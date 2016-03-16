@@ -226,31 +226,31 @@ public:
   void ClearStyleStateLocks();
 
   /**
-   * Get the inline style rule, if any, for this element.
+   * Get the inline style declaration, if any, for this element.
    */
-  virtual css::StyleRule* GetInlineStyleRule();
+  virtual css::Declaration* GetInlineStyleDeclaration();
 
   /**
-   * Set the inline style rule for this element. This will send an appropriate
-   * AttributeChanged notification if aNotify is true.
+   * Set the inline style declaration for this element. This will send
+   * an appropriate AttributeChanged notification if aNotify is true.
    */
-  virtual nsresult SetInlineStyleRule(css::StyleRule* aStyleRule,
-                                      const nsAString* aSerialized,
-                                      bool aNotify);
+  virtual nsresult SetInlineStyleDeclaration(css::Declaration* aDeclaration,
+                                             const nsAString* aSerialized,
+                                             bool aNotify);
 
   /**
-   * Get the SMIL override style rule for this element. If the rule hasn't been
-   * created, this method simply returns null.
+   * Get the SMIL override style declaration for this element. If the
+   * rule hasn't been created, this method simply returns null.
    */
-  virtual css::StyleRule* GetSMILOverrideStyleRule();
+  virtual css::Declaration* GetSMILOverrideStyleDeclaration();
 
   /**
-   * Set the SMIL override style rule for this element. If aNotify is true, this
-   * method will notify the document's pres context, so that the style changes
-   * will be noticed.
+   * Set the SMIL override style declaration for this element. If
+   * aNotify is true, this method will notify the document's pres
+   * context, so that the style changes will be noticed.
    */
-  virtual nsresult SetSMILOverrideStyleRule(css::StyleRule* aStyleRule,
-                                            bool aNotify);
+  virtual nsresult SetSMILOverrideStyleDeclaration(css::Declaration* aDeclaration,
+                                                   bool aNotify);
 
   /**
    * Returns a new nsISMILAttr that allows the caller to animate the given
@@ -628,6 +628,9 @@ public:
 
     return slots->mAttributeMap;
   }
+
+  void GetAttributeNames(nsTArray<nsString>& aResult);
+
   void GetAttribute(const nsAString& aName, nsString& aReturn)
   {
     DOMString str;
@@ -672,11 +675,6 @@ public:
                            ErrorResult& aError);
   already_AddRefed<nsIHTMLCollection>
     GetElementsByClassName(const nsAString& aClassNames);
-  bool MozMatchesSelector(const nsAString& aSelector,
-                          ErrorResult& aError)
-  {
-    return Matches(aSelector, aError);
-  }
   void SetPointerCapture(int32_t aPointerId, ErrorResult& aError)
   {
     bool activeState = false;
@@ -786,12 +784,24 @@ public:
   {
     return nsPresContext::AppUnitsToIntCSSPixels(GetClientAreaRect().height);
   }
+  int32_t ScrollTopMin()
+  {
+    nsIScrollableFrame* sf = GetScrollFrame();
+    return sf ?
+           nsPresContext::AppUnitsToIntCSSPixels(sf->GetScrollRange().y) : 0;
+  }
   int32_t ScrollTopMax()
   {
     nsIScrollableFrame* sf = GetScrollFrame();
     return sf ?
            nsPresContext::AppUnitsToIntCSSPixels(sf->GetScrollRange().YMost()) :
            0;
+  }
+  int32_t ScrollLeftMin()
+  {
+    nsIScrollableFrame* sf = GetScrollFrame();
+    return sf ?
+           nsPresContext::AppUnitsToIntCSSPixels(sf->GetScrollRange().x) : 0;
   }
   int32_t ScrollLeftMax()
   {
@@ -815,7 +825,7 @@ public:
   {
   }
 
-  void GetAnimations(nsTArray<nsRefPtr<Animation>>& aAnimations);
+  void GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations);
 
   NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML);
   virtual void SetInnerHTML(const nsAString& aInnerHTML, ErrorResult& aError);
@@ -1071,7 +1081,7 @@ public:
    */
   float FontSizeInflation();
 
-  net::ReferrerPolicy GetReferrerPolicy();
+  net::ReferrerPolicy GetReferrerPolicyAsEnum();
 
 protected:
   /*
@@ -1307,8 +1317,8 @@ public:
   NS_IMETHOD Run() override;
 private:
   virtual ~RemoveFromBindingManagerRunnable();
-  nsRefPtr<nsBindingManager> mManager;
-  nsRefPtr<nsIContent> mContent;
+  RefPtr<nsBindingManager> mManager;
+  RefPtr<nsIContent> mContent;
   nsCOMPtr<nsIDocument> mDoc;
 };
 
@@ -1332,7 +1342,7 @@ public:
 protected:
   virtual ~DestinationInsertionPointList();
 
-  nsRefPtr<Element> mParent;
+  RefPtr<Element> mParent;
   nsCOMArray<nsIContent> mDestinationPoints;
 };
 
@@ -1400,7 +1410,7 @@ _elementName::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const 
 {                                                                           \
   *aResult = nullptr;                                                       \
   already_AddRefed<mozilla::dom::NodeInfo> ni =                             \
-    nsRefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();                   \
+    RefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();                   \
   _elementName *it = new _elementName(ni);                                  \
   if (!it) {                                                                \
     return NS_ERROR_OUT_OF_MEMORY;                                          \
@@ -1421,7 +1431,7 @@ _elementName::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const 
 {                                                                           \
   *aResult = nullptr;                                                       \
   already_AddRefed<mozilla::dom::NodeInfo> ni =                             \
-    nsRefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();                   \
+    RefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();                   \
   _elementName *it = new _elementName(ni);                                  \
   if (!it) {                                                                \
     return NS_ERROR_OUT_OF_MEMORY;                                          \
@@ -1773,8 +1783,8 @@ NS_IMETHOD MozMatchesSelector(const nsAString& selector,                      \
                               bool* _retval) final override                   \
 {                                                                             \
   mozilla::ErrorResult rv;                                                    \
-  *_retval = Element::MozMatchesSelector(selector, rv);                       \
-  return rv.StealNSResult();                                                      \
+  *_retval = Element::Matches(selector, rv);                                  \
+  return rv.StealNSResult();                                                  \
 }                                                                             \
 NS_IMETHOD SetCapture(bool retargetToElement) final override                  \
 {                                                                             \

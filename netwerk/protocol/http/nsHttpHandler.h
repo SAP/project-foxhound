@@ -29,6 +29,8 @@ class nsISiteSecurityService;
 class nsIStreamConverterService;
 class nsITimer;
 
+extern mozilla::Atomic<PRThread*, mozilla::Relaxed> gSocketThread;
+
 namespace mozilla {
 namespace net {
 class ATokenBucketEvent;
@@ -65,10 +67,10 @@ public:
     nsHttpHandler();
 
     nsresult Init();
-    nsresult AddStandardRequestHeaders(nsHttpHeaderArray *);
+    nsresult AddStandardRequestHeaders(nsHttpHeaderArray *, bool isSecure);
     nsresult AddConnectionHeader(nsHttpHeaderArray *,
                                  uint32_t capabilities);
-    bool     IsAcceptableEncoding(const char *encoding);
+    bool     IsAcceptableEncoding(const char *encoding, bool isSecure);
 
     const nsAFlatCString &UserAgent();
 
@@ -111,6 +113,7 @@ public:
     uint32_t       SpdySendingChunkSize() { return mSpdySendingChunkSize; }
     uint32_t       SpdySendBufferSize()      { return mSpdySendBufferSize; }
     uint32_t       SpdyPushAllowance()       { return mSpdyPushAllowance; }
+    uint32_t       SpdyPullAllowance()       { return mSpdyPullAllowance; }
     uint32_t       DefaultSpdyConcurrent()   { return mDefaultSpdyConcurrent; }
     PRIntervalTime SpdyPingThreshold() { return mSpdyPingThreshold; }
     PRIntervalTime SpdyPingTimeout() { return mSpdyPingTimeout; }
@@ -353,7 +356,7 @@ private:
 
     nsresult SetAccept(const char *);
     nsresult SetAcceptLanguages(const char *);
-    nsresult SetAcceptEncodings(const char *);
+    nsresult SetAcceptEncodings(const char *, bool mIsSecure);
 
     nsresult InitConnectionMgr();
 
@@ -430,7 +433,8 @@ private:
 
     nsCString mAccept;
     nsCString mAcceptLanguages;
-    nsCString mAcceptEncodings;
+    nsCString mHttpAcceptEncodings;
+    nsCString mHttpsAcceptEncodings;
 
     nsXPIDLCString mDefaultSocketType;
 
@@ -473,6 +477,9 @@ private:
     bool           mSafeHintEnabled;
     bool           mParentalControlEnabled;
 
+    // true in between init and shutdown states
+    Atomic<bool, Relaxed> mHandlerActive;
+
     // Whether telemetry is reported or not
     uint32_t           mTelemetryEnabled : 1;
 
@@ -481,9 +488,6 @@ private:
 
     // The value of 'hidden' network.http.debug-observations : 1;
     uint32_t           mDebugObservations : 1;
-
-    // true in between init and shutdown states
-    uint32_t           mHandlerActive : 1;
 
     uint32_t           mEnableSpdy : 1;
     uint32_t           mSpdyV31 : 1;
@@ -502,6 +506,7 @@ private:
     uint32_t       mSpdySendingChunkSize;
     uint32_t       mSpdySendBufferSize;
     uint32_t       mSpdyPushAllowance;
+    uint32_t       mSpdyPullAllowance;
     uint32_t       mDefaultSpdyConcurrent;
     PRIntervalTime mSpdyPingThreshold;
     PRIntervalTime mSpdyPingTimeout;
@@ -553,26 +558,38 @@ private:
     // For Rate Pacing Certain Network Events. Only assign this pointer on
     // socket thread.
     void MakeNewRequestTokenBucket();
-    nsRefPtr<EventTokenBucket> mRequestTokenBucket;
+    RefPtr<EventTokenBucket> mRequestTokenBucket;
 
 public:
     // Socket thread only
     nsresult SubmitPacedRequest(ATokenBucketEvent *event,
                                 nsICancelable **cancel)
     {
-        if (!mRequestTokenBucket)
-            return NS_ERROR_UNEXPECTED;
+        MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
+        if (!mRequestTokenBucket) {
+            return NS_ERROR_NOT_AVAILABLE;
+        }
         return mRequestTokenBucket->SubmitEvent(event, cancel);
     }
 
     // Socket thread only
     void SetRequestTokenBucket(EventTokenBucket *aTokenBucket)
     {
+        MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
         mRequestTokenBucket = aTokenBucket;
     }
 
+    void StopRequestTokenBucket()
+    {
+        MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
+        if (mRequestTokenBucket) {
+            mRequestTokenBucket->Stop();
+            mRequestTokenBucket = nullptr;
+        }
+    }
+
 private:
-    nsRefPtr<Tickler> mWifiTickler;
+    RefPtr<Tickler> mWifiTickler;
     void TickleWifi(nsIInterfaceRequestor *cb);
 
 private:

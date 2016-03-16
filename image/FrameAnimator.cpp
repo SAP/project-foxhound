@@ -79,6 +79,7 @@ FrameAnimator::AdvanceFrame(TimeStamp aTime)
 {
   NS_ASSERTION(aTime <= TimeStamp::Now(),
                "Given time appears to be in the future");
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::GRAPHICS);
 
   uint32_t currentFrameIndex = mCurrentAnimationFrameIndex;
   uint32_t nextFrameIndex = currentFrameIndex + 1;
@@ -479,7 +480,7 @@ FrameAnimator::DoBlend(nsIntRect* aDirtyRect,
 
   // Create the Compositing Frame
   if (!mCompositingFrame) {
-    nsRefPtr<imgFrame> newFrame = new imgFrame;
+    RefPtr<imgFrame> newFrame = new imgFrame;
     nsresult rv = newFrame->InitForDecoder(mSize,
                                            SurfaceFormat::B8G8R8A8);
     if (NS_FAILED(rv)) {
@@ -622,7 +623,7 @@ FrameAnimator::DoBlend(nsIntRect* aDirtyRect,
     // It would be better if we just stored the area that nextFrame is going to
     // overwrite.
     if (!mCompositingPrevFrame) {
-      nsRefPtr<imgFrame> newFrame = new imgFrame;
+      RefPtr<imgFrame> newFrame = new imgFrame;
       nsresult rv = newFrame->InitForDecoder(mSize,
                                              SurfaceFormat::B8G8R8A8);
       if (NS_FAILED(rv)) {

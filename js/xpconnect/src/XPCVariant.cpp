@@ -42,11 +42,10 @@ XPCVariant::XPCVariant(JSContext* cx, Value aJSVal)
         // thing, but I'm saving the cleanup here for another day. Blake thinks
         // that we should just not store the WN if we're creating a variant for
         // an outer window.
-        JS::RootedObject obj(cx, &mJSVal.toObject());
-        obj = JS_ObjectToInnerObject(cx, obj);
+        JSObject* obj = js::ToWindowIfWindowProxy(&mJSVal.toObject());
         mJSVal = JS::ObjectValue(*obj);
 
-        JSObject* unwrapped = js::CheckedUnwrap(obj, /* stopAtOuter = */ false);
+        JSObject* unwrapped = js::CheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
         mReturnRawObject = !(unwrapped && IS_WN_REFLECTOR(unwrapped));
     } else
         mReturnRawObject = false;
@@ -98,7 +97,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 already_AddRefed<XPCVariant>
 XPCVariant::newVariant(JSContext* cx, Value aJSVal)
 {
-    nsRefPtr<XPCVariant> variant;
+    RefPtr<XPCVariant> variant;
 
     if (!aJSVal.isMarkable())
         variant = new XPCVariant(cx, aJSVal);
@@ -191,7 +190,12 @@ XPCArrayHomogenizer::GetTypeForArray(JSContext* cx, HandleObject array,
         } else {
             MOZ_ASSERT(val.isObject(), "invalid type of jsval!");
             jsobj = &val.toObject();
-            if (JS_IsArrayObject(cx, jsobj))
+
+            bool isArray;
+            if (!JS_IsArrayObject(cx, jsobj, &isArray))
+                return false;
+
+            if (isArray)
                 type = tArr;
             else if (xpc_JSObjectIsID(cx, jsobj))
                 type = tID;
@@ -304,7 +308,14 @@ bool XPCVariant::InitializeData(JSContext* cx)
 
     uint32_t len;
 
-    if (JS_IsArrayObject(cx, jsobj) && JS_GetArrayLength(cx, jsobj, &len)) {
+    bool isArray;
+    if (!JS_IsArrayObject(cx, jsobj, &isArray) ||
+        (isArray && !JS_GetArrayLength(cx, jsobj, &len)))
+    {
+        return false;
+    }
+
+    if (isArray) {
         if (!len) {
             // Zero length array
             mData.SetToEmptyArray();

@@ -4,11 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDNSServiceDiscovery.h"
-#include <cutils/properties.h>
 #include "MDNSResponderOperator.h"
 #include "nsICancelable.h"
 #include "nsXULAppAPI.h"
 #include "private/pprio.h"
+
+#ifdef MOZ_WIDGET_GONK
+#include <cutils/properties.h>
+#endif // MOZ_WIDGET_GONK
 
 namespace mozilla {
 namespace net {
@@ -18,6 +21,7 @@ namespace {
 inline void
 StartService()
 {
+#ifdef MOZ_WIDGET_GONK
   char value[PROPERTY_VALUE_MAX] = { '\0' };
   property_get("init.svc.mdnsd", value, "");
 
@@ -25,11 +29,13 @@ StartService()
     return;
   }
   property_set("ctl.start", "mdnsd");
+#endif // MOZ_WIDGET_GONK
 }
 
 inline void
 StopService()
 {
+#ifdef MOZ_WIDGET_GONK
   char value[PROPERTY_VALUE_MAX] = { '\0' };
   property_get("init.svc.mdnsd", value, "");
 
@@ -37,6 +43,7 @@ StopService()
     return;
   }
   property_set("ctl.stop", "mdnsd");
+#endif // MOZ_WIDGET_GONK
 }
 
 class ServiceCounter
@@ -83,7 +90,7 @@ public:
 private:
   virtual ~DiscoveryRequest() { Cancel(NS_OK); }
 
-  nsRefPtr<nsDNSServiceDiscovery> mService;
+  RefPtr<nsDNSServiceDiscovery> mService;
   nsIDNSServiceDiscoveryListener* mListener;
 };
 
@@ -120,7 +127,7 @@ public:
 private:
   virtual ~RegisterRequest() { Cancel(NS_OK); }
 
-  nsRefPtr<nsDNSServiceDiscovery> mService;
+  RefPtr<nsDNSServiceDiscovery> mService;
   nsIDNSRegistrationListener* mListener;
 };
 
@@ -178,7 +185,7 @@ nsDNSServiceDiscovery::StartDiscovery(const nsACString& aServiceType,
   }
 
   nsCOMPtr<nsICancelable> req = new DiscoveryRequest(this, aListener);
-  nsRefPtr<BrowseOperator> browserOp = new BrowseOperator(aServiceType,
+  RefPtr<BrowseOperator> browserOp = new BrowseOperator(aServiceType,
                                                           aListener);
   if (NS_WARN_IF(NS_FAILED(rv = browserOp->Start()))) {
     return rv;
@@ -196,7 +203,7 @@ nsDNSServiceDiscovery::StopDiscovery(nsIDNSServiceDiscoveryListener* aListener)
 {
   nsresult rv;
 
-  nsRefPtr<BrowseOperator> browserOp;
+  RefPtr<BrowseOperator> browserOp;
   if (!mDiscoveryMap.Get(aListener, getter_AddRefs(browserOp))) {
     return NS_OK;
   }
@@ -223,7 +230,7 @@ nsDNSServiceDiscovery::RegisterService(nsIDNSServiceInfo* aServiceInfo,
   }
 
   nsCOMPtr<nsICancelable> req = new RegisterRequest(this, aListener);
-  nsRefPtr<RegisterOperator> registerOp = new RegisterOperator(aServiceInfo,
+  RefPtr<RegisterOperator> registerOp = new RegisterOperator(aServiceInfo,
                                                                aListener);
   if (NS_WARN_IF(NS_FAILED(rv = registerOp->Start()))) {
     return rv;
@@ -241,7 +248,7 @@ nsDNSServiceDiscovery::UnregisterService(nsIDNSRegistrationListener* aListener)
 {
   nsresult rv;
 
-  nsRefPtr<RegisterOperator> registerOp;
+  RefPtr<RegisterOperator> registerOp;
   if (!mRegisterMap.Get(aListener, getter_AddRefs(registerOp))) {
     return NS_OK;
   }
@@ -265,7 +272,7 @@ nsDNSServiceDiscovery::ResolveService(nsIDNSServiceInfo* aServiceInfo,
 
   nsresult rv;
 
-  nsRefPtr<ResolveOperator> resolveOp = new ResolveOperator(aServiceInfo,
+  RefPtr<ResolveOperator> resolveOp = new ResolveOperator(aServiceInfo,
                                                             aListener);
   if (NS_WARN_IF(NS_FAILED(rv = resolveOp->Start()))) {
     return rv;

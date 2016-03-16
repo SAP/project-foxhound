@@ -569,7 +569,6 @@ static const Class CollatorClass = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     collator_finalize
 };
 
@@ -1064,7 +1063,6 @@ static const Class NumberFormatClass = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     numberFormat_finalize
 };
 
@@ -1534,7 +1532,6 @@ static const Class DateTimeFormatClass = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     dateTimeFormat_finalize
 };
 
@@ -1930,6 +1927,14 @@ NewUDateFormat(JSContext* cx, HandleObject dateTimeFormat)
     uPatternLength = u_strlen(uPattern);
 
     UErrorCode status = U_ZERO_ERROR;
+
+    if (!uTimeZone) {
+        // When no time zone was specified, we use ICU's default time zone.
+        // The current default might be stale, because JS::ResetTimeZone()
+        // doesn't immediately update ICU's default time zone.  So perform an
+        // update if needed.
+        js::ResyncICUDefaultTimeZone();
+    }
 
     // If building with ICU headers before 50.1, use UDAT_IGNORE instead of
     // UDAT_PATTERN.

@@ -78,8 +78,8 @@ function testFloat32x4FromFloat64x2Bits() {
 }
 
 function testFloat32x4FromInt8x16Bits() {
-  function expected(v) {
-    var i8 = new Int8Array(16);
+  function expected(v, Buffer) {
+    var i8 = new Int8Array(new Buffer(16));
     var f32 = new Float32Array(i8.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 16; i++) i8[i] = asArr[i];
@@ -91,13 +91,15 @@ function testFloat32x4FromInt8x16Bits() {
                INT8_MAX, INT8_MIN, INT8_MAX, INT8_MIN, INT8_MAX, INT8_MIN, INT8_MAX, INT8_MIN]];
   for (var v of vals) {
     var i = Int8x16(...v);
-    assertEqX4(Float32x4.fromInt8x16Bits(i), expected(i));
+    assertEqX4(Float32x4.fromInt8x16Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX4(Float32x4.fromInt8x16Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
 function testFloat32x4FromInt16x8Bits() {
-  function expected(v) {
-    var i16 = new Int16Array(8);
+  function expected(v, Buffer) {
+    var i16 = new Int16Array(new Buffer(16));
     var f32 = new Float32Array(i16.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 8; i++) i16[i] = asArr[i];
@@ -108,7 +110,9 @@ function testFloat32x4FromInt16x8Bits() {
               [INT16_MIN, INT16_MAX, INT16_MIN, INT16_MAX, INT16_MIN, INT16_MAX, INT16_MIN, INT16_MAX]];
   for (var v of vals) {
     var i = Int16x8(...v);
-    assertEqX4(Float32x4.fromInt16x8Bits(i), expected(i));
+    assertEqX4(Float32x4.fromInt16x8Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX4(Float32x4.fromInt16x8Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
@@ -205,9 +209,9 @@ function testFloat64x2FromFloat32x4Bits() {
 }
 
 function testFloat64x2FromInt8x16Bits() {
-  function expected(v) {
-    var i8 = Int8Array(16);
-    var f64 = Float64Array(i8.buffer);
+  function expected(v, Buffer) {
+    var i8 = new Int8Array(new Buffer(16));
+    var f64 = new Float64Array(i8.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 16; i++) i8[i] = asArr[i];
     return [f64[0], f64[1]];
@@ -219,14 +223,16 @@ function testFloat64x2FromInt8x16Bits() {
 
   for (var v of vals) {
     var f = Int8x16(...v);
-    assertEqX2(Float64x2.fromInt8x16Bits(f), expected(f));
+    assertEqX2(Float64x2.fromInt8x16Bits(f), expected(f, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX2(Float64x2.fromInt8x16Bits(f), expected(f, SharedArrayBuffer));
   }
 }
 
 function testFloat64x2FromInt16x8Bits() {
-  function expected(v) {
-    var i16 = Int16Array(8);
-    var f64 = Float64Array(i16.buffer);
+  function expected(v, Buffer) {
+    var i16 = new Int16Array(new Buffer(16));
+    var f64 = new Float64Array(i16.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 8; i++) i16[i] = asArr[i];
     return [f64[0], f64[1]];
@@ -237,7 +243,9 @@ function testFloat64x2FromInt16x8Bits() {
 
   for (var v of vals) {
     var f = Int16x8(...v);
-    assertEqX2(Float64x2.fromInt16x8Bits(f), expected(f));
+    assertEqX2(Float64x2.fromInt16x8Bits(f), expected(f, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX2(Float64x2.fromInt16x8Bits(f), expected(f, SharedArrayBuffer));
   }
 }
 
@@ -360,9 +368,9 @@ function testInt32x4FromFloat64x2Bits() {
 }
 
 function testInt32x4FromInt8x16Bits() {
-  function expected(v) {
-    var i8 = Int8Array(16);
-    var i32 = Int32Array(i8.buffer);
+  function expected(v, Buffer) {
+    var i8 = new Int8Array(new Buffer(16));
+    var i32 = new Int32Array(i8.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 16; i++) i8[i] = asArr[i];
     return [i32[0], i32[1], i32[2], i32[3]];
@@ -374,14 +382,16 @@ function testInt32x4FromInt8x16Bits() {
 
   for (var v of vals) {
     var i = Int8x16(...v);
-    assertEqX4(Int32x4.fromInt8x16Bits(i), expected(i));
+    assertEqX4(Int32x4.fromInt8x16Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX4(Int32x4.fromInt8x16Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
 function testInt32x4FromInt16x8Bits() {
-  function expected(v) {
-    var i16 = Int16Array(8);
-    var i32 = Int32Array(i16.buffer);
+  function expected(v, Buffer) {
+    var i16 = new Int16Array(new Buffer(16));
+    var i32 = new Int32Array(i16.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 8; i++) i16[i] = asArr[i];
     return [i32[0], i32[1], i32[2], i32[3]];
@@ -392,14 +402,16 @@ function testInt32x4FromInt16x8Bits() {
 
   for (var v of vals) {
     var i = Int16x8(...v);
-    assertEqX4(Int32x4.fromInt16x8Bits(i), expected(i));
+    assertEqX4(Int32x4.fromInt16x8Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX4(Int32x4.fromInt16x8Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
 function testInt8x16FromFloat32x4Bits() {
-  function expected(v) {
-    var f32 = Float32Array(4);
-    var i8 = Int8Array(f32.buffer);
+  function expected(v, Buffer) {
+    var f32 = new Float32Array(new Buffer(16));
+    var i8 = new Int8Array(f32.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 4; i++) f32[i] = asArr[i];
     return [i8[0], i8[1], i8[2], i8[3], i8[4], i8[5], i8[6], i8[7],
@@ -410,14 +422,16 @@ function testInt8x16FromFloat32x4Bits() {
 
   for (var v of vals) {
     var f = Float32x4(...v);
-    assertEqX16(Int8x16.fromFloat32x4Bits(f), expected(f));
+    assertEqX16(Int8x16.fromFloat32x4Bits(f), expected(f, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX16(Int8x16.fromFloat32x4Bits(f), expected(f, SharedArrayBuffer));
   }
 }
 
 function testInt8x16FromFloat64x2Bits() {
-  function expected(v) {
-    var f64 = Float64Array(2);
-    var i8 = Int8Array(f64.buffer);
+  function expected(v, Buffer) {
+    var f64 = new Float64Array(new Buffer(16));
+    var i8 = new Int8Array(f64.buffer);
     f64[0] = Float64x2.extractLane(v, 0);
     f64[1] = Float64x2.extractLane(v, 1);
     return [i8[0], i8[1], i8[2], i8[3], i8[4], i8[5], i8[6], i8[7],
@@ -427,14 +441,16 @@ function testInt8x16FromFloat64x2Bits() {
 
   for (var v of vals) {
     var f = Float64x2(...v);
-    assertEqX16(Int8x16.fromFloat64x2Bits(f), expected(f));
+    assertEqX16(Int8x16.fromFloat64x2Bits(f), expected(f, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX16(Int8x16.fromFloat64x2Bits(f), expected(f, SharedArrayBuffer));
   }
 }
 
 function testInt8x16FromInt16x8Bits() {
-  function expected(v) {
-    var i16 = Int16Array(8);
-    var i8 = Int8Array(i16.buffer);
+  function expected(v, Buffer) {
+    var i16 = new Int16Array(new Buffer(16));
+    var i8 = new Int8Array(i16.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 8; i++) i16[i] = asArr[i];
     return [i8[0], i8[1], i8[2], i8[3], i8[4], i8[5], i8[6], i8[7],
@@ -444,14 +460,16 @@ function testInt8x16FromInt16x8Bits() {
   var vals = [[0, 1, -2, 3, INT8_MIN, INT8_MAX, INT16_MIN, INT16_MAX]];
   for (var v of vals) {
     var i = Int16x8(...v);
-    assertEqX16(Int8x16.fromInt16x8Bits(i), expected(i));
+    assertEqX16(Int8x16.fromInt16x8Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX16(Int8x16.fromInt16x8Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
 function testInt8x16FromInt32x4Bits() {
-  function expected(v) {
-    var i32 = Int32Array(4);
-    var i8 = Int8Array(i32.buffer);
+  function expected(v, Buffer) {
+    var i32 = new Int32Array(new Buffer(16));
+    var i8 = new Int8Array(i32.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 4; i++) i32[i] = asArr[i];
     return [i8[0], i8[1], i8[2], i8[3], i8[4], i8[5], i8[6], i8[7],
@@ -461,14 +479,16 @@ function testInt8x16FromInt32x4Bits() {
   var vals = [[0, 1, -2, 3], [INT8_MIN, INT8_MAX, INT32_MIN, INT32_MAX]];
   for (var v of vals) {
     var i = Int32x4(...v);
-    assertEqX16(Int8x16.fromInt32x4Bits(i), expected(i));
+    assertEqX16(Int8x16.fromInt32x4Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX16(Int8x16.fromInt32x4Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
 function testInt16x8FromFloat32x4Bits() {
-  function expected(v) {
-    var f32 = Float32Array(4);
-    var i16 = Int16Array(f32.buffer);
+  function expected(v, Buffer) {
+    var f32 = new Float32Array(new Buffer(16));
+    var i16 = new Int16Array(f32.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 4; i++) f32[i] = asArr[i];
     return [i16[0], i16[1], i16[2], i16[3], i16[4], i16[5], i16[6], i16[7]];
@@ -478,14 +498,16 @@ function testInt16x8FromFloat32x4Bits() {
 
   for (var v of vals) {
     var f = Float32x4(...v);
-    assertEqX8(Int16x8.fromFloat32x4Bits(f), expected(f));
+    assertEqX8(Int16x8.fromFloat32x4Bits(f), expected(f, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX8(Int16x8.fromFloat32x4Bits(f), expected(f, SharedArrayBuffer));
   }
 }
 
 function testInt16x8FromFloat64x2Bits() {
-  function expected(v) {
-    var f64 = Float64Array(2);
-    var i16 = Int16Array(f64.buffer);
+  function expected(v, Buffer) {
+    var f64 = new Float64Array(new Buffer(16));
+    var i16 = new Int16Array(f64.buffer);
     f64[0] = Float64x2.extractLane(v, 0);
     f64[1] = Float64x2.extractLane(v, 1);
     return [i16[0], i16[1], i16[2], i16[3], i16[4], i16[5], i16[6], i16[7]];
@@ -495,14 +517,16 @@ function testInt16x8FromFloat64x2Bits() {
 
   for (var v of vals) {
     var f = Float64x2(...v);
-    assertEqX8(Int16x8.fromFloat64x2Bits(f), expected(f));
+    assertEqX8(Int16x8.fromFloat64x2Bits(f), expected(f, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX8(Int16x8.fromFloat64x2Bits(f), expected(f, SharedArrayBuffer));
   }
 }
 
 function testInt16x8FromInt8x16Bits() {
-  function expected(v) {
-    var i8 = Int8Array(16);
-    var i16 = Int16Array(i8.buffer);
+  function expected(v, Buffer) {
+    var i8 = new Int8Array(new Buffer(16));
+    var i16 = new Int16Array(i8.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 16; i++) i8[i] = asArr[i];
     return [i16[0], i16[1], i16[2], i16[3], i16[4], i16[5], i16[6], i16[7]];
@@ -512,14 +536,16 @@ function testInt16x8FromInt8x16Bits() {
 
   for (var v of vals) {
     var i = Int8x16(...v);
-    assertEqX8(Int16x8.fromInt8x16Bits(i), expected(i));
+    assertEqX8(Int16x8.fromInt8x16Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX8(Int16x8.fromInt8x16Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 
 function testInt16x8FromInt32x4Bits() {
-  function expected(v) {
-    var i32 = Int32Array(4);
-    var i16 = Int16Array(i32.buffer);
+  function expected(v, Buffer) {
+    var i32 = new Int32Array(new Buffer(16));
+    var i16 = new Int16Array(i32.buffer);
     var asArr = simdToArray(v);
     for (var i = 0; i < 4; i++) i32[i] = asArr[i];
     return [i16[0], i16[1], i16[2], i16[3], i16[4], i16[5], i16[6], i16[7]];
@@ -529,7 +555,9 @@ function testInt16x8FromInt32x4Bits() {
 
   for (var v of vals) {
     var i = Int32x4(...v);
-    assertEqX8(Int16x8.fromInt32x4Bits(i), expected(i));
+    assertEqX8(Int16x8.fromInt32x4Bits(i), expected(i, ArrayBuffer));
+    if (typeof SharedArrayBuffer != "undefined")
+      assertEqX8(Int16x8.fromInt32x4Bits(i), expected(i, SharedArrayBuffer));
   }
 }
 

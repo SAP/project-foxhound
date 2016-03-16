@@ -30,13 +30,12 @@ public:
                       bool& aIsHandlingUserInput,
                       nsCOMPtr<nsIContent>& aCurrentEventContent);
 
-  static bool gPreventMouseEvents;
   static nsRefPtrHashtable<nsUint32HashKey, mozilla::dom::Touch>* gCaptureTouchList;
 
 private:
   void EvictTouches();
 
-  nsRefPtr<PresShell>   mPresShell;
+  RefPtr<PresShell>   mPresShell;
   nsCOMPtr<nsIDocument> mDocument;
 };
 

@@ -12,6 +12,7 @@
 #include "gfx2DGlue.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
+#include "mozilla/gfx/Tools.h"
 #include "gfxUtils.h"
 #include "YCbCrUtils.h"
 #include <algorithm>
@@ -69,12 +70,12 @@ public:
 
 BasicCompositor::BasicCompositor(nsIWidget *aWidget)
   : mWidget(aWidget)
+  , mDidExternalComposition(false)
 {
   MOZ_COUNT_CTOR(BasicCompositor);
-  SetBackend(LayersBackend::LAYERS_BASIC);
 
   mMaxTextureSize =
-    Factory::GetMaxSurfaceSize(gfxPlatform::GetPlatform()->GetContentBackend());
+    Factory::GetMaxSurfaceSize(gfxPlatform::GetPlatform()->GetContentBackendFor(LayersBackend::LAYERS_BASIC));
 }
 
 BasicCompositor::~BasicCompositor()
@@ -148,7 +149,7 @@ BasicCompositor::CreateRenderTargetFromSource(const IntRect &aRect,
                                               const CompositingRenderTarget *aSource,
                                               const IntPoint &aSourcePoint)
 {
-  MOZ_CRASH("Shouldn't be called!");
+  MOZ_CRASH("GFX: Shouldn't be called!");
   return nullptr;
 }
 
@@ -352,7 +353,6 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
   // |dest| is a temporary surface.
   RefPtr<DrawTarget> dest = buffer;
 
-  buffer->PushClipRect(aClipRect);
   AutoRestoreTransform autoRestoreTransform(dest);
 
   Matrix newTransform;
@@ -375,6 +375,10 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     transformBounds = aTransform.TransformAndClipBounds(aRect, Rect(offset.x, offset.y, buffer->GetSize().width, buffer->GetSize().height));
     transformBounds.RoundOut();
 
+    if (transformBounds.IsEmpty()) {
+      return;
+    }
+
     // Propagate the coordinate offset to our 2D draw target.
     newTransform = Matrix::Translation(transformBounds.x, transformBounds.y);
 
@@ -382,6 +386,8 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     // surface, so undo the coordinate offset.
     new3DTransform = Matrix4x4::Translation(aRect.x, aRect.y, 0) * aTransform;
   }
+
+  buffer->PushClipRect(aClipRect);
 
   newTransform.PostTranslate(-offset.x, -offset.y);
   buffer->SetTransform(newTransform);
@@ -407,8 +413,17 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
       EffectSolidColor* effectSolidColor =
         static_cast<EffectSolidColor*>(aEffectChain.mPrimaryEffect.get());
 
+      bool unboundedOp = !IsOperatorBoundByMask(blendMode);
+      if (unboundedOp) {
+        dest->PushClipRect(aRect);
+      }
+
       FillRectWithMask(dest, aRect, effectSolidColor->mColor,
                        DrawOptions(aOpacity, blendMode), sourceMask, &maskTransform);
+
+      if (unboundedOp) {
+        dest->PopClip();
+      }
       break;
     }
     case EffectTypes::RGB: {
@@ -506,24 +521,26 @@ BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
                             gfx::Rect *aClipRectOut /* = nullptr */,
                             gfx::Rect *aRenderBoundsOut /* = nullptr */)
 {
-  mWidgetSize = mWidget->GetClientSize();
+  mWidgetSize = mWidget->GetClientSize().ToUnknownSize();
   IntRect intRect = gfx::IntRect(IntPoint(), mWidgetSize);
   Rect rect = Rect(0, 0, intRect.width, intRect.height);
 
-  // Sometimes the invalid region is larger than we want to draw.
   nsIntRegion invalidRegionSafe;
-  invalidRegionSafe.And(aInvalidRegion, intRect);
+  if (mDidExternalComposition) {
+    // We do not know rendered region during external composition, just redraw
+    // whole widget.
+    invalidRegionSafe = intRect;
+    mDidExternalComposition = false;
+  } else {
+    // Sometimes the invalid region is larger than we want to draw.
+    invalidRegionSafe.And(aInvalidRegion, intRect);
+  }
 
-  IntRect invalidRect = invalidRegionSafe.GetBounds();
-  mInvalidRect = IntRect(invalidRect.x, invalidRect.y, invalidRect.width, invalidRect.height);
   mInvalidRegion = invalidRegionSafe;
+  mInvalidRect = mInvalidRegion.GetBounds();
 
   if (aRenderBoundsOut) {
     *aRenderBoundsOut = Rect();
-  }
-
-  if (mInvalidRect.width <= 0 || mInvalidRect.height <= 0) {
-    return;
   }
 
   if (mTarget) {
@@ -531,9 +548,19 @@ BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
     // placeholder so that CreateRenderTarget() works.
     mDrawTarget = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
   } else {
+    // StartRemoteDrawingInRegion can mutate mInvalidRegion.
     mDrawTarget = mWidget->StartRemoteDrawingInRegion(mInvalidRegion);
+    if (!mDrawTarget) {
+      return;
+    }
+    mInvalidRect = mInvalidRegion.GetBounds();
+    if (mInvalidRect.IsEmpty()) {
+      mWidget->EndRemoteDrawingInRegion(mDrawTarget, mInvalidRegion);
+      return;
+    }
   }
-  if (!mDrawTarget) {
+
+  if (!mDrawTarget || mInvalidRect.IsEmpty()) {
     return;
   }
 
@@ -550,10 +577,10 @@ BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
 
   // We only allocate a surface sized to the invalidated region, so we need to
   // translate future coordinates.
-  mRenderTarget->mDrawTarget->SetTransform(Matrix::Translation(-invalidRect.x,
-                                                               -invalidRect.y));
+  mRenderTarget->mDrawTarget->SetTransform(Matrix::Translation(-mInvalidRect.x,
+                                                               -mInvalidRect.y));
 
-  gfxUtils::ClipToRegion(mRenderTarget->mDrawTarget, invalidRegionSafe);
+  gfxUtils::ClipToRegion(mRenderTarget->mDrawTarget, mInvalidRegion);
 
   if (aRenderBoundsOut) {
     *aRenderBoundsOut = rect;
@@ -580,7 +607,7 @@ BasicCompositor::EndFrame()
     float g = float(rand()) / RAND_MAX;
     float b = float(rand()) / RAND_MAX;
     // We're still clipped to mInvalidRegion, so just fill the bounds.
-    mRenderTarget->mDrawTarget->FillRect(ToRect(mInvalidRegion.GetBounds()),
+    mRenderTarget->mDrawTarget->FillRect(IntRectToRect(mInvalidRegion.GetBounds()),
                                          ColorPattern(Color(r, g, b, 0.2f)));
   }
 
@@ -610,6 +637,17 @@ BasicCompositor::EndFrame()
   mDrawTarget = nullptr;
   mRenderTarget = nullptr;
 }
+
+void
+BasicCompositor::EndFrameForExternalComposition(const gfx::Matrix& aTransform)
+{
+  MOZ_ASSERT(!mTarget);
+  MOZ_ASSERT(!mDrawTarget);
+  MOZ_ASSERT(!mRenderTarget);
+
+  mDidExternalComposition = true;
+}
+
 
 } // namespace layers
 } // namespace mozilla

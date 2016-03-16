@@ -90,7 +90,7 @@ public:
   }
 
 private:
-  nsRefPtr<BluetoothDevice> mDevice;
+  RefPtr<BluetoothDevice> mDevice;
 };
 
 BluetoothDevice::BluetoothDevice(nsPIDOMWindow* aWindow,
@@ -181,16 +181,19 @@ BluetoothDevice::FetchUuids(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
   NS_ENSURE_TRUE(!aRv.Failed(), nullptr);
 
   // Ensure BluetoothService is available
   BluetoothService* bs = BluetoothService::Get();
   BT_ENSURE_TRUE_REJECT(bs, promise, NS_ERROR_NOT_AVAILABLE);
-
+  BluetoothAddress address;
+  BT_ENSURE_TRUE_REJECT(NS_SUCCEEDED(StringToAddress(mAddress, address)),
+                        promise,
+                        NS_ERROR_DOM_INVALID_STATE_ERR);
   BT_ENSURE_TRUE_REJECT(
     NS_SUCCEEDED(
-      bs->FetchUuidsInternal(mAddress, new FetchUuidsTask(promise, this))),
+      bs->FetchUuidsInternal(address, new FetchUuidsTask(promise, this))),
     promise, NS_ERROR_DOM_OPERATION_ERR);
 
   return promise.forget();
@@ -204,7 +207,7 @@ BluetoothDevice::Create(nsPIDOMWindow* aWindow,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aWindow);
 
-  nsRefPtr<BluetoothDevice> device = new BluetoothDevice(aWindow, aValue);
+  RefPtr<BluetoothDevice> device = new BluetoothDevice(aWindow, aValue);
   return device.forget();
 }
 
@@ -308,7 +311,7 @@ BluetoothDevice::DispatchAttributeEvent(const Sequence<nsString>& aTypes)
 
   BluetoothAttributeEventInit init;
   init.mAttrs = aTypes;
-  nsRefPtr<BluetoothAttributeEvent> event =
+  RefPtr<BluetoothAttributeEvent> event =
     BluetoothAttributeEvent::Constructor(
       this, NS_LITERAL_STRING(ATTRIBUTE_CHANGED_ID), init);
 

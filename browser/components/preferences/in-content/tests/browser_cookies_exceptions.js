@@ -1,9 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+requestLongerTimeout(2);
+
 function test() {
   waitForExplicitFinish();
-  requestLongerTimeout(2);
+  requestLongerTimeout(3);
   testRunner.runTests();
 }
 
@@ -277,7 +279,7 @@ var testRunner = {
               let expected = testRunner.tests[testRunner._currentTest].observances.shift();
 
               is(aData, expected.data, "type of message should be the same");
-              for each (let prop in ["type", "capability"]) {
+              for (let prop of ["type", "capability"]) {
                 if (expected[prop])
                   is(permission[prop], expected[prop],
                     "property: \"" + prop  + "\" should be equal");

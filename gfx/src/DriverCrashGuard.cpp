@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "DriverCrashGuard.h"
+#include "gfxEnv.h"
 #include "gfxPrefs.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
@@ -71,8 +72,7 @@ DriverCrashGuard::Initialize()
   }
 
   // Check to see if all guards have been disabled through the environment.
-  static bool sAllGuardsDisabled = !!PR_GetEnv("MOZ_DISABLE_CRASH_GUARD");
-  if (sAllGuardsDisabled) {
+  if (gfxEnv::DisableCrashGuard()) {
     return;
   }
 
@@ -424,14 +424,14 @@ void
 D3D11LayersCrashGuard::LogCrashRecovery()
 {
   RecordTelemetry(TelemetryState::RecoveredFromCrash);
-  gfxCriticalError(CriticalLog::DefaultOptions(false)) << "D3D11 layers just crashed; D3D11 will be disabled.";
+  gfxCriticalNote << "D3D11 layers just crashed; D3D11 will be disabled.";
 }
 
 void
 D3D11LayersCrashGuard::LogFeatureDisabled()
 {
   RecordTelemetry(TelemetryState::FeatureDisabled);
-  gfxCriticalError(CriticalLog::DefaultOptions(false)) << "D3D11 layers disabled due to a prior crash.";
+  gfxCriticalNote << "D3D11 layers disabled due to a prior crash.";
 }
 
 void
@@ -468,13 +468,13 @@ D3D9VideoCrashGuard::UpdateEnvironment()
 void
 D3D9VideoCrashGuard::LogCrashRecovery()
 {
-  gfxCriticalError(CriticalLog::DefaultOptions(false)) << "DXVA2D3D9 just crashed; hardware video will be disabled.";
+  gfxCriticalNote << "DXVA2D3D9 just crashed; hardware video will be disabled.";
 }
 
 void
 D3D9VideoCrashGuard::LogFeatureDisabled()
 {
-  gfxCriticalError(CriticalLog::DefaultOptions(false)) << "DXVA2D3D9 video decoding is disabled due to a previous crash.";
+  gfxCriticalNote << "DXVA2D3D9 video decoding is disabled due to a previous crash.";
 }
 
 GLContextCrashGuard::GLContextCrashGuard(dom::ContentParent* aContentParent)
@@ -490,6 +490,13 @@ GLContextCrashGuard::Initialize()
     // to lose the entire browser and we don't want to hinder WebGL availability.
     return;
   }
+
+#if defined(MOZ_WIDGET_ANDROID)
+  // Disable the WebGL crash guard on Android - it doesn't use E10S, and
+  // its drivers will essentially never change, so the crash guard could
+  // permanently disable WebGL.
+  return;
+#endif
 
   DriverCrashGuard::Initialize();
 }
@@ -525,13 +532,13 @@ GLContextCrashGuard::UpdateEnvironment()
 void
 GLContextCrashGuard::LogCrashRecovery()
 {
-  gfxCriticalError(CriticalLog::DefaultOptions(false)) << "GLContext just crashed and is now disabled.";
+  gfxCriticalNote << "GLContext just crashed and is now disabled.";
 }
 
 void
 GLContextCrashGuard::LogFeatureDisabled()
 {
-  gfxCriticalError(CriticalLog::DefaultOptions(false)) << "GLContext is disabled due to a previous crash.";
+  gfxCriticalNote << "GLContext is disabled due to a previous crash.";
 }
 
 } // namespace gfx

@@ -48,11 +48,11 @@ public:
     virtual gfxFontEntry* LookupLocalFont(const nsAString& aFontName,
                                           uint16_t aWeight,
                                           int16_t aStretch,
-                                          bool aItalic);
+                                          uint8_t aStyle);
     virtual gfxFontEntry* MakePlatformFont(const nsAString& aFontName,
                                            uint16_t aWeight,
                                            int16_t aStretch,
-                                           bool aItalic,
+                                           uint8_t aStyle,
                                            const uint8_t* aFontData,
                                            uint32_t aLength);
 
@@ -73,14 +73,13 @@ public:
     CreateFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
                     const gfxFontStyle *aStyle,
                     gfxTextPerfMetrics* aTextPerf,
-                    gfxUserFontSet *aUserFontSet) override;
+                    gfxUserFontSet *aUserFontSet,
+                    gfxFloat aDevToCssSize) override;
 
     virtual bool FontHintingEnabled() override;
     virtual bool RequiresLinearZoom() override;
 
     FT_Library GetFTLibrary();
-
-    virtual int GetScreenDepth() const;
 
     virtual bool CanRenderContentToDataSurface() const override {
       return true;

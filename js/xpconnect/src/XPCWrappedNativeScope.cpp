@@ -139,9 +139,11 @@ XPCWrappedNativeScope::XPCWrappedNativeScope(JSContext* cx,
     JSAddonId* addonId = JS::AddonIdOfObject(aGlobal);
     if (gInterpositionMap) {
         bool isSystem = nsContentUtils::IsSystemPrincipal(principal);
-        if (InterpositionMap::Ptr p = gInterpositionMap->lookup(addonId)) {
+        bool waiveInterposition = priv->waiveInterposition;
+        InterpositionMap::Ptr interposition = gInterpositionMap->lookup(addonId);
+        if (!waiveInterposition && interposition) {
             MOZ_RELEASE_ASSERT(isSystem);
-            mInterposition = p->value();
+            mInterposition = interposition->value();
         }
         // We also want multiprocessCompatible add-ons to have a default interposition.
         if (!mInterposition && addonId && isSystem) {
@@ -477,7 +479,7 @@ XPCWrappedNativeScope::TraceWrappedNativesInAllScopes(JSTracer* trc, XPCJSRuntim
 
         if (cur->mDOMExpandoSet) {
             for (DOMExpandoSet::Enum e(*cur->mDOMExpandoSet); !e.empty(); e.popFront())
-                JS_CallHashSetObjectTracer(trc, e, e.front(), "DOM expando object");
+                JS_CallObjectTracer(trc, &e.mutableFront(), "DOM expando object");
         }
     }
 }
@@ -783,12 +785,18 @@ XPCWrappedNativeScope::UpdateInterpositionWhitelist(JSContext* cx,
     {
         JSAutoCompartment ac(cx, whitelistObj);
 
-        uint32_t length;
-        if (!JS_IsArrayObject(cx, whitelistObj) ||
-            !JS_GetArrayLength(cx, whitelistObj, &length)) {
+        bool isArray;
+        if (!JS_IsArrayObject(cx, whitelistObj, &isArray))
+            return false;
+
+        if (!isArray) {
             JS_ReportError(cx, "Whitelist must be an array.");
             return false;
         }
+
+        uint32_t length;
+        if (!JS_GetArrayLength(cx, whitelistObj, &length))
+            return false;
 
         for (uint32_t i = 0; i < length; i++) {
             RootedValue idval(cx);

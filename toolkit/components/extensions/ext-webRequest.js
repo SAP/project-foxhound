@@ -1,4 +1,6 @@
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+"use strict";
+
+var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -10,14 +12,14 @@ XPCOMUtils.defineLazyModuleGetter(this, "WebRequest",
 Cu.import("resource://gre/modules/ExtensionUtils.jsm");
 var {
   SingletonEventManager,
-  runSafe,
+  runSafeSync,
+  ignoreEvent,
 } = ExtensionUtils;
 
 // EventManager-like class specifically for WebRequest. Inherits from
 // SingletonEventManager. Takes care of converting |details| parameter
 // when invoking listeners.
-function WebRequestEventManager(context, eventName)
-{
+function WebRequestEventManager(context, eventName) {
   let name = `webRequest.${eventName}`;
   let register = (callback, filter, info) => {
     let listener = data => {
@@ -53,7 +55,7 @@ function WebRequestEventManager(context, eventName)
         }
       }
 
-      return runSafe(context, callback, data2);
+      return runSafeSync(context, callback, data2);
     };
 
     let filter2 = {};
@@ -91,7 +93,7 @@ function WebRequestEventManager(context, eventName)
 
 WebRequestEventManager.prototype = Object.create(SingletonEventManager.prototype);
 
-extensions.registerPrivilegedAPI("webRequest", (extension, context) => {
+extensions.registerSchemaAPI("webRequest", "webRequest", (extension, context) => {
   return {
     webRequest: {
       onBeforeRequest: new WebRequestEventManager(context, "onBeforeRequest").api(),
@@ -103,6 +105,10 @@ extensions.registerPrivilegedAPI("webRequest", (extension, context) => {
       handlerBehaviorChanged: function() {
         // TODO: Flush all caches.
       },
+
+      // TODO
+      onBeforeRedirect: ignoreEvent(context, "webRequest.onBeforeRedirect"),
+      onErrorOccurred: ignoreEvent(context, "webRequest.onErrorOccurred"),
     },
   };
 });

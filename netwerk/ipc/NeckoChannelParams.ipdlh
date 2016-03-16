@@ -12,6 +12,7 @@ include URIParams;
 include InputStreamParams;
 include PBackgroundSharedTypes;
 
+using mozilla::NeckoOriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
 using struct nsHttpAtom from "nsHttp.h";
@@ -26,17 +27,24 @@ namespace net {
 
 struct LoadInfoArgs
 {
-  PrincipalInfo   requestingPrincipalInfo;
-  PrincipalInfo   triggeringPrincipalInfo;
-  uint32_t        securityFlags;
-  uint32_t        contentPolicyType;
-  bool            upgradeInsecureRequests;
-  uint64_t        innerWindowID;
-  uint64_t        outerWindowID;
-  uint64_t        parentOuterWindowID;
-  bool            enforceSecurity;
-  bool            initialSecurityCheckDone;
-  PrincipalInfo[] redirectChain;
+  PrincipalInfo    requestingPrincipalInfo;
+  PrincipalInfo    triggeringPrincipalInfo;
+  uint32_t         securityFlags;
+  uint32_t         contentPolicyType;
+  uint32_t         tainting;
+  bool             upgradeInsecureRequests;
+  uint64_t         innerWindowID;
+  uint64_t         outerWindowID;
+  uint64_t         parentOuterWindowID;
+  bool             enforceSecurity;
+  bool             initialSecurityCheckDone;
+  bool             isInThirdPartyContext;
+  NeckoOriginAttributes originAttributes;
+  PrincipalInfo[]  redirectChainIncludingInternalRedirects;
+  PrincipalInfo[]  redirectChain;
+  nsCString[]      corsUnsafeHeaders;
+  bool             forcePreflight;
+  bool             isPreflight;
 };
 
 /**
@@ -60,8 +68,6 @@ union OptionalHttpResponseHead
 
 struct CorsPreflightArgs
 {
-  bool          withCredentials;
-  PrincipalInfo preflightPrincipal;
   nsCString[]   unsafeHeaders;
 };
 
@@ -108,6 +114,8 @@ struct HttpChannelOpenArgs
   uint32_t                    cacheKey;
   nsCString                   schedulingContextID;
   OptionalCorsPreflightArgs   preflightArgs;
+  uint32_t                    initialRwin;
+  bool                        suspendAfterSynthesizeResponse;
 };
 
 struct HttpChannelConnectArgs

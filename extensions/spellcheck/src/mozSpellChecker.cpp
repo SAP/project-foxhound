@@ -153,9 +153,10 @@ mozSpellChecker::CheckWord(const nsAString &aWord, bool *aIsMisspelled, nsTArray
       char16_t **words;
       
       result = mSpellCheckingEngine->Suggest(PromiseFlatString(aWord).get(), &words, &count);
-      NS_ENSURE_SUCCESS(result, result); 
+      NS_ENSURE_SUCCESS(result, result);
+      nsString* suggestions = aSuggestions->AppendElements(count);
       for(i=0;i<count;i++){
-        aSuggestions->AppendElement(nsDependentString(words[i]));
+	suggestions[i].Assign(words[i]);
       }
       
       if (count)
@@ -390,7 +391,7 @@ mozSpellChecker::SetCurrentDictionary(const nsAString &aDictionary)
   }
 
   // Calls to mozISpellCheckingEngine::SetDictionary might destroy us
-  nsRefPtr<mozSpellChecker> kungFuDeathGrip = this;
+  RefPtr<mozSpellChecker> kungFuDeathGrip = this;
 
   mSpellCheckingEngine = nullptr;
 
@@ -426,31 +427,6 @@ mozSpellChecker::SetCurrentDictionary(const nsAString &aDictionary)
 
   // We could not find any engine with the requested dictionary
   return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP 
-mozSpellChecker::CheckCurrentDictionary()
-{
-  // If the current dictionary has been uninstalled, we need to stop using it.
-  // This happens when there is a current engine, but that engine has no
-  // current dictionary.
-
-  if (!mSpellCheckingEngine) {
-    // We didn't have a current dictionary
-    return NS_OK;
-  }
-
-  nsXPIDLString dictname;
-  mSpellCheckingEngine->GetDictionary(getter_Copies(dictname));
-
-  if (!dictname.IsEmpty()) {
-    // We still have a current dictionary
-    return NS_OK;
-  }
-
-  // We had a current dictionary, but it has gone, so we cannot use it anymore.
-  mSpellCheckingEngine = nullptr;
-  return NS_OK;
 }
 
 nsresult

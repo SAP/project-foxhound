@@ -44,7 +44,6 @@
 #include "nsIDOMEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMFileList.h"
-#include "nsIDOMFileReader.h"
 #include "nsIDOMFocusEvent.h"
 #include "nsIDOMFormData.h"
 #include "nsIDOMGeoPositionError.h"
@@ -179,7 +178,6 @@
 #include "mozilla/dom/EventBinding.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/FileListBinding.h"
-#include "mozilla/dom/FileReaderBinding.h"
 #include "mozilla/dom/FocusEventBinding.h"
 #include "mozilla/dom/FormDataBinding.h"
 #include "mozilla/dom/HistoryBinding.h"
@@ -368,7 +366,6 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
   DEFINE_SHIM(Element),
   DEFINE_SHIM(Event),
   DEFINE_SHIM(EventTarget),
-  DEFINE_SHIM(FileReader),
   DEFINE_SHIM(FileList),
   DEFINE_SHIM(FocusEvent),
   DEFINE_SHIM(FormData),
@@ -476,7 +473,7 @@ NS_IMPL_ISUPPORTS(ShimInterfaceInfo, nsISupports, nsIInterfaceInfo)
 already_AddRefed<ShimInterfaceInfo>
 ShimInterfaceInfo::MaybeConstruct(const char* aName, JSContext* cx)
 {
-    nsRefPtr<ShimInterfaceInfo> info;
+    RefPtr<ShimInterfaceInfo> info;
     for (uint32_t i = 0; i < ArrayLength(kComponentsInterfaceShimMap); ++i) {
         if (!strcmp(aName, kComponentsInterfaceShimMap[i].geckoName)) {
             const ComponentsInterfaceShimEntry& shimEntry =

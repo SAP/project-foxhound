@@ -11,10 +11,10 @@ var Ci = Components.interfaces;
 var Cc = Components.classes;
 var Cu = Components.utils;
 
-Cu.import("resource://specialpowers/MockFilePicker.jsm");
-Cu.import("resource://specialpowers/MockColorPicker.jsm");
-Cu.import("resource://specialpowers/MockPermissionPrompt.jsm");
-Cu.import("resource://specialpowers/MockPaymentsUIGlue.jsm");
+Cu.import("chrome://specialpowers/content/MockFilePicker.jsm");
+Cu.import("chrome://specialpowers/content/MockColorPicker.jsm");
+Cu.import("chrome://specialpowers/content/MockPermissionPrompt.jsm");
+Cu.import("chrome://specialpowers/content/MockPaymentsUIGlue.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -47,7 +47,6 @@ function SpecialPowersAPI() {
   this._observingPermissions = false;
   this._fm = null;
   this._cb = null;
-  this._quotaManagerCallbackInfos = null;
 }
 
 function bindDOMWindowUtils(aWindow) {
@@ -607,7 +606,7 @@ SpecialPowersAPI.prototype = {
       // in order to properly log these assertions and notify
       // all usefull log observers
       let window = this.window.get();
-      let parentRunner, repr = function (o) o;
+      let parentRunner, repr = o => o;
       if (window) {
         window = window.wrappedJSObject;
         parentRunner = window.TestRunner;
@@ -642,6 +641,14 @@ SpecialPowersAPI.prototype = {
     };
 
     return this.wrap(chromeScript);
+  },
+
+  importInMainProcess: function (importString) {
+    var message = this._sendSyncMessage("SPImportInMainProcess", importString)[0];
+    if (message.hadError) {
+      throw "SpecialPowers.importInMainProcess failed with error " + message.errorMessage;
+    }
+    return;
   },
 
   get Services() {
@@ -786,8 +793,8 @@ SpecialPowersAPI.prototype = {
           originalValue = Ci.nsICookiePermission.ACCESS_LIMIT_THIRD_PARTY;
         }
 
-        let [url, appId, isInBrowserElement, isSystem] = this._getInfoFromPermissionArg(context);
-        if (isSystem) {
+        let principal = this._getPrincipalFromArg(context);
+        if (principal.isSystemPrincipal) {
           continue;
         }
 
@@ -810,9 +817,7 @@ SpecialPowersAPI.prototype = {
                     'type': permission.type,
                     'permission': perm,
                     'value': perm,
-                    'url': url,
-                    'appId': appId,
-                    'isInBrowserElement': isInBrowserElement,
+                    'principal': principal,
                     'expireType': (typeof permission.expireType === "number") ?
                       permission.expireType : 0, // default: EXPIRE_NEVER
                     'expireTime': (typeof permission.expireTime === "number") ?
@@ -967,7 +972,7 @@ SpecialPowersAPI.prototype = {
           for (var j = 0; j < undos.length; j++) {
             var undo = undos[j];
             if (undo.op == this._obsDataMap[aData] &&
-                undo.appId == permission.principal.appId &&
+                undo.principal.originAttributes.appId == permission.principal.originAttributes.appId &&
                 undo.type == permission.type) {
               // Remove this undo item if it has been done by others(not
               // specialpowers itself.)
@@ -1449,14 +1454,6 @@ SpecialPowersAPI.prototype = {
     Services.console.reset();
   },
 
-  getMaxLineBoxWidth: function(window) {
-    return this._getMUDV(window).maxLineBoxWidth;
-  },
-
-  setMaxLineBoxWidth: function(window, width) {
-    this._getMUDV(window).changeMaxLineBoxWidth(width);
-  },
-
   getFullZoom: function(window) {
     return this._getMUDV(window).fullZoom;
   },
@@ -1820,57 +1817,40 @@ SpecialPowersAPI.prototype = {
                                   .messageManager);
   },
 
-  _getInfoFromPermissionArg: function(arg) {
-    let url = "";
-    let appId = Ci.nsIScriptSecurityManager.NO_APP_ID;
-    let isInBrowserElement = false;
-    let isSystem = false;
+  _getPrincipalFromArg: function(arg) {
+    let principal;
+    let secMan = Services.scriptSecurityManager;
 
     if (typeof(arg) == "string") {
       // It's an URL.
-      url = Cc["@mozilla.org/network/io-service;1"]
-              .getService(Ci.nsIIOService)
-              .newURI(arg, null, null)
-              .spec;
+      let uri = Services.io.newURI(arg, null, null);
+      principal = secMan.createCodebasePrincipal(uri, {});
     } else if (arg.manifestURL) {
       // It's a thing representing an app.
       let appsSvc = Cc["@mozilla.org/AppsService;1"]
                       .getService(Ci.nsIAppsService)
       let app = appsSvc.getAppByManifestURL(arg.manifestURL);
-
       if (!app) {
         throw "No app for this manifest!";
       }
 
-      appId = appsSvc.getAppLocalIdByManifestURL(arg.manifestURL);
-      url = app.origin;
-      isInBrowserElement = arg.isInBrowserElement || false;
+      principal = app.principal;
     } else if (arg.nodePrincipal) {
       // It's a document.
-      isSystem = (arg.nodePrincipal instanceof Ci.nsIPrincipal) &&
-                 Cc["@mozilla.org/scriptsecuritymanager;1"].
-                 getService(Ci.nsIScriptSecurityManager).
-                 isSystemPrincipal(arg.nodePrincipal);
-      if (!isSystem) {
-        // System principals don't have a URL associated with them, and they
-        // don't really need any permissions to be registered with the
-        // permission manager anyway.
-        url = arg.nodePrincipal.URI.spec;
-        appId = arg.nodePrincipal.appId;
-        isInBrowserElement = arg.nodePrincipal.isInBrowserElement;
-      }
+      // In some tests the arg is a wrapped DOM element, so we unwrap it first.
+      principal = unwrapIfWrapped(arg).nodePrincipal;
     } else {
-      url = arg.url;
-      appId = arg.appId;
-      isInBrowserElement = arg.isInBrowserElement;
+      let uri = Services.io.newURI(arg.url, null, null);
+      let attrs = arg.originAttributes || {};
+      principal = secMan.createCodebasePrincipal(uri, attrs);
     }
 
-    return [ url, appId, isInBrowserElement, isSystem ];
+    return principal;
   },
 
   addPermission: function(type, allow, arg, expireType, expireTime) {
-    let [url, appId, isInBrowserElement, isSystem] = this._getInfoFromPermissionArg(arg);
-    if (isSystem) {
+    let principal = this._getPrincipalFromArg(arg);
+    if (principal.isSystemPrincipal) {
       return; // nothing to do
     }
 
@@ -1886,9 +1866,7 @@ SpecialPowersAPI.prototype = {
       'op': 'add',
       'type': type,
       'permission': permission,
-      'url': url,
-      'appId': appId,
-      'isInBrowserElement': isInBrowserElement,
+      'principal': principal,
       'expireType': (typeof expireType === "number") ? expireType : 0,
       'expireTime': (typeof expireTime === "number") ? expireTime : 0
     };
@@ -1897,51 +1875,46 @@ SpecialPowersAPI.prototype = {
   },
 
   removePermission: function(type, arg) {
-    let [url, appId, isInBrowserElement, isSystem] = this._getInfoFromPermissionArg(arg);
-    if (isSystem) {
+    let principal = this._getPrincipalFromArg(arg);
+    if (principal.isSystemPrincipal) {
       return; // nothing to do
     }
 
     var msg = {
       'op': 'remove',
       'type': type,
-      'url': url,
-      'appId': appId,
-      'isInBrowserElement': isInBrowserElement
+      'principal': principal
     };
 
     this._sendSyncMessage('SPPermissionManager', msg);
   },
 
   hasPermission: function (type, arg) {
-    let [url, appId, isInBrowserElement, isSystem] = this._getInfoFromPermissionArg(arg);
-    if (isSystem) {
+    let principal = this._getPrincipalFromArg(arg);
+    if (principal.isSystemPrincipal) {
       return true; // system principals have all permissions
     }
 
     var msg = {
       'op': 'has',
       'type': type,
-      'url': url,
-      'appId': appId,
-      'isInBrowserElement': isInBrowserElement
+      'principal': principal
     };
 
     return this._sendSyncMessage('SPPermissionManager', msg)[0];
   },
+
   testPermission: function (type, value, arg) {
-    let [url, appId, isInBrowserElement, isSystem] = this._getInfoFromPermissionArg(arg);
-    if (isSystem) {
+    let principal = this._getPrincipalFromArg(arg);
+    if (principal.isSystemPrincipal) {
       return true; // system principals have all permissions
     }
 
     var msg = {
       'op': 'test',
       'type': type,
-      'value': value, 
-      'url': url,
-      'appId': appId,
-      'isInBrowserElement': isInBrowserElement
+      'value': value,
+      'principal': principal
     };
     return this._sendSyncMessage('SPPermissionManager', msg)[0];
   },
@@ -1966,74 +1939,8 @@ SpecialPowersAPI.prototype = {
     this._sendSyncMessage('SPObserverService', msg);
   },
 
-  clearStorageForURI: function(uri, callback, appId, inBrowser) {
-    this._quotaManagerRequest('clear', uri, appId, inBrowser, callback);
-  },
-
-  getStorageUsageForURI: function(uri, callback, appId, inBrowser) {
-    this._quotaManagerRequest('getUsage', uri, appId, inBrowser, callback);
-  },
-
-  // Technically this restarts the QuotaManager for all URIs, but we need
-  // a specific one to perform the synchronized callback when the reset is
-  // complete.
-  resetStorageForURI: function(uri, callback, appId, inBrowser) {
-    this._quotaManagerRequest('reset', uri, appId, inBrowser, callback);
-  },
-
-  _quotaManagerRequest: function(op, uri, appId, inBrowser, callback) {
-    const messageTopic = "SPQuotaManager";
-
-    if (uri instanceof Ci.nsIURI) {
-      uri = uri.spec;
-    }
-
-    const id = Cc["@mozilla.org/uuid-generator;1"]
-                 .getService(Ci.nsIUUIDGenerator)
-                 .generateUUID()
-                 .toString();
-
-    let callbackInfo = { id: id, callback: callback };
-
-    if (this._quotaManagerCallbackInfos) {
-      callbackInfo.listener = this._quotaManagerCallbackInfos[0].listener;
-      this._quotaManagerCallbackInfos.push(callbackInfo)
-    } else {
-      callbackInfo.listener = function(msg) {
-        msg = msg.data;
-        for (let index in this._quotaManagerCallbackInfos) {
-          let callbackInfo = this._quotaManagerCallbackInfos[index];
-          if (callbackInfo.id == msg.id) {
-            if (this._quotaManagerCallbackInfos.length > 1) {
-              this._quotaManagerCallbackInfos.splice(index, 1);
-            } else {
-              this._quotaManagerCallbackInfos = null;
-              this._removeMessageListener(messageTopic, callbackInfo.listener);
-            }
-
-            if ('usage' in msg) {
-              callbackInfo.callback(msg.usage, msg.fileUsage);
-            } else {
-              callbackInfo.callback();
-            }
-          }
-        }
-      }.bind(this);
-
-      this._addMessageListener(messageTopic, callbackInfo.listener);
-      this._quotaManagerCallbackInfos = [ callbackInfo ];
-    }
-
-    let msg = { op: op, uri: uri, appId: appId, inBrowser: inBrowser, id: id };
-    this._sendAsyncMessage(messageTopic, msg);
-  },
-
   createDOMFile: function(path, options) {
     return new File(path, options);
-  },
-
-  startPeriodicServiceWorkerUpdates: function() {
-    return this._sendSyncMessage('SPPeriodicServiceWorkerUpdates', {});
   },
 
   removeAllServiceWorkerData: function() {
@@ -2044,9 +1951,15 @@ SpecialPowersAPI.prototype = {
     this.notifyObserversInParentProcess(null, "browser:purge-domain-data", "example.com");
   },
 
-  loadExtension: function(ext, handler) {
-    let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
-    let id = uuidGenerator.generateUUID().number;
+  cleanUpSTSData: function(origin, flags) {
+    return this._sendSyncMessage('SPCleanUpSTSData', {origin: origin, flags: flags || 0});
+  },
+
+  loadExtension: function(id, ext, handler) {
+    if (!id) {
+      let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
+      id = uuidGenerator.generateUUID().number;
+    }
 
     let resolveStartup, resolveUnload, rejectStartup;
     let startupPromise = new Promise((resolve, reject) => {
@@ -2060,6 +1973,8 @@ SpecialPowersAPI.prototype = {
 
     let sp = this;
     let extension = {
+      id,
+
       startup() {
         sp._sendAsyncMessage("SPStartupExtension", {id});
         return startupPromise;
@@ -2096,6 +2011,10 @@ SpecialPowersAPI.prototype = {
 
     this._addMessageListener("SPExtensionMessage", listener);
     return extension;
+  },
+
+  invalidateExtensionStorageCache: function() {
+    this.notifyObserversInParentProcess(null, "extension-invalidate-storage-cache", "");
   },
 };
 

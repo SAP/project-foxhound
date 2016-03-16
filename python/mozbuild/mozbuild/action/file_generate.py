@@ -14,7 +14,11 @@ import os
 import sys
 import traceback
 
+from mozbuild.pythonutil import iter_modules_in_path
+from mozbuild.makeutil import Makefile
 from mozbuild.util import FileAvoidWrite
+import buildconfig
+
 
 def main(argv):
     parser = argparse.ArgumentParser('Generate a file from a Python script',
@@ -25,6 +29,8 @@ def main(argv):
                         help='The method of the script to invoke')
     parser.add_argument('output_file', metavar='output-file', type=str,
                         help='The file to generate')
+    parser.add_argument('dep_file', metavar='dep-file', type=str,
+                        help='File to write any additional make dependencies to')
     parser.add_argument('additional_arguments', metavar='arg', nargs='*',
                         help="Additional arguments to the script's main() method")
 
@@ -54,6 +60,27 @@ def main(argv):
     try:
         with FileAvoidWrite(args.output_file) as output:
             ret = module.__dict__[method](output, *args.additional_arguments)
+            # We treat sets as a statement of success.  Everything else
+            # is an error (so scripts can conveniently |return 1| or
+            # similar).
+            if isinstance(ret, set) and ret:
+                ret |= set(iter_modules_in_path(buildconfig.topsrcdir,
+                                                buildconfig.topobjdir))
+                mk = Makefile()
+                mk.create_rule([args.output_file]).add_dependencies(ret)
+                with FileAvoidWrite(args.dep_file) as dep_file:
+                    mk.dump(dep_file)
+                # The script succeeded, so reset |ret| to indicate that.
+                ret = None
+        # Even when our file's contents haven't changed, we want to update
+        # the file's mtime so make knows this target isn't still older than
+        # whatever prerequisite caused it to be built this time around.
+        try:
+            os.utime(args.output_file, None)
+        except:
+            print('Error processing file "{0}"'.format(args.output_file),
+                  file=sys.stderr)
+            traceback.print_exc()
     except IOError as e:
         print('Error opening file "{0}"'.format(e.filename), file=sys.stderr)
         traceback.print_exc()

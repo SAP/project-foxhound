@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cr = Components.results;
-const Cu = Components.utils;
+var Ci = Components.interfaces;
+var Cc = Components.classes;
+var Cr = Components.results;
+var Cu = Components.utils;
 
 const FRECENCY_DEFAULT = 10000;
 
@@ -102,8 +102,8 @@ AutoCompleteInput.prototype = {
   onSearchBegin: function () {},
   onSearchComplete: function () {},
 
-  onTextEntered: function() false,
-  onTextReverted: function() false,
+  onTextEntered: () => false,
+  onTextReverted: () => false,
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteInput])
 }
@@ -131,7 +131,7 @@ function _check_autocomplete_matches(match, result) {
   if (style)
     Assert.equal(actualStyle.toString(), style.toString(), "Match should have expected style");
   if (uri.spec.startsWith("moz-action:")) {
-    Assert.ok(actualStyle.indexOf("action") != -1, "moz-action results should always have 'action' in their style");
+    Assert.ok(actualStyle.includes("action"), "moz-action results should always have 'action' in their style");
   }
 
   if (match.icon)
@@ -409,7 +409,8 @@ function setFaviconForHref(href, iconHref) {
       NetUtil.newURI(iconHref),
       true,
       PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-      resolve
+      resolve,
+      Services.scriptSecurityManager.getSystemPrincipal()
     );
   });
 }
@@ -442,8 +443,7 @@ function* addTestEngine(basename, httpServer=undefined) {
     }, "browser-search-engine-modified", false);
 
     do_print("Adding engine from URL: " + dataUrl + basename);
-    Services.search.addEngine(dataUrl + basename,
-                              Ci.nsISearchEngine.DATA_XML, null, false);
+    Services.search.addEngine(dataUrl + basename, null, null, false);
   });
 }
 

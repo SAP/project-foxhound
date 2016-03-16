@@ -15,6 +15,76 @@ def _raw_log():
     return logging.getLogger(__name__)
 
 
+# Do not add anything to this list, unless one of the existing leaks below
+# has started to leak additional objects. This function returns a dict
+# mapping the names of objects as reported to the XPCOM leak checker to an
+# upper bound on the number of leaked objects of that kind that are allowed
+# to appear in a content process leak report.
+def expectedTabProcessLeakCounts():
+    leaks = {}
+
+    def appendExpectedLeakCounts(leaks2):
+        for obj, count in leaks2.iteritems():
+            leaks[obj] = leaks.get(obj, 0) + count
+
+    # Bug 1117203 - ImageBridgeChild is not shut down in tab processes.
+    appendExpectedLeakCounts({
+        'AsyncTransactionTrackersHolder': 1,
+        'CondVar': 2,
+        'IPC::Channel': 1,
+        'MessagePump': 1,
+        'Mutex': 2,
+        'PImageBridgeChild': 1,
+        'RefCountedMonitor': 1,
+        'RefCountedTask': 2,
+        'StoreRef': 1,
+        'WaitableEventKernel': 1,
+        'WeakReference<MessageListener>': 1,
+        'base::Thread': 1,
+        'ipc::MessageChannel': 1,
+        'nsTArray_base': 7,
+        'nsThread': 1,
+    })
+
+    # Bug 1215265 - CompositorChild is not shut down.
+    appendExpectedLeakCounts({
+        'CompositorChild': 1,
+        'CondVar': 1,
+        'IPC::Channel': 1,
+        'Mutex': 1,
+        'PCompositorChild': 1,
+        'RefCountedMonitor': 1,
+        'RefCountedTask': 2,
+        'StoreRef': 1,
+        'WeakReference<MessageListener>': 1,
+        'ipc::MessageChannel': 1,
+        'nsTArray_base': 2,
+    })
+
+    # Bug 1219369 - On Aurora, we leak a SyncObject in Windows.
+    appendExpectedLeakCounts({
+        'SyncObject': 1
+    })
+
+    # Bug 1219916 - On Aurora, we leak textures and image containers
+    # on Windows.
+    appendExpectedLeakCounts({
+        'AsyncTransactionTrackersHolder': 4,
+        'CompositableChild': 4,
+        'CondVar': 4,
+        'Mutex': 8,
+        'PCompositableChild': 4,
+        'PImageContainerChild': 4,
+        'PTextureChild': 4,
+        'SharedMemory': 4,
+        'TextureChild': 4,
+        'TextureData': 4,
+        'WeakReference<MessageListener>': 12,
+    })
+
+    return leaks
+
+
 def process_single_leak_file(leakLogFileName, processType, leakThreshold,
                              ignoreMissingLeaks, log=None,
                              stackFixer=None):
@@ -34,6 +104,7 @@ def process_single_leak_file(leakLogFileName, processType, leakThreshold,
     log = log or _raw_log()
 
     processString = "%s process:" % processType
+    expectedLeaks = expectedTabProcessLeakCounts() if processType == 'tab' else {}
     crashedOnPurpose = False
     totalBytesLeaked = None
     logAsWarning = False
@@ -85,9 +156,17 @@ def process_single_leak_file(leakLogFileName, processType, leakThreshold,
                 logAsWarning = True
                 continue
             if name != "TOTAL" and numLeaked != 0 and recordLeakedObjects:
-                leakedObjectNames.append(name)
-                leakedObjectAnalysis.append("TEST-INFO | leakcheck | %s leaked %d %s (%s bytes)"
-                                            % (processString, numLeaked, name, bytesLeaked))
+                currExpectedLeak = expectedLeaks.get(name, 0)
+                if not expectedLeaks or numLeaked <= currExpectedLeak:
+                    if not expectedLeaks:
+                        leakedObjectNames.append(name)
+                    leakedObjectAnalysis.append("TEST-INFO | leakcheck | %s leaked %d %s"
+                                                % (processString, numLeaked, name))
+                else:
+                    leakedObjectNames.append(name)
+                    leakedObjectAnalysis.append("WARNING | leakcheck | %s leaked too many %s (expected %d, got %d)"
+                                                % (processString, name, currExpectedLeak, numLeaked))
+
 
     leakAnalysis.extend(leakedObjectAnalysis)
     if logAsWarning:
@@ -117,8 +196,7 @@ def process_single_leak_file(leakLogFileName, processType, leakThreshold,
                  processString)
         return
 
-    # totalBytesLeaked was seen and is non-zero.
-    if totalBytesLeaked > leakThreshold:
+    if totalBytesLeaked > leakThreshold or (expectedLeaks and leakedObjectNames):
         logAsWarning = True
         # Fail the run if we're over the threshold (which defaults to 0)
         prefix = "TEST-UNEXPECTED-FAIL"
@@ -132,6 +210,8 @@ def process_single_leak_file(leakLogFileName, processType, leakThreshold,
     if len(leakedObjectNames) > maxSummaryObjects:
         leakedObjectSummary += ', ...'
 
+    # totalBytesLeaked will include any expected leaks, so it can be off
+    # by a few thousand bytes.
     if logAsWarning:
         log.warning("%s | leakcheck | %s %d bytes leaked (%s)"
                     % (prefix, processString, totalBytesLeaked, leakedObjectSummary))

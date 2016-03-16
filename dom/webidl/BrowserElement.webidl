@@ -175,4 +175,14 @@ interface BrowserElementPrivileged {
   DOMRequest executeScript(DOMString script,
                            optional BrowserElementExecuteScriptOptions options);
 
+  [Throws,
+   Pref="dom.mozBrowserFramesEnabled",
+   CheckAllPermissions="browser"]
+  DOMRequest getStructuredData();
+
+  [Throws,
+   Pref="dom.mozBrowserFramesEnabled",
+   CheckAllPermissions="browser"]
+  DOMRequest getWebManifest();
+
 };

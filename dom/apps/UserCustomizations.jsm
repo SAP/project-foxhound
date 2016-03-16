@@ -53,10 +53,16 @@ this.UserCustomizations = {
     });
 
     this.extensions.set(aApp.manifestURL, extension);
-    extension.startup().then(() => {
-      let uri = Services.io.newURI(aApp.origin, null, null);
-      this.appId.add(uri.host);
-    });
+    let uri = Services.io.newURI(aApp.origin, null, null);
+    debug(`Adding ${uri.host} to appId set`);
+    this.appId.add(uri.host);
+
+    extension.startup()
+      .then(() => { })
+      .catch((err) => {
+        debug(`extension.startup failed: ${err}`);
+        this.appId.delete(uri.host);
+      });
   },
 
   unregister: function(aApp) {
@@ -136,6 +142,10 @@ this.UserCustomizations = {
 
     if (aManifest.icons) {
       result.icons = aManifest.icons;
+    }
+
+    if (aManifest.version) {
+      result.version = aManifest.version;
     }
 
     // chrome extension manifests have a single 'author' property, that we

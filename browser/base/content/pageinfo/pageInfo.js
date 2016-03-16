@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/LoadContextInfo.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+Components.utils.import("resource://gre/modules/LoadContextInfo.jsm");
+Components.utils.import("resource://gre/modules/Services.jsm");
 
 //******** define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol)
@@ -350,7 +349,7 @@ function onLoadPageInfo()
             .notifyObservers(window, "page-info-dialog-loaded", null);
 }
 
-function loadPageInfo(frameOuterWindowID)
+function loadPageInfo(frameOuterWindowID, imageElement)
 {
   let mm = window.opener.gBrowser.selectedBrowser.messageManager;
 
@@ -362,7 +361,8 @@ function loadPageInfo(frameOuterWindowID)
 
   // Look for pageInfoListener in content.js. Sends message to listener with arguments.
   mm.sendAsyncMessage("PageInfo:getData", {strings: gStrings,
-                      frameOuterWindowID: frameOuterWindowID});
+                      frameOuterWindowID: frameOuterWindowID},
+                      { imageElement });
 
   let pageInfoData;
 
@@ -375,6 +375,8 @@ function loadPageInfo(frameOuterWindowID)
     let uri = makeURI(docInfo.documentURIObject.spec,
                       docInfo.documentURIObject.originCharset);
     gDocInfo = docInfo;
+
+    gImageElement = pageInfoData.imageInfo;
 
     var titleFormat = windowInfo.isTopWindow ? "pageInfo.page.title"
                                              : "pageInfo.frame.title";
@@ -479,19 +481,11 @@ function loadTab(args)
   // If the "View Image Info" context menu item was used, the related image
   // element is provided as an argument. This can't be a background image.
   let imageElement = args && args.imageElement;
-  if (imageElement) {
-    gImageElement = {currentSrc: imageElement.currentSrc,
-                     width: imageElement.width, height: imageElement.height,
-                     imageText: imageElement.title || imageElement.alt};
-  }
-  else {
-    gImageElement = null;
-  }
 
   let frameOuterWindowID = args && args.frameOuterWindowID;
 
   /* Load the page info */
-  loadPageInfo(frameOuterWindowID);
+  loadPageInfo(frameOuterWindowID, imageElement);
 
   var initialTab = (args && args.initialTab) || "generalTab";
   var radioGroup = document.getElementById("viewGroup");
@@ -748,8 +742,9 @@ function saveMedia()
     selectSaveFolder(function(aDirectory) {
       if (aDirectory) {
         var saveAnImage = function(aURIString, aChosenData, aBaseURI) {
+          uniqueFile(aChosenData.file);
           internalSave(aURIString, null, null, null, null, false, "SaveImageTitle",
-                       aChosenData, aBaseURI, null, gDocInfo.isContentWindowPrivate);
+                       aChosenData, aBaseURI, null, false, null, gDocInfo.isContentWindowPrivate);
         };
 
         for (var i = 0; i < rowArray.length; i++) {
@@ -763,7 +758,10 @@ function saveMedia()
             uri.QueryInterface(Components.interfaces.nsIURL);
             dir.append(decodeURIComponent(uri.fileName));
           } catch(ex) {
-            /* data: uris */
+            // data:/blob: uris
+            // Supply a dummy filename, otherwise Download Manager
+            // will try to delete the base directory on failure.
+            dir.append(gImageView.data[v][COL_IMAGE_TYPE]);
           }
 
           if (i == 0) {
@@ -840,7 +838,7 @@ function makePreview(row)
     // find out the file size
     var sizeText;
     if (cacheEntry) {
-      var imageSize = cacheEntry.dataSize;
+      let imageSize = cacheEntry.dataSize;
       var kbSize = Math.round(imageSize / 1024 * 100) / 100;
       sizeText = gBundle.getFormattedString("generalSize",
                                             [formatNumber(kbSize), formatNumber(imageSize)]);
@@ -896,6 +894,14 @@ function makePreview(row)
       // "width" and "height" attributes must be set to newImage,
       // even if there is no "width" or "height attribute in item;
       // otherwise, the preview image cannot be displayed correctly.
+      // Since the image might have been loaded out-of-process, we expect
+      // the item to tell us its width / height dimensions. Failing that
+      // the item should tell us the natural dimensions of the image. Finally
+      // failing that, we'll assume that the image was never loaded in the
+      // other process (this can be true for favicons, for example), and so
+      // we'll assume that we can use the natural dimensions of the newImage
+      // we just created. If the natural dimensions of newImage are not known
+      // then the image is probably broken.
       if (!isBG) {
         newImage.width = ("width" in item && item.width) || newImage.naturalWidth;
         newImage.height = ("height" in item && item.height) || newImage.naturalHeight;
@@ -903,8 +909,8 @@ function makePreview(row)
       else {
         // the Width and Height of an HTML tag should not be used for its background image
         // (for example, "table" can have "width" or "height" attributes)
-        newImage.width = newImage.naturalWidth;
-        newImage.height = newImage.naturalHeight;
+        newImage.width = item.naturalWidth || newImage.naturalWidth;
+        newImage.height = item.naturalHeight || newImage.naturalHeight;
       }
 
       if (item.SVGImageElement) {
@@ -946,7 +952,7 @@ function makePreview(row)
       document.getElementById("theimagecontainer").collapsed = true;
     }
 
-    var imageSize = "";
+    let imageSize = "";
     if (url && !isAudio) {
       if (width != physWidth || height != physHeight) {
         imageSize = gBundle.getFormattedString("mediaDimensionsScaled",

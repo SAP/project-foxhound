@@ -8,53 +8,49 @@
 
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
+#include "SharedSSLState.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/PublicSSL.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsCRT.h"
 #include "nsCertVerificationThread.h"
-#include "nsAppDirectoryServiceDefs.h"
+#include "nsClientAuthRemember.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsIBufEntropyCollector.h"
 #include "nsICertOverrideService.h"
-#include "NSSCertDBTrustDomain.h"
+#include "nsIFile.h"
+#include "nsIObserverService.h"
+#include "nsIPrompt.h"
+#include "nsIProperties.h"
+#include "nsISiteSecurityService.h"
+#include "nsITokenPasswordDialogs.h"
+#include "nsIWindowWatcher.h"
+#include "nsIXULRuntime.h"
+#include "nsNSSHelper.h"
+#include "nsNSSShutDown.h"
+#include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Preferences.h"
-#include "nsThreadUtils.h"
-#include "mozilla/PublicSSL.h"
-#include "mozilla/StaticPtr.h"
+#include "nsXULAppAPI.h"
+#include "nss.h"
+#include "p12plcy.h"
+#include "pkix/pkixnss.h"
+#include "secerr.h"
+#include "secmod.h"
+#include "ssl.h"
+#include "sslerr.h"
+#include "sslproto.h"
 
 #ifndef MOZ_NO_SMART_CARDS
 #include "nsSmartCardMonitor.h"
 #endif
 
-#include "nsCRT.h"
-#include "nsNTLMAuthModule.h"
-#include "nsIFile.h"
-#include "nsIProperties.h"
-#include "nsIWindowWatcher.h"
-#include "nsIPrompt.h"
-#include "nsIBufEntropyCollector.h"
-#include "nsITokenPasswordDialogs.h"
-#include "nsISiteSecurityService.h"
-#include "nsServiceManagerUtils.h"
-#include "nsNSSShutDown.h"
-#include "SharedSSLState.h"
-#include "NSSErrorsService.h"
-
-#include "nss.h"
-#include "pkix/pkixnss.h"
-#include "ssl.h"
-#include "sslproto.h"
-#include "secmod.h"
-#include "secerr.h"
-#include "sslerr.h"
-
-#include "nsXULAppAPI.h"
-
 #ifdef XP_WIN
 #include "nsILocalFileWin.h"
 #endif
-
-#include "p12plcy.h"
 
 using namespace mozilla;
 using namespace mozilla::psm;
@@ -62,8 +58,6 @@ using namespace mozilla::psm;
 PRLogModuleInfo* gPIPNSSLog = nullptr;
 
 int nsNSSComponent::mInstanceCount = 0;
-
-bool nsPSMInitPanic::isPanic = false;
 
 // This function can be called from chrome or content processes
 // to ensure that NSS is initialized.
@@ -103,9 +97,6 @@ bool EnsureNSSInitializedChromeOrContent()
 // creating any other components.
 bool EnsureNSSInitialized(EnsureNSSOperator op)
 {
-  if (nsPSMInitPanic::GetPanic())
-    return false;
-
   if (GeckoProcessType_Default != XRE_GetProcessType())
   {
     if (op == nssEnsureOnChromeOnly)
@@ -233,12 +224,10 @@ nsNSSComponent::nsNSSComponent()
   if (!gPIPNSSLog)
     gPIPNSSLog = PR_NewLogModule("pipnss");
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent::ctor\n"));
-  mObserversRegistered = false;
 
   NS_ASSERTION( (0 == mInstanceCount), "nsNSSComponent is a singleton, but instantiated multiple times!");
   ++mInstanceCount;
   mShutdownObjectList = nsNSSShutDownList::construct();
-  mIsNetworkDown = false;
 }
 
 void
@@ -327,26 +316,6 @@ nsNSSComponent::GetPIPNSSBundleString(const char* name, nsAString& outString)
     }
   }
 
-  return rv;
-}
-
-NS_IMETHODIMP
-nsNSSComponent::NSSBundleFormatStringFromName(const char* name,
-                                              const char16_t** params,
-                                              uint32_t numParams,
-                                              nsAString& outString)
-{
-  nsresult rv = NS_ERROR_FAILURE;
-
-  if (mNSSErrorsBundle && name) {
-    nsXPIDLString result;
-    rv = mNSSErrorsBundle->FormatStringFromName(NS_ConvertASCIItoUTF16(name).get(),
-                                                params, numParams,
-                                                getter_Copies(result));
-    if (NS_SUCCEEDED(rv)) {
-      outString = result;
-    }
-  }
   return rv;
 }
 
@@ -769,7 +738,6 @@ public:
   NS_DECL_NSIOBSERVER
 
   static nsresult StartObserve();
-  static nsresult StopObserve();
 
 protected:
   virtual ~CipherSuiteChangeObserver() {}
@@ -790,28 +758,19 @@ CipherSuiteChangeObserver::StartObserve()
 {
   NS_ASSERTION(NS_IsMainThread(), "CipherSuiteChangeObserver::StartObserve() can only be accessed in main thread");
   if (!sObserver) {
-    nsRefPtr<CipherSuiteChangeObserver> observer = new CipherSuiteChangeObserver();
+    RefPtr<CipherSuiteChangeObserver> observer = new CipherSuiteChangeObserver();
     nsresult rv = Preferences::AddStrongObserver(observer.get(), "security.");
     if (NS_FAILED(rv)) {
       sObserver = nullptr;
       return rv;
     }
-    sObserver = observer;
-  }
-  return NS_OK;
-}
 
-// static
-nsresult
-CipherSuiteChangeObserver::StopObserve()
-{
-  NS_ASSERTION(NS_IsMainThread(), "CipherSuiteChangeObserver::StopObserve() can only be accessed in main thread");
-  if (sObserver) {
-    nsresult rv = Preferences::RemoveObserver(sObserver.get(), "security.");
-    sObserver = nullptr;
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
+    nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+    observerService->AddObserver(observer, NS_XPCOM_SHUTDOWN_OBSERVER_ID,
+                                 false);
+
+    sObserver = observer;
   }
   return NS_OK;
 }
@@ -849,6 +808,13 @@ CipherSuiteChangeObserver::Observe(nsISupports* aSubject,
         break;
       }
     }
+  } else if (nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
+    Preferences::RemoveObserver(this, "security.");
+    MOZ_ASSERT(sObserver.get() == this);
+    sObserver = nullptr;
+    nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+    observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
   }
   return NS_OK;
 }
@@ -879,6 +845,11 @@ void nsNSSComponent::setValidationOptions(bool isInitialSetting,
                                                   true);
   PublicSSLState()->SetOCSPStaplingEnabled(ocspStaplingEnabled);
   PrivateSSLState()->SetOCSPStaplingEnabled(ocspStaplingEnabled);
+
+  bool ocspMustStapleEnabled = Preferences::GetBool("security.ssl.enable_ocsp_must_staple",
+                                                    true);
+  PublicSSLState()->SetOCSPMustStapleEnabled(ocspMustStapleEnabled);
+  PrivateSSLState()->SetOCSPMustStapleEnabled(ocspMustStapleEnabled);
 
   CertVerifier::PinningMode pinningMode =
     static_cast<CertVerifier::PinningMode>
@@ -955,8 +926,8 @@ GetNSSProfilePath(nsAutoCString& aProfilePath)
   nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
                                        getter_AddRefs(profileFile));
   if (NS_FAILED(rv)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
-           ("Unable to get profile directory - continuing with no NSS DB\n"));
+    NS_WARNING("NSS will be initialized without a profile directory. "
+               "Some things may not work as expected.");
     return NS_OK;
   }
 
@@ -979,6 +950,8 @@ GetNSSProfilePath(nsAutoCString& aProfilePath)
     return rv;
   }
 
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+          ("NSS profile at '%s'\n", aProfilePath.get()));
   return NS_OK;
 }
 
@@ -1018,20 +991,32 @@ nsNSSComponent::InitializeNSS()
   nsAutoCString profileStr;
   nsresult rv = GetNSSProfilePath(profileStr);
   if (NS_FAILED(rv)) {
-    nsPSMInitPanic::SetPanic();
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   SECStatus init_rv = SECFailure;
   bool nocertdb = Preferences::GetBool("security.nocertdb", false);
+  bool inSafeMode = true;
+  nsCOMPtr<nsIXULRuntime> runtime(do_GetService("@mozilla.org/xre/runtime;1"));
+  // There might not be an nsIXULRuntime in embedded situations. This will
+  // default to assuming we are in safe mode (as a result, no external PKCS11
+  // modules will be loaded).
+  if (runtime) {
+    rv = runtime->GetInSafeMode(&inSafeMode);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+  }
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("inSafeMode: %u\n", inSafeMode));
 
   if (!nocertdb && !profileStr.IsEmpty()) {
     // First try to initialize the NSS DB in read/write mode.
-    init_rv = ::mozilla::psm::InitializeNSS(profileStr.get(), false);
+    // Only load PKCS11 modules if we're not in safe mode.
+    init_rv = ::mozilla::psm::InitializeNSS(profileStr.get(), false, !inSafeMode);
     // If that fails, attempt read-only mode.
     if (init_rv != SECSuccess) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("could not init NSS r/w in %s\n", profileStr.get()));
-      init_rv = ::mozilla::psm::InitializeNSS(profileStr.get(), true);
+      init_rv = ::mozilla::psm::InitializeNSS(profileStr.get(), true, !inSafeMode);
     }
     if (init_rv != SECSuccess) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("could not init in r/o either\n"));
@@ -1045,7 +1030,6 @@ nsNSSComponent::InitializeNSS()
   }
   if (init_rv != SECSuccess) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("could not initialize NSS - panicking\n"));
-    nsPSMInitPanic::SetPanic();
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -1063,7 +1047,6 @@ nsNSSComponent::InitializeNSS()
 
   rv = setEnabledTLSVersions();
   if (NS_FAILED(rv)) {
-    nsPSMInitPanic::SetPanic();
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -1147,9 +1130,6 @@ nsNSSComponent::ShutdownNSS()
     PK11_SetPasswordFunc((PK11PasswordFunc)nullptr);
 
     Preferences::RemoveObserver(this, "security.");
-    if (NS_FAILED(CipherSuiteChangeObserver::StopObserve())) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("nsNSSComponent::ShutdownNSS cannot stop observing cipher suite change\n"));
-    }
 
 #ifndef MOZ_NO_SMART_CARDS
     ShutdownSmartCardThreads();
@@ -1171,7 +1151,7 @@ nsNSSComponent::ShutdownNSS()
   }
 }
 
-NS_IMETHODIMP
+nsresult
 nsNSSComponent::Init()
 {
   // No mutex protection.
@@ -1206,54 +1186,42 @@ nsNSSComponent::Init()
                                         getter_Copies(result));
   }
 
-  // Do that before NSS init, to make sure we won't get unloaded.
-  RegisterObservers();
 
   rv = InitializeNSS();
   if (NS_FAILED(rv)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("Unable to Initialize NSS.\n"));
-
-    DeregisterObservers();
-    mPIPNSSBundle = nullptr;
+    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+            ("nsNSSComponent::InitializeNSS() failed\n"));
     return rv;
   }
 
   RememberCertErrorsTable::Init();
 
   createBackgroundThreads();
-  if (!mCertVerificationThread)
-  {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("NSS init, could not create threads\n"));
-
-    DeregisterObservers();
-    mPIPNSSBundle = nullptr;
+  if (!mCertVerificationThread) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("nsNSSComponent::createBackgroundThreads() failed\n"));
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  nsCOMPtr<nsIEntropyCollector> ec
-      = do_GetService(NS_ENTROPYCOLLECTOR_CONTRACTID);
-
-  nsCOMPtr<nsIBufEntropyCollector> bec;
-
-  if (ec) {
-    bec = do_QueryInterface(ec);
+  nsCOMPtr<nsIEntropyCollector> ec(
+    do_GetService(NS_ENTROPYCOLLECTOR_CONTRACTID));
+  if (!ec) {
+    return NS_ERROR_FAILURE;
   }
-
-  NS_ASSERTION(bec, "No buffering entropy collector.  "
-                    "This means no entropy will be collected.");
-  if (bec) {
-    bec->ForwardTo(this);
+  nsCOMPtr<nsIBufEntropyCollector> bec(do_QueryInterface(ec));
+  if (!bec) {
+    return NS_ERROR_FAILURE;
   }
+  bec->ForwardTo(this);
 
-  return rv;
+  return RegisterObservers();
 }
 
 // nsISupports Implementation for the class
 NS_IMPL_ISUPPORTS(nsNSSComponent,
                   nsIEntropyCollector,
                   nsINSSComponent,
-                  nsIObserver,
-                  nsISupportsWeakReference)
+                  nsIObserver)
 
 NS_IMETHODIMP
 nsNSSComponent::RandomUpdate(void* entropy, int32_t bufLen)
@@ -1272,61 +1240,16 @@ nsNSSComponent::RandomUpdate(void* entropy, int32_t bufLen)
   return NS_OK;
 }
 
-static const char* const PROFILE_CHANGE_NET_TEARDOWN_TOPIC
-  = "profile-change-net-teardown";
-static const char* const PROFILE_CHANGE_NET_RESTORE_TOPIC
-  = "profile-change-net-restore";
-static const char* const PROFILE_CHANGE_TEARDOWN_TOPIC
-  = "profile-change-teardown";
 static const char* const PROFILE_BEFORE_CHANGE_TOPIC = "profile-before-change";
-static const char* const PROFILE_DO_CHANGE_TOPIC = "profile-do-change";
 
 NS_IMETHODIMP
 nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
                         const char16_t* someData)
 {
-  if (nsCRT::strcmp(aTopic, PROFILE_CHANGE_TEARDOWN_TOPIC) == 0) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("in PSM code, receiving change-teardown\n"));
-    DoProfileChangeTeardown(aSubject);
-  }
-  else if (nsCRT::strcmp(aTopic, PROFILE_BEFORE_CHANGE_TOPIC) == 0) {
+  if (nsCRT::strcmp(aTopic, PROFILE_BEFORE_CHANGE_TOPIC) == 0) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("receiving profile change topic\n"));
-    DoProfileBeforeChange(aSubject);
-  }
-  else if (nsCRT::strcmp(aTopic, PROFILE_DO_CHANGE_TOPIC) == 0) {
-    if (someData && NS_LITERAL_STRING("startup").Equals(someData)) {
-      // The application is initializing against a known profile directory for
-      // the first time during process execution.
-      // However, earlier code execution might have already triggered NSS init.
-      // We must ensure that NSS gets shut down prior to any attempt to init
-      // it again. We use the same cleanup functionality used when switching
-      // profiles. The order of function calls must correspond to the order
-      // of notifications sent by Profile Manager (nsProfile).
-      DoProfileChangeNetTeardown();
-      DoProfileChangeTeardown(aSubject);
-      DoProfileBeforeChange(aSubject);
-      DoProfileChangeNetRestore();
-    }
-
-    bool needsInit = true;
-
-    {
-      MutexAutoLock lock(mutex);
-
-      if (mNSSInitialized) {
-        // We have already initialized NSS before the profile came up,
-        // no need to do it again
-        needsInit = false;
-      }
-    }
-
-    if (needsInit) {
-      if (NS_FAILED(InitializeNSS())) {
-        MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("Unable to Initialize NSS after profile switch.\n"));
-      }
-    }
-  }
-  else if (nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
+    DoProfileBeforeChange();
+  } else if (nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
 
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent: XPCom shutdown observed\n"));
 
@@ -1377,6 +1300,7 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
                prefName.EqualsLiteral("security.OCSP.GET.enabled") ||
                prefName.EqualsLiteral("security.pki.cert_short_lifetime_in_days") ||
                prefName.EqualsLiteral("security.ssl.enable_ocsp_stapling") ||
+               prefName.EqualsLiteral("security.ssl.enable_ocsp_must_staple") ||
                prefName.EqualsLiteral("security.cert_pinning.enforcement_level") ||
                prefName.EqualsLiteral("security.pki.sha1_enforcement_level")) {
       MutexAutoLock lock(mutex);
@@ -1386,14 +1310,6 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
     }
     if (clearSessionCache)
       SSL_ClearSessionCache();
-  }
-  else if (nsCRT::strcmp(aTopic, PROFILE_CHANGE_NET_TEARDOWN_TOPIC) == 0) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("receiving network teardown topic\n"));
-    DoProfileChangeNetTeardown();
-  }
-  else if (nsCRT::strcmp(aTopic, PROFILE_CHANGE_NET_RESTORE_TOPIC) == 0) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("receiving network restore topic\n"));
-    DoProfileChangeNetRestore();
   }
 
   return NS_OK;
@@ -1426,13 +1342,7 @@ nsNSSComponent::ShowAlertWithConstructedString(const nsString& message)
   nsCOMPtr<nsIPrompt> prompter;
   nsresult rv = GetNewPrompter(getter_AddRefs(prompter));
   if (prompter) {
-    nsPSMUITracker tracker;
-    if (tracker.isUIForbidden()) {
-      NS_WARNING("Suppressing alert because PSM UI is forbidden");
-      rv = NS_ERROR_UNEXPECTED;
-    } else {
-      rv = prompter->Alert(nullptr, message.get());
-    }
+    rv = prompter->Alert(nullptr, message.get());
   }
   return rv;
 }
@@ -1472,72 +1382,27 @@ nsNSSComponent::RegisterObservers()
 {
   // Happens once during init only, no mutex protection.
 
-  nsCOMPtr<nsIObserverService> observerService(do_GetService("@mozilla.org/observer-service;1"));
-  NS_ASSERTION(observerService, "could not get observer service");
-  if (observerService) {
-    mObserversRegistered = true;
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent: adding observers\n"));
-
-    // We are a service.
-    // Once we are loaded, don't allow being removed from memory.
-    // This makes sense, as initializing NSS is expensive.
-
-    // By using false for parameter ownsWeak in AddObserver,
-    // we make sure that we won't get unloaded until the application shuts down.
-
-    observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
-
-    observerService->AddObserver(this, PROFILE_CHANGE_TEARDOWN_TOPIC, false);
-    observerService->AddObserver(this, PROFILE_BEFORE_CHANGE_TOPIC, false);
-    observerService->AddObserver(this, PROFILE_DO_CHANGE_TOPIC, false);
-    observerService->AddObserver(this, PROFILE_CHANGE_NET_TEARDOWN_TOPIC, false);
-    observerService->AddObserver(this, PROFILE_CHANGE_NET_RESTORE_TOPIC, false);
+  nsCOMPtr<nsIObserverService> observerService(
+    do_GetService("@mozilla.org/observer-service;1"));
+  if (!observerService) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("nsNSSComponent: couldn't get observer service\n"));
+    return NS_ERROR_FAILURE;
   }
-  return NS_OK;
-}
 
-nsresult
-nsNSSComponent::DeregisterObservers()
-{
-  if (!mObserversRegistered)
-    return NS_OK;
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent: adding observers\n"));
+  // Using false for the ownsweak parameter means the observer service will
+  // keep a strong reference to this component. As a result, this will live at
+  // least as long as the observer service.
+  observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
+  observerService->AddObserver(this, PROFILE_BEFORE_CHANGE_TOPIC, false);
 
-  nsCOMPtr<nsIObserverService> observerService(do_GetService("@mozilla.org/observer-service;1"));
-  NS_ASSERTION(observerService, "could not get observer service");
-  if (observerService) {
-    mObserversRegistered = false;
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent: removing observers\n"));
-
-    observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
-
-    observerService->RemoveObserver(this, PROFILE_CHANGE_TEARDOWN_TOPIC);
-    observerService->RemoveObserver(this, PROFILE_BEFORE_CHANGE_TOPIC);
-    observerService->RemoveObserver(this, PROFILE_DO_CHANGE_TOPIC);
-    observerService->RemoveObserver(this, PROFILE_CHANGE_NET_TEARDOWN_TOPIC);
-    observerService->RemoveObserver(this, PROFILE_CHANGE_NET_RESTORE_TOPIC);
-  }
   return NS_OK;
 }
 
 void
-nsNSSComponent::DoProfileChangeNetTeardown()
+nsNSSComponent::DoProfileBeforeChange()
 {
-  if (mCertVerificationThread)
-    mCertVerificationThread->requestExit();
-  mIsNetworkDown = true;
-}
-
-void
-nsNSSComponent::DoProfileChangeTeardown(nsISupports* aSubject)
-{
-  mShutdownObjectList->ifPossibleDisallowUI();
-}
-
-void
-nsNSSComponent::DoProfileBeforeChange(nsISupports* aSubject)
-{
-  NS_ASSERTION(mIsNetworkDown, "nsNSSComponent relies on profile manager to wait for synchronous shutdown of all network activity");
-
   bool needsCleanup = true;
 
   {
@@ -1554,16 +1419,6 @@ nsNSSComponent::DoProfileBeforeChange(nsISupports* aSubject)
   if (needsCleanup) {
     ShutdownNSS();
   }
-  mShutdownObjectList->allowUI();
-}
-
-void
-nsNSSComponent::DoProfileChangeNetRestore()
-{
-  // XXX this doesn't work well, since nothing expects null pointers
-  deleteBackgroundThreads();
-  createBackgroundThreads();
-  mIsNetworkDown = false;
 }
 
 NS_IMETHODIMP
@@ -1654,9 +1509,9 @@ getNSSDialogs(void** _result, REFNSIID aIID, const char* contract)
 }
 
 nsresult
-setPassword(PK11SlotInfo* slot, nsIInterfaceRequestor* ctx)
+setPassword(PK11SlotInfo* slot, nsIInterfaceRequestor* ctx,
+            nsNSSShutDownPreventionLock& /*proofOfLock*/)
 {
-  nsNSSShutDownPreventionLock locker;
   nsresult rv = NS_OK;
 
   if (PK11_NeedUserInit(slot)) {
@@ -1670,17 +1525,8 @@ setPassword(PK11SlotInfo* slot, nsIInterfaceRequestor* ctx)
 
     if (NS_FAILED(rv)) goto loser;
 
-    {
-      nsPSMUITracker tracker;
-      if (tracker.isUIForbidden()) {
-        rv = NS_ERROR_NOT_AVAILABLE;
-      }
-      else {
-        rv = dialogs->SetPassword(ctx,
-                                  tokenName.get(),
-                                  &canceled);
-      }
-    }
+    rv = dialogs->SetPassword(ctx, tokenName.get(), &canceled);
+
     NS_RELEASE(dialogs);
     if (NS_FAILED(rv)) goto loser;
 

@@ -471,10 +471,18 @@ public:
   virtual int32_t IndexOf(const nsINode* aPossibleChild) const = 0;
 
   /**
-   * Return the "owner document" of this node.  Note that this is not the same
-   * as the DOM ownerDocument -- that's null for Document nodes, whereas for a
-   * nsIDocument GetOwnerDocument returns the document itself.  For nsIContent
-   * implementations the two are the same.
+   * Returns the "node document" of this node.
+   *
+   * https://dom.spec.whatwg.org/#concept-node-document
+   *
+   * Note that in the case that this node is a document node this method
+   * will return |this|.  That is different to the Node.ownerDocument DOM
+   * attribute (implemented by nsINode::GetOwnerDocument) which is specified to
+   * be null in that case:
+   *
+   * https://dom.spec.whatwg.org/#dom-node-ownerdocument
+   *
+   * For all other cases GetOwnerDoc and GetOwnerDocument behave identically.
    */
   nsIDocument *OwnerDoc() const
   {
@@ -1050,7 +1058,7 @@ public:
      * @see nsIDOMNodeList
      * @see nsGenericHTMLElement::GetChildNodes
      */
-    nsRefPtr<nsChildContentList> mChildNodes;
+    RefPtr<nsChildContentList> mChildNodes;
 
     /**
      * Weak reference to this node.  This is cleared by the destructor of
@@ -1694,7 +1702,7 @@ public:
   // aObject alive anymore.
   void UnbindObject(nsISupports* aObject);
 
-  void GetBoundMutationObservers(nsTArray<nsRefPtr<nsDOMMutationObserver> >& aResult);
+  void GetBoundMutationObservers(nsTArray<RefPtr<nsDOMMutationObserver> >& aResult);
 
   /**
    * Returns the length of this node, as specified at
@@ -1735,6 +1743,8 @@ public:
     // The DOM spec says that when nodeValue is defined to be null "setting it
     // has no effect", so we don't throw an exception.
   }
+  void EnsurePreInsertionValidity(nsINode& aNewChild, nsINode* aRefChild,
+                                  mozilla::ErrorResult& aError);
   nsINode* InsertBefore(nsINode& aNode, nsINode* aChild,
                         mozilla::ErrorResult& aError)
   {
@@ -1806,7 +1816,7 @@ public:
   mozilla::dom::Element* GetLastElementChild() const;
 
   void GetBoxQuads(const BoxQuadOptions& aOptions,
-                   nsTArray<nsRefPtr<DOMQuad> >& aResult,
+                   nsTArray<RefPtr<DOMQuad> >& aResult,
                    mozilla::ErrorResult& aRv);
 
   already_AddRefed<DOMQuad> ConvertQuadFromNode(DOMQuad& aQuad,
@@ -1884,6 +1894,11 @@ protected:
   nsresult CompareDocumentPosition(nsIDOMNode* aOther,
                                    uint16_t* aReturn);
 
+  void EnsurePreInsertionValidity1(nsINode& aNewChild, nsINode* aRefChild,
+                                   mozilla::ErrorResult& aError);
+  void EnsurePreInsertionValidity2(bool aReplace, nsINode& aNewChild,
+                                   nsINode* aRefChild,
+                                   mozilla::ErrorResult& aError);
   nsresult ReplaceOrInsertBefore(bool aReplace, nsIDOMNode *aNewChild,
                                  nsIDOMNode *aRefChild, nsIDOMNode **aReturn);
   nsINode* ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
@@ -1960,7 +1975,7 @@ protected:
   static bool Traverse(nsINode *tmp, nsCycleCollectionTraversalCallback &cb);
   static void Unlink(nsINode *tmp);
 
-  nsRefPtr<mozilla::dom::NodeInfo> mNodeInfo;
+  RefPtr<mozilla::dom::NodeInfo> mNodeInfo;
 
   // mParent is an owning ref most of the time, except for the case of document
   // nodes, so it cannot be represented by nsCOMPtr, so mark is as

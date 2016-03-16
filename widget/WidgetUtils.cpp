@@ -9,6 +9,9 @@
 #ifdef XP_WIN
 #include "WinUtils.h"
 #endif
+#if MOZ_WIDGET_GTK == 3
+#include "mozilla/WidgetUtilsGtk.h"
+#endif
 
 namespace mozilla {
 
@@ -89,7 +92,6 @@ nsIntRect RotateRect(nsIntRect aRect,
                        aRect.height, aRect.width);
     default:
       MOZ_CRASH("Unknown rotation");
-      return aRect;
   }
 }
 
@@ -100,6 +102,8 @@ WidgetUtils::IsTouchDeviceSupportPresent()
 {
 #ifdef XP_WIN
   return WinUtils::IsTouchDeviceSupportPresent();
+#elif MOZ_WIDGET_GTK == 3
+  return WidgetUtilsGTK::IsTouchDeviceSupportPresent();
 #else
   return 0;
 #endif

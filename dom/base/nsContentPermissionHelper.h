@@ -108,6 +108,12 @@ public:
 
   static void
   NotifyRemoveContentPermissionRequestParent(PContentPermissionRequestParent* aParent);
+
+  static nsTArray<PContentPermissionRequestChild*>
+  GetContentPermissionRequestChildById(const TabId& aTabId);
+
+  static void
+  NotifyRemoveContentPermissionRequestChild(PContentPermissionRequestChild* aChild);
 };
 
 class nsContentPermissionRequester final : public nsIContentPermissionRequester
@@ -122,7 +128,7 @@ private:
   virtual ~nsContentPermissionRequester();
 
   nsCOMPtr<nsPIDOMWindow> mWindow;
-  nsRefPtr<VisibilityChangeListener> mListener;
+  RefPtr<VisibilityChangeListener> mListener;
 };
 
 } // namespace dom
@@ -171,7 +177,7 @@ private:
   // Non-owning pointer to the ContentPermissionRequestParent object which owns this proxy.
   ContentPermissionRequestParent* mParent;
   nsTArray<mozilla::dom::PermissionRequest> mPermissionRequests;
-  nsRefPtr<nsContentPermissionRequesterProxy> mRequester;
+  RefPtr<nsContentPermissionRequesterProxy> mRequester;
 };
 
 /**
@@ -188,8 +194,8 @@ public:
                           nsPIDOMWindow* aWindow);
 
   // It will be called when prompt dismissed.
-  virtual bool Recv__delete__(const bool &aAllow,
-                              InfallibleTArray<PermissionChoice>&& aChoices) override;
+  virtual bool RecvNotifyResult(const bool &aAllow,
+                                InfallibleTArray<PermissionChoice>&& aChoices) override;
 
   virtual bool RecvGetVisibility() override;
 
@@ -205,6 +211,10 @@ public:
     Release();
   }
 
+  void Destroy();
+
+  bool IPCOpen() const { return mIPCOpen && !mDestroyed; }
+
 private:
   virtual ~RemotePermissionRequest()
   {
@@ -217,7 +227,8 @@ private:
   nsCOMPtr<nsIContentPermissionRequest> mRequest;
   nsCOMPtr<nsPIDOMWindow>               mWindow;
   bool                                  mIPCOpen;
-  nsRefPtr<VisibilityChangeListener>    mListener;
+  bool                                  mDestroyed;
+  RefPtr<VisibilityChangeListener>    mListener;
 };
 
 #endif // nsContentPermissionHelper_h

@@ -14,7 +14,7 @@
 
 namespace mozilla {
 
-extern PRLogModuleInfo* gMediaDecoderLog;
+extern LazyLogModule gMediaDecoderLog;
 #define SINK_LOG(msg, ...) \
   MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, \
     ("DecodedAudioDataSink=%p " msg, this, ##__VA_ARGS__))
@@ -108,7 +108,7 @@ void
 DecodedAudioDataSink::ScheduleNextLoopCrossThread()
 {
   AssertNotOnAudioThread();
-  nsRefPtr<DecodedAudioDataSink> self = this;
+  RefPtr<DecodedAudioDataSink> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([self] () {
     // Do nothing if there is already a pending task waiting for its turn.
     if (!self->mAudioLoopScheduled) {
@@ -118,10 +118,10 @@ DecodedAudioDataSink::ScheduleNextLoopCrossThread()
   DispatchTask(r.forget());
 }
 
-nsRefPtr<GenericPromise>
+RefPtr<GenericPromise>
 DecodedAudioDataSink::Init()
 {
-  nsRefPtr<GenericPromise> p = mEndPromise.Ensure(__func__);
+  RefPtr<GenericPromise> p = mEndPromise.Ensure(__func__);
   nsresult rv = NS_NewNamedThread("Media Audio",
                                   getter_AddRefs(mThread),
                                   nullptr,
@@ -143,8 +143,12 @@ DecodedAudioDataSink::GetPosition()
   int64_t pos;
   if (mAudioStream &&
       (pos = mAudioStream->GetPosition()) >= 0) {
+    NS_ASSERTION(pos >= mLastGoodPosition,
+                 "AudioStream position shouldn't go backward");
     // Update the last good position when we got a good one.
-    mLastGoodPosition = pos;
+    if (pos >= mLastGoodPosition) {
+      mLastGoodPosition = pos;
+    }
   }
 
   return mStartTime + mLastGoodPosition;
@@ -168,7 +172,7 @@ DecodedAudioDataSink::Shutdown()
       mAudioStream->Cancel();
     }
   }
-  nsRefPtr<DecodedAudioDataSink> self = this;
+  RefPtr<DecodedAudioDataSink> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([=] () {
     self->mStopAudioThread = true;
     if (!self->mAudioLoopScheduled) {
@@ -195,7 +199,7 @@ void
 DecodedAudioDataSink::SetVolume(double aVolume)
 {
   AssertNotOnAudioThread();
-  nsRefPtr<DecodedAudioDataSink> self = this;
+  RefPtr<DecodedAudioDataSink> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([=] () {
     if (self->mState == AUDIOSINK_STATE_PLAYING) {
       self->mAudioStream->SetVolume(aVolume);
@@ -209,7 +213,7 @@ DecodedAudioDataSink::SetPlaybackRate(double aPlaybackRate)
 {
   AssertNotOnAudioThread();
   MOZ_ASSERT(aPlaybackRate != 0, "Don't set the playbackRate to 0 on AudioStream");
-  nsRefPtr<DecodedAudioDataSink> self = this;
+  RefPtr<DecodedAudioDataSink> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([=] () {
     if (self->mState == AUDIOSINK_STATE_PLAYING) {
       self->mAudioStream->SetPlaybackRate(aPlaybackRate);
@@ -222,7 +226,7 @@ void
 DecodedAudioDataSink::SetPreservesPitch(bool aPreservesPitch)
 {
   AssertNotOnAudioThread();
-  nsRefPtr<DecodedAudioDataSink> self = this;
+  RefPtr<DecodedAudioDataSink> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([=] () {
     if (self->mState == AUDIOSINK_STATE_PLAYING) {
       self->mAudioStream->SetPreservesPitch(aPreservesPitch);
@@ -235,7 +239,7 @@ void
 DecodedAudioDataSink::SetPlaying(bool aPlaying)
 {
   AssertNotOnAudioThread();
-  nsRefPtr<DecodedAudioDataSink> self = this;
+  RefPtr<DecodedAudioDataSink> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([=] () {
     if (self->mState != AUDIOSINK_STATE_PLAYING ||
         self->mPlaying == aPlaying) {
@@ -463,13 +467,13 @@ DecodedAudioDataSink::PlayFromAudioQueue()
 {
   AssertOnAudioThread();
   NS_ASSERTION(!mAudioStream->IsPaused(), "Don't play when paused");
-  nsRefPtr<AudioData> audio =
+  RefPtr<AudioData> audio =
     dont_AddRef(AudioQueue().PopFront().take()->As<AudioData>());
 
   SINK_LOG_V("playing %u frames of audio at time %lld",
              audio->mFrames, audio->mTime);
   if (audio->mRate == mInfo.mRate && audio->mChannels == mInfo.mChannels) {
-    mAudioStream->Write(audio->mAudioData, audio->mFrames);
+    mAudioStream->Write(audio->mAudioData.get(), audio->mFrames);
   } else {
     SINK_LOG_V("mismatched sample format mInfo=[%uHz/%u channels] audio=[%uHz/%u channels]",
                mInfo.mRate, mInfo.mChannels, audio->mRate, audio->mChannels);

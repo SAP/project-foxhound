@@ -71,6 +71,7 @@
 #include "nsArrayEnumerator.h"
 #include "nsStringEnumerator.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/UniquePtr.h"
 #include "nsDataHashtable.h"
 
 #include <new>     // for placement new
@@ -81,7 +82,7 @@
 
 using namespace mozilla;
 
-PRLogModuleInfo* nsComponentManagerLog = nullptr;
+static LazyLogModule nsComponentManagerLog("nsComponentManager");
 
 #if 0 || defined (DEBUG_timeless)
  #define SHOW_DENIED_ON_SHUTDOWN
@@ -369,10 +370,6 @@ nsComponentManagerImpl::Init()
 {
   PR_ASSERT(NOT_INITIALIZED == mStatus);
 
-  if (!nsComponentManagerLog) {
-    nsComponentManagerLog = PR_NewLogModule("nsComponentManager");
-  }
-
   // Initialize our arena
   PL_INIT_ARENA_POOL(&mArena, "ComponentManagerArena", NS_CM_BLOCK_SIZE);
 
@@ -421,7 +418,7 @@ nsComponentManagerImpl::Init()
   cl->type = NS_APP_LOCATION;
   cl->location.Init(lf);
 
-  nsRefPtr<nsZipArchive> greOmnijar =
+  RefPtr<nsZipArchive> greOmnijar =
     mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE);
   if (greOmnijar) {
     cl = sModuleLocations->AppendElement();
@@ -438,7 +435,7 @@ nsComponentManagerImpl::Init()
     cl->location.Init(lf);
   }
 
-  nsRefPtr<nsZipArchive> appOmnijar =
+  RefPtr<nsZipArchive> appOmnijar =
     mozilla::Omnijar::GetReader(mozilla::Omnijar::APP);
   if (appOmnijar) {
     cl = sModuleLocations->AppendElement();
@@ -624,18 +621,18 @@ DoRegisterManifest(NSLocationType aType,
   MOZ_ASSERT(!aXPTOnly || !nsComponentManagerImpl::gComponentManager);
   uint32_t len;
   FileLocation::Data data;
-  nsAutoArrayPtr<char> buf;
+  UniquePtr<char[]> buf;
   nsresult rv = aFile.GetData(data);
   if (NS_SUCCEEDED(rv)) {
     rv = data.GetSize(&len);
   }
   if (NS_SUCCEEDED(rv)) {
-    buf = new char[len + 1];
-    rv = data.Copy(buf, len);
+    buf = MakeUnique<char[]>(len + 1);
+    rv = data.Copy(buf.get(), len);
   }
   if (NS_SUCCEEDED(rv)) {
     buf[len] = '\0';
-    ParseManifest(aType, aFile, buf, aChromeOnly, aXPTOnly);
+    ParseManifest(aType, aFile, buf.get(), aChromeOnly, aXPTOnly);
   } else if (NS_BOOTSTRAPPED_LOCATION != aType) {
     nsCString uri;
     aFile.GetURIString(uri);
@@ -703,17 +700,17 @@ DoRegisterXPT(FileLocation& aFile)
 
   uint32_t len;
   FileLocation::Data data;
-  nsAutoArrayPtr<char> buf;
+  UniquePtr<char[]> buf;
   nsresult rv = aFile.GetData(data);
   if (NS_SUCCEEDED(rv)) {
     rv = data.GetSize(&len);
   }
   if (NS_SUCCEEDED(rv)) {
-    buf = new char[len];
-    rv = data.Copy(buf, len);
+    buf = MakeUnique<char[]>(len);
+    rv = data.Copy(buf.get(), len);
   }
   if (NS_SUCCEEDED(rv)) {
-    XPTInterfaceInfoManager::GetSingleton()->RegisterBuffer(buf, len);
+    XPTInterfaceInfoManager::GetSingleton()->RegisterBuffer(buf.get(), len);
 #ifdef MOZ_B2G_LOADER
     MarkRegisteredXPTIInfo(aFile);
 #endif
@@ -1849,7 +1846,7 @@ nsComponentManagerImpl::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
   for (auto iter = mContractIDs.ConstIter(); !iter.Done(); iter.Next()) {
     // We don't measure the nsFactoryEntry data because it's owned by
     // mFactories (which is measured above).
-    n += iter.Key().SizeOfExcludingThisMustBeUnshared(aMallocSizeOf);
+    n += iter.Key().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
   }
 
   n += sStaticModules->ShallowSizeOfIncludingThis(aMallocSizeOf);

@@ -1,7 +1,7 @@
-# -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var FullScreen = {
   _MESSAGES: [
@@ -49,11 +49,11 @@ var FullScreen = {
       fullscreenCommand.removeAttribute("checked");
     }
 
-#ifdef XP_MACOSX
-    // Make sure the menu items are adjusted.
-    document.getElementById("enterFullScreenItem").hidden = enterFS;
-    document.getElementById("exitFullScreenItem").hidden = !enterFS;
-#endif
+    if (AppConstants.platform == "macosx") {
+      // Make sure the menu items are adjusted.
+      document.getElementById("enterFullScreenItem").hidden = enterFS;
+      document.getElementById("exitFullScreenItem").hidden = !enterFS;
+    }
 
     if (!this._fullScrToggler) {
       this._fullScrToggler = document.getElementById("fullscr-toggler");
@@ -198,8 +198,9 @@ var FullScreen = {
 
     document.documentElement.setAttribute("inDOMFullscreen", true);
 
-    if (gFindBarInitialized)
-      gFindBar.close();
+    if (gFindBarInitialized) {
+      gFindBar.close(true);
+    }
 
     // Exit DOM full-screen mode upon open, close, or change tab.
     gBrowser.tabContainer.addEventListener("TabOpen", this.exitDomFullScreen);
@@ -306,8 +307,11 @@ var FullScreen = {
         aEvent.target.localName != "tooltip" && aEvent.target.localName != "window")
       FullScreen._isPopupOpen = true;
     else if (aEvent.type == "popuphidden" && aEvent.target.localName != "tooltip" &&
-             aEvent.target.localName != "window")
+             aEvent.target.localName != "window") {
       FullScreen._isPopupOpen = false;
+      // Try again to hide toolbar when we close the popup.
+      FullScreen.hideNavToolbox(true);
+    }
   },
 
   // Autohide helpers for the context menu item
@@ -318,6 +322,8 @@ var FullScreen = {
   setAutohide: function()
   {
     gPrefService.setBoolPref("browser.fullscreen.autohide", !gPrefService.getBoolPref("browser.fullscreen.autohide"));
+    // Try again to hide toolbar when we change the pref.
+    FullScreen.hideNavToolbox(true);
   },
 
   _WarningBox: {
@@ -627,10 +633,6 @@ XPCOMUtils.defineLazyGetter(FullScreen, "useLionFullScreen", function() {
   // * on OS X
   // * on Lion or higher (Darwin 11+)
   // * have fullscreenbutton="true"
-#ifdef XP_MACOSX
-  return parseFloat(Services.sysinfo.getProperty("version")) >= 11 &&
+  return AppConstants.isPlatformAndVersionAtLeast("macosx", 11) &&
          document.documentElement.getAttribute("fullscreenbutton") == "true";
-#else
-  return false;
-#endif
 });

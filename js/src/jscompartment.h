@@ -7,8 +7,10 @@
 #ifndef jscompartment_h
 #define jscompartment_h
 
+#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Variant.h"
+#include "mozilla/XorShift128PlusRNG.h"
 
 #include "builtin/RegExp.h"
 #include "gc/Barrier.h"
@@ -29,6 +31,7 @@ template<class Node> class ComponentFinder;
 } // namespace gc
 
 struct NativeIterator;
+class ClonedBlockObject;
 
 /*
  * A single-entry cache for some base-10 double-to-string conversions. This
@@ -148,10 +151,10 @@ typedef HashMap<CrossCompartmentKey, ReadBarrieredValue,
 //                  set.
 //
 // * PendingMetadata: This object has been allocated and is still pending its
-//                    metadata. This should never be the case in an allocation
-//                    path, as a constructor function was supposed to have set
-//                    the metadata of the previous object *before* allocating
-//                    another object.
+//                    metadata. This should never be the case when we begin an
+//                    allocation, as a constructor function was supposed to have
+//                    set the metadata of the previous object *before*
+//                    allocating another object.
 //
 // The js::AutoSetNewObjectMetadata RAII class provides an ergonomic way for
 // constructor functions to navigate state transitions, and its instances
@@ -199,7 +202,7 @@ class MOZ_RAII AutoSetNewObjectMetadata : private JS::CustomAutoRooter
     virtual void trace(JSTracer* trc) override {
         if (prevState_.is<PendingMetadata>()) {
             TraceRoot(trc,
-                      prevState_.as<PendingMetadata>().unsafeGet(),
+                      prevState_.as<PendingMetadata>().unsafeUnbarrieredForTracing(),
                       "Object pending metadata");
         }
     }
@@ -273,8 +276,8 @@ struct JSCompartment
   public:
     bool                         isSelfHosting;
     bool                         marked;
-    bool                         warnedAboutNoSuchMethod;
     bool                         warnedAboutFlagsArgument;
+    bool                         warnedAboutExprClosure;
 
     // A null add-on ID means that the compartment is not associated with an
     // add-on.
@@ -373,6 +376,12 @@ struct JSCompartment
     js::NewObjectMetadataState objectMetadataState;
 
   public:
+    // Recompute the probability with which this compartment should record
+    // profiling data (stack traces, allocations log, etc.) about each
+    // allocation. We consult the probabilities requested by the Debugger
+    // instances observing us, if any.
+    void chooseAllocationSamplingProbability() { savedStacks_.chooseSamplingProbability(this); }
+
     bool hasObjectPendingMetadata() const { return objectMetadataState.is<js::PendingMetadata>(); }
 
     void setObjectPendingMetadata(JSContext* cx, JSObject* obj) {
@@ -397,7 +406,8 @@ struct JSCompartment
                                 size_t* objectMetadataTables,
                                 size_t* crossCompartmentWrappers,
                                 size_t* regexpCompartment,
-                                size_t* savedStacksSet);
+                                size_t* savedStacksSet,
+                                size_t* nonSyntacticLexicalScopes);
 
     /*
      * Shared scope property tree, and arena-pool for allocating its nodes.
@@ -442,6 +452,13 @@ struct JSCompartment
     // All unboxed layouts in the compartment.
     mozilla::LinkedList<js::UnboxedLayout> unboxedLayouts;
 
+  private:
+    // All non-syntactic lexical scopes in the compartment. These are kept in
+    // a map because when loading scripts into a non-syntactic scope, we need
+    // to use the same lexical scope to persist lexical bindings.
+    js::ObjectWeakMap* nonSyntacticLexicalScopes_;
+
+  public:
     /* During GC, stores the index of this compartment in rt->compartments. */
     unsigned                     gcIndex;
 
@@ -453,9 +470,6 @@ struct JSCompartment
      * slot for the former, or a special slot for the latter.
      */
     JSObject*                    gcIncomingGrayPointers;
-
-    /* Linked list of live weakmaps in this compartment. */
-    js::WeakMapBase*             gcWeakMapList;
 
   private:
     /* Whether to preserve JIT code on non-shrinking GCs. */
@@ -514,6 +528,11 @@ struct JSCompartment
         explicit WrapperEnum(JSCompartment* c) : js::WrapperMap::Enum(c->crossCompartmentWrappers) {}
     };
 
+    js::ClonedBlockObject* getOrCreateNonSyntacticLexicalScope(JSContext* cx,
+                                                               js::HandleObject enclosingStatic,
+                                                               js::HandleObject enclosingScope);
+    js::ClonedBlockObject* getNonSyntacticLexicalScope(JSObject* enclosingScope) const;
+
     /*
      * This method traces data that is live iff we know that this compartment's
      * global is still live.
@@ -546,7 +565,6 @@ struct JSCompartment
     void sweepJitCompartment(js::FreeOp* fop);
     void sweepRegExps();
     void sweepDebugScopes();
-    void sweepWeakMaps();
     void sweepNativeIterators();
     void sweepTemplateObjects();
 
@@ -576,12 +594,11 @@ struct JSCompartment
 
     js::DtoaCache dtoaCache;
 
-    /* Random number generator state, used by jsmath.cpp. */
-    uint64_t rngState;
+    // Random number generator for Math.random().
+    mozilla::Maybe<mozilla::non_crypto::XorShift128PlusRNG> randomNumberGenerator;
 
-    static size_t offsetOfRngState() {
-        return offsetof(JSCompartment, rngState);
-    }
+    // Initialize randomNumberGenerator if needed.
+    void ensureRandomNumberGenerator();
 
   private:
     JSCompartment* thisForCtor() { return this; }
@@ -664,10 +681,7 @@ struct JSCompartment
 
     // The code coverage can be enabled either for each compartment, with the
     // Debugger API, or for the entire runtime.
-    bool collectCoverage() const {
-        return debuggerObservesCoverage() ||
-               runtimeFromAnyThread()->profilingScripts;
-    }
+    bool collectCoverage() const;
     void clearScriptCounts();
 
     bool needsDelazificationForDebugger() const {
@@ -732,11 +746,12 @@ struct JSCompartment
         // NO LONGER USING 1
         DeprecatedLegacyGenerator = 2,      // JS 1.7+
         DeprecatedExpressionClosure = 3,    // Added in JS 1.8
-        DeprecatedLetBlock = 4,             // Added in JS 1.7
+        // NO LONGER USING 4
         // NO LONGER USING 5
-        DeprecatedNoSuchMethod = 6,         // JS 1.7+
+        // NO LONGER USING 6
         DeprecatedFlagsArgument = 7,        // JS 1.3 or older
-        RegExpSourceProperty = 8,           // ES5
+        // NO LONGER USING 8
+        // NO LONGER USING 9
         DeprecatedLanguageExtensionCount
     };
 
@@ -750,6 +765,11 @@ struct JSCompartment
 
   public:
     void addTelemetry(const char* filename, DeprecatedLanguageExtension e);
+
+  public:
+    // Aggregated output used to collect JSScript hit counts when code coverage
+    // is enabled.
+    js::coverage::LCovCompartment lcovOutput;
 };
 
 inline bool

@@ -66,6 +66,9 @@ public:
   InvalidateWorkers(WhichServiceWorker aWhichOnes) = 0;
 
   virtual void
+  RegistrationRemoved() = 0;
+
+  virtual void
   GetScope(nsAString& aScope) const = 0;
 };
 
@@ -105,9 +108,6 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ServiceWorkerRegistrationMainThread,
                                            ServiceWorkerRegistrationBase)
-
-  ServiceWorkerRegistrationMainThread(nsPIDOMWindow* aWindow,
-                                      const nsAString& aScope);
 
   already_AddRefed<Promise>
   Update(ErrorResult& aRv);
@@ -155,12 +155,18 @@ public:
   InvalidateWorkers(WhichServiceWorker aWhichOnes) override;
 
   void
+  RegistrationRemoved() override;
+
+  void
   GetScope(nsAString& aScope) const override
   {
     aScope = mScope;
   }
 
 private:
+  friend nsPIDOMWindow;
+  ServiceWorkerRegistrationMainThread(nsPIDOMWindow* aWindow,
+                                      const nsAString& aScope);
   ~ServiceWorkerRegistrationMainThread();
 
   already_AddRefed<workers::ServiceWorker>
@@ -178,12 +184,12 @@ private:
   // instead of acquiring a new worker instance from the ServiceWorkerManager
   // for every access. A null value is considered a cache miss.
   // These three may change to a new worker at any time.
-  nsRefPtr<workers::ServiceWorker> mInstallingWorker;
-  nsRefPtr<workers::ServiceWorker> mWaitingWorker;
-  nsRefPtr<workers::ServiceWorker> mActiveWorker;
+  RefPtr<workers::ServiceWorker> mInstallingWorker;
+  RefPtr<workers::ServiceWorker> mWaitingWorker;
+  RefPtr<workers::ServiceWorker> mActiveWorker;
 
 #ifndef MOZ_SIMPLEPUSH
-  nsRefPtr<PushManager> mPushManager;
+  RefPtr<PushManager> mPushManager;
 #endif
 };
 
@@ -254,10 +260,10 @@ private:
   ReleaseListener(Reason aReason);
 
   workers::WorkerPrivate* mWorkerPrivate;
-  nsRefPtr<WorkerListener> mListener;
+  RefPtr<WorkerListener> mListener;
 
 #ifndef MOZ_SIMPLEPUSH
-  nsRefPtr<WorkerPushManager> mPushManager;
+  RefPtr<WorkerPushManager> mPushManager;
 #endif
 };
 

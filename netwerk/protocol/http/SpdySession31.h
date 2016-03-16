@@ -10,6 +10,7 @@
 
 #include "ASpdySession.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/UniquePtr.h"
 #include "nsAHttpConnection.h"
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
@@ -197,6 +198,10 @@ public:
 
   bool MaybeReTunnel(nsAHttpTransaction *) override;
 
+  // overload of nsAHttpTransaction
+  nsresult ReadSegmentsAgain(nsAHttpSegmentReader *, uint32_t, uint32_t *, bool *) override final;
+  nsresult WriteSegmentsAgain(nsAHttpSegmentWriter *, uint32_t , uint32_t *, bool *) override final;
+
 private:
 
   enum stateType {
@@ -261,7 +266,7 @@ private:
   // This is intended to be nsHttpConnectionMgr:nsConnectionHandle taken
   // from the first transaction on this session. That object contains the
   // pointer to the real network-level nsHttpConnection object.
-  nsRefPtr<nsAHttpConnection> mConnection;
+  RefPtr<nsAHttpConnection> mConnection;
 
   // The underlying socket transport object is needed to propogate some events
   nsISocketTransport         *mSocketTransport;
@@ -307,7 +312,7 @@ private:
   // of header on data packets
   uint32_t             mInputFrameBufferSize;
   uint32_t             mInputFrameBufferUsed;
-  nsAutoArrayPtr<char> mInputFrameBuffer;
+  UniquePtr<char[]>    mInputFrameBuffer;
 
   // mInputFrameDataSize/Read are used for tracking the amount of data consumed
   // in a data frame. the data itself is not buffered in spdy
@@ -395,7 +400,7 @@ private:
   uint32_t             mOutputQueueSize;
   uint32_t             mOutputQueueUsed;
   uint32_t             mOutputQueueSent;
-  nsAutoArrayPtr<char> mOutputQueueBuffer;
+  UniquePtr<char[]>    mOutputQueueBuffer;
 
   PRIntervalTime       mPingThreshold;
   PRIntervalTime       mLastReadEpoch;     // used for ping timeouts

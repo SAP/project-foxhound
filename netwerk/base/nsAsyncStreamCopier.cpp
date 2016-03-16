@@ -19,7 +19,7 @@ using namespace mozilla;
 //
 // NSPR_LOG_MODULES=nsStreamCopier:5
 //
-static PRLogModuleInfo *gStreamCopierLog = nullptr;
+static LazyLogModule gStreamCopierLog("nsStreamCopier");
 #define LOG(args) MOZ_LOG(gStreamCopierLog, mozilla::LogLevel::Debug, args)
 
 /**
@@ -54,7 +54,7 @@ public:
       return NS_OK;
     }
 private:
-      nsRefPtr<nsAsyncStreamCopier> mCopier;
+      RefPtr<nsAsyncStreamCopier> mCopier;
       nsCOMPtr<nsIEventTarget> mTarget;
 };
 
@@ -70,8 +70,6 @@ nsAsyncStreamCopier::nsAsyncStreamCopier()
     , mIsPending(false)
     , mShouldSniffBuffering(false)
 {
-    if (!gStreamCopierLog)
-        gStreamCopierLog = PR_NewLogModule("nsStreamCopier");
     LOG(("Creating nsAsyncStreamCopier @%x\n", this));
 }
 

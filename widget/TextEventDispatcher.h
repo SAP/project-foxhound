@@ -269,8 +269,8 @@ private:
     void Clear();
 
   private:
-    nsAutoString mString;
-    nsRefPtr<TextRangeArray> mClauses;
+    nsString mString;
+    RefPtr<TextRangeArray> mClauses;
     TextRange mCaret;
 
     void EnsureClauseArray();

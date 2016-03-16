@@ -159,13 +159,13 @@ public:
   {
     SetHTMLAttr(nsGkAtoms::marginheight, aMarginHeight, aError);
   }
-  void SetReferrer(const nsAString& aReferrer, ErrorResult& aError)
+  void SetReferrerPolicy(const nsAString& aReferrer, ErrorResult& aError)
   {
-    SetHTMLAttr(nsGkAtoms::referrer, aReferrer, aError);
+    SetHTMLAttr(nsGkAtoms::referrerpolicy, aReferrer, aError);
   }
-  void GetReferrer(nsAString& aReferrer)
+  void GetReferrerPolicy(nsAString& aReferrer)
   {
-    GetHTMLAttr(nsGkAtoms::referrer, aReferrer);
+    GetHTMLAttr(nsGkAtoms::referrerpolicy, aReferrer);
   }
 
   nsIDocument* GetSVGDocument()
@@ -183,6 +183,13 @@ public:
   using nsGenericHTMLFrameElement::SetMozbrowser;
   // nsGenericHTMLFrameElement::GetFrameLoader is fine
   // nsGenericHTMLFrameElement::GetAppManifestURL is fine
+
+  // The fullscreen flag is set to true only when requestFullscreen is
+  // explicitly called on this <iframe> element. In case this flag is
+  // set, the fullscreen state of this element will not be reverted
+  // automatically when its subdocument exits fullscreen.
+  bool FullscreenFlag() const { return mFullscreenFlag; }
+  void SetFullscreenFlag(bool aValue) { mFullscreenFlag = aValue; }
 
 protected:
   virtual ~HTMLIFrameElement();

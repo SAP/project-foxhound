@@ -49,6 +49,7 @@
 #include "prprf.h"
 #include "prproces.h"
 #include "prenv.h"
+#include "prtime.h"
 
 #include "nsIAppShellService.h"
 #include "nsIAppStartup.h"
@@ -208,6 +209,10 @@
 #include "AndroidBridge.h"
 #endif
 
+#if defined(MOZ_SANDBOX) && defined(XP_LINUX) && !defined(ANDROID)
+#include "mozilla/SandboxInfo.h"
+#endif
+
 extern uint32_t gRestartMode;
 extern void InstallSignalHandlers(const char *ProgramName);
 
@@ -257,7 +262,7 @@ int (*RunGTest)() = 0;
 } // namespace mozilla
 
 using namespace mozilla;
-using mozilla::unused;
+using mozilla::Unused;
 using mozilla::scache::StartupCache;
 using mozilla::dom::ContentParent;
 using mozilla::dom::ContentChild;
@@ -623,9 +628,9 @@ static void
 SetUpSandboxEnvironment()
 {
   // A low integrity temp only currently makes sense for Vista and later, e10s
-  // and sandbox pref level 1.
+  // and sandbox pref level >= 1.
   if (!IsVistaOrLater() || !BrowserTabsRemoteAutostart() ||
-      Preferences::GetInt("security.sandbox.content.level") != 1) {
+      Preferences::GetInt("security.sandbox.content.level") < 1) {
     return;
   }
 
@@ -1024,24 +1029,6 @@ nsXULAppInfo::GetAccessibilityEnabled(bool* aResult)
 }
 
 NS_IMETHODIMP
-nsXULAppInfo::GetAccessibilityIsBlacklistedForE10S(bool* aResult)
-{
-  *aResult = false;
-#if defined(ACCESSIBILITY)
-#if defined(XP_WIN)
-  if (GetAccService() && mozilla::a11y::Compatibility::IsBlacklistedForE10S()) {
-    *aResult = true;
-  }
-#elif defined(XP_MACOSX)
-  if (GetAccService()) {
-    *aResult = true;
-  }
-#endif
-#endif // defined(ACCESSIBILITY)
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsXULAppInfo::GetIs64Bit(bool* aResult)
 {
 #ifdef HAVE_64BIT_BUILD
@@ -1058,7 +1045,7 @@ nsXULAppInfo::EnsureContentProcess()
   if (!XRE_IsParentProcess())
     return NS_ERROR_NOT_AVAILABLE;
 
-  nsRefPtr<ContentParent> unused = ContentParent::GetNewOrUsedBrowserProcess();
+  RefPtr<ContentParent> unused = ContentParent::GetNewOrUsedBrowserProcess();
   return NS_OK;
 }
 
@@ -3506,7 +3493,7 @@ XREMain::XRE_mainInit(bool* aExitFlag)
  */
 static void AnnotateSystemManufacturer()
 {
-  nsRefPtr<IWbemLocator> locator;
+  RefPtr<IWbemLocator> locator;
 
   HRESULT hr = CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
                                 IID_IWbemLocator, getter_AddRefs(locator));
@@ -3515,7 +3502,7 @@ static void AnnotateSystemManufacturer()
     return;
   }
 
-  nsRefPtr<IWbemServices> services;
+  RefPtr<IWbemServices> services;
 
   hr = locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr, nullptr,
                               0, nullptr, nullptr, getter_AddRefs(services));
@@ -3532,7 +3519,7 @@ static void AnnotateSystemManufacturer()
     return;
   }
 
-  nsRefPtr<IEnumWbemClassObject> enumerator;
+  RefPtr<IEnumWbemClassObject> enumerator;
 
   hr = services->ExecQuery(_bstr_t(L"WQL"), _bstr_t(L"SELECT * FROM Win32_BIOS"),
                            WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
@@ -3542,7 +3529,7 @@ static void AnnotateSystemManufacturer()
     return;
   }
 
-  nsRefPtr<IWbemClassObject> classObject;
+  RefPtr<IWbemClassObject> classObject;
   ULONG results;
 
   hr = enumerator->Next(WBEM_INFINITE, 1, getter_AddRefs(classObject), &results);
@@ -3694,7 +3681,9 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
 
 #if (MOZ_WIDGET_GTK == 3) && defined(MOZ_X11)
   // Disable XInput2 support due to focus bugginess. See bugs 1182700, 1170342.
-  gdk_disable_multidevice();
+  const char* useXI2 = PR_GetEnv("MOZ_USE_XINPUT2");
+  if (!useXI2 || (*useXI2 == '0'))
+    gdk_disable_multidevice();
 #endif
 
   // Open the display ourselves instead of using gtk_init, so that we can
@@ -4104,6 +4093,14 @@ XREMain::XRE_mainRun()
     file->AppendNative(NS_LITERAL_CSTRING("override.ini"));
     nsINIParser parser;
     nsresult rv = parser.Init(file);
+    // if override.ini doesn't exist, also check for distribution.ini
+    if (NS_FAILED(rv)) {
+      bool persistent;
+      mDirProvider.GetFile(XRE_APP_DISTRIBUTION_DIR, &persistent,
+                           getter_AddRefs(file));
+      file->AppendNative(NS_LITERAL_CSTRING("distribution.ini"));
+      rv = parser.Init(file);
+    }
     if (NS_SUCCEEDED(rv)) {
       nsAutoCString buf;
       rv = parser.GetString("XRE", "EnableProfileMigrator", buf);
@@ -4328,6 +4325,10 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 {
   ScopedLogging log;
 
+#if defined(MOZ_SANDBOX) && defined(XP_LINUX) && !defined(ANDROID)
+  SandboxInfo::ThreadingCheck();
+#endif
+
   char aLocal;
   GeckoProfilerInitRAII profilerGuard(&aLocal);
 
@@ -4471,7 +4472,7 @@ XRE_CreateStatsObject()
   // Note: purposely leaked
   base::StatisticsRecorder* statistics_recorder = new base::StatisticsRecorder();
   MOZ_LSAN_INTENTIONALLY_LEAK_OBJECT(statistics_recorder);
-  unused << statistics_recorder;
+  Unused << statistics_recorder;
 }
 
 int
@@ -4608,7 +4609,24 @@ enum {
   // kE10sDisabledInSafeMode = 3, was removed in bug 1172491.
   kE10sDisabledForAccessibility = 4,
   kE10sDisabledForMacGfx = 5,
+  kE10sDisabledForBidi = 6,
+  kE10sDisabledForAddons = 7,
 };
+
+#ifdef XP_WIN
+const char* kAccessibilityLastRunDatePref = "accessibility.lastLoadDate";
+const char* kAccessibilityLoadedLastSessionPref = "accessibility.loadedInLastSession";
+#endif // XP_WIN
+const char* kForceEnableE10sPref = "browser.tabs.remote.force-enable";
+
+#ifdef XP_WIN
+static inline uint32_t
+PRTimeToSeconds(PRTime t_usec)
+{
+  PRTime usec_per_sec = PR_USEC_PER_SEC;
+  return uint32_t(t_usec /= usec_per_sec);
+}
+#endif // XP_WIN
 
 bool
 mozilla::BrowserTabsRemoteAutostart()
@@ -4617,6 +4635,62 @@ mozilla::BrowserTabsRemoteAutostart()
     return gBrowserTabsRemoteAutostart;
   }
   gBrowserTabsRemoteAutostartInitialized = true;
+
+  bool disabledForA11y = false;
+#ifdef XP_WIN
+  /**
+   * Avoids enabling e10s if accessibility has recently loaded. Performs the
+   * following checks:
+   * 1) Checks a pref indicating if a11y loaded in the last session. This pref
+   * is set in nsBrowserGlue.js. If a11y was loaded in the last session we
+   * do not enable e10s in this session.
+   * 2) Accessibility stores a last run date (PR_IntervalNow) when it is
+   * initialized (see nsBaseWidget.cpp). We check if this pref exists and
+   * compare it to now. If a11y hasn't run in an extended period of time or
+   * if the date pref does not exist we load e10s.
+   */
+  disabledForA11y = Preferences::GetBool(kAccessibilityLoadedLastSessionPref, false);
+  if (!disabledForA11y  &&
+      Preferences::HasUserValue(kAccessibilityLastRunDatePref)) {
+    #define ONE_WEEK_IN_SECONDS (60*60*24*7)
+    uint32_t a11yRunDate = Preferences::GetInt(kAccessibilityLastRunDatePref, 0);
+    MOZ_ASSERT(0 != a11yRunDate);
+    // If a11y hasn't run for a period of time, clear the pref and load e10s
+    uint32_t now = PRTimeToSeconds(PR_Now());
+    uint32_t difference = now - a11yRunDate;
+    if (difference > ONE_WEEK_IN_SECONDS || !a11yRunDate) {
+      Preferences::ClearUser(kAccessibilityLastRunDatePref);
+    } else {
+      disabledForA11y = true;
+    }
+  }
+#endif // XP_WIN
+
+  /**
+   * Avoids enabling e10s for certain locales that require bidi selection,
+   * which currently doesn't work well with e10s.
+   */
+  bool disabledForBidi = false;
+
+  nsAutoCString locale;
+  nsCOMPtr<nsIXULChromeRegistry> registry =
+   mozilla::services::GetXULChromeRegistryService();
+  if (registry) {
+     registry->GetSelectedLocale(NS_LITERAL_CSTRING("global"), locale);
+  }
+
+  int32_t index = locale.FindChar('-');
+  if (index >= 0) {
+    locale.Truncate(index);
+  }
+
+  if (locale.EqualsLiteral("ar") ||
+      locale.EqualsLiteral("fa") ||
+      locale.EqualsLiteral("he") ||
+      locale.EqualsLiteral("ur")) {
+    disabledForBidi = true;
+  }
+
   bool optInPref = Preferences::GetBool("browser.tabs.remote.autostart", false);
   bool trialPref = Preferences::GetBool("browser.tabs.remote.autostart.2", false);
   bool prefEnabled = optInPref || trialPref;
@@ -4635,21 +4709,34 @@ mozilla::BrowserTabsRemoteAutostart()
   // When running tests with 'layers.offmainthreadcomposition.testing.enabled', e10s must be
   // allowed because these tests must be allowed to run remotely.
   // We are also allowing e10s to be enabled on Beta (which doesn't have E10S_TESTING_ONLY defined.
-  bool e10sAllowed = Preferences::GetDefaultCString("app.update.channel").EqualsLiteral("beta") ||
-                     Preferences::GetBool("layers.offmainthreadcomposition.testing.enabled", false);
+  bool e10sAllowed = !Preferences::GetDefaultCString("app.update.channel").EqualsLiteral("release") ||
+                     gfxPrefs::GetSingleton().LayersOffMainThreadCompositionTestingEnabled();
 #endif
 
-  // Check for some conditions that might disable e10s.
-  bool disabledForA11y = Preferences::GetBool("browser.tabs.remote.disabled-for-a11y", false);
   // Disable for VR
   bool disabledForVR = Preferences::GetBool("dom.vr.enabled", false);
+
+  bool addonsCanDisable = Preferences::GetBool("extensions.e10sBlocksEnabling", false);
+  bool disabledByAddons = Preferences::GetBool("extensions.e10sBlockedByAddons", false);
+
+#ifdef MOZ_CRASHREPORTER
+  CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AddonsShouldHaveBlockedE10s"),
+                                     disabledByAddons ? NS_LITERAL_CSTRING("1")
+                                                      : NS_LITERAL_CSTRING("0"));
+#endif
 
   if (e10sAllowed && prefEnabled) {
     if (disabledForA11y) {
       status = kE10sDisabledForAccessibility;
-      LogE10sBlockedReason("An accessibility tool is or was active. See bug 1115956.");
+      LogE10sBlockedReason("An accessibility tool is or was active. See bug 1198459.");
+    } else if (disabledForBidi) {
+      status = kE10sDisabledForBidi;
+      LogE10sBlockedReason("Disabled for RTL locales due to broken bidi detection.");
     } else if (disabledForVR) {
       LogE10sBlockedReason("Experimental VR interfaces are enabled");
+    } else if (addonsCanDisable && disabledByAddons) {
+      status = kE10sDisabledForAddons;
+      LogE10sBlockedReason("3rd party add-ons are installed and enabled.");
     } else {
       gBrowserTabsRemoteAutostart = true;
     }
@@ -4660,8 +4747,8 @@ mozilla::BrowserTabsRemoteAutostart()
   // e10s auto start on mac.
   if (gBrowserTabsRemoteAutostart) {
     // Check prefs
-    bool accelDisabled = Preferences::GetBool("layers.acceleration.disabled", false) &&
-                         !Preferences::GetBool("layers.acceleration.force-enabled", false);
+    bool accelDisabled = gfxPrefs::GetSingleton().LayersAccelerationDisabled() &&
+                         !gfxPrefs::LayersAccelerationForceEnabled();
 
     accelDisabled = accelDisabled || !nsCocoaFeatures::AccelerateByDefault();
 
@@ -4694,8 +4781,15 @@ mozilla::BrowserTabsRemoteAutostart()
   }
 #endif // defined(XP_MACOSX)
 
+  // Uber override pref for manual testing purposes
+  if (Preferences::GetBool(kForceEnableE10sPref, false)) {
+    gBrowserTabsRemoteAutostart = true;
+    prefEnabled = true;
+    status = kE10sEnabledByUser;
+  }
+
   mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_AUTOSTART, gBrowserTabsRemoteAutostart);
-  mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_AUTOSTART_STATUS, status);
+  mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_STATUS, status);
   if (Preferences::GetBool("browser.enabledE10SFromPrompt", false)) {
     mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_STILL_ACCEPTED_FROM_PROMPT,
                                     gBrowserTabsRemoteAutostart);
@@ -4703,6 +4797,9 @@ mozilla::BrowserTabsRemoteAutostart()
   if (prefEnabled) {
     mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_BLOCKED_FROM_RUNNING,
                                     !gBrowserTabsRemoteAutostart);
+  }
+  if (Preferences::HasUserValue("extensions.e10sBlockedByAddons")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_ADDONS_BLOCKER_RAN, true);
   }
   return gBrowserTabsRemoteAutostart;
 }

@@ -55,8 +55,7 @@ public:
 
   friend class mozilla::RestyleManager;
 
-  nsCSSFrameConstructor(nsIDocument *aDocument, nsIPresShell* aPresShell,
-                        nsStyleSet* aStyleSet);
+  nsCSSFrameConstructor(nsIDocument* aDocument, nsIPresShell* aPresShell);
   ~nsCSSFrameConstructor(void) {
     NS_ASSERTION(mUpdateCount == 0, "Dying in the middle of our own update?");
   }
@@ -301,8 +300,7 @@ public:
    */
   InsertionPoint GetInsertionPoint(nsIContent* aContainer, nsIContent* aChild);
 
-  nsresult CreateListBoxContent(nsPresContext*    aPresContext,
-                                nsContainerFrame* aParentFrame,
+  nsresult CreateListBoxContent(nsContainerFrame* aParentFrame,
                                 nsIFrame*         aPrevFrame,
                                 nsIContent*       aChild,
                                 nsIFrame**        aResult,
@@ -337,7 +335,6 @@ private:
   class FrameConstructionItemList;
 
   nsContainerFrame* ConstructPageFrame(nsIPresShell*      aPresShell,
-                                       nsPresContext*     aPresContext,
                                        nsContainerFrame*  aParentFrame,
                                        nsIFrame*          aPrevPageFrame,
                                        nsContainerFrame*& aCanvasFrame);
@@ -435,7 +432,7 @@ private:
    */
   already_AddRefed<nsIContent> CreateGenConTextNode(nsFrameConstructorState& aState,
                                                     const nsString& aString,
-                                                    nsRefPtr<nsTextNode>* aText,
+                                                    RefPtr<nsTextNode>* aText,
                                                     nsGenConInitializer* aInitializer);
 
   /**
@@ -995,7 +992,7 @@ private:
       {}
 
       nsIContent * const mContent;
-      nsRefPtr<nsStyleContext> mStyleContext;
+      RefPtr<nsStyleContext> mStyleContext;
     };
 
     // Adjust our various counts for aItem being added or removed.  aDelta
@@ -1121,7 +1118,7 @@ private:
     // insertion point before doing so and pop it afterward.
     PendingBinding* mPendingBinding;
     // The style context to use for creating the new frame.
-    nsRefPtr<nsStyleContext> mStyleContext;
+    RefPtr<nsStyleContext> mStyleContext;
     // The XBL-resolved namespace to use for frame construction.
     int32_t mNameSpaceID;
     // Whether optimizations to skip constructing textframes around
@@ -1606,8 +1603,6 @@ public:
   nsContainerFrame* GetFloatContainingBlock(nsIFrame* aFrame);
 
 private:
-  nsIContent* PropagateScrollToViewport();
-
   // Build a scroll frame:
   //  Calls BeginBuildingScrollFrame, InitAndRestoreFrame, and then FinishBuildingScrollFrame.
   // @param aNewFrame the created scrollframe --- output only
@@ -1697,7 +1692,6 @@ private:
                                             nsStyleContext*   aStyleContext);
 
   nsIFrame* CreateContinuingTableFrame(nsIPresShell*     aPresShell,
-                                       nsPresContext*    aPresContext,
                                        nsIFrame*         aFrame,
                                        nsContainerFrame* aParentFrame,
                                        nsIContent*       aContent,
@@ -1874,20 +1868,17 @@ private:
   void RecoverLetterFrames(nsContainerFrame* aBlockFrame);
 
   //
-  nsresult RemoveLetterFrames(nsPresContext*    aPresContext,
-                              nsIPresShell*     aPresShell,
+  nsresult RemoveLetterFrames(nsIPresShell*     aPresShell,
                               nsContainerFrame* aBlockFrame);
 
   // Recursive helper for RemoveLetterFrames
-  nsresult RemoveFirstLetterFrames(nsPresContext*    aPresContext,
-                                   nsIPresShell*     aPresShell,
+  nsresult RemoveFirstLetterFrames(nsIPresShell*     aPresShell,
                                    nsContainerFrame* aFrame,
                                    nsContainerFrame* aBlockFrame,
                                    bool*             aStopLooking);
 
   // Special remove method for those pesky floating first-letter frames
-  nsresult RemoveFloatingFirstLetterFrames(nsPresContext*  aPresContext,
-                                           nsIPresShell*    aPresShell,
+  nsresult RemoveFloatingFirstLetterFrames(nsIPresShell*    aPresShell,
                                            nsIFrame*        aBlockFrame,
                                            bool*          aStopLooking);
 

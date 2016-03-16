@@ -126,7 +126,7 @@ public:
                                 const nsRect&           aDirtyRect,
                                 const nsDisplayListSet& aLists) override;
 
-  void PaintFocus(nsRenderingContext& aRenderingContext, nsPoint aPt);
+  void PaintFocus(mozilla::gfx::DrawTarget* aRenderingContext, nsPoint aPt);
 
   // nsIScrollPositionListener
   virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) override;
@@ -186,7 +186,7 @@ protected:
   /**
    * A no-op touch-listener used for APZ purposes.
    */
-  nsRefPtr<DummyTouchListener> mDummyTouchListener;
+  RefPtr<DummyTouchListener> mDummyTouchListener;
 };
 
 /**
@@ -239,7 +239,11 @@ public:
   nsDisplayCanvasBackgroundImage(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                  uint32_t aLayer, const nsStyleBackground* aBg)
     : nsDisplayBackgroundImage(aBuilder, aFrame, aLayer, aBg)
-  {}
+  {
+    if (ShouldFixToViewport(aBuilder)) {
+      mAnimatedGeometryRoot = aBuilder->FindAnimatedGeometryRootFor(this);
+    }
+  }
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, nsRenderingContext* aCtx) override;
 
@@ -249,7 +253,7 @@ public:
     mFrame->Properties().Delete(nsIFrame::CachedBackgroundImageDT());
   }
 
-  virtual bool ShouldFixToViewport(LayerManager* aManager) override
+  virtual bool ShouldFixToViewport(nsDisplayListBuilder* aBuilder) override
   {
     // Put background-attachment:fixed canvas background images in their own
     // compositing layer. Since we know their background painting area can't

@@ -15,14 +15,13 @@
  */
 
 #include "GonkGPSGeolocationProvider.h"
-#include "mozstumbler/MozStumbler.h"
 
+#include <cmath>
 #include <pthread.h>
 #include <hardware/gps.h>
 
 #include "GeolocationUtil.h"
 #include "mozstumbler/MozStumbler.h"
-#include "mozilla/Constants.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "nsContentUtils.h"
@@ -40,6 +39,7 @@
 #include "mozilla/dom/SettingChangeNotificationBinding.h"
 
 #ifdef MOZ_B2G_RIL
+#include "mozstumbler/MozStumbler.h"
 #include "nsIIccInfo.h"
 #include "nsIMobileConnectionInfo.h"
 #include "nsIMobileConnectionService.h"
@@ -55,6 +55,13 @@
 #endif
 
 #define FLUSH_AIDE_DATA 0
+
+#undef LOG
+#undef ERR
+#undef DBG
+#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO,  "GonkGPSGeolocationProvider", ## args)
+#define ERR(args...)  __android_log_print(ANDROID_LOG_ERROR, "GonkGPSGeolocationProvider", ## args)
+#define DBG(args...)  __android_log_print(ANDROID_LOG_DEBUG, "GonkGPSGeolocationProvider" , ## args)
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -104,7 +111,7 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
       : mPosition(aPosition)
     {}
     NS_IMETHOD Run() {
-      nsRefPtr<GonkGPSGeolocationProvider> provider =
+      RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
       nsCOMPtr<nsIGeolocationUpdate> callback = provider->mLocationCallback;
       provider->mLastGPSPosition = mPosition;
@@ -114,7 +121,7 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
       return NS_OK;
     }
   private:
-    nsRefPtr<nsGeoPosition> mPosition;
+    RefPtr<nsGeoPosition> mPosition;
   };
 
   MOZ_ASSERT(location);
@@ -124,7 +131,7 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
     return;
   }
 
-  nsRefPtr<nsGeoPosition> somewhere = new nsGeoPosition(location->latitude,
+  RefPtr<nsGeoPosition> somewhere = new nsGeoPosition(location->latitude,
                                                         location->longitude,
                                                         location->altitude,
                                                         location->accuracy,
@@ -139,16 +146,18 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
   // set in the DOM JS.
 
   if (gDebug_isLoggingEnabled) {
-    nsContentUtils::LogMessageToConsole("geo: GPS got a fix (%f, %f). accuracy: %f",
-                                        location->latitude,
-                                        location->longitude,
-                                        location->accuracy);
+    DBG("geo: GPS got a fix (%f, %f). accuracy: %f",
+        location->latitude,
+        location->longitude,
+        location->accuracy);
   }
 
-  nsRefPtr<UpdateLocationEvent> event = new UpdateLocationEvent(somewhere);
+  RefPtr<UpdateLocationEvent> event = new UpdateLocationEvent(somewhere);
   NS_DispatchToMainThread(event);
 
+#ifdef MOZ_B2G_RIL
   MozStumble(somewhere);
+#endif
 }
 
 void
@@ -157,22 +166,22 @@ GonkGPSGeolocationProvider::StatusCallback(GpsStatus* status)
   if (gDebug_isLoggingEnabled) {
     switch (status->status) {
       case GPS_STATUS_NONE:
-        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_NONE\n");
+        DBG("geo: GPS_STATUS_NONE\n");
         break;
       case GPS_STATUS_SESSION_BEGIN:
-        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_SESSION_BEGIN\n");
+        DBG("geo: GPS_STATUS_SESSION_BEGIN\n");
         break;
       case GPS_STATUS_SESSION_END:
-        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_SESSION_END\n");
+        DBG("geo: GPS_STATUS_SESSION_END\n");
         break;
       case GPS_STATUS_ENGINE_ON:
-        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_ENGINE_ON\n");
+        DBG("geo: GPS_STATUS_ENGINE_ON\n");
         break;
       case GPS_STATUS_ENGINE_OFF:
-        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_ENGINE_OFF\n");
+        DBG("geo: GPS_STATUS_ENGINE_OFF\n");
         break;
       default:
-        nsContentUtils::LogMessageToConsole("geo: Unknown GPS status\n");
+        DBG("geo: Unknown GPS status\n");
         break;
     }
   }
@@ -215,7 +224,7 @@ GonkGPSGeolocationProvider::SvStatusCallback(GpsSvStatus* sv_info)
         svEphemerisCount != numEphemeris ||
         svUsedCount != numUsedInFix) {
 
-      nsContentUtils::LogMessageToConsole(
+      LOG(
         "geo: Number of SVs have (visibility, almanac, ephemeris): (%d, %d, %d)."
         "  %d of these SVs were used in fix.\n",
         sv_info->num_svs, svAlmanacCount, svEphemerisCount, svUsedCount);
@@ -232,8 +241,7 @@ void
 GonkGPSGeolocationProvider::NmeaCallback(GpsUtcTime timestamp, const char* nmea, int length)
 {
   if (gDebug_isLoggingEnabled) {
-    nsContentUtils::LogMessageToConsole("geo: NMEA: timestamp:\t%lld, length: %d, %s",
-                                        timestamp, length, nmea);
+    DBG("NMEA: timestamp:\t%lld, length: %d, %s", timestamp, length, nmea);
   }
 }
 
@@ -246,7 +254,7 @@ GonkGPSGeolocationProvider::SetCapabilitiesCallback(uint32_t capabilities)
       : mCapabilities(aCapabilities)
     {}
     NS_IMETHOD Run() {
-      nsRefPtr<GonkGPSGeolocationProvider> provider =
+      RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
 
       provider->mSupportsScheduling = mCapabilities & GPS_CAPABILITY_SCHEDULING;
@@ -314,7 +322,7 @@ GonkGPSGeolocationProvider::AGPSStatusCallback(AGpsStatus* status)
       : mStatus(aStatus)
     {}
     NS_IMETHOD Run() {
-      nsRefPtr<GonkGPSGeolocationProvider> provider =
+      RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
 
       switch (mStatus) {
@@ -343,7 +351,7 @@ GonkGPSGeolocationProvider::AGPSRILSetIDCallback(uint32_t flags)
       : mFlags(flags)
     {}
     NS_IMETHOD Run() {
-      nsRefPtr<GonkGPSGeolocationProvider> provider =
+      RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
       provider->RequestSetID(mFlags);
       return NS_OK;
@@ -363,7 +371,7 @@ GonkGPSGeolocationProvider::AGPSRILRefLocCallback(uint32_t flags)
     RequestRefLocEvent()
     {}
     NS_IMETHOD Run() {
-      nsRefPtr<GonkGPSGeolocationProvider> provider =
+      RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
       provider->SetReferenceLocation();
       return NS_OK;
@@ -409,7 +417,7 @@ GonkGPSGeolocationProvider::GetSingleton()
   if (!sSingleton)
     sSingleton = new GonkGPSGeolocationProvider();
 
-  nsRefPtr<GonkGPSGeolocationProvider> provider = sSingleton;
+  RefPtr<GonkGPSGeolocationProvider> provider = sSingleton;
   return provider.forget();
 }
 
@@ -507,15 +515,13 @@ GonkGPSGeolocationProvider::RequestSettingValue(const char* aKey)
   nsCOMPtr<nsISettingsServiceLock> lock;
   nsresult rv = ss->CreateLock(nullptr, getter_AddRefs(lock));
   if (NS_FAILED(rv)) {
-    nsContentUtils::LogMessageToConsole(
-      "geo: error while createLock setting '%s': %d\n", aKey, rv);
+    ERR("error while createLock setting '%s': %d\n", aKey, uint32_t(rv));
     return;
   }
 
   rv = lock->Get(aKey, this);
   if (NS_FAILED(rv)) {
-    nsContentUtils::LogMessageToConsole(
-      "geo: error while get setting '%s': %d\n", aKey, rv);
+    ERR("error while get setting '%s': %d\n", aKey, uint32_t(rv));
     return;
   }
 }
@@ -614,8 +620,8 @@ ConvertToGpsRefLocationType(const nsAString& aConnectionType)
   }
 
   if (gDebug_isLoggingEnabled) {
-    nsContentUtils::LogMessageToConsole("geo: Unsupported connection type %s\n",
-                                        NS_ConvertUTF16toUTF8(aConnectionType).get());
+    DBG("geo: Unsupported connection type %s\n",
+        NS_ConvertUTF16toUTF8(aConnectionType).get());
   }
   return AGPS_REF_LOCATION_TYPE_GSM_CELLID;
 }
@@ -719,8 +725,7 @@ GonkGPSGeolocationProvider::InjectLocation(double latitude,
                                            float accuracy)
 {
   if (gDebug_isLoggingEnabled) {
-    nsContentUtils::LogMessageToConsole("geo: injecting location (%f, %f) accuracy: %f",
-                                        latitude, longitude, accuracy);
+    DBG("injecting location (%f, %f) accuracy: %f", latitude, longitude, accuracy);
   }
 
   MOZ_ASSERT(NS_IsMainThread());
@@ -873,7 +878,7 @@ NS_IMPL_ISUPPORTS(GonkGPSGeolocationProvider::NetworkLocationUpdate,
 NS_IMETHODIMP
 GonkGPSGeolocationProvider::NetworkLocationUpdate::Update(nsIDOMGeoPosition *position)
 {
-  nsRefPtr<GonkGPSGeolocationProvider> provider =
+  RefPtr<GonkGPSGeolocationProvider> provider =
     GonkGPSGeolocationProvider::GetSingleton();
 
   nsCOMPtr<nsIDOMGeoPositionCoords> coords;
@@ -922,14 +927,12 @@ GonkGPSGeolocationProvider::NetworkLocationUpdate::Update(nsIDOMGeoPosition *pos
        (isGPSTempInactive && delta > kMinMLSCoordChangeInMeters))
     {
       if (gDebug_isLoggingEnabled) {
-        nsContentUtils::LogMessageToConsole("geo: Using MLS, GPS age:%fs, MLS Delta:%fm\n",
-                                            diff_ms / 1000.0, delta);
+        DBG("Using MLS, GPS age:%fs, MLS Delta:%fm\n", diff_ms / 1000.0, delta);
       }
       provider->mLocationCallback->Update(position);
     } else if (provider->mLastGPSPosition) {
       if (gDebug_isLoggingEnabled) {
-        nsContentUtils::LogMessageToConsole("geo: Using old GPS age:%fs\n",
-                                            diff_ms / 1000.0);
+        DBG("Using old GPS age:%fs\n", diff_ms / 1000.0);
       }
 
       // This is a fallback case so that the GPS provider responds with its last
@@ -991,7 +994,7 @@ GonkGPSGeolocationProvider::Startup()
   if (mNetworkLocationProvider) {
     nsresult rv = mNetworkLocationProvider->Startup();
     if (NS_SUCCEEDED(rv)) {
-      nsRefPtr<NetworkLocationUpdate> update = new NetworkLocationUpdate();
+      RefPtr<NetworkLocationUpdate> update = new NetworkLocationUpdate();
       mNetworkLocationProvider->Watch(update);
     }
   }
@@ -1160,16 +1163,15 @@ GonkGPSGeolocationProvider::Observe(nsISupports* aSubject,
     }
 
     if (setting.mKey.EqualsASCII(kSettingDebugGpsIgnored)) {
-      nsContentUtils::LogMessageToConsole("geo: received mozsettings-changed: ignoring\n");
+      LOG("received mozsettings-changed: ignoring\n");
       gDebug_isGPSLocationIgnored =
         setting.mValue.isBoolean() ? setting.mValue.toBoolean() : false;
       if (gDebug_isLoggingEnabled) {
-        nsContentUtils::LogMessageToConsole("geo: Debug: GPS ignored %d\n",
-                                            gDebug_isGPSLocationIgnored);
+        DBG("GPS ignored %d\n", gDebug_isGPSLocationIgnored);
       }
       return NS_OK;
     } else if (setting.mKey.EqualsASCII(kSettingDebugEnabled)) {
-      nsContentUtils::LogMessageToConsole("geo: received mozsettings-changed: logging\n");
+      LOG("received mozsettings-changed: logging\n");
       gDebug_isLoggingEnabled =
         setting.mValue.isBoolean() ? setting.mValue.toBoolean() : false;
       return NS_OK;

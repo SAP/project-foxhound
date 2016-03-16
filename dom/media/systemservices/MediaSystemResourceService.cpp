@@ -95,7 +95,7 @@ MediaSystemResourceService::Acquire(media::MediaSystemResourceManagerParent* aPa
       resource->mResourceCount == 0) {
     // Resource does not exit
     // Send fail response
-    mozilla::unused << aParent->SendResponse(aId, false /* fail */);
+    mozilla::Unused << aParent->SendResponse(aId, false /* fail */);
     return;
   }
 
@@ -105,12 +105,12 @@ MediaSystemResourceService::Acquire(media::MediaSystemResourceManagerParent* aPa
     resource->mAcquiredRequests.push_back(
       MediaSystemResourceRequest(aParent, aId));
     // Send success response
-    mozilla::unused << aParent->SendResponse(aId, true /* success */);
+    mozilla::Unused << aParent->SendResponse(aId, true /* success */);
     return;
   } else if (!aWillWait) {
     // Resource is not available and do not wait.
     // Send fail response
-    mozilla::unused << aParent->SendResponse(aId, false /* fail */);
+    mozilla::Unused << aParent->SendResponse(aId, false /* fail */);
     return;
   }
   // Wait until acquire.
@@ -141,25 +141,6 @@ MediaSystemResourceService::ReleaseResource(media::MediaSystemResourceManagerPar
   UpdateRequests(aResourceType);
 }
 
-struct ReleaseResourceData
-{
-  MediaSystemResourceService* mSelf;
-  media::MediaSystemResourceManagerParent* mParent;
-};
-
-/*static*/PLDHashOperator
-MediaSystemResourceService::ReleaseResourceForKey(const uint32_t& aKey,
-                                                  nsAutoPtr<MediaSystemResource>& aData,
-                                                  void* aClosure)
-{
-  ReleaseResourceData* closure = static_cast<ReleaseResourceData*>(aClosure);
-
-  closure->mSelf->RemoveRequests(closure->mParent, static_cast<MediaSystemResourceType>(aKey));
-  closure->mSelf->UpdateRequests(static_cast<MediaSystemResourceType>(aKey));
-
-  return PLDHashOperator::PL_DHASH_NEXT;
-}
-
 void
 MediaSystemResourceService::ReleaseResource(media::MediaSystemResourceManagerParent* aParent)
 {
@@ -169,8 +150,11 @@ MediaSystemResourceService::ReleaseResource(media::MediaSystemResourceManagerPar
     return;
   }
 
-  ReleaseResourceData data = { this, aParent };
-  mResources.Enumerate(ReleaseResourceForKey, &data);
+  for (auto iter = mResources.Iter(); !iter.Done(); iter.Next()) {
+    const uint32_t& key = iter.Key();
+    RemoveRequests(aParent, static_cast<MediaSystemResourceType>(key));
+    UpdateRequests(static_cast<MediaSystemResourceType>(key));
+  }
 }
 
 void
@@ -262,7 +246,7 @@ MediaSystemResourceService::UpdateRequests(MediaSystemResourceType aResourceType
     MediaSystemResourceRequest& request = waitingRequests.front();
     MOZ_ASSERT(request.mParent);
     // Send response
-    mozilla::unused << request.mParent->SendResponse(request.mId, true /* success */);
+    mozilla::Unused << request.mParent->SendResponse(request.mId, true /* success */);
     // Move request to mAcquiredRequests
     acquiredRequests.push_back(waitingRequests.front());
     waitingRequests.pop_front();

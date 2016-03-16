@@ -21,7 +21,7 @@ struct JSContext;
 //
 // set NSPR_LOG_MODULES=UDPSocket:5
 //
-extern PRLogModuleInfo *gUDPSocketLog;
+extern mozilla::LazyLogModule gUDPSocketLog;
 #define UDPSOCKET_LOG(args)     MOZ_LOG(gUDPSocketLog, mozilla::LogLevel::Debug, args)
 #define UDPSOCKET_LOG_ENABLED() MOZ_LOG_TEST(gUDPSocketLog, mozilla::LogLevel::Debug)
 
@@ -202,12 +202,12 @@ private:
   bool mAddressReuse;
   bool mLoopback;
   SocketReadyState mReadyState;
-  nsRefPtr<Promise> mOpened;
-  nsRefPtr<Promise> mClosed;
+  RefPtr<Promise> mOpened;
+  RefPtr<Promise> mClosed;
 
   nsCOMPtr<nsIUDPSocket> mSocket;
   nsCOMPtr<nsIUDPSocketChild> mSocketChild;
-  nsRefPtr<ListenerProxy> mListenerProxy;
+  RefPtr<ListenerProxy> mListenerProxy;
 
   struct MulticastCommand {
     enum CommandType { Join, Leave };

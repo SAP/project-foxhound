@@ -8,6 +8,7 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/unused.h"
 #include "mozilla/dom/PushManagerBinding.h"
 #include "mozilla/dom/PushSubscriptionBinding.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
@@ -32,6 +33,39 @@ namespace mozilla {
 namespace dom {
 
 using namespace workers;
+
+namespace {
+
+nsresult
+GetPermissionState(nsIPrincipal* aPrincipal,
+                            PushPermissionState& aState)
+{
+  nsCOMPtr<nsIPermissionManager> permManager =
+    mozilla::services::GetPermissionManager();
+
+  if (!permManager) {
+    return NS_ERROR_FAILURE;
+  }
+  uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
+  nsresult rv = permManager->TestExactPermissionFromPrincipal(
+                  aPrincipal,
+                  "desktop-notification",
+                  &permission);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (permission == nsIPermissionManager::ALLOW_ACTION) {
+    aState = PushPermissionState::Granted;
+  } else if (permission == nsIPermissionManager::DENY_ACTION) {
+    aState = PushPermissionState::Denied;
+  } else {
+    aState = PushPermissionState::Prompt;
+  }
+  return NS_OK;
+}
+
+} // anonymous namespace
 
 class UnsubscribeResultCallback final : public nsIUnsubscribeResultCallback
 {
@@ -60,7 +94,7 @@ private:
   ~UnsubscribeResultCallback()
   {}
 
-  nsRefPtr<Promise> mPromise;
+  RefPtr<Promise> mPromise;
 };
 
 NS_IMPL_ISUPPORTS(UnsubscribeResultCallback, nsIUnsubscribeResultCallback)
@@ -77,12 +111,12 @@ PushSubscription::Unsubscribe(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Promise> p = Promise::Create(mGlobal, aRv);
+  RefPtr<Promise> p = Promise::Create(mGlobal, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  nsRefPtr<UnsubscribeResultCallback> callback =
+  RefPtr<UnsubscribeResultCallback> callback =
     new UnsubscribeResultCallback(p);
   client->Unsubscribe(mScope, mPrincipal, callback);
   return p.forget();
@@ -91,11 +125,13 @@ PushSubscription::Unsubscribe(ErrorResult& aRv)
 PushSubscription::PushSubscription(nsIGlobalObject* aGlobal,
                                    const nsAString& aEndpoint,
                                    const nsAString& aScope,
-                                   const nsTArray<uint8_t>& aRawP256dhKey)
+                                   const nsTArray<uint8_t>& aRawP256dhKey,
+                                   const nsTArray<uint8_t>& aAuthSecret)
   : mGlobal(aGlobal)
   , mEndpoint(aEndpoint)
   , mScope(aScope)
   , mRawP256dhKey(aRawP256dhKey)
+  , mAuthSecret(aAuthSecret)
 {
 }
 
@@ -112,14 +148,18 @@ PushSubscription::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 void
 PushSubscription::GetKey(JSContext* aCx,
                          PushEncryptionKeyName aType,
-                         JS::MutableHandle<JSObject*> aP256dhKey)
+                         JS::MutableHandle<JSObject*> aKey)
 {
   if (aType == PushEncryptionKeyName::P256dh && !mRawP256dhKey.IsEmpty()) {
-    aP256dhKey.set(ArrayBuffer::Create(aCx,
-                                       mRawP256dhKey.Length(),
-                                       mRawP256dhKey.Elements()));
+    aKey.set(ArrayBuffer::Create(aCx,
+                                 mRawP256dhKey.Length(),
+                                 mRawP256dhKey.Elements()));
+  } else if (aType == PushEncryptionKeyName::Auth && !mAuthSecret.IsEmpty()) {
+    aKey.set(ArrayBuffer::Create(aCx,
+                                 mAuthSecret.Length(),
+                                 mAuthSecret.Elements()));
   } else {
-    aP256dhKey.set(nullptr);
+    aKey.set(nullptr);
   }
 }
 
@@ -136,6 +176,7 @@ PushSubscription::Constructor(GlobalObject& aGlobal,
                               const nsAString& aEndpoint,
                               const nsAString& aScope,
                               const Nullable<ArrayBuffer>& aP256dhKey,
+                              const Nullable<ArrayBuffer>& aAuthSecret,
                               ErrorResult& aRv)
 {
   MOZ_ASSERT(!aEndpoint.IsEmpty());
@@ -147,13 +188,20 @@ PushSubscription::Constructor(GlobalObject& aGlobal,
   if (!aP256dhKey.IsNull()) {
     const ArrayBuffer& key = aP256dhKey.Value();
     key.ComputeLengthAndData();
-    rawKey.SetLength(key.Length());
-    rawKey.ReplaceElementsAt(0, key.Length(), key.Data(), key.Length());
+    rawKey.InsertElementsAt(0, key.Data(), key.Length());
   }
-  nsRefPtr<PushSubscription> sub = new PushSubscription(global,
-                                                        aEndpoint,
-                                                        aScope,
-                                                        rawKey);
+
+  nsTArray<uint8_t> authSecret;
+  if (!aAuthSecret.IsNull()) {
+    const ArrayBuffer& sekrit = aAuthSecret.Value();
+    sekrit.ComputeLengthAndData();
+    authSecret.InsertElementsAt(0, sekrit.Data(), sekrit.Length());
+  }
+  RefPtr<PushSubscription> sub = new PushSubscription(global,
+                                                      aEndpoint,
+                                                      aScope,
+                                                      rawKey,
+                                                      authSecret);
 
   return sub.forget();
 }
@@ -226,8 +274,12 @@ NS_INTERFACE_MAP_END
 
 WorkerPushSubscription::WorkerPushSubscription(const nsAString& aEndpoint,
                                                const nsAString& aScope,
-                                               const nsTArray<uint8_t>& aRawP256dhKey)
-  : mEndpoint(aEndpoint), mScope(aScope), mRawP256dhKey(aRawP256dhKey)
+                                               const nsTArray<uint8_t>& aRawP256dhKey,
+                                               const nsTArray<uint8_t>& aAuthSecret)
+  : mEndpoint(aEndpoint)
+  , mScope(aScope)
+  , mRawP256dhKey(aRawP256dhKey)
+  , mAuthSecret(aAuthSecret)
 {
   MOZ_ASSERT(!aScope.IsEmpty());
   MOZ_ASSERT(!aEndpoint.IsEmpty());
@@ -248,6 +300,7 @@ WorkerPushSubscription::Constructor(GlobalObject& aGlobal,
                                     const nsAString& aEndpoint,
                                     const nsAString& aScope,
                                     const Nullable<ArrayBuffer>& aP256dhKey,
+                                    const Nullable<ArrayBuffer>& aAuthSecret,
                                     ErrorResult& aRv)
 {
   WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
@@ -261,9 +314,19 @@ WorkerPushSubscription::Constructor(GlobalObject& aGlobal,
     rawKey.SetLength(key.Length());
     rawKey.ReplaceElementsAt(0, key.Length(), key.Data(), key.Length());
   }
-  nsRefPtr<WorkerPushSubscription> sub = new WorkerPushSubscription(aEndpoint,
-                                                                    aScope,
-                                                                    rawKey);
+
+  nsTArray<uint8_t> authSecret;
+  if (!aAuthSecret.IsNull()) {
+    const ArrayBuffer& sekrit = aAuthSecret.Value();
+    sekrit.ComputeLengthAndData();
+    authSecret.SetLength(sekrit.Length());
+    authSecret.ReplaceElementsAt(0, sekrit.Length(),
+                                 sekrit.Data(), sekrit.Length());
+  }
+  RefPtr<WorkerPushSubscription> sub = new WorkerPushSubscription(aEndpoint,
+                                                                  aScope,
+                                                                  rawKey,
+                                                                  authSecret);
 
   return sub.forget();
 }
@@ -271,15 +334,20 @@ WorkerPushSubscription::Constructor(GlobalObject& aGlobal,
 void
 WorkerPushSubscription::GetKey(JSContext* aCx,
                                PushEncryptionKeyName aType,
-                               JS::MutableHandle<JSObject*> aP256dhKey)
+                               JS::MutableHandle<JSObject*> aKey)
 {
   if (aType == mozilla::dom::PushEncryptionKeyName::P256dh &&
       !mRawP256dhKey.IsEmpty()) {
-    aP256dhKey.set(ArrayBuffer::Create(aCx,
-                                       mRawP256dhKey.Length(),
-                                       mRawP256dhKey.Elements()));
+    aKey.set(ArrayBuffer::Create(aCx,
+                                 mRawP256dhKey.Length(),
+                                 mRawP256dhKey.Elements()));
+  } else if (aType == mozilla::dom::PushEncryptionKeyName::Auth &&
+             !mAuthSecret.IsEmpty()) {
+    aKey.set(ArrayBuffer::Create(aCx,
+                                 mAuthSecret.Length(),
+                                 mAuthSecret.Elements()));
   } else {
-    aP256dhKey.set(nullptr);
+    aKey.set(nullptr);
   }
 }
 
@@ -303,7 +371,7 @@ public:
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
 
-    nsRefPtr<Promise> promise = mProxy->WorkerPromise();
+    RefPtr<Promise> promise = mProxy->WorkerPromise();
     if (NS_SUCCEEDED(mStatus)) {
       promise->MaybeResolve(mSuccess);
     } else {
@@ -317,7 +385,7 @@ private:
   ~UnsubscribeResultRunnable()
   {}
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
   nsresult mStatus;
   bool mSuccess;
 };
@@ -339,7 +407,7 @@ public:
     AssertIsOnMainThread();
     MOZ_ASSERT(mProxy, "OnUnsubscribe() called twice?");
 
-    nsRefPtr<PromiseWorkerProxy> proxy = mProxy.forget();
+    RefPtr<PromiseWorkerProxy> proxy = mProxy.forget();
 
     MutexAutoLock lock(proxy->Lock());
     if (proxy->CleanedUp()) {
@@ -349,7 +417,7 @@ public:
     AutoJSAPI jsapi;
     jsapi.Init();
 
-    nsRefPtr<UnsubscribeResultRunnable> r =
+    RefPtr<UnsubscribeResultRunnable> r =
       new UnsubscribeResultRunnable(proxy, aStatus, aSuccess);
     r->Dispatch(jsapi.cx());
     return NS_OK;
@@ -360,7 +428,7 @@ private:
   {
   }
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
 };
 
 NS_IMPL_ISUPPORTS(WorkerUnsubscribeResultCallback, nsIUnsubscribeResultCallback)
@@ -386,19 +454,20 @@ public:
       return NS_OK;
     }
 
-    nsRefPtr<WorkerUnsubscribeResultCallback> callback =
+    RefPtr<WorkerUnsubscribeResultCallback> callback =
       new WorkerUnsubscribeResultCallback(mProxy);
 
     nsCOMPtr<nsIPushClient> client =
       do_CreateInstance("@mozilla.org/push/PushClient;1");
     if (!client) {
       callback->OnUnsubscribe(NS_ERROR_FAILURE, false);
+      return NS_OK;
     }
 
     nsCOMPtr<nsIPrincipal> principal = mProxy->GetWorkerPrivate()->GetPrincipal();
     if (NS_WARN_IF(NS_FAILED(client->Unsubscribe(mScope, principal, callback)))) {
       callback->OnUnsubscribe(NS_ERROR_FAILURE, false);
-      return NS_ERROR_FAILURE;
+      return NS_OK;
     }
     return NS_OK;
   }
@@ -407,7 +476,7 @@ private:
   ~UnsubscribeRunnable()
   {}
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
   nsString mScope;
 };
 
@@ -419,18 +488,18 @@ WorkerPushSubscription::Unsubscribe(ErrorResult &aRv)
   worker->AssertIsOnWorkerThread();
 
   nsCOMPtr<nsIGlobalObject> global = worker->GlobalScope();
-  nsRefPtr<Promise> p = Promise::Create(global, aRv);
+  RefPtr<Promise> p = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  nsRefPtr<PromiseWorkerProxy> proxy = PromiseWorkerProxy::Create(worker, p);
+  RefPtr<PromiseWorkerProxy> proxy = PromiseWorkerProxy::Create(worker, p);
   if (!proxy) {
     p->MaybeReject(NS_ERROR_DOM_NETWORK_ERR);
     return p.forget();
   }
 
-  nsRefPtr<UnsubscribeRunnable> r =
+  RefPtr<UnsubscribeRunnable> r =
     new UnsubscribeRunnable(proxy, mScope);
   MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(r)));
 
@@ -466,29 +535,32 @@ public:
                                 nsresult aStatus,
                                 const nsAString& aEndpoint,
                                 const nsAString& aScope,
-                                const nsTArray<uint8_t>& aRawP256dhKey)
+                                const nsTArray<uint8_t>& aRawP256dhKey,
+                                const nsTArray<uint8_t>& aAuthSecret)
     : WorkerRunnable(aProxy->GetWorkerPrivate(), WorkerThreadModifyBusyCount)
     , mProxy(aProxy)
     , mStatus(aStatus)
     , mEndpoint(aEndpoint)
     , mScope(aScope)
     , mRawP256dhKey(aRawP256dhKey)
+    , mAuthSecret(aAuthSecret)
   { }
 
   bool
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
   {
-    nsRefPtr<Promise> promise = mProxy->WorkerPromise();
+    RefPtr<Promise> promise = mProxy->WorkerPromise();
     if (NS_SUCCEEDED(mStatus)) {
       if (mEndpoint.IsEmpty()) {
         promise->MaybeResolve(JS::NullHandleValue);
       } else {
-        nsRefPtr<WorkerPushSubscription> sub =
-          new WorkerPushSubscription(mEndpoint, mScope, mRawP256dhKey);
+        RefPtr<WorkerPushSubscription> sub =
+            new WorkerPushSubscription(mEndpoint, mScope,
+                                       mRawP256dhKey, mAuthSecret);
         promise->MaybeResolve(sub);
       }
     } else {
-      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+      promise->MaybeReject(NS_ERROR_DOM_PUSH_ABORT_ERR);
     }
 
     mProxy->CleanUp(aCx);
@@ -498,11 +570,12 @@ private:
   ~GetSubscriptionResultRunnable()
   {}
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
   nsresult mStatus;
   nsString mEndpoint;
   nsString mScope;
   nsTArray<uint8_t> mRawP256dhKey;
+  nsTArray<uint8_t> mAuthSecret;
 };
 
 class GetSubscriptionCallback final : public nsIPushEndpointCallback
@@ -520,12 +593,14 @@ public:
   OnPushEndpoint(nsresult aStatus,
                  const nsAString& aEndpoint,
                  uint32_t aKeyLen,
-                 uint8_t* aKey) override
+                 uint8_t* aKey,
+                 uint32_t aAuthSecretLen,
+                 uint8_t* aAuthSecret) override
   {
     AssertIsOnMainThread();
     MOZ_ASSERT(mProxy, "OnPushEndpoint() called twice?");
 
-    nsRefPtr<PromiseWorkerProxy> proxy = mProxy.forget();
+    RefPtr<PromiseWorkerProxy> proxy = mProxy.forget();
 
     MutexAutoLock lock(proxy->Lock());
     if (proxy->CleanedUp()) {
@@ -538,22 +613,36 @@ public:
     nsTArray<uint8_t> rawP256dhKey(aKeyLen);
     rawP256dhKey.ReplaceElementsAt(0, aKeyLen, aKey, aKeyLen);
 
-    nsRefPtr<GetSubscriptionResultRunnable> r =
+    nsTArray<uint8_t> authSecret(aAuthSecretLen);
+    authSecret.ReplaceElementsAt(0, aAuthSecretLen,
+                                 aAuthSecret, aAuthSecretLen);
+
+    RefPtr<GetSubscriptionResultRunnable> r =
       new GetSubscriptionResultRunnable(proxy,
                                         aStatus,
                                         aEndpoint,
                                         mScope,
-                                        rawP256dhKey);
+                                        rawP256dhKey,
+                                        authSecret);
     r->Dispatch(jsapi.cx());
     return NS_OK;
   }
+
+  // Convenience method for use in this file.
+  void
+  OnPushEndpointError(nsresult aStatus)
+  {
+    Unused << NS_WARN_IF(NS_FAILED(
+        OnPushEndpoint(aStatus, EmptyString(), 0, nullptr, 0, nullptr)));
+  }
+
 
 protected:
   ~GetSubscriptionCallback()
   {}
 
 private:
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
   nsString mScope;
 };
 
@@ -578,32 +667,30 @@ public:
       return NS_OK;
     }
 
-    nsRefPtr<GetSubscriptionCallback> callback = new GetSubscriptionCallback(mProxy, mScope);
-
-    nsCOMPtr<nsIPermissionManager> permManager =
-      mozilla::services::GetPermissionManager();
-    if (!permManager) {
-      callback->OnPushEndpoint(NS_ERROR_FAILURE, EmptyString(), 0, nullptr);
-      return NS_OK;
-    }
+    RefPtr<GetSubscriptionCallback> callback = new GetSubscriptionCallback(mProxy, mScope);
 
     nsCOMPtr<nsIPrincipal> principal = mProxy->GetWorkerPrivate()->GetPrincipal();
 
-    uint32_t permission = nsIPermissionManager::DENY_ACTION;
-    nsresult rv = permManager->TestExactPermissionFromPrincipal(
-                    principal,
-                    "push",
-                    &permission);
+    PushPermissionState state;
+    nsresult rv = GetPermissionState(principal, state);
+    if (NS_FAILED(rv)) {
+      callback->OnPushEndpointError(NS_ERROR_FAILURE);
+      return NS_OK;
+    }
 
-    if (NS_WARN_IF(NS_FAILED(rv)) || permission != nsIPermissionManager::ALLOW_ACTION) {
-      callback->OnPushEndpoint(NS_ERROR_FAILURE, EmptyString(), 0, nullptr);
+    if (state != PushPermissionState::Granted) {
+      if (mAction == WorkerPushManager::GetSubscriptionAction) {
+        callback->OnPushEndpointError(NS_OK);
+        return NS_OK;
+      }
+      callback->OnPushEndpointError(NS_ERROR_FAILURE);
       return NS_OK;
     }
 
     nsCOMPtr<nsIPushClient> client =
       do_CreateInstance("@mozilla.org/push/PushClient;1");
     if (!client) {
-      callback->OnPushEndpoint(NS_ERROR_FAILURE, EmptyString(), 0, nullptr);
+      callback->OnPushEndpointError(NS_ERROR_FAILURE);
       return NS_OK;
     }
 
@@ -615,8 +702,8 @@ public:
     }
 
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      callback->OnPushEndpoint(NS_ERROR_FAILURE, EmptyString(), 0, nullptr);
-      return rv;
+      callback->OnPushEndpointError(NS_ERROR_FAILURE);
+      return NS_OK;
     }
 
     return NS_OK;
@@ -626,7 +713,7 @@ private:
   ~GetSubscriptionRunnable()
   {}
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
   nsString mScope;
   WorkerPushManager::SubscriptionAction mAction;
 };
@@ -639,18 +726,18 @@ WorkerPushManager::PerformSubscriptionAction(SubscriptionAction aAction, ErrorRe
   worker->AssertIsOnWorkerThread();
 
   nsCOMPtr<nsIGlobalObject> global = worker->GlobalScope();
-  nsRefPtr<Promise> p = Promise::Create(global, aRv);
+  RefPtr<Promise> p = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  nsRefPtr<PromiseWorkerProxy> proxy = PromiseWorkerProxy::Create(worker, p);
+  RefPtr<PromiseWorkerProxy> proxy = PromiseWorkerProxy::Create(worker, p);
   if (!proxy) {
-    p->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+    p->MaybeReject(NS_ERROR_DOM_PUSH_ABORT_ERR);
     return p.forget();
   }
 
-  nsRefPtr<GetSubscriptionRunnable> r =
+  RefPtr<GetSubscriptionRunnable> r =
     new GetSubscriptionRunnable(proxy, mScope, aAction);
   MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(r)));
 
@@ -689,12 +776,9 @@ public:
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
 
-    nsRefPtr<Promise> promise = mProxy->WorkerPromise();
+    RefPtr<Promise> promise = mProxy->WorkerPromise();
     if (NS_SUCCEEDED(mStatus)) {
-      MOZ_ASSERT(uint32_t(mState) < ArrayLength(PushPermissionStateValues::strings));
-      nsAutoCString stringState(PushPermissionStateValues::strings[uint32_t(mState)].value,
-                                PushPermissionStateValues::strings[uint32_t(mState)].length);
-      promise->MaybeResolve(NS_ConvertUTF8toUTF16(stringState));
+      promise->MaybeResolve(mState);
     } else {
       promise->MaybeReject(aCx, JS::UndefinedHandleValue);
     }
@@ -707,7 +791,7 @@ private:
   ~PermissionResultRunnable()
   {}
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
   nsresult mStatus;
   PushPermissionState mState;
 };
@@ -728,39 +812,15 @@ public:
       return NS_OK;
     }
 
-    nsCOMPtr<nsIPermissionManager> permManager =
-      mozilla::services::GetPermissionManager();
-
-    nsresult rv = NS_ERROR_FAILURE;
-    PushPermissionState state = PushPermissionState::Denied;
-
-    if (permManager) {
-      uint32_t permission = nsIPermissionManager::DENY_ACTION;
-      rv = permManager->TestExactPermissionFromPrincipal(
-             mProxy->GetWorkerPrivate()->GetPrincipal(),
-             "push",
-             &permission);
-
-      if (NS_SUCCEEDED(rv)) {
-        switch (permission) {
-          case nsIPermissionManager::ALLOW_ACTION:
-            state = PushPermissionState::Granted;
-            break;
-          case nsIPermissionManager::DENY_ACTION:
-            state = PushPermissionState::Denied;
-            break;
-          case nsIPermissionManager::PROMPT_ACTION:
-            state = PushPermissionState::Prompt;
-            break;
-          default:
-            MOZ_CRASH("Unexpected case!");
-        }
-      }
-    }
+    PushPermissionState state;
+    nsresult rv = GetPermissionState(
+      mProxy->GetWorkerPrivate()->GetPrincipal(),
+      state
+    );
 
     AutoJSAPI jsapi;
     jsapi.Init();
-    nsRefPtr<PermissionResultRunnable> r =
+    RefPtr<PermissionResultRunnable> r =
       new PermissionResultRunnable(mProxy, rv, state);
     r->Dispatch(jsapi.cx());
     return NS_OK;
@@ -770,7 +830,7 @@ private:
   ~PermissionStateRunnable()
   {}
 
-  nsRefPtr<PromiseWorkerProxy> mProxy;
+  RefPtr<PromiseWorkerProxy> mProxy;
 };
 
 already_AddRefed<Promise>
@@ -781,18 +841,18 @@ WorkerPushManager::PermissionState(ErrorResult& aRv)
   worker->AssertIsOnWorkerThread();
 
   nsCOMPtr<nsIGlobalObject> global = worker->GlobalScope();
-  nsRefPtr<Promise> p = Promise::Create(global, aRv);
+  RefPtr<Promise> p = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  nsRefPtr<PromiseWorkerProxy> proxy = PromiseWorkerProxy::Create(worker, p);
+  RefPtr<PromiseWorkerProxy> proxy = PromiseWorkerProxy::Create(worker, p);
   if (!proxy) {
     p->MaybeReject(worker->GetJSContext(), JS::UndefinedHandleValue);
     return p.forget();
   }
 
-  nsRefPtr<PermissionStateRunnable> r =
+  RefPtr<PermissionStateRunnable> r =
     new PermissionStateRunnable(proxy);
   NS_DispatchToMainThread(r);
 

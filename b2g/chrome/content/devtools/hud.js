@@ -10,16 +10,16 @@ const DEVELOPER_HUD_LOG_PREFIX = 'DeveloperHUD';
 const CUSTOM_HISTOGRAM_PREFIX = 'DEVTOOLS_HUD_CUSTOM_';
 
 XPCOMUtils.defineLazyGetter(this, 'devtools', function() {
-  const {devtools} = Cu.import('resource://gre/modules/devtools/Loader.jsm', {});
+  const {devtools} = Cu.import('resource://devtools/shared/Loader.jsm', {});
   return devtools;
 });
 
 XPCOMUtils.defineLazyGetter(this, 'DebuggerClient', function() {
-  return devtools.require('devtools/toolkit/client/main').DebuggerClient;
+  return devtools.require('devtools/shared/client/main').DebuggerClient;
 });
 
 XPCOMUtils.defineLazyGetter(this, 'WebConsoleUtils', function() {
-  return devtools.require('devtools/toolkit/webconsole/utils').Utils;
+  return devtools.require('devtools/shared/webconsole/utils').Utils;
 });
 
 XPCOMUtils.defineLazyGetter(this, 'EventLoopLagFront', function() {
@@ -36,7 +36,7 @@ XPCOMUtils.defineLazyGetter(this, 'MemoryFront', function() {
 
 Cu.import('resource://gre/modules/Frames.jsm');
 
-var _telemetryDebug = true;
+var _telemetryDebug = false;
 
 function telemetryDebug(...args) {
   if (_telemetryDebug) {
@@ -108,8 +108,8 @@ var developerHUD = {
       this._logging = enabled;
     });
 
-    SettingsListener.observe('debug.performance_data.advanced_telemetry', this._telemetry, enabled => {
-      this._telemetry = enabled;
+    SettingsListener.observe('metrics.selectedMetrics.level', "", level => {
+      this._telemetry = (level === 'Enhanced');
     });
   },
 
@@ -190,7 +190,7 @@ var developerHUD = {
  * metrics, and how to notify the front-end when metrics have changed.
  */
 function Target(frame, actor) {
-  this._frame = frame;
+  this.frame = frame;
   this.actor = actor;
   this.metrics = new Map();
   this._appName = null;
@@ -198,15 +198,8 @@ function Target(frame, actor) {
 
 Target.prototype = {
 
-  get frame() {
-    let frame = this._frame;
-    let systemapp = document.querySelector('#systemapp');
-
-    return (frame === systemapp ? getContentWindow() : frame);
-  },
-
   get manifest() {
-    return this._frame.appManifestURL;
+    return this.frame.appManifestURL;
   },
 
   get appName() {
@@ -453,6 +446,7 @@ var consoleWatcher = {
     'SSL',
     'CORS'
   ],
+  _reflowThreshold: 0,
 
   init(client) {
     this._client = client;
@@ -474,6 +468,10 @@ var consoleWatcher = {
         }
       });
     }
+
+    SettingsListener.observe('hud.reflows.duration', this._reflowThreshold, threshold => {
+      this._reflowThreshold = threshold;
+    });
 
     client.addListener('logMessage', this.consoleListener);
     client.addListener('pageError', this.consoleListener);
@@ -579,6 +577,12 @@ var consoleWatcher = {
         let {start, end, sourceURL, interruptible} = packet;
         metric.interruptible = interruptible;
         let duration = Math.round((end - start) * 100) / 100;
+
+        // Record the reflow if the duration exceeds the threshold.
+        if (duration < this._reflowThreshold) {
+          return;
+        }
+
         output += 'Reflow: ' + duration + 'ms';
         if (sourceURL) {
           output += ' ' + this.formatSourceURL(packet);
@@ -752,19 +756,21 @@ developerHUD.registerWatcher(eventLoopLagWatcher);
 
 /*
  * The performanceEntriesWatcher determines the delta between the epoch
- * of an app's launch time and the app's performance entry marks.
+ * of an app's launch time and the epoch of the app's performance entry marks.
  * When it receives an "appLaunch" performance entry mark it records the
  * name of the app being launched and the epoch of when the launch ocurred.
  * When it receives subsequent performance entry events for the app being
  * launched, it records the delta of the performance entry opoch compared
  * to the app-launch epoch and emits an "app-start-time-<performance mark name>"
  * event containing the delta.
+ *
+ * Additionally, while recording the "app-start-time" for a performance mark,
+ * USS memory at the time of the performance mark is also recorded.
  */
 var performanceEntriesWatcher = {
   _client: null,
   _fronts: new Map(),
-  _appLaunchName: null,
-  _appLaunchStartTime: null,
+  _appLaunch: new Map(),
   _supported: [
     'contentInteractive',
     'navigationInteractive',
@@ -807,17 +813,14 @@ var performanceEntriesWatcher = {
       let name = detail.name;
       let epoch = detail.epoch;
 
-      // FIXME There is a potential race condition that can result
-      // in some performance entries being disregarded. See bug 1189942.
-      //
       // If this is an "app launch" mark, record the app that was
       // launched and the epoch of when it was launched.
       if (name.indexOf('appLaunch') !== -1) {
         let CHARS_UNTIL_APP_NAME = 7; // '@app://'
         let startPos = name.indexOf('@app') + CHARS_UNTIL_APP_NAME;
         let endPos = name.indexOf('.');
-        this._appLaunchName = name.slice(startPos, endPos);
-        this._appLaunchStartTime = epoch;
+        let appName = name.slice(startPos, endPos);
+        this._appLaunch.set(appName, epoch);
         return;
       }
 
@@ -829,13 +832,15 @@ var performanceEntriesWatcher = {
       let origin = detail.origin;
       origin = origin.slice(0, origin.indexOf('.'));
 
-      // Continue if the performance mark corresponds to the app
-      // for which we have recorded app launch information.
-      if (this._appLaunchName !== origin) {
+      let appLaunchTime = this._appLaunch.get(origin);
+
+      // Sanity check: ensure we have an app launch time for the app
+      // corresponding to this performance mark.
+      if (!appLaunchTime) {
         return;
       }
 
-      let time = epoch - this._appLaunchStartTime;
+      let time = epoch - appLaunchTime;
       let eventName = 'app_startup_time_' + name;
 
       // Events based on performance marks are for telemetry only, they are
@@ -843,7 +848,8 @@ var performanceEntriesWatcher = {
       target._logHistogram({name: eventName, value: time});
 
       memoryWatcher.front(target).residentUnique().then(value => {
-        eventName = 'app_memory_' + name;
+        // bug 1215277, need 'v2' for app-memory histograms
+        eventName = 'app_memory_' + name + '_v2';
         target._logHistogram({name: eventName, value: value});
       }, err => {
         console.error(err);

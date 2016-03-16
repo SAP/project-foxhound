@@ -39,6 +39,9 @@ const kPrefCustomizationDebug        = "browser.uiCustomization.debug";
 const kPrefDrawInTitlebar            = "browser.tabs.drawInTitlebar";
 const kPrefWebIDEInNavbar            = "devtools.webide.widget.inNavbarByDefault";
 
+const kExpectedWindowURL = "chrome://browser/content/browser.xul";
+
+
 /**
  * The keys are the handlers that are fired when the event type (the value)
  * is fired on the subview. A widget that provides a subview has the option
@@ -53,7 +56,16 @@ const kSubviewEvents = [
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 4;
+var kVersion = 5;
+
+/**
+ * Buttons removed from built-ins by version they were removed. kVersion must be
+ * bumped any time a new id is added to this. Use the button id as key, and
+ * version the button is removed in as the value.  e.g. "pocket-button": 5
+ */
+var ObsoleteBuiltinButtons = {
+  "loop-button": 5
+};
 
 /**
  * gPalette is a map of every widget that CustomizableUI.jsm knows about, keyed
@@ -154,6 +166,7 @@ var CustomizableUIInternal = {
     this._defineBuiltInWidgets();
     this.loadSavedState();
     this._introduceNewBuiltinWidgets();
+    this._markObsoleteBuiltinButtonsSeen();
 
     let panelPlacements = [
       "edit-controls",
@@ -170,6 +183,7 @@ var CustomizableUIInternal = {
 #ifndef MOZ_DEV_EDITION
       "developer-button",
 #endif
+      "sync-button",
     ];
 
 #ifdef E10S_TESTING_ONLY
@@ -349,6 +363,26 @@ var CustomizableUIInternal = {
 
     if (currentVersion < 4) {
       CustomizableUI.removeWidgetFromArea("loop-button-throttled");
+    }
+  },
+
+  /**
+   * _markObsoleteBuiltinButtonsSeen
+   * when upgrading, ensure obsoleted buttons are in seen state.
+   */
+  _markObsoleteBuiltinButtonsSeen: function() {
+    if (!gSavedState)
+      return;
+    let currentVersion = gSavedState.currentVersion;
+    if (currentVersion >= kVersion)
+      return;
+    // we're upgrading, update state if necessary
+    for (let id in ObsoleteBuiltinButtons) {
+      let version = ObsoleteBuiltinButtons[id]
+      if (version == kVersion) {
+        gSeenWidgets.add(id);
+        gDirty = true;
+      }
     }
   },
 
@@ -589,7 +623,7 @@ var CustomizableUIInternal = {
           legacyState = legacyState.split(",").filter(s => s);
         }
 
-        // Manually restore the state here, so the legacy state can be converted. 
+        // Manually restore the state here, so the legacy state can be converted.
         this.restoreStateForArea(area, legacyState);
         placements = gPlacements.get(area);
       }
@@ -1269,6 +1303,9 @@ var CustomizableUIInternal = {
   },
 
   buildWidget: function(aDocument, aWidget) {
+    if (aDocument.documentURI != kExpectedWindowURL) {
+      throw new Error("buildWidget was called for a non-browser window!");
+    }
     if (typeof aWidget == "string") {
       aWidget = gPalette.get(aWidget);
     }
@@ -1620,7 +1657,7 @@ var CustomizableUIInternal = {
     // We can't use event.target because we might have passed a panelview
     // anonymous content boundary as well, and so target points to the
     // panelmultiview in that case. Unfortunately, this means we get
-    // anonymous child nodes instead of the real ones, so looking for the 
+    // anonymous child nodes instead of the real ones, so looking for the
     // 'stoooop, don't close me' attributes is more involved.
     let target = aEvent.originalTarget;
     let closemenu = "auto";
@@ -1863,7 +1900,7 @@ var CustomizableUIInternal = {
   // Note that this does not populate gPlacements, which is done lazily so that
   // the legacy state can be migrated, which is only available once a browser
   // window is openned.
-  // The panel area is an exception here, since it has no legacy state and is 
+  // The panel area is an exception here, since it has no legacy state and is
   // built lazily - and therefore wouldn't otherwise result in restoring its
   // state immediately when a browser window opens, which is important for
   // other consumers of this API.
@@ -2255,7 +2292,7 @@ var CustomizableUIInternal = {
     }
 
     delete widget.implementation.currentArea;
-    widget.implementation.__defineGetter__("currentArea", function() widget.currentArea);
+    widget.implementation.__defineGetter__("currentArea", () => widget.currentArea);
 
     const kReqStringProps = ["id"];
     for (let prop of kReqStringProps) {
@@ -2737,79 +2774,79 @@ this.CustomizableUI = {
   /**
    * Constant reference to the ID of the menu panel.
    */
-  get AREA_PANEL() "PanelUI-contents",
+  AREA_PANEL: "PanelUI-contents",
   /**
    * Constant reference to the ID of the navigation toolbar.
    */
-  get AREA_NAVBAR() "nav-bar",
+  AREA_NAVBAR: "nav-bar",
   /**
    * Constant reference to the ID of the menubar's toolbar.
    */
-  get AREA_MENUBAR() "toolbar-menubar",
+  AREA_MENUBAR: "toolbar-menubar",
   /**
    * Constant reference to the ID of the tabstrip toolbar.
    */
-  get AREA_TABSTRIP() "TabsToolbar",
+  AREA_TABSTRIP: "TabsToolbar",
   /**
    * Constant reference to the ID of the bookmarks toolbar.
    */
-  get AREA_BOOKMARKS() "PersonalToolbar",
+  AREA_BOOKMARKS: "PersonalToolbar",
   /**
    * Constant reference to the ID of the addon-bar toolbar shim.
    * Do not use, this will be removed as soon as reasonably possible.
    * @deprecated
    */
-  get AREA_ADDONBAR() "addon-bar",
+  AREA_ADDONBAR: "addon-bar",
   /**
    * Constant indicating the area is a menu panel.
    */
-  get TYPE_MENU_PANEL() "menu-panel",
+  TYPE_MENU_PANEL: "menu-panel",
   /**
    * Constant indicating the area is a toolbar.
    */
-  get TYPE_TOOLBAR() "toolbar",
+  TYPE_TOOLBAR: "toolbar",
 
   /**
    * Constant indicating a XUL-type provider.
    */
-  get PROVIDER_XUL() "xul",
+  PROVIDER_XUL: "xul",
   /**
    * Constant indicating an API-type provider.
    */
-  get PROVIDER_API() "api",
+  PROVIDER_API: "api",
   /**
    * Constant indicating dynamic (special) widgets: spring, spacer, and separator.
    */
-  get PROVIDER_SPECIAL() "special",
+  PROVIDER_SPECIAL: "special",
 
   /**
    * Constant indicating the widget is built-in
    */
-  get SOURCE_BUILTIN() "builtin",
+  SOURCE_BUILTIN: "builtin",
   /**
    * Constant indicating the widget is externally provided
    * (e.g. by add-ons or other items not part of the builtin widget set).
    */
-  get SOURCE_EXTERNAL() "external",
+  SOURCE_EXTERNAL: "external",
 
   /**
    * The class used to distinguish items that span the entire menu panel.
    */
-  get WIDE_PANEL_CLASS() "panel-wide-item",
+  WIDE_PANEL_CLASS: "panel-wide-item",
   /**
    * The (constant) number of columns in the menu panel.
    */
-  get PANEL_COLUMN_COUNT() 3,
+  PANEL_COLUMN_COUNT: 3,
 
   /**
    * Constant indicating the reason the event was fired was a window closing
    */
-  get REASON_WINDOW_CLOSED() "window-closed",
+  REASON_WINDOW_CLOSED: "window-closed",
   /**
    * Constant indicating the reason the event was fired was an area being
    * unregistered separately from window closing mechanics.
    */
-  get REASON_AREA_UNREGISTERED() "area-unregistered",
+  REASON_AREA_UNREGISTERED: "area-unregistered",
 
 
   /**
@@ -3677,10 +3714,10 @@ function WidgetGroupWrapper(aWidget) {
                       "showInPrivateBrowsing", "viewId"];
   for (let prop of kBareProps) {
     let propertyName = prop;
-    this.__defineGetter__(propertyName, function() aWidget[propertyName]);
+    this.__defineGetter__(propertyName, () => aWidget[propertyName]);
   }
 
-  this.__defineGetter__("provider", function() CustomizableUI.PROVIDER_API);
+  this.__defineGetter__("provider", () => CustomizableUI.PROVIDER_API);
 
   this.__defineSetter__("disabled", function(aValue) {
     aValue = !!aValue;
@@ -3757,10 +3794,10 @@ function WidgetSingleWrapper(aWidget, aNode) {
     // Look at the node for these, instead of the widget data, to ensure the
     // wrapper always reflects this live instance.
     this.__defineGetter__(propertyName,
-                          function() aNode.getAttribute(propertyName));
+                          () => aNode.getAttribute(propertyName));
   }
 
-  this.__defineGetter__("disabled", function() aNode.disabled);
+  this.__defineGetter__("disabled", () => aNode.disabled);
   this.__defineSetter__("disabled", function(aValue) {
     aNode.disabled = !!aValue;
   });
@@ -3843,7 +3880,7 @@ function XULWidgetGroupWrapper(aWidgetId) {
 }
 
 /**
- * A XULWidgetSingleWrapper is a wrapper around a single instance of a XUL 
+ * A XULWidgetSingleWrapper is a wrapper around a single instance of a XUL
  * widget in a particular window.
  */
 function XULWidgetSingleWrapper(aWidgetId, aNode, aDocument) {
@@ -4086,7 +4123,7 @@ OverflowableToolbar.prototype = {
 
     let child = this._target.lastChild;
 
-    while (child && this._target.scrollLeftMax > 0) {
+    while (child && this._target.scrollLeftMin != this._target.scrollLeftMax) {
       let prevChild = child.previousSibling;
 
       if (child.getAttribute("overflows") != "false") {
@@ -4166,7 +4203,7 @@ OverflowableToolbar.prototype = {
     if (!this._enabled)
       return;
 
-    if (this._target.scrollLeftMax > 0) {
+    if (this._target.scrollLeftMin != this._target.scrollLeftMax) {
       this.onOverflow();
     } else {
       this._moveItemsBackToTheirOrigin();

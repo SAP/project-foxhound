@@ -21,16 +21,7 @@
 #include "nsProxyRelease.h"
 #include "nsXULAppAPI.h"
 #include "nsContentSecurityManager.h"
-
-static PLDHashOperator
-CopyProperties(const nsAString &key, nsIVariant *data, void *closure)
-{
-  nsIWritablePropertyBag *bag =
-      static_cast<nsIWritablePropertyBag *>(closure);
-
-  bag->SetProperty(key, data);
-  return PL_DHASH_NEXT;
-}
+#include "LoadInfo.h"
 
 // This class is used to suspend a request across a function scope.
 class ScopedRequestSuspender {
@@ -88,9 +79,29 @@ nsBaseChannel::Redirect(nsIChannel *newChannel, uint32_t redirectFlags,
   newChannel->SetLoadGroup(mLoadGroup);
   newChannel->SetNotificationCallbacks(mCallbacks);
   newChannel->SetLoadFlags(mLoadFlags | LOAD_REPLACE);
-  newChannel->SetLoadInfo(mLoadInfo);
 
-  // Try to preserve the privacy bit if it has been overridden
+  // make a copy of the loadinfo, append to the redirectchain
+  // and set it on the new channel
+  if (mLoadInfo) {
+    nsCOMPtr<nsILoadInfo> newLoadInfo =
+      static_cast<mozilla::LoadInfo*>(mLoadInfo.get())->Clone();
+
+    nsCOMPtr<nsIPrincipal> uriPrincipal;
+    nsIScriptSecurityManager *sm = nsContentUtils::GetSecurityManager();
+    sm->GetChannelURIPrincipal(this, getter_AddRefs(uriPrincipal));
+    bool isInternalRedirect =
+      (redirectFlags & (nsIChannelEventSink::REDIRECT_INTERNAL |
+                        nsIChannelEventSink::REDIRECT_STS_UPGRADE));
+    newLoadInfo->AppendRedirectedPrincipal(uriPrincipal, isInternalRedirect);
+    newChannel->SetLoadInfo(newLoadInfo);
+  }
+  else {
+    // the newChannel was created with a dummy loadInfo, we should clear
+    // it in case the original channel does not have a loadInfo
+    newChannel->SetLoadInfo(nullptr);
+  }
+
+  // Preserve the privacy bit if it has been overridden
   if (mPrivateBrowsingOverriden) {
     nsCOMPtr<nsIPrivateBrowsingChannel> newPBChannel =
       do_QueryInterface(newChannel);
@@ -100,14 +111,17 @@ nsBaseChannel::Redirect(nsIChannel *newChannel, uint32_t redirectFlags,
   }
 
   nsCOMPtr<nsIWritablePropertyBag> bag = ::do_QueryInterface(newChannel);
-  if (bag)
-    mPropertyHash.EnumerateRead(CopyProperties, bag.get());
+  if (bag) {
+    for (auto iter = mPropertyHash.Iter(); !iter.Done(); iter.Next()) {
+      bag->SetProperty(iter.Key(), iter.UserData());
+    }
+  }
 
   // Notify consumer, giving chance to cancel redirect.  For backwards compat,
   // we support nsIHttpEventSink if we are an HTTP channel and if this is not
   // an internal redirect.
 
-  nsRefPtr<nsAsyncRedirectVerifyHelper> redirectCallbackHelper =
+  RefPtr<nsAsyncRedirectVerifyHelper> redirectCallbackHelper =
       new nsAsyncRedirectVerifyHelper();
 
   bool checkRedirectSynchronously = !openNewChannel;
@@ -163,14 +177,6 @@ nsBaseChannel::ContinueRedirect()
       rv = mRedirectChannel->AsyncOpen(mListener, mListenerContext);
     }
     NS_ENSURE_SUCCESS(rv, rv);
-    // Append the initial uri of the channel to the redirectChain
-    // after the channel got openend successfully.
-    if (mLoadInfo) {
-      nsCOMPtr<nsIPrincipal> uriPrincipal;
-      nsIScriptSecurityManager *sm = nsContentUtils::GetSecurityManager();
-      sm->GetChannelURIPrincipal(this, getter_AddRefs(uriPrincipal));
-      mLoadInfo->AppendRedirectedPrincipal(uriPrincipal);
-    }
   }
 
   mRedirectChannel = nullptr;
@@ -303,7 +309,7 @@ nsBaseChannel::ClassifyURI()
   }
 
   if (mLoadFlags & LOAD_CLASSIFY_URI) {
-    nsRefPtr<nsChannelClassifier> classifier = new nsChannelClassifier();
+    RefPtr<nsChannelClassifier> classifier = new nsChannelClassifier();
     if (classifier) {
       classifier->Start(this);
     } else {
@@ -418,6 +424,7 @@ nsBaseChannel::SetLoadGroup(nsILoadGroup *aLoadGroup)
 
   mLoadGroup = aLoadGroup;
   CallbacksChanged();
+  UpdatePrivateBrowsing();
   return NS_OK;
 }
 
@@ -491,6 +498,7 @@ nsBaseChannel::SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks)
 
   mCallbacks = aCallbacks;
   CallbacksChanged();
+  UpdatePrivateBrowsing();
   return NS_OK;
 }
 
@@ -626,8 +634,11 @@ nsBaseChannel::Open2(nsIInputStream** aStream)
 NS_IMETHODIMP
 nsBaseChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *ctxt)
 {
-  MOZ_ASSERT(!mLoadInfo || mLoadInfo->GetSecurityMode() == 0 ||
-             mLoadInfo->GetInitialSecurityCheckDone(),
+  MOZ_ASSERT(!mLoadInfo ||
+             mLoadInfo->GetSecurityMode() == 0 ||
+             mLoadInfo->GetInitialSecurityCheckDone() ||
+             (mLoadInfo->GetSecurityMode() == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
+              nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
              "security flags in loadInfo but asyncOpen2() not called");
 
   NS_ENSURE_TRUE(mURI, NS_ERROR_NOT_INITIALIZED);
@@ -837,7 +848,7 @@ nsBaseChannel::OnDataAvailable(nsIRequest *request, nsISupports *ctxt,
     } else {
       class OnTransportStatusAsyncEvent : public nsRunnable
       {
-        nsRefPtr<nsBaseChannel> mChannel;
+        RefPtr<nsBaseChannel> mChannel;
         int64_t mProgress;
         int64_t mContentLength;
       public:

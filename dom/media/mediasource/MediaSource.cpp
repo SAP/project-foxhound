@@ -27,6 +27,7 @@
 #include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
 #include "nsServiceManagerUtils.h"
+#include "gfxPlatform.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
@@ -35,21 +36,15 @@
 struct JSContext;
 class JSObject;
 
-PRLogModuleInfo* GetMediaSourceLog()
+mozilla::LogModule* GetMediaSourceLog()
 {
-  static PRLogModuleInfo* sLogModule = nullptr;
-  if (!sLogModule) {
-    sLogModule = PR_NewLogModule("MediaSource");
-  }
+  static mozilla::LazyLogModule sLogModule("MediaSource");
   return sLogModule;
 }
 
-PRLogModuleInfo* GetMediaSourceAPILog()
+mozilla::LogModule* GetMediaSourceAPILog()
 {
-  static PRLogModuleInfo* sLogModule = nullptr;
-  if (!sLogModule) {
-    sLogModule = PR_NewLogModule("MediaSource");
-  }
+  static mozilla::LazyLogModule sLogModule("MediaSource");
   return sLogModule;
 }
 
@@ -75,13 +70,14 @@ static const char* const gMediaSourceTypes[6] = {
 //   * Windows Vista and Server 2008 without the optional "Platform Update Supplement"
 //   * N/KN editions (Europe and Korea) of Windows 7/8/8.1/10 without the
 //     optional "Windows Media Feature Pack"
-
+// 2. If H264 hardware acceleration is not available.
 static bool
 IsWebMForced()
 {
   bool mp4supported =
     DecoderTraits::IsMP4TypeAndEnabled(NS_LITERAL_CSTRING("video/mp4"));
-  return !mp4supported;
+  bool hwsupported = gfxPlatform::GetPlatform()->CanUseHardwareVideoDecoding();
+  return !mp4supported || !hwsupported;
 }
 
 static nsresult
@@ -94,7 +90,7 @@ IsTypeSupported(const nsAString& aType)
   nsAutoString mimeType;
   nsresult rv = parser.GetType(mimeType);
   if (NS_FAILED(rv)) {
-    return NS_ERROR_DOM_INVALID_STATE_ERR;
+    return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
   }
   NS_ConvertUTF16toUTF8 mimeTypeUTF8(mimeType);
 
@@ -110,18 +106,20 @@ IsTypeSupported(const nsAString& aType)
         if (hasCodecs &&
             DecoderTraits::CanHandleCodecsType(mimeTypeUTF8.get(),
                                                codecs) == CANPLAY_NO) {
-          return NS_ERROR_DOM_INVALID_STATE_ERR;
+          return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
         }
         return NS_OK;
       } else if (DecoderTraits::IsWebMTypeAndEnabled(mimeTypeUTF8)) {
         if (!(Preferences::GetBool("media.mediasource.webm.enabled", false) ||
+              (Preferences::GetBool("media.mediasource.webm.audio.enabled", true) &&
+               DecoderTraits::IsWebMAudioType(mimeTypeUTF8)) ||
               IsWebMForced())) {
           return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
         }
         if (hasCodecs &&
             DecoderTraits::CanHandleCodecsType(mimeTypeUTF8.get(),
                                                codecs) == CANPLAY_NO) {
-          return NS_ERROR_DOM_INVALID_STATE_ERR;
+          return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
         }
         return NS_OK;
       }
@@ -143,7 +141,7 @@ MediaSource::Constructor(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  nsRefPtr<MediaSource> mediaSource = new MediaSource(window);
+  RefPtr<MediaSource> mediaSource = new MediaSource(window);
   return mediaSource.forget();
 }
 
@@ -242,7 +240,7 @@ MediaSource::AddSourceBuffer(const nsAString& aType, ErrorResult& aRv)
     aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return nullptr;
   }
-  nsRefPtr<SourceBuffer> sourceBuffer = new SourceBuffer(this, NS_ConvertUTF16toUTF8(mimeType));
+  RefPtr<SourceBuffer> sourceBuffer = new SourceBuffer(this, NS_ConvertUTF16toUTF8(mimeType));
   if (!sourceBuffer) {
     aRv.Throw(NS_ERROR_FAILURE); // XXX need a better error here
     return nullptr;
@@ -488,20 +486,6 @@ MediaSource::NotifyEvicted(double aStart, double aEnd)
   // the given range.
   mSourceBuffers->Evict(aStart, aEnd);
 }
-
-#if defined(DEBUG)
-void
-MediaSource::Dump(const char* aPath)
-{
-  char buf[255];
-  PR_snprintf(buf, sizeof(buf), "%s/mediasource-%p", aPath, this);
-  PR_MkDir(buf, 0700);
-
-  if (mSourceBuffers) {
-    mSourceBuffers->Dump(buf);
-  }
-}
-#endif
 
 void
 MediaSource::GetMozDebugReaderData(nsAString& aString)

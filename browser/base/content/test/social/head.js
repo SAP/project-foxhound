@@ -154,7 +154,7 @@ function runSocialTestWithProvider(manifest, callback, finishcallback) {
         registerCleanupFunction(function () {
           finishSocialTest(true);
         });
-        waitForCondition(function() provider.enabled,
+        waitForCondition(() => provider.enabled,
                          function() {
           info("provider has been enabled");
           callback(finishSocialTest);
@@ -416,7 +416,7 @@ function loadIntoTab(tab, url, callback) {
 
 function ensureBrowserTabClosed(tab) {
   let promise = ensureEventFired(gBrowser.tabContainer, "TabClose");
-  gBrowser.removeTab(tab);
+  gBrowser.removeTab(tab, {skipPermitUnload: true});
   return promise;
 }
 
@@ -589,7 +589,7 @@ function resizeAndCheckWidths(first, second, third, checks, cb) {
     checkPopup();
     ok(sizedOk, count+": window resized correctly");
     function collapsedObserver(r, m) {
-      if ([first, second, third].filter(function(item) !item.collapsed).length == numExpectedVisible) {
+      if ([first, second, third].filter(item => !item.collapsed).length == numExpectedVisible) {
         if (m) {
           m.disconnect();
         }

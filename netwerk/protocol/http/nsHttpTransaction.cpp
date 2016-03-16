@@ -44,13 +44,6 @@
 
 //-----------------------------------------------------------------------------
 
-#ifdef DEBUG
-// defined by the socket transport service while active
-extern PRThread *gSocketThread;
-#endif
-
-//-----------------------------------------------------------------------------
-
 static NS_DEFINE_CID(kMultiplexInputStream, NS_MULTIPLEXINPUTSTREAM_CID);
 
 // Place a limit on how much non-compliant HTTP can be skipped while
@@ -94,10 +87,14 @@ nsHttpTransaction::nsHttpTransaction()
     , mConnection(nullptr)
     , mRequestHead(nullptr)
     , mResponseHead(nullptr)
+    , mReader(nullptr)
+    , mWriter(nullptr)
     , mContentLength(-1)
     , mContentRead(0)
+    , mTransferSize(0)
     , mInvalidResponseBytesRead(0)
     , mPushedStream(nullptr)
+    , mInitialRwin(0)
     , mChunkedDecoder(nullptr)
     , mStatus(NS_OK)
     , mPriority(0)
@@ -270,6 +267,7 @@ nsHttpTransaction::Init(uint32_t caps,
         if (NS_WARN_IF(NS_FAILED(rv))) {
             return rv;
         }
+        httpChannelInternal->GetInitialRwin(&mInitialRwin);
     }
 
     // create transport event sink proxy. it coalesces consecutive
@@ -418,7 +416,7 @@ already_AddRefed<nsAHttpConnection>
 nsHttpTransaction::GetConnectionReference()
 {
     MutexAutoLock lock(mLock);
-    nsRefPtr<nsAHttpConnection> connection(mConnection);
+    RefPtr<nsAHttpConnection> connection(mConnection);
     return connection.forget();
 }
 
@@ -473,7 +471,7 @@ nsHttpTransaction::Http1xTransactionCount()
 
 nsresult
 nsHttpTransaction::TakeSubTransactions(
-    nsTArray<nsRefPtr<nsAHttpTransaction> > &outTransactions)
+    nsTArray<RefPtr<nsAHttpTransaction> > &outTransactions)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -508,7 +506,7 @@ nsHttpTransaction::SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks)
     }
 
     if (gSocketTransportService) {
-        nsRefPtr<UpdateSecurityCallbacks> event = new UpdateSecurityCallbacks(this, aCallbacks);
+        RefPtr<UpdateSecurityCallbacks> event = new UpdateSecurityCallbacks(this, aCallbacks);
         gSocketTransportService->Dispatch(event, nsIEventTarget::DISPATCH_NORMAL);
     }
 }
@@ -538,7 +536,7 @@ nsHttpTransaction::OnTransportStatus(nsITransport* transport,
     // and the correct value will be returned in nsPerformance.
     if (TimingEnabled() && GetRequestStart().IsNull()) {
         if (status == NS_NET_STATUS_RESOLVING_HOST) {
-            SetDomainLookupStart(TimeStamp::Now());
+            SetDomainLookupStart(TimeStamp::Now(), true);
         } else if (status == NS_NET_STATUS_RESOLVED_HOST) {
             SetDomainLookupEnd(TimeStamp::Now());
         } else if (status == NS_NET_STATUS_CONNECTING_TO) {
@@ -771,6 +769,7 @@ nsHttpTransaction::WritePipeSegment(nsIOutputStream *stream,
     MOZ_ASSERT(*countWritten > 0, "bad writer");
     trans->CountRecvBytes(*countWritten);
     trans->mReceivedData = true;
+    trans->mTransferSize += *countWritten;
 
     // Let the transaction "play" with the buffer.  It is free to modify
     // the contents of the buffer and/or modify countWritten.
@@ -869,7 +868,7 @@ nsHttpTransaction::SaveNetworkStats(bool enforce)
 
     // Create the event to save the network statistics.
     // the event is then dispathed to the main thread.
-    nsRefPtr<nsRunnable> event =
+    RefPtr<nsRunnable> event =
         new SaveNetworkStatsEvent(mAppId, mIsInBrowser, mActiveNetworkInfo,
                                   mCountRecv, mCountSent, false);
     NS_DispatchToMainThread(event);
@@ -1264,7 +1263,7 @@ nsHttpTransaction::Restart()
 
     if (!mConnInfo->GetRoutedHost().IsEmpty()) {
         MutexAutoLock lock(*nsHttp::GetLock());
-        nsRefPtr<nsHttpConnectionInfo> ci;
+        RefPtr<nsHttpConnectionInfo> ci;
          mConnInfo->CloneAsDirectRoute(getter_AddRefs(ci));
          mConnInfo = ci;
         if (mRequestHead) {
@@ -2195,6 +2194,7 @@ NS_IMETHODIMP
 nsHttpTransaction::OnOutputStreamReady(nsIAsyncOutputStream *out)
 {
     if (mConnection) {
+        mConnection->TransactionHasDataToRecv(this);
         nsresult rv = mConnection->ResumeRecv();
         if (NS_FAILED(rv))
             NS_ERROR("ResumeRecv failed");

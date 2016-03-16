@@ -12,10 +12,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Globals
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
+var Cc = Components.classes;
+var Ci = Components.interfaces;
+var Cu = Components.utils;
+var Cr = Components.results;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -409,11 +409,11 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
 
     let channel = NetUtil.newChannel({
       uri: sourceURI,
-      loadUsingSystemPrincipal: true,
+      loadUsingSystemPrincipal: true
     });
 
     // Start the actual download process.
-    channel.asyncOpen({
+    channel.asyncOpen2({
       contentListener: null,
 
       onStartRequest: function (aRequest, aContext)
@@ -435,7 +435,7 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
         this.contentListener.onDataAvailable(aRequest, aContext, aInputStream,
                                              aOffset, aCount);
       },
-    }, null);
+    });
   }.bind(this)).then(null, do_report_unexpected_exception);
 
   return deferred.promise;
@@ -532,7 +532,7 @@ function promiseNewList(aIsPrivate)
  */
 function promiseVerifyContents(aPath, aExpectedContents)
 {
-  return Task.spawn(function() {
+  return Task.spawn(function* () {
     let file = new FileUtils.File(aPath);
 
     if (!(yield OS.File.exists(aPath))) {

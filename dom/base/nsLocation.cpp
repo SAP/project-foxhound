@@ -280,9 +280,6 @@ nsLocation::SetURI(nsIURI* aURI, bool aReplace)
 NS_IMETHODIMP
 nsLocation::GetHash(nsAString& aHash)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aHash.SetLength(0);
 
   nsCOMPtr<nsIURI> uri;
@@ -371,9 +368,6 @@ nsLocation::SetHash(const nsAString& aHash)
 NS_IMETHODIMP
 nsLocation::GetHost(nsAString& aHost)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aHost.Truncate();
 
   nsCOMPtr<nsIURI> uri;
@@ -400,9 +394,6 @@ nsLocation::GetHost(nsAString& aHost)
 NS_IMETHODIMP
 nsLocation::SetHost(const nsAString& aHost)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv) || !uri)) {
@@ -424,9 +415,6 @@ nsLocation::SetHost(const nsAString& aHost)
 NS_IMETHODIMP
 nsLocation::GetHostname(nsAString& aHostname)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aHostname.Truncate();
 
   nsCOMPtr<nsIURI> uri;
@@ -444,9 +432,6 @@ nsLocation::GetHostname(nsAString& aHostname)
 NS_IMETHODIMP
 nsLocation::SetHostname(const nsAString& aHostname)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv) || !uri)) {
@@ -468,9 +453,6 @@ nsLocation::SetHostname(const nsAString& aHostname)
 NS_IMETHODIMP
 nsLocation::GetHref(nsAString& aHref)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aHref.Truncate();
 
   nsCOMPtr<nsIURI> uri;
@@ -593,9 +575,6 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
 NS_IMETHODIMP
 nsLocation::GetOrigin(nsAString& aOrigin)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aOrigin.Truncate();
 
   nsCOMPtr<nsIURI> uri;
@@ -618,9 +597,6 @@ nsLocation::GetOrigin(nsAString& aOrigin)
 NS_IMETHODIMP
 nsLocation::GetPathname(nsAString& aPathname)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aPathname.Truncate();
 
   nsCOMPtr<nsIURI> uri;
@@ -648,9 +624,6 @@ nsLocation::GetPathname(nsAString& aPathname)
 NS_IMETHODIMP
 nsLocation::SetPathname(const nsAString& aPathname)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv) || !uri)) {
@@ -672,9 +645,6 @@ nsLocation::SetPathname(const nsAString& aPathname)
 NS_IMETHODIMP
 nsLocation::GetPort(nsAString& aPort)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aPort.SetLength(0);
 
   nsCOMPtr<nsIURI> uri;
@@ -702,9 +672,6 @@ nsLocation::GetPort(nsAString& aPort)
 NS_IMETHODIMP
 nsLocation::SetPort(const nsAString& aPort)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv) || !uri)) {
@@ -740,9 +707,6 @@ nsLocation::SetPort(const nsAString& aPort)
 NS_IMETHODIMP
 nsLocation::GetProtocol(nsAString& aProtocol)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aProtocol.SetLength(0);
 
   nsCOMPtr<nsIURI> uri;
@@ -767,9 +731,6 @@ nsLocation::GetProtocol(nsAString& aProtocol)
 NS_IMETHODIMP
 nsLocation::SetProtocol(const nsAString& aProtocol)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv) || !uri)) {
@@ -778,6 +739,16 @@ nsLocation::SetProtocol(const nsAString& aProtocol)
 
   rv = uri->SetScheme(NS_ConvertUTF16toUTF8(aProtocol));
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  nsAutoCString newSpec;
+  rv = uri->GetSpec(newSpec);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  // We may want a new URI class for the new URI, so recreate it:
+  rv = NS_NewURI(getter_AddRefs(uri), newSpec);
+  if (NS_FAILED(rv)) {
     return rv;
   }
 
@@ -791,10 +762,7 @@ nsLocation::SetProtocol(const nsAString& aProtocol)
 void
 nsLocation::GetUsername(nsAString& aUsername, ErrorResult& aError)
 {
-  if (!CallerSubsumes()) {
-    aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return;
-  }
+  THROW_AND_RETURN_IF_CALLER_DOESNT_SUBSUME();
 
   aUsername.Truncate();
   nsCOMPtr<nsIURI> uri;
@@ -814,10 +782,7 @@ nsLocation::GetUsername(nsAString& aUsername, ErrorResult& aError)
 void
 nsLocation::SetUsername(const nsAString& aUsername, ErrorResult& aError)
 {
-  if (!CallerSubsumes()) {
-    aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return;
-  }
+  THROW_AND_RETURN_IF_CALLER_DOESNT_SUBSUME();
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
@@ -846,10 +811,7 @@ nsLocation::SetUsername(const nsAString& aUsername, ErrorResult& aError)
 void
 nsLocation::GetPassword(nsAString& aPassword, ErrorResult& aError)
 {
-  if (!CallerSubsumes()) {
-    aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return;
-  }
+  THROW_AND_RETURN_IF_CALLER_DOESNT_SUBSUME();
 
   aPassword.Truncate();
   nsCOMPtr<nsIURI> uri;
@@ -869,10 +831,7 @@ nsLocation::GetPassword(nsAString& aPassword, ErrorResult& aError)
 void
 nsLocation::SetPassword(const nsAString& aPassword, ErrorResult& aError)
 {
-  if (!CallerSubsumes()) {
-    aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return;
-  }
+  THROW_AND_RETURN_IF_CALLER_DOESNT_SUBSUME();
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
@@ -901,9 +860,6 @@ nsLocation::SetPassword(const nsAString& aPassword, ErrorResult& aError)
 NS_IMETHODIMP
 nsLocation::GetSearch(nsAString& aSearch)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   aSearch.SetLength(0);
 
   nsCOMPtr<nsIURI> uri;
@@ -948,9 +904,6 @@ nsLocation::SetSearch(const nsAString& aSearch)
 nsresult
 nsLocation::SetSearchInternal(const nsAString& aSearch)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetWritableURI(getter_AddRefs(uri));
 
@@ -970,9 +923,6 @@ nsLocation::SetSearchInternal(const nsAString& aSearch)
 NS_IMETHODIMP
 nsLocation::Reload(bool aForceget)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsresult rv;
   nsCOMPtr<nsIDocShell> docShell(do_QueryReferent(mDocShell));
   nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(docShell));
@@ -1042,9 +992,6 @@ nsLocation::Replace(const nsAString& aUrl)
 NS_IMETHODIMP
 nsLocation::Assign(const nsAString& aUrl)
 {
-  if (!CallerSubsumes())
-    return NS_ERROR_DOM_SECURITY_ERR;
-
   nsAutoString oldHref;
   nsresult result = NS_OK;
 
@@ -1066,7 +1013,6 @@ nsLocation::Assign(const nsAString& aUrl)
 NS_IMETHODIMP
 nsLocation::ToString(nsAString& aReturn)
 {
-  // NB: GetHref checks CallerSubsumes().
   return GetHref(aReturn);
 }
 

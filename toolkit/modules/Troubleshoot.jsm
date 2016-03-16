@@ -47,7 +47,6 @@ const PREFS_WHITELIST = [
   "browser.fixup.",
   "browser.history_expire_",
   "browser.link.open_newwindow",
-  "browser.newtab.url",
   "browser.places.",
   "browser.privatebrowsing.",
   "browser.search.context.loadInBackground",
@@ -86,6 +85,11 @@ const PREFS_WHITELIST = [
   "print.",
   "privacy.",
   "security.",
+  "services.sync.declinedEngines",
+  "services.sync.lastPing",
+  "services.sync.lastSync",
+  "services.sync.numClients",
+  "services.sync.engine.",
   "social.enabled",
   "storage.vacuum.last.",
   "svg.",
@@ -185,7 +189,7 @@ var dataProviders = {
     };
 
     if (AppConstants.MOZ_UPDATER)
-      data.updateChannel = Cu.import("resource://gre/modules/UpdateChannel.jsm", {}).UpdateChannel.get();
+      data.updateChannel = Cu.import("resource://gre/modules/UpdateUtils.jsm", {}).UpdateUtils.UpdateChannel;
 
     try {
       data.vendor = Services.prefs.getCharPref("app.support.vendor");
@@ -308,11 +312,15 @@ var dataProviders = {
     data.numAcceleratedWindows = 0;
     let winEnumer = Services.ww.getWindowEnumerator();
     while (winEnumer.hasMoreElements()) {
-      data.numTotalWindows++;
       let winUtils = winEnumer.getNext().
                      QueryInterface(Ci.nsIInterfaceRequestor).
                      getInterface(Ci.nsIDOMWindowUtils);
       try {
+        // NOTE: windowless browser's windows should not be reported in the graphics troubleshoot report
+        if (winUtils.layerManagerType == "None") {
+          continue;
+        }
+        data.numTotalWindows++;
         data.windowLayerManagerType = winUtils.layerManagerType;
         data.windowLayerManagerRemote = winUtils.layerManagerRemote;
         data.supportsHardwareH264 = winUtils.supportsHardwareH264Decoding;

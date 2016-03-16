@@ -124,6 +124,12 @@ MacroAssembler::or64(Register64 src, Register64 dest)
 }
 
 void
+MacroAssembler::xor64(Register64 src, Register64 dest)
+{
+    xorPtr(src.reg, dest.reg);
+}
+
+void
 MacroAssembler::xor32(Imm32 imm, Register dest)
 {
     Eor(ARMRegister(dest, 32), ARMRegister(dest, 32), Operand(imm.value));
@@ -139,6 +145,37 @@ void
 MacroAssembler::xorPtr(Imm32 imm, Register dest)
 {
     Eor(ARMRegister(dest, 64), ARMRegister(dest, 64), Operand(imm.value));
+}
+
+// ===============================================================
+// Arithmetic functions
+
+void
+MacroAssembler::add64(Register64 src, Register64 dest)
+{
+    addPtr(src.reg, dest.reg);
+}
+
+void
+MacroAssembler::sub32(Imm32 imm, Register dest)
+{
+    Sub(ARMRegister(dest, 32), ARMRegister(dest, 32), Operand(imm.value));
+}
+
+void
+MacroAssembler::sub32(Register src, Register dest)
+{
+    Sub(ARMRegister(dest, 32), ARMRegister(dest, 32), Operand(ARMRegister(src, 32)));
+}
+
+void
+MacroAssembler::sub32(const Address& src, Register dest)
+{
+    vixl::UseScratchRegisterScope temps(this);
+    const ARMRegister scratch32 = temps.AcquireW();
+    MOZ_ASSERT(scratch32.asUnsized() != src.base);
+    load32(src, scratch32.asUnsized());
+    Sub(ARMRegister(dest, 32), ARMRegister(dest, 32), Operand(scratch32));
 }
 
 // ===============================================================

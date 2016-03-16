@@ -34,7 +34,7 @@ protected:
   }
 
 public:
-  virtual void SetVisibleRegion(const nsIntRegion& aRegion)
+  virtual void SetVisibleRegion(const LayerIntRegion& aRegion)
   {
     NS_ASSERTION(ClientManager()->InConstruction(),
                  "Can only set properties in construction phase");
@@ -70,7 +70,7 @@ already_AddRefed<ColorLayer>
 ClientLayerManager::CreateColorLayer()
 {
   NS_ASSERTION(InConstruction(), "Only allowed in construction phase");
-  nsRefPtr<ClientColorLayer> layer =
+  RefPtr<ClientColorLayer> layer =
     new ClientColorLayer(this);
   CREATE_SHADOW(Color);
   return layer.forget();

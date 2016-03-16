@@ -323,7 +323,7 @@ struct ParamTraits<mozilla::WidgetTouchEvent>
     for (uint32_t i = 0; i < numTouches; ++i) {
         int32_t identifier;
         mozilla::LayoutDeviceIntPoint refPoint;
-        nsIntPoint radius;
+        mozilla::LayoutDeviceIntPoint radius;
         float rotationAngle;
         float force;
         if (!ReadParam(aMsg, aIter, &identifier) ||
@@ -544,6 +544,7 @@ struct ParamTraits<mozilla::WidgetCompositionEvent>
   {
     WriteParam(aMsg, static_cast<mozilla::WidgetGUIEvent>(aParam));
     WriteParam(aMsg, aParam.mData);
+    WriteParam(aMsg, aParam.mNativeIMEContext);
     bool hasRanges = !!aParam.mRanges;
     WriteParam(aMsg, hasRanges);
     if (hasRanges) {
@@ -557,6 +558,7 @@ struct ParamTraits<mozilla::WidgetCompositionEvent>
     if (!ReadParam(aMsg, aIter,
                    static_cast<mozilla::WidgetGUIEvent*>(aResult)) ||
         !ReadParam(aMsg, aIter, &aResult->mData) ||
+        !ReadParam(aMsg, aIter, &aResult->mNativeIMEContext) ||
         !ReadParam(aMsg, aIter, &hasRanges)) {
       return false;
     }
@@ -682,6 +684,24 @@ struct ParamTraits<nsIMEUpdatePreference>
 };
 
 template<>
+struct ParamTraits<mozilla::widget::NativeIMEContext>
+{
+  typedef mozilla::widget::NativeIMEContext paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam)
+  {
+    WriteParam(aMsg, aParam.mRawNativeIMEContext);
+    WriteParam(aMsg, aParam.mOriginProcessID);
+  }
+
+  static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
+  {
+    return ReadParam(aMsg, aIter, &aResult->mRawNativeIMEContext) &&
+           ReadParam(aMsg, aIter, &aResult->mOriginProcessID);
+  }
+};
+
+template<>
 struct ParamTraits<mozilla::widget::IMENotification::Point>
 {
   typedef mozilla::widget::IMENotification::Point paramType;
@@ -735,6 +755,7 @@ struct ParamTraits<mozilla::widget::IMENotification::SelectionChangeDataBase>
     WriteParam(aMsg, aParam.mReversed);
     WriteParam(aMsg, aParam.mCausedByComposition);
     WriteParam(aMsg, aParam.mCausedBySelectionEvent);
+    WriteParam(aMsg, aParam.mOccurredDuringComposition);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
@@ -745,7 +766,8 @@ struct ParamTraits<mozilla::widget::IMENotification::SelectionChangeDataBase>
            ReadParam(aMsg, aIter, &aResult->mWritingMode) &&
            ReadParam(aMsg, aIter, &aResult->mReversed) &&
            ReadParam(aMsg, aIter, &aResult->mCausedByComposition) &&
-           ReadParam(aMsg, aIter, &aResult->mCausedBySelectionEvent);
+           ReadParam(aMsg, aIter, &aResult->mCausedBySelectionEvent) &&
+           ReadParam(aMsg, aIter, &aResult->mOccurredDuringComposition);
   }
 };
 
@@ -760,6 +782,7 @@ struct ParamTraits<mozilla::widget::IMENotification::TextChangeDataBase>
     WriteParam(aMsg, aParam.mRemovedEndOffset);
     WriteParam(aMsg, aParam.mAddedEndOffset);
     WriteParam(aMsg, aParam.mCausedByComposition);
+    WriteParam(aMsg, aParam.mOccurredDuringComposition);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
@@ -767,7 +790,8 @@ struct ParamTraits<mozilla::widget::IMENotification::TextChangeDataBase>
     return ReadParam(aMsg, aIter, &aResult->mStartOffset) &&
            ReadParam(aMsg, aIter, &aResult->mRemovedEndOffset) &&
            ReadParam(aMsg, aIter, &aResult->mAddedEndOffset) &&
-           ReadParam(aMsg, aIter, &aResult->mCausedByComposition);
+           ReadParam(aMsg, aIter, &aResult->mCausedByComposition) &&
+           ReadParam(aMsg, aIter, &aResult->mOccurredDuringComposition);
   }
 };
 

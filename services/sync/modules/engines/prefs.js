@@ -4,9 +4,9 @@
 
 this.EXPORTED_SYMBOLS = ['PrefsEngine', 'PrefRec'];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+var Cc = Components.classes;
+var Ci = Components.interfaces;
+var Cu = Components.utils;
 
 const PREF_SYNC_PREFS_PREFIX = "services.sync.prefs.sync.";
 
@@ -101,7 +101,7 @@ PrefStore.prototype = {
 
   _getAllPrefs: function () {
     let values = {};
-    for each (let pref in this._getSyncPrefs()) {
+    for (let pref of this._getSyncPrefs()) {
       if (this._isSynced(pref)) {
         // Missing prefs get the null value.
         values[pref] = this._prefs.get(pref, null);

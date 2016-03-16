@@ -10,6 +10,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/SheetType.h"
 
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
@@ -46,6 +47,18 @@ class CSSStyleSheet;
       type_ *dlm_next = cur->member_;                                          \
       cur->member_ = nullptr;                                                  \
       delete cur;                                                              \
+      cur = dlm_next;                                                          \
+    }                                                                          \
+  }
+// Ditto, but use NS_RELEASE instead of 'delete' (bug 1221902).
+#define NS_CSS_NS_RELEASE_LIST_MEMBER(type_, ptr_, member_)                    \
+  {                                                                            \
+    type_ *cur = (ptr_)->member_;                                              \
+    (ptr_)->member_ = nullptr;                                                 \
+    while (cur) {                                                              \
+      type_ *dlm_next = cur->member_;                                          \
+      cur->member_ = nullptr;                                                  \
+      NS_RELEASE(cur);                                                         \
       cur = dlm_next;                                                          \
     }                                                                          \
   }
@@ -108,7 +121,7 @@ private:
   // null if the URI is invalid.
   mutable nsCOMPtr<nsIURI> mURI;
 public:
-  nsRefPtr<nsStringBuffer> mString;
+  RefPtr<nsStringBuffer> mString;
   nsCOMPtr<nsIURI> mReferrer;
   nsCOMPtr<nsIPrincipal> mOriginPrincipal;
 
@@ -134,7 +147,7 @@ private:
 public:
   // Inherit operator== from URLValue
 
-  nsRefPtrHashtable<nsPtrHashKey<nsISupports>, imgRequestProxy> mRequests; 
+  nsRefPtrHashtable<nsPtrHashKey<nsIDocument>, imgRequestProxy> mRequests;
 
   // Override AddRef and Release to not only log ourselves correctly, but
   // also so that we delete correctly without a virtual destructor (assuming
@@ -725,6 +738,9 @@ public:
                                  const nsCSSValue* aValues[],
                                  nsAString& aResult,
                                  Serialization aValueSerialization);
+  static void
+  AppendAlignJustifyValueToString(int32_t aValue, nsAString& aResult);
+
 private:
   static const char16_t* GetBufferValue(nsStringBuffer* aBuffer) {
     return static_cast<char16_t*>(aBuffer->Data());
@@ -1542,7 +1558,7 @@ public:
   // mozilla::CSSStyleSheet* mSheet;
   uint32_t mLineNumber;
   uint32_t mLineOffset;
-  uint16_t mLevel; // an nsStyleSet::sheetType
+  mozilla::SheetType mLevel;
 
 private:
   nsCSSValueTokenStream(const nsCSSValueTokenStream& aOther) = delete;

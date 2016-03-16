@@ -65,9 +65,6 @@ public:
     return mPresContext;
   }
 
-  nsCSSFrameConstructor* FrameConstructor() const
-    { return PresContext()->FrameConstructor(); }
-
   // Should be called when a frame is going to be destroyed and
   // WillDestroyFrameTree hasn't been called yet.
   void NotifyDestroyingFrame(nsIFrame* aFrame);
@@ -138,6 +135,9 @@ public:
   }
 
 private:
+  nsCSSFrameConstructor* FrameConstructor() const
+    { return PresContext()->FrameConstructor(); }
+
   // Used when restyling an element with a frame.
   void ComputeAndProcessStyleChange(nsIFrame*              aFrame,
                                     nsChangeHint           aMinChange,
@@ -251,7 +251,7 @@ public:
   static bool
   TryStartingTransition(nsPresContext* aPresContext, nsIContent* aContent,
                         nsStyleContext* aOldStyleContext,
-                        nsRefPtr<nsStyleContext>* aNewStyleContext /* inout */);
+                        RefPtr<nsStyleContext>* aNewStyleContext /* inout */);
 
   // AnimationsWithDestroyedFrame is used to stop animations on elements that
   // have no frame at the end of the restyling process.
@@ -287,7 +287,7 @@ public:
     void StopAnimationsForElementsWithoutFrames();
 
   private:
-    void StopAnimationsWithoutFrame(nsTArray<nsRefPtr<nsIContent>>& aArray,
+    void StopAnimationsWithoutFrame(nsTArray<RefPtr<nsIContent>>& aArray,
                                     nsCSSPseudoElements::Type aPseudoType);
 
     RestyleManager* mRestyleManager;
@@ -299,9 +299,9 @@ public:
     // mBeforeContents and mAfterContents hold the real element rather than
     // the content node for the generated content (which might change during
     // a reframe)
-    nsTArray<nsRefPtr<nsIContent>> mContents;
-    nsTArray<nsRefPtr<nsIContent>> mBeforeContents;
-    nsTArray<nsRefPtr<nsIContent>> mAfterContents;
+    nsTArray<RefPtr<nsIContent>> mContents;
+    nsTArray<RefPtr<nsIContent>> mBeforeContents;
+    nsTArray<RefPtr<nsIContent>> mAfterContents;
   };
 
   /**
@@ -346,12 +346,14 @@ public:
   // Returns whether there are any pending restyles.
   bool HasPendingRestyles() { return mPendingRestyles.Count() != 0; }
 
+private:
   // ProcessPendingRestyles calls into one of our RestyleTracker
   // objects.  It then calls back to these functions at the beginning
   // and end of its work.
   void BeginProcessingRestyles(RestyleTracker& aRestyleTracker);
   void EndProcessingRestyles();
 
+public:
   // Update styles for animations that are running on the compositor and
   // whose updating is suppressed on the main thread (to save
   // unnecessary work), while leaving all other aspects of style
@@ -586,7 +588,7 @@ public:
   typedef mozilla::dom::Element Element;
 
   struct ContextToClear {
-    nsRefPtr<nsStyleContext> mStyleContext;
+    RefPtr<nsStyleContext> mStyleContext;
     uint32_t mStructs;
   };
 
@@ -600,7 +602,7 @@ public:
                   TreeMatchContext& aTreeMatchContext,
                   nsTArray<nsIContent*>& aVisibleKidsOfHiddenElement,
                   nsTArray<ContextToClear>& aContextsToClear,
-                  nsTArray<nsRefPtr<nsStyleContext>>& aSwappedStructOwners);
+                  nsTArray<RefPtr<nsStyleContext>>& aSwappedStructOwners);
 
   // Construct for an element whose parent is being restyled.
   enum ConstructorFlags {
@@ -631,7 +633,7 @@ public:
                   TreeMatchContext& aTreeMatchContext,
                   nsTArray<nsIContent*>& aVisibleKidsOfHiddenElement,
                   nsTArray<ContextToClear>& aContextsToClear,
-                  nsTArray<nsRefPtr<nsStyleContext>>& aSwappedStructOwners);
+                  nsTArray<RefPtr<nsStyleContext>>& aSwappedStructOwners);
 
   /**
    * Restyle our frame's element and its subtree.
@@ -676,7 +678,7 @@ public:
                                     nsRestyleHint      aRestyleHint,
                                     const RestyleHintData& aRestyleHintData,
                                     nsTArray<ContextToClear>& aContextsToClear,
-                                    nsTArray<nsRefPtr<nsStyleContext>>&
+                                    nsTArray<RefPtr<nsStyleContext>>&
                                       aSwappedStructOwners);
 
 #ifdef RESTYLE_LOGGING
@@ -709,8 +711,8 @@ private:
 
   struct SwapInstruction
   {
-    nsRefPtr<nsStyleContext> mOldContext;
-    nsRefPtr<nsStyleContext> mNewContext;
+    RefPtr<nsStyleContext> mOldContext;
+    RefPtr<nsStyleContext> mNewContext;
     uint32_t mStructsToSwap;
   };
 
@@ -890,7 +892,7 @@ private:
   // Style contexts that had old structs swapped into it and which should
   // stay alive until the end of the restyle.  (See comment in
   // ElementRestyler::Restyle.)
-  nsTArray<nsRefPtr<nsStyleContext>>& mSwappedStructOwners;
+  nsTArray<RefPtr<nsStyleContext>>& mSwappedStructOwners;
   // Whether this is the root of the restyle.
   bool mIsRootOfRestyle;
 

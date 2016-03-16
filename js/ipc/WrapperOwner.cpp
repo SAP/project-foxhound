@@ -125,8 +125,10 @@ class CPOWProxyHandler : public BaseProxyHandler
                                               AutoIdVector& props) const override;
     virtual bool hasInstance(JSContext* cx, HandleObject proxy,
                              MutableHandleValue v, bool* bp) const override;
-    virtual bool objectClassIs(HandleObject obj, js::ESClassValue classValue,
-                               JSContext* cx) const override;
+    virtual bool getBuiltinClass(JSContext* cx, HandleObject obj,
+                                 js::ESClassValue* classValue) const override;
+    virtual bool isArray(JSContext* cx, HandleObject obj,
+                         IsArrayAnswer* answer) const override;
     virtual const char* className(JSContext* cx, HandleObject proxy) const override;
     virtual bool regexp_toShared(JSContext* cx, HandleObject proxy, RegExpGuard* g) const override;
     virtual void finalize(JSFreeOp* fop, JSObject* proxy) const override;
@@ -143,9 +145,13 @@ const char CPOWProxyHandler::family = 0;
 const CPOWProxyHandler CPOWProxyHandler::singleton;
 
 #define FORWARD(call, args)                                             \
+    PROFILER_LABEL_FUNC(js::ProfileEntry::Category::JS);                \
     WrapperOwner* owner = OwnerOf(proxy);                               \
     if (!owner->active()) {                                             \
         JS_ReportError(cx, "cannot use a CPOW whose process is gone");  \
+        return false;                                                   \
+    }                                                                   \
+    if (!owner->allowMessage(cx)) {                                     \
         return false;                                                   \
     }                                                                   \
     {                                                                   \
@@ -720,25 +726,54 @@ WrapperOwner::hasInstance(JSContext* cx, HandleObject proxy, MutableHandleValue 
 }
 
 bool
-CPOWProxyHandler::objectClassIs(HandleObject proxy, js::ESClassValue classValue, JSContext* cx) const
+CPOWProxyHandler::getBuiltinClass(JSContext* cx, HandleObject proxy,
+                                  js::ESClassValue* classValue) const
 {
-    FORWARD(objectClassIs, (cx, proxy, classValue));
+    FORWARD(getBuiltinClass, (cx, proxy, classValue));
 }
 
 bool
-WrapperOwner::objectClassIs(JSContext* cx, HandleObject proxy, js::ESClassValue classValue)
+WrapperOwner::getBuiltinClass(JSContext* cx, HandleObject proxy,
+                              js::ESClassValue* classValue)
 {
     ObjectId objId = idOf(proxy);
 
-    // This function is assumed infallible, so we just return false if the IPC
-    // channel fails.
-    bool result;
-    if (!SendObjectClassIs(objId, classValue, &result))
-        return false;
+    uint32_t cls = ESClass_Other;
+    ReturnStatus status;
+    if (!SendGetBuiltinClass(objId, &status, &cls))
+        return ipcfail(cx);
+    *classValue = ESClassValue(cls);
 
     LOG_STACK();
 
-    return result;
+    return ok(cx, status);
+}
+
+bool
+CPOWProxyHandler::isArray(JSContext* cx, HandleObject proxy,
+                          IsArrayAnswer* answer) const
+{
+    FORWARD(isArray, (cx, proxy, answer));
+}
+
+bool
+WrapperOwner::isArray(JSContext* cx, HandleObject proxy, IsArrayAnswer* answer)
+{
+    ObjectId objId = idOf(proxy);
+
+    uint32_t ans;
+    ReturnStatus status;
+    if (!SendIsArray(objId, &status, &ans))
+        return ipcfail(cx);
+
+    LOG_STACK();
+
+    *answer = IsArrayAnswer(ans);
+    MOZ_ASSERT(*answer == IsArrayAnswer::Array ||
+               *answer == IsArrayAnswer::NotArray ||
+               *answer == IsArrayAnswer::RevokedProxy);
+
+    return ok(cx, status);
 }
 
 const char*
@@ -861,7 +896,7 @@ WrapperOwner::drop(JSObject* obj)
 
     cpows_.remove(objId);
     if (active())
-        unused << SendDropObject(objId);
+        Unused << SendDropObject(objId);
     decref();
 }
 
@@ -947,8 +982,9 @@ InstanceOf(JSObject* proxy, const nsID* id, bool* bp)
 }
 
 bool
-DOMInstanceOf(JSContext* cx, JSObject* proxy, int prototypeID, int depth, bool* bp)
+DOMInstanceOf(JSContext* cx, JSObject* proxyArg, int prototypeID, int depth, bool* bp)
 {
+    RootedObject proxy(cx, proxyArg);
     FORWARD(domInstanceOf, (cx, proxy, prototypeID, depth, bp));
 }
 

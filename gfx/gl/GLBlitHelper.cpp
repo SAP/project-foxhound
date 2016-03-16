@@ -12,6 +12,7 @@
 #include "ImageContainer.h"
 #include "HeapCopyOfStackArray.h"
 #include "mozilla/gfx/Matrix.h"
+#include "mozilla/UniquePtr.h"
 
 #ifdef MOZ_WIDGET_GONK
 #include "GrallocImages.h"
@@ -34,119 +35,6 @@ using mozilla::layers::PlanarYCbCrData;
 
 namespace mozilla {
 namespace gl {
-
-static void
-RenderbufferStorageBySamples(GLContext* aGL, GLsizei aSamples,
-                             GLenum aInternalFormat, const gfx::IntSize& aSize)
-{
-    if (aSamples) {
-        aGL->fRenderbufferStorageMultisample(LOCAL_GL_RENDERBUFFER,
-                                             aSamples,
-                                             aInternalFormat,
-                                             aSize.width, aSize.height);
-    } else {
-        aGL->fRenderbufferStorage(LOCAL_GL_RENDERBUFFER,
-                                  aInternalFormat,
-                                  aSize.width, aSize.height);
-    }
-}
-
-GLuint
-CreateTexture(GLContext* aGL, GLenum aInternalFormat, GLenum aFormat,
-              GLenum aType, const gfx::IntSize& aSize, bool linear)
-{
-    GLuint tex = 0;
-    aGL->fGenTextures(1, &tex);
-    ScopedBindTexture autoTex(aGL, tex);
-
-    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D,
-                        LOCAL_GL_TEXTURE_MIN_FILTER, linear ? LOCAL_GL_LINEAR
-                                                            : LOCAL_GL_NEAREST);
-    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D,
-                        LOCAL_GL_TEXTURE_MAG_FILTER, linear ? LOCAL_GL_LINEAR
-                                                            : LOCAL_GL_NEAREST);
-    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S,
-                        LOCAL_GL_CLAMP_TO_EDGE);
-    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T,
-                        LOCAL_GL_CLAMP_TO_EDGE);
-
-    aGL->fTexImage2D(LOCAL_GL_TEXTURE_2D,
-                     0,
-                     aInternalFormat,
-                     aSize.width, aSize.height,
-                     0,
-                     aFormat,
-                     aType,
-                     nullptr);
-
-    return tex;
-}
-
-GLuint
-CreateTextureForOffscreen(GLContext* aGL, const GLFormats& aFormats,
-                          const gfx::IntSize& aSize)
-{
-    MOZ_ASSERT(aFormats.color_texInternalFormat);
-    MOZ_ASSERT(aFormats.color_texFormat);
-    MOZ_ASSERT(aFormats.color_texType);
-
-    return CreateTexture(aGL,
-                         aFormats.color_texInternalFormat,
-                         aFormats.color_texFormat,
-                         aFormats.color_texType,
-                         aSize);
-}
-
-
-GLuint
-CreateRenderbuffer(GLContext* aGL, GLenum aFormat, GLsizei aSamples,
-                   const gfx::IntSize& aSize)
-{
-    GLuint rb = 0;
-    aGL->fGenRenderbuffers(1, &rb);
-    ScopedBindRenderbuffer autoRB(aGL, rb);
-
-    RenderbufferStorageBySamples(aGL, aSamples, aFormat, aSize);
-
-    return rb;
-}
-
-
-void
-CreateRenderbuffersForOffscreen(GLContext* aGL, const GLFormats& aFormats,
-                                const gfx::IntSize& aSize, bool aMultisample,
-                                GLuint* aColorMSRB, GLuint* aDepthRB,
-                                GLuint* aStencilRB)
-{
-    GLsizei samples = aMultisample ? aFormats.samples : 0;
-    if (aColorMSRB) {
-        MOZ_ASSERT(aFormats.samples > 0);
-        MOZ_ASSERT(aFormats.color_rbFormat);
-
-        *aColorMSRB = CreateRenderbuffer(aGL, aFormats.color_rbFormat, samples, aSize);
-    }
-
-    if (aDepthRB &&
-        aStencilRB &&
-        aFormats.depthStencil)
-    {
-        *aDepthRB = CreateRenderbuffer(aGL, aFormats.depthStencil, samples, aSize);
-        *aStencilRB = *aDepthRB;
-    } else {
-        if (aDepthRB) {
-            MOZ_ASSERT(aFormats.depth);
-
-            *aDepthRB = CreateRenderbuffer(aGL, aFormats.depth, samples, aSize);
-        }
-
-        if (aStencilRB) {
-            MOZ_ASSERT(aFormats.stencil);
-
-            *aStencilRB = CreateRenderbuffer(aGL, aFormats.stencil, samples, aSize);
-        }
-    }
-}
-
 
 GLBlitHelper::GLBlitHelper(GLContext* gl)
     : mGL(gl)
@@ -443,8 +331,8 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
                     break;
                 }
 
-                nsAutoArrayPtr<char> buffer(new char[length]);
-                mGL->fGetShaderInfoLog(mTexBlit_VertShader, length, nullptr, buffer);
+                auto buffer = MakeUnique<char[]>(length);
+                mGL->fGetShaderInfoLog(mTexBlit_VertShader, length, nullptr, buffer.get());
 
                 printf_stderr("Shader info log (%d bytes): %s\n", length, buffer.get());
                 break;
@@ -462,8 +350,8 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
                     break;
                 }
 
-                nsAutoArrayPtr<char> buffer(new char[length]);
-                mGL->fGetShaderInfoLog(fragShader, length, nullptr, buffer);
+                auto buffer = MakeUnique<char[]>(length);
+                mGL->fGetShaderInfoLog(fragShader, length, nullptr, buffer.get());
 
                 printf_stderr("Shader info log (%d bytes): %s\n", length, buffer.get());
                 break;
@@ -482,8 +370,8 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
                     break;
                 }
 
-                nsAutoArrayPtr<char> buffer(new char[length]);
-                mGL->fGetProgramInfoLog(program, length, nullptr, buffer);
+                auto buffer = MakeUnique<char[]>(length);
+                mGL->fGetProgramInfoLog(program, length, nullptr, buffer.get());
 
                 printf_stderr("Program info log (%d bytes): %s\n", length, buffer.get());
             }
@@ -502,8 +390,10 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
                 GLint texUnitLoc = mGL->fGetUniformLocation(program, "uTexUnit");
                 MOZ_ASSERT(texUnitLoc != -1, "uniform uTexUnit not found");
                 mGL->fUniform1i(texUnitLoc, 0);
-                break;
+#else
+                MOZ_ASSERT_UNREACHABLE("gralloc not support on non-android");
 #endif
+                break;
             }
             case ConvertPlanarYCbCr: {
                 GLint texY = mGL->fGetUniformLocation(program, "uYTexture");
@@ -794,7 +684,7 @@ GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage)
 bool
 GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage)
 {
-    AndroidSurfaceTexture* surfaceTexture = stImage->GetData()->mSurfTex;
+    AndroidSurfaceTexture* surfaceTexture = stImage->GetSurfaceTexture();
 
     ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
 
@@ -823,8 +713,8 @@ GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage)
 bool
 GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image)
 {
-    EGLImage eglImage = image->GetData()->mImage;
-    EGLSync eglSync = image->GetData()->mSync;
+    EGLImage eglImage = image->GetImage();
+    EGLSync eglSync = image->GetSync();
 
     if (eglSync) {
         EGLint status = sEGLLibrary.fClientWaitSync(EGL_DISPLAY(), eglSync, 0, LOCAL_EGL_FOREVER);
@@ -842,7 +732,7 @@ GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image)
 
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 
-    mGL->fBindTexture(LOCAL_GL_TEXTURE_EXTERNAL_OES, oldBinding);
+    mGL->fBindTexture(LOCAL_GL_TEXTURE_2D, oldBinding);
     return true;
 }
 
@@ -951,13 +841,12 @@ GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
 #ifdef MOZ_WIDGET_ANDROID
     case ImageFormat::SURFACE_TEXTURE:
         type = ConvertSurfaceTexture;
-        srcOrigin = static_cast<layers::SurfaceTextureImage*>(srcImage)->GetData()
-                                                                       ->mOriginPos;
+        srcOrigin = srcImage->AsSurfaceTextureImage()->GetOriginPos();
         break;
 
     case ImageFormat::EGLIMAGE:
         type = ConvertEGLImage;
-        srcOrigin = static_cast<layers::EGLImageImage*>(srcImage)->GetData()->mOriginPos;
+        srcOrigin = srcImage->AsEGLImageImage()->GetOriginPos();
         break;
 #endif
 #ifdef XP_MACOSX
@@ -1003,7 +892,7 @@ GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
 
 #ifdef XP_MACOSX
     case ConvertMacIOSurfaceImage:
-        return BlitMacIOSurfaceImage(static_cast<layers::MacIOSurfaceImage*>(srcImage));
+        return BlitMacIOSurfaceImage(srcImage->AsMacIOSurfaceImage());
 #endif
 
     default:
@@ -1045,6 +934,18 @@ GLBlitHelper::BlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
         return;
     }
 
+    DrawBlitTextureToFramebuffer(srcTex, destFB, srcSize, destSize, srcTarget,
+                                 internalFBs);
+}
+
+
+void
+GLBlitHelper::DrawBlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
+                                           const gfx::IntSize& srcSize,
+                                           const gfx::IntSize& destSize,
+                                           GLenum srcTarget,
+                                           bool internalFBs)
+{
     BlitType type;
     switch (srcTarget) {
     case LOCAL_GL_TEXTURE_2D:
@@ -1054,7 +955,7 @@ GLBlitHelper::BlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
         type = BlitTexRect;
         break;
     default:
-        MOZ_CRASH("Fatal Error: Bad `srcTarget`.");
+        MOZ_CRASH("GFX: Fatal Error: Bad `srcTarget`.");
         break;
     }
 

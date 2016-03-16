@@ -15,7 +15,6 @@ include protocol PFilePicker;
 include protocol PIndexedDBPermissionRequest;
 include protocol PRenderFrame;
 include protocol PPluginWidget;
-include protocol PWebBrowserPersistDocument;
 include DOMTypes;
 include JavaScriptTypes;
 include URIParams;
@@ -27,8 +26,9 @@ using class mozilla::gfx::Matrix from "mozilla/gfx/Matrix.h";
 using struct gfxSize from "gfxPoint.h";
 using CSSRect from "Units.h";
 using CSSSize from "Units.h";
-using LayoutDeviceIntRect from "Units.h";
+using mozilla::LayoutDeviceIntRect from "Units.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
+using mozilla::ScreenIntPoint from "Units.h";
 using ScreenIntSize from "Units.h";
 using struct mozilla::layers::FrameMetrics from "FrameMetrics.h";
 using struct mozilla::layers::ScrollableLayerGuid from "FrameMetrics.h";
@@ -61,6 +61,7 @@ using mozilla::CommandInt from "mozilla/EventForwards.h";
 using mozilla::Modifiers from "mozilla/EventForwards.h";
 using mozilla::layers::GeckoContentController::APZStateChange from "mozilla/layers/GeckoContentController.h";
 using mozilla::WritingMode from "mozilla/WritingModes.h";
+using mozilla::layers::AsyncDragMetrics from "mozilla/layers/AsyncDragMetrics.h";
 using mozilla::layers::TouchBehaviorFlags from "mozilla/layers/APZUtils.h";
 using nsIWidget::TouchPointerState from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
@@ -90,14 +91,9 @@ struct ShowInfo
   nsString name;
   bool fullscreenAllowed;
   bool isPrivate;
+  bool fakeShowInfo;
   float dpi;
   double defaultScale;
-};
-
-struct FrameScriptInfo
-{
-    nsString url;
-    bool runInGlobalScope;
 };
 
 prio(normal upto urgent) sync protocol PBrowser
@@ -111,7 +107,6 @@ prio(normal upto urgent) sync protocol PBrowser
     manages PIndexedDBPermissionRequest;
     manages PRenderFrame;
     manages PPluginWidget;
-    manages PWebBrowserPersistDocument;
 
 both:
     AsyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows,
@@ -122,8 +117,6 @@ both:
      * the page that is currently loaded in the <browser>.
      */
     PRenderFrame();
-
-    PWebBrowserPersistDocument(uint64_t aOuterWindowID);
 
 parent:
     /**
@@ -167,20 +160,6 @@ parent:
     MoveFocus(bool forward, bool forDocumentNavigation);
 
     Event(RemoteDOMEvent aEvent);
-
-    sync CreateWindow(PBrowser aNewTab,
-                      uint32_t aChromeFlags,
-                      bool aCalledFromJS,
-                      bool aPositionSpecified,
-                      bool aSizeSpecified,
-                      nsCString aURI,
-                      nsString aName,
-                      nsCString aFeatures,
-                      nsCString aBaseURI)
-      returns (nsresult rv,
-               bool windowOpened,
-               FrameScriptInfo[] frameScripts,
-               nsCString urlToLoad);
 
     sync SyncMessage(nsString aMessage, ClonedMessageData aData,
                      CpowEntry[] aCpows, Principal aPrincipal)
@@ -256,20 +235,19 @@ parent:
                                                IMENotification notification);
 
     /**
-     * Instructs chrome to end any pending composition
+     * Requests chrome to commit or cancel composition of IME.
      *
-     *  cancel       true if composition should be cancelled
-     *  noCompositionEvent   true if no composition event is fired by commit or
-     *                       cancel
-     *  composition  Text to commit before ending the composition
+     *  cancel                Set true if composition should be cancelled.
      *
-     *  if cancel is true,
-     *    widget should return empty string for composition
-     *  if cancel is false,
-     *    widget should return the current composition text
+     *  isCommitted           Returns true if the request causes composition
+     *                        being committed synchronously.
+     *  committedString       Returns committed string.  The may be non-empty
+     *                        string even if cancel is true because IME may
+     *                        try to restore selected string which was
+     *                        replaced with the composition.
      */
-    prio(urgent) sync EndIMEComposition(bool cancel)
-                        returns (bool noCompositionEvent, nsString composition);
+    prio(urgent) sync RequestIMEToCommitComposition(bool cancel)
+                        returns (bool isCommitted, nsString committedString);
 
     /**
      * OnEventNeedingAckHandled() is called after a child process dispatches a
@@ -317,8 +295,7 @@ parent:
                           nsCString[] disabledCommands);
 
     prio(urgent) sync GetInputContext() returns (int32_t IMEEnabled,
-                                                 int32_t IMEOpen,
-                                                 intptr_t NativeIMEContext);
+                                                 int32_t IMEOpen);
 
     prio(urgent) async SetInputContext(int32_t IMEEnabled,
                                        int32_t IMEOpen,
@@ -329,14 +306,6 @@ parent:
                                        int32_t focusChange);
 
     sync IsParentWindowMainWidgetVisible() returns (bool visible);
-
-    /**
-     * Returns the offset of this tab from the top level window
-     * origin in device pixels.
-     *
-     * aPoint offset values in device pixels.
-     */
-    prio(high) sync GetTabOffset() returns (LayoutDeviceIntPoint aPoint);
 
     /**
      * Gets the DPI of the screen corresponding to this browser.
@@ -386,8 +355,6 @@ parent:
     SetCustomCursor(nsCString cursorData, uint32_t width, uint32_t height,
                     uint32_t stride, uint8_t format,
                     uint32_t hotspotX, uint32_t hotspotY, bool force);
-
-    SetBackgroundColor(nscolor color);
 
     /**
      * Used to set the current text of the status tooltip.
@@ -522,11 +489,11 @@ parent:
                                      uint64_t aObserverId);
     SynthesizeNativeTouchPoint(uint32_t aPointerId,
                                TouchPointerState aPointerState,
-                               IntPoint aPointerScreenPoint,
+                               ScreenIntPoint aPointerScreenPoint,
                                double aPointerPressure,
                                uint32_t aPointerOrientation,
                                uint64_t aObserverId);
-    SynthesizeNativeTouchTap(IntPoint aPointerScreenPoint,
+    SynthesizeNativeTouchTap(ScreenIntPoint aPointerScreenPoint,
                              bool aLongTap,
                              uint64_t aObserverId);
     ClearNativeTouchSequence(uint64_t aObserverId);
@@ -559,6 +526,9 @@ parent:
     prio(high) sync DispatchMouseEvent(WidgetMouseEvent event);
     prio(high) sync DispatchKeyboardEvent(WidgetKeyboardEvent event);
 
+    // Start an APZ drag on a scrollbar
+    async StartScrollbarDrag(AsyncDragMetrics aDragMetrics);
+
     InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
                       nsCString visualData, uint32_t width, uint32_t height,
                       uint32_t stride, uint8_t format, int32_t dragAreaX, int32_t dragAreaY);
@@ -583,7 +553,9 @@ child:
          nullable PRenderFrame renderFrame,
          bool parentIsActive);
 
-    LoadURL(nsCString uri, BrowserConfiguration config);
+    LoadURL(nsCString uri, BrowserConfiguration config, ShowInfo info);
+
+    OpenURI(URIParams uri, uint32_t flags);
 
     CacheFileDescriptor(nsString path, FileDescriptor fd);
 
@@ -641,7 +613,7 @@ child:
      * When two consecutive mouse move events would be added to the message queue,
      * they are 'compressed' by dumping the oldest one.
      */
-    RealMouseMoveEvent(WidgetMouseEvent event) compress;
+    RealMouseMoveEvent(WidgetMouseEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId) compress;
     /**
      * Mouse move events with |reason == eSynthesized| are sent via a separate
      * message because they do not generate DOM 'mousemove' events, and the
@@ -649,8 +621,8 @@ child:
      * |reason == eReal| event being dropped in favour of an |eSynthesized|
      * event, and thus a DOM 'mousemove' event to be lost.
      */
-    SynthMouseMoveEvent(WidgetMouseEvent event);
-    RealMouseButtonEvent(WidgetMouseEvent event);
+    SynthMouseMoveEvent(WidgetMouseEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
+    RealMouseButtonEvent(WidgetMouseEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
     RealKeyEvent(WidgetKeyboardEvent event, MaybeNativeKeyBinding keyBinding);
     MouseWheelEvent(WidgetWheelEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
     RealTouchEvent(WidgetTouchEvent aEvent,
@@ -724,7 +696,7 @@ child:
     /**
      * Update the child side docShell active (resource use) state.
      */
-    SetDocShellIsActive(bool aIsActive);
+    SetDocShellIsActive(bool aIsActive, bool aIsHidden);
 
     /**
      * Notify the child that it shouldn't paint the offscreen displayport.

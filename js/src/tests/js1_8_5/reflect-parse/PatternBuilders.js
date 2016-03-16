@@ -38,13 +38,14 @@ function funDecl(id, params, body, defaults=[], rest=null) {
                      rest: rest,
                      generator: false });
 }
-function genFunDecl(id, params, body) {
+function genFunDecl(style, id, params, body) {
     return Pattern({ type: "FunctionDeclaration",
                      id: id,
                      params: params,
                      defaults: [],
                      body: body,
-                     generator: true });
+                     generator: true,
+                     style: style });
 }
 function varDecl(decls) {
     return Pattern({ type: "VariableDeclaration", declarations: decls, kind: "var" });
@@ -157,12 +158,13 @@ function funExpr(id, args, body, gen) {
                      body: body,
                      generator: false });
 }
-function genFunExpr(id, args, body) {
+function genFunExpr(style, id, args, body) {
     return Pattern({ type: "FunctionExpression",
                      id: id,
                      params: args,
                      body: body,
-                     generator: true });
+                     generator: true,
+                     style: style });
 }
 function arrowExpr(args, body) {
     return Pattern({ type: "ArrowFunctionExpression",
@@ -206,6 +208,9 @@ function newExpr(callee, args) {
 }
 function callExpr(callee, args) {
     return Pattern({ type: "CallExpression", callee: callee, arguments: args });
+}
+function superCallExpr(args) {
+    return callExpr({ type: "Super" }, args);
 }
 function arrExpr(elts) {
     return Pattern({ type: "ArrayExpression", elements: elts });

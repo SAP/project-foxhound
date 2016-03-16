@@ -16,8 +16,9 @@
 #include "MediaFormatReader.h"
 #include "MediaSourceDemuxer.h"
 #include "SourceBufferList.h"
+#include <algorithm>
 
-extern PRLogModuleInfo* GetMediaSourceLog();
+extern mozilla::LogModule* GetMediaSourceLog();
 
 #define MSE_DEBUG(arg, ...) MOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, ("MediaSourceDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 #define MSE_DEBUGV(arg, ...) MOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Verbose, ("MediaSourceDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
@@ -27,15 +28,15 @@ using namespace mozilla::media;
 namespace mozilla {
 
 MediaSourceDecoder::MediaSourceDecoder(dom::HTMLMediaElement* aElement)
-  : mMediaSource(nullptr)
+  : MediaDecoder(aElement)
+  , mMediaSource(nullptr)
   , mEnded(false)
 {
   SetExplicitDuration(UnspecifiedNaN<double>());
-  Init(aElement);
 }
 
 MediaDecoder*
-MediaSourceDecoder::Clone()
+MediaSourceDecoder::Clone(MediaDecoderOwner* aOwner)
 {
   // TODO: Sort out cloning.
   return nullptr;
@@ -44,14 +45,17 @@ MediaSourceDecoder::Clone()
 MediaDecoderStateMachine*
 MediaSourceDecoder::CreateStateMachine()
 {
+  MOZ_ASSERT(NS_IsMainThread());
   mDemuxer = new MediaSourceDemuxer();
-  nsRefPtr<MediaFormatReader> reader = new MediaFormatReader(this, mDemuxer);
+  RefPtr<MediaFormatReader> reader =
+    new MediaFormatReader(this, mDemuxer, GetVideoFrameContainer());
   return new MediaDecoderStateMachine(this, reader);
 }
 
 nsresult
-MediaSourceDecoder::Load(nsIStreamListener**, MediaDecoder*)
+MediaSourceDecoder::Load(nsIStreamListener**)
 {
+  MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!GetStateMachine());
   SetStateMachine(CreateStateMachine());
   if (!GetStateMachine()) {
@@ -59,7 +63,7 @@ MediaSourceDecoder::Load(nsIStreamListener**, MediaDecoder*)
     return NS_ERROR_FAILURE;
   }
 
-  nsresult rv = GetStateMachine()->Init(nullptr);
+  nsresult rv = GetStateMachine()->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 
   SetStateMachineParameters();
@@ -99,6 +103,10 @@ MediaSourceDecoder::GetBuffered()
   MOZ_ASSERT(NS_IsMainThread());
 
   dom::SourceBufferList* sourceBuffers = mMediaSource->ActiveSourceBuffers();
+  if (!sourceBuffers) {
+    // Media source object is shutting down.
+    return TimeIntervals();
+  }
   media::TimeUnit highestEndTime;
   nsTArray<media::TimeIntervals> activeRanges;
   media::TimeIntervals buffered;
@@ -131,9 +139,10 @@ MediaSourceDecoder::GetBuffered()
   return buffered;
 }
 
-void
+RefPtr<ShutdownPromise>
 MediaSourceDecoder::Shutdown()
 {
+  MOZ_ASSERT(NS_IsMainThread());
   MSE_DEBUG("Shutdown");
   // Detach first so that TrackBuffers are unused on the main thread when
   // shut down on the decode task queue.
@@ -142,17 +151,14 @@ MediaSourceDecoder::Shutdown()
   }
   mDemuxer = nullptr;
 
-  MediaDecoder::Shutdown();
-  // Kick WaitForData out of its slumber.
-  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
-  mon.NotifyAll();
+  return MediaDecoder::Shutdown();
 }
 
 /*static*/
 already_AddRefed<MediaResource>
 MediaSourceDecoder::CreateResource(nsIPrincipal* aPrincipal)
 {
-  return nsRefPtr<MediaResource>(new MediaSourceResource(aPrincipal)).forget();
+  return RefPtr<MediaResource>(new MediaSourceResource(aPrincipal)).forget();
 }
 
 void
@@ -172,10 +178,18 @@ MediaSourceDecoder::DetachMediaSource()
 void
 MediaSourceDecoder::Ended(bool aEnded)
 {
-  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+  MOZ_ASSERT(NS_IsMainThread());
   static_cast<MediaSourceResource*>(GetResource())->SetEnded(aEnded);
   mEnded = true;
-  mon.NotifyAll();
+}
+
+void
+MediaSourceDecoder::AddSizeOfResources(ResourceSizes* aSizes)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  if (GetDemuxer()) {
+    GetDemuxer()->AddSizeOfResources(aSizes);
+  }
 }
 
 void
@@ -184,7 +198,6 @@ MediaSourceDecoder::SetInitialDuration(int64_t aDuration)
   MOZ_ASSERT(NS_IsMainThread());
   // Only use the decoded duration if one wasn't already
   // set.
-  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
   if (!mMediaSource || !IsNaN(ExplicitDuration())) {
     return;
   }
@@ -200,7 +213,6 @@ void
 MediaSourceDecoder::SetMediaSourceDuration(double aDuration, MSRangeRemovalAction aAction)
 {
   MOZ_ASSERT(NS_IsMainThread());
-  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
   double oldDuration = ExplicitDuration();
   if (aDuration >= 0) {
     int64_t checkedDuration;
@@ -222,7 +234,7 @@ MediaSourceDecoder::SetMediaSourceDuration(double aDuration, MSRangeRemovalActio
 double
 MediaSourceDecoder::GetMediaSourceDuration()
 {
-  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+  MOZ_ASSERT(NS_IsMainThread());
   return ExplicitDuration();
 }
 
@@ -232,33 +244,58 @@ MediaSourceDecoder::GetMozDebugReaderData(nsAString& aString)
   mDemuxer->GetMozDebugReaderData(aString);
 }
 
-#ifdef MOZ_EME
-nsresult
-MediaSourceDecoder::SetCDMProxy(CDMProxy* aProxy)
-{
-  nsresult rv = MediaDecoder::SetCDMProxy(aProxy);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (aProxy) {
-    // The sub readers can't decrypt EME content until they have a CDMProxy,
-    // and the CDMProxy knows the capabilities of the CDM. The MediaSourceReader
-    // remains in "waiting for resources" state until then. We need to kick the
-    // reader out of waiting if the CDM gets added with known capabilities.
-    CDMCaps::AutoLock caps(aProxy->Capabilites());
-    if (!caps.AreCapsKnown()) {
-      nsCOMPtr<nsIRunnable> task(
-        NS_NewRunnableMethod(this, &MediaDecoder::NotifyWaitingForResourcesStatusChanged));
-      caps.CallOnMainThreadWhenCapsAvailable(task);
-    }
-  }
-  return NS_OK;
-}
-#endif
-
 double
 MediaSourceDecoder::GetDuration()
 {
-  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+  MOZ_ASSERT(NS_IsMainThread());
   return ExplicitDuration();
+}
+
+MediaDecoderOwner::NextFrameStatus
+MediaSourceDecoder::NextFrameBufferedStatus()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!mMediaSource ||
+      mMediaSource->ReadyState() == dom::MediaSourceReadyState::Closed) {
+    return MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE;
+  }
+
+  // Next frame hasn't been decoded yet.
+  // Use the buffered range to consider if we have the next frame available.
+  TimeUnit currentPosition = TimeUnit::FromMicroseconds(CurrentPosition());
+  TimeInterval interval(currentPosition,
+                        currentPosition + media::TimeUnit::FromMicroseconds(DEFAULT_NEXT_FRAME_AVAILABLE_BUFFERED),
+                        MediaSourceDemuxer::EOS_FUZZ);
+  return GetBuffered().Contains(interval)
+    ? MediaDecoderOwner::NEXT_FRAME_AVAILABLE
+    : MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE;
+}
+
+bool
+MediaSourceDecoder::CanPlayThrough()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  if (IsNaN(mMediaSource->Duration())) {
+    // Don't have any data yet.
+    return false;
+  }
+  TimeUnit duration = TimeUnit::FromSeconds(mMediaSource->Duration());
+  TimeUnit currentPosition = TimeUnit::FromMicroseconds(CurrentPosition());
+  if (duration.IsInfinite()) {
+    // We can't make an informed decision and just assume that it's a live stream
+    return true;
+  } else if (duration <= currentPosition) {
+    return true;
+  }
+  // If we have data up to the mediasource's duration or 30s ahead, we can
+  // assume that we can play without interruption.
+  TimeUnit timeAhead =
+    std::min(duration, currentPosition + TimeUnit::FromSeconds(30));
+  TimeInterval interval(currentPosition,
+                        timeAhead,
+                        MediaSourceDemuxer::EOS_FUZZ);
+  return GetBuffered().Contains(interval);
 }
 
 #undef MSE_DEBUG

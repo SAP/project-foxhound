@@ -25,7 +25,6 @@ class OptionalLoadInfoArgs;
 }
 
 using mozilla::BasePrincipal;
-using mozilla::OriginAttributes;
 using namespace mozilla::net;
 
 namespace ipc {
@@ -77,12 +76,10 @@ PrincipalInfoToPrincipal(const PrincipalInfo& aPrincipalInfo,
         return nullptr;
       }
 
-      if (info.appId() == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
+      if (info.attrs().mAppId == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
         rv = secMan->GetSimpleCodebasePrincipal(uri, getter_AddRefs(principal));
       } else {
-        // TODO: Bug 1167100 - User nsIPrincipal.originAttribute in ContentPrincipalInfo
-        OriginAttributes attrs(info.appId(), info.isInBrowserElement());
-        principal = BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+        principal = BasePrincipal::CreateCodebasePrincipal(uri, info.attrs());
         rv = principal ? NS_OK : NS_ERROR_FAILURE;
       }
       if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -107,7 +104,7 @@ PrincipalInfoToPrincipal(const PrincipalInfo& aPrincipalInfo,
         whitelist.AppendElement(wlPrincipal);
       }
 
-      nsRefPtr<nsExpandedPrincipal> expandedPrincipal = new nsExpandedPrincipal(whitelist);
+      RefPtr<nsExpandedPrincipal> expandedPrincipal = new nsExpandedPrincipal(whitelist);
       if (!expandedPrincipal) {
         NS_WARNING("could not instantiate expanded principal");
         return nullptr;
@@ -202,29 +199,8 @@ PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
     return rv;
   }
 
-  bool isUnknownAppId;
-  rv = aPrincipal->GetUnknownAppId(&isUnknownAppId);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  uint32_t appId;
-  if (isUnknownAppId) {
-    appId = nsIScriptSecurityManager::UNKNOWN_APP_ID;
-  } else {
-    rv = aPrincipal->GetAppId(&appId);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  bool isInBrowserElement;
-  rv = aPrincipal->GetIsInBrowserElement(&isInBrowserElement);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  *aPrincipalInfo = ContentPrincipalInfo(appId, isInBrowserElement, spec);
+  *aPrincipalInfo = ContentPrincipalInfo(BasePrincipal::Cast(aPrincipal)->OriginAttributesRef(),
+                                         spec);
   return NS_OK;
 }
 
@@ -248,6 +224,12 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
   rv = PrincipalToPrincipalInfo(aLoadInfo->TriggeringPrincipal(),
                                 &triggeringPrincipalInfo);
 
+  nsTArray<PrincipalInfo> redirectChainIncludingInternalRedirects;
+  for (const nsCOMPtr<nsIPrincipal>& principal : aLoadInfo->RedirectChainIncludingInternalRedirects()) {
+    rv = PrincipalToPrincipalInfo(principal, redirectChainIncludingInternalRedirects.AppendElement());
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
   nsTArray<PrincipalInfo> redirectChain;
   for (const nsCOMPtr<nsIPrincipal>& principal : aLoadInfo->RedirectChain()) {
     rv = PrincipalToPrincipalInfo(principal, redirectChain.AppendElement());
@@ -259,14 +241,21 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
       requestingPrincipalInfo,
       triggeringPrincipalInfo,
       aLoadInfo->GetSecurityFlags(),
-      aLoadInfo->GetContentPolicyType(),
+      aLoadInfo->InternalContentPolicyType(),
+      static_cast<uint32_t>(aLoadInfo->GetTainting()),
       aLoadInfo->GetUpgradeInsecureRequests(),
       aLoadInfo->GetInnerWindowID(),
       aLoadInfo->GetOuterWindowID(),
       aLoadInfo->GetParentOuterWindowID(),
       aLoadInfo->GetEnforceSecurity(),
       aLoadInfo->GetInitialSecurityCheckDone(),
-      redirectChain);
+      aLoadInfo->GetIsInThirdPartyContext(),
+      aLoadInfo->GetOriginAttributes(),
+      redirectChainIncludingInternalRedirects,
+      redirectChain,
+      aLoadInfo->CorsUnsafeHeaders(),
+      aLoadInfo->GetForcePreflight(),
+      aLoadInfo->GetIsPreflight());
 
   return NS_OK;
 }
@@ -291,6 +280,14 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
     PrincipalInfoToPrincipal(loadInfoArgs.triggeringPrincipalInfo(), &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsTArray<nsCOMPtr<nsIPrincipal>> redirectChainIncludingInternalRedirects;
+  for (const PrincipalInfo& principalInfo : loadInfoArgs.redirectChainIncludingInternalRedirects()) {
+    nsCOMPtr<nsIPrincipal> redirectedPrincipal =
+      PrincipalInfoToPrincipal(principalInfo, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+    redirectChainIncludingInternalRedirects.AppendElement(redirectedPrincipal.forget());
+  }
+
   nsTArray<nsCOMPtr<nsIPrincipal>> redirectChain;
   for (const PrincipalInfo& principalInfo : loadInfoArgs.redirectChain()) {
     nsCOMPtr<nsIPrincipal> redirectedPrincipal =
@@ -304,13 +301,20 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
                           triggeringPrincipal,
                           loadInfoArgs.securityFlags(),
                           loadInfoArgs.contentPolicyType(),
+                          static_cast<LoadTainting>(loadInfoArgs.tainting()),
                           loadInfoArgs.upgradeInsecureRequests(),
                           loadInfoArgs.innerWindowID(),
                           loadInfoArgs.outerWindowID(),
                           loadInfoArgs.parentOuterWindowID(),
                           loadInfoArgs.enforceSecurity(),
                           loadInfoArgs.initialSecurityCheckDone(),
-                          redirectChain);
+                          loadInfoArgs.isInThirdPartyContext(),
+                          loadInfoArgs.originAttributes(),
+                          redirectChainIncludingInternalRedirects,
+                          redirectChain,
+                          loadInfoArgs.corsUnsafeHeaders(),
+                          loadInfoArgs.forcePreflight(),
+                          loadInfoArgs.isPreflight());
 
    loadInfo.forget(outLoadInfo);
    return NS_OK;

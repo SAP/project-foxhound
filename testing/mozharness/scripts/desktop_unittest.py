@@ -34,7 +34,6 @@ from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_opt
 
 SUITE_CATEGORIES = ['gtest', 'cppunittest', 'jittest', 'mochitest', 'reftest', 'xpcshell', 'mozbase', 'mozmill', 'webapprt']
 
-
 # DesktopUnittest {{{1
 class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMixin, CodeCoverageMixin):
     config_options = [
@@ -398,7 +397,14 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
                              "please make sure they are specified in your "
                              "config under %s_options" %
                              (suite_category, suite_category))
-                return base_cmd
+
+
+            for option in options:
+                option = option % str_format_values
+                if not option.endswith('None'):
+                    base_cmd.append(option)
+
+            return base_cmd
         else:
             self.fatal("'binary_path' could not be determined.\n This should "
                        "be like '/path/build/application/firefox/firefox'"
@@ -433,6 +439,20 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
                 suites = all_suites
 
         return suites
+
+    def _query_try_flavor(self, category, suite):
+        flavors = {
+            "mochitest": [("plain.*", "mochitest"),
+                          ("browser-chrome.*", "browser-chrome"),
+                          ("mochitest-devtools-chrome.*", "devtools-chrome"),
+                          ("chrome", "chrome")],
+            "xpcshell": [("xpcshell", "xpcshell")],
+            "reftest": [("reftest", "reftest"),
+                        ("crashtest", "crashtest")]
+        }
+        for suite_pattern, flavor in flavors.get(category, []):
+            if re.compile(suite_pattern).match(suite):
+                return flavor
 
     # Actions {{{2
 
@@ -486,8 +506,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
         self._run_category_suites('mozmill',
                                   preflight_run_method=self.preflight_mozmill)
 
-    def preflight_xpcshell(self, suites):
-        c = self.config
+    def preflight_copydirs(self, bin_name=None):
         dirs = self.query_abs_dirs()
         abs_app_dir = self.query_abs_app_dir()
 
@@ -498,15 +517,16 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
         abs_res_plugins_dir = os.path.join(abs_res_dir, 'plugins')
         abs_res_extensions_dir = os.path.join(abs_res_dir, 'extensions')
 
-        self.mkdir_p(abs_res_plugins_dir)
-        self.info('copying %s to %s' % (os.path.join(dirs['abs_test_bin_dir'],
-                  c['xpcshell_name']), os.path.join(abs_app_dir,
-                                                    c['xpcshell_name'])))
-        shutil.copy2(os.path.join(dirs['abs_test_bin_dir'], c['xpcshell_name']),
-                     os.path.join(abs_app_dir, c['xpcshell_name']))
+        if bin_name:
+            self.info('copying %s to %s' % (os.path.join(dirs['abs_test_bin_dir'],
+                      bin_name), os.path.join(abs_app_dir, bin_name)))
+            shutil.copy2(os.path.join(dirs['abs_test_bin_dir'], bin_name),
+                         os.path.join(abs_app_dir, bin_name))
+
         self.copytree(dirs['abs_test_bin_components_dir'],
                       abs_res_components_dir,
                       overwrite='overwrite_if_exists')
+        self.mkdir_p(abs_res_plugins_dir)
         self.copytree(dirs['abs_test_bin_plugins_dir'],
                       abs_res_plugins_dir,
                       overwrite='overwrite_if_exists')
@@ -515,6 +535,9 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
             self.copytree(dirs['abs_test_extensions_dir'],
                           abs_res_extensions_dir,
                           overwrite='overwrite_if_exists')
+
+    def preflight_xpcshell(self, suites):
+        self.preflight_copydirs(self.config['xpcshell_name'])
 
     def preflight_cppunittest(self, suites):
         abs_res_dir = self.query_abs_res_dir()
@@ -543,20 +566,8 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
                       os.path.join(abs_app_dir))
 
     def preflight_mozmill(self, suites):
-        c = self.config
+        self.preflight_copydirs()
         dirs = self.query_abs_dirs()
-        abs_app_dir = self.query_abs_app_dir()
-        abs_app_plugins_dir = os.path.join(abs_app_dir, 'plugins')
-        abs_app_extensions_dir = os.path.join(abs_app_dir, 'extensions')
-
-        self.mkdir_p(abs_app_plugins_dir)
-        self.copytree(dirs['abs_test_bin_plugins_dir'],
-                      abs_app_plugins_dir,
-                      overwrite='overwrite_if_exists')
-        if os.path.isdir(dirs['abs_test_extensions_dir']):
-            self.copytree(dirs['abs_test_extensions_dir'],
-                          abs_app_extensions_dir,
-                          overwrite='overwrite_if_exists')
         modules = ['jsbridge', 'mozmill']
         for module in modules:
             self.install_module(module=os.path.join(dirs['abs_mozmill_dir'],
@@ -588,15 +599,22 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
                 options_list = []
                 env = {}
                 if isinstance(suites[suite], dict):
-                    options_list = suites[suite]['options'] + suites[suite].get("tests", [])
+                    options_list = suites[suite].get('options', [])
+                    tests_list = suites[suite].get('tests', [])
                     env = copy.deepcopy(suites[suite].get('env', {}))
                 else:
                     options_list = suites[suite]
+                    tests_list = []
 
-                for arg in options_list:
-                    cmd.append(arg % replace_dict)
+                flavor = self._query_try_flavor(suite_category, suite)
+                try_options, try_tests = self.try_args(flavor)
 
-                cmd = self.append_harness_extra_args(cmd)
+                cmd.extend(self.query_options(options_list,
+                                              try_options,
+                                              str_format_values=replace_dict))
+                cmd.extend(self.query_tests_args(tests_list,
+                                                 try_tests,
+                                                 str_format_values=replace_dict))
 
                 suite_name = suite_category + '-' + suite
                 tbpl_status, log_level = None, None

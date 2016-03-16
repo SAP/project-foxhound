@@ -15,7 +15,7 @@
 #include "nsISupportsBase.h"
 #include "nsISupportsImpl.h"
 #include "nsRect.h"
-#include "mozilla/nsRefPtr.h"
+#include "mozilla/RefPtr.h"
 #include "nsString.h"
 
 class nsIDocument;
@@ -37,6 +37,8 @@ namespace mozilla {
 // that SetPosition() works correctly, the caller must make sure the layout is
 // up to date.
 //
+// Please see the wiki page for more information.
+// https://wiki.mozilla.org/Copy_n_Paste
 class AccessibleCaret
 {
 public:
@@ -203,14 +205,14 @@ protected:
   // outlive mPresShell.
   nsIPresShell* MOZ_NON_OWNING_REF const mPresShell = nullptr;
 
-  nsRefPtr<dom::AnonymousContent> mCaretElementHolder;
+  RefPtr<dom::AnonymousContent> mCaretElementHolder;
 
   // mImaginaryCaretRect is relative to root frame.
   nsRect mImaginaryCaretRect;
 
   // A no-op touch-start listener which prevents APZ from panning when dragging
   // the caret.
-  nsRefPtr<DummyTouchListener> mDummyTouchListener{new DummyTouchListener()};
+  RefPtr<DummyTouchListener> mDummyTouchListener{new DummyTouchListener()};
 
   // Static class variables
   static float sWidth;

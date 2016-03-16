@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+requestLongerTimeout(2);
+
 const kObservedTopics = [
   "getUserMedia:response:allow",
   "getUserMedia:revoke",
@@ -223,7 +225,7 @@ function* checkNotSharing() {
   yield* assertWebRTCIndicatorStatus(null);
 }
 
-const permissionError = "error: PermissionDeniedError: The user did not grant permission for the operation.";
+const permissionError = "error: SecurityError: The operation is insecure.";
 
 var gTests = [
 

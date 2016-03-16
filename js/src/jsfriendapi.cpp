@@ -24,7 +24,6 @@
 #include "proxy/DeadObjectProxy.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/Time.h"
-#include "vm/WeakMapObject.h"
 #include "vm/WrapperObject.h"
 
 #include "jsobjinlines.h"
@@ -83,10 +82,10 @@ JS_FindCompilationScope(JSContext* cx, HandleObject objArg)
         obj = UncheckedUnwrap(obj);
 
     /*
-     * Innerize the target_obj so that we compile in the correct (inner)
-     * scope.
+     * Get the Window if `obj` is a WindowProxy so that we compile in the
+     * correct (global) scope.
      */
-    return GetInnerObject(obj);
+    return ToWindowIfWindowProxy(obj);
 }
 
 JS_FRIEND_API(JSFunction*)
@@ -262,9 +261,37 @@ JS_DefineFunctionsWithHelp(JSContext* cx, HandleObject obj, const JSFunctionSpec
 }
 
 JS_FRIEND_API(bool)
-js::ObjectClassIs(JSContext* cx, HandleObject obj, ESClassValue classValue)
+js::GetBuiltinClass(JSContext* cx, HandleObject obj, ESClassValue* classValue)
 {
-    return ObjectClassIs(obj, classValue, cx);
+    if (MOZ_UNLIKELY(obj->is<ProxyObject>()))
+        return Proxy::getBuiltinClass(cx, obj, classValue);
+
+    if (obj->is<PlainObject>() || obj->is<UnboxedPlainObject>())
+        *classValue = ESClass_Object;
+    else if (obj->is<ArrayObject>() || obj->is<UnboxedArrayObject>())
+        *classValue = ESClass_Array;
+    else if (obj->is<NumberObject>())
+        *classValue = ESClass_Number;
+    else if (obj->is<StringObject>())
+        *classValue = ESClass_String;
+    else if (obj->is<BooleanObject>())
+        *classValue = ESClass_Boolean;
+    else if (obj->is<RegExpObject>())
+        *classValue = ESClass_RegExp;
+    else if (obj->is<ArrayBufferObject>())
+        *classValue = ESClass_ArrayBuffer;
+    else if (obj->is<SharedArrayBufferObject>())
+        *classValue = ESClass_SharedArrayBuffer;
+    else if (obj->is<DateObject>())
+        *classValue = ESClass_Date;
+    else if (obj->is<SetObject>())
+        *classValue = ESClass_Set;
+    else if (obj->is<MapObject>())
+        *classValue = ESClass_Map;
+    else
+        *classValue = ESClass_Other;
+
+    return true;
 }
 
 JS_FRIEND_API(const char*)
@@ -693,8 +720,12 @@ FormatFrame(JSContext* cx, const ScriptFrameIter& iter, char* buf, int num,
         funname = fun->displayAtom();
 
     RootedValue thisVal(cx);
-    if (iter.hasUsableAbstractFramePtr() && iter.computeThis(cx)) {
-        thisVal = iter.computedThisValue();
+    if (iter.hasUsableAbstractFramePtr() &&
+        iter.isNonEvalFunctionFrame() &&
+        fun && !fun->isArrow() && !fun->isDerivedClassConstructor())
+    {
+        if (!GetFunctionThis(cx, iter.abstractFramePtr(), &thisVal))
+            return nullptr;
     }
 
     // print the frame number and function name
@@ -998,12 +1029,6 @@ js::DumpHeap(JSRuntime* rt, FILE* fp, js::DumpHeapNurseryBehaviour nurseryBehavi
     fflush(dtrc.output);
 }
 
-JS_FRIEND_API(const JSStructuredCloneCallbacks*)
-js::GetContextStructuredCloneCallbacks(JSContext* cx)
-{
-    return cx->runtime()->structuredCloneCallbacks;
-}
-
 JS_FRIEND_API(bool)
 js::ContextHasOutstandingRequests(const JSContext* cx)
 {
@@ -1015,12 +1040,6 @@ js::SetActivityCallback(JSRuntime* rt, ActivityCallback cb, void* arg)
 {
     rt->activityCallback = cb;
     rt->activityCallbackArg = arg;
-}
-
-JS_FRIEND_API(bool)
-js::IsContextRunningJS(JSContext* cx)
-{
-    return cx->currentlyRunning();
 }
 
 JS_FRIEND_API(void)
@@ -1063,7 +1082,7 @@ js::GetTestingFunctions(JSContext* cx)
     if (!obj)
         return nullptr;
 
-    if (!DefineTestingFunctions(cx, obj, false))
+    if (!DefineTestingFunctions(cx, obj, false, false))
         return nullptr;
 
     return obj;
@@ -1126,24 +1145,28 @@ js::detail::IdMatchesAtom(jsid id, JSAtom* atom)
     return id == INTERNED_STRING_TO_JSID(nullptr, atom);
 }
 
-JS_FRIEND_API(bool)
-js::PrepareScriptEnvironmentAndInvoke(JSRuntime* rt, HandleObject scope, ScriptEnvironmentPreparer::Closure& closure)
+JS_FRIEND_API(void)
+js::PrepareScriptEnvironmentAndInvoke(JSContext* cx, HandleObject scope, ScriptEnvironmentPreparer::Closure& closure)
 {
-    if (rt->scriptEnvironmentPreparer)
-        return rt->scriptEnvironmentPreparer->invoke(scope, closure);
+    MOZ_ASSERT(!cx->isExceptionPending());
 
-    MOZ_ASSERT(rt->contextList.getFirst() == rt->contextList.getLast());
-    JSContext* cx = rt->contextList.getFirst();
+    if (cx->runtime()->scriptEnvironmentPreparer) {
+        cx->runtime()->scriptEnvironmentPreparer->invoke(scope, closure);
+        return;
+    }
+
     JSAutoCompartment ac(cx, scope);
     bool ok = closure(cx);
 
+    MOZ_ASSERT_IF(ok, !cx->isExceptionPending());
+
     // NB: This does not affect Gecko, which has a prepareScriptEnvironment
     // callback.
-    if (JS_IsExceptionPending(cx)) {
+    if (!ok) {
         JS_ReportPendingException(cx);
     }
 
-    return ok;
+    MOZ_ASSERT(!cx->isExceptionPending());
 }
 
 JS_FRIEND_API(void)
@@ -1266,4 +1289,54 @@ js::GetPropertyNameFromPC(JSScript* script, jsbytecode* pc)
     if (!IsGetPropPC(pc) && !IsSetPropPC(pc))
         return nullptr;
     return script->getName(pc);
+}
+
+JS_FRIEND_API(void)
+js::SetWindowProxyClass(JSRuntime* rt, const js::Class* clasp)
+{
+    MOZ_ASSERT(!rt->maybeWindowProxyClass());
+    rt->setWindowProxyClass(clasp);
+}
+
+JS_FRIEND_API(void)
+js::SetWindowProxy(JSContext* cx, HandleObject global, HandleObject windowProxy)
+{
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+
+    assertSameCompartment(cx, global, windowProxy);
+
+    MOZ_ASSERT(IsWindowProxy(windowProxy));
+    global->as<GlobalObject>().setWindowProxy(windowProxy);
+}
+
+JS_FRIEND_API(JSObject*)
+js::ToWindowIfWindowProxy(JSObject* obj)
+{
+    if (IsWindowProxy(obj))
+        return &obj->global();
+    return obj;
+}
+
+JS_FRIEND_API(JSObject*)
+js::ToWindowProxyIfWindow(JSObject* obj)
+{
+    if (IsWindow(obj))
+        return obj->as<GlobalObject>().windowProxy();
+    return obj;
+}
+
+JS_FRIEND_API(bool)
+js::IsWindowProxy(JSObject* obj)
+{
+    // Note: simply checking `obj == obj->global().windowProxy()` is not
+    // sufficient: we may have transplanted the window proxy with a CCW.
+    // Check the Class to ensure we really have a window proxy.
+    return obj->getClass() == obj->runtimeFromAnyThread()->maybeWindowProxyClass();
+}
+
+JS_FRIEND_API(bool)
+js::detail::IsWindowSlow(JSObject* obj)
+{
+    return obj->as<GlobalObject>().maybeWindowProxy();
 }

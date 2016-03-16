@@ -13,12 +13,14 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/TreeWalker.h"
+#include "mozilla/IMEStateManager.h"
 #include "nsCaret.h"
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
 #include "nsFrame.h"
 #include "nsFrameSelection.h"
 #include "nsGenericHTMLElement.h"
+#include "nsIHapticFeedback.h"
 
 namespace mozilla {
 
@@ -60,14 +62,30 @@ std::ostream& operator<<(std::ostream& aStream,
 }
 #undef AC_PROCESS_ENUM_TO_STREAM
 
+/*static*/ bool
+AccessibleCaretManager::sCaretsExtendedVisibility = false;
+/*static*/ bool
+AccessibleCaretManager::sHapticFeedback = false;
+
 AccessibleCaretManager::AccessibleCaretManager(nsIPresShell* aPresShell)
   : mPresShell(aPresShell)
 {
-  if (mPresShell) {
-    mFirstCaret = MakeUnique<AccessibleCaret>(mPresShell);
-    mSecondCaret = MakeUnique<AccessibleCaret>(mPresShell);
+  if (!mPresShell) {
+    return;
+  }
 
-    mCaretTimeoutTimer = do_CreateInstance("@mozilla.org/timer;1");
+  mFirstCaret = MakeUnique<AccessibleCaret>(mPresShell);
+  mSecondCaret = MakeUnique<AccessibleCaret>(mPresShell);
+
+  mCaretTimeoutTimer = do_CreateInstance("@mozilla.org/timer;1");
+
+  static bool addedPrefs = false;
+  if (!addedPrefs) {
+    Preferences::AddBoolVarCache(&sCaretsExtendedVisibility,
+                                 "layout.accessiblecaret.extendedvisibility");
+    Preferences::AddBoolVarCache(&sHapticFeedback,
+                                 "layout.accessiblecaret.hapticfeedback");
+    addedPrefs = true;
   }
 }
 
@@ -80,21 +98,52 @@ nsresult
 AccessibleCaretManager::OnSelectionChanged(nsIDOMDocument* aDoc,
                                            nsISelection* aSel, int16_t aReason)
 {
-  AC_LOG("aSel: %p, GetSelection(): %p, aReason: %d", aSel, GetSelection(),
-         aReason);
-
-  if (aSel != GetSelection()) {
+  Selection* selection = GetSelection();
+  AC_LOG("%s: aSel: %p, GetSelection(): %p, aReason: %d", __FUNCTION__,
+         aSel, selection, aReason);
+  if (aSel != selection) {
     return NS_OK;
   }
 
-  // Move the cursor by Javascript.
+  // eSetSelection events from the Fennec widget IME can be generated
+  // by autoSuggest, autoCorrect, and nsCaret position changes.
+  if (aReason & nsISelectionListener::IME_REASON) {
+    if (GetCaretMode() == CaretMode::Cursor) {
+      // Caret position changes need us to open/update,
+      // or hide the AccessibleCaret.
+      FlushLayout();
+      UpdateCarets();
+    } else {
+      // Ignore transient autoSuggest selection styling,
+      // or autoCorrect text updates.
+    }
+    return NS_OK;
+  }
+
+  // Move the cursor by Javascript / or unknown internal.
   if (aReason == nsISelectionListener::NO_REASON) {
+    // Extended visibility won't make hidden carets visible. Visible carets will
+    // be updated or hidden as appropriate.
+    if (sCaretsExtendedVisibility &&
+        (mFirstCaret->IsLogicallyVisible() || mSecondCaret->IsLogicallyVisible())) {
+        FlushLayout();
+        UpdateCarets();
+        return NS_OK;
+    }
+    // Default for NO_REASON is to make hidden.
     HideCarets();
     return NS_OK;
   }
 
   // Move cursor by keyboard.
   if (aReason & nsISelectionListener::KEYPRESS_REASON) {
+    HideCarets();
+    return NS_OK;
+  }
+
+  // OnBlur() might be called between mouse down and mouse up, so we hide carets
+  // upon mouse down anyway, and update carets upon mouse up.
+  if (aReason & nsISelectionListener::MOUSEDOWN_REASON) {
     HideCarets();
     return NS_OK;
   }
@@ -123,6 +172,18 @@ AccessibleCaretManager::HideCarets()
 }
 
 void
+AccessibleCaretManager::DoNotShowCarets()
+{
+  if (mFirstCaret->IsLogicallyVisible() || mSecondCaret->IsLogicallyVisible()) {
+    AC_LOG("%s", __FUNCTION__);
+    mFirstCaret->SetAppearance(Appearance::NormalNotShown);
+    mSecondCaret->SetAppearance(Appearance::NormalNotShown);
+    DispatchCaretStateChangedEvent(CaretChangedReason::Visibilitychange);
+    CancelCaretTimeoutTimer();
+  }
+}
+
+void
 AccessibleCaretManager::UpdateCarets(UpdateCaretsHint aHint)
 {
   mLastUpdateCaretMode = GetCaretMode();
@@ -144,7 +205,7 @@ bool
 AccessibleCaretManager::IsCaretDisplayableInCursorMode(nsIFrame** aOutFrame,
                                                        int32_t* aOutOffset) const
 {
-  nsRefPtr<nsCaret> caret = mPresShell->GetCaret();
+  RefPtr<nsCaret> caret = mPresShell->GetCaret();
   if (!caret || !caret->IsVisible()) {
     return false;
   }
@@ -284,11 +345,7 @@ AccessibleCaretManager::UpdateCaretsForSelectionMode(UpdateCaretsHint aHint)
 
   UpdateCaretsForTilt();
 
-  if ((firstCaretResult == PositionChangedResult::Changed ||
-       secondCaretResult == PositionChangedResult::Changed ||
-       firstCaretResult == PositionChangedResult::Invisible ||
-       secondCaretResult == PositionChangedResult::Invisible) &&
-      !mActiveCaret) {
+  if (!mActiveCaret) {
     DispatchCaretStateChangedEvent(CaretChangedReason::Updateposition);
   }
 }
@@ -310,6 +367,16 @@ AccessibleCaretManager::UpdateCaretsForTilt()
       mFirstCaret->SetAppearance(Appearance::Normal);
       mSecondCaret->SetAppearance(Appearance::Normal);
     }
+  }
+}
+
+void
+AccessibleCaretManager::ProvideHapticFeedback()
+{
+  if (sHapticFeedback) {
+    nsCOMPtr<nsIHapticFeedback> haptic =
+      do_GetService("@mozilla.org/widget/hapticfeedback;1");
+    haptic->PerformSimpleAction(haptic->LongPress);
   }
 }
 
@@ -413,6 +480,7 @@ AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint)
     // We need to update carets to get correct information before dispatching
     // CaretStateChangedEvent.
     UpdateCarets();
+    ProvideHapticFeedback();
     DispatchCaretStateChangedEvent(CaretChangedReason::Longpressonemptycontent);
     return NS_OK;
   }
@@ -429,6 +497,11 @@ AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint)
     return NS_ERROR_FAILURE;
   }
 
+  // Commit the composition string of the old editable focus element (if there
+  // is any) before changing the focus.
+  IMEStateManager::NotifyIME(widget::REQUEST_TO_COMMIT_COMPOSITION,
+                             mPresShell->GetPresContext());
+
   // ptFrame is selectable. Now change the focus.
   ChangeFocusToOrClearOldFocus(focusableFrame);
 
@@ -438,6 +511,8 @@ AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint)
 
   nsresult rv = SelectWord(ptFrame, ptInFrame);
   UpdateCarets();
+  ProvideHapticFeedback();
+
   return rv;
 }
 
@@ -446,7 +521,16 @@ AccessibleCaretManager::OnScrollStart()
 {
   AC_LOG("%s", __FUNCTION__);
 
-  HideCarets();
+  if (GetCaretMode() == CaretMode::Cursor) {
+    mFirstCaretAppearanceOnScrollStart = mFirstCaret->GetAppearance();
+  }
+
+  // Hide the carets. (Extended visibility makes them "NormalNotShown").
+  if (sCaretsExtendedVisibility) {
+    DoNotShowCarets();
+  } else {
+    HideCarets();
+  }
 }
 
 void
@@ -457,12 +541,16 @@ AccessibleCaretManager::OnScrollEnd()
   }
 
   if (GetCaretMode() == CaretMode::Cursor) {
-    AC_LOG("%s: HideCarets()", __FUNCTION__);
-    HideCarets();
-  } else {
-    AC_LOG("%s: UpdateCarets()", __FUNCTION__);
-    UpdateCarets();
+    mFirstCaret->SetAppearance(mFirstCaretAppearanceOnScrollStart);
+    if (!mFirstCaret->IsLogicallyVisible()) {
+      // If the caret is hide (Appearance::None) due to timeout or blur, no need
+      // to update it.
+      return;
+    }
   }
+
+  AC_LOG("%s: UpdateCarets()", __FUNCTION__);
+  UpdateCarets();
 }
 
 void
@@ -472,8 +560,10 @@ AccessibleCaretManager::OnScrollPositionChanged()
     return;
   }
 
-  AC_LOG("%s: UpdateCarets(RespectOldAppearance)", __FUNCTION__);
-  UpdateCarets(UpdateCaretsHint::RespectOldAppearance);
+  if (mFirstCaret->IsLogicallyVisible() || mSecondCaret->IsLogicallyVisible()) {
+    AC_LOG("%s: UpdateCarets(RespectOldAppearance)", __FUNCTION__);
+    UpdateCarets(UpdateCaretsHint::RespectOldAppearance);
+  }
 }
 
 void
@@ -483,9 +573,9 @@ AccessibleCaretManager::OnReflow()
     return;
   }
 
-  if (mFirstCaret->IsVisuallyVisible() || mSecondCaret->IsVisuallyVisible()) {
-    AC_LOG("%s: UpdateCarets()", __FUNCTION__);
-    UpdateCarets();
+  if (mFirstCaret->IsLogicallyVisible() || mSecondCaret->IsLogicallyVisible()) {
+    AC_LOG("%s: UpdateCarets(RespectOldAppearance)", __FUNCTION__);
+    UpdateCarets(UpdateCaretsHint::RespectOldAppearance);
   }
 }
 
@@ -508,7 +598,7 @@ AccessibleCaretManager::OnKeyboardEvent()
 Selection*
 AccessibleCaretManager::GetSelection() const
 {
-  nsRefPtr<nsFrameSelection> fs = GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = GetFrameSelection();
   if (!fs) {
     return nullptr;
   }
@@ -534,7 +624,7 @@ AccessibleCaretManager::GetFrameSelection() const
 
     // Prevent us from touching the nsFrameSelection associated with other
     // PresShell.
-    nsRefPtr<nsFrameSelection> fs = focusFrame->GetFrameSelection();
+    RefPtr<nsFrameSelection> fs = focusFrame->GetFrameSelection();
     if (!fs || fs->GetShell() != mPresShell) {
       return nullptr;
     }
@@ -634,7 +724,7 @@ AccessibleCaretManager::SelectWord(nsIFrame* aFrame, const nsPoint& aPoint) cons
 void
 AccessibleCaretManager::SetSelectionDragState(bool aState) const
 {
-  nsRefPtr<nsFrameSelection> fs = GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = GetFrameSelection();
   if (fs) {
     fs->SetDragState(aState);
   }
@@ -654,7 +744,7 @@ AccessibleCaretManager::ClearMaintainedSelection() const
 {
   // Selection made by double-clicking for example will maintain the original
   // word selection. We should clear it so that we can drag caret freely.
-  nsRefPtr<nsFrameSelection> fs = GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = GetFrameSelection();
   if (fs) {
     fs->MaintainSelection(eSelectNoAmount);
   }
@@ -676,12 +766,12 @@ AccessibleCaretManager::FindFirstNodeWithFrame(bool aBackward,
     return nullptr;
   }
 
-  nsRefPtr<Selection> selection = GetSelection();
+  RefPtr<Selection> selection = GetSelection();
   if (!selection) {
     return nullptr;
   }
 
-  nsRefPtr<nsFrameSelection> fs = GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = GetFrameSelection();
   if (!fs) {
     return nullptr;
   }
@@ -692,9 +782,9 @@ AccessibleCaretManager::FindFirstNodeWithFrame(bool aBackward,
   }
 
   nsRange* range = selection->GetRangeAt(aBackward ? rangeCount - 1 : 0);
-  nsRefPtr<nsINode> startNode =
+  RefPtr<nsINode> startNode =
     aBackward ? range->GetEndParent() : range->GetStartParent();
-  nsRefPtr<nsINode> endNode =
+  RefPtr<nsINode> endNode =
     aBackward ? range->GetStartParent() : range->GetEndParent();
   int32_t offset = aBackward ? range->EndOffset() : range->StartOffset();
   nsCOMPtr<nsIContent> startContent = do_QueryInterface(startNode);
@@ -708,7 +798,7 @@ AccessibleCaretManager::FindFirstNodeWithFrame(bool aBackward,
   }
 
   ErrorResult err;
-  nsRefPtr<TreeWalker> walker = mPresShell->GetDocument()->CreateTreeWalker(
+  RefPtr<TreeWalker> walker = mPresShell->GetDocument()->CreateTreeWalker(
     *startNode, nsIDOMNodeFilter::SHOW_ALL, nullptr, err);
 
   if (!walker) {
@@ -741,7 +831,7 @@ AccessibleCaretManager::CompareRangeWithContentOffset(nsIFrame::ContentOffsets& 
   MOZ_ASSERT(rangeCount > 0);
 
   int32_t rangeIndex = (mActiveCaret == mFirstCaret.get() ? rangeCount - 1 : 0);
-  nsRefPtr<nsRange> range = selection->GetRangeAt(rangeIndex);
+  RefPtr<nsRange> range = selection->GetRangeAt(rangeIndex);
 
   nsINode* node = nullptr;
   int32_t nodeOffset = 0;
@@ -763,7 +853,7 @@ AccessibleCaretManager::CompareRangeWithContentOffset(nsIFrame::ContentOffsets& 
   }
   nsCOMPtr<nsIContent> content = do_QueryInterface(node);
 
-  nsRefPtr<nsFrameSelection> fs = GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = GetFrameSelection();
   if (!fs) {
     return false;
   }
@@ -837,7 +927,7 @@ AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint)
     return NS_ERROR_FAILURE;
   }
 
-  nsRefPtr<nsFrameSelection> fs = GetFrameSelection();
+  RefPtr<nsFrameSelection> fs = GetFrameSelection();
   if (!fs) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -899,19 +989,57 @@ AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint)
   return NS_OK;
 }
 
+nsRect
+AccessibleCaretManager::GetContentBoundaryForFrame(nsIFrame* aFrame) const
+{
+  nsRect resultRect;
+  nsIFrame* rootFrame = mPresShell->GetRootFrame();
+
+  for (; aFrame; aFrame = aFrame->GetNextContinuation()) {
+    nsRect rect = aFrame->GetContentRectRelativeToSelf();
+    nsLayoutUtils::TransformRect(aFrame, rootFrame, rect);
+    resultRect = resultRect.Union(rect);
+
+    nsIFrame::ChildListIterator lists(aFrame);
+    for (; !lists.IsDone(); lists.Next()) {
+      // Loop over all children to take the overflow rect into consideration.
+      for (nsIFrame* child : lists.CurrentList()) {
+        nsRect overflowRect = child->GetScrollableOverflowRect();
+        nsLayoutUtils::TransformRect(child, rootFrame, overflowRect);
+        resultRect = resultRect.Union(overflowRect);
+      }
+    }
+  }
+
+  // Shrink rect to make sure we never hit the boundary.
+  resultRect.Deflate(kBoundaryAppUnits);
+  return resultRect;
+}
+
 nsPoint
 AccessibleCaretManager::AdjustDragBoundary(const nsPoint& aPoint) const
 {
-  // Bug 1068474: Adjust the Y-coordinate so that the carets won't be in tilt
-  // mode when a caret is being dragged surpass the other caret.
-  //
-  // For example, when dragging the second caret, the horizontal boundary (lower
-  // bound) of its Y-coordinate is the logical position of the first caret.
-  // Likewise, when dragging the first caret, the horizontal boundary (upper
-  // bound) of its Y-coordinate is the logical position of the second caret.
   nsPoint adjustedPoint = aPoint;
 
+  int32_t focusOffset = 0;
+  nsIFrame* focusFrame =
+    nsCaret::GetFrameAndOffset(GetSelection(), nullptr, 0, &focusOffset);
+  Element* editingHost = GetEditingHostForFrame(focusFrame);
+
+  if (editingHost) {
+    nsRect boundary =
+      GetContentBoundaryForFrame(editingHost->GetPrimaryFrame());
+    adjustedPoint = boundary.ClampPoint(adjustedPoint);
+  }
+
   if (GetCaretMode() == CaretMode::Selection) {
+    // Bug 1068474: Adjust the Y-coordinate so that the carets won't be in tilt
+    // mode when a caret is being dragged surpass the other caret.
+    //
+    // For example, when dragging the second caret, the horizontal boundary (lower
+    // bound) of its Y-coordinate is the logical position of the first caret.
+    // Likewise, when dragging the first caret, the horizontal boundary (upper
+    // bound) of its Y-coordinate is the logical position of the second caret.
     if (mActiveCaret == mFirstCaret.get()) {
       nscoord dragDownBoundaryY = mSecondCaret->LogicalPosition().y;
       if (dragDownBoundaryY > 0 && adjustedPoint.y > dragDownBoundaryY) {
@@ -1002,8 +1130,8 @@ AccessibleCaretManager::DispatchCaretStateChangedEvent(CaretChangedReason aReaso
     commonAncestorNode = sel->GetFrameSelection()->GetAncestorLimiter();
   }
 
-  nsRefPtr<DOMRect> domRect = new DOMRect(ToSupports(doc));
-  nsRect rect = nsContentUtils::GetSelectionBoundingRect(sel);
+  RefPtr<DOMRect> domRect = new DOMRect(ToSupports(doc));
+  nsRect rect = nsLayoutUtils::GetSelectionBoundingRect(sel);
 
   nsIFrame* commonAncestorFrame = nullptr;
   nsIFrame* rootFrame = mPresShell->GetRootFrame();
@@ -1034,9 +1162,11 @@ AccessibleCaretManager::DispatchCaretStateChangedEvent(CaretChangedReason aReaso
   init.mCollapsed = sel->IsCollapsed();
   init.mCaretVisible = mFirstCaret->IsLogicallyVisible() ||
                        mSecondCaret->IsLogicallyVisible();
+  init.mCaretVisuallyVisible = mFirstCaret->IsVisuallyVisible() ||
+                                mSecondCaret->IsVisuallyVisible();
   sel->Stringify(init.mSelectedTextContent);
 
-  nsRefPtr<CaretStateChangedEvent> event =
+  RefPtr<CaretStateChangedEvent> event =
     CaretStateChangedEvent::Constructor(doc, NS_LITERAL_STRING("mozcaretstatechanged"), init);
 
   event->SetTrusted(true);

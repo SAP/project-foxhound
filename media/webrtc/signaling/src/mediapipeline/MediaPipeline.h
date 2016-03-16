@@ -388,7 +388,7 @@ public:
                         RefPtr<TransportFlow> rtcp_transport,
                         nsAutoPtr<MediaPipelineFilter> filter) :
       MediaPipeline(pc, TRANSMIT, main_thread, sts_thread,
-                    domstream->GetStream(), track_id, level,
+                    domstream->GetOwnedStream(), track_id, level,
                     conduit, rtp_transport, rtcp_transport, filter),
       listener_(new PipelineListener(conduit)),
       domstream_(domstream),
@@ -482,7 +482,9 @@ public:
     virtual void NotifyQueuedTrackChanges(MediaStreamGraph* graph, TrackID tid,
                                           StreamTime offset,
                                           uint32_t events,
-                                          const MediaSegment& queued_media) override;
+                                          const MediaSegment& queued_media,
+                                          MediaStream* input_stream,
+                                          TrackID input_tid) override;
     virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime) override {}
 
     // Implement MediaStreamDirectListener
@@ -629,7 +631,9 @@ class MediaPipelineReceiveAudio : public MediaPipelineReceive {
     virtual void NotifyQueuedTrackChanges(MediaStreamGraph* graph, TrackID tid,
                                           StreamTime offset,
                                           uint32_t events,
-                                          const MediaSegment& queued_media) override {}
+                                          const MediaSegment& queued_media,
+                                          MediaStream* input_stream,
+                                          TrackID input_tid) override {}
     virtual void NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) override;
 
    private:
@@ -697,17 +701,30 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
     // Implement VideoRenderer
     virtual void FrameSizeChange(unsigned int width,
                                  unsigned int height,
-                                 unsigned int number_of_streams) {
+                                 unsigned int number_of_streams) override {
       pipeline_->listener_->FrameSizeChange(width, height, number_of_streams);
     }
 
     virtual void RenderVideoFrame(const unsigned char* buffer,
-                                  unsigned int buffer_size,
+                                  size_t buffer_size,
                                   uint32_t time_stamp,
                                   int64_t render_time,
-                                  const ImageHandle& handle) {
-      pipeline_->listener_->RenderVideoFrame(buffer, buffer_size, time_stamp,
-                                             render_time,
+                                  const ImageHandle& handle) override {
+      pipeline_->listener_->RenderVideoFrame(buffer, buffer_size,
+                                             time_stamp, render_time,
+                                             handle.GetImage());
+    }
+
+    virtual void RenderVideoFrame(const unsigned char* buffer,
+                                  size_t buffer_size,
+                                  uint32_t y_stride,
+                                  uint32_t cbcr_stride,
+                                  uint32_t time_stamp,
+                                  int64_t render_time,
+                                  const ImageHandle& handle) override {
+      pipeline_->listener_->RenderVideoFrame(buffer, buffer_size,
+                                             y_stride, cbcr_stride,
+                                             time_stamp, render_time,
                                              handle.GetImage());
     }
 
@@ -725,7 +742,9 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
     virtual void NotifyQueuedTrackChanges(MediaStreamGraph* graph, TrackID tid,
                                           StreamTime offset,
                                           uint32_t events,
-                                          const MediaSegment& queued_media) override {}
+                                          const MediaSegment& queued_media,
+                                          MediaStream* input_stream,
+                                          TrackID input_tid) override {}
     virtual void NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) override;
 
     // Accessors for external writes from the renderer
@@ -739,7 +758,14 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
     }
 
     void RenderVideoFrame(const unsigned char* buffer,
-                          unsigned int buffer_size,
+                          size_t buffer_size,
+                          uint32_t time_stamp,
+                          int64_t render_time,
+                          const RefPtr<layers::Image>& video_image);
+    void RenderVideoFrame(const unsigned char* buffer,
+                          size_t buffer_size,
+                          uint32_t y_stride,
+                          uint32_t cbcr_stride,
                           uint32_t time_stamp,
                           int64_t render_time,
                           const RefPtr<layers::Image>& video_image);
@@ -748,10 +774,10 @@ class MediaPipelineReceiveVideo : public MediaPipelineReceive {
     int width_;
     int height_;
 #if defined(MOZILLA_XPCOMRT_API)
-    nsRefPtr<mozilla::SimpleImageBuffer> image_;
+    RefPtr<mozilla::SimpleImageBuffer> image_;
 #elif defined(MOZILLA_INTERNAL_API)
-    nsRefPtr<layers::ImageContainer> image_container_;
-    nsRefPtr<layers::Image> image_;
+    RefPtr<layers::ImageContainer> image_container_;
+    RefPtr<layers::Image> image_;
 #endif
     mozilla::ReentrantMonitor monitor_; // Monitor for processing WebRTC frames.
                                         // Protects image_ against:

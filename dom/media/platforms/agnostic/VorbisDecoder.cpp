@@ -12,7 +12,7 @@
 #include "nsAutoPtr.h"
 
 #undef LOG
-extern PRLogModuleInfo* GetPDMLog();
+extern mozilla::LogModule* GetPDMLog();
 #define LOG(type, msg) MOZ_LOG(GetPDMLog(), type, msg)
 
 namespace mozilla {
@@ -63,7 +63,7 @@ VorbisDataDecoder::Shutdown()
   return NS_OK;
 }
 
-nsRefPtr<MediaDataDecoder::InitPromise>
+RefPtr<MediaDataDecoder::InitPromise>
 VorbisDataDecoder::Init()
 {
   vorbis_info_init(&mVorbisInfo);
@@ -125,9 +125,9 @@ nsresult
 VorbisDataDecoder::Input(MediaRawData* aSample)
 {
   nsCOMPtr<nsIRunnable> runnable(
-    NS_NewRunnableMethodWithArg<nsRefPtr<MediaRawData>>(
+    NS_NewRunnableMethodWithArg<RefPtr<MediaRawData>>(
       this, &VorbisDataDecoder::Decode,
-      nsRefPtr<MediaRawData>(aSample)));
+      RefPtr<MediaRawData>(aSample)));
   mTaskQueue->Dispatch(runnable.forget());
 
   return NS_OK;
@@ -184,7 +184,7 @@ VorbisDataDecoder::DoDecode(MediaRawData* aSample)
   }
   while (frames > 0) {
     uint32_t channels = mVorbisDsp.vi->channels;
-    nsAutoArrayPtr<AudioDataValue> buffer(new AudioDataValue[frames*channels]);
+    auto buffer = MakeUnique<AudioDataValue[]>(frames*channels);
     for (uint32_t j = 0; j < channels; ++j) {
       VorbisPCMValue* channel = pcm[j];
       for (uint32_t i = 0; i < uint32_t(frames); ++i) {
@@ -215,7 +215,7 @@ VorbisDataDecoder::DoDecode(MediaRawData* aSample)
                                     time.value(),
                                     duration.value(),
                                     frames,
-                                    buffer.forget(),
+                                    Move(buffer),
                                     mVorbisDsp.vi->channels,
                                     mVorbisDsp.vi->rate));
     mFrames += aTotalFrames;
@@ -260,7 +260,8 @@ VorbisDataDecoder::Flush()
 bool
 VorbisDataDecoder::IsVorbis(const nsACString& aMimeType)
 {
-  return aMimeType.EqualsLiteral("audio/ogg; codecs=vorbis");
+  return aMimeType.EqualsLiteral("audio/webm; codecs=vorbis") ||
+         aMimeType.EqualsLiteral("audio/ogg; codecs=vorbis");
 }
 
 

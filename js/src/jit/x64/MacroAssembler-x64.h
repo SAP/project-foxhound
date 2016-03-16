@@ -39,40 +39,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     MacroAssembler& asMasm();
     const MacroAssembler& asMasm() const;
 
-  private:
-    // These use SystemAllocPolicy since asm.js releases memory after each
-    // function is compiled, and these need to live until after all functions
-    // are compiled.
-    struct Double {
-        double value;
-        NonAssertingLabel uses;
-        explicit Double(double value) : value(value) {}
-    };
-    Vector<Double, 0, SystemAllocPolicy> doubles_;
-
-    typedef HashMap<double, size_t, DefaultHasher<double>, SystemAllocPolicy> DoubleMap;
-    DoubleMap doubleMap_;
-
-    struct Float {
-        float value;
-        NonAssertingLabel uses;
-        explicit Float(float value) : value(value) {}
-    };
-    Vector<Float, 0, SystemAllocPolicy> floats_;
-
-    typedef HashMap<float, size_t, DefaultHasher<float>, SystemAllocPolicy> FloatMap;
-    FloatMap floatMap_;
-
-    struct SimdData {
-        SimdConstant value;
-        NonAssertingLabel uses;
-
-        explicit SimdData(const SimdConstant& v) : value(v) {}
-        SimdConstant::Type type() { return value.type(); }
-    };
-    Vector<SimdData, 0, SystemAllocPolicy> simds_;
-    typedef HashMap<SimdConstant, size_t, SimdConstant, SystemAllocPolicy> SimdMap;
-    SimdMap simdMap_;
+    void bindOffsets(const MacroAssemblerX86Shared::UsesVector&);
 
   public:
     using MacroAssemblerX86Shared::branch32;
@@ -636,9 +603,9 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
             branch32(cond, Address(scratch, 0), rhs, label);
         }
     }
-    void branch32(Condition cond, AsmJSAbsoluteAddress lhs, Imm32 rhs, Label* label) {
+    void branch32(Condition cond, wasm::SymbolicAddress lhs, Imm32 rhs, Label* label) {
         ScratchRegisterScope scratch(asMasm());
-        mov(AsmJSImmPtr(lhs.kind()), scratch);
+        mov(lhs, scratch);
         branch32(cond, Address(scratch, 0), rhs, label);
     }
     void branch32(Condition cond, AbsoluteAddress lhs, Register rhs, Label* label) {
@@ -681,10 +648,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
             branchPtr(cond, Operand(scratch, 0x0), ptr, label);
         }
     }
-    void branchPtr(Condition cond, AsmJSAbsoluteAddress addr, Register ptr, Label* label) {
+    void branchPtr(Condition cond, wasm::SymbolicAddress addr, Register ptr, Label* label) {
         ScratchRegisterScope scratch(asMasm());
         MOZ_ASSERT(ptr != scratch);
-        mov(AsmJSImmPtr(addr.kind()), scratch);
+        mov(addr, scratch);
         branchPtr(cond, Operand(scratch, 0x0), ptr, label);
     }
 
@@ -757,7 +724,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     void movePtr(ImmPtr imm, Register dest) {
         mov(imm, dest);
     }
-    void movePtr(AsmJSImmPtr imm, Register dest) {
+    void movePtr(wasm::SymbolicAddress imm, Register dest) {
         mov(imm, dest);
     }
     void movePtr(ImmGCPtr imm, Register dest) {
@@ -952,6 +919,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
         MOZ_ASSERT(cond == Equal || cond == NotEqual);
         cmp32(ToUpper32(operand), Imm32(Upper32Of(GetShiftedTag(JSVAL_TYPE_BOOLEAN))));
         j(cond, label);
+    }
+    void branchTestBoolean(Condition cond, const Address& address, Label* label) {
+        MOZ_ASSERT(cond == Equal || cond == NotEqual);
+        branchTestBoolean(cond, Operand(address), label);
     }
     void branchTestNull(Condition cond, const Operand& operand, Label* label) {
         MOZ_ASSERT(cond == Equal || cond == NotEqual);
@@ -1270,9 +1241,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
 
     void loadConstantDouble(double d, FloatRegister dest);
     void loadConstantFloat32(float f, FloatRegister dest);
-  private:
-    SimdData* getSimdData(const SimdConstant& v);
-  public:
     void loadConstantInt32x4(const SimdConstant& v, FloatRegister dest);
     void loadConstantFloat32x4(const SimdConstant& v, FloatRegister dest);
 
@@ -1420,7 +1388,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     void handleFailureWithHandlerTail(void* handler);
 
     // See CodeGeneratorX64 calls to noteAsmJSGlobalAccess.
-    void patchAsmJSGlobalAccess(CodeOffsetLabel patchAt, uint8_t* code, uint8_t* globalData,
+    void patchAsmJSGlobalAccess(CodeOffset patchAt, uint8_t* code, uint8_t* globalData,
                                 unsigned globalDataOffset)
     {
         uint8_t* nextInsn = code + patchAt.offset();

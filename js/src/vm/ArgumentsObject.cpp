@@ -39,7 +39,7 @@ ArgumentsObject::MaybeForwardToCallObject(AbstractFramePtr frame, ArgumentsObjec
                                           ArgumentsData* data)
 {
     JSScript* script = frame.script();
-    if (frame.fun()->needsCallObject() && script->argsObjAliasesFormals()) {
+    if (frame.fun()->needsCallObject() && script->argumentsAliasesFormals()) {
         obj->initFixedSlot(MAYBE_CALL_SLOT, ObjectValue(frame.callObj()));
         for (AliasedFormalIter fi(script); fi; fi++)
             data->args[fi.frameIndex()] = MagicScopeSlotValue(fi.scopeSlot());
@@ -52,7 +52,7 @@ ArgumentsObject::MaybeForwardToCallObject(jit::JitFrameLayout* frame, HandleObje
 {
     JSFunction* callee = jit::CalleeTokenToFunction(frame->calleeToken());
     JSScript* script = callee->nonLazyScript();
-    if (callee->needsCallObject() && script->argsObjAliasesFormals()) {
+    if (callee->needsCallObject() && script->argumentsAliasesFormals()) {
         MOZ_ASSERT(callObj && callObj->is<CallObject>());
         obj->initFixedSlot(MAYBE_CALL_SLOT, ObjectValue(*callObj.get()));
         for (AliasedFormalIter fi(script); fi; fi++)
@@ -611,10 +611,11 @@ ArgumentsObject::objectMovedDuringMinorGC(JSTracer* trc, JSObject* dst, JSObject
         return 0;
     }
 
+    AutoEnterOOMUnsafeRegion oomUnsafe;
     uint32_t nbytes = nsrc->data()->dataBytes;
     uint8_t* data = nsrc->zone()->pod_malloc<uint8_t>(nbytes);
     if (!data)
-        CrashAtUnhandlableOOM("Failed to allocate ArgumentsObject data while tenuring.");
+        oomUnsafe.crash("Failed to allocate ArgumentsObject data while tenuring.");
     ndst->initFixedSlot(DATA_SLOT, PrivateValue(data));
 
     mozilla::PodCopy(data, reinterpret_cast<uint8_t*>(nsrc->data()), nbytes);
@@ -645,7 +646,6 @@ const Class MappedArgumentsObject::class_ = {
     MappedArgumentsObject::obj_enumerate,
     MappedArgumentsObject::obj_resolve,
     nullptr,                 /* mayResolve  */
-    nullptr,                 /* convert     */
     ArgumentsObject::finalize,
     nullptr,                 /* call        */
     nullptr,                 /* hasInstance */
@@ -671,7 +671,6 @@ const Class UnmappedArgumentsObject::class_ = {
     UnmappedArgumentsObject::obj_enumerate,
     UnmappedArgumentsObject::obj_resolve,
     nullptr,                 /* mayResolve  */
-    nullptr,                 /* convert     */
     ArgumentsObject::finalize,
     nullptr,                 /* call        */
     nullptr,                 /* hasInstance */

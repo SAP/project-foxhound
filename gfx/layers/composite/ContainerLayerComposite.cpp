@@ -8,8 +8,8 @@
 #include "apz/src/AsyncPanZoomController.h"  // for AsyncPanZoomController
 #include "FrameMetrics.h"               // for FrameMetrics
 #include "Units.h"                      // for LayerRect, LayerPixel, etc
+#include "gfxEnv.h"                     // for gfxEnv
 #include "gfxPrefs.h"                   // for gfxPrefs
-#include "gfxUtils.h"                   // for gfxUtils, etc
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/UniquePtr.h"          // for UniquePtr
@@ -24,7 +24,7 @@
 #include "mozilla/layers/AsyncCompositionManager.h" // for ViewTransform
 #include "mozilla/layers/LayerMetricsWrapper.h" // for LayerMetricsWrapper
 #include "mozilla/mozalloc.h"           // for operator delete, etc
-#include "mozilla/nsRefPtr.h"                   // for nsRefPtr
+#include "mozilla/RefPtr.h"                   // for nsRefPtr
 #include "nsDebug.h"                    // for NS_ASSERTION
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 #include "nsISupportsUtils.h"           // for NS_ADDREF, NS_RELEASE
@@ -40,7 +40,7 @@
 #define CULLING_LOG(...)
 // #define CULLING_LOG(...) printf_stderr("CULLING: " __VA_ARGS__)
 
-#define DUMP(...) do { if (getenv("DUMP_DEBUG")) { printf_stderr(__VA_ARGS__); } } while(0)
+#define DUMP(...) do { if (gfxEnv::DumpDebug()) { printf_stderr(__VA_ARGS__); } } while(0)
 #define XYWH(k)  (k).x, (k).y, (k).width, (k).height
 #define XY(k)    (k).x, (k).y
 #define WH(k)    (k).width, (k).height
@@ -51,7 +51,7 @@ namespace layers {
 using namespace gfx;
 
 static bool
-LayerHasCheckerboardingAPZC(Layer* aLayer, gfxRGBA* aOutColor)
+LayerHasCheckerboardingAPZC(Layer* aLayer, Color* aOutColor)
 {
   for (LayerMetricsWrapper i(aLayer, LayerMetricsWrapper::StartAt::BOTTOM); i; i = i.GetParent()) {
     if (!i.Metrics().IsScrollable()) {
@@ -83,11 +83,11 @@ static void DrawLayerInfo(const RenderTargetIntRect& aClipRect,
   std::stringstream ss;
   aLayer->PrintInfo(ss, "");
 
-  nsIntRegion visibleRegion = aLayer->GetVisibleRegion();
+  LayerIntRegion visibleRegion = aLayer->GetVisibleRegion();
 
   uint32_t maxWidth = std::min<uint32_t>(visibleRegion.GetBounds().width, 500);
 
-  IntPoint topLeft = visibleRegion.GetBounds().TopLeft();
+  IntPoint topLeft = visibleRegion.ToUnknownRegion().GetBounds().TopLeft();
   aManager->GetTextRenderer()->RenderText(ss.str().c_str(), topLeft,
                                           aLayer->GetEffectiveTransform(), 16,
                                           maxWidth);
@@ -96,7 +96,7 @@ static void DrawLayerInfo(const RenderTargetIntRect& aClipRect,
 template<class ContainerT>
 static gfx::IntRect ContainerVisibleRect(ContainerT* aContainer)
 {
-  gfx::IntRect surfaceRect = aContainer->GetEffectiveVisibleRegion().GetBounds();
+  gfx::IntRect surfaceRect = aContainer->GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds();
   return surfaceRect;
 }
 
@@ -163,12 +163,15 @@ ContainerRenderVR(ContainerT* aContainer,
   surfaceRect.height = std::min(maxTextureSize, surfaceRect.height);
 
   gfx::VRHMDRenderingSupport *vrRendering = aHMD->GetRenderingSupport();
-  if (PR_GetEnv("NO_VR_RENDERING")) vrRendering = nullptr;
+  if (gfxEnv::NoVRRendering()) vrRendering = nullptr;
   if (vrRendering) {
     if (!aContainer->mVRRenderTargetSet || aContainer->mVRRenderTargetSet->size != surfaceRect.Size()) {
       aContainer->mVRRenderTargetSet = vrRendering->CreateRenderTargetSet(compositor, surfaceRect.Size());
     }
-
+    if (!aContainer->mVRRenderTargetSet) {
+      NS_WARNING("CreateRenderTargetSet failed");
+      return;
+    }
     surface = aContainer->mVRRenderTargetSet->GetNextRenderTarget();
     if (!surface) {
       NS_WARNING("GetNextRenderTarget failed");
@@ -222,9 +225,11 @@ ContainerRenderVR(ContainerT* aContainer,
       // proper bounds here (visible region bounds are 0,0,0,0)
       // and I'm not sure if this is the bounds we want anyway.
       if (layer->GetType() == Layer::TYPE_CANVAS) {
-        layerBounds = ToRect(static_cast<CanvasLayer*>(layer)->GetBounds());
+        layerBounds =
+          IntRectToRect(static_cast<CanvasLayer*>(layer)->GetBounds());
       } else {
-        layerBounds = ToRect(layer->GetEffectiveVisibleRegion().GetBounds());
+        layerBounds =
+          IntRectToRect(layer->GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds());
       }
       const gfx::Matrix4x4 childTransform = layer->GetEffectiveTransform();
       layerBounds = childTransform.TransformBounds(layerBounds);
@@ -293,7 +298,7 @@ ContainerRenderVR(ContainerT* aContainer,
 
   // draw the temporary surface with VR distortion to the original destination
   EffectChain vrEffect(aContainer);
-  bool skipDistortion = vrRendering || PR_GetEnv("MOZ_GFX_VR_NO_DISTORTION");
+  bool skipDistortion = vrRendering || gfxEnv::VRNoDistortion();
   if (skipDistortion) {
     vrEffect.mPrimaryEffect = new EffectRenderTarget(surface);
   } else {
@@ -401,7 +406,7 @@ ContainerPrepare(ContainerT* aContainer,
         surface = CreateOrRecycleTarget(aContainer, aManager);
 
         MOZ_PERFORMANCE_WARNING("gfx", "[%p] Container layer requires intermediate surface rendering\n", aContainer);
-        RenderIntermediate(aContainer, aManager, RenderTargetPixel::ToUntyped(aClipRect), surface);
+        RenderIntermediate(aContainer, aManager, aClipRect.ToUnknownRect(), surface);
         aContainer->SetChildrenChanged(false);
       }
 
@@ -519,12 +524,12 @@ RenderLayers(ContainerT* aContainer,
     const RenderTargetIntRect& clipRect = preparedData.mClipRect;
     Layer* layer = layerToRender->GetLayer();
 
-    gfxRGBA color;
+    Color color;
     if ((layer->GetContentFlags() & Layer::CONTENT_OPAQUE) &&
         layer->IsOpaqueForVisibility() &&
         LayerHasCheckerboardingAPZC(layer, &color)) {
       if (gfxPrefs::APZHighlightCheckerboardedAreas()) {
-        color = gfxRGBA(255 / 255.0, 188 / 255.0, 217 / 255.0, 1);  // "Cotton Candy"
+        color = Color(255 / 255.f, 188 / 255.f, 217 / 255.f, 1.f); // "Cotton Candy"
       }
       // Ideally we would want to intersect the checkerboard region from the APZ with the layer bounds
       // and only fill in that area. However the layer bounds takes into account the base translation
@@ -534,7 +539,7 @@ RenderLayers(ContainerT* aContainer,
       // should only occur transiently.
       gfx::IntRect layerBounds = layer->GetLayerBounds();
       EffectChain effectChain(layer);
-      effectChain.mPrimaryEffect = new EffectSolidColor(ToColor(color));
+      effectChain.mPrimaryEffect = new EffectSolidColor(color);
       aManager->GetCompositor()->DrawQuad(gfx::Rect(layerBounds.x, layerBounds.y, layerBounds.width, layerBounds.height),
                                           gfx::Rect(clipRect.ToUnknownRect()),
                                           effectChain, layer->GetEffectiveOpacity(),
@@ -553,7 +558,7 @@ RenderLayers(ContainerT* aContainer,
         layerToRender->SetClearRect(gfx::IntRect(0, 0, 0, 0));
       }
     } else {
-      layerToRender->RenderLayer(RenderTargetPixel::ToUntyped(clipRect));
+      layerToRender->RenderLayer(clipRect.ToUnknownRect());
     }
 
     if (gfxPrefs::UniformityInfo()) {
@@ -629,7 +634,7 @@ CreateTemporaryTargetAndCopyFromBackground(ContainerT* aContainer,
                                            LayerManagerComposite* aManager)
 {
   Compositor* compositor = aManager->GetCompositor();
-  gfx::IntRect visibleRect = aContainer->GetEffectiveVisibleRegion().GetBounds();
+  gfx::IntRect visibleRect = aContainer->GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds();
   RefPtr<CompositingRenderTarget> previousTarget = compositor->GetCurrentRenderTarget();
   gfx::IntRect surfaceRect = gfx::IntRect(visibleRect.x, visibleRect.y,
                                           visibleRect.width, visibleRect.height);
@@ -661,7 +666,7 @@ RenderIntermediate(ContainerT* aContainer,
 
   compositor->SetRenderTarget(surface);
   // pre-render all of the layers into our temporary
-  RenderLayers(aContainer, aManager, RenderTargetPixel::FromUntyped(aClipRect));
+  RenderLayers(aContainer, aManager, RenderTargetIntRect::FromUnknownRect(aClipRect));
   // Unbind the current surface and rebind the previous one.
   compositor->SetRenderTarget(previousTarget);
 }
@@ -697,10 +702,10 @@ ContainerRender(ContainerT* aContainer,
       return;
     }
 
-    gfx::Rect visibleRect(aContainer->GetEffectiveVisibleRegion().GetBounds());
-    nsRefPtr<Compositor> compositor = aManager->GetCompositor();
+    gfx::Rect visibleRect(aContainer->GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds());
+    RefPtr<Compositor> compositor = aManager->GetCompositor();
 #ifdef MOZ_DUMP_PAINTING
-    if (gfxUtils::sDumpPainting) {
+    if (gfxEnv::DumpCompositorTextures()) {
       RefPtr<gfx::DataSourceSurface> surf = surface->Dump(compositor);
       if (surf) {
         WriteSnapshotToDumpFile(aContainer, surf);
@@ -708,7 +713,7 @@ ContainerRender(ContainerT* aContainer,
     }
 #endif
 
-    nsRefPtr<ContainerT> container = aContainer;
+    RefPtr<ContainerT> container = aContainer;
     RenderWithAllMasks(aContainer, compositor, aClipRect,
                        [&, surface, compositor, container](EffectChain& effectChain, const Rect& clipRect) {
       effectChain.mPrimaryEffect = new EffectRenderTarget(surface);
@@ -717,7 +722,7 @@ ContainerRender(ContainerT* aContainer,
                            container->GetEffectiveTransform());
     });
   } else {
-    RenderLayers(aContainer, aManager, RenderTargetPixel::FromUntyped(aClipRect));
+    RenderLayers(aContainer, aManager, RenderTargetIntRect::FromUnknownRect(aClipRect));
   }
   aContainer->mPrepared = nullptr;
 

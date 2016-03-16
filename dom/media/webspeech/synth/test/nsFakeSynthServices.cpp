@@ -30,7 +30,8 @@ StaticRefPtr<nsFakeSynthServices> nsFakeSynthServices::sSingleton;
 enum VoiceFlags
 {
   eSuppressEvents = 1,
-  eSuppressEnd = 2
+  eSuppressEnd = 2,
+  eFailAtStart = 4
 };
 
 struct VoiceDetails
@@ -54,6 +55,7 @@ static const VoiceDetails sIndirectVoices[] = {
   {"urn:moz-tts:fake-indirect:zanetta", "Zanetta Farussi", "it-IT", false, 0},
   {"urn:moz-tts:fake-indirect:margherita", "Margherita Durastanti", "it-IT-noevents-noend", false, eSuppressEvents | eSuppressEnd},
   {"urn:moz-tts:fake-indirect:teresa", "Teresa Cornelys", "it-IT-noend", false, eSuppressEnd},
+  {"urn:moz-tts:fake-indirect:cecilia", "Cecilia Bartoli", "it-IT-error", false, eFailAtStart},
 };
 
 // FakeSynthCallback
@@ -144,14 +146,14 @@ FakeDirectAudioSynth::Speak(const nsAString& aText, const nsAString& aUri,
 
     NS_IMETHOD Run() override
     {
-      nsRefPtr<FakeSynthCallback> cb = new FakeSynthCallback(nullptr);
+      RefPtr<FakeSynthCallback> cb = new FakeSynthCallback(nullptr);
       mTask->Setup(cb, CHANNELS, SAMPLERATE, 2);
 
       // Just an arbitrary multiplier. Pretend that each character is
       // synthesized to 40 frames.
       uint32_t frames_length = 40 * mText.Length();
-      nsAutoArrayPtr<int16_t> frames(new int16_t[frames_length]());
-      mTask->SendAudioNative(frames, frames_length);
+      auto frames = MakeUnique<int16_t[]>(frames_length);
+      mTask->SendAudioNative(frames.get(), frames_length);
 
       mTask->SendAudioNative(nullptr, 0);
 
@@ -243,7 +245,12 @@ FakeIndirectAudioSynth::Speak(const nsAString& aText, const nsAString& aUri,
     }
   }
 
-  nsRefPtr<FakeSynthCallback> cb = new FakeSynthCallback(
+  if (flags & eFailAtStart) {
+    aTask->DispatchError(0, 0);
+    return NS_OK;
+  }
+
+  RefPtr<FakeSynthCallback> cb = new FakeSynthCallback(
     (flags & eSuppressEvents) ? nullptr : aTask);
 
   aTask->Setup(cb, 0, 0, 0);
@@ -350,7 +357,7 @@ nsFakeSynthServices::GetInstance()
 already_AddRefed<nsFakeSynthServices>
 nsFakeSynthServices::GetInstanceForService()
 {
-  nsRefPtr<nsFakeSynthServices> picoService = GetInstance();
+  RefPtr<nsFakeSynthServices> picoService = GetInstance();
   return picoService.forget();
 }
 

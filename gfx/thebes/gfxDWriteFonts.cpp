@@ -85,8 +85,9 @@ gfxDWriteFont::gfxDWriteFont(gfxFontEntry *aFontEntry,
         static_cast<gfxDWriteFontEntry*>(aFontEntry);
     nsresult rv;
     DWRITE_FONT_SIMULATIONS sims = DWRITE_FONT_SIMULATIONS_NONE;
-    if ((GetStyle()->style & (NS_FONT_STYLE_ITALIC | NS_FONT_STYLE_OBLIQUE)) &&
-        !fe->IsItalic() && GetStyle()->allowSyntheticStyle) {
+    if ((GetStyle()->style != NS_FONT_STYLE_NORMAL) &&
+        fe->IsUpright() &&
+        GetStyle()->allowSyntheticStyle) {
             // For this we always use the font_matrix for uniformity. Not the
             // DWrite simulation.
             mNeedsOblique = true;
@@ -143,7 +144,7 @@ gfxDWriteFont::GetFakeMetricsForArialBlack(DWRITE_FONT_METRICS *aFontMetrics)
         return false;
     }
 
-    nsRefPtr<gfxFont> font = fe->FindOrMakeFont(&style, needsBold);
+    RefPtr<gfxFont> font = fe->FindOrMakeFont(&style, needsBold);
     gfxDWriteFont *dwFont = static_cast<gfxDWriteFont*>(font.get());
     dwFont->mFontFace->GetMetrics(aFontMetrics);
 
@@ -530,8 +531,6 @@ gfxDWriteFont::GetCairoScaledFont()
         cairo_dwrite_scaled_font_allow_manual_show_glyphs(mScaledFont,
                                                           mAllowManualShowGlyphs);
 
-        gfxDWriteFontEntry *fe =
-            static_cast<gfxDWriteFontEntry*>(mFontEntry.get());
         cairo_dwrite_scaled_font_set_force_GDI_classic(mScaledFont,
                                                        GetForceGDIClassic());
     }

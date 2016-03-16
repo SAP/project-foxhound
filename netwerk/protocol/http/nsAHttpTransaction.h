@@ -76,6 +76,20 @@ public:
     virtual nsresult WriteSegments(nsAHttpSegmentWriter *writer,
                                    uint32_t count, uint32_t *countWritten) = 0;
 
+    // These versions of the functions allow the overloader to specify whether or
+    // not it is safe to call *Segments() in a loop while they return OK.
+    // The callee should turn again to false if it is not, otherwise leave untouched
+    virtual nsresult ReadSegmentsAgain(nsAHttpSegmentReader *reader,
+                                       uint32_t count, uint32_t *countRead, bool *again)
+    {
+        return ReadSegments(reader, count, countRead);
+    }
+    virtual nsresult WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
+                                   uint32_t count, uint32_t *countWritten, bool *again)
+    {
+        return WriteSegments(writer, count, countWritten);
+    }
+
     // called to close the transaction
     virtual void Close(nsresult reason) = 0;
 
@@ -100,7 +114,7 @@ public:
     // at least partially written and cannot be moved.
     //
     virtual nsresult TakeSubTransactions(
-        nsTArray<nsRefPtr<nsAHttpTransaction> > &outTransactions) = 0;
+        nsTArray<RefPtr<nsAHttpTransaction> > &outTransactions) = 0;
 
     // called to add a sub-transaction in the case of pipelined transactions
     // classes that do not implement sub transactions
@@ -212,7 +226,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpTransaction, NS_AHTTPTRANSACTION_IID)
     void     SetProxyConnectFailed() override;                                   \
     virtual nsHttpRequestHead *RequestHead() override;                                   \
     uint32_t Http1xTransactionCount() override;                                  \
-    nsresult TakeSubTransactions(nsTArray<nsRefPtr<nsAHttpTransaction> > &outTransactions) override; \
+    nsresult TakeSubTransactions(nsTArray<RefPtr<nsAHttpTransaction> > &outTransactions) override; \
     nsresult AddTransaction(nsAHttpTransaction *) override;                      \
     uint32_t PipelineDepth() override;                                           \
     nsresult SetPipelinePosition(int32_t) override;                              \

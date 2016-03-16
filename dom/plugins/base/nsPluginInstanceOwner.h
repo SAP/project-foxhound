@@ -66,7 +66,12 @@ public:
   
   NPBool     ConvertPoint(double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
                           double *destX, double *destY, NPCoordinateSpace destSpace) override;
-  
+
+  NPError InitAsyncSurface(NPSize *size, NPImageFormat format,
+                           void *initData, NPAsyncSurface *surface) override;
+  NPError FinalizeAsyncSurface(NPAsyncSurface *surface) override;
+  void SetCurrentAsyncSurface(NPAsyncSurface *surface, NPRect *changed) override;
+
   /**
    * Get the type of the HTML tag that was used ot instantiate this
    * plugin.  Currently supported tags are EMBED, OBJECT and APPLET.
@@ -136,19 +141,9 @@ public:
   // This calls into the plugin (NPP_SetWindow) and can run script.
   void FixUpPluginWindow(int32_t inPaintState);
   void HidePluginWindow();
-  // Return a pointer to the internal nsPluginPort structure that's used to
-  // store a copy of plugin port info and to detect when it's been changed.
-  void* GetPluginPortCopy();
   // Set plugin port info in the plugin (in the 'window' member of the
   // NPWindow structure passed to the plugin by SetWindow()).
   void SetPluginPort();
-  // Flag when we've set up a Thebes (and CoreGraphics) context in
-  // nsPluginFrame::PaintPlugin().  We need to know this in
-  // FixUpPluginWindow() (i.e. we need to know when FixUpPluginWindow() has
-  // been called from nsPluginFrame::PaintPlugin() when we're using the
-  // CoreGraphics drawing model).
-  void BeginCGPaint();
-  void EndCGPaint();
 #else // XP_MACOSX
   void UpdateWindowPositionAndClipRect(bool aSetWindow);
   void UpdateWindowVisibility(bool aVisible);
@@ -223,6 +218,8 @@ public:
   // Returns the image container that has our currently displayed image.
   already_AddRefed<mozilla::layers::ImageContainer> GetImageContainer();
 
+  void DidComposite();
+
   /**
    * Returns the bounds of the current async-rendered surface. This can only
    * change in response to messages received by the event loop (i.e. not during
@@ -259,6 +256,11 @@ public:
   void NotifyHostCreateWidget();
   void NotifyDestroyPending();
 
+#if defined(XP_WIN)
+  // See QUIRK_FLASH_FIXUP_MOUSE_CURSOR
+  void ResetWidgetCursorCaching();
+#endif
+
 private:
   virtual ~nsPluginInstanceOwner();
 
@@ -284,20 +286,15 @@ private:
 #endif
  
   nsPluginNativeWindow       *mPluginWindow;
-  nsRefPtr<nsNPAPIPluginInstance> mInstance;
+  RefPtr<nsNPAPIPluginInstance> mInstance;
   nsPluginFrame              *mPluginFrame;
   nsWeakPtr                   mContent; // WEAK, content owns us
   nsCString                   mDocumentBase;
   bool                        mWidgetCreationComplete;
   nsCOMPtr<nsIWidget>         mWidget;
-  nsRefPtr<nsPluginHost>      mPluginHost;
+  RefPtr<nsPluginHost>      mPluginHost;
   
 #ifdef XP_MACOSX
-  NP_CGContext                              mCGPluginPortCopy;
-  int32_t                                   mInCGPaintLevel;
-  mozilla::RefPtr<MacIOSurface>             mIOSurface;
-  mozilla::RefPtr<nsCARenderer>             mCARenderer;
-  CGColorSpaceRef                           mColorProfile;
   static nsCOMPtr<nsITimer>                *sCATimer;
   static nsTArray<nsPluginInstanceOwner*>  *sCARefreshListeners;
   bool                                      mSentInitialTopLevelWindowEvent;
@@ -331,7 +328,7 @@ private:
 #endif
   
   // pointer to wrapper for nsIDOMContextMenuListener
-  nsRefPtr<nsPluginDOMContextMenuListener> mCXMenuListener;
+  RefPtr<nsPluginDOMContextMenuListener> mCXMenuListener;
   
   nsresult DispatchKeyToPlugin(nsIDOMEvent* aKeyEvent);
   nsresult DispatchMouseToPlugin(nsIDOMEvent* aMouseEvent,

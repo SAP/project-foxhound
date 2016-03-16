@@ -128,6 +128,7 @@ public:
                        ImageContainer* aImageContainer) override;
 
   virtual PTextureChild* CreateTexture(const SurfaceDescriptor& aSharedData,
+                                       LayersBackend aLayersBackend,
                                        TextureFlags aFlags) override;
 
   /**
@@ -219,8 +220,6 @@ public:
   virtual void RemoveTextureFromCompositableAsync(AsyncTransactionTracker* aAsyncTransactionTracker,
                                                   CompositableClient* aCompositable,
                                                   TextureClient* aTexture) override;
-
-  virtual void RemoveTexture(TextureClient* aTexture) override;
 
   /**
    * Communicate to the compositor that aRegion in the texture identified by aLayer

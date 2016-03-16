@@ -14,7 +14,7 @@
 #include <algorithm>
 
 #undef LOG
-extern PRLogModuleInfo* GetPDMLog();
+extern mozilla::LogModule* GetPDMLog();
 #define LOG(arg, ...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, ("VPXDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
 namespace mozilla {
@@ -54,7 +54,7 @@ VPXDecoder::Shutdown()
   return NS_OK;
 }
 
-nsRefPtr<MediaDataDecoder::InitPromise>
+RefPtr<MediaDataDecoder::InitPromise>
 VPXDecoder::Init()
 {
   int decode_threads = 2;
@@ -138,7 +138,7 @@ VPXDecoder::DoDecodeFrame(MediaRawData* aSample)
 
     VideoInfo info;
     info.mDisplay = mInfo.mDisplay;
-    nsRefPtr<VideoData> v = VideoData::Create(info,
+    RefPtr<VideoData> v = VideoData::Create(info,
                                               mImageContainer,
                                               aSample->mOffset,
                                               aSample->mTime,
@@ -173,9 +173,9 @@ nsresult
 VPXDecoder::Input(MediaRawData* aSample)
 {
   nsCOMPtr<nsIRunnable> runnable(
-    NS_NewRunnableMethodWithArg<nsRefPtr<MediaRawData>>(
+    NS_NewRunnableMethodWithArg<RefPtr<MediaRawData>>(
       this, &VPXDecoder::DecodeFrame,
-      nsRefPtr<MediaRawData>(aSample)));
+      RefPtr<MediaRawData>(aSample)));
   mTaskQueue->Dispatch(runnable.forget());
 
   return NS_OK;

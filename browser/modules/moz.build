@@ -17,7 +17,7 @@ EXTRA_JS_MODULES += [
     'CastingApps.jsm',
     'Chat.jsm',
     'ContentClick.jsm',
-    'ContentCrashReporters.jsm',
+    'ContentCrashHandlers.jsm',
     'ContentLinkHandler.jsm',
     'ContentObservers.jsm',
     'ContentSearch.jsm',
@@ -30,20 +30,23 @@ EXTRA_JS_MODULES += [
     'FormValidationHandler.jsm',
     'HiddenFrame.jsm',
     'NetworkPrioritizer.jsm',
-    'NewTabURL.jsm',
     'offlineAppCache.jsm',
     'PanelFrame.jsm',
     'PluginContent.jsm',
-    'ProcessHangMonitor.jsm',
     'ReaderParent.jsm',
     'RecentWindow.jsm',
     'RemotePrompt.jsm',
     'SelfSupportBackend.jsm',
     'SitePermissions.jsm',
     'Social.jsm',
+    'TabGroupsMigrator.jsm',
     'TransientPrefs.jsm',
     'WebappManager.jsm',
     'webrtcUI.jsm',
+]
+
+EXTRA_PP_JS_MODULES += [
+    'ProcessHangMonitor.jsm'
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':

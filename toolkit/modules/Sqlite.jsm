@@ -36,7 +36,10 @@ XPCOMUtils.defineLazyServiceGetter(this, "FinalizationWitnessService",
 XPCOMUtils.defineLazyModuleGetter(this, "PromiseUtils",
                                   "resource://gre/modules/PromiseUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "console",
-                                  "resource://gre/modules/devtools/Console.jsm");
+                                  "resource://gre/modules/Console.jsm");
+
+// Regular expression used by isInvalidBoundLikeQuery
+var likeSqlRegex = /\bLIKE\b\s(?![@:?])/i;
 
 // Counts the number of created connections per database basename(). This is
 // used for logging to distinguish connection instances.
@@ -59,6 +62,17 @@ var Debugging = {
   // should be set to false.
   failTestsOnAutoClose: true
 };
+
+/**
+ * Helper function to check whether LIKE is implemented using proper bindings.
+ *
+ * @param sql
+ *        (string) The SQL query to be verified.
+ * @return boolean value telling us whether query was correct or not
+*/
+function isInvalidBoundLikeQuery(sql) {
+  return likeSqlRegex.test(sql);
+}
 
 // Displays a script error message
 function logScriptError(message) {
@@ -755,13 +769,15 @@ ConnectionData.prototype = Object.freeze({
 
           try {
             onRow(row);
-          } catch (e if e instanceof StopIteration) {
-            userCancelled = true;
-            pending.cancel();
-            break;
-          } catch (ex) {
+          } catch (e) {
+            if (e instanceof StopIteration) {
+              userCancelled = true;
+              pending.cancel();
+              break;
+            }
+
             self._log.warn("Exception when calling onRow callback: " +
-                           CommonUtils.exceptionStr(ex));
+                           CommonUtils.exceptionStr(e));
           }
         }
       },
@@ -797,7 +813,7 @@ ConnectionData.prototype = Object.freeze({
             break;
 
           case Ci.mozIStorageStatementCallback.REASON_ERROR:
-            let error = new Error("Error(s) encountered during statement execution: " + [error.message for (error of errors)].join(", "));
+            let error = new Error("Error(s) encountered during statement execution: " + errors.map(e => e.message).join(", "));
             error.errors = errors;
             deferred.reject(error);
             break;
@@ -1273,6 +1289,9 @@ OpenedConnection.prototype = Object.freeze({
    *        (function) Callback to receive each row from result.
    */
   executeCached: function (sql, params=null, onRow=null) {
+    if (isInvalidBoundLikeQuery(sql)) {
+      throw new Error("Please enter a LIKE clause with bindings");
+    }
     return this._connectionData.executeCached(sql, params, onRow);
   },
 
@@ -1292,6 +1311,9 @@ OpenedConnection.prototype = Object.freeze({
    *        (function) Callback to receive result of a single row.
    */
   execute: function (sql, params=null, onRow=null) {
+    if (isInvalidBoundLikeQuery(sql)) {
+      throw new Error("Please enter a LIKE clause with bindings");
+    }
     return this._connectionData.execute(sql, params, onRow);
   },
 

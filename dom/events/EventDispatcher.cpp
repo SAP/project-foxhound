@@ -36,6 +36,7 @@
 #include "mozilla/dom/TouchEvent.h"
 #include "mozilla/dom/TransitionEvent.h"
 #include "mozilla/dom/WheelEvent.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/XULCommandEvent.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
@@ -239,7 +240,7 @@ public:
   // Event retargeting must happen whenever mNewTarget is non-null.
   nsCOMPtr<EventTarget>             mNewTarget;
   // Cache mTarget's event listener manager.
-  nsRefPtr<EventListenerManager>    mManager;
+  RefPtr<EventListenerManager>    mManager;
 };
 
 EventTargetChainItem::EventTargetChainItem(EventTarget* aTarget)
@@ -254,7 +255,7 @@ void
 EventTargetChainItem::PreHandleEvent(EventChainPreVisitor& aVisitor)
 {
   aVisitor.Reset();
-  unused << mTarget->PreHandleEvent(aVisitor);
+  Unused << mTarget->PreHandleEvent(aVisitor);
   SetForceContentDispatch(aVisitor.mForceContentDispatch);
   SetWantsWillHandleEvent(aVisitor.mWantsWillHandleEvent);
   SetMayHaveListenerManager(aVisitor.mMayHaveListenerManager);
@@ -519,7 +520,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
 
   // If we have a PresContext, make sure it doesn't die before
   // event dispatching is finished.
-  nsRefPtr<nsPresContext> kungFuDeathGrip(aPresContext);
+  RefPtr<nsPresContext> kungFuDeathGrip(aPresContext);
 
   ELMCreationDetector cd;
   nsTArray<EventTargetChainItem> chain;
@@ -641,9 +642,10 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
     if (NS_SUCCEEDED(rv)) {
       if (aTargets) {
         aTargets->Clear();
-        aTargets->SetCapacity(chain.Length());
-        for (uint32_t i = 0; i < chain.Length(); ++i) {
-          aTargets->AppendElement(chain[i].CurrentTarget()->GetTargetForDOMEvent());
+        uint32_t numTargets = chain.Length();
+        EventTarget** targets = aTargets->AppendElements(numTargets);
+        for (uint32_t i = 0; i < numTargets; ++i) {
+          targets[i] = chain[i].CurrentTarget()->GetTargetForDOMEvent();
         }
       } else {
         // Event target chain is created. Handle the chain.
@@ -709,7 +711,9 @@ EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
 
     if (!dontResetTrusted) {
       //Check security state to determine if dispatcher is trusted
-      aDOMEvent->SetTrusted(nsContentUtils::ThreadsafeIsCallerChrome());
+      bool trusted = NS_IsMainThread() ? nsContentUtils::LegacyIsCallerChromeOrNativeCode()
+                                       : mozilla::dom::workers::IsCurrentThreadRunningChromeWorker();
+      aDOMEvent->SetTrusted(trusted);
     }
 
     return EventDispatcher::Dispatch(aTarget, aPresContext, innerEvent,

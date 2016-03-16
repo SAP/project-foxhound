@@ -37,6 +37,7 @@ XPIDL_SOURCES += [
     'nsITokenDialogs.idl',
     'nsITokenPasswordDialogs.idl',
     'nsIUserCertPicker.idl',
+    'nsIWeakCryptoOverride.idl',
     'nsIX509Cert.idl',
     'nsIX509CertDB.idl',
     'nsIX509CertList.idl',
@@ -72,6 +73,10 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.psm += [
     'PSMContentListener.h',
+]
+
+EXPORTS.ipc += [
+    'DataStorageIPCUtils.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -126,6 +131,7 @@ UNIFIED_SOURCES += [
     'SharedSSLState.cpp',
     'SSLServerCertVerification.cpp',
     'TransportSecurityInfo.cpp',
+    'WeakCryptoOverride.cpp',
 ]
 
 # nsNSSCertificateDB.cpp needs to include nscert.h before everything else.
@@ -159,8 +165,8 @@ LOCAL_INCLUDES += [
     '/security/pkix/include',
 ]
 
-GENERATED_INCLUDES += [
-    '/dist/public/nss',
+LOCAL_INCLUDES += [
+    '!/dist/public/nss',
 ]
 
 if CONFIG['NSS_DISABLE_DBM']:

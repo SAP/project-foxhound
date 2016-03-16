@@ -7,15 +7,21 @@
 #include "mozilla/Services.h"
 #include "mozilla/dom/BrowserElementAudioChannelBinding.h"
 #include "mozilla/dom/DOMRequest.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "AudioChannelService.h"
 #include "nsIBrowserElementAPI.h"
 #include "nsIDocShell.h"
+#include "nsIDOMDocument.h"
 #include "nsIDOMDOMRequest.h"
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"
+#include "nsISystemMessagesInternal.h"
 #include "nsITabParent.h"
+#include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
 
 namespace {
 
@@ -45,20 +51,45 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(BrowserElementAudioChannel,
                                    mTabParent,
                                    mBrowserElementAPI)
 
+/* static */ already_AddRefed<BrowserElementAudioChannel>
+BrowserElementAudioChannel::Create(nsPIDOMWindow* aWindow,
+                                   nsIFrameLoader* aFrameLoader,
+                                   nsIBrowserElementAPI* aAPI,
+                                   AudioChannel aAudioChannel,
+                                   const nsAString& aManifestURL,
+                                   ErrorResult& aRv)
+{
+  RefPtr<BrowserElementAudioChannel> ac =
+    new BrowserElementAudioChannel(aWindow, aFrameLoader, aAPI,
+                                   aAudioChannel, aManifestURL);
+
+  aRv = ac->Initialize();
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  MOZ_LOG(AudioChannelService::GetAudioChannelLog(), LogLevel::Debug,
+         ("BrowserElementAudioChannel, Create, channel = %p, type = %d\n",
+          ac.get(), aAudioChannel));
+
+  return ac.forget();
+}
+
 BrowserElementAudioChannel::BrowserElementAudioChannel(
-                                                   nsPIDOMWindow* aWindow,
-                                                   nsIFrameLoader* aFrameLoader,
-                                                   nsIBrowserElementAPI* aAPI,
-                                                   AudioChannel aAudioChannel)
+                                                nsPIDOMWindow* aWindow,
+                                                nsIFrameLoader* aFrameLoader,
+                                                nsIBrowserElementAPI* aAPI,
+                                                AudioChannel aAudioChannel,
+                                                const nsAString& aManifestURL)
   : DOMEventTargetHelper(aWindow)
   , mFrameLoader(aFrameLoader)
   , mBrowserElementAPI(aAPI)
   , mAudioChannel(aAudioChannel)
+  , mManifestURL(aManifestURL)
   , mState(eStateUnknown)
 {
   MOZ_ASSERT(NS_IsMainThread());
   AssertIsInMainProcess();
-  MOZ_ASSERT(mFrameLoader);
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
@@ -94,6 +125,17 @@ BrowserElementAudioChannel::~BrowserElementAudioChannel()
 nsresult
 BrowserElementAudioChannel::Initialize()
 {
+  if (!mFrameLoader) {
+    nsCOMPtr<nsPIDOMWindow> window = GetOwner();
+    if (!window) {
+      return NS_ERROR_FAILURE;
+    }
+
+    mFrameWindow = window->GetScriptableTop();
+    mFrameWindow = mFrameWindow->GetOuterWindow();
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIDocShell> docShell;
   nsresult rv = mFrameLoader->GetDocShell(getter_AddRefs(docShell));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -106,10 +148,7 @@ BrowserElementAudioChannel::Initialize()
       return NS_ERROR_FAILURE;
     }
 
-    nsCOMPtr<nsIDOMWindow> topWindow;
-    window->GetScriptableTop(getter_AddRefs(topWindow));
-
-    mFrameWindow = do_QueryInterface(topWindow);
+    mFrameWindow = window->GetScriptableTop();
     mFrameWindow = mFrameWindow->GetOuterWindow();
     return NS_OK;
   }
@@ -146,7 +185,7 @@ class BaseRunnable : public nsRunnable
 protected:
   nsCOMPtr<nsPIDOMWindow> mParentWindow;
   nsCOMPtr<nsPIDOMWindow> mFrameWindow;
-  nsRefPtr<DOMRequest> mRequest;
+  RefPtr<DOMRequest> mRequest;
   AudioChannel mAudioChannel;
 
   virtual void DoWork(AudioChannelService* aService,
@@ -163,8 +202,10 @@ public:
 
   NS_IMETHODIMP Run() override
   {
-    nsRefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
-    MOZ_ASSERT(service);
+    RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
+    if (!service) {
+      return NS_OK;
+    }
 
     AutoJSAPI jsapi;
     if (!jsapi.Init(mParentWindow)) {
@@ -277,6 +318,43 @@ protected:
   }
 };
 
+class RespondSuccessHandler final : public PromiseNativeHandler
+{
+public:
+  NS_DECL_ISUPPORTS
+
+  explicit RespondSuccessHandler(DOMRequest* aRequest)
+    : mDomRequest(aRequest)
+  {};
+
+  virtual void
+  ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
+
+  virtual void
+  RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
+
+private:
+  ~RespondSuccessHandler() {};
+
+  RefPtr<DOMRequest> mDomRequest;
+};
+NS_IMPL_ISUPPORTS0(RespondSuccessHandler);
+
+void
+RespondSuccessHandler::ResolvedCallback(JSContext* aCx,
+                                        JS::Handle<JS::Value> aValue)
+{
+  JS::Rooted<JS::Value> value(aCx);
+  mDomRequest->FireSuccess(value);
+}
+
+void
+RespondSuccessHandler::RejectedCallback(JSContext* aCx,
+                                        JS::Handle<JS::Value> aValue)
+{
+  mDomRequest->FireError(NS_ERROR_FAILURE);
+}
+
 } // anonymous namespace
 
 already_AddRefed<dom::DOMRequest>
@@ -296,7 +374,7 @@ BrowserElementAudioChannel::GetVolume(ErrorResult& aRv)
     return request.forget().downcast<DOMRequest>();
   }
 
-  nsRefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
+  RefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
 
   nsCOMPtr<nsIRunnable> runnable =
     new GetVolumeRunnable(GetOwner(), mFrameWindow, domRequest, mAudioChannel);
@@ -323,12 +401,12 @@ BrowserElementAudioChannel::SetVolume(float aVolume, ErrorResult& aRv)
     return request.forget().downcast<DOMRequest>();
   }
 
-  nsRefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
-  MOZ_ASSERT(service);
+  RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
+  if (service) {
+    service->SetAudioChannelVolume(mFrameWindow, mAudioChannel, aVolume);
+  }
 
-  service->SetAudioChannelVolume(mFrameWindow, mAudioChannel, aVolume);
-
-  nsRefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
+  RefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
   nsCOMPtr<nsIRunnable> runnable = new FireSuccessRunnable(GetOwner(),
                                                            mFrameWindow,
                                                            domRequest,
@@ -355,7 +433,7 @@ BrowserElementAudioChannel::GetMuted(ErrorResult& aRv)
     return request.forget().downcast<DOMRequest>();
   }
 
-  nsRefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
+  RefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
 
   nsCOMPtr<nsIRunnable> runnable =
     new GetMutedRunnable(GetOwner(), mFrameWindow, domRequest, mAudioChannel);
@@ -382,12 +460,12 @@ BrowserElementAudioChannel::SetMuted(bool aMuted, ErrorResult& aRv)
     return request.forget().downcast<DOMRequest>();
   }
 
-  nsRefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
-  MOZ_ASSERT(service);
+  RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
+  if (service) {
+    service->SetAudioChannelMuted(mFrameWindow, mAudioChannel, aMuted);
+  }
 
-  service->SetAudioChannelMuted(mFrameWindow, mAudioChannel, aMuted);
-
-  nsRefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
+  RefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
   nsCOMPtr<nsIRunnable> runnable = new FireSuccessRunnable(GetOwner(),
                                                            mFrameWindow,
                                                            domRequest,
@@ -404,7 +482,7 @@ BrowserElementAudioChannel::IsActive(ErrorResult& aRv)
   AssertIsInMainProcess();
 
   if (mState != eStateUnknown) {
-    nsRefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
+    RefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
 
     nsCOMPtr<nsIRunnable> runnable =
       new IsActiveRunnable(GetOwner(), mFrameWindow, domRequest, mAudioChannel,
@@ -425,13 +503,69 @@ BrowserElementAudioChannel::IsActive(ErrorResult& aRv)
     return request.forget().downcast<DOMRequest>();
   }
 
-  nsRefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
+  RefPtr<DOMRequest> domRequest = new DOMRequest(GetOwner());
 
   nsCOMPtr<nsIRunnable> runnable =
     new IsActiveRunnable(GetOwner(), mFrameWindow, domRequest, mAudioChannel);
   NS_DispatchToMainThread(runnable);
 
   return domRequest.forget();
+}
+
+already_AddRefed<dom::DOMRequest>
+BrowserElementAudioChannel::NotifyChannel(const nsAString& aEvent,
+                                          ErrorResult& aRv)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mFrameWindow) {
+    nsCOMPtr<nsIDOMDOMRequest> request;
+    aRv = mBrowserElementAPI->NotifyChannel(aEvent, mManifestURL,
+                                            (uint32_t)mAudioChannel,
+                                            getter_AddRefs(request));
+    if (NS_WARN_IF(aRv.Failed())) {
+      return nullptr;
+    }
+
+    return request.forget().downcast<DOMRequest>();
+  }
+
+  nsCOMPtr<nsISystemMessagesInternal> systemMessenger =
+    do_GetService("@mozilla.org/system-message-internal;1");
+  MOZ_ASSERT(systemMessenger);
+
+  AutoJSAPI jsAPI;
+  if (!jsAPI.Init(GetOwner())) {
+    return nullptr;
+  }
+
+  JS::Rooted<JS::Value> value(jsAPI.cx());
+  value.setInt32((uint32_t)mAudioChannel);
+
+  nsCOMPtr<nsIURI> manifestURI;
+  nsresult rv = NS_NewURI(getter_AddRefs(manifestURI), mManifestURL);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  // Since the pageURI of the app has been registered to the system messager,
+  // when the app was installed. The system messager can only use the manifest
+  // to send the message to correct page.
+  nsCOMPtr<nsISupports> promise;
+  rv = systemMessenger->SendMessage(aEvent, value, nullptr, manifestURI,
+                                    JS::UndefinedHandleValue,
+                                    getter_AddRefs(promise));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  RefPtr<Promise> promiseIns = static_cast<Promise*>(promise.get());
+  RefPtr<DOMRequest> request = new DOMRequest(GetOwner());
+  RefPtr<RespondSuccessHandler> handler = new RespondSuccessHandler(request);
+  promiseIns->AppendNativeHandler(handler);
+
+  return request.forget();
 }
 
 NS_IMETHODIMP
@@ -480,6 +614,10 @@ BrowserElementAudioChannel::Observe(nsISupports* aSubject, const char* aTopic,
 void
 BrowserElementAudioChannel::ProcessStateChanged(const char16_t* aData)
 {
+  MOZ_LOG(AudioChannelService::GetAudioChannelLog(), LogLevel::Debug,
+         ("BrowserElementAudioChannel, ProcessStateChanged, this = %p, "
+          "type = %d\n", this, mAudioChannel));
+
   nsAutoString value(aData);
   mState = value.EqualsASCII("active") ? eStateActive : eStateInactive;
   DispatchTrustedEvent(NS_LITERAL_STRING("activestatechanged"));

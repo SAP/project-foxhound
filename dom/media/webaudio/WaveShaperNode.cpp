@@ -215,6 +215,7 @@ public:
   }
 
   virtual void ProcessBlock(AudioNodeStream* aStream,
+                            GraphTime aFrom,
                             const AudioBlock& aInput,
                             AudioBlock* aOutput,
                             bool* aFinished) override
@@ -231,7 +232,7 @@ public:
     for (uint32_t i = 0; i < channelCount; ++i) {
       const float* inputSamples;
       float scaledInput[WEBAUDIO_BLOCK_SIZE];
-      if (aInput.mVolume != 1.0) {
+      if (aInput.mVolume != 1.0f) {
         AudioBlockCopyChannelWithScale(
             static_cast<const float*>(aInput.mChannelData[i]),
                                       aInput.mVolume,
@@ -326,6 +327,11 @@ WaveShaperNode::SetCurve(const Nullable<Float32Array>& aCurve, ErrorResult& aRv)
     const Float32Array& floats = aCurve.Value();
 
     floats.ComputeLengthAndData();
+    if (floats.IsShared()) {
+      // Throw if the object is mapping shared memory (must opt in).
+      aRv.ThrowTypeError<MSG_TYPEDARRAY_IS_SHARED>(NS_LITERAL_STRING("Argument of WaveShaperNode.setCurve"));
+      return;
+    }
 
     uint32_t argLength = floats.Length();
     if (argLength < 2) {

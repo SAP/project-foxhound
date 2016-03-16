@@ -75,16 +75,6 @@ class RuntimeService final : public nsIObserver
 
   struct IdleThreadInfo;
 
-  struct MatchSharedWorkerInfo
-  {
-    WorkerPrivate* mWorkerPrivate;
-    SharedWorkerInfo* mSharedWorkerInfo;
-
-    explicit MatchSharedWorkerInfo(WorkerPrivate* aWorkerPrivate)
-    : mWorkerPrivate(aWorkerPrivate), mSharedWorkerInfo(nullptr)
-    { }
-  };
-
   mozilla::Mutex mMutex;
 
   // Protected by mMutex.
@@ -140,6 +130,10 @@ public:
   UnregisterWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
 
   void
+  RemoveSharedWorker(WorkerDomainInfo* aDomainInfo,
+                     WorkerPrivate* aWorkerPrivate);
+
+  void
   CancelWorkersForWindow(nsPIDOMWindow* aWindow);
 
   void
@@ -148,26 +142,17 @@ public:
   void
   ThawWorkersForWindow(nsPIDOMWindow* aWindow);
 
+  void
+  SuspendWorkersForWindow(nsPIDOMWindow* aWindow);
+
+  void
+  ResumeWorkersForWindow(nsPIDOMWindow* aWindow);
+
   nsresult
   CreateSharedWorker(const GlobalObject& aGlobal,
                      const nsAString& aScriptURL,
                      const nsACString& aName,
-                     SharedWorker** aSharedWorker)
-  {
-    return CreateSharedWorkerInternal(aGlobal, aScriptURL, aName,
-                                      WorkerTypeShared, aSharedWorker);
-  }
-
-  nsresult
-  CreateSharedWorkerForServiceWorkerFromLoadInfo(JSContext* aCx,
-                                                 WorkerLoadInfo* aLoadInfo,
-                                                 const nsAString& aScriptURL,
-                                                 const nsACString& aScope,
-                                                 SharedWorker** aSharedWorker)
-  {
-    return CreateSharedWorkerFromLoadInfo(aCx, aLoadInfo, aScriptURL, aScope,
-                                          WorkerTypeService, aSharedWorker);
-  }
+                     SharedWorker** aSharedWorker);
 
   void
   ForgetSharedWorker(WorkerPrivate* aWorkerPrivate);
@@ -277,20 +262,8 @@ private:
   void
   Cleanup();
 
-  static PLDHashOperator
-  AddAllTopLevelWorkersToArray(const nsACString& aKey,
-                               WorkerDomainInfo* aData,
-                               void* aUserArg);
-
-  static PLDHashOperator
-  RemoveSharedWorkerFromWindowMap(nsPIDOMWindow* aKey,
-                                  nsAutoPtr<nsTArray<WorkerPrivate*> >& aData,
-                                  void* aUserArg);
-
-  static PLDHashOperator
-  FindSharedWorkerInfo(const nsACString& aKey,
-                       SharedWorkerInfo* aData,
-                       void* aUserArg);
+  void
+  AddAllTopLevelWorkersToArray(nsTArray<WorkerPrivate*>& aWorkers);
 
   void
   GetWorkersForWindow(nsPIDOMWindow* aWindow,
@@ -309,18 +282,10 @@ private:
   JSVersionChanged(const char* aPrefName, void* aClosure);
 
   nsresult
-  CreateSharedWorkerInternal(const GlobalObject& aGlobal,
-                             const nsAString& aScriptURL,
-                             const nsACString& aName,
-                             WorkerType aType,
-                             SharedWorker** aSharedWorker);
-
-  nsresult
   CreateSharedWorkerFromLoadInfo(JSContext* aCx,
                                  WorkerLoadInfo* aLoadInfo,
                                  const nsAString& aScriptURL,
                                  const nsACString& aName,
-                                 WorkerType aType,
                                  SharedWorker** aSharedWorker);
 };
 

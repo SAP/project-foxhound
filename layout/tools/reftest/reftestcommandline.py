@@ -469,14 +469,8 @@ class B2GArgumentParser(ReftestArgumentsParser):
                           action="store",
                           type=str,
                           dest="profile",
-                          help="for desktop testing, the path to the "
+                          help="for mulet testing, the path to the "
                           "gaia profile to use")
-
-        self.add_argument("--desktop",
-                          action="store_true",
-                          dest="desktop",
-                          default=False,
-                          help="Run the tests on a B2G desktop build")
 
         self.add_argument("--mulet",
                           action="store_true",
@@ -664,6 +658,12 @@ class RemoteArgumentsParser(ReftestArgumentsParser):
                           dest="httpdPath",
                           help="path to the httpd.js file")
 
+        self.add_argument("--no-device-info",
+                          action="store_false",
+                          dest="printDeviceInfo",
+                          default=True,
+                          help="do not display verbose diagnostics about the remote device")
+
     def validate_remote(self, options, automation):
         # Ensure our defaults are set properly for everything we can infer
         if not options.remoteTestRoot:
@@ -735,6 +735,6 @@ class RemoteArgumentsParser(ReftestArgumentsParser):
                 'screen')['screen'][0].split()
             width = int(parts[0].split(':')[1])
             height = int(parts[1].split(':')[1])
-            if (width < 1050 or height < 1050):
+            if (width < 1366 or height < 1050):
                 self.error("ERROR: Invalid screen resolution %sx%s, please adjust to 1366x1050 or higher" % (
                     width, height))

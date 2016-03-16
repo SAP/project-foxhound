@@ -30,7 +30,6 @@ EXPORTS.mozilla = [
     'CheckedInt.h',
     'Compiler.h',
     'Compression.h',
-    'Constants.h',
     'DebugOnly.h',
     'decimal/Decimal.h',
     'double-conversion/double-conversion.h',
@@ -39,6 +38,7 @@ EXPORTS.mozilla = [
     'EnumeratedArray.h',
     'EnumeratedRange.h',
     'EnumSet.h',
+    'FastBernoulliTrial.h',
     'FloatingPoint.h',
     'Function.h',
     'GuardObjects.h',
@@ -58,7 +58,6 @@ EXPORTS.mozilla = [
     'MemoryChecking.h',
     'MemoryReporting.h',
     'Move.h',
-    'nsRefPtr.h',
     'NullPtr.h',
     'NumericLimits.h',
     'Pair.h',
@@ -67,8 +66,9 @@ EXPORTS.mozilla = [
     'Range.h',
     'RangedArray.h',
     'RangedPtr.h',
-    'RefCountType.h',
     'ReentrancyGuard.h',
+    'RefCounted.h',
+    'RefCountType.h',
     'RefPtr.h',
     'ReverseIterator.h',
     'RollingMean.h',
@@ -88,10 +88,12 @@ EXPORTS.mozilla = [
     'Types.h',
     'TypeTraits.h',
     'UniquePtr.h',
+    'UniquePtrExtensions.h',
+    'unused.h',
     'Variant.h',
     'Vector.h',
     'WeakPtr.h',
-    'unused.h',
+    'XorShift128PlusRNG.h',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -122,3 +124,6 @@ if CONFIG['GNU_CXX']:
 if CONFIG['_MSC_VER']:
     # Error 4804 is "'>' : unsafe use of type 'bool' in operation"
     SOURCES['/mfbt/Compression.cpp'].flags += ['-wd4804']
+
+if CONFIG['MOZ_NEEDS_LIBATOMIC']:
+    OS_LIBS += ['atomic']

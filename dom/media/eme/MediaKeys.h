@@ -35,12 +35,6 @@ typedef nsRefPtrHashtable<nsUint32HashKey, dom::DetailedPromise> PromiseHashMap;
 typedef nsRefPtrHashtable<nsUint32HashKey, MediaKeySession> PendingKeySessionsHashMap;
 typedef uint32_t PromiseId;
 
-// Helper function to extract data coming in from JS in an
-// (ArrayBuffer or ArrayBufferView) IDL typed function argument.
-bool
-CopyArrayBufferViewOrArrayBufferData(const ArrayBufferViewOrArrayBuffer& aBufferOrView,
-                                     nsTArray<uint8_t>& aOutData);
-
 // This class is used on the main thread only.
 // Note: it's addref/release is not (and can't be) thread safe!
 class MediaKeys final : public nsISupports,
@@ -132,9 +126,9 @@ private:
 
   // Owning ref to proxy. The proxy has a weak reference back to the MediaKeys,
   // and the MediaKeys destructor clears the proxy's reference to the MediaKeys.
-  nsRefPtr<CDMProxy> mProxy;
+  RefPtr<CDMProxy> mProxy;
 
-  nsRefPtr<HTMLMediaElement> mElement;
+  RefPtr<HTMLMediaElement> mElement;
 
   nsCOMPtr<nsPIDOMWindow> mParent;
   const nsString mKeySystem;
@@ -145,8 +139,8 @@ private:
   PendingKeySessionsHashMap mPendingSessions;
   PromiseId mCreatePromiseId;
 
-  nsRefPtr<nsIPrincipal> mPrincipal;
-  nsRefPtr<nsIPrincipal> mTopLevelPrincipal;
+  RefPtr<nsIPrincipal> mPrincipal;
+  RefPtr<nsIPrincipal> mTopLevelPrincipal;
 
 };
 

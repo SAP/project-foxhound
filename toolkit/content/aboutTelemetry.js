@@ -4,9 +4,9 @@
 
 'use strict';
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
+var Ci = Components.interfaces;
+var Cc = Components.classes;
+var Cu = Components.utils;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/TelemetryTimestamps.jsm");
@@ -236,7 +236,7 @@ var Settings = {
           Cu.import("resource://gre/modules/Messaging.jsm");
           Messaging.sendRequest({
             type: "Settings:Show",
-            resource: "preferences_vendor",
+            resource: "preferences_privacy",
           });
         } else {
           // Show the data choices preferences on desktop.
@@ -298,6 +298,12 @@ var PingPicker = {
             .addEventListener("click", () => this._movePingIndex(-1), false);
     document.getElementById("older-ping")
             .addEventListener("click", () => this._movePingIndex(1), false);
+    document.getElementById("show-raw-ping")
+            .addEventListener("click", () => this._showRawPingData(), false);
+    document.getElementById("hide-raw-ping")
+            .addEventListener("click", () => this._hideRawPingData(), false);
+    document.getElementById("choose-payload")
+            .addEventListener("change", () => displayPingData(gPingData), false);
   },
 
   onPingSourceChanged: function() {
@@ -322,13 +328,16 @@ var PingPicker = {
   _updateCurrentPingData: function() {
     const subsession = document.getElementById("show-subsession-data").checked;
     const ping = TelemetryController.getCurrentPingData(subsession);
-    displayPingData(ping);
+    if (!ping) {
+      return;
+    }
+    displayPingData(ping, true);
   },
 
   _updateArchivedPingData: function() {
     let id = this._getSelectedPingId();
     TelemetryArchive.promiseArchivedPingById(id)
-                    .then((ping) => displayPingData(ping));
+                    .then((ping) => displayPingData(ping, true));
   },
 
   _updateArchivedPingList: function() {
@@ -363,10 +372,10 @@ var PingPicker = {
         return d;
       };
 
-      this._weeks = [for (startTime of weekStartDates.values()) {
+      this._weeks = Array.from(weekStartDates.values(), startTime => ({
         startDate: new Date(startTime),
         endDate: plusOneWeek(new Date(startTime)),
-      }];
+      }));
 
       // Render the archive data.
       this._renderWeeks();
@@ -444,6 +453,16 @@ var PingPicker = {
 
     this._renderPingList(ping.id);
     this._updateArchivedPingData();
+  },
+
+  _showRawPingData: function() {
+    let pre = document.getElementById("raw-ping-data");
+    pre.textContent = JSON.stringify(gPingData, null, 2);
+    document.getElementById("raw-ping-data-section").classList.remove("hidden");
+  },
+
+  _hideRawPingData: function() {
+    document.getElementById("raw-ping-data-section").classList.add("hidden");
   },
 };
 
@@ -810,11 +829,13 @@ var StackRenderer = {
   }
 };
 
-function SymbolicationRequest(aPrefix, aRenderHeader, aMemoryMap, aStacks) {
+function SymbolicationRequest(aPrefix, aRenderHeader,
+                              aMemoryMap, aStacks, aDurations = null) {
   this.prefix = aPrefix;
   this.renderHeader = aRenderHeader;
   this.memoryMap = aMemoryMap;
   this.stacks = aStacks;
+  this.durations = aDurations;
 }
 /**
  * A callback for onreadystatechange. It replaces the numeric stack with
@@ -848,7 +869,7 @@ function SymbolicationRequest_handleSymbolResponse() {
 
   for (let i = 0; i < jsonResponse.length; ++i) {
     let stack = jsonResponse[i];
-    this.renderHeader(i);
+    this.renderHeader(i, this.durations);
 
     for (let symbol of stack) {
       div.appendChild(document.createTextNode(symbol));
@@ -894,14 +915,14 @@ var ChromeHangs = {
 
     let stacks = hangs.stacks;
     let memoryMap = hangs.memoryMap;
+    let durations = hangs.durations;
 
     StackRenderer.renderStacks("chrome-hangs", stacks, memoryMap,
-			       (index) => this.renderHangHeader(aPing, index));
+                               (index) => this.renderHangHeader(index, durations));
   },
 
-  renderHangHeader: function ChromeHangs_renderHangHeader(aPing, aIndex) {
-    let durations = aPing.payload.chromeHangs.durations;
-    StackRenderer.renderHeader("chrome-hangs", [aIndex + 1, durations[aIndex]]);
+  renderHangHeader: function ChromeHangs_renderHangHeader(aIndex, aDurations) {
+    StackRenderer.renderHeader("chrome-hangs", [aIndex + 1, aDurations[aIndex]]);
   }
 };
 
@@ -910,11 +931,11 @@ var ThreadHangStats = {
   /**
    * Renders raw thread hang stats data
    */
-  render: function(aPing) {
+  render: function(aPayload) {
     let div = document.getElementById("thread-hang-stats");
     removeAllChildNodes(div);
 
-    let stats = aPing.payload.threadHangStats;
+    let stats = aPayload.threadHangStats;
     setHasData("thread-hang-stats-section", stats && (stats.length > 0));
     if (!stats) {
       return;
@@ -938,11 +959,11 @@ var ThreadHangStats = {
     // Don't localize the histogram name, because the
     // name is also used as the div element's ID
     Histogram.render(div, aThread.name + "-Activity",
-                     aThread.activity, {exponential: true});
+                     aThread.activity, {exponential: true}, true);
     aThread.hangs.forEach((hang, index) => {
       let hangName = aThread.name + "-Hang-" + (index + 1);
       let hangDiv = Histogram.render(
-        div, hangName, hang.histogram, {exponential: true});
+        div, hangName, hang.histogram, {exponential: true}, true);
       let stackDiv = document.createElement("div");
       let stack = hang.nativeStack || hang.stack;
       stack.forEach((frame) => {
@@ -975,10 +996,11 @@ var Histogram = {
    * @param aHgram Histogram information
    * @param aOptions Object with render options
    *                 * exponential: bars follow logarithmic scale
+   * @param aIsBHR whether or not requires fixing the labels for TimeHistogram
    */
-  render: function Histogram_render(aParent, aName, aHgram, aOptions) {
+  render: function Histogram_render(aParent, aName, aHgram, aOptions, aIsBHR) {
     let options = aOptions || {};
-    let hgram = this.processHistogram(aHgram, aName);
+    let hgram = this.processHistogram(aHgram, aName, aIsBHR);
 
     let outerDiv = document.createElement("div");
     outerDiv.className = "histogram";
@@ -1019,8 +1041,8 @@ var Histogram = {
     return outerDiv;
   },
 
-  processHistogram: function(aHgram, aName) {
-    const values = [for (k of Object.keys(aHgram.values)) aHgram.values[k]];
+  processHistogram: function(aHgram, aName, aIsBHR) {
+    const values = Object.keys(aHgram.values).map(k => aHgram.values[k]);
     if (!values.length) {
       // If we have no values collected for this histogram, just return
       // zero values so we still render it.
@@ -1037,7 +1059,27 @@ var Histogram = {
     const average = Math.round(aHgram.sum * 10 / sample_count) / 10;
     const max_value = Math.max(...values);
 
-    const labelledValues = [for (k of Object.keys(aHgram.values)) [Number(k), aHgram.values[k]]];
+    function labelFunc(k) {
+      // - BHR histograms are TimeHistograms: Exactly power-of-two buckets (from 0)
+      //   (buckets: [0..1], [2..3], [4..7], [8..15], ... note the 0..1 anomaly - same bucket)
+      // - TimeHistogram's JS representation adds a dummy (empty) "0" bucket, and
+      //   the rest of the buckets have the label as the upper value of the
+      //   bucket (non TimeHistograms have the lower value of the bucket as label).
+      //   So JS TimeHistograms bucket labels are: 0 (dummy), 1, 3, 7, 15, ...
+      // - see toolkit/components/telemetry/Telemetry.cpp
+      //   (CreateJSTimeHistogram, CreateJSThreadHangStats, CreateJSHangHistogram)
+      // - see toolkit/components/telemetry/ThreadHangStats.h
+      // Fix BHR labels to the "standard" format for about:telemetry as follows:
+      //   - The dummy 0 label+bucket will be filtered before arriving here
+      //   - If it's 1 -> manually correct it to 0 (the 0..1 anomaly)
+      //   - For the rest, set the label as the bottom value instead of the upper.
+      //   --> so we'll end with the following (non dummy) labels: 0, 2, 4, 8, 16, ...
+      return !aIsBHR ? k : k == 1 ? 0 : (k + 1) / 2;
+    }
+
+    const labelledValues = Object.keys(aHgram.values)
+                           .filter(label => !aIsBHR || Number(label) != 0) // remove dummy 0 label for BHR
+                           .map(k => [labelFunc(Number(k)), aHgram.values[k]]);
 
     let result = {
       values: labelledValues,
@@ -1086,7 +1128,7 @@ var Histogram = {
               + " ".repeat(Math.max(0, labelPadTo - String(label).length)) + label // Right-aligned label
               + " |" + "#".repeat(Math.round(MAX_BAR_CHARS * barValue / maxBarValue)) // Bar
               + "  " + value // Value
-              + "  " + Math.round(100 * value / aHgram.sum) + "%"; // Percentage
+              + "  " + Math.round(100 * value / aHgram.sample_count) + "%"; // Percentage
 
       // Construct the HTML labels + bars
       let belowEm = Math.round(MAX_BAR_HEIGHT * (barValue / maxBarValue) * 10) / 10;
@@ -1391,7 +1433,9 @@ function setupListeners() {
       let hangs = gPingData.payload.chromeHangs;
       let req = new SymbolicationRequest("chrome-hangs",
                                          ChromeHangs.renderHangHeader,
-                                         hangs.memoryMap, hangs.stacks);
+                                         hangs.memoryMap,
+                                         hangs.stacks,
+                                         hangs.durations);
       req.fetchSymbols();
   }, false);
 
@@ -1527,11 +1571,48 @@ function sortStartupMilestones(aSimpleMeasurements) {
   return result;
 }
 
-function displayPingData(ping) {
+function renderPayloadList(ping) {
+  // Rebuild the payload select with options:
+  //   Parent Payload (selected)
+  //   Child Payload 1..ping.payload.childPayloads.length
+  let listEl = document.getElementById("choose-payload");
+  removeAllChildNodes(listEl);
+
+  let option = document.createElement("option");
+  let text = bundle.GetStringFromName("parentPayload");
+  let content = document.createTextNode(text);
+  let payloadIndex = 0;
+  option.appendChild(content);
+  option.setAttribute("value", payloadIndex++);
+  option.selected = true;
+  listEl.appendChild(option);
+
+  if (!ping.payload.childPayloads) {
+    listEl.disabled = true;
+    return
+  }
+  listEl.disabled = false;
+
+  for (; payloadIndex <= ping.payload.childPayloads.length; ++payloadIndex) {
+    option = document.createElement("option");
+    text = bundle.formatStringFromName("childPayloadN", [payloadIndex], 1);
+    content = document.createTextNode(text);
+    option.appendChild(content);
+    option.setAttribute("value", payloadIndex);
+    listEl.appendChild(option);
+  }
+}
+
+function displayPingData(ping, updatePayloadList = false) {
   gPingData = ping;
 
   const keysHeader = bundle.GetStringFromName("keysHeader");
   const valuesHeader = bundle.GetStringFromName("valuesHeader");
+
+  // Update the payload list
+  if (updatePayloadList) {
+    renderPayloadList(ping);
+  }
 
   // Show general data.
   GeneralData.render(ping);
@@ -1548,14 +1629,23 @@ function displayPingData(ping) {
   // Show chrome hang stacks
   ChromeHangs.render(ping);
 
-  // Show thread hang stats
-  ThreadHangStats.render(ping);
-
   // Render Addon details.
   AddonDetails.render(ping);
 
-  // Show simple measurements
+  // Select payload to render
+  let payloadSelect = document.getElementById("choose-payload");
+  let payloadOption = payloadSelect.selectedOptions.item(0);
+  let payloadIndex = payloadOption.getAttribute("value");
+
   let payload = ping.payload;
+  if (payloadIndex > 0) {
+    payload = ping.payload.childPayloads[payloadIndex - 1];
+  }
+
+  // Show thread hang stats
+  ThreadHangStats.render(payload);
+
+  // Show simple measurements
   let simpleMeasurements = sortStartupMilestones(payload.simpleMeasurements);
   let hasData = Object.keys(simpleMeasurements).length > 0;
   setHasData("simple-measurements-section", hasData);
@@ -1569,14 +1659,14 @@ function displayPingData(ping) {
 
   LateWritesSingleton.renderLateWrites(payload.lateWrites);
 
-  // Show basic system info gathered
-  hasData = Object.keys(payload.info).length > 0;
-  setHasData("system-info-section", hasData);
-  let infoSection = document.getElementById("system-info");
+  // Show basic session info gathered
+  hasData = Object.keys(ping.payload.info).length > 0;
+  setHasData("session-info-section", hasData);
+  let infoSection = document.getElementById("session-info");
   removeAllChildNodes(infoSection);
 
   if (hasData) {
-    infoSection.appendChild(KeyValueTable.render(payload.info,
+    infoSection.appendChild(KeyValueTable.render(ping.payload.info,
                                                  keysHeader, valuesHeader));
   }
 

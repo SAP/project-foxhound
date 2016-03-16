@@ -4,7 +4,7 @@
 
 this.EXPORTED_SYMBOLS = ['PasswordEngine', 'LoginRec'];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
@@ -85,7 +85,7 @@ PasswordEngine.prototype = {
     this._store._sleep(0); // Yield back to main thread after synchronous operation.
 
     // Look for existing logins that match the hostname, but ignore the password.
-    for each (let local in logins) {
+    for (let local of logins) {
       if (login.matches(local, true) && local instanceof Ci.nsILoginMetaInfo) {
         return local.guid;
       }

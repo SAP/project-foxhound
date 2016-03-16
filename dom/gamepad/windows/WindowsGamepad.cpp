@@ -398,7 +398,7 @@ private:
   // List of connected devices.
   nsTArray<Gamepad> mGamepads;
 
-  nsRefPtr<Observer> mObserver;
+  RefPtr<Observer> mObserver;
   nsCOMPtr<nsITimer> mXInputPollTimer;
 
   HIDLoader mHID;
@@ -882,13 +882,19 @@ WindowsGamepadService::Cleanup()
     mXInputPollTimer->Cancel();
   }
   mGamepads.Clear();
+  if (mObserver) {
+    mObserver->Stop();
+    mObserver = nullptr;
+  }
 }
 
 void
 WindowsGamepadService::DevicesChanged(DeviceChangeType type)
 {
   if (type == DeviceChangeNotification) {
-    mObserver->SetDeviceChangeTimer();
+    if (mObserver) {
+      mObserver->SetDeviceChangeTimer();
+    }
   } else if (type == DeviceChangeStable) {
     ScanForDevices();
   }

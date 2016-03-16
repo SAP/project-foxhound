@@ -57,7 +57,7 @@ const char kPrefIndexedDBEnabled[] = "dom.indexedDB.enabled";
 class IDBFactory::BackgroundCreateCallback final
   : public nsIIPCBackgroundChildCreateCallback
 {
-  nsRefPtr<IDBFactory> mFactory;
+  RefPtr<IDBFactory> mFactory;
   LoggingInfo mLoggingInfo;
 
 public:
@@ -81,7 +81,7 @@ private:
 
 struct IDBFactory::PendingRequestInfo
 {
-  nsRefPtr<IDBOpenDBRequest> mRequest;
+  RefPtr<IDBOpenDBRequest> mRequest;
   FactoryRequestParams mParams;
 
   PendingRequestInfo(IDBOpenDBRequest* aRequest,
@@ -166,7 +166,7 @@ IDBFactory::CreateForWindow(nsPIDOMWindow* aWindow,
   nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(aWindow);
   nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(webNav);
 
-  nsRefPtr<IDBFactory> factory = new IDBFactory();
+  RefPtr<IDBFactory> factory = new IDBFactory();
   factory->mPrincipalInfo = Move(principalInfo);
   factory->mWindow = aWindow;
   factory->mTabChild = TabChild::GetFrom(aWindow);
@@ -322,7 +322,7 @@ IDBFactory::CreateForJSInternal(JSContext* aCx,
     return NS_OK;
   }
 
-  nsRefPtr<IDBFactory> factory = new IDBFactory();
+  RefPtr<IDBFactory> factory = new IDBFactory();
   factory->mPrincipalInfo = aPrincipalInfo.forget();
   factory->mOwningObject = aOwningObject;
   mozilla::HoldJSObjects(factory.get());
@@ -470,16 +470,6 @@ IDBFactory::IsChrome() const
   MOZ_ASSERT(mPrincipalInfo);
 
   return mPrincipalInfo->type() == PrincipalInfo::TSystemPrincipalInfo;
-}
-
-void
-IDBFactory::SetBackgroundActor(BackgroundFactoryChild* aBackgroundActor)
-{
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(aBackgroundActor);
-  MOZ_ASSERT(!mBackgroundActor);
-
-  mBackgroundActor = aBackgroundActor;
 }
 
 void
@@ -657,7 +647,7 @@ IDBFactory::OpenInternal(nsIPrincipal* aPrincipal,
   uint64_t version = 0;
   if (!aDeleting && aVersion.WasPassed()) {
     if (aVersion.Value() < 1) {
-      aRv.ThrowTypeError(MSG_INVALID_VERSION);
+      aRv.ThrowTypeError<MSG_INVALID_VERSION>();
       return nullptr;
     }
     version = aVersion.Value();
@@ -694,8 +684,6 @@ IDBFactory::OpenInternal(nsIPrincipal* aPrincipal,
   }
 
   if (!mBackgroundActor && mPendingRequests.IsEmpty()) {
-    // We need to start the sequence to create a background actor for this
-    // thread.
     BackgroundChildImpl::ThreadLocal* threadLocal =
       BackgroundChildImpl::GetThreadLocalForCurrentThread();
 
@@ -715,12 +703,18 @@ IDBFactory::OpenInternal(nsIPrincipal* aPrincipal,
       newIDBThreadLocal = idbThreadLocal = new ThreadLocal(id);
     }
 
-    nsRefPtr<BackgroundCreateCallback> cb =
-      new BackgroundCreateCallback(this, idbThreadLocal->GetLoggingInfo());
-    if (NS_WARN_IF(!BackgroundChild::GetOrCreateForCurrentThread(cb))) {
-      IDB_REPORT_INTERNAL_ERR();
-      aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-      return nullptr;
+    if (PBackgroundChild* actor = BackgroundChild::GetForCurrentThread()) {
+      BackgroundActorCreated(actor, idbThreadLocal->GetLoggingInfo());
+    } else {
+      // We need to start the sequence to create a background actor for this
+      // thread.
+      RefPtr<BackgroundCreateCallback> cb =
+        new BackgroundCreateCallback(this, idbThreadLocal->GetLoggingInfo());
+      if (NS_WARN_IF(!BackgroundChild::GetOrCreateForCurrentThread(cb))) {
+        IDB_REPORT_INTERNAL_ERR();
+        aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+        return nullptr;
+      }
     }
 
     if (newIDBThreadLocal) {
@@ -735,7 +729,7 @@ IDBFactory::OpenInternal(nsIPrincipal* aPrincipal,
   }
 
   AutoJSAPI autoJS;
-  nsRefPtr<IDBOpenDBRequest> request;
+  RefPtr<IDBOpenDBRequest> request;
 
   if (mWindow) {
     AutoJSContext cx;
@@ -947,7 +941,7 @@ IDBFactory::BackgroundCreateCallback::ActorCreated(PBackgroundChild* aActor)
   MOZ_ASSERT(aActor);
   MOZ_ASSERT(mFactory);
 
-  nsRefPtr<IDBFactory> factory;
+  RefPtr<IDBFactory> factory;
   mFactory.swap(factory);
 
   factory->BackgroundActorCreated(aActor, mLoggingInfo);
@@ -958,7 +952,7 @@ IDBFactory::BackgroundCreateCallback::ActorFailed()
 {
   MOZ_ASSERT(mFactory);
 
-  nsRefPtr<IDBFactory> factory;
+  RefPtr<IDBFactory> factory;
   mFactory.swap(factory);
 
   factory->BackgroundActorFailed();

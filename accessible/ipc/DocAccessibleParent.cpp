@@ -206,6 +206,7 @@ DocAccessibleParent::RecvBindChildDoc(PDocAccessibleParent* aChildDoc, const uin
   MOZ_DIAGNOSTIC_ASSERT(CheckDocTree());
 
   auto childDoc = static_cast<DocAccessibleParent*>(aChildDoc);
+  childDoc->Unbind();
   bool result = AddChildDoc(childDoc, aID, false);
   MOZ_ASSERT(result);
   MOZ_DIAGNOSTIC_ASSERT(CheckDocTree());
@@ -262,6 +263,7 @@ DocAccessibleParent::Destroy()
     mChildDocs[i]->Destroy();
 
   for (auto iter = mAccessibles.Iter(); !iter.Done(); iter.Next()) {
+    MOZ_ASSERT(iter.Get()->mProxy != this);
     ProxyDestroyed(iter.Get()->mProxy);
     iter.Remove();
   }

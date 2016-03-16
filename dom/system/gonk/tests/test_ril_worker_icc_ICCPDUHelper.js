@@ -367,7 +367,7 @@ add_test(function test_write_alpha_identifier() {
 
   // Removal
   let writenAlphaId = iccHelper.writeAlphaIdentifier(10, null);
-  equal(writenAlphaId, null);
+  equal(writenAlphaId, "");
   equal(iccHelper.readAlphaIdentifier(10), "");
 
   // GSM 8 bit
@@ -401,7 +401,7 @@ add_test(function test_write_alpha_identifier() {
   // Write 0 octet.
   writenAlphaId = iccHelper.writeAlphaIdentifier(0, "1");
   helper.writeHexOctet(0xff); // dummy octet.
-  equal(writenAlphaId, null);
+  equal(writenAlphaId, "");
   equal(iccHelper.readAlphaIdentifier(1), "");
 
   run_next_test();
@@ -462,32 +462,36 @@ add_test(function test_write_alpha_id_dialling_number() {
     alphaId: "Mozilla",
     number: "1234567890"
   };
+
   let writtenContact = helper.writeAlphaIdDiallingNumber(recordSize,
                                                          contactW.alphaId,
-                                                         contactW.number);
+                                                         contactW.number, 0xff);
 
   let contactR = helper.readAlphaIdDiallingNumber(recordSize);
   equal(writtenContact.alphaId, contactR.alphaId);
   equal(writtenContact.number, contactR.number);
+  equal(0xff, contactR.extRecordNumber);
 
   // Write a contact with alphaId encoded in UCS2 and number has '+'.
   let contactUCS2 = {
     alphaId: "火狐",
     number: "+1234567890"
   };
+
   writtenContact = helper.writeAlphaIdDiallingNumber(recordSize,
                                                      contactUCS2.alphaId,
-                                                     contactUCS2.number);
+                                                     contactUCS2.number, 0xff);
   contactR = helper.readAlphaIdDiallingNumber(recordSize);
   equal(writtenContact.alphaId, contactR.alphaId);
   equal(writtenContact.number, contactR.number);
+  equal(0xff, contactR.extRecordNumber);
 
   // Write a null contact (Removal).
   writtenContact = helper.writeAlphaIdDiallingNumber(recordSize);
   contactR = helper.readAlphaIdDiallingNumber(recordSize);
   equal(contactR, null);
-  equal(writtenContact.alphaId, null);
-  equal(writtenContact.number, null);
+  equal(writtenContact.alphaId, "");
+  equal(writtenContact.number, "");
 
   // Write a longer alphaId/dialling number
   // Dialling Number : Maximum 20 digits(10 octets).
@@ -498,21 +502,24 @@ add_test(function test_write_alpha_id_dialling_number() {
     alphaId: "AAAAAAAAABBBBBBBBBCCCCCCCCC",
     number: "123456789012345678901234567890",
   };
+
   writtenContact = helper.writeAlphaIdDiallingNumber(recordSize,
                                                      longContact.alphaId,
-                                                     longContact.number);
+                                                     longContact.number, 0xff);
   contactR = helper.readAlphaIdDiallingNumber(recordSize);
   equal(writtenContact.alphaId, contactR.alphaId);
   equal(writtenContact.number, contactR.number);
+  equal(0xff, contactR.extRecordNumber);
 
   // Add '+' to number and test again.
   longContact.number = "+123456789012345678901234567890";
   writtenContact = helper.writeAlphaIdDiallingNumber(recordSize,
                                                      longContact.alphaId,
-                                                     longContact.number);
+                                                     longContact.number, 0xff);
   contactR = helper.readAlphaIdDiallingNumber(recordSize);
   equal(writtenContact.alphaId, contactR.alphaId);
   equal(writtenContact.number, contactR.number);
+  equal(0xff, contactR.extRecordNumber);
 
   run_next_test();
 });

@@ -26,6 +26,9 @@
 #include <hardware/power.h>
 #include <suspend/autosuspend.h>
 
+#if ANDROID_VERSION >= 19
+#include "VirtualDisplaySurface.h"
+#endif
 #include "FramebufferSurface.h"
 #if ANDROID_VERSION == 17
 #include "GraphicBufferAlloc.h"
@@ -110,7 +113,7 @@ GonkDisplayJB::GonkDisplayJB()
 
     mAlloc = new GraphicBufferAlloc();
 
-    CreateSurface(mSTClient, mDispSurface, mWidth, mHeight);
+    CreateFramebufferSurface(mSTClient, mDispSurface, mWidth, mHeight);
 
     mList = (hwc_display_contents_1_t *)calloc(1, sizeof(*mList) + (sizeof(hwc_layer_1_t)*2));
 
@@ -123,7 +126,7 @@ GonkDisplayJB::GonkDisplayJB()
         PowerOnDisplay(HWC_DISPLAY_PRIMARY);
         // For devices w/ hwc v1.0 or no hwc, this buffer can not be created,
         // only create this buffer for devices w/ hwc version > 1.0.
-        CreateSurface(mBootAnimSTClient, mBootAnimDispSurface, mWidth, mHeight);
+        CreateFramebufferSurface(mBootAnimSTClient, mBootAnimDispSurface, mWidth, mHeight);
     }
 }
 
@@ -137,9 +140,10 @@ GonkDisplayJB::~GonkDisplayJB()
 }
 
 void
-GonkDisplayJB::CreateSurface(android::sp<ANativeWindow>& aNativeWindow,
-                             android::sp<android::DisplaySurface>& aDisplaySurface,
-                             uint32_t aWidth, uint32_t aHeight)
+GonkDisplayJB::CreateFramebufferSurface(android::sp<ANativeWindow>& aNativeWindow,
+                                        android::sp<android::DisplaySurface>& aDisplaySurface,
+                                        uint32_t aWidth,
+                                        uint32_t aHeight)
 {
 #if ANDROID_VERSION >= 21
     sp<IGraphicBufferProducer> producer;
@@ -162,6 +166,28 @@ GonkDisplayJB::CreateSurface(android::sp<ANativeWindow>& aNativeWindow,
         static_cast<sp<ISurfaceTexture>>(aDisplaySurface->getBufferQueue()));
 #else
     aNativeWindow = new Surface(producer);
+#endif
+}
+
+void
+GonkDisplayJB::CreateVirtualDisplaySurface(android::IGraphicBufferProducer* aSink,
+                                           android::sp<ANativeWindow>& aNativeWindow,
+                                           android::sp<android::DisplaySurface>& aDisplaySurface)
+{
+#if ANDROID_VERSION >= 21
+    sp<IGraphicBufferProducer> producer;
+    sp<IGraphicBufferConsumer> consumer;
+    BufferQueue::createBufferQueue(&producer, &consumer, mAlloc);
+#elif ANDROID_VERSION >= 19
+    sp<BufferQueue> consumer = new BufferQueue(mAlloc);
+    sp<IGraphicBufferProducer> producer = consumer;
+#endif
+
+#if ANDROID_VERSION >= 19
+    sp<VirtualDisplaySurface> virtualDisplay;
+    virtualDisplay = new VirtualDisplaySurface(-1, aSink, producer, consumer, String8("VirtualDisplaySurface"));
+    aDisplaySurface = virtualDisplay;
+    aNativeWindow = new Surface(virtualDisplay);
 #endif
 }
 
@@ -323,24 +349,41 @@ GonkDisplayJB::DequeueBuffer()
 bool
 GonkDisplayJB::QueueBuffer(ANativeWindowBuffer* buf)
 {
-    int error = 0;
     bool success = false;
+    int error = DoQueueBuffer(buf);
+    // Check for bootAnim or normal display flow.
+    if (!mBootAnimSTClient.get()) {
+        success = Post(mDispSurface->lastHandle, mDispSurface->GetPrevDispAcquireFd());
+    } else {
+        success = Post(mBootAnimDispSurface->lastHandle, mBootAnimDispSurface->GetPrevDispAcquireFd());
+    }
+    return error == 0 && success;
+}
+
+int
+GonkDisplayJB::DoQueueBuffer(ANativeWindowBuffer* buf)
+{
+    int error = 0;
     // Check for bootAnim or normal display flow.
     if (!mBootAnimSTClient.get()) {
         error = mSTClient->queueBuffer(mSTClient.get(), buf, -1);
-        success = Post(mDispSurface->lastHandle, mDispSurface->GetPrevDispAcquireFd());
     } else {
         error = mBootAnimSTClient->queueBuffer(mBootAnimSTClient.get(), buf, -1);
-        success = Post(mBootAnimDispSurface->lastHandle, mBootAnimDispSurface->GetPrevDispAcquireFd());
     }
-
-    return error == 0 && success;
+    return error;
 }
 
 void
 GonkDisplayJB::UpdateDispSurface(EGLDisplay dpy, EGLSurface sur)
 {
-    eglSwapBuffers(dpy, sur);
+    if (sur != EGL_NO_SURFACE) {
+      eglSwapBuffers(dpy, sur);
+    } else {
+      // When BasicCompositor is used as Compositor,
+      // EGLSurface does not exit.
+      ANativeWindowBuffer* buf = DequeueBuffer();
+      DoQueueBuffer(buf);
+    }
 }
 
 void
@@ -369,7 +412,7 @@ GonkDisplayJB::PowerOnDisplay(int aDpy)
 
 GonkDisplay::NativeData
 GonkDisplayJB::GetNativeData(GonkDisplay::DisplayType aDisplayType,
-                             android::IGraphicBufferProducer* aProducer)
+                             android::IGraphicBufferProducer* aSink)
 {
     NativeData data;
 
@@ -392,11 +435,15 @@ GonkDisplayJB::GetNativeData(GonkDisplay::DisplayType aDisplayType,
         // sound right, Bug 1169176 is the follow-up bug for this issue.
         data.mXdpi = values[2] ? values[2] / 1000.f : DEFAULT_XDPI;
         PowerOnDisplay(HWC_DISPLAY_EXTERNAL);
-        CreateSurface(data.mNativeWindow, data.mDisplaySurface, width, height);
+        CreateFramebufferSurface(data.mNativeWindow,
+                                 data.mDisplaySurface,
+                                 width,
+                                 height);
     } else if (aDisplayType == DISPLAY_VIRTUAL) {
-        // TODO: Bug 1161874 (the support of WifiDisplay) should fill up the
-        // implementation of virtual display.
-        MOZ_CRASH("Display type of virtual is not supported yet.");
+        data.mXdpi = xdpi;
+        CreateVirtualDisplaySurface(aSink,
+                                    data.mNativeWindow,
+                                    data.mDisplaySurface);
     }
 
     return data;

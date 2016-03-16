@@ -95,15 +95,8 @@ var gSearchPane = {
   buildDefaultEngineDropDown: function() {
     // This is called each time something affects the list of engines.
     let list = document.getElementById("defaultEngine");
-    let currentEngine;
-
-    // First, try to preserve the current selection.
-    if (list.selectedItem)
-      currentEngine = list.selectedItem.label;
-
-    // If there's no current selection, use the current default engine.
-    if (!currentEngine)
-      currentEngine = Services.search.currentEngine.name;
+    // Set selection to the current default engine.
+    let currentEngine = Services.search.currentEngine.name;
 
     // If the current engine isn't in the list any more, select the first item.
     let engines = gEngineView._engineStore._engines;
@@ -116,8 +109,7 @@ var gSearchPane = {
       let item = list.appendItem(e.name);
       item.setAttribute("class", "menuitem-iconic searchengine-menuitem menuitem-with-favicon");
       if (e.iconURI) {
-        let uri = PlacesUtils.getImageURLForResolution(window, e.iconURI.spec);
-        item.setAttribute("image", uri);
+        item.setAttribute("image", e.iconURI.spec);
       }
       item.engine = e;
       if (e.name == currentEngine)
@@ -256,7 +248,7 @@ var gSearchPane = {
 
       // Check for duplicates in changes we haven't committed yet
       let engines = gEngineView._engineStore.engines;
-      for each (let engine in engines) {
+      for (let engine of engines) {
         if (engine.alias == aNewKeyword &&
             engine.name != aEngine.name) {
           eduplicate = true;
@@ -318,7 +310,7 @@ function EngineStore() {
   this._defaultEngines = Services.search.getDefaultEngines().map(this._cloneEngine, this);
 
   // check if we need to disable the restore defaults button
-  var someHidden = this._defaultEngines.some(function (e) e.hidden);
+  var someHidden = this._defaultEngines.some(e => e.hidden);
   gSearchPane.showRestoreDefaults(someHidden);
 }
 EngineStore.prototype = {
@@ -338,11 +330,7 @@ EngineStore.prototype = {
   },
 
   _getEngineByName: function ES_getEngineByName(aName) {
-    for each (var engine in this._engines)
-      if (engine.name == aName)
-        return engine;
-
-    return null;
+    return this._engines.find(engine => engine.name == aName);
   },
 
   _cloneEngine: function ES_cloneEngine(aEngine) {
@@ -416,6 +404,7 @@ EngineStore.prototype = {
         added++;
       }
     }
+    Services.search.resetToOriginalDefaultEngine();
     gSearchPane.showRestoreDefaults(false);
     gSearchPane.buildDefaultEngineDropDown();
     return added;
@@ -488,8 +477,7 @@ EngineView.prototype = {
 
   getImageSrc: function(index, column) {
     if (column.id == "engineName" && this._engineStore.engines[index].iconURI) {
-      let uri = this._engineStore.engines[index].iconURI.spec;
-      return PlacesUtils.getImageURLForResolution(window, uri);
+      return this._engineStore.engines[index].iconURI.spec;
     }
     return "";
   },

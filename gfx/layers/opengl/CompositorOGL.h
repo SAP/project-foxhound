@@ -17,6 +17,7 @@
 #include "mozilla/RefPtr.h"             // for already_AddRefed, RefPtr
 #include "mozilla/gfx/2D.h"             // for DrawTarget
 #include "mozilla/gfx/BaseSize.h"       // for BaseSize
+#include "mozilla/gfx/MatrixFwd.h"      // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for IntSize, Point
 #include "mozilla/gfx/Rect.h"           // for Rect, IntRect
 #include "mozilla/gfx/Types.h"          // for Float, SurfaceFormat, etc
@@ -36,10 +37,6 @@
 class nsIWidget;
 
 namespace mozilla {
-
-namespace gfx {
-class Matrix4x4;
-} // namespace gfx
 
 namespace layers {
 
@@ -209,8 +206,6 @@ public:
                                GetMaxTextureSize(),
                                mFBOTextureTarget == LOCAL_GL_TEXTURE_2D,
                                SupportsPartialTextureUpdate());
-    result.mSupportedBlendModes += gfx::CompositionOp::OP_SCREEN;
-    result.mSupportedBlendModes += gfx::CompositionOp::OP_MULTIPLY;
     result.mSupportedBlendModes += gfx::CompositionOp::OP_SOURCE;
     return result;
   }
@@ -234,8 +229,6 @@ public:
                         const gfx::Rect& aVisibleRect) override;
 
   virtual void EndFrame() override;
-  virtual void SetDispAcquireFence(Layer* aLayer, nsIWidget* aWidget) override;
-  virtual FenceHandle GetReleaseFence() override;
   virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) override;
 
   virtual bool SupportsPartialTextureUpdate() override;
@@ -331,7 +324,7 @@ private:
   /** Widget associated with this compositor */
   nsIWidget *mWidget;
   gfx::IntSize mWidgetSize;
-  nsRefPtr<GLContext> mGLContext;
+  RefPtr<GLContext> mGLContext;
   UniquePtr<GLBlitTextureImageHelper> mBlitTextureImageHelper;
   gfx::Matrix4x4 mProjMatrix;
 
@@ -454,7 +447,6 @@ private:
    */
   gfx::IntSize mViewportSize;
 
-  FenceHandle mReleaseFenceHandle;
   ShaderProgramOGL *mCurrentProgram;
 
   gfx::Rect mRenderBound;

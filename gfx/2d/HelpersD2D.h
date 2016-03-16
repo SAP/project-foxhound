@@ -45,13 +45,27 @@ static inline D2D1_RECT_F D2DRect(const T &aRect)
   return D2D1::RectF(aRect.x, aRect.y, aRect.XMost(), aRect.YMost());
 }
 
-static inline D2D1_EXTEND_MODE D2DExtend(ExtendMode aExtendMode)
+static inline D2D1_EXTEND_MODE D2DExtend(ExtendMode aExtendMode, Axis aAxis)
 {
   D2D1_EXTEND_MODE extend;
   switch (aExtendMode) {
   case ExtendMode::REPEAT:
     extend = D2D1_EXTEND_MODE_WRAP;
     break;
+  case ExtendMode::REPEAT_X:
+  {
+    extend = aAxis == Axis::X_AXIS
+             ? D2D1_EXTEND_MODE_WRAP
+             : D2D1_EXTEND_MODE_CLAMP;
+    break;
+  }
+  case ExtendMode::REPEAT_Y:
+  {
+    extend = aAxis == Axis::Y_AXIS
+             ? D2D1_EXTEND_MODE_WRAP
+             : D2D1_EXTEND_MODE_CLAMP;
+    break;
+  }
   case ExtendMode::REFLECT:
     extend = D2D1_EXTEND_MODE_MIRROR;
     break;
@@ -426,7 +440,7 @@ static inline already_AddRefed<ID2D1Geometry>
 ConvertRectToGeometry(const D2D1_RECT_F& aRect)
 {
   RefPtr<ID2D1RectangleGeometry> rectGeom;
-  D2DFactory()->CreateRectangleGeometry(&aRect, byRef(rectGeom));
+  D2DFactory()->CreateRectangleGeometry(&aRect, getter_AddRefs(rectGeom));
   return rectGeom.forget();
 }
 
@@ -434,9 +448,9 @@ static inline already_AddRefed<ID2D1Geometry>
 GetTransformedGeometry(ID2D1Geometry *aGeometry, const D2D1_MATRIX_3X2_F &aTransform)
 {
   RefPtr<ID2D1PathGeometry> tmpGeometry;
-  D2DFactory()->CreatePathGeometry(byRef(tmpGeometry));
+  D2DFactory()->CreatePathGeometry(getter_AddRefs(tmpGeometry));
   RefPtr<ID2D1GeometrySink> currentSink;
-  tmpGeometry->Open(byRef(currentSink));
+  tmpGeometry->Open(getter_AddRefs(currentSink));
   aGeometry->Simplify(D2D1_GEOMETRY_SIMPLIFICATION_OPTION_CUBICS_AND_LINES,
                       aTransform, currentSink);
   currentSink->Close();
@@ -447,9 +461,9 @@ static inline already_AddRefed<ID2D1Geometry>
 IntersectGeometry(ID2D1Geometry *aGeometryA, ID2D1Geometry *aGeometryB)
 {
   RefPtr<ID2D1PathGeometry> pathGeom;
-  D2DFactory()->CreatePathGeometry(byRef(pathGeom));
+  D2DFactory()->CreatePathGeometry(getter_AddRefs(pathGeom));
   RefPtr<ID2D1GeometrySink> sink;
-  pathGeom->Open(byRef(sink));
+  pathGeom->Open(getter_AddRefs(sink));
   aGeometryA->CombineWithGeometry(aGeometryB, D2D1_COMBINE_MODE_INTERSECT, nullptr, sink);
   sink->Close();
 
@@ -517,13 +531,13 @@ CreateStrokeStyleForOptions(const StrokeOptions &aStrokeOptions)
       &dash[0], // data() is not C++98, although it's in recent gcc
                 // and VC10's STL
       dash.size(),
-      byRef(style));
+      getter_AddRefs(style));
   } else {
     hr = D2DFactory()->CreateStrokeStyle(
       D2D1::StrokeStyleProperties(capStyle, capStyle,
                                   capStyle, joinStyle,
                                   aStrokeOptions.mMiterLimit),
-      nullptr, 0, byRef(style));
+      nullptr, 0, getter_AddRefs(style));
   }
 
   if (FAILED(hr)) {
@@ -616,7 +630,7 @@ CreatePartialBitmapForSurface(DataSourceSurface *aSurface, const Matrix &aDestin
                         mapping.GetData() + int(uploadRect.x) * 4 + int(uploadRect.y) * mapping.GetStride(),
                         mapping.GetStride(),
                         D2D1::BitmapProperties(D2DPixelFormat(aSurface->GetFormat())),
-                        byRef(bitmap));
+                        getter_AddRefs(bitmap));
     }
 
     aSourceTransform.PreTranslate(uploadRect.x, uploadRect.y);
@@ -673,7 +687,7 @@ CreatePartialBitmapForSurface(DataSourceSurface *aSurface, const Matrix &aDestin
       aRT->CreateBitmap(D2D1::SizeU(newSize.width, newSize.height),
                         scaler.GetScaledData(), scaler.GetStride(),
                         D2D1::BitmapProperties(D2DPixelFormat(aSurface->GetFormat())),
-                        byRef(bitmap));
+                        getter_AddRefs(bitmap));
 
       aSourceTransform.PreScale(Float(size.width) / newSize.width,
                                 Float(size.height) / newSize.height);

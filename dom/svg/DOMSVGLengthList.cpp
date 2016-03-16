@@ -117,7 +117,7 @@ DOMSVGLengthList::InternalListLengthWillChange(uint32_t aNewLength)
     aNewLength = DOMSVGLength::MaxListIndex();
   }
 
-  nsRefPtr<DOMSVGLengthList> kungFuDeathGrip;
+  RefPtr<DOMSVGLengthList> kungFuDeathGrip;
   if (aNewLength < oldLength) {
     // RemovingFromList() might clear last reference to |this|.
     // Retain a temporary reference to keep from dying before returning.
@@ -190,7 +190,7 @@ DOMSVGLengthList::Initialize(DOMSVGLength& newItem,
   // would not insert a clone of newItem, it would actually insert newItem. To
   // prevent that from happening we have to do the clone here, if necessary.
 
-  nsRefPtr<DOMSVGLength> domItem = &newItem;
+  RefPtr<DOMSVGLength> domItem = &newItem;
   if (!domItem) {
     error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
     return nullptr;
@@ -209,7 +209,7 @@ already_AddRefed<DOMSVGLength>
 DOMSVGLengthList::GetItem(uint32_t index, ErrorResult& error)
 {
   bool found;
-  nsRefPtr<DOMSVGLength> item = IndexedGetter(index, found, error);
+  RefPtr<DOMSVGLength> item = IndexedGetter(index, found, error);
   if (!found) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
   }
@@ -245,7 +245,7 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
     return nullptr;
   }
 
-  nsRefPtr<DOMSVGLength> domItem = &newItem;
+  RefPtr<DOMSVGLength> domItem = &newItem;
   if (!domItem) {
     error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
     return nullptr;
@@ -259,6 +259,13 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
       !InternalList().SetCapacity(InternalList().Length() + 1)) {
     error.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
+  }
+  if (AnimListMirrorsBaseList()) {
+    if (!mAList->mAnimVal->mItems.SetCapacity(
+          mAList->mAnimVal->mItems.Length() + 1, fallible)) {
+      error.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return nullptr;
+    }
   }
 
   AutoChangeLengthListNotifier notifier(this);
@@ -288,7 +295,7 @@ DOMSVGLengthList::ReplaceItem(DOMSVGLength& newItem,
     return nullptr;
   }
 
-  nsRefPtr<DOMSVGLength> domItem = &newItem;
+  RefPtr<DOMSVGLength> domItem = &newItem;
   if (!domItem) {
     error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
     return nullptr;
@@ -361,7 +368,7 @@ DOMSVGLengthList::GetItemAt(uint32_t aIndex)
   if (!mItems[aIndex]) {
     mItems[aIndex] = new DOMSVGLength(this, AttrEnum(), aIndex, IsAnimValList());
   }
-  nsRefPtr<DOMSVGLength> result = mItems[aIndex];
+  RefPtr<DOMSVGLength> result = mItems[aIndex];
   return result.forget();
 }
 
@@ -370,16 +377,15 @@ DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
 {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
-  DOMSVGLengthList* animVal = mAList->mAnimVal;
-
-  if (!animVal || mAList->IsAnimating()) {
-    // No animVal list wrapper, or animVal not a clone of baseVal
+  if (!AnimListMirrorsBaseList()) {
     return;
   }
 
+  DOMSVGLengthList* animVal = mAList->mAnimVal;
+
+  MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
-
   MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(aIndex, nullptr, fallible));
 
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
@@ -390,15 +396,15 @@ DOMSVGLengthList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex)
 {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
-  // This needs to be a strong reference; otherwise, the RemovingFromList call
-  // below might drop the last reference to animVal before we're done with it.
-  nsRefPtr<DOMSVGLengthList> animVal = mAList->mAnimVal;
-
-  if (!animVal || mAList->IsAnimating()) {
-    // No animVal list wrapper, or animVal not a clone of baseVal
+  if (!AnimListMirrorsBaseList()) {
     return;
   }
 
+  // This needs to be a strong reference; otherwise, the RemovingFromList call
+  // below might drop the last reference to animVal before we're done with it.
+  RefPtr<DOMSVGLengthList> animVal = mAList->mAnimVal;
+
+  MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
 

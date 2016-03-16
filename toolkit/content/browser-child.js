@@ -55,14 +55,19 @@ var WebProgressListener = {
   },
 
   _setupJSON: function setupJSON(aWebProgress, aRequest) {
+    let innerWindowID = null;
     if (aWebProgress) {
-      let domWindowID;
+      let domWindowID = null;
       try {
-        domWindowID = aWebProgress && aWebProgress.DOMWindowID;
+        let utils = aWebProgress.DOMWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+                                .getInterface(Ci.nsIDOMWindowUtils);
+        domWindowID = utils.outerWindowID;
+        innerWindowID = utils.currentInnerWindowID;
       } catch (e) {
         // If nsDocShell::Destroy has already been called, then we'll
-        // get NS_NOINTERFACE when trying to get the DOM window ID.
-        domWindowID = null;
+        // get NS_NOINTERFACE when trying to get the DOM window.
+        // If there is no current inner window, we'll get
+        // NS_ERROR_NOT_AVAILABLE.
       }
 
       aWebProgress = {
@@ -77,7 +82,8 @@ var WebProgressListener = {
       webProgress: aWebProgress || null,
       requestURI: this._requestSpec(aRequest, "URI"),
       originalRequestURI: this._requestSpec(aRequest, "originalURI"),
-      documentContentType: content.document && content.document.contentType
+      documentContentType: content.document && content.document.contentType,
+      innerWindowID,
     };
   },
 
@@ -217,19 +223,6 @@ var WebNavigation =  {
     addMessageListener("WebNavigation:LoadURI", this);
     addMessageListener("WebNavigation:Reload", this);
     addMessageListener("WebNavigation:Stop", this);
-
-    // Send a CPOW for the sessionHistory object. We need to make sure
-    // it stays alive as long as the content script since CPOWs are
-    // weakly held.
-    let history = this.webNavigation.sessionHistory;
-    this._sessionHistory = history;
-    sendAsyncMessage("WebNavigation:setHistory", {}, {history: history});
-
-    addEventListener("unload", this.uninit);
-  },
-
-  uninit: function() {
-    this._sessionHistory = null;
   },
 
   get webNavigation() {
@@ -361,7 +354,6 @@ addEventListener("DOMWindowClose", function (aEvent) {
   if (!aEvent.isTrusted)
     return;
   sendAsyncMessage("DOMWindowClose");
-  aEvent.preventDefault();
 }, false);
 
 addEventListener("ImageContentLoaded", function (aEvent) {
@@ -462,26 +454,12 @@ addMessageListener("UpdateCharacterSet", function (aMessage) {
  * Remote thumbnail request handler for PageThumbs thumbnails.
  */
 addMessageListener("Browser:Thumbnail:Request", function (aMessage) {
-  let thumbnail = content.document.createElementNS(PageThumbUtils.HTML_NAMESPACE,
-                                                   "canvas");
-  thumbnail.mozOpaque = true;
-  thumbnail.mozImageSmoothingEnabled = true;
+  let snapshotWidth = aMessage.data.canvasWidth;
+  let snapshotHeight = aMessage.data.canvasHeight;
+  let canvas = PageThumbUtils.createCanvas(content, snapshotWidth, snapshotHeight);
+  let snapshot = PageThumbUtils.createSnapshotThumbnail(content, canvas);
 
-  thumbnail.width = aMessage.data.canvasWidth;
-  thumbnail.height = aMessage.data.canvasHeight;
-
-  let [width, height, scale] =
-    PageThumbUtils.determineCropSize(content, thumbnail);
-
-  let ctx = thumbnail.getContext("2d");
-  ctx.save();
-  ctx.scale(scale, scale);
-  ctx.drawWindow(content, 0, 0, width, height,
-                 aMessage.data.background,
-                 ctx.DRAWWINDOW_DO_NOT_FLUSH);
-  ctx.restore();
-
-  thumbnail.toBlob(function (aBlob) {
+  snapshot.toBlob(function (aBlob) {
     sendAsyncMessage("Browser:Thumbnail:Response", {
       thumbnail: aBlob,
       id: aMessage.data.id
@@ -590,6 +568,22 @@ var AutoCompletePopup = {
     });
   }
 }
+
+addMessageListener("InPermitUnload", msg => {
+  let inPermitUnload = docShell.contentViewer && docShell.contentViewer.inPermitUnload;
+  sendAsyncMessage("InPermitUnload", {id: msg.data.id, inPermitUnload});
+});
+
+addMessageListener("PermitUnload", msg => {
+  sendAsyncMessage("PermitUnload", {id: msg.data.id, kind: "start"});
+
+  let permitUnload = true;
+  if (docShell && docShell.contentViewer) {
+    permitUnload = docShell.contentViewer.permitUnload();
+  }
+
+  sendAsyncMessage("PermitUnload", {id: msg.data.id, kind: "end", permitUnload});
+});
 
 // We may not get any responses to Browser:Init if the browser element
 // is torn down too quickly.

@@ -74,6 +74,14 @@
         if (this.findbar._isIMEComposing) {
           return;
         }
+
+        if (this._hadValue && !this.value) {
+          this._willfullyDeleted = true;
+          this._hadValue = false;
+        } else if (this.value.trim()) {
+          this._hadValue = true;
+          this._willfullyDeleted = false;
+        }
         this.findbar._find(this.value);
       ]]></handler>
 
@@ -609,6 +617,7 @@
 
           this._updateFindUI();
           if (this.hidden) {
+            this.removeAttribute("noanim");
             this.hidden = false;
 
             this._updateStatusUI(this.nsITypeAheadFind.FIND_FOUND);
@@ -627,10 +636,13 @@
         - Closes the findbar.
         -->
       <method name="close">
+        <parameter name="aNoAnim"/>
         <body><![CDATA[
           if (this.hidden)
             return;
 
+          if (aNoAnim)
+            this.setAttribute("noanim", true);
           this.hidden = true;
 
           this.browser.finder.focusContent();
@@ -860,6 +872,13 @@
           if (!this._findFailedString ||
               !val.startsWith(this._findFailedString))
           {
+            // Getting here means the user commanded a find op. Make sure any
+            // initial prefilling is ignored if it hasn't happened yet.
+            if (this._startFindDeferred) {
+              this._startFindDeferred.resolve();
+              this._startFindDeferred = null;
+            }
+
             this._enableFindButtons(val);
             if (this.getElement("highlight").checked)
               this._setHighlightTimeout();
@@ -1018,6 +1037,13 @@
             // NB: We have to focus this._findField here so tests that send
             // key events can open and close the find bar synchronously.
             this._findField.focus();
+
+            // (e10s) since we focus lets also select it, otherwise that would
+            // only happen in this.onCurrentSelection and, because it is async,
+            // there's a chance keypresses could come inbetween, leading to
+            // jumbled up queries.
+            this._findField.select();
+
             this.browser.finder.getInitialSelection();
             return startFindPromise;
           }
@@ -1097,8 +1123,10 @@
             return;
 
           let clipboardSearchString = this._browser.finder.clipboardSearchString;
-          if (clipboardSearchString && this._findField.value != clipboardSearchString) {
+          if (clipboardSearchString && this._findField.value != clipboardSearchString &&
+              !this._findField._willfullyDeleted) {
             this._findField.value = clipboardSearchString;
+            this._findField._hadValue = true;
             // Changing the search string makes the previous status invalid, so
             // we better clear it here.
             this._updateStatusUI();
@@ -1124,13 +1152,19 @@
       <method name="onFindResult">
         <parameter name="aData"/>
         <body><![CDATA[
+          if (aData.result == this.nsITypeAheadFind.FIND_NOTFOUND) {
+            // If an explicit Find Again command fails, re-open the toolbar.
+            if (aData.storeResult && this.open()) {
+              this._findField.select();
+              this._findField.focus();
+            }
+            this._findFailedString = aData.searchString;
+          } else {
+            this._findFailedString = null;
+          }
+
           this._updateStatusUI(aData.result, aData.findBackwards);
           this._updateStatusUIBar(aData.linkURL);
-
-          if (aData.result == this.nsITypeAheadFind.FIND_NOTFOUND)
-            this._findFailedString = aData.searchString;
-          else
-            this._findFailedString = null;
 
           if (this._findMode != this.FIND_NORMAL)
             this._setFindCloseTimeout();
@@ -1171,6 +1205,11 @@
         <parameter name="aSelectionString" />
         <parameter name="aIsInitialSelection" />
         <body><![CDATA[
+          // Ignore the prefill if the user has already typed in the findbar,
+          // it would have been overwritten anyway. See bug 1198465.
+          if (aIsInitialSelection && !this._startFindDeferred)
+            return;
+
 #ifdef XP_MACOSX
           if (aIsInitialSelection && !aSelectionString) {
             let clipboardSearchString = this.browser.finder.clipboardSearchString;
@@ -1186,10 +1225,9 @@
             this._enableFindButtons(!!this._findField.value);
             this._findField.select();
             this._findField.focus();
-            if (this._startFindDeferred) {
-              this._startFindDeferred.resolve();
-              this._startFindDeferred = null;
-            }
+
+            this._startFindDeferred.resolve();
+            this._startFindDeferred = null;
           }
         ]]></body>
       </method>

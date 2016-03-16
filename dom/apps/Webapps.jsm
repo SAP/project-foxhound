@@ -195,10 +195,10 @@ const STORE_ID_PENDING_PREFIX = "#unknownID#";
 
 this.DOMApplicationRegistry = {
   // pseudo-constants for the different application kinds.
-  get kPackaged()       "packaged",
-  get kHosted()         "hosted",
-  get kHostedAppcache() "hosted-appcache",
-  get kAndroid()        "android-native",
+  get kPackaged()       { return "packaged"; },
+  get kHosted()         { return "hosted"; },
+  get kHostedAppcache() { return "hosted-appcache"; },
+  get kAndroid()        { return "android-native"; },
 
   // Path to the webapps.json file where we store the registry data.
   appsFile: null,
@@ -346,6 +346,10 @@ this.DOMApplicationRegistry = {
 
         if (app.enabled === undefined) {
           app.enabled = true;
+        }
+
+        if (app.blockedStatus === undefined) {
+          app.blockedStatus = Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
         }
 
         // At startup we can't be downloading, and the $TMP directory
@@ -696,7 +700,8 @@ this.DOMApplicationRegistry = {
           continue;
         // Remove the permissions, cookies and private data for this app.
         let localId = this.webapps[id].localId;
-        permMgr.removePermissionsForApp(localId, false);
+        let attrs = { appId: localId };
+        permMgr.removePermissionsWithAttributes(JSON.stringify(attrs));
         Services.cookies.removeCookiesForApp(localId, false);
         this._clearPrivateData(localId, false);
         delete this.webapps[id];
@@ -1210,6 +1215,7 @@ this.DOMApplicationRegistry = {
         ppmm.removeMessageListener(msgName, this);
       }).bind(this));
       Services.obs.removeObserver(this, "xpcom-shutdown");
+      Services.obs.removeObserver(this, "memory-pressure");
       cpmm = null;
       ppmm = null;
       if (AppConstants.MOZ_B2GDROID) {
@@ -1219,6 +1225,55 @@ this.DOMApplicationRegistry = {
       // Clear the manifest cache on memory pressure.
       this._manifestCache = {};
     }
+  },
+
+  // Check extensions to be blocked.
+  blockExtensions: function(aExtensions) {
+    debug("blockExtensions");
+    let app;
+    let runtime = Services.appinfo.QueryInterface(Ci.nsIXULRuntime);
+
+    aExtensions.filter(extension => {
+      // Filter out id-less items and those who don't have a matching installed
+      // extension.
+      if (!extension.attributes.has("id")) {
+        return false;
+      }
+      // Check that we have an app with this extension id.
+      let extId = extension.attributes.get("id");
+      for (let id in this.webapps) {
+        if (this.webapps[id].blocklistId == extId) {
+          app = this.webapps[id];
+          return true;
+        }
+      }
+      // No webapp found for this extension id.
+      return false;
+    }).forEach(extension => {
+      // `extension` is a object such as:
+      //  {"versions":[{"minVersion":"0.1",
+      //                "maxVersion":"1.3.328.4",
+      //                "severity":"1",
+      //                "vulnerabilityStatus":0,
+      //                "targetApps":{
+      //                  "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}":[{"minVersion":"3.7a1pre","maxVersion":"*"}]
+      //                }
+      //               }],
+      //   "prefs":[],
+      //   "blockID":"i24",
+      //   "attributes": Map()
+      //  }
+      //
+      // `versions` is array of BlocklistItemData (see nsBlocklistService.js)
+      let severity = Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+      for (let item of extension.versions) {
+        if (item.includesItem(app.extensionVersion, runtime.version, runtime.platformVersion)) {
+          severity = item.severity;
+          break;
+        }
+      }
+      this.setBlockedStatus(app.manifestURL, severity);
+    });
   },
 
   formatMessage: function(aData) {
@@ -1918,6 +1973,9 @@ this.DOMApplicationRegistry = {
 
     delete app.retryingDownload;
 
+    // Once updated we are not in the blocklist anymore.
+    app.blockedStatus = Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+
     // Update the asm.js scripts we need to compile.
     yield ScriptPreloader.preload(app, newManifest);
 
@@ -1937,8 +1995,7 @@ this.DOMApplicationRegistry = {
       PermissionsInstaller.installPermissions(
         { manifest: newManifest,
           origin: app.origin,
-          manifestURL: app.manifestURL,
-          kind: app.kind },
+          manifestURL: app.manifestURL },
         true);
     }
     this.updateDataStore(this.webapps[id].localId, app.origin,
@@ -1989,8 +2046,12 @@ this.DOMApplicationRegistry = {
         },
         id: aApp.id
       });
+      let appURI = NetUtil.newURI(aApp.origin, null, null);
+      let principal =
+        Services.scriptSecurityManager.createCodebasePrincipal(appURI,
+                                                               {appId: aApp.localId});
       let cacheUpdate = updateSvc.scheduleAppUpdate(
-        appcacheURI, docURI, aApp.localId, false, aProfileDir);
+        appcacheURI, docURI, principal, aApp.localId, false, aProfileDir);
 
       // We save the download details for potential further usage like
       // cancelling it.
@@ -2139,8 +2200,12 @@ this.DOMApplicationRegistry = {
           new ManifestHelper(manifest, aData.origin, aData.manifestURL);
         debug("onlyCheckAppCache - launch updateSvc.checkForUpdate for " +
               helper.fullAppcachePath());
+        let appURI = NetUtil.newURI(aApp.origin, null, null);
+        let principal =
+          Services.scriptSecurityManager.createCodebasePrincipal(appURI,
+                                                                 {appId: aApp.localId});
         updateSvc.checkForUpdate(Services.io.newURI(helper.fullAppcachePath(), null, null),
-                                 app.localId, false, updateObserver);
+                                 principal, app.localId, false, updateObserver);
       });
       return;
     }
@@ -2374,8 +2439,7 @@ this.DOMApplicationRegistry = {
         PermissionsInstaller.installPermissions({
           manifest: aApp.manifest,
           origin: aApp.origin,
-          manifestURL: aData.manifestURL,
-          kind: aApp.kind
+          manifestURL: aData.manifestURL
         }, true);
       }
 
@@ -2409,9 +2473,13 @@ this.DOMApplicationRegistry = {
             manifest.fullAppcachePath());
 
       let updateDeferred = Promise.defer();
+      let appURI = NetUtil.newURI(aApp.origin, null, null);
+      let principal =
+        Services.scriptSecurityManager.createCodebasePrincipal(appURI,
+                                                               {appId: aApp.localId});
 
       updateSvc.checkForUpdate(Services.io.newURI(manifest.fullAppcachePath(), null, null),
-                               aApp.localId, false,
+                               principal, aApp.localId, false,
                                (aSubject, aTopic, aData) => updateDeferred.resolve(aTopic));
 
       let topic = yield updateDeferred.promise;
@@ -2950,6 +3018,10 @@ this.DOMApplicationRegistry = {
     this._writeManifestFile(app.id, false, aManifest);
     if (aUpdateManifest) {
       this._writeManifestFile(app.id, true, aUpdateManifest);
+      // If there is an id in the mini-manifest, use it for blocklisting purposes.
+      if (aData.isPackage && ("id" in aUpdateManifest)) {
+        this.webapps[app.id].blocklistId = aUpdateManifest["id"];
+      }
     }
 
     this._saveApps().then(() => {
@@ -2984,6 +3056,10 @@ this.DOMApplicationRegistry = {
 
     let jsonManifest = aData.isPackage ? app.updateManifest : app.manifest;
     yield this._writeManifestFile(id, aData.isPackage, jsonManifest);
+    // If there is an id in the mini-manifest, use it for blocklisting purposes.
+    if (aData.isPackage && ("id" in jsonManifest)) {
+      app.blocklistId = jsonManifest["id"];
+    }
 
     debug("app.origin: " + app.origin);
     let manifest =
@@ -3468,6 +3544,10 @@ this.DOMApplicationRegistry = {
       // nsILoadContext
       appId: aOldApp.installerAppId,
       isInBrowserElement: aOldApp.installerIsBrowser,
+      originAttributes: {
+        appId: aOldApp.installerAppId,
+        inBrowser: aOldApp.installerIsBrowser
+      },
       usePrivateBrowsing: false,
       isContent: false,
       associatedWindow: null,
@@ -3722,16 +3802,24 @@ this.DOMApplicationRegistry = {
     // true.
     if (useReviewerCerts) {
       let manifestPath = Services.io.newURI(aManifestURL, null, null).path;
+      let isReviewer = false;
+      // There are different reviewer paths for apps & addons so we keep
+      // them in a comma separated preference.
+      try {
+        let reviewerPaths =
+          Services.prefs.getCharPref("dom.apps.reviewer_paths").split(",");
+        isReviewer = reviewerPaths.some(path => { return manifestPath.startsWith(path); });
+      } catch(e) {}
 
       switch (aInstallOrigin) {
         case "https://marketplace.firefox.com":
-          root = manifestPath.startsWith("/reviewers/")
+          root = isReviewer
                ? Ci.nsIX509CertDB.AppMarketplaceProdReviewersRoot
                : Ci.nsIX509CertDB.AppMarketplaceProdPublicRoot;
           break;
 
         case "https://marketplace-dev.allizom.org":
-          root = manifestPath.startsWith("/reviewers/")
+          root = isReviewer
                ? Ci.nsIX509CertDB.AppMarketplaceDevReviewersRoot
                : Ci.nsIX509CertDB.AppMarketplaceDevPublicRoot;
           break;
@@ -3789,6 +3877,10 @@ this.DOMApplicationRegistry = {
         throw "INVALID_MANIFEST";
       }
       newManifest = UserCustomizations.convertManifest(newManifest);
+      // Keep track of the add-on version, to use for blocklisting.
+      if (newManifest.version) {
+        aNewApp.extensionVersion = newManifest.version;
+      }
     }
 
     if (!AppsUtils.checkManifest(newManifest, aOldApp)) {
@@ -4090,11 +4182,6 @@ this.DOMApplicationRegistry = {
   },
 
   doUninstall: Task.async(function*(aData, aMm) {
-    // The yields here could get stuck forever, so we only hold
-    // a weak reference to the message manager while yielding, to avoid
-    // leaking the whole page associationed with the message manager.
-    aMm = Cu.getWeakReference(aMm);
-
     let response = "Webapps:Uninstall:Return:OK";
 
     try {
@@ -4124,9 +4211,7 @@ this.DOMApplicationRegistry = {
       response = "Webapps:Uninstall:Return:KO";
     }
 
-    if ((aMm = aMm.get())) {
-      aMm.sendAsyncMessage(response, this.formatMessage(aData));
-    }
+    aMm.sendAsyncMessage(response, this.formatMessage(aData));
   }),
 
   uninstall: function(aManifestURL) {
@@ -4561,6 +4646,20 @@ this.DOMApplicationRegistry = {
     });
   },
 
+  setBlockedStatus: function(aManifestURL, aSeverity) {
+    let id = this._appIdForManifestURL(aManifestURL);
+    if (!id || !this.webapps[id]) {
+      return;
+    }
+
+    debug(`Setting blocked status ${aSeverity} on ${id}`);
+    let app = this.webapps[id];
+
+    app.blockedStatus = aSeverity;
+    let enabled = aSeverity == Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+    this.setEnabled({ manifestURL: aManifestURL, enabled });
+  },
+
   setEnabled: function(aData) {
     debug("setEnabled " + aData.manifestURL + " : " + aData.enabled);
     let id = this._appIdForManifestURL(aData.manifestURL);
@@ -4570,7 +4669,13 @@ this.DOMApplicationRegistry = {
 
     debug("Enabling " + id);
     let app = this.webapps[id];
-    app.enabled = aData.enabled;
+
+    // If we try to enable an app, check if it's not blocked.
+    if (!aData.enabled ||
+        app.blockedStatus == Ci.nsIBlocklistService.STATE_NOT_BLOCKED) {
+      app.enabled = aData.enabled;
+    }
+
     this._saveApps().then(() => {
       MessageBroadcaster.broadcastMessage("Webapps:UpdateState", {
         app: app,
@@ -4634,6 +4739,10 @@ this.DOMApplicationRegistry = {
     }
 
     return this.getManifestFor(aManifestURL).then((aManifest) => {
+      if (!aManifest) {
+        return Promise.reject("NoManifest");
+      }
+
       let manifest = aEntryPoint && aManifest.entry_points &&
                      aManifest.entry_points[aEntryPoint]
         ? aManifest.entry_points[aEntryPoint]

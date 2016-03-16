@@ -35,7 +35,6 @@ XPIDL_MODULE = 'dom_system_gonk'
 EXPORTS += [
     'GeolocationUtil.h',
     'GonkGPSGeolocationProvider.h',
-    'mozstumbler/MozStumbler.h',
     'nsVolume.h',
     'nsVolumeService.h',
 ]
@@ -49,10 +48,6 @@ UNIFIED_SOURCES += [
     'MozMtpDatabase.cpp',
     'MozMtpServer.cpp',
     'MozMtpStorage.cpp',
-    'mozstumbler/MozStumbler.cpp',
-    'mozstumbler/StumblerLogging.cpp',
-    'mozstumbler/UploadStumbleRunnable.cpp',
-    'mozstumbler/WriteStumbleOnThread.cpp',
     'NetIdManager.cpp',
     'NetworkUtils.cpp',
     'NetworkWorker.cpp',
@@ -71,9 +66,9 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG['ANDROID_VERSION'] >= '17':
-    CXXFLAGS += ['-I%s/frameworks/av/media/mtp' % CONFIG['ANDROID_SOURCE']]
+    LOCAL_INCLUDES += ['%' + '%s/frameworks/av/media/mtp' % CONFIG['ANDROID_SOURCE']]
 else:
-    CXXFLAGS += ['-I%s/frameworks/base/media/mtp' % CONFIG['ANDROID_SOURCE']]
+    LOCAL_INCLUDES += ['%' + '%s/frameworks/base/media/mtp' % CONFIG['ANDROID_SOURCE']]
 
 if CONFIG['ENABLE_TESTS']:
     XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell.ini']
@@ -93,6 +88,15 @@ EXTRA_JS_MODULES += [
 ]
 
 if CONFIG['MOZ_B2G_RIL']:
+    EXPORTS += [
+         'mozstumbler/MozStumbler.h',
+    ]
+    UNIFIED_SOURCES += [
+          'mozstumbler/MozStumbler.cpp',
+          'mozstumbler/StumblerLogging.cpp',
+          'mozstumbler/UploadStumbleRunnable.cpp',
+          'mozstumbler/WriteStumbleOnThread.cpp'
+    ]
     XPIDL_SOURCES += [
         'nsIDataCallInterfaceService.idl',
         'nsIDataCallManager.idl',

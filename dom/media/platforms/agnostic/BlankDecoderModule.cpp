@@ -4,16 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "MediaDecoderReader.h"
-#include "PlatformDecoderModule.h"
-#include "nsRect.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/CheckedInt.h"
-#include "VideoUtils.h"
 #include "ImageContainer.h"
+#include "MediaDecoderReader.h"
 #include "MediaInfo.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/mozalloc.h" // for operator new, and new (fallible)
+#include "mozilla/RefPtr.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "nsRect.h"
+#include "PlatformDecoderModule.h"
 #include "TimeUnits.h"
+#include "VideoUtils.h"
 
 namespace mozilla {
 
@@ -34,11 +37,11 @@ public:
   {
   }
 
-  virtual nsRefPtr<InitPromise> Init() override {
+  RefPtr<InitPromise> Init() override {
     return InitPromise::CreateAndResolve(mType, __func__);
   }
 
-  virtual nsresult Shutdown() override {
+  nsresult Shutdown() override {
     return NS_OK;
   }
 
@@ -54,20 +57,23 @@ public:
     }
     NS_IMETHOD Run() override
     {
-      nsRefPtr<MediaData> data =
+      RefPtr<MediaData> data =
         mCreator->Create(media::TimeUnit::FromMicroseconds(mSample->mTime),
                          media::TimeUnit::FromMicroseconds(mSample->mDuration),
                          mSample->mOffset);
+      if (!data) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
       mCallback->Output(data);
       return NS_OK;
     }
   private:
-    nsRefPtr<MediaRawData> mSample;
+    RefPtr<MediaRawData> mSample;
     BlankMediaDataCreator* mCreator;
     MediaDataDecoderCallback* mCallback;
   };
 
-  virtual nsresult Input(MediaRawData* aSample) override
+  nsresult Input(MediaRawData* aSample) override
   {
     // The MediaDataDecoder must delete the sample when we're finished
     // with it, so the OutputEvent stores it in an nsAutoPtr and deletes
@@ -77,12 +83,12 @@ public:
     return NS_OK;
   }
 
-  virtual nsresult Flush() override {
+  nsresult Flush() override {
     mTaskQueue->Flush();
     return NS_OK;
   }
 
-  virtual nsresult Drain() override {
+  nsresult Drain() override {
     mCallback->DrainComplete();
     return NS_OK;
   }
@@ -114,12 +120,12 @@ public:
     // with a U and V plane that are half the size of the Y plane, i.e 8 bit,
     // 2x2 subsampled. Have the data pointers of each frame point to the
     // first plane, they'll always be zero'd memory anyway.
-    nsAutoArrayPtr<uint8_t> frame(new uint8_t[mFrameWidth * mFrameHeight]);
-    memset(frame, 0, mFrameWidth * mFrameHeight);
+    auto frame = MakeUnique<uint8_t[]>(mFrameWidth * mFrameHeight);
+    memset(frame.get(), 0, mFrameWidth * mFrameHeight);
     VideoData::YCbCrBuffer buffer;
 
     // Y plane.
-    buffer.mPlanes[0].mData = frame;
+    buffer.mPlanes[0].mData = frame.get();
     buffer.mPlanes[0].mStride = mFrameWidth;
     buffer.mPlanes[0].mHeight = mFrameHeight;
     buffer.mPlanes[0].mWidth = mFrameWidth;
@@ -127,7 +133,7 @@ public:
     buffer.mPlanes[0].mSkip = 0;
 
     // Cb plane.
-    buffer.mPlanes[1].mData = frame;
+    buffer.mPlanes[1].mData = frame.get();
     buffer.mPlanes[1].mStride = mFrameWidth / 2;
     buffer.mPlanes[1].mHeight = mFrameHeight / 2;
     buffer.mPlanes[1].mWidth = mFrameWidth / 2;
@@ -135,7 +141,7 @@ public:
     buffer.mPlanes[1].mSkip = 0;
 
     // Cr plane.
-    buffer.mPlanes[2].mData = frame;
+    buffer.mPlanes[2].mData = frame.get();
     buffer.mPlanes[2].mStride = mFrameWidth / 2;
     buffer.mPlanes[2].mHeight = mFrameHeight / 2;
     buffer.mPlanes[2].mWidth = mFrameWidth / 2;
@@ -183,7 +189,11 @@ public:
         frames.value() > (UINT32_MAX / mChannelCount)) {
       return nullptr;
     }
-    AudioDataValue* samples = new AudioDataValue[frames.value() * mChannelCount];
+    auto samples =
+      MakeUniqueFallible<AudioDataValue[]>(frames.value() * mChannelCount);
+    if (!samples) {
+      return nullptr;
+    }
     // Fill the sound buffer with an A4 tone.
     static const float pi = 3.14159265f;
     static const float noteHz = 440.0f;
@@ -198,7 +208,7 @@ public:
                          aDTS.ToMicroseconds(),
                          aDuration.ToMicroseconds(),
                          uint32_t(frames.value()),
-                         samples,
+                         Move(samples),
                          mChannelCount,
                          mSampleRate);
   }
@@ -213,7 +223,7 @@ class BlankDecoderModule : public PlatformDecoderModule {
 public:
 
   // Decode thread.
-  virtual already_AddRefed<MediaDataDecoder>
+  already_AddRefed<MediaDataDecoder>
   CreateVideoDecoder(const VideoInfo& aConfig,
                      layers::LayersBackend aLayersBackend,
                      layers::ImageContainer* aImageContainer,
@@ -221,7 +231,7 @@ public:
                      MediaDataDecoderCallback* aCallback) override {
     BlankVideoDataCreator* creator = new BlankVideoDataCreator(
       aConfig.mDisplay.width, aConfig.mDisplay.height, aImageContainer);
-    nsRefPtr<MediaDataDecoder> decoder =
+    RefPtr<MediaDataDecoder> decoder =
       new BlankMediaDataDecoder<BlankVideoDataCreator>(creator,
                                                        aVideoTaskQueue,
                                                        aCallback,
@@ -230,14 +240,14 @@ public:
   }
 
   // Decode thread.
-  virtual already_AddRefed<MediaDataDecoder>
+  already_AddRefed<MediaDataDecoder>
   CreateAudioDecoder(const AudioInfo& aConfig,
                      FlushableTaskQueue* aAudioTaskQueue,
                      MediaDataDecoderCallback* aCallback) override {
     BlankAudioDataCreator* creator = new BlankAudioDataCreator(
       aConfig.mChannels, aConfig.mRate);
 
-    nsRefPtr<MediaDataDecoder> decoder =
+    RefPtr<MediaDataDecoder> decoder =
       new BlankMediaDataDecoder<BlankAudioDataCreator>(creator,
                                                        aAudioTaskQueue,
                                                        aCallback,
@@ -245,18 +255,13 @@ public:
     return decoder.forget();
   }
 
-  virtual bool
-  SupportsMimeType(const nsACString& aMimeType) override
+  bool
+  SupportsMimeType(const nsACString& aMimeType) const override
   {
     return true;
   }
 
-  virtual bool
-  SupportsSharedDecoders(const VideoInfo& aConfig) const override {
-    return false;
-  }
-
-  virtual ConversionRequired
+  ConversionRequired
   DecoderNeedsConversion(const TrackInfo& aConfig) const override
   {
     return kNeedNone;
@@ -264,27 +269,10 @@ public:
 
 };
 
-class AgnosticDecoderModule : public BlankDecoderModule {
-public:
-
-  bool SupportsMimeType(const nsACString& aMimeType) override
-  {
-    // This module does not support any decoders itself,
-    // agnostic decoders are created in PlatformDecoderModule::CreateDecoder
-    return false;
-  }
-};
-
 already_AddRefed<PlatformDecoderModule> CreateBlankDecoderModule()
 {
-  nsRefPtr<PlatformDecoderModule> pdm = new BlankDecoderModule();
+  RefPtr<PlatformDecoderModule> pdm = new BlankDecoderModule();
   return pdm.forget();
-}
-
-already_AddRefed<PlatformDecoderModule> CreateAgnosticDecoderModule()
-{
-  nsRefPtr<PlatformDecoderModule> adm = new AgnosticDecoderModule();
-  return adm.forget();
 }
 
 } // namespace mozilla

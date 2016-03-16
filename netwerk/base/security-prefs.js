@@ -6,14 +6,7 @@ pref("security.tls.version.min", 1);
 pref("security.tls.version.max", 3);
 pref("security.tls.version.fallback-limit", 3);
 pref("security.tls.insecure_fallback_hosts", "");
-
-#ifdef RELEASE_BUILD
-pref("security.tls.insecure_fallback_hosts.use_static_list", true);
-pref("security.tls.unrestricted_rc4_fallback", true);
-#else
-pref("security.tls.insecure_fallback_hosts.use_static_list", false);
 pref("security.tls.unrestricted_rc4_fallback", false);
-#endif
 
 pref("security.ssl.treat_unsafe_negotiation_as_broken", false);
 pref("security.ssl.require_safe_negotiation",  false);
@@ -47,6 +40,8 @@ pref("security.password_lifetime",       30);
 pref("security.OCSP.enabled", 1);
 pref("security.OCSP.require", false);
 pref("security.OCSP.GET.enabled", false);
+
+pref("security.pki.cert_short_lifetime_in_days", 10);
 
 pref("security.ssl.errorReporting.enabled", true);
 pref("security.ssl.errorReporting.url", "https://data.mozilla.com/submit/sslreports");

@@ -19,6 +19,7 @@ Cu.import("resource://gre/modules/Log.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/GMPUtils.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
+Cu.import("resource://gre/modules/UpdateUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(
   this, "GMPInstallManager", "resource://gre/modules/GMPInstallManager.jsm");
@@ -69,6 +70,7 @@ const GMP_PLUGINS = [
     missingKey:      "VIDEO_ADOBE_GMP_DISAPPEARED",
     missingFilesKey: "VIDEO_ADOBE_GMP_MISSING_FILES",
   }];
+XPCOMUtils.defineConstant(this, "GMP_PLUGINS", GMP_PLUGINS);
 
 XPCOMUtils.defineLazyGetter(this, "pluginsBundle",
   () => Services.strings.createBundle("chrome://global/locale/plugins.properties"));
@@ -280,14 +282,12 @@ GMPWrapper.prototype = {
       return this._updateTask;
     }
 
-    this._updateTask = Task.spawn(function* GMPProvider_updateTask() {
+    this._updateTask = Task.spawn(function*() {
       this._log.trace("findUpdates() - updateTask");
       try {
         let installManager = new GMPInstallManager();
         let gmpAddons = yield installManager.checkForAddons();
-        let update = gmpAddons.find(function(aAddon) {
-          return aAddon.id === this._plugin.id;
-        }, this);
+        let update = gmpAddons.find(addon => addon.id === this._plugin.id);
         if (update && update.isValid && !update.isInstalled) {
           this._log.trace("findUpdates() - found update for " +
                           this._plugin.id + ", installing");
@@ -465,7 +465,7 @@ GMPWrapper.prototype = {
     return this._updateTask;
   },
 
-  _arePluginFilesOnDisk: function () {
+  _arePluginFilesOnDisk: function() {
     let fileExists = function(aGmpPath, aFileName) {
       let f = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
       let path = OS.Path.join(aGmpPath, aFileName);
@@ -490,8 +490,8 @@ GMPWrapper.prototype = {
       return { installed: false, valid: true };
     }
 
-    let abi = GMPPrefs.get(GMPPrefs.KEY_PLUGIN_ABI, GMPUtils.ABI(), this._plugin.id);
-    if (abi != GMPUtils.ABI()) {
+    let abi = GMPPrefs.get(GMPPrefs.KEY_PLUGIN_ABI, UpdateUtils.ABI, this._plugin.id);
+    if (abi != UpdateUtils.ABI) {
       // ABI doesn't match. Possibly this is a profile migrated across platforms
       // or from 32 -> 64 bit.
       return {
@@ -572,7 +572,9 @@ var GMPProvider = {
         this._log.info("startup - adding gmp directory " + gmpPath);
         try {
           gmpService.addPluginDirectory(gmpPath);
-        } catch (e if e.name == 'NS_ERROR_NOT_AVAILABLE') {
+        } catch (e) {
+          if (e.name != 'NS_ERROR_NOT_AVAILABLE')
+            throw e;
           this._log.warn("startup - adding gmp directory failed with " +
                          e.name + " - sandboxing not available?", e);
         }
@@ -616,7 +618,7 @@ var GMPProvider = {
     this._log.trace("shutdown");
     Preferences.ignore(GMPPrefs.KEY_LOG_BASE, configureLogging);
 
-    let shutdownTask = Task.spawn(function* GMPProvider_shutdownTask() {
+    let shutdownTask = Task.spawn(function*() {
       this._log.trace("shutdown - shutdownTask");
       let shutdownSucceeded = true;
 
@@ -659,8 +661,10 @@ var GMPProvider = {
       return;
     }
 
-    let results = [p.wrapper for ([id, p] of this._plugins)
-                    if (!GMPUtils.isPluginHidden(p))];
+    let results = Array.from(this._plugins.values())
+      .filter(p => !GMPUtils.isPluginHidden(p))
+      .map(p => p.wrapper);
+
     aCallback(results);
   },
 

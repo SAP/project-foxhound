@@ -11,12 +11,44 @@
                 style="border:0px;padding:0px;margin:0px;-moz-appearance:none">
             <menu id="file-menu" label="&fileMenu.label;"
                   accesskey="&fileMenu.accesskey;">
-              <menupopup id="menu_FilePopup">
+              <menupopup id="menu_FilePopup"
+                         onpopupshowing="updateUserContextUIVisibility();">
                 <menuitem id="menu_newNavigatorTab"
                           label="&tabCmd.label;"
                           command="cmd_newNavigatorTab"
                           key="key_newNavigatorTab"
                           accesskey="&tabCmd.accesskey;"/>
+                <menu id="menu_newUserContext"
+                      label="&newUserContext.label;"
+                      accesskey="&newUserContext.accesskey;"
+                      hidden="true">
+                  <menupopup>
+                    <menuitem id="menu_newUserContextTabPersonal"
+                              usercontextid="1"
+                              class="menuitem-iconic"
+                              label="&userContextPersonal.label;"
+                              command="Browser:NewUserContextTab"
+                              accesskey="&userContextPersonal.accesskey;"/>
+                    <menuitem id="menu_newUserContextTabWork"
+                              usercontextid="2"
+                              class="menuitem-iconic"
+                              label="&userContextWork.label;"
+                              command="Browser:NewUserContextTab"
+                              accesskey="&userContextWork.accesskey;"/>
+                    <menuitem id="menu_newUserContextTabBanking"
+                              usercontextid="3"
+                              class="menuitem-iconic"
+                              label="&userContextBanking.label;"
+                              command="Browser:NewUserContextTab"
+                              accesskey="&userContextBanking.accesskey;"/>
+                    <menuitem id="menu_newUserContextTabShopping"
+                              usercontextid="4"
+                              class="menuitem-iconic"
+                              label="&userContextShopping.label;"
+                              command="Browser:NewUserContextTab"
+                              accesskey="&userContextShopping.accesskey;"/>
+                  </menupopup>
+                </menu>
                 <menuitem id="menu_newNavigator"
                           label="&newNavigatorCmd.label;"
                           accesskey="&newNavigatorCmd.accesskey;"
@@ -333,13 +365,11 @@
                           key="key_sanitize"
                           command="Tools:Sanitize"/>
                 <menuseparator id="sanitizeSeparator"/>
-#ifdef MOZ_SERVICES_SYNC
                 <menuitem id="sync-tabs-menuitem"
                           class="syncTabsMenuItem"
-                          label="&syncTabsMenu2.label;"
+                          label="&syncTabsMenu3.label;"
                           oncommand="BrowserOpenSyncTabs();"
-                          disabled="true"/>
-#endif
+                          hidden="true"/>
                 <menuitem id="historyRestoreLastSession"
                           label="&historyRestoreLastSession.label;"
                           command="Browser:RestoreLastSession"/>
@@ -454,12 +484,10 @@
                   accesskey="&toolsMenu.accesskey;"
                   onpopupshowing="mirrorShow(this)">
               <menupopup id="menu_ToolsPopup"
-#ifdef MOZ_SERVICES_SYNC
 # We have to use setTimeout() here to avoid a flickering menu bar when opening
 # the Tools menu, see bug 970769. This can be removed once we got rid of the
 # event loop spinning in Weave.Status._authManager.
                          onpopupshowing="setTimeout(() => gSyncUI.updateUI());"
-#endif
                          >
               <menuitem id="menu_openDownloads"
                         label="&downloads.label;"
@@ -471,11 +499,12 @@
                         accesskey="&addons.accesskey;"
                         key="key_openAddons"
                         command="Tools:Addons"/>
-              <menuitem id="menu_openApps"
-                        label="&webapps.label;"
-                        accesskey="&webapps.accesskey;"
-                        oncommand="BrowserOpenApps();"/>
-#ifdef MOZ_SERVICES_SYNC
+
+              <menuitem id="menu_openLoop"
+                        label="&loopMenuItem.label;"
+                        accesskey = "&loopMenuItem.accesskey;"
+                        oncommand="LoopUI.togglePanel();"/>
+
               <!-- only one of sync-setup, sync-syncnowitem or sync-reauthitem will be showing at once -->
               <menuitem id="sync-setup"
                         label="&syncSignIn.label;"
@@ -492,7 +521,6 @@
                         accesskey="&syncReAuthItem.accesskey;"
                         observes="sync-reauth-state"
                         oncommand="gSyncUI.openSignInAgainPage('menubar');"/>
-#endif
               <menuseparator id="devToolsSeparator"/>
               <menu id="webDeveloperMenu"
                     label="&webDeveloperMenu.label;"
@@ -505,9 +533,6 @@
                   <menuitem id="menu_devToolbar"
                             observes="devtoolsMenuBroadcaster_DevToolbar"
                             accesskey="&devToolbarMenu.accesskey;"/>
-                  <menuitem id="menu_devAppMgr"
-                            observes="devtoolsMenuBroadcaster_DevAppMgr"
-                            accesskey="&devAppMgrMenu.accesskey;"/>
                   <menuitem id="menu_webide"
                             observes="devtoolsMenuBroadcaster_webide"
                             accesskey="&webide.accesskey;"/>

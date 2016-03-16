@@ -101,11 +101,8 @@
 
 <!ENTITY settings "Settings">
 <!ENTITY settings_title "Settings">
-<!ENTITY pref_category_input_options "Input options">
-<!ENTITY pref_category_advanced "Advanced">
-<!ENTITY pref_category_customize "Customize">
-<!ENTITY pref_category_customize_summary "Home, search, tabs, import">
-<!ENTITY pref_category_customize_alt_summary "Home, search, tabs, open later, import">
+<!ENTITY pref_category_general "General">
+<!ENTITY pref_category_general_summary2 "Home, language, URL bar">
 
 <!-- Localization note (pref_category_language) : This is the preferences
      section in which the user picks the locale in which to display Firefox
@@ -144,22 +141,15 @@
      to send a tab to a synced device is pressed and no other synced devices
      are found. -->
 <!ENTITY overlay_no_synced_devices "No Firefox Account connected devices found">
-<!-- Localization note (overlay_share_tab_not_sent) : Used when the menu option
-     to send a tab to a synced device is pressed and there is an error
-     connecting to the server so the tab could not be sent. The text should be
-     divided into two lines (use the newline escape character, "\n", between
-     them): the first notifying the user about the failure and the second
-     telling the user what to do about it. -->
-<!ENTITY overlay_share_tab_not_sent "Your tab could not be sent.\nPlease try again later.">
 
 <!ENTITY pref_category_search3 "Search">
 <!ENTITY pref_category_search_summary "Customize your search providers">
-<!ENTITY pref_category_display "Display">
-<!ENTITY pref_category_display_summary "Text, title bar, full-screen browsing">
+<!ENTITY pref_category_accessibility "Accessibility">
+<!ENTITY pref_category_accessibility_summary2 "Text size, zoom, voice input">
 <!ENTITY pref_category_privacy_short "Privacy">
-<!ENTITY pref_category_privacy_summary2 "Control logins, cookies, tracking, data">
-<!ENTITY pref_category_vendor "&vendorShortName;">
-<!ENTITY pref_category_vendor_summary "About &brandShortName;, FAQs, data choices">
+<!ENTITY pref_category_privacy_summary3 "Tracking, cookies, data choices">
+<!ENTITY pref_category_vendor2 "&vendorShortName; &brandShortName;">
+<!ENTITY pref_category_vendor_summary2 "About &brandShortName;, FAQs, feedback">
 <!ENTITY pref_category_datareporting "Data choices">
 <!ENTITY pref_learn_more "Learn more">
 <!ENTITY pref_category_installed_search_engines "Installed search engines">
@@ -173,12 +163,12 @@
      The &formatI; in the string will be replaced by a small image of the icon described, and can be moved to wherever
      it is applicable. -->
 <!ENTITY pref_search_hint "TIP: Add any website to your list of search providers by long-pressing on its search field and then tapping the &formatI; icon.">
-<!ENTITY pref_category_devtools "Developer tools">
+<!ENTITY pref_category_advanced "Advanced">
+<!ENTITY pref_category_advanced_summary2 "Restore tabs, plugins, developer tools">
 <!ENTITY pref_developer_remotedebugging "Remote debugging">
 <!ENTITY pref_developer_remotedebugging_usb "Remote debugging via USB">
 <!ENTITY pref_developer_remotedebugging_wifi "Remote debugging via Wi-Fi">
 <!ENTITY pref_developer_remotedebugging_wifi_disabled_summary "Wi-Fi debugging requires your device to have a QR code reader app installed.">
-<!ENTITY pref_category_logins "Logins">
 <!ENTITY pref_remember_signons2 "Remember logins">
 <!ENTITY pref_open_external_urls_privately_title "Open links in Private browsing">
 <!ENTITY pref_open_external_urls_privately_summary "For all external links opened in &brandShortName;">
@@ -201,26 +191,49 @@
 <!ENTITY pref_home_suggested_sites_summary "Display shortcuts to sites on your homepage that we think you might find interesting">
 <!ENTITY pref_category_home_homepage "Homepage">
 <!ENTITY home_homepage_title "Set a Homepage">
-<!ENTITY home_homepage_use_current_tab "Use current tab">
+<!-- Localization note (home_homepage_radio_user_address): The user will see a series of radio
+     buttons to choose the homepage they'd like to start on. When they click the radio
+     button for this string, they will use the built-in default Firefox homepage (about:home). -->
+<!ENTITY home_homepage_radio_default "&brandShortName; Home">
+<!-- Localization note (home_homepage_radio_user_address): The user will see a series of radio
+     buttons to choose the homepage they'd like to start on. When they click the radio
+     button for this string, a text field will appear below the radio button and allow the
+     user to insert an address of their choice. -->
+<!ENTITY home_homepage_radio_user_address "Custom">
+<!-- Localization note (home_homepage_hint_user_address): The user will see a series of
+     radio buttons to choose the homepage they'd like to start on. When they click a
+     particular radio button, a text field will appear below the radio button and allow the
+     user to insert an address of their choice. This string is the hint text to that
+     text field. -->
+<!ENTITY home_homepage_hint_user_address "Enter address or search term">
 
 <!-- Localization note: These are shown in the left sidebar on tablets -->
-<!ENTITY pref_header_customize "Customize">
-<!ENTITY pref_header_display "Display">
+<!ENTITY pref_header_general "General">
+<!ENTITY pref_header_search "Search">
 <!ENTITY pref_header_privacy_short "Privacy">
+<!ENTITY pref_header_accessibility "Accessibility">
+<!ENTITY pref_header_advanced "Advanced">
 <!ENTITY pref_header_help "Help">
-<!ENTITY pref_header_language "Language">
 <!ENTITY pref_header_vendor "&vendorShortName;">
-<!ENTITY pref_header_devtools "Developer tools">
 
 <!ENTITY pref_cookies_menu "Cookies">
 <!ENTITY pref_cookies_accept_all "Enabled">
 <!ENTITY pref_cookies_not_accept_foreign "Enabled, excluding 3rd party">
 <!ENTITY pref_cookies_disabled "Disabled">
 
+<!ENTITY pref_tap_to_load_images_title2 "Show images">
+<!ENTITY pref_tap_to_load_images_enabled "Always">
+<!ENTITY pref_tap_to_load_images_data "Only over Wi-Fi">
+<!ENTITY pref_tap_to_load_images_disabled2 "Blocked">
+
 <!ENTITY pref_tracking_protection_title "Tracking protection">
 <!ENTITY pref_tracking_protection_summary3 "Enabled in Private Browsing">
 <!ENTITY pref_donottrack_title "Do not track">
 <!ENTITY pref_donottrack_summary "&brandShortName; will tell sites that you do not want to be tracked">
+
+<!ENTITY pref_tracking_protection_enabled "Enabled">
+<!ENTITY pref_tracking_protection_enabled_pb "Enabled in Private Browsing">
+<!ENTITY pref_tracking_protection_disabled "Disabled">
 
 <!ENTITY tracking_protection_prompt_title "Now with Tracking Protection">
 <!ENTITY tracking_protection_prompt_text "Actively block tracking elements so you don\'t have to worry.">
@@ -247,9 +260,11 @@
 <!ENTITY pref_char_encoding "Character encoding">
 <!ENTITY pref_char_encoding_on "Show menu">
 <!ENTITY pref_char_encoding_off "Don\'t show menu">
-<!ENTITY pref_clear_private_data2 "Clear now">
-<!ENTITY pref_clear_private_data_category "Clear private data">
-<!ENTITY pref_clear_on_exit_title2 "Clear on exit">
+<!ENTITY pref_clear_private_data "Clear Private Data">
+<!-- Localization note (pref_clear_private_data_now_tablet): This action to clear private data is only shown on tablets.
+     The action is shown below a header saying "Clear private data"; See pref_clear_private_data -->
+<!ENTITY pref_clear_private_data_now_tablet "Clear now">
+<!ENTITY pref_clear_on_exit_title3 "Clear private data on exit">
 <!ENTITY pref_clear_on_exit_summary2 "&brandShortName; will automatically clear your data whenever you select \u0022Quit\u0022 from the main menu">
 <!ENTITY pref_clear_on_exit_dialog_title "Select which data to clear">
 <!ENTITY pref_plugins "Plugins">
@@ -257,7 +272,7 @@
 <!ENTITY pref_plugins_tap_to_play "Tap to play">
 <!ENTITY pref_plugins_disabled "Disabled">
 <!ENTITY pref_text_size "Text size">
-<!ENTITY pref_restore "Tabs">
+<!ENTITY pref_restore_tabs "Restore tabs">
 <!ENTITY pref_restore_always "Always restore">
 <!ENTITY pref_restore_quit "Don\'t restore after quitting &brandShortName;">
 <!ENTITY pref_font_size_tiny "Tiny">
@@ -282,15 +297,16 @@ size. -->
 <!ENTITY pref_zoom_force_enabled "Always enable zoom">
 <!ENTITY pref_zoom_force_enabled_summary "Force override so you can zoom any page">
 <!ENTITY pref_voice_input "Voice input">
-<!ENTITY pref_voice_input_summary "Allow voice dictation in the title bar">
+<!ENTITY pref_voice_input_summary2 "Allow voice dictation in the URL bar">
 <!ENTITY pref_qrcode_enabled "QR code reader">
-<!ENTITY pref_qrcode_enabled_summary "Allow QR scanner in the title bar">
+<!ENTITY pref_qrcode_enabled_summary2 "Allow QR scanner in the URL bar">
 
 <!ENTITY pref_use_master_password "Use master password">
-<!ENTITY pref_sync "Sync">
+<!ENTITY pref_sync2 "Sign in">
 <!ENTITY pref_sync_summary2 "Sync your tabs, bookmarks, logins, history">
 <!ENTITY pref_search_suggestions "Show search suggestions">
-<!ENTITY pref_import_android "Import from Android">
+<!ENTITY pref_history_search_suggestions "Show search history">
+<!ENTITY pref_import_options "Import options">
 <!ENTITY pref_import_android_summary "Import bookmarks and history from the native browser">
 <!ENTITY pref_private_data_history2 "Browsing history">
 <!ENTITY pref_private_data_searchHistory "Search history">
@@ -347,7 +363,7 @@ size. -->
 <!-- Localization note (pref_update_autodownload2) : This should mention downloading
      specifically, since the pref only prevents automatic downloads and not the
      actual notification that an update is available. -->
-<!ENTITY pref_update_autodownload2 "Download updates automatically">
+<!ENTITY pref_update_autodownload3 "Automatic updates">
 <!ENTITY pref_update_autodownload_wifi "Only over Wi-Fi">
 <!ENTITY pref_update_autodownload_never "Never">
 <!ENTITY pref_update_autodownload_always "Always">
@@ -429,10 +445,6 @@ size. -->
 <!ENTITY doorhanger_login_select_action_text "Select another login">
 <!ENTITY doorhanger_login_select_title "Copy password from">
 
-<!ENTITY pref_titlebar_mode "Title bar">
-<!ENTITY pref_titlebar_mode_title "Show page title">
-<!ENTITY pref_titlebar_mode_url "Show page address">
-
 <!-- Localization note (pref_prevent_magnifying_glass): Label for setting that controls
      whether or not the magnifying glass is disabled. -->
 <!ENTITY pref_magnifying_glass_enabled "Magnify small areas">
@@ -441,7 +453,7 @@ size. -->
 <!-- Localization note (pref_scroll_title_bar2): Label for setting that controls
      whether or not the dynamic toolbar is enabled. -->
 <!ENTITY pref_scroll_title_bar2 "Full-screen browsing">
-<!ENTITY pref_scroll_title_bar_summary "Hide the &brandShortName; title bar when scrolling down a page">
+<!ENTITY pref_scroll_title_bar_summary2 "Hide the &brandShortName; toolbar when scrolling down a page">
 
 <!ENTITY pref_tab_queue_title2 "Open multiple links">
 <!ENTITY pref_tab_queue_summary3 "Save them until the next time you open &brandShortName;">
@@ -461,7 +473,6 @@ size. -->
 <!ENTITY site_settings_title3       "Site Settings">
 <!ENTITY site_settings_cancel       "Cancel">
 <!ENTITY site_settings_clear        "Clear">
-<!ENTITY site_settings_no_settings  "There are no settings to clear.">
 
 <!-- Localization note (reading_list_added3) : Used in a toast, please keep as short
      as possible. -->
@@ -517,14 +528,14 @@ size. -->
      The placeholders &formatS1; and &formatS2; are used to mark the location of text underlining. -->
 <!ENTITY home_most_recent_emptyhint2 "Psst: using a &formatS1;New Private Tab&formatS2; won\'t save your history.">
 <!ENTITY home_reading_list_empty "Articles you save for later show up here.">
-<!-- Localization note (home_reading_list_hint): The "TIP" string is synonymous to "hint", "clue", etc. This string is displayed
+<!-- Localization note (home_reading_list_hint3): The "TIP" string is synonymous to "hint", "clue", etc. This string is displayed
      as an advisory message on how to add content to the reading list when the reading list empty.
      The placeholder &formatI; will be replaced by a small image of the icon described, and can be moved to wherever
      it is applicable. -->
-<!ENTITY home_reading_list_hint2 "TIP: Save articles to your reading list by long pressing the &formatI; icon when it appears in the title bar.">
-<!-- Localization note (home_reading_list_hint_accessible): This string is used
+<!ENTITY home_reading_list_hint3 "TIP: Save articles to your reading list by long pressing the &formatI; icon when it appears in the URL bar.">
+<!-- Localization note (home_reading_list_hint_accessible2): This string is used
      as alternate text for accessibility. It is not visible in the UI. -->
-<!ENTITY home_reading_list_hint_accessible "TIP: Save articles to your reading list by long pressing the reader mode button when it appears in the title bar.">
+<!ENTITY home_reading_list_hint_accessible2 "TIP: Save articles to your reading list by long pressing the reader mode button when it appears in the URL bar.">
 
 <!-- Localization note (home_default_empty): This string is used as the default text when there
      is no data to show in an about:home panel that was created by an add-on. -->
@@ -582,6 +593,7 @@ with that structure, consider a translation which ignores the preceding domain a
 just addresses the organization to follow, e.g. "This site is run by " -->
 <!ENTITY identity_connection_secure "Secure Connection">
 <!ENTITY identity_connection_insecure "Insecure connection">
+<!ENTITY identity_login_insecure "This page is not secure and your login could be vulnerable.">
 
 <!-- Mixed content notifications in site identity popup -->
 <!ENTITY mixed_content_blocked_all1 "&brandShortName; has blocked insecure content on this page.">
@@ -697,6 +709,19 @@ just addresses the organization to follow, e.g. "This site is run by " -->
 <!ENTITY find_matchcase "Aa">
 
 <!ENTITY intent_uri_cannot_open "Cannot open link">
+<!-- LOCALIZATION NOTE (intent_uri_private_browsing_prompt): This string will
+     appear in an alert when a user, who is currently in private browsing,
+     clicks a link that will open an external Android application. "&formatS;"
+     will be replaced with the name of the application that will be opened. -->
+<!ENTITY intent_uri_private_browsing_prompt "This link will open in &formatS;. Are you sure you want to exit Private Browsing?">
+<!-- LOCALIZATION NOTE (intent_uri_private_browsing_multiple_match_title): This
+     string will appear as the title of an alert when a user, who is currently
+     in private browsing, clicks a link that will open an external Android
+     application and more than one application is available to open that link.
+     We don't have control over the style of this dialog and it looks
+     unpolished when this string is longer than one line so ideally keep it
+     short! -->
+<!ENTITY intent_uri_private_browsing_multiple_match_title "Exit Private Browsing?">
 
 <!-- DevTools Authentication -->
 <!-- LOCALIZATION NOTE (devtools_auth_scan_header): This header text appears
@@ -706,19 +731,21 @@ just addresses the organization to follow, e.g. "This site is run by " -->
      code. -->
 <!ENTITY devtools_auth_scan_header "Scanning for the QR code displayed on your other device">
 
-<!-- Restrictions -->
-<!-- Localization note: These are restrictions the device owner (e.g. parent) can enable for
+<!-- Restrictable features -->
+<!-- Localization note: These are features the device owner (e.g. parent) can enable or disable for
      a restricted profile (e.g. child). Used inside the Android settings UI. -->
-<!ENTITY restriction_disallow_import_settings_title2 "Disable \'Import from Android\'">
-<!ENTITY restriction_disallow_addons_title2 "Disable add-on installation">
-<!ENTITY restriction_disallow_devtools_title2 "Disable developer tools">
-<!ENTITY restriction_disallow_customize_home_title2 "Disable Home customization">
-<!ENTITY restriction_disallow_private_browsing_title2 "Disable Private Browsing">
-<!ENTITY restriction_disallow_location_services_title2 "Disable Location Services">
-<!ENTITY restriction_disallow_display_settings_title2 "Disable Display settings">
-<!ENTITY restriction_disallow_clear_history_title2 "Disable \'Clear browsing history\'">
-<!ENTITY restriction_disallow_master_password_title2 "Disable master password">
-<!ENTITY restriction_disallow_guest_browsing_title2 "Disable Guest Browsing">
+<!ENTITY restrictable_feature_addons_installation "Add-ons">
+<!ENTITY restrictable_feature_addons_installation_description "Add features or functionality to Firefox. Note: Add-ons can disable certain restrictions.">
+<!ENTITY restrictable_feature_private_browsing "Private Browsing">
+<!ENTITY restrictable_feature_private_browsing_description "Allows family members to browse without saving information about the sites and pages they\'ve visited.">
+<!ENTITY restrictable_feature_clear_history "Clear History">
+<!ENTITY restrictable_feature_clear_history_description "Allows family members to delete information about the sites and pages they\'ve visited.">
+<!ENTITY restrictable_feature_advanced_settings "Advanced Settings">
+<!ENTITY restrictable_feature_advanced_settings_description "This includes importing bookmarks, restoring tabs and automated updates. Turn off for simplified settings suitable for any family member.">
+<!ENTITY restrictable_feature_camera_microphone "Camera &amp; Microphone">
+<!ENTITY restrictable_feature_camera_microphone_description "Allows family members to engage in real time communication on websites.">
+<!ENTITY restrictable_feature_data_choices "Data Choices">
+<!ENTITY restrictable_feature_data_choices_description "Choose whether or not to send usage information to Mozilla to help make Firefox better.">
 
 <!-- Default Bookmarks titles-->
 <!-- LOCALIZATION NOTE (bookmarks_about_browser): link title for about:fennec -->
@@ -727,9 +754,15 @@ just addresses the organization to follow, e.g. "This site is run by " -->
 <!ENTITY bookmarks_addons "Firefox: Customize with add-ons">
 <!-- LOCALIZATION NOTE (bookmarks_support): link title for https://support.mozilla.org/ -->
 <!ENTITY bookmarks_support "Firefox: Support">
-<!--LOCALIZATION NOTE (bookmarks_marketplace):link title for https://marketplace.firefox.com -->
-<!ENTITY bookmarks_marketplace "Firefox Marketplace">
 <!-- LOCALIZATION NOTE (bookmarks_restricted_support): link title for https://support.mozilla.org/kb/controlledaccess -->
 <!ENTITY bookmarks_restricted_support2 "Firefox Help and Support for restricted profiles on Android tablets">
 <!-- LOCALIZATION NOTE (bookmarks_restricted_webmaker):link title for https://webmaker.org -->
 <!ENTITY bookmarks_restricted_webmaker "Learn the Web: Mozilla Webmaker">
+
+<!-- LOCALIZATION NOTE (unsupported_sdk_version): The user installed a build of this app that does not support
+     the Android version of this device. the formatS1 is replaced by the CPU ABI (e.g., ARMv7); the formatS2 is
+     replaced by the Android OS version (e.g., 14)-->
+<!ENTITY unsupported_sdk_version "Sorry! This &brandShortName; won\'t work on this device (&formatS1;, &formatS2;). Please download the correct version.">
+
+<!ENTITY eol_notification_title "&brandShortName; no longer supports Android 3">
+<!ENTITY eol_notification_summary "Tap to learn more">

@@ -22,6 +22,7 @@
 #include "mozilla/Maybe.h"
 
 #include "signaling/src/sdp/SdpEnum.h"
+#include "signaling/src/common/EncodingConstraints.h"
 
 namespace mozilla
 {
@@ -59,6 +60,7 @@ public:
     kPtimeAttribute,
     kRecvonlyAttribute,
     kRemoteCandidatesAttribute,
+    kRidAttribute,
     kRtcpAttribute,
     kRtcpFbAttribute,
     kRtcpMuxAttribute,
@@ -771,6 +773,101 @@ public:
   std::vector<Candidate> mCandidates;
 };
 
+/*
+a=rid, draft-pthatcher-mmusic-rid-01
+
+   rid-syntax        = "a=rid:" rid-identifier SP rid-dir
+                       [ rid-pt-param-list / rid-param-list ]
+
+   rid-identifier    = 1*(alpha-numeric / "-" / "_")
+
+   rid-dir           = "send" / "recv"
+
+   rid-pt-param-list = SP rid-fmt-list *(";" rid-param)
+
+   rid-param-list    = SP rid-param *(";" rid-param)
+
+   rid-fmt-list      = "pt=" fmt *( "," fmt )
+                        ; fmt defined in {{RFC4566}}
+
+   rid-param         = rid-width-param
+                       / rid-height-param
+                       / rid-fps-param
+                       / rid-fs-param
+                       / rid-br-param
+                       / rid-pps-param
+                       / rid-depend-param
+                       / rid-param-other
+
+   rid-width-param   = "max-width" [ "=" int-param-val ]
+
+   rid-height-param  = "max-height" [ "=" int-param-val ]
+
+   rid-fps-param     = "max-fps" [ "=" int-param-val ]
+
+   rid-fs-param      = "max-fs" [ "=" int-param-val ]
+
+   rid-br-param      = "max-br" [ "=" int-param-val ]
+
+   rid-pps-param     = "max-pps" [ "=" int-param-val ]
+
+   rid-depend-param  = "depend=" rid-list
+
+   rid-param-other   = 1*(alpha-numeric / "-") [ "=" param-val ]
+
+   rid-list          = rid-identifier *( "," rid-identifier )
+
+   int-param-val     = 1*DIGIT
+
+   param-val         = *( %x20-58 / %x60-7E )
+                       ; Any printable character except semicolon
+*/
+class SdpRidAttributeList : public SdpAttribute
+{
+public:
+  explicit SdpRidAttributeList()
+    : SdpAttribute(kRidAttribute)
+  {}
+
+  struct Rid
+  {
+    Rid() :
+      direction(sdp::kSend)
+    {}
+
+    bool Parse(std::istream& is, std::string* error);
+    bool ParseParameters(std::istream& is, std::string* error);
+    bool ParseDepend(std::istream& is, std::string* error);
+    bool ParseFormats(std::istream& is, std::string* error);
+    void Serialize(std::ostream& os) const;
+    void SerializeParameters(std::ostream& os) const;
+    bool HasFormat(const std::string& format) const;
+    bool HasParameters() const
+    {
+      return !formats.empty() ||
+        constraints.maxWidth ||
+        constraints.maxHeight ||
+        constraints.maxFps ||
+        constraints.maxFs ||
+        constraints.maxBr ||
+        constraints.maxPps ||
+        !dependIds.empty();
+    }
+
+
+    std::string id;
+    sdp::Direction direction;
+    std::vector<uint16_t> formats; // Empty implies all
+    EncodingConstraints constraints;
+    std::vector<std::string> dependIds;
+  };
+
+  virtual void Serialize(std::ostream& os) const override;
+  bool PushEntry(const std::string& raw, std::string* error, size_t* errorPos);
+
+  std::vector<Rid> mRids;
+};
+
 ///////////////////////////////////////////////////////////////////////////
 // a=rtcp, RFC3605
 //-------------------------------------------------------------------------
@@ -1301,16 +1398,16 @@ inline std::ostream& operator<<(std::ostream& os, SdpSetupAttribute::Role r)
   return os;
 }
 
-// Note: This ABNF is buggy since it does not include a ':' after "a=simulcast"
-// The authors have said this will be fixed in a subsequent version.
-// TODO(bug 1191986): Update this ABNF once the new version is out.
-// simulcast-attribute = "a=simulcast" 1*3( WSP sc-dir-list )
-// sc-dir-list         = sc-dir WSP sc-fmt-list *( ";" sc-fmt-list )
-// sc-dir              = "send" / "recv" / "sendrecv"
-// sc-fmt-list         = sc-fmt *( "," sc-fmt )
-// sc-fmt              = fmt
+// sc-attr     = "a=simulcast:" 1*2( WSP sc-str-list ) [WSP sc-pause-list]
+// sc-str-list = sc-dir WSP sc-id-type "=" sc-alt-list *( ";" sc-alt-list )
+// sc-pause-list = "paused=" sc-alt-list
+// sc-dir      = "send" / "recv"
+// sc-id-type  = "pt" / "rid" / token
+// sc-alt-list = sc-id *( "," sc-id )
+// sc-id       = fmt / rid-identifier / token
 // ; WSP defined in [RFC5234]
-// ; fmt defined in [RFC4566]
+// ; fmt, token defined in [RFC4566]
+// ; rid-identifier defined in [I-D.pthatcher-mmusic-rid]
 class SdpSimulcastAttribute : public SdpAttribute
 {
 public:
@@ -1328,15 +1425,20 @@ public:
         return !choices.empty();
       }
       bool Parse(std::istream& is, std::string* error);
-      void AppendAsStrings(std::vector<std::string>* formats) const;
-      void AddChoice(const std::string& pt);
+      bool GetChoicesAsFormats(std::vector<uint16_t>* formats) const;
 
-      std::vector<uint16_t> choices;
+      std::vector<std::string> choices;
   };
 
   class Versions : public std::vector<Version>
   {
     public:
+      enum Type {
+        kPt,
+        kRid
+      };
+
+      Versions() : type(kRid) {}
       void Serialize(std::ostream& os) const;
       bool IsSet() const
       {
@@ -1352,12 +1454,13 @@ public:
 
         return false;
       }
+
       bool Parse(std::istream& is, std::string* error);
+      Type type;
   };
 
   Versions sendVersions;
   Versions recvVersions;
-  Versions sendrecvVersions;
 };
 
 ///////////////////////////////////////////////////////////////////////////

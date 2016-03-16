@@ -30,8 +30,6 @@ using namespace mozilla::gfx;
 // nsMathMLContainerFrame implementation
 //
 
-NS_IMPL_FRAMEARENA_HELPERS(nsMathMLContainerFrame)
-
 NS_QUERYFRAME_HEAD(nsMathMLContainerFrame)
   NS_QUERYFRAME_ENTRY(nsIMathMLFrame)
   NS_QUERYFRAME_ENTRY(nsMathMLContainerFrame)
@@ -51,7 +49,7 @@ nsMathMLContainerFrame::ReflowError(nsRenderingContext& aRenderingContext,
 
   ///////////////
   // Set font
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
                                         nsLayoutUtils::
                                         FontSizeInflationFor(this));
@@ -96,7 +94,7 @@ void nsDisplayMathMLError::Paint(nsDisplayListBuilder* aBuilder,
                                  nsRenderingContext* aCtx)
 {
   // Set color and font ...
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(mFrame, getter_AddRefs(fm));
 
   nsPoint pt = ToReferenceFrame();
@@ -108,7 +106,7 @@ void nsDisplayMathMLError::Paint(nsDisplayListBuilder* aBuilder,
   ColorPattern red(ToDeviceColor(Color(1.f, 0.f, 0.f, 1.f)));
   drawTarget->FillRect(rect, red);
 
-  aCtx->ThebesContext()->SetColor(NS_RGB(255,255,255));
+  aCtx->ThebesContext()->SetColor(Color(1.f, 1.f, 1.f));
   nscoord ascent = fm->MaxAscent();
   NS_NAMED_LITERAL_STRING(errorMsg, "invalid-markup");
   nsLayoutUtils::DrawUniDirString(errorMsg.get(), uint32_t(errorMsg.Length()),

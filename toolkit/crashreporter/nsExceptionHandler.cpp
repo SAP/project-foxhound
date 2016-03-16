@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -185,6 +186,7 @@ static char const * const kCrashEventAnnotations[] = {
   // "TotalPageFile"
   // "TotalPhysicalMemory"
   // "TotalVirtualMemory"
+  // "MozCrashReason"
 };
 
 static const char kCrashMainID[] = "crash.main.2\n";
@@ -453,6 +455,13 @@ Concat(XP_CHAR* str, const XP_CHAR* toAppend, int* size)
   return str;
 }
 
+static const char* gMozCrashReason = nullptr;
+
+void AnnotateMozCrashReason(const char* aReason)
+{
+  gMozCrashReason = aReason;
+}
+
 static size_t gOOMAllocationSize = 0;
 
 void AnnotateOOMAllocationSize(size_t size)
@@ -590,7 +599,7 @@ public:
     if (!Valid()) {
       return;
     }
-    unused << sys_write(mFD, buffer, len);
+    Unused << sys_write(mFD, buffer, len);
   }
 
 private:
@@ -841,6 +850,12 @@ bool MinidumpCallback(
 #undef WRITE_STATEX_FIELD
     }
 #endif // XP_WIN
+
+    if (gMozCrashReason) {
+      WriteAnnotation(apiData, "MozCrashReason", gMozCrashReason);
+      WriteAnnotation(eventFile, "MozCrashReason", gMozCrashReason);
+    }
+
     if (oomAllocationSizeBuffer[0]) {
       WriteAnnotation(apiData, "OOMAllocationSize", oomAllocationSizeBuffer);
       WriteAnnotation(eventFile, "OOMAllocationSize", oomAllocationSizeBuffer);
@@ -918,12 +933,12 @@ bool MinidumpCallback(
     // need to clobber this, as libcurl might load NSS,
     // and we want it to load the system NSS.
     unsetenv("LD_LIBRARY_PATH");
-    unused << execl(crashReporterPath,
+    Unused << execl(crashReporterPath,
                     crashReporterPath, minidumpPath, (char*)0);
 #else
     // Invoke the reportCrash activity using am
     if (androidUserSerial) {
-      unused << execlp("/system/bin/am",
+      Unused << execlp("/system/bin/am",
                        "/system/bin/am",
                        "start",
                        "--user", androidUserSerial,
@@ -932,7 +947,7 @@ bool MinidumpCallback(
                        "--es", "minidumpPath", minidumpPath,
                        (char*)0);
     } else {
-      unused << execlp("/system/bin/am",
+      Unused << execlp("/system/bin/am",
                        "/system/bin/am",
                        "start",
                        "-a", "org.mozilla.gecko.reportCrash",
@@ -947,7 +962,7 @@ bool MinidumpCallback(
     // We need to wait on the 'am start' command above to finish, otherwise everything will
     // be killed by the ActivityManager as soon as the signal handler exits
     int status;
-    unused << HANDLE_EINTR(sys_waitpid(pid, &status, __WALL));
+    Unused << HANDLE_EINTR(sys_waitpid(pid, &status, __WALL));
 #endif
   }
 #endif // XP_MACOSX
@@ -1108,10 +1123,18 @@ nsresult SetExceptionHandler(nsIFile* aXREDirectory,
     exePath->GetNativePath(crashReporterPath_temp);
     crashReporterPath = ToNewCString(crashReporterPath_temp);
 #else
-    // On Android, we launch using the application package name
-    // instead of a filename, so use ANDROID_PACKAGE_NAME to do that here.
-    nsCString package(ANDROID_PACKAGE_NAME "/org.mozilla.gecko.CrashReporter");
-    crashReporterPath = ToNewCString(package);
+    // On Android, we launch using the application package name instead of a
+    // filename, so use the dynamically set MOZ_ANDROID_PACKAGE_NAME, or fall
+    // back to the static ANDROID_PACKAGE_NAME.
+    const char* androidPackageName = PR_GetEnv("MOZ_ANDROID_PACKAGE_NAME");
+    if (androidPackageName != nullptr) {
+      nsCString package(androidPackageName);
+      package.Append("/org.mozilla.gecko.CrashReporter");
+      crashReporterPath = ToNewCString(package);
+    } else {
+      nsCString package(ANDROID_PACKAGE_NAME "/org.mozilla.gecko.CrashReporter");
+      crashReporterPath = ToNewCString(package);
+    }
 #endif
   }
 
@@ -1694,23 +1717,6 @@ IsInWhitelist(const nsACString& key)
   return false;
 }
 
-static PLDHashOperator EnumerateEntries(const nsACString& key,
-                                        nsCString entry,
-                                        void* userData)
-{
-  if (!entry.IsEmpty()) {
-    NS_NAMED_LITERAL_CSTRING(kEquals, "=");
-    NS_NAMED_LITERAL_CSTRING(kNewline, "\n");
-    nsAutoCString line = key + kEquals + entry + kNewline;
-
-    crashReporterAPIData->Append(line);
-    if (IsInWhitelist(key)) {
-      crashEventAPIData->Append(line);
-    }
-  }
-  return PL_DHASH_NEXT;
-}
-
 // This function is miscompiled with MSVC 2005/2008 when PGO is on.
 #ifdef _MSC_VER
 #pragma optimize("", off)
@@ -1804,7 +1810,20 @@ nsresult AnnotateCrashReport(const nsACString& key, const nsACString& data)
   // now rebuild the file contents
   crashReporterAPIData->Truncate(0);
   crashEventAPIData->Truncate(0);
-  crashReporterAPIData_Hash->EnumerateRead(EnumerateEntries, nullptr);
+  for (auto it = crashReporterAPIData_Hash->Iter(); !it.Done(); it.Next()) {
+    const nsACString& key = it.Key();
+    nsCString entry = it.Data();
+    if (!entry.IsEmpty()) {
+      NS_NAMED_LITERAL_CSTRING(kEquals, "=");
+      NS_NAMED_LITERAL_CSTRING(kNewline, "\n");
+      nsAutoCString line = key + kEquals + entry + kNewline;
+
+      crashReporterAPIData->Append(line);
+      if (IsInWhitelist(key)) {
+        crashEventAPIData->Append(line);
+      }
+    }
+  }
 
   return NS_OK;
 }
@@ -2517,11 +2536,6 @@ struct Blacklist {
   const int mLen;
 };
 
-struct EnumerateAnnotationsContext {
-  const Blacklist& blacklist;
-  PRFileDesc* fd;
-};
-
 static void
 WriteAnnotation(PRFileDesc* fd, const nsACString& key, const nsACString& value)
 {
@@ -2529,24 +2543,6 @@ WriteAnnotation(PRFileDesc* fd, const nsACString& key, const nsACString& value)
   PR_Write(fd, "=", 1);
   PR_Write(fd, value.BeginReading(), value.Length());
   PR_Write(fd, "\n", 1);
-}
-
-static PLDHashOperator
-EnumerateAnnotations(const nsACString& key,
-                     nsCString entry,
-                     void* userData)
-{
-  EnumerateAnnotationsContext* ctx =
-    static_cast<EnumerateAnnotationsContext*>(userData);
-  const Blacklist& blacklist = ctx->blacklist;
-
-  // skip entries in the blacklist
-  if (blacklist.Contains(key))
-      return PL_DHASH_NEXT;
-
-  WriteAnnotation(ctx->fd, key, entry);
-
-  return PL_DHASH_NEXT;
 }
 
 static bool
@@ -2558,14 +2554,20 @@ WriteExtraData(nsIFile* extraFile,
 {
   PRFileDesc* fd;
   int truncOrAppend = truncate ? PR_TRUNCATE : PR_APPEND;
-  nsresult rv = 
+  nsresult rv =
     extraFile->OpenNSPRFileDesc(PR_WRONLY | PR_CREATE_FILE | truncOrAppend,
                                 0600, &fd);
   if (NS_FAILED(rv))
     return false;
 
-  EnumerateAnnotationsContext ctx = { blacklist, fd };
-  data.EnumerateRead(EnumerateAnnotations, &ctx);
+  for (auto iter = data.ConstIter(); !iter.Done(); iter.Next()) {
+    // Skip entries in the blacklist.
+    const nsACString& key = iter.Key();
+    if (blacklist.Contains(key)) {
+        continue;
+    }
+    WriteAnnotation(fd, key, iter.Data());
+  }
 
   if (writeCrashTime) {
     time_t crashTime = time(nullptr);
@@ -3089,8 +3091,8 @@ TakeMinidumpForChild(uint32_t childPid, nsIFile** dump, uint32_t* aSequence)
   if (aSequence) {
     *aSequence = pd->sequence;
   }
-  
-  pidToMinidump->RemoveEntry(childPid);
+
+  pidToMinidump->RemoveEntry(pd);
 
   return !!*dump;
 }

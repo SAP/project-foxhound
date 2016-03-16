@@ -143,7 +143,8 @@ typedef uint32_t nsSplittableType;
 
 #define NS_INTRINSICSIZE    NS_UNCONSTRAINEDSIZE
 #define NS_AUTOHEIGHT       NS_UNCONSTRAINEDSIZE
-#define NS_AUTOMARGIN       NS_UNCONSTRAINEDSIZE
+// +1 is to avoid clamped huge margin values being processed as auto margins
+#define NS_AUTOMARGIN       (NS_UNCONSTRAINEDSIZE + 1)
 #define NS_AUTOOFFSET       NS_UNCONSTRAINEDSIZE
 // NOTE: there are assumptions all over that these have the same value, namely NS_UNCONSTRAINEDSIZE
 //       if any are changed to be a value other than NS_UNCONSTRAINEDSIZE
@@ -430,7 +431,7 @@ public:
   NS_DECL_QUERYFRAME_TARGET(nsIFrame)
 
   nsPresContext* PresContext() const {
-    return StyleContext()->RuleNode()->PresContext();
+    return StyleContext()->PresContext();
   }
 
   /**
@@ -898,7 +899,7 @@ public:
 
   NS_DECLARE_FRAME_PROPERTY(InvalidationRect, DeleteValue<nsRect>)
 
-  NS_DECLARE_FRAME_PROPERTY(RefusedAsyncAnimation, nullptr)
+  NS_DECLARE_FRAME_PROPERTY(RefusedAsyncAnimationProperty, nullptr)
 
   NS_DECLARE_FRAME_PROPERTY(GenConProperty, DestroyContentArray)
 
@@ -1066,16 +1067,8 @@ public:
    */
   void GetCrossDocChildLists(nsTArray<ChildList>* aLists);
 
-  // XXXbz this method should go away
-  nsIFrame* GetFirstChild(ChildListID aListID) const {
-    return GetChildList(aListID).FirstChild();
-  }
-  // XXXmats this method should also go away then
-  nsIFrame* GetLastChild(ChildListID aListID) const {
-    return GetChildList(aListID).LastChild();
-  }
   nsIFrame* GetFirstPrincipalChild() const {
-    return GetFirstChild(kPrincipalList);
+    return GetChildList(kPrincipalList).FirstChild();
   }
 
   // The individual concrete child lists.
@@ -1202,6 +1195,12 @@ public:
    * Does this frame need a view?
    */
   virtual bool NeedsView() { return false; }
+
+  bool RefusedAsyncAnimation() const
+  {
+    void* prop = Properties().Get(nsIFrame::RefusedAsyncAnimationProperty());
+    return bool(reinterpret_cast<intptr_t>(prop));
+  }
 
   /**
    * Returns true if this frame is transformed (e.g. has CSS or SVG transforms)
@@ -1553,16 +1552,33 @@ public:
       , lineContainer(nullptr)
       , prevLines(0)
       , currentLine(0)
-      , skipWhitespace(true)
       , trailingWhitespace(0)
+      , skipWhitespace(true)
     {}
 
     // The line. This may be null if the inlines are not associated with
     // a block or if we just don't know the line.
     const nsLineList_iterator* line;
 
-    // The line container.
+    // The line container. Private, to ensure we always use SetLineContainer
+    // to update it (so that we have a chance to store the lineContainerWM).
+    //
+    // Note that nsContainerFrame::DoInlineIntrinsicISize will clear the
+    // |line| and |lineContainer| fields when following a next-in-flow link,
+    // so we must not assume these can always be dereferenced.
+  private:
     nsIFrame* lineContainer;
+
+    // Setter and getter for the lineContainer field:
+  public:
+    void SetLineContainer(nsIFrame* aLineContainer)
+    {
+      lineContainer = aLineContainer;
+      if (lineContainer) {
+        lineContainerWM = lineContainer->GetWritingMode();
+      }
+    }
+    nsIFrame* LineContainer() const { return lineContainer; }
 
     // The maximum intrinsic width for all previous lines.
     nscoord prevLines;
@@ -1572,14 +1588,18 @@ public:
     // the caller should call |Break()|.
     nscoord currentLine;
 
+    // This contains the width of the trimmable whitespace at the end of
+    // |currentLine|; it is zero if there is no such whitespace.
+    nscoord trailingWhitespace;
+
     // True if initial collapsable whitespace should be skipped.  This
     // should be true at the beginning of a block, after hard breaks
     // and when the last text ended with whitespace.
     bool skipWhitespace;
 
-    // This contains the width of the trimmable whitespace at the end of
-    // |currentLine|; it is zero if there is no such whitespace.
-    nscoord trailingWhitespace;
+    // Writing mode of the line container (stored here so that we don't
+    // lose track of it if the lineContainer field is reset).
+    mozilla::WritingMode lineContainerWM;
 
     // Floats encountered in the lines.
     class FloatInfo {
@@ -1608,12 +1628,11 @@ public:
     // current line total is negative.  When it is, we need to ignore
     // optional breaks to prevent min-width from ending up bigger than
     // pref-width.
-    void ForceBreak(nsRenderingContext *aRenderingContext);
+    void ForceBreak();
 
     // If the break here is actually taken, aHyphenWidth must be added to the
     // width of the current line.
-    void OptionallyBreak(nsRenderingContext *aRenderingContext,
-                         nscoord aHyphenWidth = 0);
+    void OptionallyBreak(nscoord aHyphenWidth = 0);
 
     // The last text frame processed so far in the current line, when
     // the last characters in that text frame are relevant for line
@@ -1627,7 +1646,7 @@ public:
   };
 
   struct InlinePrefISizeData : public InlineIntrinsicISizeData {
-    void ForceBreak(nsRenderingContext *aRenderingContext);
+    void ForceBreak();
   };
 
   /**
@@ -1889,26 +1908,43 @@ public:
   virtual bool CanContinueTextRun() const = 0;
 
   /**
-   * Append the rendered text to the passed-in string.
+   * Computes an approximation of the rendered text of the frame and its
+   * continuations. Returns nothing for non-text frames.
    * The appended text will often not contain all the whitespace from source,
-   * depending on whether the CSS rule "white-space: pre" is active for this frame.
-   * if aStartOffset + aLength goes past end, or if aLength is not specified
-   * then use the text up to the string's end.
+   * depending on CSS white-space processing.
+   * if aEndOffset goes past end, use the text up to the string's end.
    * Call this on the primary frame for a text node.
-   * @param aAppendToString   String to append text to, or null if text should not be returned
-   * @param aSkipChars         if aSkipIter is non-null, this must also be non-null.
-   * This gets used as backing data for the iterator so it should outlive the iterator.
-   * @param aSkipIter         Where to fill in the gfxSkipCharsIterator info, or null if not needed by caller
-   * @param aStartOffset       Skipped (rendered text) start offset
-   * @param aSkippedMaxLength  Maximum number of characters to return
-   * The iterator can be used to map content offsets to offsets in the returned string, or vice versa.
+   * aStartOffset and aEndOffset can be content offsets or offsets in the
+   * rendered text, depending on aOffsetType.
+   * Returns a string, as well as offsets identifying the start of the text
+   * within the rendered text for the whole node, and within the text content
+   * of the node.
    */
-  virtual nsresult GetRenderedText(nsAString* aAppendToString = nullptr,
-                                   gfxSkipChars* aSkipChars = nullptr,
-                                   gfxSkipCharsIterator* aSkipIter = nullptr,
-                                   uint32_t aSkippedStartOffset = 0,
-                                   uint32_t aSkippedMaxLength = UINT32_MAX)
-  { return NS_ERROR_NOT_IMPLEMENTED; }
+  struct RenderedText {
+    nsAutoString mString;
+    uint32_t mOffsetWithinNodeRenderedText;
+    int32_t mOffsetWithinNodeText;
+    RenderedText() : mOffsetWithinNodeRenderedText(0),
+        mOffsetWithinNodeText(0) {}
+  };
+  enum class TextOffsetType {
+    // Passed-in start and end offsets are within the content text.
+    OFFSETS_IN_CONTENT_TEXT,
+    // Passed-in start and end offsets are within the rendered text.
+    OFFSETS_IN_RENDERED_TEXT
+  };
+  enum class TrailingWhitespace {
+    TRIM_TRAILING_WHITESPACE,
+    // Spaces preceding a caret at the end of a line should not be trimmed
+    DONT_TRIM_TRAILING_WHITESPACE
+  };
+  virtual RenderedText GetRenderedText(uint32_t aStartOffset = 0,
+                                       uint32_t aEndOffset = UINT32_MAX,
+                                       TextOffsetType aOffsetType =
+                                           TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
+                                       TrailingWhitespace aTrimTrailingWhitespace =
+                                           TrailingWhitespace::TRIM_TRAILING_WHITESPACE)
+  { return RenderedText(); }
 
   /**
    * Returns true if the frame contains any non-collapsed characters.
@@ -2939,6 +2975,7 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
    * Is this a flex or grid item? (i.e. a non-abs-pos child of a flex/grid container)
    */
   inline bool IsFlexOrGridItem() const;
+  inline bool IsFlexOrGridContainer() const;
 
   /**
    * @return true if this frame is used as a table caption.
@@ -3021,6 +3058,15 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
    */
   bool IsContainerForFontSizeInflation() const {
     return GetStateBits() & NS_FRAME_FONT_INFLATION_CONTAINER;
+  }
+
+  /**
+   * Return whether this frame keeps track of overflow areas. (Frames for
+   * non-display SVG elements -- e.g. <clipPath> -- do not maintain overflow
+   * areas, because they're never painted.)
+   */
+  bool FrameMaintainsOverflow() const {
+    return !HasAllStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_IS_NONDISPLAY);
   }
 
   /**

@@ -274,6 +274,26 @@ class Build(MachCommandBase):
         help='Verbose output for what commands the build is running.')
     def build(self, what=None, disable_extra_make_dependencies=None, jobs=0,
         directory=None, verbose=False):
+        """Build the source tree.
+
+        With no arguments, this will perform a full build.
+
+        Positional arguments define targets to build. These can be make targets
+        or patterns like "<dir>/<target>" to indicate a make target within a
+        directory.
+
+        There are a few special targets that can be used to perform a partial
+        build faster than what `mach build` would perform:
+
+        * binaries - compiles and links all C/C++ sources and produces shared
+          libraries and executables (binaries).
+
+        * faster - builds JavaScript, XUL, CSS, etc files.
+
+        "binaries" and "faster" almost fully complement each other. However,
+        there are build actions not captured by either. If things don't appear to
+        be rebuilding, perform a vanilla `mach build` to rebuild the world.
+        """
         import which
         from mozbuild.controller.building import BuildMonitor
         from mozbuild.util import resolve_target_to_make
@@ -558,11 +578,11 @@ class Build(MachCommandBase):
         help='Show a diff of changes.')
     # It would be nice to filter the choices below based on
     # conditions, but that is for another day.
-    @CommandArgument('-b', '--backend',
-        choices=['RecursiveMake', 'AndroidEclipse', 'CppEclipse', 'VisualStudio'],
-        default='RecursiveMake',
-        help='Which backend to build (default: RecursiveMake).')
-    def build_backend(self, backend='RecursiveMake', diff=False):
+    @CommandArgument('-b', '--backend', nargs='+',
+        choices=['RecursiveMake', 'AndroidEclipse', 'CppEclipse',
+                 'VisualStudio', 'FasterMake', 'CompileDB'],
+        help='Which backend to build.')
+    def build_backend(self, backend, diff=False):
         python = self.virtualenv_manager.python_path
         config_status = os.path.join(self.topobjdir, 'config.status')
 
@@ -572,7 +592,10 @@ class Build(MachCommandBase):
                   % backend)
             return 1
 
-        args = [python, config_status, '--backend=%s' % backend]
+        args = [python, config_status]
+        if backend:
+            args.append('--backend')
+            args.extend(backend)
         if diff:
             args.append('--diff')
 
@@ -880,13 +903,13 @@ class GTestCommands(MachCommandBase):
         # Parameters come from the CLI. We need to convert them before
         # their use.
         if debugger_args:
-            import pymake.process
-            argv, badchar = pymake.process.clinetoargv(debugger_args, os.getcwd())
-            if badchar:
+            from mozbuild import shellutil
+            try:
+                debugger_args = shellutil.split(debugger_args)
+            except shellutil.MetaCharacterException as e:
                 print("The --debugger_args you passed require a real shell to parse them.")
-                print("(We can't handle the %r character.)" % (badchar,))
+                print("(We can't handle the %r character.)" % e.char)
                 return 1
-            debugger_args = argv;
 
         # Prepend the debugger args.
         args = [debuggerInfo.path] + debuggerInfo.args + args
@@ -1021,33 +1044,47 @@ class RunProgram(MachCommandBase):
         debugparams, slowscript, dmd, mode, sample_below, max_frames,
         show_dump_stats):
 
-        try:
-            binpath = self.get_binary_path('app')
-        except Exception as e:
-            print("It looks like your program isn't built.",
-                "You can run |mach build| to build it.")
-            print(e)
-            return 1
+        if conditions.is_android(self):
+            # Running Firefox for Android is completely different
+            if dmd:
+                print("DMD is not supported for Firefox for Android")
+                return 1
+            from mozrunner.devices.android_device import verify_android_device, run_firefox_for_android
+            if not (debug or debugger or debugparams):
+                verify_android_device(self, install=True)
+                return run_firefox_for_android(self, params)
+            verify_android_device(self, install=True, debugger=True)
+            args = ['']
 
-        args = [binpath]
+        else:
 
-        if params:
-            args.extend(params)
+            try:
+                binpath = self.get_binary_path('app')
+            except Exception as e:
+                print("It looks like your program isn't built.",
+                    "You can run |mach build| to build it.")
+                print(e)
+                return 1
 
-        if not remote:
-            args.append('-no-remote')
+            args = [binpath]
 
-        if not background and sys.platform == 'darwin':
-            args.append('-foreground')
+            if params:
+                args.extend(params)
 
-        no_profile_option_given = \
-            all(p not in params for p in ['-profile', '--profile', '-P'])
-        if no_profile_option_given and not noprofile:
-            path = os.path.join(self.topobjdir, 'tmp', 'scratch_user')
-            if not os.path.isdir(path):
-                os.makedirs(path)
-            args.append('-profile')
-            args.append(path)
+            if not remote:
+                args.append('-no-remote')
+
+            if not background and sys.platform == 'darwin':
+                args.append('-foreground')
+
+            no_profile_option_given = \
+                all(p not in params for p in ['-profile', '--profile', '-P'])
+            if no_profile_option_given and not noprofile:
+                path = os.path.join(self.topobjdir, 'tmp', 'scratch_user')
+                if not os.path.isdir(path):
+                    os.makedirs(path)
+                args.append('-profile')
+                args.append(path)
 
         extra_env = {}
 
@@ -1067,13 +1104,13 @@ class RunProgram(MachCommandBase):
             # Parameters come from the CLI. We need to convert them before
             # their use.
             if debugparams:
-                import pymake.process
-                argv, badchar = pymake.process.clinetoargv(debugparams, os.getcwd())
-                if badchar:
+                from mozbuild import shellutil
+                try:
+                    debugparams = shellutil.split(debugparams)
+                except shellutil.MetaCharacterException as e:
                     print("The --debugparams you passed require a real shell to parse them.")
-                    print("(We can't handle the %r character.)" % (badchar,))
+                    print("(We can't handle the %r character.)" % e.char)
                     return 1
-                debugparams = argv;
 
             if not slowscript:
                 extra_env['JS_DISABLE_SLOW_SCRIPT_SIGNALS'] = '1'

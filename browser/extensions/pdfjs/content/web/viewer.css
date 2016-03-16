@@ -21,6 +21,7 @@
   bottom: 0;
   overflow: hidden;
   opacity: 0.2;
+  line-height: 1.0;
 }
 
 .textLayer > div {
@@ -58,6 +59,22 @@
 
 .textLayer ::selection { background: rgb(0,0,255); }
 .textLayer ::-moz-selection { background: rgb(0,0,255); }
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  left: 0px;
+  top: 100%;
+  right: 0px;
+  bottom: 0px;
+  z-index: -1;
+  cursor: default;
+  -moz-user-select: none;
+}
+
+.textLayer .endOfContent.active {
+  top: 0px;
+}
 
 
 .annotationLayer .annotLink > a:hover {
@@ -420,9 +437,8 @@ html[dir='rtl'] #toolbarContainer, .findbar, .secondaryToolbar {
 }
 
 @keyframes progressIndeterminate {
-  0% { left: 0%; }
-  50% { left: 100%; }
-  100% { left: 100%; }
+  0% { left: -142px; }
+  100% { left: 0; }
 }
 
 #loadingBar .progress.indeterminate {
@@ -430,18 +446,19 @@ html[dir='rtl'] #toolbarContainer, .findbar, .secondaryToolbar {
   transition: none;
 }
 
-#loadingBar .indeterminate .glimmer {
+#loadingBar .progress.indeterminate .glimmer {
   position: absolute;
   top: 0;
   left: 0;
   height: 100%;
-  width: 50px;
+  width: calc(100% + 150px);
 
-  background-image: linear-gradient(to right, #999 0%, #fff 50%, #999 100%);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
+  background: repeating-linear-gradient(135deg,
+                                        #bbb 0, #999 5px,
+                                        #999 45px, #ddd 55px,
+                                        #ddd 95px, #bbb 100px);
 
-  animation: progressIndeterminate 2s linear infinite;
+  animation: progressIndeterminate 950ms linear infinite;
 }
 
 .findbar, .secondaryToolbar {
@@ -549,6 +566,13 @@ html[dir='rtl'] .doorHanger:before,
 html[dir='ltr'] .doorHangerRight:before {
   right: 13px;
   margin-right: -9px;
+}
+
+#findResultsCount {
+  background-color: hsl(0, 0%, 85%);
+  color: hsl(0, 0%, 32%);
+  text-align: center;
+  padding: 3px 4px;
 }
 
 #findMsg {
@@ -1551,7 +1575,25 @@ html[dir='rtl'] #documentPropertiesOverlay .row > * {
   font-size: 10px;
 }
 
-#viewer.textLayer-visible .textLayer > div,
+#viewer.textLayer-visible .textLayer {
+  opacity: 1.0;
+}
+
+#viewer.textLayer-visible .canvasWrapper {
+  background-color: rgb(128,255,128);
+}
+
+#viewer.textLayer-visible .canvasWrapper canvas {
+  mix-blend-mode: screen;
+}
+
+#viewer.textLayer-visible .textLayer > div {
+  background-color: rgba(255, 255, 0, 0.1);
+  color: black;
+  border: solid 1px rgba(255, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
 #viewer.textLayer-hover .textLayer > div:hover {
   background-color: white;
   color: black;

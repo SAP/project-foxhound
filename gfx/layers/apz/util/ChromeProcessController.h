@@ -8,7 +8,7 @@
 
 #include "mozilla/layers/GeckoContentController.h"
 #include "nsCOMPtr.h"
-#include "mozilla/nsRefPtr.h"
+#include "mozilla/RefPtr.h"
 
 class nsIDOMWindowUtils;
 class nsIDocument;
@@ -28,6 +28,7 @@ class APZEventState;
 // tree.
 class ChromeProcessController : public mozilla::layers::GeckoContentController
 {
+protected:
   typedef mozilla::layers::FrameMetrics FrameMetrics;
   typedef mozilla::layers::ScrollableLayerGuid ScrollableLayerGuid;
 
@@ -51,8 +52,6 @@ public:
   virtual void HandleLongTap(const mozilla::CSSPoint& aPoint, Modifiers aModifiers,
                                const ScrollableLayerGuid& aGuid,
                                uint64_t aInputBlockId) override;
-  virtual void SendAsyncScrollDOMEvent(bool aIsRootContent, const mozilla::CSSRect &aContentRect,
-                                       const mozilla::CSSSize &aScrollableSize) override {}
   virtual void NotifyAPZStateChange(const ScrollableLayerGuid& aGuid,
                                     APZStateChange aChange,
                                     int aArg) override;
@@ -61,8 +60,8 @@ public:
   virtual void NotifyFlushComplete() override;
 private:
   nsCOMPtr<nsIWidget> mWidget;
-  nsRefPtr<APZEventState> mAPZEventState;
-  nsRefPtr<APZCTreeManager> mAPZCTreeManager;
+  RefPtr<APZEventState> mAPZEventState;
+  RefPtr<APZCTreeManager> mAPZCTreeManager;
   MessageLoop* mUILoop;
 
   void InitializeRoot();

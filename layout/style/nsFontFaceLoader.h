@@ -10,6 +10,7 @@
 #define nsFontFaceLoader_h_
 
 #include "mozilla/Attributes.h"
+#include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsIStreamLoader.h"
 #include "nsIChannel.h"
@@ -50,12 +51,12 @@ protected:
   virtual ~nsFontFaceLoader();
 
 private:
-  nsRefPtr<gfxUserFontEntry>  mUserFontEntry;
+  RefPtr<gfxUserFontEntry>  mUserFontEntry;
   nsCOMPtr<nsIURI>        mFontURI;
-  nsRefPtr<mozilla::dom::FontFaceSet> mFontFaceSet;
+  RefPtr<mozilla::dom::FontFaceSet> mFontFaceSet;
   nsCOMPtr<nsIChannel>    mChannel;
   nsCOMPtr<nsITimer>      mLoadTimer;
-
+  TimeStamp               mStartTime;
   nsIStreamLoader*        mStreamLoader;
 };
 

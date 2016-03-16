@@ -335,7 +335,7 @@ gfxHarfBuzzShaper::HBGetGlyphHAdvance(hb_font_t *font, void *font_data,
         static_cast<const gfxHarfBuzzShaper::FontCallbackData*>(font_data);
     gfxFont *gfxfont = fcd->mShaper->GetFont();
     if (gfxfont->ProvidesGlyphWidths()) {
-        return gfxfont->GetGlyphWidth(*fcd->mContext->GetDrawTarget(), glyph);
+        return gfxfont->GetGlyphWidth(*fcd->mDrawTarget, glyph);
     }
     return fcd->mShaper->GetGlyphHAdvance(glyph);
 }
@@ -1224,7 +1224,7 @@ HBUnicodeDecompose(hb_unicode_funcs_t *ufuncs,
 #endif
 }
 
-static PLDHashOperator
+static void
 AddOpenTypeFeature(const uint32_t& aTag, uint32_t& aValue, void *aUserArg)
 {
     nsTArray<hb_feature_t>* features = static_cast<nsTArray<hb_feature_t>*> (aUserArg);
@@ -1233,7 +1233,6 @@ AddOpenTypeFeature(const uint32_t& aTag, uint32_t& aValue, void *aUserArg)
     feat.tag = aTag;
     feat.value = aValue;
     features->AppendElement(feat);
-    return PL_DHASH_NEXT;
 }
 
 /*
@@ -1476,7 +1475,7 @@ gfxHarfBuzzShaper::ShapeText(gfxContext      *aContext,
         return false;
     }
 
-    mCallbackData.mContext = aContext;
+    mCallbackData.mDrawTarget = aContext->GetDrawTarget();
     mUseVerticalPresentationForms = false;
 
     if (!Initialize()) {

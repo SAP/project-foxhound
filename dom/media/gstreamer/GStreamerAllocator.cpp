@@ -60,7 +60,7 @@ moz_gfx_memory_reset(MozGfxMemory *mem)
     mem->image->Release();
 
   ImageContainer* container = ((MozGfxMemoryAllocator*) mem->memory.allocator)->reader->GetImageContainer();
-  mem->image = reinterpret_cast<PlanarYCbCrImage*>(container->CreateImage(ImageFormat::PLANAR_YCBCR).take());
+  mem->image = container->CreatePlanarYCbCrImage().forget().take();
   mem->data = mem->image->AllocateAndGetNewBuffer(mem->memory.size);
 }
 
@@ -168,7 +168,7 @@ moz_gfx_memory_allocator_set_reader(GstAllocator* aAllocator, GStreamerReader* a
   allocator->reader = aReader;
 }
 
-nsRefPtr<PlanarYCbCrImage>
+RefPtr<PlanarYCbCrImage>
 moz_gfx_memory_get_image(GstMemory *aMemory)
 {
   NS_ASSERTION(GST_IS_MOZ_GFX_MEMORY_ALLOCATOR(aMemory->allocator), "Should be a gfx image");

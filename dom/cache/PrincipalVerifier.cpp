@@ -12,6 +12,7 @@
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
@@ -36,7 +37,7 @@ PrincipalVerifier::CreateAndDispatch(Listener* aListener,
   // only works on the PBackground thread.
   AssertIsOnBackgroundThread();
 
-  nsRefPtr<PrincipalVerifier> verifier = new PrincipalVerifier(aListener,
+  RefPtr<PrincipalVerifier> verifier = new PrincipalVerifier(aListener,
                                                                aActor,
                                                                aPrincipalInfo);
 
@@ -112,11 +113,11 @@ PrincipalVerifier::VerifyOnMainThread()
 
   // No matter what happens, we need to release the actor before leaving
   // this method.
-  nsRefPtr<ContentParent> actor;
+  RefPtr<ContentParent> actor;
   actor.swap(mActor);
 
   nsresult rv;
-  nsRefPtr<nsIPrincipal> principal = PrincipalInfoToPrincipal(mPrincipalInfo,
+  RefPtr<nsIPrincipal> principal = PrincipalInfoToPrincipal(mPrincipalInfo,
                                                               &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     DispatchToInitiatingThread(rv);

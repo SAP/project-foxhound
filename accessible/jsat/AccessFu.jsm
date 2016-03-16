@@ -88,8 +88,6 @@ this.AccessFu = { // jshint ignore:line
     Cu.import('resource://gre/modules/accessibility/PointerAdapter.jsm');
     Cu.import('resource://gre/modules/accessibility/Presentation.jsm');
 
-    Logger.info('Enabled');
-
     for (let mm of Utils.AllMessageManagers) {
       this._addMessageListeners(mm);
       this._loadFrameScript(mm);
@@ -146,9 +144,7 @@ this.AccessFu = { // jshint ignore:line
       delete this.readyCallback;
     }
 
-    if (Utils.MozBuildApp !== 'mobile/android') {
-      this.announce('screenReaderStarted');
-    }
+    Logger.info('AccessFu:Enabled');
   },
 
   /**
@@ -161,13 +157,7 @@ this.AccessFu = { // jshint ignore:line
 
     this._enabled = false;
 
-    Logger.info('Disabled');
-
     Utils.win.document.removeChild(this.stylesheet.get());
-
-    if (Utils.MozBuildApp !== 'mobile/android') {
-      this.announce('screenReaderStopped');
-    }
 
     for (let mm of Utils.AllMessageManagers) {
       mm.sendAsyncMessage('AccessFu:Stop');
@@ -200,6 +190,8 @@ this.AccessFu = { // jshint ignore:line
       this.doneCallback();
       delete this.doneCallback;
     }
+
+    Logger.info('AccessFu:Disabled');
   },
 
   _enableOrDisable: function _enableOrDisable() {
@@ -522,7 +514,10 @@ var Output = {
 
   stop: function stop() {
     if (this.highlightBox) {
-      Utils.win.document.documentElement.removeChild(this.highlightBox.get());
+      let highlightBox = this.highlightBox.get();
+      if (highlightBox) {
+        highlightBox.remove();
+      }
       delete this.highlightBox;
     }
   },
@@ -538,16 +533,17 @@ var Output = {
       {
         let highlightBox = null;
         if (!this.highlightBox) {
+          let doc = Utils.win.document;
           // Add highlight box
           highlightBox = Utils.win.document.
             createElementNS('http://www.w3.org/1999/xhtml', 'div');
-          Utils.win.document.documentElement.appendChild(highlightBox);
+          let parent = doc.body || doc.documentElement;
+          parent.appendChild(highlightBox);
           highlightBox.id = 'virtual-cursor-box';
 
           // Add highlight inset for inner shadow
           highlightBox.appendChild(
-            Utils.win.document.createElementNS(
-              'http://www.w3.org/1999/xhtml', 'div'));
+            doc.createElementNS('http://www.w3.org/1999/xhtml', 'div'));
 
           this.highlightBox = Cu.getWeakReference(highlightBox);
         } else {
@@ -743,6 +739,9 @@ var Input = {
         break;
       case 'tripletap3':
         Utils.dispatchChromeEvent('accessibility-control', 'toggle-shade');
+        break;
+      case 'tap2':
+        Utils.dispatchChromeEvent('accessibility-control', 'toggle-pause');
         break;
     }
   },

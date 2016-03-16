@@ -8,6 +8,8 @@ Components.utils.import("resource://gre/modules/InlineSpellChecker.jsm");
 Components.utils.import("resource://gre/modules/LoginManagerContextMenu.jsm");
 Components.utils.import("resource://gre/modules/BrowserUtils.jsm");
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+Components.utils.import("resource://gre/modules/Services.jsm");
+
 
 XPCOMUtils.defineLazyModuleGetter(this, "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm");
@@ -42,6 +44,28 @@ nsContextMenu.prototype = {
       else {
         this.hasPageMenu = PageMenuParent.buildAndAddToPopup(this.target, aXulMenu);
       }
+
+      let subject = {
+        menu: aXulMenu,
+        tab: gBrowser ? gBrowser.getTabForBrowser(this.browser) : undefined,
+        isContentSelected: this.isContentSelected,
+        inFrame: this.inFrame,
+        isTextSelected: this.isTextSelected,
+        onTextInput: this.onTextInput,
+        onLink: this.onLink,
+        onImage: this.onImage,
+        onVideo: this.onVideo,
+        onAudio: this.onAudio,
+        onCanvas: this.onCanvas,
+        onEditableArea: this.onEditableArea,
+        srcUrl: this.mediaURL,
+        frameUrl: gContextMenuContentData ? gContextMenuContentData.docLocation : undefined,
+        pageUrl: this.browser ? this.browser.currentURI.spec : undefined,
+        linkUrl: this.linkURL,
+        selectionText: this.isTextSelected ? this.selectionInfo.text : undefined,
+      };
+      subject.wrappedJSObject = subject;
+      Services.obs.notifyObservers(subject, "on-build-contextmenu", null);
     }
 
     this.isFrameImage = document.getElementById("isFrameImage");
@@ -555,7 +579,7 @@ nsContextMenu.prototype = {
   },
 
   inspectNode: function CM_inspectNode() {
-    let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+    let {devtools} = Cu.import("resource://devtools/shared/Loader.jsm", {});
     let gBrowser = this.browser.ownerDocument.defaultView.gBrowser;
     let tt = devtools.TargetFactory.forTab(gBrowser.selectedTab);
     return gDevTools.showToolbox(tt, "inspector").then(function(toolbox) {
@@ -1060,12 +1084,14 @@ nsContextMenu.prototype = {
   },
 
   viewInfo: function() {
-    BrowserPageInfo(this.target.ownerDocument.defaultView.top.document);
+    BrowserPageInfo();
   },
 
   viewImageInfo: function() {
-    BrowserPageInfo(this.target.ownerDocument.defaultView.top.document,
-                    "mediaTab", this.target);
+    // Don't need to pass in ownerDocument.defaultView.top.document here;
+    // window.gBrowser.selectedBrowser.currentURI.spec does the job without
+    // using CPOWs
+    BrowserPageInfo(null, "mediaTab", this.target);
   },
 
   viewImageDesc: function(e) {
@@ -1077,7 +1103,7 @@ nsContextMenu.prototype = {
   },
 
   viewFrameInfo: function() {
-    BrowserPageInfo(this.target.ownerDocument, null, null,
+    BrowserPageInfo(gContextMenuContentData.docLocation, null, null,
                     this.frameOuterWindowID);
   },
 
@@ -1320,15 +1346,11 @@ nsContextMenu.prototype = {
     // * this.principal - as the loadingPrincipal
     // for now lets use systemPrincipal to bypass mixedContentBlocker
     // checks after redirects, see bug: 1136055
-    var ioService = Cc["@mozilla.org/network/io-service;1"].
-                    getService(Ci.nsIIOService);
-    var principal = Services.scriptSecurityManager.getSystemPrincipal();
-    var channel = ioService.newChannelFromURI2(makeURI(linkURL),
-                                               null, // aLoadingNode
-                                               principal, // aLoadingPrincipal
-                                               null, // aTriggeringPrincipal
-                                               Ci.nsILoadInfo.SEC_NORMAL,
-                                               Ci.nsIContentPolicy.TYPE_OTHER);
+    var channel = NetUtil.newChannel({
+                    uri: makeURI(linkURL),
+                    loadUsingSystemPrincipal: true
+                  });
+
     if (linkDownload)
       channel.contentDispositionFilename = linkDownload;
     if (channel instanceof Ci.nsIPrivateBrowsingChannel) {
@@ -1361,7 +1383,7 @@ nsContextMenu.prototype = {
                            timer.TYPE_ONE_SHOT);
 
     // kick off the channel with our proxy object as the listener
-    channel.asyncOpen(new saveAsListener(), null);
+    channel.asyncOpen2(new saveAsListener());
   },
 
   // Save URL of clicked-on link.
@@ -1755,6 +1777,7 @@ nsContextMenu.prototype = {
     // Store searchTerms in context menu item so we know what to search onclick
     menuItem.searchTerms = selectedText;
 
+    // Copied to alert.js' prefillAlertInfo().
     // If the JS character after our truncation point is a trail surrogate,
     // include it in the truncated string to avoid splitting a surrogate pair.
     if (selectedText.length > 15) {

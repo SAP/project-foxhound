@@ -12,16 +12,26 @@ Author: Armen Zambrano G.
 import copy
 import os
 import sys
-import urllib2
+import urlparse
 
-from mozharness.base.python import (
-    PreScriptAction,
-    VirtualenvMixin,
-    virtualenv_config_options,
+from mozharness.base.log import FATAL
+from mozharness.base.python import PostScriptRun, PreScriptAction
+from mozharness.mozilla.structuredlog import StructuredOutputParser
+from mozharness.mozilla.testing.testbase import (
+    TestingMixin,
+    testing_config_options,
 )
-from mozharness.mozilla.testing.testbase import (INSTALLER_SUFFIXES)
 from mozharness.mozilla.vcstools import VCSToolsScript
 
+# Command line arguments for firefox ui tests
+firefox_ui_tests_harness_config_options = [
+    [["--e10s"], {
+        'dest': 'e10s',
+        'action': 'store_true',
+        'default': False,
+        'help': 'Enable multi-process (e10s) mode when running tests.',
+    }],
+]
 
 # General command line arguments for Firefox ui tests
 firefox_ui_tests_config_options = [
@@ -44,15 +54,8 @@ firefox_ui_tests_config_options = [
         'help': 'absolute path to directory containing breakpad '
                 'symbols, or the url of a zip file containing symbols.',
     }],
-    [['--installer-url'], {
-        'dest': 'installer_url',
-        'help': 'Point to an installer to download and test against.',
-    }],
-    [['--installer-path'], {
-        'dest': 'installer_path',
-        'help': 'Point to an installer to test against.',
-    }],
-] + copy.deepcopy(virtualenv_config_options)
+] + firefox_ui_tests_harness_config_options \
+    + copy.deepcopy(testing_config_options)
 
 # Command line arguments for update tests
 firefox_ui_update_harness_config_options = [
@@ -94,9 +97,10 @@ firefox_ui_update_config_options = firefox_ui_update_harness_config_options \
     + copy.deepcopy(firefox_ui_tests_config_options)
 
 
-class FirefoxUITests(VCSToolsScript, VirtualenvMixin):
+class FirefoxUITests(TestingMixin, VCSToolsScript):
 
-    cli_script = 'firefox-ui-tests'
+    # Needs to be overwritten in sub classes
+    cli_script = None
 
     def __init__(self, config_options=None,
                  all_actions=None, default_actions=None,
@@ -104,207 +108,142 @@ class FirefoxUITests(VCSToolsScript, VirtualenvMixin):
         config_options = config_options or firefox_ui_tests_config_options
         actions = [
             'clobber',
-            'checkout',
+            'download-and-extract',
             'create-virtualenv',
+            'install',
             'run-tests',
+            'uninstall',
         ]
 
-        VCSToolsScript.__init__(self,
-                                config_options=config_options,
-                                all_actions=all_actions or actions,
-                                default_actions=default_actions or actions,
-                                *args, **kwargs)
-        VirtualenvMixin.__init__(self)
+        super(FirefoxUITests, self).__init__(
+            config_options=config_options,
+            all_actions=all_actions or actions,
+            default_actions=default_actions or actions,
+            *args, **kwargs)
+
+        # As long as we don't run on buildbot the following properties have be set on our own
+        self.binary_path = self.config.get('binary_path')
+        self.installer_path = self.config.get('installer_path')
+        self.installer_url = self.config.get('installer_url')
+        self.test_packages_url = self.config.get('test_packages_url')
+        self.test_url = self.config.get('test_url')
+
+        self.reports = {'html': 'report.html', 'xunit': 'report.xml'}
 
         self.firefox_ui_repo = self.config['firefox_ui_repo']
         self.firefox_ui_branch = self.config.get('firefox_ui_branch')
 
-        if not self.firefox_ui_branch:
+        if not self.test_url and not self.test_packages_url and not self.firefox_ui_branch:
             self.fatal(
-                'Please specify --firefox-ui-branch. Valid values can be found '
-                'in here https://github.com/mozilla/firefox-ui-tests/branches')
-
-        self.installer_url = self.config.get('installer_url')
-        self.installer_path = self.config.get('installer_path')
-
-        if self.installer_path:
-            self.installer_path = os.path.abspath(self.installer_path)
-
-            if not os.path.exists(self.installer_path):
-                self.critical('Please make sure that the path to the installer exists.')
-                sys.exit(1)
+                'You must use --test-url, --test-packages-url, or --firefox-ui-branch (valid '
+                'values can be found at: https://github.com/mozilla/firefox-ui-tests/branches)')
 
     @PreScriptAction('create-virtualenv')
     def _pre_create_virtualenv(self, action):
         dirs = self.query_abs_dirs()
 
-        # List of exact versions of mozbase packages which are known to work
-        requirements_file = os.path.join(dirs['fx_ui_dir'], 'requirements.txt')
-        if os.path.isfile(requirements_file):
-            self.register_virtualenv_module(requirements=[requirements_file])
+        # If tests are used from common.tests.zip install every Python package
+        # via the single requirements file
+        if self.test_packages_url or self.test_url:
+            test_install_dir = dirs.get('abs_test_install_dir',
+                                        os.path.join(dirs['abs_work_dir'], 'tests'))
+            requirements = os.path.join(test_install_dir,
+                                        'config', 'firefox_ui_requirements.txt')
+            self.register_virtualenv_module(requirements=[requirements], two_pass=True)
 
-        # Optional packages to be installed, e.g. for Jenkins
-        if self.config.get('virtualenv_modules'):
-            for module in self.config['virtualenv_modules']:
-                self.register_virtualenv_module(module)
-
-        self.register_virtualenv_module('firefox-ui-tests', url=dirs['fx_ui_dir'])
-
-    def _query_symbols_url(self, installer_url):
-        for suffix in INSTALLER_SUFFIXES:
-            if installer_url.endswith(suffix):
-                symbols_url = installer_url[:-len(suffix)] + '.crashreporter-symbols.zip'
-                continue
-
-        if symbols_url:
-            self.info('Symbols_url: {}'.format(symbols_url))
-            if not symbols_url.startswith('http'):
-                return symbols_url
-
-            try:
-                # Let's see if the symbols are available
-                urllib2.urlopen(symbols_url)
-                return symbols_url
-
-            except urllib2.HTTPError, e:
-                self.warning('{} - {}'.format(str(e), symbols_url))
-                return None
+        # We have a non-packaged version of Firefox UI tests. So install requirements
+        # and the firefox-ui-tests package separately
+        # TODO - Can be removed when the github repository is no longer needed
         else:
-            self.fatal('Can\'t find symbols_url from installer_url: {}!'.format(installer_url))
-
-    @PreScriptAction('checkout')
-    def _pre_checkout(self, action):
-        if not self.firefox_ui_branch:
-            self.fatal(
-                'Please specify --firefox-ui-branch. Valid values can be found '
-                'in here https://github.com/mozilla/firefox-ui-tests/branches')
+            # Register all modules for firefox-ui-tests including all dependencies
+            # as strict versions to ensure newer releases won't break something
+            requirements = os.path.join(dirs.get('abs_test_install_dir',
+                                                 os.path.join(dirs['abs_work_dir'], 'tests')),
+                                        'requirements.txt')
+            self.register_virtualenv_module(requirements=[requirements])
 
     def checkout(self):
-        """
-        We checkout firefox_ui_tests and update to the right branch
-        for it.
-        """
+        """Clone the firefox-ui-tests repository."""
         dirs = self.query_abs_dirs()
 
         self.vcs_checkout(
             repo=self.firefox_ui_repo,
-            dest=dirs['fx_ui_dir'],
+            dest=dirs['abs_test_install_dir'],
             branch=self.firefox_ui_branch,
-            vcs='gittool'
+            vcs='gittool',
+            env=self.query_env(),
         )
+
+    def clobber(self):
+        """Delete the working directory"""
+        super(FirefoxUITests, self).clobber()
+
+        # Also ensure to delete the reports directory to get rid of old files
+        dirs = self.query_abs_dirs()
+        self.rmtree(dirs['abs_reports_dir'], error_level=FATAL)
+
+    def copy_reports_to_upload_dir(self):
+        self.info("Copying reports to upload dir...")
+
+        dirs = self.query_abs_dirs()
+        for report in self.reports:
+            self.copy_to_upload_dir(os.path.join(dirs['abs_reports_dir'], self.reports[report]),
+                                    dest=os.path.join('reports', self.reports[report]),
+                                    short_desc='%s log' % self.reports[report],
+                                    long_desc='%s log' % self.reports[report],
+                                    max_backups=self.config.get("log_max_rotate", 0))
+
+    def download_and_extract(self):
+        """Overriding method from TestingMixin for more specific behavior.
+
+        We use the test_packages_url command line argument to check where to get the
+        harness, puppeteer, and tests from and how to set them up.
+
+        """
+        if self.test_packages_url or self.test_url:
+            target_unzip_dirs = ['config/*',
+                                 'firefox-ui/*',
+                                 'marionette/*',
+                                 'mozbase/*',
+                                 'puppeteer/*',
+                                 'tools/wptserve/*',
+                                 ]
+            super(FirefoxUITests, self).download_and_extract(target_unzip_dirs=target_unzip_dirs)
+
+        else:
+            self.checkout()
+            self._download_installer()
+
+            if self.config.get('download_symbols'):
+                self._download_and_extract_symbols()
 
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
 
-        abs_dirs = VCSToolsScript.query_abs_dirs(self)
-        abs_dirs.update({
-            'fx_ui_dir': os.path.join(abs_dirs['abs_work_dir'], 'firefox_ui_tests'),
-        })
+        abs_dirs = super(FirefoxUITests, self).query_abs_dirs()
+        dirs = {
+            'abs_reports_dir': os.path.join(abs_dirs['base_work_dir'], 'reports'),
+            'abs_test_install_dir': os.path.join(abs_dirs['abs_work_dir'], 'tests'),
+        }
+
+        for key in dirs.keys():
+            if key not in abs_dirs:
+                abs_dirs[key] = dirs[key]
         self.abs_dirs = abs_dirs
 
         return self.abs_dirs
 
-    def query_extra_cmd_args(self):
+    def query_harness_args(self, extra_harness_config_options=None):
         """Collects specific update test related command line arguments.
 
         Sub classes should override this method for their own specific arguments.
         """
-        return []
+        extra_harness_config_options = extra_harness_config_options or []
+        config_options = firefox_ui_tests_harness_config_options + extra_harness_config_options
 
-    def run_test(self, installer_path, script_name, env=None, symbols_url=None,
-                 cleanup=True, marionette_port=2828):
-        """All required steps for running the tests against an installer."""
-        dirs = self.query_abs_dirs()
-
-        venv_python_path = self.query_python_path()
-        update_script = os.path.join(dirs['fx_ui_dir'], 'firefox_ui_harness', 'cli_update.py')
-        gecko_log = os.path.join(dirs['abs_log_dir'], 'gecko.log')
-
-        # Build the command
-        cmd = [
-            venv_python_path,
-            update_script,
-            '--installer', installer_path,
-            # Log to stdout until tests are stable.
-            '--gecko-log=-',
-            '--address', 'localhost:{}'.format(marionette_port),
-            # Use the work dir to get temporary data stored
-            '--workspace', dirs['abs_work_dir'],
-        ]
-
-        if symbols_url:
-            cmd += ['--symbols-path', symbols_url]
-
-        # Collect all pass-through harness options to the script
-        cmd.extend(self.query_extra_cmd_args())
-
-        return_code = self.run_command(cmd, cwd=dirs['abs_work_dir'],
-                                       output_timeout=300, env=env)
-
-        # Return more output if we fail
-        if return_code:
-            if os.path.exists(gecko_log):
-                contents = self.read_from_file(gecko_log, verbose=False)
-                self.warning('== Dumping gecko output ==')
-                self.warning(contents)
-                self.warning('== End of gecko output ==')
-            else:
-                # We're outputting to stdout with --gecko-log=- so there is not log to
-                # complaing about. Remove the commented line below when changing
-                # this behaviour.
-                # self.warning('No gecko.log was found: %s' % gecko_log)
-                pass
-
-        if cleanup:
-            for filepath in (installer_path, gecko_log):
-                if os.path.exists(filepath):
-                    self.debug('Removing {}'.format(filepath))
-                    os.remove(filepath)
-
-        return return_code
-
-    @PreScriptAction('run-tests')
-    def _pre_run_tests(self, action):
-        if not self.installer_path and not self.installer_url:
-            self.critical('Please specify an installer via --installer-path or --installer-url.')
-            sys.exit(1)
-
-    def run_tests(self):
-        dirs = self.query_abs_dirs()
-
-        if self.installer_url:
-            self.installer_path = self.download_file(
-                self.installer_url,
-                parent_dir=dirs['abs_work_dir']
-            )
-
-        symbols_url = self._query_symbols_url(installer_url=self.installer_path)
-
-        return self.run_test(
-            installer_path=self.installer_path,
-            script_name=self.cli_script,
-            env=self.query_env(),
-            symbols_url=symbols_url,
-            cleanup=False,
-        )
-
-
-class FirefoxUIUpdateTests(FirefoxUITests):
-
-    cli_script = 'firefox-ui-update'
-
-    def __init__(self, config_options=None, *args, **kwargs):
-        config_options = config_options or firefox_ui_update_config_options
-
-        FirefoxUITests.__init__(self, config_options=config_options,
-                                *args, **kwargs)
-
-    def query_extra_cmd_args(self):
-        """Collects specific update test related command line arguments."""
         args = []
-
-        for option in firefox_ui_update_harness_config_options:
+        for option in config_options:
             dest = option[1]['dest']
             name = self.config.get(dest)
 
@@ -315,3 +254,171 @@ class FirefoxUIUpdateTests(FirefoxUITests):
                     args.extend([option[0][0], self.config[dest]])
 
         return args
+
+    def query_minidump_stackwalk(self):
+        """Download the minidump stackwalk binary.
+
+        We can remove this whole method once we no longer need the github repository.
+
+        """
+        # If the test package is available use it
+        if self.test_packages_url or self.test_url:
+            return super(FirefoxUITests, self).query_minidump_stackwalk()
+
+        # Otherwise grab the manifest file from hg.mozilla.org
+        manifest_path = None
+
+        if self.config.get('download_minidump_stackwalk'):
+            tooltool_manifest = self.query_minidump_tooltool_manifest()
+            url_base = 'https://hg.mozilla.org/mozilla-central/raw-file/default/testing/'
+
+            dirs = self.query_abs_dirs()
+            manifest_path = os.path.join(dirs['abs_work_dir'], 'releng.manifest')
+            try:
+                self.download_file(urlparse.urljoin(url_base, tooltool_manifest),
+                                   manifest_path)
+            except Exception as e:
+                self.fatal('Download of tooltool manifest file failed: %s' % e.message)
+
+        return super(FirefoxUITests, self).query_minidump_stackwalk(manifest=manifest_path)
+
+    @PostScriptRun
+    def _upload_reports_post_run(self):
+        if self.config.get("copy_reports_post_run", True):
+            self.copy_reports_to_upload_dir()
+
+    def run_test(self, binary_path, env=None, marionette_port=2828):
+        """All required steps for running the tests against an installer."""
+        dirs = self.query_abs_dirs()
+
+        # Import the harness to retrieve the location of the cli scripts
+        import firefox_ui_harness
+
+        cmd = [
+            self.query_python_path(),
+            os.path.join(os.path.dirname(firefox_ui_harness.__file__),
+                         self.cli_script),
+            '--binary', binary_path,
+            '--address', 'localhost:{}'.format(marionette_port),
+
+            # Use the work dir to get temporary data stored
+            '--workspace', dirs['abs_work_dir'],
+
+            # logging options
+            '--gecko-log=-',  # output from the gecko process redirected to stdout
+            '--log-raw=-',  # structured log for output parser redirected to stdout
+
+            # additional reports helpful for Jenkins and inpection via Treeherder
+            '--log-html', os.path.join(dirs["abs_reports_dir"], self.reports['html']),
+            '--log-xunit', os.path.join(dirs["abs_reports_dir"], self.reports['xunit']),
+        ]
+
+        # Collect all pass-through harness options to the script
+        cmd.extend(self.query_harness_args())
+
+        # Set further environment settings
+        env = env or self.query_env()
+
+        if self.symbols_url:
+            cmd.extend(['--symbols-path', self.symbols_url])
+
+        if self.query_minidump_stackwalk():
+            env['MINIDUMP_STACKWALK'] = self.minidump_stackwalk_path
+
+        parser = StructuredOutputParser(config=self.config,
+                                        log_obj=self.log_obj,
+                                        strict=False)
+
+        return_code = self.run_command(cmd,
+                                       cwd=dirs['abs_work_dir'],
+                                       output_timeout=300,
+                                       output_parser=parser,
+                                       env=env)
+
+        tbpl_status, log_level = parser.evaluate_parser(return_code)
+        self.buildbot_status(tbpl_status, level=log_level)
+
+        return return_code
+
+    @PreScriptAction('run-tests')
+    def _pre_run_tests(self, action):
+        if not self.installer_path and not self.installer_url:
+            self.critical('Please specify an installer via --installer-path or --installer-url.')
+            sys.exit(1)
+
+    def run_tests(self):
+        """Run all the tests"""
+        return self.run_test(
+            binary_path=self.binary_path,
+            env=self.query_env(),
+        )
+
+    def download_unzip(self, url, parent_dir, target_unzip_dirs=None, halt_on_failure=True):
+        """Overwritten method from BaseScript until bug 1237706 is fixed.
+
+        The downloaded file will always be saved to the working directory and is not getting
+        deleted after extracting.
+
+        Args:
+            url (str): URL where the file to be downloaded is located.
+            parent_dir (str): directory where the downloaded file will
+                              be extracted to.
+            target_unzip_dirs (list, optional): directories inside the zip file to extract.
+                                                Defaults to `None`.
+            halt_on_failure (bool, optional): whether or not to redefine the
+                                              log level as `FATAL` on errors. Defaults to True.
+
+        """
+        import fnmatch
+        import itertools
+        import functools
+        import zipfile
+
+        def _filter_entries(namelist):
+            """Filter entries of the archive based on the specified list of extract_dirs."""
+            filter_partial = functools.partial(fnmatch.filter, namelist)
+            for entry in itertools.chain(*map(filter_partial, target_unzip_dirs or ['*'])):
+                yield entry
+
+        dirs = self.query_abs_dirs()
+        zip = self.download_file(url, parent_dir=dirs['abs_work_dir'],
+                                 error_level=FATAL)
+
+        try:
+            self.info('Using ZipFile to extract {} to {}'.format(zip, parent_dir))
+            with zipfile.ZipFile(zip) as bundle:
+                for entry in _filter_entries(bundle.namelist()):
+                    bundle.extract(entry, path=parent_dir)
+
+                    # ZipFile doesn't preserve permissions: http://bugs.python.org/issue15795
+                    fname = os.path.realpath(os.path.join(parent_dir, entry))
+                    mode = bundle.getinfo(entry).external_attr >> 16 & 0x1FF
+                    # Only set permissions if attributes are available.
+                    if mode:
+                        os.chmod(fname, mode)
+        except zipfile.BadZipfile as e:
+            self.log('%s (%s)' % (e.message, zip),
+                     level=FATAL, exit_code=2)
+
+
+class FirefoxUIFunctionalTests(FirefoxUITests):
+
+    cli_script = 'cli_functional.py'
+
+
+class FirefoxUIUpdateTests(FirefoxUITests):
+
+    cli_script = 'cli_update.py'
+
+    def __init__(self, config_options=None, *args, **kwargs):
+        config_options = config_options or firefox_ui_update_config_options
+
+        super(FirefoxUIUpdateTests, self).__init__(
+            config_options=config_options,
+            *args, **kwargs
+        )
+
+    def query_harness_args(self):
+        """Collects specific update test related command line arguments."""
+        return super(FirefoxUIUpdateTests, self).query_harness_args(
+            firefox_ui_update_harness_config_options)

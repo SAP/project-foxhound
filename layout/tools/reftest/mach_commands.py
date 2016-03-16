@@ -122,41 +122,7 @@ class ReftestRunner(MozbuildObject):
                 path = os.path.relpath(path, os.path.join(self.topsrcdir))
             kwargs["tests"][i] = os.path.join('tests', path)
 
-        if conditions.is_b2g_desktop(self):
-            return self.run_b2g_desktop(**kwargs)
-
         return self.run_b2g_remote(b2g_home, xre_path, **kwargs)
-
-    def run_b2g_desktop(self, **kwargs):
-        if self.substs.get('ENABLE_MARIONETTE') != '1':
-            print(MARIONETTE_DISABLED % ('mochitest-b2g-desktop',
-                                         self.mozconfig['path']))
-            return 1
-
-        if not kwargs["profile"]:
-            gaia_profile = os.environ.get('GAIA_PROFILE')
-            if not gaia_profile:
-                print(GAIA_PROFILE_NOT_FOUND % 'reftest-b2g-desktop')
-                return 1
-            kwargs["profile"] = gaia_profile
-
-
-        if os.path.isfile(os.path.join(kwargs["profile"], 'extensions',
-                                       'httpd@gaiamobile.org')):
-            print(GAIA_PROFILE_IS_DEBUG % ('mochitest-b2g-desktop',
-                                           kwargs["profile"]))
-            return 1
-
-        kwargs["desktop"] = True
-        kwargs["app"] = self.get_binary_path()
-        if kwargs["oop"]:
-            options.browser_arg = '-oop'
-        if not kwargs["app"].endswith('-bin'):
-            kwargs["app"] = '%s-bin' % options.app
-        if not os.path.isfile(kwargs["app"]):
-            options.app = kwargs["app"][:-len('-bin')]
-
-        return runreftestb2g.run(**kwargs)
 
     def run_b2g_remote(self, b2g_home, xre_path, **kwargs):
         import runreftestb2g
@@ -180,7 +146,7 @@ class ReftestRunner(MozbuildObject):
         return runreftestb2g.run_remote(**kwargs)
 
     def run_desktop_test(self, **kwargs):
-        """Runs a reftest."""
+        """Runs a reftest, in desktop Firefox."""
         import runreftest
 
         if kwargs["suite"] not in ('reftest', 'crashtest', 'jstestbrowser'):
@@ -193,7 +159,7 @@ class ReftestRunner(MozbuildObject):
                               "jstests.list")
         }
 
-        kwargs["extraProfileFiles"] = [os.path.join(self.topobjdir, "dist", "plugins")]
+        kwargs["extraProfileFiles"].append(os.path.join(self.topobjdir, "dist", "plugins"))
         kwargs["symbolsPath"] = os.path.join(self.topobjdir, "crashreporter-symbols")
 
         if not kwargs["tests"]:
@@ -210,11 +176,89 @@ class ReftestRunner(MozbuildObject):
         #Remove the stdout handler from the internal logger and let mach deal with it
         runreftest.log.removeHandler(runreftest.log.handlers[0])
         self.log_manager.enable_unstructured()
-        rv = runreftest.run(**kwargs)
-        self.log_manager.disable_unstructured()
+        try:
+            rv = runreftest.run(**kwargs)
+        finally:
+            self.log_manager.disable_unstructured()
 
         return rv
 
+    def run_android_test(self, **kwargs):
+        """Runs a reftest, in Firefox for Android."""
+        import runreftest
+
+        if kwargs["suite"] not in ('reftest', 'crashtest', 'jstestbrowser'):
+            raise Exception('None or unrecognized reftest suite type.')
+        if "ipc" in kwargs.keys():
+            raise Exception('IPC tests not supported on Android.')
+
+        default_manifest = {
+            "reftest": (self.topsrcdir, "layout", "reftests", "reftest.list"),
+            "crashtest": (self.topsrcdir, "testing", "crashtest", "crashtests.list"),
+            "jstestbrowser": ("jsreftest", "tests", "jstests.list")
+        }
+
+        if not kwargs["tests"]:
+            kwargs["tests"] = [os.path.join(*default_manifest[kwargs["suite"]])]
+
+        kwargs["extraProfileFiles"].append(
+            os.path.join(self.topsrcdir, "mobile", "android", "fonts"))
+
+        if not kwargs["httpdPath"]:
+            kwargs["httpdPath"] = os.path.join(self.tests_dir, "modules")
+        if not kwargs["symbolsPath"]:
+            kwargs["symbolsPath"] = os.path.join(self.topobjdir, "crashreporter-symbols")
+        if not kwargs["xrePath"]:
+            kwargs["xrePath"] = os.environ.get("MOZ_HOST_BIN")
+        if not kwargs["app"]:
+            kwargs["app"] = self.substs["ANDROID_PACKAGE_NAME"]
+        kwargs["dm_trans"] = "adb"
+        kwargs["ignoreWindowSize"] = True
+        kwargs["printDeviceInfo"] = False
+
+        # A symlink and some path manipulations are required so that test
+        # manifests can be found both locally and remotely (via a url)
+        # using the same relative path.
+        if kwargs["suite"] == "jstestbrowser":
+            staged_js_dir = os.path.join(self.topobjdir, "dist", "test-stage", "jsreftest")
+            tests = os.path.join(self.reftest_dir, 'jsreftest')
+            if not os.path.isdir(tests):
+                os.symlink(staged_js_dir, tests)
+            kwargs["extraProfileFiles"].append(os.path.join(staged_js_dir, "tests", "user.js"))
+        else:
+            tests = os.path.join(self.reftest_dir, "tests")
+            if not os.path.isdir(tests):
+                os.symlink(self.topsrcdir, tests)
+            for i, path in enumerate(kwargs["tests"]):
+                # Non-absolute paths are relative to the packaged directory, which
+                # has an extra tests/ at the start
+                if os.path.exists(os.path.abspath(path)):
+                    path = os.path.relpath(path, os.path.join(self.topsrcdir))
+                kwargs["tests"][i] = os.path.join('tests', path)
+
+        # Need to chdir to reftest_dir otherwise imports fail below.
+        os.chdir(self.reftest_dir)
+
+        # The imp module can spew warnings if the modules below have
+        # already been imported, ignore them.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+
+            import imp
+            path = os.path.join(self.reftest_dir, 'remotereftest.py')
+            with open(path, 'r') as fh:
+                imp.load_module('reftest', fh, path, ('.py', 'r', imp.PY_SOURCE))
+            import reftest
+
+        # Remove the stdout handler from the internal logger and let mach deal with it
+        runreftest.log.removeHandler(runreftest.log.handlers[0])
+        self.log_manager.enable_unstructured()
+        try:
+            rv = reftest.run(**kwargs)
+        finally:
+            self.log_manager.disable_unstructured()
+
+        return rv
 
 def process_test_objects(kwargs):
     """|mach test| works by providing a test_objects argument, from
@@ -227,13 +271,20 @@ def process_test_objects(kwargs):
         kwargs["tests"].extend(item["path"] for item in kwargs["test_objects"])
         del kwargs["test_objects"]
 
+def get_parser():
+    here = os.path.abspath(os.path.dirname(__file__))
+    build_obj = MozbuildObject.from_environment(cwd=here)
+    if conditions.is_android(build_obj):
+        return reftestcommandline.RemoteArgumentsParser()
+    else:
+        return reftestcommandline.DesktopArgumentsParser()
 
 @CommandProvider
 class MachCommands(MachCommandBase):
     @Command('reftest',
              category='testing',
              description='Run reftests (layout and graphics correctness).',
-             parser=reftestcommandline.DesktopArgumentsParser)
+             parser=get_parser)
     def run_reftest(self, **kwargs):
         kwargs["suite"] = "reftest"
         return self._run_reftest(**kwargs)
@@ -241,7 +292,7 @@ class MachCommands(MachCommandBase):
     @Command('jstestbrowser',
              category='testing',
              description='Run js/src/tests in the browser.',
-             parser=reftestcommandline.DesktopArgumentsParser)
+             parser=get_parser)
     def run_jstestbrowser(self, **kwargs):
         self._mach_context.commands.dispatch("build",
                                              self._mach_context,
@@ -252,7 +303,7 @@ class MachCommands(MachCommandBase):
     @Command('reftest-ipc',
              category='testing',
              description='Run IPC reftests (layout and graphics correctness, separate process).',
-             parser=reftestcommandline.DesktopArgumentsParser)
+             parser=get_parser)
     def run_ipc(self, **kwargs):
         kwargs["ipc"] = True
         kwargs["suite"] = "reftest"
@@ -261,7 +312,7 @@ class MachCommands(MachCommandBase):
     @Command('crashtest',
              category='testing',
              description='Run crashtests (Check if crashes on a page).',
-             parser=reftestcommandline.DesktopArgumentsParser)
+             parser=get_parser)
     def run_crashtest(self, **kwargs):
         kwargs["suite"] = "crashtest"
         return self._run_reftest(**kwargs)
@@ -269,7 +320,7 @@ class MachCommands(MachCommandBase):
     @Command('crashtest-ipc',
              category='testing',
              description='Run IPC crashtests (Check if crashes on a page, separate process).',
-             parser=reftestcommandline.DesktopArgumentsParser)
+             parser=get_parser)
     def run_crashtest_ipc(self, **kwargs):
         kwargs["ipc"] = True
         kwargs["suite"] = "crashtest"
@@ -278,6 +329,10 @@ class MachCommands(MachCommandBase):
     def _run_reftest(self, **kwargs):
         process_test_objects(kwargs)
         reftest = self._spawn(ReftestRunner)
+        if conditions.is_android(self):
+            from mozrunner.devices.android_device import verify_android_device
+            verify_android_device(self, install=True, xre=True)
+            return reftest.run_android_test(**kwargs)
         return reftest.run_desktop_test(**kwargs)
 
 
@@ -301,14 +356,6 @@ class B2GCommands(MachCommandBase):
              conditions=[conditions.is_b2g, is_emulator],
              parser=reftestcommandline.B2GArgumentParser)
     def run_reftest_remote(self, **kwargs):
-        kwargs["suite"] = "reftest"
-        return self._run_reftest(**kwargs)
-
-    @Command('reftest-b2g-desktop', category='testing',
-             description='Run a b2g desktop reftest (b2g desktop layout and graphics correctness).',
-             conditions=[conditions.is_b2g_desktop],
-             parser=reftestcommandline.B2GArgumentParser)
-    def run_reftest_b2g_desktop(self, **kwargs):
         kwargs["suite"] = "reftest"
         return self._run_reftest(**kwargs)
 

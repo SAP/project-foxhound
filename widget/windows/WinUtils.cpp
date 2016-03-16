@@ -42,7 +42,6 @@
 #include "imgIEncoder.h"
 #include "nsIThread.h"
 #include "MainThreadUtils.h"
-#include "gfxColor.h"
 #include "nsLookAndFeel.h"
 
 #ifdef NS_ENABLE_TSF
@@ -1022,7 +1021,8 @@ WINAPI EnumFirstChild(HWND hwnd, LPARAM lParam)
 
 /* static */
 void
-WinUtils::InvalidatePluginAsWorkaround(nsIWidget *aWidget, const nsIntRect &aRect)
+WinUtils::InvalidatePluginAsWorkaround(nsIWidget* aWidget,
+                                       const LayoutDeviceIntRect& aRect)
 {
   aWidget->Invalidate(aRect);
 
@@ -1108,7 +1108,7 @@ nsresult AsyncFaviconDataReady::OnFaviconDataNotAvailable(void)
                      mozIconURI,
                      nsContentUtils::GetSystemPrincipal(),
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     nsIContentPolicy::TYPE_IMAGE);
+                     nsIContentPolicy::TYPE_INTERNAL_IMAGE);
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1213,16 +1213,14 @@ AsyncFaviconDataReady::OnComplete(nsIURI *aFaviconURI,
 
   // Allocate a new buffer that we own and can use out of line in
   // another thread.
-  uint8_t *data = SurfaceToPackedBGRA(dataSurface);
+  UniquePtr<uint8_t[]> data = SurfaceToPackedBGRA(dataSurface);
   if (!data) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   int32_t stride = 4 * size.width;
-  int32_t dataLength = stride * size.height;
 
   // AsyncEncodeAndWriteIcon takes ownership of the heap allocated buffer
-  nsCOMPtr<nsIRunnable> event = new AsyncEncodeAndWriteIcon(path, data,
-                                                            dataLength,
+  nsCOMPtr<nsIRunnable> event = new AsyncEncodeAndWriteIcon(path, Move(data),
                                                             stride,
                                                             size.width,
                                                             size.height,
@@ -1235,16 +1233,14 @@ AsyncFaviconDataReady::OnComplete(nsIURI *aFaviconURI,
 
 // Warning: AsyncEncodeAndWriteIcon assumes ownership of the aData buffer passed in
 AsyncEncodeAndWriteIcon::AsyncEncodeAndWriteIcon(const nsAString &aIconPath,
-                                                 uint8_t *aBuffer,
-                                                 uint32_t aBufferLength,
+                                                 UniquePtr<uint8_t[]> aBuffer,
                                                  uint32_t aStride,
                                                  uint32_t aWidth,
                                                  uint32_t aHeight,
                                                  const bool aURLShortcut) :
   mURLShortcut(aURLShortcut),
   mIconPath(aIconPath),
-  mBuffer(aBuffer),
-  mBufferLength(aBufferLength),
+  mBuffer(Move(aBuffer)),
   mStride(aStride),
   mWidth(aWidth),
   mHeight(aHeight)
@@ -1258,7 +1254,7 @@ NS_IMETHODIMP AsyncEncodeAndWriteIcon::Run()
   // Note that since we're off the main thread we can't use
   // gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget()
   RefPtr<DataSourceSurface> surface =
-    Factory::CreateWrappingDataSourceSurface(mBuffer, mStride,
+    Factory::CreateWrappingDataSourceSurface(mBuffer.get(), mStride,
                                              IntSize(mWidth, mHeight),
                                              SurfaceFormat::B8G8R8A8);
 

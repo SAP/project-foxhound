@@ -7,6 +7,7 @@
 
 #include "nsCanvasFrame.h"
 
+#include "AccessibleCaretEventHub.h"
 #include "gfxUtils.h"
 #include "nsContainerFrame.h"
 #include "nsCSSRendering.h"
@@ -85,7 +86,7 @@ nsCanvasFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   ErrorResult er;
   // We won't create touch caret element if preference is not enabled.
   if (PresShell::TouchCaretPrefEnabled()) {
-    nsRefPtr<NodeInfo> nodeInfo;
+    RefPtr<NodeInfo> nodeInfo;
 
     // Create and append touch caret frame.
     nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::div, nullptr,
@@ -174,6 +175,13 @@ nsCanvasFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
     HideCustomContentContainer();
   }
 
+  RefPtr<AccessibleCaretEventHub> eventHub =
+    PresContext()->GetPresShell()->GetAccessibleCaretEventHub();
+  if (eventHub) {
+    // AccessibleCaret will insert anonymous caret elements.
+    eventHub->Init();
+  }
+
   return NS_OK;
 }
 
@@ -230,7 +238,7 @@ nsCanvasFrame::DestroyFrom(nsIFrame* aDestructRoot)
     nsCOMPtr<nsIDocument> doc = mContent->OwnerDoc();
     ErrorResult rv;
 
-    nsTArray<nsRefPtr<mozilla::dom::AnonymousContent>>& docAnonContents =
+    nsTArray<RefPtr<mozilla::dom::AnonymousContent>>& docAnonContents =
       doc->GetAnonymousContents();
     for (size_t i = 0, len = docAnonContents.Length(); i < len; ++i) {
       AnonymousContent* content = docAnonContents[i];
@@ -378,7 +386,7 @@ nsDisplayCanvasBackgroundImage::Paint(nsDisplayListBuilder* aBuilder,
   nsRect bgClipRect = frame->CanvasArea() + offset;
 
   nsRenderingContext context;
-  nsRefPtr<gfxContext> dest = aCtx->ThebesContext();
+  RefPtr<gfxContext> dest = aCtx->ThebesContext();
   RefPtr<DrawTarget> dt;
   gfxRect destRect;
 #ifndef MOZ_GFX_OPTIMIZE_MOBILE
@@ -396,7 +404,7 @@ nsDisplayCanvasBackgroundImage::Paint(nsDisplayListBuilder* aBuilder,
     }
     dt = destDT->CreateSimilarDrawTarget(IntSize(ceil(destRect.width), ceil(destRect.height)), SurfaceFormat::B8G8R8A8);
     if (dt) {
-      nsRefPtr<gfxContext> ctx = new gfxContext(dt);
+      RefPtr<gfxContext> ctx = new gfxContext(dt);
       ctx->SetMatrix(
         ctx->CurrentMatrix().Translate(-destRect.x, -destRect.y));
       context.Init(ctx);
@@ -455,7 +463,7 @@ public:
                      nsRenderingContext* aCtx) override
   {
     nsCanvasFrame* frame = static_cast<nsCanvasFrame*>(mFrame);
-    frame->PaintFocus(*aCtx, ToReferenceFrame());
+    frame->PaintFocus(aCtx->GetDrawTarget(), ToReferenceFrame());
   }
 
   NS_DISPLAY_DECL_NAME("CanvasFocus", TYPE_CANVAS_FOCUS)
@@ -562,7 +570,7 @@ nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 }
 
 void
-nsCanvasFrame::PaintFocus(nsRenderingContext& aRenderingContext, nsPoint aPt)
+nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt)
 {
   nsRect focusRect(aPt, GetSize());
 
@@ -583,7 +591,7 @@ nsCanvasFrame::PaintFocus(nsRenderingContext& aRenderingContext, nsPoint aPt)
     return;
   }
 
-  nsCSSRendering::PaintFocus(PresContext(), aRenderingContext,
+  nsCSSRendering::PaintFocus(PresContext(), aDrawTarget,
                              focusRect, color->mColor);
 }
 

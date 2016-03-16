@@ -117,7 +117,7 @@ MResumePoint::writeRecoverData(CompactBufferWriter& writer) const
     // arguments_object.
     MOZ_ASSERT(CountArgSlots(script, fun) < SNAPSHOT_MAX_NARGS + 4);
 
-#ifdef DEBUG
+#ifdef JS_JITSPEW
     uint32_t implicit = StartArgSlot(script);
 #endif
     uint32_t formalArgs = CountArgSlots(script, fun);
@@ -1207,7 +1207,7 @@ MNewArray::writeRecoverData(CompactBufferWriter& writer) const
 {
     MOZ_ASSERT(canRecoverOnBailout());
     writer.writeUnsigned(uint32_t(RInstruction::Recover_NewArray));
-    writer.writeUnsigned(count());
+    writer.writeUnsigned(length());
     return true;
 }
 
@@ -1341,12 +1341,12 @@ RSimdBox::recover(JSContext* cx, SnapshotIterator& iter) const
     switch (SimdTypeDescr::Type(type_)) {
       case SimdTypeDescr::Int32x4:
         MOZ_ASSERT_IF(a.mode() == RValueAllocation::ANY_FLOAT_REG,
-                      a.fpuReg().isInt32x4());
+                      a.fpuReg().isSimd128());
         resultObject = js::CreateSimd<Int32x4>(cx, (const Int32x4::Elem*) raw);
         break;
       case SimdTypeDescr::Float32x4:
         MOZ_ASSERT_IF(a.mode() == RValueAllocation::ANY_FLOAT_REG,
-                      a.fpuReg().isFloat32x4());
+                      a.fpuReg().isSimd128());
         resultObject = js::CreateSimd<Float32x4>(cx, (const Float32x4::Elem*) raw);
         break;
       case SimdTypeDescr::Float64x2:

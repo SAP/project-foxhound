@@ -26,21 +26,28 @@ struct MSGResult;
 class IMEContext final
 {
 public:
+  IMEContext()
+    : mWnd(nullptr)
+    , mIMC(nullptr)
+  {
+  }
+
   explicit IMEContext(HWND aWnd);
   explicit IMEContext(nsWindow* aWindow);
 
   ~IMEContext()
   {
-    if (mIMC) {
-      ::ImmReleaseContext(mWnd, mIMC);
-      mIMC = nullptr;
-    }
+    Clear();
   }
 
   HIMC get() const
   {
     return mIMC;
   }
+
+  void Init(HWND aWnd);
+  void Init(nsWindow* aWindow);
+  void Clear();
 
   bool IsValid() const
   {
@@ -90,11 +97,6 @@ public:
   }
 
 protected:
-  IMEContext()
-  {
-    MOZ_CRASH("Don't create IMEContext without window handle");
-  }
-
   IMEContext(const IMEContext& aOther)
   {
     MOZ_CRASH("Don't copy IMEContext");
@@ -267,9 +269,9 @@ protected:
    *  @param aOutRect         The converted cursor rect.
    */
   void ResolveIMECaretPos(nsIWidget* aReferenceWidget,
-                          nsIntRect& aCursorRect,
+                          mozilla::LayoutDeviceIntRect& aCursorRect,
                           nsIWidget* aNewOriginWidget,
-                          nsIntRect& aOutRect);
+                          mozilla::LayoutDeviceIntRect& aOutRect);
 
   bool ConvertToANSIString(const nsAFlatString& aStr,
                              UINT aCodePage,
@@ -299,7 +301,7 @@ protected:
   bool GetCharacterRectOfSelectedTextAt(
          nsWindow* aWindow,
          uint32_t aOffset,
-         nsIntRect& aCharRect,
+         mozilla::LayoutDeviceIntRect& aCharRect,
          mozilla::WritingMode* aWritingMode = nullptr);
   /**
    * GetCaretRect() returns caret rect at current selection start.
@@ -313,7 +315,7 @@ protected:
    *                        Otherwise, false.
    */
   bool GetCaretRect(nsWindow* aWindow,
-                    nsIntRect& aCaretRect,
+                    mozilla::LayoutDeviceIntRect& aCaretRect,
                     mozilla::WritingMode* aWritingMode = nullptr);
   void GetCompositionString(const IMEContext& aContext,
                             DWORD aIndex,
@@ -351,6 +353,11 @@ protected:
    *  in the composition string, you need to subtract mCompositionStart from it.
    */
   bool GetTargetClauseRange(uint32_t *aOffset, uint32_t *aLength = nullptr);
+
+  /**
+   * DispatchEvent() dispatches aEvent if aWidget hasn't been destroyed yet.
+   */
+  static void DispatchEvent(nsWindow* aWindow, WidgetGUIEvent& aEvent);
 
   /**
    * DispatchCompositionChangeEvent() dispatches eCompositionChange event

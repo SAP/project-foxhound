@@ -44,15 +44,22 @@ namespace gl {
 }
 }
 
+enum class NotifyDisplayChangedEvent : int8_t {
+  Observable,
+  Suppressed
+};
+
 class nsScreenGonk : public nsBaseScreen
 {
     typedef mozilla::hal::ScreenConfiguration ScreenConfiguration;
     typedef mozilla::GonkDisplay GonkDisplay;
+    typedef mozilla::LayoutDeviceIntRect LayoutDeviceIntRect;
 
 public:
     nsScreenGonk(uint32_t aId,
                  GonkDisplay::DisplayType aDisplayType,
-                 const GonkDisplay::NativeData& aNativeData);
+                 const GonkDisplay::NativeData& aNativeData,
+                 NotifyDisplayChangedEvent aEventVisibility);
 
     ~nsScreenGonk();
 
@@ -65,14 +72,18 @@ public:
     NS_IMETHOD SetRotation(uint32_t  aRotation);
 
     uint32_t GetId();
-    nsIntRect GetRect();
+    NotifyDisplayChangedEvent GetEventVisibility();
+    LayoutDeviceIntRect GetRect();
     float GetDpi();
     int32_t GetSurfaceFormat();
     ANativeWindow* GetNativeWindow();
-    nsIntRect GetNaturalBounds();
+    LayoutDeviceIntRect GetNaturalBounds();
     uint32_t EffectiveScreenRotation();
     ScreenConfiguration GetConfiguration();
     bool IsPrimaryScreen();
+
+    ANativeWindowBuffer* DequeueBuffer();
+    bool QueueBuffer(ANativeWindowBuffer* buf);
 
 #if ANDROID_VERSION >= 17
     android::DisplaySurface* GetDisplaySurface();
@@ -106,17 +117,19 @@ public:
                     mozilla::gl::GLContext* aGLContext);
     hwc_display_t GetEGLDisplay();
     hwc_surface_t GetEGLSurface();
+    already_AddRefed<mozilla::gl::GLContext> GetGLContext();
     void UpdateMirroringWidget(already_AddRefed<nsWindow>& aWindow); // Primary screen only
     nsWindow* GetMirroringWidget(); // Primary screen only
 
 protected:
     uint32_t mId;
+    NotifyDisplayChangedEvent mEventVisibility;
     int32_t mColorDepth;
     android::sp<ANativeWindow> mNativeWindow;
     float mDpi;
     int32_t mSurfaceFormat;
-    nsIntRect mNaturalBounds; // Screen bounds w/o rotation taken into account.
-    nsIntRect mVirtualBounds; // Screen bounds w/ rotation taken into account.
+    LayoutDeviceIntRect mNaturalBounds; // Screen bounds w/o rotation taken into account.
+    LayoutDeviceIntRect mVirtualBounds; // Screen bounds w/ rotation taken into account.
     uint32_t mScreenRotation;
     uint32_t mPhysicalScreenRotation;
     nsTArray<nsWindow*> mTopWindows;
@@ -124,14 +137,14 @@ protected:
     android::sp<android::DisplaySurface> mDisplaySurface;
 #endif
     bool mIsMirroring; // Non-primary screen only
-    nsRefPtr<nsScreenGonk> mMirroringScreen; // Primary screen only
+    RefPtr<nsScreenGonk> mMirroringScreen; // Primary screen only
 
     // Accessed and updated only on compositor thread
     GonkDisplay::DisplayType mDisplayType;
     hwc_display_t mEGLDisplay;
     hwc_surface_t mEGLSurface;
-    nsRefPtr<mozilla::gl::GLContext> mGLContext;
-    nsRefPtr<nsWindow> mMirroringWidget; // Primary screen only
+    RefPtr<mozilla::gl::GLContext> mGLContext;
+    RefPtr<nsWindow> mMirroringWidget; // Primary screen only
 };
 
 class nsScreenManagerGonk final : public nsIScreenManager
@@ -152,7 +165,8 @@ public:
     void DisplayEnabled(bool aEnabled);
 
     nsresult AddScreen(GonkDisplay::DisplayType aDisplayType,
-                       android::IGraphicBufferProducer* aSink = nullptr);
+                       android::IGraphicBufferProducer* aSink = nullptr,
+                       NotifyDisplayChangedEvent aEventVisibility = NotifyDisplayChangedEvent::Observable);
 
     nsresult RemoveScreen(GonkDisplay::DisplayType aDisplayType);
 
@@ -163,9 +177,9 @@ protected:
     bool IsScreenConnected(uint32_t aId);
 
     bool mInitialized;
-    nsTArray<nsRefPtr<nsScreenGonk>> mScreens;
-    nsRefPtr<nsRunnable> mScreenOnEvent;
-    nsRefPtr<nsRunnable> mScreenOffEvent;
+    nsTArray<RefPtr<nsScreenGonk>> mScreens;
+    RefPtr<nsRunnable> mScreenOnEvent;
+    RefPtr<nsRunnable> mScreenOffEvent;
 };
 
 #endif /* nsScreenManagerGonk_h___ */

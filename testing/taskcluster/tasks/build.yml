@@ -24,10 +24,6 @@ task:
     # Nearly all of our build tasks use tc-vcs so just include the scope across
     # the board.
     - 'docker-worker:cache:tc-vcs'
-    - 'docker-worker:image:{{#docker_image}}builder{{/docker_image}}'
-    - 'queue:define-task:aws-provisioner-v1/build-c4-2xlarge'
-    - 'queue:create-task:aws-provisioner-v1/build-c4-2xlarge'
-
 
   payload:
     image: '{{#docker_image}}builder{{/docker_image}}'
@@ -57,6 +53,8 @@ task:
 
   extra:
     build_product: '{{build_product}}'
+    build_name: '{{build_name}}'
+    build_type: '{{build_type}}'
     index:
       rank: {{pushlog_id}}
     treeherder:

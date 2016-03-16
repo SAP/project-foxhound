@@ -13,6 +13,7 @@
 #include "mozilla/TextRange.h"
 #include "nsISelection.h"
 #include "nsISelectionController.h"
+#include "nsISelectionListener.h"
 #include "nsISelectionPrivate.h"
 #include "nsRange.h"
 #include "nsThreadUtils.h"
@@ -36,7 +37,7 @@ struct RangeData
     : mRange(aRange)
   {}
 
-  nsRefPtr<nsRange> mRange;
+  RefPtr<nsRange> mRange;
   mozilla::TextRangeStyle mTextRangeStyle;
 };
 
@@ -63,6 +64,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Selection, nsISelectionPrivate)
   NS_DECL_NSISELECTION
   NS_DECL_NSISELECTIONPRIVATE
+
+  nsresult EndBatchChangesInternal(int16_t aReason = nsISelectionListener::NO_REASON);
 
   nsIDocument* GetParentObject() const;
 
@@ -103,7 +106,7 @@ public:
   nsresult      SubtractRange(RangeData* aRange, nsRange* aSubtract,
                               nsTArray<RangeData>* aOutput);
   /**
-   * AddItem adds aRange to this Selection.  If mApplyUserSelectStyle is true,
+   * AddItem adds aRange to this Selection.  If mUserInitiated is true,
    * then aRange is first scanned for -moz-user-select:none nodes and split up
    * into multiple ranges to exclude those before adding the resulting ranges
    * to this Selection.
@@ -197,7 +200,7 @@ public:
   void GetRangesForInterval(nsINode& aBeginNode, int32_t aBeginOffset,
                             nsINode& aEndNode, int32_t aEndOffset,
                             bool aAllowAdjacent,
-                            nsTArray<nsRefPtr<nsRange>>& aReturn,
+                            nsTArray<RefPtr<nsRange>>& aReturn,
                             mozilla::ErrorResult& aRv);
 
   void ScrollIntoView(int16_t aRegion, bool aIsSynchronous,
@@ -219,15 +222,15 @@ public:
 
   nsresult     NotifySelectionListeners();
 
-  friend struct AutoApplyUserSelectStyle;
-  struct MOZ_RAII AutoApplyUserSelectStyle
+  friend struct AutoUserInitiated;
+  struct MOZ_RAII AutoUserInitiated
   {
-    explicit AutoApplyUserSelectStyle(Selection* aSelection
-                             MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mSavedValue(aSelection->mApplyUserSelectStyle)
+    explicit AutoUserInitiated(Selection* aSelection
+                               MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : mSavedValue(aSelection->mUserInitiated)
     {
       MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-      aSelection->mApplyUserSelectStyle = true;
+      aSelection->mUserInitiated = true;
     }
     AutoRestore<bool> mSavedValue;
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
@@ -286,7 +289,7 @@ private:
                                  int32_t* aStartIndex, int32_t* aEndIndex);
   RangeData* FindRangeData(nsIDOMRange* aRange);
 
-  void UserSelectRangesToAdd(nsRange* aItem, nsTArray<nsRefPtr<nsRange> >& rangesToAdd);
+  void UserSelectRangesToAdd(nsRange* aItem, nsTArray<RefPtr<nsRange> >& rangesToAdd);
 
   /**
    * Helper method for AddItem.
@@ -308,9 +311,9 @@ private:
   // O(log n) time, though this would require rebalancing and other overhead.
   nsTArray<RangeData> mRanges;
 
-  nsRefPtr<nsRange> mAnchorFocusRange;
-  nsRefPtr<nsFrameSelection> mFrameSelection;
-  nsRefPtr<nsAutoScrollTimer> mAutoScrollTimer;
+  RefPtr<nsRange> mAnchorFocusRange;
+  RefPtr<nsFrameSelection> mFrameSelection;
+  RefPtr<nsAutoScrollTimer> mAutoScrollTimer;
   nsCOMArray<nsISelectionListener> mSelectionListeners;
   nsRevocableEventPtr<ScrollSelectionIntoViewEvent> mScrollEvent;
   CachedOffsetForFrame *mCachedOffsetForFrame;
@@ -321,7 +324,7 @@ private:
    * It determines whether we exclude -moz-user-select:none nodes or not,
    * as well as whether selectstart events will be fired.
    */
-  bool mApplyUserSelectStyle;
+  bool mUserInitiated;
 
   // Non-zero if we don't want any changes we make to the selection to be
   // visible to content. If non-zero, content won't be notified about changes.
@@ -332,7 +335,7 @@ private:
 class MOZ_STACK_CLASS SelectionBatcher final
 {
 private:
-  nsRefPtr<Selection> mSelection;
+  RefPtr<Selection> mSelection;
 public:
   explicit SelectionBatcher(Selection* aSelection)
   {
@@ -345,7 +348,7 @@ public:
   ~SelectionBatcher()
   {
     if (mSelection) {
-      mSelection->EndBatchChanges();
+      mSelection->EndBatchChangesInternal();
     }
   }
 };
@@ -353,7 +356,7 @@ public:
 class MOZ_STACK_CLASS AutoHideSelectionChanges final
 {
 private:
-  nsRefPtr<Selection> mSelection;
+  RefPtr<Selection> mSelection;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 public:
   explicit AutoHideSelectionChanges(const nsFrameSelection* aFrame);

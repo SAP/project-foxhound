@@ -26,12 +26,12 @@ var {synthesizeDragStart, synthesizeDrop} = ChromeUtils;
 const kNSXUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const kTabEventFailureTimeoutInMs = 20000;
 
-function createDummyXULButton(id, label) {
+function createDummyXULButton(id, label, win = window) {
   let btn = document.createElementNS(kNSXUL, "toolbarbutton");
   btn.id = id;
   btn.setAttribute("label", label || id);
   btn.className = "toolbarbutton-1 chromeclass-toolbar-additional";
-  window.gNavToolbox.palette.appendChild(btn);
+  win.gNavToolbox.palette.appendChild(btn);
   return btn;
 }
 
@@ -374,7 +374,7 @@ function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
 
 function waitFor(aTimeout=100) {
   let deferred = Promise.defer();
-  setTimeout(function() deferred.resolve(), aTimeout);
+  setTimeout(() => deferred.resolve(), aTimeout);
   return deferred.promise;
 }
 

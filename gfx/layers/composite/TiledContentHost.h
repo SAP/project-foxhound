@@ -15,6 +15,7 @@
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr
+#include "mozilla/gfx/MatrixFwd.h"      // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for Point
 #include "mozilla/gfx/Rect.h"           // for Rect
 #include "mozilla/gfx/Types.h"          // for Filter
@@ -32,9 +33,6 @@
 #endif
 
 namespace mozilla {
-namespace gfx {
-class Matrix4x4;
-} // namespace gfx
 
 namespace layers {
 
@@ -108,7 +106,7 @@ public:
     aStream << "TileHost(...)"; // fill in as needed
   }
 
-  void DumpTexture(std::stringstream& aStream) {
+  void DumpTexture(std::stringstream& aStream, TextureDumpMode /* aCompress, ignored for host tiles */) {
     // TODO We should combine the OnWhite/OnBlack here an just output a single image.
     CompositableHost::DumpTextureHost(aStream, mTextureHost);
   }
@@ -211,6 +209,8 @@ public:
     return LayerRenderState();
   }
 
+  // Generate effect for layerscope when using hwc.
+  virtual already_AddRefed<TexturedEffect> GenEffect(const gfx::Filter& aFilter) override;
 
   virtual bool UpdateThebes(const ThebesBufferData& aData,
                             const nsIntRegion& aUpdated,
@@ -270,7 +270,7 @@ public:
 private:
 
   void RenderLayerBuffer(TiledLayerBufferComposite& aLayerBuffer,
-                         const gfxRGBA* aBackgroundColor,
+                         const gfx::Color* aBackgroundColor,
                          EffectChain& aEffectChain,
                          float aOpacity,
                          const gfx::Filter& aFilter,

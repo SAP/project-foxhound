@@ -49,7 +49,6 @@
 
   /* Url and search bars */
   --url-and-searchbar-background-color: #171B1F;
-  --url-and-searchbar-color: #fff;
   --urlbar-separator-color: #5F6670;
   --urlbar-dropmarker-url: url("chrome://browser/skin/devedition/urlbar-history-dropmarker.svg");
   --urlbar-dropmarker-region: rect(0px, 11px, 14px, 0px);
@@ -64,7 +63,8 @@
 :root[devtoolstheme="dark"] #identity-box {
   --identity-box-chrome-color: #46afe3;
   --identity-box-verified-background-color: transparent;
-  --identity-box-selected-background-color: rgba(231,230,230,.2);
+  --identity-box-hover-background-color: rgba(231,230,230,.2);
+  --identity-box-selected-background-color: rgba(211,210,210,.2);
 }
 
 :root[devtoolstheme="light"] {
@@ -164,16 +164,8 @@
 .browserContainer > findbar,
 #browser-bottombox {
   background-color: var(--chrome-secondary-background-color) !important;
+  background-image: none !important;
   color: var(--chrome-color);
-}
-
-.browserContainer > findbar {
-  background-image: none;
-}
-
-.browserContainer > .findbar-textbox {
-  background-color: var(--url-and-searchbar-background-color) !important;
-  color: var(--url-and-searchbar-color);
 }
 
 /* Default findbar text color doesn't look good - Bug 1125677 */
@@ -205,7 +197,7 @@ toolbar[brighttext] #downloads-indicator-counter {
 #navigator-toolbox .searchbar-textbox {
   background-color: var(--url-and-searchbar-background-color) !important;
   background-image: none !important;
-  color: var(--url-and-searchbar-color) !important;
+  color: inherit !important;
   border: 1px solid var(--chrome-nav-bar-controls-border-color) !important;
   box-shadow: none !important;
 }
@@ -245,7 +237,6 @@ window:not([chromehidden~="toolbar"]) #urlbar-wrapper {
   border-bottom: none !important;
   border-radius: 0 !important;
   box-shadow: 0 -1px var(--chrome-nav-bar-separator-color) !important;
-  background-image: none !important;
 }
 
 /* No extra vertical padding for nav bar */
@@ -283,10 +274,16 @@ window:not([chromehidden~="toolbar"]) #urlbar-wrapper {
   pointer-events: auto;
 }
 
-.tabbrowser-tab[pinned][titlechanged]:not([visuallyselected="true"]) > .tab-stack > .tab-content {
+.tabbrowser-tab:-moz-any([image], [pinned]) > .tab-stack > .tab-content[attention]:not([visuallyselected="true"]),
+.tabbrowser-tab > .tab-stack > .tab-content[pinned][titlechanged]:not([visuallyselected="true"]) {
   background-image: var(--pinned-tab-glow);
   background-position: center;
   background-size: 100%;
+}
+
+.tabbrowser-tab[image] > .tab-stack > .tab-content[attention]:not([pinned]):not([visuallyselected="true"]) {
+  background-position: left bottom var(--tab-toolbar-navbar-overlap);
+  background-size: 34px 100%;
 }
 
 .tabbrowser-arrowscrollbox > .scrollbutton-down:not([disabled]):hover,

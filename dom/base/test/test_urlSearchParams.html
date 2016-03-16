@@ -19,8 +19,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=887836
 </div>
 <pre id="test">
 </pre>
-<a href="http://www.example.net?a=b&c=d" id="anchor">foobar</a>
-<area href="http://www.example.net?a=b&c=d" id="area">foobar</area>
 <script type="application/javascript">
 
   /** Test for Bug 887836 **/
@@ -127,20 +125,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=887836
     runTest();
   }
 
-  function testElement(e) {
-    ok(e, 'element exists');
-    ok(e.searchParams, "e.searchParams exists!");
-    ok(e.searchParams.has('a'), "e.searchParams.has('a')");
-    is(e.searchParams.get('a'), 'b', "e.searchParams.get('a')");
-    ok(e.searchParams.has('c'), "e.searchParams.has('c')");
-    is(e.searchParams.get('c'), 'd', "e.searchParams.get('c')");
-
-    e.searchParams.set('e', 'f');
-    ok(e.href.indexOf('e=f') != 1, 'e is right');
-
-    runTest();
-  }
-
   function testEncoding() {
     var encoding = [ [ '1', '1' ],
                      [ 'a b', 'a+b' ],
@@ -237,18 +221,96 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=887836
     runTest();
   }
 
+  function testIterable() {
+    var u = new URLSearchParams();
+    u.set('1','2');
+    u.set('2','4');
+    u.set('3','6');
+    u.set('4','8');
+    u.set('5','10');
+
+    var key_iter = u.keys();
+    var value_iter = u.values();
+    var entries_iter = u.entries();
+    for (var i = 0; i < 5; ++i) {
+      var v = i + 1;
+      var key = key_iter.next();
+      var value = value_iter.next();
+      var entry = entries_iter.next();
+      is(key.value, v.toString(), "Correct Key iterator: " + v.toString());
+      ok(!key.done, "Key.done is false");
+      is(value.value, (v * 2).toString(), "Correct Value iterator: " + (v * 2).toString());
+      ok(!value.done, "Value.done is false");
+      is(entry.value[0], v.toString(), "Correct Entry 0 iterator: " + v.toString());
+      is(entry.value[1], (v * 2).toString(), "Correct Entry 1 iterator: " + (v * 2).toString());
+      ok(!entry.done, "Entry.done is false");
+    }
+
+    var last = key_iter.next();
+    ok(last.done, "Nothing more to read.");
+    is(last.value, undefined, "Undefined is the last key");
+
+    last = value_iter.next();
+    ok(last.done, "Nothing more to read.");
+    is(last.value, undefined, "Undefined is the last value");
+
+    last = entries_iter.next();
+    ok(last.done, "Nothing more to read.");
+
+    key_iter = u.keys();
+    key_iter.next();
+    key_iter.next();
+    u.delete('1');
+    u.delete('2');
+    u.delete('3');
+    u.delete('4');
+    u.delete('5');
+
+    last = key_iter.next();
+    ok(last.done, "Nothing more to read.");
+    is(last.value, undefined, "Undefined is the last key");
+
+    runTest();
+  }
+
+  function testZeroHandling() {
+    var u = new URLSearchParams;
+    u.set("a", "b\0c");
+    u.set("d\0e", "f");
+    u.set("g\0h", "i\0j");
+    is(u.toString(), "a=b%00c&d%00e=f&g%00h=i%00j",
+       "Should encode U+0000 as %00");
+
+    runTest();
+  }
+
+  function testCopyConstructor() {
+    var url = new URL("http://example.com/");
+    var p = url.searchParams;
+    var q = new URLSearchParams(p);
+    q.set("a", "b");
+    is(url.href, "http://example.com/",
+       "Messing with copy of URLSearchParams should not affect URL");
+    p.set("c", "d");
+    is(url.href, "http://example.com/?c=d",
+       "Messing with URLSearchParams should affect URL");
+
+    runTest();
+  }
+
   var tests = [
     testSimpleURLSearchParams,
     testCopyURLSearchParams,
     testParserURLSearchParams,
     testURL,
-    function() { testElement(document.getElementById('anchor')) },
-    function() { testElement(document.getElementById('area')) },
     testEncoding,
     testOrdering,
     testDelete,
     testGetNULL,
-    testSet
+    testSet,
+    testIterable,
+    testZeroHandling,
+    testCopyConstructor,
   ];
 
   function runTest() {

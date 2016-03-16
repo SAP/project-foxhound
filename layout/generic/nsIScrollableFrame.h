@@ -157,20 +157,6 @@ public:
    */
   virtual nsSize GetScrollPositionClampingScrollPortSize() const = 0;
   /**
-   * Get the element resolution.
-   */
-  virtual float GetResolution() const = 0;
-  /**
-   * Set the element resolution.
-   */
-  virtual void SetResolution(float aResolution) = 0;
-  /**
-   * Set the element resolution and specify that content should be scaled by
-   * the amount of the resolution. This is only meaningful for root scroll
-   * frames. See nsIDOMWindowUtils.setResolutionAndScaleTo().
-   */
-  virtual void SetResolutionAndScaleTo(float aResolution) = 0;
-  /**
    * Return how much we would try to scroll by in each direction if
    * asked to scroll by one "line" vertically and horizontally.
    */
@@ -360,10 +346,6 @@ public:
    */
   virtual bool DidHistoryRestore() const = 0;
   /**
-   * Was the current resolution set by the user or just default initialized?
-   */
-  virtual bool IsResolutionSet() const = 0;
-  /**
    * Clear the flag so that DidHistoryRestore() returns false until the next
    * RestoreState call.
    * @see nsIStatefulFrame::RestoreState
@@ -455,6 +437,19 @@ public:
   virtual bool UsesContainerScrolling() const = 0;
 
   virtual mozilla::Maybe<mozilla::DisplayItemClip> ComputeScrollClip(bool aIsForCaret) const = 0;
+
+  /**
+   * Determine if we should build a scrollable layer for this scroll frame and
+   * return the result. It will also record this result on the scroll frame.
+   * Pass the dirty rect in aDirtyRect. On return it will be set to the
+   * displayport if there is one (ie the dirty rect that should be used).
+   * This function may create a display port where one did not exist before if
+   * aAllowCreateDisplayPort is true. It is only allowed to be false if there
+   * has been a call with it set to true before on the same paint.
+   */
+  virtual bool DecideScrollableLayer(nsDisplayListBuilder* aBuilder,
+                                     nsRect* aDirtyRect,
+                                     bool aAllowCreateDisplayPort) = 0;
 };
 
 #endif

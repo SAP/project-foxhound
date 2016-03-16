@@ -40,9 +40,6 @@ can reach it easily. -->
 <!ENTITY  pinTab.accesskey                   "P">
 <!ENTITY  unpinTab.label                     "Unpin Tab">
 <!ENTITY  unpinTab.accesskey                 "b">
-<!ENTITY  moveToGroup.label                  "Move to Group">
-<!ENTITY  moveToGroup.accesskey              "M">
-<!ENTITY  moveToNewGroup.label               "New Group">
 <!ENTITY  moveToNewWindow.label              "Move to New Window">
 <!ENTITY  moveToNewWindow.accesskey          "W">
 <!ENTITY  bookmarkAllTabs.label              "Bookmark All Tabs…">
@@ -189,13 +186,39 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY printButton.label            "Print">
 <!ENTITY printButton.tooltip          "Print this page">
 
-<!ENTITY locationItem.title           "Location">
+<!ENTITY urlbar.viewSiteInfo.label                      "View site information">
+<!-- LOCALIZATION NOTE: all of the following urlbar NotificationAnchor.label strings are
+     used to provide accessible labels to users of assistive technology like screenreaders.
+     It is not possible to see them visually in the UI. -->
+<!ENTITY urlbar.defaultNotificationAnchor.label         "View a notification">
+<!ENTITY urlbar.geolocationNotificationAnchor.label     "View the location request">
+<!ENTITY urlbar.addonsNotificationAnchor.label          "View the add-on install message">
+<!ENTITY urlbar.indexedDBNotificationAnchor.label       "View the app-offline storage message">
+<!ENTITY urlbar.loginFillNotificationAnchor.label       "Manage your login information">
+<!ENTITY urlbar.passwordNotificationAnchor.label        "Check if you want to save your password">
+<!ENTITY urlbar.webappsNotificationAnchor.label         "View the app install message">
+<!ENTITY urlbar.pluginsNotificationAnchor.label         "Manage plugin usage on this page">
+<!ENTITY urlbar.webNotsNotificationAnchor3.label        "Change whether you can receive notifications from the site">
+
+<!ENTITY urlbar.webRTCShareDevicesNotificationAnchor.label      "Manage sharing your camera and/or microphone with the site">
+<!ENTITY urlbar.webRTCSharingDevicesNotificationAnchor.label    "You are sharing your camera and/or microphone with the site">
+<!ENTITY urlbar.webRTCShareMicrophoneNotificationAnchor.label   "Manage sharing your microphone with the site">
+<!ENTITY urlbar.webRTCSharingMicrophoneNotificationAnchor.label "You are sharing your microphone with the site">
+<!ENTITY urlbar.webRTCShareScreenNotificationAnchor.label       "Manage sharing your windows or screen with the site">
+<!ENTITY urlbar.webRTCSharingScreenNotificationAnchor.label     "You are sharing a window or your screen with the site">
+
+<!ENTITY urlbar.pointerLockNotificationAnchor.label     "Change whether the site can hide the pointer">
+<!ENTITY urlbar.servicesNotificationAnchor.label        "View the service install message">
+<!ENTITY urlbar.translateNotificationAnchor.label       "Translate this page">
+<!ENTITY urlbar.translatedNotificationAnchor.label      "Manage page translation">
+<!ENTITY urlbar.emeNotificationAnchor.label             "Manage use of DRM software">
+
+<!ENTITY urlbar.openHistoryPopup.tooltip                "Show history">
+
 <!ENTITY searchItem.title             "Search">
 
 <!-- Toolbar items --> 
 <!ENTITY homeButton.label             "Home">
-
-<!ENTITY tabGroupsButton.label        "Tab Groups">
 
 <!ENTITY bookmarksButton.label          "Bookmarks">
 <!ENTITY bookmarksCmd.commandkey "b">
@@ -229,6 +252,8 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY addons.commandkey            "A">
 <!ENTITY webapps.label                "Apps">
 <!ENTITY webapps.accesskey            "p">
+<!ENTITY loopMenuItem.label           "Start a conversation…">
+<!ENTITY loopMenuItem.accesskey       "t">
 
 <!ENTITY webDeveloperMenu.label       "Web Developer">
 <!ENTITY webDeveloperMenu.accesskey   "W">
@@ -288,8 +313,6 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY devToolbarCloseButton.tooltiptext "Close Developer Toolbar">
 <!ENTITY devToolbarMenu.label              "Developer Toolbar">
 <!ENTITY devToolbarMenu.accesskey          "v">
-<!ENTITY devAppMgrMenu.label               "App Manager">
-<!ENTITY devAppMgrMenu.accesskey           "A">
 <!ENTITY webide.label                      "WebIDE">
 <!ENTITY webide.accesskey                  "W">
 <!ENTITY webide.keycode                    "VK_F8">
@@ -308,6 +331,16 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 
 <!ENTITY fileMenu.label         "File"> 
 <!ENTITY fileMenu.accesskey       "F">
+<!ENTITY newUserContext.label             "New Container Tab">
+<!ENTITY newUserContext.accesskey         "C">
+<!ENTITY userContextPersonal.label        "Personal">
+<!ENTITY userContextPersonal.accesskey    "P">
+<!ENTITY userContextWork.label            "Work">
+<!ENTITY userContextWork.accesskey        "W">
+<!ENTITY userContextBanking.label         "Banking">
+<!ENTITY userContextBanking.accesskey     "B">
+<!ENTITY userContextShopping.label        "Shopping">
+<!ENTITY userContextShopping.accesskey    "S">
 <!ENTITY newNavigatorCmd.label        "New Window">
 <!ENTITY newNavigatorCmd.key        "N">
 <!ENTITY newNavigatorCmd.accesskey      "N">
@@ -349,8 +382,6 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 
 <!ENTITY viewMenu.label         "View"> 
 <!ENTITY viewMenu.accesskey       "V"> 
-<!ENTITY viewTabGroups.label            "Tab Groups">
-<!ENTITY viewTabGroups.accesskey        "G">
 <!ENTITY viewToolbarsMenu.label       "Toolbars"> 
 <!ENTITY viewToolbarsMenu.accesskey     "T"> 
 <!ENTITY viewSidebarMenu.label "Sidebar">
@@ -378,6 +409,22 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY appMenuHistory.restoreSession.label "Restore Previous Session">
 <!ENTITY appMenuHistory.viewSidebar.label "View History Sidebar">
 <!ENTITY appMenuHelp.tooltip "Open Help Menu">
+
+<!ENTITY appMenuRemoteTabs.label "Synced Tabs">
+<!ENTITY appMenuRemoteTabs.fetching.label "Fetching Synced Tabs…">
+<!-- LOCALIZATION NOTE (appMenuRemoteTabs.notabs.label): This is shown beneath
+     the name of a device when that device has no open tabs -->
+<!ENTITY appMenuRemoteTabs.notabs.label "No open tabs">
+<!-- LOCALIZATION NOTE (appMenuRemoteTabs.tabsnotsyncing.label): This is shown
+     when Sync is configured but syncing tabs is disabled. -->
+<!ENTITY appMenuRemoteTabs.tabsnotsyncing.label "Turn on tab syncing to view a list of tabs from your other devices.">
+<!-- LOCALIZATION NOTE (appMenuRemoteTabs.noclients.label): This is shown
+     when Sync is configured but this appears to be the only device attached to
+     the account. We also show links to download Firefox for android/ios. -->
+<!ENTITY appMenuRemoteTabs.noclients.label "Sign in to Firefox from your other devices to view their tabs here.">
+<!ENTITY appMenuRemoteTabs.openprefs.label "Sync Preferences">
+<!ENTITY appMenuRemoteTabs.notsignedin.label "Sign in to view a list of tabs from your other devices.">
+<!ENTITY appMenuRemoteTabs.signin.label "Sign in to Sync">
 
 <!ENTITY customizeMenu.addToToolbar.label "Add to Toolbar">
 <!ENTITY customizeMenu.addToToolbar.accesskey "A">
@@ -471,8 +518,6 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY searchInNewTab.accesskey     "T">
 <!ENTITY searchSetAsDefault.label     "Set As Default Search Engine">
 <!ENTITY searchSetAsDefault.accesskey "D">
-
-<!ENTITY tabView.commandkey           "e">
 
 <!ENTITY openLinkCmdInTab.label       "Open Link in New Tab">
 <!ENTITY openLinkCmdInTab.accesskey   "T">
@@ -742,8 +787,8 @@ you can use these alternative items. Otherwise, their values should be empty.  -
      The word "toolbar" is appended automatically and should not be contained below! -->
 <!ENTITY tabsToolbar.label "Browser tabs">
 
-<!-- LOCALIZATION NOTE (syncTabsMenu2.label): This appears in the history menu -->
-<!ENTITY syncTabsMenu2.label     "Tabs From Other Devices">
+<!-- LOCALIZATION NOTE (syncTabsMenu3.label): This appears in the history menu and history panel -->
+<!ENTITY syncTabsMenu3.label     "Synced Tabs">
 
 <!ENTITY syncBrand.shortName.label    "Sync">
 
@@ -884,15 +929,6 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY panicButton.thankyou.msg1                "Your recent history is cleared.">
 <!ENTITY panicButton.thankyou.msg2                "Safe browsing!">
 <!ENTITY panicButton.thankyou.buttonlabel         "Thanks!">
-
-<!ENTITY processHang.terminateScript.label        "Stop Script">
-<!ENTITY processHang.terminateScript.accessKey    "S">
-<!ENTITY processHang.debugScript.label            "Debug Script">
-<!ENTITY processHang.debugScript.accessKey        "D">
-<!ENTITY processHang.terminatePlugin.label        "Kill Plugin">
-<!ENTITY processHang.terminatePlugin.accessKey    "P">
-<!ENTITY processHang.terminateProcess.label       "Kill Web Process">
-<!ENTITY processHang.terminateProcess.accessKey   "K">
 
 <!ENTITY emeLearnMoreContextMenu.label            "Learn more about DRM…">
 <!ENTITY emeLearnMoreContextMenu.accesskey        "D">

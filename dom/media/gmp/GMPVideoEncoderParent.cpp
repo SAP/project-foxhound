@@ -23,7 +23,7 @@ namespace mozilla {
 #undef LOG
 #endif
 
-extern PRLogModuleInfo* GetGMPLog();
+extern LogModule* GetGMPLog();
 
 #define LOGD(msg) MOZ_LOG(GetGMPLog(), mozilla::LogLevel::Debug, msg)
 #define LOG(level, msg) MOZ_LOG(GetGMPLog(), (level), msg)
@@ -88,7 +88,7 @@ GMPVideoEncoderParent::Close()
   // Let Shutdown mark us as dead so it knows if we had been alive
 
   // In case this is the last reference
-  nsRefPtr<GMPVideoEncoderParent> kungfudeathgrip(this);
+  RefPtr<GMPVideoEncoderParent> kungfudeathgrip(this);
   Release();
   Shutdown();
 }
@@ -232,7 +232,7 @@ GMPVideoEncoderParent::Shutdown()
 
   mIsOpen = false;
   if (!mActorDestroyed) {
-    unused << SendEncodingComplete();
+    Unused << SendEncodingComplete();
   }
 }
 

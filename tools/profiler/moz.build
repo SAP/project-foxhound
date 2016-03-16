@@ -32,6 +32,7 @@ if CONFIG['MOZ_ENABLE_PROFILER_SPS']:
         'core/ProfileJSONWriter.cpp',
         'core/ProfilerBacktrace.cpp',
         'core/ProfilerMarkers.cpp',
+        'core/StackTop.cpp',
         'core/SyncProfile.cpp',
         'core/ThreadInfo.cpp',
         'core/ThreadProfile.cpp',
@@ -107,6 +108,12 @@ if CONFIG['MOZ_ENABLE_PROFILER_SPS']:
         DEFINES['ELFSIZE'] = 32
 
     FINAL_LIBRARY = 'xul'
+
+IPDL_SOURCES += [
+    'gecko/ProfilerTypes.ipdlh',
+]
+
+include('/ipc/chromium/chromium-config.mozbuild')
 
 EXPORTS += [
     'public/GeckoProfiler.h',

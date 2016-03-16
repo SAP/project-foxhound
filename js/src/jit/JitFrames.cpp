@@ -827,7 +827,7 @@ HandleException(ResumeFromException* rfe)
     JitActivation* activation = cx->runtime()->activation()->asJit();
 
 #ifdef CHECK_OSIPOINT_REGISTERS
-    if (js_JitOptions.checkOsiPointRegisters)
+    if (JitOptions.checkOsiPointRegisters)
         activation->setCheckRegs(false);
 #endif
 
@@ -1044,21 +1044,32 @@ ReadAllocation(const JitFrameIterator& frame, const LAllocation* a)
 #endif
 
 static void
-MarkThisAndArguments(JSTracer* trc, JitFrameLayout* layout)
+MarkThisAndArguments(JSTracer* trc, const JitFrameIterator& frame)
 {
     // Mark |this| and any extra actual arguments for an Ion frame. Marking of
     // formal arguments is taken care of by the frame's safepoint/snapshot,
-    // except when the script might have lazy arguments, in which case we mark
-    // them as well.
+    // except when the script might have lazy arguments or rest, in which case
+    // we mark them as well. We also have to mark formals if we have a LazyLink
+    // frame.
+
+    JitFrameLayout* layout = frame.isExitFrameLayout<LazyLinkExitFrameLayout>()
+                             ? frame.exitFrame()->as<LazyLinkExitFrameLayout>()->jsFrame()
+                             : frame.jsFrame();
+
+    if (!CalleeTokenIsFunction(layout->calleeToken()))
+        return;
 
     size_t nargs = layout->numActualArgs();
     size_t nformals = 0;
-    size_t newTargetOffset = 0;
-    if (CalleeTokenIsFunction(layout->calleeToken())) {
-        JSFunction* fun = CalleeTokenToFunction(layout->calleeToken());
-        nformals = fun->nonLazyScript()->argumentsHasVarBinding() ? 0 : fun->nargs();
-        newTargetOffset = Max(nargs, fun->nargs());
+
+    JSFunction* fun = CalleeTokenToFunction(layout->calleeToken());
+    if (!frame.isExitFrameLayout<LazyLinkExitFrameLayout>() &&
+        !fun->nonLazyScript()->mayReadFrameArgsDirectly())
+    {
+        nformals = fun->nargs();
     }
+
+    size_t newTargetOffset = Max(nargs, fun->nargs());
 
     Value* argv = layout->argv();
 
@@ -1073,13 +1084,6 @@ MarkThisAndArguments(JSTracer* trc, JitFrameLayout* layout)
     // +1 to pass |this|
     if (CalleeTokenIsConstructing(layout->calleeToken()))
         TraceRoot(trc, &argv[1 + newTargetOffset], "ion-newTarget");
-}
-
-static void
-MarkThisAndArguments(JSTracer* trc, const JitFrameIterator& frame)
-{
-    JitFrameLayout* layout = frame.jsFrame();
-    MarkThisAndArguments(trc, layout);
 }
 
 #ifdef JS_NUNBOX32
@@ -1428,7 +1432,7 @@ MarkJitExitFrame(JSTracer* trc, const JitFrameIterator& frame)
 
         TraceRoot(trc, ll->stubCode(), "lazy-link-code");
         layout->replaceCalleeToken(MarkCalleeToken(trc, layout->calleeToken()));
-        MarkThisAndArguments(trc, layout);
+        MarkThisAndArguments(trc, frame);
         return;
     }
 
@@ -1527,7 +1531,7 @@ MarkJitActivation(JSTracer* trc, const JitActivationIterator& activations)
     JitActivation* activation = activations->asJit();
 
 #ifdef CHECK_OSIPOINT_REGISTERS
-    if (js_JitOptions.checkOsiPointRegisters) {
+    if (JitOptions.checkOsiPointRegisters) {
         // GC can modify spilled registers, breaking our register checks.
         // To handle this, we disable these checks for the current VM call
         // when a GC happens.
@@ -1626,10 +1630,13 @@ GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes)
             MOZ_ASSERT(it.isBaselineStub() || it.isBaselineJS() || it.isIonJS());
         }
 
-        // Skip Baseline stub frames.
+        // Skip Baseline or Ion stub frames.
         if (it.isBaselineStubMaybeUnwound()) {
             ++it;
             MOZ_ASSERT(it.isBaselineJS());
+        } else if (it.isIonStubMaybeUnwound() || it.isIonAccessorICMaybeUnwound()) {
+            ++it;
+            MOZ_ASSERT(it.isIonJS());
         }
 
         MOZ_ASSERT(it.isBaselineJS() || it.isIonJS());
@@ -1683,12 +1690,6 @@ GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes)
     // Add entry to cache.
     if (retAddr && rt->ionPcScriptCache)
         rt->ionPcScriptCache->add(hash, retAddr, pc, *scriptRes);
-}
-
-void
-OsiIndex::fixUpOffset(MacroAssembler& masm)
-{
-    callPointDisplacement_ = masm.actualOffset(callPointDisplacement_);
 }
 
 uint32_t
@@ -1751,6 +1752,14 @@ RInstructionResults::isInitialized() const
 {
     return initialized_;
 }
+
+#ifdef DEBUG
+size_t
+RInstructionResults::length() const
+{
+    return results_->length();
+}
+#endif
 
 JitFrameLayout*
 RInstructionResults::frame() const
@@ -2033,7 +2042,7 @@ SnapshotIterator::maybeRead(const RValueAllocation& a, MaybeReadFallback& fallba
 
     if (fallback.canRecoverResults()) {
         if (!initInstructionResults(fallback))
-            js::CrashAtUnhandlableOOM("Unable to recover allocations.");
+            MOZ_CRASH("Unable to recover allocations.");
 
         if (allocationReadable(a))
             return allocationValue(a);
@@ -2218,6 +2227,7 @@ SnapshotIterator::initInstructionResults(MaybeReadFallback& fallback)
     }
 
     MOZ_ASSERT(results->isInitialized());
+    MOZ_ASSERT(results->length() == recover_.numInstructions() - 1);
     instructionResults_ = results;
     return true;
 }
@@ -2554,7 +2564,7 @@ InlineFrameIterator::computeScopeChain(Value scopeChainValue, MaybeReadFallback&
     // the global on their scope chain.
     MOZ_ASSERT(!script()->isForEval());
     MOZ_ASSERT(!script()->hasNonSyntacticScope());
-    return &script()->global();
+    return &script()->global().lexicalScope();
 }
 
 bool
@@ -2586,12 +2596,16 @@ MachineState::FromBailout(RegisterDump::GPRArray& regs, RegisterDump::FPUArray& 
         machine.setRegisterLocation(FloatRegister::FromIndex(i, FloatRegister::Single),
                                     (double*)&fbase[i]);
     }
+#elif defined(JS_CODEGEN_MIPS64)
+    for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
+        machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Double), &fpregs[i]);
+        machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Single), &fpregs[i]);
+    }
 #elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
     for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
         machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Single), &fpregs[i]);
         machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Double), &fpregs[i]);
-        machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Int32x4), &fpregs[i]);
-        machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Float32x4), &fpregs[i]);
+        machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Simd128), &fpregs[i]);
     }
 #elif defined(JS_CODEGEN_ARM64)
     for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
@@ -2691,7 +2705,7 @@ JitFrameIterator::dumpBaseline() const
     baselineScriptAndPc(script.address(), &pc);
 
     fprintf(stderr, "  script = %p, pc = %p (offset %u)\n", (void*)script, pc, uint32_t(script->pcToOffset(pc)));
-    fprintf(stderr, "  current op: %s\n", js_CodeName[*pc]);
+    fprintf(stderr, "  current op: %s\n", CodeName[*pc]);
 
     fprintf(stderr, "  actual args: %d\n", numActualArgs());
 
@@ -2735,7 +2749,7 @@ InlineFrameIterator::dump() const
             script()->filename(), script()->lineno());
 
     fprintf(stderr, "  script = %p, pc = %p\n", (void*) script(), pc());
-    fprintf(stderr, "  current op: %s\n", js_CodeName[*pc()]);
+    fprintf(stderr, "  current op: %s\n", CodeName[*pc()]);
 
     if (!more()) {
         numActualArgs();

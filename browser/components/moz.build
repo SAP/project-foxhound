@@ -6,13 +6,14 @@
 
 DIRS += [
     'about',
+    'contextualidentity',
     'customizableui',
     'dirprovider',
     'downloads',
     'extensions',
     'feeds',
-    'loop',
     'migration',
+    'newtab',
     'places',
     'pocket',
     'preferences',
@@ -21,7 +22,6 @@ DIRS += [
     'sessionstore',
     'shell',
     'selfsupport',
-    'tabview',
     'uitour',
     'translation',
 ]
@@ -29,6 +29,7 @@ DIRS += [
 DIRS += ['build']
 
 XPIDL_SOURCES += [
+    'nsIAboutNewTabService.idl',
     'nsIBrowserGlue.idl',
     'nsIBrowserHandler.idl',
 ]

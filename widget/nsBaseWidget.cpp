@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,6 +45,7 @@
 #include "mozilla/MouseEvents.h"
 #include "GLConsts.h"
 #include "mozilla/unused.h"
+#include "mozilla/IMEStateManager.h"
 #include "mozilla/VsyncDispatcher.h"
 #include "mozilla/layers/APZCTreeManager.h"
 #include "mozilla/layers/APZEventState.h"
@@ -51,6 +53,7 @@
 #include "mozilla/layers/ChromeProcessController.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/TabParent.h"
 #include "mozilla/Move.h"
 #include "mozilla/Services.h"
@@ -58,6 +61,7 @@
 #include "nsRefPtrHashtable.h"
 #include "TouchEvents.h"
 #include "WritingModes.h"
+#include "InputData.h"
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
 #endif
@@ -83,6 +87,7 @@ static nsRefPtrHashtable<nsVoidPtrHashKey, nsIWidget>* sPluginWidgetList;
 
 nsIRollupListener* nsBaseWidget::gRollupListener = nullptr;
 
+using namespace mozilla::dom;
 using namespace mozilla::layers;
 using namespace mozilla::ipc;
 using namespace mozilla::widget;
@@ -245,8 +250,8 @@ void nsBaseWidget::DestroyCompositor()
   if (mCompositorChild) {
     // XXX CompositorChild and CompositorParent might be re-created in
     // ClientLayerManager destructor. See bug 1133426.
-    nsRefPtr<CompositorChild> compositorChild = mCompositorChild;
-    nsRefPtr<CompositorParent> compositorParent = mCompositorParent;
+    RefPtr<CompositorChild> compositorChild = mCompositorChild;
+    RefPtr<CompositorParent> compositorParent = mCompositorParent;
     mCompositorChild->Destroy();
   }
 
@@ -282,6 +287,8 @@ nsBaseWidget::FreeShutdownObserver()
 //-------------------------------------------------------------------------
 nsBaseWidget::~nsBaseWidget()
 {
+  IMEStateManager::WidgetDestroyed(this);
+
   if (mLayerManager &&
       mLayerManager->GetBackendType() == LayersBackend::LAYERS_BASIC) {
     static_cast<BasicLayerManager*>(mLayerManager.get())->ClearRetainerWidget();
@@ -303,9 +310,9 @@ nsBaseWidget::~nsBaseWidget()
 // Basic create.
 //
 //-------------------------------------------------------------------------
-void nsBaseWidget::BaseCreate(nsIWidget *aParent,
-                              const nsIntRect &aRect,
-                              nsWidgetInitData *aInitData)
+void nsBaseWidget::BaseCreate(nsIWidget* aParent,
+                              const LayoutDeviceIntRect& aRect,
+                              nsWidgetInitData* aInitData)
 {
   static bool gDisableNativeThemeCached = false;
   if (!gDisableNativeThemeCached) {
@@ -350,9 +357,9 @@ void nsBaseWidget::SetWidgetListener(nsIWidgetListener* aWidgetListener)
 }
 
 already_AddRefed<nsIWidget>
-nsBaseWidget::CreateChild(const nsIntRect  &aRect,
-                          nsWidgetInitData *aInitData,
-                          bool             aForceUseIWidgetParent)
+nsBaseWidget::CreateChild(const LayoutDeviceIntRect& aRect,
+                          nsWidgetInitData* aInitData,
+                          bool aForceUseIWidgetParent)
 {
   nsIWidget* parent = this;
   nsNativeWidget nativeParent = nullptr;
@@ -688,37 +695,37 @@ nsTransparencyMode nsBaseWidget::GetTransparencyMode() {
 }
 
 bool
-nsBaseWidget::IsWindowClipRegionEqual(const nsTArray<nsIntRect>& aRects)
+nsBaseWidget::IsWindowClipRegionEqual(const nsTArray<LayoutDeviceIntRect>& aRects)
 {
   return mClipRects &&
          mClipRectCount == aRects.Length() &&
-         memcmp(mClipRects, aRects.Elements(), sizeof(nsIntRect)*mClipRectCount) == 0;
+         memcmp(mClipRects.get(), aRects.Elements(), sizeof(LayoutDeviceIntRect)*mClipRectCount) == 0;
 }
 
 void
-nsBaseWidget::StoreWindowClipRegion(const nsTArray<nsIntRect>& aRects)
+nsBaseWidget::StoreWindowClipRegion(const nsTArray<LayoutDeviceIntRect>& aRects)
 {
   mClipRectCount = aRects.Length();
-  mClipRects = new nsIntRect[mClipRectCount];
+  mClipRects = MakeUnique<LayoutDeviceIntRect[]>(mClipRectCount);
   if (mClipRects) {
-    memcpy(mClipRects, aRects.Elements(), sizeof(nsIntRect)*mClipRectCount);
+    memcpy(mClipRects.get(), aRects.Elements(), sizeof(LayoutDeviceIntRect)*mClipRectCount);
   }
 }
 
 void
-nsBaseWidget::GetWindowClipRegion(nsTArray<nsIntRect>* aRects)
+nsBaseWidget::GetWindowClipRegion(nsTArray<LayoutDeviceIntRect>* aRects)
 {
   if (mClipRects) {
     aRects->AppendElements(mClipRects.get(), mClipRectCount);
   } else {
-    aRects->AppendElement(nsIntRect(0, 0, mBounds.width, mBounds.height));
+    aRects->AppendElement(LayoutDeviceIntRect(0, 0, mBounds.width, mBounds.height));
   }
 }
 
-const nsIntRegion
-nsBaseWidget::RegionFromArray(const nsTArray<nsIntRect>& aRects)
+const LayoutDeviceIntRegion
+nsBaseWidget::RegionFromArray(const nsTArray<LayoutDeviceIntRect>& aRects)
 {
-  nsIntRegion region;
+  LayoutDeviceIntRegion region;
   for (uint32_t i = 0; i < aRects.Length(); ++i) {
     region.Or(region, aRects[i]);
   }
@@ -726,33 +733,34 @@ nsBaseWidget::RegionFromArray(const nsTArray<nsIntRect>& aRects)
 }
 
 void
-nsBaseWidget::ArrayFromRegion(const nsIntRegion& aRegion, nsTArray<nsIntRect>& aRects)
+nsBaseWidget::ArrayFromRegion(const LayoutDeviceIntRegion& aRegion,
+                              nsTArray<LayoutDeviceIntRect>& aRects)
 {
-  const nsIntRect* r;
-  for (nsIntRegionRectIterator iter(aRegion); (r = iter.Next());) {
+  const LayoutDeviceIntRect* r;
+  for (LayoutDeviceIntRegion::RectIterator iter(aRegion); (r = iter.Next()); ) {
     aRects.AppendElement(*r);
   }
 }
 
 nsresult
-nsBaseWidget::SetWindowClipRegion(const nsTArray<nsIntRect>& aRects,
+nsBaseWidget::SetWindowClipRegion(const nsTArray<LayoutDeviceIntRect>& aRects,
                                   bool aIntersectWithExisting)
 {
   if (!aIntersectWithExisting) {
     StoreWindowClipRegion(aRects);
   } else {
     // get current rects
-    nsTArray<nsIntRect> currentRects;
+    nsTArray<LayoutDeviceIntRect> currentRects;
     GetWindowClipRegion(&currentRects);
     // create region from them
-    nsIntRegion currentRegion = RegionFromArray(currentRects);
+    LayoutDeviceIntRegion currentRegion = RegionFromArray(currentRects);
     // create region from new rects
-    nsIntRegion newRegion = RegionFromArray(aRects);
+    LayoutDeviceIntRegion newRegion = RegionFromArray(aRects);
     // intersect regions
-    nsIntRegion intersection;
+    LayoutDeviceIntRegion intersection;
     intersection.And(currentRegion, newRegion);
     // create int rect array from intersection
-    nsTArray<nsIntRect> rects;
+    nsTArray<LayoutDeviceIntRect> rects;
     ArrayFromRegion(intersection, rects);
     // store
     StoreWindowClipRegion(rects);
@@ -801,8 +809,9 @@ NS_IMETHODIMP nsBaseWidget::MakeFullScreen(bool aFullScreen, nsIScreen* aScreen)
   HideWindowChrome(aFullScreen);
 
   if (aFullScreen) {
-    if (!mOriginalBounds)
-      mOriginalBounds = new nsIntRect();
+    if (!mOriginalBounds) {
+      mOriginalBounds = new CSSIntRect();
+    }
     *mOriginalBounds = GetScaledScreenBounds();
 
     // Move to top-left corner of screen and size to the screen dimensions
@@ -862,7 +871,7 @@ CompositorParent* nsBaseWidget::NewCompositorParent(int aSurfaceWidth,
 
 void nsBaseWidget::CreateCompositor()
 {
-  nsIntRect rect;
+  LayoutDeviceIntRect rect;
   GetBounds(rect);
   CreateCompositor(rect.width, rect.height);
 }
@@ -870,7 +879,7 @@ void nsBaseWidget::CreateCompositor()
 already_AddRefed<GeckoContentController>
 nsBaseWidget::CreateRootContentController()
 {
-  nsRefPtr<GeckoContentController> controller = new ChromeProcessController(this, mAPZEventState, mAPZC);
+  RefPtr<GeckoContentController> controller = new ChromeProcessController(this, mAPZEventState, mAPZC);
   return controller.forget();
 }
 
@@ -882,7 +891,7 @@ void nsBaseWidget::ConfigureAPZCTreeManager()
 
   mAPZC->SetDPI(GetDPI());
 
-  nsRefPtr<APZCTreeManager> treeManager = mAPZC;  // for capture by the lambdas
+  RefPtr<APZCTreeManager> treeManager = mAPZC;  // for capture by the lambdas
 
   ContentReceivedInputBlockCallback callback(
       [treeManager](const ScrollableLayerGuid& aGuid,
@@ -905,10 +914,18 @@ void nsBaseWidget::ConfigureAPZCTreeManager()
         aInputBlockId, aFlags));
   };
 
-  nsRefPtr<GeckoContentController> controller = CreateRootContentController();
+  RefPtr<GeckoContentController> controller = CreateRootContentController();
   if (controller) {
     uint64_t rootLayerTreeId = mCompositorParent->RootLayerTreeId();
     CompositorParent::SetControllerForLayerTree(rootLayerTreeId, controller);
+  }
+
+  // When APZ is enabled, we can actually enable raw touch events because we
+  // have code that can deal with them properly. If APZ is not enabled, this
+  // function doesn't get called.
+  if (Preferences::GetInt("dom.w3c_touch_events.enabled", 0) ||
+      Preferences::GetBool("dom.w3c_pointer_events.enabled", false)) {
+    RegisterTouchWindow();
   }
 }
 
@@ -926,7 +943,7 @@ nsBaseWidget::SetConfirmedTargetAPZC(uint64_t aInputBlockId,
   void (APZCTreeManager::*setTargetApzcFunc)(uint64_t, const nsTArray<ScrollableLayerGuid>&)
           = &APZCTreeManager::SetTargetAPZC;
   APZThreadUtils::RunOnControllerThread(NewRunnableMethod(
-    mAPZC.get(), setTargetApzcFunc, aInputBlockId, mozilla::Move(aTargets)));
+    mAPZC.get(), setTargetApzcFunc, aInputBlockId, aTargets));
 }
 
 void
@@ -935,6 +952,19 @@ nsBaseWidget::UpdateZoomConstraints(const uint32_t& aPresShellId,
                                     const Maybe<ZoomConstraints>& aConstraints)
 {
   if (!mCompositorParent || !mAPZC) {
+    if (mInitialZoomConstraints) {
+      MOZ_ASSERT(mInitialZoomConstraints->mPresShellID == aPresShellId);
+      MOZ_ASSERT(mInitialZoomConstraints->mViewID == aViewId);
+      if (!aConstraints) {
+        mInitialZoomConstraints.reset();
+      }
+    }
+
+    if (aConstraints) {
+      // We have some constraints, but the compositor and APZC aren't created yet.
+      // Save these so we can use them later.
+      mInitialZoomConstraints = Some(InitialZoomConstraints(aPresShellId, aViewId, aConstraints.ref()));
+    }
     return;
   }
   uint64_t layersId = mCompositorParent->RootLayerTreeId();
@@ -968,7 +998,11 @@ nsBaseWidget::ProcessUntransformedAPZEvent(WidgetInputEvent* aEvent,
         GetDefaultScale());
   }
 
+  // Make a copy of the original event for the APZCCallbackHelper helpers that
+  // we call later, because the event passed to DispatchEvent can get mutated in
+  // ways that we don't want (i.e. touch points can get stripped out).
   nsEventStatus status;
+  UniquePtr<WidgetEvent> original(aEvent->Duplicate());
   DispatchEvent(aEvent, status);
 
   if (mAPZC && !context.WasRoutedToChildProcess()) {
@@ -979,22 +1013,26 @@ nsBaseWidget::ProcessUntransformedAPZEvent(WidgetInputEvent* aEvent,
     if (WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent()) {
       if (touchEvent->mMessage == eTouchStart) {
         if (gfxPrefs::TouchActionEnabled()) {
-          APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(this, *touchEvent,
-              aInputBlockId, mSetAllowedTouchBehaviorCallback);
+          APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(this,
+              *(original->AsTouchEvent()), aInputBlockId,
+              mSetAllowedTouchBehaviorCallback);
         }
-        APZCCallbackHelper::SendSetTargetAPZCNotification(this, GetDocument(), *aEvent,
-            aGuid, aInputBlockId);
+        APZCCallbackHelper::SendSetTargetAPZCNotification(this, GetDocument(),
+            *(original->AsTouchEvent()), aGuid, aInputBlockId);
       }
-      mAPZEventState->ProcessTouchEvent(*touchEvent, aGuid, aInputBlockId, aApzResponse);
+      mAPZEventState->ProcessTouchEvent(*touchEvent, aGuid, aInputBlockId,
+          aApzResponse, status);
     } else if (WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent()) {
       if (wheelEvent->mFlags.mHandledByAPZ) {
-        APZCCallbackHelper::SendSetTargetAPZCNotification(this, GetDocument(), *aEvent,
-                  aGuid, aInputBlockId);
+        APZCCallbackHelper::SendSetTargetAPZCNotification(this, GetDocument(),
+            *(original->AsWheelEvent()), aGuid, aInputBlockId);
         if (wheelEvent->mCanTriggerSwipe) {
           ReportSwipeStarted(aInputBlockId, wheelEvent->TriggersSwipe());
         }
         mAPZEventState->ProcessWheelEvent(*wheelEvent, aGuid, aInputBlockId);
       }
+    } else if (WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent()) {
+      mAPZEventState->ProcessMouseEvent(*mouseEvent, aGuid, aInputBlockId);
     }
   }
 
@@ -1016,18 +1054,94 @@ nsBaseWidget::DispatchInputEvent(WidgetInputEvent* aEvent)
   return status;
 }
 
+class DispatchWheelEventOnMainThread : public Task
+{
+public:
+  DispatchWheelEventOnMainThread(const ScrollWheelInput& aWheelInput,
+                                 nsBaseWidget* aWidget,
+                                 nsEventStatus aAPZResult,
+                                 uint64_t aInputBlockId,
+                                 ScrollableLayerGuid aGuid)
+    : mWheelInput(aWheelInput)
+    , mWidget(aWidget)
+    , mAPZResult(aAPZResult)
+    , mInputBlockId(aInputBlockId)
+    , mGuid(aGuid)
+  {
+  }
+
+  void Run()
+  {
+    WidgetWheelEvent wheelEvent = mWheelInput.ToWidgetWheelEvent(mWidget);
+    mWidget->ProcessUntransformedAPZEvent(&wheelEvent, mGuid, mInputBlockId, mAPZResult);
+    return;
+  }
+
+private:
+  ScrollWheelInput mWheelInput;
+  nsBaseWidget* mWidget;
+  nsEventStatus mAPZResult;
+  uint64_t mInputBlockId;
+  ScrollableLayerGuid mGuid;
+};
+
+class DispatchWheelInputOnControllerThread : public Task
+{
+public:
+  DispatchWheelInputOnControllerThread(const WidgetWheelEvent& aWheelEvent,
+                                       APZCTreeManager* aAPZC,
+                                       nsBaseWidget* aWidget)
+    : mMainMessageLoop(MessageLoop::current())
+    , mWheelInput(aWheelEvent)
+    , mAPZC(aAPZC)
+    , mWidget(aWidget)
+    , mInputBlockId(0)
+  {
+  }
+
+  void Run()
+  {
+    mAPZResult = mAPZC->ReceiveInputEvent(mWheelInput, &mGuid, &mInputBlockId);
+    if (mAPZResult == nsEventStatus_eConsumeNoDefault) {
+      return;
+    }
+    mMainMessageLoop->PostTask(FROM_HERE,
+                               new DispatchWheelEventOnMainThread(mWheelInput, mWidget, mAPZResult, mInputBlockId, mGuid));
+    return;
+  }
+
+private:
+  MessageLoop* mMainMessageLoop;
+  ScrollWheelInput mWheelInput;
+  RefPtr<APZCTreeManager> mAPZC;
+  nsBaseWidget* mWidget;
+  nsEventStatus mAPZResult;
+  uint64_t mInputBlockId;
+  ScrollableLayerGuid mGuid;
+};
+
 nsEventStatus
 nsBaseWidget::DispatchAPZAwareEvent(WidgetInputEvent* aEvent)
 {
+  MOZ_ASSERT(NS_IsMainThread());
   if (mAPZC) {
-    uint64_t inputBlockId = 0;
-    ScrollableLayerGuid guid;
+    if (APZThreadUtils::IsControllerThread()) {
+      uint64_t inputBlockId = 0;
+      ScrollableLayerGuid guid;
 
-    nsEventStatus result = mAPZC->ReceiveInputEvent(*aEvent, &guid, &inputBlockId);
-    if (result == nsEventStatus_eConsumeNoDefault) {
-        return result;
+      nsEventStatus result = mAPZC->ReceiveInputEvent(*aEvent, &guid, &inputBlockId);
+      if (result == nsEventStatus_eConsumeNoDefault) {
+          return result;
+      }
+      return ProcessUntransformedAPZEvent(aEvent, guid, inputBlockId, result);
+    } else {
+      WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent();
+      if (wheelEvent) {
+        APZThreadUtils::RunOnControllerThread(new DispatchWheelInputOnControllerThread(*wheelEvent, mAPZC, this));
+        return nsEventStatus_eConsumeDoDefault;
+      }
+      MOZ_CRASH();
     }
-    return ProcessUntransformedAPZEvent(aEvent, guid, inputBlockId, result);
   }
 
   nsEventStatus status;
@@ -1088,7 +1202,7 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight)
 
   CreateCompositorVsyncDispatcher();
   mCompositorParent = NewCompositorParent(aWidth, aHeight);
-  nsRefPtr<ClientLayerManager> lm = new ClientLayerManager(this);
+  RefPtr<ClientLayerManager> lm = new ClientLayerManager(this);
   mCompositorChild = new CompositorChild(lm);
   mCompositorChild->OpenSameProcess(mCompositorParent);
 
@@ -1099,6 +1213,13 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight)
   mAPZC = CompositorParent::GetAPZCTreeManager(rootLayerTreeId);
   if (mAPZC) {
     ConfigureAPZCTreeManager();
+  }
+
+  if (mInitialZoomConstraints) {
+    UpdateZoomConstraints(mInitialZoomConstraints->mPresShellID,
+                          mInitialZoomConstraints->mViewID,
+                          Some(mInitialZoomConstraints->mConstraints));
+    mInitialZoomConstraints.reset();
   }
 
   TextureFactoryIdentifier textureFactoryIdentifier;
@@ -1132,7 +1253,11 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight)
 
   mLayerManager = lm.forget();
 
-  gfxPlatform::GetPlatform()->NotifyCompositorCreated(mLayerManager->GetCompositorBackendType());
+  if (mWindowType == eWindowType_toplevel) {
+    // Only track compositors for top-level windows, since other window types
+    // may use the basic compositor.
+    gfxPlatform::GetPlatform()->NotifyCompositorCreated(mLayerManager->GetCompositorBackendType());
+  }
 }
 
 bool nsBaseWidget::ShouldUseOffMainThreadCompositing()
@@ -1204,7 +1329,7 @@ NS_METHOD nsBaseWidget::SetWindowClass(const nsAString& xulWinType)
 
 NS_METHOD nsBaseWidget::MoveClient(double aX, double aY)
 {
-  nsIntPoint clientOffset(GetClientOffset());
+  LayoutDeviceIntPoint clientOffset(GetClientOffset());
 
   // GetClientOffset returns device pixels; scale back to display pixels
   // if that's what this widget uses for the Move/Resize APIs
@@ -1224,7 +1349,7 @@ NS_METHOD nsBaseWidget::ResizeClient(double aWidth,
   NS_ASSERTION((aWidth >=0) , "Negative width passed to ResizeClient");
   NS_ASSERTION((aHeight >=0), "Negative height passed to ResizeClient");
 
-  nsIntRect clientBounds;
+  LayoutDeviceIntRect clientBounds;
   GetClientBounds(clientBounds);
 
   // GetClientBounds and mBounds are device pixels; scale back to display pixels
@@ -1248,14 +1373,14 @@ NS_METHOD nsBaseWidget::ResizeClient(double aX,
   NS_ASSERTION((aWidth >=0) , "Negative width passed to ResizeClient");
   NS_ASSERTION((aHeight >=0), "Negative height passed to ResizeClient");
 
-  nsIntRect clientBounds;
+  LayoutDeviceIntRect clientBounds;
   GetClientBounds(clientBounds);
 
   double scale = BoundsUseDisplayPixels() ? 1.0 / GetDefaultScale().scale : 1.0;
   aWidth = mBounds.width * scale + (aWidth - clientBounds.width * scale);
   aHeight = mBounds.height * scale + (aHeight - clientBounds.height * scale);
 
-  nsIntPoint clientOffset(GetClientOffset());
+  LayoutDeviceIntPoint clientOffset(GetClientOffset());
   aX -= clientOffset.x * scale;
   aY -= clientOffset.y * scale;
 
@@ -1272,7 +1397,7 @@ NS_METHOD nsBaseWidget::ResizeClient(double aX,
 * If the implementation of nsWindow supports borders this method MUST be overridden
 *
 **/
-NS_METHOD nsBaseWidget::GetClientBounds(nsIntRect &aRect)
+NS_METHOD nsBaseWidget::GetClientBounds(LayoutDeviceIntRect &aRect)
 {
   return GetBounds(aRect);
 }
@@ -1281,9 +1406,9 @@ NS_METHOD nsBaseWidget::GetClientBounds(nsIntRect &aRect)
 * If the implementation of nsWindow supports borders this method MUST be overridden
 *
 **/
-NS_METHOD nsBaseWidget::GetBounds(nsIntRect &aRect)
+NS_METHOD nsBaseWidget::GetBounds(LayoutDeviceIntRect &aRect)
 {
-  aRect = mBounds;
+  aRect = LayoutDeviceIntRect::FromUnknownRect(mBounds);
   return NS_OK;
 }
 
@@ -1292,12 +1417,12 @@ NS_METHOD nsBaseWidget::GetBounds(nsIntRect &aRect)
 * this method must be overridden
 *
 **/
-NS_METHOD nsBaseWidget::GetScreenBounds(nsIntRect &aRect)
+NS_METHOD nsBaseWidget::GetScreenBounds(LayoutDeviceIntRect& aRect)
 {
   return GetBounds(aRect);
 }
 
-NS_METHOD nsBaseWidget::GetRestoredBounds(nsIntRect &aRect)
+NS_METHOD nsBaseWidget::GetRestoredBounds(LayoutDeviceIntRect& aRect)
 {
   if (SizeMode() != nsSizeMode_Normal) {
     return NS_ERROR_FAILURE;
@@ -1305,19 +1430,20 @@ NS_METHOD nsBaseWidget::GetRestoredBounds(nsIntRect &aRect)
   return GetScreenBounds(aRect);
 }
 
-nsIntPoint nsBaseWidget::GetClientOffset()
+LayoutDeviceIntPoint
+nsBaseWidget::GetClientOffset()
 {
-  return nsIntPoint(0, 0);
+  return LayoutDeviceIntPoint(0, 0);
 }
 
 NS_IMETHODIMP
-nsBaseWidget::GetNonClientMargins(nsIntMargin &margins)
+nsBaseWidget::GetNonClientMargins(LayoutDeviceIntMargin &margins)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsBaseWidget::SetNonClientMargins(nsIntMargin &margins)
+nsBaseWidget::SetNonClientMargins(LayoutDeviceIntMargin &margins)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -1361,7 +1487,7 @@ nsBaseWidget::SetWindowTitlebarColor(nscolor aColor, bool aActive)
 }
 
 bool
-nsBaseWidget::ShowsResizeIndicator(nsIntRect* aResizerRect)
+nsBaseWidget::ShowsResizeIndicator(LayoutDeviceIntRect* aResizerRect)
 {
   return false;
 }
@@ -1644,6 +1770,18 @@ nsBaseWidget::GetTextEventDispatcher()
 
 #ifdef ACCESSIBILITY
 
+#ifdef XP_WIN
+// defined in nsAppRunner.cpp
+extern const char* kAccessibilityLastRunDatePref;
+
+static inline uint32_t
+PRTimeToSeconds(PRTime t_usec)
+{
+  PRTime usec_per_sec = PR_USEC_PER_SEC;
+  return uint32_t(t_usec /= usec_per_sec);
+}
+#endif
+
 a11y::Accessible*
 nsBaseWidget::GetRootAccessible()
 {
@@ -1662,6 +1800,10 @@ nsBaseWidget::GetRootAccessible()
   nsCOMPtr<nsIAccessibilityService> accService =
     services::GetAccessibilityService();
   if (accService) {
+#ifdef XP_WIN
+    uint32_t now = PRTimeToSeconds(PR_Now());
+    Preferences::SetInt(kAccessibilityLastRunDatePref, now);
+#endif
     return accService->GetRootDocumentAccessible(presShell, nsContentUtils::IsSafeToRunScript());
   }
 
@@ -1670,17 +1812,32 @@ nsBaseWidget::GetRootAccessible()
 
 #endif // ACCESSIBILITY
 
-nsIntRect
+void
+nsBaseWidget::StartAsyncScrollbarDrag(const AsyncDragMetrics& aDragMetrics)
+{
+  if (!AsyncPanZoomEnabled()) {
+    return;
+  }
+
+  MOZ_ASSERT(XRE_IsParentProcess() && mCompositorParent);
+
+  int layersId = mCompositorParent->RootLayerTreeId();;
+  ScrollableLayerGuid guid(layersId, aDragMetrics.mPresShellId, aDragMetrics.mViewId);
+
+  APZThreadUtils::RunOnControllerThread(
+    NewRunnableMethod(mAPZC.get(), &APZCTreeManager::StartScrollbarDrag, guid, aDragMetrics));
+}
+
+CSSIntRect
 nsBaseWidget::GetScaledScreenBounds()
 {
-  nsIntRect bounds;
+  LayoutDeviceIntRect bounds;
   GetScreenBounds(bounds);
+
+  // *Dividing* a LayoutDeviceIntRect by a CSSToLayoutDeviceScale gives a
+  // CSSIntRect.
   CSSToLayoutDeviceScale scale = GetDefaultScale();
-  bounds.x = NSToIntRound(bounds.x / scale.scale);
-  bounds.y = NSToIntRound(bounds.y / scale.scale);
-  bounds.width = NSToIntRound(bounds.width / scale.scale);
-  bounds.height = NSToIntRound(bounds.height / scale.scale);
-  return bounds;
+  return RoundedToInt(bounds / scale);
 }
 
 already_AddRefed<nsIScreen>
@@ -1692,7 +1849,7 @@ nsBaseWidget::GetWidgetScreen()
     return nullptr;
   }
 
-  nsIntRect bounds = GetScaledScreenBounds();
+  CSSIntRect bounds = GetScaledScreenBounds();
   nsCOMPtr<nsIScreen> screen;
   screenManager->ScreenForRect(bounds.x, bounds.y,
                                bounds.width, bounds.height,
@@ -1701,7 +1858,7 @@ nsBaseWidget::GetWidgetScreen()
 }
 
 nsresult
-nsIWidget::SynthesizeNativeTouchTap(nsIntPoint aPointerScreenPoint, bool aLongTap,
+nsIWidget::SynthesizeNativeTouchTap(ScreenIntPoint aPointerScreenPoint, bool aLongTap,
                                     nsIObserver* aObserver)
 {
   AutoObserverNotifier notifier(aObserver, "touchtap");
@@ -1777,7 +1934,7 @@ nsIWidget::OnLongTapTimerCallback(nsITimer* aTimer, void* aClosure)
     return;
   }
 
-  AutoObserverNotifier notiifer(self->mLongTapTouchPoint->mObserver, "touchtap");
+  AutoObserverNotifier notifier(self->mLongTapTouchPoint->mObserver, "touchtap");
 
   // finished, remove the touch point
   self->mLongTapTimer->Cancel();
@@ -1850,37 +2007,10 @@ nsIWidget::LookupRegisteredPluginWindow(uintptr_t aWindowID)
   return nullptr;
 #else
   MOZ_ASSERT(NS_IsMainThread());
-  nsIWidget* widget = nullptr;
   MOZ_ASSERT(sPluginWidgetList);
-  sPluginWidgetList->Get((void*)aWindowID, &widget);
-  return widget;
+  return sPluginWidgetList->GetWeak((void*)aWindowID);
 #endif
 }
-
-#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
-struct VisEnumContext {
-  uintptr_t parentWidget;
-  const nsTArray<uintptr_t>* list;
-  bool widgetVisibilityFlag;
-};
-
-static PLDHashOperator
-RegisteredPluginEnumerator(const void* aWindowId, nsIWidget* aWidget, void* aUserArg)
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aWindowId);
-  MOZ_ASSERT(aWidget);
-  MOZ_ASSERT(aUserArg);
-
-  if (!aWidget->Destroyed()) {
-    VisEnumContext* pctx = static_cast<VisEnumContext*>(aUserArg);
-    if ((uintptr_t)aWidget->GetParent() == pctx->parentWidget) {
-      aWidget->Show(pctx->list->Contains((uintptr_t)aWindowId));
-    }
-  }
-  return PLDHashOperator::PL_DHASH_NEXT;
-}
-#endif
 
 // static
 void
@@ -1893,11 +2023,23 @@ nsIWidget::UpdateRegisteredPluginWindowVisibility(uintptr_t aOwnerWidget,
 #else
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(sPluginWidgetList);
+
   // Our visible list is associated with a compositor which is associated with
-  // a specific top level window. We hand the parent widget in here so the
-  // enumerator can skip the plugin widgets owned by other top level windows.
-  VisEnumContext ctx = { aOwnerWidget, &aPluginIds };
-  sPluginWidgetList->EnumerateRead(RegisteredPluginEnumerator, static_cast<void*>(&ctx));
+  // a specific top level window. We use the parent widget during iteration
+  // to skip the plugin widgets owned by other top level windows.
+  for (auto iter = sPluginWidgetList->Iter(); !iter.Done(); iter.Next()) {
+    const void* windowId = iter.Key();
+    nsIWidget* widget = iter.UserData();
+
+    MOZ_ASSERT(windowId);
+    MOZ_ASSERT(widget);
+
+    if (!widget->Destroyed()) {
+      if ((uintptr_t)widget->GetParent() == aOwnerWidget) {
+        widget->Show(aPluginIds.Contains((uintptr_t)windowId));
+      }
+    }
+  }
 #endif
 }
 
@@ -1920,7 +2062,7 @@ nsIWidget::SnapshotWidgetOnScreen()
     return nullptr;
   }
 
-  nsIntRect bounds;
+  LayoutDeviceIntRect bounds;
   GetBounds(bounds);
   if (bounds.IsEmpty()) {
     return nullptr;
@@ -1955,8 +2097,48 @@ nsIWidget::SnapshotWidgetOnScreen()
   return dt->Snapshot();
 }
 
+NS_IMETHODIMP_(nsIWidget::NativeIMEContext)
+nsIWidget::GetNativeIMEContext()
+{
+  return NativeIMEContext(this);
+}
+
 namespace mozilla {
 namespace widget {
+
+void
+NativeIMEContext::Init(nsIWidget* aWidget)
+{
+  if (!aWidget) {
+    mRawNativeIMEContext = reinterpret_cast<uintptr_t>(nullptr);
+    mOriginProcessID = static_cast<uint64_t>(-1);
+    return;
+  }
+  if (!XRE_IsContentProcess()) {
+    mRawNativeIMEContext = reinterpret_cast<uintptr_t>(
+      aWidget->GetNativeData(NS_RAW_NATIVE_IME_CONTEXT));
+    mOriginProcessID = 0;
+    return;
+  }
+  // If this is created in a child process, aWidget is an instance of
+  // PuppetWidget which doesn't support NS_RAW_NATIVE_IME_CONTEXT.
+  // Instead of that PuppetWidget::GetNativeIMEContext() returns cached
+  // native IME context of the parent process.
+  *this = aWidget->GetNativeIMEContext();
+}
+
+void
+NativeIMEContext::InitWithRawNativeIMEContext(void* aRawNativeIMEContext)
+{
+  if (NS_WARN_IF(!aRawNativeIMEContext)) {
+    mRawNativeIMEContext = reinterpret_cast<uintptr_t>(nullptr);
+    mOriginProcessID = static_cast<uint64_t>(-1);
+    return;
+  }
+  mRawNativeIMEContext = reinterpret_cast<uintptr_t>(aRawNativeIMEContext);
+  mOriginProcessID =
+    XRE_IsContentProcess() ? ContentChild::GetSingleton()->GetID() : 0;
+}
 
 void
 IMENotification::TextChangeDataBase::MergeWith(
@@ -2005,8 +2187,14 @@ IMENotification::TextChangeDataBase::MergeWith(
   const TextChangeDataBase& newData = aOther;
   const TextChangeDataBase oldData = *this;
 
+  // mCausedByComposition should be true only when all changes are caused by
+  // composition.
   mCausedByComposition =
     newData.mCausedByComposition && oldData.mCausedByComposition;
+  // mOccurredDuringComposition should be true only when all changes occurred
+  // during composition.
+  mOccurredDuringComposition =
+    newData.mOccurredDuringComposition && oldData.mOccurredDuringComposition;
 
   if (newData.mStartOffset >= oldData.mAddedEndOffset) {
     // Case 1:
@@ -2162,8 +2350,8 @@ IMENotification::TextChangeDataBase::Test()
    ****************************************************************************/
 
   // Appending text
-  MergeWith(TextChangeData(10, 10, 20, false));
-  MergeWith(TextChangeData(20, 20, 35, false));
+  MergeWith(TextChangeData(10, 10, 20, false, false));
+  MergeWith(TextChangeData(20, 20, 35, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 1-1-1: mStartOffset should be the first offset");
   MOZ_ASSERT(mRemovedEndOffset == 10, // 20 - (20 - 10)
@@ -2173,8 +2361,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Removing text (longer line -> shorter line)
-  MergeWith(TextChangeData(10, 20, 10, false));
-  MergeWith(TextChangeData(10, 30, 10, false));
+  MergeWith(TextChangeData(10, 20, 10, false, false));
+  MergeWith(TextChangeData(10, 30, 10, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 1-2-1: mStartOffset should be the first offset");
   MOZ_ASSERT(mRemovedEndOffset == 40, // 30 + (10 - 20)
@@ -2185,8 +2373,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Removing text (shorter line -> longer line)
-  MergeWith(TextChangeData(10, 20, 10, false));
-  MergeWith(TextChangeData(10, 15, 10, false));
+  MergeWith(TextChangeData(10, 20, 10, false, false));
+  MergeWith(TextChangeData(10, 15, 10, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 1-3-1: mStartOffset should be the first offset");
   MOZ_ASSERT(mRemovedEndOffset == 25, // 15 + (10 - 20)
@@ -2197,8 +2385,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Appending text at different point (not sure if actually occurs)
-  MergeWith(TextChangeData(10, 10, 20, false));
-  MergeWith(TextChangeData(55, 55, 60, false));
+  MergeWith(TextChangeData(10, 10, 20, false, false));
+  MergeWith(TextChangeData(55, 55, 60, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 1-4-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 45, // 55 - (10 - 20)
@@ -2209,8 +2397,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Removing text at different point (not sure if actually occurs)
-  MergeWith(TextChangeData(10, 20, 10, false));
-  MergeWith(TextChangeData(55, 68, 55, false));
+  MergeWith(TextChangeData(10, 20, 10, false, false));
+  MergeWith(TextChangeData(55, 68, 55, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 1-5-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 78, // 68 - (10 - 20)
@@ -2221,8 +2409,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Replacing text and append text (becomes longer)
-  MergeWith(TextChangeData(30, 35, 32, false));
-  MergeWith(TextChangeData(32, 32, 40, false));
+  MergeWith(TextChangeData(30, 35, 32, false, false));
+  MergeWith(TextChangeData(32, 32, 40, false, false));
   MOZ_ASSERT(mStartOffset == 30,
     "Test 1-6-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 35, // 32 - (32 - 35)
@@ -2233,8 +2421,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Replacing text and append text (becomes shorter)
-  MergeWith(TextChangeData(30, 35, 32, false));
-  MergeWith(TextChangeData(32, 32, 33, false));
+  MergeWith(TextChangeData(30, 35, 32, false, false));
+  MergeWith(TextChangeData(32, 32, 33, false, false));
   MOZ_ASSERT(mStartOffset == 30,
     "Test 1-7-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 35, // 32 - (32 - 35)
@@ -2246,8 +2434,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Removing text and replacing text after first range (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(30, 35, 30, false));
-  MergeWith(TextChangeData(32, 34, 48, false));
+  MergeWith(TextChangeData(30, 35, 30, false, false));
+  MergeWith(TextChangeData(32, 34, 48, false, false));
   MOZ_ASSERT(mStartOffset == 30,
     "Test 1-8-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 39, // 34 - (30 - 35)
@@ -2259,8 +2447,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Removing text and replacing text after first range (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(30, 35, 30, false));
-  MergeWith(TextChangeData(32, 38, 36, false));
+  MergeWith(TextChangeData(30, 35, 30, false, false));
+  MergeWith(TextChangeData(32, 38, 36, false, false));
   MOZ_ASSERT(mStartOffset == 30,
     "Test 1-9-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 43, // 38 - (30 - 35)
@@ -2276,8 +2464,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text in around end of added text (becomes shorter) (not sure
   // if actually occurs)
-  MergeWith(TextChangeData(50, 50, 55, false));
-  MergeWith(TextChangeData(53, 60, 54, false));
+  MergeWith(TextChangeData(50, 50, 55, false, false));
+  MergeWith(TextChangeData(53, 60, 54, false, false));
   MOZ_ASSERT(mStartOffset == 50,
     "Test 2-1-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 55, // 60 - (55 - 50)
@@ -2289,8 +2477,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around end of added text (becomes longer) (not sure
   // if actually occurs)
-  MergeWith(TextChangeData(50, 50, 55, false));
-  MergeWith(TextChangeData(54, 62, 68, false));
+  MergeWith(TextChangeData(50, 50, 55, false, false));
+  MergeWith(TextChangeData(54, 62, 68, false, false));
   MOZ_ASSERT(mStartOffset == 50,
     "Test 2-2-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 57, // 62 - (55 - 50)
@@ -2302,8 +2490,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around end of replaced text (became shorter) (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(36, 48, 45, false));
-  MergeWith(TextChangeData(43, 50, 49, false));
+  MergeWith(TextChangeData(36, 48, 45, false, false));
+  MergeWith(TextChangeData(43, 50, 49, false, false));
   MOZ_ASSERT(mStartOffset == 36,
     "Test 2-3-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 53, // 50 - (45 - 48)
@@ -2315,8 +2503,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around end of replaced text (became longer) (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(36, 52, 53, false));
-  MergeWith(TextChangeData(43, 68, 61, false));
+  MergeWith(TextChangeData(36, 52, 53, false, false));
+  MergeWith(TextChangeData(43, 68, 61, false, false));
   MOZ_ASSERT(mStartOffset == 36,
     "Test 2-4-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 67, // 68 - (53 - 52)
@@ -2331,8 +2519,8 @@ IMENotification::TextChangeDataBase::Test()
    ****************************************************************************/
 
   // Appending text in already added text (not sure if actually occurs)
-  MergeWith(TextChangeData(10, 10, 20, false));
-  MergeWith(TextChangeData(15, 15, 30, false));
+  MergeWith(TextChangeData(10, 10, 20, false, false));
+  MergeWith(TextChangeData(15, 15, 30, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 3-1-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 10,
@@ -2343,8 +2531,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Replacing text in added text (not sure if actually occurs)
-  MergeWith(TextChangeData(50, 50, 55, false));
-  MergeWith(TextChangeData(52, 53, 56, false));
+  MergeWith(TextChangeData(50, 50, 55, false, false));
+  MergeWith(TextChangeData(52, 53, 56, false, false));
   MOZ_ASSERT(mStartOffset == 50,
     "Test 3-2-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 50,
@@ -2356,8 +2544,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text in replaced text (became shorter) (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(36, 48, 45, false));
-  MergeWith(TextChangeData(37, 38, 50, false));
+  MergeWith(TextChangeData(36, 48, 45, false, false));
+  MergeWith(TextChangeData(37, 38, 50, false, false));
   MOZ_ASSERT(mStartOffset == 36,
     "Test 3-3-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 48,
@@ -2369,8 +2557,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text in replaced text (became longer) (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(32, 48, 53, false));
-  MergeWith(TextChangeData(43, 50, 52, false));
+  MergeWith(TextChangeData(32, 48, 53, false, false));
+  MergeWith(TextChangeData(43, 50, 52, false, false));
   MOZ_ASSERT(mStartOffset == 32,
     "Test 3-4-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 48,
@@ -2383,8 +2571,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text in replaced text (became shorter) (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(36, 48, 50, false));
-  MergeWith(TextChangeData(37, 49, 47, false));
+  MergeWith(TextChangeData(36, 48, 50, false, false));
+  MergeWith(TextChangeData(37, 49, 47, false, false));
   MOZ_ASSERT(mStartOffset == 36,
     "Test 3-5-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 48,
@@ -2397,8 +2585,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text in replaced text (became longer) (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(32, 48, 53, false));
-  MergeWith(TextChangeData(43, 50, 47, false));
+  MergeWith(TextChangeData(32, 48, 53, false, false));
+  MergeWith(TextChangeData(43, 50, 47, false, false));
   MOZ_ASSERT(mStartOffset == 32,
     "Test 3-6-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 48,
@@ -2414,8 +2602,8 @@ IMENotification::TextChangeDataBase::Test()
    ****************************************************************************/
 
   // Replacing text all of already append text (not sure if actually occurs)
-  MergeWith(TextChangeData(50, 50, 55, false));
-  MergeWith(TextChangeData(44, 66, 68, false));
+  MergeWith(TextChangeData(50, 50, 55, false, false));
+  MergeWith(TextChangeData(44, 66, 68, false, false));
   MOZ_ASSERT(mStartOffset == 44,
     "Test 4-1-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 61, // 66 - (55 - 50)
@@ -2427,8 +2615,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around a point in which text was removed (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(50, 62, 50, false));
-  MergeWith(TextChangeData(44, 66, 68, false));
+  MergeWith(TextChangeData(50, 62, 50, false, false));
+  MergeWith(TextChangeData(44, 66, 68, false, false));
   MOZ_ASSERT(mStartOffset == 44,
     "Test 4-2-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 78, // 66 - (50 - 62)
@@ -2440,8 +2628,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text all replaced text (became shorter) (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(50, 62, 60, false));
-  MergeWith(TextChangeData(49, 128, 130, false));
+  MergeWith(TextChangeData(50, 62, 60, false, false));
+  MergeWith(TextChangeData(49, 128, 130, false, false));
   MOZ_ASSERT(mStartOffset == 49,
     "Test 4-3-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 130, // 128 - (60 - 62)
@@ -2453,8 +2641,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text all replaced text (became longer) (not sure if actually
   // occurs)
-  MergeWith(TextChangeData(50, 61, 73, false));
-  MergeWith(TextChangeData(44, 100, 50, false));
+  MergeWith(TextChangeData(50, 61, 73, false, false));
+  MergeWith(TextChangeData(44, 100, 50, false, false));
   MOZ_ASSERT(mStartOffset == 44,
     "Test 4-4-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 88, // 100 - (73 - 61)
@@ -2469,8 +2657,8 @@ IMENotification::TextChangeDataBase::Test()
    ****************************************************************************/
 
   // Replacing text around start of added text (not sure if actually occurs)
-  MergeWith(TextChangeData(50, 50, 55, false));
-  MergeWith(TextChangeData(48, 52, 49, false));
+  MergeWith(TextChangeData(50, 50, 55, false, false));
+  MergeWith(TextChangeData(48, 52, 49, false, false));
   MOZ_ASSERT(mStartOffset == 48,
     "Test 5-1-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 50,
@@ -2483,8 +2671,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around start of replaced text (became shorter) (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(50, 60, 58, false));
-  MergeWith(TextChangeData(43, 50, 48, false));
+  MergeWith(TextChangeData(50, 60, 58, false, false));
+  MergeWith(TextChangeData(43, 50, 48, false, false));
   MOZ_ASSERT(mStartOffset == 43,
     "Test 5-2-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 60,
@@ -2497,8 +2685,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around start of replaced text (became longer) (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(50, 60, 68, false));
-  MergeWith(TextChangeData(43, 55, 53, false));
+  MergeWith(TextChangeData(50, 60, 68, false, false));
+  MergeWith(TextChangeData(43, 55, 53, false, false));
   MOZ_ASSERT(mStartOffset == 43,
     "Test 5-3-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 60,
@@ -2511,8 +2699,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around start of replaced text (became shorter) (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(50, 60, 58, false));
-  MergeWith(TextChangeData(43, 50, 128, false));
+  MergeWith(TextChangeData(50, 60, 58, false, false));
+  MergeWith(TextChangeData(43, 50, 128, false, false));
   MOZ_ASSERT(mStartOffset == 43,
     "Test 5-4-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 60,
@@ -2525,8 +2713,8 @@ IMENotification::TextChangeDataBase::Test()
 
   // Replacing text around start of replaced text (became longer) (not sure if
   // actually occurs)
-  MergeWith(TextChangeData(50, 60, 68, false));
-  MergeWith(TextChangeData(43, 55, 65, false));
+  MergeWith(TextChangeData(50, 60, 68, false, false));
+  MergeWith(TextChangeData(43, 55, 65, false, false));
   MOZ_ASSERT(mStartOffset == 43,
     "Test 5-5-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 60,
@@ -2542,8 +2730,8 @@ IMENotification::TextChangeDataBase::Test()
    ****************************************************************************/
 
   // Appending text before already added text (not sure if actually occurs)
-  MergeWith(TextChangeData(30, 30, 45, false));
-  MergeWith(TextChangeData(10, 10, 20, false));
+  MergeWith(TextChangeData(30, 30, 45, false, false));
+  MergeWith(TextChangeData(10, 10, 20, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 6-1-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 30,
@@ -2555,8 +2743,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Removing text before already removed text (not sure if actually occurs)
-  MergeWith(TextChangeData(30, 35, 30, false));
-  MergeWith(TextChangeData(10, 25, 10, false));
+  MergeWith(TextChangeData(30, 35, 30, false, false));
+  MergeWith(TextChangeData(10, 25, 10, false, false));
   MOZ_ASSERT(mStartOffset == 10,
     "Test 6-2-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 35,
@@ -2568,8 +2756,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Replacing text before already replaced text (not sure if actually occurs)
-  MergeWith(TextChangeData(50, 65, 70, false));
-  MergeWith(TextChangeData(13, 24, 15, false));
+  MergeWith(TextChangeData(50, 65, 70, false, false));
+  MergeWith(TextChangeData(13, 24, 15, false, false));
   MOZ_ASSERT(mStartOffset == 13,
     "Test 6-3-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 65,
@@ -2581,8 +2769,8 @@ IMENotification::TextChangeDataBase::Test()
   Clear();
 
   // Replacing text before already replaced text (not sure if actually occurs)
-  MergeWith(TextChangeData(50, 65, 70, false));
-  MergeWith(TextChangeData(13, 24, 36, false));
+  MergeWith(TextChangeData(50, 65, 70, false, false));
+  MergeWith(TextChangeData(13, 24, 36, false, false));
   MOZ_ASSERT(mStartOffset == 13,
     "Test 6-4-1: mStartOffset should be the smallest offset");
   MOZ_ASSERT(mRemovedEndOffset == 65,
@@ -2848,11 +3036,11 @@ nsBaseWidget::debug_DumpPaintEvent(FILE *                aFileOut,
 }
 //////////////////////////////////////////////////////////////
 /* static */ void
-nsBaseWidget::debug_DumpInvalidate(FILE *                aFileOut,
-                                   nsIWidget *           aWidget,
-                                   const nsIntRect *     aRect,
-                                   const nsAutoCString & aWidgetName,
-                                   int32_t               aWindowID)
+nsBaseWidget::debug_DumpInvalidate(FILE* aFileOut,
+                                   nsIWidget* aWidget,
+                                   const LayoutDeviceIntRect* aRect,
+                                   const nsAutoCString& aWidgetName,
+                                   int32_t aWindowID)
 {
   if (!debug_GetCachedBoolPref("nglayout.debug.invalidate_dumping"))
     return;
@@ -2867,25 +3055,18 @@ nsBaseWidget::debug_DumpInvalidate(FILE *                aFileOut,
           aWidgetName.get(),
           aWindowID);
 
-  if (aRect)
-  {
+  if (aRect) {
     fprintf(aFileOut,
             " rect=%3d,%-3d %3d,%-3d",
-            aRect->x,
-            aRect->y,
-            aRect->width,
-            aRect->height);
-  }
-  else
-  {
+            aRect->x, aRect->y, aRect->width, aRect->height);
+  } else {
     fprintf(aFileOut,
             " rect=%-15s",
             "none");
   }
 
-  fprintf(aFileOut,"\n");
+  fprintf(aFileOut, "\n");
 }
 //////////////////////////////////////////////////////////////
 
 #endif // DEBUG
-

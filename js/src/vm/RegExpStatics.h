@@ -42,31 +42,12 @@ class RegExpStatics
      */
     int32_t                 pendingLazyEvaluation;
 
-    /* Linkage for preserving RegExpStatics during nested RegExp execution. */
-    RegExpStatics*          bufferLink;
-    bool                    copied;
-
   public:
-    RegExpStatics() : bufferLink(nullptr), copied(false) { clear(); }
+    RegExpStatics() { clear(); }
     static RegExpStaticsObject* create(ExclusiveContext* cx, Handle<GlobalObject*> parent);
 
   private:
     bool executeLazy(JSContext* cx);
-
-    inline void aboutToWrite();
-    inline void copyTo(RegExpStatics& dst);
-
-    inline void restore();
-    bool save(JSContext* cx, RegExpStatics* buffer) {
-        MOZ_ASSERT(!buffer->copied && !buffer->bufferLink);
-        buffer->bufferLink = bufferLink;
-        bufferLink = buffer;
-        if (!buffer->matches.allocOrExpandArray(matches.length())) {
-            ReportOutOfMemory(cx);
-            return false;
-        }
-        return true;
-    }
 
     inline void checkInvariants();
 
@@ -80,9 +61,8 @@ class RegExpStatics
     void markFlagsSet(JSContext* cx);
 
     struct InitBuffer {};
-    explicit RegExpStatics(InitBuffer) : bufferLink(nullptr), copied(false) {}
+    explicit RegExpStatics(InitBuffer) {}
 
-    friend class PreserveRegExpStatics;
     friend class AutoRegExpStaticsBuffer;
 
   public:
@@ -92,7 +72,6 @@ class RegExpStatics
     inline bool updateFromMatchPairs(JSContext* cx, JSLinearString* input, MatchPairs& newPairs);
 
     void setMultiline(JSContext* cx, bool enabled) {
-        aboutToWrite();
         if (enabled) {
             flags = RegExpFlag(flags | MultilineFlag);
             markFlagsSet(cx);
@@ -105,7 +84,6 @@ class RegExpStatics
 
     /* Corresponds to JSAPI functionality to set the pending RegExp input. */
     void reset(JSContext* cx, JSString* newInput, bool newMultiline) {
-        aboutToWrite();
         clear();
         pendingInput = newInput;
         setMultiline(cx, newMultiline);
@@ -156,10 +134,6 @@ class RegExpStatics
     void getLastParen(JSSubString* out) const;
     void getLeftContext(JSSubString* out) const;
     void getRightContext(JSSubString* out) const;
-
-    const void* addressOfBufferLink() {
-        return &bufferLink;
-    }
 
     static size_t offsetOfPendingInput() {
         return offsetof(RegExpStatics, pendingInput);
@@ -216,24 +190,6 @@ class MOZ_RAII AutoRegExpStaticsBuffer : private JS::CustomAutoRooter
 
     RegExpStatics statics;
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-};
-
-class PreserveRegExpStatics
-{
-    RegExpStatics * const original;
-    AutoRegExpStaticsBuffer buffer;
-
-  public:
-    explicit PreserveRegExpStatics(JSContext* cx, RegExpStatics* original)
-     : original(original),
-       buffer(cx)
-    {}
-
-    bool init(JSContext* cx) {
-        return original->save(cx, &buffer.getStatics());
-    }
-
-    ~PreserveRegExpStatics() { original->restore(); }
 };
 
 inline bool
@@ -418,47 +374,10 @@ RegExpStatics::getRightContext(JSSubString* out) const
 }
 
 inline void
-RegExpStatics::copyTo(RegExpStatics& dst)
-{
-    /* Destination buffer has already been reserved by save(). */
-    if (!pendingLazyEvaluation)
-        dst.matches.initArrayFrom(matches);
-
-    dst.matchesInput = matchesInput;
-    dst.lazySource = lazySource;
-    dst.lazyFlags = lazyFlags;
-    dst.lazyIndex = lazyIndex;
-    dst.pendingInput = pendingInput;
-    dst.flags = flags;
-    dst.pendingLazyEvaluation = pendingLazyEvaluation;
-
-    MOZ_ASSERT_IF(pendingLazyEvaluation, lazySource);
-    MOZ_ASSERT_IF(pendingLazyEvaluation, matchesInput);
-}
-
-inline void
-RegExpStatics::aboutToWrite()
-{
-    if (bufferLink && !bufferLink->copied) {
-        copyTo(*bufferLink);
-        bufferLink->copied = true;
-    }
-}
-
-inline void
-RegExpStatics::restore()
-{
-    if (bufferLink->copied)
-        bufferLink->copyTo(*this);
-    bufferLink = bufferLink->bufferLink;
-}
-
-inline void
 RegExpStatics::updateLazily(JSContext* cx, JSLinearString* input,
                             RegExpShared* shared, size_t lastIndex)
 {
     MOZ_ASSERT(input && shared);
-    aboutToWrite();
 
     BarrieredSetPair<JSString, JSLinearString>(cx->zone(),
                                                pendingInput, input,
@@ -474,7 +393,6 @@ inline bool
 RegExpStatics::updateFromMatchPairs(JSContext* cx, JSLinearString* input, MatchPairs& newPairs)
 {
     MOZ_ASSERT(input);
-    aboutToWrite();
 
     /* Unset all lazy state. */
     pendingLazyEvaluation = false;
@@ -496,8 +414,6 @@ RegExpStatics::updateFromMatchPairs(JSContext* cx, JSLinearString* input, MatchP
 inline void
 RegExpStatics::clear()
 {
-    aboutToWrite();
-
     matches.forgetArray();
     matchesInput = nullptr;
     lazySource = nullptr;
@@ -511,7 +427,6 @@ RegExpStatics::clear()
 inline void
 RegExpStatics::setPendingInput(JSString* newInput)
 {
-    aboutToWrite();
     pendingInput = newInput;
 }
 

@@ -21,7 +21,7 @@ function add_ocsp_test(aHost, aExpectedResult, aStaplingEnabled) {
     });
 }
 
-function add_tests(certDB, otherTestCA) {
+function add_tests() {
   // In the absence of OCSP stapling, these should actually all work.
   add_ocsp_test("ocsp-stapling-good.example.com",
                 PRErrorCodeSuccess, false);
@@ -73,6 +73,9 @@ function add_tests(certDB, otherTestCA) {
 
   // This stapled response is from a CA that is untrusted and did not issue
   // the server's certificate.
+  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
+                  .getService(Ci.nsIX509CertDB);
+  let otherTestCA = constructCertFromFile("ocsp_certs/other-test-ca.pem");
   add_test(function() {
     certDB.setCertTrust(otherTestCA, Ci.nsIX509Cert.CA_CERT,
                         Ci.nsIX509CertDB.UNTRUSTED);
@@ -152,6 +155,61 @@ function add_tests(certDB, otherTestCA) {
   add_ocsp_test("ocsp-stapling-delegated-wrong-extKeyUsage.example.com",
                 SEC_ERROR_OCSP_INVALID_SIGNING_CERT, true);
 
+  // TLS Must Staple tests
+  add_test(function() {
+    clearSessionCache();
+    Services.prefs.setBoolPref("security.ssl.enable_ocsp_must_staple", true);
+    run_next_test();
+  });
+
+  // ensure that the chain is checked for required features in children:
+  // First a case where intermediate and ee both have the extension
+  add_ocsp_test("ocsp-stapling-must-staple-ee-with-must-staple-int.example.com",
+                PRErrorCodeSuccess, true);
+
+  // Next, a case where it's present in the intermediate, not the ee
+  add_ocsp_test("ocsp-stapling-plain-ee-with-must-staple-int.example.com",
+                MOZILLA_PKIX_ERROR_REQUIRED_TLS_FEATURE_MISSING, true);
+
+  // We disable OCSP must-staple in the next two tests so we can perform checks
+  // on TLS Features in the chain without needint to support the TLS
+  // extension values used.
+  // Test an issuer with multiple TLS features in matched in the EE
+  add_ocsp_test("multi-tls-feature-good.example.com",
+                PRErrorCodeSuccess, false);
+
+  // Finally, an inssuer with multiple TLS features not matched by the EE
+  add_ocsp_test("multi-tls-feature-bad.example.com",
+                MOZILLA_PKIX_ERROR_REQUIRED_TLS_FEATURE_MISSING, false);
+
+
+
+  // Now a bunch of operations with only a must-staple ee
+  add_ocsp_test("ocsp-stapling-must-staple.example.com",
+                PRErrorCodeSuccess, true);
+
+  add_ocsp_test("ocsp-stapling-must-staple-revoked.example.com",
+                SEC_ERROR_REVOKED_CERTIFICATE, true);
+
+  add_ocsp_test("ocsp-stapling-must-staple-missing.example.com",
+                MOZILLA_PKIX_ERROR_REQUIRED_TLS_FEATURE_MISSING, true);
+
+  add_ocsp_test("ocsp-stapling-must-staple-empty.example.com",
+                SEC_ERROR_OCSP_MALFORMED_RESPONSE, true);
+
+  add_ocsp_test("ocsp-stapling-must-staple-missing.example.com",
+                PRErrorCodeSuccess, false);
+
+  // check that disabling must-staple works
+  add_test(function() {
+    clearSessionCache();
+    Services.prefs.setBoolPref("security.ssl.enable_ocsp_must_staple", false);
+    run_next_test();
+  });
+
+  add_ocsp_test("ocsp-stapling-must-staple-missing.example.com",
+                PRErrorCodeSuccess, true);
+
   // ocsp-stapling-expired.example.com and
   // ocsp-stapling-expired-fresh-ca.example.com are handled in
   // test_ocsp_stapling_expired.js
@@ -172,13 +230,13 @@ function check_ocsp_stapling_telemetry() {
                     .snapshot();
   equal(histogram.counts[0], 0,
         "Should have 0 connections for unused histogram bucket 0");
-  equal(histogram.counts[1], 5,
+  equal(histogram.counts[1], 7,
         "Actual and expected connections with a good response should match");
-  equal(histogram.counts[2], 18,
+  equal(histogram.counts[2], 22,
         "Actual and expected connections with no stapled response should match");
   equal(histogram.counts[3], 0,
         "Actual and expected connections with an expired response should match");
-  equal(histogram.counts[4], 21,
+  equal(histogram.counts[4], 23,
         "Actual and expected connections with bad responses should match");
   run_next_test();
 }
@@ -186,11 +244,6 @@ function check_ocsp_stapling_telemetry() {
 function run_test() {
   do_get_profile();
 
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-                  .getService(Ci.nsIX509CertDB);
-  let otherTestCAFile = do_get_file("tlsserver/other-test-ca.der", false);
-  let otherTestCADER = readFile(otherTestCAFile);
-  let otherTestCA = certDB.constructX509(otherTestCADER, otherTestCADER.length);
 
   let fakeOCSPResponder = new HttpServer();
   fakeOCSPResponder.registerPrefixHandler("/", function (request, response) {
@@ -200,9 +253,9 @@ function run_test() {
   });
   fakeOCSPResponder.start(8888);
 
-  add_tls_server_setup("OCSPStaplingServer");
+  add_tls_server_setup("OCSPStaplingServer", "ocsp_certs");
 
-  add_tests(certDB, otherTestCA);
+  add_tests();
 
   add_test(function () {
     fakeOCSPResponder.stop(check_ocsp_stapling_telemetry);

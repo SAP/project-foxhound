@@ -53,6 +53,7 @@ namespace jit {
     _(UnarySharedStub)                                                      \
     _(CheckOverRecursed)                                                    \
     _(DefVar)                                                               \
+    _(DefLexical)                                                           \
     _(DefFun)                                                               \
     _(CreateThis)                                                           \
     _(CreateThisWithProto)                                                  \
@@ -61,9 +62,9 @@ namespace jit {
     _(GetArgumentsObjectArg)                                                \
     _(SetArgumentsObjectArg)                                                \
     _(ComputeThis)                                                          \
-    _(LoadArrowThis)                                                        \
     _(Call)                                                                 \
     _(ApplyArgs)                                                            \
+    _(ApplyArray)                                                           \
     _(ArraySplice)                                                          \
     _(Bail)                                                                 \
     _(Unreachable)                                                          \
@@ -160,8 +161,6 @@ namespace jit {
     _(GetPropertyCache)                                                     \
     _(GetPropertyPolymorphic)                                               \
     _(SetPropertyPolymorphic)                                               \
-    _(GetElementCache)                                                      \
-    _(SetElementCache)                                                      \
     _(BindNameCache)                                                        \
     _(GuardShape)                                                           \
     _(GuardReceiverPolymorphic)                                             \
@@ -209,12 +208,14 @@ namespace jit {
     _(StoreTypedArrayElementHole)                                           \
     _(StoreTypedArrayElementStatic)                                         \
     _(AtomicIsLockFree)                                                     \
+    _(GuardSharedTypedArray)                                                \
     _(CompareExchangeTypedArrayElement)                                     \
     _(AtomicExchangeTypedArrayElement)                                      \
     _(AtomicTypedArrayElementBinop)                                         \
     _(EffectiveAddress)                                                     \
     _(ClampToUint8)                                                         \
     _(LoadFixedSlot)                                                        \
+    _(LoadFixedSlotAndUnbox)                                                \
     _(StoreFixedSlot)                                                       \
     _(CallGetProperty)                                                      \
     _(GetNameCache)                                                         \
@@ -272,10 +273,13 @@ namespace jit {
     _(AsmJSAtomicBinopHeap)                                                 \
     _(UnknownValue)                                                         \
     _(LexicalCheck)                                                         \
-    _(ThrowUninitializedLexical)                                            \
+    _(ThrowRuntimeLexicalError)                                             \
+    _(GlobalNameConflictsCheck)                                             \
     _(Debugger)                                                             \
     _(NewTarget)                                                            \
-    _(ArrowNewTarget)
+    _(ArrowNewTarget)                                                       \
+    _(CheckReturn)                                                          \
+    _(CheckObjCoercible)
 
 // Forward declarations of MIR types.
 #define FORWARD_DECLARE(op) class M##op;

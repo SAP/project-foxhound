@@ -4,15 +4,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 # ***** END LICENSE BLOCK *****
-"""firefox_ui_updates.py
 
-Author: Armen Zambrano G.
-        Henrik Skupin
-"""
+
 import copy
 import os
 import pprint
-import re
 import sys
 import urllib
 
@@ -72,14 +68,17 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
             'clobber',
             'checkout',
             'create-virtualenv',
+            'query_minidump_stackwalk',
             'read-release-update-config',
             'run-tests',
         ]
 
-        FirefoxUIUpdateTests.__init__(self, all_actions=all_actions,
-                                      default_actions=all_actions,
-                                      config_options=firefox_ui_update_release_config_options,
-                                      append_env_variables_from_configs=True)
+        super(ReleaseFirefoxUIUpdateTests, self).__init__(
+            all_actions=all_actions,
+            default_actions=all_actions,
+            config_options=firefox_ui_update_release_config_options,
+            append_env_variables_from_configs=True,
+        )
 
         self.tools_repo = self.config.get('tools_repo')
         self.tools_tag = self.config.get('tools_tag')
@@ -93,26 +92,6 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
         # from tools/release/updates/*cfg
         self.releases = None
 
-    def _modify_url(self, rel_info):
-        # This is a temporary hack to find crash symbols. It should be replaced
-        # with something that doesn't make wild guesses about where symbol
-        # packages are.
-        # We want this:
-        # https://ftp.mozilla.org/pub/mozilla.org/firefox/candidates/40.0b1-candidates/build1/mac/en-US/Firefox%2040.0b1.crashreporter-symbols.zip
-        # https://ftp.mozilla.org/pub/mozilla.org//firefox/releases/40.0b1/mac/en-US/Firefox%2040.0b1.crashreporter-symbols.zip
-        installer_from = rel_info['from']
-        version = (re.search('/firefox/releases/(%s.*)\/.*\/.*\/.*' % rel_info['release'],
-                             installer_from)).group(1)
-
-        temp_from = installer_from.replace(version, '%s-candidates/build%s' % (
-                                           version, self.config['build_number']),
-                                           1).replace('releases', 'candidates')
-        temp_url = rel_info['ftp_server_from'] + urllib.quote(temp_from.replace('%locale%',
-                                                                                'en-US'))
-        self.info('Installer url under stage/candidates dir: {}'.format(temp_url))
-
-        return temp_url
-
     def checkout(self):
         """
         We checkout the tools repository and update to the right branch
@@ -120,7 +99,7 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
         """
         dirs = self.query_abs_dirs()
 
-        FirefoxUIUpdateTests.checkout(self)
+        super(ReleaseFirefoxUIUpdateTests, self).checkout()
 
         self.vcs_checkout(
             repo=self.tools_repo,
@@ -133,10 +112,14 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
         if self.abs_dirs:
             return self.abs_dirs
 
-        abs_dirs = FirefoxUIUpdateTests.query_abs_dirs(self)
-        abs_dirs.update({
+        abs_dirs = super(ReleaseFirefoxUIUpdateTests, self).query_abs_dirs()
+        dirs = {
             'abs_tools_dir': os.path.join(abs_dirs['abs_work_dir'], 'tools'),
-        })
+        }
+
+        for key in dirs.keys():
+            if key not in abs_dirs:
+                abs_dirs[key] = dirs[key]
         self.abs_dirs = abs_dirs
 
         return self.abs_dirs
@@ -253,12 +236,6 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
                 if self.config['dry_run']:
                     continue
 
-                # Safe temporary hack to determine symbols URL from en-US
-                # build1 in the candidates dir
-                ftp_candidates_installer_url = self._modify_url(rel_info)
-                symbols_url = self._query_symbols_url(
-                    installer_url=ftp_candidates_installer_url)
-
                 # Determine from where to download the file
                 installer_url = '{server}/{fragment}'.format(
                     server=rel_info['ftp_server_from'],
@@ -269,15 +246,22 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
                     parent_dir=dirs['abs_work_dir']
                 )
 
+                binary_path = self.install_app(app=self.config.get('application'),
+                                               installer_path=installer_path)
+
                 marionette_port += 1
 
                 retcode = self.run_test(
-                    installer_path=installer_path,
-                    script_name=self.cli_script,
+                    binary_path=binary_path,
                     env=self.query_env(avoid_host_env=True),
-                    symbols_url=symbols_url,
                     marionette_port=marionette_port,
                 )
+
+                self.uninstall_app()
+
+                # Remove installer which is not needed anymore
+                self.info('Removing {}'.format(installer_path))
+                os.remove(installer_path)
 
                 if retcode:
                     self.warning('FAIL: {} has failed.'.format(sys.argv[0]))
@@ -293,8 +277,8 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
                     for config in self.config['config_files']:
                         base_cmd += ' --cfg {}'.format(config)
 
-                    if symbols_url:
-                        base_cmd += ' --symbols-path {}'.format(symbols_url)
+                    if self.symbols_url:
+                        base_cmd += ' --symbols-path {}'.format(self.symbols_url)
 
                     base_cmd += ' --installer-url {}'.format(installer_url)
 

@@ -68,11 +68,13 @@
     _(InitPropGetterSetter)         \
     _(CheckOverRecursed)            \
     _(DefVar)                       \
+    _(DefLexical)                   \
     _(DefFun)                       \
     _(CallKnown)                    \
     _(CallGeneric)                  \
     _(CallNative)                   \
     _(ApplyArgsGeneric)             \
+    _(ApplyArrayGeneric)            \
     _(Bail)                         \
     _(Unreachable)                  \
     _(EncodeSnapshot)               \
@@ -88,7 +90,6 @@
     _(SetArgumentsObjectArg)        \
     _(ReturnFromCtor)               \
     _(ComputeThis)                  \
-    _(LoadArrowThis)                \
     _(BitNotI)                      \
     _(BitNotV)                      \
     _(BitOpI)                       \
@@ -256,6 +257,7 @@
     _(StoreTypedArrayElementHole)   \
     _(StoreTypedArrayElementStatic) \
     _(AtomicIsLockFree)             \
+    _(GuardSharedTypedArray)        \
     _(CompareExchangeTypedArrayElement) \
     _(AtomicExchangeTypedArrayElement) \
     _(AtomicTypedArrayElementBinop) \
@@ -266,6 +268,7 @@
     _(ClampVToUint8)                \
     _(LoadFixedSlotV)               \
     _(LoadFixedSlotT)               \
+    _(LoadFixedSlotAndUnbox)        \
     _(StoreFixedSlotV)              \
     _(StoreFixedSlotT)              \
     _(FunctionEnvironment)          \
@@ -273,8 +276,6 @@
     _(GetPropertyCacheT)            \
     _(GetPropertyPolymorphicV)      \
     _(GetPropertyPolymorphicT)      \
-    _(GetElementCacheV)             \
-    _(GetElementCacheT)             \
     _(BindNameCache)                \
     _(CallGetProperty)              \
     _(GetNameCache)                 \
@@ -285,10 +286,7 @@
     _(CallSetProperty)              \
     _(CallDeleteProperty)           \
     _(CallDeleteElement)            \
-    _(SetPropertyCacheV)            \
-    _(SetPropertyCacheT)            \
-    _(SetElementCacheV)             \
-    _(SetElementCacheT)             \
+    _(SetPropertyCache)             \
     _(SetPropertyPolymorphicV)      \
     _(SetPropertyPolymorphicT)      \
     _(CallIteratorStart)            \
@@ -363,9 +361,12 @@
     _(AssertResultV)                \
     _(AssertResultT)                \
     _(LexicalCheck)                 \
-    _(ThrowUninitializedLexical)    \
+    _(ThrowRuntimeLexicalError)     \
+    _(GlobalNameConflictsCheck)     \
     _(Debugger)                     \
     _(NewTarget)                    \
-    _(ArrowNewTarget)
+    _(ArrowNewTarget)               \
+    _(CheckReturn)                  \
+    _(CheckObjCoercible)
 
 #endif /* jit_shared_LOpcodes_shared_h */

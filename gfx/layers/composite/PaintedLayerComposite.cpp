@@ -7,7 +7,7 @@
 #include "CompositableHost.h"           // for TiledLayerProperties, etc
 #include "FrameMetrics.h"               // for FrameMetrics
 #include "Units.h"                      // for CSSRect, LayerPixel, etc
-#include "gfxUtils.h"                   // for gfxUtils, etc
+#include "gfxEnv.h"                     // for gfxEnv
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/gfx/Matrix.h"         // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for Point
@@ -18,7 +18,7 @@
 #include "mozilla/layers/Effects.h"     // for EffectChain
 #include "mozilla/mozalloc.h"           // for operator delete
 #include "nsAString.h"
-#include "mozilla/nsRefPtr.h"                   // for nsRefPtr
+#include "mozilla/RefPtr.h"                   // for nsRefPtr
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 #include "nsMathUtils.h"                // for NS_lround
 #include "nsString.h"                   // for nsAutoCString
@@ -112,10 +112,10 @@ PaintedLayerComposite::RenderLayer(const gfx::IntRect& aClipRect)
              mBuffer->GetLayer() == this,
              "buffer is corrupted");
 
-  const nsIntRegion& visibleRegion = GetEffectiveVisibleRegion();
+  const nsIntRegion visibleRegion = GetEffectiveVisibleRegion().ToUnknownRegion();
 
 #ifdef MOZ_DUMP_PAINTING
-  if (gfxUtils::sDumpPainting) {
+  if (gfxEnv::DumpCompositorTextures()) {
     RefPtr<gfx::DataSourceSurface> surf = mBuffer->GetAsSurface();
     if (surf) {
       WriteSnapshotToDumpFile(this, surf);
@@ -125,7 +125,7 @@ PaintedLayerComposite::RenderLayer(const gfx::IntRect& aClipRect)
 
 
   RenderWithAllMasks(this, compositor, aClipRect,
-                     [&](EffectChain& effectChain, const Rect& clipRect) {
+                     [&](EffectChain& effectChain, const gfx::Rect& clipRect) {
     mBuffer->SetPaintWillResample(MayResample());
 
     mBuffer->Composite(this, effectChain,

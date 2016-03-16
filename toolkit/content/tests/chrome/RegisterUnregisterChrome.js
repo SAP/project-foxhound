@@ -3,9 +3,9 @@
 const NS_CHROME_MANIFESTS_FILE_LIST = "ChromeML";
 const XUL_CACHE_PREF = "nglayout.debug.disable_xul_cache";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
+var Cc = Components.classes;
+var Ci = Components.interfaces;
+var Cr = Components.results;
 
 var gDirSvc    = Cc["@mozilla.org/file/directory_service;1"].
   getService(Ci.nsIDirectoryService).QueryInterface(Ci.nsIProperties);
@@ -27,7 +27,7 @@ function copyToTemporaryFile(f)
   return tmpf;
 }
 
-function dirIter(directory)
+function* dirIter(directory)
 {
   var ioSvc = Cc["@mozilla.org/network/io-service;1"].
               getService(Ci.nsIIOService);
@@ -69,7 +69,7 @@ function copyDirToTempProfile(path, subdirname) {
   }
 
   // The SimpleTest directory is hidden
-  var files = [file for (file in dirIter('file://' +rootDir))];
+  var files = Array.from(dirIter('file://' + rootDir));
   for (f in files) {
     files[f].copyTo(tmpdir, "");
   }

@@ -34,7 +34,7 @@ ul {
 }
 
 #errorTitle {
-  background: url("aboutNetError_info.svg") left 0 no-repeat;
+  background: url("chrome://global/skin/icons/info.svg") left 0 no-repeat;
   background-size: 3em;
   -moz-margin-start: -5em;
   -moz-padding-start: 5em;
@@ -49,8 +49,9 @@ ul {
   background-position: right 0;
 }
 
-#errorTitle[sslv3=true] {
-  background-image: url("aboutNetError_alert.svg");
+#errorTitle[sslv3=true],
+#errorTitle[weakCrypto=true] {
+  background-image: url("cert-error.svg");
 }
 
 #errorTryAgain {
@@ -78,7 +79,47 @@ button:disabled {
   cursor: pointer;
 }
 
-div#certificateErrorReporting {
+#learnMoreContainer {
+  display: none;
+}
+
+#buttonContainer {
+  display: none;
+  flex-flow: row wrap;
+}
+
+#buttonSpacer {
+  flex: 1;
+}
+
+#returnButton {
+  background-color: var(--in-content-primary-button-background);
+  border: none;
+  color: var(--in-content-selected-text);
+  min-width: 250px;
+  margin-inline-start: 0;
+}
+
+#returnButton:hover {
+  background-color: var(--in-content-primary-button-background-hover) !important;
+}
+
+#returnButton:hover:active {
+  background-color: var(--in-content-primary-button-background-active) !important;
+}
+
+#advancedButton {
+  display: none;
+  min-width: 150px;
+}
+
+#certificateErrorReporting,
+#reportCertificateError,
+#reportSentMessage {
+  display: none;
+}
+
+div#weakCryptoAdvanced {
   display: none;
   float: right;
   /* Align with the "Try Again" button */
@@ -86,11 +127,11 @@ div#certificateErrorReporting {
   -moz-margin-end: 24px;
 }
 
-div#certificateErrorReporting a {
+div#weakCryptoAdvanced a {
   text-decoration: none;
 }
 
-div#certificateErrorReporting a:hover {
+div#weakCryptoAdvanced a:hover {
   text-decoration: underline;
 }
 
@@ -102,7 +143,7 @@ span.downArrow {
   transform: scaleY(0.7);
 }
 
-div#certificateErrorReportingPanel {
+div#weakCryptoAdvancedPanel {
   /* Hidden until the link is clicked */
   display: none;
   background-color: white;
@@ -113,25 +154,16 @@ div#certificateErrorReportingPanel {
   box-shadow: 0 0 4px #ddd;
   font-size: 0.9em;
   position: absolute;
-  width: 75%;
-  margin-top: 10px;
 }
 
-div#certificateErrorReportingPanel:-moz-dir(ltr) {
-  left: 34%;
-}
-
-div#certificateErrorReportingPanel:-moz-dir(rtl) {
-  right: 0;
-}
-
-#errorStatePanel {
-  display: flex;
+#overrideWeakCryptoPanel {
+  display: none;
   flex-direction: row;
   flex-wrap: wrap;
   justify-content: space-between;
   align-content: space-between;
   align-items: flex-start;
+  margin-top: 1em;
 }
 
 span#hostname {
@@ -140,4 +172,10 @@ span#hostname {
 
 #automaticallyReportInFuture {
   cursor: pointer;
+}
+
+#errorCode {
+  color: var(--in-content-page-color);
+  cursor: text;
+  text-decoration: none;
 }

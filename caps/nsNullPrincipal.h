@@ -44,8 +44,6 @@ public:
   NS_IMETHOD GetURI(nsIURI** aURI) override;
   NS_IMETHOD GetDomain(nsIURI** aDomain) override;
   NS_IMETHOD SetDomain(nsIURI* aDomain) override;
-  NS_IMETHOD CheckMayLoad(nsIURI* uri, bool report, bool allowIfInheritsPrincipal) override;
-  NS_IMETHOD GetIsNullPrincipal(bool* aIsNullPrincipal) override;
   NS_IMETHOD GetBaseDomain(nsACString& aBaseDomain) override;
   nsresult GetOriginInternal(nsACString& aOrigin) override;
 
@@ -54,11 +52,13 @@ public:
 
   // Returns null on failure.
   static already_AddRefed<nsNullPrincipal>
-    Create(const mozilla::OriginAttributes& aOriginAttributes = mozilla::OriginAttributes());
+  Create(const mozilla::PrincipalOriginAttributes& aOriginAttributes = mozilla::PrincipalOriginAttributes());
 
-  nsresult Init(const mozilla::OriginAttributes& aOriginAttributes = mozilla::OriginAttributes());
+  nsresult Init(const mozilla::PrincipalOriginAttributes& aOriginAttributes = mozilla::PrincipalOriginAttributes());
 
   virtual void GetScriptLocation(nsACString &aStr) override;
+
+  PrincipalKind Kind() override { return eNullPrincipal; }
 
  protected:
   virtual ~nsNullPrincipal() {}
@@ -68,8 +68,9 @@ public:
     return aOther == this;
   }
 
+  bool MayLoadInternal(nsIURI* aURI) override;
+
   nsCOMPtr<nsIURI> mURI;
-  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
 };
 
 #endif // nsNullPrincipal_h__

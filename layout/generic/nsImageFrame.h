@@ -230,6 +230,7 @@ protected:
 protected:
   friend class nsImageListener;
   friend class nsImageLoadingContent;
+  friend class PresShell;
 
   nsresult OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
   nsresult OnFrameUpdate(imgIRequest* aRequest, const nsIntRect* aRect);
@@ -247,6 +248,7 @@ protected:
    * Computes the predicted dest rect that we'll draw into, in app units, based
    * upon the provided frame content box. (The content box is what
    * nsDisplayImage::GetBounds() returns.)
+   * The result is not necessarily contained in the frame content box.
    */
   nsRect PredictedDestRect(const nsRect& aFrameContentBox);
 
@@ -313,7 +315,7 @@ private:
   void InvalidateSelf(const nsIntRect* aLayerInvalidRect,
                       const nsRect* aFrameInvalidRect);
 
-  nsRefPtr<nsImageMap> mImageMap;
+  RefPtr<nsImageMap> mImageMap;
 
   nsCOMPtr<imgINotificationObserver> mListener;
 
@@ -374,8 +376,8 @@ private:
 
 
   public:
-    nsRefPtr<imgRequestProxy> mLoadingImage;
-    nsRefPtr<imgRequestProxy> mBrokenImage;
+    RefPtr<imgRequestProxy> mLoadingImage;
+    RefPtr<imgRequestProxy> mBrokenImage;
     bool             mPrefForceInlineAltText;
     bool             mPrefShowPlaceholders;
     bool             mPrefShowLoadingPlaceholder;
@@ -424,7 +426,8 @@ public:
                                                         nsDisplayListBuilder* aBuilder) override;
 
   /**
-   * @return the dest rect we'll use when drawing this image, in app units.
+   * @return The dest rect we'll use when drawing this image, in app units.
+   *         Not necessarily contained in this item's bounds.
    */
   nsRect GetDestRect(bool* aSnap = nullptr);
 

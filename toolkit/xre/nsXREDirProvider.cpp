@@ -389,6 +389,18 @@ nsXREDirProvider::GetFile(const char* aProperty, bool* aPersistent,
     if (NS_SUCCEEDED(rv))
       rv = file->AppendNative(NS_LITERAL_CSTRING("distribution"));
   }
+  else if (!strcmp(aProperty, XRE_APP_FEATURES_DIR)) {
+    rv = GetAppDir()->Clone(getter_AddRefs(file));
+    if (NS_SUCCEEDED(rv))
+      rv = file->AppendNative(NS_LITERAL_CSTRING("features"));
+  }
+  else if (!strcmp(aProperty, XRE_ADDON_APP_DIR)) {
+    nsCOMPtr<nsIDirectoryServiceProvider> dirsvc(do_GetService("@mozilla.org/file/directory_service;1", &rv));
+    if (NS_FAILED(rv))
+      return rv;
+    bool unused;
+    rv = dirsvc->GetFile("XCurProcD", &unused, getter_AddRefs(file));
+  }
   else if (NS_SUCCEEDED(GetProfileStartupDir(getter_AddRefs(file)))) {
     // We need to allow component, xpt, and chrome registration to
     // occur prior to the profile-after-change notification.
@@ -644,15 +656,24 @@ nsXREDirProvider::LoadExtensionBundleDirectories()
                                NS_EXTENSION_LOCATION);
       LoadExtensionDirectories(parser, "ThemeDirs", mThemeDirectories,
                                NS_SKIN_LOCATION);
-#ifdef MOZ_BUILD_APP_IS_BROWSER
+/* non-Firefox applications that use overrides in their default theme should
+ * define AC_DEFINE(MOZ_SEPARATE_MANIFEST_FOR_THEME_OVERRIDES) in their
+ * configure.in */
+#if defined(MOZ_BUILD_APP_IS_BROWSER) || defined(MOZ_SEPARATE_MANIFEST_FOR_THEME_OVERRIDES)
     } else {
       // In safe mode, still load the default theme directory:
       nsCOMPtr<nsIFile> themeManifest;
       mXULAppDir->Clone(getter_AddRefs(themeManifest));
       themeManifest->AppendNative(NS_LITERAL_CSTRING("extensions"));
-      themeManifest->AppendNative(NS_LITERAL_CSTRING("{972ce4c6-7e08-4474-a285-3208198ce6fd}"));
-      themeManifest->AppendNative(NS_LITERAL_CSTRING("chrome.manifest"));
-      XRE_AddManifestLocation(NS_SKIN_LOCATION, themeManifest);
+      themeManifest->AppendNative(NS_LITERAL_CSTRING("{972ce4c6-7e08-4474-a285-3208198ce6fd}.xpi"));
+      bool exists = false;
+      if (NS_SUCCEEDED(themeManifest->Exists(&exists)) && exists) {
+        XRE_AddJarManifestLocation(NS_SKIN_LOCATION, themeManifest);
+      } else {
+        themeManifest->SetNativeLeafName(NS_LITERAL_CSTRING("{972ce4c6-7e08-4474-a285-3208198ce6fd}"));
+        themeManifest->AppendNative(NS_LITERAL_CSTRING("chrome.manifest"));
+        XRE_AddManifestLocation(NS_SKIN_LOCATION, themeManifest);
+      }
 #endif
     }
   }
@@ -895,6 +916,8 @@ nsXREDirProvider::DoStartup()
 void
 nsXREDirProvider::DoShutdown()
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
+
   if (mProfileNotified) {
     nsCOMPtr<nsIObserverService> obsSvc =
       mozilla::services::GetObserverService();

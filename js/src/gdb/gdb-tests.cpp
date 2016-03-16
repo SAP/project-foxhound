@@ -9,6 +9,7 @@
 #include "gdb-tests.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Initialization.h"
 
 using namespace JS;
 
@@ -17,7 +18,7 @@ const JSClass global_class = {
     "global", JSCLASS_GLOBAL_FLAGS,
     nullptr, nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr, nullptr,
-    nullptr, nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr,
     JS_GlobalObjectTraceHook
 };
 

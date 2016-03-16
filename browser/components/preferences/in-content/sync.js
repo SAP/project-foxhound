@@ -12,9 +12,6 @@ XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function () {
 XPCOMUtils.defineLazyModuleGetter(this, "fxAccounts",
   "resource://gre/modules/FxAccounts.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "fxaMigrator",
-  "resource://services-sync/FxaMigrator.jsm");
-
 const PAGE_NO_ACCOUNT = 0;
 const PAGE_HAS_ACCOUNT = 1;
 const PAGE_NEEDS_UPDATE = 2;
@@ -122,31 +119,31 @@ var gSyncPane = {
                   FxAccountsCommon.ONLOGIN_NOTIFICATION,
                   FxAccountsCommon.ON_PROFILE_CHANGE_NOTIFICATION,
                   ];
-    let migrateTopic = "fxa-migration:state-changed";
-
     // Add the observers now and remove them on unload
     //XXXzpao This should use Services.obs.* but Weave's Obs does nice handling
     //        of `this`. Fix in a followup. (bug 583347)
     topics.forEach(function (topic) {
       Weave.Svc.Obs.add(topic, this.updateWeavePrefs, this);
     }, this);
-    // The FxA migration observer is a special case.
-    Weave.Svc.Obs.add(migrateTopic, this.updateMigrationState, this);
 
     window.addEventListener("unload", function() {
       topics.forEach(function (topic) {
         Weave.Svc.Obs.remove(topic, this.updateWeavePrefs, this);
       }, gSyncPane);
-      Weave.Svc.Obs.remove(migrateTopic, gSyncPane.updateMigrationState, gSyncPane);
     }, false);
 
     XPCOMUtils.defineLazyGetter(this, '_stringBundle', () => {
       return Services.strings.createBundle("chrome://browser/locale/preferences/preferences.properties");
-    }),
+    });
 
     XPCOMUtils.defineLazyGetter(this, '_accountsStringBundle', () => {
       return Services.strings.createBundle("chrome://browser/locale/accounts.properties");
-    }),
+    });
+
+    let url = Services.prefs.getCharPref("identity.mobilepromo.android") + "sync-preferences";
+    document.getElementById("fxaMobilePromo-android").setAttribute("href", url);
+    url = Services.prefs.getCharPref("identity.mobilepromo.ios") + "sync-preferences";
+    document.getElementById("fxaMobilePromo-ios").setAttribute("href", url);
 
     this.updateWeavePrefs();
 
@@ -172,8 +169,11 @@ var gSyncPane = {
     document.getElementById("fxaSyncComputerName").blur();
   },
 
-  _focusChangeDeviceNameButton: function() {
-    document.getElementById("fxaChangeDeviceName").focus();
+  _focusAfterComputerNameTextbox: function() {
+    // Focus the most appropriate element that's *not* the "computer name" box.
+    Services.focus.moveFocus(window,
+                             document.getElementById("fxaSyncComputerName"),
+                             Services.focus.MOVEFOCUS_FORWARD, 0);
   },
 
   _updateComputerNameValue: function(save) {
@@ -190,11 +190,6 @@ var gSyncPane = {
     document.getElementById("syncStatusMessage").removeAttribute("message-type");
     document.getElementById("syncStatusMessageTitle").textContent = "";
     document.getElementById("syncStatusMessageDescription").textContent = "";
-    let learnMoreLink = document.getElementById("learnMoreLink");
-    if (learnMoreLink) {
-      learnMoreLink.parentNode.removeChild(learnMoreLink);
-    }
-    document.getElementById("sync-migration-buttons-deck").hidden = true;
   },
 
   _setupEventListeners: function() {
@@ -236,17 +231,21 @@ var gSyncPane = {
       this._focusComputerNameTextbox();
     });
     setEventListener("fxaCancelChangeDeviceName", "command", function () {
-      // We explicitly blur the textbox because of bug 1194032
+      // We explicitly blur the textbox because of bug 75324, then after
+      // changing the state of the buttons, force focus to whatever the focus
+      // manager thinks should be next (which on the mac, depends on an OSX
+      // keyboard access preference)
       this._blurComputerNameTextbox();
       this._toggleComputerNameControls(false);
       this._updateComputerNameValue(false);
-      this._focusChangeDeviceNameButton();
+      this._focusAfterComputerNameTextbox();
     });
     setEventListener("fxaSaveChangeDeviceName", "command", function () {
+      // Work around bug 75324 - see above.
       this._blurComputerNameTextbox();
       this._toggleComputerNameControls(false);
       this._updateComputerNameValue(true);
-      this._focusChangeDeviceNameButton();
+      this._focusAfterComputerNameTextbox();
     });
     setEventListener("unlinkDevice", "click", function () {
       gSyncPane.startOver(true);
@@ -292,20 +291,6 @@ var gSyncPane = {
     });
     setEventListener("tosPP-small-ToS", "click", gSyncPane.openToS);
     setEventListener("tosPP-small-PP", "click", gSyncPane.openPrivacyPolicy);
-    setEventListener("sync-migrate-upgrade", "click", function () {
-      let win = Services.wm.getMostRecentWindow("navigator:browser");
-      fxaMigrator.createFxAccount(win);
-    });
-    setEventListener("sync-migrate-unlink", "click", function () {
-      gSyncPane.startOverMigration();
-    });
-    setEventListener("sync-migrate-forget", "click", function () {
-      fxaMigrator.forgetFxAccount();
-    });
-    setEventListener("sync-migrate-resend", "click", function () {
-      let win = Services.wm.getMostRecentWindow("navigator:browser");
-      fxaMigrator.resendVerificationMail(win);
-    });
     setEventListener("fxaSyncComputerName", "keypress", function (e) {
       if (e.keyCode == KeyEvent.DOM_VK_RETURN) {
         document.getElementById("fxaSaveChangeDeviceName").click();
@@ -324,12 +309,6 @@ var gSyncPane = {
   },
 
   updateWeavePrefs: function () {
-    // ask the migration module to broadcast its current state (and nothing will
-    // happen if it's not loaded - which is good, as that means no migration
-    // is pending/necessary) - we don't want to suck that module in just to
-    // find there's nothing to do.
-    Services.obs.notifyObservers(null, "fxa-migration:state-request", null);
-
     let service = Components.classes["@mozilla.org/weave/service;1"]
                   .getService(Components.interfaces.nsISupports)
                   .wrappedJSObject;
@@ -406,13 +385,17 @@ var gSyncPane = {
             displayNameLabel.textContent = data.displayName;
           }
           if (data.avatar) {
-            // Make sure the image is available before displaying it,
-            // as we don't want to overwrite the default profile image
-            // with a broken/unavailable image
+            let bgImage = "url(\"" + data.avatar + "\")";
+            let profileImageElement = document.getElementById("fxaProfileImage");
+            profileImageElement.style.listStyleImage = bgImage;
+
             let img = new Image();
-            img.onload = () => {
-              let bgImage = "url('" + data.avatar + "')";
-              document.getElementById("fxaProfileImage").style.listStyleImage = bgImage;
+            img.onerror = () => {
+              // Clear the image if it has trouble loading. Since this callback is asynchronous
+              // we check to make sure the image is still the same before we clear it.
+              if (profileImageElement.style.listStyleImage === bgImage) {
+                profileImageElement.style.removeProperty("list-style-image");
+              }
             };
             img.src = data.avatar;
           }
@@ -442,83 +425,6 @@ var gSyncPane = {
       document.getElementById("syncComputerName").value = Weave.Service.clientsEngine.localName;
       document.getElementById("tosPP-normal").hidden = this._usingCustomServer;
     }
-  },
-
-  updateMigrationState: function(subject, state) {
-    this._closeSyncStatusMessageBox();
-    let selIndex;
-    let sb = this._accountsStringBundle;
-    switch (state) {
-      case fxaMigrator.STATE_USER_FXA: {
-        // There are 2 cases here - no email address means it is an offer on
-        // the first device (so the user is prompted to create an account).
-        // If there is an email address it is the "join the party" flow, so the
-        // user is prompted to sign in with the address they previously used.
-        let email = subject ? subject.QueryInterface(Components.interfaces.nsISupportsString).data : null;
-        let elt = document.getElementById("syncStatusMessageDescription");
-        elt.textContent = email ?
-                          sb.formatStringFromName("signInAfterUpgradeOnOtherDevice.description",
-                                                  [email], 1) :
-                          sb.GetStringFromName("needUserLong");
-
-        // The "Learn more" link.
-        if (!email) {
-          let learnMoreLink = document.createElement("label");
-          learnMoreLink.id = "learnMoreLink";
-          learnMoreLink.className = "text-link";
-          let { text, href } = fxaMigrator.learnMoreLink;
-          learnMoreLink.setAttribute("value", text);
-          learnMoreLink.href = href;
-          elt.parentNode.insertBefore(learnMoreLink, elt.nextSibling);
-        }
-
-        // The "upgrade" button.
-        let button = document.getElementById("sync-migrate-upgrade");
-        button.setAttribute("label",
-                            sb.GetStringFromName(email
-                                                 ? "signInAfterUpgradeOnOtherDevice.label"
-                                                 : "upgradeToFxA.label"));
-        button.setAttribute("accesskey",
-                            sb.GetStringFromName(email
-                                                 ? "signInAfterUpgradeOnOtherDevice.accessKey"
-                                                 : "upgradeToFxA.accessKey"));
-        // The "unlink" button - this is only shown for first migration
-        button = document.getElementById("sync-migrate-unlink");
-        if (email) {
-          button.hidden = true;
-        } else {
-          button.setAttribute("label", sb.GetStringFromName("unlinkMigration.label"));
-          button.setAttribute("accesskey", sb.GetStringFromName("unlinkMigration.accessKey"));
-        }
-        selIndex = 0;
-        break;
-      }
-      case fxaMigrator.STATE_USER_FXA_VERIFIED: {
-        let sb = this._accountsStringBundle;
-        let email = subject.QueryInterface(Components.interfaces.nsISupportsString).data;
-        let label = sb.formatStringFromName("needVerifiedUserLong", [email], 1);
-        let elt = document.getElementById("syncStatusMessageDescription");
-        elt.setAttribute("value", label);
-        // The "resend" button.
-        let button = document.getElementById("sync-migrate-resend");
-        button.setAttribute("label", sb.GetStringFromName("resendVerificationEmail.label"));
-        button.setAttribute("accesskey", sb.GetStringFromName("resendVerificationEmail.accessKey"));
-        // The "forget" button.
-        button = document.getElementById("sync-migrate-forget");
-        button.setAttribute("label", sb.GetStringFromName("forgetMigration.label"));
-        button.setAttribute("accesskey", sb.GetStringFromName("forgetMigration.accessKey"));
-        selIndex = 1;
-        break;
-      }
-      default:
-        if (state) { // |null| is expected, but everything else is not.
-          Cu.reportError("updateMigrationState has unknown state: " + state);
-        }
-        document.getElementById("sync-migration").hidden = true;
-        return;
-    }
-    document.getElementById("sync-migration-buttons-deck").selectedIndex = selIndex;
-    document.getElementById("syncStatusMessage").setAttribute("message-type", "migration");
   },
 
   // Called whenever one of the sync engine preferences is changed.
@@ -552,30 +458,6 @@ var gSyncPane = {
         return;
     }
 
-    Weave.Service.startOver();
-    this.updateWeavePrefs();
-  },
-
-  // When the "Unlink" button in the migration header is selected we display
-  // a slightly different message.
-  startOverMigration: function () {
-    let flags = Services.prompt.BUTTON_POS_0 * Services.prompt.BUTTON_TITLE_IS_STRING +
-                Services.prompt.BUTTON_POS_1 * Services.prompt.BUTTON_TITLE_CANCEL +
-                Services.prompt.BUTTON_POS_1_DEFAULT;
-    let sb = this._accountsStringBundle;
-    let buttonChoice =
-      Services.prompt.confirmEx(window,
-                                sb.GetStringFromName("unlinkVerificationTitle"),
-                                sb.GetStringFromName("unlinkVerificationDescription"),
-                                flags,
-                                sb.GetStringFromName("unlinkVerificationConfirm"),
-                                null, null, null, {});
-
-    // If the user selects cancel, just bail
-    if (buttonChoice == 1)
-      return;
-
-    fxaMigrator.recordTelemetry(fxaMigrator.TELEMETRY_UNLINKED);
     Weave.Service.startOver();
     this.updateWeavePrefs();
   },

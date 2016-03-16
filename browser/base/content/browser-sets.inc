@@ -82,7 +82,6 @@
     <command id="Browser:NextTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(1, true);" reserved="true"/>
     <command id="Browser:PrevTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(-1, true);" reserved="true"/>
     <command id="Browser:ShowAllTabs" oncommand="allTabs.open();"/>
-    <command id="Browser:ToggleTabView" oncommand="TabView.toggle();"/>
     <command id="cmd_fullZoomReduce"  oncommand="FullZoom.reduce()"/>
     <command id="cmd_fullZoomEnlarge" oncommand="FullZoom.enlarge()"/>
     <command id="cmd_fullZoomReset"   oncommand="FullZoom.reset()"/>
@@ -92,13 +91,13 @@
     <command id="cmd_gestureRotateEnd" oncommand="gGestureSupport.rotateEnd()"/>
     <command id="Browser:OpenLocation" oncommand="openLocation();"/>
     <command id="Browser:RestoreLastSession" oncommand="restoreLastSession();" disabled="true"/>
+    <command id="Browser:NewUserContextTab" oncommand="openNewUserContextTab(event.sourceEvent);" reserved="true"/>
 
     <command id="Tools:Search" oncommand="BrowserSearch.webSearch();"/>
     <command id="Tools:Downloads" oncommand="BrowserDownloadsUI();"/>
     <command id="Tools:DevToolbox" oncommand="gDevToolsBrowser.toggleToolboxCommand(gBrowser);"/>
     <command id="Tools:DevToolbar" oncommand="DeveloperToolbar.toggle();" disabled="true" hidden="true"/>
     <command id="Tools:DevToolbarFocus" oncommand="DeveloperToolbar.focusToggle();" disabled="true"/>
-    <command id="Tools:DevAppMgr" oncommand="gDevToolsBrowser.openAppManager(gBrowser);" disabled="true" hidden="true"/>
     <command id="Tools:WebIDE" oncommand="gDevToolsBrowser.openWebIDE();" disabled="true" hidden="true"/>
     <command id="Tools:BrowserToolbox" oncommand="BrowserToolboxProcess.init();" disabled="true" hidden="true"/>
     <command id="Tools:BrowserContentToolbox" oncommand="gDevToolsBrowser.openContentProcessToolbox();" disabled="true" hidden="true"/>
@@ -178,12 +177,17 @@
     <broadcaster id="isFrameImage"/>
     <broadcaster id="singleFeedMenuitemState" disabled="true"/>
     <broadcaster id="multipleFeedsMenuState" hidden="true"/>
-    <broadcaster id="tabviewGroupsNumber" groups="1"/>
-#ifdef MOZ_SERVICES_SYNC
+
+    <!-- Sync broadcasters -->
+    <!-- A broadcaster of a number of attributes suitable for "sync now" UI -
+        A 'syncstatus' attribute is set while actively syncing, and the label
+        attribute which changes from "sync now" to "syncing" etc. -->
+    <broadcaster id="sync-status"/>
+    <!-- broadcasters of the "hidden" attribute to reflect setup state for
+         menus -->
     <broadcaster id="sync-setup-state"/>
     <broadcaster id="sync-syncnow-state" hidden="true"/>
     <broadcaster id="sync-reauth-state" hidden="true"/>
-#endif
     <broadcaster id="workOfflineMenuitemState"/>
     <broadcaster id="socialSidebarBroadcaster" hidden="true"/>
 
@@ -198,9 +202,6 @@
                  type="checkbox" autocheck="false"
                  command="Tools:DevToolbar"
                  key="key_devToolbar"/>
-    <broadcaster id="devtoolsMenuBroadcaster_DevAppMgr"
-                 label="&devAppMgrMenu.label;"
-                 command="Tools:DevAppMgr"/>
     <broadcaster id="devtoolsMenuBroadcaster_webide"
                  label="&webide.label;"
                  command="Tools:WebIDE"
@@ -432,8 +433,6 @@
     <key id="key_showAllTabs" command="Browser:ShowAllTabs" keycode="VK_TAB" modifiers="control,shift"/>
 
     <key id="key_switchTextDirection" key="&bidiSwitchTextDirectionItem.commandkey;" command="cmd_switchTextDirection" modifiers="accel,shift" />
-
-    <key id="key_tabview" key="&tabView.commandkey;" command="Browser:ToggleTabView" modifiers="accel,shift"/>
 
     <key id="key_privatebrowsing" command="Tools:PrivateBrowsing" key="&privateBrowsingCmd.commandkey;" modifiers="accel,shift"/>
     <key id="key_sanitize" command="Tools:Sanitize" keycode="VK_DELETE" modifiers="accel,shift"/>

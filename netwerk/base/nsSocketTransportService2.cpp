@@ -8,7 +8,6 @@
 #include "nsSocketTransport2.h"
 #include "NetworkActivityMonitor.h"
 #include "mozilla/Preferences.h"
-#include "ClosingService.h"
 #endif // !defined(MOZILLA_XPCOMRT_API)
 #include "nsASocketHandler.h"
 #include "nsError.h"
@@ -18,6 +17,7 @@
 #include "nsIPrefBranch.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIObserverService.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Services.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PublicSSL.h"
@@ -30,11 +30,11 @@
 using namespace mozilla;
 using namespace mozilla::net;
 
-PRLogModuleInfo *gSocketTransportLog = nullptr;
-PRLogModuleInfo *gUDPSocketLog = nullptr;
+LazyLogModule gSocketTransportLog("nsSocketTransport");
+LazyLogModule gUDPSocketLog("UDPSocket");
 
 nsSocketTransportService *gSocketTransportService = nullptr;
-PRThread                 *gSocketThread           = nullptr;
+Atomic<PRThread*, Relaxed> gSocketThread;
 
 #define SEND_BUFFER_PREF "network.tcp.sendbuffer"
 #define KEEPALIVE_ENABLED_PREF "network.tcp.keepalive.enabled"
@@ -100,6 +100,8 @@ nsSocketTransportService::nsSocketTransportService()
     , mIdleCount(0)
     , mSentBytesCount(0)
     , mReceivedBytesCount(0)
+    , mEventQueueLock("nsSocketTransportService::mEventQueueLock")
+    , mPendingSocketQ(mEventQueueLock)
     , mSendBufferSize(0)
     , mKeepaliveIdleTimeS(600)
     , mKeepaliveRetryIntervalS(1)
@@ -110,9 +112,6 @@ nsSocketTransportService::nsSocketTransportService()
     , mTelemetryEnabledPref(false)
     , mProbedMaxCount(false)
 {
-    gSocketTransportLog = PR_NewLogModule("nsSocketTransport");
-    gUDPSocketLog = PR_NewLogModule("UDPSocket");
-
     NS_ASSERTION(NS_IsMainThread(), "wrong thread");
 
     PR_CallOnce(&gMaxCountInitOnce, DiscoverMaxCount);
@@ -198,7 +197,10 @@ nsSocketTransportService::NotifyWhenCanAttachSocket(nsIRunnable *event)
         return Dispatch(event, NS_DISPATCH_NORMAL);
     }
 
-    mPendingSocketQ.PutEvent(event);
+    {
+      MutexAutoLock lock(mEventQueueLock);
+      mPendingSocketQ.PutEvent(event, lock);
+    }
     return NS_OK;
 }
 
@@ -251,7 +253,11 @@ nsSocketTransportService::DetachSocket(SocketContext *listHead, SocketContext *s
     // notify the first element on the pending socket queue...
     //
     nsCOMPtr<nsIRunnable> event;
-    if (mPendingSocketQ.GetPendingEvent(getter_AddRefs(event))) {
+    {
+      MutexAutoLock lock(mEventQueueLock);
+      mPendingSocketQ.GetPendingEvent(getter_AddRefs(event), lock);
+    }
+    if (event) {
         // move event from pending queue to dispatch queue
         return Dispatch(event, NS_DISPATCH_NORMAL);
     }
@@ -552,13 +558,6 @@ nsSocketTransportService::Init()
         obsSvc->AddObserver(this, "last-pb-context-exited", false);
     }
 
-#if !defined(MOZILLA_XPCOMRT_API)
-    // Start the closing service. Actual PR_Close() will be carried out on
-    // a separate "closing" thread. Start the closing servicee here since this
-    // point is executed only once per session.
-    ClosingService::Start();
-#endif //!defined(MOZILLA_XPCOMRT_API)
-
     mInitialized = true;
     return NS_OK;
 }
@@ -609,7 +608,6 @@ nsSocketTransportService::Shutdown()
 
 #if !defined(MOZILLA_XPCOMRT_API)
     mozilla::net::NetworkActivityMonitor::Shutdown();
-    ClosingService::Shutdown();
 #endif // !defined(MOZILLA_XPCOMRT_API)
 
     mInitialized = false;
@@ -705,7 +703,7 @@ nsSocketTransportService::CreateRoutedTransport(const char **types,
     NS_ENSURE_TRUE(mInitialized, NS_ERROR_NOT_INITIALIZED);
     NS_ENSURE_TRUE(port >= 0 && port <= 0xFFFF, NS_ERROR_ILLEGAL_VALUE);
 
-    nsRefPtr<nsSocketTransport> trans = new nsSocketTransport();
+    RefPtr<nsSocketTransport> trans = new nsSocketTransport();
     nsresult rv = trans->Init(types, typeCount, host, port, hostRoute, portRoute, proxyInfo);
     if (NS_FAILED(rv)) {
         return rv;
@@ -733,7 +731,7 @@ nsSocketTransportService::CreateUnixDomainTransport(nsIFile *aPath,
     if (NS_FAILED(rv))
         return rv;
 
-    nsRefPtr<nsSocketTransport> trans = new nsSocketTransport();
+    RefPtr<nsSocketTransport> trans = new nsSocketTransport();
 
     rv = trans->InitWithFilename(path.get());
     if (NS_FAILED(rv))

@@ -30,9 +30,27 @@ static const char* kPrefTesting = "device.storage.testing";
 static const char* kPrefPromptTesting = "device.storage.prompt.testing";
 static const char* kPrefWritableName = "device.storage.writable.name";
 
+// file-watcher-notify comes from some process (but not the MTP Server)
+// to indicate that a file has changed. It eventually winds up in the
+// parent process, and then gets broadcast out to all child listeners
+// as a file-watcher-update and mtp-watcher-update.
+//
+// mtp-watcher-notify comes from the MTP Server whenever it detects a change
+// and this gets rebroadcast as file-watcher-update to the device storage
+// listeners.
+//
+// download-watcher-notify is treated similarly to file-watcher-notify,
+// and gets converted into file-watcher-update and mtp-watcher-update.
+//
+// We need to make sure that the MTP server doesn't get notified about
+// files which it told us it added, otherwise it confuses some clients
+// (like the Android-File-Transfer program which runs under OS X).
+
 static const char* kFileWatcherUpdate = "file-watcher-update";
+static const char* kMtpWatcherUpdate = "mtp-watcher-update";
 static const char* kDiskSpaceWatcher = "disk-space-watcher";
 static const char* kFileWatcherNotify = "file-watcher-notify";
+static const char* kMtpWatcherNotify = "mtp-watcher-notify";
 static const char* kDownloadWatcherNotify = "download-watcher-notify";
 
 StaticRefPtr<DeviceStorageStatics> DeviceStorageStatics::sInstance;
@@ -100,6 +118,7 @@ DeviceStorageStatics::Init()
   if (obs) {
     obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
     obs->AddObserver(this, kFileWatcherNotify, false);
+    obs->AddObserver(this, kMtpWatcherNotify, false);
     obs->AddObserver(this, kDownloadWatcherNotify, false);
   }
   DS_LOG_INFO("");
@@ -155,6 +174,13 @@ DeviceStorageStatics::InitDirs()
     NS_NewLocalFile(path, /* aFollowLinks */ true,
                     getter_AddRefs(mDirs[TYPE_SDCARD]));
   }
+#ifdef MOZ_B2GDROID
+  if (NS_SUCCEEDED(mozilla::AndroidBridge::GetExternalPublicDirectory(
+      NS_LITERAL_STRING(DEVICESTORAGE_APPS), path))) {
+    NS_NewLocalFile(path, /* aFollowLinks */ true,
+                    getter_AddRefs(mDirs[TYPE_APPS]));
+  }
+#endif
 
 #elif defined (XP_UNIX)
   dirService->Get(NS_UNIX_XDG_PICTURES_DIR,
@@ -189,8 +215,11 @@ DeviceStorageStatics::InitDirs()
   }
 #endif // !MOZ_WIDGET_ANDROID
 
+#ifndef MOZ_B2GDROID
   dirService->Get(NS_APP_USER_PROFILE_50_DIR, NS_GET_IID(nsIFile),
                   getter_AddRefs(mDirs[TYPE_APPS]));
+#endif
+
   if (mDirs[TYPE_APPS]) {
     mDirs[TYPE_APPS]->AppendRelativeNativePath(NS_LITERAL_CSTRING("webapps"));
   }
@@ -413,7 +442,7 @@ DeviceStorageStatics::AddListener(nsDOMDeviceStorage* aListener)
       NS_NewRunnableMethod(sInstance.get(), &DeviceStorageStatics::Register));
   }
 
-  nsRefPtr<ListenerWrapper> wrapper =
+  RefPtr<ListenerWrapper> wrapper =
     new ListenerWrapper(aListener);
   sInstance->mListeners.AppendElement(wrapper.forget());
 }
@@ -659,7 +688,7 @@ DeviceStorageStatics::Observe(nsISupports* aSubject,
      broadcast events from one child to another child in B2G.  (f.e., if one
      child decides to add a file, we want to be able to able to send a onchange
      notifications to every other child watching that device storage object).*/
-  nsRefPtr<DeviceStorageFile> dsf;
+  RefPtr<DeviceStorageFile> dsf;
   if (!strcmp(aTopic, kDownloadWatcherNotify)) {
     // aSubject will be an nsISupportsString with the native path to the file
     // in question.
@@ -704,7 +733,8 @@ DeviceStorageStatics::Observe(nsISupports* aSubject,
 #endif
     dsf = new DeviceStorageFile(NS_LITERAL_STRING(DEVICESTORAGE_SDCARD), volName, path);
 
-  } else if (!strcmp(aTopic, kFileWatcherNotify)) {
+  } else if (!strcmp(aTopic, kFileWatcherNotify) ||
+             !strcmp(aTopic, kMtpWatcherNotify)) {
     dsf = static_cast<DeviceStorageFile*>(aSubject);
   } else {
     DS_LOG_WARN("unhandled topic '%s'", aTopic);
@@ -741,7 +771,7 @@ DeviceStorageStatics::Observe(nsISupports* aSubject,
     };
 
     for (size_t i = 0; i < MOZ_ARRAY_LENGTH(kMediaTypes); i++) {
-      nsRefPtr<DeviceStorageFile> dsf2;
+      RefPtr<DeviceStorageFile> dsf2;
       if (typeChecker->Check(kMediaTypes[i], dsf->mPath)) {
         if (dsf->mStorageType.Equals(kMediaTypes[i])) {
           dsf2 = dsf;
@@ -754,6 +784,11 @@ DeviceStorageStatics::Observe(nsISupports* aSubject,
     }
   } else {
     obs->NotifyObservers(dsf, kFileWatcherUpdate, aData);
+  }
+  if (strcmp(aTopic, kMtpWatcherNotify)) {
+    // Only send mtp-watcher-updates out if the MTP Server wasn't the one
+    // telling us about the change.
+    obs->NotifyObservers(dsf, kMtpWatcherUpdate, aData);
   }
   return NS_OK;
 }
@@ -777,7 +812,7 @@ DeviceStorageStatics::ListenerWrapper::Equals(nsDOMDeviceStorage* aListener)
   mOwningThread->IsOnCurrentThread(&current);
   if (current) {
     // It is only safe to acquire the reference on the owning thread
-    nsRefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(mListener);
+    RefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(mListener);
     return listener.get() == aListener;
   }
   return false;
@@ -787,57 +822,57 @@ void
 DeviceStorageStatics::ListenerWrapper::OnFileWatcherUpdate(const nsCString& aData,
                                                                  DeviceStorageFile* aFile)
 {
-  nsRefPtr<ListenerWrapper> self = this;
+  RefPtr<ListenerWrapper> self = this;
   nsCString data = aData;
-  nsRefPtr<DeviceStorageFile> file = aFile;
+  RefPtr<DeviceStorageFile> file = aFile;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([self, data, file] () -> void {
-    nsRefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
+    RefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
     if (listener) {
       listener->OnFileWatcherUpdate(data, file);
     }
   });
-  mOwningThread->Dispatch(r, NS_DISPATCH_NORMAL);
+  mOwningThread->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
 
 void
 DeviceStorageStatics::ListenerWrapper::OnDiskSpaceWatcher(bool aLowDiskSpace)
 {
-  nsRefPtr<ListenerWrapper> self = this;
+  RefPtr<ListenerWrapper> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([self, aLowDiskSpace] () -> void {
-    nsRefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
+    RefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
     if (listener) {
       listener->OnDiskSpaceWatcher(aLowDiskSpace);
     }
   });
-  mOwningThread->Dispatch(r, NS_DISPATCH_NORMAL);
+  mOwningThread->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
 
 void
 DeviceStorageStatics::ListenerWrapper::OnWritableNameChanged()
 {
-  nsRefPtr<ListenerWrapper> self = this;
+  RefPtr<ListenerWrapper> self = this;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([self] () -> void {
-    nsRefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
+    RefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
     if (listener) {
       listener->OnWritableNameChanged();
     }
   });
-  mOwningThread->Dispatch(r, NS_DISPATCH_NORMAL);
+  mOwningThread->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
 
 #ifdef MOZ_WIDGET_GONK
 void
 DeviceStorageStatics::ListenerWrapper::OnVolumeStateChanged(nsIVolume* aVolume)
 {
-  nsRefPtr<ListenerWrapper> self = this;
+  RefPtr<ListenerWrapper> self = this;
   nsCOMPtr<nsIVolume> volume = aVolume;
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([self, volume] () -> void {
-    nsRefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
+    RefPtr<nsDOMDeviceStorage> listener = do_QueryReferent(self->mListener);
     if (listener) {
       listener->OnVolumeStateChanged(volume);
     }
   });
-  mOwningThread->Dispatch(r, NS_DISPATCH_NORMAL);
+  mOwningThread->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
 #endif
 

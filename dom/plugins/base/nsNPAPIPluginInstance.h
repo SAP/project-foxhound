@@ -121,6 +121,7 @@ public:
   nsresult GetJSContext(JSContext* *outContext);
   nsPluginInstanceOwner* GetOwner();
   void SetOwner(nsPluginInstanceOwner *aOwner);
+  void DidComposite();
 
   bool HasAudioChannelAgent() const
   {
@@ -224,7 +225,7 @@ public:
       mSurfaceTexture = nullptr;
     }
 
-    mozilla::RefPtr<mozilla::gl::AndroidSurfaceTexture> mSurfaceTexture;
+    RefPtr<mozilla::gl::AndroidSurfaceTexture> mSurfaceTexture;
     gfxRect mDimensions;
   };
 
@@ -292,6 +293,11 @@ public:
 
   void URLRedirectResponse(void* notifyData, NPBool allow);
 
+  NPError InitAsyncSurface(NPSize *size, NPImageFormat format,
+                           void *initData, NPAsyncSurface *surface);
+  NPError FinalizeAsyncSurface(NPAsyncSurface *surface);
+  void SetCurrentAsyncSurface(NPAsyncSurface *surface, NPRect *changed);
+
   // Called when the instance fails to instantiate beceause the Carbon
   // event model is not supported.
   void CarbonNPAPIFailure();
@@ -339,7 +345,7 @@ protected:
 
   friend class PluginEventRunnable;
 
-  nsTArray<nsRefPtr<PluginEventRunnable>> mPostedEvents;
+  nsTArray<RefPtr<PluginEventRunnable>> mPostedEvents;
   void PopPostedEvent(PluginEventRunnable* r);
   void OnSurfaceTextureFrameAvailable();
 
@@ -348,8 +354,8 @@ protected:
   bool mFullScreen;
   mozilla::gl::OriginPos mOriginPos;
 
-  mozilla::RefPtr<SharedPluginTexture> mContentTexture;
-  mozilla::RefPtr<mozilla::gl::AndroidSurfaceTexture> mContentSurface;
+  RefPtr<SharedPluginTexture> mContentTexture;
+  RefPtr<mozilla::gl::AndroidSurfaceTexture> mContentSurface;
 #endif
 
   enum {

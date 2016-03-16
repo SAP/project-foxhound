@@ -7,13 +7,14 @@ this.EXPORTED_SYMBOLS = [
   "ClientsRec"
 ];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://services-common/stringbundle.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://gre/modules/Services.jsm");
 
 const CLIENTS_TTL = 1814400; // 21 days
 const CLIENTS_TTL_REFRESH = 604800; // 7 days
@@ -49,7 +50,9 @@ ClientEngine.prototype = {
   _trackerObj: ClientsTracker,
 
   // Always sync client data as it controls other sync behavior
-  get enabled() true,
+  get enabled() {
+    return true;
+  },
 
   get lastRecordUpload() {
     return Svc.Prefs.get(this.name + ".lastRecordUpload", 0);
@@ -66,7 +69,8 @@ ClientEngine.prototype = {
       numClients: 1,
     };
 
-    for each (let {name, type} in this._store._remoteClients) {
+    for (let id in this._store._remoteClients) {
+      let {name, type} = this._store._remoteClients[id];
       stats.hasMobile = stats.hasMobile || type == "mobile";
       stats.names.push(name);
       stats.numClients++;
@@ -85,7 +89,8 @@ ClientEngine.prototype = {
 
     counts.set(this.localType, 1);
 
-    for each (let record in this._store._remoteClients) {
+    for (let id in this._store._remoteClients) {
+      let record = this._store._remoteClients[id];
       let type = record.type;
       if (!counts.has(type)) {
         counts.set(type, 0);
@@ -102,7 +107,9 @@ ClientEngine.prototype = {
     let localID = Svc.Prefs.get("client.GUID", "");
     return localID == "" ? this.localID = Utils.makeGUID() : localID;
   },
-  set localID(value) Svc.Prefs.set("client.GUID", value),
+  set localID(value) {
+    Svc.Prefs.set("client.GUID", value);
+  },
 
   get brandName() {
     let brand = new StringBundle("chrome://branding/locale/brand.properties");
@@ -116,10 +123,16 @@ ClientEngine.prototype = {
 
     return this.localName = Utils.getDefaultDeviceName();
   },
-  set localName(value) Svc.Prefs.set("client.name", value),
+  set localName(value) {
+    Svc.Prefs.set("client.name", value);
+  },
 
-  get localType() Svc.Prefs.get("client.type", "desktop"),
-  set localType(value) Svc.Prefs.set("client.type", value),
+  get localType() {
+    return Svc.Prefs.get("client.type", "desktop");
+  },
+  set localType(value) {
+    Svc.Prefs.set("client.type", value);
+  },
 
   isMobile: function isMobile(id) {
     if (this._store._remoteClients[id])
@@ -134,6 +147,26 @@ ClientEngine.prototype = {
       this.lastRecordUpload = Date.now() / 1000;
     }
     SyncEngine.prototype._syncStartup.call(this);
+  },
+
+  _syncFinish() {
+    // Record telemetry for our device types.
+    for (let [deviceType, count] of this.deviceTypes) {
+      let hid;
+      switch (deviceType) {
+        case "desktop":
+          hid = "WEAVE_DEVICE_COUNT_DESKTOP";
+          break;
+        case "mobile":
+          hid = "WEAVE_DEVICE_COUNT_MOBILE";
+          break;
+        default:
+          this._log.warn(`Unexpected deviceType "${deviceType}" recording device telemetry.`);
+          continue;
+      }
+      Services.telemetry.getHistogramById(hid).add(count);
+    }
+    SyncEngine.prototype._syncFinish.call(this);
   },
 
   // Always process incoming items because they might have commands
@@ -248,7 +281,11 @@ ClientEngine.prototype = {
       this.clearCommands();
 
       // Process each command in order.
-      for each (let {command, args} in commands) {
+      if (!commands) {
+        return true;
+      }
+      for (let key in commands) {
+        let {command, args} = commands[key];
         this._log.debug("Processing command: " + command + "(" + args + ")");
 
         let engines = [args[0]];

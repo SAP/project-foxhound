@@ -15,7 +15,10 @@
 #include "nsNetCID.h"
 #include <algorithm>
 
-extern PRLogModuleInfo* gFTPLog;
+using namespace mozilla;
+using namespace mozilla::net;
+
+extern LazyLogModule gFTPLog;
 #define LOG(args)         MOZ_LOG(gFTPLog, mozilla::LogLevel::Debug, args)
 #define LOG_INFO(args)  MOZ_LOG(gFTPLog, mozilla::LogLevel::Info, args)
 
@@ -46,7 +49,7 @@ nsFtpControlConnection::OnInputStreamReady(nsIAsyncInputStream *stream)
     // It's important that we null out mListener before calling one of its
     // methods as it may call WaitData, which would queue up another read.
 
-    nsRefPtr<nsFtpControlConnectionListener> listener;
+    RefPtr<nsFtpControlConnectionListener> listener;
     listener.swap(mListener);
 
     if (!listener)

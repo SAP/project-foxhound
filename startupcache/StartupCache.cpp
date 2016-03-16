@@ -305,7 +305,10 @@ GetBufferFromZipArchive(nsZipArchive *zip, bool doCRC, const char* id,
 nsresult
 StartupCache::GetBuffer(const char* id, char** outbuf, uint32_t* length) 
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
+
   NS_ASSERTION(NS_IsMainThread(), "Startup cache only available on main thread");
+
   WaitOnWriteThread();
   if (!mStartupWriteInitiated) {
     CacheEntry* entry; 
@@ -323,7 +326,7 @@ StartupCache::GetBuffer(const char* id, char** outbuf, uint32_t* length)
   if (NS_SUCCEEDED(rv))
     return rv;
 
-  nsRefPtr<nsZipArchive> omnijar = mozilla::Omnijar::GetReader(mozilla::Omnijar::APP);
+  RefPtr<nsZipArchive> omnijar = mozilla::Omnijar::GetReader(mozilla::Omnijar::APP);
   // no need to checksum omnijarred entries
   rv = GetBufferFromZipArchive(omnijar, false, id, outbuf, length);
   if (NS_SUCCEEDED(rv))

@@ -30,6 +30,7 @@ enum MediaSourceEnum {
     "microphone",
     "audioCapture",
     "other"
+    // If values are added, adjust n_values in Histograms.json (2 places)
 };
 
 typedef (long or ConstrainLongRange) ConstrainLong;
@@ -49,6 +50,10 @@ dictionary MediaTrackConstraintSet {
     long long browserWindow;
     boolean scrollWithPage;
     ConstrainDOMString deviceId;
+    ConstrainLong viewportOffsetX;
+    ConstrainLong viewportOffsetY;
+    ConstrainLong viewportWidth;
+    ConstrainLong viewportHeight;
 };
 
 dictionary MediaTrackConstraints : MediaTrackConstraintSet {

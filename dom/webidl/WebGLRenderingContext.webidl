@@ -45,24 +45,38 @@ dictionary WebGLContextAttributes {
     boolean failIfMajorPerformanceCaveat = false;
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLBuffer {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLFramebuffer {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLProgram {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLRenderbuffer {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLShader {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLTexture {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLUniformLocation {
 };
 
@@ -70,18 +84,24 @@ interface WebGLUniformLocation {
 interface WebGLVertexArrayObjectOES {
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLActiveInfo {
     readonly attribute GLint size;
     readonly attribute GLenum type;
     readonly attribute DOMString name;
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLShaderPrecisionFormat {
     readonly attribute GLint rangeMin;
     readonly attribute GLint rangeMax;
     readonly attribute GLint precision;
 };
 
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface WebGLRenderingContext {
 
     /* ClearBufferMask */
@@ -504,7 +524,7 @@ interface WebGLRenderingContext {
     const GLenum BROWSER_DEFAULT_WEBGL          = 0x9244;
 
     // The canvas might actually be null in some cases, apparently.
-    readonly attribute HTMLCanvasElement? canvas;
+    readonly attribute (HTMLCanvasElement or OffscreenCanvas)? canvas;
     readonly attribute GLsizei drawingBufferWidth;
     readonly attribute GLsizei drawingBufferHeight;
 
@@ -533,8 +553,10 @@ interface WebGLRenderingContext {
     void bufferData(GLenum target, GLsizeiptr size, GLenum usage);
     void bufferData(GLenum target, ArrayBufferView data, GLenum usage);
     void bufferData(GLenum target, ArrayBuffer? data, GLenum usage);
+    void bufferData(GLenum target, SharedArrayBuffer data, GLenum usage);
     void bufferSubData(GLenum target, GLintptr offset, ArrayBufferView data);
     void bufferSubData(GLenum target, GLintptr offset, ArrayBuffer? data);
+    void bufferSubData(GLenum target, GLintptr offset, SharedArrayBuffer data);
 
     [WebGLHandlesContextLoss] GLenum checkFramebufferStatus(GLenum target);
     void clear(GLbitfield mask);
@@ -670,11 +692,12 @@ interface WebGLRenderingContext {
     void stencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum zpass);
 
 
-    [Throws]
+    // Overloads must share [Throws].
+    [Throws] // Can't actually throw.
     void texImage2D(GLenum target, GLint level, GLenum internalformat,
                     GLsizei width, GLsizei height, GLint border, GLenum format,
                     GLenum type, ArrayBufferView? pixels);
-    [Throws]
+    [Throws] // Can't actually throw.
     void texImage2D(GLenum target, GLint level, GLenum internalformat,
                     GLenum format, GLenum type, ImageData? pixels);
     [Throws]
@@ -690,11 +713,11 @@ interface WebGLRenderingContext {
     void texParameterf(GLenum target, GLenum pname, GLfloat param);
     void texParameteri(GLenum target, GLenum pname, GLint param);
 
-    [Throws]
+    [Throws] // Can't actually throw.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
-                       GLsizei width, GLsizei height,
-                       GLenum format, GLenum type, ArrayBufferView? pixels);
-    [Throws]
+                       GLsizei width, GLsizei height, GLenum format, GLenum type,
+                       ArrayBufferView? pixels);
+    [Throws] // Can't actually throw.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                        GLenum format, GLenum type, ImageData? pixels);
     [Throws]
@@ -764,6 +787,14 @@ interface WebGLRenderingContext {
                              GLboolean normalized, GLsizei stride, GLintptr offset);
 
     void viewport(GLint x, GLint y, GLsizei width, GLsizei height);
+};
+
+// For OffscreenCanvas
+// Reference: https://wiki.whatwg.org/wiki/OffscreenCanvas
+[Exposed=(Window,Worker)]
+partial interface WebGLRenderingContext {
+  [Func="mozilla::dom::OffscreenCanvas::PrefEnabled"]
+  void commit();
 };
 
 /*[Constructor(DOMString type, optional WebGLContextEventInit eventInit)]

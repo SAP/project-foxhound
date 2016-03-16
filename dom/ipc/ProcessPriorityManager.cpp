@@ -28,6 +28,10 @@
 #include "nsComponentManagerUtils.h"
 #include "nsCRT.h"
 
+using namespace mozilla;
+using namespace mozilla::dom;
+using namespace mozilla::hal;
+
 #ifdef XP_WIN
 #include <process.h>
 #define getpid _getpid
@@ -69,12 +73,10 @@
        NameWithComma().get(), \
        static_cast<uint64_t>(ChildID()), Pid(), ##__VA_ARGS__)
 #else
-  static PRLogModuleInfo*
+  static LogModule*
   GetPPMLog()
   {
-    static PRLogModuleInfo *sLog;
-    if (!sLog)
-      sLog = PR_NewLogModule("ProcessPriorityManager");
+    static LazyLogModule sLog("ProcessPriorityManager");
     return sLog;
   }
 #  define LOG(fmt, ...) \
@@ -86,10 +88,6 @@
             NameWithComma().get(), \
             static_cast<uint64_t>(ChildID()), Pid(), ##__VA_ARGS__))
 #endif
-
-using namespace mozilla;
-using namespace mozilla::dom;
-using namespace mozilla::hal;
 
 namespace {
 
@@ -233,7 +231,7 @@ private:
   void ObserveContentParentDestroyed(nsISupports* aSubject);
   void ObserveScreenStateChanged(const char16_t* aData);
 
-  nsDataHashtable<nsUint64HashKey, nsRefPtr<ParticularProcessPriorityManager> >
+  nsDataHashtable<nsUint64HashKey, RefPtr<ParticularProcessPriorityManager> >
     mParticularManagers;
 
   /** True if the main process is holding a high-priority wakelock */
@@ -346,6 +344,7 @@ public:
 private:
   static uint32_t sBackgroundPerceivableGracePeriodMS;
   static uint32_t sBackgroundGracePeriodMS;
+  static uint32_t sMemoryPressureGracePeriodMS;
 
   void FireTestOnlyObserverNotification(
     const char* aTopic,
@@ -370,6 +369,7 @@ private:
   nsAutoCString mNameWithComma;
 
   nsCOMPtr<nsITimer> mResetPriorityTimer;
+  nsCOMPtr<nsITimer> mMemoryPressureTimer;
 };
 
 /* static */ bool ProcessPriorityManagerImpl::sInitialized = false;
@@ -382,6 +382,7 @@ private:
   ProcessPriorityManagerImpl::sSingleton;
 /* static */ uint32_t ParticularProcessPriorityManager::sBackgroundPerceivableGracePeriodMS = 0;
 /* static */ uint32_t ParticularProcessPriorityManager::sBackgroundGracePeriodMS = 0;
+/* static */ uint32_t ParticularProcessPriorityManager::sMemoryPressureGracePeriodMS = 0;
 
 NS_IMPL_ISUPPORTS(ProcessPriorityManagerImpl,
                   nsIObserver,
@@ -535,7 +536,7 @@ ProcessPriorityManagerImpl::GetParticularProcessPriorityManager(
   }
 #endif
 
-  nsRefPtr<ParticularProcessPriorityManager> pppm;
+  RefPtr<ParticularProcessPriorityManager> pppm;
   uint64_t cpId = aContentParent->ChildID();
   mParticularManagers.Get(cpId, &pppm);
   if (!pppm) {
@@ -556,7 +557,7 @@ ProcessPriorityManagerImpl::SetProcessPriority(ContentParent* aContentParent,
                                                uint32_t aLRU)
 {
   MOZ_ASSERT(aContentParent);
-  nsRefPtr<ParticularProcessPriorityManager> pppm =
+  RefPtr<ParticularProcessPriorityManager> pppm =
     GetParticularProcessPriorityManager(aContentParent);
   if (pppm) {
     pppm->SetPriorityNow(aPriority, aLRU);
@@ -570,7 +571,7 @@ ProcessPriorityManagerImpl::ObserveContentParentCreated(
   // Do nothing; it's sufficient to get the PPPM.  But assign to nsRefPtr so we
   // don't leak the already_AddRefed object.
   nsCOMPtr<nsIContentParent> cp = do_QueryInterface(aContentParent);
-  nsRefPtr<ParticularProcessPriorityManager> pppm =
+  RefPtr<ParticularProcessPriorityManager> pppm =
     GetParticularProcessPriorityManager(cp->AsContentParent());
 }
 
@@ -584,7 +585,7 @@ ProcessPriorityManagerImpl::ObserveContentParentDestroyed(nsISupports* aSubject)
   props->GetPropertyAsUint64(NS_LITERAL_STRING("childID"), &childID);
   NS_ENSURE_TRUE_VOID(childID != CONTENT_PROCESS_ID_UNKNOWN);
 
-  nsRefPtr<ParticularProcessPriorityManager> pppm;
+  RefPtr<ParticularProcessPriorityManager> pppm;
   mParticularManagers.Get(childID, &pppm);
   if (pppm) {
     // Unconditionally remove the manager from the pools
@@ -595,30 +596,8 @@ ProcessPriorityManagerImpl::ObserveContentParentDestroyed(nsISupports* aSubject)
 
     mParticularManagers.Remove(childID);
 
-    if (mHighPriorityChildIDs.Contains(childID)) {
-      mHighPriorityChildIDs.RemoveEntry(childID);
-    }
+    mHighPriorityChildIDs.RemoveEntry(childID);
   }
-}
-
-static PLDHashOperator
-FreezeParticularProcessPriorityManagers(
-  const uint64_t& aKey,
-  nsRefPtr<ParticularProcessPriorityManager> aValue,
-  void* aUserData)
-{
-  aValue->Freeze();
-  return PL_DHASH_NEXT;
-}
-
-static PLDHashOperator
-UnfreezeParticularProcessPriorityManagers(
-  const uint64_t& aKey,
-  nsRefPtr<ParticularProcessPriorityManager> aValue,
-  void* aUserData)
-{
-  aValue->Unfreeze();
-  return PL_DHASH_NEXT;
 }
 
 void
@@ -626,12 +605,14 @@ ProcessPriorityManagerImpl::ObserveScreenStateChanged(const char16_t* aData)
 {
   if (NS_LITERAL_STRING("on").Equals(aData)) {
     sFrozen = false;
-    mParticularManagers.EnumerateRead(
-      &UnfreezeParticularProcessPriorityManagers, nullptr);
+    for (auto iter = mParticularManagers.Iter(); !iter.Done(); iter.Next()) {
+      iter.UserData()->Unfreeze();
+    }
   } else {
     sFrozen = true;
-    mParticularManagers.EnumerateRead(
-      &FreezeParticularProcessPriorityManagers, nullptr);
+    for (auto iter = mParticularManagers.Iter(); !iter.Done(); iter.Next()) {
+      iter.UserData()->Freeze();
+    }
   }
 }
 
@@ -721,6 +702,8 @@ ParticularProcessPriorityManager::StaticInit()
                                "dom.ipc.processPriorityManager.backgroundPerceivableGracePeriodMS");
   Preferences::AddUintVarCache(&sBackgroundGracePeriodMS,
                                "dom.ipc.processPriorityManager.backgroundGracePeriodMS");
+  Preferences::AddUintVarCache(&sMemoryPressureGracePeriodMS,
+                               "dom.ipc.processPriorityManager.memoryPressureGracePeriodMS");
 }
 
 void
@@ -1034,20 +1017,31 @@ ParticularProcessPriorityManager::ScheduleResetPriority(TimeoutPref aTimeoutPref
 NS_IMETHODIMP
 ParticularProcessPriorityManager::Notify(nsITimer* aTimer)
 {
-  LOGP("Reset priority timer callback; about to ResetPriorityNow.");
-  ResetPriorityNow();
-  mResetPriorityTimer = nullptr;
-  return NS_OK;
+  if (mResetPriorityTimer == aTimer) {
+    LOGP("Reset priority timer callback; about to ResetPriorityNow.");
+    ResetPriorityNow();
+    mResetPriorityTimer = nullptr;
+    return NS_OK;
+  }
+
+  if (mContentParent && mMemoryPressureTimer == aTimer) {
+    Unused << mContentParent->SendFlushMemory(NS_LITERAL_STRING("lowering-priority"));
+    mMemoryPressureTimer = nullptr;
+    return NS_OK;
+  }
+
+  NS_WARNING("Unexpected timer!");
+  return NS_ERROR_INVALID_POINTER;
 }
 
 bool
 ParticularProcessPriorityManager::HasAppType(const char* aAppType)
 {
-  const InfallibleTArray<PBrowserParent*>& browsers =
+  const ManagedContainer<PBrowserParent>& browsers =
     mContentParent->ManagedPBrowserParent();
-  for (uint32_t i = 0; i < browsers.Length(); i++) {
+  for (auto iter = browsers.ConstIter(); !iter.Done(); iter.Next()) {
     nsAutoString appType;
-    TabParent::GetFrom(browsers[i])->GetAppType(appType);
+    TabParent::GetFrom(iter.Get()->GetKey())->GetAppType(appType);
     if (appType.EqualsASCII(aAppType)) {
       return true;
     }
@@ -1059,10 +1053,10 @@ ParticularProcessPriorityManager::HasAppType(const char* aAppType)
 bool
 ParticularProcessPriorityManager::IsExpectingSystemMessage()
 {
-  const InfallibleTArray<PBrowserParent*>& browsers =
+  const ManagedContainer<PBrowserParent>& browsers =
     mContentParent->ManagedPBrowserParent();
-  for (uint32_t i = 0; i < browsers.Length(); i++) {
-    TabParent* tp = TabParent::GetFrom(browsers[i]);
+  for (auto iter = browsers.ConstIter(); !iter.Done(); iter.Next()) {
+    TabParent* tp = TabParent::GetFrom(iter.Get()->GetKey());
     nsCOMPtr<nsIMozBrowserFrame> bf = do_QueryInterface(tp->GetOwnerElement());
     if (!bf) {
       continue;
@@ -1091,10 +1085,10 @@ ParticularProcessPriorityManager::ComputePriority()
   }
 
   bool isVisible = false;
-  const InfallibleTArray<PBrowserParent*>& browsers =
+  const ManagedContainer<PBrowserParent>& browsers =
     mContentParent->ManagedPBrowserParent();
-  for (uint32_t i = 0; i < browsers.Length(); i++) {
-    if (TabParent::GetFrom(browsers[i])->IsVisible()) {
+  for (auto iter = browsers.ConstIter(); !iter.Done(); iter.Next()) {
+    if (TabParent::GetFrom(iter.Get()->GetKey())->IsVisible()) {
       isVisible = true;
       break;
     }
@@ -1111,8 +1105,8 @@ ParticularProcessPriorityManager::ComputePriority()
     return PROCESS_PRIORITY_BACKGROUND_PERCEIVABLE;
   }
 
-  nsRefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
-  if (service->ProcessContentOrNormalChannelIsActive(ChildID())) {
+  RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
+  if (service && service->ProcessContentOrNormalChannelIsActive(ChildID())) {
     return PROCESS_PRIORITY_BACKGROUND_PERCEIVABLE;
   }
 
@@ -1161,11 +1155,19 @@ ParticularProcessPriorityManager::SetPriorityNow(ProcessPriority aPriority,
     ProcessPriorityManagerImpl::GetSingleton()->
       NotifyProcessPriorityChanged(this, oldPriority);
 
-    unused << mContentParent->SendNotifyProcessPriorityChanged(mPriority);
-  }
+    Unused << mContentParent->SendNotifyProcessPriorityChanged(mPriority);
 
-  if (aPriority < PROCESS_PRIORITY_FOREGROUND) {
-    unused << mContentParent->SendFlushMemory(NS_LITERAL_STRING("lowering-priority"));
+    if (mMemoryPressureTimer) {
+      mMemoryPressureTimer->Cancel();
+      mMemoryPressureTimer = nullptr;
+    }
+
+    if (aPriority < PROCESS_PRIORITY_FOREGROUND) {
+      mMemoryPressureTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
+      mMemoryPressureTimer->InitWithCallback(this,
+                                             sMemoryPressureGracePeriodMS,
+                                             nsITimer::TYPE_ONE_SHOT);
+    }
   }
 
   FireTestOnlyObserverNotification("process-priority-set",
@@ -1379,7 +1381,7 @@ ProcessLRUPool::CalculateLRULevel(uint32_t aLRU)
   // (End of buffer)
 
   int exp;
-  unused << frexp(static_cast<double>(aLRU), &exp);
+  Unused << frexp(static_cast<double>(aLRU), &exp);
   uint32_t level = std::max(exp - 1, 0);
 
   return std::min(mLRUPoolLevels - 1, level);

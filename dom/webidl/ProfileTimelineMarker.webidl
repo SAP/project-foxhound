@@ -15,7 +15,7 @@ dictionary ProfileTimelineStackFrame {
   DOMString functionDisplayName;
   object? parent = null;
   object? asyncParent = null;
-  object? asyncCause = null;
+  DOMString asyncCause;
 };
 
 dictionary ProfileTimelineLayerRect {
@@ -25,20 +25,42 @@ dictionary ProfileTimelineLayerRect {
   long height = 0;
 };
 
+enum ProfileTimelineWorkerOperationType {
+  "serializeDataOffMainThread",
+  "serializeDataOnMainThread",
+  "deserializeDataOffMainThread",
+  "deserializeDataOnMainThread",
+};
+
 dictionary ProfileTimelineMarker {
   DOMString name = "";
   DOMHighResTimeStamp start = 0;
   DOMHighResTimeStamp end = 0;
   object? stack = null;
+
+  unsigned short processType;
+  boolean isOffMainThread;
+
   /* For ConsoleTime, Timestamp and Javascript markers.  */
   DOMString causeName;
+
   /* For ConsoleTime markers.  */
   object? endStack = null;
+
   /* For DOMEvent markers.  */
   DOMString type;
   unsigned short eventPhase;
+
+  /* For document::DOMContentLoaded and document::Load markers. Using this
+   * instead of the `start` and `end` timestamps is strongly discouraged. */
+  unsigned long long unixTime; // in microseconds
+
   /* For Paint markers.  */
   sequence<ProfileTimelineLayerRect> rectangles;
+
   /* For Style markers. */
   DOMString restyleHint;
+
+  /* For Worker markers. */
+  ProfileTimelineWorkerOperationType workerOperation;
 };

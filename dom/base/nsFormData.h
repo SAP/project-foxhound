@@ -37,13 +37,12 @@ private:
 
   typedef mozilla::dom::Blob Blob;
   typedef mozilla::dom::File File;
+  typedef mozilla::dom::OwningFileOrUSVString OwningFileOrUSVString;
 
   struct FormDataTuple
   {
     nsString name;
-    nsString stringValue;
-    nsRefPtr<File> fileValue;
-    bool valueIsFile;
+    OwningFileOrUSVString value;
   };
 
   // Returns the FormDataTuple to modify. This may be null, in which case
@@ -53,26 +52,12 @@ private:
 
   void SetNameValuePair(FormDataTuple* aData,
                         const nsAString& aName,
-                        const nsAString& aValue)
-  {
-    MOZ_ASSERT(aData);
-    aData->name = aName;
-    aData->stringValue = aValue;
-    aData->valueIsFile = false;
-  }
+                        const nsAString& aValue);
 
   void SetNameFilePair(FormDataTuple* aData,
                        const nsAString& aName,
-                       File* aFile)
-  {
-    MOZ_ASSERT(aData);
-    aData->name = aName;
-    aData->fileValue = aFile;
-    aData->valueIsFile = true;
-  }
+                       File* aFile);
 
-  void ExtractValue(const FormDataTuple& aTuple,
-                    mozilla::dom::OwningFileOrUSVString* aOutValue);
 public:
   explicit nsFormData(nsISupports* aOwner = nullptr);
 
@@ -96,16 +81,24 @@ public:
   Constructor(const mozilla::dom::GlobalObject& aGlobal,
               const mozilla::dom::Optional<mozilla::dom::NonNull<mozilla::dom::HTMLFormElement> >& aFormElement,
               mozilla::ErrorResult& aRv);
-  void Append(const nsAString& aName, const nsAString& aValue);
+  void Append(const nsAString& aName, const nsAString& aValue,
+              mozilla::ErrorResult& aRv);
   void Append(const nsAString& aName, Blob& aBlob,
-              const mozilla::dom::Optional<nsAString>& aFilename);
+              const mozilla::dom::Optional<nsAString>& aFilename,
+              mozilla::ErrorResult& aRv);
   void Delete(const nsAString& aName);
-  void Get(const nsAString& aName, mozilla::dom::Nullable<mozilla::dom::OwningFileOrUSVString>& aOutValue);
-  void GetAll(const nsAString& aName, nsTArray<mozilla::dom::OwningFileOrUSVString>& aValues);
+  void Get(const nsAString& aName, mozilla::dom::Nullable<OwningFileOrUSVString>& aOutValue);
+  void GetAll(const nsAString& aName, nsTArray<OwningFileOrUSVString>& aValues);
   bool Has(const nsAString& aName);
   void Set(const nsAString& aName, Blob& aBlob,
-           const mozilla::dom::Optional<nsAString>& aFilename);
-  void Set(const nsAString& aName, const nsAString& aValue);
+           const mozilla::dom::Optional<nsAString>& aFilename,
+           mozilla::ErrorResult& aRv);
+  void Set(const nsAString& aName, const nsAString& aValue,
+           mozilla::ErrorResult& aRv);
+
+  uint32_t GetIterableLength() const;
+  const nsAString& GetKeyAtIndex(uint32_t aIndex) const;
+  const OwningFileOrUSVString& GetValueAtIndex(uint32_t aIndex) const;
 
   // nsFormSubmission
   virtual nsresult GetEncodedSubmission(nsIURI* aURI,
@@ -120,9 +113,9 @@ public:
   virtual nsresult AddNameFilePair(const nsAString& aName,
                                    File* aFile) override;
 
-  typedef bool (*FormDataEntryCallback)(const nsString& aName, bool aIsFile,
-                                        const nsString& aValue,
-                                        File* aFile, void* aClosure);
+  typedef bool (*FormDataEntryCallback)(const nsString& aName,
+                                        const OwningFileOrUSVString& aValue,
+                                        void* aClosure);
 
   uint32_t
   Length() const
@@ -137,8 +130,7 @@ public:
   {
     for (uint32_t i = 0; i < mFormData.Length(); ++i) {
       FormDataTuple& tuple = mFormData[i];
-      if (!aFunc(tuple.name, tuple.valueIsFile, tuple.stringValue,
-                 tuple.fileValue, aClosure)) {
+      if (!aFunc(tuple.name, tuple.value, aClosure)) {
         return false;
       }
     }

@@ -1,19 +1,20 @@
-XPCOMUtils.defineLazyModuleGetter(this, "NewTabURL",
-                                  "resource:///modules/NewTabURL.jsm");
+/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set sts=2 sw=2 et tw=80: */
+"use strict";
+
+XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
+                                   "@mozilla.org/browser/aboutnewtab-service;1",
+                                   "nsIAboutNewTabService");
 
 Cu.import("resource://gre/modules/ExtensionUtils.jsm");
 var {
   EventManager,
-  ignoreEvent,
   runSafe,
 } = ExtensionUtils;
 
-extensions.registerAPI((extension, context) => {
+extensions.registerSchemaAPI("windows", null, (extension, context) => {
   return {
     windows: {
-      WINDOW_ID_CURRENT: WindowManager.WINDOW_ID_CURRENT,
-      WINDOW_ID_NONE: WindowManager.WINDOW_ID_NONE,
-
       onCreated:
       new WindowEventManager(context, "windows.onCreated", "domwindowopened", (fire, window) => {
         fire(WindowManager.convert(extension, window));
@@ -45,17 +46,11 @@ extensions.registerAPI((extension, context) => {
       },
 
       getCurrent: function(getInfo, callback) {
-        let window = context.contentWindow;
+        let window = currentWindow(context);
         runSafe(context, callback, WindowManager.convert(extension, window, getInfo));
       },
 
-      getLastFocused: function(...args) {
-        let getInfo, callback;
-        if (args.length == 1) {
-          callback = args[0];
-        } else {
-          [getInfo, callback] = args;
-        }
+      getLastFocused: function(getInfo, callback) {
         let window = WindowManager.topWindow;
         runSafe(context, callback, WindowManager.convert(extension, window, getInfo));
       },
@@ -65,7 +60,9 @@ extensions.registerAPI((extension, context) => {
         let windows = [];
         while (e.hasMoreElements()) {
           let window = e.getNext();
-          windows.push(WindowManager.convert(extension, window, getInfo));
+          if (window.document.readyState == "complete") {
+            windows.push(WindowManager.convert(extension, window, getInfo));
+          }
         }
         runSafe(context, callback, windows);
       },
@@ -78,7 +75,7 @@ extensions.registerAPI((extension, context) => {
         }
 
         let args = Cc["@mozilla.org/supports-array;1"].createInstance(Ci.nsISupportsArray);
-        if ("url" in createData) {
+        if (createData.url !== null) {
           if (Array.isArray(createData.url)) {
             let array = Cc["@mozilla.org/supports-array;1"].createInstance(Ci.nsISupportsArray);
             for (let url of createData.url) {
@@ -89,11 +86,11 @@ extensions.registerAPI((extension, context) => {
             args.AppendElement(mkstr(createData.url));
           }
         } else {
-          args.AppendElement(mkstr(NewTabURL.get()));
+          args.AppendElement(mkstr(aboutNewTabService.newTabURL));
         }
 
         let extraFeatures = "";
-        if ("incognito" in createData) {
+        if (createData.incognito !== null) {
           if (createData.incognito) {
             extraFeatures += ",private";
           } else {
@@ -104,14 +101,14 @@ extensions.registerAPI((extension, context) => {
         let window = Services.ww.openWindow(null, "chrome://browser/content/browser.xul", "_blank",
                                             "chrome,dialog=no,all" + extraFeatures, args);
 
-        if ("left" in createData || "top" in createData) {
-          let left = "left" in createData ? createData.left : window.screenX;
-          let top = "top" in createData ? createData.top : window.screenY;
+        if (createData.left !== null || createData.top !== null) {
+          let left = createData.left !== null ? createData.left : window.screenX;
+          let top = createData.top !== null ? createData.top : window.screenY;
           window.moveTo(left, top);
         }
-        if ("width" in createData || "height" in createData) {
-          let width = "width" in createData ? createData.width : window.outerWidth;
-          let height = "height" in createData ? createData.height : window.outerHeight;
+        if (createData.width !== null || createData.height !== null) {
+          let width = createData.width !== null ? createData.width : window.outerWidth;
+          let height = createData.height !== null ? createData.height : window.outerHeight;
           window.resizeTo(width, height);
         }
 

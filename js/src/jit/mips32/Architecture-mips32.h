@@ -12,23 +12,6 @@
 #include <limits.h>
 #include <stdint.h>
 
-#define REGISTERS_NAMES         \
-    { "zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", \
-      "t0",   "t1", "t2", "t3", "t4", "t5", "t6", "t7", \
-      "s0",   "s1", "s2", "s3", "s4", "s5", "s6", "s7", \
-      "t8",   "t9", "k0", "k1", "gp", "sp", "fp", "ra"};
-
-#define REGISTERS_ALLOCATABLE   14
-#define REGISTERS_ARGREGMASK    SharedArgRegMask
-
-#define REGISTERS_JSCALLMASK    \
-    (1 << Registers::a2) |      \
-    (1 << Registers::a3);
-
-#define REGISTERS_CALLMASK      \
-    (1 << Registers::v0) |      \
-    (1 << Registers::v1);  // used for double-size returns
-
 #include "jit/mips-shared/Architecture-mips-shared.h"
 
 #include "js/Utility.h"
@@ -59,20 +42,30 @@ static const uint32_t BAILOUT_TABLE_ENTRY_SIZE = 2 * sizeof(void*);
 
 // When using O32 ABI, floating-point coprocessor is 32 bit.
 // When using N32 ABI, floating-point coprocessor is 64 bit.
-class FloatRegisters : public BaseFloatRegisters
+class FloatRegisters : public FloatRegistersMIPSShared
 {
   public:
     static const char* GetName(uint32_t i) {
         MOZ_ASSERT(i < Total);
-        return GetName(Code(i % 32));
+        return FloatRegistersMIPSShared::GetName(Code(i % 32));
     }
 
     static Code FromName(const char* name);
 
     static const uint32_t Total = 64;
     static const uint32_t TotalDouble = 16;
+    static const uint32_t RegisterIdLimit = 32;
+    // Workarounds: On Loongson CPU-s the odd FP registers behave differently
+    // in fp-32 mode than standard MIPS.
+#if defined(_MIPS_ARCH_LOONGSON3A)
+    static const uint32_t TotalSingle = 16;
+    static const uint32_t Allocatable = 28;
+    static const SetType AllSingleMask = 0x55555555ULL;
+#else
     static const uint32_t TotalSingle = 32;
     static const uint32_t Allocatable = 42;
+    static const SetType AllSingleMask = (1ULL << 32) - 1;
+#endif
     // When saving all registers we only need to do is save double registers.
     static const uint32_t TotalPhys = 16;
 
@@ -80,7 +73,7 @@ class FloatRegisters : public BaseFloatRegisters
                   "SetType should be large enough to enumerate all registers.");
 
     static const SetType AllDoubleMask = 0x55555555ULL << 32;
-    static const SetType AllMask = AllDoubleMask | ((1ULL << 32) - 1);
+    static const SetType AllMask = AllDoubleMask | AllSingleMask;
 
     static const SetType NonVolatileDoubleMask =
         ((1ULL << FloatRegisters::f20) |
@@ -128,7 +121,7 @@ class FloatRegisters : public BaseFloatRegisters
     static const SetType AllocatableMask = AllMask & ~NonAllocatableMask;
 };
 
-class FloatRegister : public BaseFloatRegister
+class FloatRegister : public FloatRegisterMIPSShared
 {
   public:
     enum RegType {
@@ -173,8 +166,7 @@ class FloatRegister : public BaseFloatRegister
 
     FloatRegister asSingle() const { return singleOverlay(); }
     FloatRegister asDouble() const { return doubleOverlay(); }
-    FloatRegister asInt32x4() const { MOZ_CRASH("NYI"); }
-    FloatRegister asFloat32x4() const { MOZ_CRASH("NYI"); }
+    FloatRegister asSimd128() const { MOZ_CRASH("NYI"); }
 
     Code code() const {
         MOZ_ASSERT(!isInvalid());
@@ -182,7 +174,7 @@ class FloatRegister : public BaseFloatRegister
     }
     Encoding encoding() const {
         MOZ_ASSERT(!isInvalid());
-        return Code(code_  | (kind_ << 5));
+        return Encoding(code_);
     }
     uint32_t id() const {
         return code_;
@@ -195,10 +187,15 @@ class FloatRegister : public BaseFloatRegister
     // This is similar to FromCode except for double registers on O32.
     static FloatRegister FromIndex(uint32_t index, RegType kind) {
 #if defined(USES_O32_ABI)
+        // Only even FP registers are avaiable for Loongson on O32.
+# if defined(_MIPS_ARCH_LOONGSON3A)
+        return FloatRegister(index * 2, kind);
+# else
         if (kind == Double)
-            return FloatRegister(index * 2, RegType(kind));
+            return FloatRegister(index * 2, kind);
+# endif
 #endif
-        return FloatRegister(index, RegType(kind));
+        return FloatRegister(index, kind);
     }
 
     bool volatile_() const {

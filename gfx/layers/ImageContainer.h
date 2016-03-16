@@ -30,6 +30,7 @@
 #include "mozilla/gfx/2D.h"
 #include "nsDataHashtable.h"
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/UniquePtr.h"
 
 #ifndef XPCOM_GLUE_AVOID_NSPR
 /**
@@ -102,6 +103,7 @@ class ImageCompositeNotification;
 class ImageContainerChild;
 class PImageContainerChild;
 class SharedPlanarYCbCrImage;
+class PlanarYCbCrImage;
 class TextureClient;
 class CompositableClient;
 class GrallocImage;
@@ -113,6 +115,17 @@ struct ImageBackendData
 protected:
   ImageBackendData() {}
 };
+
+/* Forward declarations for Image derivatives. */
+class EGLImageImage;
+class SharedRGBImage;
+#ifdef MOZ_WIDGET_ANDROID
+class SurfaceTextureImage;
+#elif defined(XP_MACOSX)
+class MacIOSurfaceImage;
+#elif defined(MOZ_WIDGET_GONK)
+class OverlayImage;
+#endif
 
 /**
  * A class representing a buffer of pixel data. The data can be in one
@@ -160,10 +173,20 @@ public:
   virtual uint8_t* GetBuffer() { return nullptr; }
 
   /**
-  * For use with the CompositableClient only (so that the later can
-  * synchronize the TextureClient with the TextureHost).
-  */
+   * For use with the CompositableClient only (so that the later can
+   * synchronize the TextureClient with the TextureHost).
+   */
   virtual TextureClient* GetTextureClient(CompositableClient* aClient) { return nullptr; }
+
+  /* Access to derived classes. */
+  virtual EGLImageImage* AsEGLImageImage() { return nullptr; }
+#ifdef MOZ_WIDGET_ANDROID
+  virtual SurfaceTextureImage* AsSurfaceTextureImage() { return nullptr; }
+#endif
+#ifdef XP_MACOSX
+  virtual MacIOSurfaceImage* AsMacIOSurfaceImage() { return nullptr; }
+#endif
+  virtual PlanarYCbCrImage* AsPlanarYCbCrImage() { return nullptr; }
 
 protected:
   Image(void* aImplData, ImageFormat aFormat) :
@@ -203,9 +226,9 @@ class BufferRecycleBin final {
 public:
   BufferRecycleBin();
 
-  void RecycleBuffer(uint8_t* aBuffer, uint32_t aSize);
+  void RecycleBuffer(mozilla::UniquePtr<uint8_t[]> aBuffer, uint32_t aSize);
   // Returns a recycled buffer of the right size, or allocates a new buffer.
-  uint8_t* GetBuffer(uint32_t aSize);
+  mozilla::UniquePtr<uint8_t[]> GetBuffer(uint32_t aSize);
 
 private:
   typedef mozilla::Mutex Mutex;
@@ -221,7 +244,7 @@ private:
 
   // We should probably do something to prune this list on a timer so we don't
   // eat excess memory while video is paused...
-  nsTArray<nsAutoArrayPtr<uint8_t> > mRecycledBuffers;
+  nsTArray<mozilla::UniquePtr<uint8_t[]>> mRecycledBuffers;
   // This is only valid if mRecycledBuffers is non-empty
   uint32_t mRecycledBufferSize;
 };
@@ -251,10 +274,9 @@ protected:
   ImageFactory() {}
   virtual ~ImageFactory() {}
 
-  virtual already_AddRefed<Image> CreateImage(ImageFormat aFormat,
-                                              const gfx::IntSize &aScaleHint,
-                                              BufferRecycleBin *aRecycleBin);
-
+  virtual RefPtr<PlanarYCbCrImage> CreatePlanarYCbCrImage(
+    const gfx::IntSize& aScaleHint,
+    BufferRecycleBin *aRecycleBin);
 };
  
 /**
@@ -291,16 +313,14 @@ public:
   typedef uint32_t FrameID;
   typedef uint32_t ProducerID;
 
+  RefPtr<PlanarYCbCrImage> CreatePlanarYCbCrImage();
 
-  /**
-   * Create an Image in one of the given formats.
-   * Picks the "best" format from the list and creates an Image of that
-   * format.
-   * Returns null if this backend does not support any of the formats.
-   * Can be called on any thread. This method takes mReentrantMonitor
-   * when accessing thread-shared state.
-   */
-  B2G_ACL_EXPORT already_AddRefed<Image> CreateImage(ImageFormat aFormat);
+  // Factory methods for shared image types.
+  RefPtr<SharedRGBImage> CreateSharedRGBImage();
+
+#ifdef MOZ_WIDGET_GONK
+  RefPtr<OverlayImage> CreateOverlayImage();
+#endif
 
   struct NonOwningImage {
     explicit NonOwningImage(Image* aImage = nullptr,
@@ -397,7 +417,7 @@ public:
 
   struct OwningImage {
     OwningImage() : mFrameID(0), mProducerID(0), mComposited(false) {}
-    nsRefPtr<Image> mImage;
+    RefPtr<Image> mImage;
     TimeStamp mTimeStamp;
     FrameID mFrameID;
     ProducerID mProducerID;
@@ -528,11 +548,11 @@ private:
   // This is the image factory used by this container, layer managers using
   // this container can set an alternative image factory that will be used to
   // create images for this container.
-  nsRefPtr<ImageFactory> mImageFactory;
+  RefPtr<ImageFactory> mImageFactory;
 
   gfx::IntSize mScaleHint;
 
-  nsRefPtr<BufferRecycleBin> mRecycleBin;
+  RefPtr<BufferRecycleBin> mRecycleBin;
 
   // This member points to an ImageClient if this ImageContainer was
   // sucessfully created with ENABLE_ASYNC, or points to null otherwise.
@@ -650,13 +670,13 @@ public:
     MAX_DIMENSION = 16384
   };
 
-  virtual ~PlanarYCbCrImage();
+  virtual ~PlanarYCbCrImage() {}
 
   /**
    * This makes a copy of the data buffers, in order to support functioning
    * in all different layer managers.
    */
-  virtual bool SetData(const Data& aData);
+  virtual bool SetData(const Data& aData) = 0;
 
   /**
    * This doesn't make a copy of the data buffers. Can be used when mBuffer is
@@ -670,7 +690,7 @@ public:
   /**
    * This allocates and returns a new buffer
    */
-  virtual uint8_t* AllocateAndGetNewBuffer(uint32_t aSize);
+  virtual uint8_t* AllocateAndGetNewBuffer(uint32_t aSize) = 0;
 
   /**
    * Ask this Image to not convert YUV to RGB during SetData, and make
@@ -693,7 +713,7 @@ public:
 
   virtual gfx::IntSize GetSize() { return mSize; }
 
-  explicit PlanarYCbCrImage(BufferRecycleBin *aRecycleBin);
+  explicit PlanarYCbCrImage();
 
   virtual SharedPlanarYCbCrImage *AsSharedPlanarYCbCrImage() { return nullptr; }
 
@@ -701,8 +721,30 @@ public:
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
-  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
+  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const = 0;
 
+  PlanarYCbCrImage* AsPlanarYCbCrImage() { return this; }
+
+protected:
+  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface();
+
+  void SetOffscreenFormat(gfxImageFormat aFormat) { mOffscreenFormat = aFormat; }
+  gfxImageFormat GetOffscreenFormat();
+
+  Data mData;
+  gfx::IntSize mSize;
+  gfxImageFormat mOffscreenFormat;
+  nsCountedRef<nsMainThreadSourceSurfaceRef> mSourceSurface;
+  uint32_t mBufferSize;
+};
+
+class RecyclingPlanarYCbCrImage: public PlanarYCbCrImage {
+public:
+  explicit RecyclingPlanarYCbCrImage(BufferRecycleBin *aRecycleBin) : mRecycleBin(aRecycleBin) {}
+  virtual ~RecyclingPlanarYCbCrImage() override;
+  virtual bool SetData(const Data& aData) override;
+  virtual uint8_t* AllocateAndGetNewBuffer(uint32_t aSize) override;
+  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
 protected:
   /**
    * Make a copy of the YCbCr data into local storage.
@@ -713,23 +755,11 @@ protected:
 
   /**
    * Return a buffer to store image data in.
-   * The default implementation returns memory that can
-   * be freed wit delete[]
    */
-  virtual uint8_t* AllocateBuffer(uint32_t aSize);
+  mozilla::UniquePtr<uint8_t[]> AllocateBuffer(uint32_t aSize);
 
-  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface();
-
-  void SetOffscreenFormat(gfxImageFormat aFormat) { mOffscreenFormat = aFormat; }
-  gfxImageFormat GetOffscreenFormat();
-
-  nsAutoArrayPtr<uint8_t> mBuffer;
-  uint32_t mBufferSize;
-  Data mData;
-  gfx::IntSize mSize;
-  gfxImageFormat mOffscreenFormat;
-  nsCountedRef<nsMainThreadSourceSurfaceRef> mSourceSurface;
-  nsRefPtr<BufferRecycleBin> mRecycleBin;
+  RefPtr<BufferRecycleBin> mRecycleBin;
+  mozilla::UniquePtr<uint8_t[]> mBuffer;
 };
 
 /**
@@ -739,22 +769,6 @@ protected:
  */
 class CairoImage final : public Image {
 public:
-  struct Data {
-    gfx::IntSize mSize;
-    RefPtr<gfx::SourceSurface> mSourceSurface;
-  };
-
-  /**
-   * This can only be called on the main thread. It may add a reference
-   * to the surface (which will eventually be released on the main thread).
-   * The surface must not be modified after this call!!!
-   */
-  void SetData(const Data& aData)
-  {
-    mSize = aData.mSize;
-    mSourceSurface = aData.mSourceSurface;
-  }
-
   virtual already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override
   {
     RefPtr<gfx::SourceSurface> surface(mSourceSurface);
@@ -765,11 +779,11 @@ public:
 
   virtual gfx::IntSize GetSize() override { return mSize; }
 
-  CairoImage();
+  CairoImage(const gfx::IntSize& aSize, gfx::SourceSurface* aSourceSurface);
   ~CairoImage();
 
+private:
   gfx::IntSize mSize;
-
   nsCountedRef<nsMainThreadSourceSurfaceRef> mSourceSurface;
   nsDataHashtable<nsUint32HashKey, RefPtr<TextureClient> >  mTextureClients;
 };

@@ -368,7 +368,6 @@ nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
     // Allocate new buffer
     int32_t newLength = textLength - aCount + aLength;
     char16_t* to = new char16_t[newLength];
-    NS_ENSURE_TRUE(to, NS_ERROR_OUT_OF_MEMORY);
 
     // Copy over appropriate data
     if (aOffset) {
@@ -539,6 +538,8 @@ nsGenericDOMDataNode::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
     }
   }
 
+  bool hadParent = !!GetParentNode();
+
   // Set parent
   if (aParent) {
     if (!GetParent()) {
@@ -573,6 +574,9 @@ nsGenericDOMDataNode::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
   }
 
   nsNodeUtils::ParentChainChanged(this);
+  if (!hadParent && IsRootOfNativeAnonymousSubtree()) {
+    nsNodeUtils::NativeAnonymousChildListChange(this, false);
+  }
 
   UpdateEditableState(false);
 
@@ -595,6 +599,9 @@ nsGenericDOMDataNode::UnbindFromTree(bool aDeep, bool aNullParent)
     HasFlag(NODE_FORCE_XBL_BINDINGS) ? OwnerDoc() : GetComposedDoc();
 
   if (aNullParent) {
+    if (this->IsRootOfNativeAnonymousSubtree()) {
+      nsNodeUtils::NativeAnonymousChildListChange(this, true);
+    }
     if (GetParent()) {
       NS_RELEASE(mParent);
     } else {

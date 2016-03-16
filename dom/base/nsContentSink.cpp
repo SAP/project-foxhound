@@ -51,19 +51,16 @@
 #include "nsParserConstants.h"
 #include "nsSandboxFlags.h"
 
-static PRLogModuleInfo*
+using namespace mozilla;
+
+static LogModule*
 GetSriLog()
 {
-  static PRLogModuleInfo *gSriPRLog;
-  if (!gSriPRLog) {
-    gSriPRLog = PR_NewLogModule("SRI");
-  }
+  static LazyLogModule gSriPRLog("SRI");
   return gSriPRLog;
 }
 
-using namespace mozilla;
-
-PRLogModuleInfo* gContentSinkLogModuleInfo;
+LazyLogModule gContentSinkLogModuleInfo("nscontentsink");
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsContentSink)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsContentSink)
@@ -110,12 +107,6 @@ nsContentSink::nsContentSink()
   NS_ASSERTION(mInMonolithicContainer == 0, "What?");
   NS_ASSERTION(mInNotification == 0, "What?");
   NS_ASSERTION(!mDeferredLayoutStart, "What?");
-
-#ifdef DEBUG
-  if (!gContentSinkLogModuleInfo) {
-    gContentSinkLogModuleInfo = PR_NewLogModule("nscontentsink");
-  }
-#endif
 }
 
 nsContentSink::~nsContentSink()
@@ -963,8 +954,10 @@ nsContentSink::SelectDocAppCache(nsIApplicationCache *aLoadApplicationCache,
       nsAutoCString docURISpec, clientID;
       mDocumentURI->GetAsciiSpec(docURISpec);
       aLoadApplicationCache->GetClientID(clientID);
-      SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_CALLS,
-          ("Selection: assigning app cache %s to document %s", clientID.get(), docURISpec.get()));
+      SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+                 SINK_TRACE_CALLS,
+                ("Selection: assigning app cache %s to document %s",
+                  clientID.get(), docURISpec.get()));
 #endif
 
       rv = applicationCacheDocument->SetApplicationCache(aLoadApplicationCache);
@@ -1017,8 +1010,10 @@ nsContentSink::SelectDocAppCacheNoManifest(nsIApplicationCache *aLoadApplication
     nsAutoCString docURISpec, clientID;
     mDocumentURI->GetAsciiSpec(docURISpec);
     aLoadApplicationCache->GetClientID(clientID);
-    SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_CALLS,
-        ("Selection, no manifest: assigning app cache %s to document %s", clientID.get(), docURISpec.get()));
+    SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+               SINK_TRACE_CALLS,
+             ("Selection, no manifest: assigning app cache %s to document %s",
+               clientID.get(), docURISpec.get()));
 #endif
 
     rv = applicationCacheDocument->SetApplicationCache(aLoadApplicationCache);
@@ -1171,7 +1166,8 @@ nsContentSink::ProcessOfflineManifest(const nsAString& aManifestSpec)
 
     if (updateService) {
       nsCOMPtr<nsIDOMDocument> domdoc = do_QueryInterface(mDocument);
-      updateService->ScheduleOnDocumentStop(manifestURI, mDocumentURI, domdoc);
+      updateService->ScheduleOnDocumentStop(manifestURI, mDocumentURI,
+                                            mDocument->NodePrincipal(), domdoc);
     }
     break;
   }
@@ -1331,7 +1327,8 @@ nsContentSink::WillInterruptImpl()
 {
   nsresult result = NS_OK;
 
-  SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_CALLS,
+  SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+             SINK_TRACE_CALLS,
              ("nsContentSink::WillInterrupt: this=%p", this));
 #ifndef SINK_NO_INCREMENTAL
   if (WaitForPendingSheets()) {
@@ -1345,7 +1342,8 @@ nsContentSink::WillInterruptImpl()
       // If it's already time for us to have a notification
       if (diff > interval || mDroppedTimer) {
         mBackoffCount--;
-        SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_REFLOW,
+        SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+                   SINK_TRACE_REFLOW,
                    ("nsContentSink::WillInterrupt: flushing tags since we've "
                     "run out time; backoff count: %d", mBackoffCount));
         result = FlushTags();
@@ -1363,7 +1361,8 @@ nsContentSink::WillInterruptImpl()
         mNotificationTimer = do_CreateInstance("@mozilla.org/timer;1",
                                                &result);
         if (NS_SUCCEEDED(result)) {
-          SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_REFLOW,
+          SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+                     SINK_TRACE_REFLOW,
                      ("nsContentSink::WillInterrupt: setting up timer with "
                       "delay %d", delay));
 
@@ -1377,7 +1376,8 @@ nsContentSink::WillInterruptImpl()
       }
     }
   } else {
-    SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_REFLOW,
+    SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+               SINK_TRACE_REFLOW,
                ("nsContentSink::WillInterrupt: flushing tags "
                 "unconditionally"));
     result = FlushTags();
@@ -1392,7 +1392,8 @@ nsContentSink::WillInterruptImpl()
 nsresult
 nsContentSink::WillResumeImpl()
 {
-  SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_CALLS,
+  SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+             SINK_TRACE_CALLS,
              ("nsContentSink::WillResume: this=%p", this));
 
   mParsing = true;
@@ -1512,7 +1513,8 @@ nsContentSink::DidBuildModelImpl(bool aTerminated)
 
   // Cancel a timer if we had one out there
   if (mNotificationTimer) {
-    SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_REFLOW,
+    SINK_TRACE(static_cast<LogModule*>(gContentSinkLogModuleInfo),
+               SINK_TRACE_REFLOW,
                ("nsContentSink::DidBuildModel: canceling notification "
                 "timeout"));
     mNotificationTimer->Cancel();
@@ -1535,7 +1537,7 @@ nsContentSink::DropParserAndPerfHint(void)
   // actually broken.
   // Drop our reference to the parser to get rid of a circular
   // reference.
-  nsRefPtr<nsParserBase> kungFuDeathGrip(mParser.forget());
+  RefPtr<nsParserBase> kungFuDeathGrip(mParser.forget());
 
   if (mDynamicLowerValue) {
     // Reset the performance hint which was set to FALSE

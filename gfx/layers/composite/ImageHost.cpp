@@ -17,14 +17,9 @@
 #include "nsPrintfCString.h"            // for nsPrintfCString
 #include "nsString.h"                   // for nsAutoCString
 
-class nsIntRegion;
-
 #define BIAS_TIME_MS 1.0
 
 namespace mozilla {
-namespace gfx {
-class Matrix4x4;
-} // namespace gfx
 
 using namespace gfx;
 
@@ -316,6 +311,13 @@ ImageHost::Composite(LayerComposite* aLayer,
       return;
     }
 
+    DiagnosticFlags diagnosticFlags = DiagnosticFlags::IMAGE;
+    if (effect->mType == EffectTypes::NV12) {
+      diagnosticFlags |= DiagnosticFlags::NV12;
+    } else if (effect->mType == EffectTypes::YCBCR) {
+      diagnosticFlags |= DiagnosticFlags::YCBCR;
+    }
+
     if (mLastFrameID != img->mFrameID || mLastProducerID != img->mProducerID) {
       if (mImageContainer) {
         aLayer->GetLayerManager()->
@@ -363,12 +365,12 @@ ImageHost::Composite(LayerComposite* aLayer,
         }
         GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain,
                                   aOpacity, aTransform);
-        GetCompositor()->DrawDiagnostics(DiagnosticFlags::IMAGE | DiagnosticFlags::BIGIMAGE,
+        GetCompositor()->DrawDiagnostics(diagnosticFlags | DiagnosticFlags::BIGIMAGE,
                                          rect, aClipRect, aTransform, mFlashCounter);
       } while (it->NextTile());
       it->EndBigImageIteration();
       // layer border
-      GetCompositor()->DrawDiagnostics(DiagnosticFlags::IMAGE, pictureRect,
+      GetCompositor()->DrawDiagnostics(diagnosticFlags, pictureRect,
                                        aClipRect, aTransform, mFlashCounter);
     } else {
       IntSize textureSize = img->mTextureSource->GetSize();
@@ -384,7 +386,7 @@ ImageHost::Composite(LayerComposite* aLayer,
 
       GetCompositor()->DrawQuad(pictureRect, aClipRect, aEffectChain,
                                 aOpacity, aTransform);
-      GetCompositor()->DrawDiagnostics(DiagnosticFlags::IMAGE,
+      GetCompositor()->DrawDiagnostics(diagnosticFlags,
                                        pictureRect, aClipRect,
                                        aTransform, mFlashCounter);
     }

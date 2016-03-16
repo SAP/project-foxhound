@@ -13,7 +13,7 @@
 
 #include "mozilla/Logging.h"
 
-extern PRLogModuleInfo* GetPDMLog();
+extern mozilla::LogModule* GetPDMLog();
 #define LOG(...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
@@ -126,7 +126,7 @@ WMFAudioMFTManager::Init()
   // Setup input/output media types
   RefPtr<IMFMediaType> inputType;
 
-  hr = wmf::MFCreateMediaType(byRef(inputType));
+  hr = wmf::MFCreateMediaType(getter_AddRefs(inputType));
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   hr = inputType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
@@ -152,7 +152,7 @@ WMFAudioMFTManager::Init()
   }
 
   RefPtr<IMFMediaType> outputType;
-  hr = wmf::MFCreateMediaType(byRef(outputType));
+  hr = wmf::MFCreateMediaType(getter_AddRefs(outputType));
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   hr = outputType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
@@ -200,7 +200,7 @@ WMFAudioMFTManager::UpdateOutputType()
 
 HRESULT
 WMFAudioMFTManager::Output(int64_t aStreamOffset,
-                           nsRefPtr<MediaData>& aOutData)
+                           RefPtr<MediaData>& aOutData)
 {
   aOutData = nullptr;
   RefPtr<IMFSample> sample;
@@ -227,7 +227,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset,
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
   RefPtr<IMFMediaBuffer> buffer;
-  hr = sample->ConvertToContiguousBuffer(byRef(buffer));
+  hr = sample->ConvertToContiguousBuffer(getter_AddRefs(buffer));
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
   BYTE* data = nullptr; // Note: *data will be owned by the IMFMediaBuffer, we don't need to free it.
@@ -280,7 +280,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset,
     return S_OK;
   }
 
-  nsAutoArrayPtr<AudioDataValue> audioData(new AudioDataValue[numSamples]);
+  auto audioData = MakeUnique<AudioDataValue[]>(numSamples);
 
   int16_t* pcm = (int16_t*)data;
   for (int32_t i = 0; i < numSamples; ++i) {
@@ -302,7 +302,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset,
                            timestamp.ToMicroseconds(),
                            duration.ToMicroseconds(),
                            numFrames,
-                           audioData.forget(),
+                           Move(audioData),
                            mAudioChannels,
                            mAudioRate);
 

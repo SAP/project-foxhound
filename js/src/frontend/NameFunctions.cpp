@@ -366,7 +366,6 @@ class NameResolver
           case PNK_TRUE:
           case PNK_FALSE:
           case PNK_NULL:
-          case PNK_THIS:
           case PNK_ELISION:
           case PNK_GENERATOR:
           case PNK_NUMBER:
@@ -374,12 +373,13 @@ class NameResolver
           case PNK_CONTINUE:
           case PNK_DEBUGGER:
           case PNK_EXPORT_BATCH_SPEC:
-          case PNK_FRESHENBLOCK:
           case PNK_OBJECT_PROPERTY_NAME:
+          case PNK_POSHOLDER:
             MOZ_ASSERT(cur->isArity(PN_NULLARY));
             break;
 
           case PNK_TYPEOFNAME:
+          case PNK_SUPERBASE:
             MOZ_ASSERT(cur->isArity(PN_UNARY));
             MOZ_ASSERT(cur->pn_kid->isKind(PNK_NAME));
             MOZ_ASSERT(!cur->pn_kid->maybeExpr());
@@ -419,6 +419,7 @@ class NameResolver
 
           // Nodes with a single nullable child.
           case PNK_SEMI:
+          case PNK_THIS:
             MOZ_ASSERT(cur->isArity(PN_UNARY));
             if (ParseNode* expr = cur->pn_kid) {
                 if (!resolve(expr, prefix))
@@ -441,14 +442,15 @@ class NameResolver
           case PNK_MODASSIGN:
           case PNK_POWASSIGN:
           case PNK_COLON:
-          case PNK_CASE:
           case PNK_SHORTHAND:
           case PNK_DOWHILE:
           case PNK_WHILE:
           case PNK_SWITCH:
           case PNK_LETBLOCK:
           case PNK_FOR:
+          case PNK_COMPREHENSIONFOR:
           case PNK_CLASSMETHOD:
+          case PNK_SETTHIS:
             MOZ_ASSERT(cur->isArity(PN_BINARY));
             if (!resolve(cur->pn_left, prefix))
                 return false;
@@ -472,9 +474,12 @@ class NameResolver
                 return false;
             break;
 
-          case PNK_DEFAULT:
+          case PNK_CASE:
             MOZ_ASSERT(cur->isArity(PN_BINARY));
-            MOZ_ASSERT(!cur->pn_left);
+            if (ParseNode* caseExpr = cur->pn_left) {
+                if (!resolve(caseExpr, prefix))
+                    return false;
+            }
             if (!resolve(cur->pn_right, prefix))
                 return false;
             break;
@@ -500,18 +505,11 @@ class NameResolver
             break;
 
           case PNK_RETURN:
-            MOZ_ASSERT(cur->isArity(PN_BINARY));
-            if (ParseNode* returnValue = cur->pn_left) {
+            MOZ_ASSERT(cur->isArity(PN_UNARY));
+            if (ParseNode* returnValue = cur->pn_kid) {
                 if (!resolve(returnValue, prefix))
                     return false;
             }
-#ifdef DEBUG
-            if (ParseNode* internalAssignForGenerators = cur->pn_right) {
-                MOZ_ASSERT(internalAssignForGenerators->isKind(PNK_NAME));
-                MOZ_ASSERT(internalAssignForGenerators->pn_atom == cx->names().dotGenRVal);
-                MOZ_ASSERT(internalAssignForGenerators->isAssigned());
-            }
-#endif
             break;
 
           case PNK_IMPORT:
@@ -673,6 +671,7 @@ class NameResolver
           case PNK_COMMA:
           case PNK_NEW:
           case PNK_CALL:
+          case PNK_SUPERCALL:
           case PNK_GENEXP:
           case PNK_ARRAY:
           case PNK_STATEMENTLIST:
@@ -682,7 +681,6 @@ class NameResolver
           case PNK_VAR:
           case PNK_CONST:
           case PNK_LET:
-          case PNK_GLOBALCONST:
             MOZ_ASSERT(cur->isArity(PN_LIST));
             for (ParseNode* element = cur->pn_head; element; element = element->pn_next) {
                 if (!resolve(element, prefix))
@@ -690,13 +688,15 @@ class NameResolver
             }
             break;
 
-          // Array comprehension nodes are lists with a single child -- PNK_FOR for
-          // comprehensions, PNK_LEXICALSCOPE for legacy comprehensions.  Probably
-          // this should be a non-list eventually.
+          // Array comprehension nodes are lists with a single child:
+          // PNK_COMPREHENSIONFOR for comprehensions, PNK_LEXICALSCOPE for
+          // legacy comprehensions.  Probably this should be a non-list
+          // eventually.
           case PNK_ARRAYCOMP:
             MOZ_ASSERT(cur->isArity(PN_LIST));
             MOZ_ASSERT(cur->pn_count == 1);
-            MOZ_ASSERT(cur->pn_head->isKind(PNK_LEXICALSCOPE) || cur->pn_head->isKind(PNK_FOR));
+            MOZ_ASSERT(cur->pn_head->isKind(PNK_LEXICALSCOPE) ||
+                       cur->pn_head->isKind(PNK_COMPREHENSIONFOR));
             if (!resolve(cur->pn_head, prefix))
                 return false;
             break;
@@ -797,7 +797,6 @@ class NameResolver
           case PNK_EXPORT_SPEC: // by PNK_EXPORT_SPEC_LIST
           case PNK_CALLSITEOBJ: // by PNK_TAGGED_TEMPLATE
           case PNK_CLASSNAMES:  // by PNK_CLASS
-          case PNK_POSHOLDER:   // by PNK_NEWTARGET, PNK_DOT
             MOZ_CRASH("should have been handled by a parent node");
 
           case PNK_LIMIT: // invalid sentinel value

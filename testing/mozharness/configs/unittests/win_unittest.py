@@ -102,6 +102,7 @@ config = {
             "options": [
                 "--binary=%(binary_path)s",
                 "--testing-modules-dir=test/modules",
+                "--plugins-path=%(test_plugin_path)s",
                 "--symbols-path=%(symbols_path)s"
             ],
             "run_filename": "runtestlist.py",
@@ -159,6 +160,7 @@ config = {
         "plain-chunked": ["--chunk-by-dir=4"],
         "mochitest-push": ["--subsuite=push"],
         "chrome": ["--chrome"],
+        "chrome-chunked": ["--chrome", "--chunk-by-dir=4"],
         "browser-chrome": ["--browser-chrome"],
         "browser-chrome-chunked": ["--browser-chrome", "--chunk-by-runtime"],
         "browser-chrome-addons": ["--browser-chrome", "--chunk-by-runtime", "--tag=addons"],

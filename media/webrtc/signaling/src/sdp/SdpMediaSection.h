@@ -25,6 +25,8 @@ class SdpMediaSection
 {
 public:
   enum MediaType { kAudio, kVideo, kText, kApplication, kMessage };
+  // don't add to enum to avoid warnings about unhandled enum values
+  static const size_t kMediaTypes = static_cast<size_t>(kMessage) + 1;
 
   enum Protocol {
     kRtpAvp,            // RTP/AVP [RFC4566]
@@ -167,6 +169,7 @@ public:
   void SetSsrcs(const std::vector<uint32_t>& ssrcs,
                 const std::string& cname);
   void AddMsid(const std::string& id, const std::string& appdata);
+  const SdpRidAttributeList::Rid* FindRid(const std::string& id) const;
 
 private:
   size_t mLevel;

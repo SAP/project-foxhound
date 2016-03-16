@@ -9,6 +9,7 @@
 #include "Units.h"                      // for ScreenPoint
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/RefPtr.h"             // for already_AddRefed, RefCounted
+#include "mozilla/gfx/MatrixFwd.h"      // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for IntSize, Point
 #include "mozilla/gfx/Rect.h"           // for Rect, IntRect
 #include "mozilla/gfx/Types.h"          // for Float
@@ -106,12 +107,10 @@
  */
 
 class nsIWidget;
-class nsIntRegion;
 
 namespace mozilla {
 namespace gfx {
 class Matrix;
-class Matrix4x4;
 class DrawTarget;
 } // namespace gfx
 
@@ -370,12 +369,9 @@ public:
    */
   virtual void EndFrame() = 0;
 
-  virtual void SetDispAcquireFence(Layer* aLayer, nsIWidget* aWidget) {}
+  virtual void SetDispAcquireFence(Layer* aLayer, nsIWidget* aWidget);
 
-  virtual FenceHandle GetReleaseFence()
-  {
-    return FenceHandle();
-  }
+  virtual FenceHandle GetReleaseFence();
 
   /**
    * Post-rendering stuff if the rendering is done outside of this Compositor
@@ -463,16 +459,6 @@ public:
    */
   static void AssertOnCompositorThread();
 
-  /**
-   * We enforce that there can only be one Compositor backend type off the main
-   * thread at the same time. The backend type in use can be checked with this
-   * static method. We need this for creating texture clients/hosts etc. when we
-   * don't have a reference to a Compositor.
-   *
-   * This can only be used from the compositor thread!
-   */
-  static LayersBackend GetBackend();
-
   size_t GetFillRatio() {
     float fillRatio = 0;
     if (mPixelsFilled > 0 && mPixelsPerFrame > 0) {
@@ -522,11 +508,6 @@ protected:
   bool ShouldDrawDiagnostics(DiagnosticFlags);
 
   /**
-   * Set the global Compositor backend, checking that one isn't already set.
-   */
-  static void SetBackend(LayersBackend backend);
-
-  /**
    * Render time for the current composition.
    */
   TimeStamp mCompositionTime;
@@ -555,6 +536,10 @@ protected:
 
   RefPtr<gfx::DrawTarget> mTarget;
   gfx::IntRect mTargetBounds;
+
+#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
+  FenceHandle mReleaseFenceHandle;
+#endif
 
 private:
   static LayersBackend sBackend;

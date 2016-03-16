@@ -286,6 +286,7 @@ private:
     nsCString    mProxyHost;
     nsCString    mOriginHost;
     uint16_t     mPort;
+    nsCOMPtr<nsIProxyInfo> mProxyInfo;
     uint16_t     mProxyPort;
     uint16_t     mOriginPort;
     bool mProxyTransparent;
@@ -361,7 +362,7 @@ private:
     // A delete protector reference to gSocketTransportService held for lifetime
     // of 'this'. Sometimes used interchangably with gSocketTransportService due
     // to scoping.
-    nsRefPtr<nsSocketTransportService> mSocketTransportService;
+    RefPtr<nsSocketTransportService> mSocketTransportService;
 
     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
     nsCOMPtr<nsITransportEventSink> mEventSink;

@@ -13,6 +13,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "jsfriendapi.h"
 
 using mozilla::dom::AnyCallback;
 using mozilla::dom::DOMError;
@@ -192,12 +193,8 @@ DOMRequest::FireEvent(const nsAString& aType, bool aBubble, bool aCancelable)
     return;
   }
 
-  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
-  nsresult rv = event->InitEvent(aType, aBubble, aCancelable);
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
+  RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
+  event->InitEvent(aType, aBubble, aCancelable);
   event->SetTrusted(true);
 
   bool dummy;
@@ -210,14 +207,16 @@ DOMRequest::RootResultVal()
   mozilla::HoldJSObjects(this);
 }
 
-already_AddRefed<Promise>
+void
 DOMRequest::Then(JSContext* aCx, AnyCallback* aResolveCallback,
-                 AnyCallback* aRejectCallback, mozilla::ErrorResult& aRv)
+                 AnyCallback* aRejectCallback,
+                 JS::MutableHandle<JS::Value> aRetval,
+                 mozilla::ErrorResult& aRv)
 {
   if (!mPromise) {
     mPromise = Promise::Create(DOMEventTargetHelper::GetParentObject(), aRv);
     if (aRv.Failed()) {
-      return nullptr;
+      return;
     }
     if (mDone) {
       // Since we create mPromise lazily, it's possible that the DOMRequest object
@@ -232,7 +231,10 @@ DOMRequest::Then(JSContext* aCx, AnyCallback* aResolveCallback,
     }
   }
 
-  return mPromise->Then(aCx, aResolveCallback, aRejectCallback, aRv);
+  // Just use the global of the Promise itself as the callee global.
+  JS::Rooted<JSObject*> global(aCx, mPromise->GetWrapper());
+  global = js::GetGlobalForObjectCrossCompartment(global);
+  mPromise->Then(aCx, global, aResolveCallback, aRejectCallback, aRetval, aRv);
 }
 
 NS_IMPL_ISUPPORTS(DOMRequestService, nsIDOMRequestService)
@@ -314,7 +316,7 @@ public:
            const JS::Value& aResult)
   {
     mozilla::ThreadsafeAutoSafeJSContext cx;
-    nsRefPtr<FireSuccessAsyncTask> asyncTask = new FireSuccessAsyncTask(cx, aRequest, aResult);
+    RefPtr<FireSuccessAsyncTask> asyncTask = new FireSuccessAsyncTask(cx, aRequest, aResult);
     MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToCurrentThread(asyncTask)));
     return NS_OK;
   }
@@ -327,7 +329,7 @@ public:
   }
 
 private:
-  nsRefPtr<DOMRequest> mReq;
+  RefPtr<DOMRequest> mReq;
   JS::PersistentRooted<JS::Value> mResult;
 };
 
@@ -348,7 +350,7 @@ public:
     return NS_OK;
   }
 private:
-  nsRefPtr<DOMRequest> mReq;
+  RefPtr<DOMRequest> mReq;
   nsString mError;
 };
 

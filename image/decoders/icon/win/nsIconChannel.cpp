@@ -27,6 +27,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsProxyRelease.h"
 #include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
 
 #ifdef _WIN32_WINNT
 #undef _WIN32_WINNT
@@ -239,8 +240,11 @@ NS_IMETHODIMP
 nsIconChannel::AsyncOpen(nsIStreamListener* aListener,
                                        nsISupports* ctxt)
 {
-  MOZ_ASSERT(!mLoadInfo || mLoadInfo->GetSecurityMode() == 0 ||
-             mLoadInfo->GetInitialSecurityCheckDone(),
+  MOZ_ASSERT(!mLoadInfo ||
+             mLoadInfo->GetSecurityMode() == 0 ||
+             mLoadInfo->GetInitialSecurityCheckDone() ||
+             (mLoadInfo->GetSecurityMode() == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
+              nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
              "security flags in loadInfo but asyncOpen2() not called");
 
   nsCOMPtr<nsIInputStream> inStream;
@@ -575,11 +579,11 @@ nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool aNonBlocking)
                             colorHeader.biSizeImage +
                             maskHeader.biSizeImage;
 
-        char* buffer = new char[iconSize];
+        UniquePtr<char[]> buffer = MakeUnique<char[]>(iconSize);
         if (!buffer) {
           rv = NS_ERROR_OUT_OF_MEMORY;
         } else {
-          char* whereTo = buffer;
+          char* whereTo = buffer.get();
           int howMuch;
 
           // the data starts with an icon file header
@@ -640,7 +644,7 @@ nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool aNonBlocking)
                               iconSize, iconSize, aNonBlocking);
               if (NS_SUCCEEDED(rv)) {
                 uint32_t written;
-                rv = outStream->Write(buffer, iconSize, &written);
+                rv = outStream->Write(buffer.get(), iconSize, &written);
                 if (NS_SUCCEEDED(rv)) {
                   NS_ADDREF(*_retval = inStream);
                 }
@@ -650,7 +654,6 @@ nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool aNonBlocking)
             delete maskInfo;
           } // if we got mask bits
           delete colorInfo;
-          delete [] buffer;
         } // if we allocated the buffer
       } // if we got mask size
 

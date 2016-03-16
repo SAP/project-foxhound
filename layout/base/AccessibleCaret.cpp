@@ -236,6 +236,7 @@ AccessibleCaret::RemoveCaretElement(nsIDocument* aDocument)
   ErrorResult rv;
   aDocument->RemoveAnonymousContent(*mCaretElementHolder, rv);
   // It's OK rv is failed since nsCanvasFrame might not exists now.
+  rv.SuppressException();
 }
 
 AccessibleCaret::PositionChangedResult
@@ -253,6 +254,7 @@ AccessibleCaret::SetPosition(nsIFrame* aFrame, int32_t aOffset)
 
   if (imaginaryCaretRectInFrame.IsEmpty()) {
     // Don't bother to set the caret position since it's invisible.
+    mImaginaryCaretRect = nsRect();
     return PositionChangedResult::Invisible;
   }
 

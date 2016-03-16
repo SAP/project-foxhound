@@ -182,24 +182,17 @@ function verifyMutableFile(mutableFile1, file2)
   });
 }
 
-function grabFileUsageAndContinueHandler(usage, fileUsage)
+function grabFileUsageAndContinueHandler(request)
 {
-  testGenerator.send(fileUsage);
+  testGenerator.send(request.fileUsage);
 }
 
 function getUsage(usageHandler)
 {
+  let qms = SpecialPowers.Services.qms;
   let principal = SpecialPowers.wrap(document).nodePrincipal;
-  let appId, inBrowser;
-  if (principal.appId != Components.interfaces.nsIPrincipal.UNKNOWN_APP_ID &&
-      principal.appId != Components.interfaces.nsIPrincipal.NO_APP_ID) {
-    appId = principal.appId;
-    inBrowser = principal.isInBrowserElement;
-  }
-  SpecialPowers.getStorageUsageForURI(window.document.documentURI,
-                                      usageHandler,
-                                      appId,
-                                      inBrowser);
+  let cb = SpecialPowers.wrapCallback(usageHandler);
+  qms.getUsageForPrincipal(principal, cb);
 }
 
 function getFileId(file)

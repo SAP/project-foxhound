@@ -422,11 +422,8 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     Linker linker(masm);
     JitCode* code = linker.newCode<NoGC>(cx, OTHER_CODE);
 
-    if (returnAddrOut) {
-        CodeOffsetLabel returnLabel(returnOffset);
-        returnLabel.fixup(&masm);
-        *returnAddrOut = (void*) (code->raw() + returnLabel.offset());
-    }
+    if (returnAddrOut)
+        *returnAddrOut = (void*) (code->raw() + returnOffset);
 
     return code;
 }
@@ -783,6 +780,11 @@ JitCode*
 JitRuntime::generateDebugTrapHandler(JSContext* cx)
 {
     MacroAssembler masm(cx);
+#ifndef JS_USE_LINK_REGISTER
+    // The first value contains the return addres,
+    // which we pull into ICTailCallReg for tail calls.
+    masm.setFramePushed(sizeof(intptr_t));
+#endif
 
     Register scratch1 = r0;
     Register scratch2 = r1;

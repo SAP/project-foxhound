@@ -30,6 +30,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/TimeStamp.h"
 #include "js/HeapAPI.h"
+#include "GeckoProfiler.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 
@@ -480,13 +481,9 @@ nsPerformance::Timing()
 void
 nsPerformance::DispatchBufferFullEvent()
 {
-  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
+  RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
   // it bubbles, and it isn't cancelable
-  nsresult rv = event->InitEvent(NS_LITERAL_STRING("resourcetimingbufferfull"),
-                                 true, false);
-  if (NS_FAILED(rv)) {
-    return;
-  }
+  event->InitEvent(NS_LITERAL_STRING("resourcetimingbufferfull"), true, false);
   event->SetTrusted(true);
   DispatchDOMEvent(nullptr, event, nullptr, nullptr);
 }
@@ -503,12 +500,7 @@ nsPerformance::Navigation()
 DOMHighResTimeStamp
 nsPerformance::Now() const
 {
-  double nowTimeMs = GetDOMTiming()->TimeStampToDOMHighRes(TimeStamp::Now());
-  // Round down to the nearest 5us, because if the timer is too accurate people
-  // can do nasty timing attacks with it.  See similar code in the worker
-  // Performance implementation.
-  const double maxResolutionMs = 0.005;
-  return floor(nowTimeMs / maxResolutionMs) * maxResolutionMs;
+  return RoundTime(GetDOMTiming()->TimeStampToDOMHighRes(TimeStamp::Now()));
 }
 
 JSObject*
@@ -556,14 +548,33 @@ nsPerformance::AddEntry(nsIHttpChannel* channel,
     // The last argument is the "zero time" (offset). Since we don't want
     // any offset for the resource timing, this will be set to "0" - the
     // resource timing returns a relative timing (no offset).
-    nsRefPtr<nsPerformanceTiming> performanceTiming =
+    RefPtr<nsPerformanceTiming> performanceTiming =
         new nsPerformanceTiming(this, timedChannel, channel,
             0);
 
     // The PerformanceResourceTiming object will use the nsPerformanceTiming
     // object to get all the required timings.
-    nsRefPtr<PerformanceResourceTiming> performanceEntry =
+    RefPtr<PerformanceResourceTiming> performanceEntry =
       new PerformanceResourceTiming(performanceTiming, this, entryName);
+
+    nsAutoCString protocol;
+    channel->GetProtocolVersion(protocol);
+    performanceEntry->SetNextHopProtocol(NS_ConvertUTF8toUTF16(protocol));
+
+    uint64_t encodedBodySize = 0;
+    channel->GetEncodedBodySize(&encodedBodySize);
+    performanceEntry->SetEncodedBodySize(encodedBodySize);
+
+    uint64_t transferSize = 0;
+    channel->GetTransferSize(&transferSize);
+    performanceEntry->SetTransferSize(transferSize);
+
+    uint64_t decodedBodySize = 0;
+    channel->GetDecodedBodySize(&decodedBodySize);
+    if (decodedBodySize == 0) {
+      decodedBodySize = encodedBodySize;
+    }
+    performanceEntry->SetDecodedBodySize(decodedBodySize);
 
     // If the initiator type had no valid value, then set it to the default
     // ("other") value.
@@ -691,12 +702,12 @@ public:
   }
 };
 
-class PrefEnabledRunnable final : public WorkerMainThreadRunnable
+class PrefEnabledRunnable final : public WorkerCheckAPIExposureOnMainThreadRunnable
 {
 public:
   PrefEnabledRunnable(WorkerPrivate* aWorkerPrivate,
                       const nsCString& aPrefName)
-    : WorkerMainThreadRunnable(aWorkerPrivate)
+    : WorkerCheckAPIExposureOnMainThreadRunnable(aWorkerPrivate)
     , mEnabled(false)
     , mPrefName(aPrefName)
   { }
@@ -731,12 +742,10 @@ nsPerformance::IsEnabled(JSContext* aCx, JSObject* aGlobal)
   MOZ_ASSERT(workerPrivate);
   workerPrivate->AssertIsOnWorkerThread();
 
-  nsRefPtr<PrefEnabledRunnable> runnable =
+  RefPtr<PrefEnabledRunnable> runnable =
     new PrefEnabledRunnable(workerPrivate,
                             NS_LITERAL_CSTRING("dom.enable_user_timing"));
-  runnable->Dispatch(workerPrivate->GetJSContext());
-
-  return runnable->IsEnabled();
+  return runnable->Dispatch() && runnable->IsEnabled();
 }
 
 /* static */ bool
@@ -750,12 +759,11 @@ nsPerformance::IsObserverEnabled(JSContext* aCx, JSObject* aGlobal)
   MOZ_ASSERT(workerPrivate);
   workerPrivate->AssertIsOnWorkerThread();
 
-  nsRefPtr<PrefEnabledRunnable> runnable =
+  RefPtr<PrefEnabledRunnable> runnable =
     new PrefEnabledRunnable(workerPrivate,
                             NS_LITERAL_CSTRING("dom.enable_performance_observer"));
-  runnable->Dispatch(workerPrivate->GetJSContext());
 
-  return runnable->IsEnabled();
+  return runnable->Dispatch() && runnable->IsEnabled();
 }
 
 void
@@ -786,15 +794,16 @@ nsPerformance::InsertUserEntry(PerformanceEntry* aEntry)
   PerformanceBase::InsertUserEntry(aEntry);
 }
 
-DOMHighResTimeStamp
-nsPerformance::DeltaFromNavigationStart(DOMHighResTimeStamp aTime)
+TimeStamp
+nsPerformance::CreationTimeStamp() const
 {
-  // If the time we're trying to convert is equal to zero, it hasn't been set
-  // yet so just return 0.
-  if (aTime == 0) {
-    return 0;
-  }
-  return aTime - GetDOMTiming()->GetNavigationStart();
+  return GetDOMTiming()->GetNavigationStartTimeStamp();
+}
+
+DOMHighResTimeStamp
+nsPerformance::CreationTime() const
+{
+  return GetDOMTiming()->GetNavigationStart();
 }
 
 // PerformanceBase
@@ -829,7 +838,7 @@ PerformanceBase::~PerformanceBase()
 {}
 
 void
-PerformanceBase::GetEntries(nsTArray<nsRefPtr<PerformanceEntry>>& aRetval)
+PerformanceBase::GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval)
 {
   aRetval = mResourceEntries;
   aRetval.AppendElements(mUserEntries);
@@ -838,7 +847,7 @@ PerformanceBase::GetEntries(nsTArray<nsRefPtr<PerformanceEntry>>& aRetval)
 
 void
 PerformanceBase::GetEntriesByType(const nsAString& aEntryType,
-                                  nsTArray<nsRefPtr<PerformanceEntry>>& aRetval)
+                                  nsTArray<RefPtr<PerformanceEntry>>& aRetval)
 {
   if (aEntryType.EqualsLiteral("resource")) {
     aRetval = mResourceEntries;
@@ -860,7 +869,7 @@ PerformanceBase::GetEntriesByType(const nsAString& aEntryType,
 void
 PerformanceBase::GetEntriesByName(const nsAString& aName,
                                   const Optional<nsAString>& aEntryType,
-                                  nsTArray<nsRefPtr<PerformanceEntry>>& aRetval)
+                                  nsTArray<RefPtr<PerformanceEntry>>& aRetval)
 {
   aRetval.Clear();
 
@@ -906,6 +915,17 @@ PerformanceBase::ClearResourceTimings()
   mResourceEntries.Clear();
 }
 
+DOMHighResTimeStamp
+PerformanceBase::RoundTime(double aTime) const
+{
+  // Round down to the nearest 5us, because if the timer is too accurate people
+  // can do nasty timing attacks with it.  See similar code in the worker
+  // Performance implementation.
+  const double maxResolutionMs = 0.005;
+  return floor(aTime / maxResolutionMs) * maxResolutionMs;
+}
+
+
 void
 PerformanceBase::Mark(const nsAString& aName, ErrorResult& aRv)
 {
@@ -919,9 +939,13 @@ PerformanceBase::Mark(const nsAString& aName, ErrorResult& aRv)
     return;
   }
 
-  nsRefPtr<PerformanceMark> performanceMark =
+  RefPtr<PerformanceMark> performanceMark =
     new PerformanceMark(GetAsISupports(), aName, Now());
   InsertUserEntry(performanceMark);
+
+  if (profiler_is_active()) {
+    PROFILER_MARKER(NS_ConvertUTF16toUTF8(aName).get());
+  }
 }
 
 void
@@ -934,7 +958,7 @@ DOMHighResTimeStamp
 PerformanceBase::ResolveTimestampFromName(const nsAString& aName,
                                           ErrorResult& aRv)
 {
-  nsAutoTArray<nsRefPtr<PerformanceEntry>, 1> arr;
+  nsAutoTArray<RefPtr<PerformanceEntry>, 1> arr;
   DOMHighResTimeStamp ts;
   Optional<nsAString> typeParam;
   nsAutoString str;
@@ -956,7 +980,7 @@ PerformanceBase::ResolveTimestampFromName(const nsAString& aName,
     return 0;
   }
 
-  return DeltaFromNavigationStart(ts);
+  return ts - CreationTime();
 }
 
 void
@@ -1000,7 +1024,7 @@ PerformanceBase::Measure(const nsAString& aName,
     endTime = Now();
   }
 
-  nsRefPtr<PerformanceMeasure> performanceMeasure =
+  RefPtr<PerformanceMeasure> performanceMeasure =
     new PerformanceMeasure(GetAsISupports(), aName, startTime, endTime);
   InsertUserEntry(performanceMeasure);
 }
@@ -1036,7 +1060,7 @@ PerformanceBase::TimingNotification(PerformanceEntry* aEntry, const nsACString& 
   init.mEpoch = aEpoch;
   init.mOrigin = NS_ConvertUTF8toUTF16(aOwner.BeginReading());
 
-  nsRefPtr<PerformanceEntryEvent> perfEntryEvent =
+  RefPtr<PerformanceEntryEvent> perfEntryEvent =
     PerformanceEntryEvent::Constructor(this, NS_LITERAL_STRING("performanceentry"), init);
 
   nsCOMPtr<EventTarget> et = do_QueryInterface(GetOwner());
@@ -1134,7 +1158,7 @@ private:
   {
   }
 
-  nsRefPtr<PerformanceBase> mPerformance;
+  RefPtr<PerformanceBase> mPerformance;
 };
 
 void

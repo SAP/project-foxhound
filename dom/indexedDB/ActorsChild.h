@@ -20,6 +20,7 @@
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBTransactionChild.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBVersionChangeTransactionChild.h"
+#include "mozilla/dom/indexedDB/PBackgroundIndexedDBUtilsChild.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
@@ -44,6 +45,7 @@ class IDBFactory;
 class IDBMutableFile;
 class IDBOpenDBRequest;
 class IDBRequest;
+class IndexedDatabaseManager;
 class Key;
 class PermissionRequestChild;
 class PermissionRequestParent;
@@ -216,10 +218,7 @@ class BackgroundDatabaseChild;
 class BackgroundRequestChildBase
 {
 protected:
-  nsRefPtr<IDBRequest> mRequest;
-
-private:
-  bool mActorDestroyed;
+  RefPtr<IDBRequest> mRequest;
 
 public:
   void
@@ -230,28 +229,11 @@ public:
   { }
 #endif
 
-  IDBRequest*
-  GetDOMObject() const
-  {
-    AssertIsOnOwningThread();
-    return mRequest;
-  }
-
-  bool
-  IsActorDestroyed() const
-  {
-    AssertIsOnOwningThread();
-    return mActorDestroyed;
-  }
-
 protected:
   explicit BackgroundRequestChildBase(IDBRequest* aRequest);
 
   virtual
   ~BackgroundRequestChildBase();
-
-  void
-  NoteActorDestroyed();
 };
 
 class BackgroundFactoryRequestChild final
@@ -266,7 +248,7 @@ class BackgroundFactoryRequestChild final
   friend class PermissionRequestChild;
   friend class PermissionRequestParent;
 
-  nsRefPtr<IDBFactory> mFactory;
+  RefPtr<IDBFactory> mFactory;
   const uint64_t mRequestedVersion;
   const bool mIsDeleteOp;
 
@@ -315,7 +297,7 @@ class BackgroundDatabaseChild final
   friend class IDBDatabase;
 
   nsAutoPtr<DatabaseSpec> mSpec;
-  nsRefPtr<IDBDatabase> mTemporaryStrongDatabase;
+  RefPtr<IDBDatabase> mTemporaryStrongDatabase;
   BackgroundFactoryRequestChild* mOpenRequestActor;
   IDBDatabase* mDatabase;
 
@@ -446,7 +428,7 @@ class BackgroundDatabaseRequestChild final
   friend class BackgroundDatabaseChild;
   friend class IDBDatabase;
 
-  nsRefPtr<IDBDatabase> mDatabase;
+  RefPtr<IDBDatabase> mDatabase;
 
 private:
   // Only created by IDBDatabase.
@@ -476,7 +458,7 @@ class BackgroundTransactionBase
   // mTemporaryStrongTransaction is strong and is only valid until the end of
   // NoteComplete() member function or until the NoteActorDestroyed() member
   // function is called.
-  nsRefPtr<IDBTransaction> mTemporaryStrongTransaction;
+  RefPtr<IDBTransaction> mTemporaryStrongTransaction;
 
 protected:
   // mTransaction is weak and is valid until the NoteActorDestroyed() member
@@ -653,7 +635,7 @@ class BackgroundRequestChild final
   friend class BackgroundVersionChangeTransactionChild;
   friend class IDBTransaction;
 
-  nsRefPtr<IDBTransaction> mTransaction;
+  RefPtr<IDBTransaction> mTransaction;
 
 private:
   // Only created by IDBTransaction.
@@ -719,8 +701,8 @@ class BackgroundCursorChild final
   IDBCursor* mCursor;
 
   // These are only set while a request is in progress.
-  nsRefPtr<IDBRequest> mStrongRequest;
-  nsRefPtr<IDBCursor> mStrongCursor;
+  RefPtr<IDBRequest> mStrongRequest;
+  RefPtr<IDBCursor> mStrongCursor;
 
   Direction mDirection;
 
@@ -824,6 +806,45 @@ private:
   // Force callers to use SendContinueInternal.
   bool
   SendContinue(const CursorRequestParams& aParams, const Key& aKey) = delete;
+
+  bool
+  SendDeleteMe() = delete;
+};
+
+class BackgroundUtilsChild final
+  : public PBackgroundIndexedDBUtilsChild
+{
+  friend class mozilla::ipc::BackgroundChildImpl;
+  friend class IndexedDatabaseManager;
+
+  IndexedDatabaseManager* mManager;
+
+#ifdef DEBUG
+  nsCOMPtr<nsIEventTarget> mOwningThread;
+#endif
+
+public:
+  void
+  AssertIsOnOwningThread() const
+#ifdef DEBUG
+  ;
+#else
+  { }
+#endif
+
+private:
+  // Only created by IndexedDatabaseManager.
+  explicit BackgroundUtilsChild(IndexedDatabaseManager* aManager);
+
+  // Only destroyed by mozilla::ipc::BackgroundChildImpl.
+  ~BackgroundUtilsChild();
+
+  void
+  SendDeleteMeInternal();
+
+  // IPDL methods are only called by IPDL.
+  virtual void
+  ActorDestroy(ActorDestroyReason aWhy) override;
 
   bool
   SendDeleteMe() = delete;

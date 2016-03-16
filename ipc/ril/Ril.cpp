@@ -75,7 +75,7 @@ protected:
   void Close();
 
 private:
-  nsRefPtr<RilSocket> mSocket;
+  RefPtr<RilSocket> mSocket;
   nsCString mAddress;
   bool mShutdown;
 };
@@ -89,7 +89,6 @@ RilConsumer::ConnectWorkerToRIL(JSContext* aCx)
 {
   // Set up the postRILMessage on the function for worker -> RIL thread
   // communication.
-  NS_ASSERTION(!JS_IsRunning(aCx), "Are we being called somehow?");
   Rooted<JSObject*> workerGlobal(aCx, CurrentGlobalOrNull(aCx));
 
   // Check whether |postRILMessage| has been defined.  No one but this class
@@ -207,9 +206,18 @@ RilConsumer::Send(JSContext* aCx, const CallArgs& aArgs)
       return NS_ERROR_FAILURE;
     }
 
-    AutoCheckCannotGC nogc;
     size_t size = JS_GetTypedArrayByteLength(obj);
-    void* data = JS_GetArrayBufferViewData(obj, nogc);
+    bool isShared;
+    void* data;
+    {
+      AutoCheckCannotGC nogc;
+      data = JS_GetArrayBufferViewData(obj, &isShared, nogc);
+    }
+    if (isShared) {
+      JS_ReportError(
+        aCx, "Incorrect argument.  Shared memory not supported");
+      return NS_ERROR_FAILURE;
+    }
     raw = new UnixSocketRawData(data, size);
   } else {
     JS_ReportError(
@@ -242,8 +250,10 @@ RilConsumer::Receive(JSContext* aCx,
   }
   {
     AutoCheckCannotGC nogc;
-    memcpy(JS_GetArrayBufferViewData(array, nogc),
+    bool isShared;
+    memcpy(JS_GetArrayBufferViewData(array, &isShared, nogc),
            aBuffer->GetData(), aBuffer->GetSize());
+    MOZ_ASSERT(!isShared);      // Array was constructed above.
   }
 
   AutoValueArray<2> args(aCx);
@@ -385,13 +395,13 @@ public:
 
 private:
   unsigned int mClientId;
-  nsRefPtr<WorkerCrossThreadDispatcher> mDispatcher;
+  RefPtr<WorkerCrossThreadDispatcher> mDispatcher;
 };
 
 nsresult
 RilWorker::RegisterConsumer(unsigned int aClientId)
 {
-  nsRefPtr<RegisterConsumerTask> task = new RegisterConsumerTask(aClientId,
+  RefPtr<RegisterConsumerTask> task = new RegisterConsumerTask(aClientId,
                                                                  mDispatcher);
   if (!mDispatcher->PostTask(task)) {
     NS_WARNING("Failed to post register-consumer task.");
@@ -426,7 +436,7 @@ private:
 void
 RilWorker::UnregisterConsumer(unsigned int aClientId)
 {
-  nsRefPtr<UnregisterConsumerTask> task =
+  RefPtr<UnregisterConsumerTask> task =
     new UnregisterConsumerTask(aClientId);
 
   if (!mDispatcher->PostTask(task)) {

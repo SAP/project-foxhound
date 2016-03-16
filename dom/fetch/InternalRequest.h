@@ -10,6 +10,7 @@
 #include "mozilla/dom/HeadersBinding.h"
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/RequestBinding.h"
+#include "mozilla/LoadTainting.h"
 
 #include "nsIContentPolicy.h"
 #include "nsIInputStream.h"
@@ -43,7 +44,7 @@ namespace dom {
  * frame             | TYPE_INTERNAL_FRAME
  * hyperlink         |
  * iframe            | TYPE_INTERNAL_IFRAME
- * image             | TYPE_IMAGE
+ * image             | TYPE_INTERNAL_IMAGE, TYPE_INTERNAL_IMAGE_PRELOAD
  * imageset          | TYPE_IMAGESET
  * import            | Not supported by Gecko
  * internal          | TYPE_DOCUMENT, TYPE_XBL, TYPE_OTHER
@@ -53,10 +54,10 @@ namespace dom {
  * ping              | TYPE_PING
  * plugin            | TYPE_OBJECT_SUBREQUEST
  * prefetch          |
- * script            | TYPE_INTERNAL_SCRIPT
+ * script            | TYPE_INTERNAL_SCRIPT, TYPE_INTERNAL_SCRIPT_PRELOAD
  * sharedworker      | TYPE_INTERNAL_SHARED_WORKER
  * subresource       | Not supported by Gecko
- * style             | TYPE_STYLESHEET
+ * style             | TYPE_INTERNAL_STYLESHEET, TYPE_INTERNAL_STYLESHEET_PRELOAD
  * track             | TYPE_INTERNAL_TRACK
  * video             | TYPE_INTERNAL_VIDEO
  * worker            | TYPE_INTERNAL_WORKER
@@ -87,21 +88,13 @@ class InternalRequest final
 public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(InternalRequest)
 
-  enum ResponseTainting
-  {
-    RESPONSETAINT_BASIC,
-    RESPONSETAINT_CORS,
-    RESPONSETAINT_OPAQUE,
-    RESPONSETAINT_OPAQUEREDIRECT,
-  };
-
   explicit InternalRequest()
     : mMethod("GET")
     , mHeaders(new InternalHeaders(HeadersGuardEnum::None))
     , mReferrer(NS_LITERAL_STRING(kFETCH_CLIENT_REFERRER_STR))
     , mMode(RequestMode::No_cors)
     , mCredentialsMode(RequestCredentials::Omit)
-    , mResponseTainting(RESPONSETAINT_BASIC)
+    , mResponseTainting(LoadTainting::Basic)
     , mCacheMode(RequestCache::Default)
     , mRedirectMode(RequestRedirect::Follow)
     , mAuthenticationFlag(false)
@@ -242,16 +235,18 @@ public:
     mCredentialsMode = aCredentialsMode;
   }
 
-  ResponseTainting
+  LoadTainting
   GetResponseTainting() const
   {
     return mResponseTainting;
   }
 
   void
-  SetResponseTainting(ResponseTainting aTainting)
+  MaybeIncreaseResponseTainting(LoadTainting aTainting)
   {
-    mResponseTainting = aTainting;
+    if (aTainting > mResponseTainting) {
+      mResponseTainting = aTainting;
+    }
   }
 
   RequestCache
@@ -380,6 +375,9 @@ public:
   static RequestMode
   MapChannelToRequestMode(nsIChannel* aChannel);
 
+  static RequestCredentials
+  MapChannelToRequestCredentials(nsIChannel* aChannel);
+
 private:
   // Does not copy mBodyStream.  Use fallible Clone() for complete copy.
   explicit InternalRequest(const InternalRequest& aOther);
@@ -398,7 +396,7 @@ private:
   nsCString mMethod;
   // mURL always stores the url with the ref stripped
   nsCString mURL;
-  nsRefPtr<InternalHeaders> mHeaders;
+  RefPtr<InternalHeaders> mHeaders;
   nsCOMPtr<nsIInputStream> mBodyStream;
 
   nsContentPolicyType mContentPolicyType;
@@ -410,7 +408,7 @@ private:
 
   RequestMode mMode;
   RequestCredentials mCredentialsMode;
-  ResponseTainting mResponseTainting;
+  LoadTainting mResponseTainting;
   RequestCache mCacheMode;
   RequestRedirect mRedirectMode;
 

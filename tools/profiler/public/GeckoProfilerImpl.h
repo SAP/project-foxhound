@@ -170,6 +170,22 @@ void profiler_get_profile_jsobject_async(double aSinceTime = 0,
 {
   mozilla_sampler_get_profile_data_async(aSinceTime, aPromise);
 }
+
+static inline
+void profiler_get_start_params(int* aEntrySize,
+                               double* aInterval,
+                               mozilla::Vector<const char*>* aFilters,
+                               mozilla::Vector<const char*>* aFeatures)
+{
+  mozilla_sampler_get_profiler_start_params(aEntrySize, aInterval, aFilters, aFeatures);
+}
+
+static inline
+void profiler_get_gatherer(nsISupports** aRetVal)
+{
+  mozilla_sampler_get_gatherer(aRetVal);
+}
+
 #endif
 
 static inline
@@ -204,9 +220,9 @@ void profiler_unlock()
 }
 
 static inline
-void profiler_register_thread(const char* name, void* stackTop)
+void profiler_register_thread(const char* name, void* guessStackTop)
 {
-  mozilla_sampler_register_thread(name, stackTop);
+  mozilla_sampler_register_thread(name, guessStackTop);
 }
 
 static inline

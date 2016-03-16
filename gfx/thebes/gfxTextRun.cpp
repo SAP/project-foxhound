@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* vim: set ts=4 et sw=4 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +25,7 @@
 #include "mozilla/Likely.h"
 #include "gfx2DGlue.h"
 #include "mozilla/gfx/Logging.h"        // for gfxCriticalError
+#include "mozilla/UniquePtr.h"
 
 #if defined(MOZ_WIDGET_GTK)
 #include "gfxPlatformGtk.h" // xxx - for UseFcFontList
@@ -321,25 +323,9 @@ gfxTextRun::ComputePartialLigatureWidth(uint32_t aPartStart, uint32_t aPartEnd,
 int32_t
 gfxTextRun::GetAdvanceForGlyphs(uint32_t aStart, uint32_t aEnd)
 {
-    const CompressedGlyph *glyphData = mCharacterGlyphs + aStart;
     int32_t advance = 0;
-    uint32_t i;
-    for (i = aStart; i < aEnd; ++i, ++glyphData) {
-        if (glyphData->IsSimpleGlyph()) {
-            advance += glyphData->GetSimpleAdvance();   
-        } else {
-            uint32_t glyphCount = glyphData->GetGlyphCount();
-            if (glyphCount == 0) {
-                continue;
-            }
-            const DetailedGlyph *details = GetDetailedGlyphs(i);
-            if (details) {
-                uint32_t j;
-                for (j = 0; j < glyphCount; ++j, ++details) {
-                    advance += details->mAdvance;
-                }
-            }
-        }
+    for (auto i = aStart; i < aEnd; ++i) {
+        advance += GetAdvanceForGlyph(i);
     }
     return advance;
 }
@@ -514,17 +500,16 @@ HasSyntheticBold(gfxTextRun *aRun, uint32_t aStart, uint32_t aLength)
     return false;
 }
 
-// returns true if color is non-opaque (i.e. alpha != 1.0) or completely transparent, false otherwise
-// if true, color is set on output
+// Returns true if color is neither opaque nor transparent (i.e. alpha is not 0
+// or 1), and false otherwise. If true, aCurrentColorOut is set on output.
 static bool
-HasNonOpaqueColor(gfxContext *aContext, gfxRGBA& aCurrentColor)
+HasNonOpaqueNonTransparentColor(gfxContext *aContext, Color& aCurrentColorOut)
 {
-    if (aContext->GetDeviceColor(aCurrentColor)) {
-        if (aCurrentColor.a < 1.0 && aCurrentColor.a > 0.0) {
+    if (aContext->GetDeviceColor(aCurrentColorOut)) {
+        if (0.f < aCurrentColorOut.a && aCurrentColorOut.a < 1.f) {
             return true;
         }
     }
-        
     return false;
 }
 
@@ -532,14 +517,13 @@ HasNonOpaqueColor(gfxContext *aContext, gfxRGBA& aCurrentColor)
 struct BufferAlphaColor {
     explicit BufferAlphaColor(gfxContext *aContext)
         : mContext(aContext)
-        , mAlpha(0.0)
     {
 
     }
 
     ~BufferAlphaColor() {}
 
-    void PushSolidColor(const gfxRect& aBounds, const gfxRGBA& aAlphaColor, uint32_t appsPerDevUnit)
+    void PushSolidColor(const gfxRect& aBounds, const Color& aAlphaColor, uint32_t appsPerDevUnit)
     {
         mContext->Save();
         mContext->NewPath();
@@ -548,22 +532,18 @@ struct BufferAlphaColor {
                     aBounds.Width() / appsPerDevUnit,
                     aBounds.Height() / appsPerDevUnit), true);
         mContext->Clip();
-        mContext->SetColor(gfxRGBA(aAlphaColor.r, aAlphaColor.g, aAlphaColor.b));
-        mContext->PushGroup(gfxContentType::COLOR_ALPHA);
-        mAlpha = aAlphaColor.a;
+        mContext->SetColor(Color(aAlphaColor.r, aAlphaColor.g, aAlphaColor.b));
+        mContext->PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, aAlphaColor.a);
     }
 
     void PopAlpha()
     {
         // pop the text, using the color alpha as the opacity
-        mContext->PopGroupToSource();
-        mContext->SetOperator(gfxContext::OPERATOR_OVER);
-        mContext->Paint(mAlpha);
+        mContext->PopGroupAndBlend();
         mContext->Restore();
     }
 
     gfxContext *mContext;
-    gfxFloat mAlpha;
 };
 
 void
@@ -582,7 +562,7 @@ gfxTextRun::Draw(gfxContext *aContext, gfxPoint aPt, DrawMode aDrawMode,
 
     bool skipDrawing = mSkipDrawing;
     if (aDrawMode == DrawMode::GLYPH_FILL) {
-        gfxRGBA currentColor;
+        Color currentColor;
         if (aContext->GetDeviceColor(currentColor) && currentColor.a == 0) {
             skipDrawing = true;
         }
@@ -607,11 +587,11 @@ gfxTextRun::Draw(gfxContext *aContext, gfxPoint aPt, DrawMode aDrawMode,
     // synthetic bolding draws glyphs twice ==> colors with opacity won't draw
     // correctly unless first drawn without alpha
     BufferAlphaColor syntheticBoldBuffer(aContext);
-    gfxRGBA currentColor;
+    Color currentColor;
     bool needToRestore = false;
 
     if (aDrawMode == DrawMode::GLYPH_FILL &&
-        HasNonOpaqueColor(aContext, currentColor) &&
+        HasNonOpaqueNonTransparentColor(aContext, currentColor) &&
         HasSyntheticBold(this, aStart, aLength)) {
         needToRestore = true;
         // measure text, use the bounding box
@@ -683,6 +663,50 @@ gfxTextRun::Draw(gfxContext *aContext, gfxPoint aPt, DrawMode aDrawMode,
 
     if (aAdvanceWidth) {
         *aAdvanceWidth = advance;
+    }
+}
+
+// This method is mostly parallel to Draw().
+void
+gfxTextRun::DrawEmphasisMarks(gfxContext *aContext, gfxTextRun* aMark,
+                              gfxFloat aMarkAdvance, gfxPoint aPt,
+                              uint32_t aStart, uint32_t aLength,
+                              PropertyProvider* aProvider)
+{
+    MOZ_ASSERT(aStart + aLength <= GetLength());
+
+    EmphasisMarkDrawParams params;
+    params.context = aContext;
+    params.mark = aMark;
+    params.advance = aMarkAdvance;
+    params.direction = GetDirection();
+    params.isVertical = IsVertical();
+
+    gfxFloat& inlineCoord = params.isVertical ? aPt.y : aPt.x;
+    gfxFloat direction = params.direction;
+
+    GlyphRunIterator iter(this, aStart, aLength);
+    while (iter.NextRun()) {
+        gfxFont* font = iter.GetGlyphRun()->mFont;
+        uint32_t start = iter.GetStringStart();
+        uint32_t end = iter.GetStringEnd();
+        uint32_t ligatureRunStart = start;
+        uint32_t ligatureRunEnd = end;
+        ShrinkToLigatureBoundaries(&ligatureRunStart, &ligatureRunEnd);
+
+        inlineCoord += direction *
+            ComputePartialLigatureWidth(start, ligatureRunStart, aProvider);
+
+        nsAutoTArray<PropertyProvider::Spacing, 200> spacingBuffer;
+        bool haveSpacing = GetAdjustedSpacingArray(
+            ligatureRunStart, ligatureRunEnd, aProvider,
+            ligatureRunStart, ligatureRunEnd, &spacingBuffer);
+        params.spacing = haveSpacing ? spacingBuffer.Elements() : nullptr;
+        font->DrawEmphasisMarks(this, &aPt, ligatureRunStart,
+                                ligatureRunEnd - ligatureRunStart, params);
+
+        inlineCoord += direction *
+            ComputePartialLigatureWidth(ligatureRunEnd, end, aProvider);
     }
 }
 
@@ -1297,8 +1321,7 @@ void
 gfxTextRun::SetSpaceGlyph(gfxFont *aFont, gfxContext *aContext,
                           uint32_t aCharIndex, uint16_t aOrientation)
 {
-    if (SetSpaceGlyphIfSimple(aFont, aContext, aCharIndex, ' ',
-                              aOrientation)) {
+    if (SetSpaceGlyphIfSimple(aFont, aCharIndex, ' ', aOrientation)) {
         return;
     }
 
@@ -1326,9 +1349,8 @@ gfxTextRun::SetSpaceGlyph(gfxFont *aFont, gfxContext *aContext,
 }
 
 bool
-gfxTextRun::SetSpaceGlyphIfSimple(gfxFont *aFont, gfxContext *aContext,
-                                  uint32_t aCharIndex, char16_t aSpaceChar,
-                                  uint16_t aOrientation)
+gfxTextRun::SetSpaceGlyphIfSimple(gfxFont* aFont, uint32_t aCharIndex,
+                                  char16_t aSpaceChar, uint16_t aOrientation)
 {
     uint32_t spaceGlyph = aFont->GetSpaceGlyph();
     if (!spaceGlyph || !CompressedGlyph::IsSimpleGlyphID(spaceGlyph)) {
@@ -1537,14 +1559,16 @@ gfxTextRun::Dump(FILE* aOutput) {
 gfxFontGroup::gfxFontGroup(const FontFamilyList& aFontFamilyList,
                            const gfxFontStyle *aStyle,
                            gfxTextPerfMetrics* aTextPerf,
-                           gfxUserFontSet *aUserFontSet)
+                           gfxUserFontSet *aUserFontSet,
+                           gfxFloat aDevToCssSize)
     : mFamilyList(aFontFamilyList)
     , mStyle(*aStyle)
     , mUnderlineOffset(UNDERLINE_OFFSET_NOT_SET)
     , mHyphenWidth(-1)
+    , mDevToCssSize(aDevToCssSize)
     , mUserFontSet(aUserFontSet)
     , mTextPerf(aTextPerf)
-    , mPageLang(gfxPlatform::GetFontPrefLangFor(aStyle->language))
+    , mPageLang(gfxPlatformFontList::GetFontPrefLangFor(aStyle->language))
     , mSkipDrawing(false)
     , mSkipUpdateUserFonts(false)
 {
@@ -1559,138 +1583,6 @@ gfxFontGroup::~gfxFontGroup()
 }
 
 void
-gfxFontGroup::FindGenericFonts(FontFamilyType aGenericType,
-                               nsIAtom *aLanguage,
-                               void *aClosure)
-{
-    nsAutoTArray<nsString, 5> resolvedGenerics;
-    ResolveGenericFontNames(aGenericType, aLanguage, resolvedGenerics);
-    uint32_t g = 0, numGenerics = resolvedGenerics.Length();
-    for (g = 0; g < numGenerics; g++) {
-        FindPlatformFont(resolvedGenerics[g], false, aClosure);
-    }
-}
-
-/* static */ void
-gfxFontGroup::ResolveGenericFontNames(FontFamilyType aGenericType,
-                                      nsIAtom *aLanguage,
-                                      nsTArray<nsString>& aGenericFamilies)
-{
-    static const char kGeneric_serif[] = "serif";
-    static const char kGeneric_sans_serif[] = "sans-serif";
-    static const char kGeneric_monospace[] = "monospace";
-    static const char kGeneric_cursive[] = "cursive";
-    static const char kGeneric_fantasy[] = "fantasy";
-
-    // treat -moz-fixed as monospace
-    if (aGenericType == eFamily_moz_fixed) {
-        aGenericType = eFamily_monospace;
-    }
-
-    // type should be standard generic type at this point
-    NS_ASSERTION(aGenericType >= eFamily_serif &&
-                 aGenericType <= eFamily_fantasy,
-                 "standard generic font family type required");
-
-    // create the lang string
-    nsIAtom *langGroupAtom = nullptr;
-    nsAutoCString langGroupString;
-    if (aLanguage) {
-        if (!gLangService) {
-            CallGetService(NS_LANGUAGEATOMSERVICE_CONTRACTID, &gLangService);
-        }
-        if (gLangService) {
-            nsresult rv;
-            langGroupAtom = gLangService->GetLanguageGroup(aLanguage, &rv);
-        }
-    }
-    if (!langGroupAtom) {
-        langGroupAtom = nsGkAtoms::Unicode;
-    }
-    langGroupAtom->ToUTF8String(langGroupString);
-
-    // map generic type to string
-    const char *generic = nullptr;
-    switch (aGenericType) {
-        case eFamily_serif:
-            generic = kGeneric_serif;
-            break;
-        case eFamily_sans_serif:
-            generic = kGeneric_sans_serif;
-            break;
-        case eFamily_monospace:
-            generic = kGeneric_monospace;
-            break;
-        case eFamily_cursive:
-            generic = kGeneric_cursive;
-            break;
-        case eFamily_fantasy:
-            generic = kGeneric_fantasy;
-            break;
-        default:
-            break;
-    }
-
-    if (!generic) {
-        return;
-    }
-
-    aGenericFamilies.Clear();
-
-    // load family for "font.name.generic.lang"
-    nsAutoCString prefFontName("font.name.");
-    prefFontName.Append(generic);
-    prefFontName.Append('.');
-    prefFontName.Append(langGroupString);
-    gfxFontUtils::AppendPrefsFontList(prefFontName.get(),
-                                      aGenericFamilies);
-
-    // if lang has pref fonts, also load fonts for "font.name-list.generic.lang"
-    if (!aGenericFamilies.IsEmpty()) {
-        nsAutoCString prefFontListName("font.name-list.");
-        prefFontListName.Append(generic);
-        prefFontListName.Append('.');
-        prefFontListName.Append(langGroupString);
-        gfxFontUtils::AppendPrefsFontList(prefFontListName.get(),
-                                          aGenericFamilies);
-    }
-
-#if 0  // dump out generic mappings
-    printf("%s ===> ", prefFontName.get());
-    for (uint32_t k = 0; k < aGenericFamilies.Length(); k++) {
-        if (k > 0) printf(", ");
-        printf("%s", NS_ConvertUTF16toUTF8(aGenericFamilies[k]).get());
-    }
-    printf("\n");
-#endif
-}
-
-void gfxFontGroup::EnumerateFontList(nsIAtom *aLanguage, void *aClosure)
-{
-    // initialize fonts in the font family list
-    const nsTArray<FontFamilyName>& fontlist = mFamilyList.GetFontlist();
-
-    // lookup fonts in the fontlist
-    uint32_t i, numFonts = fontlist.Length();
-    for (i = 0; i < numFonts; i++) {
-        const FontFamilyName& name = fontlist[i];
-        if (name.IsNamed()) {
-            FindPlatformFont(name.mName, true, aClosure);
-        } else {
-            FindGenericFonts(name.mType, aLanguage, aClosure);
-        }
-    }
-
-    // if necessary, append default generic onto the end
-    if (mFamilyList.GetDefaultFontType() != eFamily_none &&
-        !mFamilyList.HasDefaultGeneric()) {
-        FindGenericFonts(mFamilyList.GetDefaultFontType(),
-                         aLanguage,
-                         aClosure);
-    }
-}
-
-void
 gfxFontGroup::BuildFontList()
 {
     bool enumerateFonts = true;
@@ -1701,58 +1593,91 @@ gfxFontGroup::BuildFontList()
 #elif defined(MOZ_WIDGET_QT)
     enumerateFonts = false;
 #endif
-    if (enumerateFonts) {
-        EnumerateFontList(mStyle.language);
+    if (!enumerateFonts) {
+        return;
+    }
+
+    // initialize fonts in the font family list
+    nsAutoTArray<gfxFontFamily*,4> fonts;
+    gfxPlatformFontList *pfl = gfxPlatformFontList::PlatformFontList();
+
+    // lookup fonts in the fontlist
+    for (const FontFamilyName& name : mFamilyList.GetFontlist()) {
+        if (name.IsNamed()) {
+            AddPlatformFont(name.mName, fonts);
+        } else {
+            pfl->AddGenericFonts(name.mType, mStyle.language, fonts);
+            if (mTextPerf) {
+                mTextPerf->current.genericLookups++;
+            }
+        }
+    }
+
+    // if necessary, append default generic onto the end
+    if (mFamilyList.GetDefaultFontType() != eFamily_none &&
+        !mFamilyList.HasDefaultGeneric()) {
+        pfl->AddGenericFonts(mFamilyList.GetDefaultFontType(),
+                             mStyle.language, fonts);
+        if (mTextPerf) {
+            mTextPerf->current.genericLookups++;
+        }
+    }
+
+    // build the fontlist from the specified families
+    for (gfxFontFamily* fontFamily : fonts) {
+        AddFamilyToFontList(fontFamily);
     }
 }
 
 void
-gfxFontGroup::FindPlatformFont(const nsAString& aName,
-                               bool aUseFontSet,
-                               void *aClosure)
+gfxFontGroup::AddPlatformFont(const nsAString& aName,
+                              nsTArray<gfxFontFamily*>& aFamilyList)
 {
-    bool needsBold;
-    gfxFontFamily *family = nullptr;
+    gfxFontFamily* family = nullptr;
 
-    if (aUseFontSet) {
-        // First, look up in the user font set...
-        // If the fontSet matches the family, we must not look for a platform
-        // font of the same name, even if we fail to actually get a fontEntry
-        // here; we'll fall back to the next name in the CSS font-family list.
-        if (mUserFontSet) {
-            // Add userfonts to the fontlist whether already loaded
-            // or not. Loading is initiated during font matching.
-            family = mUserFontSet->LookupFamily(aName);
-        }
+    // First, look up in the user font set...
+    // If the fontSet matches the family, we must not look for a platform
+    // font of the same name, even if we fail to actually get a fontEntry
+    // here; we'll fall back to the next name in the CSS font-family list.
+    if (mUserFontSet) {
+        // Add userfonts to the fontlist whether already loaded
+        // or not. Loading is initiated during font matching.
+        family = mUserFontSet->LookupFamily(aName);
     }
 
     // Not known in the user font set ==> check system fonts
     if (!family) {
-        gfxPlatformFontList *fontList = gfxPlatformFontList::PlatformFontList();
-        // workaround for beta branch
-#if defined(XP_MACOSX)
-        family = fontList->FindFamilyWithStyle(aName, &mStyle);
-#else
-        family = fontList->FindFamily(aName, mStyle.language, mStyle.systemFont);
-#endif
+        gfxPlatformFontList* fontList = gfxPlatformFontList::PlatformFontList();
+        family = fontList->FindFamily(aName, &mStyle, mDevToCssSize);
     }
 
-    // if family found, do style matching and add all font entries to mFonts
     if (family) {
-        nsAutoTArray<gfxFontEntry*,4> fontEntryList;
-        family->FindAllFontsForStyle(mStyle, fontEntryList, needsBold);
-        // add these to the fontlist
-        uint32_t n = fontEntryList.Length();
-        for (uint32_t i = 0; i < n; i++) {
-            gfxFontEntry* fe = fontEntryList[i];
-            if (!HasFont(fe)) {
-                FamilyFace ff(family, fe, needsBold);
-                if (fe->mIsUserFontContainer) {
-                    ff.CheckState(mSkipDrawing);
-                }
-                mFonts.AppendElement(ff);
+        aFamilyList.AppendElement(family);
+    }
+}
+
+void
+gfxFontGroup::AddFamilyToFontList(gfxFontFamily* aFamily)
+{
+    NS_ASSERTION(aFamily, "trying to add a null font family to fontlist");
+    nsAutoTArray<gfxFontEntry*,4> fontEntryList;
+    bool needsBold;
+    aFamily->FindAllFontsForStyle(mStyle, fontEntryList, needsBold);
+    // add these to the fontlist
+    for (gfxFontEntry* fe : fontEntryList) {
+        if (!HasFont(fe)) {
+            FamilyFace ff(aFamily, fe, needsBold);
+            if (fe->mIsUserFontContainer) {
+                ff.CheckState(mSkipDrawing);
             }
+            mFonts.AppendElement(ff);
         }
+    }
+    // for a family marked as "check fallback faces", only mark the last
+    // entry so that fallbacks for a family are only checked once
+    if (aFamily->CheckForFallbackFaces() &&
+        !fontEntryList.IsEmpty() && !mFonts.IsEmpty()) {
+        mFonts.LastElement().SetCheckForFallbackFaces();
     }
 }
 
@@ -1780,7 +1705,7 @@ gfxFontGroup::GetFontAt(int32_t i, uint32_t aCh)
         return nullptr;
     }
 
-    nsRefPtr<gfxFont> font = ff.Font();
+    RefPtr<gfxFont> font = ff.Font();
     if (!font) {
         gfxFontEntry* fe = mFonts[i].FontEntry();
         gfxCharacterMap* unicodeRangeMap = nullptr;
@@ -1823,6 +1748,7 @@ gfxFontGroup::FamilyFace::CheckState(bool& aSkipDrawing)
             case gfxUserFontEntry::STATUS_FAILED:
                 SetInvalid();
                 // fall-thru to the default case
+                MOZ_FALLTHROUGH;
             default:
                 SetLoading(false);
         }
@@ -1898,7 +1824,7 @@ gfxFontGroup::GetDefaultFont()
         // that assumes it will be able to get valid metrics for layout,
         // just look for the first usable font and put in the list.
         // (see bug 554544)
-        nsAutoTArray<nsRefPtr<gfxFontFamily>,200> familyList;
+        nsAutoTArray<RefPtr<gfxFontFamily>,200> familyList;
         pfl->GetFontFamilyList(familyList);
         numFonts = familyList.Length();
         for (uint32_t i = 0; i < numFonts; ++i) {
@@ -1999,7 +1925,8 @@ gfxFontGroup *
 gfxFontGroup::Copy(const gfxFontStyle *aStyle)
 {
     gfxFontGroup *fg =
-        new gfxFontGroup(mFamilyList, aStyle, mTextPerf, mUserFontSet);
+        new gfxFontGroup(mFamilyList, aStyle, mTextPerf,
+                         mUserFontSet, mDevToCssSize);
     return fg;
 }
 
@@ -2065,7 +1992,7 @@ gfxFontGroup::MakeSpaceTextRun(const Parameters *aParams, uint32_t aFlags)
             // In case the primary font doesn't have <space> (bug 970891),
             // find one that does.
             uint8_t matchType;
-            nsRefPtr<gfxFont> spaceFont =
+            RefPtr<gfxFont> spaceFont =
                 FindFontForChar(' ', 0, 0, MOZ_SCRIPT_LATIN, nullptr,
                                 &matchType);
             if (spaceFont) {
@@ -2122,7 +2049,7 @@ gfxFloat
 gfxFontGroup::GetHyphenWidth(gfxTextRun::PropertyProvider *aProvider)
 {
     if (mHyphenWidth < 0) {
-        nsRefPtr<gfxContext> ctx(aProvider->GetContext());
+        RefPtr<gfxContext> ctx(aProvider->GetContext());
         if (ctx) {
             nsAutoPtr<gfxTextRun>
                 hyphRun(MakeHyphenTextRun(ctx,
@@ -2211,7 +2138,7 @@ gfxFontGroup::InitTextRun(gfxContext *aContext,
     // we need to do numeral processing even on 8-bit text,
     // in case we're converting Western to Hindi/Arabic digits
     int32_t numOption = gfxPlatform::GetPlatform()->GetBidiNumeralOption();
-    nsAutoArrayPtr<char16_t> transformedString;
+    UniquePtr<char16_t[]> transformedString;
     if (numOption != IBMBIDI_NUMERAL_NOMINAL) {
         // scan the string for numerals that may need to be transformed;
         // if we find any, we'll make a local copy here and use that for
@@ -2223,7 +2150,7 @@ gfxFontGroup::InitTextRun(gfxContext *aContext,
             char16_t newCh = HandleNumberInChar(origCh, prevIsArabic, numOption);
             if (newCh != origCh) {
                 if (!transformedString) {
-                    transformedString = new char16_t[aLength];
+                    transformedString = MakeUnique<char16_t[]>(aLength);
                     if (sizeof(T) == sizeof(char16_t)) {
                         memcpy(transformedString.get(), aString, i * sizeof(char16_t));
                     } else {
@@ -2240,9 +2167,9 @@ gfxFontGroup::InitTextRun(gfxContext *aContext,
         }
     }
 
-    PRLogModuleInfo *log = (mStyle.systemFont ?
-                            gfxPlatform::GetLog(eGfxLog_textrunui) :
-                            gfxPlatform::GetLog(eGfxLog_textrun));
+    LogModule* log = mStyle.systemFont
+                   ? gfxPlatform::GetLog(eGfxLog_textrunui)
+                   : gfxPlatform::GetLog(eGfxLog_textrun);
 
     // variant fallback handling may end up passing through this twice
     bool redo;
@@ -2449,7 +2376,7 @@ gfxFontGroup::InitScriptRun(gfxContext *aContext,
                     return;
                 }
 
-                nsRefPtr<gfxFont> subSuperFont =
+                RefPtr<gfxFont> subSuperFont =
                     matchedFont->GetSubSuperscriptFont(aTextRun->GetAppUnitsPerDevUnit());
                 aTextRun->AddGlyphRun(subSuperFont, range.matchType,
                                       aOffset + runStart, (matchedLength > 0),
@@ -2624,7 +2551,7 @@ gfxFontGroup::GetEllipsisTextRun(int32_t aAppUnitsPerDevPixel, uint32_t aFlags,
         : nsDependentString(kASCIIPeriodsChar,
                             ArrayLength(kASCIIPeriodsChar) - 1);
 
-    nsRefPtr<gfxContext> refCtx = aRefContextGetter.GetRefContext();
+    RefPtr<gfxContext> refCtx = aRefContextGetter.GetRefContext();
     Parameters params = {
         refCtx, nullptr, nullptr, nullptr, 0, aAppUnitsPerDevPixel
     };
@@ -2656,7 +2583,24 @@ gfxFontGroup::FindNonItalicFaceForChar(gfxFontFamily* aFamily, uint32_t aCh)
         return nullptr;
     }
 
-    nsRefPtr<gfxFont> font = fe->FindOrMakeFont(&mStyle, needsBold);
+    RefPtr<gfxFont> font = fe->FindOrMakeFont(&mStyle, needsBold);
+    return font.forget();
+}
+
+already_AddRefed<gfxFont>
+gfxFontGroup::FindFallbackFaceForChar(gfxFontFamily* aFamily, uint32_t aCh,
+                                      int32_t aRunScript)
+{
+    GlobalFontMatch data(aCh, aRunScript, &mStyle);
+    aFamily->SearchAllFontsForChar(&data);
+    gfxFontEntry* fe = data.mBestMatch;
+    if (!fe) {
+        return nullptr;
+    }
+
+    bool needsBold = mStyle.weight >= 600 && !fe->IsBold() &&
+                     mStyle.allowSyntheticWeight;
+    RefPtr<gfxFont> font = fe->FindOrMakeFont(&mStyle, needsBold);
     return font.forget();
 }
 
@@ -2673,7 +2617,7 @@ gfxFontGroup::GetUnderlineOffset()
                 !ff.FontEntry()->IsUserFont() &&
                 ff.Family() &&
                 ff.Family()->IsBadUnderlineFamily()) {
-                nsRefPtr<gfxFont> font = GetFontAt(i);
+                RefPtr<gfxFont> font = GetFontAt(i);
                 if (!font) {
                     continue;
                 }
@@ -2705,7 +2649,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
     // the font group because it avoids breaks in shaping within a cluster.
     if (aPrevMatchedFont && IsClusterExtender(aCh) &&
         aPrevMatchedFont->HasCharacter(aCh)) {
-        nsRefPtr<gfxFont> ret = aPrevMatchedFont;
+        RefPtr<gfxFont> ret = aPrevMatchedFont;
         return ret.forget();
     }
 
@@ -2717,18 +2661,25 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
     bool isVarSelector = gfxFontUtils::IsVarSelector(aCh);
 
     if (!isJoinControl && !wasJoinCauser && !isVarSelector) {
-        nsRefPtr<gfxFont> firstFont = GetFontAt(0, aCh);
+        RefPtr<gfxFont> firstFont = GetFontAt(0, aCh);
         if (firstFont) {
             if (firstFont->HasCharacter(aCh)) {
                 *aMatchType = gfxTextRange::kFontGroup;
                 return firstFont.forget();
             }
 
-            // If italic, test the regular face to see if it supports character.
-            // Only do this for platform fonts, not userfonts.
-            if (mStyle.style != NS_FONT_STYLE_NORMAL &&
-                !firstFont->GetFontEntry()->IsUserFont()) {
-                nsRefPtr<gfxFont> font =
+            if (mFonts[0].CheckForFallbackFaces()) {
+                RefPtr<gfxFont> font =
+                    FindFallbackFaceForChar(mFonts[0].Family(), aCh, aRunScript);
+                if (font) {
+                    *aMatchType = gfxTextRange::kFontGroup;
+                    return font.forget();
+                }
+            } else if (mStyle.style != NS_FONT_STYLE_NORMAL &&
+                       !firstFont->GetFontEntry()->IsUserFont()) {
+                // If italic, test the regular face to see if it supports
+                // character. Only do this for platform fonts, not userfonts.
+                RefPtr<gfxFont> font =
                     FindNonItalicFaceForChar(mFonts[0].Family(), aCh);
                 if (font) {
                     *aMatchType = gfxTextRange::kFontGroup;
@@ -2747,7 +2698,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
         // actually be rendered (see bug 716229)
         if (isJoinControl ||
             GetGeneralCategory(aCh) == HB_UNICODE_GENERAL_CATEGORY_CONTROL) {
-            nsRefPtr<gfxFont> ret = aPrevMatchedFont;
+            RefPtr<gfxFont> ret = aPrevMatchedFont;
             return ret.forget();
         }
 
@@ -2755,7 +2706,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
         // use the same font as the previous range if we can
         if (wasJoinCauser) {
             if (aPrevMatchedFont->HasCharacter(aCh)) {
-                nsRefPtr<gfxFont> ret = aPrevMatchedFont;
+                RefPtr<gfxFont> ret = aPrevMatchedFont;
                 return ret.forget();
             }
         }
@@ -2766,7 +2717,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
     // otherwise the text run will be divided.
     if (isVarSelector) {
         if (aPrevMatchedFont) {
-            nsRefPtr<gfxFont> ret = aPrevMatchedFont;
+            RefPtr<gfxFont> ret = aPrevMatchedFont;
             return ret.forget();
         }
         // VS alone. it's meaningless to search different fonts
@@ -2782,7 +2733,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
         }
 
         // if available, use already made gfxFont and check for character
-        nsRefPtr<gfxFont> font = ff.Font();
+        RefPtr<gfxFont> font = ff.Font();
         if (font) {
             if (font->HasCharacter(aCh)) {
                 return font.forget();
@@ -2827,22 +2778,35 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
             }
         }
 
-        // If italic, test the regular face to see if it supports the character.
-        // Only do this for platform fonts, not userfonts.
-        fe = ff.FontEntry();
-        if (mStyle.style != NS_FONT_STYLE_NORMAL &&
-            !fe->mIsUserFontContainer &&
-            !fe->IsUserFont()) {
-            font = FindNonItalicFaceForChar(ff.Family(), aCh);
+        // check other family faces if needed
+        if (ff.CheckForFallbackFaces()) {
+            NS_ASSERTION(i == 0 ? true :
+                         !mFonts[i-1].CheckForFallbackFaces() ||
+                         !mFonts[i-1].Family()->Name().Equals(ff.Family()->Name()),
+                         "should only do fallback once per font family");
+            font = FindFallbackFaceForChar(ff.Family(), aCh, aRunScript);
             if (font) {
                 *aMatchType = gfxTextRange::kFontGroup;
                 return font.forget();
+            }
+        } else {
+            // If italic, test the regular face to see if it supports the
+            // character. Only do this for platform fonts, not userfonts.
+            fe = ff.FontEntry();
+            if (mStyle.style != NS_FONT_STYLE_NORMAL &&
+                !fe->mIsUserFontContainer &&
+                !fe->IsUserFont()) {
+                font = FindNonItalicFaceForChar(ff.Family(), aCh);
+                if (font) {
+                    *aMatchType = gfxTextRange::kFontGroup;
+                    return font.forget();
+                }
             }
         }
     }
 
     if (fontListLength == 0) {
-        nsRefPtr<gfxFont> defaultFont = GetDefaultFont();
+        RefPtr<gfxFont> defaultFont = GetDefaultFont();
         if (defaultFont->HasCharacter(aCh)) {
             *aMatchType = gfxTextRange::kFontGroup;
             return defaultFont.forget();
@@ -2854,7 +2818,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
         return nullptr;
 
     // 2. search pref fonts
-    nsRefPtr<gfxFont> font = WhichPrefFontSupportsChar(aCh);
+    RefPtr<gfxFont> font = WhichPrefFontSupportsChar(aCh);
     if (font) {
         *aMatchType = gfxTextRange::kPrefsFallback;
         return font.forget();
@@ -2864,7 +2828,7 @@ gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh, uint32_t aNextCh,
     // -- before searching for something else check the font used for the previous character
     if (aPrevMatchedFont && aPrevMatchedFont->HasCharacter(aCh)) {
         *aMatchType = gfxTextRange::kSystemFallback;
-        nsRefPtr<gfxFont> ret = aPrevMatchedFont;
+        RefPtr<gfxFont> ret = aPrevMatchedFont;
         return ret.forget();
     }
 
@@ -2949,7 +2913,7 @@ void gfxFontGroup::ComputeRanges(nsTArray<gfxTextRange>& aRanges,
         }
 
         // find the font for this char
-        nsRefPtr<gfxFont> font =
+        RefPtr<gfxFont> font =
             FindFontForChar(ch, prevCh, nextCh, aRunScript, prevFont,
                             &matchType);
 
@@ -3012,9 +2976,9 @@ void gfxFontGroup::ComputeRanges(nsTArray<gfxTextRange>& aRanges,
     aRanges[lastRangeIndex].end = aLength;
 
 #ifndef RELEASE_BUILD
-    PRLogModuleInfo *log = (mStyle.systemFont ?
-                            gfxPlatform::GetLog(eGfxLog_textrunui) :
-                            gfxPlatform::GetLog(eGfxLog_textrun));
+    LogModule* log = mStyle.systemFont
+                   ? gfxPlatform::GetLog(eGfxLog_textrunui)
+                   : gfxPlatform::GetLog(eGfxLog_textrun);
 
     if (MOZ_UNLIKELY(MOZ_LOG_TEST(log, LogLevel::Debug))) {
         nsAutoCString lang;
@@ -3129,36 +3093,15 @@ gfxFontGroup::ContainsUserFont(const gfxUserFontEntry* aUserFont)
     return false;
 }
 
-struct PrefFontCallbackData {
-    explicit PrefFontCallbackData(nsTArray<nsRefPtr<gfxFontFamily> >& aFamiliesArray)
-        : mPrefFamilies(aFamiliesArray)
-    {}
-
-    nsTArray<nsRefPtr<gfxFontFamily> >& mPrefFamilies;
-
-    static bool AddFontFamilyEntry(eFontPrefLang aLang, const nsAString& aName, void *aClosure)
-    {
-        PrefFontCallbackData *prefFontData = static_cast<PrefFontCallbackData*>(aClosure);
-
-        // map pref lang to langGroup for language-sensitive lookups
-        nsIAtom* lang = gfxPlatform::GetLangGroupForPrefLang(aLang);
-        gfxFontFamily *family =
-            gfxPlatformFontList::PlatformFontList()->FindFamily(aName, lang);
-        if (family) {
-            prefFontData->mPrefFamilies.AppendElement(family);
-        }
-        return true;
-    }
-};
-
 already_AddRefed<gfxFont>
 gfxFontGroup::WhichPrefFontSupportsChar(uint32_t aCh)
 {
-    nsRefPtr<gfxFont> font;
+    RefPtr<gfxFont> font;
 
     // get the pref font list if it hasn't been set up already
     uint32_t unicodeRange = FindCharUnicodeRange(aCh);
-    eFontPrefLang charLang = gfxPlatform::GetPlatform()->GetFontPrefLangFor(unicodeRange);
+    gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
+    eFontPrefLang charLang = pfl->GetFontPrefLangFor(unicodeRange);
 
     // if the last pref font was the first family in the pref list, no need to recheck through a list of families
     if (mLastPrefFont && charLang == mLastPrefLang &&
@@ -3171,29 +3114,22 @@ gfxFontGroup::WhichPrefFontSupportsChar(uint32_t aCh)
     eFontPrefLang prefLangs[kMaxLenPrefLangList];
     uint32_t i, numLangs = 0;
 
-    gfxPlatform::GetPlatform()->GetLangPrefs(prefLangs, numLangs, charLang, mPageLang);
+    pfl->GetLangPrefs(prefLangs, numLangs, charLang, mPageLang);
 
     for (i = 0; i < numLangs; i++) {
-        nsAutoTArray<nsRefPtr<gfxFontFamily>, 5> families;
         eFontPrefLang currentLang = prefLangs[i];
-
-        gfxPlatformFontList *fontList = gfxPlatformFontList::PlatformFontList();
-
-        // get the pref families for a single pref lang
-        if (!fontList->GetPrefFontFamilyEntries(currentLang, &families)) {
-            eFontPrefLang prefLangsToSearch[1] = { currentLang };
-            PrefFontCallbackData prefFontData(families);
-            gfxPlatform::ForEachPrefFont(prefLangsToSearch, 1, PrefFontCallbackData::AddFontFamilyEntry,
-                                           &prefFontData);
-            fontList->SetPrefFontFamilyEntries(currentLang, families);
-        }
+        mozilla::FontFamilyType defaultGeneric =
+            pfl->GetDefaultGeneric(currentLang);
+        nsTArray<RefPtr<gfxFontFamily>>* families =
+            pfl->GetPrefFontsLangGroup(defaultGeneric, currentLang);
+        NS_ASSERTION(families, "no pref font families found");
 
         // find the first pref font that includes the character
         uint32_t  j, numPrefs;
-        numPrefs = families.Length();
+        numPrefs = families->Length();
         for (j = 0; j < numPrefs; j++) {
             // look up the appropriate face
-            gfxFontFamily *family = families[j];
+            gfxFontFamily *family = (*families)[j];
             if (!family) continue;
 
             // if a pref font is used, it's likely to be used again in the same text run.
@@ -3209,7 +3145,7 @@ gfxFontGroup::WhichPrefFontSupportsChar(uint32_t aCh)
             gfxFontEntry *fe = family->FindFontForStyle(mStyle, needsBold);
             // if ch in cmap, create and return a gfxFont
             if (fe && fe->HasCharacter(aCh)) {
-                nsRefPtr<gfxFont> prefFont = fe->FindOrMakeFont(&mStyle, needsBold);
+                RefPtr<gfxFont> prefFont = fe->FindOrMakeFont(&mStyle, needsBold);
                 if (!prefFont) continue;
                 mLastPrefFamily = family;
                 mLastPrefFont = prefFont;
@@ -3233,7 +3169,7 @@ gfxFontGroup::WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
             SystemFindFontForChar(aCh, aNextCh, aRunScript, &mStyle);
     if (fe) {
         bool wantBold = mStyle.ComputeWeight() >= 6;
-        nsRefPtr<gfxFont> font =
+        RefPtr<gfxFont> font =
             fe->FindOrMakeFont(&mStyle, wantBold && !fe->IsBold());
         return font.forget();
     }

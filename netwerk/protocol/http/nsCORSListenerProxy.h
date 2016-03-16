@@ -37,10 +37,15 @@ enum class DataURIHandling
   Disallow
 };
 
+enum class UpdateType
+{
+  Default,
+  InternalOrHSTSRedirect
+};
+
 class nsCORSListenerProxy final : public nsIStreamListener,
                                   public nsIInterfaceRequestor,
                                   public nsIChannelEventSink,
-                                  public nsIAsyncVerifyRedirectCallback,
                                   public nsIThreadRetargetableStreamListener
 {
 public:
@@ -53,7 +58,6 @@ public:
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSICHANNELEVENTSINK
-  NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
   // Must be called at startup.
@@ -74,16 +78,16 @@ private:
   static void RemoveFromCorsPreflightCache(nsIURI* aURI,
                                            nsIPrincipal* aRequestingPrincipal);
   static nsresult StartCORSPreflight(nsIChannel* aRequestChannel,
-                                     nsIPrincipal* aPrincipal,
                                      nsICorsPreflightCallback* aCallback,
-                                     bool aWithCredentials,
                                      nsTArray<nsCString>& aACUnsafeHeaders,
                                      nsIChannel** aPreflightChannel);
 
   ~nsCORSListenerProxy();
 
-  nsresult UpdateChannel(nsIChannel* aChannel, DataURIHandling aAllowDataURI);
+  nsresult UpdateChannel(nsIChannel* aChannel, DataURIHandling aAllowDataURI,
+                         UpdateType aUpdateType);
   nsresult CheckRequestApproved(nsIRequest* aRequest);
+  nsresult CheckPreflightNeeded(nsIChannel* aChannel, UpdateType aUpdateType);
 
   nsCOMPtr<nsIStreamListener> mOuterListener;
   // The principal that originally kicked off the request
@@ -103,9 +107,6 @@ private:
 #ifdef DEBUG
   bool mInited;
 #endif
-  nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
-  nsCOMPtr<nsIChannel> mOldRedirectChannel;
-  nsCOMPtr<nsIChannel> mNewRedirectChannel;
 };
 
 #endif

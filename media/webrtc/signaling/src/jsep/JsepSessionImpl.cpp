@@ -649,10 +649,9 @@ std::string
 JsepSessionImpl::GetLocalDescription() const
 {
   std::ostringstream os;
-  if (mPendingLocalDescription) {
-    mPendingLocalDescription->Serialize(os);
-  } else if (mCurrentLocalDescription) {
-    mCurrentLocalDescription->Serialize(os);
+  mozilla::Sdp* sdp = GetParsedLocalDescription();
+  if (sdp) {
+    sdp->Serialize(os);
   }
   return os.str();
 }
@@ -661,10 +660,9 @@ std::string
 JsepSessionImpl::GetRemoteDescription() const
 {
   std::ostringstream os;
-  if (mPendingRemoteDescription) {
-    mPendingRemoteDescription->Serialize(os);
-  } else if (mCurrentRemoteDescription) {
-    mCurrentRemoteDescription->Serialize(os);
+  mozilla::Sdp* sdp =  GetParsedRemoteDescription();
+  if (sdp) {
+    sdp->Serialize(os);
   }
   return os.str();
 }
@@ -1299,6 +1297,8 @@ JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
   mNegotiatedTrackPairs = trackPairs;
 
   mGeneratedLocalDescription.reset();
+
+  mNegotiations++;
   return NS_OK;
 }
 
@@ -2006,13 +2006,27 @@ void
 JsepSessionImpl::SetupDefaultCodecs()
 {
   // Supported audio codecs.
+  // Per jmspeex on IRC:
+  // For 32KHz sampling, 28 is ok, 32 is good, 40 should be really good
+  // quality.  Note that 1-2Kbps will be wasted on a stereo Opus channel
+  // with mono input compared to configuring it for mono.
+  // If we reduce bitrate enough Opus will low-pass us; 16000 will kill a
+  // 9KHz tone.  This should be adaptive when we're at the low-end of video
+  // bandwidth (say <100Kbps), and if we're audio-only, down to 8 or
+  // 12Kbps.
   mSupportedCodecs.values.push_back(new JsepAudioCodecDescription(
       "109",
       "opus",
       48000,
       2,
       960,
-      16000));
+#ifdef WEBRTC_GONK
+      // TODO Move this elsewhere to be adaptive to rate - Bug 1207925
+      16000 // B2G uses lower capture sampling rate
+#else
+      40000
+#endif
+      ));
 
   mSupportedCodecs.values.push_back(new JsepAudioCodecDescription(
       "9",
@@ -2049,8 +2063,8 @@ JsepSessionImpl::SetupDefaultCodecs()
       90000
       );
   // Defaults for mandatory params
-  vp8->mMaxFs = 12288;
-  vp8->mMaxFr = 60;
+  vp8->mConstraints.maxFs = 12288; // Enough for 2048x1536
+  vp8->mConstraints.maxFps = 60;
   mSupportedCodecs.values.push_back(vp8);
 
   JsepVideoCodecDescription* vp9 = new JsepVideoCodecDescription(
@@ -2059,8 +2073,8 @@ JsepSessionImpl::SetupDefaultCodecs()
       90000
       );
   // Defaults for mandatory params
-  vp9->mMaxFs = 12288;
-  vp9->mMaxFr = 60;
+  vp9->mConstraints.maxFs = 12288; // Enough for 2048x1536
+  vp9->mConstraints.maxFps = 60;
   mSupportedCodecs.values.push_back(vp9);
 
   JsepVideoCodecDescription* h264_1 = new JsepVideoCodecDescription(
@@ -2114,13 +2128,9 @@ JsepSessionImpl::AddRemoteIceCandidate(const std::string& candidate,
 {
   mLastError.clear();
 
-  mozilla::Sdp* sdp = 0;
+  mozilla::Sdp* sdp = GetParsedRemoteDescription();
 
-  if (mPendingRemoteDescription) {
-    sdp = mPendingRemoteDescription.get();
-  } else if (mCurrentRemoteDescription) {
-    sdp = mCurrentRemoteDescription.get();
-  } else {
+  if (!sdp) {
     JSEP_SET_ERROR("Cannot add ICE candidate in state " << GetStateStr(mState));
     return NS_ERROR_UNEXPECTED;
   }
@@ -2136,13 +2146,9 @@ JsepSessionImpl::AddLocalIceCandidate(const std::string& candidate,
 {
   mLastError.clear();
 
-  mozilla::Sdp* sdp = 0;
+  mozilla::Sdp* sdp = GetParsedLocalDescription();
 
-  if (mPendingLocalDescription) {
-    sdp = mPendingLocalDescription.get();
-  } else if (mCurrentLocalDescription) {
-    sdp = mCurrentLocalDescription.get();
-  } else {
+  if (!sdp) {
     JSEP_SET_ERROR("Cannot add ICE candidate in state " << GetStateStr(mState));
     return NS_ERROR_UNEXPECTED;
   }
@@ -2174,21 +2180,18 @@ JsepSessionImpl::AddLocalIceCandidate(const std::string& candidate,
 }
 
 nsresult
-JsepSessionImpl::EndOfLocalCandidates(const std::string& defaultCandidateAddr,
-                                      uint16_t defaultCandidatePort,
-                                      const std::string& defaultRtcpCandidateAddr,
-                                      uint16_t defaultRtcpCandidatePort,
-                                      uint16_t level)
+JsepSessionImpl::UpdateDefaultCandidate(
+    const std::string& defaultCandidateAddr,
+    uint16_t defaultCandidatePort,
+    const std::string& defaultRtcpCandidateAddr,
+    uint16_t defaultRtcpCandidatePort,
+    uint16_t level)
 {
   mLastError.clear();
 
-  mozilla::Sdp* sdp = 0;
+  mozilla::Sdp* sdp = GetParsedLocalDescription();
 
-  if (mPendingLocalDescription) {
-    sdp = mPendingLocalDescription.get();
-  } else if (mCurrentLocalDescription) {
-    sdp = mCurrentLocalDescription.get();
-  } else {
+  if (!sdp) {
     JSEP_SET_ERROR("Cannot add ICE candidate in state " << GetStateStr(mState));
     return NS_ERROR_UNEXPECTED;
   }
@@ -2224,6 +2227,42 @@ JsepSessionImpl::EndOfLocalCandidates(const std::string& defaultCandidateAddr,
       sdp,
       level,
       bundledMids);
+
+  return NS_OK;
+}
+
+nsresult
+JsepSessionImpl::EndOfLocalCandidates(uint16_t level)
+{
+  mLastError.clear();
+
+  mozilla::Sdp* sdp = GetParsedLocalDescription();
+
+  if (!sdp) {
+    JSEP_SET_ERROR("Cannot mark end of local ICE candidates in state "
+                   << GetStateStr(mState));
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  if (level >= sdp->GetMediaSectionCount()) {
+    return NS_OK;
+  }
+
+  // If offer/answer isn't done, it is too early to tell whether this update
+  // needs to be applied to other m-sections.
+  SdpHelper::BundledMids bundledMids;
+  if (mState == kJsepStateStable) {
+    nsresult rv = GetNegotiatedBundledMids(&bundledMids);
+    if (NS_FAILED(rv)) {
+      MOZ_ASSERT(false);
+      mLastError += " (This should have been caught sooner!)";
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  mSdpHelper.SetIceGatheringComplete(sdp,
+                                     level,
+                                     bundledMids);
 
   return NS_OK;
 }
@@ -2270,6 +2309,30 @@ JsepSessionImpl::EnableOfferMsection(SdpMediaSection* msection)
   AddMid(osMid.str(), msection);
 
   return NS_OK;
+}
+
+mozilla::Sdp*
+JsepSessionImpl::GetParsedLocalDescription() const
+{
+  if (mPendingLocalDescription) {
+    return mPendingLocalDescription.get();
+  } else if (mCurrentLocalDescription) {
+    return mCurrentLocalDescription.get();
+  }
+
+  return nullptr;
+}
+
+mozilla::Sdp*
+JsepSessionImpl::GetParsedRemoteDescription() const
+{
+  if (mPendingRemoteDescription) {
+    return mPendingRemoteDescription.get();
+  } else if (mCurrentRemoteDescription) {
+    return mCurrentRemoteDescription.get();
+  }
+
+  return nullptr;
 }
 
 const Sdp*

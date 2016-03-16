@@ -133,7 +133,7 @@ nsMathMLmoFrame::ProcessTextData()
   nsPresContext* presContext = PresContext();
   if (mFrames.GetLength() != 1) {
     data.Truncate(); // empty data to reset the char
-    mMathMLChar.SetData(presContext, data);
+    mMathMLChar.SetData(data);
     ResolveMathMLCharStyle(presContext, mContent, mStyleContext, &mMathMLChar);
     return;
   }
@@ -177,7 +177,7 @@ nsMathMLmoFrame::ProcessTextData()
   }
 
   // cache the operator
-  mMathMLChar.SetData(presContext, data);
+  mMathMLChar.SetData(data);
 
   // cache the native direction -- beware of bug 133429...
   // mEmbellishData.direction must always retain our native direction, whereas
@@ -362,7 +362,7 @@ nsMathMLmoFrame::ProcessOperatorData()
       // Cache the default values of lspace and rspace.
       // since these values are relative to the 'em' unit, convert to twips now
       nscoord em;
-      nsRefPtr<nsFontMetrics> fm;
+      RefPtr<nsFontMetrics> fm;
       nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
                                             fontSizeInflation);
       GetEmHeight(fm, em);
@@ -619,7 +619,7 @@ nsMathMLmoFrame::Stretch(nsRenderingContext& aRenderingContext,
 
   // get the axis height;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
                                         fontSizeInflation);
   nscoord axisHeight, height;

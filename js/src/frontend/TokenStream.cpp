@@ -42,12 +42,11 @@ using mozilla::UniquePtr;
 struct KeywordInfo {
     const char* chars;         // C string with keyword text
     TokenKind   tokentype;
-    JSVersion   version;
 };
 
 static const KeywordInfo keywords[] = {
-#define KEYWORD_INFO(keyword, name, type, version) \
-    {js_##keyword##_str, type, version},
+#define KEYWORD_INFO(keyword, name, type) \
+    {js_##keyword##_str, type},
     FOR_EACH_JAVASCRIPT_KEYWORD(KEYWORD_INFO)
 #undef KEYWORD_INFO
 };
@@ -555,11 +554,11 @@ TokenStream::reportStrictModeErrorNumberVA(uint32_t offset, bool strictMode, uns
                                            va_list args)
 {
     // In strict mode code, this is an error, not merely a warning.
-    unsigned flags = JSREPORT_STRICT;
+    unsigned flags;
     if (strictMode)
-        flags |= JSREPORT_ERROR;
+        flags = JSREPORT_ERROR;
     else if (options().extraWarningsOption)
-        flags |= JSREPORT_WARNING;
+        flags = JSREPORT_WARNING | JSREPORT_STRICT;
     else
         return true;
 
@@ -772,7 +771,10 @@ TokenStream::reportAsmJSError(uint32_t offset, unsigned errorNumber, ...)
 {
     va_list args;
     va_start(args, errorNumber);
-    reportCompileErrorNumberVA(offset, JSREPORT_WARNING, errorNumber, args);
+    unsigned flags = options().throwOnAsmJSValidationFailureOption
+                     ? JSREPORT_ERROR
+                     : JSREPORT_WARNING;
+    reportCompileErrorNumberVA(offset, flags, errorNumber, args);
     va_end(args);
 }
 
@@ -875,13 +877,15 @@ TokenStream::getDirective(bool isMultiline, bool shouldWarnDeprecated,
                 ungetChar('*');
                 break;
             }
-            tokenbuf.append(c);
+            if (!tokenbuf.append(c))
+                return false;
         }
 
-        if (tokenbuf.empty())
+        if (tokenbuf.empty()) {
             // The directive's URL was missing, but this is not quite an
             // exception that we should stop and drop everything for.
             return true;
+        }
 
         size_t length = tokenbuf.length();
 
@@ -983,36 +987,24 @@ TokenStream::putIdentInTokenbuf(const char16_t* identStart)
 bool
 TokenStream::checkForKeyword(const KeywordInfo* kw, TokenKind* ttp)
 {
-    if (kw->tokentype == TOK_RESERVED
-#ifndef JS_HAS_CLASSES
-        || kw->tokentype == TOK_CLASS
-        || kw->tokentype == TOK_EXTENDS
-        || kw->tokentype == TOK_SUPER
-#endif
-        )
-    {
+    if (kw->tokentype == TOK_RESERVED)
         return reportError(JSMSG_RESERVED_ID, kw->chars);
+
+    if (kw->tokentype == TOK_STRICT_RESERVED)
+        return reportStrictModeError(JSMSG_RESERVED_ID, kw->chars);
+
+    // Treat 'let' as an identifier and contextually a keyword in sloppy mode.
+    // It is always a keyword in strict mode.
+    if (kw->tokentype == TOK_LET && !strictMode())
+        return true;
+
+    // Working keyword.
+    if (ttp) {
+        *ttp = kw->tokentype;
+        return true;
     }
 
-    if (kw->tokentype != TOK_STRICT_RESERVED) {
-        if (kw->version <= versionNumber()) {
-            // Working keyword.
-            if (ttp) {
-                *ttp = kw->tokentype;
-                return true;
-            }
-            return reportError(JSMSG_RESERVED_ID, kw->chars);
-        }
-
-        // The keyword is not in this version. Treat it as an identifier, unless
-        // it is let which we treat as TOK_STRICT_RESERVED by falling through to
-        // the code below (ES5 forbids it in strict mode).
-        if (kw->tokentype != TOK_LET)
-            return true;
-    }
-
-    // Strict reserved word.
-    return reportStrictModeError(JSMSG_RESERVED_ID, kw->chars);
+    return reportError(JSMSG_RESERVED_ID, kw->chars);
 }
 
 bool

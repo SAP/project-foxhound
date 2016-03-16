@@ -6,6 +6,7 @@
 #include "nsNativeThemeCocoa.h"
 
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Helpers.h"
 #include "nsDeviceContext.h"
 #include "nsLayoutUtils.h"
 #include "nsObjCExceptions.h"
@@ -311,7 +312,6 @@ static BOOL IsToolbarStyleContainer(nsIFrame* aFrame)
 
   switch (aFrame->StyleDisplay()->mAppearance) {
     case NS_THEME_TOOLBAR:
-    case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:
     case NS_THEME_STATUSBAR:
       return YES;
     default:
@@ -527,24 +527,24 @@ nsNativeThemeCocoa::nsNativeThemeCocoa()
   // before the main event-loop pool is in place
   nsAutoreleasePool pool;
 
-  mDisclosureButtonCell = [[NSButtonCell alloc] initTextCell:nil];
+  mDisclosureButtonCell = [[NSButtonCell alloc] initTextCell:@""];
   [mDisclosureButtonCell setBezelStyle:NSRoundedDisclosureBezelStyle];
   [mDisclosureButtonCell setButtonType:NSPushOnPushOffButton];
   [mDisclosureButtonCell setHighlightsBy:NSPushInCellMask];
   
-  mHelpButtonCell = [[NSButtonCell alloc] initTextCell:nil];
+  mHelpButtonCell = [[NSButtonCell alloc] initTextCell:@""];
   [mHelpButtonCell setBezelStyle:NSHelpButtonBezelStyle];
   [mHelpButtonCell setButtonType:NSMomentaryPushInButton];
   [mHelpButtonCell setHighlightsBy:NSPushInCellMask];
 
-  mPushButtonCell = [[NSButtonCell alloc] initTextCell:nil];
+  mPushButtonCell = [[NSButtonCell alloc] initTextCell:@""];
   [mPushButtonCell setButtonType:NSMomentaryPushInButton];
   [mPushButtonCell setHighlightsBy:NSPushInCellMask];
 
-  mRadioButtonCell = [[RadioButtonCell alloc] initTextCell:nil];
+  mRadioButtonCell = [[RadioButtonCell alloc] initTextCell:@""];
   [mRadioButtonCell setButtonType:NSRadioButton];
 
-  mCheckboxCell = [[CheckboxCell alloc] initTextCell:nil];
+  mCheckboxCell = [[CheckboxCell alloc] initTextCell:@""];
   [mCheckboxCell setButtonType:NSSwitchButton];
   [mCheckboxCell setAllowsMixedState:YES];
 
@@ -2429,19 +2429,14 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
   if (nativeWidgetRect.IsEmpty())
     return NS_OK; // Don't attempt to draw invisible widgets.
 
-  gfxContext* thebesCtx = aContext->ThebesContext();
-  if (!thebesCtx)
-    return NS_ERROR_FAILURE;
-
-  gfxContextMatrixAutoSaveRestore save(thebesCtx);
+  AutoRestoreTransform autoRestoreTransform(&aDrawTarget);
 
   bool hidpi = IsHiDPIContext(aFrame->PresContext());
   if (hidpi) {
     // Use high-resolution drawing.
     nativeWidgetRect.Scale(0.5f);
     nativeDirtyRect.Scale(0.5f);
-    thebesCtx->SetMatrix(
-      thebesCtx->CurrentMatrix().Scale(2.0f, 2.0f));
+    aDrawTarget.SetTransform(aDrawTarget.GetTransform().PreScale(2.0f, 2.0f));
   }
 
   gfxQuartzNativeDrawing nativeDrawing(aDrawTarget, nativeDirtyRect);
@@ -2688,7 +2683,6 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
     }
       break;
 
-    case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:
     case NS_THEME_TOOLBAR: {
       NSWindow* win = NativeWindowForFrame(aFrame);
       if (ToolbarCanBeUnified(cgContext, macRect, win)) {
@@ -3601,7 +3595,6 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame, uint8_t aWidgetType,
     case NS_THEME_WINDOW_TITLEBAR:
     case NS_THEME_TOOLBOX:
     case NS_THEME_TOOLBAR:
-    case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:
     case NS_THEME_STATUSBAR:
     case NS_THEME_STATUSBAR_PANEL:
     case NS_THEME_STATUSBAR_RESIZER_PANEL:
@@ -3695,7 +3688,7 @@ nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* a
       if (aFrame && aFrame->GetWritingMode().IsVertical()) {
         return false;
       }
-      // fall through
+      MOZ_FALLTHROUGH;
 
     case NS_THEME_LISTBOX:
 
@@ -3728,7 +3721,6 @@ nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* a
     case NS_THEME_SPINNER_UP_BUTTON:
     case NS_THEME_SPINNER_DOWN_BUTTON:
     case NS_THEME_TOOLBAR:
-    case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:
     case NS_THEME_STATUSBAR:
     case NS_THEME_NUMBER_INPUT:
     case NS_THEME_TEXTFIELD:
@@ -3775,7 +3767,6 @@ nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* a
     case NS_THEME_SCROLLBAR_TRACK_HORIZONTAL:
     case NS_THEME_SCROLLBAR_NON_DISAPPEARING:
       return !IsWidgetStyled(aPresContext, aFrame, aWidgetType);
-      break;
 
     case NS_THEME_RESIZER:
     {
@@ -3791,8 +3782,8 @@ nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* a
       nsIScrollableFrame* scrollFrame = do_QueryFrame(parentFrame);
       return (!nsLookAndFeel::UseOverlayScrollbars() &&
               scrollFrame && scrollFrame->GetScrollbarVisibility());
-      break;
     }
+
     case NS_THEME_FOCUS_OUTLINE:
       return true;
 
@@ -3819,7 +3810,6 @@ nsNativeThemeCocoa::WidgetIsContainer(uint8_t aWidgetType)
    case NS_THEME_MAC_DISCLOSURE_BUTTON_OPEN:
    case NS_THEME_MAC_DISCLOSURE_BUTTON_CLOSED:
     return false;
-    break;
   }
   return true;
 }
@@ -3958,7 +3948,6 @@ nsNativeThemeCocoa::ThemeGeometryTypeForWidget(nsIFrame* aFrame, uint8_t aWidget
     case NS_THEME_WINDOW_TITLEBAR:
       return eThemeGeometryTypeTitlebar;
     case NS_THEME_TOOLBAR:
-    case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:
       return eThemeGeometryTypeToolbar;
     case NS_THEME_TOOLBOX:
       return eThemeGeometryTypeToolbox;
@@ -4009,7 +3998,6 @@ nsNativeThemeCocoa::GetWidgetTransparency(nsIFrame* aFrame, uint8_t aWidgetType)
     return eOpaque;
 
   case NS_THEME_TOOLBAR:
-  case NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR:
     return eOpaque;
 
   default:

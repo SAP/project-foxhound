@@ -22,7 +22,7 @@
 #include "WakeLockListener.h"
 #endif
 
-using mozilla::unused;
+using mozilla::Unused;
 
 #define NOTIFY_TOKEN 0xFA
 
@@ -73,7 +73,7 @@ nsAppShell::EventProcessorCallback(GIOChannel *source,
     nsAppShell *self = static_cast<nsAppShell *>(data);
 
     unsigned char c;
-    unused << read(self->mPipeFDs[0], &c, 1);
+    Unused << read(self->mPipeFDs[0], &c, 1);
     NS_ASSERTION(c == (unsigned char) NOTIFY_TOKEN, "wrong token");
 
     self->NativeEventCallback();
@@ -134,6 +134,10 @@ nsAppShell::Init()
         sReal_gtk_window_check_resize = *check_resize;
         *check_resize = wrap_gtk_window_check_resize;
     }
+
+    // Workaround for bug 1209659 which is fixed by Gtk3.20
+    if (gtk_check_version(3, 20, 0) != nullptr)
+        unsetenv("GTK_CSD");
 #endif
 
     if (PR_GetEnv("MOZ_DEBUG_PAINTS"))
@@ -199,7 +203,7 @@ void
 nsAppShell::ScheduleNativeEventCallback()
 {
     unsigned char buf[] = { NOTIFY_TOKEN };
-    unused << write(mPipeFDs[1], buf, 1);
+    Unused << write(mPipeFDs[1], buf, 1);
 }
 
 bool

@@ -48,7 +48,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration
                                , public nsStubMutationObserver
 {
 public:
-  typedef nsCSSProps::KTableValue KTableValue;
+  typedef nsCSSProps::KTableEntry KTableEntry;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsComputedDOMStyle,
@@ -127,14 +127,14 @@ private:
   // Helper method for DoGetTextAlign[Last].
   mozilla::dom::CSSValue* CreateTextAlignValue(uint8_t aAlign,
                                                bool aAlignTrue,
-                                               const KTableValue aTable[]);
+                                               const KTableEntry aTable[]);
   // This indicates error by leaving mStyleContext null.
   void UpdateCurrentStyleSources(bool aNeedsLayoutFlush);
   void ClearCurrentStyleSources();
 
   // Helper functions called by UpdateCurrentStyleSources.
   void ClearStyleContext();
-  void SetResolvedStyleContext(nsRefPtr<nsStyleContext>&& aContext);
+  void SetResolvedStyleContext(RefPtr<nsStyleContext>&& aContext);
   void SetFrameStyleContext(nsStyleContext* aContext);
 
 #define STYLE_STRUCT(name_, checkdata_cb_)                              \
@@ -179,7 +179,8 @@ private:
   mozilla::dom::CSSValue* GetGridLineNames(const nsTArray<nsString>& aLineNames);
   mozilla::dom::CSSValue* GetGridTrackSize(const nsStyleCoord& aMinSize,
                                            const nsStyleCoord& aMaxSize);
-  mozilla::dom::CSSValue* GetGridTemplateColumnsRows(const nsStyleGridTemplate& aTrackList);
+  mozilla::dom::CSSValue* GetGridTemplateColumnsRows(const nsStyleGridTemplate& aTrackList,
+                                                     const nsTArray<nscoord>* aTrackSizes);
   mozilla::dom::CSSValue* GetGridLine(const nsStyleGridLine& aGridLine);
 
   bool GetLineHeightCoord(nscoord& aCoord);
@@ -190,7 +191,7 @@ private:
 
   mozilla::dom::CSSValue* GetBackgroundList(uint8_t nsStyleBackground::Layer::* aMember,
                                             uint32_t nsStyleBackground::* aCount,
-                                            const KTableValue aTable[]);
+                                            const KTableEntry aTable[]);
 
   void GetCSSGradientString(const nsStyleGradient* aGradient,
                             nsAString& aString);
@@ -266,6 +267,8 @@ private:
   mozilla::dom::CSSValue* DoGetGridColumnEnd();
   mozilla::dom::CSSValue* DoGetGridRowStart();
   mozilla::dom::CSSValue* DoGetGridRowEnd();
+  mozilla::dom::CSSValue* DoGetGridColumnGap();
+  mozilla::dom::CSSValue* DoGetGridRowGap();
 
   /* Background properties */
   mozilla::dom::CSSValue* DoGetBackgroundAttachment();
@@ -373,6 +376,9 @@ private:
   mozilla::dom::CSSValue* DoGetTextDecorationColor();
   mozilla::dom::CSSValue* DoGetTextDecorationLine();
   mozilla::dom::CSSValue* DoGetTextDecorationStyle();
+  mozilla::dom::CSSValue* DoGetTextEmphasisColor();
+  mozilla::dom::CSSValue* DoGetTextEmphasisPosition();
+  mozilla::dom::CSSValue* DoGetTextEmphasisStyle();
   mozilla::dom::CSSValue* DoGetTextIndent();
   mozilla::dom::CSSValue* DoGetTextOrientation();
   mozilla::dom::CSSValue* DoGetTextOverflow();
@@ -469,16 +475,22 @@ private:
   mozilla::dom::CSSValue* DoGetAnimationPlayState();
 
   /* CSS Flexbox properties */
-  mozilla::dom::CSSValue* DoGetAlignContent();
-  mozilla::dom::CSSValue* DoGetAlignItems();
-  mozilla::dom::CSSValue* DoGetAlignSelf();
   mozilla::dom::CSSValue* DoGetFlexBasis();
   mozilla::dom::CSSValue* DoGetFlexDirection();
   mozilla::dom::CSSValue* DoGetFlexGrow();
   mozilla::dom::CSSValue* DoGetFlexShrink();
   mozilla::dom::CSSValue* DoGetFlexWrap();
+
+  /* CSS Flexbox/Grid properties */
   mozilla::dom::CSSValue* DoGetOrder();
+
+  /* CSS Box Alignment properties */
+  mozilla::dom::CSSValue* DoGetAlignContent();
+  mozilla::dom::CSSValue* DoGetAlignItems();
+  mozilla::dom::CSSValue* DoGetAlignSelf();
   mozilla::dom::CSSValue* DoGetJustifyContent();
+  mozilla::dom::CSSValue* DoGetJustifyItems();
+  mozilla::dom::CSSValue* DoGetJustifySelf();
 
   /* SVG properties */
   mozilla::dom::CSSValue* DoGetFill();
@@ -560,7 +572,7 @@ private:
                        const nsStyleCoord& aCoord,
                        bool aClampNegativeCalc,
                        PercentageBaseGetter aPercentageBaseGetter = nullptr,
-                       const KTableValue aTable[] = nullptr,
+                       const KTableEntry aTable[] = nullptr,
                        nscoord aMinAppUnits = nscoord_MIN,
                        nscoord aMaxAppUnits = nscoord_MAX);
 

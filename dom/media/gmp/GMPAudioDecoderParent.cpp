@@ -17,7 +17,7 @@ namespace mozilla {
 #undef LOG
 #endif
 
-extern PRLogModuleInfo* GetGMPLog();
+extern LogModule* GetGMPLog();
 
 #define LOGV(msg) MOZ_LOG(GetGMPLog(), mozilla::LogLevel::Verbose, msg)
 #define LOGD(msg) MOZ_LOG(GetGMPLog(), mozilla::LogLevel::Debug, msg)
@@ -164,7 +164,7 @@ GMPAudioDecoderParent::Close()
   // Let Shutdown mark us as dead so it knows if we had been alive
 
   // In case this is the last reference
-  nsRefPtr<GMPAudioDecoderParent> kungfudeathgrip(this);
+  RefPtr<GMPAudioDecoderParent> kungfudeathgrip(this);
   Release();
   Shutdown();
 
@@ -196,7 +196,7 @@ GMPAudioDecoderParent::Shutdown()
 
   mIsOpen = false;
   if (!mActorDestroyed) {
-    unused << SendDecodingComplete();
+    Unused << SendDecodingComplete();
   }
 
   return NS_OK;

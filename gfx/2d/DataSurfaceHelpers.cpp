@@ -17,11 +17,11 @@ namespace gfx {
 
 uint8_t*
 DataAtOffset(DataSourceSurface* aSurface,
-             DataSourceSurface::MappedSurface* aMap,
+             const DataSourceSurface::MappedSurface* aMap,
              IntPoint aPoint)
 {
   if (!SurfaceContainsPoint(aSurface, aPoint)) {
-    MOZ_CRASH("sample position needs to be inside surface!");
+    MOZ_CRASH("GFX: sample position needs to be inside surface!");
   }
 
   MOZ_ASSERT(Factory::CheckSurfaceSize(aSurface->GetSize()),
@@ -31,7 +31,7 @@ DataAtOffset(DataSourceSurface* aSurface,
     aPoint.x * BytesPerPixel(aSurface->GetFormat());
 
   if (data < aMap->mData) {
-    MOZ_CRASH("out-of-range data access");
+    MOZ_CRASH("GFX: out-of-range data access");
   }
 
   return data;
@@ -110,7 +110,7 @@ CopyBGRXSurfaceDataToPackedBGRArray(uint8_t* aSrc, uint8_t* aDst,
   }
 }
 
-uint8_t*
+UniquePtr<uint8_t[]>
 SurfaceToPackedBGRA(DataSourceSurface *aSurface)
 {
   SurfaceFormat format = aSurface->GetFormat();
@@ -120,25 +120,25 @@ SurfaceToPackedBGRA(DataSourceSurface *aSurface)
 
   IntSize size = aSurface->GetSize();
 
-  uint8_t* imageBuffer = new (std::nothrow) uint8_t[size.width * size.height * sizeof(uint32_t)];
+  UniquePtr<uint8_t[]> imageBuffer(
+    new (std::nothrow) uint8_t[size.width * size.height * sizeof(uint32_t)]);
   if (!imageBuffer) {
     return nullptr;
   }
 
   DataSourceSurface::MappedSurface map;
   if (!aSurface->Map(DataSourceSurface::MapType::READ, &map)) {
-    delete [] imageBuffer;
     return nullptr;
   }
 
-  CopySurfaceDataToPackedArray(map.mData, imageBuffer, size,
+  CopySurfaceDataToPackedArray(map.mData, imageBuffer.get(), size,
                                map.mStride, 4 * sizeof(uint8_t));
 
   aSurface->Unmap();
 
   if (format == SurfaceFormat::B8G8R8X8) {
     // Convert BGRX to BGRA by setting a to 255.
-    ConvertBGRXToBGRA(reinterpret_cast<uint8_t *>(imageBuffer), size, size.width * sizeof(uint32_t));
+    ConvertBGRXToBGRA(imageBuffer.get(), size, size.width * sizeof(uint32_t));
   }
 
   return imageBuffer;
@@ -238,7 +238,7 @@ CopyRect(DataSourceSurface* aSrc, DataSourceSurface* aDest,
 {
   if (aSrcRect.Overflows() ||
       IntRect(aDestPoint, aSrcRect.Size()).Overflows()) {
-    MOZ_CRASH("we should never be getting invalid rects at this point");
+    MOZ_CRASH("GFX: we should never be getting invalid rects at this point");
   }
 
   MOZ_RELEASE_ASSERT(aSrc->GetFormat() == aDest->GetFormat(),

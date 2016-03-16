@@ -7,7 +7,7 @@
 #ifndef mozilla_dom_PresentationSessionTransport_h
 #define mozilla_dom_PresentationSessionTransport_h
 
-#include "mozilla/nsRefPtr.h"
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIPresentationSessionTransport.h"
@@ -44,7 +44,10 @@ class PresentationSessionTransport final : public nsIPresentationSessionTranspor
                                          , public nsIStreamListener
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(PresentationSessionTransport,
+                                           nsIPresentationSessionTransport)
+
   NS_DECL_NSIPRESENTATIONSESSIONTRANSPORT
   NS_DECL_NSITRANSPORTEVENTSINK
   NS_DECL_NSIINPUTSTREAMCALLBACK

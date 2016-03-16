@@ -40,11 +40,17 @@ class Reader(object):
     def __init__(self, event):
         self.output = []
         self.got_end_timestamp = False
+        self.got_timeout = False
+        self.timeout_message = ''
         self.event = event
 
     def __call__(self, line):
         if line.find('__endTimestamp') != -1:
             self.got_end_timestamp = True
+            self.event.set()
+        elif line == 'TART: TIMEOUT':
+            self.got_timeout = True
+            self.timeout_message = 'TART'
             self.event.set()
 
         if not (line.startswith('JavaScript error:') or
@@ -53,7 +59,8 @@ class Reader(object):
             self.output.append(line)
 
 
-def run_browser(command, timeout=None, on_started=None, **kwargs):
+def run_browser(command, minidump_dir, timeout=None, on_started=None,
+                **kwargs):
     """
     Run the browser using the given `command`.
 
@@ -64,10 +71,14 @@ def run_browser(command, timeout=None, on_started=None, **kwargs):
     the end. If this is not possible, an exception will be raised.
 
     :param command: the commad (as a string list) to run the browser
+    :param minidump_dir: a path where to extract minidumps in case the
+                         browser hang. This have to be the same value
+                         used in `mozcrash.check_for_crashes`.
     :param timeout: if specified, timeout to wait for the browser before
                     we raise a :class:`TalosError`
     :param on_started: a callback that can be used to do things just after
-                       the browser has been started
+                       the browser has been started. The callback must takes
+                       an argument, which is the psutil.Process instance
     :param kwargs: additional keyword arguments for the :class:`ProcessHandler`
                    instance
 
@@ -87,12 +98,12 @@ def run_browser(command, timeout=None, on_started=None, **kwargs):
     try:
         context.process = psutil.Process(proc.pid)
         if on_started:
-            on_started()
+            on_started(context.process)
         # wait until we saw __endTimestamp in the proc output,
         # or the browser just terminated - or we have a timeout
         if not event.wait(timeout):
             # try to extract the minidump stack if the browser hangs
-            mozcrash.kill_and_get_minidump(proc.pid)
+            mozcrash.kill_and_get_minidump(proc.pid, minidump_dir)
             raise TalosError("timeout")
         if reader.got_end_timestamp:
             for i in range(1, wait_for_quit_timeout):
@@ -103,6 +114,8 @@ def run_browser(command, timeout=None, on_started=None, **kwargs):
                     "Browser shutdown timed out after {0} seconds, terminating"
                     " process.".format(wait_for_quit_timeout)
                 )
+        elif reader.got_timeout:
+            raise TalosError('TIMEOUT: %s' % reader.timeout_message)
     finally:
         # this also handle KeyboardInterrupt
         # ensure early the process is really terminated

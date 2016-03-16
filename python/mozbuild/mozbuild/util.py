@@ -14,6 +14,7 @@ import functools
 import hashlib
 import itertools
 import os
+import re
 import stat
 import sys
 import time
@@ -109,25 +110,6 @@ def ensureParentDir(path):
                 raise
 
 
-def readFileContent(name, mode):
-    """Read the content of file, returns tuple (file existed, file content)"""
-    existed = False
-    old_content = None
-    try:
-        existing = open(name, mode)
-        existed = True
-    except IOError:
-        pass
-    else:
-        try:
-            old_content = existing.read()
-        except IOError:
-            pass
-        finally:
-            existing.close()
-    return existed, old_content
-
-
 class FileAvoidWrite(BytesIO):
     """File-like object that buffers output and only writes if content changed.
 
@@ -146,7 +128,6 @@ class FileAvoidWrite(BytesIO):
         self._capture_diff = capture_diff
         self.diff = None
         self.mode = mode
-        self.force_update = False
 
     def write(self, buf):
         if isinstance(buf, unicode):
@@ -166,11 +147,23 @@ class FileAvoidWrite(BytesIO):
         """
         buf = self.getvalue()
         BytesIO.close(self)
+        existed = False
+        old_content = None
 
-        existed, old_content = readFileContent(self.name, self.mode)
-        if not self.force_update and old_content == buf:
-            assert existed
-            return existed, False
+        try:
+            existing = open(self.name, self.mode)
+            existed = True
+        except IOError:
+            pass
+        else:
+            try:
+                old_content = existing.read()
+                if old_content == buf:
+                    return True, False
+            except IOError:
+                pass
+            finally:
+                existing.close()
 
         ensureParentDir(self.name)
         with open(self.name, 'w') as file:
@@ -488,6 +481,8 @@ class HierarchicalStringList(object):
     __slots__ = ('_strings', '_children')
 
     def __init__(self):
+        # Please change ContextDerivedTypedHierarchicalStringList in context.py
+        # if you make changes here.
         self._strings = StrictOrderingOnAppendList()
         self._children = {}
 
@@ -501,17 +496,6 @@ class HierarchicalStringList(object):
         def __len__(self):
             return len(self._hsl._strings)
 
-        def flags_for(self, value):
-            try:
-                # Solely for the side-effect of throwing AttributeError
-                object.__getattribute__(self._hsl, '__flag_slots__')
-                # We now know we have a HierarchicalStringListWithFlags.
-                # Get the flags, but use |get| so we don't create the
-                # flags if they're not already there.
-                return self._hsl._flags.get(value, None)
-            except AttributeError:
-                return None
-
     def walk(self):
         """Walk over all HierarchicalStringLists in the hierarchy.
 
@@ -519,11 +503,7 @@ class HierarchicalStringList(object):
 
         The path is '' for the root level and '/'-delimited strings for
         any descendants.  The sequence is a read-only sequence of the
-        strings contained at that level.  To support accessing the flags
-        for a given string (e.g. when walking over a
-        HierarchicalStringListWithFlagsFactory), the sequence supports a
-        flags_for() method.  Given a string, the flags_for() method returns
-        the flags for the string, if any, or None if there are no flags set.
+        strings contained at that level.
         """
 
         if self._strings:
@@ -561,8 +541,13 @@ class HierarchicalStringList(object):
         raise MozbuildDeletionError('Unable to delete attributes for this object')
 
     def __iadd__(self, other):
-        self._check_list(other)
-        self._strings += other
+        if isinstance(other, HierarchicalStringList):
+            self._strings += other._strings
+            for c in other._children:
+                self[c] += other[c]
+        else:
+            self._check_list(other)
+            self._strings += other
         return self
 
     def __getitem__(self, name):
@@ -572,13 +557,23 @@ class HierarchicalStringList(object):
         self._set_exportvariable(name, value)
 
     def _get_exportvariable(self, name):
-        return self._children.setdefault(name, HierarchicalStringList())
+        # Please change ContextDerivedTypedHierarchicalStringList in context.py
+        # if you make changes here.
+        child = self._children.get(name)
+        if not child:
+            child = self._children[name] = HierarchicalStringList()
+        return child
 
     def _set_exportvariable(self, name, value):
+        if name in self._children:
+            if value is self._get_exportvariable(name):
+                return
+            raise KeyError('global_ns', 'reassign',
+                           '<some variable>.%s' % name)
+
         exports = self._get_exportvariable(name)
-        if not isinstance(value, HierarchicalStringList):
-            exports._check_list(value)
-            exports._strings = value
+        exports._check_list(value)
+        exports._strings += value
 
     def _check_list(self, value):
         if not isinstance(value, list):
@@ -588,58 +583,6 @@ class HierarchicalStringList(object):
                 raise ValueError(
                     'Expected a list of strings, not an element of %s' % type(v))
 
-
-def HierarchicalStringListWithFlagsFactory(flags):
-    """Returns a HierarchicalStringList-like object, with optional
-    flags on each item.
-
-    The flags are defined in the dict given as argument, where keys are
-    the flag names, and values the type used for the value of that flag.
-
-    Example:
-        FooList = HierarchicalStringListWithFlagsFactory({
-            'foo': bool, 'bar': unicode
-        })
-        foo = FooList(['a', 'b', 'c'])
-        foo['a'].foo = True
-        foo['b'].bar = 'bar'
-        foo.sub = ['x, 'y']
-        foo.sub['x'].foo = False
-        foo.sub['y'].bar = 'baz'
-    """
-    class HierarchicalStringListWithFlags(HierarchicalStringList):
-        __flag_slots__ = ('_flags_type', '_flags')
-
-        def __init__(self):
-            HierarchicalStringList.__init__(self)
-            self._flags_type = FlagsFactory(flags)
-            self._flags = dict()
-
-        def __setattr__(self, name, value):
-            if name in self.__flag_slots__:
-                return object.__setattr__(self, name, value)
-            HierarchicalStringList.__setattr__(self, name, value)
-
-        def __getattr__(self, name):
-            if name in self.__flag_slots__:
-                return object.__getattr__(self, name)
-            return HierarchicalStringList.__getattr__(self, name)
-
-        def __getitem__(self, name):
-            if name not in self._flags:
-                if name not in self._strings:
-                    raise KeyError("'%s'" % name)
-                self._flags[name] = self._flags_type()
-            return self._flags[name]
-
-        def __setitem__(self, name, value):
-            raise TypeError("'%s' object does not support item assignment" %
-                            self.__class__.__name__)
-
-        def _get_exportvariable(self, name):
-            return self._children.setdefault(name, HierarchicalStringListWithFlags())
-
-    return HierarchicalStringListWithFlags
 
 class LockFile(object):
     """LockFile is used by the lock_file method to hold the lock.
@@ -722,56 +665,6 @@ def lock_file(lockfile, max_wait = 600):
     f.close()
 
     return LockFile(lockfile)
-
-
-class PushbackIter(object):
-    '''Utility iterator that can deal with pushed back elements.
-
-    This behaves like a regular iterable, just that you can call
-    iter.pushback(item) to get the given item as next item in the
-    iteration.
-    '''
-    def __init__(self, iterable):
-        self.it = iter(iterable)
-        self.pushed_back = []
-
-    def __iter__(self):
-        return self
-
-    def __nonzero__(self):
-        if self.pushed_back:
-            return True
-
-        try:
-            self.pushed_back.insert(0, self.it.next())
-        except StopIteration:
-            return False
-        else:
-            return True
-
-    def next(self):
-        if self.pushed_back:
-            return self.pushed_back.pop()
-        return self.it.next()
-
-    def pushback(self, item):
-        self.pushed_back.append(item)
-
-
-def shell_quote(s):
-    '''Given a string, returns a version enclosed with single quotes for use
-    in a shell command line.
-
-    As a special case, if given an int, returns a string containing the int,
-    not enclosed in quotes.
-    '''
-    if type(s) == int:
-        return '%d' % s
-    # Single quoted strings can contain any characters unescaped except the
-    # single quote itself, which can't even be escaped, so the string needs to
-    # be closed, an escaped single quote added, and reopened.
-    t = type(s)
-    return t("'%s'") % s.replace(t("'"), t("'\\''"))
 
 
 class OrderedDefaultDict(OrderedDict):
@@ -992,3 +885,36 @@ def group_unified_files(files, unified_prefix, unified_suffix,
                                               files)):
         just_the_filenames = list(filter_out_dummy(unified_group))
         yield '%s%d.%s' % (unified_prefix, i, unified_suffix), just_the_filenames
+
+
+def pair(iterable):
+    '''Given an iterable, returns an iterable pairing its items.
+
+    For example,
+        list(pair([1,2,3,4,5,6]))
+    returns
+        [(1,2), (3,4), (5,6)]
+    '''
+    i = iter(iterable)
+    return itertools.izip_longest(i, i)
+
+
+VARIABLES_RE = re.compile('\$\((\w+)\)')
+
+
+def expand_variables(s, variables):
+    '''Given a string with $(var) variable references, replace those references
+    with the corresponding entries from the given `variables` dict.
+
+    If a variable value is not a string, it is iterated and its items are
+    joined with a whitespace.'''
+    result = ''
+    for s, name in pair(VARIABLES_RE.split(s)):
+        result += s
+        value = variables.get(name)
+        if not value:
+            continue
+        if not isinstance(value, types.StringTypes):
+            value = ' '.join(value)
+        result += value
+    return result

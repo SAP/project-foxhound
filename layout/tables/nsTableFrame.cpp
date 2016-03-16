@@ -622,7 +622,24 @@ nsTableFrame::RemoveCol(nsTableColGroupFrame* aColGroupFrame,
   if (aRemoveFromCellMap) {
     nsTableCellMap* cellMap = GetCellMap();
     if (cellMap) {
-      AppendAnonymousColFrames(1);
+      // If we have some anonymous cols at the end already, we just
+      // add a new anonymous col.
+      if (!mColFrames.IsEmpty() &&
+          mColFrames.LastElement() && // XXXbz is this ever null?
+          mColFrames.LastElement()->GetColType() == eColAnonymousCell) {
+        AppendAnonymousColFrames(1);
+      } else {
+        // All of our colframes correspond to actual <col> tags.  It's possible
+        // that we still have at least as many <col> tags as we have logical
+        // columns from cells, but we might have one less.  Handle the latter
+        // case as follows: First ask the cellmap to drop its last col if it
+        // doesn't have any actual cells in it.  Then call
+        // MatchCellMapToColCache to append an anonymous column if it's needed;
+        // this needs to be after RemoveColsAtEnd, since it will determine the
+        // need for a new column frame based on the width of the cell map.
+        cellMap->RemoveColsAtEnd();
+        MatchCellMapToColCache(cellMap);
+      }
     }
   }
   // for now, just bail and recalc all of the collapsing borders
@@ -649,7 +666,7 @@ nsTableFrame::CreateAnonymousColGroupFrame(nsTableColGroupType aColGroupType)
   nsPresContext* presContext = PresContext();
   nsIPresShell *shell = presContext->PresShell();
 
-  nsRefPtr<nsStyleContext> colGroupStyle;
+  RefPtr<nsStyleContext> colGroupStyle;
   colGroupStyle = shell->StyleSet()->
     ResolveAnonymousBoxStyle(nsCSSAnonBoxes::tableColGroup, mStyleContext);
   // Create a col group frame
@@ -705,7 +722,7 @@ nsTableFrame::AppendAnonymousColFrames(nsTableColGroupFrame* aColGroupFrame,
 
   for (int32_t childX = startIndex; childX <= lastIndex; childX++) {
     nsIContent* iContent;
-    nsRefPtr<nsStyleContext> styleContext;
+    RefPtr<nsStyleContext> styleContext;
     nsStyleContext* parentStyleContext;
 
     // all anonymous cols that we create here use a pseudo style context of the
@@ -1164,9 +1181,8 @@ nsDisplayTableBorderBackground::Paint(nsDisplayListBuilder* aBuilder,
                                       nsRenderingContext* aCtx)
 {
   DrawResult result = static_cast<nsTableFrame*>(mFrame)->
-    PaintTableBorderBackground(*aCtx, mVisibleRect,
-                               ToReferenceFrame(),
-                               aBuilder->GetBackgroundPaintFlags());
+    PaintTableBorderBackground(aBuilder, *aCtx, mVisibleRect,
+                               ToReferenceFrame());
 
   nsDisplayTableItemGeometry::UpdateDrawResult(this, result);
 }
@@ -1358,15 +1374,21 @@ nsTableFrame::GetDeflationForBackground(nsPresContext* aPresContext) const
 // XXX We don't put the borders and backgrounds in tree order like we should.
 // That requires some major surgery which we aren't going to do right now.
 DrawResult
-nsTableFrame::PaintTableBorderBackground(nsRenderingContext& aRenderingContext,
+nsTableFrame::PaintTableBorderBackground(nsDisplayListBuilder* aBuilder,
+                                         nsRenderingContext& aRenderingContext,
                                          const nsRect& aDirtyRect,
-                                         nsPoint aPt, uint32_t aBGPaintFlags)
+                                         nsPoint aPt)
 {
   nsPresContext* presContext = PresContext();
 
+  uint32_t bgFlags = aBuilder->GetBackgroundPaintFlags();
+  PaintBorderFlags borderFlags = aBuilder->ShouldSyncDecodeImages()
+                               ? PaintBorderFlags::SYNC_DECODE_IMAGES
+                               : PaintBorderFlags();
+
   TableBackgroundPainter painter(this, TableBackgroundPainter::eOrigin_Table,
                                  presContext, aRenderingContext,
-                                 aDirtyRect, aPt, aBGPaintFlags);
+                                 aDirtyRect, aPt, bgFlags);
   nsMargin deflate = GetDeflationForBackground(presContext);
   // If 'deflate' is (0,0,0,0) then we'll paint the table background
   // in a separate display item, so don't do it here.
@@ -1377,8 +1399,11 @@ nsTableFrame::PaintTableBorderBackground(nsRenderingContext& aRenderingContext,
     if (!IsBorderCollapse()) {
       Sides skipSides = GetSkipSides();
       nsRect rect(aPt, mRect.Size());
-      nsCSSRendering::PaintBorder(presContext, aRenderingContext, this,
-                                  aDirtyRect, rect, mStyleContext, skipSides);
+
+      result &=
+        nsCSSRendering::PaintBorder(presContext, aRenderingContext, this,
+                                    aDirtyRect, rect, mStyleContext,
+                                    borderFlags, skipSides);
     }
     else {
       gfxContext* ctx = aRenderingContext.ThebesContext();
@@ -2526,10 +2551,30 @@ nsTableFrame::DoRemoveFrame(ChildListID     aListID,
       }
     }
 
-    int32_t numAnonymousColsToAdd = GetColCount() - mColFrames.Length();
-    if (numAnonymousColsToAdd > 0) {
-      // this sets the child list, updates the col cache and cell map
-      AppendAnonymousColFrames(numAnonymousColsToAdd);
+    // If we have some anonymous cols at the end already, we just
+    // add more of them.
+    if (!mColFrames.IsEmpty() &&
+        mColFrames.LastElement() && // XXXbz is this ever null?
+        mColFrames.LastElement()->GetColType() == eColAnonymousCell) {
+      int32_t numAnonymousColsToAdd = GetColCount() - mColFrames.Length();
+      if (numAnonymousColsToAdd > 0) {
+        // this sets the child list, updates the col cache and cell map
+        AppendAnonymousColFrames(numAnonymousColsToAdd);
+      }
+    } else {
+      // All of our colframes correspond to actual <col> tags.  It's possible
+      // that we still have at least as many <col> tags as we have logical
+      // columns from cells, but we might have one less.  Handle the latter case
+      // as follows: First ask the cellmap to drop its last col if it doesn't
+      // have any actual cells in it.  Then call MatchCellMapToColCache to
+      // append an anonymous column if it's needed; this needs to be after
+      // RemoveColsAtEnd, since it will determine the need for a new column
+      // frame based on the width of the cell map.
+      nsTableCellMap* cellMap = GetCellMap();
+      if (cellMap) { // XXXbz is this ever null?
+        cellMap->RemoveColsAtEnd();
+        MatchCellMapToColCache(cellMap);
+      }
     }
 
   } else {

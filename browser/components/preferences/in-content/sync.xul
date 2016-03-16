@@ -35,7 +35,9 @@
       class="header"
       hidden="true"
       data-category="paneSync">
-  <label class="header-name">&paneSync.title;</label>
+  <label class="header-name" flex="1">&paneSync.title;</label>
+  <button class="help-button"
+          aria-label="&helpButton.label;"/>
 </hbox>
 
 <vbox id="syncStatusMessage-container" data-category="paneSync" hidden="true">
@@ -43,18 +45,6 @@
     <vbox id="syncStatusMessageWrapper">
       <label id="syncStatusMessageTitle"></label>
       <description id="syncStatusMessageDescription"></description>
-      <deck id="sync-migration-buttons-deck">
-        <!-- When we are in the "need FxA user" state -->
-        <hbox>
-          <button id="sync-migrate-unlink"/>
-          <button id="sync-migrate-upgrade"/>
-        </hbox>
-        <!-- When we are in the "need the user to be verified" state -->
-        <hbox>
-          <button id="sync-migrate-forget"/>
-          <button id="sync-migrate-resend"/>
-        </hbox>
-      </deck>
     </vbox>
     <vbox>
       <button id="syncStatusMessageClose" class="close-icon"/>
@@ -223,13 +213,16 @@
       </vbox>
     </hbox>
     <label class="fxaMobilePromo">
-        &mobilePromo.start;<!-- We put these comments to avoid inserting white spaces
-        --><image class="androidLogo"/><!--
-        --><label class="androidLink text-link" href="https://www.mozilla.org/firefox/android/"><!--
-        -->&mobilePromo.androidLink;</label><!--
-        -->&mobilePromo.end;
+        &mobilePromo2.start;<!-- We put these comments to avoid inserting white spaces
+        --><label id="fxaMobilePromo-android"
+                  class="androidLink text-link"><!--
+        -->&mobilePromo2.androidLink;</label><!--
+        -->&mobilePromo2.iOSBefore;<!--
+        --><label id="fxaMobilePromo-ios"
+                  class="iOSLink text-link"><!--
+        -->&mobilePromo2.iOSLink;</label><!--
+        -->&mobilePromo2.end;
     </label>
-    <label class="androidAttribution">&androidAttribution;</label>
   </vbox>
 
   <vbox id="hasFxaAccount">
@@ -354,15 +347,18 @@
         </hbox>
       </hbox>
     </groupbox>
-    <spacer class="separator"/>
     <label class="fxaMobilePromo">
-        &mobilePromo.start;<!-- We put these comments to avoid inserting white spaces
-        --><image class="androidLogo"/><!--
-        --><label class="androidLink text-link" href="https://www.mozilla.org/firefox/android/"><!--
-        -->&mobilePromo.androidLink;</label><!--
-        -->&mobilePromo.end;
+        &mobilePromo2.start;<!-- We put these comments to avoid inserting white spaces
+        --><label class="androidLink text-link"
+                  href="https://www.mozilla.org/firefox/android/?utm_source=firefox-browser&amp;utm_medium=firefox-browser&amp;utm_campaign=sync-preferences"><!--
+        -->&mobilePromo2.androidLink;</label><!--
+        -->&mobilePromo2.iOSBefore;<!--
+        --><label class="iOSLink text-link"
+                  href="https://www.mozilla.org/firefox/ios/?utm_source=firefox-browser&amp;utm_medium=firefox-browser&amp;utm_campaign=sync-preferences"><!--
+        -->&mobilePromo2.iOSLink;</label><!--
+        -->&mobilePromo2.end;
     </label>
-    <spacer flex="1"/>
+    <spacer class="separator" flex="1"/>
     <vbox id="tosPP-small" align="start">
       <label id="tosPP-small-ToS" class="text-link">
         &prefs.tosLink.label;
@@ -371,6 +367,5 @@
         &fxaPrivacyNotice.link.label;
       </label>
     </vbox>
-    <label class="androidAttribution">&androidAttribution;</label>
   </vbox>
 </deck>

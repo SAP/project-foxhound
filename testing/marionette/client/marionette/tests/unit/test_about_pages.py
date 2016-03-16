@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from marionette import MarionetteTestCase
+from marionette.marionette_test import skip_if_e10s
 from marionette_driver.keys import Keys
 from marionette_driver.by import By
 
@@ -10,8 +11,7 @@ class TestAboutPages(MarionetteTestCase):
 
     def setUp(self):
         MarionetteTestCase.setUp(self)
-
-        if self.marionette.session_capabilities['platformName'] == 'DARWIN':
+        if self.marionette.session_capabilities['platformName'] == 'Darwin':
             self.mod_key = Keys.META
         else:
             self.mod_key = Keys.CONTROL
@@ -55,6 +55,7 @@ class TestAboutPages(MarionetteTestCase):
         self.marionette.close()
         self.marionette.switch_to_window(start_win)
 
+    @skip_if_e10s
     def test_type_to_non_remote_tab(self):
         with self.marionette.using_context("chrome"):
             urlbar = self.marionette.find_element('id', 'urlbar')

@@ -171,6 +171,12 @@ class JitFrameIterator
     bool isIonStub() const {
         return type_ == JitFrame_IonStub;
     }
+    bool isIonStubMaybeUnwound() const {
+        return type_ == JitFrame_IonStub || type_ == JitFrame_Unwound_IonStub;
+    }
+    bool isIonAccessorICMaybeUnwound() const {
+        return type_ == JitFrame_IonAccessorIC || type_ == JitFrame_Unwound_IonAccessorIC;
+    }
     bool isBailoutJS() const {
         return type_ == JitFrame_Bailout;
     }
@@ -338,6 +344,9 @@ class RInstructionResults
 
     bool init(JSContext* cx, uint32_t numResults);
     bool isInitialized() const;
+#ifdef DEBUG
+    size_t length() const;
+#endif
 
     JitFrameLayout* frame() const;
 
@@ -816,8 +825,7 @@ class InlineFrameIterator
         return computeScopeChain(v, fallback);
     }
 
-    Value thisValue(MaybeReadFallback& fallback) const {
-        // MOZ_ASSERT(isConstructing(...));
+    Value thisArgument(MaybeReadFallback& fallback) const {
         SnapshotIterator s(si_);
 
         // scopeChain

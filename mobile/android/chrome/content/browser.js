@@ -61,6 +61,9 @@ if (AppConstants.MOZ_SAFE_BROWSING) {
                                     "resource://gre/modules/SafeBrowsing.jsm");
 }
 
+XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
+                                  "resource://gre/modules/BrowserUtils.jsm");
+
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
                                   "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
@@ -113,10 +116,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "SharedPreferences",
 XPCOMUtils.defineLazyModuleGetter(this, "Notifications",
                                   "resource://gre/modules/Notifications.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "GMPInstallManager",
-                                  "resource://gre/modules/GMPInstallManager.jsm");
-
 XPCOMUtils.defineLazyModuleGetter(this, "ReaderMode", "resource://gre/modules/ReaderMode.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
+
+XPCOMUtils.defineLazyServiceGetter(this, "FontEnumerator",
+  "@mozilla.org/gfx/fontenumerator;1",
+  "nsIFontEnumerator");
 
 var lazilyLoadedBrowserScripts = [
   ["SelectHelper", "chrome://browser/content/SelectHelper.js"],
@@ -157,7 +163,7 @@ var lazilyLoadedObserverScripts = [
 ];
 if (AppConstants.NIGHTLY_BUILD) {
   lazilyLoadedObserverScripts.push(
-    ["ActionBarHandler", ["ActionBar:OpenNew", "ActionBar:Close", "TextSelection:Get"],
+    ["ActionBarHandler", ["TextSelection:Get", "TextSelection:Action", "TextSelection:End"],
       "chrome://browser/content/ActionBarHandler.js"]
   );
 }
@@ -188,17 +194,19 @@ lazilyLoadedObserverScripts.forEach(function (aScript) {
 // Lazily-loaded browser scripts that use message listeners.
 [
   ["Reader", [
-    "Reader:AddToList",
-    "Reader:ArticleGet",
-    "Reader:FaviconRequest",
-    "Reader:ListStatusRequest",
-    "Reader:RemoveFromList",
-    "Reader:Share",
-    "Reader:ToolbarHidden",
-    "Reader:SystemUIVisibility",
-    "Reader:UpdateReaderButton",
-    "Reader:SetIntPref",
-    "Reader:SetCharPref",
+    ["Reader:AddToList", false],
+    ["Reader:ArticleGet", false],
+    ["Reader:DropdownClosed", true], // 'true' allows us to survive mid-air cycle-collection.
+    ["Reader:DropdownOpened", false],
+    ["Reader:FaviconRequest", false],
+    ["Reader:ListStatusRequest", false],
+    ["Reader:RemoveFromList", false],
+    ["Reader:Share", false],
+    ["Reader:ToolbarHidden", false],
+    ["Reader:SystemUIVisibility", false],
+    ["Reader:UpdateReaderButton", false],
+    ["Reader:SetIntPref", false],
+    ["Reader:SetCharPref", false],
   ], "chrome://browser/content/Reader.js"],
 ].forEach(aScript => {
   let [name, messages, script] = aScript;
@@ -211,11 +219,21 @@ lazilyLoadedObserverScripts.forEach(function (aScript) {
   let mm = window.getGroupMessageManager("browsers");
   let listener = (message) => {
     mm.removeMessageListener(message.name, listener);
-    mm.addMessageListener(message.name, window[name]);
+    let listenAfterClose = false;
+    for (let [name, laClose] of messages) {
+      if (message.name === name) {
+        listenAfterClose = laClose;
+        break;
+      }
+    }
+
+    mm.addMessageListener(message.name, window[name], listenAfterClose);
     window[name].receiveMessage(message);
   };
+
   messages.forEach((message) => {
-    mm.addMessageListener(message, listener);
+    let [name, listenAfterClose] = message;
+    mm.addMessageListener(name, listener, listenAfterClose);
   });
 });
 
@@ -404,11 +422,7 @@ var BrowserApp = {
 
     this.deck = document.getElementById("browsers");
 
-    // This check and BrowserEventHandler should be removed once we have
-    // switched over to the C++ APZ code
-    if (!AppConstants.MOZ_ANDROID_APZ) {
-      BrowserEventHandler.init();
-    }
+    BrowserEventHandler.init();
 
     ViewportHandler.init();
 
@@ -446,10 +460,12 @@ var BrowserApp = {
     Services.obs.addObserver(this, "Webapps:Load", false);
     Services.obs.addObserver(this, "Webapps:AutoUninstall", false);
     Services.obs.addObserver(this, "sessionstore-state-purge-complete", false);
+    Services.obs.addObserver(this, "Fonts:Reload", false);
+
     Messaging.addListener(this.getHistory.bind(this), "Session:GetHistory");
 
     function showFullScreenWarning() {
-      NativeWindow.toast.show(Strings.browser.GetStringFromName("alertFullScreenToast"), "short");
+      Snackbars.show(Strings.browser.GetStringFromName("alertFullScreenToast"), Snackbars.LENGTH_LONG);
     }
 
     window.addEventListener("fullscreen", function() {
@@ -481,7 +497,6 @@ var BrowserApp = {
     NativeWindow.init();
     FormAssistant.init();
     IndexedDB.init();
-    HealthReportStatusListener.init();
     XPInstallObserver.init();
     CharacterEncoding.init();
     ActivityObserver.init();
@@ -492,14 +507,11 @@ var BrowserApp = {
     Tabs.init();
     SearchEngines.init();
 
-    let url = null;
     if ("arguments" in window) {
       if (window.arguments[0])
-        url = window.arguments[0];
+        gScreenWidth = window.arguments[0];
       if (window.arguments[1])
-        gScreenWidth = window.arguments[1];
-      if (window.arguments[2])
-        gScreenHeight = window.arguments[2];
+        gScreenHeight = window.arguments[1];
     }
 
     // XXX maybe we don't do this if the launch was kicked off from external
@@ -525,19 +537,18 @@ var BrowserApp = {
       Services.prefs.setBoolPref("xpinstall.enabled", true);
     }
 
+     if (ParentalControls.parentalControlsEnabled) {
+        let isTelemetryEnabled = ParentalControls.isAllowed(ParentalControls.TELEMETRY);
+        Services.prefs.setBoolPref("toolkit.telemetry.enabled", isTelemetryEnabled);
+
+        let isHealthReportEnabled = ParentalControls.isAllowed(ParentalControls.HEALTH_REPORT);
+        SharedPreferences.forApp().setBoolPref("android.not_a_preference.healthreport.uploadEnabled", isHealthReportEnabled);
+     }
+
     let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
     if (sysInfo.get("version") < 16) {
       let defaults = Services.prefs.getDefaultBranch(null);
       defaults.setBoolPref("media.autoplay.enabled", false);
-    }
-
-    try {
-      // Set the tiles click observer only if tiles reporting is enabled (that
-      // is, a report URL is set in prefs).
-      gTilesReportURL = Services.prefs.getCharPref("browser.tiles.reportURL");
-      Services.obs.addObserver(this, "Tiles:Click", false);
-    } catch (e) {
-      // Tiles reporting is disabled.
     }
 
     InitLater(() => {
@@ -556,20 +567,18 @@ var BrowserApp = {
       InitLater(() => AccessFu.attach(window), window, "AccessFu");
     }
 
-    if (!AppConstants.MOZ_ANDROID_NATIVE_ACCOUNT_UI) {
-      // We can't delay registering WebChannel listeners: if the first page is
-      // about:accounts, which can happen when starting the Firefox Account flow
-      // from the first run experience, or via the Firefox Account Status
-      // Activity, we can and do miss messages from the fxa-content-server.
-      // However, we never allow suitably restricted profiles from listening to
-      // fxa-content-server messages.
-      if (ParentalControls.isAllowed(ParentalControls.MODIFY_ACCOUNTS)) {
-        console.log("browser.js: loading Firefox Accounts WebChannel");
-        Cu.import("resource://gre/modules/FxAccountsWebChannel.jsm");
-        EnsureFxAccountsWebChannel();
-      } else {
-        console.log("browser.js: not loading Firefox Accounts WebChannel; this profile cannot connect to Firefox Accounts.");
-      }
+    // We can't delay registering WebChannel listeners: if the first page is
+    // about:accounts, which can happen when starting the Firefox Account flow
+    // from the first run experience, or via the Firefox Account Status
+    // Activity, we can and do miss messages from the fxa-content-server.
+    // However, we never allow suitably restricted profiles from listening to
+    // fxa-content-server messages.
+    if (ParentalControls.isAllowed(ParentalControls.MODIFY_ACCOUNTS)) {
+      console.log("browser.js: loading Firefox Accounts WebChannel");
+      Cu.import("resource://gre/modules/FxAccountsWebChannel.jsm");
+      EnsureFxAccountsWebChannel();
+    } else {
+      console.log("browser.js: not loading Firefox Accounts WebChannel; this profile cannot connect to Firefox Accounts.");
     }
 
     // Notify Java that Gecko has loaded.
@@ -588,8 +597,16 @@ var BrowserApp = {
         InitLater(() => ShumwayUtils.init(), window, "ShumwayUtils");
         InitLater(() => Telemetry.addData("TRACKING_PROTECTION_ENABLED",
             Services.prefs.getBoolPref("privacy.trackingprotection.enabled")));
+        InitLater(() => Telemetry.addData("TRACKING_PROTECTION_PBM_DISABLED",
+            !Services.prefs.getBoolPref("privacy.trackingprotection.pbmode.enabled")));
         InitLater(() => WebcompatReporter.init());
       }
+
+      // Collect telemetry data.
+      // We do this at startup because we want to move away from "gather-telemetry" (bug 1127907)
+      InitLater(() => {
+        Telemetry.addData("ZOOMED_VIEW_ENABLED", Services.prefs.getBoolPref("ui.zoomedview.enabled"));
+      });
 
       InitLater(() => LightWeightThemeWebInstaller.init());
       InitLater(() => SpatialNavigation.init(BrowserApp.deck, null), window, "SpatialNavigation");
@@ -605,12 +622,14 @@ var BrowserApp = {
       InitLater(() => Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager));
       InitLater(() => LoginManagerParent.init(), window, "LoginManagerParent");
 
-      InitLater(() => {
-          BrowserApp.gmpInstallManager = new GMPInstallManager();
-          BrowserApp.gmpInstallManager.simpleCheckAndInstall().then(null, () => {});
-      }, BrowserApp, "gmpInstallManager");
-
     }, false);
+
+    // Pass caret StateChanged events to ActionBarHandler.
+    if (AppConstants.NIGHTLY_BUILD) {
+      window.addEventListener("mozcaretstatechanged", e => {
+        ActionBarHandler.caretStateChangedHandler(e);
+      }, /* useCapture = */ true, /* wantsUntrusted = */ false);
+    }
   },
 
   get _startupStatus() {
@@ -666,9 +685,9 @@ var BrowserApp = {
         let newtabStrings = Strings.browser.GetStringFromName("newtabpopup.opened");
         let label = PluralForm.get(1, newtabStrings).replace("#1", 1);
         let buttonLabel = Strings.browser.GetStringFromName("newtabpopup.switch");
-        NativeWindow.toast.show(label, "long", {
-          button: {
-            icon: "drawable://switch_button_icon",
+
+        Snackbars.show(label, Snackbars.LENGTH_LONG, {
+          action: {
             label: buttonLabel,
             callback: () => { BrowserApp.selectTab(tab); },
           }
@@ -695,9 +714,8 @@ var BrowserApp = {
           let newtabStrings = Strings.browser.GetStringFromName("newprivatetabpopup.opened");
           let label = PluralForm.get(1, newtabStrings).replace("#1", 1);
           let buttonLabel = Strings.browser.GetStringFromName("newtabpopup.switch");
-          NativeWindow.toast.show(label, "long", {
-            button: {
-              icon: "drawable://switch_button_icon",
+          Snackbars.show(label, Snackbars.LENGTH_LONG, {
+            action: {
               label: buttonLabel,
               callback: () => { BrowserApp.selectTab(tab); },
             }
@@ -760,6 +778,7 @@ var BrowserApp = {
       },
       icon: "drawable://ic_menu_share",
       callback: function(aTarget) {
+        // share.1 telemetry is handled in Java via PromptList
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_link");
       }
     });
@@ -779,6 +798,7 @@ var BrowserApp = {
       },
       icon: "drawable://ic_menu_share",
       callback: function(aTarget) {
+        // share.1 telemetry is handled in Java via PromptList
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_email");
       }
     });
@@ -798,6 +818,7 @@ var BrowserApp = {
       },
       icon: "drawable://ic_menu_share",
       callback: function(aTarget) {
+        // share.1 telemetry is handled in Java via PromptList
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_phone");
       }
     });
@@ -877,6 +898,7 @@ var BrowserApp = {
       },
       icon: "drawable://ic_menu_share",
       callback: function(aTarget) {
+        // share.1 telemetry is handled in Java via PromptList
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_media");
       }
     });
@@ -919,7 +941,7 @@ var BrowserApp = {
         let doc = aTarget.ownerDocument;
         let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
                                                          .getImgCacheForDocument(doc);
-        let props = imageCache.findEntryProperties(aTarget.currentURI, doc.characterSet);
+        let props = imageCache.findEntryProperties(aTarget.currentURI, doc);
         let src = aTarget.src;
         return {
           title: src,
@@ -938,6 +960,7 @@ var BrowserApp = {
       NativeWindow.contextmenus.imageSaveableContext,
       function(aTarget) {
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_save_image");
+        UITelemetry.addEvent("save.1", "contextmenu", null, "image");
 
         ContentAreaUtils.saveImageURL(aTarget.currentURI.spec, null, "SaveImageTitle",
                                       false, true, aTarget.ownerDocument.documentURIObject,
@@ -971,6 +994,7 @@ var BrowserApp = {
       }, NativeWindow.contextmenus.mediaSaveableContext,
       function(aTarget) {
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_save_media");
+        UITelemetry.addEvent("save.1", "contextmenu", null, "media");
 
         let url = aTarget.currentSrc || aTarget.src;
         let filePickerTitleKey = (aTarget instanceof HTMLVideoElement &&
@@ -981,6 +1005,33 @@ var BrowserApp = {
                                       filePickerTitleKey, null, aTarget.ownerDocument.documentURIObject,
                                       aTarget.ownerDocument, true, null);
       });
+
+    NativeWindow.contextmenus.add(stringGetter("contextmenu.showImage"),
+      NativeWindow.contextmenus.imageBlockingPolicyContext,
+      function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_show_image");
+        aTarget.setAttribute("data-ctv-show", "true");
+        aTarget.setAttribute("src", aTarget.getAttribute("data-ctv-src"));
+
+        // Shows a snackbar to unblock all images if browser.image_blocking.enabled is enabled.
+        let blockedImgs = aTarget.ownerDocument.querySelectorAll("[data-ctv-src]");
+        if (blockedImgs.length == 0) {
+          return;
+        }
+        let message = Strings.browser.GetStringFromName("imageblocking.downloadedImage");
+        Snackbars.show(message, Snackbars.LENGTH_LONG, {
+          action: {
+            label: Strings.browser.GetStringFromName("imageblocking.showAllImages"),
+            callback: () => {
+              UITelemetry.addEvent("action.1", "toast", null, "web_show_all_image");
+              for (let i = 0; i < blockedImgs.length; ++i) {
+                blockedImgs[i].setAttribute("data-ctv-show", "true");
+                blockedImgs[i].setAttribute("src", blockedImgs[i].getAttribute("data-ctv-src"));
+              }
+            },
+          }
+        });
+    });
   },
 
   onAppUpdated: function() {
@@ -1230,7 +1281,7 @@ var BrowserApp = {
 
   // Calling this will update the state in BrowserApp after a tab has been
   // closed in the Java UI.
-  _handleTabClosed: function _handleTabClosed(aTab, aShowUndoToast) {
+  _handleTabClosed: function _handleTabClosed(aTab, aShowUndoSnackbar) {
     if (aTab == this.selectedTab)
       this.selectedTab = null;
 
@@ -1240,8 +1291,8 @@ var BrowserApp = {
     evt.initUIEvent("TabClose", true, false, window, tabIndex);
     aTab.browser.dispatchEvent(evt);
 
-    if (aShowUndoToast) {
-      // Get a title for the undo close toast. Fall back to the URL if there is no title.
+    if (aShowUndoSnackbar) {
+      // Get a title for the undo close snackbar. Fall back to the URL if there is no title.
       let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
       let closedTabData = ss.getClosedTabs(window)[0];
 
@@ -1254,9 +1305,8 @@ var BrowserApp = {
         message = Strings.browser.GetStringFromName("undoCloseToast.messageDefault");
       }
 
-      NativeWindow.toast.show(message, "short", {
-        button: {
-          icon: "drawable://undo_button_icon",
+      Snackbars.show(message, Snackbars.LENGTH_LONG, {
+        action: {
           label: Strings.browser.GetStringFromName("undoCloseToast.action2"),
           callback: function() {
             UITelemetry.addEvent("undo.1", "toast", null, "closetab");
@@ -1303,6 +1353,7 @@ var BrowserApp = {
    * @return the tab with the given URL, or null if no such tab exists
    */
   getTabWithURL: function getTabWithURL(aURL, aOptions) {
+    aOptions = aOptions || {};
     let uri = Services.io.newURI(aURL, null, null);
     for (let i = 0; i < this._tabs.length; ++i) {
       let tab = this._tabs[i];
@@ -1324,15 +1375,16 @@ var BrowserApp = {
    * Otherwise, a new tab is opened with the given URL.
    *
    * @param aURL URL to open
-   * @param  aFlags Options for the search. Currently supports:
+   * @param aParam Options used if a tab is created
+   * @param aFlags Options for the search. Currently supports:
    **  @option startsWith a Boolean indicating whether to search for a tab who's url starts with the
    *           requested url. Useful if you want to ignore hash codes on the end of a url. For instance
    *           to have about:downloads match about:downloads#123.
    */
-  selectOrOpenTab: function selectOrOpenTab(aURL, aFlags) {
+  selectOrAddTab: function selectOrAddTab(aURL, aParams, aFlags) {
     let tab = this.getTabWithURL(aURL, aFlags);
     if (tab == null) {
-      tab = this.addTab(aURL);
+      tab = this.addTab(aURL, aParams);
     } else {
       this.selectTab(tab);
     }
@@ -1351,10 +1403,6 @@ var BrowserApp = {
   },
 
   quit: function quit(aClear = { sanitize: {}, dontSaveSession: false }) {
-    if (this.gmpInstallManager) {
-      this.gmpInstallManager.uninit();
-    }
-
     // Notify all windows that an application quit has been requested.
     let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(Ci.nsISupportsPRBool);
     Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
@@ -1408,6 +1456,11 @@ var BrowserApp = {
     }, this);
   },
 
+  // These values come from pref_tracking_protection_entries in arrays.xml.
+  PREF_TRACKING_PROTECTION_ENABLED: "2",
+  PREF_TRACKING_PROTECTION_ENABLED_PB: "1",
+  PREF_TRACKING_PROTECTION_DISABLED: "0",
+
   handlePreferencesRequest: function handlePreferencesRequest(aRequestId,
                                                               aPrefNames,
                                                               aListen) {
@@ -1446,6 +1499,18 @@ var BrowserApp = {
           pref.value = MasterPassword.enabled;
           prefs.push(pref);
           continue;
+        case "privacy.trackingprotection.state": {
+          pref.type = "string";
+          if (Services.prefs.getBoolPref("privacy.trackingprotection.enabled")) {
+            pref.value = this.PREF_TRACKING_PROTECTION_ENABLED;
+          } else if (Services.prefs.getBoolPref("privacy.trackingprotection.pbmode.enabled")) {
+            pref.value = this.PREF_TRACKING_PROTECTION_ENABLED_PB;
+          } else {
+            pref.value = this.PREF_TRACKING_PROTECTION_DISABLED;
+          }
+          prefs.push(pref);
+          continue;
+        }
         // Crash reporter submit pref must be fetched from nsICrashReporter service.
         case "datareporting.crashreporter.submitEnabled":
           let crashReporterBuilt = "nsICrashReporter" in Ci && Services.appinfo instanceof Ci.nsICrashReporter;
@@ -1495,6 +1560,7 @@ var BrowserApp = {
         case "network.cookie.cookieBehavior":
         case "font.size.inflation.minTwips":
         case "home.sync.updateMode":
+        case "browser.image_blocking":
           pref.type = "string";
           pref.value = pref.value.toString();
           break;
@@ -1528,6 +1594,29 @@ var BrowserApp = {
           MasterPassword.setPassword(json.value);
         return;
 
+      // "privacy.trackingprotection.state" is not a "real" pref name, but it's used in the setting menu.
+      // By default "privacy.trackingprotection.pbmode.enabled" is true,
+      // and "privacy.trackingprotection.enabled" is false.
+      case "privacy.trackingprotection.state": {
+        switch (json.value) {
+          // Tracking protection disabled.
+          case this.PREF_TRACKING_PROTECTION_DISABLED:
+            Services.prefs.setBoolPref("privacy.trackingprotection.pbmode.enabled", false);
+            Services.prefs.setBoolPref("privacy.trackingprotection.enabled", false);
+            break;
+          // Tracking protection only in private browsing,
+          case this.PREF_TRACKING_PROTECTION_ENABLED_PB:
+            Services.prefs.setBoolPref("privacy.trackingprotection.pbmode.enabled", true);
+            Services.prefs.setBoolPref("privacy.trackingprotection.enabled", false);
+            break;
+          // Tracking protection everywhere.
+          case this.PREF_TRACKING_PROTECTION_ENABLED:
+            Services.prefs.setBoolPref("privacy.trackingprotection.pbmode.enabled", true);
+            Services.prefs.setBoolPref("privacy.trackingprotection.enabled", true);
+            break;
+        }
+        return;
+      }
       // Enabling or disabling suggestions will prevent future prompts
       case SearchEngines.PREF_SUGGEST_ENABLED:
         Services.prefs.setBoolPref(SearchEngines.PREF_SUGGEST_PROMPTED, true);
@@ -1548,6 +1637,7 @@ var BrowserApp = {
       case "network.cookie.cookieBehavior":
       case "font.size.inflation.minTwips":
       case "home.sync.updateMode":
+      case "browser.image_blocking":
         json.type = "int";
         json.value = parseInt(json.value);
         break;
@@ -2019,11 +2109,8 @@ var BrowserApp = {
         this.computeAcceptLanguages(osLocale, aData);
         break;
 
-      case "Tiles:Click":
-        // Set the click data for the given tab to be handled on the next page load.
-        let data = JSON.parse(aData);
-        let tab = this.getTabForId(data.tabId);
-        tab.tilesData = data.payload;
+      case "Fonts:Reload":
+        FontEnumerator.updateFontList();
         break;
 
       default:
@@ -2199,8 +2286,6 @@ var NativeWindow = {
   init: function() {
     Services.obs.addObserver(this, "Menu:Clicked", false);
     Services.obs.addObserver(this, "Doorhanger:Reply", false);
-    Services.obs.addObserver(this, "Toast:Click", false);
-    Services.obs.addObserver(this, "Toast:Hidden", false);
     this.contextmenus.init();
   },
 
@@ -2219,38 +2304,6 @@ var NativeWindow = {
     });
   },
 
-  toast: {
-    _callbacks: {},
-    show: function(aMessage, aDuration, aOptions) {
-      let msg = {
-        type: "Toast:Show",
-        message: aMessage,
-        duration: aDuration
-      };
-
-      if (aOptions && aOptions.button) {
-        msg.button = {
-          id: uuidgen.generateUUID().toString(),
-        };
-
-        // null is badly handled by the receiver, so try to avoid including nulls.
-        if (aOptions.button.label) {
-          msg.button.label = aOptions.button.label;
-        }
-
-        if (aOptions.button.icon) {
-          // If the caller specified a button, make sure we convert any chrome urls
-          // to jar:jar urls so that the frontend can show them
-          msg.button.icon = resolveGeckoURI(aOptions.button.icon);
-        };
-
-        this._callbacks[msg.button.id] = aOptions.button.callback;
-      }
-
-      Messaging.sendRequest(msg);
-    }
-  },
-
   menu: {
     _callbacks: [],
     _menuId: 1,
@@ -2260,9 +2313,9 @@ var NativeWindow = {
       if (arguments.length == 1) {
         options = arguments[0];
       } else if (arguments.length == 3) {
+          Log.w("Browser", "This menu addon API has been deprecated. Instead, use the options object API.");
           options = {
             name: arguments[0],
-            icon: arguments[1],
             callback: arguments[2]
           };
       } else {
@@ -2363,14 +2416,6 @@ var NativeWindow = {
     if (aTopic == "Menu:Clicked") {
       if (this.menu._callbacks[aData])
         this.menu._callbacks[aData]();
-    } else if (aTopic == "Toast:Click") {
-      if (this.toast._callbacks[aData]) {
-        this.toast._callbacks[aData]();
-        delete this.toast._callbacks[aData];
-      }
-    } else if (aTopic == "Toast:Hidden") {
-      if (this.toast._callbacks[aData])
-        delete this.toast._callbacks[aData];
     } else if (aTopic == "Doorhanger:Reply") {
       let data = JSON.parse(aData);
       let reply_id = data["callback"];
@@ -2515,12 +2560,24 @@ var NativeWindow = {
 
     imageLocationCopyableContext: {
       matches: function imageLinkCopyableContextMatches(aElement) {
+        if (aElement instanceof Ci.nsIDOMHTMLImageElement) {
+          // The image is blocked by Tap-to-load Images
+          if (aElement.hasAttribute("data-ctv-src") && !aElement.hasAttribute("data-ctv-show")) {
+            return false;
+          }
+        }
         return (aElement instanceof Ci.nsIImageLoadingContent && aElement.currentURI);
       }
     },
 
     imageSaveableContext: {
       matches: function imageSaveableContextMatches(aElement) {
+        if (aElement instanceof Ci.nsIDOMHTMLImageElement) {
+          // The image is blocked by Tap-to-load Images
+          if (aElement.hasAttribute("data-ctv-src") && !aElement.hasAttribute("data-ctv-show")) {
+            return false;
+          }
+        }
         if (aElement instanceof Ci.nsIImageLoadingContent && aElement.currentURI) {
           // The image must be loaded to allow saving
           let request = aElement.getRequest(Ci.nsIImageLoadingContent.CURRENT_REQUEST);
@@ -2534,6 +2591,19 @@ var NativeWindow = {
       matches: function mediaSaveableContextMatches(aElement) {
         return (aElement instanceof HTMLVideoElement ||
                aElement instanceof HTMLAudioElement);
+      }
+    },
+
+    imageBlockingPolicyContext: {
+      matches: function imageBlockingPolicyContextMatches(aElement) {
+        if (aElement instanceof Ci.nsIDOMHTMLImageElement && aElement.getAttribute("data-ctv-src")) {
+          // Only show the menuitem if we are blocking the image
+          if (aElement.getAttribute("data-ctv-show") == "true") {
+            return false;
+          }
+          return true;
+        }
+        return false;
       }
     },
 
@@ -2759,6 +2829,11 @@ var NativeWindow = {
           (node instanceof Ci.nsIDOMHTMLAreaElement && node.href)) {
         return this._getLinkURL(node);
       } else if (node instanceof Ci.nsIImageLoadingContent && node.currentURI) {
+        // The image is blocked by Tap-to-load Images
+        let originalURL = node.getAttribute("data-ctv-src");
+        if (originalURL) {
+          return originalURL;
+        }
         return node.currentURI.spec;
       } else if (node instanceof Ci.nsIDOMHTMLMediaElement) {
         return (node.currentSrc || node.src);
@@ -3021,6 +3096,7 @@ var NativeWindow = {
     _copyStringToDefaultClipboard: function(aString) {
       let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
       clipboard.copyString(aString);
+      Snackbars.show(Strings.browser.GetStringFromName("selectionHelper.textCopied"), Snackbars.LENGTH_LONG);
     },
 
     _stripScheme: function(aString) {
@@ -3035,7 +3111,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "PageActions",
 
 // These alias to the old, deprecated NativeWindow interfaces
 [
-  ["pageactions", "resource://gre/modules/PageActions.jsm", "PageActions"]
+  ["pageactions", "resource://gre/modules/PageActions.jsm", "PageActions"],
+  ["toast", "resource://gre/modules/Snackbars.jsm", "Snackbars"]
 ].forEach(item => {
   let [name, script, exprt] = item;
 
@@ -3060,7 +3137,7 @@ var LightWeightThemeWebInstaller = {
 
     if (ParentalControls.parentalControlsEnabled &&
         !this._manager.currentTheme &&
-        !ParentalControls.isAllowed(ParentalControls.DEFAULT_THEME)) {
+        ParentalControls.isAllowed(ParentalControls.DEFAULT_THEME)) {
       // We are using the DEFAULT_THEME restriction to differentiate between restricted profiles & guest mode - Bug 1199596
       this._installParentalControlsTheme();
     }
@@ -3174,6 +3251,10 @@ var LightWeightThemeWebInstaller = {
     let pm = Services.perms;
 
     let uri = node.ownerDocument.documentURIObject;
+    if (!uri.schemeIs("https")) {
+      return false;
+    }
+
     return pm.testPermission(uri, "install") == pm.ALLOW_ACTION;
   },
 
@@ -3377,6 +3458,10 @@ nsBrowserAccess.prototype = {
   isTabContentWindow: function(aWindow) {
     return BrowserApp.getBrowserForWindow(aWindow) != null;
   },
+
+  canClose() {
+    return BrowserUtils.canCloseWindow(window);
+  },
 };
 
 
@@ -3384,9 +3469,6 @@ nsBrowserAccess.prototype = {
 // get created with the right size rather than being 1x1
 var gScreenWidth = 1;
 var gScreenHeight = 1;
-
-// The URL where suggested tile clicks are posted.
-var gTilesReportURL = null;
 
 function Tab(aURL, aParams) {
   this.filter = null;
@@ -3404,7 +3486,6 @@ function Tab(aURL, aParams) {
   this.desktopMode = false;
   this.originalURI = null;
   this.hasTouchListener = false;
-  this.tilesData = null;
 
   this.create(aURL, aParams);
 }
@@ -3621,6 +3702,9 @@ Tab.prototype = {
       return;
 
     let url = currentURI.spec;
+    // We need LOAD_FLAGS_BYPASS_CACHE here since we're changing the User-Agent
+    // string, and servers typically don't use the Vary: User-Agent header, so
+    // not doing this means that we'd get some of the previously cached content.
     let flags = Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE |
                 Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY;
     if (this.originalURI && !this.originalURI.equals(currentURI)) {
@@ -3966,7 +4050,7 @@ Tab.prototype = {
     }
   },
 
-  makeOpenSearchMessage: function(eventTarget) {
+  sendOpenSearchMessage: function(eventTarget) {
     let type = eventTarget.type && eventTarget.type.toLowerCase();
     // Replace all starting or trailing spaces or spaces before "*;" globally w/ "".
     type = type.replace(/^\s+|\s*(?:;.*)?$/g, "");
@@ -4012,11 +4096,11 @@ Tab.prototype = {
           return null;
 
         // Broadcast message that this tab contains search engines that should be visible.
-        return {
+        Messaging.sendRequest({
           type: "Link:OpenSearch",
           tabID: this.id,
           visible: true
-        };
+        });
       });
     }
   },
@@ -4137,7 +4221,7 @@ Tab.prototype = {
 
           jsonMessage = this.makeFeedMessage(target, type);
         } else if (list.indexOf("[search]" != -1) && aEvent.type == "DOMLinkAdded") {
-          jsonMessage = this.makeOpenSearchMessage(target);
+          this.sendOpenSearchMessage(target);
         }
         if (!jsonMessage)
          return;
@@ -4291,27 +4375,6 @@ Tab.prototype = {
             ExternalApps.clearPageAction();
           }
         }
-
-        // Upload any pending tile click events.
-        // Tiles data will be non-null for this tab only if:
-        // 1) the user just clicked a suggested site with a tracking ID, and
-        // 2) tiles reporting is enabled (gTilesReportURL != null).
-        if (this.tilesData) {
-          let xhr = new XMLHttpRequest();
-          xhr.open("POST", gTilesReportURL, true);
-          xhr.setRequestHeader("Content-Type", "application/json");
-          xhr.onload = function (e) {
-            // Broadcast reply if X-Robocop header is set. Used for testing only.
-            if (this.status == 200 && this.getResponseHeader("X-Robocop")) {
-              Messaging.sendRequest({
-                type: "Robocop:TilesResponse",
-                response: this.response
-              });
-            }
-          };
-          xhr.send(this.tilesData);
-          this.tilesData = null;
-        }
       }
     }
   },
@@ -4359,14 +4422,6 @@ Tab.prototype = {
         success = aRequest.status == 0;
       }
 
-      // At this point, either:
-      // 1) the page loaded, the pageshow event fired, and the tilesData XHR has been posted, or
-      // 2) the page did not load, and we're loading a new page.
-      // Either way, we're done with the tiles data, so clear it out.
-      if (this.tilesData && (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP)) {
-        this.tilesData = null;
-      }
-
       // Check to see if we restoring the content from a previous presentation (session)
       // since there should be no real network activity
       let restoring = (aStateFlags & Ci.nsIWebProgressListener.STATE_RESTORING) > 0;
@@ -4399,14 +4454,11 @@ Tab.prototype = {
       fixedURI = URIFixup.createExposableURI(aLocationURI);
     } catch (ex) { }
 
-    // In restricted profiles, we refuse to let you open any file urls.
-    if (!ParentalControls.isAllowed(ParentalControls.VISIT_FILE_URLS, fixedURI)) {
+    // In restricted profiles, we refuse to let you open various urls.
+    if (!ParentalControls.isAllowed(ParentalControls.BROWSE, fixedURI)) {
       aRequest.cancel(Cr.NS_BINDING_ABORTED);
 
-      aRequest = this.browser.docShell.displayLoadError(Cr.NS_ERROR_UNKNOWN_PROTOCOL, fixedURI, null);
-      if (aRequest) {
-        fixedURI = aRequest.URI;
-      }
+      this.browser.docShell.displayLoadError(Cr.NS_ERROR_UNKNOWN_PROTOCOL, fixedURI, null);
     }
 
     let contentType = contentWin.document.contentType;
@@ -4459,7 +4511,13 @@ Tab.prototype = {
     let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
     let appOrigin = ss.getTabValue(this, "appOrigin");
     if (appOrigin) {
-      let originHost = Services.io.newURI(appOrigin, null, null).host;
+      let originHost = "";
+      try {
+        originHost = Services.io.newURI(appOrigin, null, null).host;
+      } catch (e if (e.result == Cr.NS_ERROR_FAILURE)) {
+        // NS_ERROR_FAILURE can be thrown by nsIURI.host if the URI scheme does not possess a host - in this case
+        // we just act as if we have an empty host.
+      }
       if (originHost != aLocationURI.host) {
         // Note: going 'back' will not make this tab pinned again
         ss.deleteTabValue(this, "appOrigin");
@@ -4616,16 +4674,13 @@ Tab.prototype = {
           }
           this.contentDocumentIsDisplayed = true;
 
+          if (contentDocument instanceof Ci.nsIImageDocument) {
+            contentDocument.shrinkToFit();
+          }
+
           let zoom = this.restoredSessionZoom();
           if (zoom) {
             this.setResolution(zoom, true);
-          }
-
-          if (!this.restoredSessionZoom() && contentDocument.mozSyntheticDocument) {
-            let fitZoom = Math.min(gScreenWidth / contentDocument.body.scrollWidth,
-                                   gScreenHeight / contentDocument.body.scrollHeight);
-            this.setResolution(fitZoom, false);
-            this.sendViewportUpdate();  // recompute displayport
           }
         }
         break;
@@ -4656,24 +4711,42 @@ var BrowserEventHandler = {
   init: function init() {
     this._clickInZoomedView = false;
     Services.obs.addObserver(this, "Gesture:SingleTap", false);
-    Services.obs.addObserver(this, "Gesture:CancelTouch", false);
     Services.obs.addObserver(this, "Gesture:ClickInZoomedView", false);
-    Services.obs.addObserver(this, "Gesture:DoubleTap", false);
-    Services.obs.addObserver(this, "Gesture:Scroll", false);
-    Services.obs.addObserver(this, "dom-touch-listener-added", false);
+
+    if (!AppConstants.MOZ_ANDROID_APZ) {
+      Services.obs.addObserver(this, "Gesture:CancelTouch", false);
+      Services.obs.addObserver(this, "Gesture:DoubleTap", false);
+      Services.obs.addObserver(this, "Gesture:Scroll", false);
+      Services.obs.addObserver(this, "dom-touch-listener-added", false);
+      BrowserApp.deck.addEventListener("touchstart", this, true);
+    } else {
+      BrowserApp.deck.addEventListener("touchend", this, true);
+    }
 
     BrowserApp.deck.addEventListener("DOMUpdatePageReport", PopupBlockerObserver.onUpdatePageReport, false);
-    BrowserApp.deck.addEventListener("touchstart", this, true);
     BrowserApp.deck.addEventListener("MozMouseHittest", this, true);
 
     InitLater(() => BrowserApp.deck.addEventListener("click", InputWidgetHelper, true));
     InitLater(() => BrowserApp.deck.addEventListener("click", SelectHelper, true));
+    if (AppConstants.NIGHTLY_BUILD) {
+      InitLater(() => BrowserApp.deck.addEventListener("InsecureLoginFormsStateChange", IdentityHandler.sendLoginInsecure, true));
+    }
+
+    // ReaderViews support backPress listeners.
+    Messaging.addListener(() => {
+      return Reader.onBackPress(BrowserApp.selectedTab.id);
+    }, "Browser:OnBackPressed");
   },
 
   handleEvent: function(aEvent) {
     switch (aEvent.type) {
       case 'touchstart':
         this._handleTouchStart(aEvent);
+        break;
+      case 'touchend':
+        if (this._inCluster) {
+          aEvent.preventDefault();
+        }
         break;
       case 'MozMouseHittest':
         this._handleRetargetedTouchStart(aEvent);
@@ -4859,16 +4932,20 @@ var BrowserEventHandler = {
           if (this._clickInZoomedView != true) {
             this._closeZoomedView();
           }
-          // The _highlightElement was chosen after fluffing the touch events
-          // that led to this SingleTap, so by fluffing the mouse events, they
-          // should find the same target since we fluff them again below.
-          this._sendMouseEvent("mousemove", x, y);
-          this._sendMouseEvent("mousedown", x, y);
-          this._sendMouseEvent("mouseup",   x, y);
+          if (!AppConstants.MOZ_ANDROID_APZ) {
+            // The _highlightElement was chosen after fluffing the touch events
+            // that led to this SingleTap, so by fluffing the mouse events, they
+            // should find the same target since we fluff them again below.
+            this._sendMouseEvent("mousemove", x, y);
+            this._sendMouseEvent("mousedown", x, y);
+            this._sendMouseEvent("mouseup",   x, y);
+          }
         }
         this._clickInZoomedView = false;
-        // scrollToFocusedInput does its own checks to find out if an element should be zoomed into
-        BrowserApp.scrollToFocusedInput(BrowserApp.selectedBrowser);
+        if (!AppConstants.MOZ_ANDROID_APZ) {
+          // scrollToFocusedInput does its own checks to find out if an element should be zoomed into
+          BrowserApp.scrollToFocusedInput(BrowserApp.selectedBrowser);
+        }
 
         this._cancelTapHighlight();
         break;
@@ -4943,7 +5020,9 @@ var BrowserEventHandler = {
   _highlightElement: null,
 
   _doTapHighlight: function _doTapHighlight(aElement) {
-    DOMUtils.setContentState(aElement, kStateActive);
+    if (!AppConstants.MOZ_ANDROID_APZ) {
+      DOMUtils.setContentState(aElement, kStateActive);
+    }
     this._highlightElement = aElement;
   },
 
@@ -4951,12 +5030,15 @@ var BrowserEventHandler = {
     if (!this._highlightElement)
       return;
 
-    // If the active element is in a sub-frame, we need to make that frame's document
-    // active to remove the element's active state.
-    if (this._highlightElement.ownerDocument != BrowserApp.selectedBrowser.contentWindow.document)
-      DOMUtils.setContentState(this._highlightElement.ownerDocument.documentElement, kStateActive);
+    if (!AppConstants.MOZ_ANDROID_APZ) {
+      // If the active element is in a sub-frame, we need to make that frame's document
+      // active to remove the element's active state.
+      if (this._highlightElement.ownerDocument != BrowserApp.selectedBrowser.contentWindow.document)
+        DOMUtils.setContentState(this._highlightElement.ownerDocument.documentElement, kStateActive);
 
-    DOMUtils.setContentState(BrowserApp.selectedBrowser.contentWindow.document.documentElement, kStateActive);
+      DOMUtils.setContentState(BrowserApp.selectedBrowser.contentWindow.document.documentElement, kStateActive);
+    }
+
     this._highlightElement = null;
   },
 
@@ -5002,7 +5084,8 @@ var BrowserEventHandler = {
        * - It's a select element showing multiple rows
        */
       if (checkElem) {
-        if ((elem.scrollTopMax > 0 || elem.scrollLeftMax > 0) &&
+        if ((elem.scrollTopMin != elem.scrollTopMax ||
+             elem.scrollLeftMin != elem.scrollLeftMax) &&
             (this._hasScrollableOverflow(elem) ||
              elem.matches("textarea")) ||
             (elem instanceof HTMLInputElement && elem.mozIsTextField(false)) ||
@@ -5157,10 +5240,16 @@ var ErrorPageEventHandler = {
           // The event came from a button on a malware/phishing block page
           // First check whether it's malware, phishing or unwanted, so that we
           // can use the right strings/links
-          let bucketName = "WARNING_PHISHING_PAGE_";
+          let bucketName = "";
+          let sendTelemetry = false;
           if (errorDoc.documentURI.contains("e=malwareBlocked")) {
+            sendTelemetry = true;
             bucketName = "WARNING_MALWARE_PAGE_";
+          } else if (errorDoc.documentURI.contains("e=phishingBlocked")) {
+            sendTelemetry = true;
+            bucketName = "WARNING_PHISHING_PAGE_";
           } else if (errorDoc.documentURI.contains("e=unwantedBlocked")) {
+            sendTelemetry = true;
             bucketName = "WARNING_UNWANTED_PAGE_";
           }
           let nsISecTel = Ci.nsISecurityUITelemetry;
@@ -5170,19 +5259,26 @@ var ErrorPageEventHandler = {
           let formatter = Cc["@mozilla.org/toolkit/URLFormatterService;1"].getService(Ci.nsIURLFormatter);
 
           if (target == errorDoc.getElementById("getMeOutButton")) {
-            Telemetry.addData("SECURITY_UI", nsISecTel[bucketName + "GET_ME_OUT_OF_HERE"]);
+            if (sendTelemetry) {
+              Telemetry.addData("SECURITY_UI", nsISecTel[bucketName + "GET_ME_OUT_OF_HERE"]);
+            }
             errorDoc.location = "about:home";
           } else if (target == errorDoc.getElementById("reportButton")) {
             // We log even if malware/phishing info URL couldn't be found:
             // the measurement is for how many users clicked the WHY BLOCKED button
-            Telemetry.addData("SECURITY_UI", nsISecTel[bucketName + "WHY_BLOCKED"]);
+            if (sendTelemetry) {
+              Telemetry.addData("SECURITY_UI", nsISecTel[bucketName + "WHY_BLOCKED"]);
+            }
 
             // This is the "Why is this site blocked" button. We redirect
             // to the generic page describing phishing/malware protection.
             let url = Services.urlFormatter.formatURLPref("app.support.baseURL");
             BrowserApp.selectedBrowser.loadURI(url + "phishing-malware");
-          } else if (target == errorDoc.getElementById("ignoreWarningButton")) {
-            Telemetry.addData("SECURITY_UI", nsISecTel[bucketName + "IGNORE_WARNING"]);
+          } else if (target == errorDoc.getElementById("ignoreWarningButton") &&
+                     Services.prefs.getBoolPref("browser.safebrowsing.allowOverride")) {
+            if (sendTelemetry) {
+              Telemetry.addData("SECURITY_UI", nsISecTel[bucketName + "IGNORE_WARNING"]);
+            }
 
             // Allow users to override and continue through to the site,
             let webNav = BrowserApp.selectedBrowser.docShell.QueryInterface(Ci.nsIWebNavigation);
@@ -5572,194 +5668,10 @@ var FormAssistant = {
   }
 };
 
-/**
- * An object to watch for Gecko status changes -- add-on installs, pref changes
- * -- and reflect them back to Java.
- */
-var HealthReportStatusListener = {
-  PREF_ACCEPT_LANG: "intl.accept_languages",
-  PREF_BLOCKLIST_ENABLED: "extensions.blocklist.enabled",
-
-  PREF_TELEMETRY_ENABLED: AppConstants.MOZ_TELEMETRY_REPORTING ?
-    "toolkit.telemetry.enabled" :
-    null,
-
-  init: function () {
-    try {
-      AddonManager.addAddonListener(this);
-    } catch (ex) {
-      dump("Failed to initialize add-on status listener. FHR cannot report add-on state. " + ex);
-    }
-
-    dump("Adding HealthReport:RequestSnapshot observer.");
-    Services.obs.addObserver(this, "HealthReport:RequestSnapshot", false);
-    Services.prefs.addObserver(this.PREF_ACCEPT_LANG, this, false);
-    Services.prefs.addObserver(this.PREF_BLOCKLIST_ENABLED, this, false);
-    if (this.PREF_TELEMETRY_ENABLED) {
-      Services.prefs.addObserver(this.PREF_TELEMETRY_ENABLED, this, false);
-    }
-  },
-
-  observe: function (aSubject, aTopic, aData) {
-    switch (aTopic) {
-      case "HealthReport:RequestSnapshot":
-        HealthReportStatusListener.sendSnapshotToJava();
-        break;
-      case "nsPref:changed":
-        let response = {
-          type: "Pref:Change",
-          pref: aData,
-          isUserSet: Services.prefs.prefHasUserValue(aData),
-        };
-
-        switch (aData) {
-          case this.PREF_ACCEPT_LANG:
-            response.value = Services.prefs.getCharPref(aData);
-            break;
-          case this.PREF_TELEMETRY_ENABLED:
-          case this.PREF_BLOCKLIST_ENABLED:
-            response.value = Services.prefs.getBoolPref(aData);
-            break;
-          default:
-            console.log("Unexpected pref in HealthReportStatusListener: " + aData);
-            return;
-        }
-
-        Messaging.sendRequest(response);
-        break;
-    }
-  },
-
-  MILLISECONDS_PER_DAY: 24 * 60 * 60 * 1000,
-
-  COPY_FIELDS: [
-    "blocklistState",
-    "userDisabled",
-    "appDisabled",
-    "version",
-    "type",
-    "scope",
-    "foreignInstall",
-    "hasBinaryComponents",
-  ],
-
-  // Add-on types for which full details are recorded in FHR.
-  // All other types are ignored.
-  FULL_DETAIL_TYPES: [
-    "plugin",
-    "extension",
-    "service",
-  ],
-
-  /**
-   * Return true if the add-on is not of a type for which we report full details.
-   * These add-ons will still make it over to Java, but will be filtered out.
-   */
-  _shouldIgnore: function (aAddon) {
-    return this.FULL_DETAIL_TYPES.indexOf(aAddon.type) == -1;
-  },
-
-  _dateToDays: function (aDate) {
-    return Math.floor(aDate.getTime() / this.MILLISECONDS_PER_DAY);
-  },
-
-  jsonForAddon: function (aAddon) {
-    let o = {};
-    if (aAddon.installDate) {
-      o.installDay = this._dateToDays(aAddon.installDate);
-    }
-    if (aAddon.updateDate) {
-      o.updateDay = this._dateToDays(aAddon.updateDate);
-    }
-
-    for (let field of this.COPY_FIELDS) {
-      o[field] = aAddon[field];
-    }
-
-    return o;
-  },
-
-  notifyJava: function (aAddon, aNeedsRestart, aAction="Addons:Change") {
-    let json = this.jsonForAddon(aAddon);
-    if (this._shouldIgnore(aAddon)) {
-      json.ignore = true;
-    }
-    Messaging.sendRequest({ type: aAction, id: aAddon.id, json: json });
-  },
-
-  // Add-on listeners.
-  onEnabling: function (aAddon, aNeedsRestart) {
-    this.notifyJava(aAddon, aNeedsRestart);
-  },
-  onDisabling: function (aAddon, aNeedsRestart) {
-    this.notifyJava(aAddon, aNeedsRestart);
-  },
-  onInstalling: function (aAddon, aNeedsRestart) {
-    this.notifyJava(aAddon, aNeedsRestart);
-  },
-  onUninstalling: function (aAddon, aNeedsRestart) {
-    this.notifyJava(aAddon, aNeedsRestart, "Addons:Uninstalling");
-  },
-  onPropertyChanged: function (aAddon, aProperties) {
-    this.notifyJava(aAddon);
-  },
-  onOperationCancelled: function (aAddon) {
-    this.notifyJava(aAddon);
-  },
-
-  sendSnapshotToJava: function () {
-    AddonManager.getAllAddons(function (aAddons) {
-        let jsonA = {};
-        if (aAddons) {
-          for (let i = 0; i < aAddons.length; ++i) {
-            let addon = aAddons[i];
-            try {
-              let addonJSON = HealthReportStatusListener.jsonForAddon(addon);
-              if (HealthReportStatusListener._shouldIgnore(addon)) {
-                addonJSON.ignore = true;
-              }
-              jsonA[addon.id] = addonJSON;
-            } catch (e) {
-              // Just skip this add-on.
-            }
-          }
-        }
-
-        // Now add prefs.
-        let jsonP = {};
-        for (let pref of [this.PREF_BLOCKLIST_ENABLED, this.PREF_TELEMETRY_ENABLED]) {
-          if (!pref) {
-            // This will be the case for PREF_TELEMETRY_ENABLED in developer builds.
-            continue;
-          }
-          jsonP[pref] = {
-            pref: pref,
-            value: Services.prefs.getBoolPref(pref),
-            isUserSet: Services.prefs.prefHasUserValue(pref),
-          };
-        }
-        for (let pref of [this.PREF_ACCEPT_LANG]) {
-          jsonP[pref] = {
-            pref: pref,
-            value: Services.prefs.getCharPref(pref),
-            isUserSet: Services.prefs.prefHasUserValue(pref),
-          };
-        }
-
-        console.log("Sending snapshot message.");
-        Messaging.sendRequest({
-          type: "HealthReport:Snapshot",
-          json: {
-            addons: jsonA,
-            prefs: jsonP,
-          },
-        });
-      }.bind(this));
-  },
-};
-
 var XPInstallObserver = {
   init: function() {
+    Services.obs.addObserver(this, "addon-install-origin-blocked", false);
+    Services.obs.addObserver(this, "addon-install-disabled", false);
     Services.obs.addObserver(this, "addon-install-blocked", false);
     Services.obs.addObserver(this, "addon-install-started", false);
     Services.obs.addObserver(this, "xpi-signature-changed", false);
@@ -5769,76 +5681,104 @@ var XPInstallObserver = {
   },
 
   observe: function(aSubject, aTopic, aData) {
+    let installInfo, tab, host;
+    if (aSubject && aSubject instanceof Ci.amIWebInstallInfo) {
+      installInfo = aSubject;
+      tab = BrowserApp.getTabForBrowser(installInfo.browser);
+      if (installInfo.originatingURI) {
+        host = installInfo.originatingURI.host;
+      }
+    }
+
+    let strings = Strings.browser;
+    let brandShortName = Strings.brand.GetStringFromName("brandShortName");
+
     switch (aTopic) {
       case "addon-install-started":
-        NativeWindow.toast.show(Strings.browser.GetStringFromName("alertAddonsDownloading"), "short");
+        Snackbars.show(strings.GetStringFromName("alertAddonsDownloading"), Snackbars.LENGTH_LONG);
         break;
-      case "addon-install-blocked": {
-        let installInfo = aSubject.QueryInterface(Ci.amIWebInstallInfo);
-        let tab = BrowserApp.getTabForBrowser(installInfo.browser);
+      case "addon-install-disabled": {
         if (!tab)
           return;
 
-        let host = null;
-        if (installInfo.originatingURI) {
-          host = installInfo.originatingURI.host;
-        }
-
-        let brandShortName = Strings.brand.GetStringFromName("brandShortName");
-        let notificationName, buttons, message;
-        let strings = Strings.browser;
         let enabled = true;
         try {
           enabled = Services.prefs.getBoolPref("xpinstall.enabled");
-        }
-        catch (e) {}
+        } catch (e) {}
 
+        let buttons, message, callback;
         if (!enabled) {
-          notificationName = "xpinstall-disabled";
-          if (Services.prefs.prefIsLocked("xpinstall.enabled")) {
-            message = strings.GetStringFromName("xpinstallDisabledMessageLocked");
-            buttons = [];
-          } else {
-            message = strings.formatStringFromName("xpinstallDisabledMessage2", [brandShortName, host], 2);
-            buttons = [{
-              label: strings.GetStringFromName("xpinstallDisabledButton"),
-              callback: function editPrefs() {
-                Services.prefs.setBoolPref("xpinstall.enabled", true);
-                return false;
-              }
-            }];
-          }
+          message = strings.GetStringFromName("xpinstallDisabledMessageLocked");
+          buttons = [strings.GetStringFromName("unsignedAddonsDisabled.dismiss")];
+          callback: (data) => {};
         } else {
-          notificationName = "xpinstall";
-          if (host) {
-            // We have a host which asked for the install.
-            message = strings.formatStringFromName("xpinstallPromptWarning2", [brandShortName, host], 2);
-          } else {
-            // Without a host we address the add-on as the initiator of the install.
-            let addon = null;
-            if (installInfo.installs.length > 0) {
-              addon = installInfo.installs[0].name;
+          message = strings.formatStringFromName("xpinstallDisabledMessage2", [brandShortName, host], 2);
+          buttons = [
+              strings.GetStringFromName("xpinstallDisabledButton"),
+              strings.GetStringFromName("unsignedAddonsDisabled.dismiss")
+          ];
+          callback: (data) => {
+            if (data.button === 1) {
+              Services.prefs.setBoolPref("xpinstall.enabled", true)
             }
-            if (addon) {
-              // We have an addon name, show the regular message.
-              message = strings.formatStringFromName("xpinstallPromptWarningLocal", [brandShortName, addon], 2);
-            } else {
-              // We don't have an addon name, show an alternative message.
-              message = strings.formatStringFromName("xpinstallPromptWarningDirect", [brandShortName], 1);
-            }
-          }
-
-          buttons = [{
-            label: strings.GetStringFromName("xpinstallPromptAllowButton"),
-            callback: function() {
-              // Kick off the install
-              installInfo.install();
-              return false;
-            },
-            positive: true
-          }];
+          };
         }
-        NativeWindow.doorhanger.show(message, aTopic, buttons, tab.id);
+
+        new Prompt({
+          title: Strings.browser.GetStringFromName("addonError.titleError"),
+          message: message,
+          buttons: buttons
+        }).show(callback);
+        break;
+      }
+      case "addon-install-blocked": {
+        if (!tab)
+          return;
+
+        let message;
+        if (host) {
+          // We have a host which asked for the install.
+          message = strings.formatStringFromName("xpinstallPromptWarning2", [brandShortName, host], 2);
+        } else {
+          // Without a host we address the add-on as the initiator of the install.
+          let addon = null;
+          if (installInfo.installs.length > 0) {
+            addon = installInfo.installs[0].name;
+          }
+          if (addon) {
+            // We have an addon name, show the regular message.
+            message = strings.formatStringFromName("xpinstallPromptWarningLocal", [brandShortName, addon], 2);
+          } else {
+            // We don't have an addon name, show an alternative message.
+            message = strings.formatStringFromName("xpinstallPromptWarningDirect", [brandShortName], 1);
+          }
+        }
+
+        let buttons = [
+            strings.GetStringFromName("xpinstallPromptAllowButton"),
+            strings.GetStringFromName("unsignedAddonsDisabled.dismiss")
+        ];
+        new Prompt({
+          title: Strings.browser.GetStringFromName("addonError.titleBlocked"),
+          message: message,
+          buttons: buttons
+        }).show((data) => {
+          if (data.button === 0) {
+            // Kick off the install
+            installInfo.install();
+          }
+        });
+        break;
+      }
+      case "addon-install-origin-blocked": {
+        if (!tab)
+          return;
+
+        new Prompt({
+          title: Strings.browser.GetStringFromName("addonError.titleBlocked"),
+          message: strings.formatStringFromName("xpinstallPromptWarningDirect", [brandShortName], 1),
+          buttons: [strings.GetStringFromName("unsignedAddonsDisabled.dismiss")]
+        }).show((data) => {});
         break;
       }
       case "xpi-signature-changed": {
@@ -5872,7 +5812,7 @@ var XPInstallObserver = {
     }).show((data) => {
       if (data.button === 0) {
         // TODO: Open about:addons to show only unsigned add-ons?
-        BrowserApp.addTab("about:addons", { parentId: BrowserApp.selectedTab.id });
+        BrowserApp.selectOrAddTab("about:addons", { parentId: BrowserApp.selectedTab.id });
       }
     });
   },
@@ -5896,11 +5836,13 @@ var XPInstallObserver = {
       // Display completion message for new installs or updates not done Automatically
       if (!aInstall.existingAddon || !AddonManager.shouldAutoUpdate(aInstall.existingAddon)) {
         let message = Strings.browser.GetStringFromName("alertAddonsInstalledNoRestart.message");
-        NativeWindow.toast.show(message, "short", {
-          button: {
-            icon: "drawable://alert_addon",
+        Snackbars.show(message, Snackbars.LENGTH_LONG, {
+          action: {
             label: Strings.browser.GetStringFromName("alertAddonsInstalledNoRestart.action2"),
-            callback: () => { BrowserApp.addTab("about:addons#" + aAddon.id, { parentId: BrowserApp.selectedTab.id }); },
+            callback: () => {
+              UITelemetry.addEvent("show.1", "toast", null, "addons");
+              BrowserApp.selectOrAddTab("about:addons", { parentId: BrowserApp.selectedTab.id });
+            },
           }
         });
       }
@@ -6483,6 +6425,18 @@ var IdentityHandler = {
     return this.TRACKING_MODE_UNKNOWN;
   },
 
+  sendLoginInsecure: function sendLoginInsecure() {
+    let loginInsecure = LoginManagerParent.hasInsecureLoginForms(BrowserApp.selectedBrowser);
+        if (loginInsecure) {
+          let message = {
+            type: "Content:LoginInsecure",
+            tabID: BrowserApp.selectedTab.id
+          };
+          Messaging.sendRequest(message);
+        }
+    },
+
+
   shieldHistogramAdd: function(browser, value) {
     if (PrivateBrowsingUtils.isBrowserPrivate(browser)) {
       return;
@@ -6784,7 +6738,7 @@ var SearchEngines = {
     Services.search.addEngine(engine.url, Ci.nsISearchEngine.DATA_XML, engine.iconURL, false, {
       onSuccess: function() {
         // Display a toast confirming addition of new search engine.
-        NativeWindow.toast.show(Strings.browser.formatStringFromName("alertSearchEngineAddedToast", [engine.title], 1), "long");
+        Snackbars.show(Strings.browser.formatStringFromName("alertSearchEngineAddedToast", [engine.title], 1), Snackbars.LENGTH_LONG);
       },
 
       onError: function(aCode) {
@@ -6798,7 +6752,7 @@ var SearchEngines = {
           errorMessage = "alertSearchEngineErrorToast";
         }
 
-        NativeWindow.toast.show(Strings.browser.formatStringFromName(errorMessage, [engine.title], 1), "long");
+        Snackbars.show(Strings.browser.formatStringFromName(errorMessage, [engine.title], 1), Snackbars.LENGTH_LONG);
       }
     });
   },
@@ -6879,7 +6833,7 @@ var SearchEngines = {
             name = title.value + " " + i;
 
           Services.search.addEngineWithDetails(name, favicon, null, null, method, formURL);
-          NativeWindow.toast.show(Strings.browser.formatStringFromName("alertSearchEngineAddedToast", [name], 1), "long");
+          Snackbars.show(Strings.browser.formatStringFromName("alertSearchEngineAddedToast", [name], 1), Snackbars.LENGTH_LONG);
           let engine = Services.search.getEngineByName(name);
           engine.wrappedJSObject._queryCharset = charset;
           for (let i = 0; i < formData.length; ++i) {
@@ -7506,3 +7460,4 @@ HTMLContextMenuItem.prototype = Object.create(ContextMenuItem.prototype, {
     }
   },
 });
+

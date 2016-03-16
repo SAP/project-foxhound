@@ -11,6 +11,8 @@ component_intl   = ('Core', 'JavaScript: Internationalization API')
 component_jit    = ('Core', 'JavaScript Engine: JIT')
 component_stl    = ('Core', 'JavaScript: Standard Library')
 
+FILES_PER_UNIFIED_FILE = 6
+
 with Files('../public/**'):
     BUG_COMPONENT = component_engine
 with Files('*'):
@@ -47,9 +49,6 @@ with Files('builtin/make_intl_data.py'):
 with Files('../public/TrackedOptimizationInfo.h'):
     BUG_COMPONENT = component_jit
 
-
-if CONFIG['DEHYDRA_PATH']:
-    DIRS += ['analysis-tests']
 
 if CONFIG['JS_BUNDLED_EDITLINE']:
     DIRS += ['editline']
@@ -109,9 +108,11 @@ EXPORTS.js += [
     '../public/Date.h',
     '../public/Debug.h',
     '../public/GCAPI.h',
+    '../public/GCHashTable.h',
     '../public/HashTable.h',
     '../public/HeapAPI.h',
     '../public/Id.h',
+    '../public/Initialization.h',
     '../public/LegacyIntTypes.h',
     '../public/MemoryMetrics.h',
     '../public/Principals.h',
@@ -122,15 +123,16 @@ EXPORTS.js += [
     '../public/RootingAPI.h',
     '../public/SliceBudget.h',
     '../public/StructuredClone.h',
-    '../public/TraceableHashTable.h',
     '../public/TraceableVector.h',
     '../public/TraceKind.h',
     '../public/TracingAPI.h',
     '../public/TrackedOptimizationInfo.h',
     '../public/TypeDecls.h',
     '../public/UbiNode.h',
+    '../public/UbiNodeBreadthFirst.h',
     '../public/UbiNodeCensus.h',
-    '../public/UbiNodeTraverse.h',
+    '../public/UbiNodeDominatorTree.h',
+    '../public/UbiNodePostOrder.h',
     '../public/Utility.h',
     '../public/Value.h',
     '../public/Vector.h',
@@ -138,12 +140,14 @@ EXPORTS.js += [
 ]
 
 UNIFIED_SOURCES += [
-    'asmjs/AsmJSCompile.cpp',
     'asmjs/AsmJSFrameIterator.cpp',
     'asmjs/AsmJSLink.cpp',
     'asmjs/AsmJSModule.cpp',
     'asmjs/AsmJSSignalHandlers.cpp',
     'asmjs/AsmJSValidate.cpp',
+    'asmjs/WasmGenerator.cpp',
+    'asmjs/WasmIonCompile.cpp',
+    'asmjs/WasmStubs.cpp',
     'builtin/AtomicsObject.cpp',
     'builtin/Eval.cpp',
     'builtin/Intl.cpp',
@@ -157,6 +161,7 @@ UNIFIED_SOURCES += [
     'builtin/SymbolObject.cpp',
     'builtin/TestingFunctions.cpp',
     'builtin/TypedObject.cpp',
+    'builtin/WeakMapObject.cpp',
     'builtin/WeakSetObject.cpp',
     'devtools/sharkctl.cpp',
     'ds/LifoAlloc.cpp',
@@ -287,6 +292,7 @@ UNIFIED_SOURCES += [
     'vm/ArrayBufferObject.cpp',
     'vm/CallNonGenericMethod.cpp',
     'vm/CharacterEncoding.cpp',
+    'vm/CodeCoverage.cpp',
     'vm/Compression.cpp',
     'vm/DateTime.cpp',
     'vm/Debugger.cpp',
@@ -316,9 +322,9 @@ UNIFIED_SOURCES += [
     'vm/SelfHosting.cpp',
     'vm/Shape.cpp',
     'vm/SharedArrayObject.cpp',
-    'vm/SharedTypedArrayObject.cpp',
     'vm/SPSProfiler.cpp',
     'vm/Stack.cpp',
+    'vm/Stopwatch.cpp',
     'vm/String.cpp',
     'vm/StringBuffer.cpp',
     'vm/StructuredClone.cpp',
@@ -357,6 +363,7 @@ SOURCES += [
     'jsatom.cpp',
     'jsmath.cpp',
     'jsutil.cpp',
+    'vm/Initialization.cpp',
 ]
 
 if CONFIG['JS_POSIX_NSPR']:
@@ -439,6 +446,11 @@ elif CONFIG['JS_CODEGEN_ARM']:
         UNIFIED_SOURCES += [
             'jit/arm/Simulator-arm.cpp'
         ]
+    elif CONFIG['OS_ARCH'] == 'Darwin':
+        SOURCES += [
+            'jit/arm/llvm-compiler-rt/arm/aeabi_idivmod.S',
+            'jit/arm/llvm-compiler-rt/arm/aeabi_uidivmod.S',
+        ]
 elif CONFIG['JS_CODEGEN_ARM64']:
     UNIFIED_SOURCES += [
         'jit/arm64/Architecture-arm64.cpp',
@@ -465,17 +477,20 @@ elif CONFIG['JS_CODEGEN_ARM64']:
     if CONFIG['JS_SIMULATOR_ARM64']:
         UNIFIED_SOURCES += [
             'jit/arm64/vixl/Debugger-vixl.cpp',
+            'jit/arm64/vixl/Logic-vixl.cpp',
             'jit/arm64/vixl/MozSimulator-vixl.cpp',
             'jit/arm64/vixl/Simulator-vixl.cpp'
         ]
-elif CONFIG['JS_CODEGEN_MIPS32']:
+elif CONFIG['JS_CODEGEN_MIPS32'] or CONFIG['JS_CODEGEN_MIPS64']:
     UNIFIED_SOURCES += [
         'jit/mips-shared/Architecture-mips-shared.cpp',
         'jit/mips-shared/Assembler-mips-shared.cpp',
         'jit/mips-shared/Bailouts-mips-shared.cpp',
         'jit/mips-shared/BaselineCompiler-mips-shared.cpp',
         'jit/mips-shared/BaselineIC-mips-shared.cpp',
+        'jit/mips-shared/CodeGenerator-mips-shared.cpp',
         'jit/mips-shared/Lowering-mips-shared.cpp',
+        'jit/mips-shared/MacroAssembler-mips-shared.cpp',
         'jit/mips-shared/MoveEmitter-mips-shared.cpp',
     ]
     if CONFIG['JS_CODEGEN_MIPS32']:
@@ -496,6 +511,24 @@ elif CONFIG['JS_CODEGEN_MIPS32']:
             UNIFIED_SOURCES += [
                 'jit/mips32/Simulator-mips32.cpp'
             ]
+    elif CONFIG['JS_CODEGEN_MIPS64']:
+        UNIFIED_SOURCES += [
+            'jit/mips64/Architecture-mips64.cpp',
+            'jit/mips64/Assembler-mips64.cpp',
+            'jit/mips64/Bailouts-mips64.cpp',
+            'jit/mips64/BaselineCompiler-mips64.cpp',
+            'jit/mips64/BaselineIC-mips64.cpp',
+            'jit/mips64/CodeGenerator-mips64.cpp',
+            'jit/mips64/Lowering-mips64.cpp',
+            'jit/mips64/MacroAssembler-mips64.cpp',
+            'jit/mips64/MoveEmitter-mips64.cpp',
+            'jit/mips64/SharedIC-mips64.cpp',
+            'jit/mips64/Trampoline-mips64.cpp',
+        ]
+        if CONFIG['JS_SIMULATOR_MIPS64']:
+            UNIFIED_SOURCES += [
+                'jit/mips64/Simulator-mips64.cpp'
+            ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     SOURCES += [
@@ -514,8 +547,8 @@ if CONFIG['JS_HAS_CTYPES']:
         'ctypes/Library.cpp',
     ]
     if not CONFIG['MOZ_NATIVE_FFI']:
-        GENERATED_INCLUDES += [
-            'ctypes/libffi/include',
+        LOCAL_INCLUDES += [
+            '!ctypes/libffi/include',
         ]
 
 if CONFIG['MOZ_VTUNE']:
@@ -610,6 +643,8 @@ if CONFIG['_MSC_VER']:
     # Parser<SyntaxParseHandler> definition, see bug 1167030.
     CXXFLAGS += ['-wd4661']
     CXXFLAGS += ['-we4067', '-we4258', '-we4275']
+    CXXFLAGS += ['-wd4146'] # FIXME: unary minus operator applied to unsigned type (bug 1229189)
+    CXXFLAGS += ['-wd4273'] # FIXME: inconsistent dll linkage (bug 1229666)
 
 if CONFIG['OS_ARCH'] not in ('WINNT', 'HP-UX'):
     OS_LIBS += [
@@ -636,10 +671,44 @@ if CONFIG['OS_ARCH'] == 'SunOS':
 
 CFLAGS += CONFIG['MOZ_ICU_CFLAGS']
 CXXFLAGS += CONFIG['MOZ_ICU_CFLAGS']
-
-if not CONFIG['GNU_CXX']:
-    ALLOW_COMPILER_WARNINGS = True
+LOCAL_INCLUDES += CONFIG['MOZ_ICU_INCLUDES']
 
 NO_EXPAND_LIBS = True
 
 DIST_INSTALL = True
+
+# Prepare self-hosted JS code for embedding
+GENERATED_FILES += ['selfhosted.out.h']
+selfhosted = GENERATED_FILES['selfhosted.out.h']
+selfhosted.script = 'builtin/embedjs.py:generate_selfhosted'
+selfhosted.inputs = [
+    'js.msg',
+    'builtin/TypedObjectConstants.h',
+    'builtin/SelfHostingDefines.h',
+    'builtin/Utilities.js',
+    'builtin/Array.js',
+    'builtin/Date.js',
+    'builtin/Error.js',
+    'builtin/Generator.js',
+    'builtin/Intl.js',
+    'builtin/IntlData.js',
+    'builtin/Iterator.js',
+    'builtin/Map.js',
+    'builtin/Module.js',
+    'builtin/Number.js',
+    'builtin/Object.js',
+    'builtin/Reflect.js',
+    'builtin/RegExp.js',
+    'builtin/String.js',
+    'builtin/Set.js',
+    'builtin/TypedArray.js',
+    'builtin/TypedObject.js',
+    'builtin/WeakSet.js'
+]
+
+if CONFIG['JS_HAS_CTYPES']:
+    if CONFIG['MOZ_NATIVE_FFI']:
+        CXXFLAGS += CONFIG['MOZ_FFI_CFLAGS']
+    else:
+        # Windows needs this to be linked with a static library.
+        DEFINES['FFI_BUILDING'] = True

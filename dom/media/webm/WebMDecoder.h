@@ -13,13 +13,24 @@ namespace mozilla {
 class WebMDecoder : public MediaDecoder
 {
 public:
-  virtual MediaDecoder* Clone() {
+  explicit WebMDecoder(MediaDecoderOwner* aOwner) : MediaDecoder(aOwner) {}
+  virtual MediaDecoder* Clone(MediaDecoderOwner* aOwner) {
     if (!IsWebMEnabled()) {
       return nullptr;
     }
-    return new WebMDecoder();
+    return new WebMDecoder(aOwner);
   }
   virtual MediaDecoderStateMachine* CreateStateMachine();
+
+  // Returns true if the WebM backend is preffed on.
+  static bool IsEnabled();
+
+  // Returns true if aMIMEType is a type that we think we can render with the
+  // a WebM platform decoder backend. If aCodecs is non emtpy, it is filled
+  // with a comma-delimited list of codecs to check support for. Notes in
+  // out params whether the codecs string contains Opus/Vorbis or VP8/VP9.
+  static bool CanHandleMediaType(const nsACString& aMIMETypeExcludingCodecs,
+                                 const nsAString& aCodecs);
 };
 
 } // namespace mozilla

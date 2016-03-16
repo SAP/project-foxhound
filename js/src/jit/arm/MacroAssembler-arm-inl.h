@@ -111,6 +111,13 @@ MacroAssembler::or64(Register64 src, Register64 dest)
 }
 
 void
+MacroAssembler::xor64(Register64 src, Register64 dest)
+{
+    ma_eor(src.low, dest.low);
+    ma_eor(src.high, dest.high);
+}
+
+void
 MacroAssembler::xor32(Imm32 imm, Register dest)
 {
     ma_eor(imm, dest, SetCC);
@@ -126,6 +133,36 @@ void
 MacroAssembler::xorPtr(Imm32 imm, Register dest)
 {
     ma_eor(imm, dest);
+}
+
+// ===============================================================
+// Arithmetic functions
+
+void
+MacroAssembler::add64(Register64 src, Register64 dest)
+{
+    ma_add(src.low, dest.low, SetCC);
+    ma_adc(src.high, dest.high);
+}
+
+void
+MacroAssembler::sub32(Register src, Register dest)
+{
+    ma_sub(src, dest, SetCC);
+}
+
+void
+MacroAssembler::sub32(Imm32 imm, Register dest)
+{
+    ma_sub(imm, dest, SetCC);
+}
+
+void
+MacroAssembler::sub32(const Address& src, Register dest)
+{
+    ScratchRegisterScope scratch(*this);
+    load32(src, scratch);
+    ma_sub(scratch, dest, SetCC);
 }
 
 // ===============================================================

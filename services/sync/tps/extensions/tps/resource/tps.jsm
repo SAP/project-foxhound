@@ -108,6 +108,7 @@ var TPS = {
   _test: null,
   _triggeredSync: false,
   _usSinceEpoch: 0,
+  _requestedQuit: false,
 
   _init: function TPS__init() {
     // Check if Firefox Accounts is enabled
@@ -122,6 +123,8 @@ var TPS = {
       Services.obs.addObserver(this, aTopic, true);
     }, this);
 
+    // Configure some logging prefs for Sync itself.
+    Weave.Svc.Prefs.set("log.appender.dump", "Debug");
     // Import the appropriate authentication module
     if (this.fxaccounts_enabled) {
       Cu.import("resource://tps/auth/fxaccounts.jsm", module);
@@ -131,9 +134,16 @@ var TPS = {
     }
   },
 
-  DumpError: function TPS__DumpError(msg) {
+  DumpError(msg, exc = null) {
     this._errors++;
-    Logger.logError("[phase" + this._currentPhase + "] " + msg);
+    let errInfo;
+    if (exc) {
+      errInfo = Utils.exceptionStr(exc); // includes details and stack-trace.
+    } else {
+      // always write a stack even if no error passed.
+      errInfo = Utils.stackTrace(new Error());
+    }
+    Logger.logError(`[phase ${this._currentPhase}] ${msg} - ${errInfo}`);
     this.quit();
   },
 
@@ -232,7 +242,7 @@ var TPS = {
       }
     }
     catch (e) {
-      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
+      this.DumpError("Observer failed", e);
       return;
     }
   },
@@ -265,6 +275,7 @@ var TPS = {
   },
 
   quit: function TPS__quit() {
+    this._requestedQuit = true;
     this.goQuitApplication();
   },
 
@@ -285,7 +296,7 @@ var TPS = {
   HandleTabs: function (tabs, action) {
     this._tabsAdded = tabs.length;
     this._tabsFinished = 0;
-    for each (let tab in tabs) {
+    for (let tab of tabs) {
       Logger.logInfo("executing action " + action.toUpperCase() +
                      " on tab " + JSON.stringify(tab));
       switch(action) {
@@ -330,7 +341,7 @@ var TPS = {
   },
 
   HandlePrefs: function (prefs, action) {
-    for each (pref in prefs) {
+    for (let pref of prefs) {
       Logger.logInfo("executing action " + action.toUpperCase() +
                      " on pref " + JSON.stringify(pref));
       let preference = new Preference(pref);
@@ -349,7 +360,7 @@ var TPS = {
   },
 
   HandleForms: function (data, action) {
-    for each (datum in data) {
+    for (let datum of data) {
       Logger.logInfo("executing action " + action.toUpperCase() +
                      " on form entry " + JSON.stringify(datum));
       let formdata = new FormData(datum, this._usSinceEpoch);
@@ -377,7 +388,7 @@ var TPS = {
 
   HandleHistory: function (entries, action) {
     try {
-      for each (entry in entries) {
+      for (let entry of entries) {
         Logger.logInfo("executing action " + action.toUpperCase() +
                        " on history entry " + JSON.stringify(entry));
         switch(action) {
@@ -410,30 +421,30 @@ var TPS = {
 
   HandlePasswords: function (passwords, action) {
     try {
-      for each (password in passwords) {
+      for (let password of passwords) {
         let password_id = -1;
         Logger.logInfo("executing action " + action.toUpperCase() +
                       " on password " + JSON.stringify(password));
-        var password = new Password(password);
+        let passwordOb = new Password(password);
         switch (action) {
           case ACTION_ADD:
-            Logger.AssertTrue(password.Create() > -1, "error adding password");
+            Logger.AssertTrue(passwordOb.Create() > -1, "error adding password");
             break;
           case ACTION_VERIFY:
-            Logger.AssertTrue(password.Find() != -1, "password not found");
+            Logger.AssertTrue(passwordOb.Find() != -1, "password not found");
             break;
           case ACTION_VERIFY_NOT:
-            Logger.AssertTrue(password.Find() == -1,
+            Logger.AssertTrue(passwordOb.Find() == -1,
               "password found, but it shouldn't exist");
             break;
           case ACTION_DELETE:
-            Logger.AssertTrue(password.Find() != -1, "password not found");
-            password.Remove();
+            Logger.AssertTrue(passwordOb.Find() != -1, "password not found");
+            passwordOb.Remove();
             break;
           case ACTION_MODIFY:
-            if (password.updateProps != null) {
-              Logger.AssertTrue(password.Find() != -1, "password not found");
-              password.Update();
+            if (passwordOb.updateProps != null) {
+              Logger.AssertTrue(passwordOb.Find() != -1, "password not found");
+              passwordOb.Update();
             }
             break;
           default:
@@ -450,7 +461,7 @@ var TPS = {
   },
 
   HandleAddons: function (addons, action, state) {
-    for each (let entry in addons) {
+    for (let entry of addons) {
       Logger.logInfo("executing action " + action.toUpperCase() +
                      " on addon " + JSON.stringify(entry));
       let addon = new Addon(this, entry);
@@ -481,9 +492,9 @@ var TPS = {
   HandleBookmarks: function (bookmarks, action) {
     try {
       let items = [];
-      for (folder in bookmarks) {
+      for (let folder in bookmarks) {
         let last_item_pos = -1;
-        for each (bookmark in bookmarks[folder]) {
+        for (let bookmark of bookmarks[folder]) {
           Logger.clearPotentialError();
           let placesItem;
           bookmark['location'] = folder;
@@ -525,7 +536,7 @@ var TPS = {
       }
 
       if (action == ACTION_DELETE || action == ACTION_MODIFY) {
-        for each (item in items) {
+        for (let item of items) {
           Logger.logInfo("executing action " + action.toUpperCase() +
                          " on bookmark " + JSON.stringify(item));
           switch(action) {
@@ -601,7 +612,15 @@ var TPS = {
       this._currentAction++;
     }
     catch(e) {
-      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
+      if (Async.isShutdownException(e)) {
+        if (this._requestedQuit) {
+          Logger.logInfo("Sync aborted due to requested shutdown");
+        } else {
+          this.DumpError("Sync aborted due to shutdown, but we didn't request it");
+        }
+      } else {
+        this.DumpError("RunNextTestAction failed", e);
+      }
       return;
     }
     this.RunNextTestAction();
@@ -658,7 +677,7 @@ var TPS = {
       // executed.
       Utils.nextTick(this._executeTestPhase.bind(this, file, phase, settings));
     } catch(e) {
-      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
+      this.DumpError("RunTestPhase failed", e);
       return;
     }
   },
@@ -689,7 +708,7 @@ var TPS = {
       // care about.
       if (settings.ignoreUnusedEngines && Array.isArray(this._enabledEngines)) {
         let names = {};
-        for each (let name in this._enabledEngines) {
+        for (let name of this._enabledEngines) {
           names[name] = true;
         }
 
@@ -743,7 +762,7 @@ var TPS = {
       this._currentAction = 0;
     }
     catch(e) {
-      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
+      this.DumpError("_executeTestPhase failed", e);
       return;
     }
   },
@@ -819,10 +838,6 @@ var TPS = {
     cb.wait();
     Svc.Obs.remove(aEventName, cb);
     Logger.logInfo(aEventName + " observed!");
-
-    cb = Async.makeSpinningCallback();
-    Utils.nextTick(cb);
-    cb.wait();
   },
 
 
@@ -868,6 +883,13 @@ var TPS = {
     this.waitForSetupComplete();
     Logger.AssertEqual(Weave.Status.service, Weave.STATUS_OK, "Weave status OK");
     this.waitForTracking();
+    // If fxaccounts is enabled we get an initial sync at login time - let
+    // that complete.
+    if (this.fxaccounts_enabled) {
+      this._triggeredSync = true;
+      this.waitForEvent("weave:service:sync:start");
+      this.waitForSyncFinished();
+    }
   },
 
   /**

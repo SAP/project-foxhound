@@ -38,7 +38,10 @@ IccContactToMozContact(JSContext* aCx, GlobalObject& aGlobal,
   if (count > 0) {
     Sequence<nsString>& nameSeq = properties.mName.Construct().SetValue();
     for (uint32_t i = 0; i < count; i++) {
-      nameSeq.AppendElement(nsDependentString(rawStringArray[i]), fallible);
+      nameSeq.AppendElement(
+        rawStringArray[i] ? nsDependentString(rawStringArray[i])
+                          : EmptyString(),
+        fallible);
     }
     NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(count, rawStringArray);
   }
@@ -52,7 +55,9 @@ IccContactToMozContact(JSContext* aCx, GlobalObject& aGlobal,
     Sequence<ContactTelField>& numberSeq = properties.mTel.Construct().SetValue();
     for (uint32_t i = 0; i < count; i++) {
       ContactTelField number;
-      number.mValue.Construct() = nsDependentString(rawStringArray[i]);
+      number.mValue.Construct() =
+        rawStringArray[i] ? nsDependentString(rawStringArray[i])
+                          : EmptyString();
       numberSeq.AppendElement(number, fallible);
     }
     NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(count, rawStringArray);
@@ -67,14 +72,16 @@ IccContactToMozContact(JSContext* aCx, GlobalObject& aGlobal,
     Sequence<ContactField>& emailSeq = properties.mEmail.Construct().SetValue();
     for (uint32_t i = 0; i < count; i++) {
       ContactField email;
-      email.mValue.Construct() = nsDependentString(rawStringArray[i]);
+      email.mValue.Construct() =
+        rawStringArray[i] ? nsDependentString(rawStringArray[i])
+                          : EmptyString();
       emailSeq.AppendElement(email, fallible);
     }
     NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(count, rawStringArray);
   }
 
   ErrorResult er;
-  nsRefPtr<mozContact> contact
+  RefPtr<mozContact> contact
     = mozContact::Constructor(aGlobal, aCx, properties, er);
   rv = er.StealNSResult();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -95,11 +102,11 @@ IccContactToMozContact(JSContext* aCx, GlobalObject& aGlobal,
 static NS_IMETHODIMP
 IccContactListToMozContactList(JSContext* aCx, GlobalObject& aGlobal,
                                nsIIccContact** aContacts, uint32_t aCount,
-                               nsTArray<nsRefPtr<mozContact>>& aContactList)
+                               nsTArray<RefPtr<mozContact>>& aContactList)
 {
   aContactList.SetCapacity(aCount);
   for (uint32_t i = 0; i < aCount ; i++) {
-    nsRefPtr<mozContact> contact;
+    RefPtr<mozContact> contact;
     nsresult rv =
       IccContactToMozContact(aCx, aGlobal, aContacts[i], getter_AddRefs(contact));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -220,7 +227,7 @@ NS_IMETHODIMP
 IccCallback::NotifyCardLockError(const nsAString & aErrorMsg,
                                  int32_t aRetryCount)
 {
-  nsRefPtr<IccCardLockError> error =
+  RefPtr<IccCardLockError> error =
     new IccCardLockError(mWindow, aErrorMsg, aRetryCount);
   mRequest->FireDetailedError(error);
 
@@ -242,7 +249,7 @@ IccCallback::NotifyRetrievedIccContacts(nsIIccContact** aContacts,
   nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(mWindow);
   GlobalObject global(cx, go->GetGlobalJSObject());
 
-  nsTArray<nsRefPtr<mozContact>> contactList;
+  nsTArray<RefPtr<mozContact>> contactList;
 
   nsresult rv =
     IccContactListToMozContactList(cx, global, aContacts, aCount, contactList);
@@ -271,7 +278,7 @@ IccCallback::NotifyUpdatedIccContact(nsIIccContact* aContact)
   nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(mWindow);
   GlobalObject global(cx, go->GetGlobalJSObject());
 
-  nsRefPtr<mozContact> mozContact;
+  RefPtr<mozContact> mozContact;
   nsresult rv =
     IccContactToMozContact(cx, global, aContact, getter_AddRefs(mozContact));
   NS_ENSURE_SUCCESS(rv, rv);

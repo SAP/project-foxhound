@@ -32,12 +32,15 @@ class nsPluginInstanceOwner;
 
 namespace mozilla {
 namespace layers {
+class Image;
 class ImageContainer;
+class TextureClientRecycleAllocator;
 } // namespace layers
 namespace plugins {
 
 class PBrowserStreamParent;
 class PluginModuleParent;
+class D3D11SurfaceHolder;
 
 class PluginInstanceParent : public PPluginInstanceParent
                            , public PluginDataResolver
@@ -115,6 +118,15 @@ public:
     AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value, NPError* result) override;
 
     virtual bool
+    AnswerNPN_GetValue_SupportsAsyncBitmapSurface(bool* value) override;
+
+    virtual bool
+    AnswerNPN_GetValue_SupportsAsyncDXGISurface(bool* value) override;
+
+    virtual bool
+    AnswerNPN_GetValue_PreferredDXGIAdapter(DxgiAdapterDesc* desc) override;
+
+    virtual bool
     AnswerNPN_SetValue_NPPVpluginWindow(const bool& windowed, NPError* result) override;
     virtual bool
     AnswerNPN_SetValue_NPPVpluginTransparent(const bool& transparent,
@@ -161,6 +173,28 @@ public:
     virtual bool
     RecvNPN_InvalidateRect(const NPRect& rect) override;
 
+    virtual bool
+    RecvRevokeCurrentDirectSurface() override;
+
+    virtual bool
+    RecvInitDXGISurface(const gfx::SurfaceFormat& format,
+                         const gfx::IntSize& size,
+                         WindowsHandle* outHandle,
+                         NPError* outError) override;
+    virtual bool
+    RecvFinalizeDXGISurface(const WindowsHandle& handle) override;
+
+    virtual bool
+    RecvShowDirectBitmap(Shmem&& buffer,
+                         const gfx::SurfaceFormat& format,
+                         const uint32_t& stride,
+                         const gfx::IntSize& size,
+                         const gfx::IntRect& dirty) override;
+
+    virtual bool
+    RecvShowDirectDXGISurface(const WindowsHandle& handle,
+                               const gfx::IntRect& rect) override;
+
     // Async rendering
     virtual bool
     RecvShow(const NPRect& updatedRect,
@@ -169,7 +203,7 @@ public:
 
     virtual PPluginSurfaceParent*
     AllocPPluginSurfaceParent(const WindowsSharedMemoryHandle& handle,
-                              const gfxIntSize& size,
+                              const mozilla::gfx::IntSize& size,
                               const bool& transparent) override;
 
     virtual bool
@@ -307,7 +341,9 @@ public:
                                    gfxContext** aCtx);
     nsresult EndUpdateBackground(gfxContext* aCtx,
                                  const nsIntRect& aRect);
-    void DidComposite() { unused << SendNPP_DidComposite(); }
+    void DidComposite();
+
+    bool IsUsingDirectDrawing();
 
     virtual PluginAsyncSurrogate* GetAsyncSurrogate() override;
 
@@ -315,6 +351,9 @@ public:
 
     static PluginInstanceParent* Cast(NPP instance,
                                       PluginAsyncSurrogate** aSurrogate = nullptr);
+
+    virtual bool
+    RecvPluginDidSetCursor() override;
 
 private:
     // Create an appropriate platform surface for a background of size
@@ -338,26 +377,41 @@ private:
 
     nsPluginInstanceOwner* GetOwner();
 
+    void SetCurrentImage(layers::Image* aImage);
+
+    // Update Telemetry with the current drawing model.
+    void RecordDrawingModel();
+
 private:
     PluginModuleParent* mParent;
-    nsRefPtr<PluginAsyncSurrogate> mSurrogate;
+    RefPtr<PluginAsyncSurrogate> mSurrogate;
     bool mUseSurrogate;
     NPP mNPP;
     const NPNetscapeFuncs* mNPNIface;
     nsCString mSrcAttribute;
     bool mIsWhitelistedForShumway;
     NPWindowType mWindowType;
-    int16_t            mDrawingModel;
+    int16_t mDrawingModel;
+
+    // Since plugins may request different drawing models to find a compatible
+    // one, we only record the drawing model after a SetWindow call and if the
+    // drawing model has changed.
+    int mLastRecordedDrawingModel;
 
     nsDataHashtable<nsPtrHashKey<NPObject>, PluginScriptableObjectParent*> mScriptableObjects;
 
+    // This is used to tell the compositor that it should invalidate the ImageLayer.
+    uint32_t mFrameID;
+
+#if defined(XP_WIN)
+    // Note: DXGI 1.1 surface handles are global across all processes, and are not
+    // marshaled. As long as we haven't freed a texture its handle should be valid
+    // as a unique cross-process identifier for the texture.
+    nsRefPtrHashtable<nsPtrHashKey<void>, D3D11SurfaceHolder> mD3D11Surfaces;
+#endif
+
 #if defined(OS_WIN)
 private:
-    // Used in rendering windowless plugins in other processes.
-    bool SharedSurfaceSetWindow(const NPWindow* aWindow, NPRemoteWindow& aRemoteWindow);
-    void SharedSurfaceBeforePaint(RECT &rect, NPRemoteEvent& npremoteevent);
-    void SharedSurfaceAfterPaint(NPEvent* npevent);
-    void SharedSurfaceRelease();
     // Used in handling parent/child forwarding of events.
     static LRESULT CALLBACK PluginWindowHookProc(HWND hWnd, UINT message,
                                                  WPARAM wParam, LPARAM lParam);
@@ -368,7 +422,6 @@ private:
     void MaybeCreateChildPopupSurrogate();
 
 private:
-    gfx::SharedDIBWin  mSharedSurfaceDib;
     nsIntRect          mPluginPort;
     nsIntRect          mSharedSize;
     HWND               mPluginHWND;
@@ -378,9 +431,6 @@ private:
     HWND               mChildPluginsParentHWND;
     WNDPROC            mPluginWndProc;
     bool               mNestedEventState;
-
-    // This will automatically release the textures when this object goes away.
-    nsRefPtrHashtable<nsPtrHashKey<void>, ID3D10Texture2D> mTextureMap;
 #endif // defined(XP_WIN)
 #if defined(MOZ_WIDGET_COCOA)
 private:
@@ -393,7 +443,7 @@ private:
 #endif // definied(MOZ_WIDGET_COCOA)
 
     // ObjectFrame layer wrapper
-    nsRefPtr<gfxASurface>    mFrontSurface;
+    RefPtr<gfxASurface>    mFrontSurface;
     // For windowless+transparent instances, this surface contains a
     // "pretty recent" copy of the pixels under its <object> frame.
     // On the plugin side, we use this surface to avoid doing alpha
@@ -403,9 +453,9 @@ private:
     // We have explicitly chosen not to provide any guarantees about
     // the consistency of the pixels in |mBackground|.  A plugin may
     // be able to observe partial updates to the background.
-    nsRefPtr<gfxASurface>    mBackground;
+    RefPtr<gfxASurface>    mBackground;
 
-    nsRefPtr<ImageContainer> mImageContainer;
+    RefPtr<ImageContainer> mImageContainer;
 };
 
 

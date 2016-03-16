@@ -8,11 +8,12 @@
 #ifndef mozilla_StyleAnimationValue_h_
 #define mozilla_StyleAnimationValue_h_
 
+#include "mozilla/gfx/MatrixFwd.h"
 #include "nsStringFwd.h"
 #include "nsStringBuffer.h"
-#include "nsCSSProperty.h"
 #include "nsCoord.h"
 #include "nsColor.h"
+#include "nsCSSProps.h"
 #include "nsCSSValue.h"
 
 class nsIFrame;
@@ -21,13 +22,15 @@ class gfx3DMatrix;
 
 namespace mozilla {
 
+namespace css {
+class StyleRule;
+} // namespace css
+
 namespace dom {
 class Element;
 } // namespace dom
 
-namespace gfx {
-class Matrix4x4;
-} // namespace gfx
+struct PropertyStyleAnimationValuePair;
 
 /**
  * Utility class to handle animated style values
@@ -152,6 +155,23 @@ public:
                              bool aUseSVGMode,
                              StyleAnimationValue& aComputedValue,
                              bool* aIsContextSensitive = nullptr);
+
+  /**
+   * Like ComputeValue, but returns an array of StyleAnimationValues.
+   *
+   * On success, when aProperty is a longhand, aResult will have a single
+   * value in it.  When aProperty is a shorthand, aResult will be filled with
+   * values for all of aProperty's longhand components.  aEnabledState
+   * is used to filter the longhand components that will be appended
+   * to aResult.  On failure, aResult might still have partial results
+   * in it.
+   */
+  static bool ComputeValues(nsCSSProperty aProperty,
+                            nsCSSProps::EnabledState aEnabledState,
+                            mozilla::dom::Element* aTargetElement,
+                            const nsAString& aSpecifiedValue,
+                            bool aUseSVGMode,
+                            nsTArray<PropertyStyleAnimationValuePair>& aResult);
 
   /**
    * Creates a specified value for the given computed value.
@@ -373,6 +393,13 @@ public:
     { return !(*this == aOther); }
 
 private:
+  static bool ComputeValues(nsCSSProperty aProperty,
+                            nsCSSProps::EnabledState aEnabledState,
+                            mozilla::dom::Element* aTargetElement,
+                            mozilla::css::StyleRule* aStyleRule,
+                            nsTArray<PropertyStyleAnimationValuePair>& aValues,
+                            bool* aIsContextSensitive);
+
   void FreeValue();
 
   static const char16_t* GetBufferValue(nsStringBuffer* aBuffer) {
@@ -410,6 +437,12 @@ private:
   static bool IsStringUnit(Unit aUnit) {
     return aUnit == eUnit_UnparsedString;
   }
+};
+
+struct PropertyStyleAnimationValuePair
+{
+  nsCSSProperty mProperty;
+  StyleAnimationValue mValue;
 };
 
 } // namespace mozilla

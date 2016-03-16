@@ -136,13 +136,13 @@ FINISH:
  * @return True if we took the direct path
  */
 bool
-gfxXlibNativeRenderer::DrawDirect(gfxContext *ctx, IntSize size,
+gfxXlibNativeRenderer::DrawDirect(DrawTarget* aDT, IntSize size,
                                   uint32_t flags,
                                   Screen *screen, Visual *visual)
 {
     // We need to actually borrow the context because we want to read out the
     // clip rectangles.
-    BorrowedCairoContext borrowed(ctx->GetDrawTarget());
+    BorrowedCairoContext borrowed(aDT);
     if (!borrowed.mCairo) {
       return false;
     }
@@ -352,7 +352,7 @@ CreateTempXlibSurface (cairo_surface_t* cairoTarget,
         } else if (cairoTargetType == CAIRO_SURFACE_TYPE_IMAGE || drawTarget) {
             gfxImageFormat imageFormat =
                 drawTarget ? SurfaceFormatToImageFormat(drawTarget->GetFormat()) :
-                    (gfxImageFormat)cairo_image_surface_get_format(cairoTarget);
+                    gfxCairoFormatToImageFormat(cairo_image_surface_get_format(cairoTarget));
             target_visual = gfxXlibSurface::FindVisual(screen, imageFormat);
             Display *dpy = DisplayOfScreen(screen);
             if (target_visual) {
@@ -451,7 +451,7 @@ CopyXlibSurfaceToImage(cairo_surface_t *tempXlibSurface,
                        IntSize size,
                        gfxImageFormat format)
 {
-    nsRefPtr<gfxImageSurface> result = new gfxImageSurface(size, format);
+    RefPtr<gfxImageSurface> result = new gfxImageSurface(size, format);
 
     cairo_t* copyCtx = cairo_create(result->CairoSurface());
     cairo_set_source_surface(copyCtx, tempXlibSurface, 0, 0);
@@ -474,7 +474,7 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
     // would permit copying the background but not drawing direct.)
     bool matrixIsIntegerTranslation = !matrix.HasNonIntegerTranslation();
     bool canDrawOverBackground = matrixIsIntegerTranslation &&
-        ctx->CurrentOperator() == gfxContext::OPERATOR_OVER;
+         ctx->CurrentOp() == CompositionOp::OP_OVER;
 
     // The padding of 0.5 for non-pixel-exact transformations used here is
     // the same as what _cairo_pattern_analyze_filter uses.
@@ -490,6 +490,8 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
         NATIVE_DRAWING_NOTE("FALLBACK: unsupported operator");
     }
 
+    DrawTarget* drawTarget = ctx->GetDrawTarget();
+
     // Clipping to the region affected by drawing allows us to consider only
     // the portions of the clip region that will be affected by drawing.
     gfxRect clipExtents;
@@ -498,12 +500,13 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
         ctx->Clip(affectedRect);
 
         clipExtents = ctx->GetClipExtents();
-        if (clipExtents.IsEmpty())
+        if (clipExtents.IsEmpty()) {
             return; // nothing to do
-
+        }
         if (canDrawOverBackground &&
-            DrawDirect(ctx, size, flags, screen, visual))
+            DrawDirect(drawTarget, size, flags, screen, visual)) {
           return;
+        }
     }
 
     IntRect drawingRect(IntPoint(0, 0), size);
@@ -525,7 +528,6 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
     gfxPoint offset(drawingRect.x, drawingRect.y);
 
     DrawingMethod method;
-    DrawTarget* drawTarget = ctx->GetDrawTarget();
     Matrix dtTransform = drawTarget->GetTransform();
     gfxPoint deviceTranslation = gfxPoint(dtTransform._31, dtTransform._32);
     cairo_surface_t* cairoTarget = static_cast<cairo_surface_t*>
@@ -582,7 +584,7 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
                     Rect(0, 0, size.width, size.height));
             }
         } else {
-            nsRefPtr<gfxASurface> tmpSurf = gfxASurface::Wrap(tempXlibSurface);
+            RefPtr<gfxASurface> tmpSurf = gfxASurface::Wrap(tempXlibSurface);
             ctx->SetSource(tmpSurf, offset);
             ctx->Paint();
         }
@@ -590,7 +592,7 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
         return;
     }
     
-    nsRefPtr<gfxImageSurface> blackImage =
+    RefPtr<gfxImageSurface> blackImage =
         CopyXlibSurfaceToImage(tempXlibSurface, size, gfxImageFormat::ARGB32);
     
     cairo_t* tmpCtx = cairo_create(tempXlibSurface);
@@ -599,7 +601,7 @@ gfxXlibNativeRenderer::Draw(gfxContext* ctx, IntSize size,
     cairo_paint(tmpCtx);
     cairo_destroy(tmpCtx);
     DrawOntoTempSurface(tempXlibSurface, -drawingRect.TopLeft());
-    nsRefPtr<gfxImageSurface> whiteImage =
+    RefPtr<gfxImageSurface> whiteImage =
         CopyXlibSurfaceToImage(tempXlibSurface, size, gfxImageFormat::RGB24);
   
     if (blackImage->CairoStatus() == CAIRO_STATUS_SUCCESS &&

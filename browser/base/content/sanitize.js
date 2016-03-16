@@ -1,4 +1,4 @@
-# -*- indent-tabs-mode: nil; js-indent-level: 4 -*-
+// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -65,7 +65,13 @@ Sanitizer.prototype = {
       var itemsToClear = [...aItemsToClear];
     } else {
       let branch = Services.prefs.getBranch(this.prefDomain);
-      itemsToClear = Object.keys(this.items).filter(itemName => branch.getBoolPref(itemName));
+      itemsToClear = Object.keys(this.items).filter(itemName => {
+        try {
+          return branch.getBoolPref(itemName);
+        } catch (ex) {
+          return false;
+        }
+      });
     }
 
     // Ensure open windows get cleared first, if they're in our list, so that they don't stick
@@ -406,8 +412,8 @@ Sanitizer.prototype = {
 
         let count = 0;
         let countDone = {
-          handleResult : function(aResult) count = aResult,
-          handleError : function(aError) Components.utils.reportError(aError),
+          handleResult : aResult => count = aResult,
+          handleError : aError => Components.utils.reportError(aError),
           handleCompletion :
             function(aReason) { aCallback("formdata", aReason == 0 && count > 0, aArg); }
         };
@@ -420,7 +426,7 @@ Sanitizer.prototype = {
       clear: function ()
       {
         TelemetryStopwatch.start("FX_SANITIZE_DOWNLOADS");
-        Task.spawn(function () {
+        Task.spawn(function*() {
           let filterByTime = null;
           if (this.range) {
             // Convert microseconds back to milliseconds for date comparisons.
@@ -505,7 +511,7 @@ Sanitizer.prototype = {
         var pwmgr = Components.classes["@mozilla.org/login-manager;1"]
                               .getService(Components.interfaces.nsILoginManager);
         var hosts = pwmgr.getAllDisabledHosts();
-        for each (var host in hosts) {
+        for (var host of hosts) {
           pwmgr.setLoginSavingEnabled(host, true);
         }
 
@@ -535,28 +541,17 @@ Sanitizer.prototype = {
     openWindows: {
       privateStateForNewWindow: "non-private",
       _canCloseWindow: function(aWindow) {
-        // Bug 967873 - Proxy nsDocumentViewer::PermitUnload to the child process
-        if (!aWindow.gMultiProcessBrowser) {
-          // Cargo-culted out of browser.js' WindowIsClosing because we don't care
-          // about TabView or the regular 'warn me before closing windows with N tabs'
-          // stuff here, and more importantly, we want to set aCallerClosesWindow to true
-          // when calling into permitUnload:
-          for (let browser of aWindow.gBrowser.browsers) {
-            let ds = browser.docShell;
-            // 'true' here means we will be closing the window soon, so please don't dispatch
-            // another onbeforeunload event when we do so. If unload is *not* permitted somewhere,
-            // we will reset the flag that this triggers everywhere so that we don't interfere
-            // with the browser after all:
-            if (ds.contentViewer && !ds.contentViewer.permitUnload(true)) {
-              return false;
-            }
-          }
+        if (aWindow.CanCloseWindow()) {
+          // We already showed PermitUnload for the window, so let's
+          // make sure we don't do it again when we actually close the
+          // window.
+          aWindow.skipNextCanClose = true;
+          return true;
         }
-        return true;
       },
       _resetAllWindowClosures: function(aWindowList) {
         for (let win of aWindowList) {
-          win.getInterface(Ci.nsIDocShell).contentViewer.resetCloseWindow();
+          win.skipNextCanClose = false;
         }
       },
       clear: function(aCallback)

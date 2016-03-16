@@ -60,7 +60,6 @@ function CustomizeMode(aWindow) {
   // to the user when in customizing mode.
   this.visiblePalette = this.document.getElementById(kPaletteId);
   this.paletteEmptyNotice = this.document.getElementById("customization-empty");
-  this.paletteSpacer = this.document.getElementById("customization-spacer");
   this.tipPanel = this.document.getElementById("customization-tipPanel");
   if (Services.prefs.getCharPref("general.skins.selectedSkin") != "classic/1.0") {
     let lwthemeButton = this.document.getElementById("customization-lwtheme-button");
@@ -287,7 +286,6 @@ CustomizeMode.prototype = {
         this.visiblePalette.clientTop;
         this.visiblePalette.setAttribute("showing", "true");
       }, 0);
-      this.paletteSpacer.hidden = true;
       this._updateEmptyPaletteNotice();
 
       this.swatchForTheme(document);
@@ -311,10 +309,12 @@ CustomizeMode.prototype = {
         this.exit();
       }
     }.bind(this)).then(null, function(e) {
-      ERROR(e);
+      ERROR("Error entering customize mode", e);
       // We should ensure this has been called, and calling it again doesn't hurt:
       window.PanelUI.endBatchUpdate();
       this._handler.isEnteringCustomizeMode = false;
+      // Exit customize mode to ensure proper clean-up when entering failed.
+      this.exit();
     }.bind(this));
   },
 
@@ -366,7 +366,6 @@ CustomizeMode.prototype = {
     let documentElement = document.documentElement;
 
     // Hide the palette before starting the transition for increased perf.
-    this.paletteSpacer.hidden = false;
     this.visiblePalette.hidden = true;
     this.visiblePalette.removeAttribute("showing");
     this.paletteEmptyNotice.hidden = true;
@@ -485,7 +484,7 @@ CustomizeMode.prototype = {
         this.enter();
       }
     }.bind(this)).then(null, function(e) {
-      ERROR(e);
+      ERROR("Error exiting customize mode", e);
       // We should ensure this has been called, and calling it again doesn't hurt:
       window.PanelUI.endBatchUpdate();
       this._handler.isExitingCustomizeMode = false;

@@ -13,7 +13,7 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/Function.h"
 #include "mozilla/layers/GeckoContentController.h"  // for APZStateChange
-#include "mozilla/nsRefPtr.h"
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsISupportsImpl.h"  // for NS_INLINE_DECL_REFCOUNTING
 #include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
@@ -57,21 +57,26 @@ public:
   void ProcessTouchEvent(const WidgetTouchEvent& aEvent,
                          const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId,
-                         nsEventStatus aApzResponse);
+                         nsEventStatus aApzResponse,
+                         nsEventStatus aContentResponse);
   void ProcessWheelEvent(const WidgetWheelEvent& aEvent,
+                         const ScrollableLayerGuid& aGuid,
+                         uint64_t aInputBlockId);
+  void ProcessMouseEvent(const WidgetMouseEvent& aEvent,
                          const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId);
   void ProcessAPZStateChange(const nsCOMPtr<nsIDocument>& aDocument,
                              ViewID aViewId,
                              APZStateChange aChange,
                              int aArg);
+  void ProcessClusterHit();
 private:
   ~APZEventState();
   bool SendPendingTouchPreventedResponse(bool aPreventDefault);
   already_AddRefed<nsIWidget> GetWidget() const;
 private:
   nsWeakPtr mWidget;
-  nsRefPtr<ActiveElementManager> mActiveElementManager;
+  RefPtr<ActiveElementManager> mActiveElementManager;
   ContentReceivedInputBlockCallback mContentReceivedInputBlockCallback;
   bool mPendingTouchPreventedResponse;
   ScrollableLayerGuid mPendingTouchPreventedGuid;

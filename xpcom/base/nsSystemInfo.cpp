@@ -31,6 +31,7 @@
 
 #ifdef MOZ_WIDGET_GTK
 #include <gtk/gtk.h>
+#include <dlfcn.h>
 #include <unistd.h>
 #include <fstream>
 #include "mozilla/Tokenizer.h"
@@ -42,6 +43,7 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
+#include "mozilla/dom/ContentChild.h"
 #endif
 
 #ifdef MOZ_WIDGET_GONK
@@ -191,7 +193,7 @@ nsresult GetInstallYear(uint32_t& aYear)
   time_t raw_time = 0;
   DWORD time_size = sizeof(time_t);
 
-  status = RegQueryValueExW(hKey, NS_LITERAL_STRING("InstallDate").get(),
+  status = RegQueryValueExW(hKey, L"InstallDate",
                             nullptr, &type, (LPBYTE)&raw_time, &time_size);
 
   if (status != ERROR_SUCCESS) {
@@ -679,53 +681,68 @@ nsSystemInfo::Init()
 
 #if defined(MOZ_WIDGET_GTK)
   // This must be done here because NSPR can only separate OS's when compiled, not libraries.
-  char* gtkver = PR_smprintf("GTK %u.%u.%u", gtk_major_version,
-                             gtk_minor_version, gtk_micro_version);
-  if (gtkver) {
-    rv = SetPropertyAsACString(NS_LITERAL_STRING("secondaryLibrary"),
-                               nsDependentCString(gtkver));
-    PR_smprintf_free(gtkver);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+  // 64 bytes is going to be well enough for "GTK " followed by 3 integers
+  // separated with dots.
+  char gtkver[64];
+  ssize_t gtkver_len = 0;
+
+#if MOZ_WIDGET_GTK == 2
+  extern int gtk_read_end_of_the_pipe;
+
+  if (gtk_read_end_of_the_pipe != -1) {
+    do {
+      gtkver_len = read(gtk_read_end_of_the_pipe, &gtkver, sizeof(gtkver));
+    } while (gtkver_len < 0 && errno == EINTR);
+    close(gtk_read_end_of_the_pipe);
+  }
+#endif
+
+  if (gtkver_len <= 0) {
+    gtkver_len = snprintf(gtkver, sizeof(gtkver), "GTK %u.%u.%u",
+                          gtk_major_version, gtk_minor_version,
+                          gtk_micro_version);
+  }
+
+  nsAutoCString secondaryLibrary;
+  if (gtkver_len > 0) {
+    secondaryLibrary.Append(nsDependentCSubstring(gtkver, gtkver_len));
+  }
+
+  void* libpulse = dlopen("libpulse.so.0", RTLD_LAZY);
+  const char* libpulseVersion = "not-available";
+  if (libpulse) {
+    auto pa_get_library_version = reinterpret_cast<const char* (*)()>
+      (dlsym(libpulse, "pa_get_library_version"));
+
+    if (pa_get_library_version) {
+      libpulseVersion = pa_get_library_version();
     }
+  }
+
+  secondaryLibrary.AppendPrintf(",libpulse %s", libpulseVersion);
+
+  if (libpulse) {
+    dlclose(libpulse);
+  }
+
+  rv = SetPropertyAsACString(NS_LITERAL_STRING("secondaryLibrary"),
+                             secondaryLibrary);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  if (mozilla::AndroidBridge::Bridge()) {
-    nsAutoString str;
-    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
-          "android/os/Build", "MODEL", str)) {
-      SetPropertyAsAString(NS_LITERAL_STRING("device"), str);
+  AndroidSystemInfo info;
+  if (XRE_IsContentProcess()) {
+    dom::ContentChild* child = dom::ContentChild::GetSingleton();
+    if (child) {
+      child->SendGetAndroidSystemInfo(&info);
+      SetupAndroidInfo(info);
     }
-    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
-          "android/os/Build", "MANUFACTURER", str)) {
-      SetPropertyAsAString(NS_LITERAL_STRING("manufacturer"), str);
-    }
-    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
-          "android/os/Build$VERSION", "RELEASE", str)) {
-      SetPropertyAsAString(NS_LITERAL_STRING("release_version"), str);
-    }
-    int32_t version;
-    if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField(
-          "android/os/Build$VERSION", "SDK_INT", &version)) {
-      version = 0;
-    }
-    android_sdk_version = version;
-    if (version >= 8 &&
-        mozilla::AndroidBridge::Bridge()->GetStaticStringField(
-          "android/os/Build", "HARDWARE", str)) {
-      SetPropertyAsAString(NS_LITERAL_STRING("hardware"), str);
-    }
-    bool isTablet = mozilla::widget::GeckoAppShell::IsTablet();
-    SetPropertyAsBool(NS_LITERAL_STRING("tablet"), isTablet);
-    // NSPR "version" is the kernel version. For Android we want the Android version.
-    // Rename SDK version to version and put the kernel version into kernel_version.
-    rv = GetPropertyAsAString(NS_LITERAL_STRING("version"), str);
-    if (NS_SUCCEEDED(rv)) {
-      SetPropertyAsAString(NS_LITERAL_STRING("kernel_version"), str);
-    }
-    SetPropertyAsInt32(NS_LITERAL_STRING("version"), android_sdk_version);
+  } else {
+    GetAndroidSystemInfo(&info);
+    SetupAndroidInfo(info);
   }
 #endif
 
@@ -743,6 +760,8 @@ nsSystemInfo::Init()
   if (__system_property_get("ro.build.characteristics", characteristics)) {
     if (!strcmp(characteristics, "tablet")) {
       SetPropertyAsBool(NS_LITERAL_STRING("tablet"), true);
+    } else if (!strcmp(characteristics, "tv")) {
+      SetPropertyAsBool(NS_LITERAL_STRING("tv"), true);
     }
   }
 
@@ -790,6 +809,75 @@ nsSystemInfo::Init()
 
   return NS_OK;
 }
+
+#ifdef MOZ_WIDGET_ANDROID
+/* static */
+void
+nsSystemInfo::GetAndroidSystemInfo(AndroidSystemInfo* aInfo)
+{
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mozilla::AndroidBridge::Bridge()) {
+    aInfo->sdk_version() = 0;
+    return;
+  }
+
+  nsAutoString str;
+  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
+      "android/os/Build", "MODEL", str)) {
+    aInfo->device() = str;
+  }
+  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
+      "android/os/Build", "MANUFACTURER", str)) {
+    aInfo->manufacturer() = str;
+  }
+  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
+      "android/os/Build$VERSION", "RELEASE", str)) {
+    aInfo->release_version() = str;
+  }
+  if (mozilla::AndroidBridge::Bridge()->GetStaticStringField(
+      "android/os/Build", "HARDWARE", str)) {
+    aInfo->hardware() = str;
+  }
+  int32_t sdk_version;
+  if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField(
+      "android/os/Build$VERSION", "SDK_INT", &sdk_version)) {
+    sdk_version = 0;
+  }
+  aInfo->sdk_version() = sdk_version;
+  aInfo->isTablet() = mozilla::widget::GeckoAppShell::IsTablet();
+}
+
+void
+nsSystemInfo::SetupAndroidInfo(const AndroidSystemInfo& aInfo)
+{
+  if (!aInfo.device().IsEmpty()) {
+    SetPropertyAsAString(NS_LITERAL_STRING("device"), aInfo.device());
+  }
+  if (!aInfo.manufacturer().IsEmpty()) {
+    SetPropertyAsAString(NS_LITERAL_STRING("manufacturer"), aInfo.manufacturer());
+  }
+  if (!aInfo.release_version().IsEmpty()) {
+    SetPropertyAsAString(NS_LITERAL_STRING("release_version"), aInfo.release_version());
+  }
+  SetPropertyAsBool(NS_LITERAL_STRING("tablet"), aInfo.isTablet());
+  // NSPR "version" is the kernel version. For Android we want the Android version.
+  // Rename SDK version to version and put the kernel version into kernel_version.
+  nsAutoString str;
+  nsresult rv = GetPropertyAsAString(NS_LITERAL_STRING("version"), str);
+  if (NS_SUCCEEDED(rv)) {
+    SetPropertyAsAString(NS_LITERAL_STRING("kernel_version"), str);
+  }
+  // When AndroidBridge is not available (eg. in xpcshell tests), sdk_version is 0.
+  if (aInfo.sdk_version() != 0) {
+    android_sdk_version = aInfo.sdk_version();
+    if (android_sdk_version >= 8 && !aInfo.hardware().IsEmpty()) {
+      SetPropertyAsAString(NS_LITERAL_STRING("hardware"), aInfo.hardware());
+    }
+    SetPropertyAsInt32(NS_LITERAL_STRING("version"), android_sdk_version);
+  }
+}
+#endif // MOZ_WIDGET_ANDROID
 
 void
 nsSystemInfo::SetInt32Property(const nsAString& aPropertyName,

@@ -72,7 +72,6 @@
         './src/mediapipeline',
         './src/peerconnection',
         './src/sdp/sipcc',
-        '../../../xpcom/base',
         '../../../dom/base',
         '../../../dom/media',
         '../../../media/mtransport',
@@ -176,6 +175,7 @@
          './src/jsep/JsepSessionImpl.h',
          './src/jsep/JsepTrack.cpp',
          './src/jsep/JsepTrack.h',
+         './src/jsep/JsepTrackEncoding.h',
          './src/jsep/JsepTransport.h'
       ],
 
@@ -330,6 +330,7 @@
           'defines': [
             'OS_WIN',
             'SIP_OS_WINDOWS',
+            'WEBRTC_WIN',
             'WIN32',
             'GIPS_VER=3480',
             'SIPCC_BUILD',

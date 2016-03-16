@@ -1,6 +1,11 @@
 config = {
     "log_name": "central_to_aurora",
-
+    "version_files": [
+        "browser/config/version.txt",
+        "browser/config/version_display.txt",
+        "config/milestone.txt",
+        "b2g/confvars.sh",
+    ],
     "replacements": [
         # File, from, to
         ("{}/{}".format(d, f),
@@ -87,7 +92,7 @@ config = {
     "balrog_credentials_file": "oauth.txt",
 
     "virtualenv_modules": [
-        "requests==2.2.1",
+        "requests==2.8.1",
     ],
 
     "post_merge_builders": [

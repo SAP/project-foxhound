@@ -23,9 +23,10 @@
 #include "mozilla/Telemetry.h"
 #endif
 
+#include "webrtc/common.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
 #include "webrtc/system_wrappers/interface/clock.h"
-#include "browser_logging/WebRtcLog.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidJNIWrapper.h"
@@ -41,7 +42,7 @@ const unsigned int WebrtcAudioConduit::CODEC_PLNAME_SIZE = 32;
 /**
  * Factory Method for AudioConduit
  */
-mozilla::RefPtr<AudioSessionConduit> AudioSessionConduit::Create()
+RefPtr<AudioSessionConduit> AudioSessionConduit::Create()
 {
   CSFLogDebug(logTag,  "%s ", __FUNCTION__);
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
@@ -223,25 +224,37 @@ MediaConduitErrorCode WebrtcAudioConduit::Init()
 
 #ifdef MOZ_WIDGET_ANDROID
     jobject context = jsjni_GetGlobalContextRef();
-
     // get the JVM
     JavaVM *jvm = jsjni_GetVM();
-    JNIEnv* jenv = jsjni_GetJNIForThread();
 
-    if (webrtc::VoiceEngine::SetAndroidObjects(jvm, jenv, (void*)context) != 0) {
+    if (webrtc::VoiceEngine::SetAndroidObjects(jvm, (void*)context) != 0) {
       CSFLogError(logTag, "%s Unable to set Android objects", __FUNCTION__);
       return kMediaConduitSessionNotInited;
     }
 #endif
+  webrtc::Config config;
+  bool aec_extended_filter = true; // Always default to the extended filter length
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+  bool aec_delay_agnostic = false;
+  nsresult rv;
+  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
+  if (NS_SUCCEEDED(rv)) {
+    prefs->GetBoolPref("media.getusermedia.aec_extended_filter", &aec_extended_filter);
+    rv = prefs->GetBoolPref("media.getusermedia.aec_delay_agnostic", &aec_delay_agnostic);
+    if (NS_SUCCEEDED(rv)) {
+      // Only override platform setting if pref is defined.
+      config.Set<webrtc::DelayAgnostic>(new webrtc::DelayAgnostic(aec_delay_agnostic));
+    }
+  }
+#endif
+  config.Set<webrtc::ExtendedFilter>(new webrtc::ExtendedFilter(aec_extended_filter));
 
   // Per WebRTC APIs below function calls return nullptr on failure
-  if(!(mVoiceEngine = webrtc::VoiceEngine::Create()))
+  if(!(mVoiceEngine = webrtc::VoiceEngine::Create(config)))
   {
     CSFLogError(logTag, "%s Unable to create voice engine", __FUNCTION__);
     return kMediaConduitSessionNotInited;
   }
-
-  EnableWebRtcLog();
 
   if(!(mPtrVoEBase = VoEBase::GetInterface(mVoiceEngine)))
   {
@@ -330,7 +343,7 @@ MediaConduitErrorCode WebrtcAudioConduit::Init()
 
 // AudioSessionConduit Implementation
 MediaConduitErrorCode
-WebrtcAudioConduit::SetTransmitterTransport(mozilla::RefPtr<TransportInterface> aTransport)
+WebrtcAudioConduit::SetTransmitterTransport(RefPtr<TransportInterface> aTransport)
 {
   CSFLogDebug(logTag,  "%s ", __FUNCTION__);
 
@@ -341,7 +354,7 @@ WebrtcAudioConduit::SetTransmitterTransport(mozilla::RefPtr<TransportInterface> 
 }
 
 MediaConduitErrorCode
-WebrtcAudioConduit::SetReceiverTransport(mozilla::RefPtr<TransportInterface> aTransport)
+WebrtcAudioConduit::SetReceiverTransport(RefPtr<TransportInterface> aTransport)
 {
   CSFLogDebug(logTag,  "%s ", __FUNCTION__);
 
@@ -839,7 +852,7 @@ WebrtcAudioConduit::StartReceiving()
 
 //WebRTC::RTP Callback Implementation
 // Called on AudioGUM or MSG thread
-int WebrtcAudioConduit::SendPacket(int channel, const void* data, int len)
+int WebrtcAudioConduit::SendPacket(int channel, const void* data, size_t len)
 {
   CSFLogDebug(logTag,  "%s : channel %d", __FUNCTION__, channel);
 
@@ -868,12 +881,12 @@ int WebrtcAudioConduit::SendPacket(int channel, const void* data, int len)
 }
 
 // Called on WebRTC Process thread and perhaps others
-int WebrtcAudioConduit::SendRTCPPacket(int channel, const void* data, int len)
+int WebrtcAudioConduit::SendRTCPPacket(int channel, const void* data, size_t len)
 {
-  CSFLogDebug(logTag,  "%s : channel %d , len %d, first rtcp = %u ",
+  CSFLogDebug(logTag,  "%s : channel %d , len %lu, first rtcp = %u ",
               __FUNCTION__,
               channel,
-              len,
+              (unsigned long) len,
               static_cast<unsigned>(((uint8_t *) data)[1]));
 
   // We come here if we have only one pipeline/conduit setup,

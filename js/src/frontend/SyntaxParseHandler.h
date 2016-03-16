@@ -220,7 +220,7 @@ class SyntaxParseHandler
         return true;
     }
 
-    Node newThisLiteral(const TokenPos& pos) { return NodeGeneric; }
+    Node newThisLiteral(const TokenPos& pos, Node thisName) { return NodeGeneric; }
     Node newNullLiteral(const TokenPos& pos) { return NodeGeneric; }
 
     template <class Boxer>
@@ -276,7 +276,7 @@ class SyntaxParseHandler
 
     Node newNewTarget(Node newHolder, Node targetHolder) { return NodeGeneric; }
     Node newPosHolder(const TokenPos& pos) { return NodeGeneric; }
-    Node newSuperBase(const TokenPos& pos, ExclusiveContext* cx) { return NodeSuperBase; }
+    Node newSuperBase(Node thisName, const TokenPos& pos) { return NodeSuperBase; }
 
     bool addPrototypeMutation(Node literal, uint32_t begin, Node expr) { return true; }
     bool addPropertyDefinition(Node literal, Node name, Node expr) { return true; }
@@ -293,6 +293,8 @@ class SyntaxParseHandler
     bool prependInitialYield(Node stmtList, Node gen) { return true; }
     Node newEmptyStatement(const TokenPos& pos) { return NodeEmptyStatement; }
 
+    Node newSetThis(Node thisName, Node value) { return value; }
+
     Node newExprStatement(Node expr, uint32_t end) {
         return expr == NodeUnparenthesizedString ? NodeStringExprStatement : NodeGeneric;
     }
@@ -304,7 +306,7 @@ class SyntaxParseHandler
     Node newCaseOrDefault(uint32_t begin, Node expr, Node body) { return NodeGeneric; }
     Node newContinueStatement(PropertyName* label, const TokenPos& pos) { return NodeGeneric; }
     Node newBreakStatement(PropertyName* label, const TokenPos& pos) { return NodeBreak; }
-    Node newReturnStatement(Node expr, Node genrval, const TokenPos& pos) { return NodeReturn; }
+    Node newReturnStatement(Node expr, const TokenPos& pos) { return NodeReturn; }
 
     Node newLabeledStatement(PropertyName* label, Node stmt, uint32_t begin) {
         return NodeGeneric;
@@ -337,6 +339,10 @@ class SyntaxParseHandler
         return NodeGeneric;
     }
 
+    Node newComprehensionFor(uint32_t begin, Node forHead, Node body) {
+        return NodeGeneric;
+    }
+
     Node newForHead(ParseNodeKind kind, Node decls, Node lhs, Node rhs, const TokenPos& pos) {
         return NodeGeneric;
     }
@@ -349,6 +355,7 @@ class SyntaxParseHandler
     }
 
     bool finishInitializerAssignment(Node pn, Node init, JSOp op) { return true; }
+    void setLexicalDeclarationOp(Node pn, JSOp op) {}
 
     void setBeginPosition(Node pn, Node oth) {}
     void setBeginPosition(Node pn, uint32_t begin) {}
@@ -371,8 +378,7 @@ class SyntaxParseHandler
         return NodeGeneric;
     }
     Node newDeclarationList(ParseNodeKind kind, JSOp op = JSOP_NOP) {
-        MOZ_ASSERT(kind == PNK_VAR || kind == PNK_CONST || kind == PNK_LET ||
-                   kind == PNK_GLOBALCONST);
+        MOZ_ASSERT(kind == PNK_VAR || kind == PNK_CONST || kind == PNK_LET);
         return kind == PNK_VAR ? NodeHoistableDeclaration : NodeGeneric;
     }
     Node newList(ParseNodeKind kind, Node kid, JSOp op = JSOP_NOP) {
@@ -380,8 +386,7 @@ class SyntaxParseHandler
         return NodeGeneric;
     }
     Node newDeclarationList(ParseNodeKind kind, Node kid, JSOp op = JSOP_NOP) {
-        MOZ_ASSERT(kind == PNK_VAR || kind == PNK_CONST || kind == PNK_LET ||
-                   kind == PNK_GLOBALCONST);
+        MOZ_ASSERT(kind == PNK_VAR || kind == PNK_CONST || kind == PNK_LET);
         return kind == PNK_VAR ? NodeHoistableDeclaration : NodeGeneric;
     }
 
@@ -431,9 +436,7 @@ class SyntaxParseHandler
                pn == NodeEmptyStatement;
     }
 
-    bool isSuperBase(Node pn, ExclusiveContext* cx) {
-        // While NodePosHolder is used in other places than just as super-base,
-        // it is unique enough for our purposes.
+    bool isSuperBase(Node pn) {
         return pn == NodeSuperBase;
     }
 

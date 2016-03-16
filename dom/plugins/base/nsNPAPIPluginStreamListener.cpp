@@ -192,7 +192,7 @@ nsNPAPIPluginStreamListener::CleanUpStream(NPReason reason)
   // Various bits of code in the rest of this method may result in the
   // deletion of this object. Use a KungFuDeathGrip to keep ourselves
   // alive during cleanup.
-  nsRefPtr<nsNPAPIPluginStreamListener> kungFuDeathGrip(this);
+  RefPtr<nsNPAPIPluginStreamListener> kungFuDeathGrip(this);
 
   if (mStreamCleanedUp)
     return NS_OK;
@@ -286,6 +286,7 @@ nsNPAPIPluginStreamListener::CallURLNotify(NPReason reason)
 nsresult
 nsNPAPIPluginStreamListener::OnStartBinding(nsPluginStreamListenerPeer* streamPeer)
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
   if (!mInst || !mInst->CanFireNotifications() || mStreamCleanedUp)
     return NS_ERROR_FAILURE;
 

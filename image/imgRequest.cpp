@@ -17,7 +17,7 @@
 #include "RasterImage.h"
 
 #include "nsIChannel.h"
-#include "nsICachingChannel.h"
+#include "nsICacheInfoChannel.h"
 #include "nsIDocument.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIInputStream.h"
@@ -32,8 +32,6 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsContentUtils.h"
 
-#include "nsICacheEntry.h"
-
 #include "plstr.h" // PL_strcasestr(...)
 #include "nsNetUtil.h"
 #include "nsIProtocolHandler.h"
@@ -42,16 +40,7 @@
 using namespace mozilla;
 using namespace mozilla::image;
 
-PRLogModuleInfo*
-GetImgLog()
-{
-  static PRLogModuleInfo* sImgLog;
-  if (!sImgLog) {
-    sImgLog = PR_NewLogModule("imgRequest");
-  }
-  return sImgLog;
-}
-#define LOG_TEST(level) (GetImgLog() && MOZ_LOG_TEST(GetImgLog(), (level)))
+#define LOG_TEST(level) (MOZ_LOG_TEST(gImgLog, (level)))
 
 NS_IMPL_ISUPPORTS(imgRequest,
                   nsIStreamListener, nsIRequestObserver,
@@ -88,10 +77,10 @@ imgRequest::~imgRequest()
   if (mURI) {
     nsAutoCString spec;
     mURI->GetSpec(spec);
-    LOG_FUNC_WITH_PARAM(GetImgLog(), "imgRequest::~imgRequest()",
+    LOG_FUNC_WITH_PARAM(gImgLog, "imgRequest::~imgRequest()",
                         "keyuri", spec.get());
   } else
-    LOG_FUNC(GetImgLog(), "imgRequest::~imgRequest()");
+    LOG_FUNC(gImgLog, "imgRequest::~imgRequest()");
 }
 
 nsresult
@@ -108,7 +97,7 @@ imgRequest::Init(nsIURI *aURI,
 {
   MOZ_ASSERT(NS_IsMainThread(), "Cannot use nsIURI off main thread!");
 
-  LOG_FUNC(GetImgLog(), "imgRequest::Init");
+  LOG_FUNC(gImgLog, "imgRequest::Init");
 
   MOZ_ASSERT(!mImage, "Multiple calls to init");
   MOZ_ASSERT(aURI, "No uri");
@@ -159,6 +148,7 @@ imgRequest::Init(nsIURI *aURI,
   mChannel->SetNotificationCallbacks(this);
 
   mCacheEntry = aCacheEntry;
+  mCacheEntry->UpdateLoadTime();
 
   SetLoadId(aCX);
 
@@ -188,7 +178,7 @@ imgRequest::GetProgressTracker() const
   } else {
     MOZ_ASSERT(mProgressTracker,
                "Should have mProgressTracker until we create mImage");
-    nsRefPtr<ProgressTracker> progressTracker = mProgressTracker;
+    RefPtr<ProgressTracker> progressTracker = mProgressTracker;
     MOZ_ASSERT(progressTracker);
     return progressTracker.forget();
   }
@@ -217,7 +207,7 @@ void
 imgRequest::AddProxy(imgRequestProxy* proxy)
 {
   NS_PRECONDITION(proxy, "null imgRequestProxy passed in");
-  LOG_SCOPE_WITH_PARAM(GetImgLog(), "imgRequest::AddProxy", "proxy", proxy);
+  LOG_SCOPE_WITH_PARAM(gImgLog, "imgRequest::AddProxy", "proxy", proxy);
 
   if (!mFirstProxy) {
     // Save a raw pointer to the first proxy we see, for use in the network
@@ -227,7 +217,7 @@ imgRequest::AddProxy(imgRequestProxy* proxy)
 
   // If we're empty before adding, we have to tell the loader we now have
   // proxies.
-  nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+  RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
   if (progressTracker->ObserverCount() == 0) {
     MOZ_ASSERT(mURI, "Trying to SetHasProxies without key uri.");
     if (mLoader) {
@@ -241,7 +231,7 @@ imgRequest::AddProxy(imgRequestProxy* proxy)
 nsresult
 imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus)
 {
-  LOG_SCOPE_WITH_PARAM(GetImgLog(), "imgRequest::RemoveProxy", "proxy", proxy);
+  LOG_SCOPE_WITH_PARAM(gImgLog, "imgRequest::RemoveProxy", "proxy", proxy);
 
   // This will remove our animation consumers, so after removing
   // this proxy, we don't end up without proxies with observers, but still
@@ -252,7 +242,7 @@ imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus)
   // below, because Cancel() may result in OnStopRequest being called back
   // before Cancel() returns, leaving the image in a different state then the
   // one it was in at this point.
-  nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+  RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
   if (!progressTracker->RemoveObserver(proxy)) {
     return NS_OK;
   }
@@ -267,10 +257,10 @@ imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus)
       if (mLoader) {
         mLoader->SetHasNoProxies(this, mCacheEntry);
       }
-    } else if (MOZ_LOG_TEST(GetImgLog(), LogLevel::Debug)) {
+    } else if (MOZ_LOG_TEST(gImgLog, LogLevel::Debug)) {
       nsAutoCString spec;
       mURI->GetSpec(spec);
-      LOG_MSG_WITH_PARAM(GetImgLog(),
+      LOG_MSG_WITH_PARAM(gImgLog,
                          "imgRequest::RemoveProxy no cache entry",
                          "uri", spec.get());
     }
@@ -283,7 +273,7 @@ imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus)
      */
     if (!(progressTracker->GetProgress() & FLAG_LAST_PART_COMPLETE) &&
         NS_FAILED(aStatus)) {
-      LOG_MSG(GetImgLog(), "imgRequest::RemoveProxy",
+      LOG_MSG(gImgLog, "imgRequest::RemoveProxy",
               "load in progress.  canceling");
 
       this->Cancel(NS_BINDING_ABORTED);
@@ -305,7 +295,7 @@ imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus)
 void
 imgRequest::CancelAndAbort(nsresult aStatus)
 {
-  LOG_SCOPE(GetImgLog(), "imgRequest::CancelAndAbort");
+  LOG_SCOPE(gImgLog, "imgRequest::CancelAndAbort");
 
   Cancel(aStatus);
 
@@ -336,7 +326,7 @@ public:
     return NS_OK;
   }
 private:
-  nsRefPtr<imgRequest> mImgRequest;
+  RefPtr<imgRequest> mImgRequest;
   nsresult mStatus;
 };
 
@@ -344,7 +334,7 @@ void
 imgRequest::Cancel(nsresult aStatus)
 {
   /* The Cancel() method here should only be called by this class. */
-  LOG_SCOPE(GetImgLog(), "imgRequest::Cancel");
+  LOG_SCOPE(gImgLog, "imgRequest::Cancel");
 
   if (NS_IsMainThread()) {
     ContinueCancel(aStatus);
@@ -358,7 +348,7 @@ imgRequest::ContinueCancel(nsresult aStatus)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+  RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
   progressTracker->SyncNotifyProgress(FLAG_HAS_ERROR | FLAG_ONLOAD_UNBLOCKED);
 
   RemoveFromCache();
@@ -385,7 +375,7 @@ public:
     return NS_OK;
   }
 private:
-  nsRefPtr<imgRequest> mImgRequest;
+  RefPtr<imgRequest> mImgRequest;
 };
 
 // EvictFromCache() is written to allowed to get called from any thread
@@ -393,7 +383,7 @@ void
 imgRequest::EvictFromCache()
 {
   /* The EvictFromCache() method here should only be called by this class. */
-  LOG_SCOPE(GetImgLog(), "imgRequest::EvictFromCache");
+  LOG_SCOPE(gImgLog, "imgRequest::EvictFromCache");
 
   if (NS_IsMainThread()) {
     ContinueEvict();
@@ -412,7 +402,7 @@ imgRequest::ContinueEvict()
 }
 
 void
-imgRequest::RequestDecode()
+imgRequest::StartDecoding()
 {
   MutexAutoLock lock(mMutex);
   mDecodeRequested = true;
@@ -429,7 +419,7 @@ nsresult imgRequest::GetURI(ImageURL** aURI)
 {
   MOZ_ASSERT(aURI);
 
-  LOG_FUNC(GetImgLog(), "imgRequest::GetURI");
+  LOG_FUNC(gImgLog, "imgRequest::GetURI");
 
   if (mURI) {
     *aURI = mURI;
@@ -445,7 +435,7 @@ imgRequest::GetCurrentURI(nsIURI** aURI)
 {
   MOZ_ASSERT(aURI);
 
-  LOG_FUNC(GetImgLog(), "imgRequest::GetCurrentURI");
+  LOG_FUNC(gImgLog, "imgRequest::GetCurrentURI");
 
   if (mCurrentURI) {
     *aURI = mCurrentURI;
@@ -475,7 +465,7 @@ imgRequest::GetImageErrorCode()
 nsresult
 imgRequest::GetSecurityInfo(nsISupports** aSecurityInfo)
 {
-  LOG_FUNC(GetImgLog(), "imgRequest::GetSecurityInfo");
+  LOG_FUNC(gImgLog, "imgRequest::GetSecurityInfo");
 
   // Missing security info means this is not a security load
   // i.e. it is not an error when security info is missing
@@ -486,7 +476,7 @@ imgRequest::GetSecurityInfo(nsISupports** aSecurityInfo)
 void
 imgRequest::RemoveFromCache()
 {
-  LOG_SCOPE(GetImgLog(), "imgRequest::RemoveFromCache");
+  LOG_SCOPE(gImgLog, "imgRequest::RemoveFromCache");
 
   bool isInCache = false;
 
@@ -500,7 +490,7 @@ imgRequest::RemoveFromCache()
     if (mCacheEntry) {
       mLoader->RemoveFromCache(mCacheEntry);
     } else {
-      mLoader->RemoveFromCache(ImageCacheKey(mURI));
+      mLoader->RemoveFromCache(mCacheKey);
     }
   }
 
@@ -510,7 +500,7 @@ imgRequest::RemoveFromCache()
 bool
 imgRequest::HasConsumers() const
 {
-  nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+  RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
   return progressTracker && progressTracker->ObserverCount() > 0;
 }
 
@@ -518,7 +508,7 @@ already_AddRefed<Image>
 imgRequest::GetImage() const
 {
   MutexAutoLock lock(mMutex);
-  nsRefPtr<Image> image = mImage;
+  RefPtr<Image> image = mImage;
   return image.forget();
 }
 
@@ -562,7 +552,7 @@ imgRequest::HasTransferredData() const
 void
 imgRequest::SetIsInCache(bool aInCache)
 {
-  LOG_FUNC_WITH_PARAM(GetImgLog(),
+  LOG_FUNC_WITH_PARAM(gImgLog,
                       "imgRequest::SetIsCacheable", "aInCache", aInCache);
   MutexAutoLock lock(mMutex);
   mIsInCache = aInCache;
@@ -575,7 +565,7 @@ imgRequest::UpdateCacheEntrySize()
     return;
   }
 
-  nsRefPtr<Image> image = GetImage();
+  RefPtr<Image> image = GetImage();
   size_t size = image->SizeOfSourceWithComputedFallback(moz_malloc_size_of);
   mCacheEntry->SetDataSize(size);
 }
@@ -585,22 +575,15 @@ imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry, nsIRequest* aRequest)
 {
   /* get the expires info */
   if (aCacheEntry) {
-    nsCOMPtr<nsICachingChannel> cacheChannel(do_QueryInterface(aRequest));
+    nsCOMPtr<nsICacheInfoChannel> cacheChannel(do_QueryInterface(aRequest));
     if (cacheChannel) {
-      nsCOMPtr<nsISupports> cacheToken;
-      cacheChannel->GetCacheToken(getter_AddRefs(cacheToken));
-      if (cacheToken) {
-        nsCOMPtr<nsICacheEntry> entryDesc(do_QueryInterface(cacheToken));
-        if (entryDesc) {
-          uint32_t expiration;
-          /* get the expiration time from the caching channel's token */
-          entryDesc->GetExpirationTime(&expiration);
-
-          // Expiration time defaults to 0. We set the expiration time on our
-          // entry if it hasn't been set yet.
-          if (aCacheEntry->GetExpiryTime() == 0) {
-            aCacheEntry->SetExpiryTime(expiration);
-          }
+      uint32_t expiration = 0;
+      /* get the expiration time from the caching channel's token */
+      if (NS_SUCCEEDED(cacheChannel->GetCacheTokenExpirationTime(&expiration))) {
+        // Expiration time defaults to 0. We set the expiration time on our
+        // entry if it hasn't been set yet.
+        if (aCacheEntry->GetExpiryTime() == 0) {
+          aCacheEntry->SetExpiryTime(expiration);
         }
       }
     }
@@ -719,9 +702,9 @@ imgRequest::HadInsecureRedirect() const
 NS_IMETHODIMP
 imgRequest::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt)
 {
-  LOG_SCOPE(GetImgLog(), "imgRequest::OnStartRequest");
+  LOG_SCOPE(gImgLog, "imgRequest::OnStartRequest");
 
-  nsRefPtr<Image> image;
+  RefPtr<Image> image;
 
   // Figure out if we're multipart.
   nsCOMPtr<nsIMultiPartChannel> multiPartChannel = do_QueryInterface(aRequest);
@@ -776,7 +759,7 @@ imgRequest::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt)
 
   // Shouldn't we be dead already if this gets hit?
   // Probably multipart/x-mixed-replace...
-  nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+  RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
   if (progressTracker->ObserverCount() == 0) {
     this->Cancel(NS_IMAGELIB_ERROR_FAILURE);
   }
@@ -794,7 +777,7 @@ imgRequest::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt)
         DecodePool::Singleton()->GetIOEventTarget();
       rv = retargetable->RetargetDeliveryTo(target);
     }
-    MOZ_LOG(GetImgLog(), LogLevel::Warning,
+    MOZ_LOG(gImgLog, LogLevel::Warning,
            ("[this=%p] imgRequest::OnStartRequest -- "
             "RetargetDeliveryTo rv %d=%s\n",
             this, rv, NS_SUCCEEDED(rv) ? "succeeded" : "failed"));
@@ -803,16 +786,14 @@ imgRequest::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt)
   return NS_OK;
 }
 
-/* void onStopRequest (in nsIRequest request, in nsISupports ctxt,
-                       nsresult status); */
 NS_IMETHODIMP
 imgRequest::OnStopRequest(nsIRequest* aRequest,
                           nsISupports* ctxt, nsresult status)
 {
-  LOG_FUNC(GetImgLog(), "imgRequest::OnStopRequest");
+  LOG_FUNC(gImgLog, "imgRequest::OnStopRequest");
   MOZ_ASSERT(NS_IsMainThread(), "Can't send notifications off-main-thread");
 
-  nsRefPtr<Image> image = GetImage();
+  RefPtr<Image> image = GetImage();
 
   // XXXldb What if this is a non-last part of a multipart request?
   // xxx before we release our reference to mRequest, lets
@@ -881,7 +862,7 @@ imgRequest::OnStopRequest(nsIRequest* aRequest,
     Progress progress =
       LoadCompleteProgress(lastPart, /* aError = */ false, status);
 
-    nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+    RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
     progressTracker->SyncNotifyProgress(progress);
   }
 
@@ -922,7 +903,7 @@ struct NewPartResult final
 
   nsAutoCString mContentType;
   nsAutoCString mContentDisposition;
-  nsRefPtr<Image> mImage;
+  RefPtr<Image> mImage;
   const bool mIsFirstPart;
   bool mSucceeded;
   bool mShouldResetCacheEntry;
@@ -948,7 +929,7 @@ PrepareForNewPart(nsIRequest* aRequest, nsIInputStream* aInStr, uint32_t aCount,
     nsresult rv = chan ? chan->GetContentType(result.mContentType)
                        : NS_ERROR_FAILURE;
     if (NS_FAILED(rv)) {
-      MOZ_LOG(GetImgLog(),
+      MOZ_LOG(gImgLog,
               LogLevel::Error, ("imgRequest::PrepareForNewPart -- "
                                 "Content type unavailable from the channel\n"));
       return result;
@@ -959,7 +940,7 @@ PrepareForNewPart(nsIRequest* aRequest, nsIInputStream* aInStr, uint32_t aCount,
     chan->GetContentDispositionHeader(result.mContentDisposition);
   }
 
-  MOZ_LOG(GetImgLog(), LogLevel::Debug,
+  MOZ_LOG(gImgLog, LogLevel::Debug,
          ("imgRequest::PrepareForNewPart -- Got content type %s\n",
           result.mContentType.get()));
 
@@ -970,8 +951,8 @@ PrepareForNewPart(nsIRequest* aRequest, nsIInputStream* aInStr, uint32_t aCount,
   // Create the new image and give it ownership of our ProgressTracker.
   if (aIsMultipart) {
     // Create the ProgressTracker and image for this part.
-    nsRefPtr<ProgressTracker> progressTracker = new ProgressTracker();
-    nsRefPtr<Image> partImage =
+    RefPtr<ProgressTracker> progressTracker = new ProgressTracker();
+    RefPtr<Image> partImage =
       ImageFactory::CreateImage(aRequest, progressTracker, result.mContentType,
                                 aURI, /* aIsMultipart = */ true,
                                 aInnerWindowId);
@@ -1029,7 +1010,7 @@ public:
   }
 
 private:
-  nsRefPtr<imgRequest> mImgRequest;
+  RefPtr<imgRequest> mImgRequest;
   NewPartResult mResult;
 };
 
@@ -1044,7 +1025,7 @@ imgRequest::FinishPreparingForNewPart(const NewPartResult& aResult)
 
   if (aResult.mIsFirstPart) {
     // Notify listeners that we have an image.
-    nsRefPtr<ProgressTracker> progressTracker = GetProgressTracker();
+    RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
     progressTracker->OnImageAvailable();
     MOZ_ASSERT(progressTracker->HasImage());
   }
@@ -1054,7 +1035,7 @@ imgRequest::FinishPreparingForNewPart(const NewPartResult& aResult)
   }
 
   if (IsDecodeRequested()) {
-    aResult.mImage->RequestDecode();
+    aResult.mImage->StartDecoding();
   }
 }
 
@@ -1063,13 +1044,13 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
                             nsIInputStream* aInStr, uint64_t aOffset,
                             uint32_t aCount)
 {
-  LOG_SCOPE_WITH_PARAM(GetImgLog(), "imgRequest::OnDataAvailable",
+  LOG_SCOPE_WITH_PARAM(gImgLog, "imgRequest::OnDataAvailable",
                        "count", aCount);
 
   NS_ASSERTION(aRequest, "imgRequest::OnDataAvailable -- no request!");
 
-  nsRefPtr<Image> image;
-  nsRefPtr<ProgressTracker> progressTracker;
+  RefPtr<Image> image;
+  RefPtr<ProgressTracker> progressTracker;
   bool isMultipart = false;
   bool newPartPending = false;
 
@@ -1125,7 +1106,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
     image->OnImageDataAvailable(aRequest, aContext, aInStr, aOffset, aCount);
 
   if (NS_FAILED(rv)) {
-    MOZ_LOG(GetImgLog(), LogLevel::Warning,
+    MOZ_LOG(gImgLog, LogLevel::Warning,
            ("[this=%p] imgRequest::OnDataAvailable -- "
             "copy to RasterImage failed\n", this));
     Cancel(NS_IMAGELIB_ERROR_FAILURE);
@@ -1248,7 +1229,7 @@ imgRequest::OnRedirectVerifyCallback(nsresult result)
     if (mCurrentURI) {
       mCurrentURI->GetSpec(spec);
     }
-    LOG_MSG_WITH_PARAM(GetImgLog(),
+    LOG_MSG_WITH_PARAM(gImgLog,
                        "imgRequest::OnChannelRedirect", "old", spec.get());
   }
 
@@ -1286,7 +1267,7 @@ imgRequest::OnRedirectVerifyCallback(nsresult result)
     if (mCurrentURI) {
       mCurrentURI->GetSpec(spec);
     }
-    LOG_MSG_WITH_PARAM(GetImgLog(), "imgRequest::OnChannelRedirect",
+    LOG_MSG_WITH_PARAM(gImgLog, "imgRequest::OnChannelRedirect",
                        "new", spec.get());
   }
 

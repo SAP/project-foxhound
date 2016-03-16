@@ -507,6 +507,12 @@ WINDOW_EVENT(online,
              eOnline,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
+WINDOW_EVENT(orientationchange,
+             eOrientationChange,
+             EventNameType_HTMLBodyOrFramesetOnly,
+             eBasicEventClass)
+#endif
 WINDOW_EVENT(pagehide,
              ePageHide,
              EventNameType_HTMLBodyOrFramesetOnly,
@@ -521,8 +527,10 @@ WINDOW_EVENT(popstate,
              eBasicEventClass)
 // Not supported yet
 // WINDOW_EVENT(redo)
-// Not supported yet
-// WINDOW_EVENT(storage)
+WINDOW_EVENT(storage,
+             eStorage,
+             EventNameType_HTMLBodyOrFramesetOnly,
+             eBasicEventClass)
 // Not supported yet
 // WINDOW_EVENT(undo)
 WINDOW_EVENT(unload,

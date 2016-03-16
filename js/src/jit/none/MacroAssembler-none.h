@@ -20,11 +20,10 @@ static MOZ_CONSTEXPR_VAR Register FramePointer = { Registers::invalid_reg };
 static MOZ_CONSTEXPR_VAR Register ReturnReg = { Registers::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnDoubleReg = { FloatRegisters::invalid_reg };
-static MOZ_CONSTEXPR_VAR FloatRegister ReturnInt32x4Reg = { FloatRegisters::invalid_reg };
-static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32x4Reg = { FloatRegisters::invalid_reg };
+static MOZ_CONSTEXPR_VAR FloatRegister ReturnSimd128Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ScratchFloat32Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ScratchDoubleReg = { FloatRegisters::invalid_reg };
-static MOZ_CONSTEXPR_VAR FloatRegister ScratchSimdReg = { FloatRegisters::invalid_reg };
+static MOZ_CONSTEXPR_VAR FloatRegister ScratchSimd128Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister InvalidFloatReg = { FloatRegisters::invalid_reg };
 
 static MOZ_CONSTEXPR_VAR Register OsrFrameReg = { Registers::invalid_reg };
@@ -124,7 +123,6 @@ class Assembler : public AssemblerShared
     static void PatchWrite_NearCall(CodeLocationLabel, CodeLocationLabel) { MOZ_CRASH(); }
     static uint32_t PatchWrite_NearCallSize() { MOZ_CRASH(); }
     static void PatchInstructionImmediate(uint8_t*, PatchedImmPtr) { MOZ_CRASH(); }
-    static int32_t ExtractCodeLabelOffset(uint8_t*) { MOZ_CRASH(); }
 
     static void ToggleToJmp(CodeLocationLabel) { MOZ_CRASH(); }
     static void ToggleToCmp(CodeLocationLabel) { MOZ_CRASH(); }
@@ -147,8 +145,6 @@ class Operand
     Operand (const FloatRegister) { MOZ_CRASH();}
     Operand (Register, Imm32 ) { MOZ_CRASH(); }
     Operand (Register, int32_t ) { MOZ_CRASH(); }
-
-
 };
 
 class MacroAssemblerNone : public Assembler
@@ -166,6 +162,9 @@ class MacroAssemblerNone : public Assembler
 
     size_t numCodeLabels() const { MOZ_CRASH(); }
     CodeLabel codeLabel(size_t) { MOZ_CRASH(); }
+
+    void retargetWithOffset(size_t, const LabelBase*, LabelBase*) { MOZ_CRASH(); }
+    bool asmMergeWith(const MacroAssemblerNone&) { MOZ_CRASH(); }
 
     void trace(JSTracer*) { MOZ_CRASH(); }
     static void TraceJumpRelocations(JSTracer*, JitCode*, CompactBufferReader&) { MOZ_CRASH(); }
@@ -189,20 +188,19 @@ class MacroAssemblerNone : public Assembler
     void nopAlign(size_t) { MOZ_CRASH(); }
     void checkStackAlignment() { MOZ_CRASH(); }
     uint32_t currentOffset() { MOZ_CRASH(); }
-    uint32_t actualOffset(uint32_t) { MOZ_CRASH(); }
-    uint32_t labelOffsetToPatchOffset(uint32_t) { MOZ_CRASH(); }
-    CodeOffsetLabel labelForPatch() { MOZ_CRASH(); }
+    uint32_t labelToPatchOffset(CodeOffset) { MOZ_CRASH(); }
+    CodeOffset labelForPatch() { MOZ_CRASH(); }
 
     void nop() { MOZ_CRASH(); }
     void breakpoint() { MOZ_CRASH(); }
     void abiret() { MOZ_CRASH(); }
     void ret() { MOZ_CRASH(); }
 
-    CodeOffsetLabel toggledJump(Label*) { MOZ_CRASH(); }
-    CodeOffsetLabel toggledCall(JitCode*, bool) { MOZ_CRASH(); }
+    CodeOffset toggledJump(Label*) { MOZ_CRASH(); }
+    CodeOffset toggledCall(JitCode*, bool) { MOZ_CRASH(); }
     static size_t ToggledCallSize(uint8_t*) { MOZ_CRASH(); }
 
-    void writePrebarrierOffset(CodeOffsetLabel) { MOZ_CRASH(); }
+    void writePrebarrierOffset(CodeOffset) { MOZ_CRASH(); }
 
     void finish() { MOZ_CRASH(); }
 
@@ -220,7 +218,7 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void Push(T) { MOZ_CRASH(); }
     template <typename T> void pop(T) { MOZ_CRASH(); }
     template <typename T> void Pop(T) { MOZ_CRASH(); }
-    template <typename T> CodeOffsetLabel pushWithPatch(T) { MOZ_CRASH(); }
+    template <typename T> CodeOffset pushWithPatch(T) { MOZ_CRASH(); }
 
     CodeOffsetJump jumpWithPatch(RepatchLabel*, Label* doc = nullptr) { MOZ_CRASH(); }
     CodeOffsetJump jumpWithPatch(RepatchLabel*, Condition, Label* doc = nullptr) { MOZ_CRASH(); }
@@ -239,7 +237,6 @@ class MacroAssemblerNone : public Assembler
     template <typename T, typename S> void add32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void addPtr(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void add64(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void sub32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void subPtr(T, S) { MOZ_CRASH(); }
     void neg32(Register) { MOZ_CRASH(); }
     void mulBy3(Register, Register) { MOZ_CRASH(); }
@@ -269,7 +266,7 @@ class MacroAssemblerNone : public Assembler
     template <typename T, typename S> void moveFloat32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void moveDouble(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void move64(T, S) { MOZ_CRASH(); }
-    template <typename T> CodeOffsetLabel movWithPatch(T, Register) { MOZ_CRASH(); }
+    template <typename T> CodeOffset movWithPatch(T, Register) { MOZ_CRASH(); }
 
     template <typename T> void loadInt32x1(T, FloatRegister dest) { MOZ_CRASH(); }
     template <typename T> void loadInt32x2(T, FloatRegister dest) { MOZ_CRASH(); }

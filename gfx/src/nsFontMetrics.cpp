@@ -66,7 +66,7 @@ private:
             case NS_STYLE_TEXT_ORIENTATION_UPRIGHT:
                 flags |= gfxTextRunFactory::TEXT_ORIENT_VERTICAL_UPRIGHT;
                 break;
-            case NS_STYLE_TEXT_ORIENTATION_SIDEWAYS_RIGHT:
+            case NS_STYLE_TEXT_ORIENTATION_SIDEWAYS:
                 flags |= gfxTextRunFactory::TEXT_ORIENT_VERTICAL_SIDEWAYS_RIGHT;
                 break;
             }
@@ -150,8 +150,11 @@ nsFontMetrics::Init(const nsFont& aFont,
 
     aFont.AddFontFeaturesToStyle(&style);
 
+    gfxFloat devToCssSize = gfxFloat(mP2A) /
+        gfxFloat(mDeviceContext->AppUnitsPerCSSPixel());
     mFontGroup = gfxPlatform::GetPlatform()->
-        CreateFontGroup(aFont.fontlist, &style, aTextPerf, aUserFontSet);
+        CreateFontGroup(aFont.fontlist, &style, aTextPerf,
+                        aUserFontSet, devToCssSize);
     return NS_OK;
 }
 

@@ -13,8 +13,12 @@ var loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
 loader.loadSubScript("chrome://marionette/content/simpletest.js");
 loader.loadSubScript("chrome://marionette/content/common.js");
 loader.loadSubScript("chrome://marionette/content/actions.js");
+Cu.import("chrome://marionette/content/capture.js");
+Cu.import("chrome://marionette/content/cookies.js");
 Cu.import("chrome://marionette/content/elements.js");
 Cu.import("chrome://marionette/content/error.js");
+Cu.import("chrome://marionette/content/proxy.js");
+
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
@@ -75,6 +79,9 @@ var onDOMContentLoaded;
 var EVENT_INTERVAL = 30; // milliseconds
 // last touch for each fingerId
 var multiLast = {};
+
+var chrome = proxy.toChrome(sendSyncMessage.bind(this));
+var cookies = new Cookies(() => curContainer.frame.document, chrome);
 
 Cu.import("resource://gre/modules/Log.jsm");
 var logger = Log.repository.getLogger("Marionette");
@@ -161,7 +168,6 @@ function dispatch(fn) {
     let id = msg.json.command_id;
 
     let req = Task.spawn(function*() {
-      let rv;
       if (typeof msg.json == "undefined" || msg.json instanceof Array) {
         return yield fn.apply(null, msg.json);
       } else {
@@ -216,6 +222,12 @@ var getElementValueOfCssPropertyFn = dispatch(getElementValueOfCssProperty);
 var switchToShadowRootFn = dispatch(switchToShadowRoot);
 var getCookiesFn = dispatch(getCookies);
 var singleTapFn = dispatch(singleTap);
+var takeScreenshotFn = dispatch(takeScreenshot);
+var actionChainFn = dispatch(actionChain);
+var multiActionFn = dispatch(multiAction);
+var addCookieFn = dispatch(addCookie);
+var deleteCookieFn = dispatch(deleteCookie);
+var deleteAllCookiesFn = dispatch(deleteAllCookies);
 
 /**
  * Start all message listeners
@@ -227,8 +239,8 @@ function startListeners() {
   addMessageListenerId("Marionette:executeAsyncScript", executeAsyncScript);
   addMessageListenerId("Marionette:executeJSScript", executeJSScript);
   addMessageListenerId("Marionette:singleTap", singleTapFn);
-  addMessageListenerId("Marionette:actionChain", actionChain);
-  addMessageListenerId("Marionette:multiAction", multiAction);
+  addMessageListenerId("Marionette:actionChain", actionChainFn);
+  addMessageListenerId("Marionette:multiAction", multiActionFn);
   addMessageListenerId("Marionette:get", get);
   addMessageListenerId("Marionette:pollForReadyState", pollForReadyState);
   addMessageListenerId("Marionette:cancelRequest", cancelRequest);
@@ -253,6 +265,7 @@ function startListeners() {
   addMessageListenerId("Marionette:sendKeysToElement", sendKeysToElement);
   addMessageListenerId("Marionette:clearElement", clearElementFn);
   addMessageListenerId("Marionette:switchToFrame", switchToFrame);
+  addMessageListenerId("Marionette:switchToParentFrame", switchToParentFrame);
   addMessageListenerId("Marionette:switchToShadowRoot", switchToShadowRootFn);
   addMessageListenerId("Marionette:deleteSession", deleteSession);
   addMessageListenerId("Marionette:sleepSession", sleepSession);
@@ -260,11 +273,11 @@ function startListeners() {
   addMessageListenerId("Marionette:importScript", importScript);
   addMessageListenerId("Marionette:getAppCacheStatus", getAppCacheStatus);
   addMessageListenerId("Marionette:setTestName", setTestName);
-  addMessageListenerId("Marionette:takeScreenshot", takeScreenshot);
-  addMessageListenerId("Marionette:addCookie", addCookie);
+  addMessageListenerId("Marionette:takeScreenshot", takeScreenshotFn);
+  addMessageListenerId("Marionette:addCookie", addCookieFn);
   addMessageListenerId("Marionette:getCookies", getCookiesFn);
-  addMessageListenerId("Marionette:deleteAllCookies", deleteAllCookies);
-  addMessageListenerId("Marionette:deleteCookie", deleteCookie);
+  addMessageListenerId("Marionette:deleteAllCookies", deleteAllCookiesFn);
+  addMessageListenerId("Marionette:deleteCookie", deleteCookieFn);
 }
 
 /**
@@ -331,8 +344,8 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:executeAsyncScript", executeAsyncScript);
   removeMessageListenerId("Marionette:executeJSScript", executeJSScript);
   removeMessageListenerId("Marionette:singleTap", singleTapFn);
-  removeMessageListenerId("Marionette:actionChain", actionChain);
-  removeMessageListenerId("Marionette:multiAction", multiAction);
+  removeMessageListenerId("Marionette:actionChain", actionChainFn);
+  removeMessageListenerId("Marionette:multiAction", multiActionFn);
   removeMessageListenerId("Marionette:get", get);
   removeMessageListenerId("Marionette:pollForReadyState", pollForReadyState);
   removeMessageListenerId("Marionette:cancelRequest", cancelRequest);
@@ -357,6 +370,7 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:sendKeysToElement", sendKeysToElement);
   removeMessageListenerId("Marionette:clearElement", clearElementFn);
   removeMessageListenerId("Marionette:switchToFrame", switchToFrame);
+  removeMessageListenerId("Marionette:switchToParentFrame", switchToParentFrame);
   removeMessageListenerId("Marionette:switchToShadowRoot", switchToShadowRootFn);
   removeMessageListenerId("Marionette:deleteSession", deleteSession);
   removeMessageListenerId("Marionette:sleepSession", sleepSession);
@@ -364,11 +378,11 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:importScript", importScript);
   removeMessageListenerId("Marionette:getAppCacheStatus", getAppCacheStatus);
   removeMessageListenerId("Marionette:setTestName", setTestName);
-  removeMessageListenerId("Marionette:takeScreenshot", takeScreenshot);
-  removeMessageListenerId("Marionette:addCookie", addCookie);
+  removeMessageListenerId("Marionette:takeScreenshot", takeScreenshotFn);
+  removeMessageListenerId("Marionette:addCookie", addCookieFn);
   removeMessageListenerId("Marionette:getCookies", getCookiesFn);
-  removeMessageListenerId("Marionette:deleteAllCookies", deleteAllCookies);
-  removeMessageListenerId("Marionette:deleteCookie", deleteCookie);
+  removeMessageListenerId("Marionette:deleteAllCookies", deleteAllCookiesFn);
+  removeMessageListenerId("Marionette:deleteCookie", deleteCookieFn);
   if (isB2G) {
     content.removeEventListener("mozbrowsershowmodalprompt", modalHandler, false);
   }
@@ -576,6 +590,7 @@ function executeScript(msg, directInject) {
 
   asyncTestCommandId = msg.json.command_id;
   let script = msg.json.script;
+  let filename = msg.json.filename;
   sandboxName = msg.json.sandboxName;
 
   if (msg.json.newSandbox ||
@@ -602,7 +617,7 @@ function executeScript(msg, directInject) {
         stream.close();
         script = data + script;
       }
-      let res = Cu.evalInSandbox(script, sandbox, "1.8", "dummy file" ,0);
+      let res = Cu.evalInSandbox(script, sandbox, "1.8", filename ? filename : "dummy file" ,0);
       sendSyncMessage("Marionette:shareData",
                       {log: elementManager.wrapValue(marionetteLogObj.getLogs())});
       marionetteLogObj.clearLogs();
@@ -623,7 +638,7 @@ function executeScript(msg, directInject) {
         return;
       }
 
-      script = "let __marionetteFunc = function(){" + script + "};" +
+      script = "var __marionetteFunc = function(){" + script + "};" +
                    "__marionetteFunc.apply(null, __marionetteParams);";
       if (importedScripts.exists()) {
         let stream = Components.classes["@mozilla.org/network/file-input-stream;1"].
@@ -633,7 +648,7 @@ function executeScript(msg, directInject) {
         stream.close();
         script = data + script;
       }
-      let res = Cu.evalInSandbox(script, sandbox, "1.8", "dummy file", 0);
+      let res = Cu.evalInSandbox(script, sandbox, "1.8", filename ? filename : "dummy file", 0);
       sendSyncMessage("Marionette:shareData",
                       {log: elementManager.wrapValue(marionetteLogObj.getLogs())});
       marionetteLogObj.clearLogs();
@@ -724,6 +739,7 @@ function executeWithCallback(msg, useFinish) {
   }
 
   let script = msg.json.script;
+  let filename = msg.json.filename;
   asyncTestCommandId = msg.json.command_id;
   sandboxName = msg.json.sandboxName;
 
@@ -774,7 +790,7 @@ function executeWithCallback(msg, useFinish) {
     }
 
     scriptSrc = "__marionetteParams.push(marionetteScriptFinished);" +
-                "let __marionetteFunc = function() { " + script + "};" +
+                "var __marionetteFunc = function() { " + script + "};" +
                 "__marionetteFunc.apply(null, __marionetteParams); ";
   }
 
@@ -788,7 +804,7 @@ function executeWithCallback(msg, useFinish) {
       stream.close();
       scriptSrc = data + scriptSrc;
     }
-    Cu.evalInSandbox(scriptSrc, sandbox, "1.8", "dummy file", 0);
+    Cu.evalInSandbox(scriptSrc, sandbox, "1.8", filename ? filename : "dummy file", 0);
   } catch (e) {
     let err = new JavaScriptError(
         e,
@@ -922,20 +938,21 @@ function singleTap(id, corx, cory) {
   if (!visible) {
     throw new ElementNotVisibleError("Element is not currently visible and may not be manipulated");
   }
-  let acc = accessibility.getAccessibleObject(el, true);
-  checkVisibleAccessibility(acc, el, visible);
-  checkActionableAccessibility(acc, el);
-  if (!curContainer.frame.document.createTouch) {
-    actions.mouseEventsOnly = true;
-  }
-  let c = coordinates(el, corx, cory);
-  if (!actions.mouseEventsOnly) {
-    let touchId = actions.nextTouchId++;
-    let touch = createATouch(el, c.x, c.y, touchId);
-    emitTouchEvent('touchstart', touch);
-    emitTouchEvent('touchend', touch);
-  }
-  actions.mouseTap(el.ownerDocument, c.x, c.y);
+  return accessibility.getAccessibleObject(el, true).then(acc => {
+    checkVisibleAccessibility(acc, el, visible);
+    checkActionableAccessibility(acc, el);
+    if (!curContainer.frame.document.createTouch) {
+      actions.mouseEventsOnly = true;
+    }
+    let c = coordinates(el, corx, cory);
+    if (!actions.mouseEventsOnly) {
+      let touchId = actions.nextTouchId++;
+      let touch = createATouch(el, c.x, c.y, touchId);
+      emitTouchEvent('touchstart', touch);
+      emitTouchEvent('touchend', touch);
+    }
+    actions.mouseTap(el.ownerDocument, c.x, c.y);
+  });
 }
 
 /**
@@ -1054,32 +1071,22 @@ function createATouch(el, corx, cory, touchId) {
 }
 
 /**
- * Function to start action chain on one finger
+ * Start action chain on one finger.
  */
-function actionChain(msg) {
-  let command_id = msg.json.command_id;
-  let args = msg.json.chain;
-  let touchId = msg.json.nextId;
-
-  let callbacks = {};
-  callbacks.onSuccess = value => sendResponse(value, command_id);
-  callbacks.onError = err => sendError(err, command_id);
-
+function actionChain(chain, touchId) {
   let touchProvider = {};
   touchProvider.createATouch = createATouch;
   touchProvider.emitTouchEvent = emitTouchEvent;
 
-  try {
+  return new Promise((resolve, reject) => {
     actions.dispatchActions(
-        args,
+        chain,
         touchId,
         curContainer,
         elementManager,
-        callbacks,
+        {onSuccess: resolve, onError: reject},
         touchProvider);
-  } catch (e) {
-    sendError(e, command_id);
-  }
+  });
 }
 
 /**
@@ -1118,16 +1125,13 @@ function emitMultiEvents(type, touch, touches) {
  * Function to dispatch one set of actions
  * @param touches represents all pending touches, batchIndex represents the batch we are dispatching right now
  */
-function setDispatch(batches, touches, command_id, batchIndex) {
-  if (typeof batchIndex === "undefined") {
-    batchIndex = 0;
-  }
+function setDispatch(batches, touches, batchIndex=0) {
   // check if all the sets have been fired
   if (batchIndex >= batches.length) {
     multiLast = {};
-    sendOk(command_id);
     return;
   }
+
   // a set of actions need to be done
   let batch = batches[batchIndex];
   // each action for some finger
@@ -1146,38 +1150,43 @@ function setDispatch(batches, touches, command_id, batchIndex) {
   let waitTime = 0;
   let maxTime = 0;
   let c;
-  batchIndex++;
+
   // loop through the batch
+  batchIndex++;
   for (let i = 0; i < batch.length; i++) {
     pack = batch[i];
     touchId = pack[0];
     command = pack[1];
+
     switch (command) {
-      case 'press':
+      case "press":
         el = elementManager.getKnownElement(pack[2], curContainer);
         c = coordinates(el, pack[3], pack[4]);
         touch = createATouch(el, c.x, c.y, touchId);
         multiLast[touchId] = touch;
         touches.push(touch);
-        emitMultiEvents('touchstart', touch, touches);
+        emitMultiEvents("touchstart", touch, touches);
         break;
-      case 'release':
+
+      case "release":
         touch = multiLast[touchId];
         // the index of the previous touch for the finger may change in the touches array
         touchIndex = touches.indexOf(touch);
         touches.splice(touchIndex, 1);
-        emitMultiEvents('touchend', touch, touches);
+        emitMultiEvents("touchend", touch, touches);
         break;
-      case 'move':
+
+      case "move":
         el = elementManager.getKnownElement(pack[2], curContainer);
         c = coordinates(el);
         touch = createATouch(multiLast[touchId].target, c.x, c.y, touchId);
         touchIndex = touches.indexOf(lastTouch);
         touches[touchIndex] = touch;
         multiLast[touchId] = touch;
-        emitMultiEvents('touchmove', touch, touches);
+        emitMultiEvents("touchmove", touch, touches);
         break;
-      case 'moveByOffset':
+
+      case "moveByOffset":
         el = multiLast[touchId].target;
         lastTouch = multiLast[touchId];
         touchIndex = touches.indexOf(lastTouch);
@@ -1193,59 +1202,58 @@ function setDispatch(batches, touches, command_id, batchIndex) {
         touch = doc.createTouch(win, el, touchId, pageX, pageY, screenX, screenY, clientX, clientY);
         touches[touchIndex] = touch;
         multiLast[touchId] = touch;
-        emitMultiEvents('touchmove', touch, touches);
+        emitMultiEvents("touchmove", touch, touches);
         break;
-      case 'wait':
-        if (pack[2] != undefined ) {
-          waitTime = pack[2]*1000;
+
+      case "wait":
+        if (typeof pack[2] != "undefined") {
+          waitTime = pack[2] * 1000;
           if (waitTime > maxTime) {
             maxTime = waitTime;
           }
         }
         break;
-    }//end of switch block
-  }//end of for loop
-  if (maxTime != 0) {
-    checkTimer.initWithCallback(function(){setDispatch(batches, touches, command_id, batchIndex);}, maxTime, Ci.nsITimer.TYPE_ONE_SHOT);
+    }
   }
-  else {
-    setDispatch(batches, touches, command_id, batchIndex);
+
+  if (maxTime != 0) {
+    checkTimer.initWithCallback(function() {
+      setDispatch(batches, touches, batchIndex);
+    }, maxTime, Ci.nsITimer.TYPE_ONE_SHOT);
+  } else {
+    setDispatch(batches, touches, batchIndex);
   }
 }
 
 /**
- * Function to start multi-action
+ * Start multi-action.
+ *
+ * @param {Number} maxLen
+ *     Longest action chain for one finger.
  */
-function multiAction(msg) {
-  let command_id = msg.json.command_id;
-  let args = msg.json.value;
-  // maxlen is the longest action chain for one finger
-  let maxlen = msg.json.maxlen;
-  try {
-    // unwrap the original nested array
-    let commandArray = elementManager.convertWrappedArguments(args, curContainer);
-    let concurrentEvent = [];
-    let temp;
-    for (let i = 0; i < maxlen; i++) {
-      let row = [];
-      for (let j = 0; j < commandArray.length; j++) {
-        if (commandArray[j][i] != undefined) {
-          // add finger id to the front of each action, i.e. [finger_id, action, element]
-          temp = commandArray[j][i];
-          temp.unshift(j);
-          row.push(temp);
-        }
+function multiAction(args, maxLen) {
+  // unwrap the original nested array
+  let commandArray = elementManager.convertWrappedArguments(args, curContainer);
+  let concurrentEvent = [];
+  let temp;
+  for (let i = 0; i < maxLen; i++) {
+    let row = [];
+    for (let j = 0; j < commandArray.length; j++) {
+      if (typeof commandArray[j][i] != "undefined") {
+        // add finger id to the front of each action, i.e. [finger_id, action, element]
+        temp = commandArray[j][i];
+        temp.unshift(j);
+        row.push(temp);
       }
-      concurrentEvent.push(row);
     }
-    // now concurrent event is made of sets where each set contain a list of actions that need to be fired.
-    // note: each action belongs to a different finger
-    // pendingTouches keeps track of current touches that's on the screen
-    let pendingTouches = [];
-    setDispatch(concurrentEvent, pendingTouches, command_id);
-  } catch (e) {
-    sendError(e, command_id);
+    concurrentEvent.push(row);
   }
+
+  // now concurrent event is made of sets where each set contain a list of actions that need to be fired.
+  // note: each action belongs to a different finger
+  // pendingTouches keeps track of current touches that's on the screen
+  let pendingTouches = [];
+  setDispatch(concurrentEvent, pendingTouches);
 }
 
 /*
@@ -1457,16 +1465,16 @@ function clickElement(id) {
   if (!visible) {
     throw new ElementNotVisibleError("Element is not visible");
   }
-  let acc = accessibility.getAccessibleObject(el, true);
-  checkVisibleAccessibility(acc, el, visible);
-
-  if (utils.isElementEnabled(el)) {
-    checkEnabledAccessibility(acc, el, true);
-    checkActionableAccessibility(acc, el);
-    utils.synthesizeMouseAtCenter(el, {}, el.ownerDocument.defaultView);
-  } else {
-    throw new InvalidElementStateError("Element is not Enabled");
-  }
+  return accessibility.getAccessibleObject(el, true).then(acc => {
+    checkVisibleAccessibility(acc, el, visible);
+    if (utils.isElementEnabled(el)) {
+      checkEnabledAccessibility(acc, el, true);
+      checkActionableAccessibility(acc, el);
+      utils.synthesizeMouseAtCenter(el, {}, el.ownerDocument.defaultView);
+    } else {
+      throw new InvalidElementStateError("Element is not Enabled");
+    }
+  });
 }
 
 /**
@@ -1522,9 +1530,10 @@ function getElementTagName(id) {
 function isElementDisplayed(id) {
   let el = elementManager.getKnownElement(id, curContainer);
   let displayed = utils.isElementDisplayed(el);
-  checkVisibleAccessibility(
-    accessibility.getAccessibleObject(el), el, displayed);
-  return displayed;
+  return accessibility.getAccessibleObject(el).then(acc => {
+    checkVisibleAccessibility(acc, el, displayed);
+    return displayed;
+  });
 }
 
 /**
@@ -1577,9 +1586,10 @@ function getElementRect(id) {
 function isElementEnabled(id) {
   let el = elementManager.getKnownElement(id, curContainer);
   let enabled = utils.isElementEnabled(el);
-  checkEnabledAccessibility(
-    accessibility.getAccessibleObject(el), el, enabled);
-  return enabled;
+  return accessibility.getAccessibleObject(el).then(acc => {
+    checkEnabledAccessibility(acc, el, enabled);
+    return enabled;
+  });
 }
 
 /**
@@ -1590,10 +1600,11 @@ function isElementEnabled(id) {
  */
 function isElementSelected(id) {
   let el = elementManager.getKnownElement(id, curContainer);
-    let selected = utils.isElementSelected(el);
-    checkSelectedAccessibility(
-      accessibility.getAccessibleObject(el), el, selected);
-  return selected;
+  let selected = utils.isElementSelected(el);
+  return accessibility.getAccessibleObject(el).then(acc => {
+    checkSelectedAccessibility(acc, el, selected);
+    return selected;
+  });
 }
 
 /**
@@ -1602,27 +1613,28 @@ function isElementSelected(id) {
 function sendKeysToElement(msg) {
   let command_id = msg.json.command_id;
   let val = msg.json.value;
+  let el;
 
-  try {
-    let el = elementManager.getKnownElement(msg.json.id, curContainer);
-    // Element should be actionable from the accessibility standpoint to be able
-    // to send keys to it.
-    checkActionableAccessibility(
-      accessibility.getAccessibleObject(el, true), el);
-    if (el.type == "file") {
-      let p = val.join("");
-      fileInputElement = el;
-      // In e10s, we can only construct File objects in the parent process,
-      // so pass the filename to driver.js, which in turn passes them back
-      // to this frame script in receiveFiles.
-      sendSyncMessage("Marionette:getFiles",
-                      {value: p, command_id: command_id});
-    } else {
-      utils.sendKeysToElement(curContainer.frame, el, val, sendOk, sendError, command_id);
-    }
-  } catch (e) {
-    sendError(e, command_id);
-  }
+  return Promise.resolve(elementManager.getKnownElement(msg.json.id, curContainer))
+    .then(knownEl => {
+      el = knownEl;
+      // Element should be actionable from the accessibility standpoint to be able
+      // to send keys to it.
+      return accessibility.getAccessibleObject(el, true)
+    }).then(acc => {
+      checkActionableAccessibility(acc, el);
+      if (el.type == "file") {
+        let p = val.join("");
+        fileInputElement = el;
+        // In e10s, we can only construct File objects in the parent process,
+        // so pass the filename to driver.js, which in turn passes them back
+        // to this frame script in receiveFiles.
+        sendSyncMessage("Marionette:getFiles",
+                        {value: p, command_id: command_id});
+      } else {
+        utils.sendKeysToElement(curContainer.frame, el, val, sendOk, sendError, command_id);
+      }
+    }).catch(e => sendError(e, command_id));
 }
 
 /**
@@ -1657,7 +1669,15 @@ function switchToShadowRoot(id) {
     // If no host element is passed, attempt to find a parent shadow root or, if
     // none found, unset the current shadow root
     if (curContainer.shadowRoot) {
-      let parent = curContainer.shadowRoot.host;
+      let parent;
+      try {
+        parent = curContainer.shadowRoot.host;
+      } catch (e) {
+        // There is a chance that host element is dead and we are trying to
+        // access a dead object.
+        curContainer.shadowRoot = null;
+        return;
+      }
       while (parent && !(parent instanceof curContainer.frame.ShadowRoot)) {
         parent = parent.parentNode;
       }
@@ -1674,6 +1694,20 @@ function switchToShadowRoot(id) {
   }
   curContainer.shadowRoot = foundShadowRoot;
 }
+
+/**
+ * Switch to the parent frame of the current Frame. If the frame is the top most
+ * is the current frame then no action will happen.
+ */
+ function switchToParentFrame(msg) {
+   let command_id = msg.json.command_id;
+   curContainer.frame = curContainer.frame.parent;
+   let parentElement = elementManager.addToKnownElements(curContainer.frame);
+
+   sendSyncMessage("Marionette:switchedToFrame", { frameValue: parentElement });
+
+   sendOk(msg.json.command_id);
+ }
 
 /**
  * Switch to frame given either the server-assigned element id,
@@ -1813,47 +1847,9 @@ function switchToFrame(msg) {
 
   sendResponse({value: rv}, command_id);
 }
- /**
-  * Add a cookie to the document
-  */
-function addCookie(msg) {
-  let cookie = msg.json.cookie;
-  if (!cookie.expiry) {
-    var date = new Date();
-    var thePresent = new Date(Date.now());
-    date.setYear(thePresent.getFullYear() + 20);
-    cookie.expiry = date.getTime() / 1000;  // Stored in seconds.
-  }
 
-  if (!cookie.domain) {
-    var location = curContainer.frame.document.location;
-    cookie.domain = location.hostname;
-  } else {
-    var currLocation = curContainer.frame.location;
-    var currDomain = currLocation.host;
-    if (currDomain.indexOf(cookie.domain) == -1) {
-      sendError(new InvalidCookieDomainError("You may only set cookies for the current domain"), msg.json.command_id);
-    }
-  }
-
-  // The cookie's domain may include a port. Which is bad. Remove it
-  // We'll catch ip6 addresses by mistake. Since no-one uses those
-  // this will be okay for now. See Bug 814416
-  if (cookie.domain.match(/:\d+$/)) {
-    cookie.domain = cookie.domain.replace(/:\d+$/, '');
-  }
-
-  var document = curContainer.frame.document;
-  if (!document || !document.contentType.match(/html/i)) {
-    sendError(new UnableToSetCookieError("You may only set cookies on html documents"), msg.json.command_id);
-  }
-
-  let added = sendSyncMessage("Marionette:addCookie", {value: cookie});
-  if (added[0] !== true) {
-    sendError(new UnableToSetCookieError(), msg.json.command_id);
-    return;
-  }
-  sendOk(msg.json.command_id);
+function addCookie(cookie) {
+  cookies.add(cookie.name, cookie.value, cookie);
 }
 
 /**
@@ -1861,7 +1857,6 @@ function addCookie(msg) {
  */
 function getCookies() {
   let rv = [];
-  let cookies = getVisibleCookies(curContainer.frame.location);
 
   for (let cookie of cookies) {
     let expires = cookie.expires;
@@ -1887,47 +1882,19 @@ function getCookies() {
 }
 
 /**
- * Delete a cookie by name
+ * Delete a cookie by name.
  */
-function deleteCookie(msg) {
-  let toDelete = msg.json.name;
-  let cookies = getVisibleCookies(curContainer.frame.location);
-  for (let cookie of cookies) {
-    if (cookie.name == toDelete) {
-      let deleted = sendSyncMessage("Marionette:deleteCookie", {value: cookie});
-      if (deleted[0] !== true) {
-        sendError(new UnknownError("Could not delete cookie: " + msg.json.name), msg.json.command_id);
-        return;
-      }
-    }
-  }
-
-  sendOk(msg.json.command_id);
+function deleteCookie(name) {
+  cookies.delete(name);
 }
 
 /**
- * Delete all the visibile cookies on a page
+ * Delete all the visibile cookies on a page.
  */
-function deleteAllCookies(msg) {
-  let cookies = getVisibleCookies(curContainer.frame.location);
+function deleteAllCookies() {
   for (let cookie of cookies) {
-    let deleted = sendSyncMessage("Marionette:deleteCookie", {value: cookie});
-    if (!deleted[0]) {
-      sendError(new UnknownError("Could not delete cookie: " + JSON.stringify(cookie)), msg.json.command_id);
-      return;
-    }
+    cookies.delete(cookie);
   }
-  sendOk(msg.json.command_id);
-}
-
-/**
- * Get all the visible cookies from a location
- */
-function getVisibleCookies(location) {
-  let currentPath = location.pathname || '/';
-  let result = sendSyncMessage("Marionette:getVisibleCookies",
-                               {value: [currentPath, location.hostname]});
-  return result[0];
 }
 
 function getAppCacheStatus(msg) {
@@ -1940,10 +1907,12 @@ var _emu_cb_id = 0;
 var _emu_cbs = {};
 
 function runEmulatorCmd(cmd, callback) {
+  logger.info("listener runEmulatorCmd cmd=" + cmd);
   if (callback) {
     _emu_cbs[_emu_cb_id] = callback;
   }
-  sendAsyncMessage("Marionette:runEmulatorCmd", {emulator_cmd: cmd, id: _emu_cb_id});
+  sendAsyncMessage("Marionette:runEmulatorCmd",
+      {command: cmd, id: _emu_cb_id});
   _emu_cb_id += 1;
 }
 
@@ -1951,25 +1920,34 @@ function runEmulatorShell(args, callback) {
   if (callback) {
     _emu_cbs[_emu_cb_id] = callback;
   }
-  sendAsyncMessage("Marionette:runEmulatorShell", {emulator_shell: args, id: _emu_cb_id});
+  sendAsyncMessage("Marionette:runEmulatorShell",
+      {arguments: args, id: _emu_cb_id});
   _emu_cb_id += 1;
 }
 
 function emulatorCmdResult(msg) {
-  let message = msg.json;
+  let {error, result, id} = msg.json;
+
+  if (error) {
+    let err = new JavaScriptError(error);
+    sendError(err, id);
+    return;
+  }
+
   if (!sandboxes[sandboxName]) {
     return;
   }
-  let cb = _emu_cbs[message.id];
-  delete _emu_cbs[message.id];
+  let cb = _emu_cbs[id];
+  delete _emu_cbs[id];
   if (!cb) {
     return;
   }
+
   try {
-    cb(message.result);
+    cb(result);
   } catch (e) {
-    sendError(e, -1);
-    return;
+    let err = new JavaScriptError(e);
+    sendError(err, id);
   }
 }
 
@@ -1994,96 +1972,47 @@ function importScript(msg) {
 }
 
 /**
- * Takes a screen capture of the given web element if <code>id</code>
- * property exists in the message's JSON object, or if null captures
- * the bounding box of the current frame.
+ * Perform a screen capture in content context.
  *
- * If given an array of web element references in
- * <code>msg.json.highlights</code>, a red box will be painted around
- * them to highlight their position.
+ * @param {UUID=} id
+ *     Optional web element reference of an element to take a screenshot
+ *     of.
+ * @param {boolean=} full
+ *     True to take a screenshot of the entire document element.  Is not
+ *     considered if {@code id} is not defined.  Defaults to true.
+ * @param {Array.<UUID>=} highlights
+ *     Draw a border around the elements found by their web element
+ *     references.
+ *
+ * @return {string}
+ *     Base64 encoded string of an image/png type.
  */
-function takeScreenshot(msg) {
-  let node = null;
-  if (msg.json.id) {
-    try {
-      node = elementManager.getKnownElement(msg.json.id, curContainer)
-    }
-    catch (e) {
-      sendResponse(e.message, e.code, e.stack, msg.json.command_id);
-      return;
-    }
-  }
-  else {
-    node = curContainer.frame;
-  }
-  let highlights = msg.json.highlights;
+function takeScreenshot(id, full=true, highlights=[]) {
+  let canvas;
 
-  var document = curContainer.frame.document;
-  var rect, win, width, height, left, top;
-  // node can be either a window or an arbitrary DOM node
-  if (node == curContainer.frame) {
-    // node is a window
-    win = node;
-    if (msg.json.full) {
-      // the full window
-      width = document.body.scrollWidth;
-      height = document.body.scrollHeight;
-      top = 0;
-      left = 0;
-    }
-    else {
-      // only the viewport
-      width = document.documentElement.clientWidth;
-      height = document.documentElement.clientHeight;
-      left = curContainer.frame.pageXOffset;
-      top = curContainer.frame.pageYOffset;
-    }
-  }
-  else {
-    // node is an arbitrary DOM node
-    win = node.ownerDocument.defaultView;
-    rect = node.getBoundingClientRect();
-    width = rect.width;
-    height = rect.height;
-    top = rect.top;
-    left = rect.left;
+  let highlightEls = [];
+  for (let h of highlights) {
+    let el = elementManager.getKnownElement(h, curContainer);
+    highlightEls.push(el);
   }
 
-  var canvas = document.createElementNS("http://www.w3.org/1999/xhtml",
-                                        "canvas");
-  canvas.width = width;
-  canvas.height = height;
-  var ctx = canvas.getContext("2d");
-  // Draws the DOM contents of the window to the canvas
-  ctx.drawWindow(win, left, top, width, height, "rgb(255,255,255)");
+  // viewport
+  if (!id && !full) {
+    canvas = capture.viewport(curContainer.frame.document, highlightEls);
 
-  // This section is for drawing a red rectangle around each element
-  // passed in via the highlights array
-  if (highlights) {
-    ctx.lineWidth = "2";
-    ctx.strokeStyle = "red";
-    ctx.save();
-
-    for (var i = 0; i < highlights.length; ++i) {
-      var elem = elementManager.getKnownElement(highlights[i], curContainer);
-      rect = elem.getBoundingClientRect();
-
-      var offsetY = -top;
-      var offsetX = -left;
-
-      // Draw the rectangle
-      ctx.strokeRect(rect.left + offsetX,
-                     rect.top + offsetY,
-                     rect.width,
-                     rect.height);
+  // element or full document element
+  } else {
+    let node;
+    if (id) {
+      node = elementManager.getKnownElement(id, curContainer);
+    } else {
+      node = curContainer.frame.document.documentElement;
     }
+
+    canvas = capture.element(node, highlightEls);
   }
 
-  // Return the Base64 encoded string back to the client so that it
-  // can save the file to disk if it is required
-  var dataUrl = canvas.toDataURL("image/png", "");
-  var data = dataUrl.substring(dataUrl.indexOf(",") + 1);
-  sendResponse({value: data}, msg.json.command_id);
+  return capture.toBase64(canvas);
 }
 
 // Call register self when we get loaded

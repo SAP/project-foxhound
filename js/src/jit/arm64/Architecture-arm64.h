@@ -324,7 +324,7 @@ struct FloatRegister
         k_(k)
     { }
 
-    constexpr FloatRegister(uint32_t code)
+    explicit constexpr FloatRegister(uint32_t code)
       : code_(FloatRegisters::Code(code & 31)),
         k_(FloatRegisters::Kind(code >> 5))
     { }
@@ -411,10 +411,7 @@ struct FloatRegister
     bool isDouble() const {
         return k_ == FloatRegisters::Double;
     }
-    bool isInt32x4() const {
-        return false;
-    }
-    bool isFloat32x4() const {
+    bool isSimd128() const {
         return false;
     }
 

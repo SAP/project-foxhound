@@ -212,6 +212,12 @@ public:
                                                   bool aFlushLayout = true);
   already_AddRefed<DOMRectList> GetClientRects(bool aClampToEdge = true,
                                                bool aFlushLayout = true);
+  static void GetInnerTextNoFlush(mozilla::dom::DOMString& aValue,
+                                  mozilla::ErrorResult& aError,
+                                  nsIContent* aStartParent,
+                                  uint32_t aStartOffset,
+                                  nsIContent* aEndParent,
+                                  uint32_t aEndOffset);
 
   nsINode* GetParentObject() const { return mOwner; }
   virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override final;
@@ -266,7 +272,7 @@ public:
    * will be empty.
    * @param aOutRanges the resulting set of ranges
    */
-  void ExcludeNonSelectableNodes(nsTArray<nsRefPtr<nsRange>>* aOutRanges);
+  void ExcludeNonSelectableNodes(nsTArray<RefPtr<nsRange>>* aOutRanges);
 
   typedef nsTHashtable<nsPtrHashKey<nsRange> > RangeHashTable;
 protected:
@@ -307,7 +313,7 @@ protected:
     }
     ~AutoInvalidateSelection();
     nsRange* mRange;
-    nsRefPtr<nsINode> mCommonAncestor;
+    RefPtr<nsINode> mCommonAncestor;
 #ifdef DEBUG
     bool mWasInSelection;
 #endif
@@ -318,7 +324,7 @@ protected:
   nsCOMPtr<nsINode> mRoot;
   nsCOMPtr<nsINode> mStartParent;
   nsCOMPtr<nsINode> mEndParent;
-  nsRefPtr<mozilla::dom::Selection> mSelection;
+  RefPtr<mozilla::dom::Selection> mSelection;
   int32_t mStartOffset;
   int32_t mEndOffset;
 

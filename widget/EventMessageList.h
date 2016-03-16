@@ -98,6 +98,7 @@ NS_EVENT_MESSAGE(eHashChange)
 NS_EVENT_MESSAGE(eImageAbort)
 NS_EVENT_MESSAGE(eLoadError)
 NS_EVENT_MESSAGE(ePopState)
+NS_EVENT_MESSAGE(eStorage)
 NS_EVENT_MESSAGE(eBeforeUnload)
 NS_EVENT_MESSAGE(eReadyStateChange)
  
@@ -342,6 +343,9 @@ NS_EVENT_MESSAGE(eDeviceMotion)
 NS_EVENT_MESSAGE(eDeviceProximity)
 NS_EVENT_MESSAGE(eUserProximity)
 NS_EVENT_MESSAGE(eDeviceLight)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
+NS_EVENT_MESSAGE(eOrientationChange)
+#endif
 
 NS_EVENT_MESSAGE(eShow)
 

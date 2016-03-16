@@ -40,8 +40,8 @@ private:
 
   // data member
   bool mConnected;
-  nsString mDeviceAddress;
-  nsRefPtr<BluetoothProfileController> mController;
+  BluetoothAddress mDeviceAddress;
+  RefPtr<BluetoothProfileController> mController;
 };
 
 END_BLUETOOTH_NAMESPACE

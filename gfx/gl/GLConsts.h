@@ -5182,7 +5182,7 @@
 #define LOCAL_EGL_COVERAGE_SAMPLE_RESOLVE_NONE_NV            0x3133
 #define LOCAL_EGL_COVERAGE_SAMPLE_RESOLVE_NV                 0x3131
 #define LOCAL_EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE          0x3200
-#define LOCAL_EGL_DXGI_KEYED_MUTEX_ANGLE                     0x3209
+#define LOCAL_EGL_DXGI_KEYED_MUTEX_ANGLE                     0x33A2
 #define LOCAL_EGL_DEFAULT_DISPLAY                            ((EGLNativeDisplayType)0)
 #define LOCAL_EGL_DEPTH_ENCODING_NONE_NV                     0
 #define LOCAL_EGL_DEPTH_ENCODING_NONLINEAR_NV                0x30E3
@@ -5668,7 +5668,6 @@
 #define LOCAL_GLX_X_VISUAL_TYPE_EXT                          0x22
 #define LOCAL_GLX_Y_INVERTED_EXT                             0x20D4
 
-
 // WGL
 #define LOCAL_WGL_ACCELERATION_ARB                           0x2003
 #define LOCAL_WGL_ACCELERATION_EXT                           0x2003
@@ -5948,7 +5947,5 @@
 #define LOCAL_WGL_VIDEO_OUT_FRAME                            0x20C8
 #define LOCAL_WGL_VIDEO_OUT_STACKED_FIELDS_1_2               0x20CB
 #define LOCAL_WGL_VIDEO_OUT_STACKED_FIELDS_2_1               0x20CC
-
-
 
 #endif // GLCONSTS_H_

@@ -1,13 +1,13 @@
-skip-if(Android||B2G) load 0-timescale.html # bug 1048628
+skip-if(B2G) load 0-timescale.html # bug 1229166
 skip-if(Android) load 459439-1.html # bug 888557
 load 466607-1.html
 load 466945-1.html
 load 468763-1.html
 load 474744-1.html
 HTTP load 481136-1.html # needs to be HTTP to recognize the ogg as an audio file?
-load 493915-1.html
 load 492286-1.xhtml
-load 495794-1.html
+load 493915-1.html
+skip-if(B2G) load 495794-1.html # in b2g all the media are muted by default
 load 576612-1.html
 load 752784-1.html
 load 789075-1.html
@@ -81,9 +81,12 @@ load 1157994.html
 load 1158427.html
 load 1185176.html
 load 1185192.html
+load 1228484.html
 load analyser-channels-1.html
 load audiocontext-double-suspend.html
+load buffer-source-duration-1.html
 load buffer-source-ended-1.html
+load buffer-source-resampling-start-1.html
 load doppler-1.html
 HTTP load media-element-source-seek-1.html
 load offline-buffer-source-ended-1.html

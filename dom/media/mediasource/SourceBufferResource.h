@@ -43,7 +43,7 @@ public:
   virtual void Suspend(bool aCloseImmediately) override { UNIMPLEMENTED(); }
   virtual void Resume() override { UNIMPLEMENTED(); }
   virtual already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override { UNIMPLEMENTED(); return nullptr; }
-  virtual already_AddRefed<MediaResource> CloneData(MediaDecoder* aDecoder) override { UNIMPLEMENTED(); return nullptr; }
+  virtual already_AddRefed<MediaResource> CloneData(MediaResourceCallback*) override { UNIMPLEMENTED(); return nullptr; }
   virtual void SetReadMode(MediaCacheStream::ReadMode aMode) override { UNIMPLEMENTED(); }
   virtual void SetPlaybackRate(uint32_t aBytesPerSecond) override { UNIMPLEMENTED(); }
   virtual nsresult ReadAt(int64_t aOffset, char* aBuffer, uint32_t aCount, uint32_t* aBytes) override;
@@ -70,12 +70,12 @@ public:
   virtual bool IsTransportSeekable() override { UNIMPLEMENTED(); return true; }
   virtual nsresult Open(nsIStreamListener** aStreamListener) override { UNIMPLEMENTED(); return NS_ERROR_FAILURE; }
 
-  virtual nsresult GetCachedRanges(nsTArray<MediaByteRange>& aRanges) override
+  virtual nsresult GetCachedRanges(MediaByteRangeSet& aRanges) override
   {
     ReentrantMonitorAutoEnter mon(mMonitor);
     if (mInputBuffer.GetLength()) {
-      aRanges.AppendElement(MediaByteRange(mInputBuffer.GetOffset(),
-                                           mInputBuffer.GetLength()));
+      aRanges += MediaByteRange(mInputBuffer.GetOffset(),
+                                mInputBuffer.GetLength());
     }
     return NS_OK;
   }

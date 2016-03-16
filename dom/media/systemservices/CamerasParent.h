@@ -7,10 +7,12 @@
 #ifndef mozilla_CamerasParent_h
 #define mozilla_CamerasParent_h
 
+#include "nsIObserver.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/camera/PCamerasParent.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/ShmemPool.h"
+#include "mozilla/Atomics.h"
 
 // conflicts with #include of scoped_ptr.h
 #undef FF
@@ -39,11 +41,12 @@ public:
   virtual int FrameSizeChange(unsigned int w, unsigned int h,
                               unsigned int streams) override;
   virtual int DeliverFrame(unsigned char* buffer,
-                           int size,
+                           size_t size,
                            uint32_t time_stamp,
                            int64_t ntp_time,
                            int64_t render_time,
                            void *handle) override;
+  virtual int DeliverI420Frame(const webrtc::I420VideoFrame& webrtc_frame) override;
   virtual bool IsTextureSupported() override { return false; };
 
   friend CamerasParent;
@@ -73,9 +76,11 @@ public:
   bool mEngineIsRunning;
 };
 
-class CamerasParent :  public PCamerasParent
+class CamerasParent :  public PCamerasParent,
+                       public nsIObserver
 {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CamerasParent);
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIOBSERVER
 
 public:
   static already_AddRefed<CamerasParent> Create();
@@ -94,7 +99,9 @@ public:
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   nsIThread* GetBackgroundThread() { return mPBackgroundThread; };
-  bool IsShuttingDown() { return !mChildIsAlive || mDestroyed; };
+  bool IsShuttingDown() { return !mChildIsAlive
+                              ||  mDestroyed
+                              || !mWebRTCAlive; };
   ShmemBuffer GetBuffer(size_t aSize);
 
   // helper to forward to the PBackground thread
@@ -102,7 +109,7 @@ public:
                           int cap_id,
                           ShmemBuffer buffer,
                           unsigned char* altbuffer,
-                          int size,
+                          size_t size,
                           uint32_t time_stamp,
                           int64_t ntp_time,
                           int64_t render_time);
@@ -113,18 +120,19 @@ public:
 protected:
   virtual ~CamerasParent();
 
+  // We use these helpers for shutdown and for the respective IPC commands.
+  void StopCapture(const int& aCapEngine, const int& capnum);
+  int ReleaseCaptureDevice(const int& aCapEngine, const int& capnum);
+
   bool SetupEngine(CaptureEngine aCapEngine);
-  void CloseEngines();
   bool EnsureInitialized(int aEngine);
-  void DoShutdown();
+  void CloseEngines();
   void StopIPC();
+  void StopVideoCapture();
+  nsresult DispatchToVideoCaptureThread(nsRunnable *event);
 
   EngineHelper mEngines[CaptureEngine::MaxEngine];
   nsTArray<CallbackHelper*> mCallbacks;
-  // Protects the callback arrays
-  Mutex mCallbackMutex;
-  // Protects the engines array
-  Mutex mEngineMutex;
 
   // image buffers
   mozilla::ShmemPool mShmemPool;
@@ -132,12 +140,18 @@ protected:
   // PBackground parent thread
   nsCOMPtr<nsIThread> mPBackgroundThread;
 
+  // Monitors creation of the thread below
+  Monitor mThreadMonitor;
+
   // video processing thread - where webrtc.org capturer code runs
   base::Thread* mVideoCaptureThread;
 
   // Shutdown handling
   bool mChildIsAlive;
   bool mDestroyed;
+  // Above 2 are PBackground only, but this is potentially
+  // read cross-thread.
+  mozilla::Atomic<bool> mWebRTCAlive;
 };
 
 PCamerasParent* CreateCamerasParent();

@@ -110,7 +110,10 @@ public:
       }
       mTextEditorState->mSelectionRestoreEagerInit = false;
     }
-    mTextEditorState->FinishedRestoringSelection();
+
+    if (mTextEditorState) {
+      mTextEditorState->FinishedRestoringSelection();
+    }
     return NS_OK;
   }
 
@@ -249,11 +252,8 @@ public:
   NS_IMETHOD CheckVisibility(nsIDOMNode *node, int16_t startOffset, int16_t EndOffset, bool* _retval) override;
   virtual nsresult CheckVisibilityContent(nsIContent* aNode, int16_t aStartOffset, int16_t aEndOffset, bool* aRetval) override;
 
-  NS_IMETHOD GetSelectionCaretsVisibility(bool* aOutVisibility) override;
-  NS_IMETHOD SetSelectionCaretsVisibility(bool aVisibility) override;
-
 private:
-  nsRefPtr<nsFrameSelection> mFrameSelection;
+  RefPtr<nsFrameSelection> mFrameSelection;
   nsCOMPtr<nsIContent>       mLimiter;
   nsIScrollableFrame        *mScrollFrame;
   nsWeakPtr mPresShellWeak;
@@ -398,7 +398,7 @@ nsTextInputSelectionImpl::SetCaretReadOnly(bool aReadOnly)
   nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShellWeak, &result);
   if (shell)
   {
-    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    RefPtr<nsCaret> caret = shell->GetCaret();
     if (caret) {
       nsISelection* domSel = mFrameSelection->
         GetSelection(nsISelectionController::SELECTION_NORMAL);
@@ -424,7 +424,7 @@ nsTextInputSelectionImpl::GetCaretVisible(bool *_retval)
   nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShellWeak, &result);
   if (shell)
   {
-    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    RefPtr<nsCaret> caret = shell->GetCaret();
     if (caret) {
       *_retval = caret->IsVisible();
       return NS_OK;
@@ -441,7 +441,7 @@ nsTextInputSelectionImpl::SetCaretVisibilityDuringSelection(bool aVisibility)
   nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShellWeak, &result);
   if (shell)
   {
-    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    RefPtr<nsCaret> caret = shell->GetCaret();
     if (caret) {
       nsISelection* domSel = mFrameSelection->
         GetSelection(nsISelectionController::SELECTION_NORMAL);
@@ -645,36 +645,6 @@ nsTextInputSelectionImpl::CheckVisibility(nsIDOMNode *node, int16_t startOffset,
   }
   return NS_ERROR_FAILURE;
 
-}
-
-NS_IMETHODIMP
-nsTextInputSelectionImpl::GetSelectionCaretsVisibility(bool* aOutVisibility)
-{
-  if (!mPresShellWeak) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  nsresult result;
-  nsCOMPtr<nsISelectionController> shell = do_QueryReferent(mPresShellWeak, &result);
-  if (shell) {
-    return shell->GetSelectionCaretsVisibility(aOutVisibility);
-  }
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-nsTextInputSelectionImpl::SetSelectionCaretsVisibility(bool aVisibility)
-{
-  if (!mPresShellWeak) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  nsresult result;
-  nsCOMPtr<nsISelectionController> shell = do_QueryReferent(mPresShellWeak, &result);
-  if (shell) {
-    return shell->SetSelectionCaretsVisibility(aVisibility);
-  }
-  return NS_ERROR_FAILURE;
 }
 
 nsresult
@@ -1163,7 +1133,7 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
   NS_ENSURE_TRUE(shell, NS_ERROR_FAILURE);
 
   // Create selection
-  nsRefPtr<nsFrameSelection> frameSel = new nsFrameSelection();
+  RefPtr<nsFrameSelection> frameSel = new nsFrameSelection();
 
   // Create a SelectionController
   mSelCon = new nsTextInputSelectionImpl(frameSel, shell, rootNode);
@@ -1174,12 +1144,12 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
   mSelCon->SetDisplaySelection(nsISelectionController::SELECTION_ON);
 
   // Get the caret and make it a selection listener.
-  nsRefPtr<nsISelection> domSelection;
+  RefPtr<nsISelection> domSelection;
   if (NS_SUCCEEDED(mSelCon->GetSelection(nsISelectionController::SELECTION_NORMAL,
                                          getter_AddRefs(domSelection))) &&
       domSelection) {
     nsCOMPtr<nsISelectionPrivate> selPriv(do_QueryInterface(domSelection));
-    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    RefPtr<nsCaret> caret = shell->GetCaret();
     nsCOMPtr<nsISelectionListener> listener;
     if (caret) {
       listener = do_QueryInterface(caret);
@@ -1671,7 +1641,7 @@ nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
 
   if (mSelCon) {
     if (mTextListener) {
-      nsRefPtr<nsISelection> domSelection;
+      RefPtr<nsISelection> domSelection;
       if (NS_SUCCEEDED(mSelCon->GetSelection(nsISelectionController::SELECTION_NORMAL,
                                              getter_AddRefs(domSelection))) &&
           domSelection) {
@@ -1742,7 +1712,7 @@ nsTextEditorState::CreateRootNode()
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
   // Now create a DIV and add it to the anonymous content child list.
-  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo;
   nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::div, nullptr,
                                                  kNameSpaceID_XHTML,
                                                  nsIDOMNode::ELEMENT_NODE);
@@ -1825,7 +1795,7 @@ be called if @placeholder is the empty string when trimmed from line breaks");
 
   // Create a DIV for the placeholder
   // and add it to the anonymous content child list
-  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo;
   nodeInfo = pNodeInfoManager->GetNodeInfo(nsGkAtoms::div, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
@@ -1835,7 +1805,7 @@ be called if @placeholder is the empty string when trimmed from line breaks");
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Create the text node for the placeholder text before doing anything else
-  nsRefPtr<nsTextNode> placeholderText = new nsTextNode(pNodeInfoManager);
+  RefPtr<nsTextNode> placeholderText = new nsTextNode(pNodeInfoManager);
 
   rv = mPlaceholderDiv->AppendChildTo(placeholderText, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1963,6 +1933,21 @@ nsTextEditorState::SetValue(const nsAString& aValue, uint32_t aFlags)
         // we should skip to set the new value to the editor here.  It should
         // be set later with the updated mValueBeingSet.
         return true;
+      }
+      if (NS_WARN_IF(!mBoundFrame)) {
+        // We're not sure if this case is possible.
+      } else {
+        // If setting value won't change current value, we shouldn't commit
+        // composition for compatibility with the other browsers.
+        nsAutoString currentValue;
+        mBoundFrame->GetText(currentValue);
+        if (newValue == currentValue) {
+          // Note that in this case, we shouldn't fire any events with setting
+          // value because event handlers may try to set value recursively but
+          // we cannot commit composition at that time due to unsafe to run
+          // script (see below).
+          return true;
+        }
       }
       // If there is composition, need to commit composition first because
       // other browsers do that.

@@ -338,7 +338,7 @@ BrowserElementAuthPrompt.prototype = {
         prompt.authInfo.password = password;
       }
 
-      for each (let consumer in prompt.consumers) {
+      for (let consumer of prompt.consumers) {
         if (!consumer.callback) {
           // Not having a callback means that consumer didn't provide it
           // or canceled the notification.
@@ -429,20 +429,12 @@ BrowserElementAuthPrompt.prototype = {
     return [hostname, realm];
   },
 
+  /**
+   * Strip out things like userPass and path for display.
+   */
   _getFormattedHostname : function(uri) {
-    let scheme = uri.scheme;
-    let hostname = scheme + "://" + uri.host;
-
-    // If the URI explicitly specified a port, only include it when
-    // it's not the default. (We never want "http://foo.com:80")
-    let port = uri.port;
-    if (port != -1) {
-      let handler = Services.io.getProtocolHandler(scheme);
-      if (port != handler.defaultPort)
-        hostname += ":" + port;
-    }
-    return hostname;
-  }
+    return uri.scheme + "://" + uri.hostPort;
+  },
 };
 
 

@@ -307,6 +307,7 @@ class OSXBootstrapper(BaseBootstrapper):
             ('git', 'git'),
             ('autoconf213', HOMEBREW_AUTOCONF213),
             ('gnu-tar', 'gnu-tar'),
+            ('watchman', 'watchman',)
         ]
         self._ensure_homebrew_packages(packages)
 
@@ -324,20 +325,18 @@ class OSXBootstrapper(BaseBootstrapper):
                                    '--with-clang', '--all-targets'])
 
     def ensure_homebrew_mobile_android_packages(self):
+        # Multi-part process:
+        # 1. System packages.
+        # 2. Android SDK and NDK.
+        # 3. Android packages.
+
         import android
 
-        # If we're run from a downloaded bootstrap.py, then android-ndk.rb is
-        # fetched into a temporary directory.  This finds that directory.
-        import inspect
-        path_to_android = os.path.abspath(os.path.dirname(inspect.getfile(android)))
-
-        # We don't need wget because we install the Android SDK and NDK from
-        # packages.  If we used the android.py module, we'd need wget.
+        # 1. System packages.
         packages = [
-            ('android-sdk', 'android-sdk'),
-            ('android-ndk', os.path.join(path_to_android, 'android-ndk.rb')),  # This is a locally provided brew formula!
             ('ant', 'ant'),
             ('brew-cask', 'caskroom/cask/brew-cask'),  # For installing Java later.
+            ('wget', 'wget'),
         ]
         self._ensure_homebrew_packages(packages)
 
@@ -348,16 +347,32 @@ class OSXBootstrapper(BaseBootstrapper):
         if installed:
             print(JAVA_LICENSE_NOTICE)  # We accepted a license agreement for the user.
 
-        # We could probably fish this path from |brew info android-sdk|.
-        android_tool = '/usr/local/opt/android-sdk/tools/android'
-        android.ensure_android_packages(android_tool)
+        # 2. The user may have an external Android SDK (in which case we save
+        # them a lengthy download), or they may have already completed the
+        # download. We unpack to ~/.mozbuild/{android-sdk-linux, android-ndk-r10e}.
+        mozbuild_path = os.environ.get('MOZBUILD_STATE_PATH', os.path.expanduser(os.path.join('~', '.mozbuild')))
+        self.sdk_path = os.environ.get('ANDROID_SDK_HOME', os.path.join(mozbuild_path, 'android-sdk-macosx'))
+        self.ndk_path = os.environ.get('ANDROID_NDK_HOME', os.path.join(mozbuild_path, 'android-ndk-r10e'))
+        self.sdk_url = 'https://dl.google.com/android/android-sdk_r24.0.1-macosx.zip'
+        is_64bits = sys.maxsize > 2**32
+        if is_64bits:
+            self.ndk_url = android.android_ndk_url('darwin')
+        else:
+            raise Exception('You need a 64-bit version of Mac OS X to build Firefox for Android.')
+
+        android.ensure_android_sdk_and_ndk(path=mozbuild_path,
+                                           sdk_path=self.sdk_path, sdk_url=self.sdk_url,
+                                           ndk_path=self.ndk_path, ndk_url=self.ndk_url)
+
+        # 3. We expect the |android| tool to at
+        # ~/.mozbuild/android-sdk-macosx/tools/android.
+        android_tool = os.path.join(self.sdk_path, 'tools', 'android')
+        android.ensure_android_packages(android_tool=android_tool)
 
     def suggest_homebrew_mobile_android_mozconfig(self):
         import android
-        # We could probably fish this path from |brew info android-sdk|.
-        sdk_path = '/usr/local/opt/android-sdk/platforms/%s' % android.ANDROID_PLATFORM
-        ndk_path = '/usr/local/opt/android-ndk'
-        android.suggest_mozconfig(sdk_path=sdk_path, ndk_path=ndk_path)
+        android.suggest_mozconfig(sdk_path=self.sdk_path,
+                                  ndk_path=self.ndk_path)
 
     def _ensure_macports_packages(self, packages):
         self.port = self.which('port')
@@ -371,10 +386,13 @@ class OSXBootstrapper(BaseBootstrapper):
             self.run_as_root([self.port, '-v', 'install'] + missing)
 
     def ensure_macports_system_packages(self):
-        packages = ['python27',
-                    'mercurial',
-                    'autoconf213',
-                    'gnutar']
+        packages = [
+            'python27',
+            'mercurial',
+            'autoconf213',
+            'gnutar',
+            'watchman',
+        ]
 
         self._ensure_macports_packages(packages)
         self.run_as_root([self.port, 'select', '--set', 'python', 'python27'])

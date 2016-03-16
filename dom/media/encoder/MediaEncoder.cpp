@@ -31,7 +31,7 @@
 #undef LOG
 #endif
 
-PRLogModuleInfo* gMediaEncoderLog;
+mozilla::LazyLogModule gMediaEncoderLog("MediaEncoder");
 #define LOG(type, msg) MOZ_LOG(gMediaEncoderLog, type, msg)
 
 namespace mozilla {
@@ -41,7 +41,9 @@ MediaEncoder::NotifyQueuedTrackChanges(MediaStreamGraph* aGraph,
                                        TrackID aID,
                                        StreamTime aTrackOffset,
                                        uint32_t aTrackEvents,
-                                       const MediaSegment& aQueuedMedia)
+                                       const MediaSegment& aQueuedMedia,
+                                       MediaStream* aInputStream,
+                                       TrackID aInputTrackID)
 {
   // Process the incoming raw track data from MediaStreamGraph, called on the
   // thread of MediaStreamGraph.
@@ -77,16 +79,13 @@ MediaEncoder::CreateEncoder(const nsAString& aMIMEType, uint32_t aAudioBitrate,
                             uint32_t aVideoBitrate, uint32_t aBitrate,
                             uint8_t aTrackTypes)
 {
-  if (!gMediaEncoderLog) {
-    gMediaEncoderLog = PR_NewLogModule("MediaEncoder");
-  }
   PROFILER_LABEL("MediaEncoder", "CreateEncoder",
     js::ProfileEntry::Category::OTHER);
 
   nsAutoPtr<ContainerWriter> writer;
   nsAutoPtr<AudioTrackEncoder> audioEncoder;
   nsAutoPtr<VideoTrackEncoder> videoEncoder;
-  nsRefPtr<MediaEncoder> encoder;
+  RefPtr<MediaEncoder> encoder;
   nsString mimeType;
   if (!aTrackTypes) {
     LOG(LogLevel::Error, ("NO TrackTypes!!!"));
@@ -128,6 +127,14 @@ MediaEncoder::CreateEncoder(const nsAString& aMIMEType, uint32_t aAudioBitrate,
     writer = new ISOMediaWriter(aTrackTypes, ISOMediaWriter::TYPE_FRAG_3GP);
     NS_ENSURE_TRUE(writer, nullptr);
     mimeType = NS_LITERAL_STRING(AUDIO_3GPP);
+  } else if (MediaEncoder::IsOMXEncoderEnabled() &&
+            (aMIMEType.EqualsLiteral(AUDIO_3GPP2))) {
+    audioEncoder = new OmxEVRCAudioTrackEncoder();
+    NS_ENSURE_TRUE(audioEncoder, nullptr);
+
+    writer = new ISOMediaWriter(aTrackTypes, ISOMediaWriter::TYPE_FRAG_3G2);
+    NS_ENSURE_TRUE(writer, nullptr);
+    mimeType = NS_LITERAL_STRING(AUDIO_3GPP2) ;
   }
 #endif // MOZ_OMX_ENCODER
   else if (MediaDecoder::IsOggEnabled() && MediaDecoder::IsOpusEnabled() &&
@@ -313,7 +320,7 @@ MediaEncoder::CopyMetadataToMuxer(TrackEncoder *aTrackEncoder)
   PROFILER_LABEL("MediaEncoder", "CopyMetadataToMuxer",
     js::ProfileEntry::Category::OTHER);
 
-  nsRefPtr<TrackMetadataBase> meta = aTrackEncoder->GetMetadata();
+  RefPtr<TrackMetadataBase> meta = aTrackEncoder->GetMetadata();
   if (meta == nullptr) {
     LOG(LogLevel::Error, ("Error! metadata = null"));
     mState = ENCODE_ERROR;

@@ -29,9 +29,8 @@
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_WARNING
 #include "nsISupportsImpl.h"            // for TextureImage::Release, etc
+#include "nsRegionFwd.h"                // for nsIntRegion
 #include "OGLShaderProgram.h"           // for ShaderProgramType, etc
-
-class nsIntRegion;
 
 namespace mozilla {
 namespace gfx {
@@ -211,7 +210,7 @@ public:
   }
 
 protected:
-  nsRefPtr<gl::TextureImage> mTexImage;
+  RefPtr<gl::TextureImage> mTexImage;
   RefPtr<CompositorOGL> mCompositor;
   TextureFlags mFlags;
   bool mIterating;
@@ -277,6 +276,56 @@ protected:
   // If the texture is externally owned, the gl handle will not be deleted
   // in the destructor.
   bool mExternallyOwned;
+};
+
+class GLTextureHost : public TextureHost
+{
+public:
+  GLTextureHost(TextureFlags aFlags,
+                GLuint aTextureHandle,
+                GLenum aTarget,
+                GLsync aSync,
+                gfx::IntSize aSize,
+                bool aHasAlpha);
+
+  virtual ~GLTextureHost();
+
+  // We don't own anything.
+  virtual void DeallocateDeviceData() override {}
+
+  virtual void SetCompositor(Compositor* aCompositor) override;
+
+  virtual bool Lock() override;
+
+  virtual void Unlock() override {}
+
+  virtual gfx::SurfaceFormat GetFormat() const override;
+
+  virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override
+  {
+    aTexture = mTextureSource;
+    return !!aTexture;
+  }
+
+  virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override
+  {
+    return nullptr; // XXX - implement this (for MOZ_DUMP_PAINTING)
+  }
+
+  gl::GLContext* gl() const;
+
+  virtual gfx::IntSize GetSize() const override { return mSize; }
+
+  virtual const char* Name() override { return "GLTextureHost"; }
+
+protected:
+  const GLuint mTexture;
+  const GLenum mTarget;
+  GLsync mSync;
+  const gfx::IntSize mSize;
+  const bool mHasAlpha;
+  RefPtr<CompositorOGL> mCompositor;
+  RefPtr<GLTextureSource> mTextureSource;
 };
 
 ////////////////////////////////////////////////////////////////////////

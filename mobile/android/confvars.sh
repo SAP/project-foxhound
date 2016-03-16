@@ -33,11 +33,7 @@ MOZ_MEDIA_NAVIGATOR=1
 # Enable NFC permission
 MOZ_ANDROID_BEAM=1
 
-if test "$LIBXUL_SDK"; then
-MOZ_XULRUNNER=1
-else
 MOZ_XULRUNNER=
-fi
 
 MOZ_CAPTURE=1
 MOZ_RAW=1
@@ -91,9 +87,6 @@ MOZ_WEBGL_CONFORMANT=1
 # Enable the Search Activity.
 MOZ_ANDROID_SEARCH_ACTIVITY=1
 
-# Enable the share handler.
-MOZ_ANDROID_SHARE_OVERLAY=1
-
 # Enable the Mozilla Location Service stumbler.
 MOZ_ANDROID_MLS_STUMBLER=1
 
@@ -106,8 +99,15 @@ MOZ_ANDROID_TAB_QUEUE=1
 # Use the low-memory GC tuning.
 export JS_GC_SMALL_CHUNK_SIZE=1
 
-# Enable Firefox Account avatars.
-MOZ_ANDROID_FIREFOX_ACCOUNT_PROFILES=1
+# Enable GCM registration on Nightly builds only.
+if test "$NIGHTLY_BUILD"; then
+  MOZ_ANDROID_GCM=1
+fi
+
+# Enable C++ APZ on Nightly builds only.
+if test "$NIGHTLY_BUILD"; then
+  MOZ_ANDROID_APZ=1
+fi
 
 # Enable checking that add-ons are signed by the trusted root
 MOZ_ADDON_SIGNING=1
@@ -117,5 +117,5 @@ MOZ_ADDON_SIGNING=1
 # usage of the framework.
 MOZ_SWITCHBOARD=1
 
-# Use native Firefox Accounts UI regardless of channel.
-MOZ_ANDROID_NATIVE_ACCOUNT_UI=1
+# Disable GeckoView by default.
+export MOZ_DISABLE_GECKOVIEW=1

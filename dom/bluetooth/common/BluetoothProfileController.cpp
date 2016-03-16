@@ -46,12 +46,12 @@ private:
     mController = nullptr;
   }
 
-  nsRefPtr<BluetoothProfileController> mController;
+  RefPtr<BluetoothProfileController> mController;
 };
 
 BluetoothProfileController::BluetoothProfileController(
                                    bool aConnect,
-                                   const nsAString& aDeviceAddress,
+                                   const BluetoothAddress& aDeviceAddress,
                                    BluetoothReplyRunnable* aRunnable,
                                    BluetoothProfileControllerCallback aCallback,
                                    uint16_t aServiceUuid,
@@ -64,7 +64,7 @@ BluetoothProfileController::BluetoothProfileController(
   , mSuccess(false)
   , mProfilesIndex(-1)
 {
-  MOZ_ASSERT(!aDeviceAddress.IsEmpty());
+  MOZ_ASSERT(!aDeviceAddress.IsCleared());
   MOZ_ASSERT(aRunnable);
   MOZ_ASSERT(aCallback);
 
@@ -178,15 +178,16 @@ BluetoothProfileController::SetupProfiles(bool aAssignServiceClass)
   bool isRemoteControl = IS_REMOTE_CONTROL(mTarget.cod);
   bool isKeyboard = IS_KEYBOARD(mTarget.cod);
   bool isPointingDevice = IS_POINTING_DEVICE(mTarget.cod);
-  bool isInvalid = IS_INVALID_COD(mTarget.cod);
+  bool isInvalid = IS_INVALID(mTarget.cod);
 
   // The value of CoD is invalid. Since the device didn't declare its class of
   // device properly, we assume the device may support all of these profiles.
+  // Note the invalid CoD from bluedroid callback usually results from
+  // NFC-triggered direct pairing for no EIR query records.
   if (isInvalid) {
     AddProfile(BluetoothHfpManager::Get());
     AddProfile(BluetoothA2dpManager::Get());
     AddProfile(BluetoothAvrcpManager::Get()); // register after A2DP
-    AddProfile(BluetoothHidManager::Get());
     return;
   }
 
@@ -229,7 +230,6 @@ void
 BluetoothProfileController::StartSession()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!mDeviceAddress.IsEmpty());
   MOZ_ASSERT(mProfilesIndex == -1);
   MOZ_ASSERT(mTimer);
 
@@ -284,7 +284,6 @@ void
 BluetoothProfileController::Next()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!mDeviceAddress.IsEmpty());
   MOZ_ASSERT(mProfilesIndex < (int)mProfiles.Length());
   MOZ_ASSERT(mTimer);
 

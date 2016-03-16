@@ -244,6 +244,9 @@ pref("security.alternate_certificate_error_page", "certerror");
 
 pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616712.
 
+// Block insecure active content on https pages
+pref("security.mixed_content.block_active_content", true);
+
 // 2 = strict certificate pinning checks.
 // This default preference is more strict than Firefox because B2G
 // currently does not have a way to install local root certificates.
@@ -319,13 +322,12 @@ pref("media.cache_readahead_limit", 30);
 
 #ifdef MOZ_FMP4
 // Enable/Disable Gonk Decoder Module
-pref("media.fragmented-mp4.gonk.enabled", true);
+pref("media.gonk.enabled", true);
 #endif
 
 //Encrypted media extensions.
 pref("media.eme.enabled", true);
 pref("media.eme.apiVisible", true);
-
 // The default number of decoded video frames that are enqueued in
 // MediaDecoderReader's mVideoQueue.
 pref("media.video-queue.default-size", 3);
@@ -341,21 +343,16 @@ pref("image.mem.surfacecache.max_size_kb", 131072);  // 128MB
 pref("image.mem.surfacecache.size_factor", 8);  // 1/8 of main memory
 pref("image.mem.surfacecache.discard_factor", 2);  // Discard 1/2 of the surface cache at a time.
 pref("image.mem.surfacecache.min_expiration_ms", 86400000); // 24h, we rely on the out of memory hook
-pref("image.onload.decode.limit", 24); /* don't decode more than 24 images eagerly */
 
-// XXX this isn't a good check for "are touch events supported", but
-// we don't really have a better one at the moment.
-// enable touch events interfaces
-pref("dom.w3c_touch_events.enabled", 1);
 pref("dom.w3c_touch_events.safetyX", 0); // escape borders in units of 1/240"
 pref("dom.w3c_touch_events.safetyY", 120); // escape borders in units of 1/240"
 
 #ifdef MOZ_SAFE_BROWSING
-pref("browser.safebrowsing.enabled", false);
+pref("browser.safebrowsing.enabled", true);
 // Prevent loading of pages identified as malware
-pref("browser.safebrowsing.malware.enabled", false);
-pref("browser.safebrowsing.downloads.enabled", false);
-pref("browser.safebrowsing.downloads.remote.enabled", false);
+pref("browser.safebrowsing.malware.enabled", true);
+pref("browser.safebrowsing.downloads.enabled", true);
+pref("browser.safebrowsing.downloads.remote.enabled", true);
 pref("browser.safebrowsing.downloads.remote.timeout_ms", 10000);
 pref("browser.safebrowsing.debug", false);
 
@@ -363,11 +360,11 @@ pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-d
 pref("browser.safebrowsing.provider.google.updateURL", "https://safebrowsing.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2&key=%GOOGLE_API_KEY%");
 pref("browser.safebrowsing.provider.google.gethashURL", "https://safebrowsing.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
 pref("browser.safebrowsing.provider.google.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
-pref("browser.safebrowsing.provider.google.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
 pref("browser.safebrowsing.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportMalwareMistakeURL", "https://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%&url=");
+pref("browser.safebrowsing.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
 pref("browser.safebrowsing.id", "Firefox");
 
@@ -386,8 +383,8 @@ pref("urlclassifier.gethash.timeout_ms", 5000);
 pref("urlclassifier.max-complete-age", 2700);
 
 // Tracking protection
-pref("privacy.trackingprotection.enabled", true);
-pref("privacy.trackingprotection.pbmode.enabled", false);
+pref("privacy.trackingprotection.enabled", false);
+pref("privacy.trackingprotection.pbmode.enabled", true);
 
 #endif
 
@@ -431,7 +428,7 @@ pref("dom.ipc.processCount", 100000);
 
 pref("dom.ipc.browser_frames.oop_by_default", false);
 
-#ifndef MOZ_MULET
+#if !defined(MOZ_MULET) && !defined(MOZ_GRAPHENE)
 pref("dom.meta-viewport.enabled", true);
 #endif
 
@@ -531,6 +528,9 @@ pref("layout.frame_rate.precise", true);
 // Handle hardware buttons in the b2g chrome package
 pref("b2g.keys.menu.enabled", true);
 
+// Display simulator software buttons
+pref("b2g.software-buttons", false);
+
 // Screen timeout in seconds
 pref("power.screen.timeout", 60);
 
@@ -578,7 +578,7 @@ pref("app.update.incompatible.mode", 0);
 pref("app.update.staging.enabled", true);
 pref("app.update.service.enabled", true);
 
-pref("app.update.url", "https://aus5.mozilla.org/update/3/%PRODUCT%/%VERSION%/%BUILD_ID%/%PRODUCT_DEVICE%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
+pref("app.update.url", "https://aus5.mozilla.org/update/5/%PRODUCT%/%VERSION%/%BUILD_ID%/%PRODUCT_DEVICE%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%IMEI%/update.xml");
 pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
 
 // Interval at which update manifest is fetched.  In units of seconds.
@@ -677,7 +677,7 @@ pref("javascript.options.mem.gc_max_empty_chunk_count", 2);
 pref("ui.showHideScrollbars", 1);
 pref("ui.useOverlayScrollbars", 1);
 pref("ui.scrollbarFadeBeginDelay", 450);
-pref("ui.scrollbarFadeDuration", 200);
+pref("ui.scrollbarFadeDuration", 0);
 
 // Scrollbar position follows the document `dir` attribute
 pref("layout.scrollbar.side", 1);
@@ -692,6 +692,7 @@ pref("layout.css.scroll-snap.enabled", true);
 pref("dom.ipc.processPriorityManager.enabled", true);
 pref("dom.ipc.processPriorityManager.backgroundGracePeriodMS", 1000);
 pref("dom.ipc.processPriorityManager.backgroundPerceivableGracePeriodMS", 5000);
+pref("dom.ipc.processPriorityManager.memoryPressureGracePeriodMS", 3000);
 pref("dom.ipc.processPriorityManager.temporaryPriorityLockMS", 5000);
 
 // Number of different background/foreground levels for background/foreground
@@ -954,7 +955,7 @@ pref("devtools.debugger.unix-domain-socket", "/data/local/debugger-socket");
 // falling back to Skia/software for smaller canvases
 #ifdef MOZ_WIDGET_GONK
 pref("gfx.canvas.azure.backends", "skia");
-pref("gfx.canvas.azure.accelerated", false);
+pref("gfx.canvas.azure.accelerated", true);
 #endif
 
 // Turn on dynamic cache size for Skia
@@ -1006,17 +1007,8 @@ pref("security.exthelperapp.disable_background_handling", true);
 // Inactivity time in milliseconds after which we shut down the OS.File worker.
 pref("osfile.reset_worker_delay", 5000);
 
-// APZC preferences.
-#ifdef MOZ_WIDGET_GONK
-pref("apz.allow_zooming", true);
-#endif
-
-// Gaia relies heavily on scroll events for now, so lets fire them
-// more often than the default value (100).
-pref("apz.asyncscroll.throttle", 40);
-pref("apz.pan_repaint_interval", 16);
-
 // APZ physics settings, tuned by UX designers
+pref("apz.axis_lock.mode", 2); // Use "sticky" axis locking
 pref("apz.fling_curve_function_x1", "0.41");
 pref("apz.fling_curve_function_y1", "0.0");
 pref("apz.fling_curve_function_x2", "0.80");
@@ -1024,25 +1016,7 @@ pref("apz.fling_curve_function_y2", "1.0");
 pref("apz.fling_curve_threshold_inches_per_ms", "0.01");
 pref("apz.fling_friction", "0.0019");
 pref("apz.max_velocity_inches_per_ms", "0.07");
-pref("apz.touch_start_tolerance", "0.1");
-
-// Tweak default displayport values to reduce the risk of running out of
-// memory when zooming in
-pref("apz.x_skate_size_multiplier", "1.25");
-pref("apz.y_skate_size_multiplier", "1.5");
-pref("apz.x_stationary_size_multiplier", "1.5");
-pref("apz.y_stationary_size_multiplier", "1.8");
-pref("apz.enlarge_displayport_when_clipped", true);
-// Use "sticky" axis locking
-pref("apz.axis_lock.mode", 2);
-
-// Overscroll-related settings
 pref("apz.overscroll.enabled", true);
-pref("apz.overscroll.stretch_factor", "0.35");
-pref("apz.overscroll.spring_stiffness", "0.0018");
-pref("apz.overscroll.spring_friction", "0.015");
-pref("apz.overscroll.stop_distance_threshold", "5.0");
-pref("apz.overscroll.stop_velocity_threshold", "0.01");
 
 // For event-regions based hit-testing
 pref("layout.event-regions.enabled", true);
@@ -1066,15 +1040,15 @@ pref("dom.wakelock.enabled", true);
 
 // Enable webapps add-ons
 pref("dom.apps.customization.enabled", true);
-
-// Original caret implementation on collapsed selection.
-pref("touchcaret.enabled", false);
-
-// Original caret implementation on non-collapsed selection.
-pref("selectioncaret.enabled", false);
+pref("dom.apps.reviewer_paths", "/reviewers/,/extension/reviewers/");
 
 // New implementation to unify touch-caret and selection-carets.
 pref("layout.accessiblecaret.enabled", true);
+
+// APZ on real devices supports long tap events.
+#ifdef MOZ_WIDGET_GONK
+pref("layout.accessiblecaret.use_long_tap_injector", false);
+#endif
 
 // Enable sync and mozId with Firefox Accounts.
 pref("services.sync.fxaccounts.enabled", true);
@@ -1082,6 +1056,9 @@ pref("identity.fxaccounts.enabled", true);
 
 // Mobile Identity API.
 pref("services.mobileid.server.uri", "https://msisdn.services.mozilla.com");
+
+pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com/v1");
+pref("identity.fxaccounts.remote.profile.uri", "https://profile.accounts.firefox.com/v1");
 
 // Enable mapped array buffer.
 #ifndef XP_WIN
@@ -1145,3 +1122,18 @@ pref("dom.presentation.device.name", "Firefox OS");
 
 // Enable notification of performance timing
 pref("dom.performance.enable_notify_performance_timing", true);
+
+// Multi-screen
+pref("b2g.multiscreen.chrome_remote_url", "chrome://b2g/content/shell_remote.html");
+pref("b2g.multiscreen.system_remote_url", "index_remote.html");
+
+// Blocklist service
+pref("extensions.blocklist.enabled", true);
+pref("extensions.blocklist.interval", 86400);
+pref("extensions.blocklist.url", "https://blocklist.addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
+pref("extensions.blocklist.detailsURL", "https://www.mozilla.com/%LOCALE%/blocklist/");
+
+// Because we can't have nice things.
+#ifdef MOZ_GRAPHENE
+#include ../graphene/graphene.js
+#endif

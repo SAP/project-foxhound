@@ -21,46 +21,38 @@ public:
   static already_AddRefed<PlatformDecoderModule>
   Create()
   {
-    nsRefPtr<PlatformDecoderModule> pdm = new FFmpegDecoderModule();
-    return pdm.forget();
-  }
+    RefPtr<PlatformDecoderModule> pdm = new FFmpegDecoderModule();
 
-  static bool
-  GetVersion(uint32_t& aMajor, uint32_t& aMinor)
-  {
-    uint32_t version = avcodec_version();
-    aMajor = (version >> 16) & 0xff;
-    aMinor = (version >> 8) & 0xff;
-    return true;
+    return pdm.forget();
   }
 
   FFmpegDecoderModule() {}
   virtual ~FFmpegDecoderModule() {}
 
-  virtual already_AddRefed<MediaDataDecoder>
+  already_AddRefed<MediaDataDecoder>
   CreateVideoDecoder(const VideoInfo& aConfig,
                      layers::LayersBackend aLayersBackend,
                      layers::ImageContainer* aImageContainer,
                      FlushableTaskQueue* aVideoTaskQueue,
                      MediaDataDecoderCallback* aCallback) override
   {
-    nsRefPtr<MediaDataDecoder> decoder =
+    RefPtr<MediaDataDecoder> decoder =
       new FFmpegH264Decoder<V>(aVideoTaskQueue, aCallback, aConfig,
                                aImageContainer);
     return decoder.forget();
   }
 
-  virtual already_AddRefed<MediaDataDecoder>
+  already_AddRefed<MediaDataDecoder>
   CreateAudioDecoder(const AudioInfo& aConfig,
                      FlushableTaskQueue* aAudioTaskQueue,
                      MediaDataDecoderCallback* aCallback) override
   {
-    nsRefPtr<MediaDataDecoder> decoder =
+    RefPtr<MediaDataDecoder> decoder =
       new FFmpegAudioDecoder<V>(aAudioTaskQueue, aCallback, aConfig);
     return decoder.forget();
   }
 
-  virtual bool SupportsMimeType(const nsACString& aMimeType) override
+  bool SupportsMimeType(const nsACString& aMimeType) const override
   {
     AVCodecID audioCodec = FFmpegAudioDecoder<V>::GetCodecId(aMimeType);
     AVCodecID videoCodec = FFmpegH264Decoder<V>::GetCodecId(aMimeType);
@@ -71,7 +63,7 @@ public:
     return !!FFmpegDataDecoder<V>::FindAVCodec(codec);
   }
 
-  virtual ConversionRequired
+  ConversionRequired
   DecoderNeedsConversion(const TrackInfo& aConfig) const override
   {
     if (aConfig.IsVideo() &&

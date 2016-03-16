@@ -107,11 +107,11 @@ struct FullscreenRequest : public LinkedListElement<FullscreenRequest>
   nsDocument* GetDocument() const { return mDocument; }
 
 private:
-  nsRefPtr<Element> mElement;
-  nsRefPtr<nsDocument> mDocument;
+  RefPtr<Element> mElement;
+  RefPtr<nsDocument> mDocument;
 
 public:
-  nsRefPtr<gfx::VRHMDInfo> mVRHMDDevice;
+  RefPtr<gfx::VRHMDInfo> mVRHMDDevice;
   // This value should be true if the fullscreen request is
   // originated from chrome code.
   bool mIsCallerChrome = false;
@@ -256,9 +256,9 @@ private:
   // empty if there are no elements with this ID.
   // The elements are stored as weak pointers.
   nsTArray<Element*> mIdContentList;
-  nsRefPtr<nsBaseContentList> mNameContentList;
+  RefPtr<nsBaseContentList> mNameContentList;
   nsAutoPtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
-  nsRefPtr<Element> mImageElement;
+  RefPtr<Element> mImageElement;
 };
 
 namespace mozilla {
@@ -332,8 +332,8 @@ public:
 
 private:
   // The this value to use for invocation of the callback.
-  nsRefPtr<mozilla::dom::Element> mThisObject;
-  nsRefPtr<mozilla::dom::CallbackFunction> mCallback;
+  RefPtr<mozilla::dom::Element> mThisObject;
+  RefPtr<mozilla::dom::CallbackFunction> mCallback;
   // The type of callback (eCreated, eAttached, etc.)
   nsIDocument::ElementCallbackType mType;
   // Arguments to be passed to the callback,
@@ -427,7 +427,7 @@ protected:
                            mozilla::dom::CustomElementDefinition>
     DefinitionMap;
   typedef nsClassHashtable<mozilla::dom::CustomElementHashKey,
-                           nsTArray<nsRefPtr<mozilla::dom::Element>>>
+                           nsTArray<nsWeakPtr>>
     CandidateMap;
 
   // Hashtable for custom element definitions in web components.
@@ -591,7 +591,7 @@ protected:
                          nsILoadGroup** aLoadGroup);
 
   private:
-    nsRefPtr<nsDocument> mDisplayDocument;
+    RefPtr<nsDocument> mDisplayDocument;
     nsCOMPtr<nsIStreamListener> mTargetListener;
     nsCOMPtr<nsIURI> mURI;
   };
@@ -661,29 +661,6 @@ protected:
   bool mHaveShutDown;
 };
 
-class CSPErrorQueue
-{
-  public:
-    /**
-     * Note this was designed to be passed string literals. If you give it
-     * a dynamically allocated string, it is your responsibility to make sure
-     * it never dies and is properly freed!
-     */
-    void Add(const char* aMessageName);
-    void Flush(nsIDocument* aDocument);
-
-    CSPErrorQueue()
-    {
-    }
-
-    ~CSPErrorQueue()
-    {
-    }
-
-  private:
-    nsAutoTArray<const char*,5> mErrors;
-};
-
 // Base class for our document implementations.
 //
 // Note that this class *implements* nsIDOMXMLDocument, but it's not
@@ -739,6 +716,8 @@ public:
   virtual void SetChromeXHRDocURI(nsIURI* aURI) override;
 
   virtual void SetChromeXHRDocBaseURI(nsIURI* aURI) override;
+
+  virtual void ApplySettingsFromCSP(bool aSpeculative) override;
 
   /**
    * Set the principal responsible for this document.
@@ -822,24 +801,29 @@ public:
    * These are ordered, highest priority last
    */
   virtual int32_t GetNumberOfStyleSheets() const override;
-  virtual nsIStyleSheet* GetStyleSheetAt(int32_t aIndex) const override;
-  virtual int32_t GetIndexOfStyleSheet(nsIStyleSheet* aSheet) const override;
-  virtual void AddStyleSheet(nsIStyleSheet* aSheet) override;
-  virtual void RemoveStyleSheet(nsIStyleSheet* aSheet) override;
+  virtual mozilla::CSSStyleSheet* GetStyleSheetAt(int32_t aIndex) const override;
+  virtual int32_t GetIndexOfStyleSheet(mozilla::CSSStyleSheet* aSheet) const override;
+  virtual void AddStyleSheet(mozilla::CSSStyleSheet* aSheet) override;
+  virtual void RemoveStyleSheet(mozilla::CSSStyleSheet* aSheet) override;
 
-  virtual void UpdateStyleSheets(nsCOMArray<nsIStyleSheet>& aOldSheets,
-                                 nsCOMArray<nsIStyleSheet>& aNewSheets) override;
-  virtual void AddStyleSheetToStyleSets(nsIStyleSheet* aSheet);
-  virtual void RemoveStyleSheetFromStyleSets(nsIStyleSheet* aSheet);
+  virtual void UpdateStyleSheets(
+      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aOldSheets,
+      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aNewSheets) override;
+  virtual void AddStyleSheetToStyleSets(mozilla::CSSStyleSheet* aSheet);
+  virtual void RemoveStyleSheetFromStyleSets(mozilla::CSSStyleSheet* aSheet);
 
-  virtual void InsertStyleSheetAt(nsIStyleSheet* aSheet, int32_t aIndex) override;
-  virtual void SetStyleSheetApplicableState(nsIStyleSheet* aSheet,
+  virtual void InsertStyleSheetAt(mozilla::CSSStyleSheet* aSheet,
+                                  int32_t aIndex) override;
+  virtual void SetStyleSheetApplicableState(mozilla::CSSStyleSheet* aSheet,
                                             bool aApplicable) override;
 
-  virtual nsresult LoadAdditionalStyleSheet(additionalSheetType aType, nsIURI* aSheetURI) override;
-  virtual nsresult AddAdditionalStyleSheet(additionalSheetType aType, nsIStyleSheet* aSheet) override;
-  virtual void RemoveAdditionalStyleSheet(additionalSheetType aType, nsIURI* sheetURI) override;
-  virtual nsIStyleSheet* FirstAdditionalAuthorSheet() override;
+  virtual nsresult LoadAdditionalStyleSheet(additionalSheetType aType,
+                                            nsIURI* aSheetURI) override;
+  virtual nsresult AddAdditionalStyleSheet(additionalSheetType aType,
+                                           mozilla::CSSStyleSheet* aSheet) override;
+  virtual void RemoveAdditionalStyleSheet(additionalSheetType aType,
+                                          nsIURI* sheetURI) override;
+  virtual mozilla::CSSStyleSheet* FirstAdditionalAuthorSheet() override;
 
   virtual nsIChannel* GetChannel() const override {
     return mChannel;
@@ -899,13 +883,12 @@ public:
   virtual void DocumentStatesChanged(
                  mozilla::EventStates aStateMask) override;
 
-  virtual void StyleRuleChanged(nsIStyleSheet* aStyleSheet,
-                                nsIStyleRule* aOldStyleRule,
-                                nsIStyleRule* aNewStyleRule) override;
-  virtual void StyleRuleAdded(nsIStyleSheet* aStyleSheet,
-                              nsIStyleRule* aStyleRule) override;
-  virtual void StyleRuleRemoved(nsIStyleSheet* aStyleSheet,
-                                nsIStyleRule* aStyleRule) override;
+  virtual void StyleRuleChanged(mozilla::CSSStyleSheet* aStyleSheet,
+                                mozilla::css::Rule* aStyleRule) override;
+  virtual void StyleRuleAdded(mozilla::CSSStyleSheet* aStyleSheet,
+                              mozilla::css::Rule* aStyleRule) override;
+  virtual void StyleRuleRemoved(mozilla::CSSStyleSheet* aStyleSheet,
+                                mozilla::css::Rule* aStyleRule) override;
 
   virtual void FlushPendingNotifications(mozFlushType aType) override;
   virtual void FlushExternalResources(mozFlushType aType) override;
@@ -1207,6 +1190,7 @@ public:
   virtual Element* FindImageMap(const nsAString& aNormalizedMapName) override;
 
   virtual Element* GetFullScreenElement() override;
+  virtual nsTArray<Element*> GetFullscreenStack() const override;
   virtual void AsyncRequestFullScreen(
     mozilla::UniquePtr<FullscreenRequest>&& aRequest) override;
   virtual void RestorePreviousFullScreenState() override;
@@ -1473,13 +1457,15 @@ protected:
   nsIContent* GetFirstBaseNodeWithHref();
   nsresult SetFirstBaseNodeWithHref(nsIContent *node);
 
-  // Get the first <title> element with the given IsNodeOfType type, or
-  // return null if there isn't one
-  nsIContent* GetTitleContent(uint32_t aNodeType);
-  // Find the first "title" element in the given IsNodeOfType type and
-  // append the concatenation of its text node children to aTitle. Do
-  // nothing if there is no such element.
-  void GetTitleFromElement(uint32_t aNodeType, nsAString& aTitle);
+  /**
+   * Returns the title element of the document as defined by the HTML
+   * specification, or null if there isn't one.  For documents whose root
+   * element is an <svg:svg>, this is the first <svg:title> element that's a
+   * child of the root.  For other documents, it's the first HTML title element
+   * in the document.
+   */
+  Element* GetTitleElement();
+
 public:
   // Get our title
   virtual void GetTitle(nsString& aTitle) override;
@@ -1512,8 +1498,9 @@ protected:
                                                nsCompatibility aCompatMode);
 
   void RemoveDocStyleSheetsFromStyleSets();
-  void RemoveStyleSheetsFromStyleSets(nsCOMArray<nsIStyleSheet>& aSheets, 
-                                      nsStyleSet::sheetType aType);
+  void RemoveStyleSheetsFromStyleSets(
+      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aSheets,
+      mozilla::SheetType aType);
   void ResetStylesheetsToURI(nsIURI* aURI);
   void FillStyleSet(nsStyleSet* aStyleSet);
 
@@ -1566,16 +1553,16 @@ protected:
   // EndLoad() has already happened.
   nsWeakPtr mWeakSink;
 
-  nsCOMArray<nsIStyleSheet> mStyleSheets;
-  nsCOMArray<nsIStyleSheet> mOnDemandBuiltInUASheets;
-  nsCOMArray<nsIStyleSheet> mAdditionalSheets[SheetTypeCount];
+  nsTArray<RefPtr<mozilla::CSSStyleSheet>> mStyleSheets;
+  nsTArray<RefPtr<mozilla::CSSStyleSheet>> mOnDemandBuiltInUASheets;
+  nsTArray<RefPtr<mozilla::CSSStyleSheet>> mAdditionalSheets[AdditionalSheetTypeCount];
 
   // Array of observers
   nsTObserverArray<nsIDocumentObserver*> mObservers;
 
   // Tracker for animations that are waiting to start.
   // nullptr until GetOrCreatePendingAnimationTracker is called.
-  nsRefPtr<mozilla::PendingAnimationTracker> mPendingAnimationTracker;
+  RefPtr<mozilla::PendingAnimationTracker> mPendingAnimationTracker;
 
   // Weak reference to the scope object (aka the script global object)
   // that, unlike mScriptGlobalObject, is never unset once set. This
@@ -1598,7 +1585,7 @@ private:
   // CustomElementData in this array, separated by nullptr that
   // represent the boundaries of the items in the stack. The first
   // queue in the stack is the base element queue.
-  static mozilla::Maybe<nsTArray<nsRefPtr<mozilla::dom::CustomElementData>>> sProcessingStack;
+  static mozilla::Maybe<nsTArray<RefPtr<mozilla::dom::CustomElementData>>> sProcessingStack;
 
   static bool CustomElementConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp);
 
@@ -1613,12 +1600,12 @@ public:
   static bool IsWebComponentsEnabled(JSContext* aCx, JSObject* aObject);
 
   // The "registry" from the web components spec.
-  nsRefPtr<mozilla::dom::Registry> mRegistry;
+  RefPtr<mozilla::dom::Registry> mRegistry;
 
-  nsRefPtr<mozilla::EventListenerManager> mListenerManager;
-  nsRefPtr<mozilla::dom::StyleSheetList> mDOMStyleSheets;
-  nsRefPtr<nsDOMStyleSheetSetList> mStyleSheetSetList;
-  nsRefPtr<nsScriptLoader> mScriptLoader;
+  RefPtr<mozilla::EventListenerManager> mListenerManager;
+  RefPtr<mozilla::dom::StyleSheetList> mDOMStyleSheets;
+  RefPtr<nsDOMStyleSheetSetList> mStyleSheetSetList;
+  RefPtr<nsScriptLoader> mScriptLoader;
   nsDocHeaderData* mHeaderData;
   /* mIdentifierMap works as follows for IDs:
    * 1) Attribute changes affect the table immediately (removing and adding
@@ -1673,7 +1660,7 @@ public:
 
   // ScreenOrientation "pending promise" as described by
   // http://www.w3.org/TR/screen-orientation/
-  nsRefPtr<mozilla::dom::Promise> mOrientationPendingPromise;
+  RefPtr<mozilla::dom::Promise> mOrientationPendingPromise;
 
   uint16_t mCurrentOrientationAngle;
   mozilla::dom::OrientationType mCurrentOrientationType;
@@ -1722,13 +1709,13 @@ public:
   mozilla::EventStates mDocumentState;
   mozilla::EventStates mGotDocumentState;
 
-  nsRefPtr<nsDOMNavigationTiming> mTiming;
+  RefPtr<nsDOMNavigationTiming> mTiming;
 private:
   friend class nsUnblockOnloadEvent;
   // Recomputes the visibility state but doesn't set the new value.
   mozilla::dom::VisibilityState GetVisibilityState() const;
-  void NotifyStyleSheetAdded(nsIStyleSheet* aSheet, bool aDocumentSheet);
-  void NotifyStyleSheetRemoved(nsIStyleSheet* aSheet, bool aDocumentSheet);
+  void NotifyStyleSheetAdded(mozilla::CSSStyleSheet* aSheet, bool aDocumentSheet);
+  void NotifyStyleSheetRemoved(mozilla::CSSStyleSheet* aSheet, bool aDocumentSheet);
 
   void PostUnblockOnloadEvent();
   void DoUnblockOnload();
@@ -1736,11 +1723,6 @@ private:
   nsresult CheckFrameOptions();
   bool IsLoopDocument(nsIChannel* aChannel);
   nsresult InitCSP(nsIChannel* aChannel);
-
-  void FlushCSPWebConsoleErrorQueue()
-  {
-    mCSPWebConsoleErrorQueue.Flush(this);
-  }
 
   /**
    * Find the (non-anonymous) content in this document for aFrame. It will
@@ -1763,6 +1745,8 @@ private:
   // Reschedule any notifications we need to handle
   // requestAnimationFrame, if it's OK to do so.
   void MaybeRescheduleAnimationFrameNotifications();
+
+  void ClearAllBoxObjects();
 
   // Returns true if the scheme for the url for this document is "about"
   bool IsAboutPage();
@@ -1798,9 +1782,9 @@ private:
   // Member to store out last-selected stylesheet set.
   nsString mLastStyleSheetSet;
 
-  nsTArray<nsRefPtr<nsFrameLoader> > mInitializableFrameLoaders;
+  nsTArray<RefPtr<nsFrameLoader> > mInitializableFrameLoaders;
   nsTArray<nsCOMPtr<nsIRunnable> > mFrameLoaderFinalizers;
-  nsRefPtr<nsRunnableMethod<nsDocument> > mFrameLoaderRunner;
+  RefPtr<nsRunnableMethod<nsDocument> > mFrameLoaderRunner;
 
   nsRevocableEventPtr<nsRunnableMethod<nsDocument, void, false> >
     mPendingTitleChangeEvent;
@@ -1824,9 +1808,9 @@ private:
   // Set if we've found a URL for the current picture
   nsString mPreloadPictureFoundSource;
 
-  nsRefPtr<mozilla::dom::DOMImplementation> mDOMImplementation;
+  RefPtr<mozilla::dom::DOMImplementation> mDOMImplementation;
 
-  nsRefPtr<nsContentList> mImageMaps;
+  RefPtr<nsContentList> mImageMaps;
 
   nsCString mScrollToRef;
   uint8_t mScrolledToRefAlready : 1;
@@ -1838,9 +1822,9 @@ private:
   // Tracking for plugins in the document.
   nsTHashtable< nsPtrHashKey<nsIObjectLoadingContent> > mPlugins;
 
-  nsRefPtr<mozilla::dom::UndoManager> mUndoManager;
+  RefPtr<mozilla::dom::UndoManager> mUndoManager;
 
-  nsRefPtr<mozilla::dom::DocumentTimeline> mDocumentTimeline;
+  RefPtr<mozilla::dom::DocumentTimeline> mDocumentTimeline;
 
   enum ViewportType {
     DisplayWidthHeight,
@@ -1863,10 +1847,8 @@ private:
   nsrefcnt mStackRefCnt;
   bool mNeedsReleaseAfterStackRefCntRelease;
 
-  CSPErrorQueue mCSPWebConsoleErrorQueue;
-
   nsCOMPtr<nsIDocument> mMasterDocument;
-  nsRefPtr<mozilla::dom::ImportManager> mImportManager;
+  RefPtr<mozilla::dom::ImportManager> mImportManager;
   nsTArray<nsCOMPtr<nsINode> > mSubImportLinks;
 
   // Set to true when the document is possibly controlled by the ServiceWorker.

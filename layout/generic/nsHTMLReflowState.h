@@ -250,11 +250,11 @@ protected:
   // same as previous, but using mComputedBorderPadding, mComputedPadding,
   // and mComputedMargin
   nscoord ComputeISizeValue(nscoord aContainingBlockISize,
-                            uint8_t aBoxSizing,
+                            mozilla::StyleBoxSizing aBoxSizing,
                             const nsStyleCoord& aCoord);
 
   nscoord ComputeBSizeValue(nscoord aContainingBlockBSize,
-                            uint8_t aBoxSizing,
+                            mozilla::StyleBoxSizing aBoxSizing,
                             const nsStyleCoord& aCoord);
 };
 
@@ -583,6 +583,7 @@ public:
                                         // but its in a paginated environment
                                         // (e.g. columns), it should always
                                         // reflow its placeholder children.
+    uint16_t mShrinkWrap:1; // stores the COMPUTE_SIZE_SHRINK_WRAP ctor flag
   } mFlags;
 
   // Logical and physical accessors for the resize flags. All users should go
@@ -652,9 +653,9 @@ public:
    * @param aFrame The frame for whose reflow state is being constructed.
    * @param aAvailableSpace See comments for availableHeight and availableWidth
    *        members.
-   * @param aContainingBlockSize An optional size, in app units, that
-   *        is used by absolute positioning code to override default containing
-   *        block sizes.
+   * @param aContainingBlockSize An optional size, in app units, specifying
+   *        the containing block size to use instead of the default which is
+   *        to use the aAvailableSpace.
    * @param aFlags A set of flags used for additional boolean parameters (see
    *        below).
    */
@@ -673,7 +674,11 @@ public:
 
     // Indicates that the calling function will initialize the reflow state, and
     // that the constructor should not call Init().
-    CALLER_WILL_INIT = (1<<1)
+    CALLER_WILL_INIT = (1<<1),
+
+    // The caller wants shrink-wrap behavior (i.e. ComputeSizeFlags::eShrinkWrap
+    // will be passed to ComputeSize()).
+    COMPUTE_SIZE_SHRINK_WRAP = (1<<2),
   };
 
   // This method initializes various data members. It is automatically

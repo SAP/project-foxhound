@@ -46,7 +46,7 @@ ServiceWorkerManagerService::Get()
 {
   AssertIsOnBackgroundThread();
 
-  nsRefPtr<ServiceWorkerManagerService> instance = sInstance;
+  RefPtr<ServiceWorkerManagerService> instance = sInstance;
   return instance.forget();
 }
 
@@ -55,7 +55,7 @@ ServiceWorkerManagerService::GetOrCreate()
 {
   AssertIsOnBackgroundThread();
 
-  nsRefPtr<ServiceWorkerManagerService> instance = sInstance;
+  RefPtr<ServiceWorkerManagerService> instance = sInstance;
   if (!instance) {
     instance = new ServiceWorkerManagerService();
   }
@@ -95,7 +95,7 @@ ServiceWorkerManagerService::PropagateRegistration(
     MOZ_ASSERT(parent);
 
     if (parent->ID() != aParentID) {
-      unused << parent->SendNotifyRegister(aData);
+      Unused << parent->SendNotifyRegister(aData);
 #ifdef DEBUG
     } else {
       parentFound = true;
@@ -111,7 +111,7 @@ ServiceWorkerManagerService::PropagateRegistration(
 void
 ServiceWorkerManagerService::PropagateSoftUpdate(
                                       uint64_t aParentID,
-                                      const OriginAttributes& aOriginAttributes,
+                                      const PrincipalOriginAttributes& aOriginAttributes,
                                       const nsAString& aScope)
 {
   AssertIsOnBackgroundThread();
@@ -122,7 +122,7 @@ ServiceWorkerManagerService::PropagateSoftUpdate(
     MOZ_ASSERT(parent);
 
     nsString scope(aScope);
-    unused << parent->SendNotifySoftUpdate(aOriginAttributes,
+    Unused << parent->SendNotifySoftUpdate(aOriginAttributes,
                                            scope);
 #ifdef DEBUG
     if (parent->ID() == aParentID) {
@@ -144,7 +144,7 @@ ServiceWorkerManagerService::PropagateUnregister(
 {
   AssertIsOnBackgroundThread();
 
-  nsRefPtr<dom::ServiceWorkerRegistrar> service =
+  RefPtr<dom::ServiceWorkerRegistrar> service =
     dom::ServiceWorkerRegistrar::Get();
   MOZ_ASSERT(service);
 
@@ -160,7 +160,7 @@ ServiceWorkerManagerService::PropagateUnregister(
 
     if (parent->ID() != aParentID) {
       nsString scope(aScope);
-      unused << parent->SendNotifyUnregister(aPrincipalInfo, scope);
+      Unused << parent->SendNotifyUnregister(aPrincipalInfo, scope);
 #ifdef DEBUG
     } else {
       parentFound = true;
@@ -186,7 +186,7 @@ ServiceWorkerManagerService::PropagateRemove(uint64_t aParentID,
 
     if (parent->ID() != aParentID) {
       nsCString host(aHost);
-      unused << parent->SendNotifyRemove(host);
+      Unused << parent->SendNotifyRemove(host);
 #ifdef DEBUG
     } else {
       parentFound = true;
@@ -204,7 +204,7 @@ ServiceWorkerManagerService::PropagateRemoveAll(uint64_t aParentID)
 {
   AssertIsOnBackgroundThread();
 
-  nsRefPtr<dom::ServiceWorkerRegistrar> service =
+  RefPtr<dom::ServiceWorkerRegistrar> service =
     dom::ServiceWorkerRegistrar::Get();
   MOZ_ASSERT(service);
 
@@ -216,7 +216,7 @@ ServiceWorkerManagerService::PropagateRemoveAll(uint64_t aParentID)
     MOZ_ASSERT(parent);
 
     if (parent->ID() != aParentID) {
-      unused << parent->SendNotifyRemoveAll();
+      Unused << parent->SendNotifyRemoveAll();
 #ifdef DEBUG
     } else {
       parentFound = true;

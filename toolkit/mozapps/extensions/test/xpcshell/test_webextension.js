@@ -4,6 +4,8 @@
 
 const ID = "webextension1@tests.mozilla.org";
 
+const PREF_SELECTED_LOCALE = "general.useragent.locale";
+
 const profileDir = gProfD.clone();
 profileDir.append("extensions");
 
@@ -17,7 +19,7 @@ function promiseAddonStartup() {
     let listener = (extension) => {
       Management.off("startup", listener);
       resolve(extension);
-    }
+    };
 
     Management.on("startup", listener);
   });
@@ -55,6 +57,11 @@ add_task(function*() {
   do_check_eq(addon.type, "extension");
   do_check_eq(addon.signedState, mozinfo.addon_signing ? AddonManager.SIGNEDSTATE_MISSING : AddonManager.SIGNEDSTATE_NOT_REQUIRED);
 
+  let uri = do_get_addon_root_uri(profileDir, ID);
+
+  do_check_eq(addon.iconURL, uri + "icon48.png");
+  do_check_eq(addon.icon64URL, uri + "icon64.png");
+
   // Should persist through a restart
   yield promiseShutdownManager();
 
@@ -79,6 +86,11 @@ add_task(function*() {
 
   let file = getFileForAddon(profileDir, ID);
   do_check_true(file.exists());
+
+  uri = do_get_addon_root_uri(profileDir, ID);
+
+  do_check_eq(addon.iconURL, uri + "icon48.png");
+  do_check_eq(addon.icon64URL, uri + "icon64.png");
 
   addon.userDisabled = true;
 
@@ -130,6 +142,33 @@ add_task(function*() {
   addon.uninstall();
 
   yield promiseRestartManager();
+});
+
+add_task(function* test_manifest_localization() {
+  const ID = "webextension3@tests.mozilla.org";
+
+  yield promiseInstallAllFiles([do_get_addon("webextension_3")], true);
+
+  let addon = yield promiseAddonByID(ID);
+
+  equal(addon.name, "Web Extension foo");
+  equal(addon.description, "Descripton bar of add-on");
+
+  Services.prefs.setCharPref(PREF_SELECTED_LOCALE, "fr-FR");
+  yield promiseRestartManager();
+
+  addon = yield promiseAddonByID(ID);
+
+  equal(addon.name, "Web Extension le foo");
+  equal(addon.description, "Descripton le bar of add-on");
+
+  Services.prefs.setCharPref(PREF_SELECTED_LOCALE, "de");
+  yield promiseRestartManager();
+
+  addon = yield promiseAddonByID(ID);
+
+  equal(addon.name, "Web Extension foo");
+  equal(addon.description, "Descripton bar of add-on");
 });
 
 // Missing ID should cause a failure

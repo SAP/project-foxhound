@@ -38,7 +38,7 @@ class AnalyserNodeEngine final : public AudioNodeEngine
 
     NS_IMETHOD Run()
     {
-      nsRefPtr<AnalyserNode> node =
+      RefPtr<AnalyserNode> node =
         static_cast<AnalyserNode*>(mStream->Engine()->NodeMainThread());
       if (node) {
         node->AppendChunk(mChunk);
@@ -47,7 +47,7 @@ class AnalyserNodeEngine final : public AudioNodeEngine
     }
 
   private:
-    nsRefPtr<AudioNodeStream> mStream;
+    RefPtr<AudioNodeStream> mStream;
     AudioChunk mChunk;
   };
 
@@ -59,21 +59,46 @@ public:
   }
 
   virtual void ProcessBlock(AudioNodeStream* aStream,
+                            GraphTime aFrom,
                             const AudioBlock& aInput,
                             AudioBlock* aOutput,
                             bool* aFinished) override
   {
     *aOutput = aInput;
 
-    nsRefPtr<TransferBuffer> transfer =
+    if (aInput.IsNull()) {
+      // If AnalyserNode::mChunks has only null chunks, then there is no need
+      // to send further null chunks.
+      if (mChunksToProcess == 0) {
+        return;
+      }
+
+      --mChunksToProcess;
+      if (mChunksToProcess == 0) {
+        aStream->ScheduleCheckForInactive();
+      }
+
+    } else {
+      // This many null chunks will be required to empty AnalyserNode::mChunks.
+      mChunksToProcess = CHUNK_COUNT;
+    }
+
+    RefPtr<TransferBuffer> transfer =
       new TransferBuffer(aStream, aInput.AsAudioChunk());
     NS_DispatchToMainThread(transfer);
+  }
+
+  virtual bool IsActive() const override
+  {
+    return mChunksToProcess != 0;
   }
 
   virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override
   {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
+
+  uint32_t mChunksToProcess = 0;
 };
 
 AnalyserNode::AnalyserNode(AudioContext* aContext)
@@ -93,7 +118,7 @@ AnalyserNode::AnalyserNode(AudioContext* aContext)
   // Enough chunks must be recorded to handle the case of fftSize being
   // increased to maximum immediately before getFloatTimeDomainData() is
   // called, for example.
-  unused << mChunks.SetLength(CHUNK_COUNT, fallible);
+  Unused << mChunks.SetLength(CHUNK_COUNT, fallible);
 
   AllocateBuffer();
 }

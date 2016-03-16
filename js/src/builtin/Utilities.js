@@ -27,7 +27,7 @@
 // Assertions, defined here instead of in the header above to make `assert`
 // invisible to C++.
 #ifdef DEBUG
-#define assert(b, info) if (!(b)) AssertionFailed(info)
+#define assert(b, info) if (!(b)) AssertionFailed(__FILE__ + ":" + __LINE__ + ": " + info)
 #else
 #define assert(b, info) // Elided assertion.
 #endif
@@ -49,21 +49,11 @@ var std_Map_iterator_next = MapIteratorNext;
 
 /********** List specification type **********/
 
-
 /* Spec: ECMAScript Language Specification, 5.1 edition, 8.8 */
 function List() {
     this.length = 0;
 }
-
-{
-  let ListProto = std_Object_create(null);
-  ListProto.indexOf = std_Array_indexOf;
-  ListProto.join = std_Array_join;
-  ListProto.push = std_Array_push;
-  ListProto.slice = std_Array_slice;
-  ListProto.sort = std_Array_sort;
-  MakeConstructible(List, ListProto);
-}
+MakeConstructible(List, {__proto__: null});
 
 
 /********** Record specification type **********/
@@ -192,4 +182,11 @@ function SpeciesConstructor(obj, defaultConstructor) {
 
     // Step 10.
     ThrowTypeError(JSMSG_NOT_CONSTRUCTOR, "@@species property of object's constructor");
+}
+
+/*************************************** Testing functions ***************************************/
+function outer() {
+    return function inner() {
+        return "foo";
+    }
 }

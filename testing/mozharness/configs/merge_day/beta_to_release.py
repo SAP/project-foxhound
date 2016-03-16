@@ -1,5 +1,11 @@
 config = {
     "log_name": "beta_to_release",
+    "version_files": [
+        "browser/config/version.txt",
+        "browser/config/version_display.txt",
+        "config/milestone.txt",
+        "b2g/confvars.sh",
+    ],
     "replacements": [
         # File, from, to
         ("{}/{}".format(d, f),
@@ -35,7 +41,7 @@ config = {
     "pull_all_branches": True,
 
     "virtualenv_modules": [
-        "requests==2.2.1",
+        "requests==2.8.1",
     ],
 
     "post_merge_builders": [

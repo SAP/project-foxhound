@@ -16,3 +16,14 @@ task:
       build-flame-kk-ota-user-objdir-gecko-{{project}}: /home/worker/objdir-gecko
     env:
       VARIANT: user
+      MOZHARNESS_CONFIG: b2g/taskcluster-phone-fota.py
+      B2G_UPDATE_CHANNEL: '{{b2g_update_channel}}'
+  extra:
+    treeherderEnv:
+      - staging
+    treeherder:
+      symbol: B
+      groupSymbol: Flame-KK-OTA
+      groupName:  Flame KitKat Device Image
+      machine:
+        platform: b2g-device-image

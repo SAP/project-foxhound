@@ -39,20 +39,20 @@ interface ChromeUtils : ThreadSafeChromeUtils {
  * IMPORTANT: If you add any members here, you need to do the following:
  * (1) Add them to both dictionaries.
  * (2) Update the methods on mozilla::OriginAttributes, including equality,
- *     serialization, and deserialization.
+ *     serialization, deserialization, and inheritance.
  * (3) Update the methods on mozilla::OriginAttributesPattern, including matching.
- * (4) Bump the CIDs (_not_ IIDs) of all the principal implementations that
- *     use OriginAttributes in their nsISerializable implementations.
  */
 dictionary OriginAttributesDictionary {
   unsigned long appId = 0;
   unsigned long userContextId = 0;
   boolean inBrowser = false;
   DOMString addonId = "";
+  DOMString signedPkg = "";
 };
 dictionary OriginAttributesPatternDictionary {
   unsigned long appId;
   unsigned long userContextId;
   boolean inBrowser;
   DOMString addonId;
+  DOMString signedPkg;
 };

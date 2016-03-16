@@ -40,7 +40,12 @@
 #include "logging.h"
 #include "stunserver.h"
 #include "stunserver.cpp"
+#ifdef SIGNALING_UNITTEST_STANDALONE
 #include "PeerConnectionImplEnumsBinding.cpp"
+#endif
+
+#include "FakeIPC.h"
+#include "FakeIPC.cpp"
 
 #include "ice_ctx.h"
 #include "ice_peer_ctx.h"
@@ -340,6 +345,44 @@ TestObserver::NotifyDataChannel(nsIDOMDataChannel *channel, ER&)
   return NS_OK;
 }
 
+static const char* PCImplSignalingStateStrings[] = {
+  "SignalingInvalid",
+  "SignalingStable",
+  "SignalingHaveLocalOffer",
+  "SignalingHaveRemoteOffer",
+  "SignalingHaveLocalPranswer",
+  "SignalingHaveRemotePranswer",
+  "SignalingClosed"
+};
+
+static const char* PCImplIceConnectionStateStrings[] = {
+  "new",
+  "checking",
+  "connected",
+  "completed",
+  "failed",
+  "disconnected",
+  "closed"
+};
+
+static const char* PCImplIceGatheringStateStrings[] = {
+  "new",
+  "gathering",
+  "complete"
+};
+
+#ifdef SIGNALING_UNITTEST_STANDALONE
+static_assert(ArrayLength(PCImplSignalingStateStrings) ==
+	      size_t(PCImplSignalingState::EndGuard_),
+	      "Table sizes must match");
+static_assert(ArrayLength(PCImplIceConnectionStateStrings) ==
+	      size_t(PCImplIceConnectionState::EndGuard_),
+	      "Table sizes must match");
+static_assert(ArrayLength(PCImplIceGatheringStateStrings) ==
+	      size_t(PCImplIceGatheringState::EndGuard_),
+	      "Table sizes must match");
+#endif // SIGNALING_UNITTEST_STANDALONE
+
 NS_IMETHODIMP
 TestObserver::OnStateChange(PCObserverStateType state_type, ER&, void*)
 {
@@ -357,7 +400,7 @@ TestObserver::OnStateChange(PCObserverStateType state_type, ER&, void*)
     rv = pc->IceConnectionState(&gotice);
     NS_ENSURE_SUCCESS(rv, rv);
     std::cout << "ICE Connection State: "
-              << PCImplIceConnectionStateValues::strings[int(gotice)].value
+              << PCImplIceConnectionStateStrings[int(gotice)]
               << std::endl;
     break;
   case PCObserverStateType::IceGatheringState:
@@ -366,7 +409,7 @@ TestObserver::OnStateChange(PCObserverStateType state_type, ER&, void*)
     NS_ENSURE_SUCCESS(rv, rv);
     std::cout
         << "ICE Gathering State: "
-        << PCImplIceGatheringStateValues::strings[int(goticegathering)].value
+        << PCImplIceGatheringStateStrings[int(goticegathering)]
         << std::endl;
     break;
   case PCObserverStateType::SdpState:
@@ -378,7 +421,7 @@ TestObserver::OnStateChange(PCObserverStateType state_type, ER&, void*)
     rv = pc->SignalingState(&gotsignaling);
     NS_ENSURE_SUCCESS(rv, rv);
     std::cout << "Signaling State: "
-              << PCImplSignalingStateValues::strings[int(gotsignaling)].value
+              << PCImplSignalingStateStrings[int(gotsignaling)]
               << std::endl;
     break;
   default:
@@ -404,7 +447,7 @@ TestObserver::OnAddStream(DOMMediaStream &stream, ER&)
 
   // We know that the media stream is secretly a Fake_SourceMediaStream,
   // so now we can start it pulling from us
-  nsRefPtr<Fake_SourceMediaStream> fs =
+  RefPtr<Fake_SourceMediaStream> fs =
     static_cast<Fake_SourceMediaStream *>(stream.GetStream());
 
   test_utils->sts_target()->Dispatch(
@@ -631,7 +674,7 @@ class PCDispatchWrapper : public nsSupportsWeakReference
   virtual ~PCDispatchWrapper() {}
 
  public:
-  explicit PCDispatchWrapper(const nsRefPtr<PeerConnectionImpl>& peerConnection)
+  explicit PCDispatchWrapper(const RefPtr<PeerConnectionImpl>& peerConnection)
     : pc_(peerConnection) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -640,7 +683,7 @@ class PCDispatchWrapper : public nsSupportsWeakReference
     return pc_;
   }
 
-  const nsRefPtr<PeerConnectionMedia>& media() const {
+  const RefPtr<PeerConnectionMedia>& media() const {
     return pc_->media();
   }
 
@@ -869,8 +912,8 @@ class PCDispatchWrapper : public nsSupportsWeakReference
   }
 
  private:
-  nsRefPtr<PeerConnectionImpl> pc_;
-  nsRefPtr<TestObserver> observer_;
+  RefPtr<PeerConnectionImpl> pc_;
+  RefPtr<TestObserver> observer_;
 };
 
 NS_IMPL_ISUPPORTS(PCDispatchWrapper, nsISupportsWeakReference)
@@ -1076,10 +1119,10 @@ class SignalingAgent {
       stream = audio_stream;
     }
 
-    nsRefPtr<DOMMediaStream> domMediaStream = new DOMMediaStream(stream);
+    RefPtr<DOMMediaStream> domMediaStream = new DOMMediaStream(stream);
     domMediaStream->SetHintContents(hint);
 
-    nsTArray<nsRefPtr<MediaStreamTrack>> tracks;
+    nsTArray<RefPtr<MediaStreamTrack>> tracks;
     domMediaStream->GetTracks(tracks);
     for (uint32_t i = 0; i < tracks.Length(); i++) {
       Msid msid = {domMediaStream->GetId(), tracks[i]->GetId()};
@@ -1228,7 +1271,7 @@ class SignalingAgent {
   void RemoveTrack(size_t streamIndex, bool videoTrack = false)
   {
     ASSERT_LT(streamIndex, domMediaStreams_.size());
-    nsTArray<nsRefPtr<MediaStreamTrack>> tracks;
+    nsTArray<RefPtr<MediaStreamTrack>> tracks;
     domMediaStreams_[streamIndex]->GetTracks(tracks);
     for (size_t i = 0; i < tracks.Length(); ++i) {
       if (!!tracks[i]->AsVideoStreamTrack() == videoTrack) {
@@ -1242,7 +1285,7 @@ class SignalingAgent {
   }
 
   void RemoveStream(size_t index) {
-    nsTArray<nsRefPtr<MediaStreamTrack>> tracks;
+    nsTArray<RefPtr<MediaStreamTrack>> tracks;
     domMediaStreams_[index]->GetTracks(tracks);
     for (uint32_t i = 0; i < tracks.Length(); i++) {
       ASSERT_EQ(pc->RemoveTrack(tracks[i]), NS_OK);
@@ -1506,7 +1549,7 @@ class SignalingAgent {
   // the SDP. For now, we just specify audio/video, since a given DOMMediaStream
   // can have only one of each anyway. Once this is fixed, we will need to
   // pass a real track id if we want to test that case.
-  mozilla::RefPtr<mozilla::MediaPipeline> GetMediaPipeline(
+  RefPtr<mozilla::MediaPipeline> GetMediaPipeline(
     bool local, size_t stream, bool video) {
     SourceStreamInfo* streamInfo;
     if (local) {
@@ -1541,11 +1584,11 @@ class SignalingAgent {
   }
 
 public:
-  nsRefPtr<PCDispatchWrapper> pc;
-  nsRefPtr<TestObserver> pObserver;
+  RefPtr<PCDispatchWrapper> pc;
+  RefPtr<TestObserver> pObserver;
   std::string offer_;
   std::string answer_;
-  std::vector<nsRefPtr<DOMMediaStream>> domMediaStreams_;
+  std::vector<RefPtr<DOMMediaStream>> domMediaStreams_;
   PeerConnectionConfiguration cfg_;
   const std::string name;
   bool mBundleEnabled;
@@ -1576,8 +1619,8 @@ static void AddIceCandidateToPeer(nsWeakPtr weak_observer,
     return;
   }
 
-  nsRefPtr<nsSupportsWeakReference> tmp2 = do_QueryObject(tmp);
-  nsRefPtr<TestObserver> observer = static_cast<TestObserver*>(&*tmp2);
+  RefPtr<nsSupportsWeakReference> tmp2 = do_QueryObject(tmp);
+  RefPtr<TestObserver> observer = static_cast<TestObserver*>(&*tmp2);
 
   if (!observer) {
     return;
@@ -4051,7 +4094,7 @@ TEST_P(SignalingTest, MaxFsFrCalleeCodec)
 
   // Checking callee's video sending configuration does respect max-fs and
   // max-fr in SDP offer.
-  mozilla::RefPtr<mozilla::MediaPipeline> pipeline =
+  RefPtr<mozilla::MediaPipeline> pipeline =
     a2_->GetMediaPipeline(1, 0, 1);
   ASSERT_TRUE(pipeline);
   mozilla::MediaSessionConduit *conduit = pipeline->Conduit();
@@ -4096,7 +4139,7 @@ TEST_P(SignalingTest, MaxFsFrCallerCodec)
 
   // Checking caller's video sending configuration does respect max-fs and
   // max-fr in SDP answer.
-  mozilla::RefPtr<mozilla::MediaPipeline> pipeline =
+  RefPtr<mozilla::MediaPipeline> pipeline =
     a1_->GetMediaPipeline(1, 0, 1);
   ASSERT_TRUE(pipeline);
   mozilla::MediaSessionConduit *conduit = pipeline->Conduit();
@@ -4712,6 +4755,19 @@ static int gtest_main(int argc, char **argv) {
   return result;
 }
 
+#ifdef SIGNALING_UNITTEST_STANDALONE
+static void verifyStringTable(const EnumEntry* bindingTable,
+			      const char** ourTable)
+{
+  while (bindingTable->value) {
+    if (strcmp(bindingTable->value, *ourTable)) {
+      MOZ_CRASH("Our tables are out of sync with the bindings");
+    }
+    ++bindingTable;
+    ++ourTable;
+  }
+}
+#endif // SIGNALING_UNITTEST_STANDALONE
 
 int main(int argc, char **argv) {
 
@@ -4725,6 +4781,16 @@ int main(int argc, char **argv) {
     callerName = ansiCyan + callerName + ansiColorOff;
     calleeName = ansiMagenta + calleeName + ansiColorOff;
   }
+
+#ifdef SIGNALING_UNITTEST_STANDALONE
+  // Verify our string tables are correct.
+  verifyStringTable(PCImplSignalingStateValues::strings,
+		    test::PCImplSignalingStateStrings);
+  verifyStringTable(PCImplIceConnectionStateValues::strings,
+		    test::PCImplIceConnectionStateStrings);
+  verifyStringTable(PCImplIceGatheringStateValues::strings,
+		    test::PCImplIceGatheringStateStrings);
+#endif // SIGNALING_UNITTEST_STANDALONE
 
   std::string tmp = get_environment("STUN_SERVER_ADDRESS");
   if (tmp != "")

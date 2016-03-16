@@ -29,7 +29,7 @@ GetRefreshDriver(nsIWidget& aWidget)
   nsIWidgetListener* widgetListener = aWidget.GetWidgetListener();
   nsIPresShell* presShell = widgetListener ? widgetListener->GetPresShell() : nullptr;
   nsPresContext* presContext = presShell ? presShell->GetPresContext() : nullptr;
-  nsRefPtr<nsRefreshDriver> refreshDriver = presContext ? presContext->RefreshDriver() : nullptr;
+  RefPtr<nsRefreshDriver> refreshDriver = presContext ? presContext->RefreshDriver() : nullptr;
   return refreshDriver.forget();
 }
 
@@ -41,7 +41,7 @@ SwipeTracker::SwipeTracker(nsChildView& aWidget,
   , mRefreshDriver(GetRefreshDriver(mWidget))
   , mAxis(0.0, 0.0, 0.0, kSpringForce, 1.0)
   , mEventPosition(RoundedToInt(ViewAs<LayoutDevicePixel>(aSwipeStartEvent.mPanStartPoint,
-                                  PixelCastJustification::LayoutDeviceToScreenForUntransformedEvent)))
+                                  PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent)))
   , mLastEventTimeStamp(aSwipeStartEvent.mTimeStamp)
   , mAllowedDirections(aAllowedDirections)
   , mSwipeDirection(aSwipeDirection)

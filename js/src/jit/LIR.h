@@ -484,10 +484,8 @@ class LDefinition
                 return r.fpu().isSingle();
             if (type() == DOUBLE)
                 return r.fpu().isDouble();
-            if (type() == INT32X4)
-                return r.fpu().isInt32x4();
-            if (type() == FLOAT32X4)
-                return r.fpu().isFloat32x4();
+            if (isSimdType())
+                return r.fpu().isSimd128();
             MOZ_CRASH("Unexpected MDefinition type");
         }
         return !isFloatReg() && !r.isFloat();
@@ -1595,9 +1593,6 @@ class LSafepoint : public TempObject
         MOZ_ASSERT(!osiCallPointOffset_);
         osiCallPointOffset_ = osiCallPointOffset;
     }
-    void fixupOffset(MacroAssembler* masm) {
-        osiCallPointOffset_ = masm->actualOffset(osiCallPointOffset_);
-    }
 };
 
 class LInstruction::InputIterator
@@ -1830,9 +1825,11 @@ LAllocation::toRegister() const
 # include "jit/arm/LIR-arm.h"
 #elif defined(JS_CODEGEN_ARM64)
 # include "jit/arm64/LIR-arm64.h"
-#elif defined(JS_CODEGEN_MIPS32)
+#elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
 # if defined(JS_CODEGEN_MIPS32)
 #  include "jit/mips32/LIR-mips32.h"
+# elif defined(JS_CODEGEN_MIPS64)
+#  include "jit/mips64/LIR-mips64.h"
 # endif
 # include "jit/mips-shared/LIR-mips-shared.h"
 #elif defined(JS_CODEGEN_NONE)

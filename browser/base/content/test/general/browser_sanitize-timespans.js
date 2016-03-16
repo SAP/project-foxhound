@@ -1,6 +1,8 @@
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
+requestLongerTimeout(2);
+
 // Bug 453440 - Test the timespan-based logic of the sanitizer code
 var now_mSec = Date.now();
 var now_uSec = now_mSec * 1000;
@@ -59,7 +61,7 @@ function countEntries(name, message, check) {
     obj.fieldname = name;
 
   let count;
-  FormHistory.count(obj, { handleResult: function (result) count = result,
+  FormHistory.count(obj, { handleResult: result => count = result,
                            handleError: function (error) {
                              do_throw("Error occurred searching form history: " + error);
                              deferred.reject(error)
@@ -472,9 +474,9 @@ function setupHistory() {
   addPlace(makeURI("http://before-today.com/"), "Before Today", lastYear.getTime() * 1000);
 
   PlacesUtils.asyncHistory.updatePlaces(places, {
-    handleError: function () ok(false, "Unexpected error in adding visit."),
-    handleResult: function () { },
-    handleCompletion: function () deferred.resolve()
+    handleError: () => ok(false, "Unexpected error in adding visit."),
+    handleResult: () => { },
+    handleCompletion: () => deferred.resolve()
   });
 
   return deferred.promise;
@@ -486,7 +488,7 @@ function setupFormHistory() {
     let deferred = Promise.defer();
 
     let results = [];
-    FormHistory.search(terms, params, { handleResult: function (result) results.push(result),
+    FormHistory.search(terms, params, { handleResult: result => results.push(result),
                                         handleError: function (error) {
                                           do_throw("Error occurred searching form history: " + error);
                                           deferred.reject(error);

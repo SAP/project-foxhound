@@ -8,6 +8,7 @@
 #include "SapiService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWin32Locale.h"
+#include "GeckoProfiler.h"
 
 #include "mozilla/dom/nsSynthVoiceRegistry.h"
 #include "mozilla/dom/nsSpeechTask.h"
@@ -48,7 +49,7 @@ private:
 
   // This pointer is used to dispatch events
   nsCOMPtr<nsISpeechTask> mTask;
-  nsRefPtr<ISpVoice> mSapiClient;
+  RefPtr<ISpVoice> mSapiClient;
 
   uint32_t mTextOffset;
   uint32_t mSpeakTextLen;
@@ -76,6 +77,11 @@ SapiCallback::OnPause()
   if (FAILED(mSapiClient->Pause())) {
     return NS_ERROR_FAILURE;
   }
+  if (!mTask) {
+    // When calling pause() on child porcess, it may not receive end event
+    // from chrome process yet.
+    return NS_ERROR_FAILURE;
+  }
   mTask->DispatchPause(GetTickCount() - mStartingTime, mCurrentIndex);
   return NS_OK;
 }
@@ -84,6 +90,11 @@ NS_IMETHODIMP
 SapiCallback::OnResume()
 {
   if (FAILED(mSapiClient->Resume())) {
+    return NS_ERROR_FAILURE;
+  }
+  if (!mTask) {
+    // When calling resume() on child porcess, it may not receive end event
+    // from chrome process yet.
     return NS_ERROR_FAILURE;
   }
   mTask->DispatchResume(GetTickCount() - mStartingTime, mCurrentIndex);
@@ -148,12 +159,12 @@ SapiCallback::OnSpeechEvent(const SPEVENT& speechEvent)
 void __stdcall
 SapiService::SpeechEventCallback(WPARAM aWParam, LPARAM aLParam)
 {
-  nsRefPtr<SapiService> service = (SapiService*) aWParam;
+  RefPtr<SapiService> service = (SapiService*) aWParam;
 
   SPEVENT speechEvent;
   while (service->mSapiClient->GetEvents(1, &speechEvent, nullptr) == S_OK) {
     for (size_t i = 0; i < service->mCallbacks.Length(); i++) {
-      nsRefPtr<SapiCallback> callback = service->mCallbacks[i];
+      RefPtr<SapiCallback> callback = service->mCallbacks[i];
       if (callback->GetStreamNum() == speechEvent.ulStreamNum) {
         callback->OnSpeechEvent(speechEvent);
         if (speechEvent.eEventId == SPEI_END_INPUT_STREAM) {
@@ -167,6 +178,7 @@ SapiService::SpeechEventCallback(WPARAM aWParam, LPARAM aLParam)
 
 NS_INTERFACE_MAP_BEGIN(SapiService)
   NS_INTERFACE_MAP_ENTRY(nsISpeechService)
+  NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsISpeechService)
 NS_INTERFACE_MAP_END
 
@@ -185,6 +197,8 @@ SapiService::~SapiService()
 bool
 SapiService::Init()
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
+
   MOZ_ASSERT(!mInitialized);
 
   if (Preferences::GetBool("media.webspeech.synth.test") ||
@@ -234,7 +248,7 @@ SapiService::RegisterVoices()
     return false;
   }
 
-  nsRefPtr<ISpObjectTokenCategory> category;
+  RefPtr<ISpObjectTokenCategory> category;
   if (FAILED(CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr, CLSCTX_ALL,
                               IID_ISpObjectTokenCategory,
                               getter_AddRefs(category)))) {
@@ -244,19 +258,19 @@ SapiService::RegisterVoices()
     return false;
   }
 
-  nsRefPtr<IEnumSpObjectTokens> voiceTokens;
+  RefPtr<IEnumSpObjectTokens> voiceTokens;
   if (FAILED(category->EnumTokens(nullptr, nullptr,
                                   getter_AddRefs(voiceTokens)))) {
     return false;
   }
 
   while (true) {
-    nsRefPtr<ISpObjectToken> voiceToken;
+    RefPtr<ISpObjectToken> voiceToken;
     if (voiceTokens->Next(1, getter_AddRefs(voiceToken), nullptr) != S_OK) {
       break;
     }
 
-    nsRefPtr<ISpDataKey> attributes;
+    RefPtr<ISpDataKey> attributes;
     if (FAILED(voiceToken->OpenKey(L"Attributes",
                                    getter_AddRefs(attributes)))) {
       continue;
@@ -309,7 +323,7 @@ SapiService::Speak(const nsAString& aText, const nsAString& aUri,
 {
   NS_ENSURE_TRUE(mInitialized, NS_ERROR_NOT_AVAILABLE);
 
-  nsRefPtr<ISpObjectToken> voiceToken;
+  RefPtr<ISpObjectToken> voiceToken;
   if (!mVoices.Get(aUri, getter_AddRefs(voiceToken))) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -334,7 +348,7 @@ SapiService::Speak(const nsAString& aText, const nsAString& aUri,
   xml.Append(aText);
   xml.AppendLiteral("</pitch>");
 
-  nsRefPtr<SapiCallback> callback =
+  RefPtr<SapiCallback> callback =
     new SapiCallback(aTask, mSapiClient, textOffset, aText.Length());
 
   // The last three parameters doesn't matter for an indirect service
@@ -365,6 +379,13 @@ SapiService::GetServiceType(SpeechServiceType* aServiceType)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+SapiService::Observe(nsISupports* aSubject, const char* aTopic,
+                     const char16_t* aData)
+{
+  return NS_OK;
+}
+
 SapiService*
 SapiService::GetInstance()
 {
@@ -376,7 +397,7 @@ SapiService::GetInstance()
   }
 
   if (!sSingleton) {
-    nsRefPtr<SapiService> service = new SapiService();
+    RefPtr<SapiService> service = new SapiService();
     if (service->Init()) {
       sSingleton = service;
     }
@@ -387,7 +408,7 @@ SapiService::GetInstance()
 already_AddRefed<SapiService>
 SapiService::GetInstanceForService()
 {
-  nsRefPtr<SapiService> sapiService = GetInstance();
+  RefPtr<SapiService> sapiService = GetInstance();
   return sapiService.forget();
 }
 

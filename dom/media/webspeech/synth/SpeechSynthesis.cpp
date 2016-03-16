@@ -16,14 +16,10 @@
 #include "nsIDocument.h"
 
 #undef LOG
-PRLogModuleInfo*
+mozilla::LogModule*
 GetSpeechSynthLog()
 {
-  static PRLogModuleInfo* sLog = nullptr;
-
-  if (!sLog) {
-    sLog = PR_NewLogModule("SpeechSynthesis");
-  }
+  static mozilla::LazyLogModule sLog("SpeechSynthesis");
 
   return sLog;
 }
@@ -31,14 +27,6 @@ GetSpeechSynthLog()
 
 namespace mozilla {
 namespace dom {
-
-static PLDHashOperator
-TraverseCachedVoices(const nsAString& aKey, SpeechSynthesisVoice* aEntry, void* aData)
-{
-  nsCycleCollectionTraversalCallback* cb = static_cast<nsCycleCollectionTraversalCallback*>(aData);
-  cb->NoteXPCOMChild(aEntry);
-  return PL_DHASH_NEXT;
-}
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(SpeechSynthesis)
 
@@ -55,7 +43,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(SpeechSynthesis)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentTask)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSpeechQueue)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
-  tmp->mVoiceCache.EnumerateRead(TraverseCachedVoices, &cb);
+  for (auto iter = tmp->mVoiceCache.Iter(); !iter.Done(); iter.Next()) {
+    SpeechSynthesisVoice* voice = iter.UserData();
+    cb.NoteXPCOMChild(voice);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(SpeechSynthesis)
@@ -153,7 +144,7 @@ SpeechSynthesis::AdvanceQueue()
     return;
   }
 
-  nsRefPtr<SpeechSynthesisUtterance> utterance = mSpeechQueue.ElementAt(0);
+  RefPtr<SpeechSynthesisUtterance> utterance = mSpeechQueue.ElementAt(0);
 
   nsAutoString docLang;
   nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(mParent);
@@ -201,7 +192,7 @@ SpeechSynthesis::Pause()
     return;
   }
 
-  if (mCurrentTask &&
+  if (mCurrentTask && !mSpeechQueue.IsEmpty() &&
       mSpeechQueue.ElementAt(0)->GetState() != SpeechSynthesisUtterance::STATE_ENDED) {
     mCurrentTask->Pause();
   } else {
@@ -238,7 +229,7 @@ SpeechSynthesis::OnEnd(const nsSpeechTask* aTask)
 }
 
 void
-SpeechSynthesis::GetVoices(nsTArray< nsRefPtr<SpeechSynthesisVoice> >& aResult)
+SpeechSynthesis::GetVoices(nsTArray< RefPtr<SpeechSynthesisVoice> >& aResult)
 {
   aResult.Clear();
   uint32_t voiceCount = 0;

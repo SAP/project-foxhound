@@ -7,9 +7,9 @@
 // This script is run when the preallocated process starts.  It is injected as
 // a frame script.
 
-const BrowserElementIsPreloaded = true;
+var BrowserElementIsPreloaded = true;
 
-const DoPreloadPostfork = function(aCallback) {
+var DoPreloadPostfork = function(aCallback) {
   Services.obs.addObserver({
     _callback: aCallback,
 
@@ -92,7 +92,7 @@ const DoPreloadPostfork = function(aCallback) {
   } catch (e) {
   }
 
-  if (Services.prefs.getIntPref("dom.w3c_touch_events.enabled") == 1) {
+  if (Services.prefs.getIntPref("dom.w3c_touch_events.enabled") != 0) {
     try {
       if (Services.prefs.getBoolPref("layers.async-pan-zoom.enabled") === false) {
         Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementPanningAPZDisabled.js", global);

@@ -33,6 +33,8 @@ Cu.import("resource://gre/modules/PromiseWorker.jsm", this);
 Cu.import("resource://gre/modules/Promise.jsm", this);
 Cu.import("resource://gre/modules/osfile.jsm", this);
 
+Cu.importGlobalProperties(['FileReader']);
+
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
 
@@ -83,9 +85,9 @@ const TaskUtils = {
    */
   readBlob: function readBlob(blob) {
     let deferred = Promise.defer();
-    let reader = Cc["@mozilla.org/files/filereader;1"].createInstance(Ci.nsIDOMFileReader);
+    let reader = new FileReader();
     reader.onloadend = function onloadend() {
-      if (reader.readyState != Ci.nsIDOMFileReader.DONE) {
+      if (reader.readyState != FileReader.DONE) {
         deferred.reject(reader.error);
       } else {
         deferred.resolve(reader.result);
@@ -115,17 +117,23 @@ this.PageThumbs = {
   /**
    * The scheme to use for thumbnail urls.
    */
-  get scheme() "moz-page-thumb",
+  get scheme() {
+    return "moz-page-thumb";
+  },
 
   /**
    * The static host to use for thumbnail urls.
    */
-  get staticHost() "thumbnail",
+  get staticHost() {
+    return "thumbnail";
+  },
 
   /**
    * The thumbnails' image type.
    */
-  get contentType() "image/png",
+  get contentType() {
+    return "image/png";
+  },
 
   init: function PageThumbs_init() {
     if (!this._initialized) {
@@ -152,7 +160,8 @@ this.PageThumbs = {
    */
   getThumbnailURL: function PageThumbs_getThumbnailURL(aUrl) {
     return this.scheme + "://" + this.staticHost +
-           "?url=" + encodeURIComponent(aUrl);
+           "/?url=" + encodeURIComponent(aUrl) +
+           "&revision=" + PageThumbsStorage.getRevision(aUrl);
   },
 
    /**
@@ -182,7 +191,7 @@ this.PageThumbs = {
 
     let deferred = Promise.defer();
 
-    let canvas = this.createCanvas();
+    let canvas = this.createCanvas(aBrowser.contentWindow);
     this.captureToCanvas(aBrowser, canvas, () => {
       canvas.toBlob(blob => {
         deferred.resolve(blob, this.contentType);
@@ -221,7 +230,7 @@ this.PageThumbs = {
    * transitory as it is based on current navigation state and the type of
    * content being displayed.
    *
-   * @param aBrowser The target browser 
+   * @param aBrowser The target browser
    * @param aCallback(aResult) A callback invoked once security checks have
    *   completed. aResult is a boolean indicating the combined result of the
    *   security checks performed.
@@ -250,7 +259,7 @@ this.PageThumbs = {
   // participate in this service's telemetry, which is why this method exists.
   _captureToCanvas: function (aBrowser, aCanvas, aCallback) {
     if (aBrowser.isRemoteBrowser) {
-      Task.spawn(function () {
+      Task.spawn(function* () {
         let data =
           yield this._captureRemoteThumbnail(aBrowser, aCanvas);
         let canvas = data.thumbnail;
@@ -264,24 +273,7 @@ this.PageThumbs = {
       return;
     }
 
-    // Generate in-process content thumbnail
-    let [width, height, scale] =
-      PageThumbUtils.determineCropSize(aBrowser.contentWindow, aCanvas);
-    let ctx = aCanvas.getContext("2d");
-
-    // Scale the canvas accordingly.
-    ctx.save();
-    ctx.scale(scale, scale);
-
-    try {
-      // Draw the window contents to the canvas.
-      ctx.drawWindow(aBrowser.contentWindow, 0, 0, width, height,
-                     PageThumbUtils.THUMBNAIL_BG_COLOR,
-                     ctx.DRAWWINDOW_DO_NOT_FLUSH);
-    } catch (e) {
-      // We couldn't draw to the canvas for some reason.
-    }
-    ctx.restore();
+    aCanvas = PageThumbUtils.createSnapshotThumbnail(aBrowser.contentWindow, aCanvas);
 
     if (aCallback) {
       aCallback(aCanvas);
@@ -315,8 +307,7 @@ this.PageThumbs = {
       mm.removeMessageListener("Browser:Thumbnail:Response", thumbFunc);
       let imageBlob = aMsg.data.thumbnail;
       let doc = aBrowser.parentElement.ownerDocument;
-      let reader = Cc["@mozilla.org/files/filereader;1"].
-                   createInstance(Ci.nsIDOMFileReader);
+      let reader = new FileReader();
       reader.addEventListener("loadend", function() {
         let image = doc.createElementNS(PageThumbUtils.HTML_NAMESPACE, "img");
         image.onload = function () {
@@ -371,7 +362,7 @@ this.PageThumbs = {
       originalURL = url;
     }
 
-    Task.spawn((function task() {
+    Task.spawn((function* task() {
       let isSuccess = true;
       try {
         let blob = yield this.captureToBlob(aBrowser);
@@ -427,7 +418,7 @@ this.PageThumbs = {
    * @return {Promise}
    */
   _store: function PageThumbs__store(aOriginalURL, aFinalURL, aData, aNoOverwrite) {
-    return Task.spawn(function () {
+    return Task.spawn(function* () {
       let telemetryStoreTime = new Date();
       yield PageThumbsStorage.writeData(aFinalURL, aData, aNoOverwrite);
       Services.telemetry.getHistogramById("FX_THUMBNAILS_STORE_TIME_MS")
@@ -553,6 +544,44 @@ this.PageThumbsStorage = {
     return OS.Path.join(this.path, this.getLeafNameForURL(aURL));
   },
 
+  _revisionTable: {},
+
+  // Generate an arbitrary revision tag, i.e. one that can't be used to
+  // infer URL frecency.
+  _updateRevision(aURL) {
+    // Initialize with a random value and increment on each update. Wrap around
+    // modulo _revisionRange, so that even small values carry no meaning.
+    let rev = this._revisionTable[aURL];
+    if (rev == null)
+      rev = Math.floor(Math.random() * this._revisionRange);
+    this._revisionTable[aURL] = (rev + 1) % this._revisionRange;
+  },
+
+  // If two thumbnails with the same URL and revision are in cache at the
+  // same time, the image loader may pick the stale thumbnail in some cases.
+  // Therefore _revisionRange must be large enough to prevent this, e.g.
+  // in the pathological case image.cache.size (5MB by default) could fill
+  // with (abnormally small) 10KB thumbnail images if the browser session
+  // runs long enough (though this is unlikely as thumbnails are usually
+  // only updated every MAX_THUMBNAIL_AGE_SECS).
+  _revisionRange: 8192,
+
+  /**
+  * Return a revision tag for the thumbnail stored for a given URL.
+  *
+  * @param aURL The URL spec string
+  * @return A revision tag for the corresponding thumbnail. Returns a changed
+  * value whenever the stored thumbnail changes.
+  */
+  getRevision(aURL) {
+    let rev = this._revisionTable[aURL];
+    if (rev == null) {
+      this._updateRevision(aURL);
+      rev = this._revisionTable[aURL];
+    }
+    return rev;
+  },
+
   /**
    * Write the contents of a thumbnail, off the main thread.
    *
@@ -582,7 +611,7 @@ this.PageThumbsStorage = {
       msg /*we don't want that message garbage-collected,
            as OS.Shared.Type.void_t.in_ptr.toMsg uses C-level
            memory tricks to enforce zero-copy*/).
-      then(null, this._eatNoOverwriteError(aNoOverwrite));
+      then(() => this._updateRevision(aURL), this._eatNoOverwriteError(aNoOverwrite));
   },
 
   /**
@@ -601,7 +630,7 @@ this.PageThumbsStorage = {
     let targetFile = this.getFilePathForURL(aTargetURL);
     let options = { noOverwrite: aNoOverwrite };
     return PageThumbsWorker.post("copy", [sourceFile, targetFile, options]).
-      then(null, this._eatNoOverwriteError(aNoOverwrite));
+      then(() => this._updateRevision(aTargetURL), this._eatNoOverwriteError(aNoOverwrite));
   },
 
   /**
@@ -818,7 +847,7 @@ var PageThumbsExpiration = {
 
   expireThumbnails: function Expiration_expireThumbnails(aURLsToKeep) {
     let path = this.path;
-    let keep = [PageThumbsStorage.getLeafNameForURL(url) for (url of aURLsToKeep)];
+    let keep = aURLsToKeep.map(url => PageThumbsStorage.getLeafNameForURL(url));
     let msg = [
       PageThumbsStorage.path,
       keep,

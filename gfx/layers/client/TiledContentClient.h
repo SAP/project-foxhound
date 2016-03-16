@@ -22,6 +22,7 @@
 #include "mozilla/layers/CompositableClient.h"  // for CompositableClient
 #include "mozilla/layers/CompositorTypes.h"  // for TextureInfo, etc
 #include "mozilla/layers/LayersMessages.h" // for TileDescriptor
+#include "mozilla/layers/LayersTypes.h" // for TextureDumpMode
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureClientPool.h"
 #include "ClientLayerManager.h"
@@ -117,7 +118,8 @@ public:
   static already_AddRefed<gfxShmSharedReadLock>
   Open(mozilla::layers::ISurfaceAllocator* aAllocator, const mozilla::layers::ShmemSection& aShmemSection)
   {
-    nsRefPtr<gfxShmSharedReadLock> readLock = new gfxShmSharedReadLock(aAllocator, aShmemSection);
+    MOZ_RELEASE_ASSERT(aShmemSection.shmem().IsReadable());
+    RefPtr<gfxShmSharedReadLock> readLock = new gfxShmSharedReadLock(aAllocator, aShmemSection);
     return readLock.forget();
   }
 
@@ -225,9 +227,9 @@ struct TileClient
   */
   void Flip();
 
-  void DumpTexture(std::stringstream& aStream) {
+  void DumpTexture(std::stringstream& aStream, TextureDumpMode aCompress) {
     // TODO We should combine the OnWhite/OnBlack here an just output a single image.
-    CompositableClient::DumpTextureClient(aStream, mFrontBuffer);
+    CompositableClient::DumpTextureClient(aStream, mFrontBuffer, aCompress);
   }
 
   /**
@@ -312,7 +314,7 @@ struct BasicTiledLayerPaintData {
    * the closest ancestor layer which scrolls, and is used to obtain
    * the composition bounds that are relevant for this layer.
    */
-  gfx::Matrix4x4 mTransformToCompBounds;
+  LayerToParentLayerMatrix4x4 mTransformToCompBounds;
 
   /*
    * The critical displayport of the content from the nearest ancestor layer
@@ -430,7 +432,8 @@ public:
 
   virtual void Dump(std::stringstream& aStream,
                     const char* aPrefix,
-                    bool aDumpHtml) {}
+                    bool aDumpHtml,
+                    TextureDumpMode aCompress) {}
 
   const CSSToParentLayerScale2D& GetFrameResolution() { return mFrameResolution; }
   void SetFrameResolution(const CSSToParentLayerScale2D& aResolution) { mFrameResolution = aResolution; }
@@ -507,8 +510,9 @@ public:
 
   void Dump(std::stringstream& aStream,
             const char* aPrefix,
-            bool aDumpHtml) override {
-    TiledLayerBuffer::Dump(aStream, aPrefix, aDumpHtml);
+            bool aDumpHtml,
+            TextureDumpMode aCompress) override {
+    TiledLayerBuffer::Dump(aStream, aPrefix, aDumpHtml, aCompress);
   }
 
   void ReadLock();
@@ -606,7 +610,8 @@ public:
 
   virtual void Dump(std::stringstream& aStream,
                     const char* aPrefix="",
-                    bool aDumpHtml=false);
+                    bool aDumpHtml=false,
+                    TextureDumpMode aCompress=TextureDumpMode::Compress) override;
 
   virtual TextureInfo GetTextureInfo() const override
   {
@@ -622,6 +627,9 @@ public:
     LOW_PRECISION_TILED_BUFFER
   };
   virtual void UpdatedBuffer(TiledBufferType aType) = 0;
+
+  virtual bool SupportsLayerSize(const gfx::IntSize& aSize, ClientLayerManager* aManager) const
+  { return true; }
 
 private:
   const char* mName;
@@ -641,9 +649,8 @@ protected:
   ~MultiTiledContentClient()
   {
     MOZ_COUNT_DTOR(MultiTiledContentClient);
- 
-    mDestroyed = true;
-    mTiledBuffer.DiscardBuffers();
+
+      mTiledBuffer.DiscardBuffers();
     mLowPrecisionTiledBuffer.DiscardBuffers();
   }
 

@@ -23,7 +23,7 @@ namespace dom {
 already_AddRefed<InternalRequest>
 InternalRequest::GetRequestConstructorCopy(nsIGlobalObject* aGlobal, ErrorResult& aRv) const
 {
-  nsRefPtr<InternalRequest> copy = new InternalRequest();
+  RefPtr<InternalRequest> copy = new InternalRequest();
   copy->mURL.Assign(mURL);
   copy->SetMethod(mMethod);
   copy->mHeaders = new InternalHeaders(*mHeaders);
@@ -50,7 +50,7 @@ InternalRequest::GetRequestConstructorCopy(nsIGlobalObject* aGlobal, ErrorResult
 already_AddRefed<InternalRequest>
 InternalRequest::Clone()
 {
-  nsRefPtr<InternalRequest> clone = new InternalRequest(*this);
+  RefPtr<InternalRequest> clone = new InternalRequest(*this);
 
   if (!mBodyStream) {
     return clone.forget();
@@ -116,6 +116,7 @@ InternalRequest::MapContentPolicyTypeToRequestContext(nsContentPolicyType aConte
     context = RequestContext::Internal;
     break;
   case nsIContentPolicy::TYPE_INTERNAL_SCRIPT:
+  case nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD:
   case nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER:
     context = RequestContext::Script;
     break;
@@ -125,10 +126,12 @@ InternalRequest::MapContentPolicyTypeToRequestContext(nsContentPolicyType aConte
   case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
     context = RequestContext::Sharedworker;
     break;
-  case nsIContentPolicy::TYPE_IMAGE:
+  case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
+  case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     context = RequestContext::Image;
     break;
-  case nsIContentPolicy::TYPE_STYLESHEET:
+  case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET:
+  case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET_PRELOAD:
     context = RequestContext::Style;
     break;
   case nsIContentPolicy::TYPE_INTERNAL_OBJECT:
@@ -320,6 +323,51 @@ InternalRequest::MapChannelToRequestMode(nsIChannel* aChannel)
 
   // This cast is valid due to static asserts in ServiceWorkerManager.cpp.
   return static_cast<RequestMode>(corsMode);
+}
+
+// static
+RequestCredentials
+InternalRequest::MapChannelToRequestCredentials(nsIChannel* aChannel)
+{
+  MOZ_ASSERT(aChannel);
+
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(aChannel->GetLoadInfo(getter_AddRefs(loadInfo))));
+
+  uint32_t securityMode;
+  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(loadInfo->GetSecurityMode(&securityMode)));
+
+  // TODO: Remove following code after stylesheet and image support cookie policy
+  if (securityMode == nsILoadInfo::SEC_NORMAL) {
+    uint32_t loadFlags;
+    aChannel->GetLoadFlags(&loadFlags);
+
+    if (loadFlags & nsIRequest::LOAD_ANONYMOUS) {
+      return RequestCredentials::Omit;
+    } else {
+      bool includeCrossOrigin;
+      nsCOMPtr<nsIHttpChannelInternal> internalChannel = do_QueryInterface(aChannel);
+
+      internalChannel->GetCorsIncludeCredentials(&includeCrossOrigin);
+      if (includeCrossOrigin) {
+        return RequestCredentials::Include;
+      }
+    }
+    return RequestCredentials::Same_origin;
+  }
+
+  uint32_t cookiePolicy = loadInfo->GetCookiePolicy();
+
+  if (cookiePolicy == nsILoadInfo::SEC_COOKIES_INCLUDE) {
+    return RequestCredentials::Include;
+  } else if (cookiePolicy == nsILoadInfo::SEC_COOKIES_OMIT) {
+    return RequestCredentials::Omit;
+  } else if (cookiePolicy == nsILoadInfo::SEC_COOKIES_SAME_ORIGIN) {
+    return RequestCredentials::Same_origin;
+  }
+
+  MOZ_ASSERT_UNREACHABLE("Unexpected cookie policy!");
+  return RequestCredentials::Same_origin;
 }
 
 } // namespace dom

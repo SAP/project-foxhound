@@ -14,7 +14,7 @@
 #include "mozilla/gfx/Types.h"          // for SurfaceFormat
 #include "mozilla/layers/AsyncTransactionTracker.h" // for AsyncTransactionTracker
 #include "mozilla/layers/CompositorTypes.h"
-#include "mozilla/layers/LayersTypes.h"  // for LayersBackend
+#include "mozilla/layers/LayersTypes.h"  // for LayersBackend, TextureDumpMode
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
 #include "mozilla/layers/TextureClientRecycleAllocator.h" // for TextureClientRecycleAllocator
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
@@ -23,7 +23,6 @@ namespace mozilla {
 namespace layers {
 
 class CompositableClient;
-class BufferTextureClient;
 class ImageBridgeChild;
 class ImageContainer;
 class CompositableForwarder;
@@ -127,11 +126,16 @@ public:
 
   explicit CompositableClient(CompositableForwarder* aForwarder, TextureFlags aFlags = TextureFlags::NO_FLAGS);
 
+  virtual void Dump(std::stringstream& aStream,
+                    const char* aPrefix="",
+                    bool aDumpHtml=false,
+                    TextureDumpMode aCompress=TextureDumpMode::Compress) {};
+
   virtual TextureInfo GetTextureInfo() const = 0;
 
   LayersBackend GetCompositorBackendType() const;
 
-  already_AddRefed<BufferTextureClient>
+  already_AddRefed<TextureClient>
   CreateBufferTextureClient(gfx::SurfaceFormat aFormat,
                             gfx::IntSize aSize,
                             gfx::BackendType aMoz2dBackend = gfx::BackendType::NONE,
@@ -151,7 +155,7 @@ public:
 
   void Destroy();
 
-  bool IsDestroyed() { return mDestroyed; }
+  bool IsConnected() const;
 
   PCompositableChild* GetIPDLActor() const;
 
@@ -224,14 +228,15 @@ public:
 
   TextureClientRecycleAllocator* GetTextureClientRecycler();
 
-  static void DumpTextureClient(std::stringstream& aStream, TextureClient* aTexture);
+  static void DumpTextureClient(std::stringstream& aStream,
+                                TextureClient* aTexture,
+                                TextureDumpMode aCompress);
 protected:
   CompositableChild* mCompositableChild;
   RefPtr<CompositableForwarder> mForwarder;
   // Some layers may want to enforce some flags to all their textures
   // (like disallowing tiling)
   TextureFlags mTextureFlags;
-  bool mDestroyed;
   RefPtr<TextureClientRecycleAllocator> mTextureClientRecycler;
 
   friend class CompositableChild;

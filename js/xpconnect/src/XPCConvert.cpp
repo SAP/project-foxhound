@@ -726,7 +726,7 @@ CreateHolderIfNeeded(HandleObject obj, MutableHandleValue d,
     if (dest) {
         if (!obj)
             return false;
-        nsRefPtr<XPCJSObjectHolder> objHolder = new XPCJSObjectHolder(obj);
+        RefPtr<XPCJSObjectHolder> objHolder = new XPCJSObjectHolder(obj);
         objHolder.forget(dest);
     }
 
@@ -820,7 +820,7 @@ XPCConvert::NativeInterface2JSObject(MutableHandleValue d,
         }
     }
 
-    nsRefPtr<XPCWrappedNative> wrapper;
+    RefPtr<XPCWrappedNative> wrapper;
     nsresult rv = XPCWrappedNative::GetNewOrUsed(aHelper, xpcscope, iface,
                                                  getter_AddRefs(wrapper));
     if (NS_FAILED(rv) && pErr)
@@ -857,7 +857,7 @@ XPCConvert::NativeInterface2JSObject(MutableHandleValue d,
         } else {
             if (!flat)
                 return false;
-            nsRefPtr<XPCJSObjectHolder> objHolder = new XPCJSObjectHolder(flat);
+            RefPtr<XPCJSObjectHolder> objHolder = new XPCJSObjectHolder(flat);
             objHolder.forget(dest);
         }
     }
@@ -904,7 +904,7 @@ XPCConvert::JSObject2NativeInterface(void** dest, HandleObject src,
         // because the caller may explicitly want to create the XPCWrappedJS
         // around a security wrapper. XBL does this with Xrays from the XBL
         // scope - see nsBindingManager::GetBindingImplementation.
-        JSObject* inner = js::CheckedUnwrap(src, /* stopAtOuter = */ false);
+        JSObject* inner = js::CheckedUnwrap(src, /* stopAtWindowProxy = */ false);
         if (!inner) {
             if (pErr)
                 *pErr = NS_ERROR_XPC_SECURITY_MANAGER_VETO;
@@ -927,7 +927,7 @@ XPCConvert::JSObject2NativeInterface(void** dest, HandleObject src,
         }
     }
 
-    nsRefPtr<nsXPCWrappedJS> wrapper;
+    RefPtr<nsXPCWrappedJS> wrapper;
     nsresult rv = nsXPCWrappedJS::GetNewOrUsed(src, *iid, getter_AddRefs(wrapper));
     if (pErr)
         *pErr = rv;
@@ -986,7 +986,7 @@ XPCConvert::ConstructException(nsresult rv, const char* message,
     if (ifaceName && methodName)
         msgStr.AppendPrintf(format, msg, ifaceName, methodName);
 
-    nsRefPtr<Exception> e = new Exception(msgStr, rv, EmptyCString(), nullptr, data);
+    RefPtr<Exception> e = new Exception(msgStr, rv, EmptyCString(), nullptr, data);
 
     if (cx && jsExceptionPtr) {
         e->StowJSVal(*jsExceptionPtr);
@@ -1037,7 +1037,7 @@ XPCConvert::JSValToXPCException(MutableHandleValue s,
         }
 
         // is this really a native xpcom object with a wrapper?
-        JSObject* unwrapped = js::CheckedUnwrap(obj, /* stopAtOuter = */ false);
+        JSObject* unwrapped = js::CheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
         if (!unwrapped)
             return NS_ERROR_XPC_SECURITY_MANAGER_VETO;
         XPCWrappedNative* wrapper = IS_WN_REFLECTOR(unwrapped) ? XPCWrappedNative::Get(unwrapped)
@@ -1195,7 +1195,7 @@ XPCConvert::JSErrorToXPCException(const char* message,
 {
     AutoJSContext cx;
     nsresult rv = NS_ERROR_FAILURE;
-    nsRefPtr<nsScriptError> data;
+    RefPtr<nsScriptError> data;
     if (report) {
         nsAutoString bestMessage;
         if (report && report->ucmessage) {
@@ -1353,7 +1353,18 @@ CheckTargetAndPopulate(const nsXPTType& type,
     }
 
     JS::AutoCheckCannotGC nogc;
-    memcpy(*output, JS_GetArrayBufferViewData(tArr, nogc), byteSize);
+    bool isShared;
+    void* buf = JS_GetArrayBufferViewData(tArr, &isShared, nogc);
+
+    // Require opting in to shared memory - a future project.
+    if (isShared) {
+        if (pErr)
+            *pErr = NS_ERROR_XPC_BAD_CONVERT_JS;
+
+        return false;
+    }
+
+    memcpy(*output, buf, byteSize);
     return true;
 }
 
@@ -1509,7 +1520,8 @@ XPCConvert::JSArray2Native(void** d, HandleValue s,
         return JSTypedArray2Native(d, jsarray, count, type, pErr);
     }
 
-    if (!JS_IsArrayObject(cx, jsarray)) {
+    bool isArray;
+    if (!JS_IsArrayObject(cx, jsarray, &isArray) || !isArray) {
         if (pErr)
             *pErr = NS_ERROR_XPC_CANT_CONVERT_OBJECT_TO_ARRAY;
         return false;

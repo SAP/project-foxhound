@@ -51,12 +51,6 @@ PACKAGE       = $(PKG_PATH)$(PKG_BASENAME)$(PKG_SUFFIX)
 
 # By default, the SDK uses the same packaging type as the main bundle,
 # but on mac it is a .tar.bz2
-SDK_PATH      = $(PKG_PATH)
-ifeq ($(MOZ_APP_NAME),xulrunner)
-SDK_PATH = sdk/
-# Don't codesign xulrunner internally
-MOZ_INTERNAL_SIGNING_FORMAT =
-endif
 SDK_SUFFIX    = $(PKG_SUFFIX)
 SDK           = $(SDK_PATH)$(PKG_BASENAME).sdk$(SDK_SUFFIX)
 ifdef UNIVERSAL_BINARY
@@ -64,7 +58,6 @@ SDK           = $(SDK_PATH)$(PKG_BASENAME)-$(TARGET_CPU).sdk$(SDK_SUFFIX)
 endif
 
 # JavaScript Shell packaging
-ifndef LIBXUL_SDK
 JSSHELL_BINS  = \
   js$(BIN_SUFFIX) \
   $(DLL_PREFIX)mozglue$(DLL_SUFFIX) \
@@ -116,7 +109,6 @@ endif # Darwin
 endif # WINNT
 endif # MOZ_STATIC_JS
 MAKE_JSSHELL  = $(call py_action,zip,-C $(DIST)/bin $(abspath $(PKG_JSSHELL)) $(JSSHELL_BINS))
-endif # LIBXUL_SDK
 
 _ABS_DIST = $(abspath $(DIST))
 JARLOG_DIR = $(abspath $(DEPTH)/jarlog/)
@@ -131,13 +123,13 @@ ifeq ($(MOZ_PKG_FORMAT),TAR)
 PKG_SUFFIX	= .tar
 INNER_MAKE_PACKAGE 	= $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) > $(PACKAGE)
 INNER_UNMAKE_PACKAGE	= $(UNPACK_TAR) < $(UNPACKAGE)
-MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk > $(SDK)
+MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk > '$(SDK)'
 endif
 ifeq ($(MOZ_PKG_FORMAT),TGZ)
 PKG_SUFFIX	= .tar.gz
 INNER_MAKE_PACKAGE 	= $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) | gzip -vf9 > $(PACKAGE)
 INNER_UNMAKE_PACKAGE	= gunzip -c $(UNPACKAGE) | $(UNPACK_TAR)
-MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | gzip -vf9 > $(SDK)
+MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | gzip -vf9 > '$(SDK)'
 endif
 ifeq ($(MOZ_PKG_FORMAT),BZ2)
 PKG_SUFFIX	= .tar.bz2
@@ -147,18 +139,18 @@ else
 INNER_MAKE_PACKAGE 	= $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) | bzip2 -vf > $(PACKAGE)
 endif
 INNER_UNMAKE_PACKAGE	= bunzip2 -c $(UNPACKAGE) | $(UNPACK_TAR)
-MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | bzip2 -vf > $(SDK)
+MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | bzip2 -vf > '$(SDK)'
 endif
 ifeq ($(MOZ_PKG_FORMAT),ZIP)
 ifdef MOZ_EXTERNAL_SIGNING_FORMAT
-# We can't use osslsigncode on zip files
-MOZ_EXTERNAL_SIGNING_FORMAT := $(filter-out osslsigncode,$(MOZ_EXTERNAL_SIGNING_FORMAT))
+# We can't use sha2signcode on zip files
+MOZ_EXTERNAL_SIGNING_FORMAT := $(filter-out sha2signcode,$(MOZ_EXTERNAL_SIGNING_FORMAT))
 endif
 PKG_SUFFIX	= .zip
 INNER_MAKE_PACKAGE	= $(ZIP) -r9D $(PACKAGE) $(MOZ_PKG_DIR) \
   -x \*/.mkdir.done
 INNER_UNMAKE_PACKAGE	= $(UNZIP) $(UNPACKAGE)
-MAKE_SDK = $(call py_action,zip,$(SDK) $(MOZ_APP_NAME)-sdk)
+MAKE_SDK = $(call py_action,zip,'$(SDK)' $(MOZ_APP_NAME)-sdk)
 endif
 ifeq ($(MOZ_PKG_FORMAT),SFX7Z)
 PKG_SUFFIX	= .exe
@@ -264,7 +256,6 @@ endif #Create an RPM file
 
 ifeq ($(MOZ_PKG_FORMAT),APK)
 
-JAVA_CLASSPATH = $(ANDROID_SDK)/android.jar
 include $(MOZILLA_DIR)/config/android-common.mk
 
 DIST_FILES =
@@ -312,7 +303,6 @@ DIST_FILES += \
   chrome.manifest \
   update.locale \
   removed-files \
-  distribution \
   $(NULL)
 
 NON_DIST_FILES = \
@@ -337,7 +327,7 @@ UPLOAD_EXTRA_FILES += ../embedding/android/geckoview_example/geckoview_example.a
 # Robocop/Robotium tests, Android Background tests, and Fennec need to
 # be signed with the same key, which means release signing them all.
 
-ROBOCOP_PATH = $(abspath $(_ABS_DIST)/../build/mobile/robocop)
+ROBOCOP_PATH = $(abspath $(DEPTH)/mobile/android/tests/browser/robocop)
 # Normally, $(NSINSTALL) would be used instead of cp, but INNER_ROBOCOP_PACKAGE
 # is used in a series of commands that run under a "cd something", while
 # $(NSINSTALL) is relative.
@@ -549,11 +539,7 @@ INNER_UNMAKE_PACKAGE	= \
 # The plst and blkx resources are skipped because they belong to each
 # individual dmg and are created by hdiutil.
 SDK_SUFFIX = .tar.bz2
-SDK = $(MOZ_PKG_APPNAME)-$(MOZ_PKG_VERSION).$(AB_CD).mac-$(TARGET_CPU).sdk$(SDK_SUFFIX)
-ifeq ($(MOZ_APP_NAME),xulrunner)
-SDK = $(SDK_PATH)$(MOZ_APP_NAME)-$(MOZ_PKG_VERSION).$(AB_CD).mac-$(TARGET_CPU).sdk$(SDK_SUFFIX)
-endif
-MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | bzip2 -vf > $(SDK)
+MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | bzip2 -vf > '$(SDK)'
 endif
 
 ifdef MOZ_INTERNAL_SIGNING_FORMAT
@@ -589,8 +575,7 @@ MAKE_PACKAGE    += && $(MOZ_SIGN_PACKAGE_CMD) '$(PACKAGE)'
 endif
 
 ifdef MOZ_SIGN_CMD
-MAKE_SDK           += && $(MOZ_SIGN_CMD) -f gpg $(SDK)
-UPLOAD_EXTRA_FILES += $(SDK).asc
+MAKE_SDK           += && $(MOZ_SIGN_CMD) -f gpg '$(SDK)'
 endif
 
 NO_PKG_FILES += \
@@ -734,6 +719,7 @@ UPLOAD_FILES= \
   $(call QUOTED_WILDCARD,$(DIST)/$(COMPLETE_MAR)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(LANGPACK)) \
   $(call QUOTED_WILDCARD,$(wildcard $(DIST)/$(PARTIAL_MAR))) \
+  $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZHARNESS_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(TEST_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(CPP_TEST_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(XPC_TEST_PACKAGE)) \
@@ -743,6 +729,7 @@ UPLOAD_FILES= \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(WP_TEST_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip) \
   $(call QUOTED_WILDCARD,$(DIST)/$(SDK)) \
+  $(call QUOTED_WILDCARD,$(DIST)/$(SDK).asc) \
   $(call QUOTED_WILDCARD,$(MOZ_SOURCESTAMP_FILE)) \
   $(call QUOTED_WILDCARD,$(MOZ_BUILDINFO_FILE)) \
   $(call QUOTED_WILDCARD,$(MOZ_MOZINFO_FILE)) \
@@ -763,8 +750,8 @@ endif
 ifdef UNIFY_DIST
 UNIFY_ARCH := $(notdir $(patsubst %/,%,$(dir $(UNIFY_DIST))))
 UPLOAD_FILES += \
-  $(wildcard $(UNIFY_DIST)/$(SDK_PATH)$(PKG_BASENAME)-$(UNIFY_ARCH).sdk$(SDK_SUFFIX)) \
-  $(wildcard $(UNIFY_DIST)/$(SDK_PATH)$(PKG_BASENAME)-$(UNIFY_ARCH).sdk$(SDK_SUFFIX).asc)
+  $(call QUOTED_WILDCARD,$(UNIFY_DIST)/$(SDK_PATH)$(PKG_BASENAME)-$(UNIFY_ARCH).sdk$(SDK_SUFFIX)) \
+  $(call QUOTED_WILDCARD,$(UNIFY_DIST)/$(SDK_PATH)$(PKG_BASENAME)-$(UNIFY_ARCH).sdk$(SDK_SUFFIX).asc)
 endif
 
 SIGN_CHECKSUM_CMD=

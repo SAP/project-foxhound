@@ -67,7 +67,7 @@ BluetoothGatt::~BluetoothGatt()
   NS_ENSURE_TRUE_VOID(bs);
 
   if (mClientIf > 0) {
-    nsRefPtr<BluetoothVoidReplyRunnable> result =
+    RefPtr<BluetoothVoidReplyRunnable> result =
       new BluetoothVoidReplyRunnable(nullptr);
     bs->UnregisterGattClientInternal(mClientIf, result);
   }
@@ -84,7 +84,7 @@ BluetoothGatt::DisconnectFromOwner()
   NS_ENSURE_TRUE_VOID(bs);
 
   if (mClientIf > 0) {
-    nsRefPtr<BluetoothVoidReplyRunnable> result =
+    RefPtr<BluetoothVoidReplyRunnable> result =
       new BluetoothVoidReplyRunnable(nullptr);
     bs->UnregisterGattClientInternal(mClientIf, result);
   }
@@ -101,7 +101,7 @@ BluetoothGatt::Connect(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
   NS_ENSURE_TRUE(!aRv.Failed(), nullptr);
 
   BT_ENSURE_TRUE_REJECT(
@@ -112,9 +112,20 @@ BluetoothGatt::Connect(ErrorResult& aRv)
   BluetoothService* bs = BluetoothService::Get();
   BT_ENSURE_TRUE_REJECT(bs, promise, NS_ERROR_NOT_AVAILABLE);
 
+  BluetoothUuid appUuid;
+  BT_ENSURE_TRUE_REJECT(NS_SUCCEEDED(StringToUuid(mAppUuid, appUuid)),
+                        promise,
+                        NS_ERROR_DOM_OPERATION_ERR);
+
+  BluetoothAddress deviceAddr;
+  BT_ENSURE_TRUE_REJECT(
+    NS_SUCCEEDED(StringToAddress(mDeviceAddr, deviceAddr)),
+    promise,
+    NS_ERROR_DOM_OPERATION_ERR);
+
   if (mAppUuid.IsEmpty()) {
-    GenerateUuid(mAppUuid);
-    BT_ENSURE_TRUE_REJECT(!mAppUuid.IsEmpty(),
+    nsresult rv = GenerateUuid(mAppUuid);
+    BT_ENSURE_TRUE_REJECT(NS_SUCCEEDED(rv) && !mAppUuid.IsEmpty(),
                           promise,
                           NS_ERROR_DOM_OPERATION_ERR);
     RegisterBluetoothSignalHandler(mAppUuid, this);
@@ -122,7 +133,7 @@ BluetoothGatt::Connect(ErrorResult& aRv)
 
   UpdateConnectionState(BluetoothConnectionState::Connecting);
   bs->ConnectGattClientInternal(
-    mAppUuid, mDeviceAddr, new BluetoothVoidReplyRunnable(nullptr, promise));
+    appUuid, deviceAddr, new BluetoothVoidReplyRunnable(nullptr, promise));
 
   return promise.forget();
 }
@@ -136,7 +147,7 @@ BluetoothGatt::Disconnect(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
   NS_ENSURE_TRUE(!aRv.Failed(), nullptr);
 
   BT_ENSURE_TRUE_REJECT(
@@ -147,9 +158,20 @@ BluetoothGatt::Disconnect(ErrorResult& aRv)
   BluetoothService* bs = BluetoothService::Get();
   BT_ENSURE_TRUE_REJECT(bs, promise, NS_ERROR_NOT_AVAILABLE);
 
+  BluetoothUuid appUuid;
+  BT_ENSURE_TRUE_REJECT(NS_SUCCEEDED(StringToUuid(mAppUuid, appUuid)),
+                        promise,
+                        NS_ERROR_DOM_OPERATION_ERR);
+
+  BluetoothAddress deviceAddr;
+  BT_ENSURE_TRUE_REJECT(
+    NS_SUCCEEDED(StringToAddress(mDeviceAddr, deviceAddr)),
+    promise,
+    NS_ERROR_DOM_OPERATION_ERR);
+
   UpdateConnectionState(BluetoothConnectionState::Disconnecting);
   bs->DisconnectGattClientInternal(
-    mAppUuid, mDeviceAddr, new BluetoothVoidReplyRunnable(nullptr, promise));
+    appUuid, deviceAddr, new BluetoothVoidReplyRunnable(nullptr, promise));
 
   return promise.forget();
 }
@@ -185,7 +207,7 @@ BluetoothGatt::ReadRemoteRssi(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
   NS_ENSURE_TRUE(!aRv.Failed(), nullptr);
 
   BT_ENSURE_TRUE_REJECT(
@@ -196,8 +218,14 @@ BluetoothGatt::ReadRemoteRssi(ErrorResult& aRv)
   BluetoothService* bs = BluetoothService::Get();
   BT_ENSURE_TRUE_REJECT(bs, promise, NS_ERROR_NOT_AVAILABLE);
 
+  BluetoothAddress deviceAddr;
+  BT_ENSURE_TRUE_REJECT(
+    NS_SUCCEEDED(StringToAddress(mDeviceAddr, deviceAddr)),
+    promise,
+    NS_ERROR_DOM_OPERATION_ERR);
+
   bs->GattClientReadRemoteRssiInternal(
-    mClientIf, mDeviceAddr, new ReadRemoteRssiTask(promise));
+    mClientIf, deviceAddr, new ReadRemoteRssiTask(promise));
 
   return promise.forget();
 }
@@ -211,8 +239,13 @@ BluetoothGatt::DiscoverServices(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
   NS_ENSURE_TRUE(!aRv.Failed(), nullptr);
+
+  BluetoothUuid appUuid;
+  BT_ENSURE_TRUE_REJECT(NS_SUCCEEDED(StringToUuid(mAppUuid, appUuid)),
+                        promise,
+                        NS_ERROR_DOM_OPERATION_ERR);
 
   BT_ENSURE_TRUE_REJECT(
     mConnectionState == BluetoothConnectionState::Connected &&
@@ -228,7 +261,7 @@ BluetoothGatt::DiscoverServices(ErrorResult& aRv)
   BluetoothGattBinding::ClearCachedServicesValue(this);
 
   bs->DiscoverGattServicesInternal(
-    mAppUuid, new BluetoothVoidReplyRunnable(nullptr, promise));
+    appUuid, new BluetoothVoidReplyRunnable(nullptr, promise));
 
   return promise.forget();
 }
@@ -240,13 +273,11 @@ BluetoothGatt::UpdateConnectionState(BluetoothConnectionState aState)
   mConnectionState = aState;
 
   // Dispatch connectionstatechanged event to application
-  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
+  RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
 
-  nsresult rv =
-    event->InitEvent(NS_LITERAL_STRING(GATT_CONNECTION_STATE_CHANGED_ID),
-                     false,
-                     false);
-  NS_ENSURE_SUCCESS_VOID(rv);
+  event->InitEvent(NS_LITERAL_STRING(GATT_CONNECTION_STATE_CHANGED_ID),
+                   false,
+                   false);
 
   DispatchTrustedEvent(event);
 }
@@ -287,7 +318,7 @@ BluetoothGatt::HandleIncludedServicesDiscovered(const BluetoothValue& aValue)
     values[0].value().get_BluetoothGattServiceId());
   NS_ENSURE_TRUE_VOID(index != mServices.NoIndex);
 
-  nsRefPtr<BluetoothGattService> service = mServices.ElementAt(index);
+  RefPtr<BluetoothGattService> service = mServices.ElementAt(index);
   service->AssignIncludedServices(
     values[1].value().get_ArrayOfBluetoothGattServiceId());
 }
@@ -311,7 +342,7 @@ BluetoothGatt::HandleCharacteristicsDiscovered(const BluetoothValue& aValue)
     values[0].value().get_BluetoothGattServiceId());
   NS_ENSURE_TRUE_VOID(index != mServices.NoIndex);
 
-  nsRefPtr<BluetoothGattService> service = mServices.ElementAt(index);
+  RefPtr<BluetoothGattService> service = mServices.ElementAt(index);
   service->AssignCharacteristics(
     values[1].value().get_ArrayOfBluetoothGattCharAttribute());
 }
@@ -337,7 +368,7 @@ BluetoothGatt::HandleDescriptorsDiscovered(const BluetoothValue& aValue)
     values[0].value().get_BluetoothGattServiceId());
   NS_ENSURE_TRUE_VOID(index != mServices.NoIndex);
 
-  nsRefPtr<BluetoothGattService> service = mServices.ElementAt(index);
+  RefPtr<BluetoothGattService> service = mServices.ElementAt(index);
   service->AssignDescriptors(values[1].value().get_BluetoothGattId(),
                              values[2].value().get_ArrayOfBluetoothGattId());
 }
@@ -358,18 +389,18 @@ BluetoothGatt::HandleCharacteristicChanged(const BluetoothValue& aValue)
   size_t index = mServices.IndexOf(ids[0].value().get_BluetoothGattServiceId());
   NS_ENSURE_TRUE_VOID(index != mServices.NoIndex);
 
-  nsRefPtr<BluetoothGattService> service = mServices.ElementAt(index);
-  nsTArray<nsRefPtr<BluetoothGattCharacteristic>> chars;
+  RefPtr<BluetoothGattService> service = mServices.ElementAt(index);
+  nsTArray<RefPtr<BluetoothGattCharacteristic>> chars;
   service->GetCharacteristics(chars);
 
   index = chars.IndexOf(ids[1].value().get_BluetoothGattId());
   NS_ENSURE_TRUE_VOID(index != chars.NoIndex);
-  nsRefPtr<BluetoothGattCharacteristic> characteristic = chars.ElementAt(index);
+  RefPtr<BluetoothGattCharacteristic> characteristic = chars.ElementAt(index);
 
   // Dispatch characteristicchanged event to application
   BluetoothGattCharacteristicEventInit init;
   init.mCharacteristic = characteristic;
-  nsRefPtr<BluetoothGattCharacteristicEvent> event =
+  RefPtr<BluetoothGattCharacteristicEvent> event =
     BluetoothGattCharacteristicEvent::Constructor(
       this,
       NS_LITERAL_STRING(GATT_CHARACTERISTIC_CHANGED_ID),

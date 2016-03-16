@@ -14,7 +14,7 @@ interface nsIHttpHeaderVisitor;
  * the inspection of the resulting HTTP response status and headers when they
  * become available.
  */
-[builtinclass, scriptable, uuid(46ca0df4-bb4d-423a-9b3e-2fb0988cd1f3)]
+[builtinclass, scriptable, uuid(b2596105-3d0d-4e6a-824f-0539713bb879)]
 interface nsIHttpChannel : nsIChannel
 {
     /**************************************************************************
@@ -83,6 +83,31 @@ interface nsIHttpChannel : nsIChannel
      * Set the HTTP referrer URI with a referrer policy.
      */
     void setReferrerWithPolicy(in nsIURI referrer, in unsigned long referrerPolicy);
+
+    /**
+     * Returns the network protocol used to fetch the resource as identified
+     * by the ALPN Protocol ID.
+     *
+     * @throws NS_ERROR_NOT_AVAILABLE if called before the response
+     *         has been received (before onStartRequest).
+     */
+    readonly attribute ACString protocolVersion;
+
+    /**
+     * size consumed by the response header fields and the response payload body
+     */
+    readonly attribute uint64_t transferSize;
+
+    /**
+     * The size of the message body received by the client,
+     * after removing any applied content-codings
+     */
+    readonly attribute uint64_t decodedBodySize;
+
+    /**
+     * The size in octets of the payload body, prior to removing content-codings
+     */
+    readonly attribute uint64_t encodedBodySize;
 
     /**
      * Get the value of a particular request header.
@@ -248,6 +273,12 @@ interface nsIHttpChannel : nsIChannel
      *         has been received (before onStartRequest).
      */
     readonly attribute boolean requestSucceeded;
+
+   /** Indicates whether channel should be treated as the main one for the
+    *  current document.  If manually set to true, will always remain true.  Otherwise,
+    *  will be true iff LOAD_DOCUMENT_URI is set in the channel's loadflags.
+    */
+    attribute boolean isMainDocumentChannel;
 
     /**
      * Get the value of a particular response header.

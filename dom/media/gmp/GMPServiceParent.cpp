@@ -42,6 +42,7 @@
 #include "nsPrintfCString.h"
 #endif
 #include "nsIXULRuntime.h"
+#include "GMPDecoderModule.h"
 #include <limits>
 
 namespace mozilla {
@@ -66,7 +67,7 @@ already_AddRefed<GeckoMediaPluginServiceParent>
 GeckoMediaPluginServiceParent::GetSingleton()
 {
   MOZ_ASSERT(XRE_IsParentProcess());
-  nsRefPtr<GeckoMediaPluginService> service(
+  RefPtr<GeckoMediaPluginService> service(
     GeckoMediaPluginServiceParent::GetGeckoMediaPluginService());
 #ifdef DEBUG
   if (service) {
@@ -162,13 +163,13 @@ CloneAndAppend(nsIFile* aFile, const nsAString& aDir)
 }
 
 static void
-MoveAndOverwrite(nsIFile* aOldStorageDir,
-                 nsIFile* aNewStorageDir,
+MoveAndOverwrite(nsIFile* aOldParentDir,
+                 nsIFile* aNewParentDir,
                  const nsAString& aSubDir)
 {
   nsresult rv;
 
-  nsCOMPtr<nsIFile> srcDir(CloneAndAppend(aOldStorageDir, aSubDir));
+  nsCOMPtr<nsIFile> srcDir(CloneAndAppend(aOldParentDir, aSubDir));
   if (NS_WARN_IF(!srcDir)) {
     return;
   }
@@ -178,7 +179,13 @@ MoveAndOverwrite(nsIFile* aOldStorageDir,
     return;
   }
 
-  nsCOMPtr<nsIFile> dstDir(CloneAndAppend(aNewStorageDir, aSubDir));
+  // Ensure destination parent directory exists.
+  rv = aNewParentDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  if (rv != NS_ERROR_FILE_ALREADY_EXISTS && NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  nsCOMPtr<nsIFile> dstDir(CloneAndAppend(aNewParentDir, aSubDir));
   if (FileExists(dstDir)) {
     // We must have migrated before already, and then ran an old version
     // of Gecko again which created storage at the old location. Overwrite
@@ -190,7 +197,7 @@ MoveAndOverwrite(nsIFile* aOldStorageDir,
     }
   }
 
-  rv = srcDir->MoveTo(aNewStorageDir, EmptyString());
+  rv = srcDir->MoveTo(aNewParentDir, EmptyString());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -202,6 +209,21 @@ MigratePreGecko42StorageDir(nsIFile* aOldStorageDir,
 {
   MoveAndOverwrite(aOldStorageDir, aNewStorageDir, NS_LITERAL_STRING("id"));
   MoveAndOverwrite(aOldStorageDir, aNewStorageDir, NS_LITERAL_STRING("storage"));
+}
+
+static void
+MigratePreGecko45StorageDir(nsIFile* aStorageDirBase)
+{
+  nsCOMPtr<nsIFile> adobeStorageDir(CloneAndAppend(aStorageDirBase, NS_LITERAL_STRING("gmp-eme-adobe")));
+  if (NS_WARN_IF(!adobeStorageDir)) {
+    return;
+  }
+
+  // The base storage dir in pre-45 contained "id" and "storage" subdirs.
+  // We assume all storage in the base storage dir that aren't known to GMP
+  // storage are records for the Adobe GMP.
+  MoveAndOverwrite(aStorageDirBase, adobeStorageDir, NS_LITERAL_STRING("id"));
+  MoveAndOverwrite(aStorageDirBase, adobeStorageDir, NS_LITERAL_STRING("storage"));
 }
 
 static nsresult
@@ -290,10 +312,18 @@ GeckoMediaPluginServiceParent::InitStorage()
     return rv;
   }
 
-  // Prior to 42, GMP storage was stored in $profile/gmp/. After 42, it's
-  // stored in $profile/gmp/$platform/. So we must migrate any old records
+  // Prior to 42, GMP storage was stored in $profileDir/gmp/. After 42, it's
+  // stored in $profileDir/gmp/$platform/. So we must migrate any old records
   // from the old location to the new location, for forwards compatibility.
   MigratePreGecko42StorageDir(gmpDirWithoutPlatform, mStorageBaseDir);
+
+  // Prior to 45, GMP storage was not separated by plugin. In 45 and after,
+  // it's stored in $profile/gmp/$platform/$gmpName. So we must migrate old
+  // records from the old location to the new location, for forwards
+  // compatibility. We assume all directories in the base storage dir that
+  // aren't known to GMP storage are records for the Adobe GMP, since it
+  // was first.
+  MigratePreGecko45StorageDir(mStorageBaseDir);
 
   return GeckoMediaPluginService::Init();
 }
@@ -484,7 +514,7 @@ GeckoMediaPluginServiceParent::GetContentParentFrom(const nsACString& aNodeId,
                                                     const nsTArray<nsCString>& aTags,
                                                     UniquePtr<GetGMPContentParentCallback>&& aCallback)
 {
-  nsRefPtr<GMPParent> gmp = SelectPluginForAPI(aNodeId, aAPI, aTags);
+  RefPtr<GMPParent> gmp = SelectPluginForAPI(aNodeId, aAPI, aTags);
 
   nsCString api = aTags[0];
   LOGD(("%s: %p returning %p for api %s", __FUNCTION__, (void *)this, (void *)gmp, api.get()));
@@ -700,6 +730,27 @@ GeckoMediaPluginServiceParent::LoadFromEnvironment()
   mScannedPluginOnDisk = true;
 }
 
+class NotifyObserversTask final : public nsRunnable {
+public:
+  explicit NotifyObserversTask(const char* aTopic, nsString aData = EmptyString())
+    : mTopic(aTopic)
+    , mData(aData)
+  {}
+  NS_IMETHOD Run() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    nsCOMPtr<nsIObserverService> obsService = mozilla::services::GetObserverService();
+    MOZ_ASSERT(obsService);
+    if (obsService) {
+      obsService->NotifyObservers(nullptr, mTopic, mData.get());
+    }
+    return NS_OK;
+  }
+private:
+  ~NotifyObserversTask() {}
+  const char* mTopic;
+  const nsString mData;
+};
+
 NS_IMETHODIMP
 GeckoMediaPluginServiceParent::PathRunnable::Run()
 {
@@ -710,6 +761,16 @@ GeckoMediaPluginServiceParent::PathRunnable::Run()
                                 mOperation == REMOVE_AND_DELETE_FROM_DISK,
                                 mDefer);
   }
+#ifndef MOZ_WIDGET_GONK // Bug 1214967: disabled on B2G due to inscrutable test failures.
+  // For e10s, we must fire a notification so that all ContentParents notify
+  // their children to update the codecs that the GMPDecoderModule can use.
+  NS_DispatchToMainThread(new NotifyObserversTask("gmp-changed"), NS_DISPATCH_NORMAL);
+  // For non-e10s, and for decoding in the chrome process, must update GMP
+  // PDM's codecs list directly.
+  NS_DispatchToMainThread(NS_NewRunnableFunction([]() -> void {
+    GMPDecoderModule::UpdateUsableCodecs();
+  }));
+#endif
   return NS_OK;
 }
 
@@ -904,7 +965,7 @@ public:
     return mParent.forget();
   }
 private:
-  nsRefPtr<GMPParent> mParent;
+  RefPtr<GMPParent> mParent;
 };
 
 GMPParent*
@@ -914,14 +975,14 @@ GeckoMediaPluginServiceParent::ClonePlugin(const GMPParent* aOriginal)
 
   // The GMPParent inherits from IToplevelProtocol, which must be created
   // on the main thread to be threadsafe. See Bug 1035653.
-  nsRefPtr<CreateGMPParentTask> task(new CreateGMPParentTask());
+  RefPtr<CreateGMPParentTask> task(new CreateGMPParentTask());
   if (!NS_IsMainThread()) {
     nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
     MOZ_ASSERT(mainThread);
     mozilla::SyncRunnable::DispatchToThread(mainThread, task);
   }
 
-  nsRefPtr<GMPParent> gmp = task->GetParent();
+  RefPtr<GMPParent> gmp = task->GetParent();
   nsresult rv = gmp->CloneFrom(aOriginal);
 
   if (NS_FAILED(rv)) {
@@ -934,27 +995,6 @@ GeckoMediaPluginServiceParent::ClonePlugin(const GMPParent* aOriginal)
 
   return gmp.get();
 }
-
-class NotifyObserversTask final : public nsRunnable {
-public:
-  explicit NotifyObserversTask(const char* aTopic, nsString aData = EmptyString())
-    : mTopic(aTopic)
-    , mData(aData)
-  {}
-  NS_IMETHOD Run() override {
-    MOZ_ASSERT(NS_IsMainThread());
-    nsCOMPtr<nsIObserverService> obsService = mozilla::services::GetObserverService();
-    MOZ_ASSERT(obsService);
-    if (obsService) {
-      obsService->NotifyObservers(nullptr, mTopic, mData.get());
-    }
-    return NS_OK;
-  }
-private:
-  ~NotifyObserversTask() {}
-  const char* mTopic;
-  const nsString mData;
-};
 
 void
 GeckoMediaPluginServiceParent::AddOnGMPThread(const nsAString& aDirectory)
@@ -970,11 +1010,11 @@ GeckoMediaPluginServiceParent::AddOnGMPThread(const nsAString& aDirectory)
 
   // The GMPParent inherits from IToplevelProtocol, which must be created
   // on the main thread to be threadsafe. See Bug 1035653.
-  nsRefPtr<CreateGMPParentTask> task(new CreateGMPParentTask());
+  RefPtr<CreateGMPParentTask> task(new CreateGMPParentTask());
   nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
   MOZ_ASSERT(mainThread);
   mozilla::SyncRunnable::DispatchToThread(mainThread, task);
-  nsRefPtr<GMPParent> gmp = task->GetParent();
+  RefPtr<GMPParent> gmp = task->GetParent();
   rv = gmp ? gmp->Init(this, directory) : NS_ERROR_NOT_AVAILABLE;
   if (NS_FAILED(rv)) {
     NS_WARNING("Can't Create GMPParent");
@@ -1005,7 +1045,7 @@ GeckoMediaPluginServiceParent::RemoveOnGMPThread(const nsAString& aDirectory,
 
   // Plugin destruction can modify |mPlugins|. Put them aside for now and
   // destroy them once we're done with |mPlugins|.
-  nsTArray<nsRefPtr<GMPParent>> deadPlugins;
+  nsTArray<RefPtr<GMPParent>> deadPlugins;
 
   bool inUse = false;
   MutexAutoLock lock(mMutex);
@@ -1016,7 +1056,7 @@ GeckoMediaPluginServiceParent::RemoveOnGMPThread(const nsAString& aDirectory,
       continue;
     }
 
-    nsRefPtr<GMPParent> gmp = mPlugins[i];
+    RefPtr<GMPParent> gmp = mPlugins[i];
     if (aDeleteFromDisk && gmp->State() != GMPStateNotLoaded) {
       // We have to wait for the child process to release its lib handle
       // before we can delete the GMP.
@@ -1044,6 +1084,13 @@ GeckoMediaPluginServiceParent::RemoveOnGMPThread(const nsAString& aDirectory,
   }
 
   if (aDeleteFromDisk && !inUse) {
+    // Ensure the GMP dir and all files in it are writable, so we have
+    // permission to delete them.
+    directory->SetPermissions(0700);
+    DirectoryEnumerator iter(directory, DirectoryEnumerator::FilesAndDirs);
+    for (nsCOMPtr<nsIFile> dirEntry; (dirEntry = iter.Next()) != nullptr;) {
+      dirEntry->SetPermissions(0700);
+    }
     if (NS_SUCCEEDED(directory->Remove(true))) {
       mPluginsWaitingForDeletion.RemoveElement(aDirectory);
       NS_DispatchToMainThread(new NotifyObserversTask("gmp-directory-deleted",
@@ -1054,20 +1101,20 @@ GeckoMediaPluginServiceParent::RemoveOnGMPThread(const nsAString& aDirectory,
 }
 
 // May remove when Bug 1043671 is fixed
-static void Dummy(nsRefPtr<GMPParent>& aOnDeathsDoor)
+static void Dummy(RefPtr<GMPParent>& aOnDeathsDoor)
 {
   // exists solely to do nothing and let the Runnable kill the GMPParent
   // when done.
 }
 
 void
-GeckoMediaPluginServiceParent::PluginTerminated(const nsRefPtr<GMPParent>& aPlugin)
+GeckoMediaPluginServiceParent::PluginTerminated(const RefPtr<GMPParent>& aPlugin)
 {
   MOZ_ASSERT(NS_GetCurrentThread() == mGMPThread);
 
   if (aPlugin->IsMarkedForDeletion()) {
     nsCString path8;
-    nsRefPtr<nsIFile> dir = aPlugin->GetDirectory();
+    RefPtr<nsIFile> dir = aPlugin->GetDirectory();
     nsresult rv = dir->GetNativePath(path8);
     NS_ENSURE_SUCCESS_VOID(rv);
 
@@ -1079,12 +1126,12 @@ GeckoMediaPluginServiceParent::PluginTerminated(const nsRefPtr<GMPParent>& aPlug
 }
 
 void
-GeckoMediaPluginServiceParent::ReAddOnGMPThread(const nsRefPtr<GMPParent>& aOld)
+GeckoMediaPluginServiceParent::ReAddOnGMPThread(const RefPtr<GMPParent>& aOld)
 {
   MOZ_ASSERT(NS_GetCurrentThread() == mGMPThread);
   LOGD(("%s::%s: %p", __CLASS__, __FUNCTION__, (void*) aOld));
 
-  nsRefPtr<GMPParent> gmp;
+  RefPtr<GMPParent> gmp;
   if (!mShuttingDownOnGMPThread) {
     // Don't re-add plugin if we're shutting down. Let the old plugin die.
     gmp = ClonePlugin(aOld);
@@ -1201,6 +1248,7 @@ GeckoMediaPluginServiceParent::IsPersistentStorageAllowed(const nsACString& aNod
 nsresult
 GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
                                          const nsAString& aTopLevelOrigin,
+                                         const nsAString& aGMPName,
                                          bool aInPrivateBrowsing,
                                          nsACString& aOutId)
 {
@@ -1233,11 +1281,12 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
                                   HashString(aTopLevelOrigin));
 
   if (aInPrivateBrowsing) {
-    // For PB mode, we store the node id, indexed by the origin pair,
-    // so that if the same origin pair is opened in this session, it gets
-    // the same node id.
+    // For PB mode, we store the node id, indexed by the origin pair and GMP name,
+    // so that if the same origin pair is opened for the same GMP in this session,
+    // it gets the same node id.
+    const uint32_t pbHash = AddToHash(HashString(aGMPName), hash);
     nsCString* salt = nullptr;
-    if (!(salt = mTempNodeIds.Get(hash))) {
+    if (!(salt = mTempNodeIds.Get(pbHash))) {
       // No salt stored, generate and temporarily store some for this id.
       nsAutoCString newSalt;
       rv = GenerateRandomPathName(newSalt, NodeIdSaltLength);
@@ -1245,7 +1294,7 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
         return rv;
       }
       salt = new nsCString(newSalt);
-      mTempNodeIds.Put(hash, salt);
+      mTempNodeIds.Put(pbHash, salt);
       mPersistentStorageAllowed.Put(*salt, false);
     }
     aOutId = *salt;
@@ -1254,9 +1303,20 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
 
   // Otherwise, try to see if we've previously generated and stored salt
   // for this origin pair.
-  nsCOMPtr<nsIFile> path; // $profileDir/gmp/
+  nsCOMPtr<nsIFile> path; // $profileDir/gmp/$platform/
   rv = GetStorageDir(getter_AddRefs(path));
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = path->Append(aGMPName);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // $profileDir/gmp/$platform/$gmpName/
+  rv = path->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  if (rv != NS_ERROR_FILE_ALREADY_EXISTS && NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
@@ -1265,7 +1325,7 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
     return rv;
   }
 
-  // $profileDir/gmp/id/
+  // $profileDir/gmp/$platform/$gmpName/id/
   rv = path->Create(nsIFile::DIRECTORY_TYPE, 0700);
   if (rv != NS_ERROR_FILE_ALREADY_EXISTS && NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -1274,7 +1334,7 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
   nsAutoCString hashStr;
   hashStr.AppendInt((int64_t)hash);
 
-  // $profileDir/gmp/id/$hash
+  // $profileDir/gmp/$platform/$gmpName/id/$hash
   rv = path->AppendNative(hashStr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -1311,13 +1371,13 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
     }
     MOZ_ASSERT(salt.Length() == NodeIdSaltLength);
 
-    // $profileDir/gmp/id/$hash/salt
+    // $profileDir/gmp/$platform/$gmpName/id/$hash/salt
     rv = WriteToFile(path, NS_LITERAL_CSTRING("salt"), salt);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    // $profileDir/gmp/id/$hash/origin
+    // $profileDir/gmp/$platform/$gmpName/id/$hash/origin
     rv = WriteToFile(path,
                      NS_LITERAL_CSTRING("origin"),
                      NS_ConvertUTF16toUTF8(aOrigin));
@@ -1325,7 +1385,7 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
       return rv;
     }
 
-    // $profileDir/gmp/id/$hash/topLevelOrigin
+    // $profileDir/gmp/$platform/$gmpName/id/$hash/topLevelOrigin
     rv = WriteToFile(path,
                      NS_LITERAL_CSTRING("topLevelOrigin"),
                      NS_ConvertUTF16toUTF8(aTopLevelOrigin));
@@ -1349,11 +1409,12 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
 NS_IMETHODIMP
 GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
                                          const nsAString& aTopLevelOrigin,
+                                         const nsAString& aGMPName,
                                          bool aInPrivateBrowsing,
                                          UniquePtr<GetNodeIdCallback>&& aCallback)
 {
   nsCString nodeId;
-  nsresult rv = GetNodeId(aOrigin, aTopLevelOrigin, aInPrivateBrowsing, nodeId);
+  nsresult rv = GetNodeId(aOrigin, aTopLevelOrigin, aGMPName, aInPrivateBrowsing, nodeId);
   aCallback->Done(rv, nodeId);
   return rv;
 }
@@ -1416,7 +1477,7 @@ MatchOrigin(nsIFile* aPath, const nsACString& aSite)
 }
 
 template<typename T> static void
-KillPlugins(const nsTArray<nsRefPtr<GMPParent>>& aPlugins,
+KillPlugins(const nsTArray<RefPtr<GMPParent>>& aPlugins,
             Mutex& aMutex, T&& aFilter)
 {
   // Shutdown the plugins when |aFilter| evaluates to true.
@@ -1425,11 +1486,11 @@ KillPlugins(const nsTArray<nsRefPtr<GMPParent>>& aPlugins,
   // Note: we can't shut them down while holding the lock,
   // as the lock is not re-entrant and shutdown requires taking the lock.
   // The plugin list is only edited on the GMP thread, so this should be OK.
-  nsTArray<nsRefPtr<GMPParent>> pluginsToKill;
+  nsTArray<RefPtr<GMPParent>> pluginsToKill;
   {
     MutexAutoLock lock(aMutex);
     for (size_t i = 0; i < aPlugins.Length(); i++) {
-      nsRefPtr<GMPParent> parent(aPlugins[i]);
+      RefPtr<GMPParent> parent(aPlugins[i]);
       if (aFilter(parent)) {
         pluginsToKill.AppendElement(parent);
       }
@@ -1470,54 +1531,40 @@ private:
 void
 GeckoMediaPluginServiceParent::ClearNodeIdAndPlugin(DirectoryFilter& aFilter)
 {
-  nsresult rv;
+  // $profileDir/gmp/$platform/
   nsCOMPtr<nsIFile> path;
-
-  // $profileDir/gmp/
-  rv = GetStorageDir(getter_AddRefs(path));
+  nsresult rv = GetStorageDir(getter_AddRefs(path));
   if (NS_FAILED(rv)) {
     return;
   }
 
-  // $profileDir/gmp/id/
-  rv = path->AppendNative(NS_LITERAL_CSTRING("id"));
-  if (NS_FAILED(rv)) {
+  // Iterate all sub-folders of $profileDir/gmp/$platform/, i.e. the dirs in which
+  // specific GMPs store their data.
+  DirectoryEnumerator iter(path, DirectoryEnumerator::DirsOnly);
+  for (nsCOMPtr<nsIFile> pluginDir; (pluginDir = iter.Next()) != nullptr;) {
+    ClearNodeIdAndPlugin(pluginDir, aFilter);
+  }
+}
+
+void
+GeckoMediaPluginServiceParent::ClearNodeIdAndPlugin(nsIFile* aPluginStorageDir,
+                                                    DirectoryFilter& aFilter)
+{
+  // $profileDir/gmp/$platform/$gmpName/id/
+  nsCOMPtr<nsIFile> path = CloneAndAppend(aPluginStorageDir, NS_LITERAL_STRING("id"));
+  if (!path) {
     return;
   }
 
-  // Iterate all sub-folders of $profileDir/gmp/id/
-  nsCOMPtr<nsISimpleEnumerator> iter;
-  rv = path->GetDirectoryEntries(getter_AddRefs(iter));
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
-  bool hasMore = false;
+  // Iterate all sub-folders of $profileDir/gmp/$platform/$gmpName/id/
   nsTArray<nsCString> nodeIDsToClear;
-  while (NS_SUCCEEDED(iter->HasMoreElements(&hasMore)) && hasMore) {
-    nsCOMPtr<nsISupports> supports;
-    rv = iter->GetNext(getter_AddRefs(supports));
-    if (NS_FAILED(rv)) {
-      continue;
-    }
-
-    // $profileDir/gmp/id/$hash
-    nsCOMPtr<nsIFile> dirEntry(do_QueryInterface(supports, &rv));
-    if (NS_FAILED(rv)) {
-      continue;
-    }
-
-    // Skip non-directory files.
-    bool isDirectory = false;
-    rv = dirEntry->IsDirectory(&isDirectory);
-    if (NS_FAILED(rv) || !isDirectory) {
-      continue;
-    }
-
+  DirectoryEnumerator iter(path, DirectoryEnumerator::DirsOnly);
+  for (nsCOMPtr<nsIFile> dirEntry; (dirEntry = iter.Next()) != nullptr;) {
+    // dirEntry is the hash of origins, i.e.:
+    // $profileDir/gmp/$platform/$gmpName/id/$originHash/
     if (!aFilter(dirEntry)) {
       continue;
     }
-
     nsAutoCString salt;
     if (NS_SUCCEEDED(ReadSalt(dirEntry, salt))) {
       // Keep node IDs to clear data/plugins associated with them later.
@@ -1531,28 +1578,23 @@ GeckoMediaPluginServiceParent::ClearNodeIdAndPlugin(DirectoryFilter& aFilter)
     }
   }
 
-  // Kill plugins that have node IDs to be cleared.
+  // Kill plugin instances that have node IDs being cleared.
   KillPlugins(mPlugins, mMutex, NodeFilter(nodeIDsToClear));
 
-  // Clear all matching $profileDir/gmp/storage/$nodeId/
-  rv = GetStorageDir(getter_AddRefs(path));
-  if (NS_FAILED(rv)) {
+  // Clear all storage in $profileDir/gmp/$platform/$gmpName/storage/$nodeId/
+  path = CloneAndAppend(aPluginStorageDir, NS_LITERAL_STRING("storage"));
+  if (!path) {
     return;
   }
 
-  rv = path->AppendNative(NS_LITERAL_CSTRING("storage"));
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
-  for (size_t i = 0; i < nodeIDsToClear.Length(); i++) {
+  for (const nsCString& nodeId : nodeIDsToClear) {
     nsCOMPtr<nsIFile> dirEntry;
-    rv = path->Clone(getter_AddRefs(dirEntry));
+    nsresult rv = path->Clone(getter_AddRefs(dirEntry));
     if (NS_FAILED(rv)) {
       continue;
     }
 
-    rv = dirEntry->AppendNative(nodeIDsToClear[i]);
+    rv = dirEntry->AppendNative(nodeId);
     if (NS_FAILED(rv)) {
       continue;
     }
@@ -1587,16 +1629,9 @@ GeckoMediaPluginServiceParent::ClearRecentHistoryOnGMPThread(PRTime aSince)
   MOZ_ASSERT(NS_GetCurrentThread() == mGMPThread);
   LOGD(("%s::%s: since=%lld", __CLASS__, __FUNCTION__, (int64_t)aSince));
 
-  nsCOMPtr<nsIFile> storagePath;
-  nsCOMPtr<nsIFile> temp;
-  if (NS_SUCCEEDED(GetStorageDir(getter_AddRefs(temp))) &&
-      NS_SUCCEEDED(temp->AppendNative(NS_LITERAL_CSTRING("storage")))) {
-    storagePath = temp.forget();
-  }
-
   struct MTimeFilter : public DirectoryFilter {
-    explicit MTimeFilter(PRTime aSince, already_AddRefed<nsIFile> aPath)
-      : mSince(aSince), mStoragePath(aPath) {}
+    explicit MTimeFilter(PRTime aSince)
+      : mSince(aSince) {}
 
     // Return true if any files under aPath is modified after |mSince|.
     bool IsModifiedAfter(nsIFile* aPath) {
@@ -1605,63 +1640,47 @@ GeckoMediaPluginServiceParent::ClearRecentHistoryOnGMPThread(PRTime aSince)
       if (NS_SUCCEEDED(rv) && lastModified >= mSince) {
         return true;
       }
-      // Check sub-directories recursively
-      nsCOMPtr<nsISimpleEnumerator> iter;
-      rv = aPath->GetDirectoryEntries(getter_AddRefs(iter));
-      if (NS_FAILED(rv)) {
-        return false;
-      }
-
-      bool hasMore = false;
-      while (NS_SUCCEEDED(iter->HasMoreElements(&hasMore)) && hasMore) {
-        nsCOMPtr<nsISupports> supports;
-        rv = iter->GetNext(getter_AddRefs(supports));
-        if (NS_FAILED(rv)) {
-          continue;
-        }
-
-        nsCOMPtr<nsIFile> path(do_QueryInterface(supports, &rv));
-        if (NS_FAILED(rv)) {
-          continue;
-        }
-
-        if (IsModifiedAfter(path)) {
+      DirectoryEnumerator iter(aPath, DirectoryEnumerator::FilesAndDirs);
+      for (nsCOMPtr<nsIFile> dirEntry; (dirEntry = iter.Next()) != nullptr;) {
+        if (IsModifiedAfter(dirEntry)) {
           return true;
         }
       }
       return false;
     }
 
-    // |aPath| is $profileDir/gmp/id/$hash
+    // |aPath| is $profileDir/gmp/$platform/$gmpName/id/$originHash/
     virtual bool operator()(nsIFile* aPath) {
       if (IsModifiedAfter(aPath)) {
         return true;
       }
 
       nsAutoCString salt;
-      nsresult rv = ReadSalt(aPath, salt);
-      if (NS_FAILED(rv)) {
+      if (NS_FAILED(ReadSalt(aPath, salt))) {
         return false;
       }
 
-      // $profileDir/gmp/storage/
-      if (!mStoragePath) {
+      // $profileDir/gmp/$platform/$gmpName/id/
+      nsCOMPtr<nsIFile> idDir;
+      if (NS_FAILED(aPath->GetParent(getter_AddRefs(idDir)))) {
         return false;
       }
-      // $profileDir/gmp/storage/$nodeId/
-      nsCOMPtr<nsIFile> path;
-      rv = mStoragePath->Clone(getter_AddRefs(path));
-      if (NS_FAILED(rv)) {
+      // $profileDir/gmp/$platform/$gmpName/
+      nsCOMPtr<nsIFile> temp;
+      if (NS_FAILED(idDir->GetParent(getter_AddRefs(temp)))) {
         return false;
       }
 
-      rv = path->AppendNative(salt);
-      return NS_SUCCEEDED(rv) && IsModifiedAfter(path);
+      // $profileDir/gmp/$platform/$gmpName/storage/
+      if (NS_FAILED(temp->Append(NS_LITERAL_STRING("storage")))) {
+        return false;
+      }
+      // $profileDir/gmp/$platform/$gmpName/storage/$originSalt
+      return NS_SUCCEEDED(temp->AppendNative(salt)) && IsModifiedAfter(temp);
     }
   private:
     const PRTime mSince;
-    const nsCOMPtr<nsIFile> mStoragePath;
-  } filter(aSince, storagePath.forget());
+  } filter(aSince);
 
   ClearNodeIdAndPlugin(filter);
 
@@ -1690,7 +1709,7 @@ GeckoMediaPluginServiceParent::ClearStorage()
   // Kill plugins with valid nodeIDs.
   KillPlugins(mPlugins, mMutex, &IsNodeIdValid);
 
-  nsCOMPtr<nsIFile> path; // $profileDir/gmp/
+  nsCOMPtr<nsIFile> path; // $profileDir/gmp/$platform/
   nsresult rv = GetStorageDir(getter_AddRefs(path));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
@@ -1717,7 +1736,7 @@ GMPServiceParent::RecvLoadGMP(const nsCString& aNodeId,
                               nsCString* aDisplayName,
                               uint32_t* aPluginId)
 {
-  nsRefPtr<GMPParent> gmp = mService->SelectPluginForAPI(aNodeId, aAPI, aTags);
+  RefPtr<GMPParent> gmp = mService->SelectPluginForAPI(aNodeId, aAPI, aTags);
 
   nsCString api = aTags[0];
   LOGD(("%s: %p returning %p for api %s", __FUNCTION__, (void *)this, (void *)gmp, api.get()));
@@ -1735,10 +1754,11 @@ GMPServiceParent::RecvLoadGMP(const nsCString& aNodeId,
 bool
 GMPServiceParent::RecvGetGMPNodeId(const nsString& aOrigin,
                                    const nsString& aTopLevelOrigin,
+                                   const nsString& aGMPName,
                                    const bool& aInPrivateBrowsing,
                                    nsCString* aID)
 {
-  nsresult rv = mService->GetNodeId(aOrigin, aTopLevelOrigin,
+  nsresult rv = mService->GetNodeId(aOrigin, aTopLevelOrigin, aGMPName,
                                     aInPrivateBrowsing, *aID);
   return NS_SUCCEEDED(rv);
 }
@@ -1758,7 +1778,7 @@ GMPServiceParent::RecvGetGMPPluginVersionForAPI(const nsCString& aAPI,
                                                 bool* aHasPlugin,
                                                 nsCString* aVersion)
 {
-  nsRefPtr<GeckoMediaPluginServiceParent> service =
+  RefPtr<GeckoMediaPluginServiceParent> service =
     GeckoMediaPluginServiceParent::GetSingleton();
   return service &&
          NS_SUCCEEDED(service->GetPluginVersionForAPI(aAPI, &aTags, aHasPlugin,
@@ -1820,7 +1840,7 @@ private:
 PGMPServiceParent*
 GMPServiceParent::Create(Transport* aTransport, ProcessId aOtherPid)
 {
-  nsRefPtr<GeckoMediaPluginServiceParent> gmp =
+  RefPtr<GeckoMediaPluginServiceParent> gmp =
     GeckoMediaPluginServiceParent::GetSingleton();
 
   nsAutoPtr<GMPServiceParent> serviceParent(new GMPServiceParent(gmp));

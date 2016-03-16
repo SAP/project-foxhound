@@ -83,6 +83,7 @@ if [[ "$OSTYPE" == darwin* ]]; then
   if [ "$VARIANT" = "arm-sim-osx" ]; then
     USE_64BIT=false
   fi
+  source "$ABSDIR/macbuildenv.sh"
 elif [ "$OSTYPE" = "linux-gnu" ]; then
   if [ -n "$AUTOMATION" ]; then
       GCCDIR="${GCCDIR:-/tools/gcc-4.7.2-0moz1}"
@@ -147,7 +148,10 @@ if $USE_64BIT; then
   fi
 else
   NSPR64=""
-  if [ "$OSTYPE" != "msys" ]; then
+  if [ "$OSTYPE" == darwin* ]; then
+    export CC="${CC:-/usr/bin/clang} -arch i386"
+    export CXX="${CXX:-/usr/bin/clang++} -arch i386"
+  elif [ "$OSTYPE" != "msys" ]; then
     export CC="${CC:-/usr/bin/gcc} -m32"
     export CXX="${CXX:-/usr/bin/g++} -m32"
     export AR=ar
@@ -209,23 +213,28 @@ elif [[ "$VARIANT" = "warnaserr" ||
         "$VARIANT" = "plain" ]]; then
     export JSTESTS_EXTRA_ARGS=--jitflags=all
 elif [[ "$VARIANT" = "arm-sim" ||
+        "$VARIANT" = "arm-sim-osx" ||
         "$VARIANT" = "plaindebug" ]]; then
     export JSTESTS_EXTRA_ARGS=--jitflags=debug
 elif [[ "$VARIANT" = arm64* ]]; then
     # The ARM64 JIT is not yet fully functional, and asm.js does not work.
-    # Just run "make check". We mostly care about not breaking the build at this point.
+    # Just run "make check" and jsapi-tests.
     RUN_JITTEST=false
-    RUN_JSAPITESTS=false
     RUN_JSTESTS=false
 fi
 
 $COMMAND_PREFIX $MAKE check || exit 1
+
+RESULT=0
+
 if $RUN_JITTEST; then
-    $COMMAND_PREFIX $MAKE check-jit-test || exit 1
+    $COMMAND_PREFIX $MAKE check-jit-test || RESULT=$?
 fi
 if $RUN_JSAPITESTS; then
-    $COMMAND_PREFIX $OBJDIR/dist/bin/jsapi-tests || exit 1
+    $COMMAND_PREFIX $OBJDIR/dist/bin/jsapi-tests || RESULT=$?
 fi
 if $RUN_JSTESTS; then
-    $COMMAND_PREFIX $MAKE check-jstests || exit 1
+    $COMMAND_PREFIX $MAKE check-jstests || RESULT=$?
 fi
+
+exit $RESULT

@@ -38,6 +38,7 @@ XPIDL_SOURCES += [
     'nsICryptoHMAC.idl',
     'nsIDashboard.idl',
     'nsIDashboardEventNotifier.idl',
+    'nsIDeprecationWarner.idl',
     'nsIDivertableChannel.idl',
     'nsIDownloader.idl',
     'nsIEncodedChannel.idl',
@@ -47,6 +48,7 @@ XPIDL_SOURCES += [
     'nsIForcePendingChannel.idl',
     'nsIHttpPushListener.idl',
     'nsIIncrementalDownload.idl',
+    'nsIIncrementalStreamLoader.idl',
     'nsIInputStreamChannel.idl',
     'nsIInputStreamPump.idl',
     'nsIIOService.idl',
@@ -68,7 +70,9 @@ XPIDL_SOURCES += [
     'nsINSSErrorsService.idl',
     'nsINullChannel.idl',
     'nsIPACGenerator.idl',
+    'nsIPackagedAppChannelListener.idl',
     'nsIPackagedAppService.idl',
+    'nsIPackagedAppUtils.idl',
     'nsIPackagedAppVerifier.idl',
     'nsIParentChannel.idl',
     'nsIParentRedirectingChannel.idl',
@@ -127,7 +131,6 @@ XPIDL_SOURCES += [
     'nsIUploadChannel.idl',
     'nsIUploadChannel2.idl',
     'nsIURI.idl',
-    'nsIURIChecker.idl',
     'nsIURIClassifier.idl',
     'nsIURIWithPrincipal.idl',
     'nsIURL.idl',
@@ -165,6 +168,7 @@ EXPORTS += [
 
 EXPORTS.mozilla += [
     'LoadInfo.h',
+    'LoadTainting.h',
 ]
 
 EXPORTS.mozilla.net += [
@@ -209,6 +213,7 @@ UNIFIED_SOURCES += [
     'nsDownloader.cpp',
     'nsFileStreams.cpp',
     'nsIncrementalDownload.cpp',
+    'nsIncrementalStreamLoader.cpp',
     'nsInputStreamChannel.cpp',
     'nsInputStreamPump.cpp',
     'nsIOService.cpp',
@@ -240,7 +245,6 @@ UNIFIED_SOURCES += [
     'nsTransportUtils.cpp',
     'nsUDPSocket.cpp',
     'nsUnicharStreamLoader.cpp',
-    'nsURIChecker.cpp',
     'nsURLHelper.cpp',
     'nsURLParsers.cpp',
     'OfflineObserver.cpp',

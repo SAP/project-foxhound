@@ -30,6 +30,10 @@
 #define ATTR_NONCONFIGURABLE    0x10
 #define ATTR_NONWRITABLE        0x20
 
+// The extended slot in which the self-hosted name for self-hosted builtins is
+// stored.
+#define LAZY_FUNCTION_NAME_SLOT 0
+
 // Stores the private WeakMap slot used for WeakSets
 #define WEAKSET_MAP_SLOT 0
 
@@ -39,9 +43,17 @@
 // Used for list, i.e. Array and String, iterators.
 #define ITERATOR_SLOT_NEXT_INDEX 1
 #define ITERATOR_SLOT_ITEM_KIND 2
+// Used for ListIterator.
+#define ITERATOR_SLOT_NEXT_METHOD 2
 
 #define ITEM_KIND_KEY 0
 #define ITEM_KIND_VALUE 1
 #define ITEM_KIND_KEY_AND_VALUE 2
+
+// NB: keep these in sync with the copy in jsfriendapi.h.
+#define JSITER_OWNONLY    0x8   /* iterate over obj's own properties only */
+#define JSITER_HIDDEN     0x10  /* also enumerate non-enumerable properties */
+#define JSITER_SYMBOLS    0x20  /* also include symbol property keys */
+#define JSITER_SYMBOLSONLY 0x40 /* exclude string property keys */
 
 #endif

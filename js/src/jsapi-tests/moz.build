@@ -18,6 +18,7 @@ UNIFIED_SOURCES += [
     'testClassGetter.cpp',
     'testCloneScript.cpp',
     'testContexts.cpp',
+    'testDateToLocaleString.cpp',
     'testDebugger.cpp',
     'testDeepFreeze.cpp',
     'testDefineGetterSetterNonEnumerable.cpp',
@@ -42,6 +43,8 @@ UNIFIED_SOURCES += [
     'testGCMarking.cpp',
     'testGCOutOfMemory.cpp',
     'testGCStoreBufferRemoval.cpp',
+    'testGCUniqueId.cpp',
+    'testGCWeakRef.cpp',
     'testGetPropertyDescriptor.cpp',
     'testHashTable.cpp',
     'testIndexToString.cpp',
@@ -60,7 +63,6 @@ UNIFIED_SOURCES += [
     'testNullRoot.cpp',
     'testObjectEmulatingUndefined.cpp',
     'testOOM.cpp',
-    'testOps.cpp',
     'testParseJSON.cpp',
     'testPersistentRooted.cpp',
     'testPreserveJitCode.cpp',
@@ -88,6 +90,11 @@ UNIFIED_SOURCES += [
     'testXDR.cpp',
 ]
 
+SOURCES += [
+    # There are clashing definitions of js::jit::AssemblerBuffer.
+    'testAssemblerBuffer.cpp',
+]
+
 if CONFIG['ENABLE_ION']:
     UNIFIED_SOURCES += [
         'testJitDCEinGVN.cpp',
@@ -102,14 +109,13 @@ if CONFIG['ENABLE_ION']:
 
 DEFINES['EXPORT_JS_API'] = True
 
-LOCAL_INCLUDES += ['..']
-GENERATED_INCLUDES += ['..']
+LOCAL_INCLUDES += [
+    '!..',
+    '..',
+]
 
 USE_LIBS += [
     'static:js',
 ]
 
 OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
-
-if not CONFIG['GNU_CXX']:
-    ALLOW_COMPILER_WARNINGS = True

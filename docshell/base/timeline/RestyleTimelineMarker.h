@@ -26,13 +26,15 @@ public:
 
   virtual void AddDetails(JSContext* aCx, dom::ProfileTimelineMarker& aMarker) override
   {
+    TimelineMarker::AddDetails(aCx, aMarker);
+
     if (GetTracingType() == MarkerTracingType::START) {
       aMarker.mRestyleHint.Construct(mRestyleHint);
     }
   }
 
 private:
-  nsAutoString mRestyleHint;
+  nsString mRestyleHint;
 };
 
 } // namespace mozilla

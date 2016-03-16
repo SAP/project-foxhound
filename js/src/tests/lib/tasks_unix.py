@@ -5,7 +5,7 @@
 import errno, os, select
 from datetime import datetime, timedelta
 from progressbar import ProgressBar
-from results import NullTestOutput, TestOutput
+from results import NullTestOutput, TestOutput, escape_cmdline
 
 class Task(object):
     def __init__(self, test, prefix, pid, stdout, stderr):
@@ -18,8 +18,15 @@ class Task(object):
         self.out = []
         self.err = []
 
-def spawn_test(test, prefix, passthrough=False):
+def spawn_test(test, prefix, passthrough, run_skipped, show_cmd):
     """Spawn one child, return a task struct."""
+    if not test.enable and not run_skipped:
+        return None
+
+    cmd = test.get_command(prefix)
+    if show_cmd:
+        print(escape_cmdline(cmd))
+
     if not passthrough:
         (rout, wout) = os.pipe()
         (rerr, werr) = os.pipe()
@@ -39,7 +46,6 @@ def spawn_test(test, prefix, passthrough=False):
         os.dup2(wout, 1)
         os.dup2(werr, 2)
 
-    cmd = test.get_command(prefix)
     os.execvp(cmd[0], cmd)
 
 def total_seconds(td):
@@ -137,10 +143,10 @@ def timed_out(task, timeout):
 
 def reap_zombies(tasks, timeout):
     """
-    Search for children of this process that have finished.  If they are tasks,
-    then this routine will clean up the child and send a TestOutput to the
-    results channel.  This method returns a new task list that has had the ended
-    tasks removed.
+    Search for children of this process that have finished. If they are tasks,
+    then this routine will clean up the child. This method returns a new task
+    list that has had the ended tasks removed, followed by the list of finished
+    tasks.
     """
     finished = []
     while True:
@@ -182,7 +188,7 @@ def kill_undead(tasks, timeout):
         if timed_out(task, timeout):
             os.kill(task.pid, 9)
 
-def run_all_tests(tests, prefix, results, options):
+def run_all_tests(tests, prefix, pb, options):
     # Copy and reverse for fast pop off end.
     tests = list(tests)
     tests = tests[:]
@@ -194,10 +200,12 @@ def run_all_tests(tests, prefix, results, options):
     while len(tests) or len(tasks):
         while len(tests) and len(tasks) < options.worker_count:
             test = tests.pop()
-            if not test.enable and not options.run_skipped:
-                yield NullTestOutput(test)
+            task = spawn_test(test, prefix,
+                    options.passthrough, options.run_skipped, options.show_cmd)
+            if task:
+                tasks.append(task)
             else:
-                tasks.append(spawn_test(test, prefix, options.passthrough))
+                yield NullTestOutput(test)
 
         timeout = get_max_wait(tasks, options.timeout)
         read_input(tasks, timeout)
@@ -208,3 +216,9 @@ def run_all_tests(tests, prefix, results, options):
         # With Python3.4+ we could use yield from to remove this loop.
         for out in finished:
             yield out
+
+        # If we did not finish any tasks, poke the progress bar to show that
+        # the test harness is at least not frozen.
+        if len(finished) == 0:
+            pb.poke()
+

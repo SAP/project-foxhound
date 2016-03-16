@@ -14,7 +14,7 @@
 namespace mozilla {
 
 #ifndef IC_LOG
-PRLogModuleInfo* GetICLog();
+LogModule* GetICLog();
 #define IC_LOG(...) MOZ_LOG(GetICLog(), mozilla::LogLevel::Debug, (__VA_ARGS__))
 #endif
 
@@ -84,7 +84,7 @@ protected:
   // should return NS_ERROR_NOT_IMPLEMENTED.
   nsresult TakePhotoByMediaEngine();
 
-  nsRefPtr<VideoStreamTrack> mVideoStreamTrack;
+  RefPtr<VideoStreamTrack> mVideoStreamTrack;
 };
 
 } // namespace dom

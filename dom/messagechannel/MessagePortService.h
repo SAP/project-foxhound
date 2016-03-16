@@ -29,13 +29,13 @@ public:
 
   bool DisentanglePort(
                  MessagePortParent* aParent,
-                 FallibleTArray<nsRefPtr<SharedMessagePortMessage>>& aMessages);
+                 FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
 
   bool ClosePort(MessagePortParent* aParent);
 
   bool PostMessages(
                  MessagePortParent* aParent,
-                 FallibleTArray<nsRefPtr<SharedMessagePortMessage>>& aMessages);
+                 FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
 
   void ParentDestroy(MessagePortParent* aParent);
 
@@ -46,7 +46,7 @@ public:
 private:
   ~MessagePortService() {}
 
-  void CloseAll(const nsID& aUUID);
+  void CloseAll(const nsID& aUUID, bool aForced = false);
   void MaybeShutdown();
 
   class MessagePortServiceData;

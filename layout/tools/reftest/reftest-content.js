@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const CC = Components.classes;
+var CC = Components.classes;
 const CI = Components.interfaces;
 const CR = Components.results;
 const CU = Components.utils;
@@ -565,7 +565,9 @@ function WaitForTestEnd(contentRootElement, inPrintMode, spellCheckedElements) {
             };
             os.addObserver(flushWaiter, "apz-repaints-flushed", false);
 
-            if (windowUtils().flushApzRepaints()) {
+            var willSnapshot = (gCurrentTestType != TYPE_SCRIPT) &&
+                               (gCurrentTestType != TYPE_LOAD);
+            if (willSnapshot && windowUtils().flushApzRepaints()) {
                 LogInfo("MakeProgress: done requesting APZ flush");
             } else {
                 LogInfo("MakeProgress: APZ flush not required");

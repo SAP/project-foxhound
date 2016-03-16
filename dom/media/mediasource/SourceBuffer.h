@@ -147,7 +147,7 @@ public:
     return mUpdating;
   }
 
-  already_AddRefed<TimeRanges> GetBuffered(ErrorResult& aRv);
+  TimeRanges* GetBuffered(ErrorResult& aRv);
   media::TimeIntervals GetTimeIntervals();
 
   double TimestampOffset() const
@@ -213,10 +213,6 @@ public:
     return mActive;
   }
 
-#if defined(DEBUG)
-  void Dump(const char* aPath);
-#endif
-
 private:
   ~SourceBuffer();
 
@@ -238,7 +234,7 @@ private:
 
   // Shared implementation of AppendBuffer overloads.
   void AppendData(const uint8_t* aData, uint32_t aLength, ErrorResult& aRv);
-  void BufferAppend(uint32_t aAppendID);
+  void BufferAppend();
 
   // Implement the "Append Error Algorithm".
   // Will call endOfStream() with "decode" error if aDecodeError is true.
@@ -255,25 +251,21 @@ private:
   void AppendDataCompletedWithSuccess(bool aHasActiveTracks);
   void AppendDataErrored(nsresult aError);
 
-  nsRefPtr<MediaSource> mMediaSource;
+  RefPtr<MediaSource> mMediaSource;
 
   uint32_t mEvictionThreshold;
 
-  nsRefPtr<SourceBufferContentManager> mContentManager;
-  nsRefPtr<SourceBufferAttributes> mAttributes;
+  RefPtr<SourceBufferContentManager> mContentManager;
+  RefPtr<SourceBufferAttributes> mAttributes;
 
   bool mUpdating;
 
   mozilla::Atomic<bool> mActive;
 
-  // Each time mUpdating is set to true, mUpdateID will be incremented.
-  // This allows for a queued AppendData task to identify if it was earlier
-  // aborted and another AppendData queued.
-  uint32_t mUpdateID;
-  int64_t mReportedOffset;
-
   MozPromiseRequestHolder<SourceBufferContentManager::AppendPromise> mPendingAppend;
   const nsCString mType;
+
+  RefPtr<TimeRanges> mBuffered;
 };
 
 } // namespace dom

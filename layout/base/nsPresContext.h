@@ -38,6 +38,7 @@
 #include "ScrollbarStyles.h"
 #include "nsIMessageManager.h"
 #include "mozilla/RestyleLogging.h"
+#include "Units.h"
 
 class nsAString;
 class nsIPrintSettings;
@@ -206,7 +207,7 @@ public:
    * be found (e.g. it's detached).
    */
   nsRootPresContext* GetRootPresContext();
-  nsRootPresContext* GetDisplayRootPresContext();
+
   virtual bool IsRoot() { return false; }
 
   nsIDocument* Document() const
@@ -524,10 +525,12 @@ public:
 
   nsDeviceContext* DeviceContext() { return mDeviceContext; }
   mozilla::EventStateManager* EventStateManager() { return mEventManager; }
-  nsIAtom* GetLanguageFromCharset() { return mLanguage; }
+  nsIAtom* GetLanguageFromCharset() const { return mLanguage; }
+  already_AddRefed<nsIAtom> GetContentLanguage() const;
 
   float TextZoom() { return mTextZoom; }
   void SetTextZoom(float aZoom) {
+    MOZ_ASSERT(aZoom > 0.0f, "invalid zoom factor");
     if (aZoom == mTextZoom)
       return;
 
@@ -636,6 +639,12 @@ public:
   float DevPixelsToFloatCSSPixels(int32_t aPixels)
   { return AppUnitsToFloatCSSPixels(DevPixelsToAppUnits(aPixels)); }
 
+  mozilla::CSSToLayoutDeviceScale CSSToDevPixelScale() const
+  {
+    return mozilla::CSSToLayoutDeviceScale(
+        float(AppUnitsPerCSSPixel()) / float(AppUnitsPerDevPixel()));
+  }
+
   // If there is a remainder, it is rounded to nearest app units.
   nscoord GfxUnitsToAppUnits(gfxFloat aGfxUnits) const;
 
@@ -665,10 +674,17 @@ public:
   nscoord RoundAppUnitsToNearestDevPixels(nscoord aAppUnits) const
   { return DevPixelsToAppUnits(AppUnitsToDevPixels(aAppUnits)); }
 
-  void SetViewportScrollbarStylesOverride(const ScrollbarStyles& aScrollbarStyle)
-  {
-    mViewportStyleScrollbar = aScrollbarStyle;
-  }
+  /**
+   * This checks the root element and the HTML BODY, if any, for an "overflow"
+   * property that should be applied to the viewport. If one is found then we
+   * return the element that we took the overflow from (which should then be
+   * treated as "overflow: visible"), and we store the overflow style here.
+   * If the document is in fullscreen, and the fullscreen element is not the
+   * root, the scrollbar of viewport will be suppressed.
+   * @return if scroll was propagated from some content node, the content node
+   *         it was propagated from.
+   */
+  nsIContent* UpdateViewportScrollbarStylesOverride();
   ScrollbarStyles GetViewportScrollbarStylesOverride()
   {
     return mViewportStyleScrollbar;
@@ -1088,28 +1104,13 @@ protected:
     LangGroupFontPrefs()
       : mLangGroup(nullptr)
       , mMinimumFontSize(0)
-      , mDefaultVariableFont(mozilla::eFamily_serif, NS_FONT_STYLE_NORMAL,
-                             NS_FONT_WEIGHT_NORMAL,
-                             NS_FONT_STRETCH_NORMAL, 0, 0)
-      , mDefaultFixedFont(mozilla::eFamily_monospace, NS_FONT_STYLE_NORMAL,
-                          NS_FONT_WEIGHT_NORMAL,
-                          NS_FONT_STRETCH_NORMAL, 0, 0)
-      , mDefaultSerifFont(mozilla::eFamily_serif, NS_FONT_STYLE_NORMAL,
-                          NS_FONT_WEIGHT_NORMAL,
-                          NS_FONT_STRETCH_NORMAL, 0, 0)
-      , mDefaultSansSerifFont(mozilla::eFamily_sans_serif,
-                              NS_FONT_STYLE_NORMAL,
-                              NS_FONT_WEIGHT_NORMAL,
-                              NS_FONT_STRETCH_NORMAL, 0, 0)
-      , mDefaultMonospaceFont(mozilla::eFamily_monospace, NS_FONT_STYLE_NORMAL,
-                              NS_FONT_WEIGHT_NORMAL,
-                              NS_FONT_STRETCH_NORMAL, 0, 0)
-      , mDefaultCursiveFont(mozilla::eFamily_cursive, NS_FONT_STYLE_NORMAL,
-                            NS_FONT_WEIGHT_NORMAL,
-                            NS_FONT_STRETCH_NORMAL, 0, 0)
-      , mDefaultFantasyFont(mozilla::eFamily_fantasy, NS_FONT_STYLE_NORMAL,
-                            NS_FONT_WEIGHT_NORMAL,
-                            NS_FONT_STRETCH_NORMAL, 0, 0)
+      , mDefaultVariableFont(mozilla::eFamily_serif, 0)
+      , mDefaultFixedFont(mozilla::eFamily_monospace, 0)
+      , mDefaultSerifFont(mozilla::eFamily_serif, 0)
+      , mDefaultSansSerifFont(mozilla::eFamily_sans_serif, 0)
+      , mDefaultMonospaceFont(mozilla::eFamily_monospace, 0)
+      , mDefaultCursiveFont(mozilla::eFamily_cursive, 0)
+      , mDefaultFantasyFont(mozilla::eFamily_fantasy, 0)
     {}
 
     size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
@@ -1213,17 +1214,17 @@ protected:
   // for nulling this pointer before it is destroyed
   nsIPresShell* MOZ_NON_OWNING_REF mShell;         // [WEAK]
   nsCOMPtr<nsIDocument> mDocument;
-  nsRefPtr<nsDeviceContext> mDeviceContext; // [STRONG] could be weak, but
+  RefPtr<nsDeviceContext> mDeviceContext; // [STRONG] could be weak, but
                                             // better safe than sorry.
                                             // Cannot reintroduce cycles
                                             // since there is no dependency
                                             // from gfx back to layout.
-  nsRefPtr<mozilla::EventStateManager> mEventManager;
-  nsRefPtr<nsRefreshDriver> mRefreshDriver;
-  nsRefPtr<nsTransitionManager> mTransitionManager;
-  nsRefPtr<nsAnimationManager> mAnimationManager;
-  nsRefPtr<mozilla::RestyleManager> mRestyleManager;
-  nsRefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
+  RefPtr<mozilla::EventStateManager> mEventManager;
+  RefPtr<nsRefreshDriver> mRefreshDriver;
+  RefPtr<nsTransitionManager> mTransitionManager;
+  RefPtr<nsAnimationManager> mAnimationManager;
+  RefPtr<mozilla::RestyleManager> mRestyleManager;
+  RefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
   nsIAtom* MOZ_UNSAFE_REF("always a static atom") mMedium; // initialized by subclass ctors
   nsCOMPtr<nsIAtom> mMediaEmulated;
 

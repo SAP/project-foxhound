@@ -211,7 +211,8 @@ class BaselineFrame
     unsigned numFormalArgs() const {
         return script()->functionNonDelazifying()->nargs();
     }
-    Value& thisValue() const {
+    Value& thisArgument() const {
+        MOZ_ASSERT(isNonEvalFunctionFrame());
         return *(Value*)(reinterpret_cast<const uint8_t*>(this) +
                          BaselineFrame::Size() +
                          offsetOfThis());
@@ -396,8 +397,11 @@ class BaselineFrame
     bool isFunctionFrame() const {
         return CalleeTokenIsFunction(calleeToken());
     }
+    bool isModuleFrame() const {
+        return CalleeTokenIsModuleScript(calleeToken());
+    }
     bool isGlobalFrame() const {
-        return !CalleeTokenIsFunction(calleeToken());
+        return !isFunctionFrame() && !isModuleFrame();
     }
      bool isEvalFrame() const {
         return flags_ & EVAL;
@@ -408,9 +412,9 @@ class BaselineFrame
     bool isNonStrictEvalFrame() const {
         return isEvalFrame() && !script()->strict();
     }
-    bool isDirectEvalFrame() const;
+    bool isNonGlobalEvalFrame() const;
     bool isNonStrictDirectEvalFrame() const {
-        return isNonStrictEvalFrame() && isDirectEvalFrame();
+        return isNonStrictEvalFrame() && isNonGlobalEvalFrame();
     }
     bool isNonEvalFunctionFrame() const {
         return isFunctionFrame() && !isEvalFrame();
@@ -432,7 +436,7 @@ class BaselineFrame
         return FramePointerOffset + js::jit::JitFrameLayout::offsetOfThis();
     }
     static size_t offsetOfEvalNewTarget() {
-        return offsetOfArg(0);
+        return FramePointerOffset + js::jit::JitFrameLayout::offsetOfEvalNewTarget();
     }
     static size_t offsetOfArg(size_t index) {
         return FramePointerOffset + js::jit::JitFrameLayout::offsetOfActualArg(index);

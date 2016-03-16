@@ -19,6 +19,10 @@ using namespace std;
 #include "FakeMediaStreamsImpl.h"
 #include "nsThreadUtils.h"
 #include "runnable_utils.h"
+#include "signaling/src/common/EncodingConstraints.h"
+
+#include "FakeIPC.h"
+#include "FakeIPC.cpp"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -83,7 +87,7 @@ public:
   void SetRate(int r) {
     rate = r;
   }
-  void Init(mozilla::RefPtr<mozilla::VideoSessionConduit> aSession)
+  void Init(RefPtr<mozilla::VideoSessionConduit> aSession)
   {
         mSession = aSession;
         mLen = ((width * height) * 3 / 2);
@@ -109,7 +113,7 @@ public:
   }
 
 private:
-mozilla::RefPtr<mozilla::VideoSessionConduit> mSession;
+RefPtr<mozilla::VideoSessionConduit> mSession;
 mozilla::ScopedDeletePtr<uint8_t> mFrame;
 int mLen;
 int width, height;
@@ -141,8 +145,8 @@ public:
   {
   }
 
- void Init(mozilla::RefPtr<mozilla::AudioSessionConduit> aSession,
-           mozilla::RefPtr<mozilla::AudioSessionConduit> aOtherSession,
+ void Init(RefPtr<mozilla::AudioSessionConduit> aSession,
+           RefPtr<mozilla::AudioSessionConduit> aOtherSession,
            std::string fileIn, std::string fileOut)
   {
 
@@ -157,8 +161,8 @@ public:
 
 private:
 
-  mozilla::RefPtr<mozilla::AudioSessionConduit> mSession;
-  mozilla::RefPtr<mozilla::AudioSessionConduit> mOtherSession;
+  RefPtr<mozilla::AudioSessionConduit> mSession;
+  RefPtr<mozilla::AudioSessionConduit> mOtherSession;
   std::string iFile;
   std::string oFile;
 
@@ -378,10 +382,21 @@ public:
 
 
   void RenderVideoFrame(const unsigned char* buffer,
-                        unsigned int buffer_size,
+                        size_t buffer_size,
+                        uint32_t y_stride,
+                        uint32_t cbcr_stride,
                         uint32_t time_stamp,
                         int64_t render_time,
-                        const mozilla::ImageHandle& handle)
+                        const mozilla::ImageHandle& handle) override
+  {
+    RenderVideoFrame(buffer, buffer_size, time_stamp, render_time, handle);
+  }
+
+  void RenderVideoFrame(const unsigned char* buffer,
+                        size_t buffer_size,
+                        uint32_t time_stamp,
+                        int64_t render_time,
+                        const mozilla::ImageHandle& handle) override
  {
   //write the frame to the file
   if(VerifyFrame(buffer, buffer_size) == 0)
@@ -393,7 +408,7 @@ public:
   }
  }
 
- void FrameSizeChange(unsigned int, unsigned int, unsigned int)
+ void FrameSizeChange(unsigned int, unsigned int, unsigned int) override
  {
     //do nothing
  }
@@ -465,8 +480,8 @@ public:
   }
 
   //Treat this object as Audio Transport
-  void SetAudioSession(mozilla::RefPtr<mozilla::AudioSessionConduit> aSession,
-                        mozilla::RefPtr<mozilla::AudioSessionConduit>
+  void SetAudioSession(RefPtr<mozilla::AudioSessionConduit> aSession,
+                        RefPtr<mozilla::AudioSessionConduit>
                         aOtherSession)
   {
     mAudioSession = aSession;
@@ -475,8 +490,8 @@ public:
   }
 
   // Treat this object as Video Transport
-  void SetVideoSession(mozilla::RefPtr<mozilla::VideoSessionConduit> aSession,
-                       mozilla::RefPtr<mozilla::VideoSessionConduit>
+  void SetVideoSession(RefPtr<mozilla::VideoSessionConduit> aSession,
+                       RefPtr<mozilla::VideoSessionConduit>
                        aOtherSession)
   {
     mVideoSession = aSession;
@@ -485,10 +500,10 @@ public:
   }
 
 private:
-  mozilla::RefPtr<mozilla::AudioSessionConduit> mAudioSession;
-  mozilla::RefPtr<mozilla::VideoSessionConduit> mVideoSession;
-  mozilla::RefPtr<mozilla::VideoSessionConduit> mOtherVideoSession;
-  mozilla::RefPtr<mozilla::AudioSessionConduit> mOtherAudioSession;
+  RefPtr<mozilla::AudioSessionConduit> mAudioSession;
+  RefPtr<mozilla::VideoSessionConduit> mVideoSession;
+  RefPtr<mozilla::VideoSessionConduit> mOtherVideoSession;
+  RefPtr<mozilla::AudioSessionConduit> mOtherAudioSession;
   int numPkts;
   bool mAudio, mVideo;
 };
@@ -626,9 +641,10 @@ class TransportConduitTest : public ::testing::Test
     err = mVideoSession2->SetReceiverTransport(mVideoTransport);
     ASSERT_EQ(mozilla::kMediaConduitNoError, err);
 
+    mozilla::EncodingConstraints constraints;
     //configure send and recv codecs on theconduit
-    mozilla::VideoCodecConfig cinst1(120, "VP8");
-    mozilla::VideoCodecConfig cinst2(124, "I420");
+    mozilla::VideoCodecConfig cinst1(120, "VP8", constraints);
+    mozilla::VideoCodecConfig cinst2(124, "I420", constraints);
 
 
     std::vector<mozilla::VideoCodecConfig* > rcvCodecList;
@@ -687,7 +703,7 @@ class TransportConduitTest : public ::testing::Test
  void TestVideoConduitCodecAPI()
   {
     int err = 0;
-    mozilla::RefPtr<mozilla::VideoSessionConduit> videoSession;
+    RefPtr<mozilla::VideoSessionConduit> videoSession;
     //get pointer to VideoSessionConduit
     mozilla::SyncRunnable::DispatchToThread(gMainThread,
                                             WrapRunnableNMRet(&videoSession,
@@ -707,8 +723,9 @@ class TransportConduitTest : public ::testing::Test
     cerr << "    1. Same Codec (VP8) Repeated Twice " << endl;
     cerr << "   *************************************************" << endl;
 
-    mozilla::VideoCodecConfig cinst1(120, "VP8");
-    mozilla::VideoCodecConfig cinst2(120, "VP8");
+    mozilla::EncodingConstraints constraints;
+    mozilla::VideoCodecConfig cinst1(120, "VP8", constraints);
+    mozilla::VideoCodecConfig cinst2(120, "VP8", constraints);
     rcvCodecList.push_back(&cinst1);
     rcvCodecList.push_back(&cinst2);
     err = videoSession->ConfigureRecvMediaCodecs(rcvCodecList);
@@ -724,8 +741,8 @@ class TransportConduitTest : public ::testing::Test
     cerr << "   Setting payload 1 with name: I4201234tttttthhhyyyy89087987y76t567r7756765rr6u6676" << endl;
     cerr << "   Setting payload 2 with name of zero length" << endl;
 
-    mozilla::VideoCodecConfig cinst3(124, "I4201234tttttthhhyyyy89087987y76t567r7756765rr6u6676");
-    mozilla::VideoCodecConfig cinst4(124, "");
+    mozilla::VideoCodecConfig cinst3(124, "I4201234tttttthhhyyyy89087987y76t567r7756765rr6u6676", constraints);
+    mozilla::VideoCodecConfig cinst4(124, "", constraints);
 
     rcvCodecList.push_back(&cinst3);
     rcvCodecList.push_back(&cinst4);
@@ -805,8 +822,10 @@ class TransportConduitTest : public ::testing::Test
     if( !mVideoSession )
       ASSERT_NE(mVideoSession, (void*)nullptr);
 
+    mozilla::EncodingConstraints constraints;
+    constraints.maxFs = max_fs;
     // Configure send codecs on the conduit.
-    mozilla::VideoCodecConfig cinst1(120, "VP8", max_fs);
+    mozilla::VideoCodecConfig cinst1(120, "VP8", constraints);
 
     err = mVideoSession->ConfigureSendMediaCodec(&cinst1);
     ASSERT_EQ(mozilla::kMediaConduitNoError, err);
@@ -941,23 +960,24 @@ class TransportConduitTest : public ::testing::Test
   void SetGmpCodecs() {
     mExternalEncoder = mozilla::GmpVideoCodec::CreateEncoder();
     mExternalDecoder = mozilla::GmpVideoCodec::CreateDecoder();
-    mozilla::VideoCodecConfig config(124, "H264");
+    mozilla::EncodingConstraints constraints;
+    mozilla::VideoCodecConfig config(124, "H264", constraints);
     mVideoSession->SetExternalSendCodec(&config, mExternalEncoder);
     mVideoSession2->SetExternalRecvCodec(&config, mExternalDecoder);
   }
 
  private:
   //Audio Conduit Test Objects
-  mozilla::RefPtr<mozilla::AudioSessionConduit> mAudioSession;
-  mozilla::RefPtr<mozilla::AudioSessionConduit> mAudioSession2;
-  mozilla::RefPtr<mozilla::TransportInterface> mAudioTransport;
+  RefPtr<mozilla::AudioSessionConduit> mAudioSession;
+  RefPtr<mozilla::AudioSessionConduit> mAudioSession2;
+  RefPtr<mozilla::TransportInterface> mAudioTransport;
   AudioSendAndReceive audioTester;
 
   //Video Conduit Test Objects
-  mozilla::RefPtr<mozilla::VideoSessionConduit> mVideoSession;
-  mozilla::RefPtr<mozilla::VideoSessionConduit> mVideoSession2;
-  mozilla::RefPtr<mozilla::VideoRenderer> mVideoRenderer;
-  mozilla::RefPtr<mozilla::TransportInterface> mVideoTransport;
+  RefPtr<mozilla::VideoSessionConduit> mVideoSession;
+  RefPtr<mozilla::VideoSessionConduit> mVideoSession2;
+  RefPtr<mozilla::VideoRenderer> mVideoRenderer;
+  RefPtr<mozilla::TransportInterface> mVideoTransport;
   VideoSendAndReceive videoTester;
 
   mozilla::VideoEncoder* mExternalEncoder;

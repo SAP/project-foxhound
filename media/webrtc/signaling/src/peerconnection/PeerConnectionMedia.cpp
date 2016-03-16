@@ -142,7 +142,7 @@ void SourceStreamInfo::DetachMedia_m()
 already_AddRefed<PeerConnectionImpl>
 PeerConnectionImpl::Constructor(const dom::GlobalObject& aGlobal, ErrorResult& rv)
 {
-  nsRefPtr<PeerConnectionImpl> pc = new PeerConnectionImpl(&aGlobal);
+  RefPtr<PeerConnectionImpl> pc = new PeerConnectionImpl(&aGlobal);
 
   CSFLogDebug(logTag, "Created PeerConnection: %p", pc.get());
 
@@ -297,7 +297,7 @@ nsresult PeerConnectionMedia::Init(const std::vector<NrIceStunServer>& stun_serv
     return NS_ERROR_FAILURE;
   }
 
-  nsRefPtr<ProtocolProxyQueryHandler> handler = new ProtocolProxyQueryHandler(this);
+  RefPtr<ProtocolProxyQueryHandler> handler = new ProtocolProxyQueryHandler(this);
   rv = pps->AsyncResolve(channel,
                          nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
                          nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL,
@@ -701,7 +701,7 @@ PeerConnectionMedia::AddTrack(DOMMediaStream* aMediaStream,
 
   CSFLogDebug(logTag, "%s: MediaStream: %p", __FUNCTION__, aMediaStream);
 
-  nsRefPtr<LocalSourceStreamInfo> localSourceStream =
+  RefPtr<LocalSourceStreamInfo> localSourceStream =
     GetLocalStreamById(streamId);
 
   if (!localSourceStream) {
@@ -722,7 +722,7 @@ PeerConnectionMedia::RemoveLocalTrack(const std::string& streamId,
   CSFLogDebug(logTag, "%s: stream: %s track: %s", __FUNCTION__,
                       streamId.c_str(), trackId.c_str());
 
-  nsRefPtr<LocalSourceStreamInfo> localSourceStream =
+  RefPtr<LocalSourceStreamInfo> localSourceStream =
     GetLocalStreamById(streamId);
   if (!localSourceStream) {
     return NS_ERROR_ILLEGAL_VALUE;
@@ -744,7 +744,7 @@ PeerConnectionMedia::RemoveRemoteTrack(const std::string& streamId,
   CSFLogDebug(logTag, "%s: stream: %s track: %s", __FUNCTION__,
                       streamId.c_str(), trackId.c_str());
 
-  nsRefPtr<RemoteSourceStreamInfo> remoteSourceStream =
+  RefPtr<RemoteSourceStreamInfo> remoteSourceStream =
     GetRemoteStreamById(streamId);
   if (!remoteSourceStream) {
     return NS_ERROR_ILLEGAL_VALUE;
@@ -811,6 +811,8 @@ PeerConnectionMedia::SelfDestruct_m()
 
   mLocalSourceStreams.Clear();
   mRemoteSourceStreams.Clear();
+
+  mMainThread = nullptr;
 
   // Final self-destruct.
   this->Release();
@@ -891,7 +893,7 @@ PeerConnectionMedia::GetRemoteStreamById(const std::string& id)
 }
 
 nsresult
-PeerConnectionMedia::AddRemoteStream(nsRefPtr<RemoteSourceStreamInfo> aInfo)
+PeerConnectionMedia::AddRemoteStream(RefPtr<RemoteSourceStreamInfo> aInfo)
 {
   ASSERT_ON_THREAD(mMainThread);
 
@@ -915,26 +917,13 @@ PeerConnectionMedia::IceGatheringStateChange_s(NrIceCtx* ctx,
       }
 
       NrIceCandidate candidate;
-      nsresult res = stream->GetDefaultCandidate(1, &candidate);
       NrIceCandidate rtcpCandidate;
-      // Optional; component won't exist if doing rtcp-mux
-      if (NS_FAILED(stream->GetDefaultCandidate(2, &rtcpCandidate))) {
-        rtcpCandidate.cand_addr.host.clear();
-        rtcpCandidate.cand_addr.port = 0;
-      }
-      if (NS_SUCCEEDED(res)) {
-        EndOfLocalCandidates(candidate.cand_addr.host,
-                             candidate.cand_addr.port,
-                             rtcpCandidate.cand_addr.host,
-                             rtcpCandidate.cand_addr.port,
-                             i);
-      } else {
-        CSFLogError(logTag, "%s: GetDefaultCandidate failed for level %u, "
-                            "res=%u",
-                            __FUNCTION__,
-                            static_cast<unsigned>(i),
-                            static_cast<unsigned>(res));
-      }
+      GetDefaultCandidates(*stream, &candidate, &rtcpCandidate);
+      EndOfLocalCandidates(candidate.cand_addr.host,
+                           candidate.cand_addr.port,
+                           rtcpCandidate.cand_addr.host,
+                           rtcpCandidate.cand_addr.port,
+                           i);
     }
   }
 
@@ -969,12 +958,16 @@ PeerConnectionMedia::IceConnectionStateChange_s(NrIceCtx* ctx,
 
 void
 PeerConnectionMedia::OnCandidateFound_s(NrIceMediaStream *aStream,
-                                        const std::string &candidate)
+                                        const std::string &aCandidateLine)
 {
   ASSERT_ON_THREAD(mSTSThread);
   MOZ_ASSERT(aStream);
 
   CSFLogDebug(logTag, "%s: %s", __FUNCTION__, aStream->name().c_str());
+
+  NrIceCandidate candidate;
+  NrIceCandidate rtcpCandidate;
+  GetDefaultCandidates(*aStream, &candidate, &rtcpCandidate);
 
   // ShutdownMediaTransport_s has not run yet because it unhooks this function
   // from its signal, which means that SelfDestruct_m has not been dispatched
@@ -983,7 +976,11 @@ PeerConnectionMedia::OnCandidateFound_s(NrIceMediaStream *aStream,
   GetMainThread()->Dispatch(
     WrapRunnable(this,
                  &PeerConnectionMedia::OnCandidateFound_m,
-                 candidate,
+                 aCandidateLine,
+                 candidate.cand_addr.host,
+                 candidate.cand_addr.port,
+                 rtcpCandidate.cand_addr.host,
+                 rtcpCandidate.cand_addr.port,
                  aStream->GetLevel()),
     NS_DISPATCH_NORMAL);
 }
@@ -993,14 +990,39 @@ PeerConnectionMedia::EndOfLocalCandidates(const std::string& aDefaultAddr,
                                           uint16_t aDefaultPort,
                                           const std::string& aDefaultRtcpAddr,
                                           uint16_t aDefaultRtcpPort,
-                                          uint16_t aMLine) {
-  // We will still be around because we have not started teardown yet
+                                          uint16_t aMLine)
+{
   GetMainThread()->Dispatch(
     WrapRunnable(this,
                  &PeerConnectionMedia::EndOfLocalCandidates_m,
-                 aDefaultAddr, aDefaultPort,
-                 aDefaultRtcpAddr, aDefaultRtcpPort, aMLine),
+                 aDefaultAddr,
+                 aDefaultPort,
+                 aDefaultRtcpAddr,
+                 aDefaultRtcpPort,
+                 aMLine),
     NS_DISPATCH_NORMAL);
+}
+
+void
+PeerConnectionMedia::GetDefaultCandidates(const NrIceMediaStream& aStream,
+                                          NrIceCandidate* aCandidate,
+                                          NrIceCandidate* aRtcpCandidate)
+{
+  nsresult res = aStream.GetDefaultCandidate(1, aCandidate);
+  // Optional; component won't exist if doing rtcp-mux
+  if (NS_FAILED(aStream.GetDefaultCandidate(2, aRtcpCandidate))) {
+    aRtcpCandidate->cand_addr.host.clear();
+    aRtcpCandidate->cand_addr.port = 0;
+  }
+  if (NS_FAILED(res)) {
+    aCandidate->cand_addr.host.clear();
+    aCandidate->cand_addr.port = 0;
+    CSFLogError(logTag, "%s: GetDefaultCandidates failed for level %u, "
+                        "res=%u",
+                        __FUNCTION__,
+                        static_cast<unsigned>(aStream.GetLevel()),
+                        static_cast<unsigned>(res));
+  }
 }
 
 void
@@ -1028,11 +1050,22 @@ PeerConnectionMedia::IceStreamReady_s(NrIceMediaStream *aStream)
 }
 
 void
-PeerConnectionMedia::OnCandidateFound_m(const std::string &candidate,
+PeerConnectionMedia::OnCandidateFound_m(const std::string& aCandidateLine,
+                                        const std::string& aDefaultAddr,
+                                        uint16_t aDefaultPort,
+                                        const std::string& aDefaultRtcpAddr,
+                                        uint16_t aDefaultRtcpPort,
                                         uint16_t aMLine)
 {
   ASSERT_ON_THREAD(mMainThread);
-  SignalCandidate(candidate, aMLine);
+  if (!aDefaultAddr.empty()) {
+    SignalUpdateDefaultCandidate(aDefaultAddr,
+                                 aDefaultPort,
+                                 aDefaultRtcpAddr,
+                                 aDefaultRtcpPort,
+                                 aMLine);
+  }
+  SignalCandidate(aCandidateLine, aMLine);
 }
 
 void
@@ -1041,11 +1074,15 @@ PeerConnectionMedia::EndOfLocalCandidates_m(const std::string& aDefaultAddr,
                                             const std::string& aDefaultRtcpAddr,
                                             uint16_t aDefaultRtcpPort,
                                             uint16_t aMLine) {
-  SignalEndOfLocalCandidates(aDefaultAddr,
-                             aDefaultPort,
-                             aDefaultRtcpAddr,
-                             aDefaultRtcpPort,
-                             aMLine);
+  ASSERT_ON_THREAD(mMainThread);
+  if (!aDefaultAddr.empty()) {
+    SignalUpdateDefaultCandidate(aDefaultAddr,
+                                 aDefaultPort,
+                                 aDefaultRtcpAddr,
+                                 aDefaultRtcpPort,
+                                 aMLine);
+  }
+  SignalEndOfLocalCandidates(aMLine);
 }
 
 void
@@ -1233,10 +1270,10 @@ SourceStreamInfo::AnyCodecHasPluginID(uint64_t aPluginID)
 }
 
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
-nsRefPtr<mozilla::dom::VideoStreamTrack>
+RefPtr<mozilla::dom::VideoStreamTrack>
 SourceStreamInfo::GetVideoTrackByTrackId(const std::string& trackId)
 {
-  nsTArray<nsRefPtr<mozilla::dom::VideoStreamTrack>> videoTracks;
+  nsTArray<RefPtr<mozilla::dom::VideoStreamTrack>> videoTracks;
 
   mMediaStream->GetVideoTracks(videoTracks);
 
@@ -1255,7 +1292,7 @@ SourceStreamInfo::GetVideoTrackByTrackId(const std::string& trackId)
 nsresult
 SourceStreamInfo::StorePipeline(
     const std::string& trackId,
-    const mozilla::RefPtr<mozilla::MediaPipeline>& aPipeline)
+    const RefPtr<mozilla::MediaPipeline>& aPipeline)
 {
   MOZ_ASSERT(mPipelines.find(trackId) == mPipelines.end());
   if (mPipelines.find(trackId) != mPipelines.end()) {
@@ -1304,7 +1341,7 @@ RemoteSourceStreamInfo::StartReceiving()
 
   mReceiving = true;
 
-  SourceMediaStream* source = GetMediaStream()->GetStream()->AsSourceStream();
+  SourceMediaStream* source = GetMediaStream()->GetInputStream()->AsSourceStream();
   source->FinishAddTracks();
   source->SetPullEnabled(true);
   // AdvanceKnownTracksTicksTime(HEAT_DEATH_OF_UNIVERSE) means that in

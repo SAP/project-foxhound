@@ -32,7 +32,7 @@ struct DecryptResult {
     , mSample(aSample)
   {}
   GMPErr mStatus;
-  nsRefPtr<MediaRawData> mSample;
+  RefPtr<MediaRawData> mSample;
 };
 
 // Proxies calls GMP/CDM, and proxies calls back.
@@ -57,6 +57,7 @@ public:
   void Init(PromiseId aPromiseId,
             const nsAString& aOrigin,
             const nsAString& aTopLevelOrigin,
+            const nsAString& aGMPName,
             bool aInPrivateBrowsing);
 
   // Main thread only.
@@ -147,7 +148,7 @@ public:
                        nsresult aDOMException,
                        const nsCString& aMsg);
 
-  nsRefPtr<DecryptPromise> Decrypt(MediaRawData* aSample);
+  RefPtr<DecryptPromise> Decrypt(MediaRawData* aSample);
 
   // Reject promise with DOMException corresponding to aExceptionCode.
   // Can be called from any thread.
@@ -184,8 +185,9 @@ private:
 
   struct InitData {
     uint32_t mPromiseId;
-    nsAutoString mOrigin;
-    nsAutoString mTopLevelOrigin;
+    nsString mOrigin;
+    nsString mTopLevelOrigin;
+    nsString mGMPName;
     bool mInPrivateBrowsing;
   };
 
@@ -206,7 +208,7 @@ private:
     dom::SessionType mSessionType;
     uint32_t mCreateSessionToken;
     PromiseId mPromiseId;
-    nsAutoCString mInitDataType;
+    nsCString mInitDataType;
     nsTArray<uint8_t> mInitData;
   };
   // GMP thread only.
@@ -214,7 +216,7 @@ private:
 
   struct SessionOpData {
     PromiseId mPromiseId;
-    nsAutoCString mSessionId;
+    nsCString mSessionId;
   };
   // GMP thread only.
   void gmp_LoadSession(nsAutoPtr<SessionOpData> aData);
@@ -228,7 +230,7 @@ private:
 
   struct UpdateSessionData {
     PromiseId mPromiseId;
-    nsAutoCString mSessionId;
+    nsCString mSessionId;
     nsTArray<uint8_t> mResponse;
   };
   // GMP thread only.
@@ -253,18 +255,18 @@ private:
     void PostResult(GMPErr aResult, const nsTArray<uint8_t>& aDecryptedData);
     void PostResult(GMPErr aResult);
 
-    nsRefPtr<DecryptPromise> Ensure() {
+    RefPtr<DecryptPromise> Ensure() {
       return mPromise.Ensure(__func__);
     }
 
     uint32_t mId;
-    nsRefPtr<MediaRawData> mSample;
+    RefPtr<MediaRawData> mSample;
   private:
     ~DecryptJob() {}
     MozPromiseHolder<DecryptPromise> mPromise;
   };
   // GMP thread only.
-  void gmp_Decrypt(nsRefPtr<DecryptJob> aJob);
+  void gmp_Decrypt(RefPtr<DecryptJob> aJob);
 
   class RejectPromiseTask : public nsRunnable {
   public:
@@ -283,7 +285,7 @@ private:
       return NS_OK;
     }
   private:
-    nsRefPtr<CDMProxy> mProxy;
+    RefPtr<CDMProxy> mProxy;
     PromiseId mId;
     nsresult mCode;
     nsCString mReason;
@@ -324,11 +326,11 @@ private:
   // destructor. only use on main thread, and always nullcheck before using!
   MainThreadOnlyRawPtr<dom::MediaKeys> mKeys;
 
-  const nsAutoString mKeySystem;
+  const nsString mKeySystem;
 
   // Gecko Media Plugin thread. All interactions with the out-of-process
   // EME plugin must come from this thread.
-  nsRefPtr<nsIThread> mGMPThread;
+  RefPtr<nsIThread> mGMPThread;
 
   nsCString mNodeId;
 
@@ -338,7 +340,7 @@ private:
 
   // Decryption jobs sent to CDM, awaiting result.
   // GMP thread only.
-  nsTArray<nsRefPtr<DecryptJob>> mDecryptionJobs;
+  nsTArray<RefPtr<DecryptJob>> mDecryptionJobs;
 
   // Number of buffers we've decrypted. Used to uniquely identify
   // decryption jobs sent to CDM. Note we can't just use the length of

@@ -112,7 +112,7 @@ IsDominatedUse(MBasicBlock* block, MUse* use)
 static inline void
 SpewRange(MDefinition* def)
 {
-#ifdef DEBUG
+#ifdef JS_JITSPEW
     if (JitSpewEnabled(JitSpew_Range) && def->type() != MIRType_None && def->range()) {
         JitSpewHeader(JitSpew_Range);
         Fprinter& out = JitSpewPrinter();
@@ -1734,7 +1734,7 @@ MArrayLength::computeRange(TempAllocator& alloc)
 void
 MInitializedLength::computeRange(TempAllocator& alloc)
 {
-    setRange(Range::NewUInt32Range(alloc, 0, NativeObject::NELEMENTS_LIMIT));
+    setRange(Range::NewUInt32Range(alloc, 0, NativeObject::MAX_DENSE_ELEMENTS_COUNT));
 }
 
 void
@@ -1756,9 +1756,9 @@ MArgumentsLength::computeRange(TempAllocator& alloc)
 {
     // This is is a conservative upper bound on what |TooManyActualArguments|
     // checks.  If exceeded, Ion will not be entered in the first place.
-    MOZ_ASSERT(js_JitOptions.maxStackArgs <= UINT32_MAX,
+    MOZ_ASSERT(JitOptions.maxStackArgs <= UINT32_MAX,
                "NewUInt32Range requires a uint32 value");
-    setRange(Range::NewUInt32Range(alloc, 0, js_JitOptions.maxStackArgs));
+    setRange(Range::NewUInt32Range(alloc, 0, JitOptions.maxStackArgs));
 }
 
 void
@@ -2258,7 +2258,7 @@ RangeAnalysis::analyze()
 bool
 RangeAnalysis::addRangeAssertions()
 {
-    if (!js_JitOptions.checkRangeAnalysis)
+    if (!JitOptions.checkRangeAnalysis)
         return true;
 
     // Check the computed range for this instruction, if the option is set. Note
@@ -2289,6 +2289,10 @@ RangeAnalysis::addRangeAssertions()
 
             // Don't insert assertions if there's nothing interesting to assert.
             if (r.isUnknown() || (ins->type() == MIRType_Int32 && r.isUnknownInt32()))
+                continue;
+
+            // Don't add a use to an instruction that is recovered on bailout.
+            if (ins->isRecoveredOnBailout())
                 continue;
 
             MAssertRange* guard = MAssertRange::New(alloc(), ins, new(alloc()) Range(r));

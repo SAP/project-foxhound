@@ -201,8 +201,8 @@ private:
   // there is a page change. All requests held by either array are active, that
   // is, they have been allowed and expect to be fulfilled.
 
-  nsTArray<nsRefPtr<nsGeolocationRequest> > mPendingCallbacks;
-  nsTArray<nsRefPtr<nsGeolocationRequest> > mWatchingCallbacks;
+  nsTArray<RefPtr<nsGeolocationRequest> > mPendingCallbacks;
+  nsTArray<RefPtr<nsGeolocationRequest> > mWatchingCallbacks;
 
   // window that this was created for.  Weak reference.
   nsWeakPtr mOwner;
@@ -210,14 +210,20 @@ private:
   // where the content was loaded from
   nsCOMPtr<nsIPrincipal> mPrincipal;
 
+  // the protocols we want to measure
+  enum class ProtocolType: uint8_t { OTHER, HTTP, HTTPS };
+
+  // the protocol used to load the content
+  ProtocolType mProtocolType;
+
   // owning back pointer.
-  nsRefPtr<nsGeolocationService> mService;
+  RefPtr<nsGeolocationService> mService;
 
   // Watch ID
   uint32_t mLastWatchId;
 
   // Pending requests are used when the service is not ready
-  nsTArray<nsRefPtr<nsGeolocationRequest> > mPendingRequests;
+  nsTArray<RefPtr<nsGeolocationRequest> > mPendingRequests;
 
   // Array containing already cleared watch IDs
   nsTArray<int32_t> mClearedWatchIDs;
@@ -246,7 +252,7 @@ public:
 private:
   ~PositionError();
   int16_t mCode;
-  nsRefPtr<Geolocation> mParent;
+  RefPtr<Geolocation> mParent;
 };
 
 } // namespace dom

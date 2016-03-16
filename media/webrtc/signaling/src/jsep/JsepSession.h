@@ -15,13 +15,13 @@
 #include "signaling/src/jsep/JsepTransport.h"
 #include "signaling/src/sdp/Sdp.h"
 
+#include "JsepTrack.h"
 
 namespace mozilla {
 
 // Forward declarations
 class JsepCodecDescription;
 class JsepTrack;
-struct JsepTrackPair;
 
 enum JsepSignalingState {
   kJsepStateStable,
@@ -57,7 +57,7 @@ class JsepSession
 {
 public:
   explicit JsepSession(const std::string& name)
-      : mName(name), mState(kJsepStateStable)
+    : mName(name), mState(kJsepStateStable), mNegotiations(0)
   {
   }
   virtual ~JsepSession() {}
@@ -74,6 +74,11 @@ public:
   GetState() const
   {
     return mState;
+  }
+  virtual uint32_t
+  GetNegotiations() const
+  {
+    return mNegotiations;
   }
 
   // Set up the ICE And DTLS data.
@@ -138,12 +143,13 @@ public:
                                         uint16_t level,
                                         std::string* mid,
                                         bool* skipped) = 0;
-  virtual nsresult EndOfLocalCandidates(
+  virtual nsresult UpdateDefaultCandidate(
       const std::string& defaultCandidateAddr,
       uint16_t defaultCandidatePort,
       const std::string& defaultRtcpCandidateAddr,
       uint16_t defaultRtcpCandidatePort,
       uint16_t level) = 0;
+  virtual nsresult EndOfLocalCandidates(uint16_t level) = 0;
   virtual nsresult Close() = 0;
 
   // ICE controlling or controlled
@@ -167,9 +173,30 @@ public:
 
   virtual bool AllLocalTracksAreAssigned() const = 0;
 
+  void
+  CountTracks(uint16_t (&receiving)[SdpMediaSection::kMediaTypes],
+              uint16_t (&sending)[SdpMediaSection::kMediaTypes]) const
+  {
+    auto trackPairs = GetNegotiatedTrackPairs();
+
+    memset(receiving, 0, sizeof(receiving));
+    memset(sending, 0, sizeof(sending));
+
+    for (auto& pair : trackPairs) {
+      if (pair.mReceiving) {
+        receiving[pair.mReceiving->GetMediaType()]++;
+      }
+
+      if (pair.mSending) {
+        sending[pair.mSending->GetMediaType()]++;
+      }
+    }
+  }
+
 protected:
   const std::string mName;
   JsepSignalingState mState;
+  uint32_t mNegotiations;
 };
 
 } // namespace mozilla

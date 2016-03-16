@@ -9,6 +9,7 @@
 #ifndef jsscript_h
 #define jsscript_h
 
+#include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/UniquePtr.h"
@@ -18,7 +19,6 @@
 #include "jsopcode.h"
 #include "jstypes.h"
 
-#include "builtin/ModuleObject.h"
 #include "gc/Barrier.h"
 #include "gc/Rooting.h"
 #include "jit/IonCode.h"
@@ -47,6 +47,7 @@ class BreakpointSite;
 class BindingIter;
 class Debugger;
 class LazyScript;
+class ModuleObject;
 class NestedScopeObject;
 class RegExpObject;
 struct SourceCompressionTask;
@@ -164,7 +165,7 @@ class YieldOffsetArray {
     }
 };
 
-class Binding
+class Binding : public JS::Traceable
 {
     // One JSScript stores one Binding per formal/variable so we use a
     // packed-word representation.
@@ -200,6 +201,9 @@ class Binding
     bool aliased() const {
         return bool(bits_ & ALIASED_BIT);
     }
+
+    static void trace(Binding* self, JSTracer* trc) { self->trace(trc); }
+    void trace(JSTracer* trc);
 };
 
 JS_STATIC_ASSERT(sizeof(Binding) == sizeof(uintptr_t));
@@ -328,8 +332,9 @@ class Bindings : public JS::Traceable
     /* Return the initial shape of call objects created for this scope. */
     Shape* callObjShape() const { return callObjShape_; }
 
-    /* Convenience method to get the var index of 'arguments'. */
+    /* Convenience method to get the var index of 'arguments' or 'this'. */
     static BindingIter argumentsBinding(ExclusiveContext* cx, HandleScript script);
+    static BindingIter thisBinding(ExclusiveContext* cx, HandleScript script);
 
     /* Return whether the binding at bindingIndex is aliased. */
     bool bindingIsAliased(uint32_t bindingIndex);
@@ -465,9 +470,21 @@ class ScriptCounts
     PCCounts* maybeGetPCCounts(size_t offset);
     const PCCounts* maybeGetPCCounts(size_t offset) const;
 
+    // PCCounts are stored at jump-target offsets. This function looks for the
+    // previous PCCount which is in the same basic block as the current offset.
+    PCCounts* getImmediatePrecedingPCCounts(size_t offset);
+
     // Return the counter used to count the number of throws. Returns null if
     // the element is not found.
     const PCCounts* maybeGetThrowCounts(size_t offset) const;
+
+    // Throw counts are stored at the location of each throwing
+    // instruction. This function looks for the previous throw count.
+    //
+    // Note: if the offset of the returned count is higher than the offset of
+    // the immediate preceding PCCount, then this throw happened in the same
+    // basic block.
+    const PCCounts* getImmediatePrecedingThrowCounts(size_t offset) const;
 
     // Return the counter used to count the number of throws. Allocate it if
     // none exists yet. Returns null if the allocation failed.
@@ -489,6 +506,11 @@ class ScriptCounts
     jit::IonScriptCounts* ionCounts_;
 };
 
+// Note: The key of this hash map is a weak reference to a JSScript.  We do not
+// use the WeakMap implementation provided in jsweakmap.h because it would be
+// collected at the beginning of the sweeping of the compartment, thus before
+// the calls to the JSScript::finalize function which are used to aggregate code
+// coverage results on the compartment.
 typedef HashMap<JSScript*,
                 ScriptCounts,
                 DefaultHasher<JSScript*>,
@@ -1134,6 +1156,7 @@ class JSScript : public js::gc::TenuredCell
     bool argsHasVarBinding_:1;
     bool needsArgsAnalysis_:1;
     bool needsArgsObj_:1;
+    bool functionHasThisBinding_:1;
 
     // Whether the arguments object for this script, if it needs one, should be
     // mapped (alias formal parameters).
@@ -1153,6 +1176,10 @@ class JSScript : public js::gc::TenuredCell
     // and sometimes we're working with a cross-compartment function and need to
     // keep it from relazifying.
     bool doNotRelazify_:1;
+
+    // Script contains inner functions. Used to check if we can relazify the
+    // script.
+    bool hasInnerFunctions_:1;
 
     bool needsHomeObject_:1;
 
@@ -1458,6 +1485,10 @@ class JSScript : public js::gc::TenuredCell
         return hasMappedArgsObj_;
     }
 
+    bool functionHasThisBinding() const {
+        return functionHasThisBinding_;
+    }
+
     /*
      * Arguments access (via JSOP_*ARG* opcodes) must access the canonical
      * location for the argument. If an arguments object exists AND it's mapped
@@ -1481,6 +1512,14 @@ class JSScript : public js::gc::TenuredCell
 
     void setDoNotRelazify(bool b) {
         doNotRelazify_ = b;
+    }
+
+    void setHasInnerFunctions(bool b) {
+        hasInnerFunctions_ = b;
+    }
+
+    bool hasInnerFunctions() const {
+        return hasInnerFunctions_;
     }
 
     bool hasAnyIonScript() const {
@@ -1545,7 +1584,7 @@ class JSScript : public js::gc::TenuredCell
     }
 
     bool isRelazifiable() const {
-        return (selfHosted() || lazyScript) && !types_ &&
+        return (selfHosted() || lazyScript) && !hasInnerFunctions_ && !types_ &&
                !isGenerator() && !hasBaselineScript() && !hasAnyIonScript() &&
                !hasScriptCounts() && !doNotRelazify_;
     }
@@ -1580,6 +1619,10 @@ class JSScript : public js::gc::TenuredCell
     }
     inline void setModule(js::ModuleObject* module);
 
+    // Returns true if the script may read formal arguments on the stack
+    // directly, via lazy arguments or a rest parameter.
+    bool mayReadFrameArgsDirectly();
+
     JSFlatString* sourceData(JSContext* cx);
 
     static bool loadSource(JSContext* cx, js::ScriptSource* ss, bool* worked);
@@ -1600,6 +1643,18 @@ class JSScript : public js::gc::TenuredCell
     /* Return whether this script was compiled for 'eval' */
     bool isForEval() { return isCachedEval() || isActiveEval(); }
 
+    /*
+     * Return whether this script is a top-level script.
+     *
+     * If we evaluate some code which contains a syntax error, then we might
+     * produce a JSScript which has no associated bytecode. Testing with
+     * |code()| filters out this kind of scripts.
+     *
+     * If this script has a function associated to it, then it is not the
+     * top-level of a file.
+     */
+    bool isTopLevel() { return code() && !functionNonDelazifying(); }
+
     /* Ensure the script has a TypeScript. */
     inline bool ensureHasTypes(JSContext* cx);
 
@@ -1614,6 +1669,10 @@ class JSScript : public js::gc::TenuredCell
     JSObject* enclosingStaticScope() const {
         return enclosingStaticScope_;
     }
+
+    // Switch the script over from the off-thread compartment's static
+    // global lexical scope to the main thread compartment's.
+    void fixEnclosingStaticGlobalLexicalScope();
 
   private:
     bool makeTypes(JSContext* cx);
@@ -1635,6 +1694,8 @@ class JSScript : public js::gc::TenuredCell
     js::PCCounts* maybeGetPCCounts(jsbytecode* pc);
     const js::PCCounts* maybeGetThrowCounts(jsbytecode* pc);
     js::PCCounts* getThrowCounts(jsbytecode* pc);
+    uint64_t getHitCount(jsbytecode* pc);
+    void incHitCount(jsbytecode* pc); // Used when we bailout out of Ion.
     void addIonCounts(js::jit::IonScriptCounts* ionCounts);
     js::jit::IonScriptCounts* getIonCounts();
     void releaseScriptCounts(js::ScriptCounts* counts);
@@ -2042,7 +2103,7 @@ class LazyScript : public gc::TenuredCell
     // If non-nullptr, the script has been compiled and this is a forwarding
     // pointer to the result. This is a weak pointer: after relazification, we
     // can collect the script if there are no other pointers to it.
-    ReadBarrieredScript script_;
+    WeakRef<JSScript*> script_;
 
     // Original function with which the lazy script is associated.
     HeapPtrFunction function_;
@@ -2145,17 +2206,23 @@ class LazyScript : public gc::TenuredCell
     void resetScript();
 
     JSScript* maybeScript() {
-        if (script_.unbarrieredGet() && gc::IsAboutToBeFinalized(&script_))
-            script_.set(nullptr);
         return script_;
     }
-    JSScript* maybeScriptUnbarriered() const {
+    const JSScript* maybeScriptUnbarriered() const {
         return script_.unbarrieredGet();
+    }
+    bool hasScript() const {
+        return bool(script_);
     }
 
     JSObject* enclosingScope() const {
         return enclosingScope_;
     }
+
+    // Switch the script over from the off-thread compartment's static
+    // global lexical scope to the main thread compartment's.
+    void fixEnclosingStaticGlobalLexicalScope();
+
     ScriptSourceObject* sourceObject() const;
     ScriptSource* scriptSource() const {
         return sourceObject()->source();
@@ -2307,7 +2374,7 @@ struct SharedScriptData
 {
     uint32_t length;
     uint32_t natoms;
-    bool marked;
+    mozilla::Atomic<bool, mozilla::ReleaseAcquire> marked;
     jsbytecode data[1];
 
     static SharedScriptData* new_(ExclusiveContext* cx, uint32_t codeLength,
@@ -2444,6 +2511,8 @@ namespace ubi {
 template<>
 struct Concrete<js::LazyScript> : TracerConcrete<js::LazyScript> {
     CoarseType coarseType() const final { return CoarseType::Script; }
+    Size size(mozilla::MallocSizeOf mallocSizeOf) const override;
+    const char* scriptFilename() const final;
 
   protected:
     explicit Concrete(js::LazyScript *ptr) : TracerConcrete<js::LazyScript>(ptr) { }

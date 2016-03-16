@@ -32,6 +32,7 @@
 #endif
 
 using namespace mozilla;
+using namespace mozilla::css;
 
 static bool sNumberControlEnabled;
 
@@ -72,7 +73,7 @@ nsLayoutStylesheetCache::ScrollbarsSheet()
   if (!gStyleCache->mScrollbarsSheet) {
     // Scrollbars don't need access to unsafe rules
     LoadSheetURL("chrome://global/skin/scrollbars.css",
-                 gStyleCache->mScrollbarsSheet, false);
+                 gStyleCache->mScrollbarsSheet, eAuthorSheetFeatures);
   }
 
   return gStyleCache->mScrollbarsSheet;
@@ -86,7 +87,7 @@ nsLayoutStylesheetCache::FormsSheet()
   if (!gStyleCache->mFormsSheet) {
     // forms.css needs access to unsafe rules
     LoadSheetURL("resource://gre-resources/forms.css",
-                 gStyleCache->mFormsSheet, true);
+                 gStyleCache->mFormsSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mFormsSheet;
@@ -103,7 +104,7 @@ nsLayoutStylesheetCache::NumberControlSheet()
 
   if (!gStyleCache->mNumberControlSheet) {
     LoadSheetURL("resource://gre-resources/number-control.css",
-                 gStyleCache->mNumberControlSheet, true);
+                 gStyleCache->mNumberControlSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mNumberControlSheet;
@@ -130,7 +131,7 @@ nsLayoutStylesheetCache::UASheet()
 
   if (!gStyleCache->mUASheet) {
     LoadSheetURL("resource://gre-resources/ua.css",
-                 gStyleCache->mUASheet, true);
+                 gStyleCache->mUASheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mUASheet;
@@ -140,12 +141,6 @@ CSSStyleSheet*
 nsLayoutStylesheetCache::HTMLSheet()
 {
   EnsureGlobal();
-
-  if (!gStyleCache->mHTMLSheet) {
-    LoadSheetURL("resource://gre-resources/html.css",
-                 gStyleCache->mHTMLSheet, true);
-  }
-
   return gStyleCache->mHTMLSheet;
 }
 
@@ -171,13 +166,6 @@ nsLayoutStylesheetCache::QuirkSheet()
 }
 
 CSSStyleSheet*
-nsLayoutStylesheetCache::FullScreenOverrideSheet()
-{
-  EnsureGlobal();
-  return gStyleCache->mFullScreenOverrideSheet;
-}
-
-CSSStyleSheet*
 nsLayoutStylesheetCache::SVGSheet()
 {
   EnsureGlobal();
@@ -191,7 +179,7 @@ nsLayoutStylesheetCache::MathMLSheet()
 
   if (!gStyleCache->mMathMLSheet) {
     LoadSheetURL("resource://gre-resources/mathml.css",
-                 gStyleCache->mMathMLSheet, true);
+                 gStyleCache->mMathMLSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mMathMLSheet;
@@ -218,7 +206,7 @@ nsLayoutStylesheetCache::NoScriptSheet()
 #else
                  "resource://gre-resources/noscript.css",
 #endif
-                 gStyleCache->mNoScriptSheet, true);
+                 gStyleCache->mNoScriptSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mNoScriptSheet;
@@ -238,7 +226,7 @@ nsLayoutStylesheetCache::NoFramesSheet()
 #else
                  "resource://gre-resources/noframes.css",
 #endif
-                 gStyleCache->mNoFramesSheet, true);
+                 gStyleCache->mNoFramesSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mNoFramesSheet;
@@ -277,7 +265,7 @@ nsLayoutStylesheetCache::ContentEditableSheet()
 
   if (!gStyleCache->mContentEditableSheet) {
     LoadSheetURL("resource://gre/res/contenteditable.css",
-                 gStyleCache->mContentEditableSheet, true);
+                 gStyleCache->mContentEditableSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mContentEditableSheet;
@@ -290,7 +278,7 @@ nsLayoutStylesheetCache::DesignModeSheet()
 
   if (!gStyleCache->mDesignModeSheet) {
     LoadSheetURL("resource://gre/res/designmode.css",
-                 gStyleCache->mDesignModeSheet, true);
+                 gStyleCache->mDesignModeSheet, eAgentSheetFeatures);
   }
 
   return gStyleCache->mDesignModeSheet;
@@ -329,7 +317,6 @@ nsLayoutStylesheetCache::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf
   MEASURE(mCounterStylesSheet);
   MEASURE(mDesignModeSheet);
   MEASURE(mFormsSheet);
-  MEASURE(mFullScreenOverrideSheet);
   MEASURE(mHTMLSheet);
   MEASURE(mMathMLSheet);
   MEASURE(mMinimalXULSheet);
@@ -369,17 +356,17 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache()
   // And make sure that we load our UA sheets.  No need to do this
   // per-profile, since they're profile-invariant.
   LoadSheetURL("resource://gre-resources/counterstyles.css",
-               mCounterStylesSheet, true);
-  LoadSheetURL("resource://gre-resources/full-screen-override.css",
-               mFullScreenOverrideSheet, true);
+               mCounterStylesSheet, eAgentSheetFeatures);
+  LoadSheetURL("resource://gre-resources/html.css",
+               mHTMLSheet, eAgentSheetFeatures);
   LoadSheetURL("chrome://global/content/minimal-xul.css",
-               mMinimalXULSheet, true);
+               mMinimalXULSheet, eAgentSheetFeatures);
   LoadSheetURL("resource://gre-resources/quirk.css",
-               mQuirkSheet, true);
+               mQuirkSheet, eAgentSheetFeatures);
   LoadSheetURL("resource://gre/res/svg.css",
-               mSVGSheet, true);
+               mSVGSheet, eAgentSheetFeatures);
   LoadSheetURL("chrome://global/content/xul.css",
-               mXULSheet, true);
+               mXULSheet, eAgentSheetFeatures);
 
   // The remaining sheets are created on-demand do to their use being rarer
   // (which helps save memory for Firefox OS apps) or because they need to
@@ -416,8 +403,10 @@ nsLayoutStylesheetCache::EnsureGlobal()
   // on (such as a pref that enables a property that a UA style sheet uses),
   // register DependentPrefChanged as a callback to ensure that the relevant
   // style sheets will be re-parsed.
+  // Preferences::RegisterCallback(&DependentPrefChanged,
+  //                               "layout.css.example-pref.enabled");
   Preferences::RegisterCallback(&DependentPrefChanged,
-                                "layout.css.ruby.enabled");
+                                "layout.css.grid.enabled");
 }
 
 void
@@ -446,25 +435,27 @@ nsLayoutStylesheetCache::InitFromProfile()
   contentFile->Append(NS_LITERAL_STRING("userContent.css"));
   chromeFile->Append(NS_LITERAL_STRING("userChrome.css"));
 
-  LoadSheetFile(contentFile, mUserContentSheet);
-  LoadSheetFile(chromeFile, mUserChromeSheet);
+  LoadSheetFile(contentFile, mUserContentSheet, eUserSheetFeatures);
+  LoadSheetFile(chromeFile, mUserChromeSheet, eUserSheetFeatures);
 }
 
 /* static */ void
 nsLayoutStylesheetCache::LoadSheetURL(const char* aURL,
-                                      nsRefPtr<CSSStyleSheet>& aSheet,
-                                      bool aEnableUnsafeRules)
+                                      RefPtr<CSSStyleSheet>& aSheet,
+                                      SheetParsingMode aParsingMode)
 {
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aURL);
-  LoadSheet(uri, aSheet, aEnableUnsafeRules);
+  LoadSheet(uri, aSheet, aParsingMode);
   if (!aSheet) {
     NS_ERROR(nsPrintfCString("Could not load %s", aURL).get());
   }
 }
 
 void
-nsLayoutStylesheetCache::LoadSheetFile(nsIFile* aFile, nsRefPtr<CSSStyleSheet>& aSheet)
+nsLayoutStylesheetCache::LoadSheetFile(nsIFile* aFile,
+                                       RefPtr<CSSStyleSheet>& aSheet,
+                                       SheetParsingMode aParsingMode)
 {
   bool exists = false;
   aFile->Exists(&exists);
@@ -474,7 +465,7 @@ nsLayoutStylesheetCache::LoadSheetFile(nsIFile* aFile, nsRefPtr<CSSStyleSheet>& 
   nsCOMPtr<nsIURI> uri;
   NS_NewFileURI(getter_AddRefs(uri), aFile);
 
-  LoadSheet(uri, aSheet, false);
+  LoadSheet(uri, aSheet, aParsingMode);
 }
 
 #ifdef MOZ_CRASHREPORTER
@@ -704,7 +695,7 @@ AnnotateCrashReport(nsIURI* aURI)
     annotation.Append('\n');
   }
 
-  nsRefPtr<nsZipArchive> zip = Omnijar::GetReader(Omnijar::GRE);
+  RefPtr<nsZipArchive> zip = Omnijar::GetReader(Omnijar::GRE);
   if (zip) {
     // List interesting files in the GRE omnijar.
     annotation.AppendLiteral("Interesting files in the GRE omnijar:\n");
@@ -769,8 +760,8 @@ ErrorLoadingBuiltinSheet(nsIURI* aURI, const char* aMsg)
 
 void
 nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
-                                   nsRefPtr<CSSStyleSheet>& aSheet,
-                                   bool aEnableUnsafeRules)
+                                   RefPtr<CSSStyleSheet>& aSheet,
+                                   SheetParsingMode aParsingMode)
 {
   if (!aURI) {
     ErrorLoadingBuiltinSheet(aURI, "null URI");
@@ -786,10 +777,11 @@ nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
     }
   }
 
+
 #ifdef MOZ_CRASHREPORTER
   nsZipArchive::sFileCorruptedReason = nullptr;
 #endif
-  nsresult rv = gCSSLoader->LoadSheetSync(aURI, aEnableUnsafeRules, true,
+  nsresult rv = gCSSLoader->LoadSheetSync(aURI, aParsingMode, true,
                                           getter_AddRefs(aSheet));
   if (NS_FAILED(rv)) {
     ErrorLoadingBuiltinSheet(aURI,
@@ -798,7 +790,7 @@ nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
 }
 
 /* static */ void
-nsLayoutStylesheetCache::InvalidateSheet(nsRefPtr<CSSStyleSheet>& aSheet)
+nsLayoutStylesheetCache::InvalidateSheet(RefPtr<CSSStyleSheet>& aSheet)
 {
   MOZ_ASSERT(gCSSLoader, "pref changed before we loaded a sheet?");
 
@@ -817,10 +809,7 @@ nsLayoutStylesheetCache::DependentPrefChanged(const char* aPref, void* aData)
   // to be re-parsed by dropping the sheet from gCSSLoader's cache then
   // setting our cached sheet pointer to null.  This will only work for sheets
   // that are loaded lazily.
-
-  // for layout.css.ruby.enabled
-  InvalidateSheet(gStyleCache->mUASheet);
-  InvalidateSheet(gStyleCache->mHTMLSheet);
+  InvalidateSheet(gStyleCache->mUASheet); // for layout.css.grid.enabled
 }
 
 /* static */ void
@@ -854,7 +843,7 @@ nsLayoutStylesheetCache::AppendPreferenceColorRule(CSSStyleSheet* aSheet,
 }
 
 void
-nsLayoutStylesheetCache::BuildPreferenceSheet(nsRefPtr<CSSStyleSheet>& aSheet,
+nsLayoutStylesheetCache::BuildPreferenceSheet(RefPtr<CSSStyleSheet>& aSheet,
                                               nsPresContext* aPresContext)
 {
   aSheet = new CSSStyleSheet(CORS_NONE, mozilla::net::RP_Default);

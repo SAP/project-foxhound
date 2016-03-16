@@ -180,9 +180,7 @@ SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
 
   nsIFrame::ChildListIterator lists(aFrame);
   for (; !lists.IsDone(); lists.Next()) {
-    nsFrameList::Enumerator childFrames(lists.CurrentList());
-    for (; !childFrames.AtEnd(); childFrames.Next()) {
-      nsIFrame* child = childFrames.get();
+    for (nsIFrame* child : lists.CurrentList()) {
       if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
         // only do frames that don't have placeholders
         if (nsGkAtoms::placeholderFrame == child->GetType()) {
@@ -632,14 +630,13 @@ RestyleManager::StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint)
 void
 RestyleManager::AddSubtreeToOverflowTracker(nsIFrame* aFrame) 
 {
-  mOverflowChangedTracker.AddFrame(
-      aFrame,
-      OverflowChangedTracker::CHILDREN_CHANGED);
+  if (aFrame->FrameMaintainsOverflow()) {
+    mOverflowChangedTracker.AddFrame(aFrame,
+                                     OverflowChangedTracker::CHILDREN_CHANGED);
+  }
   nsIFrame::ChildListIterator lists(aFrame);
   for (; !lists.IsDone(); lists.Next()) {
-    nsFrameList::Enumerator childFrames(lists.CurrentList());
-    for (; !childFrames.AtEnd(); childFrames.Next()) {
-      nsIFrame* child = childFrames.get();
+    for (nsIFrame* child : lists.CurrentList()) {
       AddSubtreeToOverflowTracker(child);
     }
   }
@@ -658,9 +655,7 @@ FrameHasPositionedPlaceholderDescendants(nsIFrame* aFrame, uint32_t aPositionMas
                                     nsIFrame::kFixedList);
   for (nsIFrame::ChildListIterator lists(aFrame); !lists.IsDone(); lists.Next()) {
     if (!skip.Contains(lists.CurrentID())) {
-      for (nsFrameList::Enumerator childFrames(lists.CurrentList());
-           !childFrames.AtEnd(); childFrames.Next()) {
-        nsIFrame* f = childFrames.get();
+      for (nsIFrame* f : lists.CurrentList()) {
         if (f->GetType() == nsGkAtoms::placeholderFrame) {
           nsIFrame* outOfFlow = nsPlaceholderFrame::GetRealFrameForPlaceholder(f);
           // If SVG text frames could appear here, they could confuse us since
@@ -824,8 +819,7 @@ RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
     } else {
       NS_ASSERTION(frame, "This shouldn't happen");
 
-      if ((frame->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
-          (frame->GetStateBits() & NS_FRAME_IS_NONDISPLAY)) {
+      if (!frame->FrameMaintainsOverflow()) {
         // frame does not maintain overflow rects, so avoid calling
         // FinishAndStoreOverflow on it:
         hint = NS_SubtractHint(hint,
@@ -858,6 +852,21 @@ RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
       if (hint & nsChangeHint_NeedReflow) {
         StyleChangeReflow(frame, hint);
         didReflowThisFrame = true;
+      }
+
+      if ((hint & nsChangeHint_UpdateUsesOpacity) &&
+          frame->IsFrameOfType(nsIFrame::eTablePart)) {
+        NS_ASSERTION(hint & nsChangeHint_UpdateOpacityLayer,
+                     "should only return UpdateUsesOpacity hint "
+                     "when also returning UpdateOpacityLayer hint");
+        // When an internal table part (including cells) changes between
+        // having opacity 1 and non-1, it changes whether its
+        // backgrounds (and those of table parts inside of it) are
+        // painted as part of the table's nsDisplayTableBorderBackground
+        // display item, or part of its own display item.  That requires
+        // invalidation, so change UpdateOpacityLayer to RepaintFrame.
+        hint &= ~nsChangeHint_UpdateOpacityLayer;
+        hint |= nsChangeHint_RepaintFrame;
       }
 
       if (hint & (nsChangeHint_RepaintFrame | nsChangeHint_SyncFrameView |
@@ -1020,7 +1029,7 @@ RestyleManager::RestyleElement(Element*               aElement,
       !mInRebuildAllStyleData) {
     nsStyleContext *oldContext = aPrimaryFrame->StyleContext();
     if (!oldContext->GetParent()) { // check that we're the root element
-      nsRefPtr<nsStyleContext> newContext = mPresContext->StyleSet()->
+      RefPtr<nsStyleContext> newContext = mPresContext->StyleSet()->
         ResolveStyleFor(aElement, nullptr /* == oldContext->GetParent() */);
       if (oldContext->StyleFont()->mFont.size !=
           newContext->StyleFont()->mFont.size) {
@@ -1106,7 +1115,7 @@ RestyleManager::AnimationsWithDestroyedFrame::StopAnimationsForElementsWithoutFr
 
 void
 RestyleManager::AnimationsWithDestroyedFrame::StopAnimationsWithoutFrame(
-  nsTArray<nsRefPtr<nsIContent>>& aArray,
+  nsTArray<RefPtr<nsIContent>>& aArray,
   nsCSSPseudoElements::Type aPseudoType)
 {
   nsAnimationManager* animationManager =
@@ -1224,6 +1233,7 @@ RestyleManager::AttributeWillChange(Element* aElement,
   RestyleHintData rsdata;
   nsRestyleHint rshint =
     mPresContext->StyleSet()->HasAttributeDependentStyle(aElement,
+                                                         aNameSpaceID,
                                                          aAttribute,
                                                          aModType,
                                                          false,
@@ -1315,6 +1325,7 @@ RestyleManager::AttributeChanged(Element* aElement,
   RestyleHintData rsdata;
   nsRestyleHint rshint =
     mPresContext->StyleSet()->HasAttributeDependentStyle(aElement,
+                                                         aNameSpaceID,
                                                          aAttribute,
                                                          aModType,
                                                          true,
@@ -1326,19 +1337,10 @@ RestyleManager::AttributeChanged(Element* aElement,
 /* static */ uint64_t
 RestyleManager::GetMaxAnimationGenerationForFrame(nsIFrame* aFrame)
 {
-  nsIContent* content = aFrame->GetContent();
-  if (!content || !content->IsElement()) {
-    return 0;
-  }
-
-  nsCSSPseudoElements::Type pseudoType =
-    aFrame->StyleContext()->GetPseudoType();
   AnimationCollection* transitions =
-    aFrame->PresContext()->TransitionManager()->GetAnimations(
-      content->AsElement(), pseudoType, false /* don't create */);
+    aFrame->PresContext()->TransitionManager()->GetAnimationCollection(aFrame);
   AnimationCollection* animations =
-    aFrame->PresContext()->AnimationManager()->GetAnimations(
-      content->AsElement(), pseudoType, false /* don't create */);
+    aFrame->PresContext()->AnimationManager()->GetAnimationCollection(aFrame);
 
   return std::max(transitions ? transitions->mAnimationGeneration : 0,
                   animations ? animations->mAnimationGeneration : 0);
@@ -1347,7 +1349,7 @@ RestyleManager::GetMaxAnimationGenerationForFrame(nsIFrame* aFrame)
 void
 RestyleManager::RestyleForEmptyChange(Element* aContainer)
 {
-  // In some cases (:empty + E, :empty ~ E), a change if the content of
+  // In some cases (:empty + E, :empty ~ E), a change in the content of
   // an element requires restyling its parent's siblings.
   nsRestyleHint hint = eRestyle_Subtree;
   nsIContent* grandparent = aContainer->GetParent();
@@ -1634,7 +1636,7 @@ RestyleManager::RebuildAllStyleData(nsChangeHint aExtraHint,
   }
 
   // Make sure that the viewmanager will outlive the presshell
-  nsRefPtr<nsViewManager> vm = presShell->GetViewManager();
+  RefPtr<nsViewManager> vm = presShell->GetViewManager();
 
   // We may reconstruct frames below and hence process anything that is in the
   // tree. We don't want to get notified to process those items again after.
@@ -2001,8 +2003,8 @@ VerifySameTree(nsStyleContext* aContext1, nsStyleContext* aContext2)
 }
 
 static void
-VerifyContextParent(nsPresContext* aPresContext, nsIFrame* aFrame,
-                    nsStyleContext* aContext, nsStyleContext* aParentContext)
+VerifyContextParent(nsIFrame* aFrame, nsStyleContext* aContext,
+                    nsStyleContext* aParentContext)
 {
   // get the contexts not provided
   if (!aContext) {
@@ -2062,17 +2064,14 @@ VerifyContextParent(nsPresContext* aPresContext, nsIFrame* aFrame,
 }
 
 static void
-VerifyStyleTree(nsPresContext* aPresContext, nsIFrame* aFrame,
-                nsStyleContext* aParentContext)
+VerifyStyleTree(nsIFrame* aFrame, nsStyleContext* aParentContext)
 {
   nsStyleContext*  context = aFrame->StyleContext();
-  VerifyContextParent(aPresContext, aFrame, context, nullptr);
+  VerifyContextParent(aFrame, context, nullptr);
 
   nsIFrame::ChildListIterator lists(aFrame);
   for (; !lists.IsDone(); lists.Next()) {
-    nsFrameList::Enumerator childFrames(lists.CurrentList());
-    for (; !childFrames.AtEnd(); childFrames.Next()) {
-      nsIFrame* child = childFrames.get();
+    for (nsIFrame* child : lists.CurrentList()) {
       if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
         // only do frames that are in flow
         if (nsGkAtoms::placeholderFrame == child->GetType()) {
@@ -2083,15 +2082,15 @@ VerifyStyleTree(nsPresContext* aPresContext, nsIFrame* aFrame,
 
           // recurse to out of flow frame, letting the parent context get resolved
           do {
-            VerifyStyleTree(aPresContext, outOfFlowFrame, nullptr);
+            VerifyStyleTree(outOfFlowFrame, nullptr);
           } while ((outOfFlowFrame = outOfFlowFrame->GetNextContinuation()));
 
           // verify placeholder using the parent frame's context as
           // parent context
-          VerifyContextParent(aPresContext, child, nullptr, nullptr);
+          VerifyContextParent(child, nullptr, nullptr);
         }
         else { // regular frame
-          VerifyStyleTree(aPresContext, child, nullptr);
+          VerifyStyleTree(child, nullptr);
         }
       }
     }
@@ -2102,7 +2101,7 @@ VerifyStyleTree(nsPresContext* aPresContext, nsIFrame* aFrame,
   for (nsStyleContext* extraContext;
        (extraContext = aFrame->GetAdditionalStyleContext(contextIndex));
        ++contextIndex) {
-    VerifyContextParent(aPresContext, aFrame, extraContext, context);
+    VerifyContextParent(aFrame, extraContext, context);
   }
 }
 
@@ -2112,7 +2111,7 @@ RestyleManager::DebugVerifyStyleTree(nsIFrame* aFrame)
   if (aFrame) {
     nsStyleContext* context = aFrame->StyleContext();
     nsStyleContext* parentContext = context->GetParent();
-    VerifyStyleTree(mPresContext, aFrame, parentContext);
+    VerifyStyleTree(aFrame, parentContext);
   }
 }
 
@@ -2124,7 +2123,7 @@ RestyleManager::DebugVerifyStyleTree(nsIFrame* aFrame)
 RestyleManager::TryStartingTransition(nsPresContext* aPresContext,
                                       nsIContent* aContent,
                                       nsStyleContext* aOldStyleContext,
-                                      nsRefPtr<nsStyleContext>*
+                                      RefPtr<nsStyleContext>*
                                         aNewStyleContext /* inout */)
 {
   if (!aContent || !aContent->IsElement()) {
@@ -2133,7 +2132,7 @@ RestyleManager::TryStartingTransition(nsPresContext* aPresContext,
 
   // Notify the transition manager.  If it starts a transition,
   // it might modify the new style context.
-  nsRefPtr<nsStyleContext> sc = *aNewStyleContext;
+  RefPtr<nsStyleContext> sc = *aNewStyleContext;
   aPresContext->TransitionManager()->StyleContextChanged(
     aContent->AsElement(), aOldStyleContext, aNewStyleContext);
   return *aNewStyleContext != sc;
@@ -2359,7 +2358,7 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
   // tree has already been changed, so this check would just fail.
   nsStyleContext* oldContext = aFrame->StyleContext();
 
-  nsRefPtr<nsStyleContext> newContext;
+  RefPtr<nsStyleContext> newContext;
   nsIFrame* providerFrame;
   nsStyleContext* newParentContext = aFrame->GetParentStyleContext(&providerFrame);
   bool isChild = providerFrame && providerFrame->GetParent() == aFrame;
@@ -2462,9 +2461,7 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
 
       nsIFrame::ChildListIterator lists(aFrame);
       for (; !lists.IsDone(); lists.Next()) {
-        nsFrameList::Enumerator childFrames(lists.CurrentList());
-        for (; !childFrames.AtEnd(); childFrames.Next()) {
-          nsIFrame* child = childFrames.get();
+        for (nsIFrame* child : lists.CurrentList()) {
           // only do frames that are in flow
           if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
               child != providerChild) {
@@ -2503,7 +2500,7 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
       for (nsStyleContext* oldExtraContext;
            (oldExtraContext = aFrame->GetAdditionalStyleContext(contextIndex));
            ++contextIndex) {
-        nsRefPtr<nsStyleContext> newExtraContext;
+        RefPtr<nsStyleContext> newExtraContext;
         newExtraContext = mPresContext->StyleSet()->
                             ReparentStyleContext(oldExtraContext,
                                                  newContext, nullptr);
@@ -2532,7 +2529,7 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
         }
       }
 #ifdef DEBUG
-      VerifyStyleTree(mPresContext, aFrame, newParentContext);
+      VerifyStyleTree(aFrame, newParentContext);
 #endif
     }
   }
@@ -2551,7 +2548,7 @@ ElementRestyler::ElementRestyler(nsPresContext* aPresContext,
                                  nsTArray<nsIContent*>&
                                    aVisibleKidsOfHiddenElement,
                                  nsTArray<ContextToClear>& aContextsToClear,
-                                 nsTArray<nsRefPtr<nsStyleContext>>&
+                                 nsTArray<RefPtr<nsStyleContext>>&
                                    aSwappedStructOwners)
   : mPresContext(aPresContext)
   , mFrame(aFrame)
@@ -2675,7 +2672,7 @@ ElementRestyler::ElementRestyler(nsPresContext* aPresContext,
                                  nsTArray<nsIContent*>&
                                    aVisibleKidsOfHiddenElement,
                                  nsTArray<ContextToClear>& aContextsToClear,
-                                 nsTArray<nsRefPtr<nsStyleContext>>&
+                                 nsTArray<RefPtr<nsStyleContext>>&
                                    aSwappedStructOwners)
   : mPresContext(aPresContext)
   , mFrame(nullptr)
@@ -2883,9 +2880,7 @@ ElementRestyler::ConditionallyRestyleContentChildren(nsIFrame* aFrame,
        f = GetNextContinuationWithSameStyle(f, f->StyleContext())) {
     nsIFrame::ChildListIterator lists(f);
     for (; !lists.IsDone(); lists.Next()) {
-      nsFrameList::Enumerator childFrames(lists.CurrentList());
-      for (; !childFrames.AtEnd(); childFrames.Next()) {
-        nsIFrame* child = childFrames.get();
+      for (nsIFrame* child : lists.CurrentList()) {
         // Out-of-flows are reached through their placeholders.  Continuations
         // and block-in-inline splits are reached through those chains.
         if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
@@ -3091,9 +3086,7 @@ ElementRestyler::MoveStyleContextsForContentChildren(
 {
   nsIFrame::ChildListIterator lists(aParent);
   for (; !lists.IsDone(); lists.Next()) {
-    nsFrameList::Enumerator childFrames(lists.CurrentList());
-    for (; !childFrames.AtEnd(); childFrames.Next()) {
-      nsIFrame* child = childFrames.get();
+    for (nsIFrame* child : lists.CurrentList()) {
       // Bail out if we have out-of-flow frames.
       // FIXME: It might be safe to just continue here instead of bailing out.
       if (child->GetStateBits() & NS_FRAME_OUT_OF_FLOW) {
@@ -3228,7 +3221,7 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
   // restyle.  Before we return from this function, we call
   // RestyleTracker::AddRestyleRootsIfAwaitingRestyle to ensure they get
   // restyled in RestyleTracker::DoProcessRestyles.
-  nsTArray<nsRefPtr<Element>> descendants;
+  nsTArray<RefPtr<Element>> descendants;
 
   nsRestyleHint hintToRestore = nsRestyleHint(0);
   RestyleHintData hintDataToRestore;
@@ -3270,7 +3263,7 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
                                   eRestyle_Subtree |
                                   eRestyle_ForceDescendants));
 
-  nsRefPtr<nsStyleContext> oldContext = mFrame->StyleContext();
+  RefPtr<nsStyleContext> oldContext = mFrame->StyleContext();
 
   nsTArray<SwapInstruction> swaps;
 
@@ -3708,6 +3701,89 @@ ElementRestyler::CanReparentStyleContext(nsRestyleHint aRestyleHint)
          !mPresContext->StyleSet()->IsInRuleTreeReconstruct();
 }
 
+// Returns true iff any rule node that is an ancestor-or-self of the
+// two specified rule nodes, but which is not an ancestor of both,
+// has any inherited style data.  If false is returned, then we know
+// that a change from one rule node to the other must not result in
+// any change in inherited style data.
+static bool
+CommonInheritedStyleData(nsRuleNode* aRuleNode1, nsRuleNode* aRuleNode2)
+{
+  if (aRuleNode1 == aRuleNode2) {
+    return true;
+  }
+
+  nsRuleNode* n1 = aRuleNode1->GetParent();
+  nsRuleNode* n2 = aRuleNode2->GetParent();
+
+  if (n1 == n2) {
+    // aRuleNode1 and aRuleNode2 sharing a parent is a common case, e.g.
+    // when modifying a style="" attribute.  (We must null check GetRule()'s
+    // result since although we know the two parents are the same, it might
+    // be null, as in the case of the two rule nodes being roots of two
+    // different rule trees.)
+    if (aRuleNode1->GetRule() &&
+        aRuleNode1->GetRule()->MightMapInheritedStyleData()) {
+      return false;
+    }
+    if (aRuleNode2->GetRule() &&
+        aRuleNode2->GetRule()->MightMapInheritedStyleData()) {
+      return false;
+    }
+    return true;
+  }
+
+  // Compute the depths of aRuleNode1 and aRuleNode2.
+  int d1 = 0, d2 = 0;
+  while (n1) {
+    ++d1;
+    n1 = n1->GetParent();
+  }
+  while (n2) {
+    ++d2;
+    n2 = n2->GetParent();
+  }
+
+  // Make aRuleNode1 be the deeper node.
+  if (d2 > d1) {
+    std::swap(d1, d2);
+    std::swap(aRuleNode1, aRuleNode2);
+  }
+
+  // Check all of the rule nodes in the deeper branch until we reach
+  // the same depth as the shallower branch.
+  n1 = aRuleNode1;
+  n2 = aRuleNode2;
+  while (d1 > d2) {
+    nsIStyleRule* rule = n1->GetRule();
+    MOZ_ASSERT(rule, "non-root rule node should have a rule");
+    if (rule->MightMapInheritedStyleData()) {
+      return false;
+    }
+    n1 = n1->GetParent();
+    --d1;
+  }
+
+  // Check both branches simultaneously until we reach a common ancestor.
+  while (n1 != n2) {
+    MOZ_ASSERT(n1);
+    MOZ_ASSERT(n2);
+    // As above, we must null check GetRule()'s result since we won't find
+    // a common ancestor if the two rule nodes come from different rule trees,
+    // and thus we might reach the root (which has a null rule).
+    if (n1->GetRule() && n1->GetRule()->MightMapInheritedStyleData()) {
+      return false;
+    }
+    if (n2->GetRule() && n2->GetRule()->MightMapInheritedStyleData()) {
+      return false;
+    }
+    n1 = n1->GetParent();
+    n2 = n2->GetParent();
+  }
+
+  return true;
+}
+
 ElementRestyler::RestyleResult
 ElementRestyler::RestyleSelf(nsIFrame* aSelf,
                              nsRestyleHint aRestyleHint,
@@ -3769,7 +3845,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
   ComputeRestyleResultFromFrame(aSelf, result, canStopWithStyleChange);
 
   nsChangeHint assumeDifferenceHint = NS_STYLE_HINT_NONE;
-  nsRefPtr<nsStyleContext> oldContext = aSelf->StyleContext();
+  RefPtr<nsStyleContext> oldContext = aSelf->StyleContext();
   nsStyleSet* styleSet = mPresContext->StyleSet();
 
 #ifdef ACCESSIBILITY
@@ -3828,7 +3904,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
   LOG_RESTYLE("parentContext = %p", parentContext);
 
   // do primary context
-  nsRefPtr<nsStyleContext> newContext;
+  RefPtr<nsStyleContext> newContext;
   nsIFrame *prevContinuation =
     GetPrevContinuationWithPossiblySameStyle(aSelf);
   nsStyleContext *prevContinuationContext;
@@ -3971,14 +4047,24 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       LOG_RESTYLE_CONTINUE("the old style context is shared");
       result = eRestyleResult_Continue;
 
-      // It's not safe to return eRestyleResult_StopWithStyleChange,
-      // as even though we might not have cached structs for inherited
-      // properties on oldContext (and thus our samePointerStructs
-      // check later will look OK), oldContext and newContext might
-      // represent different inherited style data, and some of the
-      // elements currently sharing oldContext might need to keep it
-      // rather than get restyled to use newContext.
-      canStopWithStyleChange = false;
+      // It is not safe to return eRestyleResult_StopWithStyleChange
+      // when oldContext is shared and newContext has different
+      // inherited style data, regardless of whether the oldContext has
+      // that inherited style data cached.  We can't simply rely on the
+      // samePointerStructs check later on, as the descendent style
+      // contexts just might not have had their inherited style data
+      // requested yet (which is possible for example if we flush style
+      // between resolving an initial style context for a frame and
+      // building its display list items).  Therefore we must compare
+      // the rule nodes of oldContext and newContext to see if the
+      // restyle results in new inherited style data.  If not, then
+      // we can continue assuming that eRestyleResult_StopWithStyleChange
+      // is safe.  Without this check, we could end up with style contexts
+      // shared between elements which should have different styles.
+      if (!CommonInheritedStyleData(oldContext->RuleNode(),
+                                    newContext->RuleNode())) {
+        canStopWithStyleChange = false;
+      }
     }
 
     // Look at some details of the new style context to see if it would
@@ -4074,7 +4160,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       for (nsStyleStructID sid = nsStyleStructID(0);
            sid < nsStyleStructID_Length;
            sid = nsStyleStructID(sid + 1)) {
-        if (oldContext->HasCachedInheritedStyleData(sid) &&
+        if (oldContext->HasCachedDependentStyleData(sid) &&
             !(samePointerStructs & nsCachedStyleData::GetBitForSID(sid))) {
           LOG_RESTYLE_CONTINUE("there are different struct pointers");
           result = eRestyleResult_Continue;
@@ -4177,7 +4263,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
        ++contextIndex) {
     LOG_RESTYLE("extra context %d", contextIndex);
     LOG_RESTYLE_INDENT();
-    nsRefPtr<nsStyleContext> newExtraContext;
+    RefPtr<nsStyleContext> newExtraContext;
     nsIAtom* const extraPseudoTag = oldExtraContext->GetPseudo();
     const nsCSSPseudoElements::Type extraPseudoType =
       oldExtraContext->GetPseudoType();
@@ -4339,9 +4425,7 @@ ElementRestyler::RestyleChildrenOfDisplayContentsElement(
     // XXX ContentIsDescendantOf check below)
     nsIFrame::ChildListIterator lists(aParentFrame);
     for ( ; !lists.IsDone(); lists.Next()) {
-      nsFrameList::Enumerator childFrames(lists.CurrentList());
-      for (; !childFrames.AtEnd(); childFrames.Next()) {
-        nsIFrame* f = childFrames.get();
+      for (nsIFrame* f : lists.CurrentList()) {
         if (nsContentUtils::ContentIsDescendantOf(f->GetContent(), mContent) &&
             !f->GetPrevContinuation()) {
           if (!(f->GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
@@ -4367,24 +4451,20 @@ ElementRestyler::ComputeStyleChangeFor(nsIFrame*          aFrame,
                                        const RestyleHintData& aRestyleHintData,
                                        nsTArray<ContextToClear>&
                                          aContextsToClear,
-                                       nsTArray<nsRefPtr<nsStyleContext>>&
+                                       nsTArray<RefPtr<nsStyleContext>>&
                                          aSwappedStructOwners)
 {
   nsIContent* content = aFrame->GetContent();
-  nsAutoCString idStr;
+  nsAutoCString localDescriptor;
   if (profiler_is_active() && content) {
-    nsIAtom* id = content->GetID();
-    if (id) {
-      id->ToUTF8String(idStr);
-    } else {
-      idStr.AssignLiteral("?");
-    }
+    std::string elemDesc = ToString(*content);
+    localDescriptor.Assign(elemDesc.c_str());
   }
 
   PROFILER_LABEL_PRINTF("ElementRestyler", "ComputeStyleChangeFor",
                         js::ProfileEntry::Category::CSS,
                         content ? "Element: %s" : "%s",
-                        content ? idStr.get() : "");
+                        content ? localDescriptor.get() : "");
   if (aMinChange) {
     aChangeList->AppendChange(aFrame, content, aMinChange);
   }
@@ -4528,7 +4608,7 @@ ElementRestyler::RestyleUndisplayedNodes(nsRestyleHint    aChildRestyleHint,
       thisChildHint =
         nsRestyleHint(thisChildHint | undisplayedRestyleData->mRestyleHint);
     }
-    nsRefPtr<nsStyleContext> undisplayedContext;
+    RefPtr<nsStyleContext> undisplayedContext;
     nsStyleSet* styleSet = mPresContext->StyleSet();
     if (MustRestyleSelf(thisChildHint, element)) {
       undisplayedContext =
@@ -4728,9 +4808,7 @@ ElementRestyler::RestyleContentChildren(nsIFrame* aParent,
     ancestorPusher.PushAncestorAndStyleScope(mContent);
   }
   for (; !lists.IsDone(); lists.Next()) {
-    nsFrameList::Enumerator childFrames(lists.CurrentList());
-    for (; !childFrames.AtEnd(); childFrames.Next()) {
-      nsIFrame* child = childFrames.get();
+    for (nsIFrame* child : lists.CurrentList()) {
       // Out-of-flows are reached through their placeholders.  Continuations
       // and block-in-inline splits are reached through those chains.
       if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
@@ -4853,7 +4931,7 @@ RestyleManager::ComputeAndProcessStyleChange(nsIFrame*              aFrame,
   // swappedStructOwners needs to be kept alive until after
   // ProcessRestyledFrames and ClearCachedInheritedStyleDataOnDescendants
   // calls; see comment in ElementRestyler::Restyle.
-  nsTArray<nsRefPtr<nsStyleContext>> swappedStructOwners;
+  nsTArray<RefPtr<nsStyleContext>> swappedStructOwners;
   ElementRestyler::ComputeStyleChangeFor(aFrame, &changeList, aMinChange,
                                          aRestyleTracker, aRestyleHint,
                                          aRestyleHintData,
@@ -4890,7 +4968,7 @@ RestyleManager::ComputeAndProcessStyleChange(nsStyleContext*        aNewContext,
   // swappedStructOwners needs to be kept alive until after
   // ProcessRestyledFrames and ClearCachedInheritedStyleDataOnDescendants
   // calls; see comment in ElementRestyler::Restyle.
-  nsTArray<nsRefPtr<nsStyleContext>> swappedStructOwners;
+  nsTArray<RefPtr<nsStyleContext>> swappedStructOwners;
   nsStyleChangeList changeList;
   ElementRestyler r(frame->PresContext(), aElement, &changeList, aMinChange,
                     aRestyleTracker, selectorsForDescendants, treeMatchContext,
@@ -5024,7 +5102,8 @@ RestyleManager::ChangeHintToString(nsChangeHint aHint)
     "ChildrenOnlyTransform", "RecomputePosition", "AddOrRemoveTransform",
     "BorderStyleNoneChange", "UpdateTextPath", "SchedulePaint",
     "NeutralChange", "InvalidateRenderingObservers",
-    "ReflowChangesSizeOrPosition", "UpdateComputedBSize"
+    "ReflowChangesSizeOrPosition", "UpdateComputedBSize",
+    "UpdateUsesOpacity"
   };
   uint32_t hint = aHint & ((1 << ArrayLength(names)) - 1);
   uint32_t rest = aHint & ~((1 << ArrayLength(names)) - 1);

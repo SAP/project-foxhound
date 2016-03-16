@@ -10,11 +10,9 @@
 
 #include "jsmath.h"
 
-#include "mozilla/Constants.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/unused.h"
 
 #include <algorithm>  // for std::max
 #include <fcntl.h>
@@ -40,7 +38,16 @@
 
 #include "jsobjinlines.h"
 
-#if defined(ANDROID) || defined(XP_MACOSX) || defined(__DragonFly__) || \
+#if defined(XP_WIN)
+// #define needed to link in RtlGenRandom(), a.k.a. SystemFunction036.  See the
+// "Community Additions" comment on MSDN here:
+// https://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
+# define SystemFunction036 NTAPI SystemFunction036
+# include <NTSecAPI.h>
+# undef SystemFunction036
+#endif
+
+#if defined(ANDROID) || defined(XP_DARWIN) || defined(__DragonFly__) || \
     defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 # include <stdlib.h>
 # define HAVE_ARC4RANDOM
@@ -735,103 +742,57 @@ js::math_pow(JSContext* cx, unsigned argc, Value* vp)
 }
 
 static uint64_t
-random_generateSeed()
+GenerateSeed()
 {
-    union {
-        uint8_t     u8[8];
-        uint32_t    u32[2];
-        uint64_t    u64;
-    } seed;
-    seed.u64 = 0;
+    uint64_t seed = 0;
 
 #if defined(XP_WIN)
-    /*
-     * Temporary diagnostic for bug 1167248: Test whether the injected hooks
-     * react differently to LoadLibraryW / LoadLibraryExW.
-     */
-    HMODULE oldWay = LoadLibraryW(L"ADVAPI32.DLL");
-    HMODULE newWay = LoadLibraryExW(L"ADVAPI32.DLL",
-                                    nullptr,
-                                    LOAD_LIBRARY_SEARCH_SYSTEM32);
-    /* Fallback for older versions of Windows */
-    if (!newWay && GetLastError() == ERROR_INVALID_PARAMETER)
-        newWay = LoadLibraryExW(L"ADVAPI32.DLL", nullptr, 0);
-
-    if (oldWay && !newWay)
-        MOZ_CRASH();
-
-    errno_t error = rand_s(&seed.u32[0]);
-
-    if (oldWay)
-        FreeLibrary(oldWay);
-    if (newWay)
-        FreeLibrary(newWay);
-
-    MOZ_ASSERT(error == 0, "rand_s() error?!");
-
-    error = rand_s(&seed.u32[1]);
-    MOZ_ASSERT(error == 0, "rand_s() error?!");
+    MOZ_ALWAYS_TRUE(RtlGenRandom(&seed, sizeof(seed)));
 #elif defined(HAVE_ARC4RANDOM)
-    seed.u32[0] = arc4random();
-    seed.u32[1] = arc4random();
+    seed = (static_cast<uint64_t>(arc4random()) << 32) | arc4random();
 #elif defined(XP_UNIX)
     int fd = open("/dev/urandom", O_RDONLY);
-    MOZ_ASSERT(fd >= 0, "Can't open /dev/urandom?!");
     if (fd >= 0) {
-        ssize_t nread = read(fd, seed.u8, mozilla::ArrayLength(seed.u8));
-        MOZ_ASSERT(nread == 8, "Can't read /dev/urandom?!");
-        mozilla::unused << nread;
+        read(fd, static_cast<void*>(&seed), sizeof(seed));
         close(fd);
     }
 #else
-# error "Platform needs to implement random_generateSeed()"
+# error "Platform needs to implement GenerateSeed()"
 #endif
 
-    seed.u64 ^= PRMJ_Now();
-    return seed.u64;
+    // Also mix in PRMJ_Now() in case we couldn't read random bits from the OS.
+    return seed ^ PRMJ_Now();
 }
 
-/*
- * Math.random() support, lifted from java.util.Random.java.
- */
 void
-js::random_initState(uint64_t* rngState)
+js::GenerateXorShift128PlusSeed(mozilla::Array<uint64_t, 2>& seed)
 {
-    /* Our PRNG only uses 48 bits, so squeeze our entropy into those bits. */
-    uint64_t seed = random_generateSeed();
-    seed ^= (seed >> 16);
-    *rngState = (seed ^ RNG_MULTIPLIER) & RNG_MASK;
+    // XorShift128PlusRNG must be initialized with a non-zero seed.
+    do {
+        seed[0] = GenerateSeed();
+        seed[1] = GenerateSeed();
+    } while (seed[0] == 0 && seed[1] == 0);
 }
 
-uint64_t
-js::random_next(uint64_t* rngState, int bits)
+void
+JSCompartment::ensureRandomNumberGenerator()
 {
-    MOZ_ASSERT((*rngState & 0xffff000000000000ULL) == 0, "Bad rngState");
-    MOZ_ASSERT(bits > 0 && bits <= RNG_STATE_WIDTH, "bits is out of range");
-
-    if (*rngState == 0) {
-        random_initState(rngState);
+    if (randomNumberGenerator.isNothing()) {
+        mozilla::Array<uint64_t, 2> seed;
+        GenerateXorShift128PlusSeed(seed);
+        randomNumberGenerator.emplace(seed[0], seed[1]);
     }
-
-    uint64_t nextstate = *rngState * RNG_MULTIPLIER;
-    nextstate += RNG_ADDEND;
-    nextstate &= RNG_MASK;
-    *rngState = nextstate;
-    return nextstate >> (RNG_STATE_WIDTH - bits);
-}
-
-double
-js::math_random_no_outparam(JSContext* cx)
-{
-    /* Calculate random without memory traffic, for use in the JITs. */
-    return random_nextDouble(&cx->compartment()->rngState);
 }
 
 bool
 js::math_random(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-    double z = random_nextDouble(&cx->compartment()->rngState);
+
+    JSCompartment* comp = cx->compartment();
+    comp->ensureRandomNumberGenerator();
+
+    double z = comp->randomNumberGenerator.ref().nextDouble();
     args.rval().setDouble(z);
     return true;
 }

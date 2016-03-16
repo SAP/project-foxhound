@@ -14,6 +14,7 @@
 #include "nsNullPrincipal.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIInputStreamChannel.h"
+#include "mozilla/DebugOnly.h"
 
 NS_IMPL_ADDREF(nsViewSourceChannel)
 NS_IMPL_RELEASE(nsViewSourceChannel)
@@ -145,6 +146,24 @@ nsViewSourceChannel::InitSrcdoc(nsIURI* aURI,
 
 NS_IMETHODIMP
 nsViewSourceChannel::GetName(nsACString &result)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetTransferSize(uint64_t *aTransferSize)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetDecodedBodySize(uint64_t *aDecodedBodySize)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetEncodedBodySize(uint64_t *aEncodedBodySize)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -377,9 +396,19 @@ nsViewSourceChannel::SetLoadFlags(uint32_t aLoadFlags)
     // Win32 compiler thinks that's supposed to be a method.
     mIsDocument = (aLoadFlags & ::nsIChannel::LOAD_DOCUMENT_URI) ? true : false;
 
-    return mChannel->SetLoadFlags((aLoadFlags |
-                                   ::nsIRequest::LOAD_FROM_CACHE) &
-                                  ~::nsIChannel::LOAD_DOCUMENT_URI);
+    nsresult rv = mChannel->SetLoadFlags((aLoadFlags |
+                                          ::nsIRequest::LOAD_FROM_CACHE) &
+                                          ~::nsIChannel::LOAD_DOCUMENT_URI);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+    }
+
+    if (mHttpChannel) {
+       rv = mHttpChannel->SetIsMainDocumentChannel(aLoadFlags & ::nsIChannel::LOAD_DOCUMENT_URI);
+       MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+
+    return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -624,6 +653,12 @@ nsViewSourceChannel::SetBaseURI(nsIURI* aBaseURI)
 {
   mBaseURI = aBaseURI;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetProtocolVersion(nsACString& aProtocolVersion)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 // nsIRequestObserver methods
@@ -916,4 +951,25 @@ nsViewSourceChannel::SetSchedulingContextID(const nsID scid)
 {
     return !mHttpChannel ? NS_ERROR_NULL_POINTER :
         mHttpChannel->SetSchedulingContextID(scid);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetIsMainDocumentChannel(bool* aValue)
+{
+    return !mHttpChannel ? NS_ERROR_NULL_POINTER :
+        mHttpChannel->GetIsMainDocumentChannel(aValue);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::SetIsMainDocumentChannel(bool aValue)
+{
+    return !mHttpChannel ? NS_ERROR_NULL_POINTER :
+        mHttpChannel->SetIsMainDocumentChannel(aValue);
+}
+
+// Have to manually forward SetCorsPreflightParameters since it's [notxpcom]
+void
+nsViewSourceChannel::SetCorsPreflightParameters(const nsTArray<nsCString>& aUnsafeHeaders)
+{
+  mHttpChannelInternal->SetCorsPreflightParameters(aUnsafeHeaders);
 }

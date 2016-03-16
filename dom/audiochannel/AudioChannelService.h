@@ -19,6 +19,7 @@
 
 class nsIRunnable;
 class nsPIDOMWindow;
+struct PRLogModuleInfo;
 
 namespace mozilla {
 namespace dom {
@@ -44,6 +45,8 @@ public:
   static already_AddRefed<AudioChannelService> GetOrCreate();
 
   static bool IsAudioChannelMutedByDefault();
+
+  static PRLogModuleInfo* GetAudioChannelLog();
 
   /**
    * Any audio channel agent that starts playing should register itself to
@@ -175,7 +178,10 @@ private:
   {
     explicit AudioChannelWindow(uint64_t aWindowID)
       : mWindowID(aWindowID)
-    {}
+    {
+      // Workaround for bug1183033, system channel type can always playback.
+      mChannels[(int16_t)AudioChannel::System].mMuted = false;
+    }
 
     uint64_t mWindowID;
     AudioChannelConfig mChannels[NUMBER_OF_AUDIO_CHANNELS];

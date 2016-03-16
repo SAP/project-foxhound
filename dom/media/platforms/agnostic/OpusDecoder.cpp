@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <inttypes.h>  // For PRId64
 
-extern PRLogModuleInfo* GetPDMLog();
+extern mozilla::LogModule* GetPDMLog();
 #define OPUS_DEBUG(arg, ...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, \
     ("OpusDataDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
@@ -46,7 +46,7 @@ OpusDataDecoder::Shutdown()
   return NS_OK;
 }
 
-nsRefPtr<MediaDataDecoder::InitPromise>
+RefPtr<MediaDataDecoder::InitPromise>
 OpusDataDecoder::Init()
 {
   size_t length = mInfo.mCodecSpecificConfig->Length();
@@ -114,9 +114,9 @@ nsresult
 OpusDataDecoder::Input(MediaRawData* aSample)
 {
   nsCOMPtr<nsIRunnable> runnable(
-    NS_NewRunnableMethodWithArg<nsRefPtr<MediaRawData>>(
+    NS_NewRunnableMethodWithArg<RefPtr<MediaRawData>>(
       this, &OpusDataDecoder::Decode,
-      nsRefPtr<MediaRawData>(aSample)));
+      RefPtr<MediaRawData>(aSample)));
   mTaskQueue->Dispatch(runnable.forget());
 
   return NS_OK;
@@ -168,17 +168,17 @@ OpusDataDecoder::DoDecode(MediaRawData* aSample)
     return -1;
   }
 
-  nsAutoArrayPtr<AudioDataValue> buffer(new AudioDataValue[frames * channels]);
+  auto buffer = MakeUnique<AudioDataValue[]>(frames * channels);
 
   // Decode to the appropriate sample type.
 #ifdef MOZ_SAMPLE_TYPE_FLOAT32
   int ret = opus_multistream_decode_float(mOpusDecoder,
                                           aSample->Data(), aSample->Size(),
-                                          buffer, frames, false);
+                                          buffer.get(), frames, false);
 #else
   int ret = opus_multistream_decode(mOpusDecoder,
                                     aSample->Data(), aSample->Size(),
-                                    buffer, frames, false);
+                                    buffer.get(), frames, false);
 #endif
   if (ret < 0) {
     return -1;
@@ -264,7 +264,7 @@ OpusDataDecoder::DoDecode(MediaRawData* aSample)
                                   time.value(),
                                   duration.value(),
                                   frames,
-                                  buffer.forget(),
+                                  Move(buffer),
                                   mOpusParser->mChannels,
                                   mOpusParser->mRate));
   mFrames += frames;
@@ -304,7 +304,8 @@ OpusDataDecoder::Flush()
 bool
 OpusDataDecoder::IsOpus(const nsACString& aMimeType)
 {
-  return aMimeType.EqualsLiteral("audio/ogg; codecs=opus");
+  return aMimeType.EqualsLiteral("audio/webm; codecs=opus") ||
+         aMimeType.EqualsLiteral("audio/ogg; codecs=opus");
 }
 
 } // namespace mozilla

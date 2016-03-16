@@ -37,11 +37,12 @@ class MoveEmitterMIPSShared
     void assertDone();
     Register tempReg();
     FloatRegister tempFloatReg();
-    Address cycleSlot(uint32_t slot, uint32_t subslot) const;
+    Address cycleSlot(uint32_t slot, uint32_t subslot = 0) const;
     int32_t getAdjustedOffset(const MoveOperand& operand);
     Address getAdjustedAddress(const MoveOperand& operand);
 
     void emitMove(const MoveOperand& from, const MoveOperand& to);
+    void emitInt32Move(const MoveOperand& from, const MoveOperand& to);
     void emitFloat32Move(const MoveOperand& from, const MoveOperand& to);
     virtual void emitDoubleMove(const MoveOperand& from, const MoveOperand& to) = 0;
     virtual void breakCycle(const MoveOperand& from, const MoveOperand& to,

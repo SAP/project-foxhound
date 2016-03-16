@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-Cu.importGlobalProperties(['Blob']);
+Cu.importGlobalProperties(['Blob', 'FileReader']);
 
 Cu.import("resource://gre/modules/PageThumbUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -108,16 +108,29 @@ const backgroundPageThumbsContent = {
           this._startNextCapture();
         }
         else if (this._state == STATE_CANCELED) {
-          // A capture request was received while the current capture's page
-          // was still loading.
           delete this._currentCapture;
           this._startNextCapture();
         }
       }
-      else if (this._state == STATE_LOADING) {
+      else if (this._state == STATE_LOADING &&
+               Components.isSuccessCode(status)) {
         // The requested page has loaded.  Capture it.
         this._state = STATE_CAPTURING;
         this._captureCurrentPage();
+      }
+      else if (this._state != STATE_CANCELED) {
+        // Something went wrong.  Cancel the capture.  Loading about:blank
+        // while onStateChange is still on the stack does not actually stop
+        // the request if it redirects, so do it asyncly.
+        this._state = STATE_CANCELED;
+        if (!this._cancelTimer) {
+          this._cancelTimer =
+            Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+          this._cancelTimer.init(() => {
+            this._loadAboutBlank();
+            delete this._cancelTimer;
+          }, 0, Ci.nsITimer.TYPE_ONE_SHOT);
+        }
       }
     }
   },
@@ -129,20 +142,10 @@ const backgroundPageThumbsContent = {
 
     let canvasDrawDate = new Date();
 
-    let canvas = PageThumbUtils.createCanvas(content);
-    let [sw, sh, scale] = PageThumbUtils.determineCropSize(content, canvas);
-
-    let ctx = canvas.getContext("2d");
-    ctx.save();
-    ctx.scale(scale, scale);
-    ctx.drawWindow(content, 0, 0, sw, sh,
-                   PageThumbUtils.THUMBNAIL_BG_COLOR,
-                   ctx.DRAWWINDOW_DO_NOT_FLUSH);
-    ctx.restore();
-
+    let finalCanvas = PageThumbUtils.createSnapshotThumbnail(content);
     capture.canvasDrawTime = new Date() - canvasDrawDate;
 
-    canvas.toBlob(blob => {
+    finalCanvas.toBlob(blob => {
       capture.imageBlob = new Blob([blob]);
       // Load about:blank to finish the capture and wait for onStateChange.
       this._loadAboutBlank();
@@ -151,8 +154,7 @@ const backgroundPageThumbsContent = {
 
   _finishCurrentCapture: function () {
     let capture = this._currentCapture;
-    let fileReader = Cc["@mozilla.org/files/filereader;1"].
-                     createInstance(Ci.nsIDOMFileReader);
+    let fileReader = new FileReader();
     fileReader.onloadend = () => {
       sendAsyncMessage("BackgroundPageThumbs:didCapture", {
         id: capture.id,

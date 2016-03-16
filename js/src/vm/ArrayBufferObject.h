@@ -10,7 +10,9 @@
 #include "jsobj.h"
 
 #include "builtin/TypedObjectConstants.h"
+#include "js/GCHashTable.h"
 #include "vm/Runtime.h"
+#include "vm/SharedMem.h"
 
 typedef struct JSProperty JSProperty;
 
@@ -31,32 +33,26 @@ class ArrayBufferViewObject;
 //       - Int8ArrayObject
 //       - Uint8ArrayObject
 //       - ...
-//   - SharedTypedArrayObject (declared in vm/SharedTypedArrayObject.h)
-//     - SharedTypedArrayObjectTemplate
-//       - SharedInt8ArrayObject
-//       - SharedUint8ArrayObject
-//       - ...
 // - JSObject
 //   - ArrayBufferViewObject
 //   - TypedObject (declared in builtin/TypedObject.h)
 //
-// Note that |TypedArrayObjectTemplate| and |SharedTypedArrayObjectTemplate| are
-// just implementation details that make implementing their various subclasses easier.
+// Note that |TypedArrayObjectTemplate| is just an implementation
+// detail that makes implementing its various subclasses easier.
 //
 // ArrayBufferObject and SharedArrayBufferObject are unrelated data types:
 // the racy memory of the latter cannot substitute for the non-racy memory of
 // the former; the non-racy memory of the former cannot be used with the atomics;
-// the former can be neutered and the latter not; and they have different
-// method suites.  Hence they have been separated completely.
+// the former can be neutered and the latter not.  Hence they have been separated
+// completely.
 //
-// Most APIs will only accept ArrayBufferObject.  ArrayBufferObjectMaybeShared exists
-// as a join point to allow APIs that can take or use either, notably AsmJS.
+// Most APIs will only accept ArrayBufferObject.  ArrayBufferObjectMaybeShared
+// exists as a join point to allow APIs that can take or use either, notably AsmJS.
 //
-// As ArrayBufferObject and SharedArrayBufferObject are separated, so are the
-// TypedArray hierarchies below the two.  However, the TypedArrays have the
-// same layout (see TypedArrayObject.h), so there is little code duplication.
+// In contrast with the separation of ArrayBufferObject and
+// SharedArrayBufferObject, the TypedArray types can map either.
 //
-// The possible data ownership and reference relationships with array buffers
+// The possible data ownership and reference relationships with ArrayBuffers
 // and related classes are enumerated below. These are the possible locations
 // for typed data:
 //
@@ -75,7 +71,6 @@ class ArrayBufferViewObject;
 class ArrayBufferObjectMaybeShared;
 
 uint32_t AnyArrayBufferByteLength(const ArrayBufferObjectMaybeShared* buf);
-uint8_t* AnyArrayBufferDataPointer(const ArrayBufferObjectMaybeShared* buf);
 ArrayBufferObjectMaybeShared& AsAnyArrayBuffer(HandleValue val);
 
 class ArrayBufferObjectMaybeShared : public NativeObject
@@ -85,9 +80,7 @@ class ArrayBufferObjectMaybeShared : public NativeObject
         return AnyArrayBufferByteLength(this);
     }
 
-    uint8_t* dataPointer() {
-        return AnyArrayBufferDataPointer(this);
-    }
+    inline SharedMem<uint8_t*> dataPointerEither();
 };
 
 /*
@@ -220,8 +213,10 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
     static ArrayBufferObject* create(JSContext* cx, uint32_t nbytes,
                                      BufferContents contents,
                                      OwnsState ownsState = OwnsData,
+                                     HandleObject proto = nullptr,
                                      NewObjectKind newKind = GenericObject);
     static ArrayBufferObject* create(JSContext* cx, uint32_t nbytes,
+                                     HandleObject proto = nullptr,
                                      NewObjectKind newKind = GenericObject);
 
     static JSObject* createSlice(JSContext* cx, Handle<ArrayBufferObject*> arrayBuffer,
@@ -298,6 +293,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
 
   public:
     uint8_t* dataPointer() const;
+    SharedMem<uint8_t*> dataPointerShared() const;
     size_t byteLength() const;
     BufferContents contents() const {
         return BufferContents(dataPointer(), bufferKind());
@@ -384,12 +380,18 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
 class ArrayBufferViewObject : public JSObject
 {
   public:
-    static ArrayBufferObject* bufferObject(JSContext* cx, Handle<ArrayBufferViewObject*> obj);
+    static ArrayBufferObjectMaybeShared* bufferObject(JSContext* cx, Handle<ArrayBufferViewObject*> obj);
 
     void neuter(void* newData);
 
-    uint8_t* dataPointer();
-    void setDataPointer(uint8_t* data);
+#ifdef DEBUG
+    bool isSharedMemory();
+#endif
+
+    // By construction we only need unshared variants here.  See
+    // comments in ArrayBufferObject.cpp.
+    uint8_t* dataPointerUnshared();
+    void setDataPointerUnshared(uint8_t* data);
 
     static void trace(JSTracer* trc, JSObject* obj);
 };
@@ -502,24 +504,42 @@ class InnerViewTable
     friend class ArrayBufferObject;
 
   private:
-    typedef HashMap<JSObject*,
-                    ViewVector,
-                    DefaultHasher<JSObject*>,
-                    SystemAllocPolicy> Map;
+    struct MapGCPolicy {
+        static bool needsSweep(JSObject** key, ViewVector* value) {
+            return InnerViewTable::sweepEntry(key, *value);
+        }
+    };
+
+    // This key is a raw pointer and not a ReadBarriered because the post-
+    // barrier would hold nursery-allocated entries live unconditionally. It is
+    // a very common pattern in low-level and performance-oriented JavaScript
+    // to create hundreds or thousands of very short lived temporary views on a
+    // larger buffer; having to tenured all of these would be a catastrophic
+    // performance regression. Thus, it is vital that nursery pointers in this
+    // map not be held live. Special support is required in the minor GC,
+    // implemented in sweepAfterMinorGC.
+    typedef GCHashMap<JSObject*,
+                      ViewVector,
+                      MovableCellHasher<JSObject*>,
+                      SystemAllocPolicy,
+                      MapGCPolicy> Map;
 
     // For all objects sharing their storage with some other view, this maps
     // the object to the list of such views. All entries in this map are weak.
     Map map;
 
     // List of keys from innerViews where either the source or at least one
-    // target is in the nursery.
+    // target is in the nursery. The raw pointer to a JSObject is allowed here
+    // because this vector is cleared after every minor collection. Users in
+    // sweepAfterMinorCollection must be careful to use MaybeForwarded before
+    // touching these pointers.
     Vector<JSObject*, 0, SystemAllocPolicy> nurseryKeys;
 
     // Whether nurseryKeys is a complete list.
     bool nurseryKeysValid;
 
     // Sweep an entry during GC, returning whether the entry should be removed.
-    bool sweepEntry(JSObject** pkey, ViewVector& views);
+    static bool sweepEntry(JSObject** pkey, ViewVector& views);
 
     bool addView(JSContext* cx, ArrayBufferObject* obj, ArrayBufferViewObject* view);
     ViewVector* maybeViewsUnbarriered(ArrayBufferObject* obj);
@@ -532,8 +552,8 @@ class InnerViewTable
 
     // Remove references to dead objects in the table and update table entries
     // to reflect moved objects.
-    void sweep(JSRuntime* rt);
-    void sweepAfterMinorGC(JSRuntime* rt);
+    void sweep();
+    void sweepAfterMinorGC();
 
     bool needsSweepAfterMinorGC() {
         return !nurseryKeys.empty() || !nurseryKeysValid;
@@ -550,5 +570,9 @@ InitArrayBufferClass(JSContext* cx, HandleObject obj);
 template <>
 bool
 JSObject::is<js::ArrayBufferViewObject>() const;
+
+template <>
+bool
+JSObject::is<js::ArrayBufferObjectMaybeShared>() const;
 
 #endif // vm_ArrayBufferObject_h

@@ -141,7 +141,7 @@ var commandsPeerConnectionInitial = [
       test.setupSignalingClient();
       test.registerSignalingCallback("ice_candidate", function (message) {
         var pc = test.pcRemote ? test.pcRemote : test.pcLocal;
-        pc.storeOrAddIceCandidate(new mozRTCIceCandidate(message.ice_candidate));
+        pc.storeOrAddIceCandidate(new RTCIceCandidate(message.ice_candidate));
       });
       test.registerSignalingCallback("end_of_trickle_ice", function (message) {
         test.signalingMessagesFinished();
@@ -291,7 +291,7 @@ var commandsPeerConnectionOfferAnswer = [
     return test.getSignalingMessage("offer")
       .then(message => {
         ok("offer" in message, "Got an offer message");
-        test._local_offer = new mozRTCSessionDescription(message.offer);
+        test._local_offer = new RTCSessionDescription(message.offer);
         test._offer_constraints = message.offer_constraints;
         test._offer_options = message.offer_options;
       });
@@ -351,7 +351,7 @@ var commandsPeerConnectionOfferAnswer = [
 
     return test.getSignalingMessage("answer").then(message => {
       ok("answer" in message, "Got an answer message");
-      test._remote_answer = new mozRTCSessionDescription(message.answer);
+      test._remote_answer = new RTCSessionDescription(message.answer);
       test._answer_constraints = message.answer_constraints;
     });
   },
@@ -464,26 +464,30 @@ var commandsPeerConnectionOfferAnswer = [
     return checkAllTrackStats(test.pcRemote);
   },
   function PC_LOCAL_VERIFY_SDP_AFTER_END_OF_TRICKLE(test) {
-    /* In case the endOfTrickleSdp promise is resolved already it will win the
-     * race because it gets evaluated first. But if endOfTrickleSdp is still
-     * pending the rejection will win the race. */
-    return Promise.race([
-      test.pcLocal.endOfTrickleSdp,
-      Promise.reject("No SDP")
-    ])
-    .then(sdp => sdputils.checkSdpAfterEndOfTrickle(sdp, test.testOptions, test.pcLocal.label),
-          () => info("pcLocal: Gathering is not complete yet, skipping post-gathering SDP check"));
+    if (test.pcLocal.endOfTrickleSdp) {
+      /* In case the endOfTrickleSdp promise is resolved already it will win the
+       * race because it gets evaluated first. But if endOfTrickleSdp is still
+       * pending the rejection will win the race. */
+      return Promise.race([
+        test.pcLocal.endOfTrickleSdp,
+        Promise.reject("No SDP")
+      ])
+      .then(sdp => sdputils.checkSdpAfterEndOfTrickle(sdp, test.testOptions, test.pcLocal.label),
+            () => info("pcLocal: Gathering is not complete yet, skipping post-gathering SDP check"));
+    }
   },
   function PC_REMOTE_VERIFY_SDP_AFTER_END_OF_TRICKLE(test) {
-    /* In case the endOfTrickleSdp promise is resolved already it will win the
-     * race because it gets evaluated first. But if endOfTrickleSdp is still
-     * pending the rejection will win the race. */
-    return Promise.race([
-      test.pcRemote.endOfTrickleSdp,
-      Promise.reject("No SDP")
-    ])
-    .then(sdp => sdputils.checkSdpAfterEndOfTrickle(sdp, test.testOptions, test.pcRemote.label),
-          () => info("pcRemote: Gathering is not complete yet, skipping post-gathering SDP check"));
+    if (test.pcRemote.endOfTrickelSdp) {
+      /* In case the endOfTrickleSdp promise is resolved already it will win the
+       * race because it gets evaluated first. But if endOfTrickleSdp is still
+       * pending the rejection will win the race. */
+      return Promise.race([
+        test.pcRemote.endOfTrickleSdp,
+        Promise.reject("No SDP")
+      ])
+      .then(sdp => sdputils.checkSdpAfterEndOfTrickle(sdp, test.testOptions, test.pcRemote.label),
+            () => info("pcRemote: Gathering is not complete yet, skipping post-gathering SDP check"));
+    }
   }
 ];
 

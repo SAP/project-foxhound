@@ -31,6 +31,10 @@ class Selection;
 } // namespace dom
 
 /**
+ * NOTE: SelectionCarets was obsoleted by AccessibleCaret, and is no longer used
+ * on B2G. This file is going to be removed in bug 1221459. Please see the wiki
+ * page for more information. https://wiki.mozilla.org/Copy_n_Paste
+ *
  * The SelectionCarets draw a pair of carets when the selection is not
  * collapsed, one at each end of the selection.
  * SelectionCarets also handle visibility, dragging caret and selecting word
@@ -266,12 +270,6 @@ private:
 
   // Preference
   static int32_t sSelectionCaretsInflateSize;
-  static bool sSelectionCaretDetectsLongTap;
-  static bool sCaretManagesAndroidActionbar;
-  static bool sSelectionCaretObservesCompositions;
-
-  // Unique ID of current Mobile ActionBar view.
-  uint32_t mActionBarViewID;
 };
 
 } // namespace mozilla

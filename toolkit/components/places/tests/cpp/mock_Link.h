@@ -59,7 +59,7 @@ protected:
 private:
   void (*mHandler)(nsLinkState);
   bool mRunNextTest;
-  nsRefPtr<Link> mDeathGrip;
+  RefPtr<Link> mDeathGrip;
 };
 
 NS_IMPL_ISUPPORTS(
@@ -115,18 +115,6 @@ Link::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
   NS_NOTREACHED("Unexpected call to Link::SizeOfExcludingThis");
   return 0;
-}
-
-void
-Link::URLSearchParamsUpdated(URLSearchParams* aSearchParams)
-{
-  NS_NOTREACHED("Unexpected call to Link::URLSearchParamsUpdated");
-}
-
-void
-Link::UpdateURLSearchParams()
-{
-  NS_NOTREACHED("Unexpected call to Link::UpdateURLSearchParams");
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(URLSearchParams)

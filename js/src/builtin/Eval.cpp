@@ -33,7 +33,7 @@ AssertInnerizedScopeChain(JSContext* cx, JSObject& scopeobj)
 #ifdef DEBUG
     RootedObject obj(cx);
     for (obj = &scopeobj; obj; obj = obj->enclosingScope())
-        MOZ_ASSERT(GetInnerObject(obj) == obj);
+        MOZ_ASSERT(!IsWindowProxy(obj));
 #endif
 }
 
@@ -230,18 +230,12 @@ EvalKernel(JSContext* cx, const CallArgs& args, EvalType evalType, AbstractFrame
 {
     MOZ_ASSERT((evalType == INDIRECT_EVAL) == !caller);
     MOZ_ASSERT((evalType == INDIRECT_EVAL) == !pc);
-    MOZ_ASSERT_IF(evalType == INDIRECT_EVAL, scopeobj->is<GlobalObject>());
+    MOZ_ASSERT_IF(evalType == INDIRECT_EVAL, IsGlobalLexicalScope(scopeobj));
     AssertInnerizedScopeChain(cx, *scopeobj);
 
     Rooted<GlobalObject*> scopeObjGlobal(cx, &scopeobj->global());
     if (!GlobalObject::isRuntimeCodeGenEnabled(cx, scopeObjGlobal)) {
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_CSP_BLOCKED_EVAL);
-        return false;
-    }
-
-    if (evalType == DIRECT_EVAL && caller.script()->isDerivedClassConstructor()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_DISABLED_DERIVED_CLASS,
-                             "direct eval");
         return false;
     }
 
@@ -261,25 +255,8 @@ EvalKernel(JSContext* cx, const CallArgs& args, EvalType evalType, AbstractFrame
     // Per ES5, indirect eval runs in the global scope. (eval is specified this
     // way so that the compiler can make assumptions about what bindings may or
     // may not exist in the current frame if it doesn't see 'eval'.)
-    RootedValue thisv(cx);
-    if (evalType == DIRECT_EVAL) {
-        MOZ_ASSERT_IF(caller.isInterpreterFrame(), !caller.asInterpreterFrame()->runningInJit());
-
-        // Direct calls to eval are supposed to see the caller's |this|. If we
-        // haven't wrapped that yet, do so now, before we make a copy of it for
-        // the eval code to use.
-        if (!ComputeThis(cx, caller))
-            return false;
-        thisv = caller.thisValue();
-    } else {
-        MOZ_ASSERT(args.callee().global() == *scopeobj);
-
-        // Use the global as 'this', modulo outerization.
-        JSObject* thisobj = GetThisObject(cx, scopeobj);
-        if (!thisobj)
-            return false;
-        thisv = ObjectValue(*thisobj);
-    }
+    MOZ_ASSERT_IF(evalType != DIRECT_EVAL,
+                  args.callee().global() == scopeobj->as<ClonedBlockObject>().global());
 
     RootedLinearString linearStr(cx, str->ensureLinear(cx));
     if (!linearStr)
@@ -318,6 +295,8 @@ EvalKernel(JSContext* cx, const CallArgs& args, EvalType evalType, AbstractFrame
         RootedObject enclosing(cx);
         if (evalType == DIRECT_EVAL)
             enclosing = callerScript->innermostStaticScope(pc);
+        else
+            enclosing = &cx->global()->lexicalScope().staticBlock();
         Rooted<StaticEvalObject*> staticScope(cx, StaticEvalObject::create(cx, enclosing));
         if (!staticScope)
             return false;
@@ -354,15 +333,15 @@ EvalKernel(JSContext* cx, const CallArgs& args, EvalType evalType, AbstractFrame
 
     // Look up the newTarget from the frame iterator.
     Value newTargetVal = NullValue();
-    return ExecuteKernel(cx, esg.script(), *scopeobj, thisv, newTargetVal, ExecuteType(evalType),
+    return ExecuteKernel(cx, esg.script(), *scopeobj, newTargetVal, ExecuteType(evalType),
                          NullFramePtr() /* evalInFrame */, args.rval().address());
 }
 
 bool
 js::DirectEvalStringFromIon(JSContext* cx,
                             HandleObject scopeobj, HandleScript callerScript,
-                            HandleValue thisValue, HandleValue newTargetValue,
-                            HandleString str, jsbytecode* pc, MutableHandleValue vp)
+                            HandleValue newTargetValue, HandleString str,
+                            jsbytecode* pc, MutableHandleValue vp)
 {
     AssertInnerizedScopeChain(cx, *scopeobj);
 
@@ -438,23 +417,7 @@ js::DirectEvalStringFromIon(JSContext* cx,
         esg.setNewScript(compiled);
     }
 
-    // Primitive 'this' values should have been filtered out by Ion. If boxed,
-    // the calling frame cannot be updated to store the new object.
-    MOZ_ASSERT(thisValue.isObject() || thisValue.isUndefined() || thisValue.isNull());
-
-    // When eval'ing strict code in a non-strict context, compute the 'this'
-    // value to use from what the caller passed in. This isn't necessary if
-    // the callee is not strict, as it will compute the non-strict 'this'
-    // value as necessary while it executes.
-    RootedValue nthisValue(cx, thisValue);
-    if (!callerScript->strict() && esg.script()->strict() && !thisValue.isObject()) {
-        JSObject* obj = BoxNonStrictThis(cx, thisValue);
-        if (!obj)
-            return false;
-        nthisValue = ObjectValue(*obj);
-    }
-
-    return ExecuteKernel(cx, esg.script(), *scopeobj, nthisValue, newTargetValue,
+    return ExecuteKernel(cx, esg.script(), *scopeobj, newTargetValue,
                          ExecuteType(DIRECT_EVAL), NullFramePtr() /* evalInFrame */, vp.address());
 }
 
@@ -463,7 +426,8 @@ js::IndirectEval(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, &args.callee().global());
-    return EvalKernel(cx, args, INDIRECT_EVAL, NullFramePtr(), global, nullptr);
+    RootedObject globalLexical(cx, &global->lexicalScope());
+    return EvalKernel(cx, args, INDIRECT_EVAL, NullFramePtr(), globalLexical, nullptr);
 }
 
 bool
@@ -501,8 +465,10 @@ js::ExecuteInGlobalAndReturnScope(JSContext* cx, HandleObject global, HandleScri
     MOZ_RELEASE_ASSERT(scriptArg->hasNonSyntacticScope());
 
     RootedScript script(cx, scriptArg);
+    Rooted<GlobalObject*> globalRoot(cx, &global->as<GlobalObject>());
     if (script->compartment() != cx->compartment()) {
-        Rooted<ScopeObject*> staticScope(cx, StaticNonSyntacticScopeObjects::create(cx, nullptr));
+        Rooted<ScopeObject*> staticScope(cx, &globalRoot->lexicalScope().staticBlock());
+        staticScope = StaticNonSyntacticScopeObjects::create(cx, staticScope);
         if (!staticScope)
             return false;
         script = CloneGlobalScript(cx, staticScope, script);
@@ -512,18 +478,20 @@ js::ExecuteInGlobalAndReturnScope(JSContext* cx, HandleObject global, HandleScri
         Debugger::onNewScript(cx, script);
     }
 
-    Rooted<GlobalObject*> globalRoot(cx, &global->as<GlobalObject>());
-    Rooted<ScopeObject*> scope(cx, NonSyntacticVariablesObject::create(cx, globalRoot));
+    Rooted<ClonedBlockObject*> globalLexical(cx, &globalRoot->lexicalScope());
+    Rooted<ScopeObject*> scope(cx, NonSyntacticVariablesObject::create(cx, globalLexical));
     if (!scope)
         return false;
 
-    JSObject* thisobj = GetThisObject(cx, global);
-    if (!thisobj)
+    // Unlike the non-syntactic scope chain API used by the subscript loader,
+    // this API creates a fresh block scope each time.
+    RootedObject enclosingStaticScope(cx, script->enclosingStaticScope());
+    scope = ClonedBlockObject::createNonSyntactic(cx, enclosingStaticScope, scope);
+    if (!scope)
         return false;
 
-    RootedValue thisv(cx, ObjectValue(*thisobj));
     RootedValue rval(cx);
-    if (!ExecuteKernel(cx, script, *scope, thisv, UndefinedValue(), EXECUTE_GLOBAL,
+    if (!ExecuteKernel(cx, script, *scope, UndefinedValue(), EXECUTE_GLOBAL,
                        NullFramePtr() /* evalInFrame */, rval.address()))
     {
         return false;

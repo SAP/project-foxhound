@@ -42,12 +42,6 @@ nsSystemPrincipal::GetScriptLocation(nsACString &aStr)
 ///////////////////////////////////////
 
 NS_IMETHODIMP
-nsSystemPrincipal::CheckMayLoad(nsIURI* uri, bool aReport, bool aAllowIfInheritsPrincipal)
-{
-    return NS_OK;
-}
-
-NS_IMETHODIMP
 nsSystemPrincipal::GetHashValue(uint32_t *result)
 {
     *result = NS_PTR_TO_INT32(this);
@@ -78,7 +72,21 @@ nsSystemPrincipal::GetCsp(nsIContentSecurityPolicy** aCsp)
 NS_IMETHODIMP
 nsSystemPrincipal::SetCsp(nsIContentSecurityPolicy* aCsp)
 {
-  // CSP on a null principal makes no sense
+  // CSP on a system principal makes no sense
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSystemPrincipal::GetPreloadCsp(nsIContentSecurityPolicy** aPreloadCSP)
+{
+  *aPreloadCSP = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSystemPrincipal::SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCSP)
+{
+  // CSP on a system principal makes no sense
   return NS_OK;
 }
 

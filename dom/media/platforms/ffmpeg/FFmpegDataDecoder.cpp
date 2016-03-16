@@ -9,11 +9,18 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "FFmpegLibs.h"
 #include "FFmpegLog.h"
 #include "FFmpegDataDecoder.h"
 #include "prsystem.h"
-#include "FFmpegDecoderModule.h"
+#include "FFmpegRuntimeLinker.h"
+
+#include "libavutil/pixfmt.h"
+#if LIBAVCODEC_VERSION_MAJOR < 54
+#define AVPixelFormat PixelFormat
+#define AV_PIX_FMT_YUV420P PIX_FMT_YUV420P
+#define AV_PIX_FMT_YUVJ420P PIX_FMT_YUVJ420P
+#define AV_PIX_FMT_NONE PIX_FMT_NONE
+#endif
 
 namespace mozilla
 {
@@ -52,19 +59,22 @@ FFmpegDataDecoder<LIBAV_VER>::~FFmpegDataDecoder()
  * For now, we just look for YUV420P as it is the only non-HW accelerated format
  * supported by FFmpeg's H264 decoder.
  */
-static PixelFormat
-ChoosePixelFormat(AVCodecContext* aCodecContext, const PixelFormat* aFormats)
+static AVPixelFormat
+ChoosePixelFormat(AVCodecContext* aCodecContext, const AVPixelFormat* aFormats)
 {
   FFMPEG_LOG("Choosing FFmpeg pixel format for video decoding.");
   for (; *aFormats > -1; aFormats++) {
-    if (*aFormats == PIX_FMT_YUV420P) {
+    if (*aFormats == AV_PIX_FMT_YUV420P) {
       FFMPEG_LOG("Requesting pixel format YUV420P.");
-      return PIX_FMT_YUV420P;
+      return AV_PIX_FMT_YUV420P;
+    } else if (*aFormats == AV_PIX_FMT_YUVJ420P) {
+      FFMPEG_LOG("Requesting pixel format YUVJ420P.");
+      return AV_PIX_FMT_YUVJ420P;
     }
   }
 
   NS_WARNING("FFmpeg does not share any supported pixel formats.");
-  return PIX_FMT_NONE;
+  return AV_PIX_FMT_NONE;
 }
 
 nsresult
@@ -88,10 +98,10 @@ FFmpegDataDecoder<LIBAV_VER>::InitDecoder()
   mCodecContext->opaque = this;
 
   // FFmpeg takes this as a suggestion for what format to use for audio samples.
-  uint32_t major, minor;
-  FFmpegDecoderModule<LIBAV_VER>::GetVersion(major, minor);
-  // LibAV 0.8 produces rubbish float interlaved samples, request 16 bits audio.
-  mCodecContext->request_sample_fmt = major == 53 && minor <= 34 ?
+  uint32_t major, minor, micro;
+  FFmpegRuntimeLinker::GetVersion(major, minor, micro);
+  // LibAV 0.8 produces rubbish float interleaved samples, request 16 bits audio.
+  mCodecContext->request_sample_fmt = major == 53 ?
     AV_SAMPLE_FMT_S16 : AV_SAMPLE_FMT_FLT;
 
   // FFmpeg will call back to this to negotiate a video pixel format.
@@ -117,6 +127,8 @@ FFmpegDataDecoder<LIBAV_VER>::InitDecoder()
 
   if (avcodec_open2(mCodecContext, codec, nullptr) < 0) {
     NS_WARNING("Couldn't initialise ffmpeg decoder");
+    avcodec_close(mCodecContext);
+    av_freep(&mCodecContext);
     return NS_ERROR_FAILURE;
   }
 

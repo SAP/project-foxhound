@@ -70,7 +70,7 @@ public:
   AbstractThread* OwnerThread() const { return mOwnerThread; }
 protected:
   virtual ~AbstractCanonical() {}
-  nsRefPtr<AbstractThread> mOwnerThread;
+  RefPtr<AbstractThread> mOwnerThread;
 };
 
 /*
@@ -91,7 +91,7 @@ public:
   AbstractThread* OwnerThread() const { return mOwnerThread; }
 protected:
   virtual ~AbstractMirror() {}
-  nsRefPtr<AbstractThread> mOwnerThread;
+  RefPtr<AbstractThread> mOwnerThread;
 };
 
 /*
@@ -137,7 +137,7 @@ private:
       MOZ_ASSERT(OwnerThread()->IsCurrentThreadIn());
       MOZ_ASSERT(!mMirrors.Contains(aMirror));
       mMirrors.AppendElement(aMirror);
-      aMirror->OwnerThread()->Dispatch(MakeNotifier(aMirror), AbstractThread::DontAssertDispatchSuccess);
+      aMirror->OwnerThread()->DispatchStateChange(MakeNotifier(aMirror));
     }
 
     void RemoveMirror(AbstractMirror<T>* aMirror) override
@@ -230,7 +230,7 @@ private:
 
     T mValue;
     Maybe<T> mInitialValue;
-    nsTArray<nsRefPtr<AbstractMirror<T>>> mMirrors;
+    nsTArray<RefPtr<AbstractMirror<T>>> mMirrors;
   };
 public:
 
@@ -252,7 +252,7 @@ public:
   Canonical(const Canonical& aOther) = delete;
 
 private:
-  nsRefPtr<Impl> mImpl;
+  RefPtr<Impl> mImpl;
 };
 
 /*
@@ -354,7 +354,7 @@ private:
 
   private:
     T mValue;
-    nsRefPtr<AbstractCanonical<T>> mCanonical;
+    RefPtr<AbstractCanonical<T>> mCanonical;
   };
 public:
 
@@ -371,7 +371,7 @@ public:
   operator const T&() const { return Ref(); }
 
 private:
-  nsRefPtr<Impl> mImpl;
+  RefPtr<Impl> mImpl;
 };
 
 #undef MIRROR_LOG

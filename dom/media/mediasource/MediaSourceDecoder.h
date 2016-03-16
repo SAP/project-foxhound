@@ -36,9 +36,9 @@ class MediaSourceDecoder : public MediaDecoder
 public:
   explicit MediaSourceDecoder(dom::HTMLMediaElement* aElement);
 
-  virtual MediaDecoder* Clone() override;
+  virtual MediaDecoder* Clone(MediaDecoderOwner* aOwner) override;
   virtual MediaDecoderStateMachine* CreateStateMachine() override;
-  virtual nsresult Load(nsIStreamListener**, MediaDecoder*) override;
+  virtual nsresult Load(nsIStreamListener**) override;
   virtual media::TimeIntervals GetSeekable() override;
   media::TimeIntervals GetBuffered() override;
 
@@ -50,7 +50,7 @@ public:
     mDormantSupported = aSupported;
   }
 
-  virtual void Shutdown() override;
+  virtual RefPtr<ShutdownPromise> Shutdown() override;
 
   static already_AddRefed<MediaResource> CreateResource(nsIPrincipal* aPrincipal = nullptr);
 
@@ -66,10 +66,6 @@ public:
   void SetMediaSourceDuration(double aDuration, MSRangeRemovalAction aAction);
   double GetMediaSourceDuration();
 
-#ifdef MOZ_EME
-  virtual nsresult SetCDMProxy(CDMProxy* aProxy) override;
-#endif
-
   MediaSourceDemuxer* GetDemuxer()
   {
     return mDemuxer;
@@ -79,6 +75,11 @@ public:
   // buffered data. Used for debugging purposes.
   void GetMozDebugReaderData(nsAString& aString);
 
+  void AddSizeOfResources(ResourceSizes* aSizes) override;
+
+  MediaDecoderOwner::NextFrameStatus NextFrameBufferedStatus() override;
+  bool CanPlayThrough() override;
+
 private:
   void DoSetMediaSourceDuration(double aDuration);
 
@@ -86,7 +87,7 @@ private:
   // calls Attach/DetachMediaSource on this decoder to set and clear
   // mMediaSource.
   dom::MediaSource* mMediaSource;
-  nsRefPtr<MediaSourceDemuxer> mDemuxer;
+  RefPtr<MediaSourceDemuxer> mDemuxer;
 
   Atomic<bool> mEnded;
 };

@@ -334,7 +334,7 @@ exports.testTabClose = function(assert, done) {
     let secondOnCloseCalled = false;
 
     // Bug 699450: Multiple calls to tab.close should not throw
-    tab.close(function() secondOnCloseCalled = true);
+    tab.close(() => secondOnCloseCalled = true);
     try {
       tab.close(function () {
         assert.notEqual(tabs.activeTab.url, url, "tab is no longer the active tab");
@@ -765,26 +765,6 @@ exports.testPerTabEvents = function*(assert) {
   assert.equal(eventCount, 2, "both listeners were notified.");
 };
 
-exports.testAttachOnOpen = function (assert, done) {
-  // Take care that attach has to be called on tab ready and not on tab open.
-  open().then(focus).then(window => {
-    tabs.open({
-      url: "data:text/html;charset=utf-8,foobar",
-      onOpen: function (tab) {
-        let worker = tab.attach({
-          contentScript: 'self.postMessage(document.location.href); ',
-          onMessage: function (msg) {
-            assert.equal(msg, "about:blank",
-              "Worker document url is about:blank on open");
-            worker.destroy();
-            close(window).then(done).then(null, assert.fail);
-          }
-        });
-      }
-    });
-  }).then(null, assert.fail);
-}
-
 exports.testAttachOnMultipleDocuments = function (assert, done) {
   // Example of attach that process multiple tab documents
   open().then(focus).then(window => {
@@ -803,7 +783,7 @@ exports.testAttachOnMultipleDocuments = function (assert, done) {
         if (onReadyCount == 1) {
           worker1 = tab.attach({
             contentScript: 'self.on("message", ' +
-                           '  function () self.postMessage(document.location.href)' +
+                           '  function () { return self.postMessage(document.location.href); }' +
                            ');',
             onMessage: function (msg) {
               assert.equal(msg, firstLocation,
@@ -827,7 +807,7 @@ exports.testAttachOnMultipleDocuments = function (assert, done) {
 
           worker2 = tab.attach({
             contentScript: 'self.on("message", ' +
-                           '  function () self.postMessage(document.location.href)' +
+                           '  function () { return self.postMessage(document.location.href); }' +
                            ');',
             onMessage: function (msg) {
               assert.equal(msg, secondLocation,

@@ -287,15 +287,6 @@ TelephonyParent::CallStateChanged(uint32_t aLength, nsITelephonyCallInfo** aAllI
 }
 
 NS_IMETHODIMP
-TelephonyParent::ConferenceCallStateChanged(uint16_t aCallState)
-{
-  NS_ENSURE_TRUE(!mActorDestroyed, NS_ERROR_FAILURE);
-
-  return SendNotifyConferenceCallStateChanged(aCallState) ? NS_OK
-                                                          : NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
 TelephonyParent::EnumerateCallStateComplete()
 {
   MOZ_CRASH("Not a EnumerateCalls request!");
@@ -377,12 +368,6 @@ TelephonyRequestParent::SendResponse(const IPCTelephonyResponse& aResponse)
 
 NS_IMETHODIMP
 TelephonyRequestParent::CallStateChanged(uint32_t aLength, nsITelephonyCallInfo** aAllInfo)
-{
-  MOZ_CRASH("Not a TelephonyParent!");
-}
-
-NS_IMETHODIMP
-TelephonyRequestParent::ConferenceCallStateChanged(uint16_t aCallState)
 {
   MOZ_CRASH("Not a TelephonyParent!");
 }
@@ -498,8 +483,10 @@ TelephonyRequestParent::DialCallback::NotifyDialMMISuccessWithStrings(const nsAS
                                                                       const char16_t** aAdditionalInformation)
 {
   nsTArray<nsString> additionalInformation;
+  nsString* infos = additionalInformation.AppendElements(aCount);
   for (uint32_t i = 0; i < aCount; i++) {
-    additionalInformation.AppendElement(nsDependentString(aAdditionalInformation[i]));
+    infos[i].Rebind(aAdditionalInformation[i],
+                    nsCharTraits<char16_t>::length(aAdditionalInformation[i]));
   }
 
   return SendResponse(DialResponseMMISuccess(nsAutoString(aStatusMessage),

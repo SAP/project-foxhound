@@ -15,12 +15,14 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextRange.h"
+#include "mozilla/UniquePtr.h"
 
 struct ANPEvent;
 
 namespace mozilla {
     class AndroidGeckoEvent;
     class TextComposition;
+    class WidgetTouchEvent;
 
     namespace layers {
         class CompositorParent;
@@ -43,8 +45,14 @@ public:
 
     NS_DECL_ISUPPORTS_INHERITED
 
+    static void InitNatives();
+    class Natives;
+    // Object that implements native GeckoView calls;
+    // nullptr for nsWindows that were not opened from GeckoView.
+    mozilla::UniquePtr<Natives> mNatives;
+
     static void OnGlobalAndroidEvent(mozilla::AndroidGeckoEvent *ae);
-    static gfxIntSize GetAndroidScreenBounds();
+    static mozilla::gfx::IntSize GetAndroidScreenBounds();
     static nsWindow* TopWindow();
 
     bool OnContextmenuEvent(mozilla::AndroidGeckoEvent *ae);
@@ -52,21 +60,20 @@ public:
     bool OnMultitouchEvent(mozilla::AndroidGeckoEvent *ae);
     void OnNativeGestureEvent(mozilla::AndroidGeckoEvent *ae);
     void OnMouseEvent(mozilla::AndroidGeckoEvent *ae);
-    void OnKeyEvent(mozilla::AndroidGeckoEvent *ae);
-    void OnIMEEvent(mozilla::AndroidGeckoEvent *ae);
 
-    void OnSizeChanged(const gfxIntSize& aSize);
+    void OnSizeChanged(const mozilla::gfx::IntSize& aSize);
 
-    void InitEvent(mozilla::WidgetGUIEvent& event, nsIntPoint* aPoint = 0);
+    void InitEvent(mozilla::WidgetGUIEvent& event,
+                   LayoutDeviceIntPoint* aPoint = 0);
 
     //
     // nsIWidget
     //
 
-    NS_IMETHOD Create(nsIWidget *aParent,
+    NS_IMETHOD Create(nsIWidget* aParent,
                       nsNativeWidget aNativeParent,
-                      const nsIntRect &aRect,
-                      nsWidgetInitData *aInitData) override;
+                      const LayoutDeviceIntRect& aRect,
+                      nsWidgetInitData* aInitData) override;
     NS_IMETHOD Destroy(void) override;
     NS_IMETHOD ConfigureChildren(const nsTArray<nsIWidget::Configuration>&) override;
     NS_IMETHOD SetParent(nsIWidget* aNewParent) override;
@@ -96,10 +103,10 @@ public:
     NS_IMETHOD SetSizeMode(nsSizeMode aMode) override;
     NS_IMETHOD Enable(bool aState) override;
     virtual bool IsEnabled() const override;
-    NS_IMETHOD Invalidate(const nsIntRect &aRect) override;
+    NS_IMETHOD Invalidate(const LayoutDeviceIntRect& aRect) override;
     NS_IMETHOD SetFocus(bool aRaise = false) override;
-    NS_IMETHOD GetScreenBounds(nsIntRect &aRect) override;
-    virtual mozilla::LayoutDeviceIntPoint WidgetToScreenOffset() override;
+    NS_IMETHOD GetScreenBounds(LayoutDeviceIntRect& aRect) override;
+    virtual LayoutDeviceIntPoint WidgetToScreenOffset() override;
     NS_IMETHOD DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                              nsEventStatus& aStatus) override;
     nsEventStatus DispatchEvent(mozilla::WidgetGUIEvent* aEvent);
@@ -134,8 +141,6 @@ public:
     NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
                                       const InputContextAction& aAction) override;
     NS_IMETHOD_(InputContext) GetInputContext() override;
-
-    nsresult NotifyIMEOfTextChange(const IMENotification& aIMENotification);
     virtual nsIMEUpdatePreference GetIMEUpdatePreference() override;
 
     LayerManager* GetLayerManager (PLayerTransactionChild* aShadowManager = nullptr,
@@ -146,8 +151,8 @@ public:
     NS_IMETHOD ReparentNativeWidget(nsIWidget* aNewParent) override;
 
     virtual bool NeedsPaint() override;
-    virtual void DrawWindowUnderlay(LayerManagerComposite* aManager, nsIntRect aRect) override;
-    virtual void DrawWindowOverlay(LayerManagerComposite* aManager, nsIntRect aRect) override;
+    virtual void DrawWindowUnderlay(LayerManagerComposite* aManager, LayoutDeviceIntRect aRect) override;
+    virtual void DrawWindowOverlay(LayerManagerComposite* aManager, LayoutDeviceIntRect aRect) override;
 
     virtual mozilla::layers::CompositorParent* NewCompositorParent(int aSurfaceWidth, int aSurfaceHeight) override;
 
@@ -178,41 +183,12 @@ protected:
     nsWindow *FindTopLevel();
     bool IsTopLevel();
 
-    struct IMEChange {
-        int32_t mStart, mOldEnd, mNewEnd;
-
-        IMEChange() :
-            mStart(-1), mOldEnd(-1), mNewEnd(-1)
-        {
-        }
-        IMEChange(const IMENotification& aIMENotification)
-            : mStart(aIMENotification.mTextChangeData.mStartOffset)
-            , mOldEnd(aIMENotification.mTextChangeData.mRemovedEndOffset)
-            , mNewEnd(aIMENotification.mTextChangeData.mAddedEndOffset)
-        {
-            MOZ_ASSERT(aIMENotification.mMessage ==
-                           mozilla::widget::NOTIFY_IME_OF_TEXT_CHANGE,
-                       "IMEChange initialized with wrong notification");
-            MOZ_ASSERT(aIMENotification.mTextChangeData.IsValid(),
-                       "The text change notification isn't initialized");
-            MOZ_ASSERT(aIMENotification.mTextChangeData.IsInInt32Range(),
-                       "The text change notification is out of range");
-        }
-        bool IsEmpty() const
-        {
-            return mStart < 0;
-        }
-    };
-
-    nsRefPtr<mozilla::TextComposition> GetIMEComposition();
+    RefPtr<mozilla::TextComposition> GetIMEComposition();
     void RemoveIMEComposition();
-    void SendIMEDummyKeyEvents();
-    void AddIMETextChange(const IMEChange& aChange);
-    void PostFlushIMEChanges();
-    void FlushIMEChanges();
 
     void ConfigureAPZCTreeManager() override;
     void ConfigureAPZControllerThread() override;
+    void DispatchHitTest(const mozilla::WidgetTouchEvent& aEvent);
 
     already_AddRefed<GeckoContentController> CreateRootContentController() override;
 
@@ -229,18 +205,8 @@ protected:
 
     nsCOMPtr<nsIIdleServiceInternal> mIdleService;
 
-    bool mIMEMaskSelectionUpdate;
-    int32_t mIMEMaskEventsCount; // Mask events when > 0
-    nsRefPtr<mozilla::TextRangeArray> mIMERanges;
-    bool mIMEUpdatingContext;
-    nsAutoTArray<mozilla::AndroidGeckoEvent, 8> mIMEKeyEvents;
-    nsAutoTArray<IMEChange, 4> mIMETextChanges;
-    bool mIMESelectionChanged;
-
     bool mAwaitingFullScreen;
     bool mIsFullScreen;
-
-    InputContext mInputContext;
 
     virtual nsresult NotifyIMEInternal(
                          const IMENotification& aIMENotification) override;
@@ -250,10 +216,6 @@ protected:
     static void LogWindow(nsWindow *win, int index, int indent);
 
 private:
-    void InitKeyEvent(mozilla::WidgetKeyboardEvent& event,
-                      mozilla::AndroidGeckoEvent& key,
-                      ANPEvent* pluginEvent);
-    void HandleSpecialKey(mozilla::AndroidGeckoEvent *ae);
     void CreateLayerManager(int aCompositorWidth, int aCompositorHeight);
     void RedrawAll();
 

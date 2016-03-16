@@ -13,8 +13,6 @@
 #include "mozilla/HashFunctions.h"
 #include "nsCRT.h"
 
-PRLogModuleInfo *gHttpLog = nullptr;
-
 namespace mozilla {
 namespace net {
 
@@ -229,6 +227,26 @@ nsHttp::IsValidToken(const char *start, const char *end)
     return true;
 }
 
+const char*
+nsHttp::GetProtocolVersion(uint32_t pv)
+{
+    switch (pv) {
+    case SPDY_VERSION_31:
+        return "spdy/3.1";
+    case HTTP_VERSION_2:
+    case NS_HTTP_VERSION_2_0:
+        return "h2";
+    case NS_HTTP_VERSION_1_0:
+        return "http/1.0";
+    case NS_HTTP_VERSION_1_1:
+        return "http/1.1";
+    default:
+        NS_WARNING(nsPrintfCString("Unkown protocol version: 0x%X. "
+                                   "Please file a bug", pv).get());
+        return "http/1.1";
+    }
+}
+
 // static
 bool
 nsHttp::IsReasonableHeaderValue(const nsACString &s)
@@ -301,7 +319,7 @@ nsHttp::IsPermanentRedirect(uint32_t httpStatus)
 
 
 template<typename T> void
-localEnsureBuffer(nsAutoArrayPtr<T> &buf, uint32_t newSize,
+localEnsureBuffer(UniquePtr<T[]> &buf, uint32_t newSize,
              uint32_t preserve, uint32_t &objSize)
 {
   if (objSize >= newSize)
@@ -314,20 +332,20 @@ localEnsureBuffer(nsAutoArrayPtr<T> &buf, uint32_t newSize,
   objSize = (newSize + 2048 + 4095) & ~4095;
 
   static_assert(sizeof(T) == 1, "sizeof(T) must be 1");
-  nsAutoArrayPtr<T> tmp(new T[objSize]);
+  auto tmp = MakeUnique<T[]>(objSize);
   if (preserve) {
-    memcpy(tmp, buf, preserve);
+    memcpy(tmp.get(), buf.get(), preserve);
   }
-  buf = tmp;
+  buf = Move(tmp);
 }
 
-void EnsureBuffer(nsAutoArrayPtr<char> &buf, uint32_t newSize,
+void EnsureBuffer(UniquePtr<char[]> &buf, uint32_t newSize,
                   uint32_t preserve, uint32_t &objSize)
 {
     localEnsureBuffer<char> (buf, newSize, preserve, objSize);
 }
 
-void EnsureBuffer(nsAutoArrayPtr<uint8_t> &buf, uint32_t newSize,
+void EnsureBuffer(UniquePtr<uint8_t[]> &buf, uint32_t newSize,
                   uint32_t preserve, uint32_t &objSize)
 {
     localEnsureBuffer<uint8_t> (buf, newSize, preserve, objSize);

@@ -49,6 +49,7 @@ class JitContext
     JitContext(ExclusiveContext* cx, TempAllocator* temp);
     JitContext(CompileRuntime* rt, CompileCompartment* comp, TempAllocator* temp);
     explicit JitContext(CompileRuntime* rt);
+    JitContext(CompileRuntime* rt, TempAllocator* temp);
     ~JitContext();
 
     // Running context when executing on the main thread. Not available during
@@ -153,7 +154,8 @@ uint8_t* LazyLinkTopActivation(JSContext* cx);
 static inline bool
 IsIonEnabled(JSContext* cx)
 {
-#ifdef JS_CODEGEN_NONE
+    // The ARM64 Ion engine is not yet implemented.
+#if defined(JS_CODEGEN_NONE) || defined(JS_CODEGEN_ARM64)
     return false;
 #else
     return cx->runtime()->options().ion() &&
@@ -173,7 +175,7 @@ IsIonInlinablePC(jsbytecode* pc) {
 inline bool
 TooManyActualArguments(unsigned nargs)
 {
-    return nargs > js_JitOptions.maxStackArgs;
+    return nargs > JitOptions.maxStackArgs;
 }
 
 inline bool

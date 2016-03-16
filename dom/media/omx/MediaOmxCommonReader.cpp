@@ -11,6 +11,7 @@
 #include "AbstractMediaDecoder.h"
 #include "AudioChannelService.h"
 #include "MediaStreamSource.h"
+#include "gfxPrefs.h"
 
 #ifdef MOZ_AUDIO_OFFLOAD
 #include <stagefright/Utils.h>
@@ -22,18 +23,19 @@ using namespace android;
 
 namespace mozilla {
 
-extern PRLogModuleInfo* gMediaDecoderLog;
+extern LazyLogModule gMediaDecoderLog;
 #define DECODER_LOG(type, msg) MOZ_LOG(gMediaDecoderLog, type, msg)
 
 MediaOmxCommonReader::MediaOmxCommonReader(AbstractMediaDecoder *aDecoder)
   : MediaDecoderReader(aDecoder)
   , mStreamSource(nullptr)
 {
-  if (!gMediaDecoderLog) {
-    gMediaDecoderLog = PR_NewLogModule("MediaDecoder");
-  }
-
   mAudioChannel = dom::AudioChannelService::GetDefaultAudioChannel();
+}
+
+bool MediaOmxCommonReader::IsMonoAudioEnabled()
+{
+  return gfxPrefs::MonoAudio();
 }
 
 #ifdef MOZ_AUDIO_OFFLOAD
@@ -66,7 +68,8 @@ void MediaOmxCommonReader::CheckAudioOffload()
       isNotStreaming, mAudioChannel));
 
   if ((meta.get()) && hasNoVideo && isNotStreaming && isTypeMusic &&
-      canOffloadStream(meta, false, false, AUDIO_STREAM_MUSIC)) {
+      canOffloadStream(meta, false, false, AUDIO_STREAM_MUSIC) &&
+      !IsMonoAudioEnabled()) {
     DECODER_LOG(LogLevel::Debug, ("Can offload this audio stream"));
     mDecoder->SetPlatformCanOffloadAudio(true);
   }

@@ -16,7 +16,6 @@ XPIDL_SOURCES += [
     'nsIDOMDOMCursor.idl',
     'nsIDOMDOMRequest.idl',
     'nsIDOMFileList.idl',
-    'nsIDOMFileReader.idl',
     'nsIDOMFormData.idl',
     'nsIDOMParser.idl',
     'nsIDOMSerializer.idl',
@@ -26,6 +25,7 @@ XPIDL_SOURCES += [
     'nsIImageLoadingContent.idl',
     'nsIMessageManager.idl',
     'nsIObjectLoadingContent.idl',
+    'nsIRemoteWindowContext.idl',
     'nsIScriptChannel.idl',
     'nsIScriptLoaderObserver.idl',
     'nsISelection.idl',
@@ -84,6 +84,7 @@ EXPORTS += [
     'nsHostObjectURI.h',
     'nsIAnimationObserver.h',
     'nsIAttribute.h',
+    'nsIConsoleReportCollector.h',
     'nsIContent.h',
     'nsIContentInlines.h',
     'nsIContentIterator.h',
@@ -142,6 +143,7 @@ if CONFIG['MOZ_WEBRTC']:
     ]
 
 EXPORTS.mozilla += [
+    'ConsoleReportCollector.h',
     'CORSMode.h',
     'FeedWriterEnabled.h',
     'TextInputProcessor.h',
@@ -154,6 +156,7 @@ EXPORTS.mozilla.dom += [
     'BarProps.h',
     'BlobSet.h',
     'ChildIterator.h',
+    'ChromeNodeList.h',
     'ChromeUtils.h',
     'Comment.h',
     'Console.h',
@@ -176,6 +179,7 @@ EXPORTS.mozilla.dom += [
     'EventSource.h',
     'File.h',
     'FileList.h',
+    'FileReader.h',
     'FragmentOrElement.h',
     'FromParser.h',
     'ImageEncoder.h',
@@ -200,7 +204,7 @@ EXPORTS.mozilla.dom += [
     'ScreenOrientation.h',
     'ScriptSettings.h',
     'ShadowRoot.h',
-    'StructuredCloneHelper.h',
+    'StructuredCloneHolder.h',
     'StructuredCloneTags.h',
     'StyleSheetList.h',
     'SubtleCrypto.h',
@@ -209,6 +213,7 @@ EXPORTS.mozilla.dom += [
     'URL.h',
     'URLSearchParams.h',
     'WebSocket.h',
+    'WindowOrientationObserver.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -216,9 +221,11 @@ UNIFIED_SOURCES += [
     'Attr.cpp',
     'BarProps.cpp',
     'ChildIterator.cpp',
+    'ChromeNodeList.cpp',
     'ChromeUtils.cpp',
     'Comment.cpp',
     'Console.cpp',
+    'ConsoleReportCollector.cpp',
     'Crypto.cpp',
     'DirectionalityUtils.cpp',
     'DocumentFragment.cpp',
@@ -237,8 +244,8 @@ UNIFIED_SOURCES += [
     'Element.cpp',
     'EventSource.cpp',
     'File.cpp',
-    'FileIOObject.cpp',
     'FileList.cpp',
+    'FileReader.cpp',
     'FragmentOrElement.cpp',
     'ImageEncoder.cpp',
     'ImportManager.cpp',
@@ -265,7 +272,6 @@ UNIFIED_SOURCES += [
     'nsDOMAttributeMap.cpp',
     'nsDOMCaretPosition.cpp',
     'nsDOMClassInfo.cpp',
-    'nsDOMFileReader.cpp',
     'nsDOMMutationObserver.cpp',
     'nsDOMNavigationTiming.cpp',
     'nsDOMScriptObjectFactory.cpp',
@@ -344,7 +350,7 @@ UNIFIED_SOURCES += [
     'ScreenOrientation.cpp',
     'ScriptSettings.cpp',
     'ShadowRoot.cpp',
-    'StructuredCloneHelper.cpp',
+    'StructuredCloneHolder.cpp',
     'StyleSheetList.cpp',
     'SubtleCrypto.cpp',
     'Text.cpp',
@@ -355,6 +361,7 @@ UNIFIED_SOURCES += [
     'URLSearchParams.cpp',
     'WebSocket.cpp',
     'WindowNamedPropertiesHandler.cpp',
+    'WindowOrientationObserver.cpp',
 ]
 
 if CONFIG['MOZ_WEBRTC']:

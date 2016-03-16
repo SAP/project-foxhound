@@ -163,7 +163,7 @@ IsEnabledStateLockedForPlugin(nsIInternalPluginTag* aTag,
     return NS_ERROR_FAILURE;
   }
 
-  unused << prefs->PrefIsLocked(GetStatePrefNameForPlugin(aTag).get(),
+  Unused << prefs->PrefIsLocked(GetStatePrefNameForPlugin(aTag).get(),
                                 aIsEnabledStateLocked);
 
   return NS_OK;
@@ -576,7 +576,8 @@ nsPluginTag::GetClicktoplay(bool *aClicktoplay)
 }
 
 NS_IMETHODIMP
-nsPluginTag::GetEnabledState(uint32_t *aEnabledState) {
+nsPluginTag::GetEnabledState(uint32_t *aEnabledState)
+{
   int32_t enabledState;
   nsresult rv = Preferences::GetInt(GetStatePrefNameForPlugin(this).get(),
                                     &enabledState);
@@ -601,14 +602,15 @@ nsPluginTag::GetEnabledState(uint32_t *aEnabledState) {
 }
 
 NS_IMETHODIMP
-nsPluginTag::SetEnabledState(uint32_t aEnabledState) {
+nsPluginTag::SetEnabledState(uint32_t aEnabledState)
+{
   if (aEnabledState >= ePluginState_MaxValue)
     return NS_ERROR_ILLEGAL_VALUE;
   uint32_t oldState = nsIPluginTag::STATE_DISABLED;
   GetEnabledState(&oldState);
   if (oldState != aEnabledState) {
     Preferences::SetInt(GetStatePrefNameForPlugin(this).get(), aEnabledState);
-    if (nsRefPtr<nsPluginHost> host = nsPluginHost::GetInst()) {
+    if (RefPtr<nsPluginHost> host = nsPluginHost::GetInst()) {
       host->UpdatePluginInfo(this);
     }
   }
@@ -810,7 +812,7 @@ nsFakePluginTag::Create(const FakePluginTagInit& aInitDictionary,
 {
   NS_ENSURE_TRUE(!aInitDictionary.mMimeEntries.IsEmpty(), NS_ERROR_INVALID_ARG);
 
-  nsRefPtr<nsFakePluginTag> tag = new nsFakePluginTag();
+  RefPtr<nsFakePluginTag> tag = new nsFakePluginTag();
   nsresult rv = NS_NewURI(getter_AddRefs(tag->mHandlerURI),
                           aInitDictionary.mHandlerURI);
   NS_ENSURE_SUCCESS(rv, rv);

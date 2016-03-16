@@ -8,6 +8,7 @@
 
 #include "LinuxCapabilities.h"
 #include "LinuxSched.h"
+#include "SandboxBrokerClient.h"
 #include "SandboxChroot.h"
 #include "SandboxFilter.h"
 #include "SandboxInternal.h"
@@ -30,6 +31,7 @@
 #include <unistd.h>
 
 #include "mozilla/Atomics.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/SandboxInfo.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/unused.h"
@@ -166,7 +168,7 @@ InstallSigSysHandler(void)
   struct sigaction act;
 
   // Ensure that the Chromium handler is installed.
-  unused << sandbox::Trap::Registry();
+  Unused << sandbox::Trap::Registry();
 
   // If the signal handling state isn't as expected, crash now instead
   // of crashing later (and more confusingly) when SIGSYS happens.
@@ -437,7 +439,7 @@ BroadcastSetThreadSandbox(const sock_fprog* aFilter)
                       signum, oldHandler);
     MOZ_CRASH();
   }
-  unused << closedir(taskdp);
+  Unused << closedir(taskdp);
   // And now, deprivilege the main thread:
   SetThreadSandbox();
   gSetSandboxFilter = nullptr;
@@ -522,8 +524,11 @@ SandboxEarlyInit(GeckoProcessType aType, bool aIsNuwa)
     return;
   }
 
-  MOZ_RELEASE_ASSERT(IsSingleThreaded());
   const SandboxInfo info = SandboxInfo::Get();
+  if (info.Test(SandboxInfo::kUnexpectedThreads)) {
+    return;
+  }
+  MOZ_RELEASE_ASSERT(IsSingleThreaded());
 
   // Which kinds of resource isolation (of those that need to be set
   // up at this point) can be used by this process?
@@ -625,13 +630,22 @@ SandboxEarlyInit(GeckoProcessType aType, bool aIsNuwa)
  * Will normally make the process exit on failure.
 */
 void
-SetContentProcessSandbox()
+SetContentProcessSandbox(int aBrokerFd)
 {
   if (!SandboxInfo::Get().Test(SandboxInfo::kEnabledForContent)) {
+    if (aBrokerFd >= 0) {
+      close(aBrokerFd);
+    }
     return;
   }
 
-  SetCurrentProcessSandbox(GetContentSandboxPolicy());
+  // This needs to live until the process exits.
+  static Maybe<SandboxBrokerClient> sBroker;
+  if (aBrokerFd >= 0) {
+    sBroker.emplace(aBrokerFd);
+  }
+
+  SetCurrentProcessSandbox(GetContentSandboxPolicy(sBroker.ptrOr(nullptr)));
 }
 #endif // MOZ_CONTENT_SANDBOX
 

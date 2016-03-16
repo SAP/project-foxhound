@@ -59,15 +59,15 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_DEVICES:
-#ifdef MOZ_DEVICES
+  MOZ_DATA_REPORTING:
+#ifdef MOZ_DATA_REPORTING
   true,
 #else
   false,
 #endif
 
-  MOZ_ANDROID_NATIVE_ACCOUNT_UI:
-#ifdef MOZ_ANDROID_NATIVE_ACCOUNT_UI
+  MOZ_DEVICES:
+#ifdef MOZ_DEVICES
   true,
 #else
   false,
@@ -89,6 +89,20 @@ this.AppConstants = Object.freeze({
 
   MOZ_TELEMETRY_REPORTING:
 #ifdef MOZ_TELEMETRY_REPORTING
+  true,
+#else
+  false,
+#endif
+
+  MOZ_TELEMETRY_ON_BY_DEFAULT:
+#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
+  true,
+#else
+  false,
+#endif
+
+  MOZ_SERVICES_CLOUDSYNC:
+#ifdef MOZ_SERVICES_CLOUDSYNC
   true,
 #else
   false,
@@ -191,8 +205,8 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_B2G:
-#ifdef MOZ_B2G
+  MOZ_B2G_RIL:
+#ifdef MOZ_B2G_RIL
   true,
 #else
   false,
@@ -205,6 +219,27 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_GRAPHENE:
+#ifdef MOZ_GRAPHENE
+  true,
+#else
+  false,
+#endif
+
+  MOZ_PLACES:
+#ifdef MOZ_PLACES
+  true,
+#else
+  false,
+#endif
+
+  MOZ_ANDROID_HISTORY:
+#ifdef MOZ_ANDROID_HISTORY
+  true,
+#else
+  false,
+#endif
+
   DLL_PREFIX: "@DLL_PREFIX@",
   DLL_SUFFIX: "@DLL_SUFFIX@",
 
@@ -212,14 +247,24 @@ this.AppConstants = Object.freeze({
   MOZ_APP_VERSION: "@MOZ_APP_VERSION@",
   MOZ_APP_VERSION_DISPLAY: "@MOZ_APP_VERSION_DISPLAY@",
   MOZ_BUILD_APP: "@MOZ_BUILD_APP@",
+  MOZ_MACBUNDLE_NAME: "@MOZ_MACBUNDLE_NAME@",
   MOZ_UPDATE_CHANNEL: "@MOZ_UPDATE_CHANNEL@",
+  INSTALL_LOCALE: "@AB_CD@",
   MOZ_WIDGET_TOOLKIT: "@MOZ_WIDGET_TOOLKIT@",
   ANDROID_PACKAGE_NAME: "@ANDROID_PACKAGE_NAME@",
+  MOZ_B2G_VERSION: @MOZ_B2G_VERSION@,
+  MOZ_B2G_OS_NAME: @MOZ_B2G_OS_NAME@,
+
   MOZ_ANDROID_APZ:
 #ifdef MOZ_ANDROID_APZ
     true,
 #else
     false,
 #endif
-  DEBUG_JS_MODULES: "@DEBUG_JS_MODULES@"
+  DEBUG_JS_MODULES: "@DEBUG_JS_MODULES@",
+
+  // URL to the hg revision this was built from (e.g.
+  // "https://hg.mozilla.org/mozilla-central/rev/6256ec9113c1")
+  // On unofficial builds, this is an empty string.
+  SOURCE_REVISION_URL: "@SOURCE_REV_URL@"
 });

@@ -339,7 +339,7 @@ PlacesViewBase.prototype = {
         element.setAttribute("scheme",
                              PlacesUIUtils.guessUrlSchemeForUI(aPlacesNode.uri));
       }
-      else if (PlacesUtils.containerTypes.indexOf(type) != -1) {
+      else if (PlacesUtils.containerTypes.includes(type)) {
         element = document.createElement("menu");
         element.setAttribute("container", "true");
 
@@ -388,8 +388,7 @@ PlacesViewBase.prototype = {
 
       let icon = aPlacesNode.icon;
       if (icon)
-        element.setAttribute("image",
-                             PlacesUtils.getImageURLForResolution(window, icon));
+        element.setAttribute("image", icon);
     }
 
     element._placesNode = aPlacesNode;
@@ -527,8 +526,7 @@ PlacesViewBase.prototype = {
     if (!icon)
       elt.removeAttribute("image");
     else if (icon != elt.getAttribute("image"))
-      elt.setAttribute("image",
-                       PlacesUtils.getImageURLForResolution(window, icon));
+      elt.setAttribute("image", icon);
   },
 
   nodeAnnotationChanged:
@@ -635,7 +633,7 @@ PlacesViewBase.prototype = {
     if (!parentElt._built)
       return;
 
-    let index = Array.indexOf(parentElt.childNodes, parentElt._startMarker) +
+    let index = Array.prototype.indexOf.call(parentElt.childNodes, parentElt._startMarker) +
                 aIndex + 1;
     this._insertNewItemToPopup(aPlacesNode, parentElt,
                                parentElt.childNodes[index]);
@@ -665,7 +663,7 @@ PlacesViewBase.prototype = {
     if (parentElt._built) {
       // Move the node.
       parentElt.removeChild(elt);
-      let index = Array.indexOf(parentElt.childNodes, parentElt._startMarker) +
+      let index = Array.prototype.indexOf.call(parentElt.childNodes, parentElt._startMarker) +
                   aNewIndex + 1;
       parentElt.insertBefore(elt, parentElt.childNodes[index]);
     }
@@ -1058,10 +1056,9 @@ PlacesToolbar.prototype = {
       button.setAttribute("label", aChild.title || "");
       let icon = aChild.icon;
       if (icon)
-        button.setAttribute("image",
-                            PlacesUtils.getImageURLForResolution(window, icon));
+        button.setAttribute("image", icon);
 
-      if (PlacesUtils.containerTypes.indexOf(type) != -1) {
+      if (PlacesUtils.containerTypes.includes(type)) {
         button.setAttribute("type", "menu");
         button.setAttribute("container", "true");
 
@@ -1184,7 +1181,7 @@ PlacesToolbar.prototype = {
   },
 
   updateOverflowStatus: function() {
-    if (this._rootElt.scrollLeftMax > 0) {
+    if (this._rootElt.scrollLeftMin != this._rootElt.scrollLeftMax) {
       this._onOverflow();
     } else {
       this._onUnderflow();
@@ -1414,7 +1411,7 @@ PlacesToolbar.prototype = {
     if (elt._placesNode && elt != this._rootElt &&
         elt.localName != "menupopup") {
       let eltRect = elt.getBoundingClientRect();
-      let eltIndex = Array.indexOf(this._rootElt.childNodes, elt);
+      let eltIndex = Array.prototype.indexOf.call(this._rootElt.childNodes, elt);
       if (PlacesUtils.nodeIsFolder(elt._placesNode) &&
           !PlacesUIUtils.isContentsReadOnly(elt._placesNode)) {
         // This is a folder.
@@ -1886,10 +1883,9 @@ PlacesPanelMenuView.prototype = {
       button.setAttribute("label", aChild.title || "");
       let icon = aChild.icon;
       if (icon)
-        button.setAttribute("image",
-                            PlacesUtils.getImageURLForResolution(window, icon));
+        button.setAttribute("image", icon);
 
-      if (PlacesUtils.containerTypes.indexOf(type) != -1) {
+      if (PlacesUtils.containerTypes.includes(type)) {
         button.setAttribute("container", "true");
 
         if (PlacesUtils.nodeIsQuery(aChild)) {

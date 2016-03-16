@@ -50,7 +50,7 @@ private:
     return principal.forget();
   }
   virtual bool CanClone() override { return false; }
-  virtual already_AddRefed<MediaResource> CloneData(MediaDecoder* aDecoder) override
+  virtual already_AddRefed<MediaResource> CloneData(MediaResourceCallback*) override
   {
     return nullptr;
   }
@@ -99,9 +99,9 @@ private:
     return NS_ERROR_FAILURE;
   }
 
-  virtual nsresult GetCachedRanges(nsTArray<MediaByteRange>& aRanges) override
+  virtual nsresult GetCachedRanges(MediaByteRangeSet& aRanges) override
   {
-    aRanges.AppendElement(MediaByteRange(0, mLength));
+    aRanges += MediaByteRange(0, int64_t(mLength));
     return NS_OK;
   }
 
@@ -135,7 +135,7 @@ private:
   uint32_t mLength;
   uint32_t mOffset;
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  const nsAutoCString mContentType;
+  const nsCString mContentType;
 };
 
 } // namespace mozilla

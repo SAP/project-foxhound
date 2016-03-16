@@ -892,10 +892,9 @@ BacktrackingAllocator::tryMergeBundles(LiveBundle* bundle0, LiveBundle* bundle1)
 
     // Registers which might spill to the frame's argument slots can only be
     // grouped with other such registers if the frame might access those
-    // arguments through a lazy arguments object.
+    // arguments through a lazy arguments object or rest parameter.
     if (IsArgumentSlotDefinition(reg0.def()) || IsArgumentSlotDefinition(reg1.def())) {
-        JSScript* script = graph.mir().entryBlock()->info().script();
-        if (script && script->argumentsHasVarBinding()) {
+        if (graph.mir().entryBlock()->info().mayReadFrameArgsDirectly()) {
             if (*reg0.def()->output() != *reg1.def()->output())
                 return true;
         }
@@ -1408,20 +1407,23 @@ BacktrackingAllocator::tryAllocateRegister(PhysicalRegister& r, LiveBundle* bund
         // case of multiple conflicting sets keep track of the set with the
         // lowest maximum spill weight.
 
+        // The #ifdef guards against "unused variable 'existing'" bustage.
+#ifdef JS_JITSPEW
         if (JitSpewEnabled(JitSpew_RegAlloc)) {
             if (aliasedConflicting.length() == 1) {
-                mozilla::DebugOnly<LiveBundle*> existing = aliasedConflicting[0];
+                LiveBundle* existing = aliasedConflicting[0];
                 JitSpew(JitSpew_RegAlloc, "  %s collides with %s [weight %lu]",
                         r.reg.name(), existing->toString(), computeSpillWeight(existing));
             } else {
                 JitSpew(JitSpew_RegAlloc, "  %s collides with the following", r.reg.name());
                 for (size_t i = 0; i < aliasedConflicting.length(); i++) {
-                    mozilla::DebugOnly<LiveBundle*> existing = aliasedConflicting[i];
+                    LiveBundle* existing = aliasedConflicting[i];
                     JitSpew(JitSpew_RegAlloc, "      %s [weight %lu]",
                             existing->toString(), computeSpillWeight(existing));
                 }
             }
         }
+#endif
 
         if (conflicting.empty()) {
             if (!conflicting.appendAll(aliasedConflicting))
@@ -1718,6 +1720,9 @@ BacktrackingAllocator::resolveControlFlow()
         VirtualRegister& reg = vregs[i];
 
         if (mir->shouldCancel("Backtracking Resolve Control Flow (vreg loop)"))
+            return false;
+
+        if (!alloc().ensureBallast())
             return false;
 
         for (LiveRange::RegisterLinkIterator iter = reg.rangesBegin(); iter; ) {
@@ -3006,7 +3011,7 @@ BacktrackingAllocator::splitAcrossCalls(LiveBundle* bundle)
     }
     MOZ_ASSERT(callPositions.length());
 
-#ifdef DEBUG
+#ifdef JS_JITSPEW
     JitSpewStart(JitSpew_RegAlloc, "  split across calls at ");
     for (size_t i = 0; i < callPositions.length(); ++i)
         JitSpewCont(JitSpew_RegAlloc, "%s%u", i != 0 ? ", " : "", callPositions[i].bits());

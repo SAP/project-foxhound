@@ -238,7 +238,8 @@ const Sandbox = iced(function Sandbox(options) {
     sandboxPrototype: 'prototype' in options ? options.prototype : {},
     invisibleToDebugger: 'invisibleToDebugger' in options ?
                          options.invisibleToDebugger : false,
-    metadata: 'metadata' in options ? options.metadata : {}
+    metadata: 'metadata' in options ? options.metadata : {},
+    waiveIntereposition: !!options.waiveIntereposition
   };
 
   if (options.metadata && options.metadata.addonID) {
@@ -363,7 +364,7 @@ const load = iced(function load(loader, module) {
       fileName: { value: fileName, writable: true, configurable: true },
       lineNumber: { value: lineNumber, writable: true, configurable: true },
       stack: { value: serializeStack(frames), writable: true, configurable: true },
-      toString: { value: function() toString, writable: true, configurable: true },
+      toString: { value: () => toString, writable: true, configurable: true },
     });
   }
 
@@ -556,8 +557,24 @@ const resolveURI = iced(function resolveURI(id, mapping) {
 
   while (index < count) {
     let [ path, uri ] = mapping[index++];
-    if (id.indexOf(path) === 0)
+
+    // Strip off any trailing slashes to make comparisons simpler
+    let stripped = path.endsWith('/') ? path.slice(0, -1) : path;
+
+    // We only want to match path segments explicitly. Examples:
+    // * "foo/bar" matches for "foo/bar"
+    // * "foo/bar" matches for "foo/bar/baz"
+    // * "foo/bar" does not match for "foo/bar-1"
+    // * "foo/bar/" does not match for "foo/bar"
+    // * "foo/bar/" matches for "foo/bar/baz"
+    //
+    // Check for an empty path, an exact match, or a substring match
+    // with the next character being a forward slash.
+    if(stripped === "" ||
+       (id.indexOf(stripped) === 0 &&
+        (id.length === path.length || id[stripped.length] === '/'))) {
       return normalizeExt(id.replace(path, uri));
+    }
   }
   return void 0; // otherwise we raise a warning, see bug 910304
 });
@@ -791,14 +808,14 @@ Loader.unload = unload;
 function Loader(options) {
   let {
     modules, globals, resolve, paths, rootURI, manifest, requireMap, isNative,
-    metadata, sharedGlobal, sharedGlobalBlacklist, checkCompatibility
+    metadata, sharedGlobal, sharedGlobalBlacklist, checkCompatibility, waiveIntereposition
   } = override({
     paths: {},
     modules: {},
     globals: {
       get console() {
         // Import Console.jsm from here to prevent loading it until someone uses it
-        let { ConsoleAPI } = Cu.import("resource://gre/modules/devtools/Console.jsm");
+        let { ConsoleAPI } = Cu.import("resource://gre/modules/Console.jsm");
         let console = new ConsoleAPI({
           consoleID: options.id ? "addon/" + options.id : ""
         });
@@ -811,7 +828,8 @@ function Loader(options) {
       // Make the returned resolve function have the same signature
       (id, requirer) => Loader.nodeResolve(id, requirer, { rootURI: rootURI }) :
       Loader.resolve,
-    sharedGlobalBlacklist: ["sdk/indexed-db"]
+    sharedGlobalBlacklist: ["sdk/indexed-db"],
+    waiveIntereposition: false
   }, options);
 
   // Create overrides defaults, none at the moment

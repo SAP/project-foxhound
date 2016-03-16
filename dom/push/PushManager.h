@@ -39,7 +39,7 @@
 #include "mozilla/dom/TypedArray.h"
 
 #include "nsCOMPtr.h"
-#include "mozilla/nsRefPtr.h"
+#include "mozilla/RefPtr.h"
 #include "jsapi.h"
 
 class nsIGlobalObject;
@@ -67,7 +67,8 @@ public:
   explicit PushSubscription(nsIGlobalObject* aGlobal,
                             const nsAString& aEndpoint,
                             const nsAString& aScope,
-                            const nsTArray<uint8_t>& aP256dhKey);
+                            const nsTArray<uint8_t>& aP256dhKey,
+                            const nsTArray<uint8_t>& aAuthSecret);
 
   JSObject*
   WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -87,13 +88,14 @@ public:
   void
   GetKey(JSContext* cx,
          PushEncryptionKeyName aType,
-         JS::MutableHandle<JSObject*> aP256dhKey);
+         JS::MutableHandle<JSObject*> aKey);
 
   static already_AddRefed<PushSubscription>
   Constructor(GlobalObject& aGlobal,
               const nsAString& aEndpoint,
               const nsAString& aScope,
               const Nullable<ArrayBuffer>& aP256dhKey,
+              const Nullable<ArrayBuffer>& aAuthSecret,
               ErrorResult& aRv);
 
   void
@@ -111,6 +113,7 @@ private:
   nsString mEndpoint;
   nsString mScope;
   nsTArray<uint8_t> mRawP256dhKey;
+  nsTArray<uint8_t> mAuthSecret;
 };
 
 class PushManager final : public nsISupports
@@ -148,7 +151,7 @@ protected:
 
 private:
   nsCOMPtr<nsIGlobalObject> mGlobal;
-  nsRefPtr<PushManagerImpl> mImpl;
+  RefPtr<PushManagerImpl> mImpl;
   nsString mScope;
 };
 
@@ -161,7 +164,8 @@ public:
 
   explicit WorkerPushSubscription(const nsAString& aEndpoint,
                                   const nsAString& aScope,
-                                  const nsTArray<uint8_t>& aRawP256dhKey);
+                                  const nsTArray<uint8_t>& aRawP256dhKey,
+                                  const nsTArray<uint8_t>& aAuthSecret);
 
   nsIGlobalObject*
   GetParentObject() const
@@ -177,6 +181,7 @@ public:
               const nsAString& aEndpoint,
               const nsAString& aScope,
               const Nullable<ArrayBuffer>& aP256dhKey,
+              const Nullable<ArrayBuffer>& aAuthSecret,
               ErrorResult& aRv);
 
   void
@@ -199,6 +204,7 @@ private:
   nsString mEndpoint;
   nsString mScope;
   nsTArray<uint8_t> mRawP256dhKey;
+  nsTArray<uint8_t> mAuthSecret;
 };
 
 class WorkerPushManager final : public nsISupports

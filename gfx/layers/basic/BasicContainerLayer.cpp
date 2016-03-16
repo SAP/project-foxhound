@@ -85,7 +85,7 @@ BasicContainerLayer::ChildrenPartitionVisibleRegion(const gfx::IntRect& aInRect)
     return false;
 
   nsIntPoint offset(int32_t(transform._31), int32_t(transform._32));
-  gfx::IntRect rect = aInRect.Intersect(GetEffectiveVisibleRegion().GetBounds() + offset);
+  gfx::IntRect rect = aInRect.Intersect(GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds() + offset);
   nsIntRegion covered;
 
   for (Layer* l = mFirstChild; l; l = l->GetNextSibling()) {
@@ -97,11 +97,11 @@ BasicContainerLayer::ChildrenPartitionVisibleRegion(const gfx::IntRect& aInRect)
         ThebesMatrix(childTransform).HasNonIntegerTranslation() ||
         l->GetEffectiveOpacity() != 1.0)
       return false;
-    nsIntRegion childRegion = l->GetEffectiveVisibleRegion();
+    nsIntRegion childRegion = l->GetEffectiveVisibleRegion().ToUnknownRegion();
     childRegion.MoveBy(int32_t(childTransform._31), int32_t(childTransform._32));
     childRegion.And(childRegion, rect);
     if (l->GetClipRect()) {
-      childRegion.And(childRegion, ParentLayerIntRect::ToUntyped(*l->GetClipRect()) + offset);
+      childRegion.And(childRegion, l->GetClipRect()->ToUnknownRect() + offset);
     }
     nsIntRegion intersection;
     intersection.And(covered, childRegion);
@@ -136,7 +136,7 @@ already_AddRefed<ContainerLayer>
 BasicLayerManager::CreateContainerLayer()
 {
   NS_ASSERTION(InConstruction(), "Only allowed in construction phase");
-  nsRefPtr<ContainerLayer> layer = new BasicContainerLayer(this);
+  RefPtr<ContainerLayer> layer = new BasicContainerLayer(this);
   return layer.forget();
 }
 

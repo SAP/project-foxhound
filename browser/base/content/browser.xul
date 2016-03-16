@@ -8,7 +8,7 @@
 
 <?xml-stylesheet href="chrome://browser/content/browser.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/content/places/places.css" type="text/css"?>
-<?xml-stylesheet href="chrome://browser/skin/devtools/common.css" type="text/css"?>
+<?xml-stylesheet href="chrome://devtools/skin/common.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/controlcenter/panel.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/customizableui/panelUIOverlay.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/" type="text/css"?>
@@ -91,15 +91,6 @@
       <menuitem id="context_unpinTab" label="&unpinTab.label;" hidden="true"
                 accesskey="&unpinTab.accesskey;"
                 oncommand="gBrowser.unpinTab(TabContextMenu.contextTab);"/>
-      <menu id="context_tabViewMenu" label="&moveToGroup.label;"
-            accesskey="&moveToGroup.accesskey;">
-        <menupopup id="context_tabViewMenuPopup"
-                   onpopupshowing="if (event.target == this) TabView.moveToGroupPopupShowing(event);">
-          <menuseparator id="context_tabViewNamedGroups" hidden="true"/>
-          <menuitem id="context_tabViewNewGroup" label="&moveToNewGroup.label;"
-                    oncommand="TabView.moveTabTo(TabContextMenu.contextTab, null);"/>
-        </menupopup>
-      </menu>
       <menuitem id="context_openTabInWindow" label="&moveToNewWindow.label;"
                 accesskey="&moveToNewWindow.accesskey;"
                 tbattr="tabbrowser-multiple"
@@ -119,7 +110,7 @@
                 accesskey="&bookmarkAllTabs.accesskey;"
                 command="Browser:BookmarkAllTabs"/>
       <menuitem id="context_closeTabsToTheEnd" label="&closeTabsToTheEnd.label;" accesskey="&closeTabsToTheEnd.accesskey;"
-                oncommand="gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab);"/>
+                oncommand="gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab, {animate: true});"/>
       <menuitem id="context_closeOtherTabs" label="&closeOtherTabs.label;" accesskey="&closeOtherTabs.accesskey;"
                 oncommand="gBrowser.removeAllTabsBut(TabContextMenu.contextTab);"/>
       <menuseparator/>
@@ -162,6 +153,7 @@
          popuponly menulist to be its immediate parent. -->
     <menulist popuponly="true" id="ContentSelectDropdown" hidden="true">
       <menupopup rolluponmousewheel="true"
+                 activateontab="true"
 #ifdef XP_WIN
                  consumeoutsideclicks="false" ignorekeys="handled"
 #endif
@@ -260,14 +252,6 @@
       <box id="UITourHighlight"></box>
     </panel>
 
-    <panel id="abouthome-search-panel" orient="vertical" type="arrow" hidden="true"
-           onclick="this.hidePopup()">
-      <hbox id="abouthome-search-panel-manage"
-            onclick="openPreferences('paneSearch')">
-        <label>&changeSearchSettings.button;</label>
-      </hbox>
-    </panel>
-
     <panel id="social-share-panel"
            class="social-panel"
            type="arrow"
@@ -317,26 +301,6 @@
            type="arrow"
            orient="horizontal"
            hidden="true"/>
-
-    <menupopup id="processHangOptions"
-               onpopupshowing="ProcessHangMonitor.refreshMenu(window);">
-      <menuitem id="processHangTerminateScript"
-                oncommand="ProcessHangMonitor.terminateScript(window)"
-                accesskey="&processHang.terminateScript.accessKey;"
-                label="&processHang.terminateScript.label;"/>
-      <menuitem id="processHangDebugScript"
-                oncommand="ProcessHangMonitor.debugScript(window)"
-                accesskey="&processHang.debugScript.accessKey;"
-                label="&processHang.debugScript.label;"/>
-      <menuitem id="processHangTerminatePlugin"
-                oncommand="ProcessHangMonitor.terminatePlugin(window)"
-                accesskey="&processHang.terminatePlugin.accessKey;"
-                label="&processHang.terminatePlugin.label;"/>
-      <menuitem id="processHangTerminateProcess"
-                oncommand="ProcessHangMonitor.terminateProcess(window)"
-                accesskey="&processHang.terminateProcess.accessKey;"
-                label="&processHang.terminateProcess.label;"/>
-    </menupopup>
 
     <menupopup id="toolbar-context-menu"
                onpopupshowing="onViewToolbarsPopupShowing(event, document.getElementById('viewToolbarsMenuSeparator'));">
@@ -499,17 +463,6 @@
 
     <tooltip id="dynamic-shortcut-tooltip"
              onpopupshowing="UpdateDynamicShortcutTooltipText(this);"/>
-
-    <menupopup id="emeNotificationsPopup">
-      <menuitem id="emeNotificationsNotNow"
-                label="&emeNotificationsNotNow.label;"
-                acceskey="&emeNotificationsNotNow.accesskey;"
-                oncommand="gEMEHandler.onNotNow(this);"/>
-      <menuitem id="emeNotificationsDontAskAgain"
-                label="&emeNotificationsDontAskAgain.label;"
-                acceskey="&emeNotificationsDontAskAgain.accesskey;"
-                oncommand="gEMEHandler.onDontAskAgain(this);"/>
-    </menupopup>
   </popupset>
 
 #ifdef CAN_DRAW_IN_TITLEBAR
@@ -617,12 +570,6 @@
                      removable="false">
         <menupopup id="alltabs-popup"
                    position="after_end">
-          <menuitem id="menu_tabview"
-                    class="menuitem-iconic"
-                    key="key_tabview"
-                    label="&viewTabGroups.label;"
-                    command="Browser:ToggleTabView"
-                    observes="tabviewGroupsNumber"/>
           <menuitem id="alltabs_undoCloseTab"
                     class="menuitem-iconic"
                     key="key_undoCloseTab"
@@ -675,7 +622,7 @@
 
       <hbox id="nav-bar-customization-target" flex="1">
         <toolbaritem id="urlbar-container" flex="400" persist="width"
-                     title="&locationItem.title;" removable="false"
+                     removable="false"
                      class="chromeclass-location" overflows="false">
           <toolbarbutton id="back-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
                          label="&backCmd.label;"
@@ -710,28 +657,50 @@
                      onfocus="document.getElementById('identity-box').style.MozUserFocus= 'normal'"
                      onblur="setTimeout(() => { document.getElementById('identity-box').style.MozUserFocus = ''; }, 0);">
               <box id="notification-popup-box" hidden="true" align="center">
-                <image id="default-notification-icon" class="notification-anchor-icon" role="button"/>
+                <image id="default-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.defaultNotificationAnchor.label;"/>
+                <!-- NB: the identity-notification-icon is used for persona-based auth and preffed
+                     off by default. It hasn't been updated for some time and liable to being
+                     removed.-->
                 <image id="identity-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="geo-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="push-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="addons-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="indexedDB-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="login-fill-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="password-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webapps-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="plugins-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="web-notifications-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webRTC-sharingDevices-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webRTC-shareMicrophone-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webRTC-sharingMicrophone-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webRTC-shareScreen-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="webRTC-sharingScreen-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="pointerLock-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="servicesInstall-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="translate-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="translated-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="eme-notification-icon" class="notification-anchor-icon" role="button"/>
+                <image id="geo-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.geolocationNotificationAnchor.label;"/>
+                <image id="addons-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.addonsNotificationAnchor.label;"/>
+                <image id="indexedDB-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.indexedDBNotificationAnchor.label;"/>
+                <image id="login-fill-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.loginFillNotificationAnchor.label;"/>
+                <image id="password-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.passwordNotificationAnchor.label;"/>
+                <image id="webapps-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webappsNotificationAnchor.label;"/>
+                <image id="plugins-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.pluginsNotificationAnchor.label;"/>
+                <image id="web-notifications-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webNotsNotificationAnchor3.label;"/>
+                <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webRTCShareDevicesNotificationAnchor.label;"/>
+                <image id="webRTC-sharingDevices-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webRTCSharingDevicesNotificationAnchor.label;"/>
+                <image id="webRTC-shareMicrophone-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webRTCShareMicrophoneNotificationAnchor.label;"/>
+                <image id="webRTC-sharingMicrophone-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webRTCSharingMicrophoneNotificationAnchor.label;"/>
+                <image id="webRTC-shareScreen-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webRTCShareScreenNotificationAnchor.label;"/>
+                <image id="webRTC-sharingScreen-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.webRTCSharingScreenNotificationAnchor.label;"/>
+                <image id="pointerLock-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.pointerLockNotificationAnchor.label;"/>
+                <image id="servicesInstall-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.servicesNotificationAnchor.label;"/>
+                <image id="translate-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.translateNotificationAnchor.label;"/>
+                <image id="translated-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.translatedNotificationAnchor.label;"/>
+                <image id="eme-notification-icon" class="notification-anchor-icon" role="button"
+                       aria-label="&urlbar.emeNotificationAnchor.label;"/>
               </box>
               <!-- Use onclick instead of normal popup= syntax since the popup
                    code fires onmousedown, and hence eats our favicon drag events.
@@ -739,16 +708,15 @@
                    has focus, otherwise pressing F6 focuses it instead of the location bar -->
               <box id="identity-box" role="button"
                    align="center"
+                   aria-label="&urlbar.viewSiteInfo.label;"
                    onclick="gIdentityHandler.handleIdentityButtonEvent(event);"
                    onkeypress="gIdentityHandler.handleIdentityButtonEvent(event);"
                    ondragstart="gIdentityHandler.onDragStart(event);">
-                <hbox id="identity-icons"
-                      consumeanchor="identity-box">
-                  <image id="tracking-protection-icon"/>
-                  <image id="page-proxy-favicon"
-                         onclick="PageProxyClickHandler(event);"
-                         pageproxystate="invalid"/>
-                </hbox>
+                <image id="identity-icon"
+                       consumeanchor="identity-box"
+                       onclick="PageProxyClickHandler(event);"/>
+                <image id="tracking-protection-icon"/>
+                <image id="connection-icon"/>
                 <hbox id="identity-icon-labels">
                   <label id="identity-icon-label" class="plain" flex="1"/>
                   <label id="identity-icon-country-label" class="plain"/>
@@ -767,6 +735,10 @@
                        class="urlbar-icon"
                        hidden="true"
                        onclick="ReaderParent.buttonClick(event);"/>
+              </hbox>
+              <hbox id="userContext-icons">
+                <label id="userContext-label"/>
+                <image id="userContext-indicator"/>
               </hbox>
               <toolbarbutton id="urlbar-go-button"
                              class="chromeclass-toolbar-additional"
@@ -1055,19 +1027,6 @@
                      type="checkbox"
                      label="&fullScreenCmd.label;"
                      tooltip="dynamic-shortcut-tooltip"/>
-
-#ifdef MOZ_SERVICES_SYNC
-      <toolbarbutton id="sync-button"
-                     class="toolbarbutton-1 chromeclass-toolbar-additional"
-                     label="&syncToolbarButton.label;"
-                     oncommand="gSyncUI.handleToolbarButton()"/>
-#endif
-
-      <toolbarbutton id="tabview-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
-                     label="&tabGroupsButton.label;"
-                     command="Browser:ToggleTabView"
-                     tooltip="dynamic-shortcut-tooltip"
-                     observes="tabviewGroupsNumber"/>
     </toolbarpalette>
   </toolbox>
 
@@ -1088,7 +1047,7 @@
 
       <splitter id="sidebar-splitter" class="chromeclass-extrachrome sidebar-splitter" hidden="true"/>
       <vbox id="appcontent" flex="1">
-        <notificationbox id="high-priority-global-notificationbox"/>
+        <notificationbox id="high-priority-global-notificationbox" notificationside="top"/>
         <tabbrowser id="content"
                     flex="1" contenttooltip="aHTMLTooltip"
                     tabcontainer="tabbrowser-tabs"
@@ -1171,7 +1130,7 @@
   </html:div>
 
   <vbox id="browser-bottombox" layer="true">
-    <notificationbox id="global-notificationbox"/>
+    <notificationbox id="global-notificationbox" notificationside="bottom"/>
     <toolbar id="developer-toolbar"
              hidden="true">
 #ifdef XP_MACOSX

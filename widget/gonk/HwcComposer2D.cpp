@@ -215,7 +215,7 @@ public:
 
     NS_IMETHOD Run()
     {
-        nsRefPtr<nsScreenManagerGonk> screenManager =
+        RefPtr<nsScreenManagerGonk> screenManager =
             nsScreenManagerGonk::GetInstance();
         if (mConnected) {
             screenManager->AddScreen(mType);
@@ -278,7 +278,7 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
 
     bool fillColor = false;
 
-    const nsIntRegion& visibleRegion = aLayer->GetEffectiveVisibleRegion();
+    const nsIntRegion visibleRegion = aLayer->GetEffectiveVisibleRegion().ToUnknownRegion();
     if (visibleRegion.IsEmpty()) {
         return true;
     }
@@ -300,8 +300,7 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
     }
 
     nsIntRect clip;
-    nsIntRect layerClip = aLayer->GetEffectiveClipRect() ?
-                          ParentLayerIntRect::ToUntyped(*aLayer->GetEffectiveClipRect()) : nsIntRect();
+    nsIntRect layerClip = aLayer->GetEffectiveClipRect().valueOr(ParentLayerIntRect()).ToUnknownRect();
     nsIntRect* layerClipPtr = aLayer->GetEffectiveClipRect() ? &layerClip : nullptr;
     if (!HwcUtils::CalculateClipRect(aParentTransform,
                                      layerClipPtr,
@@ -353,7 +352,11 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
 
     LayerRenderState state = aLayer->GetRenderState();
 
-    if (!state.mSurface.get()) {
+#if ANDROID_VERSION >= 21
+    if (!state.GetGrallocBuffer() && !state.GetSidebandStream()) {
+#else
+    if (!state.GetGrallocBuffer()) {
+#endif
         if (aLayer->AsColorLayer() && mColorFill) {
             fillColor = true;
         } else {
@@ -445,7 +448,18 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
     HwcLayer& hwcLayer = mList->hwLayers[current];
     hwcLayer.displayFrame = displayFrame;
     mHal->SetCrop(hwcLayer, sourceCrop);
-    buffer_handle_t handle = fillColor ? nullptr : state.mSurface->getNativeBuffer()->handle;
+    buffer_handle_t handle = nullptr;
+#if ANDROID_VERSION >= 21
+    if (state.GetSidebandStream()) {
+        handle = state.GetSidebandStream()->handle();
+    } else if (state.GetGrallocBuffer()) {
+        handle = state.GetGrallocBuffer()->getNativeBuffer()->handle;
+    }
+#else
+    if (state.GetGrallocBuffer()) {
+        handle = state.GetGrallocBuffer()->getNativeBuffer()->handle;
+    }
+#endif
     hwcLayer.handle = handle;
 
     hwcLayer.flags = 0;
@@ -453,7 +467,11 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
     hwcLayer.blending = isOpaque ? HWC_BLENDING_NONE : HWC_BLENDING_PREMULT;
 #if ANDROID_VERSION >= 17
     hwcLayer.compositionType = HWC_FRAMEBUFFER;
-
+#if ANDROID_VERSION >= 21
+    if (state.GetSidebandStream()) {
+        hwcLayer.compositionType = HWC_SIDEBAND;
+    }
+#endif
     hwcLayer.acquireFenceFd = -1;
     hwcLayer.releaseFenceFd = -1;
 #if ANDROID_VERSION >= 18
@@ -624,7 +642,7 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
             LOGD("Color layer has semitransparency which is unsupported");
             return false;
         }
-        hwcLayer.transform = colorLayer->GetColor().Packed();
+        hwcLayer.transform = colorLayer->GetColor().ToABGR();
     }
 
     mHwcLayerMap.AppendElement(static_cast<LayerComposite*>(aLayer->ImplData()));
@@ -751,7 +769,7 @@ HwcComposer2D::Render(nsIWidget* aWidget)
         mList->hwLayers[mList->numHwLayers - 1].acquireFenceFd = dispSurface->GetPrevDispAcquireFd();
     } else {
         // Update screen rect to handle a case that TryRenderWithHwc() is not called.
-        mScreenRect = screen->GetNaturalBounds();
+        mScreenRect = screen->GetNaturalBounds().ToUnknownRect();
 
         mList->flags = HWC_GEOMETRY_CHANGED;
         mList->numHwLayers = 2;
@@ -795,7 +813,7 @@ HwcComposer2D::Commit(nsScreenGonk* aScreen)
         }
         FenceHandle fence = state.mTexture->GetAndResetAcquireFenceHandle();
         if (fence.IsValid()) {
-            nsRefPtr<FenceHandle::FdObj> fdObj = fence.GetAndResetFdObj();
+            RefPtr<FenceHandle::FdObj> fdObj = fence.GetAndResetFdObj();
             mList->hwLayers[j].acquireFenceFd = fdObj->GetAndResetFd();
         }
     }
@@ -808,7 +826,7 @@ HwcComposer2D::Commit(nsScreenGonk* aScreen)
         if (mList->hwLayers[j].releaseFenceFd >= 0) {
             int fd = mList->hwLayers[j].releaseFenceFd;
             mList->hwLayers[j].releaseFenceFd = -1;
-            nsRefPtr<FenceHandle::FdObj> fdObj = new FenceHandle::FdObj(fd);
+            RefPtr<FenceHandle::FdObj> fdObj = new FenceHandle::FdObj(fd);
             FenceHandle fence(fdObj);
 
             LayerRenderState state = mHwcLayerMap[j]->GetLayer()->GetRenderState();
@@ -873,7 +891,7 @@ HwcComposer2D::TryRenderWithHwc(Layer* aRoot,
     // reallocated. We may want to avoid this if possible
     mVisibleRegions.clear();
 
-    mScreenRect = screen->GetNaturalBounds();
+    mScreenRect = screen->GetNaturalBounds().ToUnknownRect();
     MOZ_ASSERT(mHwcLayerMap.IsEmpty());
     if (!PrepareLayerList(aRoot,
                           mScreenRect,

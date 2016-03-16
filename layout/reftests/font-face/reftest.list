@@ -7,7 +7,7 @@ HTTP(..) == download-2.html download-2-ref.html
 HTTP(..) != download-2.html about:blank
 random-if(winWidget) HTTP(..) == download-2-big.html download-2-big-otf.html # bug 470713
 HTTP(..) != download-2-big-otf.html about:blank
-asserts-if(Android,4-8) skip-if(Android&&AndroidVersion==17) HTTP(..) != download-3-notref.html download-3.html # bug 1019192, bug 936226
+asserts-if(Android&&!asyncPan,4-8) skip-if(Android&&AndroidVersion==17) HTTP(..) != download-3-notref.html download-3.html # bug 1019192, bug 936226
 asserts-if(Android,0-8) HTTP(..) == download-3-ref.html download-3.html # same bugs as above
 asserts-if(Android,0-8) HTTP(..) == fallback-to-system-1.html fallback-to-system-1-ref.html # just delayed assertions from above tests
 HTTP(..) == name-override-simple-1.html name-override-simple-1-ref.html
@@ -50,8 +50,8 @@ skip-if(B2G||Mulet) fails-if(Android) random-if(gtkWidget) == src-list-local-ps.
 random-if(!cocoaWidget) == helveticaneue-ultra.html helveticaneue-ultra-ref.html
 
 HTTP(..) == order-1.html order-1-ref.html
-pref(layout.css.unicode-range.enabled,true) random-if(gtkWidget) HTTP(..) == order-2.html order-2-ref.html # enable new linux font backend, bug 1180560
-pref(layout.css.unicode-range.enabled,true) random-if(gtkWidget) HTTP(..) == order-3.html order-3-ref.html # enable new linux font backend, bug 1180560
+HTTP(..) == order-2.html order-2-ref.html
+HTTP(..) == order-3.html order-3-ref.html
 HTTP(..) == multiple-in-family-1.html multiple-in-family-1-ref.html
 HTTP(..) == multiple-in-family-1b.html multiple-in-family-1-ref.html
 HTTP(..) != multiple-in-family-1.html multiple-in-family-1-notref.html
@@ -61,10 +61,10 @@ HTTP(..) != prop-order-over-rule-order-1a.html prop-order-over-rule-order-1b.htm
 skip-if(B2G||Mulet) HTTP(..) == cross-iframe-1.html cross-iframe-1-ref.html # bug 773482 # Initial mulet triage: parity with B2G/B2G Desktop
 
 # unicode-range
-pref(layout.css.unicode-range.enabled,true) HTTP(..) == unicoderange-1.html unicoderange-1-ref.html
-pref(layout.css.unicode-range.enabled,true) HTTP(..) == unicoderange-2.html unicoderange-2-ref.html
-pref(layout.css.unicode-range.enabled,true) HTTP(..) == unicoderange-3.html unicoderange-3-ref.html
-pref(layout.css.unicode-range.enabled,true) HTTP(..) == unicoderange-4.html unicoderange-4-ref.html
+HTTP(..) == unicoderange-1.html unicoderange-1-ref.html
+HTTP(..) == unicoderange-2.html unicoderange-2-ref.html
+HTTP(..) == unicoderange-3.html unicoderange-3-ref.html
+HTTP(..) == unicoderange-4.html unicoderange-4-ref.html
 
 # Dynamic changes
 # we need to skip these because of the bug that's causing order-2.html to fail

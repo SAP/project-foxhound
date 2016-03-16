@@ -22,6 +22,10 @@ class nsIPresShell;
 namespace mozilla {
 
 /**
+ * NOTE: TouchCaret was obsoleted by AccessibleCaret, and is no longer used on
+ * B2G. This file is going to be removed in bug 1221459. Please see the wiki
+ * page for more information. https://wiki.mozilla.org/Copy_n_Paste
+ *
  * The TouchCaret places a touch caret according to caret position when the
  * caret is shown.
  * TouchCaret is also responsible for touch caret visibility. Touch caret
@@ -306,18 +310,12 @@ private:
   // Preference
   static int32_t sTouchCaretInflateSize;
   static int32_t sTouchCaretExpirationTime;
-  static bool sCaretManagesAndroidActionbar;
-  static bool sTouchcaretExtendedvisibility;
 
   // The auto scroll timer's interval in miliseconds.
   friend class SelectionCarets;
   static const int32_t sAutoScrollTimerDelay = 30;
   // Time for trigger scroll end event, in miliseconds.
   static const int32_t sScrollEndTimerDelay = 300;
-
-  // Unique ID of current Mobile ActionBar view.
-  static uint32_t sActionBarViewCount;
-  uint32_t mActionBarViewID;
 };
 } //namespace mozilla
 #endif //mozilla_TouchCaret_h__

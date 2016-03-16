@@ -8,20 +8,31 @@ var isMulet = "ResponsiveUI" in browserWindow;
 // Enable touch event shim on desktop that translates mouse events
 // into touch ones
 function enableTouch() {
-  let require = Cu.import('resource://gre/modules/devtools/Loader.jsm', {})
+  let require = Cu.import('resource://devtools/shared/Loader.jsm', {})
                   .devtools.require;
-  let { TouchEventSimulator } = require('devtools/toolkit/touch/simulator');
+  let { TouchEventSimulator } = require('devtools/shared/touch/simulator');
   let touchEventSimulator = new TouchEventSimulator(shell.contentBrowser);
   touchEventSimulator.start();
 }
 
+// Some additional buttons are displayed on simulators to fake hardware buttons.
 function setupButtons() {
-  let homeButton = document.getElementById('home-button');
-  if (!homeButton) {
-    // The toolbar only exists in b2g desktop build with
-    // FXOS_SIMULATOR turned on.
-    return;
-  }
+  let link = document.createElement('link');
+  link.type = 'text/css';
+  link.rel = 'stylesheet';
+  link.href = 'chrome://b2g/content/desktop.css';
+  document.head.appendChild(link);
+
+  let footer = document.createElement('footer');
+  footer.id = 'controls';
+  document.body.appendChild(footer);
+  let homeButton = document.createElement('button');
+  homeButton.id = 'home-button';
+  footer.appendChild(homeButton);
+  let rotateButton = document.createElement('button');
+  rotateButton.id = 'rotate-button';
+  footer.appendChild(rotateButton);
+
   homeButton.addEventListener('mousedown', function() {
     let window = shell.contentBrowser.contentWindow;
     let e = new window.KeyboardEvent('keydown', {key: 'Home'});
@@ -36,7 +47,6 @@ function setupButtons() {
   });
 
   Cu.import("resource://gre/modules/GlobalSimulatorScreen.jsm");
-  let rotateButton = document.getElementById('rotate-button');
   rotateButton.addEventListener('mousedown', function() {
     rotateButton.classList.add('active');
   });
@@ -108,7 +118,7 @@ function checkDebuggerPort() {
 
 
 function initResponsiveDesign() {
-  Cu.import('resource:///modules/devtools/responsivedesign.jsm');
+  Cu.import('resource://devtools/client/responsivedesign/responsivedesign.jsm');
   ResponsiveUIManager.on('on', function(event, {tab:tab}) {
     let responsive = ResponsiveUIManager.getResponsiveUIForTab(tab);
     let document = tab.ownerDocument;
@@ -154,8 +164,8 @@ function openDevtools() {
   Services.prefs.setIntPref('devtools.toolbox.sidebar.width',
                             browserWindow.outerWidth - 550);
   Services.prefs.setCharPref('devtools.toolbox.host', 'side');
-  let {gDevTools} = Cu.import('resource:///modules/devtools/gDevTools.jsm', {});
-  let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+  let {gDevTools} = Cu.import('resource://devtools/client/framework/gDevTools.jsm', {});
+  let {devtools} = Cu.import("resource://devtools/shared/Loader.jsm", {});
   let target = devtools.TargetFactory.forTab(browserWindow.gBrowser.selectedTab);
   gDevTools.showToolbox(target);
 }
@@ -165,7 +175,9 @@ window.addEventListener('ContentStart', function() {
   if (!isMulet) {
     enableTouch();
   }
-  setupButtons();
+  if (Services.prefs.getBoolPref('b2g.software-buttons')) {
+    setupButtons();
+  }
   checkDebuggerPort();
   setupStorage();
   // On Firefox mulet, we automagically enable the responsive mode

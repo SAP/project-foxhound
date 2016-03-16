@@ -13,9 +13,11 @@
 
 #include "MediaDataDemuxer.h"
 #include "MediaDecoderReader.h"
-#include "PlatformDecoderModule.h"
+#include "PDMFactory.h"
 
 namespace mozilla {
+
+class CDMProxy;
 
 class MediaFormatReader final : public MediaDecoderReader
 {
@@ -23,49 +25,34 @@ class MediaFormatReader final : public MediaDecoderReader
   typedef media::Interval<int64_t> ByteInterval;
 
 public:
-  explicit MediaFormatReader(AbstractMediaDecoder* aDecoder,
-                             MediaDataDemuxer* aDemuxer,
-                             TaskQueue* aBorrowedTaskQueue = nullptr);
+  MediaFormatReader(AbstractMediaDecoder* aDecoder,
+                    MediaDataDemuxer* aDemuxer,
+                    VideoFrameContainer* aVideoFrameContainer = nullptr,
+                    layers::LayersBackend aLayersBackend = layers::LayersBackend::LAYERS_NONE);
 
   virtual ~MediaFormatReader();
 
-  nsresult Init(MediaDecoderReader* aCloneDonor) override;
+  nsresult Init() override;
 
   size_t SizeOfVideoQueueInFrames() override;
   size_t SizeOfAudioQueueInFrames() override;
 
-  nsRefPtr<VideoDataPromise>
+  RefPtr<VideoDataPromise>
   RequestVideoData(bool aSkipToNextKeyframe, int64_t aTimeThreshold) override;
 
-  nsRefPtr<AudioDataPromise> RequestAudioData() override;
+  RefPtr<AudioDataPromise> RequestAudioData() override;
 
-  bool HasVideo() override
-  {
-    return mVideo.mTrackDemuxer;
-  }
-
-  bool HasAudio() override
-  {
-    return mAudio.mTrackDemuxer;
-  }
-
-  nsRefPtr<MetadataPromise> AsyncReadMetadata() override;
+  RefPtr<MetadataPromise> AsyncReadMetadata() override;
 
   void ReadUpdatedMetadata(MediaInfo* aInfo) override;
 
-  nsRefPtr<SeekPromise>
+  RefPtr<SeekPromise>
   Seek(int64_t aTime, int64_t aUnused) override;
 
-  bool IsMediaSeekable() override
-  {
-    return mSeekable;
-  }
-
 protected:
-  void NotifyDataArrivedInternal(uint32_t aLength, int64_t aOffset) override;
-public:
-  void NotifyDataRemoved() override;
+  void NotifyDataArrivedInternal() override;
 
+public:
   media::TimeIntervals GetBuffered() override;
 
   virtual bool ForceZeroStartTime() const override;
@@ -75,7 +62,7 @@ public:
 
   nsresult ResetDecode() override;
 
-  nsRefPtr<ShutdownPromise> Shutdown() override;
+  RefPtr<ShutdownPromise> Shutdown() override;
 
   bool IsAsync() const override { return true; }
 
@@ -84,27 +71,46 @@ public:
   void DisableHardwareAcceleration() override;
 
   bool IsWaitForDataSupported() override { return true; }
-  nsRefPtr<WaitForDataPromise> WaitForData(MediaData::Type aType) override;
+  RefPtr<WaitForDataPromise> WaitForData(MediaData::Type aType) override;
 
-  bool IsWaitingOnCDMResource() override;
+  // MediaFormatReader supports demuxed-only mode.
+  bool IsDemuxOnlySupported() const override { return true; }
+
+  void SetDemuxOnly(bool aDemuxedOnly) override
+  {
+    if (OnTaskQueue()) {
+      mDemuxOnly = aDemuxedOnly;
+      return;
+    }
+    nsCOMPtr<nsIRunnable> r = NS_NewRunnableMethodWithArg<bool>(
+      this, &MediaDecoderReader::SetDemuxOnly, aDemuxedOnly);
+    OwnerThread()->Dispatch(r.forget());
+  }
 
   bool UseBufferingHeuristics() override
   {
     return mTrackDemuxersMayBlock;
   }
 
+#ifdef MOZ_EME
+  void SetCDMProxy(CDMProxy* aProxy) override;
+#endif
+
 private:
+  bool HasVideo() { return mVideo.mTrackDemuxer; }
+  bool HasAudio() { return mAudio.mTrackDemuxer; }
+
+  bool IsWaitingOnCDMResource();
+
   bool InitDemuxer();
   // Notify the demuxer that new data has been received.
   // The next queued task calling GetBuffered() is guaranteed to have up to date
   // buffered ranges.
-  void NotifyDemuxer(uint32_t aLength, int64_t aOffset);
+  void NotifyDemuxer();
   void ReturnOutput(MediaData* aData, TrackType aTrack);
 
-  bool EnsureDecodersCreated();
-  // It returns true when all decoders are initialized. False when there is pending
-  // initialization.
-  bool EnsureDecodersInitialized();
+  bool EnsureDecoderCreated(TrackType aTrack);
+  bool EnsureDecoderInitialized(TrackType aTrack);
 
   // Enqueues a task to call Update(aTrack) on the decoder task queue.
   // Lock for corresponding track must be held.
@@ -115,9 +121,28 @@ private:
   bool UpdateReceivedNewData(TrackType aTrack);
   // Called when new samples need to be demuxed.
   void RequestDemuxSamples(TrackType aTrack);
-  // Decode any pending already demuxed samples.
-  void DecodeDemuxedSamples(TrackType aTrack,
+  // Handle demuxed samples by the input behavior.
+  void HandleDemuxedSamples(TrackType aTrack,
                             AbstractMediaDecoder::AutoNotifyDecoded& aA);
+  // Decode any pending already demuxed samples.
+  bool DecodeDemuxedSamples(TrackType aTrack,
+                            MediaRawData* aSample);
+
+  struct SeekTarget {
+    SeekTarget(const media::TimeUnit& aTime, bool aDropTarget)
+      : mTime(aTime)
+      , mDropTarget(aDropTarget)
+      , mWaiting(false)
+    {}
+
+    media::TimeUnit mTime;
+    bool mDropTarget;
+    bool mWaiting;
+  };
+  // Perform an internal seek to aTime. If aDropTarget is true then
+  // the first sample past the target will be dropped.
+  void InternalSeek(TrackType aTrack, const SeekTarget& aTarget);
+
   // Drain the current decoder.
   void DrainDecoder(TrackType aTrack);
   void NotifyNewOutput(TrackType aTrack, MediaData* aSample);
@@ -140,15 +165,12 @@ private:
   void Error(TrackType aTrack);
   void Flush(TrackType aTrack);
   void DrainComplete(TrackType aTrack);
-  bool IsSupportedAudioMimeType(const nsACString& aMimeType);
-  bool IsSupportedVideoMimeType(const nsACString& aMimeType);
 
   bool ShouldSkip(bool aSkipToNextKeyframe, media::TimeUnit aTimeThreshold);
 
   size_t SizeOfQueue(TrackType aTrack);
 
-  nsRefPtr<MediaDataDemuxer> mDemuxer;
-  nsRefPtr<PlatformDecoderModule> mPlatform;
+  RefPtr<PDMFactory> mPlatform;
 
   class DecoderCallback : public MediaDataDecoderCallback {
   public:
@@ -212,12 +234,12 @@ private:
     MediaFormatReader* mOwner;
     // Disambiguate Audio vs Video.
     MediaData::Type mType;
-    nsRefPtr<MediaTrackDemuxer> mTrackDemuxer;
+    RefPtr<MediaTrackDemuxer> mTrackDemuxer;
     // The platform decoder.
-    nsRefPtr<MediaDataDecoder> mDecoder;
+    RefPtr<MediaDataDecoder> mDecoder;
     // TaskQueue on which decoder can choose to decode.
     // Only non-null up until the decoder is created.
-    nsRefPtr<FlushableTaskQueue> mTaskQueue;
+    RefPtr<FlushableTaskQueue> mTaskQueue;
     // Callback that receives output and error notifications from the decoder.
     nsAutoPtr<DecoderCallback> mCallback;
 
@@ -233,7 +255,7 @@ private:
     MozPromiseRequestHolder<MediaTrackDemuxer::SeekPromise> mSeekRequest;
 
     // Queued demux samples waiting to be decoded.
-    nsTArray<nsRefPtr<MediaRawData>> mQueuedSamples;
+    nsTArray<RefPtr<MediaRawData>> mQueuedSamples;
     MozPromiseRequestHolder<MediaTrackDemuxer::SamplesPromise> mDemuxRequest;
     MozPromiseHolder<WaitForDataPromise> mWaitingPromise;
     bool HasWaitingPromise()
@@ -243,6 +265,8 @@ private:
     }
 
     // MediaDataDecoder handler's variables.
+    // Decoder initialization promise holder.
+    MozPromiseRequestHolder<MediaDataDecoder::InitPromise> mInitPromise;
     // False when decoder is created. True when decoder Init() promise is resolved.
     bool mDecoderInitialized;
     bool mDecodingRequested;
@@ -253,12 +277,15 @@ private:
     bool mDraining;
     bool mDrainComplete;
     // If set, all decoded samples prior mTimeThreshold will be dropped.
-    // Used for internal seeking when a change of stream is detected.
-    Maybe<media::TimeUnit> mTimeThreshold;
+    // Used for internal seeking when a change of stream is detected or when
+    // encountering data discontinuity.
+    Maybe<SeekTarget> mTimeThreshold;
+    // Time of last sample returned.
+    Maybe<media::TimeUnit> mLastSampleTime;
 
     // Decoded samples returned my mDecoder awaiting being returned to
     // state machine upon request.
-    nsTArray<nsRefPtr<MediaData>> mOutput;
+    nsTArray<RefPtr<MediaData>> mOutput;
     uint64_t mNumSamplesInput;
     uint64_t mNumSamplesOutput;
     uint64_t mNumSamplesOutputTotal;
@@ -292,6 +319,7 @@ private:
       mDraining = false;
       mDrainComplete = false;
       mTimeThreshold.reset();
+      mLastSampleTime.reset();
       mOutput.Clear();
       mNumSamplesInput = 0;
       mNumSamplesOutput = 0;
@@ -308,7 +336,8 @@ private:
     uint32_t mLastStreamSourceID;
     Maybe<uint32_t> mNextStreamSourceID;
     media::TimeIntervals mTimeRanges;
-    nsRefPtr<SharedTrackInfo> mInfo;
+    Maybe<media::TimeUnit> mLastTimeRangesEnd;
+    RefPtr<SharedTrackInfo> mInfo;
   };
 
   template<typename PromiseType>
@@ -344,24 +373,23 @@ private:
 
   DecoderData& GetDecoderData(TrackType aTrack);
 
-  void OnDecoderInitDone(const nsTArray<TrackType>& aTrackTypes);
-  void OnDecoderInitFailed(MediaDataDecoder::DecoderFailureReason aReason);
-
   // Demuxer objects.
+  RefPtr<MediaDataDemuxer> mDemuxer;
+  bool mDemuxerInitDone;
   void OnDemuxerInitDone(nsresult);
   void OnDemuxerInitFailed(DemuxerFailureReason aFailure);
   MozPromiseRequestHolder<MediaDataDemuxer::InitPromise> mDemuxerInitRequest;
   void OnDemuxFailed(TrackType aTrack, DemuxerFailureReason aFailure);
 
   void DoDemuxVideo();
-  void OnVideoDemuxCompleted(nsRefPtr<MediaTrackDemuxer::SamplesHolder> aSamples);
+  void OnVideoDemuxCompleted(RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples);
   void OnVideoDemuxFailed(DemuxerFailureReason aFailure)
   {
     OnDemuxFailed(TrackType::kVideoTrack, aFailure);
   }
 
   void DoDemuxAudio();
-  void OnAudioDemuxCompleted(nsRefPtr<MediaTrackDemuxer::SamplesHolder> aSamples);
+  void OnAudioDemuxCompleted(RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples);
   void OnAudioDemuxFailed(DemuxerFailureReason aFailure)
   {
     OnDemuxFailed(TrackType::kAudioTrack, aFailure);
@@ -384,23 +412,19 @@ private:
   // True if we've read the streams' metadata.
   bool mInitDone;
   MozPromiseHolder<MetadataPromise> mMetadataPromise;
-  // Accessed from multiple thread, in particular the MediaDecoderStateMachine,
-  // however the value doesn't change after reading the metadata.
-  bool mSeekable;
   bool IsEncrypted()
   {
     return mIsEncrypted;
   }
-  // Accessed from multiple thread, in particular the MediaDecoderStateMachine,
-  // however the value doesn't currently change after reading the metadata.
-  // TODO handle change of encryption half-way. The above assumption will then
-  // become incorrect.
   bool mIsEncrypted;
 
   // Set to true if any of our track buffers may be blocking.
   bool mTrackDemuxersMayBlock;
 
   bool mHardwareAccelerationDisabled;
+
+  // Set the demuxed-only flag.
+  Atomic<bool> mDemuxOnly;
 
   // Seeking objects.
   bool IsSeeking() const { return mPendingSeekTime.isSome(); }
@@ -424,11 +448,11 @@ private:
   Maybe<media::TimeUnit> mPendingSeekTime;
   MozPromiseHolder<SeekPromise> mSeekPromise;
 
-  // Pending decoders initialization.
-  MozPromiseRequestHolder<MediaDataDecoder::InitPromise::AllPromiseType> mDecodersInitRequest;
+  RefPtr<VideoFrameContainer> mVideoFrameContainer;
+  layers::ImageContainer* GetImageContainer();
 
 #ifdef MOZ_EME
-  nsRefPtr<CDMProxy> mCDMProxy;
+  RefPtr<CDMProxy> mCDMProxy;
 #endif
 
 #if defined(READER_DORMANT_HEURISTIC)

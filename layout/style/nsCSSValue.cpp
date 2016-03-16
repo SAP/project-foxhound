@@ -739,7 +739,7 @@ bool nsCSSValue::IsNonTransparentColor() const
 nsCSSValue::Array*
 nsCSSValue::InitFunction(nsCSSKeyword aFunctionId, uint32_t aNumArgs)
 {
-  nsRefPtr<nsCSSValue::Array> func = Array::Create(aNumArgs + 1);
+  RefPtr<nsCSSValue::Array> func = Array::Create(aNumArgs + 1);
   func->Item(0).SetIntValue(aFunctionId, eCSSUnit_Enumerated);
   SetArrayValue(func, eCSSUnit_Function);
   return func;
@@ -765,7 +765,7 @@ nsCSSValue::EqualsFunction(nsCSSKeyword aFunctionId) const
 already_AddRefed<nsStringBuffer>
 nsCSSValue::BufferFromString(const nsString& aValue)
 {
-  nsRefPtr<nsStringBuffer> buffer = nsStringBuffer::FromString(aValue);
+  RefPtr<nsStringBuffer> buffer = nsStringBuffer::FromString(aValue);
   if (buffer) {
     return buffer.forget();
   }
@@ -1009,6 +1009,33 @@ nsCSSValue::AppendInsetToString(nsCSSProperty aProperty, nsAString& aResult,
   }
 }
 
+/* static */ void
+nsCSSValue::AppendAlignJustifyValueToString(int32_t aValue, nsAString& aResult)
+{
+  auto legacy = aValue & NS_STYLE_ALIGN_LEGACY;
+  if (legacy) {
+    aValue &= ~legacy;
+    aResult.AppendLiteral("legacy ");
+  }
+  auto overflowPos = aValue & (NS_STYLE_ALIGN_SAFE | NS_STYLE_ALIGN_TRUE);
+  aValue &= ~overflowPos;
+  MOZ_ASSERT(!(aValue & NS_STYLE_ALIGN_FLAG_BITS),
+             "unknown bits in align/justify value");
+  MOZ_ASSERT((aValue != NS_STYLE_ALIGN_AUTO &&
+              aValue != NS_STYLE_ALIGN_BASELINE &&
+              aValue != NS_STYLE_ALIGN_LAST_BASELINE) ||
+             (!legacy && !overflowPos),
+             "auto/baseline/last-baseline never have any flags");
+  const auto& kwtable(nsCSSProps::kAlignAllKeywords);
+  AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(aValue, kwtable), aResult);
+  if (MOZ_UNLIKELY(overflowPos != 0)) {
+    MOZ_ASSERT(legacy == 0, "'legacy' together with <overflow-position>");
+    aResult.Append(' ');
+    AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(overflowPos, kwtable),
+                       aResult);
+  }
+}
+
 void
 nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
                            Serialization aSerialization) const
@@ -1054,21 +1081,21 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
              eCSSProperty_transition_timing_function != aProperty) ||
             unit == eCSSUnit_Symbols)
           aResult.Append(' ');
-        else
+        else if (unit != eCSSUnit_Steps)
           aResult.AppendLiteral(", ");
       }
       if (unit == eCSSUnit_Steps && i == 1) {
-        MOZ_ASSERT(array->Item(i).GetUnit() == eCSSUnit_Enumerated &&
-                   (array->Item(i).GetIntValue() ==
-                     NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_START ||
-                    array->Item(i).GetIntValue() ==
-                     NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_END),
+        MOZ_ASSERT(array->Item(i).GetUnit() == eCSSUnit_Enumerated,
                    "unexpected value");
-        if (array->Item(i).GetIntValue() ==
-              NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_START) {
-          aResult.AppendLiteral("start");
-        } else {
-          aResult.AppendLiteral("end");
+        int32_t side = array->Item(i).GetIntValue();
+        MOZ_ASSERT(side == NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_START ||
+                   side == NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_END ||
+                   side == -1,
+                   "unexpected value");
+        if (side == NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_START) {
+          aResult.AppendLiteral(", start");
+        } else if (side == NS_STYLE_TRANSITION_TIMING_FUNCTION_STEP_END) {
+          aResult.AppendLiteral(", end");
         }
         continue;
       }
@@ -1217,18 +1244,6 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
       }
       break;
 
-    case eCSSProperty_marks:
-      if (intValue == NS_STYLE_PAGE_MARKS_NONE) {
-        AppendASCIItoUTF16(nsCSSProps::LookupPropertyValue(aProperty, intValue),
-                           aResult);
-      } else {
-        nsStyleUtil::AppendBitmaskCSSValue(aProperty, intValue,
-                                           NS_STYLE_PAGE_MARKS_CROP,
-                                           NS_STYLE_PAGE_MARKS_REGISTER,
-                                           aResult);
-      }
-      break;
-
     case eCSSProperty_paint_order:
       static_assert
         (NS_STYLE_PAINT_ORDER_BITWIDTH * NS_STYLE_PAINT_ORDER_LAST_VALUE <= 8,
@@ -1306,6 +1321,46 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
                                          NS_STYLE_CONTAIN_PAINT,
                                          aResult);
       break;
+
+    case eCSSProperty_align_content:
+    case eCSSProperty_justify_content: {
+      AppendAlignJustifyValueToString(intValue & NS_STYLE_ALIGN_ALL_BITS, aResult);
+      auto fallback = intValue >> NS_STYLE_ALIGN_ALL_SHIFT;
+      if (fallback) {
+        MOZ_ASSERT(nsCSSProps::ValueToKeywordEnum(fallback & ~NS_STYLE_ALIGN_FLAG_BITS,
+                                                  nsCSSProps::kAlignSelfPosition)
+                   != eCSSKeyword_UNKNOWN, "unknown fallback value");
+        aResult.Append(' ');
+        AppendAlignJustifyValueToString(fallback, aResult);
+      }
+      break;
+    }
+
+    case eCSSProperty_align_items:
+    case eCSSProperty_align_self:
+    case eCSSProperty_justify_items:
+    case eCSSProperty_justify_self:
+      AppendAlignJustifyValueToString(intValue, aResult);
+      break;
+
+    case eCSSProperty_text_emphasis_position: {
+      nsStyleUtil::AppendBitmaskCSSValue(aProperty, intValue,
+                                         NS_STYLE_TEXT_EMPHASIS_POSITION_OVER,
+                                         NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT,
+                                         aResult);
+      break;
+    }
+
+    case eCSSProperty_text_emphasis_style: {
+      auto fill = intValue & NS_STYLE_TEXT_EMPHASIS_STYLE_FILL_MASK;
+      AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(
+        fill, nsCSSProps::kTextEmphasisStyleFillKTable), aResult);
+      aResult.Append(' ');
+      auto shape = intValue & NS_STYLE_TEXT_EMPHASIS_STYLE_SHAPE_MASK;
+      AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(
+        shape, nsCSSProps::kTextEmphasisStyleShapeKTable), aResult);
+      break;
+    }
 
     default:
       const nsAFlatCString& name = nsCSSProps::LookupPropertyValue(aProperty, intValue);
@@ -2407,8 +2462,7 @@ css::URLValue::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
   size_t n = aMallocSizeOf(this);
 
-  // This string is unshared.
-  n += mString->SizeOfIncludingThisMustBeUnshared(aMallocSizeOf);
+  n += mString->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
 
   // Measurement of the following members may be added later if DMD finds it is
   // worthwhile:
@@ -2441,35 +2495,22 @@ css::ImageValue::ImageValue(nsIURI* aURI, nsStringBuffer* aString,
   }
 }
 
-static PLDHashOperator
-ClearRequestHashtable(nsISupports* aKey, nsRefPtr<imgRequestProxy>& aValue,
-                      void* aClosure)
-{
-  mozilla::css::ImageValue* image =
-    static_cast<mozilla::css::ImageValue*>(aClosure);
-  nsIDocument* doc = static_cast<nsIDocument*>(aKey);
-
-#ifdef DEBUG
-  {
-    nsCOMPtr<nsIDocument> slowDoc = do_QueryInterface(aKey);
-    MOZ_ASSERT(slowDoc == doc);
-  }
-#endif
-
-  if (doc) {
-    doc->StyleImageLoader()->DeregisterCSSImage(image);
-  }
-
-  if (aValue) {
-    aValue->CancelAndForgetObserver(NS_BINDING_ABORTED);
-  }
-
-  return PL_DHASH_REMOVE;
-}
-
 css::ImageValue::~ImageValue()
 {
-  mRequests.Enumerate(&ClearRequestHashtable, this);
+  for (auto iter = mRequests.Iter(); !iter.Done(); iter.Next()) {
+    nsIDocument* doc = iter.Key();
+    RefPtr<imgRequestProxy>& proxy = iter.Data();
+
+    if (doc) {
+      doc->StyleImageLoader()->DeregisterCSSImage(this);
+    }
+
+    if (proxy) {
+      proxy->CancelAndForgetObserver(NS_BINDING_ABORTED);
+    }
+
+    iter.Remove();
+  }
 }
 
 NS_IMPL_ADDREF(css::ImageValue)
@@ -2538,7 +2579,7 @@ nsCSSValueGradient::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) con
 nsCSSValueTokenStream::nsCSSValueTokenStream()
   : mPropertyID(eCSSProperty_UNKNOWN)
   , mShorthandPropertyID(eCSSProperty_UNKNOWN)
-  , mLevel(nsStyleSet::eSheetTypeCount)
+  , mLevel(SheetType::Count)
 {
   MOZ_COUNT_CTOR(nsCSSValueTokenStream);
 }

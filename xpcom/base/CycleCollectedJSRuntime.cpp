@@ -59,14 +59,15 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Snprintf.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "jsprf.h"
 #include "js/Debug.h"
+#include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCycleCollector.h"
@@ -520,16 +521,15 @@ CycleCollectedJSRuntime::DescribeGCThing(bool aIsMarked, JS::GCCellPtr aThing,
         nsAutoString chars;
         AssignJSFlatString(chars, flat);
         NS_ConvertUTF16toUTF8 fname(chars);
-        JS_snprintf(name, sizeof(name),
-                    "JS Object (Function - %s)", fname.get());
+        snprintf_literal(name, "JS Object (Function - %s)", fname.get());
       } else {
-        JS_snprintf(name, sizeof(name), "JS Object (Function)");
+        snprintf_literal(name, "JS Object (Function)");
       }
     } else {
-      JS_snprintf(name, sizeof(name), "JS Object (%s)", clasp->name);
+      snprintf_literal(name, "JS Object (%s)", clasp->name);
     }
   } else {
-    JS_snprintf(name, sizeof(name), "JS %s", JS::GCTraceKindToAscii(aThing.kind()));
+    snprintf_literal(name, "JS %s", JS::GCTraceKindToAscii(aThing.kind()));
   }
 
   // Disable printing global for objects while we figure out ObjShrink fallout.
@@ -971,9 +971,9 @@ CycleCollectedJSRuntime::UsefulToMergeZones() const
     if (!obj) {
       continue;
     }
-    MOZ_ASSERT(js::IsOuterObject(obj));
-    // Grab the inner from the outer.
-    obj = JS_ObjectToInnerObject(cx, obj);
+    MOZ_ASSERT(js::IsWindowProxy(obj));
+    // Grab the global from the WindowProxy.
+    obj = js::ToWindowIfWindowProxy(obj);
     MOZ_ASSERT(JS_IsGlobalObject(obj));
     if (JS::ObjectIsMarkedGray(obj) &&
         !js::IsSystemCompartment(js::GetObjectCompartment(obj))) {

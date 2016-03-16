@@ -16,6 +16,7 @@
 #include "mozilla/FontRange.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMKeyEvent.h"
+#include "nsISelectionListener.h"
 #include "nsITransferable.h"
 #include "nsRect.h"
 #include "nsStringGlue.h"
@@ -365,6 +366,7 @@ public:
   WidgetCompositionEvent(bool aIsTrusted, EventMessage aMessage,
                          nsIWidget* aWidget)
     : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, eCompositionEventClass)
+    , mNativeIMEContext(aWidget)
     , mOriginalMessage(eVoidEvent)
   {
     // XXX compositionstart is cancelable in draft of DOM3 Events.
@@ -390,7 +392,11 @@ public:
   // TextComposition automatically.
   nsString mData;
 
-  nsRefPtr<TextRangeArray> mRanges;
+  RefPtr<TextRangeArray> mRanges;
+
+  // mNativeIMEContext stores the native IME context which causes the
+  // composition event.
+  widget::NativeIMEContext mNativeIMEContext;
 
   // If the instance is a clone of another event, mOriginalMessage stores
   // the another event's mMessage.
@@ -489,7 +495,6 @@ public:
     NS_ASSERTION(!IsAllowedToDispatchDOMEvent(),
       "WidgetQueryContentEvent needs to support Duplicate()");
     MOZ_CRASH("WidgetQueryContentEvent doesn't support Duplicate()");
-    return nullptr;
   }
 
   void InitForQueryTextContent(uint32_t aOffset, uint32_t aLength,
@@ -582,7 +587,11 @@ public:
     // This is the offset where caret would be if user clicked at the refPoint.
     uint32_t mTentativeCaretOffset;
     nsString mString;
-    // Finally, the coordinates is system coordinates.
+    // mRect is used by eQueryTextRect, eQueryCaretRect, eQueryCharacterAtPoint
+    // and eQueryEditorRect. The coordinates is system coordinates relative to
+    // the top level widget of mFocusedWidget.  E.g., if a <xul:panel> which
+    // is owned by a window has focused editor, the offset of mRect is relative
+    // to the owner window, not the <xul:panel>.
     mozilla::LayoutDeviceIntRect mRect;
     // The return widget has the caret. This is set at all query events.
     nsIWidget* mFocusedWidget;
@@ -659,6 +668,7 @@ public:
     , mExpandToClusterBoundary(true)
     , mSucceeded(false)
     , mUseNativeLineBreak(true)
+    , mReason(nsISelectionListener::NO_REASON)
   {
   }
 
@@ -683,6 +693,9 @@ public:
   bool mSucceeded;
   // true if native line breaks are used for mOffset and mLength
   bool mUseNativeLineBreak;
+  // Fennec provides eSetSelection reason codes for downstream
+  // use in AccessibleCaret visibility logic.
+  int16_t mReason;
 };
 
 /******************************************************************************

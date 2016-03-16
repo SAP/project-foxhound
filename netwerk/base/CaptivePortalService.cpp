@@ -16,12 +16,12 @@ static const char kCaptivePortalLoginSuccessEvent[] = "captive-portal-login-succ
 
 static const uint32_t kDefaultInterval = 60*1000; // check every 60 seconds
 
-static PRLogModuleInfo *gCaptivePortalLog = nullptr;
-#undef LOG
-#define LOG(args) MOZ_LOG(gCaptivePortalLog, mozilla::LogLevel::Debug, args)
-
 namespace mozilla {
 namespace net {
+
+static LazyLogModule gCaptivePortalLog("CaptivePortalService");
+#undef LOG
+#define LOG(args) MOZ_LOG(gCaptivePortalLog, mozilla::LogLevel::Debug, args)
 
 NS_IMPL_ISUPPORTS(CaptivePortalService, nsICaptivePortalService, nsIObserver,
                   nsISupportsWeakReference, nsITimerCallback,
@@ -69,7 +69,7 @@ CaptivePortalService::PerformCheck()
   LOG(("CaptivePortalService::PerformCheck - Calling CheckCaptivePortal\n"));
   mRequestInProgress = true;
   mCaptivePortalDetector->CheckCaptivePortal(
-    NS_LITERAL_STRING(kInterfaceName).get(), this);
+    MOZ_UTF16(kInterfaceName), this);
   return NS_OK;
 }
 
@@ -100,10 +100,6 @@ CaptivePortalService::Initialize()
     return NS_OK;
   }
   mInitialized = true;
-
-  if (!gCaptivePortalLog) {
-    gCaptivePortalLog = PR_NewLogModule("CaptivePortalService");
-  }
 
   nsCOMPtr<nsIObserverService> observerService =
     mozilla::services::GetObserverService();
@@ -164,7 +160,7 @@ CaptivePortalService::Stop()
   mRequestInProgress = false;
   mStarted = false;
   if (mCaptivePortalDetector) {
-    mCaptivePortalDetector->Abort(NS_LITERAL_STRING(kInterfaceName).get());
+    mCaptivePortalDetector->Abort(MOZ_UTF16(kInterfaceName));
   }
   mCaptivePortalDetector = nullptr;
   return NS_OK;
@@ -281,7 +277,7 @@ CaptivePortalService::Prepare()
   LOG(("CaptivePortalService::Prepare\n"));
   // XXX: Finish preparation shouldn't be called until dns and routing is available.
   if (mCaptivePortalDetector) {
-    mCaptivePortalDetector->FinishPreparation(NS_LITERAL_STRING(kInterfaceName).get());
+    mCaptivePortalDetector->FinishPreparation(MOZ_UTF16(kInterfaceName));
   }
   return NS_OK;
 }

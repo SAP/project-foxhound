@@ -16,10 +16,13 @@ var Cr = Components.results;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 Cu.import("resource://gre/modules/Timer.jsm", this);
 
-XPCOMUtils.defineLazyModuleGetter(this, "DocShellCapabilities",
-  "resource:///modules/sessionstore/DocShellCapabilities.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "FormData",
   "resource://gre/modules/FormData.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
+  "resource://gre/modules/Preferences.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "DocShellCapabilities",
+  "resource:///modules/sessionstore/DocShellCapabilities.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PageStyle",
   "resource:///modules/sessionstore/PageStyle.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ScrollPosition",
@@ -28,10 +31,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "SessionHistory",
   "resource:///modules/sessionstore/SessionHistory.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "SessionStorage",
   "resource:///modules/sessionstore/SessionStorage.jsm");
-
-XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
-                                   "@mozilla.org/childprocessmessagemanager;1",
-                                   "nsISyncMessageSender");
 
 Cu.import("resource:///modules/sessionstore/FrameTree.jsm", this);
 var gFrameTree = new FrameTree(this);
@@ -42,6 +41,13 @@ XPCOMUtils.defineLazyGetter(this, 'gContentRestore',
 
 // The current epoch.
 var gCurrentEpoch = 0;
+
+// A bound to the size of data to store for DOM Storage.
+const DOM_STORAGE_MAX_CHARS = 10000000; // 10M characters
+
+// This pref controls whether or not we send updates to the parent on a timeout
+// or not, and should only be used for tests or debugging.
+const TIMEOUT_DISABLED_PREF = "browser.sessionstore.debug.no_auto_updates";
 
 /**
  * Returns a lazy function that will evaluate the given
@@ -59,20 +65,6 @@ function createLazy(fn) {
 
     return cachedValue;
   };
-}
-
-/**
- * Determines whether the given storage event was triggered by changes
- * to the sessionStorage object and not the local or globalStorage.
- */
-function isSessionStorageEvent(event) {
-  try {
-    return event.storageArea == event.target.sessionStorage;
-  } catch (ex if ex instanceof Ci.nsIException && ex.result == Cr.NS_ERROR_NOT_AVAILABLE) {
-    // This page does not have a DOMSessionStorage
-    // (this is typically the case for about: pages)
-    return false;
-  }
 }
 
 /**
@@ -520,7 +512,7 @@ var DocShellCapabilitiesListener = {
  */
 var SessionStorageListener = {
   init: function () {
-    addEventListener("MozStorageChanged", this, true);
+    addEventListener("MozSessionStorageChanged", this, true);
     Services.obs.addObserver(this, "browser:purge-domain-data", false);
     gFrameTree.addObserver(this);
   },
@@ -530,8 +522,7 @@ var SessionStorageListener = {
   },
 
   handleEvent: function (event) {
-    // Ignore events triggered by localStorage or globalStorage changes.
-    if (gFrameTree.contains(event.target) && isSessionStorageEvent(event)) {
+    if (gFrameTree.contains(event.target)) {
       this.collect();
     }
   },
@@ -542,9 +533,58 @@ var SessionStorageListener = {
     setTimeout(() => this.collect(), 0);
   },
 
+  // Before DOM Storage can be written to disk, it needs to be serialized
+  // for sending across frames/processes, then again to be sent across
+  // threads, then again to be put in a buffer for the disk. Each of these
+  // serializations is an opportunity to OOM and (depending on the site of
+  // the OOM), either crash, lose all data for the frame or lose all data
+  // for the application.
+  //
+  // In order to avoid this, compute an estimate of the size of the
+  // object, and block SessionStorage items that are too large. As
+  // we also don't want to cause an OOM here, we use a quick and memory-
+  // efficient approximation: we compute the total sum of string lengths
+  // involved in this object.
+  estimateStorageSize: function(collected) {
+    if (!collected) {
+      return 0;
+    }
+
+    let size = 0;
+    for (let host of Object.keys(collected)) {
+      size += host.length;
+      let perHost = collected[host];
+      for (let key of Object.keys(perHost)) {
+        size += key.length;
+        let perKey = perHost[key];
+        size += perKey.length;
+      }
+    }
+
+    return size;
+  },
+
   collect: function () {
     if (docShell) {
-      MessageQueue.push("storage", () => SessionStorage.collect(docShell, gFrameTree));
+      MessageQueue.push("storage", () => {
+        let collected = SessionStorage.collect(docShell, gFrameTree);
+
+        if (collected == null) {
+          return collected;
+        }
+
+        let size = this.estimateStorageSize(collected);
+
+        MessageQueue.push("telemetry", () => ({ FX_SESSION_RESTORE_DOM_STORAGE_SIZE_ESTIMATE_CHARS: size }));
+        if (size > Preferences.get("browser.sessionstore.dom_storage_limit", DOM_STORAGE_MAX_CHARS)) {
+          // Rather than keeping the old storage, which wouldn't match the rest
+          // of the state of the page, empty the storage. DOM storage will be
+          // recollected the next time and stored if it is now small enough.
+          return {};
+        }
+
+        return collected;
+      });
     }
   },
 
@@ -629,6 +669,54 @@ var MessageQueue = {
   _timeout: null,
 
   /**
+   * Whether or not sending batched messages on a timer is disabled. This should
+   * only be used for debugging or testing. If you need to access this value,
+   * you should probably use the timeoutDisabled getter.
+   */
+  _timeoutDisabled: false,
+
+  /**
+   * True if batched messages are not being fired on a timer. This should only
+   * ever be true when debugging or during tests.
+   */
+  get timeoutDisabled() {
+    return this._timeoutDisabled;
+  },
+
+  /**
+   * Disables sending batched messages on a timer. Also cancels any pending
+   * timers.
+   */
+  set timeoutDisabled(val) {
+    this._timeoutDisabled = val;
+
+    if (!val && this._timeout) {
+      clearTimeout(this._timeout);
+      this._timeout = null;
+    }
+
+    return val;
+  },
+
+  init() {
+    this.timeoutDisabled =
+      Services.prefs.getBoolPref(TIMEOUT_DISABLED_PREF);
+
+    Services.prefs.addObserver(TIMEOUT_DISABLED_PREF, this, false);
+  },
+
+  uninit() {
+    Services.prefs.removeObserver(TIMEOUT_DISABLED_PREF, this);
+  },
+
+  observe(subject, topic, data) {
+    if (topic == TIMEOUT_DISABLED_PREF) {
+      this.timeoutDisabled =
+        Services.prefs.getBoolPref(TIMEOUT_DISABLED_PREF);
+    }
+  },
+
+  /**
    * Pushes a given |value| onto the queue. The given |key| represents the type
    * of data that is stored and can override data that has been queued before
    * but has not been sent to the parent process, yet.
@@ -643,7 +731,7 @@ var MessageQueue = {
     this._data.set(key, createLazy(fn));
     this._lastUpdated.set(key, this._id);
 
-    if (!this._timeout) {
+    if (!this._timeout && !this._timeoutDisabled) {
       // Wait a little before sending the message to batch multiple changes.
       this._timeout = setTimeout(() => this.send(), this.BATCH_DELAY_MS);
     }
@@ -684,6 +772,7 @@ var MessageQueue = {
     let durationMs = Date.now();
 
     let data = {};
+    let telemetry = {};
     for (let [key, id] of this._lastUpdated) {
       // There is no data for the given key anymore because
       // the parent process already marked it as received.
@@ -699,20 +788,34 @@ var MessageQueue = {
         continue;
       }
 
-      data[key] = this._data.get(key)();
+      let value = this._data.get(key)();
+      if (key == "telemetry") {
+        for (let histogramId of Object.keys(value)) {
+          telemetry[histogramId] = value[histogramId];
+        }
+      } else {
+        data[key] = value;
+      }
     }
 
     durationMs = Date.now() - durationMs;
-    let telemetry = {
-      FX_SESSION_RESTORE_CONTENT_COLLECT_DATA_LONGEST_OP_MS: durationMs
-    }
+    telemetry.FX_SESSION_RESTORE_CONTENT_COLLECT_DATA_LONGEST_OP_MS = durationMs;
 
-    // Send all data to the parent process.
-    sendMessage("SessionStore:update", {
-      id: this._id, data, telemetry, flushID,
-      isFinal: options.isFinal || false,
-      epoch: gCurrentEpoch
-    });
+    try {
+      // Send all data to the parent process.
+      sendMessage("SessionStore:update", {
+        id: this._id, data, telemetry, flushID,
+        isFinal: options.isFinal || false,
+        epoch: gCurrentEpoch
+      });
+    } catch (ex if ex && ex.result == Cr.NS_ERROR_OUT_OF_MEMORY) {
+      let telemetry = {
+        FX_SESSION_RESTORE_SEND_UPDATE_CAUSED_OOM: 1
+      };
+      sendMessage("SessionStore:error", {
+        telemetry
+      });
+    }
 
     // Increase our unique message ID.
     this._id++;
@@ -748,6 +851,7 @@ SessionStorageListener.init();
 ScrollPositionListener.init();
 DocShellCapabilitiesListener.init();
 PrivacyListener.init();
+MessageQueue.init();
 
 function handleRevivedTab() {
   if (!content) {
@@ -789,6 +893,7 @@ addEventListener("unload", () => {
   PageStyleListener.uninit();
   SessionStorageListener.uninit();
   SessionHistoryListener.uninit();
+  MessageQueue.uninit();
 
   // Remove progress listeners.
   gContentRestore.resetRestore();

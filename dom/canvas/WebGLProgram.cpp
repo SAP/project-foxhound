@@ -9,7 +9,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/nsRefPtr.h"
+#include "mozilla/RefPtr.h"
 #include "WebGLActiveInfo.h"
 #include "WebGLContext.h"
 #include "WebGLShader.h"
@@ -119,6 +119,15 @@ QueryProgramInfo(WebGLProgram* prog, gl::GLContext* gl)
             maxUniformBlockLenWithNull = 1;
     }
 
+    GLuint maxTransformFeedbackVaryingLenWithNull = 0;
+    if (gl->IsSupported(gl::GLFeature::transform_feedback2)) {
+        gl->fGetProgramiv(prog->mGLName, LOCAL_GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH,
+                          (GLint*)&maxTransformFeedbackVaryingLenWithNull);
+        if (maxTransformFeedbackVaryingLenWithNull < 1)
+            maxTransformFeedbackVaryingLenWithNull = 1;
+    }
+
+
 #ifdef DUMP_SHADERVAR_MAPPINGS
     printf_stderr("maxAttribLenWithNull: %d\n", maxAttribLenWithNull);
     printf_stderr("maxUniformLenWithNull: %d\n", maxUniformLenWithNull);
@@ -158,7 +167,7 @@ QueryProgramInfo(WebGLProgram* prog, gl::GLContext* gl)
 #endif
 
         const bool isArray = false;
-        AddActiveInfo(prog->Context(), elemCount, elemType, isArray, userName, mappedName,
+        AddActiveInfo(prog->mContext, elemCount, elemType, isArray, userName, mappedName,
                       &info->activeAttribs, &info->attribMap);
 
         // Collect active locations:
@@ -223,7 +232,7 @@ QueryProgramInfo(WebGLProgram* prog, gl::GLContext* gl)
         printf_stderr("    isArray: %d\n", (int)isArray);
 #endif
 
-        AddActiveInfo(prog->Context(), elemCount, elemType, isArray, baseUserName,
+        AddActiveInfo(prog->mContext, elemCount, elemType, isArray, baseUserName,
                       baseMappedName, &info->activeUniforms, &info->uniformMap);
     }
 
@@ -278,11 +287,56 @@ QueryProgramInfo(WebGLProgram* prog, gl::GLContext* gl)
         }
     }
 
+    // Transform feedback varyings
+
+    if (gl->IsSupported(gl::GLFeature::transform_feedback2)) {
+        GLuint numTransformFeedbackVaryings = 0;
+        gl->fGetProgramiv(prog->mGLName, LOCAL_GL_TRANSFORM_FEEDBACK_VARYINGS,
+                          (GLint*)&numTransformFeedbackVaryings);
+
+        for (GLuint i = 0; i < numTransformFeedbackVaryings; i++) {
+            nsAutoCString mappedName;
+            mappedName.SetLength(maxTransformFeedbackVaryingLenWithNull - 1);
+
+            GLint lengthWithoutNull;
+            GLsizei size;
+            GLenum type;
+            gl->fGetTransformFeedbackVarying(prog->mGLName, i, maxTransformFeedbackVaryingLenWithNull,
+                                             &lengthWithoutNull, &size, &type,
+                                             mappedName.BeginWriting());
+            mappedName.SetLength(lengthWithoutNull);
+
+            nsAutoCString baseMappedName;
+            bool isArray;
+            size_t arrayIndex;
+            if (!ParseName(mappedName, &baseMappedName, &isArray, &arrayIndex))
+                MOZ_CRASH("Failed to parse `mappedName` received from driver.");
+
+            nsAutoCString baseUserName;
+            if (!prog->FindVaryingByMappedName(mappedName, &baseUserName, &isArray)) {
+                baseUserName = baseMappedName;
+
+                if (needsCheckForArrays && !isArray) {
+                    std::string mappedNameStr = baseMappedName.BeginReading();
+                    mappedNameStr += "[0]";
+
+                    GLuint loc = gl->fGetUniformBlockIndex(prog->mGLName,
+                                                           mappedNameStr.c_str());
+                    if (loc != LOCAL_GL_INVALID_INDEX)
+                        isArray = true;
+                }
+            }
+
+            AddActiveInfo(prog->mContext, size, type, isArray, baseUserName, mappedName,
+                          &info->transformFeedbackVaryings,
+                          &info->transformFeedbackVaryingsMap);
+        }
+    }
+
     return info.forget();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
 
 webgl::LinkedProgramInfo::LinkedProgramInfo(WebGLProgram* prog)
     : prog(prog)
@@ -425,7 +479,7 @@ already_AddRefed<WebGLActiveInfo>
 WebGLProgram::GetActiveAttrib(GLuint index) const
 {
     if (!mMostRecentLinkInfo) {
-        nsRefPtr<WebGLActiveInfo> ret = WebGLActiveInfo::CreateInvalid(mContext);
+        RefPtr<WebGLActiveInfo> ret = WebGLActiveInfo::CreateInvalid(mContext);
         return ret.forget();
     }
 
@@ -446,7 +500,7 @@ WebGLProgram::GetActiveUniform(GLuint index) const
 {
     if (!mMostRecentLinkInfo) {
         // According to the spec, this can return null.
-        nsRefPtr<WebGLActiveInfo> ret = WebGLActiveInfo::CreateInvalid(mContext);
+        RefPtr<WebGLActiveInfo> ret = WebGLActiveInfo::CreateInvalid(mContext);
         return ret.forget();
     }
 
@@ -463,7 +517,7 @@ WebGLProgram::GetActiveUniform(GLuint index) const
 }
 
 void
-WebGLProgram::GetAttachedShaders(nsTArray<nsRefPtr<WebGLShader>>* const out) const
+WebGLProgram::GetAttachedShaders(nsTArray<RefPtr<WebGLShader>>* const out) const
 {
     out->TruncateLength(0);
 
@@ -753,10 +807,55 @@ WebGLProgram::GetUniformLocation(const nsAString& userName_wide) const
     if (loc == -1)
         return nullptr;
 
-    nsRefPtr<WebGLUniformLocation> locObj = new WebGLUniformLocation(mContext, LinkInfo(),
+    RefPtr<WebGLUniformLocation> locObj = new WebGLUniformLocation(mContext, LinkInfo(),
                                                                      loc, activeInfo);
     return locObj.forget();
 }
+
+void
+WebGLProgram::GetUniformIndices(const dom::Sequence<nsString>& uniformNames,
+                                dom::Nullable< nsTArray<GLuint> >& retval) const
+{
+    size_t count = uniformNames.Length();
+    nsTArray<GLuint>& arr = retval.SetValue();
+
+    gl::GLContext* gl = mContext->GL();
+    gl->MakeCurrent();
+
+    for (size_t i = 0; i < count; i++) {
+        const NS_LossyConvertUTF16toASCII userName(uniformNames[i]);
+
+        nsDependentCString baseUserName;
+        bool isArray;
+        size_t arrayIndex;
+        if (!ParseName(userName, &baseUserName, &isArray, &arrayIndex)) {
+            arr.AppendElement(LOCAL_GL_INVALID_INDEX);
+            continue;
+        }
+
+        const WebGLActiveInfo* activeInfo;
+        if (!LinkInfo()->FindUniform(baseUserName, &activeInfo)) {
+            arr.AppendElement(LOCAL_GL_INVALID_INDEX);
+            continue;
+        }
+
+        const nsCString& baseMappedName = activeInfo->mBaseMappedName;
+
+        nsAutoCString mappedName(baseMappedName);
+        if (isArray) {
+            mappedName.AppendLiteral("[");
+            mappedName.AppendInt(uint32_t(arrayIndex));
+            mappedName.AppendLiteral("]");
+        }
+
+        const GLchar* mappedNameBytes = mappedName.BeginReading();
+
+        GLuint index = 0;
+        gl->fGetUniformIndices(mGLName, 1, &mappedNameBytes, &index);
+        arr.AppendElement(index);
+    }
+}
+
 
 void
 WebGLProgram::UniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) const
@@ -959,6 +1058,18 @@ WebGLProgram::FindAttribUserNameByMappedName(const nsACString& mappedName,
 }
 
 bool
+WebGLProgram::FindVaryingByMappedName(const nsACString& mappedName,
+                                              nsCString* const out_userName,
+                                              bool* const out_isArray) const
+{
+    if (mVertShader->FindVaryingByMappedName(mappedName, out_userName, out_isArray))
+        return true;
+
+    return false;
+}
+
+
+bool
 WebGLProgram::FindUniformByMappedName(const nsACString& mappedName,
                                       nsCString* const out_userName,
                                       bool* const out_isArray) const
@@ -1021,19 +1132,13 @@ WebGLProgram::GetTransformFeedbackVarying(GLuint index)
         return nullptr;
     }
 
-    if (index >= mTransformFeedbackVaryings.size()) {
+    if (index >= LinkInfo()->transformFeedbackVaryings.size()) {
         mContext->ErrorInvalidValue("getTransformFeedbackVarying: `index` is greater or "
                                     "equal to TRANSFORM_FEEDBACK_VARYINGS.");
         return nullptr;
     }
 
-    const nsCString& varyingUserName = mTransformFeedbackVaryings[index];
-
-    WebGLActiveInfo* info;
-    LinkInfo()->FindAttrib(varyingUserName, (const WebGLActiveInfo**) &info);
-    MOZ_ASSERT(info);
-
-    RefPtr<WebGLActiveInfo> ret(info);
+    RefPtr<WebGLActiveInfo> ret = LinkInfo()->transformFeedbackVaryings[index];
     return ret.forget();
 }
 

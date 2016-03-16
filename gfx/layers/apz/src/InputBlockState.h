@@ -9,6 +9,7 @@
 
 #include "InputData.h"                      // for MultiTouchInput
 #include "mozilla/gfx/Matrix.h"             // for Matrix4x4
+#include "mozilla/layers/AsyncDragMetrics.h"
 #include "nsAutoPtr.h"                      // for nsRefPtr
 #include "nsTArray.h"                       // for nsTArray
 
@@ -20,6 +21,7 @@ class OverscrollHandoffChain;
 class CancelableBlockState;
 class TouchBlockState;
 class WheelBlockState;
+class DragBlockState;
 class PanGestureBlockState;
 
 /**
@@ -34,32 +36,32 @@ class InputBlockState
 public:
   static const uint64_t NO_BLOCK_ID = 0;
 
-  explicit InputBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+  explicit InputBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                            bool aTargetConfirmed);
   virtual ~InputBlockState()
   {}
 
-  virtual bool SetConfirmedTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc);
-  const nsRefPtr<AsyncPanZoomController>& GetTargetApzc() const;
-  const nsRefPtr<const OverscrollHandoffChain>& GetOverscrollHandoffChain() const;
+  virtual bool SetConfirmedTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc);
+  const RefPtr<AsyncPanZoomController>& GetTargetApzc() const;
+  const RefPtr<const OverscrollHandoffChain>& GetOverscrollHandoffChain() const;
   uint64_t GetBlockId() const;
 
   bool IsTargetConfirmed() const;
 
 protected:
-  virtual void UpdateTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc);
+  virtual void UpdateTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc);
 
 private:
-  nsRefPtr<AsyncPanZoomController> mTargetApzc;
+  RefPtr<AsyncPanZoomController> mTargetApzc;
   bool mTargetConfirmed;
   const uint64_t mBlockId;
 protected:
-  nsRefPtr<const OverscrollHandoffChain> mOverscrollHandoffChain;
+  RefPtr<const OverscrollHandoffChain> mOverscrollHandoffChain;
 
   // Used to transform events from global screen space to |mTargetApzc|'s
   // screen space. It's cached at the beginning of the input block so that
   // all events in the block are in the same coordinate space.
-  gfx::Matrix4x4 mTransformToApzc;
+  ScreenToParentLayerMatrix4x4 mTransformToApzc;
 };
 
 /**
@@ -77,13 +79,16 @@ protected:
 class CancelableBlockState : public InputBlockState
 {
 public:
-  CancelableBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+  CancelableBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                        bool aTargetConfirmed);
 
   virtual TouchBlockState *AsTouchBlock() {
     return nullptr;
   }
   virtual WheelBlockState *AsWheelBlock() {
+    return nullptr;
+  }
+  virtual DragBlockState *AsDragBlock() {
     return nullptr;
   }
   virtual PanGestureBlockState *AsPanGestureBlock() {
@@ -172,7 +177,7 @@ private:
 class WheelBlockState : public CancelableBlockState
 {
 public:
-  WheelBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+  WheelBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                   bool aTargetConfirmed,
                   const ScrollWheelInput& aEvent);
 
@@ -183,7 +188,7 @@ public:
   void HandleEvents() override;
   bool MustStayActive() override;
   const char* Type() override;
-  bool SetConfirmedTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc) override;
+  bool SetConfirmedTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc) override;
 
   void AddEvent(const ScrollWheelInput& aEvent);
 
@@ -239,16 +244,51 @@ public:
   /**
    * Update the wheel transaction state for a new event.
    */
-  void Update(const ScrollWheelInput& aEvent);
+  void Update(ScrollWheelInput& aEvent);
 
 protected:
-  void UpdateTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc) override;
+  void UpdateTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc) override;
 
 private:
   nsTArray<ScrollWheelInput> mEvents;
   TimeStamp mLastEventTime;
   TimeStamp mLastMouseMove;
+  uint32_t mScrollSeriesCounter;
   bool mTransactionEnded;
+};
+
+/**
+ * A block of mouse events that are part of a drag
+ */
+class DragBlockState : public CancelableBlockState
+{
+public:
+  DragBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
+                 bool aTargetConfirmed,
+                 const MouseInput& aEvent);
+
+  bool HasEvents() const override;
+  void DropEvents() override;
+  void HandleEvents() override;
+  bool MustStayActive() override;
+  const char* Type() override;
+
+  bool HasReceivedMouseUp();
+  void MarkMouseUpReceived();
+
+  void AddEvent(const MouseInput& aEvent);
+
+  DragBlockState *AsDragBlock() override {
+    return this;
+  }
+
+  void SetDragMetrics(const AsyncDragMetrics& aDragMetrics);
+
+  void DispatchEvent(const InputData& aEvent) const override;
+private:
+  nsTArray<MouseInput> mEvents;
+  AsyncDragMetrics mDragMetrics;
+  bool mReceivedMouseUp;
 };
 
 /**
@@ -257,7 +297,7 @@ private:
 class PanGestureBlockState : public CancelableBlockState
 {
 public:
-  PanGestureBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+  PanGestureBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                        bool aTargetConfirmed,
                        const PanGestureInput& aEvent);
 
@@ -268,7 +308,7 @@ public:
   void HandleEvents() override;
   bool MustStayActive() override;
   const char* Type() override;
-  bool SetConfirmedTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc) override;
+  bool SetConfirmedTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc) override;
 
   void AddEvent(const PanGestureInput& aEvent);
 
@@ -317,7 +357,7 @@ private:
 class TouchBlockState : public CancelableBlockState
 {
 public:
-  explicit TouchBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+  explicit TouchBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                            bool aTargetConfirmed, TouchCounter& aTouchCounter);
 
   TouchBlockState *AsTouchBlock() override {
@@ -391,6 +431,23 @@ public:
   bool TouchActionAllowsPanningY() const;
   bool TouchActionAllowsPanningXY() const;
 
+  /**
+   * Notifies the input block of an incoming touch event so that the block can
+   * update its internal slop state. "Slop" refers to the area around the
+   * initial touchstart where we drop touchmove events so that content doesn't
+   * see them. The |aApzcCanConsumeEvents| parameter is factored into how large
+   * the slop area is - if this is true the slop area is larger.
+   * @return true iff the provided event is a touchmove in the slop area and
+   *         so should not be sent to content.
+   */
+  bool UpdateSlopState(const MultiTouchInput& aInput,
+                       bool aApzcCanConsumeEvents);
+
+  /**
+   * Returns the number of touch points currently active.
+   */
+  uint32_t GetActiveTouchCount() const;
+
   bool HasEvents() const override;
   void DropEvents() override;
   void HandleEvents() override;
@@ -403,6 +460,8 @@ private:
   bool mAllowedTouchBehaviorSet;
   bool mDuringFastFling;
   bool mSingleTapOccurred;
+  bool mInSlop;
+  ScreenIntPoint mSlopOrigin;
   nsTArray<MultiTouchInput> mEvents;
   // A reference to the InputQueue's touch counter
   TouchCounter& mTouchCounter;

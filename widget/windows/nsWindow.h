@@ -28,6 +28,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "nsMargin.h"
+#include "nsRegionFwd.h"
 
 #include "nsWinGesture.h"
 
@@ -43,13 +44,14 @@
 #include "nsIDOMMouseEvent.h"
 #include "nsIIdleServiceInternal.h"
 
+#include "IMMHandler.h"
+
 /**
  * Forward class definitions
  */
 
 class nsNativeDragTarget;
 class nsIRollupListener;
-class nsIntRegion;
 class imgIContainer;
 
 namespace mozilla {
@@ -71,6 +73,7 @@ class nsWindow : public nsWindowBase
   typedef mozilla::widget::TaskbarWindowPreview TaskbarWindowPreview;
   typedef mozilla::widget::NativeKey NativeKey;
   typedef mozilla::widget::MSGResult MSGResult;
+  typedef mozilla::widget::IMEContext IMEContext;
 
 public:
   nsWindow();
@@ -81,7 +84,7 @@ public:
 
   // nsWindowBase
   virtual void InitEvent(mozilla::WidgetGUIEvent& aEvent,
-                         nsIntPoint* aPoint = nullptr) override;
+                         LayoutDeviceIntPoint* aPoint = nullptr) override;
   virtual bool DispatchWindowEvent(mozilla::WidgetGUIEvent* aEvent) override;
   virtual bool DispatchKeyboardEvent(mozilla::WidgetKeyboardEvent* aEvent) override;
   virtual bool DispatchWheelEvent(mozilla::WidgetWheelEvent* aEvent) override;
@@ -92,10 +95,10 @@ public:
   using nsWindowBase::DispatchPluginEvent;
 
   // nsIWidget interface
-  NS_IMETHOD              Create(nsIWidget *aParent,
+  NS_IMETHOD              Create(nsIWidget* aParent,
                                  nsNativeWidget aNativeParent,
-                                 const nsIntRect &aRect,
-                                 nsWidgetInitData *aInitData = nullptr);
+                                 const LayoutDeviceIntRect& aRect,
+                                 nsWidgetInitData* aInitData = nullptr);
   NS_IMETHOD              Destroy();
   NS_IMETHOD              SetParent(nsIWidget *aNewParent);
   virtual nsIWidget*      GetParent(void);
@@ -116,12 +119,12 @@ public:
   NS_IMETHOD              Enable(bool aState);
   virtual bool            IsEnabled() const;
   NS_IMETHOD              SetFocus(bool aRaise);
-  NS_IMETHOD              GetBounds(nsIntRect &aRect);
-  NS_IMETHOD              GetScreenBounds(nsIntRect &aRect);
-  NS_IMETHOD              GetRestoredBounds(nsIntRect &aRect) override;
-  NS_IMETHOD              GetClientBounds(nsIntRect &aRect);
-  virtual nsIntPoint      GetClientOffset();
-  void                    SetBackgroundColor(const nscolor &aColor);
+  NS_IMETHOD              GetBounds(LayoutDeviceIntRect& aRect) override;
+  NS_IMETHOD              GetScreenBounds(LayoutDeviceIntRect& aRect) override;
+  NS_IMETHOD              GetRestoredBounds(LayoutDeviceIntRect& aRect) override;
+  NS_IMETHOD              GetClientBounds(LayoutDeviceIntRect& aRect) override;
+  virtual LayoutDeviceIntPoint GetClientOffset() override;
+  void                    SetBackgroundColor(const nscolor& aColor);
   NS_IMETHOD              SetCursor(imgIContainer* aCursor,
                                     uint32_t aHotspotX, uint32_t aHotspotY);
   NS_IMETHOD              SetCursor(nsCursor aCursor);
@@ -136,14 +139,14 @@ public:
   NS_IMETHOD              Invalidate(bool aEraseBackground = false,
                                      bool aUpdateNCArea = false,
                                      bool aIncludeChildren = false);
-  NS_IMETHOD              Invalidate(const nsIntRect & aRect);
+  NS_IMETHOD              Invalidate(const LayoutDeviceIntRect& aRect);
   virtual void*           GetNativeData(uint32_t aDataType);
   void                    SetNativeData(uint32_t aDataType, uintptr_t aVal) override;
   virtual void            FreeNativeData(void * data, uint32_t aDataType);
   NS_IMETHOD              SetTitle(const nsAString& aTitle);
   NS_IMETHOD              SetIcon(const nsAString& aIconSpec);
-  virtual mozilla::LayoutDeviceIntPoint WidgetToScreenOffset();
-  virtual mozilla::LayoutDeviceIntSize ClientToWindowSize(const mozilla::LayoutDeviceIntSize& aClientSize) override;
+  virtual LayoutDeviceIntPoint WidgetToScreenOffset();
+  virtual LayoutDeviceIntSize ClientToWindowSize(const LayoutDeviceIntSize& aClientSize) override;
   NS_IMETHOD              DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                                         nsEventStatus& aStatus);
   NS_IMETHOD              EnableDragDrop(bool aEnable);
@@ -156,7 +159,7 @@ public:
                                           LayersBackend aBackendHint = mozilla::layers::LayersBackend::LAYERS_NONE,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                                           bool* aAllowRetaining = nullptr);
-  NS_IMETHOD              OnDefaultButtonLoaded(const nsIntRect &aButtonRect);
+  NS_IMETHOD              OnDefaultButtonLoaded(const LayoutDeviceIntRect& aButtonRect) override;
   NS_IMETHOD              OverrideSystemMouseScrollSpeed(double aOriginalDeltaX,
                                                          double aOriginalDeltaY,
                                                          double& aOverriddenDeltaX,
@@ -168,16 +171,16 @@ public:
                                                    const nsAString& aCharacters,
                                                    const nsAString& aUnmodifiedCharacters,
                                                    nsIObserver* aObserver) override;
-  virtual nsresult        SynthesizeNativeMouseEvent(mozilla::LayoutDeviceIntPoint aPoint,
+  virtual nsresult        SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
                                                      uint32_t aNativeMessage,
                                                      uint32_t aModifierFlags,
                                                      nsIObserver* aObserver) override;
 
-  virtual nsresult        SynthesizeNativeMouseMove(mozilla::LayoutDeviceIntPoint aPoint,
+  virtual nsresult        SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
                                                     nsIObserver* aObserver) override
                           { return SynthesizeNativeMouseEvent(aPoint, MOUSEEVENTF_MOVE, 0, aObserver); }
 
-  virtual nsresult        SynthesizeNativeMouseScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
+  virtual nsresult        SynthesizeNativeMouseScrollEvent(LayoutDeviceIntPoint aPoint,
                                                            uint32_t aNativeMessage,
                                                            double aDeltaX,
                                                            double aDeltaY,
@@ -188,19 +191,18 @@ public:
   NS_IMETHOD_(void)       SetInputContext(const InputContext& aContext,
                                           const InputContextAction& aAction);
   NS_IMETHOD_(InputContext) GetInputContext();
-  NS_IMETHOD              GetToggledKeyState(uint32_t aKeyCode, bool* aLEDState);
 #ifdef MOZ_XUL
   virtual void            SetTransparencyMode(nsTransparencyMode aMode);
   virtual nsTransparencyMode GetTransparencyMode();
-  virtual void            UpdateOpaqueRegion(const nsIntRegion& aOpaqueRegion);
+  virtual void            UpdateOpaqueRegion(const LayoutDeviceIntRegion& aOpaqueRegion);
 #endif // MOZ_XUL
   virtual nsIMEUpdatePreference GetIMEUpdatePreference();
-  NS_IMETHOD              GetNonClientMargins(nsIntMargin &margins);
-  NS_IMETHOD              SetNonClientMargins(nsIntMargin &margins);
+  NS_IMETHOD              GetNonClientMargins(LayoutDeviceIntMargin& aMargins) override;
+  NS_IMETHOD              SetNonClientMargins(LayoutDeviceIntMargin& aMargins) override;
   void                    SetDrawsInTitlebar(bool aState);
   already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawing() override;
   virtual void            EndRemoteDrawing() override;
-  virtual void UpdateWindowDraggingRegion(const nsIntRegion& aRegion) override;
+  virtual void            UpdateWindowDraggingRegion(const LayoutDeviceIntRegion& aRegion) override;
 
   virtual void            UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) override;
   virtual uint32_t        GetMaxTouchPoints() const override;
@@ -291,14 +293,15 @@ public:
   bool IsPopup();
   virtual bool ShouldUseOffMainThreadCompositing();
 
-  bool CaptureWidgetOnScreen(mozilla::RefPtr<mozilla::gfx::DrawTarget> aDT);
+  bool CaptureWidgetOnScreen(RefPtr<mozilla::gfx::DrawTarget> aDT);
+
+  const IMEContext& DefaultIMC() const { return mDefaultIMC; }
 
 protected:
   virtual ~nsWindow();
 
   virtual void WindowUsesOMTC() override;
-  virtual void ConfigureAPZCTreeManager() override;
-  void RegisterTouchWindow();
+  virtual void RegisterTouchWindow() override;
 
   virtual nsresult NotifyIMEInternal(
                      const IMENotification& aIMENotification) override;
@@ -455,7 +458,7 @@ protected:
    */
   void                    StopFlashing();
   static bool             IsTopLevelMouseExit(HWND aWnd);
-  virtual nsresult        SetWindowClipRegion(const nsTArray<nsIntRect>& aRects,
+  virtual nsresult        SetWindowClipRegion(const nsTArray<LayoutDeviceIntRect>& aRects,
                                               bool aIntersectWithExisting) override;
   nsIntRegion             GetRegionToPaint(bool aForceFullRepaint, 
                                            PAINTSTRUCT ps, HDC aDC);
@@ -474,6 +477,7 @@ protected:
   HWND                  mTransitionWnd;
   WNDPROC               mPrevWndProc;
   HBRUSH                mBrush;
+  IMEContext            mDefaultIMC;
   bool                  mIsTopWidgetWindow;
   bool                  mInDtor;
   bool                  mIsVisible;
@@ -516,11 +520,11 @@ protected:
 
   // Non-client margin settings
   // Pre-calculated outward offset applied to default frames
-  nsIntMargin           mNonClientOffset;
+  LayoutDeviceIntMargin mNonClientOffset;
   // Margins set by the owner
-  nsIntMargin           mNonClientMargins;
+  LayoutDeviceIntMargin mNonClientMargins;
   // Margins we'd like to set once chrome is reshown:
-  nsIntMargin           mFutureMarginsOnceChromeShows;
+  LayoutDeviceIntMargin mFutureMarginsOnceChromeShows;
   // Indicates we need to apply margins once toggling chrome into showing:
   bool                  mFutureMarginsToUse;
 
@@ -535,7 +539,7 @@ protected:
   nsCOMPtr<nsIIdleServiceInternal> mIdleService;
 
   // Draggable titlebar region maintained by UpdateWindowDraggingRegion
-  nsIntRegion mDraggableRegion;
+  LayoutDeviceIntRegion mDraggableRegion;
 
   // Hook Data Memebers for Dropdowns. sProcessHook Tells the
   // hook methods whether they should be processing the hook
@@ -573,7 +577,7 @@ protected:
   // Transparency
 #ifdef MOZ_XUL
   // Use layered windows to support full 256 level alpha translucency
-  nsRefPtr<gfxASurface> mTransparentSurface;
+  RefPtr<gfxASurface> mTransparentSurface;
   HDC                   mMemoryDC;
   nsTransparencyMode    mTransparencyMode;
   nsIntRegion           mPossiblyTransparentRegion;

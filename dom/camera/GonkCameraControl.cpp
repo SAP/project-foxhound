@@ -87,6 +87,7 @@ nsGonkCameraControl::nsGonkCameraControl(uint32_t aCameraId)
   , mCapturePoster(false)
   , mAutoFocusPending(false)
   , mAutoFocusCompleteExpired(0)
+  , mPrevFacesDetected(0)
   , mReentrantMonitor("GonkCameraControl::OnTakePicture.Monitor")
 {
   // Constructor runs on the main thread...
@@ -330,9 +331,9 @@ nsGonkCameraControl::ValidateConfiguration(const Configuration& aConfig, Configu
   }
 
   if (mCurrentConfiguration.mMode == aConfig.mMode &&
-      mRequestedPreviewSize.width == aConfig.mPreviewSize.width &&
-      mRequestedPreviewSize.height == aConfig.mPreviewSize.height &&
-      mCurrentConfiguration.mRecorderProfile.Equals(profile->GetName()))
+      mCurrentConfiguration.mRecorderProfile.Equals(profile->GetName()) &&
+      mRequestedPreviewSize.Equals(aConfig.mPreviewSize) &&
+      mCurrentConfiguration.mPictureSize.Equals(aValidatedConfig.mPictureSize))
   {
     DOM_CAMERA_LOGI("Camera configuration is unchanged\n");
     return NS_ERROR_ALREADY_INITIALIZED;
@@ -989,7 +990,7 @@ nsGonkCameraControl::SetThumbnailSize(const Size& aSize)
     }
 
   protected:
-    nsRefPtr<nsGonkCameraControl> mCameraControl;
+    RefPtr<nsGonkCameraControl> mCameraControl;
     Size mSize;
   };
 
@@ -1107,7 +1108,7 @@ nsGonkCameraControl::SetPictureSize(const Size& aSize)
     }
 
   protected:
-    nsRefPtr<nsGonkCameraControl> mCameraControl;
+    RefPtr<nsGonkCameraControl> mCameraControl;
     Size mSize;
   };
 
@@ -1247,7 +1248,7 @@ nsGonkCameraControl::StartRecordingImpl(DeviceStorageFileDescriptor* aFileDescri
   // close the file descriptor when we leave this function. Also note, that
   // since we're already off the main thread, we don't need to dispatch this.
   // We just let the CloseFileRunnable destructor do the work.
-  nsRefPtr<CloseFileRunnable> closer;
+  RefPtr<CloseFileRunnable> closer;
   if (aFileDescriptor->mFileDescriptor.IsValid()) {
     closer = new CloseFileRunnable(aFileDescriptor->mFileDescriptor);
   }
@@ -1302,12 +1303,12 @@ nsGonkCameraControl::StopRecordingImpl()
       MOZ_ASSERT(NS_IsMainThread());
 
       nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-      obs->NotifyObservers(mFile, "file-watcher-notify", NS_LITERAL_STRING("modified").get());
+      obs->NotifyObservers(mFile, "file-watcher-notify", MOZ_UTF16("modified"));
       return NS_OK;
     }
 
   private:
-    nsRefPtr<DeviceStorageFile> mFile;
+    RefPtr<DeviceStorageFile> mFile;
   };
 
   ReentrantMonitorAutoEnter mon(mRecorderMonitor);
@@ -1424,7 +1425,7 @@ protected:
   virtual ~AutoFocusMovingTimerCallback()
   { }
 
-  nsRefPtr<nsGonkCameraControl> mCameraControl;
+  RefPtr<nsGonkCameraControl> mCameraControl;
 };
 
 NS_IMPL_ISUPPORTS(AutoFocusMovingTimerCallback, nsITimerCallback);
@@ -1448,7 +1449,7 @@ nsGonkCameraControl::OnAutoFocusMoving(bool aIsMoving)
         mAutoFocusCompleteTimer->Cancel();
 
         if (!mAutoFocusPending) {
-          nsRefPtr<nsITimerCallback> timerCb = new AutoFocusMovingTimerCallback(this);
+          RefPtr<nsITimerCallback> timerCb = new AutoFocusMovingTimerCallback(this);
           nsresult rv = mAutoFocusCompleteTimer->InitWithCallback(timerCb,
                                                                   kAutoFocusCompleteTimeoutMs,
                                                                   nsITimer::TYPE_ONE_SHOT);
@@ -1488,7 +1489,7 @@ nsGonkCameraControl::OnAutoFocusComplete(bool aSuccess, bool aExpired)
     }
 
   protected:
-    nsRefPtr<nsGonkCameraControl> mCameraControl;
+    RefPtr<nsGonkCameraControl> mCameraControl;
     bool mSuccess;
     bool mExpired;
   };
@@ -1557,6 +1558,11 @@ nsGonkCameraControl::OnFacesDetected(camera_frame_metadata_t* aMetaData)
 
   nsTArray<Face> faces;
   uint32_t numFaces = aMetaData->number_of_faces;
+  if (numFaces == 0 && mPrevFacesDetected == 0) {
+    return;
+  }
+  mPrevFacesDetected = numFaces;
+
   DOM_CAMERA_LOGI("Camera detected %d face(s)", numFaces);
 
   faces.SetCapacity(numFaces);
@@ -1915,7 +1921,7 @@ public:
 
 protected:
   ~GonkRecorderListener() { }
-  nsRefPtr<nsGonkCameraControl> mCameraControl;
+  RefPtr<nsGonkCameraControl> mCameraControl;
 };
 
 void
@@ -2152,7 +2158,7 @@ nsresult
 nsGonkCameraControl::LoadRecorderProfiles()
 {
   if (mRecorderProfiles.Count() == 0) {
-    nsTArray<nsRefPtr<RecorderProfile>> profiles;
+    nsTArray<RefPtr<RecorderProfile>> profiles;
     nsresult rv = GonkRecorderProfile::GetAll(mCameraId, profiles);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -2166,6 +2172,7 @@ nsGonkCameraControl::LoadRecorderProfiles()
 
     nsTArray<RecorderProfile>::size_type bestIndexMatch = 0;
     int bestAreaMatch = 0;
+    uint32_t bestPriorityMatch = UINT32_MAX;
 
     // Limit profiles to those video sizes supported by the camera hardware...
     for (nsTArray<RecorderProfile>::size_type i = 0; i < profiles.Length(); ++i) {
@@ -2180,17 +2187,22 @@ nsGonkCameraControl::LoadRecorderProfiles()
         if (static_cast<uint32_t>(width) == sizes[n].width &&
             static_cast<uint32_t>(height) == sizes[n].height) {
           mRecorderProfiles.Put(profiles[i]->GetName(), profiles[i]);
+
+          // "Best" or default profile is the one with the lowest priority
+          // value and largest area.
           int area = width * height;
-          if (area > bestAreaMatch) {
+          uint32_t priority = profiles[i]->GetPriority();
+          if (bestPriorityMatch > priority ||
+              (bestPriorityMatch == priority && area > bestAreaMatch)) {
             bestIndexMatch = i;
             bestAreaMatch = area;
+            bestPriorityMatch = priority;
           }
           break;
         }
       }
     }
 
-    // Default profile is the one with the largest area.
     if (bestAreaMatch > 0) {
       nsAutoString name;
       name.AssignASCII("default");
@@ -2199,17 +2211,6 @@ nsGonkCameraControl::LoadRecorderProfiles()
   }
 
   return NS_OK;
-}
-
-/* static */ PLDHashOperator
-nsGonkCameraControl::Enumerate(const nsAString& aProfileName,
-                               RecorderProfile* aProfile,
-                               void* aUserArg)
-{
-  nsTArray<nsString>* profiles = static_cast<nsTArray<nsString>*>(aUserArg);
-  MOZ_ASSERT(profiles);
-  profiles->AppendElement(aProfileName);
-  return PL_DHASH_NEXT;
 }
 
 nsresult
@@ -2221,7 +2222,9 @@ nsGonkCameraControl::GetRecorderProfiles(nsTArray<nsString>& aProfiles)
   }
 
   aProfiles.Clear();
-  mRecorderProfiles.EnumerateRead(Enumerate, static_cast<void*>(&aProfiles));
+  for (auto iter = mRecorderProfiles.Iter(); !iter.Done(); iter.Next()) {
+    aProfiles.AppendElement(iter.Key());
+  }
   return NS_OK;
 }
 
@@ -2341,8 +2344,8 @@ nsGonkCameraControl::CreatePoster(Image* aImage, uint32_t aWidth, uint32_t aHeig
     }
 
   private:
-    nsRefPtr<nsGonkCameraControl> mTarget;
-    nsRefPtr<Image> mImage;
+    RefPtr<nsGonkCameraControl> mTarget;
+    RefPtr<Image> mImage;
     int32_t mWidth;
     int32_t mHeight;
     int32_t mRotation;
@@ -2365,7 +2368,7 @@ nsGonkCameraControl::CreatePoster(Image* aImage, uint32_t aWidth, uint32_t aHeig
 void
 nsGonkCameraControl::OnPoster(void* aData, uint32_t aLength)
 {
-  nsRefPtr<BlobImpl> blobImpl;
+  RefPtr<BlobImpl> blobImpl;
   if (aData) {
     blobImpl = new BlobImplMemory(aData, aLength, NS_LITERAL_STRING("image/jpeg"));
   }
@@ -2376,15 +2379,11 @@ void
 nsGonkCameraControl::OnNewPreviewFrame(layers::TextureClient* aBuffer)
 {
 #ifdef MOZ_WIDGET_GONK
-  nsRefPtr<Image> frame = mImageContainer->CreateImage(ImageFormat::GRALLOC_PLANAR_YCBCR);
+  RefPtr<GrallocImage> frame = new GrallocImage();
 
-  GrallocImage* videoImage = static_cast<GrallocImage*>(frame.get());
-
-  GrallocImage::GrallocData data;
-  data.mGraphicBuffer = aBuffer;
-  data.mPicSize = IntSize(mCurrentConfiguration.mPreviewSize.width,
-                          mCurrentConfiguration.mPreviewSize.height);
-  videoImage->SetData(data);
+  IntSize picSize(mCurrentConfiguration.mPreviewSize.width,
+                  mCurrentConfiguration.mPreviewSize.height);
+  frame->SetData(aBuffer, picSize);
 
   if (mCapturePoster.exchange(false)) {
     CreatePoster(frame,

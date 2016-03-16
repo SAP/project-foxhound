@@ -79,6 +79,10 @@ const MOUSE_ID = 'mouse';
 const EDGE = 0.1;
 // Multiply timeouts by this constant, x2 works great too for slower users.
 const TIMEOUT_MULTIPLIER = 1;
+// A single pointer down/up sequence periodically precedes the tripple swipe
+// gesture on Android. This delay acounts for that.
+const IS_ANDROID = Utils.MozBuildApp === 'mobile/android' &&
+  Utils.AndroidSdkVersion >= 14;
 
 /**
  * A point object containing distance travelled data.
@@ -194,13 +198,13 @@ this.GestureTracker = { // jshint ignore:line
    * @param  {Number} aTimeStamp A new pointer event timeStamp.
    * @param  {Function} aGesture A gesture constructor (default: Tap).
    */
-  _init: function GestureTracker__init(aDetail, aTimeStamp, aGesture = Tap) {
+  _init: function GestureTracker__init(aDetail, aTimeStamp, aGesture) {
     // Only create a new gesture on |pointerdown| event.
     if (aDetail.type !== 'pointerdown') {
       return;
     }
     let points = aDetail.points;
-    let GestureConstructor = aGesture;
+    let GestureConstructor = aGesture || (IS_ANDROID ? DoubleTap : Tap);
     this._create(GestureConstructor);
     this._update(aDetail, aTimeStamp);
   },
@@ -213,8 +217,7 @@ this.GestureTracker = { // jshint ignore:line
    */
   handle: function GestureTracker_handle(aDetail, aTimeStamp) {
     Logger.gesture(() => {
-      return ['Pointer event', aDetail.type, 'at:', aTimeStamp,
-        JSON.stringify(aDetail.points)];
+      return ['Pointer event', Utils.dpi, 'at:', aTimeStamp, JSON.stringify(aDetail)];
     });
     this[this.current ? '_update' : '_init'](aDetail, aTimeStamp);
   },
@@ -403,7 +406,12 @@ Gesture.prototype = {
       let identifier = point.identifier;
       let gesturePoint = this.points[identifier];
       if (gesturePoint) {
-        gesturePoint.update(point);
+        if (aType === 'pointerdown' && aCanCreate) {
+          // scratch the previous pointer with that id.
+          this.points[identifier] = new Point(point);
+        } else {
+          gesturePoint.update(point);
+        }
         if (aNeedComplete) {
           // Since the gesture is completing and at least one of the gesture
           // points is updated, set the return value to true.
@@ -913,7 +921,7 @@ Swipe.prototype.compile = function Swipe_compile() {
   let edge = EDGE * Utils.dpi;
   if (Math.abs(deltaX) > Math.abs(deltaY)) {
     // Horizontal swipe.
-    let startPoints = [touch.x1 for (touch of detail.touches)];
+    let startPoints = detail.touches.map(touch => touch.x1);
     if (deltaX > 0) {
       detail.type = type + 'right';
       detail.edge = Math.min.apply(null, startPoints) <= edge;
@@ -924,7 +932,7 @@ Swipe.prototype.compile = function Swipe_compile() {
     }
   } else {
     // Vertical swipe.
-    let startPoints = [touch.y1 for (touch of detail.touches)];
+    let startPoints = detail.touches.map(touch => touch.y1);
     if (deltaY > 0) {
       detail.type = type + 'down';
       detail.edge = Math.min.apply(null, startPoints) <= edge;

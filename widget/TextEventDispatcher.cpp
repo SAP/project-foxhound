@@ -134,6 +134,17 @@ TextEventDispatcher::InitEvent(WidgetGUIEvent& aEvent) const
   aEvent.time = PR_IntervalNow();
   aEvent.refPoint = LayoutDeviceIntPoint(0, 0);
   aEvent.mFlags.mIsSynthesizedForTests = mForTests;
+  if (aEvent.mClass != eCompositionEventClass) {
+    return;
+  }
+  // Currently, we should set special native IME context when composition
+  // events are dispatched from PuppetWidget since PuppetWidget may have not
+  // known actual native IME context yet and it caches native IME context
+  // when it dispatches every WidgetCompositionEvent.
+  if (XRE_IsContentProcess()) {
+    aEvent.AsCompositionEvent()->
+      mNativeIMEContext.InitWithRawNativeIMEContext(mWidget);
+  }
 }
 
 nsresult
@@ -143,7 +154,7 @@ TextEventDispatcher::DispatchEvent(nsIWidget* aWidget,
 {
   MOZ_ASSERT(!aEvent.AsInputEvent(), "Use DispatchInputEvent()");
 
-  nsRefPtr<TextEventDispatcher> kungFuDeathGrip(this);
+  RefPtr<TextEventDispatcher> kungFuDeathGrip(this);
   nsCOMPtr<nsIWidget> widget(aWidget);
   mDispatchingEvent++;
   nsresult rv = widget->DispatchEvent(&aEvent, aStatus);
@@ -157,7 +168,7 @@ TextEventDispatcher::DispatchInputEvent(nsIWidget* aWidget,
                                         nsEventStatus& aStatus,
                                         DispatchTo aDispatchTo)
 {
-  nsRefPtr<TextEventDispatcher> kungFuDeathGrip(this);
+  RefPtr<TextEventDispatcher> kungFuDeathGrip(this);
   nsCOMPtr<nsIWidget> widget(aWidget);
   mDispatchingEvent++;
 
@@ -539,7 +550,7 @@ TextEventDispatcher::PendingComposition::Flush(TextEventDispatcher* aDispatcher,
     mClauses->AppendElement(mCaret);
   }
 
-  nsRefPtr<TextEventDispatcher> kungFuDeathGrip(aDispatcher);
+  RefPtr<TextEventDispatcher> kungFuDeathGrip(aDispatcher);
   nsCOMPtr<nsIWidget> widget(aDispatcher->mWidget);
   WidgetCompositionEvent compChangeEvent(true, eCompositionChange, widget);
   aDispatcher->InitEvent(compChangeEvent);

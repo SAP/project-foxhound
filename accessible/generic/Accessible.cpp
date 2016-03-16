@@ -107,9 +107,10 @@ Accessible::Accessible(nsIContent* aContent, DocAccessible* aDoc) :
   mContent(aContent), mDoc(aDoc),
   mParent(nullptr), mIndexInParent(-1), mChildrenFlags(eChildrenUninitialized),
   mStateFlags(0), mContextFlags(0), mType(0), mGenericTypes(0),
-  mIndexOfEmbeddedChild(-1), mRoleMapEntry(nullptr)
+  mRoleMapEntry(nullptr)
 {
   mBits.groupInfo = nullptr;
+  mInt.mIndexOfEmbeddedChild = -1;
 }
 
 Accessible::~Accessible()
@@ -393,10 +394,12 @@ Accessible::VisibilityState()
   if (frame->GetType() == nsGkAtoms::textFrame &&
       !(frame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
       frame->GetRect().IsEmpty()) {
-    nsAutoString renderedText;
-    frame->GetRenderedText(&renderedText, nullptr, nullptr, 0, 1);
-    if (renderedText.IsEmpty())
+    nsIFrame::RenderedText text = frame->GetRenderedText(0,
+        UINT32_MAX, nsIFrame::TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
+        nsIFrame::TrailingWhitespace::DONT_TRIM_TRAILING_WHITESPACE);
+    if (text.mString.IsEmpty()) {
       return states::INVISIBLE;
+    }
   }
 
   return 0;
@@ -534,7 +537,7 @@ Accessible::ChildAtPoint(int32_t aX, int32_t aY,
   nsIWidget* rootWidget = rootFrame->GetView()->GetNearestWidget(nullptr);
   NS_ENSURE_TRUE(rootWidget, nullptr);
 
-  nsIntRect rootRect;
+  LayoutDeviceIntRect rootRect;
   rootWidget->GetScreenBounds(rootRect);
 
   WidgetMouseEvent dummyEvent(true, eMouseMove, rootWidget,
@@ -1237,11 +1240,13 @@ Accessible::ApplyARIAState(uint64_t* aState) const
       *aState &= ~states::READONLY;
 
     if (mContent->HasID()) {
-      // If has a role & ID and aria-activedescendant on the container, assume focusable
-      nsIContent *ancestorContent = mContent;
-      while ((ancestorContent = ancestorContent->GetParent()) != nullptr) {
-        if (ancestorContent->HasAttr(kNameSpaceID_None, nsGkAtoms::aria_activedescendant)) {
-            // ancestor has activedescendant property, this content could be active
+      // If has a role & ID and aria-activedescendant on the container, assume
+      // focusable.
+      const Accessible* ancestor = this;
+      while ((ancestor = ancestor->Parent()) && !ancestor->IsDoc()) {
+        dom::Element* el = ancestor->Elm();
+        if (el &&
+            el->HasAttr(kNameSpaceID_None, nsGkAtoms::aria_activedescendant)) {
           *aState |= states::FOCUSABLE;
           break;
         }
@@ -1250,12 +1255,12 @@ Accessible::ApplyARIAState(uint64_t* aState) const
   }
 
   if (*aState & states::FOCUSABLE) {
-    // Special case: aria-disabled propagates from ancestors down to any focusable descendant
-    nsIContent *ancestorContent = mContent;
-    while ((ancestorContent = ancestorContent->GetParent()) != nullptr) {
-      if (ancestorContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::aria_disabled,
-                                       nsGkAtoms::_true, eCaseMatters)) {
-          // ancestor has aria-disabled property, this is disabled
+    // Propogate aria-disabled from ancestors down to any focusable descendant.
+    const Accessible* ancestor = this;
+    while ((ancestor = ancestor->Parent()) && !ancestor->IsDoc()) {
+      dom::Element* el = ancestor->Elm();
+      if (el && el->AttrValueIs(kNameSpaceID_None, nsGkAtoms::aria_disabled,
+                                nsGkAtoms::_true, eCaseMatters)) {
         *aState |= states::UNAVAILABLE;
         break;
       }
@@ -1324,21 +1329,14 @@ Accessible::Value(nsString& aValue)
   if (mRoleMapEntry->Is(nsGkAtoms::combobox)) {
     Accessible* option = CurrentItem();
     if (!option) {
-      Accessible* listbox = nullptr;
-      ARIAOwnsIterator iter(this);
-      while ((listbox = iter.Next()) && !listbox->IsListControl());
-
-      if (!listbox) {
-        uint32_t childCount = ChildCount();
-        for (uint32_t idx = 0; idx < childCount; idx++) {
-          Accessible* child = mChildren.ElementAt(idx);
-          if (child->IsListControl())
-            listbox = child;
+      uint32_t childCount = ChildCount();
+      for (uint32_t idx = 0; idx < childCount; idx++) {
+        Accessible* child = mChildren.ElementAt(idx);
+        if (child->IsListControl()) {
+          option = child->GetSelectedItem(0);
+          break;
         }
       }
-
-      if (listbox)
-        option = listbox->GetSelectedItem(0);
     }
 
     if (option)
@@ -1609,8 +1607,7 @@ Accessible::RelationByType(RelationType aType)
     }
 
     case RelationType::NODE_CHILD_OF: {
-      Relation rel(new ARIAOwnedByIterator(this));
-
+      Relation rel;
       // This is an ARIA tree or treegrid that doesn't use owns, so we need to
       // get the parent the hard way.
       if (mRoleMapEntry && (mRoleMapEntry->role == roles::OUTLINEITEM ||
@@ -1639,8 +1636,6 @@ Accessible::RelationByType(RelationType aType)
     }
 
     case RelationType::NODE_PARENT_OF: {
-      Relation rel(new ARIAOwnsIterator(this));
-
       // ARIA tree or treegrid can do the hierarchy by @aria-level, ARIA trees
       // also can be organized by groups.
       if (mRoleMapEntry &&
@@ -1650,10 +1645,10 @@ Accessible::RelationByType(RelationType aType)
            mRoleMapEntry->role == roles::OUTLINE ||
            mRoleMapEntry->role == roles::LIST ||
            mRoleMapEntry->role == roles::TREE_TABLE)) {
-        rel.AppendIter(new ItemIterator(this));
+        return Relation(new ItemIterator(this));
       }
 
-      return rel;
+      return Relation();
     }
 
     case RelationType::CONTROLLED_BY:
@@ -1793,7 +1788,7 @@ Accessible::DoCommand(nsIContent *aContent, uint32_t aActionIndex)
     }
 
   private:
-    nsRefPtr<Accessible> mAcc;
+    RefPtr<Accessible> mAcc;
     nsCOMPtr<nsIContent> mContent;
     uint32_t mIdx;
   };
@@ -1829,7 +1824,7 @@ Accessible::DispatchClickEvent(nsIContent *aContent, uint32_t aActionIndex)
 
   nsSize size = frame->GetSize();
 
-  nsRefPtr<nsPresContext> presContext = presShell->GetPresContext();
+  RefPtr<nsPresContext> presContext = presShell->GetPresContext();
   int32_t x = presContext->AppUnitsToDevPixels(point.x + size.width / 2);
   int32_t y = presContext->AppUnitsToDevPixels(point.y + size.height / 2);
 
@@ -1974,8 +1969,8 @@ Accessible::BindToParent(Accessible* aParent, uint32_t aIndexInParent)
   if (mParent) {
     if (mParent != aParent) {
       NS_ERROR("Adopting child!");
-      mParent->RemoveChild(this);
       mParent->InvalidateChildrenGroupInfo();
+      mParent->RemoveChild(this);
     } else {
       NS_ERROR("Binding to the same parent!");
       return;
@@ -2008,7 +2003,7 @@ Accessible::UnbindFromParent()
 #endif
   mParent = nullptr;
   mIndexInParent = -1;
-  mIndexOfEmbeddedChild = -1;
+  mInt.mIndexOfEmbeddedChild = -1;
   if (IsProxy())
     MOZ_CRASH("this should never be called on proxy wrappers");
 

@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et: */
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
@@ -20,6 +20,8 @@ const MODE_RDONLY = FileUtils.MODE_RDONLY;
 const MODE_WRONLY = FileUtils.MODE_WRONLY;
 const MODE_CREATE = FileUtils.MODE_CREATE;
 const MODE_TRUNCATE = FileUtils.MODE_TRUNCATE;
+
+const CACHE_FILENAME = "search.json.mozlz4";
 
 // nsSearchService.js uses Services.appinfo.name to build a salt for a hash.
 var XULRuntime = Components.classesByID["{95d89e3e-a169-41a3-8e56-719978e15b12}"]
@@ -205,22 +207,43 @@ function getSearchMetadata()
   return readJSONFile(metadata);
 }
 
+function promiseCacheData() {
+  return new Promise(resolve => Task.spawn(function* () {
+    let path = OS.Path.join(OS.Constants.Path.profileDir, CACHE_FILENAME);
+    let bytes = yield OS.File.read(path, {compression: "lz4"});
+    resolve(JSON.parse(new TextDecoder().decode(bytes)));
+  }));
+}
+
+function promiseSaveCacheData(data) {
+  return OS.File.writeAtomic(OS.Path.join(OS.Constants.Path.profileDir, CACHE_FILENAME),
+                             new TextEncoder().encode(JSON.stringify(data)),
+                             {compression: "lz4"});
+}
+
+function promiseEngineMetadata() {
+  return new Promise(resolve => Task.spawn(function* () {
+    let cache = yield promiseCacheData();
+    let data = {};
+    for (let engine of cache.engines) {
+      data[engine._shortName] = engine._metaData;
+    }
+    resolve(data);
+  }));
+}
+
 function promiseGlobalMetadata() {
   return new Promise(resolve => Task.spawn(function* () {
-    let path = OS.Path.join(OS.Constants.Path.profileDir, "search-metadata.json");
-    let bytes = yield OS.File.read(path);
-    resolve(JSON.parse(new TextDecoder().decode(bytes))["[global]"]);
+    let cache = yield promiseCacheData();
+    resolve(cache.metaData);
   }));
 }
 
 function promiseSaveGlobalMetadata(globalData) {
   return new Promise(resolve => Task.spawn(function* () {
-    let path = OS.Path.join(OS.Constants.Path.profileDir, "search-metadata.json");
-    let bytes = yield OS.File.read(path);
-    let data = JSON.parse(new TextDecoder().decode(bytes));
-    data["[global]"] = globalData;
-    yield OS.File.writeAtomic(path,
-                              new TextEncoder().encode(JSON.stringify(data)));
+    let data = yield promiseCacheData();
+    data.metaData = globalData;
+    yield promiseSaveCacheData(data);
     resolve();
   }));
 }
@@ -229,30 +252,23 @@ var forceExpiration = Task.async(function* () {
   let metadata = yield promiseGlobalMetadata();
 
   // Make the current geodefaults expire 1s ago.
-  metadata.searchdefaultexpir = Date.now() - 1000;
+  metadata.searchDefaultExpir = Date.now() - 1000;
   yield promiseSaveGlobalMetadata(metadata);
 });
 
+/**
+ * Clean the profile of any cache file left from a previous run.
+ * Returns a boolean indicating if the cache file existed.
+ */
 function removeCacheFile()
 {
   let file = gProfD.clone();
-  file.append("search.json");
+  file.append(CACHE_FILENAME);
   if (file.exists()) {
     file.remove(false);
+    return true;
   }
-}
-
-/**
- * Clean the profile of any cache file left from a previous run.
- */
-function removeCache()
-{
-  let file = gProfD.clone();
-  file.append("search.json");
-  if (file.exists()) {
-    file.remove(false);
-  }
-
+  return false;
 }
 
 /**
@@ -289,14 +305,6 @@ function getDefaultEngineName(isUS) {
     pref += ".US";
   }
   return Services.prefs.getComplexValue(pref, nsIPLS).data;
-}
-
-/**
- * Waits for metadata being committed.
- * @return {Promise} Resolved when the metadata is committed to disk.
- */
-function promiseAfterCommit() {
-  return waitForSearchNotification("write-metadata-to-disk-complete");
 }
 
 /**
@@ -391,8 +399,6 @@ function useHttpServer() {
  *        {
  *          name: Engine name, used to wait for it to be loaded.
  *          xmlFileName: Name of the XML file in the "data" folder.
- *          srcFileName: Name of the SRC file in the "data" folder.
- *          iconFileName: Name of the icon associated to the SRC file.
  *          details: Array containing the parameters of addEngineWithDetails,
  *                   except for the engine name.  Alternative to xmlFileName.
  *        }
@@ -425,11 +431,7 @@ var addTestEngines = Task.async(function* (aItems) {
 
       if (item.xmlFileName) {
         Services.search.addEngine(gDataUrl + item.xmlFileName,
-                                  Ci.nsISearchEngine.DATA_XML, null, false);
-      } else if (item.srcFileName) {
-        Services.search.addEngine(gDataUrl + item.srcFileName,
-                                  Ci.nsISearchEngine.DATA_TEXT,
-                                  gDataUrl + item.iconFileName, false);
+                                  null, null, false);
       } else {
         Services.search.addEngineWithDetails(item.name, ...item.details);
       }

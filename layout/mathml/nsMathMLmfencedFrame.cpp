@@ -108,7 +108,7 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
 
   if (!value.IsEmpty()) {
     mOpenChar = new nsMathMLChar;
-    mOpenChar->SetData(aPresContext, value);
+    mOpenChar->SetData(value);
     ResolveMathMLCharStyle(aPresContext, mContent, mStyleContext, mOpenChar);
   }
 
@@ -122,7 +122,7 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
 
   if (!value.IsEmpty()) {
     mCloseChar = new nsMathMLChar;
-    mCloseChar->SetData(aPresContext, value);
+    mCloseChar->SetData(value);
     ResolveMathMLCharStyle(aPresContext, mContent, mStyleContext, mCloseChar);
   }
 
@@ -147,7 +147,7 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
         else {
           sepChar = value[mSeparatorsCount-1];
         }
-        mSeparatorsChar[i].SetData(aPresContext, sepChar);
+        mSeparatorsChar[i].SetData(sepChar);
         ResolveMathMLCharStyle(aPresContext, mContent, mStyleContext, &mSeparatorsChar[i]);
       }
       mSeparatorsCount = sepCount;
@@ -224,7 +224,7 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   int32_t i;
   const nsStyleFont* font = StyleFont();
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
                                         fontSizeInflation);
   nscoord axisHeight, em;
@@ -391,7 +391,7 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   }
 
   if (isRTL) {
-    childFrame = this->GetLastChild(nsIFrame::kPrincipalList);
+    childFrame = this->GetChildList(nsIFrame::kPrincipalList).LastChild();
   } else {
     childFrame = firstChild;
   }
@@ -612,7 +612,7 @@ nsMathMLmfencedFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingCon
   nsPresContext* presContext = PresContext();
   const nsStyleFont* font = StyleFont();
   float fontSizeInflation = nsLayoutUtils:: FontSizeInflationFor(this);
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
                                         fontSizeInflation);
   nscoord em;

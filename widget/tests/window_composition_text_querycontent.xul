@@ -121,6 +121,7 @@ const kIsWin = (navigator.platform.indexOf("Win") == 0);
 const kIsMac = (navigator.platform.indexOf("Mac") == 0);
 
 const kLFLen = kIsWin ? 2 : 1;
+const kLF = kIsWin ? "\r\n" : "\n";
 
 function checkQueryContentResult(aResult, aMessage)
 {
@@ -134,27 +135,33 @@ function checkQueryContentResult(aResult, aMessage)
 
 function checkContent(aExpectedText, aMessage, aID)
 {
+  if (!aID) {
+    aID = "";
+  }
   var textContent = synthesizeQueryTextContent(0, 100);
   if (!checkQueryContentResult(textContent, aMessage +
                                ": synthesizeQueryTextContent " + aID)) {
     return false;
   }
   is(textContent.text, aExpectedText,
-     aMessage + ": composition string is wrong" + aID);
+     aMessage + ": composition string is wrong " + aID);
   return textContent.text == aExpectedText;
 }
 
 function checkSelection(aExpectedOffset, aExpectedText, aMessage, aID)
 {
+  if (!aID) {
+    aID = "";
+  }
   var selectedText = synthesizeQuerySelectedText();
   if (!checkQueryContentResult(selectedText, aMessage +
                                ": synthesizeQuerySelectedText " + aID)) {
     return false;
   }
   is(selectedText.offset, aExpectedOffset,
-     aMessage + ": selection offset is wrong" + aID);
+     aMessage + ": selection offset is wrong " + aID);
   is(selectedText.text, aExpectedText,
-     aMessage + ": selected text is wrong" + aID);
+     aMessage + ": selected text is wrong " + aID);
   return selectedText.offset == aExpectedOffset &&
          selectedText.text == aExpectedText;
 }
@@ -2309,6 +2316,1178 @@ function runCharAtPointAtOutsideTest()
   }
 }
 
+function runSetSelectionEventTest()
+{
+  contenteditable.focus();
+
+  var selection = windowOfContenteditable.getSelection();
+
+  // #1
+  contenteditable.innerHTML = "abc<br>def";
+
+  synthesizeSelectionSet(0, 100);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #1 (0, 100), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #1 (0, 100), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #1 (0, 100), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node of the editor");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #1 (0, 100), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of children");
+  checkSelection(0, "abc" + kLF + "def", "runSetSelectionEventTest #1 (0, 100), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(2, 2 + kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #1 (2, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 2,
+     "runSetSelectionEventTest #1 (2, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 2");
+  is(selection.focusNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #1 (2, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #1 (2, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(2, "c" + kLF + "d", "runSetSelectionEventTest #1 (2, 2+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(1, 2);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #1 (1, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #1 (1, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #1 (1, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the first text node");
+  is(selection.focusOffset, contenteditable.firstChild.wholeText.length,
+     "runSetSelectionEventTest #1 (1, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the text node");
+  checkSelection(1, "bc", "runSetSelectionEventTest #1 (1, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #1 (3, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, contenteditable.firstChild.wholeText.length,
+     "runSetSelectionEventTest #1 (3, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the first text node");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #1 (3, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 2,
+     "runSetSelectionEventTest #1 (3, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be the index of the last text node");
+  checkSelection(3, kLF, "runSetSelectionEventTest #1 (3, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(6+kLFLen, 0);
+  is(selection.anchorNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #1 (6+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, contenteditable.lastChild.wholeText.length,
+     "runSetSelectionEventTest #1 (6+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node");
+  is(selection.focusNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #1 (6+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.anchorOffset, contenteditable.lastChild.wholeText.length,
+     "runSetSelectionEventTest #1 (6+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(6 + kLFLen, "", "runSetSelectionEventTest #1 (6+kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(100, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #1 (100, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node of the editor");
+  is(selection.anchorOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #1 (100, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of children");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #1 (100, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node of the editor");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #1 (100, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of children");
+  checkSelection(6 + kLFLen, "", "runSetSelectionEventTest #1 (100, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #2
+  contenteditable.innerHTML = "<p>a<b>b</b>c</p><p>def</p>";
+
+  synthesizeSelectionSet(kLFLen, 4+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #2 (kLFLen, 4+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #2 (kLFLen, 4+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the first <p> node");
+  is(selection.focusNode, contenteditable.lastChild.firstChild,
+     "runSetSelectionEventTest #2 (kLFLen, 4+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the second <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #2 (kLFLen, 4+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(kLFLen, "abc" + kLF + "d", "runSetSelectionEventTest #2 (kLFLen, 4+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 2);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #2 (kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #2 (kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the first <p> node");
+  is(selection.focusNode, contenteditable.firstChild.childNodes.item(1).firstChild,
+     "runSetSelectionEventTest #2 (kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the <b> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.item(1).firstChild.wholeText.length,
+     "runSetSelectionEventTest #2 (kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the text node in the <b> node");
+  checkSelection(kLFLen, "ab", "runSetSelectionEventTest #2 (kLFLen, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(1+kLFLen, 2);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #2 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #2 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #2 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node in the first <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #2 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node in the first <p> node");
+  checkSelection(1+kLFLen, "bc", "runSetSelectionEventTest #2 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(2+kLFLen, 2+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.childNodes.item(1).firstChild,
+     "runSetSelectionEventTest #2 (2+kLFLen, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node in the <b> node");
+  is(selection.anchorOffset, contenteditable.firstChild.childNodes.item(1).firstChild.wholeText.length,
+     "runSetSelectionEventTest #2 (2+kLFLen, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the text node in the <b> node");
+  is(selection.focusNode, contenteditable.lastChild.firstChild,
+     "runSetSelectionEventTest #2 (2+kLFLen, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the last <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #2 (2+kLFLen, 2+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(2+kLFLen, "c" + kLF + "d", "runSetSelectionEventTest #2 (2+kLFLen, 2+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen*2, 1);
+  is(selection.anchorNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #2 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the second <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #2 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the second <p> node");
+  is(selection.focusNode, contenteditable.lastChild.firstChild,
+     "runSetSelectionEventTest #2 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the second <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #2 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(3+kLFLen*2, "d", "runSetSelectionEventTest #2 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #2 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #2 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #2 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #2 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #2 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #2 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #2 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the first <p> node");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #2 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the first <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #2 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, kLF, "runSetSelectionEventTest #2 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(2+kLFLen, 1+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.childNodes.item(1).firstChild,
+     "runSetSelectionEventTest #2 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node of the <b> node");
+  is(selection.anchorOffset, contenteditable.firstChild.childNodes.item(1).firstChild.wholeText.length,
+     "runSetSelectionEventTest #2 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node of the first <b> node");
+  is(selection.focusNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #2 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the second <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #2 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(2+kLFLen, "c" + kLF, "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node of the first <p> node");
+  is(selection.anchorOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node of the first <p> node");
+  is(selection.focusNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the second <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(3+kLFLen, kLF, "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen, 1+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #2 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node of the first <p> node");
+  is(selection.anchorOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #2 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node of the first <p> node");
+  is(selection.focusNode, contenteditable.lastChild.firstChild,
+     "runSetSelectionEventTest #2 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node of the second <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #2 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(3+kLFLen, kLF + "d", "runSetSelectionEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  // #3
+  contenteditable.innerHTML = "<div>abc<p>def</p></div>";
+
+  synthesizeSelectionSet(1+kLFLen, 2);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #3 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the first text node");
+  is(selection.focusOffset, contenteditable.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the first text node");
+  checkSelection(1+kLFLen, "bc", "runSetSelectionEventTest #3 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(1+kLFLen, 3+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (1+kLFLen, 3+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #3 (1+kLFLen, 3+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (1+kLFLen, 3+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #3 (1+kLFLen, 3+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(1+kLFLen, "bc" + kLF + "d", "runSetSelectionEventTest #3 (1+kLFLen, 3+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen, 0);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (3+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, contenteditable.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (3+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the first text node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (3+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the first text node");
+  is(selection.focusOffset, contenteditable.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (3+kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the first text node");
+  checkSelection(3+kLFLen, "", "runSetSelectionEventTest #3 (3+kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 6+kLFLen*2);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #3 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #3 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(0, kLF + "abc" + kLF + "def", "runSetSelectionEventTest #3 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 100);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #3 (0, 100), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #3 (0, 100), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #3 (0, 100), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #3 (0, 100), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(0, kLF + "abc" + kLF + "def", "runSetSelectionEventTest #3 (0, 100), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(4+kLFLen*2, 2);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(4+kLFLen*2, "ef", "runSetSelectionEventTest #3 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(4+kLFLen*2, 100);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #3 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(4+kLFLen*2, "ef", "runSetSelectionEventTest #3 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(6+kLFLen*2, 0);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, contenteditable.firstChild.lastChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node");
+  is(selection.focusNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(6+kLFLen*2, "", "runSetSelectionEventTest #3 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(6+kLFLen*2, 1);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, contenteditable.firstChild.lastChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #3 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(6+kLFLen*2, "", "runSetSelectionEventTest #3 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #3 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #3 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the first text node");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #3 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <div> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #3 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, kLF, "runSetSelectionEventTest #3 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 1+kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #3 (0, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #3 (0, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <div> node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (0, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the first text node of the <div> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #3 (0, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(0, kLF + "a", "runSetSelectionEventTest #3 (0, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(2+kLFLen, 1+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node of the <div> node");
+  is(selection.anchorOffset, 2,
+     "runSetSelectionEventTest #3 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 2");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #3 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #3 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(2+kLFLen, "c" + kLF, "runSetSelectionEventTest #3 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node of the <div> node");
+  is(selection.anchorOffset, contenteditable.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the text node of the <div> node");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #3 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #3 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(3+kLFLen, kLF, "runSetSelectionEventTest #3 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen, 1+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #3 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node of the <div> node");
+  is(selection.anchorOffset, contenteditable.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #3 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the text node of the <div> node");
+  is(selection.focusNode, contenteditable.firstChild.lastChild.firstChild,
+     "runSetSelectionEventTest #3 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node of the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #3 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(3+kLFLen, kLF + "d", "runSetSelectionEventTest #3 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  // #4
+  contenteditable.innerHTML = "<div><p>abc</p>def</div>";
+
+  synthesizeSelectionSet(1+kLFLen*2, 2);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node in the <p> node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the text node in the <p> node");
+  checkSelection(1+kLFLen*2, "bc", "runSetSelectionEventTest #4 (1+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(1+kLFLen*2, 3);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 3), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node in the <p> node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 3), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 3), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #4 (1+kLFLen*2, 3), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(1+kLFLen*2, "bcd", "runSetSelectionEventTest #4 (1+kLFLen*2, 3), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(3+kLFLen*2, 0);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (3+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node in the <p> node");
+  is(selection.anchorOffset, contenteditable.firstChild.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #4 (3+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the text node in the <p> node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (3+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.firstChild.firstChild.wholeText.length,
+     "runSetSelectionEventTest #4 (3+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the text node in the <p> node");
+  checkSelection(3+kLFLen*2, "", "runSetSelectionEventTest #4 (3+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 6+kLFLen*2);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #4 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #4 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(0, kLF + kLF + "abcdef", "runSetSelectionEventTest #4 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 100);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #4 (0, 100), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (0, 100), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #4 (0, 100), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #4 (0, 100), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(0, kLF + kLF + "abcdef", "runSetSelectionEventTest #4 (0, 100), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(4+kLFLen*2, 2);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(4+kLFLen*2, "ef", "runSetSelectionEventTest #4 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(4+kLFLen*2, 100);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #4 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(4+kLFLen*2, "ef", "runSetSelectionEventTest #4 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(6+kLFLen*2, 0);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node");
+  is(selection.focusNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(6+kLFLen*2, "", "runSetSelectionEventTest #4 (6+kLFLen*2, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(6+kLFLen*2, 1);
+  is(selection.anchorNode, contenteditable.firstChild.lastChild,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the last text node");
+  is(selection.anchorOffset, contenteditable.firstChild.lastChild.wholeText.length,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the length of the last text node");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #4 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(6+kLFLen*2, "", "runSetSelectionEventTest #4 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #4 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <div> node");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #4 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <div> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #4 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, kLF, "runSetSelectionEventTest #4 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen*2);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <div> node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, kLF + kLF, "runSetSelectionEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 1+kLFLen*2);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #4 (0, 1+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (0, 1+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <div> node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (0, 1+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #4 (0, 1+kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(0, kLF + kLF + "a", "runSetSelectionEventTest #4 (0, 1+kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 0);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #4 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <div> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #4 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the <div> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #4 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #4 (kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <div> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <p> node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(kLFLen, kLF, "runSetSelectionEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 1+kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #4 (kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <div> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #4 (kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <p> node");
+  is(selection.focusNode, contenteditable.firstChild.firstChild.firstChild,
+     "runSetSelectionEventTest #4 (kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node in the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #4 (kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(kLFLen, kLF +"a", "runSetSelectionEventTest #4 (kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  // #5
+  contenteditable.innerHTML = "<br>";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #5 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #5 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #5 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #5 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #5 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #5 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #5 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #5 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #5 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(0, kLF, "runSetSelectionEventTest #5 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #5 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #5 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of the root's children");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #5 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #5 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #5 (kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 1);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #5 (kLFLen, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #5 (kLFLen, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of the root's children");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #5 (kLFLen, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #5 (kLFLen, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #5 (kLFLen, 1), \"" + contenteditable.innerHTML + "\"");
+
+  // #6
+  contenteditable.innerHTML = "<p><br></p>";
+
+  synthesizeSelectionSet(kLFLen, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #6 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #6 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the <p>'s children");
+  checkSelection(kLFLen, kLF, "runSetSelectionEventTest #6 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen*2, 0);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #6 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of the <p>'s children");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #6 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the <p>'s children");
+  checkSelection(kLFLen*2, "", "runSetSelectionEventTest #6 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen*2, 1);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #6 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of the root's children");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #6 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #6 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(kLFLen*2, "", "runSetSelectionEventTest #6 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #6 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #6 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #6 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, kLF, "runSetSelectionEventTest #6 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen*2);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #6 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #6 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #6 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the <p>'s children");
+  checkSelection(0, kLF + kLF, "runSetSelectionEventTest #6 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 0);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #6 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #6 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #6 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #6 (kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #7
+  contenteditable.innerHTML = "<br><br>";
+
+  synthesizeSelectionSet(0, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #7 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #7 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #7 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #7 (0, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(0, kLF, "runSetSelectionEventTest #7 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, kLFLen * 2);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #7 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #7 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #7 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #7 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(0, kLF + kLF, "runSetSelectionEventTest #7 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #7 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #7 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #7 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #7 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #7 (kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, kLFLen);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #7 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #7 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #7 (kLFLen, kLFLen) selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #7 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(kLFLen, kLF, "runSetSelectionEventTest #7 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen * 2, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #7 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #7 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of the root's children");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #7 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #7 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(kLFLen * 2, "", "runSetSelectionEventTest #7 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #8
+  contenteditable.innerHTML = "<p><br><br></p>";
+
+  synthesizeSelectionSet(kLFLen, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(kLFLen, kLF, "runSetSelectionEventTest #7 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, kLFLen * 2);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #8 (kLFLen, kLFLen*2), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the <p>'s children");
+  checkSelection(kLFLen, kLF + kLF, "runSetSelectionEventTest #8 (kLFLen, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen*2, 0);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #8 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #8 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 1");
+  checkSelection(kLFLen*2, "", "runSetSelectionEventTest #8 (kLFLen*2, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen*2, kLFLen);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen*2, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #8 (kLFLen*2, kLFLen), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 1");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen*2, kLFLen) selection focus node should be the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #8 (kLFLen*2, kLFLen), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the <p>'s children");
+  checkSelection(kLFLen*2, kLF, "runSetSelectionEventTest #8 (kLFLen*2, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen*3, 0);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen*3, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the <p> node");
+  is(selection.anchorOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #8 (kLFLen*3, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the count of the <p>'s children");
+  is(selection.focusNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #8 (kLFLen*3, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, contenteditable.firstChild.childNodes.length,
+     "runSetSelectionEventTest #8 (kLFLen*3, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the <p>'s children");
+  checkSelection(kLFLen*3, "", "runSetSelectionEventTest #8 (kLFLen*3, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #9 (ContentEventHandler cannot distinguish if <p> can have children, so, the result is same as case #5, "<br>")
+  contenteditable.innerHTML = "<p></p>";
+
+  synthesizeSelectionSet(kLFLen, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <p> node + 1");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the <p> node");
+  is(selection.focusOffset, 1,
+     "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the index of the <p> node + 1");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(kLFLen, 1);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 1,
+     "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be the index of the <p> node + 1");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #9 (kLFLen, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #9 (kLFLen, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(kLFLen, "", "runSetSelectionEventTest #9 (kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #10
+  contenteditable.innerHTML = "";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #10 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #10 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #10 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #10 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #10 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 1);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #10 (0, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #10 (0, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #10 (0, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #10 (0, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #10 (0, 1), \"" + contenteditable.innerHTML + "\"");
+
+  // #11
+  contenteditable.innerHTML = "<span></span><i><u></u></i>";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #11 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #11 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #11 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #11 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #11 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  synthesizeSelectionSet(0, 1);
+  is(selection.anchorNode, contenteditable,
+     "runSetSelectionEventTest #11 (0, 1), \"" + contenteditable.innerHTML + "\": selection anchor node should be the root node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #11 (0, 1), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable,
+     "runSetSelectionEventTest #11 (0, 1), \"" + contenteditable.innerHTML + "\": selection focus node should be the root node");
+  is(selection.focusOffset, contenteditable.childNodes.length,
+     "runSetSelectionEventTest #11 (0, 1), \"" + contenteditable.innerHTML + "\": selection focus offset should be the count of the root's children");
+  checkSelection(0, "", "runSetSelectionEventTest #11 (0, 1), \"" + contenteditable.innerHTML + "\"");
+
+  // #12
+  contenteditable.innerHTML = "<span>abc</span><i><u></u></i>";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #12 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #12 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.firstChild.firstChild,
+     "runSetSelectionEventTest #12 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #12 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #12 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #13
+  contenteditable.innerHTML = "<span></span><i>abc<u></u></i>";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable.childNodes.item(1).firstChild,
+     "runSetSelectionEventTest #13 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #13 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.childNodes.item(1).firstChild,
+     "runSetSelectionEventTest #13 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #13 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #13 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #14
+  contenteditable.innerHTML = "<span></span><i><u>abc</u></i>";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable.childNodes.item(1).firstChild.firstChild,
+     "runSetSelectionEventTest #14 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #14 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.childNodes.item(1).firstChild.firstChild,
+     "runSetSelectionEventTest #14 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #14 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #14 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #15
+  contenteditable.innerHTML = "<span></span><i><u></u>abc</i>";
+
+  synthesizeSelectionSet(0, 0);
+  is(selection.anchorNode, contenteditable.childNodes.item(1).lastChild,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the text node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.childNodes.item(1).lastChild,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the text node");
+  is(selection.focusOffset, 0,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be 0");
+  checkSelection(0, "", "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #16
+  contenteditable.innerHTML = "a<blink>b</blink>c";
+  synthesizeSelectionSet(0, 3);
+  is(selection.anchorNode, contenteditable.firstChild,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor node should be the first text node");
+  is(selection.anchorOffset, 0,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection anchor offset should be 0");
+  is(selection.focusNode, contenteditable.lastChild,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus node should be the last text node");
+  is(selection.focusOffset, contenteditable.lastChild.wholeText.length,
+     "runSetSelectionEventTest #15 (0, 0), \"" + contenteditable.innerHTML + "\": selection focus offset should be the length of the last text node");
+  checkSelection(0, "abc", "runSetSelectionEventTest #16 (0, 3), \"" + contenteditable.innerHTML + "\"");
+}
+
+function runQueryTextContentEventTest()
+{
+  contenteditable.focus();
+
+  var result;
+
+  // #1
+  contenteditable.innerHTML = "abc<br>def";
+
+  result = synthesizeQueryTextContent(0, 6 + kLFLen);
+  is(result.text, "abc" + kLF + "def", "runQueryTextContentEventTest #1 (0, 6+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 100);
+  is(result.text, "abc" + kLF + "def", "runQueryTextContentEventTest #1 (0, 100), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(2, 2 + kLFLen);
+  is(result.text, "c" + kLF + "d", "runQueryTextContentEventTest #1 (2, 2+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(1, 2);
+  is(result.text, "bc", "runQueryTextContentEventTest #1 (1, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #1 (3, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(6 + kLFLen, 1);
+  is(result.text, "", "runQueryTextContentEventTest #1 (6 + kLFLen, 0), \"" + contenteditable.innerHTML + "\"");
+
+  // #2
+  contenteditable.innerHTML = "<p>a<b>b</b>c</p><p>def</p>";
+
+  result = synthesizeQueryTextContent(kLFLen, 4+kLFLen);
+  is(result.text, "abc" + kLF + "d", "runQueryTextContentEventTest #2 (kLFLen, 4+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen, 2);
+  is(result.text, "ab", "runQueryTextContentEventTest #2 (kLFLen, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(1+kLFLen, 2);
+  is(result.text, "bc", "runQueryTextContentEventTest #2 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(2+kLFLen, 2+kLFLen);
+  is(result.text, "c" + kLF + "d", "runQueryTextContentEventTest #2 (2+kLFLen, 2+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen*2, 1);
+  is(result.text, "d", "runQueryTextContentEventTest #2 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #2 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(2+kLFLen, 1+kLFLen);
+  is(result.text, "c" + kLF, "runQueryTextContentEventTest #2 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #2 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen, 1+kLFLen);
+  is(result.text, kLF + "d", "runQueryTextContentEventTest #2 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  // #3
+  contenteditable.innerHTML = "<div>abc<p>def</p></div>";
+
+  result = synthesizeQueryTextContent(1+kLFLen, 2);
+  is(result.text, "bc", "runQueryTextContentEventTest #3 (1+kLFLen, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(1+kLFLen, 3+kLFLen);
+  is(result.text, "bc" + kLF + "d", "runQueryTextContentEventTest #3 (1+kLFLen, 3+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen*2, 1);
+  is(result.text, "d", "runQueryTextContentEventTest #3 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 6+kLFLen*2);
+  is(result.text, kLF + "abc" + kLF + "def", "runQueryTextContentEventTest #3 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 100);
+  is(result.text, kLF + "abc" + kLF + "def", "runQueryTextContentEventTest #3 (0, 100), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(4+kLFLen*2, 2);
+  is(result.text, "ef", "runQueryTextContentEventTest #3 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(4+kLFLen*2, 100);
+  is(result.text, "ef", "runQueryTextContentEventTest #3 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(6+kLFLen*2, 1);
+  is(result.text, "", "runQueryTextContentEventTest #3 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #3 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 1+kLFLen);
+  is(result.text, kLF + "a", "runQueryTextContentEventTest #3 (0, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(2+kLFLen, 1+kLFLen);
+  is(result.text, "c" + kLF, "runQueryTextContentEventTest #3 (2+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #3 (3+kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen, 1+kLFLen);
+  is(result.text, kLF + "d", "runQueryTextContentEventTest #3 (3+kLFLen, 1+kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  // #4
+  contenteditable.innerHTML = "<div><p>abc</p>def</div>";
+
+  result = synthesizeQueryTextContent(1+kLFLen*2, 2);
+  is(result.text, "bc", "runQueryTextContentEventTest #4 (1+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(1+kLFLen*2, 3);
+  is(result.text, "bcd", "runQueryTextContentEventTest #4 (1+kLFLen*2, 3), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(3+kLFLen*2, 1);
+  is(result.text, "d", "runQueryTextContentEventTest #4 (3+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 6+kLFLen*2);
+  is(result.text, kLF + kLF + "abcdef", "runQueryTextContentEventTest #4 (0, 6+kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 100);
+  is(result.text, kLF + kLF + "abcdef", "runQueryTextContentEventTest #4 (0, 100), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(4+kLFLen*2, 2);
+  is(result.text, "ef", "runQueryTextContentEventTest #4 (4+kLFLen*2, 2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(4+kLFLen*2, 100);
+  is(result.text, "ef", "runQueryTextContentEventTest #4 (4+kLFLen*2, 100), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(6+kLFLen*2, 1);
+  is(result.text, "", "runQueryTextContentEventTest #4 (6+kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #4 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen*2);
+  is(result.text, kLF + kLF, "runQueryTextContentEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, 1+kLFLen*2);
+  is(result.text, kLF + kLF + "a", "runQueryTextContentEventTest #4 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen, 1+kLFLen);
+  is(result.text, kLF + "a", "runQueryTextContentEventTest #4 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  // #5
+  contenteditable.innerHTML = "<br>";
+
+  result = synthesizeQueryTextContent(0, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #5 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen, 1);
+  is(result.text, "", "runQueryTextContentEventTest #5 (kLFLen, 1), \"" + contenteditable.innerHTML + "\"");
+
+  // #6
+  contenteditable.innerHTML = "<p><br></p>";
+
+  result = synthesizeQueryTextContent(kLFLen, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #6 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen*2, 1);
+  is(result.text, "", "runQueryTextContentEventTest #5 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #6 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen*2);
+  is(result.text, kLF + kLF, "runQueryTextContentEventTest #6 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  // #7
+  contenteditable.innerHTML = "<br><br>";
+
+  result = synthesizeQueryTextContent(0, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #7 (0, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(0, kLFLen * 2);
+  is(result.text, kLF + kLF, "runQueryTextContentEventTest #7 (0, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #7 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen * 2, 1);
+  is(result.text, "", "runQueryTextContentEventTest #7 (kLFLen*2, 1), \"" + contenteditable.innerHTML + "\"");
+
+  // #8
+  contenteditable.innerHTML = "<p><br><br></p>";
+
+  result = synthesizeQueryTextContent(kLFLen, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #8 (kLFLen, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen, kLFLen * 2);
+  is(result.text, kLF + kLF, "runQueryTextContentEventTest #8 (kLFLen, kLFLen*2), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen*2, kLFLen);
+  is(result.text, kLF, "runQueryTextContentEventTest #8 (kLFLen*2, kLFLen), \"" + contenteditable.innerHTML + "\"");
+
+  result = synthesizeQueryTextContent(kLFLen*3, 1);
+  is(result.text, "", "runQueryTextContentEventTest #8 (kLFLen*3, 1), \"" + contenteditable.innerHTML + "\"");
+
+  // #16
+  contenteditable.innerHTML = "a<blink>b</blink>c";
+
+  result = synthesizeQueryTextContent(0, 3);
+  is(result.text, "abc", "runQueryTextContentEventTest #16 (0, 3), \"" + contenteditable.innerHTML + "\"");
+}
+
+function runCSSTransformTest()
+{
+  textarea.focus();
+  textarea.value = "some text";
+  textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+  var editorRect = synthesizeQueryEditorRect();
+  if (!checkQueryContentResult(editorRect,
+        "runCSSTransformTest: editorRect")) {
+    return;
+  }
+  var firstCharRect = synthesizeQueryTextRect(0, 1);
+  if (!checkQueryContentResult(firstCharRect,
+        "runCSSTransformTest: firstCharRect")) {
+    return;
+  }
+  var lastCharRect = synthesizeQueryTextRect(textarea.value.length - 1, textarea.value.length);
+  if (!checkQueryContentResult(lastCharRect,
+        "runCSSTransformTest: lastCharRect")) {
+    return;
+  }
+  var caretRect = synthesizeQueryCaretRect(textarea.selectionStart);
+  if (!checkQueryContentResult(caretRect,
+        "runCSSTransformTest: caretRect")) {
+    return;
+  }
+  var caretRectBeforeFirstChar = synthesizeQueryCaretRect(0);
+  if (!checkQueryContentResult(caretRectBeforeFirstChar,
+        "runCSSTransformTest: caretRectBeforeFirstChar")) {
+    return;
+  }
+
+  try {
+    textarea.style.transform = "translate(10px, 15px)";
+    function movedRect(aRect, aX, aY)
+    {
+      return { left: aRect.left + aX, top: aRect.top + aY, width: aRect.width, height: aRect.height }
+    }
+
+    var editorRectTranslated = synthesizeQueryEditorRect();
+    if (!checkQueryContentResult(editorRectTranslated,
+          "runCSSTransformTest: editorRectTranslated") ||
+        !checkRect(editorRectTranslated, movedRect(editorRect, 10, 15),
+          "runCSSTransformTest: editorRectTranslated")) {
+      return;
+    }
+    var firstCharRectTranslated = synthesizeQueryTextRect(0, 1);
+    if (!checkQueryContentResult(firstCharRectTranslated,
+          "runCSSTransformTest: firstCharRectTranslated") ||
+        !checkRect(firstCharRectTranslated, movedRect(firstCharRect, 10, 15),
+          "runCSSTransformTest: firstCharRectTranslated")) {
+      return;
+    }
+    var lastCharRectTranslated = synthesizeQueryTextRect(textarea.value.length - 1, textarea.value.length);
+    if (!checkQueryContentResult(lastCharRectTranslated,
+          "runCSSTransformTest: lastCharRectTranslated") ||
+        !checkRect(lastCharRectTranslated, movedRect(lastCharRect, 10, 15),
+          "runCSSTransformTest: lastCharRectTranslated")) {
+      return;
+    }
+    var caretRectTranslated = synthesizeQueryCaretRect(textarea.selectionStart);
+    if (!checkQueryContentResult(caretRectTranslated,
+          "runCSSTransformTest: caretRectTranslated") ||
+        !checkRect(caretRectTranslated, movedRect(caretRect, 10, 15),
+          "runCSSTransformTest: caretRectTranslated")) {
+      return;
+    }
+    var caretRectBeforeFirstCharTranslated = synthesizeQueryCaretRect(0);
+    if (!checkQueryContentResult(caretRectBeforeFirstCharTranslated,
+          "runCSSTransformTest: caretRectBeforeFirstCharTranslated") ||
+        !checkRect(caretRectBeforeFirstCharTranslated, movedRect(caretRectBeforeFirstChar, 10, 15),
+          "runCSSTransformTest: caretRectBeforeFirstCharTranslated")) {
+      return;
+    }
+
+    // XXX It's too difficult to check the result with scale and rotate...
+  } finally {
+    textarea.style.transform = "";
+  }
+}
+
 function runBug722639Test()
 {
   textarea.focus();
@@ -2923,6 +4102,54 @@ function runForceCommitTest()
      "runForceCommitTest: the input still has composition #14");
   is(input.value, "\u306E appended value",
      "runForceCommitTest: the input should have both composed text and appended text #14");
+
+  input.focus();
+  input.value = "abcd";
+
+  synthesizeCompositionChange(
+    { "composition":
+      { "string": "\u306E",
+        "clauses":
+        [
+          { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
+        ]
+      },
+      "caret": { "start": 1, "length": 0 }
+    });
+
+  events = [];
+  input.value = "abcd\u306E";
+
+  is(events.length, 0,
+     "runForceCommitTest: setting same value to input with composition shouldn't cause any events #15");
+  is(input.value, "abcd\u306E",
+     "runForceCommitTest: the input has unexpected value #15");
+
+  input.blur(); // commit composition
+
+  textarea.focus();
+  textarea.value = "abcd";
+
+  synthesizeCompositionChange(
+    { "composition":
+      { "string": "\u306E",
+        "clauses":
+        [
+          { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
+        ]
+      },
+      "caret": { "start": 1, "length": 0 }
+    });
+
+  events = [];
+  textarea.value = "abcd\u306E";
+
+  is(events.length, 0,
+     "runForceCommitTest: setting same value to textarea with composition shouldn't cause any events #16");
+  is(textarea.value, "abcd\u306E",
+     "runForceCommitTest: the input has unexpected value #16");
+
+  textarea.blur(); // commit composition
 
   window.removeEventListener("compositionstart", eventHandler, true);
   window.removeEventListener("compositionupdate", eventHandler, true);
@@ -4522,6 +5749,9 @@ function runTest()
   runCompositionEventTest();
   runCharAtPointTest(textarea, "textarea in the document");
   runCharAtPointAtOutsideTest();
+  runSetSelectionEventTest();
+  runQueryTextContentEventTest();
+  runCSSTransformTest();
   runBug722639Test();
   runForceCommitTest();
   runNestedSettingValue();

@@ -270,7 +270,7 @@ NS_IMETHODIMP nsDeviceContextSpecWin::GetSurfaceForPrinter(gfxASurface **surface
 {
   NS_ASSERTION(mDevMode, "DevMode can't be NULL here");
 
-  nsRefPtr<gfxASurface> newSurface;
+  RefPtr<gfxASurface> newSurface;
 
   int16_t outputFormat = 0;
   if (mPrintSettings) {
@@ -644,7 +644,7 @@ nsPrinterEnumeratorWin::InitPrintSettingsFromPrinter(const char16_t *aPrinterNam
     return NS_OK;
   }
 
-  nsRefPtr<nsDeviceContextSpecWin> devSpecWin = new nsDeviceContextSpecWin();
+  RefPtr<nsDeviceContextSpecWin> devSpecWin = new nsDeviceContextSpecWin();
   if (!devSpecWin) return NS_ERROR_OUT_OF_MEMORY;
 
   if (NS_FAILED(GlobalPrinters::GetInstance()->EnumeratePrinterList())) {
@@ -687,10 +687,10 @@ nsPrinterEnumeratorWin::GetPrinterNameList(nsIStringEnumerator **aPrinterNameLis
   if (!printers)
     return NS_ERROR_OUT_OF_MEMORY;
 
-  uint32_t printerInx = 0;
-  while( printerInx < numPrinters ) {
-    LPWSTR name = GlobalPrinters::GetInstance()->GetItemFromList(printerInx++);
-    printers->AppendElement(nsDependentString(name));
+  nsString* names = printers->AppendElements(numPrinters);
+  for (uint32_t printerInx = 0; printerInx < numPrinters; ++printerInx) {
+    LPWSTR name = GlobalPrinters::GetInstance()->GetItemFromList(printerInx);
+    names[printerInx].Assign(name);
   }
 
   return NS_NewAdoptingStringEnumerator(aPrinterNameList, printers);

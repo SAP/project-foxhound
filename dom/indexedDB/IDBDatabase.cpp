@@ -121,7 +121,7 @@ private:
     mDatabase->AssertIsOnOwningThread();
 
     if (aWhy != Deletion) {
-      nsRefPtr<IDBDatabase> database = mDatabase;
+      RefPtr<IDBDatabase> database = mDatabase;
       database->NoteFinishedFileActor(this);
     }
 
@@ -250,7 +250,7 @@ IDBDatabase::Create(IDBOpenDBRequest* aRequest,
   MOZ_ASSERT(aActor);
   MOZ_ASSERT(aSpec);
 
-  nsRefPtr<IDBDatabase> db =
+  RefPtr<IDBDatabase> db =
     new IDBDatabase(aRequest, aFactory, aActor, aSpec);
 
   db->SetScriptOwner(aRequest->GetScriptOwner());
@@ -261,7 +261,7 @@ IDBDatabase::Create(IDBOpenDBRequest* aRequest,
 
       uint64_t windowId = window->WindowID();
 
-      nsRefPtr<Observer> observer = new Observer(db, windowId);
+      RefPtr<Observer> observer = new Observer(db, windowId);
 
       nsCOMPtr<nsIObserverService> obsSvc = GetObserverService();
       MOZ_ASSERT(obsSvc);
@@ -397,7 +397,7 @@ IDBDatabase::RefreshSpec(bool aMayDelete)
   AssertIsOnOwningThread();
 
   for (auto iter = mTransactions.Iter(); !iter.Done(); iter.Next()) {
-    nsRefPtr<IDBTransaction> transaction = iter.Get()->GetKey();
+    RefPtr<IDBTransaction> transaction = iter.Get()->GetKey();
     MOZ_ASSERT(transaction);
     transaction->AssertIsOnOwningThread();
     transaction->RefreshSpec(aMayDelete);
@@ -436,7 +436,7 @@ IDBDatabase::ObjectStoreNames() const
 
   const nsTArray<ObjectStoreSpec>& objectStores = mSpec->objectStores();
 
-  nsRefPtr<DOMStringList> list = new DOMStringList();
+  RefPtr<DOMStringList> list = new DOMStringList();
 
   if (!objectStores.IsEmpty()) {
     nsTArray<nsString>& listNames = list->StringArray();
@@ -519,7 +519,7 @@ IDBDatabase::CreateObjectStore(
     RefreshSpec(/* aMayDelete */ false);
   }
 
-  nsRefPtr<IDBObjectStore> objectStore =
+  RefPtr<IDBObjectStore> objectStore =
     transaction->CreateObjectStore(*newSpec);
   MOZ_ASSERT(objectStore);
 
@@ -638,7 +638,7 @@ IDBDatabase::Transaction(const StringOrStringSequence& aStoreNames,
     return nullptr;
   }
 
-  nsRefPtr<IDBTransaction> transaction;
+  RefPtr<IDBTransaction> transaction;
   aRv = Transaction(aStoreNames, aMode, getter_AddRefs(transaction));
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -739,7 +739,7 @@ IDBDatabase::Transaction(const StringOrStringSequence& aStoreNames,
       MOZ_CRASH("Unknown mode!");
   }
 
-  nsRefPtr<IDBTransaction> transaction =
+  RefPtr<IDBTransaction> transaction =
     IDBTransaction::Create(this, sortedStoreNames, mode);
   if (NS_WARN_IF(!transaction)) {
     IDB_REPORT_INTERNAL_ERR();
@@ -802,7 +802,7 @@ IDBDatabase::CreateMutableFile(const nsAString& aName,
 
   CreateFileParams params(nsString(aName), type);
 
-  nsRefPtr<IDBRequest> request = IDBRequest::Create(this, nullptr);
+  RefPtr<IDBRequest> request = IDBRequest::Create(this, nullptr);
   MOZ_ASSERT(request);
 
   BackgroundDatabaseRequestChild* actor =
@@ -850,7 +850,7 @@ IDBDatabase::AbortTransactions(bool aShouldWarn)
 
   class MOZ_STACK_CLASS Helper final
   {
-    typedef nsAutoTArray<nsRefPtr<IDBTransaction>, 20> StrongTransactionArray;
+    typedef nsAutoTArray<RefPtr<IDBTransaction>, 20> StrongTransactionArray;
     typedef nsAutoTArray<IDBTransaction*, 20> WeakTransactionArray;
 
   public:
@@ -896,7 +896,7 @@ IDBDatabase::AbortTransactions(bool aShouldWarn)
       // additional strong references here.
       WeakTransactionArray transactionsThatNeedWarning;
 
-      for (nsRefPtr<IDBTransaction>& transaction : transactionsToAbort) {
+      for (RefPtr<IDBTransaction>& transaction : transactionsToAbort) {
         MOZ_ASSERT(transaction);
         MOZ_ASSERT(!transaction->IsDone());
 
@@ -1025,27 +1025,15 @@ IDBDatabase::NoteFinishedFileActor(PBackgroundIDBDatabaseFileChild* aFileActor)
   AssertIsOnOwningThread();
   MOZ_ASSERT(aFileActor);
 
-  class MOZ_STACK_CLASS Helper final
-  {
-  public:
-    static PLDHashOperator
-    Remove(nsISupports* aKey,
-           PBackgroundIDBDatabaseFileChild*& aValue,
-           void* aClosure)
-    {
-      MOZ_ASSERT(aKey);
-      MOZ_ASSERT(aValue);
-      MOZ_ASSERT(aClosure);
+  for (auto iter = mFileActors.Iter(); !iter.Done(); iter.Next()) {
+    MOZ_ASSERT(iter.Key());
+    PBackgroundIDBDatabaseFileChild* actor = iter.Data();
+    MOZ_ASSERT(actor);
 
-      if (aValue == static_cast<PBackgroundIDBDatabaseFileChild*>(aClosure)) {
-        return PL_DHASH_REMOVE;
-      }
-
-      return PL_DHASH_NEXT;
+    if (actor == aFileActor) {
+      iter.Remove();
     }
-  };
-
-  mFileActors.Enumerate(&Helper::Remove, aFileActor);
+  }
 }
 
 void
@@ -1057,7 +1045,7 @@ IDBDatabase::NoteReceivedBlob(Blob* aBlob)
 
 #ifdef DEBUG
   {
-    nsRefPtr<BlobImpl> blobImpl = aBlob->Impl();
+    RefPtr<BlobImpl> blobImpl = aBlob->Impl();
     MOZ_ASSERT(blobImpl);
 
     nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryObject(blobImpl);
@@ -1163,23 +1151,16 @@ IDBDatabase::ExpireFileActors(bool aExpireAll)
 {
   AssertIsOnOwningThread();
 
-  class MOZ_STACK_CLASS Helper final
-  {
-  public:
-    static PLDHashOperator
-    MaybeExpireFileActors(nsISupports* aKey,
-                          PBackgroundIDBDatabaseFileChild*& aValue,
-                          void* aClosure)
-    {
-      MOZ_ASSERT(aKey);
-      MOZ_ASSERT(aValue);
-      MOZ_ASSERT(aClosure);
+  if (mBackgroundActor && mFileActors.Count()) {
+    for (auto iter = mFileActors.Iter(); !iter.Done(); iter.Next()) {
+      nsISupports* key = iter.Key();
+      PBackgroundIDBDatabaseFileChild* actor = iter.Data();
+      MOZ_ASSERT(key);
+      MOZ_ASSERT(actor);
 
-      const bool expiringAll = *static_cast<bool*>(aClosure);
-
-      bool shouldExpire = expiringAll;
+      bool shouldExpire = aExpireAll;
       if (!shouldExpire) {
-        nsCOMPtr<nsIWeakReference> weakRef = do_QueryInterface(aKey);
+        nsCOMPtr<nsIWeakReference> weakRef = do_QueryInterface(key);
         MOZ_ASSERT(weakRef);
 
         nsCOMPtr<nsISupports> referent = do_QueryReferent(weakRef);
@@ -1187,19 +1168,13 @@ IDBDatabase::ExpireFileActors(bool aExpireAll)
       }
 
       if (shouldExpire) {
-        PBackgroundIDBDatabaseFileChild::Send__delete__(aValue);
+        PBackgroundIDBDatabaseFileChild::Send__delete__(actor);
 
-        if (!expiringAll) {
-          return PL_DHASH_REMOVE;
+        if (!aExpireAll) {
+          iter.Remove();
         }
       }
-
-      return PL_DHASH_NEXT;
     }
-  };
-
-  if (mBackgroundActor && mFileActors.Count()) {
-    mFileActors.Enumerate(&Helper::MaybeExpireFileActors, &aExpireAll);
     if (aExpireAll) {
       mFileActors.Clear();
     }
@@ -1296,7 +1271,7 @@ IDBDatabase::LogWarning(const char* aMessageName,
                                    mFactory->IsChrome(),
                                    mFactory->InnerWindowID());
   } else {
-    nsRefPtr<LogWarningRunnable> runnable =
+    RefPtr<LogWarningRunnable> runnable =
       new LogWarningRunnable(aMessageName,
                              aFilename,
                              aLineNumber,
@@ -1486,7 +1461,7 @@ Observer::Observe(nsISupports* aSubject,
       MOZ_ALWAYS_TRUE(NS_SUCCEEDED(supportsInt->GetData(&windowId)));
 
       if (windowId == mWindowId) {
-        nsRefPtr<IDBDatabase> database = mWeakDatabase;
+        RefPtr<IDBDatabase> database = mWeakDatabase;
         mWeakDatabase = nullptr;
 
         database->InvalidateInternal();
@@ -1499,7 +1474,7 @@ Observer::Observe(nsISupports* aSubject,
   if (!strcmp(aTopic, kCycleCollectionObserverTopic) ||
       !strcmp(aTopic, kMemoryPressureObserverTopic)) {
     if (mWeakDatabase) {
-      nsRefPtr<IDBDatabase> database = mWeakDatabase;
+      RefPtr<IDBDatabase> database = mWeakDatabase;
 
       database->ExpireFileActors(/* aExpireAll */ false);
     }

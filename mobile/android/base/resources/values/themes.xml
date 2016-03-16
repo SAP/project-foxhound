@@ -9,9 +9,16 @@
         Base application theme. This could be overridden by GeckoBaseTheme
         in other res/values-XXX/themes.xml.
     -->
-    <style name="GeckoBase" parent="@android:style/Theme.Light">
-        <item name="android:windowNoTitle">true</item>
+    <style name="GeckoBase" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="windowNoTitle">true</item>
         <item name="android:windowContentOverlay">@null</item>
+
+        <!-- Gingerbread "More" menu background color; AppCompat sets this to
+             transparent by default: http://stackoverflow.com/a/31777488.
+             This color is set anecdotally to make all text colors, which change
+             by device, visible. Standard colors are #8D8D8D & #C8C8C8 (disabled)
+             and #000000 has also been seen. -->
+        <item name="android:panelBackground">@color/text_and_tabs_tray_grey</item>
     </style>
 
     <style name="GeckoDialogBase" parent="@android:style/Theme.Dialog">
@@ -21,8 +28,9 @@
 
     <style name="GeckoTitleDialogBase" parent="@android:style/Theme.Dialog" />
 
-    <style name="GeckoPreferencesBase" parent="GeckoBase">
+    <style name="GeckoPreferencesBase" parent="@android:style/Theme.Light">
         <item name="android:windowNoTitle">false</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 
     <!--
@@ -63,6 +71,8 @@
         <item name="android:textAppearanceLargeInverse">@style/TextAppearance.Large.Inverse</item>
         <item name="android:textAppearanceMediumInverse">@style/TextAppearance.Medium.Inverse</item>
         <item name="android:textAppearanceSmallInverse">@style/TextAppearance.Small.Inverse</item>
+
+        <item name="colorAccent">@color/action_orange</item>
     </style>
 
     <style name="Gecko.Dialog" parent="GeckoDialogBase"/>
@@ -101,6 +111,8 @@
 
     <style name="Gecko.Preferences" parent="GeckoPreferencesBase">
         <item name="floatingHintEditTextStyle">@style/FloatingHintEditText</item>
+        <!-- This fixed bug 1233412 (Crash in GeckoPrefs due to missing colorAccent in JB) -->
+        <item name="colorAccent">@color/action_orange</item>
     </style>
 
     <!-- Make an activity appear like an overlay. -->

@@ -19,8 +19,6 @@
 #include <mmsystem.h>
 #endif
 
-extern PRThread *gSocketThread;
-
 namespace mozilla {
 namespace net {
 
@@ -90,7 +88,6 @@ EventTokenBucket::EventTokenBucket(uint32_t eventsPerSecond,
   , mFineGrainResetTimerArmed(false)
 #endif
 {
-  MOZ_COUNT_CTOR(EventTokenBucket);
   mLastUpdate = TimeStamp::Now();
 
   MOZ_ASSERT(NS_IsMainThread());
@@ -112,24 +109,33 @@ EventTokenBucket::~EventTokenBucket()
   SOCKET_LOG(("EventTokenBucket::dtor %p events=%d\n",
               this, mEvents.GetSize()));
 
-  MOZ_COUNT_DTOR(EventTokenBucket);
-  if (mTimer && mTimerArmed)
-    mTimer->Cancel();
-
-#ifdef XP_WIN
-  NormalTimers();
-  if (mFineGrainResetTimerArmed) {
-    mFineGrainResetTimerArmed = false;
-    mFineGrainResetTimer->Cancel();
-  }
-#endif
+  CleanupTimers();
 
   // Complete any queued events to prevent hangs
   while (mEvents.GetSize()) {
-    nsRefPtr<TokenBucketCancelable> cancelable = 
+    RefPtr<TokenBucketCancelable> cancelable =
       dont_AddRef(static_cast<TokenBucketCancelable *>(mEvents.PopFront()));
     cancelable->Fire();
   }
+}
+
+void
+EventTokenBucket::CleanupTimers()
+{
+  if (mTimer && mTimerArmed) {
+    mTimer->Cancel();
+  }
+  mTimer = nullptr;
+  mTimerArmed = false;
+
+#ifdef XP_WIN
+  NormalTimers();
+  if (mFineGrainResetTimer && mFineGrainResetTimerArmed) {
+    mFineGrainResetTimer->Cancel();
+  }
+  mFineGrainResetTimer = nullptr;
+  mFineGrainResetTimerArmed = false;
+#endif
 }
 
 void
@@ -209,6 +215,22 @@ EventTokenBucket::UnPause()
   UpdateTimer();
 }
 
+void
+EventTokenBucket::Stop()
+{
+  MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
+  SOCKET_LOG(("EventTokenBucket::Stop %p armed=%d\n", this, mTimerArmed));
+  mStopped = true;
+  CleanupTimers();
+
+  // Complete any queued events to prevent hangs
+  while (mEvents.GetSize()) {
+    RefPtr<TokenBucketCancelable> cancelable =
+      dont_AddRef(static_cast<TokenBucketCancelable *>(mEvents.PopFront()));
+    cancelable->Fire();
+  }
+}
+
 nsresult
 EventTokenBucket::SubmitEvent(ATokenBucketEvent *event, nsICancelable **cancelable)
 {
@@ -220,7 +242,7 @@ EventTokenBucket::SubmitEvent(ATokenBucketEvent *event, nsICancelable **cancelab
 
   UpdateCredits();
 
-  nsRefPtr<TokenBucketCancelable> cancelEvent = new TokenBucketCancelable(event);
+  RefPtr<TokenBucketCancelable> cancelEvent = new TokenBucketCancelable(event);
   // When this function exits the cancelEvent needs 2 references, one for the
   // mEvents queue and one for the caller of SubmitEvent()
 
@@ -259,7 +281,7 @@ EventTokenBucket::DispatchEvents()
     return;
 
   while (mEvents.GetSize() && mUnitCost <= mCredit) {
-    nsRefPtr<TokenBucketCancelable> cancelable = 
+    RefPtr<TokenBucketCancelable> cancelable = 
       dont_AddRef(static_cast<TokenBucketCancelable *>(mEvents.PopFront()));
     if (cancelable->mEvent) {
       SOCKET_LOG(("EventTokenBucket::DispachEvents [%p] "

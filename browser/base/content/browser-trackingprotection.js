@@ -1,6 +1,6 @@
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var TrackingProtection = {
   MAX_INTROS: 0,
@@ -30,6 +30,7 @@ var TrackingProtection = {
       gNavigatorBundle.getString("trackingProtection.icon.disabledTooltip");
 
     this.enabledHistogramAdd(this.enabledGlobally);
+    this.disabledPBMHistogramAdd(!this.enabledInPrivateWindows);
   },
 
   uninit() {
@@ -60,6 +61,13 @@ var TrackingProtection = {
       return;
     }
     Services.telemetry.getHistogramById("TRACKING_PROTECTION_ENABLED").add(value);
+  },
+
+  disabledPBMHistogramAdd(value) {
+    if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+      return;
+    }
+    Services.telemetry.getHistogramById("TRACKING_PROTECTION_PBM_DISABLED").add(value);
   },
 
   eventsHistogramAdd(value) {

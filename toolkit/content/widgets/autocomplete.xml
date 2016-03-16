@@ -28,7 +28,7 @@
           <children/>
           <html:input anonid="input" class="autocomplete-textbox textbox-input"
                       allowevents="true"
-                      xbl:inherits="tooltiptext=inputtooltiptext,value,type,maxlength,disabled,size,readonly,placeholder,tabindex,accesskey,mozactionhint"/>
+                      xbl:inherits="tooltiptext=inputtooltiptext,value,type=inputtype,maxlength,disabled,size,readonly,placeholder,tabindex,accesskey,mozactionhint"/>
         </xul:hbox>
         <children includes="hbox"/>
       </xul:hbox>
@@ -153,9 +153,11 @@
       </field>
 
       <field name="PrivateBrowsingUtils" readonly="true">
-        let utils = {};
-        Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm", utils);
-        utils.PrivateBrowsingUtils
+        {
+          let utils = {};
+          Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm", utils);
+          utils.PrivateBrowsingUtils
+        }
       </field>
 
       <property name="inPrivateContext" readonly="true"
@@ -207,6 +209,8 @@
 
       <method name="onSearchBegin">
         <body><![CDATA[
+          if (this.popup && typeof this.popup.onSearchBegin == "function")
+            this.popup.onSearchBegin();
           if (this._searchBeginHandler)
             this._searchBeginHandler();
         ]]></body>
@@ -218,6 +222,11 @@
             this.setAttribute("nomatch", "true");
           else
             this.removeAttribute("nomatch");
+
+          if (this.ignoreBlurWhileSearching && !this.focused) {
+            this.handleEnter();
+            this.detachController();
+          }
 
           if (this._searchCompleteHandler)
             this._searchCompleteHandler();
@@ -311,6 +320,12 @@
                 onset="this.setAttribute('tabscrolling', val); return val;"
                 onget="return this.getAttribute('tabscrolling') == 'true';"/>
 
+      <!-- option to completely ignore any blur events while searches are
+           still going on. -->
+      <property name="ignoreBlurWhileSearching"
+                onset="this.setAttribute('ignoreblurwhilesearching', val); return val;"
+                onget="return this.getAttribute('ignoreblurwhilesearching') == 'true';"/>
+
       <!-- disable key navigation handling in the popup results -->
       <property name="disableKeyNavigation"
                 onset="this.setAttribute('disablekeynavigation', val); return val;"
@@ -342,7 +357,8 @@
 
       <method name="openPopup">
         <body><![CDATA[
-          this.popup.openAutocompletePopup(this, this);
+          if (this.focused)
+            this.popup.openAutocompletePopup(this, this);
         ]]></body>
       </method>
 
@@ -567,7 +583,7 @@
         ({
           _autocomplete: this,
           _kGlobalClipboard: Components.interfaces.nsIClipboard.kGlobalClipboard,
-          supportsCommand: function(aCommand) aCommand == "cmd_paste",
+          supportsCommand: aCommand => aCommand == "cmd_paste",
           doCommand: function(aCommand) {
             this._autocomplete._valueIsPasted = true;
             this._autocomplete.editor.paste(this._kGlobalClipboard);
@@ -633,7 +649,8 @@
             }
             this.mController.handleEnter(false);
           }
-          this.detachController();
+          if (!this.ignoreBlurWhileSearching)
+            this.detachController();
         }
       ]]></handler>
     </handlers>
@@ -1029,6 +1046,12 @@ extends="chrome://global/content/bindings/popup.xml#popup">
         </setter>
       </property>
 
+      <method name="onSearchBegin">
+        <body><![CDATA[
+          this.richlistbox.mouseSelectedIndex = -1;
+        ]]></body>
+      </method>
+
       <method name="openAutocompletePopup">
         <parameter name="aInput"/>
         <parameter name="aElement"/>
@@ -1064,18 +1087,20 @@ extends="chrome://global/content/bindings/popup.xml#popup">
       </method>
 
       <method name="invalidate">
+        <parameter name="reason"/>
         <body>
           <![CDATA[
           // Don't bother doing work if we're not even showing
           if (!this.mPopupOpen)
             return;
 
-          this._invalidate();
+          this._invalidate(reason);
           ]]>
         </body>
       </method>
 
       <method name="_invalidate">
+        <parameter name="reason"/>
         <body>
           <![CDATA[
           // collapsed if no matches
@@ -1094,7 +1119,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
           if (this._appendResultTimeout) {
             clearTimeout(this._appendResultTimeout);
           }
-          this._appendCurrentResult();
+          this._appendCurrentResult(reason);
         ]]>
         </body>
       </method>
@@ -1185,25 +1210,8 @@ extends="chrome://global/content/bindings/popup.xml#popup">
         </body>
       </method>
 
-      <method name="_getImageURLForResolution">
-        <parameter name="aWin"/>
-        <parameter name="aURL"/>
-        <parameter name="aWidth"/>
-        <parameter name="aHeight"/>
-        <body>
-          <![CDATA[
-          if (!aURL.endsWith('.ico') && !aURL.endsWith('.ICO')) {
-            return aURL;
-          }
-          let width  = Math.round(aWidth * aWin.devicePixelRatio);
-          let height = Math.round(aHeight * aWin.devicePixelRatio);
-          return aURL + (aURL.includes("#") ? "&" : "#") +
-                 "-moz-resolution=" + width + "," + height;
-          ]]>
-        </body>
-      </method>
-
       <method name="_appendCurrentResult">
+        <parameter name="invalidateReason"/>
         <body>
           <![CDATA[
           var controller = this.mInput.controller;
@@ -1229,9 +1237,15 @@ extends="chrome://global/content/bindings/popup.xml#popup">
               // re-use the existing item
               item = this.richlistbox.childNodes[this._currentIndex];
 
-              // Completely re-use the existing richlistitem if it's the same
+              // Completely reuse the existing richlistitem for invalidation
+              // due to new results, but only when: the item is the same, *OR*
+              // we are about to replace the currently mouse-selected item, to
+              // avoid surprising the user.
+              let iface = Components.interfaces.nsIAutoCompletePopup;
               if (item.getAttribute("text") == trimmedSearchString &&
-                  item.getAttribute("url") == url) {
+                  invalidateReason == iface.INVALIDATE_REASON_NEW_RESULT &&
+                  (item.getAttribute("url") == url ||
+                   this.richlistbox.mouseSelectedIndex === this._currentIndex)) {
                 item.collapsed = false;
                 this._currentIndex++;
                 continue;
@@ -1244,7 +1258,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
 
             // set these attributes before we set the class
             // so that we can use them from the constructor
-            let iconURI = this._getImageURLForResolution(window, controller.getImageAt(this._currentIndex), 16, 16);
+            let iconURI = controller.getImageAt(this._currentIndex);
             item.setAttribute("image", iconURI);
             item.setAttribute("url", url);
             item.setAttribute("title", controller.getCommentAt(this._currentIndex));
@@ -1440,7 +1454,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
 
           // Find which regions of text match the search terms
           let regions = [];
-          for each (let search in aSearchTokens) {
+          for (let search of Array.prototype.slice.call(aSearchTokens)) {
             let matchIndex;
             let startIndex = 0;
             let searchLen = search.length;
@@ -1709,6 +1723,10 @@ extends="chrome://global/content/bindings/popup.xml#popup">
               this.classList.add("overridable-action");
               displayUrl = action.params.url;
               let desc = this._stringBundle.GetStringFromName("switchToTab");
+              this._setUpDescription(this._action, desc, true);
+            } else if (action.type == "remotetab") {
+              displayUrl = action.params.url;
+              let desc = action.params.deviceName;
               this._setUpDescription(this._action, desc, true);
             } else if (action.type == "searchengine") {
               emphasiseUrl = false;
@@ -1995,15 +2013,16 @@ extends="chrome://global/content/bindings/popup.xml#popup">
   <binding id="autocomplete-richlistbox" extends="chrome://global/content/bindings/richlistbox.xml#richlistbox">
     <implementation>
       <field name="mLastMoveTime">Date.now()</field>
+      <field name="mouseSelectedIndex">-1</field>
     </implementation>
     <handlers>
       <handler event="mouseup">
         <![CDATA[
         // don't call onPopupClick for the scrollbar buttons, thumb, slider, etc.
-        var item = event.originalTarget;
-
-        while (item && item.localName != "richlistitem")
+        let item = event.originalTarget;
+        while (item && item.localName != "richlistitem") {
           item = item.parentNode;
+        }
 
         if (!item)
           return;
@@ -2015,17 +2034,18 @@ extends="chrome://global/content/bindings/popup.xml#popup">
       <handler event="mousemove">
         <![CDATA[
         if (Date.now() - this.mLastMoveTime > 30) {
-         var item = event.target;
-
-         while (item && item.localName != "richlistitem")
+         let item = event.target;
+         while (item && item.localName != "richlistitem") {
            item = item.parentNode;
+         }
 
          if (!item)
            return;
 
-         var rc = this.getIndexOfItem(item);
-         if (rc != this.selectedIndex)
-            this.selectedIndex = rc;
+         let index = this.getIndexOfItem(item);
+         if (index != this.selectedIndex) {
+            this.mouseSelectedIndex = this.selectedIndex = index;
+         }
 
          this.mLastMoveTime = Date.now();
         }

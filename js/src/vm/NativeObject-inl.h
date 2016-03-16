@@ -238,8 +238,6 @@ NativeObject::getDenseOrTypedArrayElement(uint32_t idx)
 {
     if (is<TypedArrayObject>())
         return as<TypedArrayObject>().getElement(idx);
-    if (is<SharedTypedArrayObject>())
-        return as<SharedTypedArrayObject>().getElement(idx);
     return getDenseElement(idx);
 }
 
@@ -584,21 +582,12 @@ LookupPropertyInline(ExclusiveContext* cx,
 }
 
 inline bool
-WarnIfNotConstructing(JSContext* cx, const CallArgs& args, const char* builtinName)
-{
-    if (args.isConstructing())
-        return true;
-    return JS_ReportErrorFlagsAndNumber(cx, JSREPORT_WARNING, GetErrorMessage, nullptr,
-                                        JSMSG_BUILTIN_CTOR_NO_NEW, builtinName);
-}
-
-inline bool
 ThrowIfNotConstructing(JSContext *cx, const CallArgs &args, const char *builtinName)
 {
     if (args.isConstructing())
         return true;
     return JS_ReportErrorFlagsAndNumber(cx, JSREPORT_ERROR, GetErrorMessage, nullptr,
-                                        JSMSG_BUILTIN_CTOR_NO_NEW_FATAL, builtinName);
+                                        JSMSG_BUILTIN_CTOR_NO_NEW, builtinName);
 }
 
 } // namespace js

@@ -91,7 +91,7 @@ public:
 
     // Cleared to allow the Context to close.  Only safe to access on
     // owning thread.
-    nsRefPtr<Context> mStrongRef;
+    RefPtr<Context> mStrongRef;
 
     // Used to support cancelation even while the Context is already allowed
     // to close.  Cleared by ~Context() calling ContextDestroyed().  Only
@@ -181,7 +181,7 @@ private:
   struct PendingAction
   {
     nsCOMPtr<nsIEventTarget> mTarget;
-    nsRefPtr<Action> mAction;
+    RefPtr<Action> mAction;
   };
 
   Context(Manager* aManager, nsIThread* aTarget, Action* aInitAction);
@@ -190,7 +190,8 @@ private:
   void Start();
   void DispatchAction(Action* aAction, bool aDoomData = false);
   void OnQuotaInit(nsresult aRv, const QuotaInfo& aQuotaInfo,
-                   nsMainThreadPtrHandle<DirectoryLock>& aDirectoryLock);
+                   already_AddRefed<DirectoryLock> aDirectoryLock);
+
 
   already_AddRefed<ThreadsafeHandle>
   CreateThreadsafeHandle();
@@ -201,14 +202,14 @@ private:
   void
   DoomTargetData();
 
-  nsRefPtr<Manager> mManager;
+  RefPtr<Manager> mManager;
   nsCOMPtr<nsIThread> mTarget;
-  nsRefPtr<Data> mData;
+  RefPtr<Data> mData;
   State mState;
   bool mOrphanedData;
   QuotaInfo mQuotaInfo;
-  nsRefPtr<QuotaInitRunnable> mInitRunnable;
-  nsRefPtr<Action> mInitAction;
+  RefPtr<QuotaInitRunnable> mInitRunnable;
+  RefPtr<Action> mInitAction;
   nsTArray<PendingAction> mPendingActions;
 
   // Weak refs since activites must remove themselves from this list before
@@ -219,10 +220,10 @@ private:
   // The ThreadsafeHandle may have a strong ref back to us.  This creates
   // a ref-cycle that keeps the Context alive.  The ref-cycle is broken
   // when ThreadsafeHandle::AllowToClose() is called.
-  nsRefPtr<ThreadsafeHandle> mThreadsafeHandle;
+  RefPtr<ThreadsafeHandle> mThreadsafeHandle;
 
-  nsMainThreadPtrHandle<DirectoryLock> mDirectoryLock;
-  nsRefPtr<Context> mNextContext;
+  RefPtr<DirectoryLock> mDirectoryLock;
+  RefPtr<Context> mNextContext;
 
 public:
   NS_INLINE_DECL_REFCOUNTING(cache::Context)

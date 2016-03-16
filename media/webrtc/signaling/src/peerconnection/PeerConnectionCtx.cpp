@@ -11,6 +11,7 @@
 #include "prcvar.h"
 
 #include "mozilla/Telemetry.h"
+#include "browser_logging/WebRtcLog.h"
 
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
@@ -23,7 +24,7 @@
 #include "nsIObserverService.h"
 #include "nsIObserver.h"
 #include "mozilla/Services.h"
-#include "StaticPtr.h"
+#include "mozilla/StaticPtr.h"
 
 #include "gmp-video-decode.h" // GMP_API_VIDEO_DECODER
 #include "gmp-video-encode.h" // GMP_API_VIDEO_ENCODER
@@ -75,7 +76,7 @@ public:
       MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
 
       // Make sure we're not deleted while still inside ::Observe()
-      nsRefPtr<PeerConnectionCtxShutdown> kungFuDeathGrip(this);
+      RefPtr<PeerConnectionCtxShutdown> kungFuDeathGrip(this);
       PeerConnectionCtx::gPeerConnectionCtxShutdown = nullptr;
     }
     return NS_OK;
@@ -135,6 +136,7 @@ nsresult PeerConnectionCtx::InitializeGlobal(nsIThread *mainThread,
     }
   }
 
+  EnableWebRtcLog();
   return NS_OK;
 }
 
@@ -155,6 +157,8 @@ void PeerConnectionCtx::Destroy() {
     delete gInstance;
     gInstance = nullptr;
   }
+
+  StopWebRtcLog();
 }
 
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)

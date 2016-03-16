@@ -11,6 +11,14 @@
 
 const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 
+// Match type constants.
+// These indicate what type of search function we should be using.
+const MATCH_ANYWHERE = Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE;
+const MATCH_BOUNDARY_ANYWHERE = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY_ANYWHERE;
+const MATCH_BOUNDARY = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY;
+const MATCH_BEGINNING = Ci.mozIPlacesAutoComplete.MATCH_BEGINNING;
+const MATCH_BEGINNING_CASE_SENSITIVE = Ci.mozIPlacesAutoComplete.MATCH_BEGINNING_CASE_SENSITIVE;
+
 const PREF_BRANCH = "browser.urlbar.";
 
 // Prefs are defined as [pref name, default value].
@@ -39,14 +47,6 @@ const PREF_SUGGEST_HISTORY_ONLYTYPED = [ "suggest.history.onlyTyped", false ];
 const PREF_SUGGEST_SEARCHES =       [ "suggest.searches",       false ];
 
 const PREF_MAX_CHARS_FOR_SUGGEST =  [ "maxCharsForSearchSuggestions", 20];
-
-// Match type constants.
-// These indicate what type of search function we should be using.
-const MATCH_ANYWHERE = Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE;
-const MATCH_BOUNDARY_ANYWHERE = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY_ANYWHERE;
-const MATCH_BOUNDARY = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY;
-const MATCH_BEGINNING = Ci.mozIPlacesAutoComplete.MATCH_BEGINNING;
-const MATCH_BEGINNING_CASE_SENSITIVE = Ci.mozIPlacesAutoComplete.MATCH_BEGINNING_CASE_SENSITIVE;
 
 // AutoComplete query type constants.
 // Describes the various types of queries that we can process rows for.
@@ -263,6 +263,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesSearchAutocompleteProvider",
                                   "resource://gre/modules/PlacesSearchAutocompleteProvider.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesRemoteTabsAutocompleteProvider",
+                                  "resource://gre/modules/PlacesRemoteTabsAutocompleteProvider.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "textURIService",
                                    "@mozilla.org/intl/texttosuburi;1",
@@ -506,8 +508,9 @@ XPCOMUtils.defineLazyGetter(this, "Prefs", () => {
  *        The text to unescape and modify.
  * @return the modified spec.
  */
-function fixupSearchText(spec)
-  textURIService.unEscapeURIForUI("UTF-8", stripPrefix(spec));
+function fixupSearchText(spec) {
+  return textURIService.unEscapeURIForUI("UTF-8", stripPrefix(spec));
+}
 
 /**
  * Generates the tokens used in searching from a given string.
@@ -519,8 +522,9 @@ function fixupSearchText(spec)
  *       empty string.  We don't want that, as it'll break our logic, so return
  *       an empty array then.
  */
-function getUnfilteredSearchTokens(searchString)
-  searchString.length ? searchString.split(REGEXP_SPACES) : [];
+function getUnfilteredSearchTokens(searchString) {
+  return searchString.length ? searchString.split(REGEXP_SPACES) : [];
+}
 
 /**
  * Strip prefixes from the URI that we don't care about for searching.
@@ -581,6 +585,42 @@ function makeActionURL(action, params) {
   let url = "moz-action:" + action + "," + JSON.stringify(params);
   // Make a nsIURI out of this to ensure it's encoded properly.
   return NetUtil.newURI(url).spec;
+}
+
+/**
+ * Returns the key to be used for a URL in a map for the purposes of removing
+ * duplicate entries - any 2 URLs that should be considered the same should
+ * return the same key. For some moz-action URLs this will unwrap the params
+ * and return a key based on the wrapped URL.
+ */
+function makeKeyForURL(actionUrl) {
+  // At this stage we only consider moz-action URLs.
+  if (!actionUrl.startsWith("moz-action:")) {
+    return stripHttpAndTrim(actionUrl);
+  }
+  let [, type, params] = actionUrl.match(/^moz-action:([^,]+),(.*)$/);
+  try {
+    params = JSON.parse(params);
+  } catch (ex) {
+    // This is unexpected in this context, so just return the input.
+    return stripHttpAndTrim(actionUrl);
+  }
+  // For now we only handle these 2 action types and treat them as the same.
+  switch (type) {
+    case "remotetab":
+    case "switchtab":
+      if (params.url) {
+        return "moz-action:tab:" + stripHttpAndTrim(params.url);
+      }
+      break;
+      // TODO (bug 1222435) - "switchtab" should be handled as an "autofill"
+      // entry.
+    default:
+      // do nothing.
+      // TODO (bug 1222436) - extend this method so it can be used instead of
+      // the |placeId| that's also used to remove duplicate entries.
+  }
+  return stripHttpAndTrim(actionUrl);
 }
 
 /**
@@ -862,6 +902,9 @@ Search.prototype = {
     yield this._matchFirstHeuristicResult(conn);
     this._addingHeuristicFirstMatch = false;
 
+    // We sleep a little between adding the heuristicFirstMatch and matching
+    // any other searches so we aren't kicking off potentially expensive
+    // searches on every keystroke.
     yield this._sleep(Prefs.delay);
     if (!this.pending)
       return;
@@ -872,6 +915,12 @@ Search.prototype = {
 
     for (let [query, params] of queries) {
       yield conn.executeCached(query, params, this._onResultRow.bind(this));
+      if (!this.pending)
+        return;
+    }
+
+    if (this._enableActions && this.hasBehavior("openpage")) {
+      yield this._matchRemoteTabs();
       if (!this.pending)
         return;
     }
@@ -1186,6 +1235,38 @@ Search.prototype = {
     });
   },
 
+  *_matchRemoteTabs() {
+    let matches = yield PlacesRemoteTabsAutocompleteProvider.getMatches(this._originalSearchString);
+    for (let {url, title, icon, deviceClass, deviceName} of matches) {
+      // It's rare that Sync supplies the icon for the page (but if it does, it
+      // is a string URL)
+      if (!icon) {
+        try {
+          let favicon = yield PlacesUtils.promiseFaviconLinkUrl(url);
+          if (favicon) {
+            icon = favicon.spec;
+          }
+        } catch (ex) {} // no favicon for this URL.
+      } else {
+        icon = PlacesUtils.favicons
+                          .getFaviconLinkForIcon(NetUtil.newURI(icon)).spec;
+      }
+
+      let match = {
+        // We include the deviceName in the action URL so we can render it in
+        // the URLBar.
+        value: makeActionURL("remotetab", { url, deviceName }),
+        comment: title || url,
+        style: "action",
+        // we want frecency > FRECENCY_DEFAULT so it doesn't get pushed out
+        // by "remote" matches.
+        frecency: FRECENCY_DEFAULT + 1,
+        icon,
+      }
+      this._addMatch(match);
+    }
+  },
+
   // TODO (bug 1054814): Use visited URLs to inform which scheme to use, if the
   // scheme isn't specificed.
   _matchUnknownUrl: function* () {
@@ -1288,7 +1369,7 @@ Search.prototype = {
     // when searching for "Firefox".
     let terms = parseResult.terms.toLowerCase();
     if (this._searchTokens.length > 0 &&
-        this._searchTokens.every(token => terms.indexOf(token) == -1)) {
+        this._searchTokens.every(token => !terms.includes(token))) {
       return;
     }
 
@@ -1305,7 +1386,7 @@ Search.prototype = {
       return;
 
     // Must check both id and url, cause keywords dynamically modify the url.
-    let urlMapKey = stripHttpAndTrim(match.value);
+    let urlMapKey = makeKeyForURL(match.value);
     if ((match.placeId && this._usedPlaceIds.has(match.placeId)) ||
         this._usedURLs.has(urlMapKey)) {
       return;
@@ -1388,7 +1469,10 @@ Search.prototype = {
     // Remove the trailing slash.
     match.comment = stripHttpAndTrim(trimmedHost);
     match.finalCompleteValue = untrimmedHost;
-    match.icon = faviconUrl;
+    if (faviconUrl) {
+      match.icon = PlacesUtils.favicons
+                              .getFaviconLinkForIcon(NetUtil.newURI(faviconUrl)).spec;
+    }
     // Although this has a frecency, this query is executed before any other
     // queries that would result in frecency matches.
     match.frecency = frecency;
@@ -1427,7 +1511,10 @@ Search.prototype = {
     match.value = this._strippedPrefix + url;
     match.comment = url;
     match.finalCompleteValue = untrimmedURL;
-    match.icon = faviconUrl;
+    if (faviconUrl) {
+      match.icon = PlacesUtils.favicons
+                              .getFaviconLinkForIcon(NetUtil.newURI(faviconUrl)).spec;
+    }
     // Although this has a frecency, this query is executed before any other
     // queries that would result in frecency matches.
     match.frecency = frecency;
@@ -1572,18 +1659,20 @@ Search.prototype = {
    * @return an array consisting of the correctly optimized query to search the
    *         database with and an object containing the params to bound.
    */
-  get _switchToTabQuery() [
-    SQL_SWITCHTAB_QUERY,
-    {
-      query_type: QUERYTYPE_FILTERED,
-      matchBehavior: this._matchBehavior,
-      searchBehavior: this._behavior,
-      // We only want to search the tokens that we are left with - not the
-      // original search string.
-      searchString: this._searchTokens.join(" "),
-      maxResults: Prefs.maxRichResults
-    }
-  ],
+  get _switchToTabQuery() {
+    return [
+      SQL_SWITCHTAB_QUERY,
+      {
+        query_type: QUERYTYPE_FILTERED,
+        matchBehavior: this._matchBehavior,
+        searchBehavior: this._behavior,
+        // We only want to search the tokens that we are left with - not the
+        // original search string.
+        searchString: this._searchTokens.join(" "),
+        maxResults: Prefs.maxRichResults
+      }
+    ];
+  },
 
   /**
    * Obtains the query to search for adaptive results.
@@ -1591,16 +1680,18 @@ Search.prototype = {
    * @return an array consisting of the correctly optimized query to search the
    *         database with and an object containing the params to bound.
    */
-  get _adaptiveQuery() [
-    SQL_ADAPTIVE_QUERY,
-    {
-      parent: PlacesUtils.tagsFolderId,
-      search_string: this._searchString,
-      query_type: QUERYTYPE_FILTERED,
-      matchBehavior: this._matchBehavior,
-      searchBehavior: this._behavior
-    }
-  ],
+  get _adaptiveQuery() {
+    return [
+      SQL_ADAPTIVE_QUERY,
+      {
+        parent: PlacesUtils.tagsFolderId,
+        search_string: this._searchString,
+        query_type: QUERYTYPE_FILTERED,
+        matchBehavior: this._matchBehavior,
+        searchBehavior: this._behavior
+      }
+    ];
+  },
 
   /**
    * Whether we should try to autoFill.

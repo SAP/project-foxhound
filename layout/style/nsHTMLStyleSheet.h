@@ -84,6 +84,7 @@ private:
 
     // nsIStyleRule interface
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+    virtual bool MightMapInheritedStyleData() override;
   #ifdef DEBUG
     virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
   #endif
@@ -92,7 +93,7 @@ private:
   };
 
   // Implementation of SetLink/VisitedLink/ActiveLinkColor
-  nsresult ImplLinkColorSetter(nsRefPtr<HTMLColorRule>& aRule, nscolor aColor);
+  nsresult ImplLinkColorSetter(RefPtr<HTMLColorRule>& aRule, nscolor aColor);
 
   class GenericTableRule;
   friend class GenericTableRule;
@@ -106,6 +107,7 @@ private:
 
     // nsIStyleRule interface
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override = 0;
+    virtual bool MightMapInheritedStyleData() override = 0;
   #ifdef DEBUG
     virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
   #endif
@@ -119,6 +121,7 @@ private:
     TableTHRule() {}
 
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+    virtual bool MightMapInheritedStyleData() override;
   };
 
   // Rule to handle quirk table colors
@@ -127,6 +130,7 @@ private:
     TableQuirkColorRule() {}
 
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+    virtual bool MightMapInheritedStyleData() override;
   };
 
 public: // for mLangRuleTable structures only
@@ -145,6 +149,7 @@ public: // for mLangRuleTable structures only
 
     // nsIStyleRule interface
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+    virtual bool MightMapInheritedStyleData() override;
   #ifdef DEBUG
     virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
   #endif
@@ -154,11 +159,11 @@ public: // for mLangRuleTable structures only
 
 private:
   nsIDocument*            mDocument;
-  nsRefPtr<HTMLColorRule> mLinkRule;
-  nsRefPtr<HTMLColorRule> mVisitedRule;
-  nsRefPtr<HTMLColorRule> mActiveRule;
-  nsRefPtr<TableQuirkColorRule> mTableQuirkColorRule;
-  nsRefPtr<TableTHRule>   mTableTHRule;
+  RefPtr<HTMLColorRule> mLinkRule;
+  RefPtr<HTMLColorRule> mVisitedRule;
+  RefPtr<HTMLColorRule> mActiveRule;
+  RefPtr<TableQuirkColorRule> mTableQuirkColorRule;
+  RefPtr<TableTHRule>   mTableTHRule;
 
   PLDHashTable            mMappedAttrTable;
   PLDHashTable            mLangRuleTable;

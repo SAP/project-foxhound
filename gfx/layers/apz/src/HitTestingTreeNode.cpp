@@ -87,6 +87,30 @@ HitTestingTreeNode::SetLastChild(HitTestingTreeNode* aChild)
 }
 
 void
+HitTestingTreeNode::SetScrollbarData(FrameMetrics::ViewID aScrollViewId, Layer::ScrollDirection aDir, int32_t aScrollSize)
+{
+  mScrollViewId = aScrollViewId;
+  mScrollDir = aDir;
+  mScrollSize = aScrollSize;;
+}
+
+bool
+HitTestingTreeNode::MatchesScrollDragMetrics(const AsyncDragMetrics& aDragMetrics) const
+{
+  return ((mScrollDir == Layer::HORIZONTAL &&
+           aDragMetrics.mDirection == AsyncDragMetrics::HORIZONTAL) ||
+          (mScrollDir == Layer::VERTICAL &&
+           aDragMetrics.mDirection == AsyncDragMetrics::VERTICAL)) &&
+         mScrollViewId == aDragMetrics.mViewId;
+}
+
+int32_t
+HitTestingTreeNode::GetScrollSize() const
+{
+  return mScrollSize;
+}
+
+void
 HitTestingTreeNode::SetPrevSibling(HitTestingTreeNode* aSibling)
 {
   mPrevSibling = aSibling;
@@ -207,7 +231,8 @@ HitTestingTreeNode::Untransform(const ParentLayerPoint& aPoint) const
   if (mApzc) {
     localTransform = localTransform * mApzc->GetCurrentAsyncTransformWithOverscroll();
   }
-  return UntransformTo<LayerPixel>(localTransform.Inverse(), aPoint);
+  return UntransformBy(
+      ViewAs<LayerToParentLayerMatrix4x4>(localTransform).Inverse(), aPoint);
 }
 
 HitTestResult

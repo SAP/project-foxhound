@@ -19,13 +19,16 @@ EXTRA_JS_MODULES += [
     'DownloadList.jsm',
     'Downloads.jsm',
     'DownloadStore.jsm',
+    'DownloadUIHelper.jsm',
 ]
 
 EXTRA_PP_JS_MODULES += [
     'DownloadIntegration.jsm',
-    'DownloadUIHelper.jsm',
 ]
 
 FINAL_LIBRARY = 'xul'
 
 CXXFLAGS += CONFIG['TK_CFLAGS']
+
+if CONFIG['GNU_CXX']:
+    CXXFLAGS += ['-Wshadow']

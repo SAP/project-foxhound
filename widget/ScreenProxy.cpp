@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/unused.h"
+#include "nsContentUtils.h"
 #include "nsIAppShell.h"
 #include "nsScreenManagerProxy.h"
 #include "nsServiceManagerUtils.h"
@@ -147,7 +148,7 @@ ScreenProxy::EnsureCacheIsValid()
   // Kick off a synchronous IPC call to the parent to get the
   // most up-to-date information.
   ScreenDetails details;
-  unused << mScreenManager->SendScreenRefresh(mId, &details, &success);
+  Unused << mScreenManager->SendScreenRefresh(mId, &details, &success);
   if (!success) {
     NS_WARNING("Updating a ScreenProxy in the child process failed on parent side.");
     return false;

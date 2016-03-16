@@ -11,7 +11,7 @@ namespace mozilla {
 using namespace mozilla::gfx;
 using namespace mozilla::dom;
 
-extern PRLogModuleInfo* GetMediaManagerLog();
+extern LogModule* GetMediaManagerLog();
 #define LOG(msg) MOZ_LOG(GetMediaManagerLog(), mozilla::LogLevel::Debug, msg)
 #define LOGFRAME(msg) MOZ_LOG(GetMediaManagerLog(), mozilla::LogLevel::Verbose, msg)
 
@@ -24,7 +24,7 @@ bool MediaEngineCameraVideoSource::AppendToTrack(SourceMediaStream* aSource,
   MOZ_ASSERT(aSource);
 
   VideoSegment segment;
-  nsRefPtr<layers::Image> image = aImage;
+  RefPtr<layers::Image> image = aImage;
   IntSize size(image ? mWidth : 0, image ? mHeight : 0);
   segment.AppendFrame(image.forget(), delta, size);
 

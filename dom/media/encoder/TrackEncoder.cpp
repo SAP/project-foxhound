@@ -18,7 +18,7 @@
 
 namespace mozilla {
 
-PRLogModuleInfo* gTrackEncoderLog;
+LazyLogModule gTrackEncoderLog("TrackEncoder");
 #define TRACK_LOG(type, msg) MOZ_LOG(gTrackEncoderLog, type, msg)
 
 static const int DEFAULT_CHANNELS = 1;
@@ -37,9 +37,6 @@ TrackEncoder::TrackEncoder()
   , mAudioInitCounter(0)
   , mVideoInitCounter(0)
 {
-  if (!gTrackEncoderLog) {
-    gTrackEncoderLog = PR_NewLogModule("TrackEncoder");
-  }
 }
 
 void
@@ -197,7 +194,7 @@ VideoTrackEncoder::NotifyQueuedTrackChanges(MediaStreamGraph* aGraph,
       VideoChunk chunk = *iter;
       if (!chunk.IsNull()) {
         gfx::IntSize imgsize = chunk.mFrame.GetImage()->GetSize();
-        gfxIntSize intrinsicSize = chunk.mFrame.GetIntrinsicSize();
+        gfx::IntSize intrinsicSize = chunk.mFrame.GetIntrinsicSize();
         nsresult rv = Init(imgsize.width, imgsize.height,
                            intrinsicSize.width, intrinsicSize.height,
                            aGraph->GraphRate());
@@ -232,7 +229,7 @@ VideoTrackEncoder::AppendVideoSegment(const VideoSegment& aSegment)
   VideoSegment::ChunkIterator iter(const_cast<VideoSegment&>(aSegment));
   while (!iter.IsEnded()) {
     VideoChunk chunk = *iter;
-    nsRefPtr<layers::Image> image = chunk.mFrame.GetImage();
+    RefPtr<layers::Image> image = chunk.mFrame.GetImage();
     mRawSegment.AppendFrame(image.forget(),
                             chunk.GetDuration(),
                             chunk.mFrame.GetIntrinsicSize(),

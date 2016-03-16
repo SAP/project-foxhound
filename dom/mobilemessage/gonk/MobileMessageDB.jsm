@@ -673,7 +673,7 @@ MobileMessageDB.prototype = {
         stores = txn.objectStore(storeNames[0]);
       } else {
         stores = [];
-        for each (let storeName in storeNames) {
+        for (let storeName of storeNames) {
           if (DEBUG) debug("Retrieving object store " + storeName);
           stores.push(txn.objectStore(storeName));
         }
@@ -1460,7 +1460,7 @@ MobileMessageDB.prototype = {
               let timestamp = messageRecord.timestamp;
               // Setup participantIdsIndex.
               messageRecord.participantIdsIndex = [];
-              for each (let id in participantIds) {
+              for (let id of participantIds) {
                 messageRecord.participantIdsIndex.push([id, timestamp]);
               }
               if (threadRecord) {
@@ -2065,13 +2065,13 @@ MobileMessageDB.prototype = {
   },
 
   /**
-   * Generate a <code>nsIDOMMozSmsMessage</code> or
-   * <code>nsIDOMMozMmsMessage</code> instance from a stored message record.
+   * Generate a <code>nsISmsMessage</code> or
+   * <code>nsIMmsMessage</code> instance from a stored message record.
    *
    * @function MobileMessageDB.createDomMessageFromRecord
    * @param {MobileMessageDB.MessageRecord} aMessageRecord
    *        The stored message record.
-   * @return {nsIDOMMozSmsMessage|nsIDOMMozMmsMessage}
+   * @return {nsISmsMessage|nsIMmsMessage}
    */
   createDomMessageFromRecord: function(aMessageRecord) {
     if (DEBUG) {
@@ -2580,7 +2580,7 @@ MobileMessageDB.prototype = {
    * @callback MobileMessageDB.TransactionResultCallback
    * @param {number} aErrorCode
    *        The error code on failure, or <code>NS_OK</code> on success.
-   * @param {nsIDOMMozSmsMessage|nsIDOMMozMmsMessage} aDomMessage
+   * @param {nsISmsMessage|nsIMmsMessage} aDomMessage
    *        The DOM message instance of the transaction result.
    */
 
@@ -2857,7 +2857,7 @@ MobileMessageDB.prototype = {
         aMessageRecord.threadIdIndex = [threadId, timestamp];
         // Setup participantIdsIndex.
         aMessageRecord.participantIdsIndex = [];
-        for each (let id in participantIds) {
+        for (let id of participantIds) {
           aMessageRecord.participantIdsIndex.push([id, timestamp]);
         }
 
@@ -3592,7 +3592,7 @@ MobileMessageDB.prototype = {
    *        The error code on failure, or <code>NS_OK</code> on success.
    * @param {MobileMessageDB.MessageRecord} aMessageRecord
    *        The stored message record.
-   * @param {nsIDOMMozSmsMessage|nsIDOMMozMmsMessage} aDomMessage
+   * @param {nsISmsMessage|nsIMmsMessage} aDomMessage
    *        The DOM message instance of the message record.
    */
 
@@ -3827,8 +3827,35 @@ MobileMessageDB.prototype = {
         }
 
         if (segmentRecord.segments[seq]) {
-          if (DEBUG) debug("Got duplicated segment no. " + seq);
-          return;
+          if (segmentRecord.encoding == RIL.PDU_DCS_MSG_CODING_8BITS_ALPHABET &&
+              segmentRecord.encoding == aSmsSegment.encoding &&
+              segmentRecord.segments[seq].length == aSmsSegment.data.length &&
+              segmentRecord.segments[seq].every(function(aElement, aIndex) {
+                return aElement == aSmsSegment.data[aIndex];
+              })) {
+            if (DEBUG) {
+              debug("Got duplicated binary segment no: " + seq);
+            }
+            return;
+          }
+
+          if (segmentRecord.encoding != RIL.PDU_DCS_MSG_CODING_8BITS_ALPHABET &&
+              aSmsSegment.encoding != RIL.PDU_DCS_MSG_CODING_8BITS_ALPHABET &&
+              segmentRecord.segments[seq] == aSmsSegment.body) {
+            if (DEBUG) {
+              debug("Got duplicated text segment no: " + seq);
+            }
+            return;
+          }
+
+          // Update mandatory properties to ensure that the segments could be
+          // concatenated properly.
+          segmentRecord.encoding = aSmsSegment.encoding;
+          segmentRecord.originatorPort = aSmsSegment.originatorPort;
+          segmentRecord.destinationPort = aSmsSegment.destinationPort;
+          segmentRecord.teleservice = aSmsSegment.teleservice;
+          // Decrease the counter for this collided segment.
+          segmentRecord.receivedSegments--;
         }
 
         segmentRecord.timestamp = aSmsSegment.timestamp;
@@ -4099,8 +4126,11 @@ MobileMessageDB.prototype = {
    * @param {boolean} value
    *        The updated <code>read</code> value.
    * @param {boolean} aSendReadReport
-   *        <code>true</code> to update the <code>isReadReportSent</code>
-   *        property if the message is MMS.
+   *        <code>true</code> to reply the read report of an incoming MMS
+   *        message whose <code>isReadReportSent</code> is 'false'.
+   *        Note: <code>isReadReportSent</code> will be set to 'true' no
+   *        matter aSendReadReport is true or not when a message was marked
+   *        from UNREAD to READ. See bug 1180470 for the new UX policy.
    * @param {nsIMobileMessageCallback} aRequest
    *        The callback object.
    */
@@ -4153,17 +4183,18 @@ MobileMessageDB.prototype = {
         messageRecord.read = value ? FILTER_READ_READ : FILTER_READ_UNREAD;
         messageRecord.readIndex = [messageRecord.read, messageRecord.timestamp];
         let readReportMessageId, readReportTo;
-        if (aSendReadReport &&
-            messageRecord.type == "mms" &&
+        if (messageRecord.type == "mms" &&
             messageRecord.delivery == DELIVERY_RECEIVED &&
             messageRecord.read == FILTER_READ_READ &&
             messageRecord.headers["x-mms-read-report"] &&
             !messageRecord.isReadReportSent) {
           messageRecord.isReadReportSent = true;
 
-          let from = messageRecord.headers["from"];
-          readReportTo = from && from.address;
-          readReportMessageId = messageRecord.headers["message-id"];
+          if (aSendReadReport) {
+            let from = messageRecord.headers["from"];
+            readReportTo = from && from.address;
+            readReportMessageId = messageRecord.headers["message-id"];
+          }
         }
 
         if (DEBUG) debug("Message.read set to: " + value);

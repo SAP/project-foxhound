@@ -134,13 +134,13 @@ private:
 
   void CreateSearchParamsIfNeeded();
 
-  void SetSearchInternal(const nsAString& aSearch);
+  void SetSearchInternal(const nsAString& aSearch, ErrorResult& aRv);
 
   void UpdateURLSearchParams();
 
   WorkerPrivate* mWorkerPrivate;
-  nsRefPtr<URLProxy> mURLProxy;
-  nsRefPtr<URLSearchParams> mSearchParams;
+  RefPtr<URLProxy> mURLProxy;
+  RefPtr<URLSearchParams> mSearchParams;
 };
 
 END_WORKERS_NAMESPACE

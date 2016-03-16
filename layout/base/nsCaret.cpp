@@ -46,9 +46,6 @@ using namespace mozilla::gfx;
 // an insignificant dot
 static const int32_t kMinBidiIndicatorPixels = 2;
 
-/*static*/ bool nsCaret::sSelectionCaretEnabled = false;
-/*static*/ bool nsCaret::sSelectionCaretsAffectCaret = false;
-
 /**
  * Find the first frame in an in-order traversal of the frame subtree rooted
  * at aFrame which is either a text frame logically at the end of a line,
@@ -147,15 +144,6 @@ nsresult nsCaret::Init(nsIPresShell *inPresShell)
   mShowDuringSelection =
     LookAndFeel::GetInt(LookAndFeel::eIntID_ShowCaretDuringSelection,
                         mShowDuringSelection ? 1 : 0) != 0;
-
-  static bool addedCaretPref = false;
-  if (!addedCaretPref) {
-    Preferences::AddBoolVarCache(&sSelectionCaretEnabled,
-      "selectioncaret.enabled");
-    Preferences::AddBoolVarCache(&sSelectionCaretsAffectCaret,
-      "selectioncaret.visibility.affectscaret");
-    addedCaretPref = true;
-  }
 
   // get the selection from the pres shell, and set ourselves up as a selection
   // listener
@@ -266,8 +254,7 @@ bool nsCaret::IsVisible()
     return false;
   }
 
-  if (!mShowDuringSelection &&
-      !(sSelectionCaretEnabled && sSelectionCaretsAffectCaret)) {
+  if (!mShowDuringSelection) {
     Selection* selection = GetSelectionInternal();
     if (!selection) {
       return false;
@@ -275,20 +262,6 @@ bool nsCaret::IsVisible()
     bool isCollapsed;
     if (NS_FAILED(selection->GetIsCollapsed(&isCollapsed)) || !isCollapsed) {
       return false;
-    }
-  }
-
-  // The Android IME can have a visible caret when there is a composition
-  // selection, due to auto-suggest/auto-correct styling (underlining),
-  // but never when the SelectionCarets are visible.
-  if (sSelectionCaretEnabled && sSelectionCaretsAffectCaret) {
-    nsCOMPtr<nsISelectionController> selCon = do_QueryReferent(mPresShell);
-    if (selCon) {
-      bool visible = false;
-      selCon->GetSelectionCaretsVisibility(&visible);
-      if (visible) {
-        return false;
-      }
     }
   }
 
@@ -348,7 +321,7 @@ nsCaret::GetGeometryForFrame(nsIFrame* aFrame,
                "We should not be in the middle of reflow");
   nscoord baseline = frame->GetCaretBaseline();
   nscoord ascent = 0, descent = 0;
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(aFrame, getter_AddRefs(fm),
     nsLayoutUtils::FontSizeInflationFor(aFrame));
   NS_ASSERTION(fm, "We should be able to get the font metrics");
@@ -907,7 +880,8 @@ nsCaret::ComputeCaretRects(nsIFrame* aFrame, int32_t aFrameOffset,
 {
   NS_ASSERTION(aFrame, "Should have a frame here");
 
-  bool isVertical = aFrame->GetWritingMode().IsVertical();
+  WritingMode wm = aFrame->GetWritingMode();
+  bool isVertical = wm.IsVertical();
 
   nscoord bidiIndicatorSize;
   *aCaretRect = GetGeometryForFrame(aFrame, aFrameOffset, &bidiIndicatorSize);
@@ -924,7 +898,6 @@ nsCaret::ComputeCaretRects(nsIFrame* aFrame, int32_t aFrameOffset,
 
   // Simon -- make a hook to draw to the left or right of the caret to show keyboard language direction
   aHookRect->SetEmpty();
-
   if (!IsBidiUI()) {
     return;
   }
@@ -939,11 +912,20 @@ nsCaret::ComputeCaretRects(nsIFrame* aFrame, int32_t aFrameOffset,
     // The height of the hook rectangle is the same as the width of the caret
     // rectangle.
     if (isVertical) {
-      aHookRect->SetRect(aCaretRect->XMost() - bidiIndicatorSize,
-                         aCaretRect->y + (isCaretRTL ? bidiIndicatorSize * -1 :
-                                                       aCaretRect->height),
-                         aCaretRect->height,
-                         bidiIndicatorSize);
+      bool isSidewaysLR = wm.IsVerticalLR() && !wm.IsLineInverted();
+      if (isSidewaysLR) {
+        aHookRect->SetRect(aCaretRect->x + bidiIndicatorSize,
+                           aCaretRect->y + (!isCaretRTL ? bidiIndicatorSize * -1 :
+                                                          aCaretRect->height),
+                           aCaretRect->height,
+                           bidiIndicatorSize);
+      } else {
+        aHookRect->SetRect(aCaretRect->XMost() - bidiIndicatorSize,
+                           aCaretRect->y + (isCaretRTL ? bidiIndicatorSize * -1 :
+                                                         aCaretRect->height),
+                           aCaretRect->height,
+                           bidiIndicatorSize);
+      }
     } else {
       aHookRect->SetRect(aCaretRect->x + (isCaretRTL ? bidiIndicatorSize * -1 :
                                                        aCaretRect->width),

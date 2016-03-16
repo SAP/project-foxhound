@@ -475,7 +475,7 @@ class TypeSet
     }
 
     /* Whether any values in this set might have the specified type. */
-    bool mightBeMIRType(jit::MIRType type);
+    bool mightBeMIRType(jit::MIRType type) const;
 
     /*
      * Get whether this type set is known to be a subset of other.
@@ -598,6 +598,9 @@ class AutoClearTypeInferenceStateOnOOM
     void setOOM() {
         oom = true;
     }
+    bool hadOOM() const {
+        return oom;
+    }
 };
 
 /* Superclass common to stack and heap type sets. */
@@ -718,11 +721,19 @@ class TemporaryTypeSet : public TypeSet
      */
     bool getCommonPrototype(CompilerConstraintList* constraints, JSObject** proto);
 
-    /* Get the typed array type of all objects in this set, or Scalar::MaxTypedArrayViewType. */
-    Scalar::Type getTypedArrayType(CompilerConstraintList* constraints);
+    /* Whether the buffer mapped by a TypedArray is shared memory or not */
+    enum TypedArraySharedness {
+        UnknownSharedness=1,    // We can't determine sharedness
+        KnownShared,            // We know for sure the buffer is shared
+        KnownUnshared           // We know for sure the buffer is unshared
+    };
 
-    /* Get the shared typed array type of all objects in this set, or Scalar::MaxTypedArrayViewType. */
-    Scalar::Type getSharedTypedArrayType(CompilerConstraintList* constraints);
+    /* Get the typed array type of all objects in this set, or Scalar::MaxTypedArrayViewType.
+     * If there is such a common type and sharedness is not nullptr then
+     * *sharedness is set to what we know about the sharedness of the memory.
+     */
+    Scalar::Type getTypedArrayType(CompilerConstraintList* constraints,
+                                   TypedArraySharedness* sharedness = nullptr);
 
     /* Whether all objects have JSCLASS_IS_DOMJSCLASS set. */
     bool isDOMClass(CompilerConstraintList* constraints);
@@ -764,6 +775,10 @@ class TemporaryTypeSet : public TypeSet
      * objects in this type set.
      */
     DoubleConversion convertDoubleElements(CompilerConstraintList* constraints);
+
+  private:
+    void getTypedArraySharedness(CompilerConstraintList* constraints,
+                                 TypedArraySharedness* sharedness);
 };
 
 bool
@@ -1022,6 +1037,8 @@ class TypeScript
      */
     static inline void Monitor(JSContext* cx, JSScript* script, jsbytecode* pc,
                                const js::Value& val);
+    static inline void Monitor(JSContext* cx, JSScript* script, jsbytecode* pc,
+                               TypeSet::Type type);
     static inline void Monitor(JSContext* cx, const js::Value& rval);
 
     /* Monitor an assignment at a SETELEM on a non-integer identifier. */
@@ -1064,11 +1081,15 @@ FillBytecodeTypeMap(JSScript* script, uint32_t* bytecodeMap);
 class RecompileInfo;
 
 // Allocate a CompilerOutput for a finished compilation and generate the type
-// constraints for the compilation. Returns whether the type constraints
-// still hold.
+// constraints for the compilation. Sets |isValidOut| based on whether the type
+// constraints still hold.
 bool
 FinishCompilation(JSContext* cx, HandleScript script, CompilerConstraintList* constraints,
-                  RecompileInfo* precompileInfo);
+                  RecompileInfo* precompileInfo, bool* isValidOut);
+
+// Reset any CompilerOutput present for a script.
+void
+InvalidateCompilerOutputsForScript(JSContext* cx, HandleScript script);
 
 // Update the actual types in any scripts queried by constraints with any
 // speculative types added during the definite properties analysis.
@@ -1295,7 +1316,18 @@ PrintTypes(JSContext* cx, JSCompartment* comp, bool force);
 // with no associated compartment.
 namespace JS {
 namespace ubi {
-template<> struct Concrete<js::ObjectGroup> : TracerConcrete<js::ObjectGroup> { };
+
+template<>
+struct Concrete<js::ObjectGroup> : TracerConcrete<js::ObjectGroup> {
+    Size size(mozilla::MallocSizeOf mallocSizeOf) const override;
+
+  protected:
+    explicit Concrete(js::ObjectGroup *ptr) : TracerConcrete<js::ObjectGroup>(ptr) { }
+
+  public:
+    static void construct(void *storage, js::ObjectGroup *ptr) { new (storage) Concrete(ptr); }
+};
+
 } // namespace ubi
 } // namespace JS
 

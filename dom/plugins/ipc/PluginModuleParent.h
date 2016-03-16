@@ -43,6 +43,10 @@ class PCrashReporterParent;
 class CrashReporterParent;
 } // namespace dom
 
+namespace layers {
+class TextureClientRecycleAllocator;
+} // namespace layers
+
 namespace plugins {
 //-----------------------------------------------------------------------------
 
@@ -100,7 +104,7 @@ public:
     explicit PluginModuleParent(bool aIsChrome, bool aAllowAsyncInit);
     virtual ~PluginModuleParent();
 
-    bool RemovePendingSurrogate(const nsRefPtr<PluginAsyncSurrogate>& aSurrogate);
+    bool RemovePendingSurrogate(const RefPtr<PluginAsyncSurrogate>& aSurrogate);
 
     /** @return the state of the pref that controls async plugin init */
     bool IsStartingAsync() const { return mIsStartingAsync; }
@@ -246,6 +250,7 @@ protected:
     virtual nsresult AsyncSetWindow(NPP aInstance, NPWindow* aWindow) override;
     virtual nsresult GetImageContainer(NPP aInstance, mozilla::layers::ImageContainer** aContainer) override;
     virtual nsresult GetImageSize(NPP aInstance, nsIntSize* aSize) override;
+    virtual void DidComposite(NPP aInstance) override;
     virtual bool IsOOP() override { return true; }
     virtual nsresult SetBackgroundUnknown(NPP instance) override;
     virtual nsresult BeginUpdateBackground(NPP instance,
@@ -293,6 +298,8 @@ public:
 
     void InitAsyncSurrogates();
 
+    layers::TextureClientRecycleAllocator* EnsureTextureAllocator();
+
 protected:
     void NotifyFlashHang();
     void NotifyPluginCrashed();
@@ -315,7 +322,7 @@ protected:
     nsString mPluginDumpID;
     nsString mBrowserDumpID;
     nsString mHangID;
-    nsRefPtr<nsIObserver> mProfilerObserver;
+    RefPtr<nsIObserver> mProfilerObserver;
     TimeDuration mTimeBlocked;
     nsCString mPluginName;
     nsCString mPluginVersion;
@@ -336,9 +343,11 @@ protected:
     bool              mIsStartingAsync;
     bool              mNPInitialized;
     bool              mIsNPShutdownPending;
-    nsTArray<nsRefPtr<PluginAsyncSurrogate>> mSurrogateInstances;
+    nsTArray<RefPtr<PluginAsyncSurrogate>> mSurrogateInstances;
     nsresult          mAsyncNewRv;
     uint32_t          mRunID;
+
+    RefPtr<layers::TextureClientRecycleAllocator> mTextureAllocator;
 };
 
 class PluginModuleContentParent : public PluginModuleParent
@@ -447,8 +456,10 @@ class PluginModuleChromeParent
     void OnExitedSyncSend() override;
 
 #ifdef  MOZ_ENABLE_PROFILER_SPS
-    void GatherAsyncProfile(mozilla::ProfileGatherer* aGatherer);
+    void GatherAsyncProfile();
     void GatheredAsyncProfile(nsIProfileSaveEvent* aSaveEvent);
+    void StartProfiler(nsIProfilerStartParams* aParams);
+    void StopProfiler();
 #endif
 
     virtual bool
@@ -613,7 +624,7 @@ private:
     dom::ContentParent* mContentParent;
     nsCOMPtr<nsIObserver> mOfflineObserver;
 #ifdef MOZ_ENABLE_PROFILER_SPS
-    nsRefPtr<mozilla::ProfileGatherer> mGatherer;
+    RefPtr<mozilla::ProfileGatherer> mGatherer;
 #endif
     nsCString mProfile;
     bool mIsBlocklisted;

@@ -141,8 +141,22 @@ SdpHelper::DisableMsection(Sdp* sdp, SdpMediaSection* msection)
 
   msection->ClearCodecs();
 
-  // We need to have something here to fit the grammar, this seems safe.
-  msection->AddCodec("0", "PCMU", 8000, 1);
+  auto mediaType = msection->GetMediaType();
+  switch (mediaType) {
+    case SdpMediaSection::kAudio:
+      msection->AddCodec("0", "PCMU", 8000, 1);
+      break;
+    case SdpMediaSection::kVideo:
+      msection->AddCodec("120", "VP8", 90000, 1);
+      break;
+    case SdpMediaSection::kApplication:
+      msection->AddDataChannel("5000", "rejected", 0);
+      break;
+    default:
+      // We need to have something here to fit the grammar, this seems safe
+      // and 19 is a reserved payload type which should not be used by anyone.
+      msection->AddCodec("19", "reserved", 8000, 1);
+  }
 }
 
 void
@@ -317,6 +331,27 @@ SdpHelper::AddCandidateToSdp(Sdp* sdp,
 }
 
 void
+SdpHelper::SetIceGatheringComplete(Sdp* sdp,
+                                   uint16_t level,
+                                   BundledMids bundledMids)
+{
+  SdpMediaSection& msection = sdp->GetMediaSection(level);
+
+  if (kSlaveBundle == GetMsectionBundleType(*sdp,
+                                            level,
+                                            bundledMids,
+                                            nullptr)) {
+    return; // Slave bundle m-section. Skip.
+  }
+
+  SdpAttributeList& attrs = msection.GetAttributeList();
+  attrs.SetAttribute(
+      new SdpFlagAttribute(SdpAttribute::kEndOfCandidatesAttribute));
+  // Remove trickle-ice option
+  attrs.RemoveAttribute(SdpAttribute::kIceOptionsAttribute);
+}
+
+void
 SdpHelper::SetDefaultAddresses(const std::string& defaultCandidateAddr,
                                uint16_t defaultCandidatePort,
                                const std::string& defaultRtcpCandidateAddr,
@@ -326,33 +361,33 @@ SdpHelper::SetDefaultAddresses(const std::string& defaultCandidateAddr,
                                BundledMids bundledMids)
 {
   SdpMediaSection& msection = sdp->GetMediaSection(level);
+  std::string masterMid;
 
-  if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
-    std::string mid(msection.GetAttributeList().GetMid());
-    if (bundledMids.count(mid)) {
-      const SdpMediaSection* masterBundleMsection(bundledMids[mid]);
-      if (msection.GetLevel() != masterBundleMsection->GetLevel()) {
-        // Slave bundle m-section. Skip.
-        return;
+  MsectionBundleType bundleType = GetMsectionBundleType(*sdp,
+                                                        level,
+                                                        bundledMids,
+                                                        &masterMid);
+  if (kSlaveBundle == bundleType) {
+    return; // Slave bundle m-section. Skip.
+  }
+  if (kMasterBundle == bundleType) {
+    // Master bundle m-section. Set defaultCandidateAddr and
+    // defaultCandidatePort on all bundled m-sections.
+    const SdpMediaSection* masterBundleMsection(bundledMids[masterMid]);
+    for (auto i = bundledMids.begin(); i != bundledMids.end(); ++i) {
+      if (i->second != masterBundleMsection) {
+        continue;
       }
-
-      // Master bundle m-section. Set defaultCandidateAddr and
-      // defaultCandidatePort on all bundled m-sections.
-      for (auto i = bundledMids.begin(); i != bundledMids.end(); ++i) {
-        if (i->second != masterBundleMsection) {
-          continue;
-        }
-        SdpMediaSection* bundledMsection = FindMsectionByMid(*sdp, i->first);
-        if (!bundledMsection) {
-          MOZ_ASSERT(false);
-          continue;
-        }
-        SetDefaultAddresses(defaultCandidateAddr,
-                            defaultCandidatePort,
-                            defaultRtcpCandidateAddr,
-                            defaultRtcpCandidatePort,
-                            bundledMsection);
+      SdpMediaSection* bundledMsection = FindMsectionByMid(*sdp, i->first);
+      if (!bundledMsection) {
+        MOZ_ASSERT(false);
+        continue;
       }
+      SetDefaultAddresses(defaultCandidateAddr,
+                          defaultCandidatePort,
+                          defaultRtcpCandidateAddr,
+                          defaultRtcpCandidatePort,
+                          bundledMsection);
     }
   }
 
@@ -361,14 +396,6 @@ SdpHelper::SetDefaultAddresses(const std::string& defaultCandidateAddr,
                       defaultRtcpCandidateAddr,
                       defaultRtcpCandidatePort,
                       &msection);
-
-  // TODO(bug 1095793): Will this have an mid someday?
-
-  SdpAttributeList& attrs = msection.GetAttributeList();
-  attrs.SetAttribute(
-      new SdpFlagAttribute(SdpAttribute::kEndOfCandidatesAttribute));
-  // Remove trickle-ice option
-  attrs.RemoveAttribute(SdpAttribute::kIceOptionsAttribute);
 }
 
 void
@@ -717,6 +744,31 @@ SdpHelper::AddCommonExtmaps(
   if (!localExtmap->mExtmaps.empty()) {
     localMsection->GetAttributeList().SetAttribute(localExtmap.release());
   }
+}
+
+SdpHelper::MsectionBundleType
+SdpHelper::GetMsectionBundleType(const Sdp& sdp,
+                                 uint16_t level,
+                                 BundledMids& bundledMids,
+                                 std::string* masterMid) const
+{
+  const SdpMediaSection& msection = sdp.GetMediaSection(level);
+  if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
+    std::string mid(msection.GetAttributeList().GetMid());
+    if (bundledMids.count(mid)) {
+      const SdpMediaSection* masterBundleMsection(bundledMids[mid]);
+      if (msection.GetLevel() != masterBundleMsection->GetLevel()) {
+        return kSlaveBundle;
+      }
+
+      // allow the caller not to care about the masterMid
+      if (masterMid) {
+        *masterMid = mid;
+      }
+      return kMasterBundle;
+    }
+  }
+  return kNoBundle;
 }
 
 } // namespace mozilla

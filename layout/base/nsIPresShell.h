@@ -36,6 +36,7 @@
 #include "nsCompatibility.h"
 #include "nsFrameManagerBase.h"
 #include "nsRect.h"
+#include "nsRegionFwd.h"
 #include "mozFlushType.h"
 #include "nsWeakReference.h"
 #include <stdio.h> // for FILE definition
@@ -61,6 +62,7 @@ class nsAString;
 class nsCaret;
 namespace mozilla {
 class AccessibleCaretEventHub;
+class CSSStyleSheet;
 class TouchCaret;
 class SelectionCarets;
 } // namespace mozilla
@@ -69,8 +71,6 @@ class nsFrameManager;
 class nsILayoutHistoryState;
 class nsIReflowCallback;
 class nsIDOMNode;
-class nsIntRegion;
-class nsIStyleSheet;
 class nsCSSFrameConstructor;
 class nsISelection;
 template<class E> class nsCOMArray;
@@ -140,10 +140,10 @@ typedef struct CapturingContentInfo {
   mozilla::StaticRefPtr<nsIContent> mContent;
 } CapturingContentInfo;
 
-// b07c5323-3061-4ca9-95ed-84cccbffadac
+// 5023beaa-0e54-4fc7-b9dc-0344dc4fb8be
 #define NS_IPRESSHELL_IID \
-{ 0xb07c5323, 0x3061, 0x4ca9, \
-  { 0x95, 0xed, 0x84, 0xcc, 0xcb, 0xff, 0xad, 0xac } }
+{ 0x5023beaa, 0x0e54, 0x4fc7, \
+  { 0xb9, 0xdc, 0x03, 0x44, 0xdc, 0x4f, 0xb8, 0xbe } }
 
 // debug VerifyReflow flags
 #define VERIFY_REFLOW_ON                    0x01
@@ -937,20 +937,6 @@ public:
   bool IsPaintingSuppressed() const { return mPaintingSuppressed; }
 
   /**
-   * Pause painting by freezing the refresh driver of this and all parent
-   * presentations. This may not have the desired effect if this pres shell
-   * has its own refresh driver.
-   */
-  virtual void PausePainting() = 0;
-
-  /**
-   * Resume painting by thawing the refresh driver of this and all parent
-   * presentations. This may not have the desired effect if this pres shell
-   * has its own refresh driver.
-   */
-  virtual void ResumePainting() = 0;
-
-  /**
    * Unsuppress painting.
    */
   virtual void UnsuppressPainting() = 0;
@@ -972,22 +958,24 @@ public:
   /**
    * Get the set of agent style sheets for this presentation
    */
-  virtual nsresult GetAgentStyleSheets(nsCOMArray<nsIStyleSheet>& aSheets) = 0;
+  virtual nsresult GetAgentStyleSheets(
+      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aSheets) = 0;
 
   /**
    * Replace the set of agent style sheets
    */
-  virtual nsresult SetAgentStyleSheets(const nsCOMArray<nsIStyleSheet>& aSheets) = 0;
+  virtual nsresult SetAgentStyleSheets(
+      const nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aSheets) = 0;
 
   /**
    * Add an override style sheet for this presentation
    */
-  virtual nsresult AddOverrideStyleSheet(nsIStyleSheet *aSheet) = 0;
+  virtual nsresult AddOverrideStyleSheet(mozilla::CSSStyleSheet* aSheet) = 0;
 
   /**
    * Remove an override style sheet
    */
-  virtual nsresult RemoveOverrideStyleSheet(nsIStyleSheet *aSheet) = 0;
+  virtual nsresult RemoveOverrideStyleSheet(mozilla::CSSStyleSheet* aSheet) = 0;
 
   /**
    * Reconstruct frames for all elements in the document
@@ -1089,7 +1077,7 @@ public:
    * such as the file name in a file upload widget, and we might choose not
    * to paint themes.
    *   set RENDER_IGNORE_VIEWPORT_SCROLLING to ignore
-   * clipping/scrolling/scrollbar painting due to scrolling in the viewport
+   * clipping and scrollbar painting due to scrolling in the viewport
    *   set RENDER_CARET to draw the caret if one would be visible
    * (by default the caret is never drawn)
    *   set RENDER_USE_LAYER_MANAGER to force rendering to go through
@@ -1102,8 +1090,11 @@ public:
    *   set RENDER_ASYNC_DECODE_IMAGES to avoid having images synchronously
    * decoded during rendering.
    * (by default images decode synchronously with RenderDocument)
-   *   set RENDER_DOCUMENT_RELATIVE to interpret |aRect| relative to the
-   * document instead of the CSS viewport
+   *   set RENDER_DOCUMENT_RELATIVE to render the document as if there has been
+   * no scrolling and interpret |aRect| relative to the document instead of the
+   * CSS viewport. Only considered if RENDER_IGNORE_VIEWPORT_SCROLLING is set
+   * or the document is in ignore viewport scrolling mode
+   * (nsIPresShell::SetIgnoreViewportScrolling/IgnoringViewportScrolling).
    * @param aBackgroundColor a background color to render onto
    * @param aRenderedContext the gfxContext to render to. We render so that
    * one CSS pixel in the source document is rendered to one unit in the current
@@ -1132,7 +1123,7 @@ public:
    * edge of the presshell area. The aPoint, aScreenRect and aFlags arguments
    * function in a similar manner as RenderSelection.
    */
-  virtual already_AddRefed<SourceSurface>
+  virtual already_AddRefed<mozilla::gfx::SourceSurface>
   RenderNode(nsIDOMNode* aNode,
              nsIntRegion* aRegion,
              nsIntPoint& aPoint,
@@ -1155,7 +1146,7 @@ public:
    * point isn't used because the position can be determined from the displayed
    * frames.
    */
-  virtual already_AddRefed<SourceSurface>
+  virtual already_AddRefed<mozilla::gfx::SourceSurface>
   RenderSelection(nsISelection* aSelection,
                   nsIntPoint& aPoint,
                   nsIntRect* aScreenRect,
@@ -1258,7 +1249,7 @@ public:
     return mObservesMutationsForPrint;
   }
 
-  virtual nsresult SetIsActive(bool aIsActive) = 0;
+  virtual nsresult SetIsActive(bool aIsActive, bool aIsHidden = true) = 0;
 
   bool IsActive()
   {
@@ -1274,7 +1265,7 @@ public:
     nsCOMPtr<nsIContent> mOverrideContent;
     bool                 mReleaseContent;
     bool                 mPrimaryState;
-    
+
     explicit PointerCaptureInfo(nsIContent* aPendingContent, bool aPrimaryState) :
       mPendingContent(aPendingContent), mReleaseContent(false), mPrimaryState(aPrimaryState)
     {
@@ -1423,8 +1414,19 @@ public:
    * The resolution defaults to 1.0.
    */
   virtual nsresult SetResolution(float aResolution) = 0;
-  float GetResolution() { return mResolution; }
+  float GetResolution() { return mResolution.valueOr(1.0); }
   virtual float GetCumulativeResolution() = 0;
+
+  /**
+   * Calculate the cumulative scale resolution from this document up to
+   * but not including the root document.
+   */
+  virtual float GetCumulativeNonRootScaleResolution() = 0;
+
+  /**
+   * Was the current resolution set by the user or just default initialized?
+   */
+  bool IsResolutionSet() { return mResolution.isSome(); }
 
   /**
    * Similar to SetResolution() but also increases the scale of the content
@@ -1670,32 +1672,6 @@ public:
   virtual void ThemeChanged() = 0;
   virtual void BackingScaleFactorChanged() = 0;
 
-  nscoord MaxLineBoxWidth() {
-    return mMaxLineBoxWidth;
-  }
-
-  void SetMaxLineBoxWidth(nscoord aMaxLineBoxWidth);
-
-  /**
-   * Returns whether or not there is a reflow on zoom event pending. A reflow
-   * on zoom event is a change to the max line box width, followed by a reflow.
-   * This subsequent reflow event should treat all frames as though they resized
-   * horizontally (and thus reflow all their descendants), rather than marking
-   * all frames dirty from the root. This is the way the pres shell indicates
-   * that an hresize reflow should take place during reflow state construction.
-   */
-  bool IsReflowOnZoomPending() {
-    return mReflowOnZoomPending;
-  }
-
-  /**
-   * Clear the flag indicating whether a reflow on zoom event is pending. This
-   * is performed at the very end of DoReflow().
-   */
-  void ClearReflowOnZoomPending() {
-    mReflowOnZoomPending = false;
-  }
-
   /**
    * Documents belonging to an invisible DocShell must not be painted ever.
    */
@@ -1722,12 +1698,12 @@ protected:
   // These are the same Document and PresContext owned by the DocViewer.
   // we must share ownership.
   nsCOMPtr<nsIDocument>     mDocument;
-  nsRefPtr<nsPresContext>   mPresContext;
+  RefPtr<nsPresContext>   mPresContext;
   nsStyleSet*               mStyleSet;      // [OWNS]
   nsCSSFrameConstructor*    mFrameConstructor; // [OWNS]
   nsViewManager*           mViewManager;   // [WEAK] docViewer owns it so I don't have to
   nsPresArena               mFrameArena;
-  nsRefPtr<nsFrameSelection> mSelection;
+  RefPtr<nsFrameSelection> mSelection;
   // Pointer into mFrameConstructor - this is purely so that FrameManager() and
   // GetRootFrame() can be inlined:
   nsFrameManagerBase*       mFrameManager;
@@ -1765,7 +1741,7 @@ protected:
 
   // Used to force allocation and rendering of proportionally more or
   // less pixels in both dimensions.
-  float                     mResolution;
+  mozilla::Maybe<float>     mResolution;
 
   int16_t                   mSelectionFlags;
 
@@ -1817,7 +1793,7 @@ protected:
   // same update block we have already had other changes that require
   // the whole document to be restyled (i.e., mStylesHaveChanged is already
   // true), then we don't bother adding the scope root here.
-  nsAutoTArray<nsRefPtr<mozilla::dom::Element>,1> mChangedScopeStyleRoots;
+  nsAutoTArray<RefPtr<mozilla::dom::Element>,1> mChangedScopeStyleRoots;
 
   static nsIContent*        gKeyDownTarget;
 
@@ -1829,18 +1805,9 @@ protected:
   bool mFontSizeInflationForceEnabled;
   bool mFontSizeInflationDisabledInMasterProcess;
   bool mFontSizeInflationEnabled;
-  bool mPaintingIsFrozen;
 
   // Dirty bit indicating that mFontSizeInflationEnabled needs to be recomputed.
   bool mFontSizeInflationEnabledIsDirty;
-
-  // Flag to indicate whether or not there is a reflow on zoom event pending.
-  // See IsReflowOnZoomPending() for more information.
-  bool mReflowOnZoomPending;
-
-  // The maximum width of a line box. Text on a single line that exceeds this
-  // width will be wrapped. A value of 0 indicates that no limit is enforced.
-  nscoord mMaxLineBoxWidth;
 
   // If a document belongs to an invisible DocShell, this flag must be set
   // to true, so we can avoid any paint calls for widget related to this

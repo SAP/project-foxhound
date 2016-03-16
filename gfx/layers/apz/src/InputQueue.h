@@ -6,6 +6,8 @@
 #ifndef mozilla_layers_InputQueue_h
 #define mozilla_layers_InputQueue_h
 
+#include "APZUtils.h"
+#include "InputData.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/UniquePtr.h"
 #include "nsAutoPtr.h"
@@ -23,7 +25,9 @@ class AsyncPanZoomController;
 class CancelableBlockState;
 class TouchBlockState;
 class WheelBlockState;
+class DragBlockState;
 class PanGestureBlockState;
+class AsyncDragMetrics;
 
 /**
  * This class stores incoming input events, separated into "input blocks", until
@@ -42,7 +46,7 @@ public:
    * See the documentation on APZCTreeManager::ReceiveInputEvent for info on
    * return values from this function, including |aOutInputBlockId|.
    */
-  nsEventStatus ReceiveInputEvent(const nsRefPtr<AsyncPanZoomController>& aTarget,
+  nsEventStatus ReceiveInputEvent(const RefPtr<AsyncPanZoomController>& aTarget,
                                   bool aTargetConfirmed,
                                   const InputData& aEvent,
                                   uint64_t* aOutInputBlockId);
@@ -59,7 +63,14 @@ public:
    * we may need to query the layout engine to know for sure. The input block
    * this applies to should be specified via the |aInputBlockId| parameter.
    */
-  void SetConfirmedTargetApzc(uint64_t aInputBlockId, const nsRefPtr<AsyncPanZoomController>& aTargetApzc);
+  void SetConfirmedTargetApzc(uint64_t aInputBlockId, const RefPtr<AsyncPanZoomController>& aTargetApzc);
+  /**
+   * This function is invoked to confirm that the drag block should be handled
+   * by the APZ.
+   */
+  void ConfirmDragBlock(uint64_t aInputBlockId,
+                        const RefPtr<AsyncPanZoomController>& aTargetApzc,
+                        const AsyncDragMetrics& aDragMetrics);
   /**
    * This function should be invoked to notify the InputQueue of the touch-
    * action properties for the different touch points in an input block. The
@@ -87,6 +98,7 @@ public:
    */
   TouchBlockState* CurrentTouchBlock() const;
   WheelBlockState* CurrentWheelBlock() const;
+  DragBlockState* CurrentDragBlock() const;
   PanGestureBlockState* CurrentPanGestureBlock() const;
   /**
    * Returns true iff the pending block at the head of the queue is ready for
@@ -110,7 +122,7 @@ public:
 private:
   ~InputQueue();
 
-  TouchBlockState* StartNewTouchBlock(const nsRefPtr<AsyncPanZoomController>& aTarget,
+  TouchBlockState* StartNewTouchBlock(const RefPtr<AsyncPanZoomController>& aTarget,
                                       bool aTargetConfirmed,
                                       bool aCopyPropertiesFromCurrent);
 
@@ -123,18 +135,22 @@ private:
   /**
    * If we need to wait for a content response, schedule that now.
    */
-  void MaybeRequestContentResponse(const nsRefPtr<AsyncPanZoomController>& aTarget,
+  void MaybeRequestContentResponse(const RefPtr<AsyncPanZoomController>& aTarget,
                                    CancelableBlockState* aBlock);
 
-  nsEventStatus ReceiveTouchInput(const nsRefPtr<AsyncPanZoomController>& aTarget,
+  nsEventStatus ReceiveTouchInput(const RefPtr<AsyncPanZoomController>& aTarget,
                                   bool aTargetConfirmed,
                                   const MultiTouchInput& aEvent,
                                   uint64_t* aOutInputBlockId);
-  nsEventStatus ReceiveScrollWheelInput(const nsRefPtr<AsyncPanZoomController>& aTarget,
+  nsEventStatus ReceiveMouseInput(const RefPtr<AsyncPanZoomController>& aTarget,
+                                  bool aTargetConfirmed,
+                                  const MouseInput& aEvent,
+                                  uint64_t* aOutInputBlockId);
+  nsEventStatus ReceiveScrollWheelInput(const RefPtr<AsyncPanZoomController>& aTarget,
                                         bool aTargetConfirmed,
                                         const ScrollWheelInput& aEvent,
                                         uint64_t* aOutInputBlockId);
-  nsEventStatus ReceivePanGestureInput(const nsRefPtr<AsyncPanZoomController>& aTarget,
+  nsEventStatus ReceivePanGestureInput(const RefPtr<AsyncPanZoomController>& aTarget,
                                         bool aTargetConfirmed,
                                         const PanGestureInput& aEvent,
                                         uint64_t* aOutInputBlockId);
@@ -151,10 +167,10 @@ private:
   bool MaybeHandleCurrentBlock(CancelableBlockState* block,
                                const InputData& aEvent);
 
-  void ScheduleMainThreadTimeout(const nsRefPtr<AsyncPanZoomController>& aTarget, uint64_t aInputBlockId);
+  void ScheduleMainThreadTimeout(const RefPtr<AsyncPanZoomController>& aTarget, uint64_t aInputBlockId);
   void MainThreadTimeout(const uint64_t& aInputBlockId);
   void ProcessInputBlocks();
-  void UpdateActiveApzc(const nsRefPtr<AsyncPanZoomController>& aNewActive);
+  void UpdateActiveApzc(const RefPtr<AsyncPanZoomController>& aNewActive);
 
 private:
   // The queue of touch blocks that have not yet been fully processed.
@@ -162,7 +178,7 @@ private:
   nsTArray<UniquePtr<CancelableBlockState>> mInputBlockQueue;
 
   // The APZC to which the last event was delivered
-  nsRefPtr<AsyncPanZoomController> mLastActiveApzc;
+  RefPtr<AsyncPanZoomController> mLastActiveApzc;
 
   // Track touches so we know when to clear mLastActiveApzc
   TouchCounter mTouchCounter;

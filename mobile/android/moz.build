@@ -27,9 +27,10 @@ DIRS += [
     'extensions',
 ]
 
-if not CONFIG['LIBXUL_SDK']:
-    DIRS += ['../../xulrunner/tools/redit']
+DIRS += ['../../xulrunner/tools/redit']
 
 TEST_DIRS += [
     'tests',
 ]
+
+SPHINX_TREES['fennec'] = 'docs'

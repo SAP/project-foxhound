@@ -73,7 +73,7 @@ _PTHREAD_LDFLAGS=""
 
 dnl Do not allow objdir == srcdir builds
 dnl ==============================================================
-_topsrcdir=`cd $srcdir; pwd`
+_topsrcdir=`cd $srcdir; pwd -W 2>/dev/null || pwd`
 _objdir=`pwd`
 
 if test "$_topsrcdir" = "$_objdir"
@@ -114,16 +114,7 @@ if test "$_conflict_files"; then
 fi
 MOZ_BUILD_ROOT=`pwd -W 2>/dev/null || pwd`
 
-dnl Choose where to put the 'dist' directory.
-dnl ==============================================================
-
-MOZ_ARG_WITH_STRING(dist-dir,
-[  --with-dist-dir=DIR     Use DIR as 'dist' staging area.  DIR may be
-                          relative to the top of SpiderMonkey build tree,
-                          or absolute.],
-    TOP_DIST=$withval,
-    TOP_DIST=dist)
-AC_SUBST(TOP_DIST)
+MOZ_BUILD_BACKEND
 
 MOZ_DEFAULT_COMPILER
 
@@ -169,10 +160,11 @@ AC_SUBST(JS_SHARED_LIBRARY)
 if test "$JS_STANDALONE" = no; then
   autoconfmk=autoconf-js.mk
   JS_STANDALONE=
+  #DIST is exported from top-level configure
 else
   JS_STANDALONE=1
-  LIBXUL_DIST="$MOZ_BUILD_ROOT/dist"
   AC_DEFINE(JS_STANDALONE)
+  DIST="$MOZ_BUILD_ROOT/dist"
 fi
 AC_SUBST(JS_STANDALONE)
 BUILDING_JS=1
@@ -303,6 +295,10 @@ MOZ_TOOL_VARIABLES
 
 MOZ_CHECK_COMPILER_WRAPPER
 
+AC_PROG_CPP
+AC_PROG_CXXCPP
+MOZ_RUST_SUPPORT
+
 dnl Special win32 checks
 dnl ========================================================
 
@@ -344,7 +340,10 @@ case "$target" in
         # that behavior) that it's better to turn it off.
         # _CRT_SECURE_NO_WARNINGS disables warnings about using MSVC-specific
         # secure CRT functions.
-        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800 -D_CRT_SECURE_NO_WARNINGS"
+        # MSVC warning C4819 warns some UTF-8 characters (e.g. copyright sign)
+        # on non-Western system locales even if it is in a comment.
+        CFLAGS="$CFLAGS -wd4819"
+        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800 -wd4819 -D_CRT_SECURE_NO_WARNINGS"
         AC_LANG_SAVE
         AC_LANG_C
         AC_TRY_COMPILE([#include <stdio.h>],
@@ -374,6 +373,7 @@ case "$target" in
 
         AC_DEFINE(_CRT_SECURE_NO_WARNINGS)
         AC_DEFINE(_CRT_NONSTDC_NO_WARNINGS)
+        AC_DEFINE(_USE_MATH_DEFINES) # Otherwise MSVC's math.h doesn't #define M_PI.
 
         if test "$_CC_MAJOR_VERSION" = "18"; then
             _CC_SUITE=12
@@ -432,8 +432,6 @@ case "$target" in
 
         CFLAGS="$CFLAGS -D_HAS_EXCEPTIONS=0"
         CXXFLAGS="$CXXFLAGS -D_HAS_EXCEPTIONS=0"
-
-        MOZ_FIND_WINSDK_VERSION
     else
         # Check w32api version
         _W32API_MAJOR_VERSION=`echo $W32API_VERSION | $AWK -F\. '{ print $1 }'`
@@ -469,10 +467,9 @@ case "$target" in
         then
             AC_MSG_ERROR([windres version $WINDRES_VERSION or higher is required to build.])
         fi
-
-        MOZ_WINSDK_MAXVER=0x06030000
     fi # !GNU_CC
 
+    MOZ_FIND_WINSDK_VERSION
     AC_DEFINE_UNQUOTED(WINVER,0x$WINVER)
     AC_DEFINE_UNQUOTED(_WIN32_WINNT,0x$WINVER)
     # Require OS features provided by IE 6.0 SP2 (XP SP2)
@@ -491,9 +488,6 @@ case "$target" in
     AC_DEFINE_UNQUOTED(MOZ_WINSDK_TARGETVER,0x$MOZ_WINSDK_TARGETVER)
     ;;
 esac
-
-AC_PROG_CPP
-AC_PROG_CXXCPP
 
 if test -n "$_WIN32_MSVC"; then
     SKIP_PATH_CHECKS=1
@@ -703,6 +697,9 @@ dnl ==============================================================
 MOZILLA_VERSION=`$PYTHON $srcdir/python/mozbuild/mozbuild/milestone.py --topsrcdir $srcdir`
 MOZILLA_UAVERSION=`$PYTHON $srcdir/python/mozbuild/mozbuild/milestone.py --topsrcdir $srcdir --uaversion`
 MOZILLA_SYMBOLVERSION=`$PYTHON $srcdir/python/mozbuild/mozbuild/milestone.py --topsrcdir $srcdir --symbolversion`
+if test -z "$MOZILLA_VERSION"; then
+  AC_MSG_ERROR([failed to read version info from milestone file])
+fi
 
 AC_DEFINE_UNQUOTED(MOZILLA_VERSION,"$MOZILLA_VERSION")
 AC_DEFINE_UNQUOTED(MOZILLA_VERSION_U,$MOZILLA_VERSION)
@@ -763,7 +760,7 @@ TARGET_MD_ARCH=unix
 DIRENT_INO=d_ino
 MOZ_USER_DIR=".mozilla"
 
-MOZ_FIX_LINK_PATHS='-Wl,-rpath-link,$(LIBXUL_DIST)/bin -Wl,-rpath-link,$(prefix)/lib'
+MOZ_FIX_LINK_PATHS="-Wl,-rpath-link,${DIST}/bin -Wl,-rpath-link,${prefix}/lib"
 
 USE_DEPENDENT_LIBS=1
 
@@ -973,6 +970,10 @@ arm*)
 
 mips|mipsel)
     CPU_ARCH="mips32"
+    ;;
+
+mips64|mips64el)
+    CPU_ARCH="mips64"
     ;;
 
 aarch64*)
@@ -1586,7 +1587,7 @@ case "$target" in
 
         LDFLAGS=$_SAVE_LDFLAGS
     fi
-    MOZ_FIX_LINK_PATHS='-Wl,-executable_path,$(LIBXUL_DIST)/bin'
+    MOZ_FIX_LINK_PATHS="-Wl,-executable_path,${DIST}/bin"
     ;;
 
 ia64*-hpux*)
@@ -1614,13 +1615,13 @@ ia64*-hpux*)
     	DSO_LDOPTS='-b -Wl,+s'
     	DSO_CFLAGS=""
     	DSO_PIC_CFLAGS="+Z"
-    	MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_LDOPTS) -L$(LIBXUL_DIST)/bin -o $@'
-    	MKCSHLIB='$(LD) -b +s -L$(LIBXUL_DIST)/bin -o $@'
+    	MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_LDOPTS) -L$(DIST)/bin -o $@'
+    	MKCSHLIB='$(LD) -b +s -L$(DIST)/bin -o $@'
         CXXFLAGS="$CXXFLAGS -Wc,-ansi_for_scope,on"
     else
         DSO_LDOPTS='-b -E +s'
-        MKSHLIB='$(LD) $(DSO_LDOPTS) -L$(LIBXUL_DIST)/bin -L$(LIBXUL_DIST)/lib -o $@'
-        MKCSHLIB='$(LD) $(DSO_LDOPTS) -L$(LIBXUL_DIST)/bin -L$(LIBXUL_DIST)/lib -o $@'
+        MKSHLIB='$(LD) $(DSO_LDOPTS) -L$(DIST)/bin -L$(DIST)/lib -o $@'
+        MKCSHLIB='$(LD) $(DSO_LDOPTS) -L$(DIST)/bin -L$(DIST)/lib -o $@'
     fi
     MOZ_POST_PROGRAM_COMMAND='chatr +s enable'
     AC_DEFINE(NSCAP_DISABLE_DEBUG_PTR_TYPES)
@@ -2051,18 +2052,11 @@ mips*-*)
     ;;
 esac
 
-case "$target" in
-mips*-*)
-     AC_DEFINE(JS_NUNBOX32)
-     ;;
-*)
-    if test "$HAVE_64BIT_BUILD" ; then
-        AC_DEFINE(JS_PUNBOX64)
-    else
-        AC_DEFINE(JS_NUNBOX32)
-    fi
-    ;;
-esac
+if test "$HAVE_64BIT_BUILD" ; then
+    AC_DEFINE(JS_PUNBOX64)
+else
+    AC_DEFINE(JS_NUNBOX32)
+fi
 
 MOZ_ARG_DISABLE_BOOL(ion,
 [  --disable-ion      Disable use of the IonMonkey JIT],
@@ -2133,10 +2127,10 @@ if test "$GNU_CC" -a "$OS_TARGET" != WINNT; then
   *)
     case $GCC_VERSION in
     4.6*)
-      VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(topsrcdir)/config/gcc_hidden_dso_handle.h'
+      VISIBILITY_FLAGS="-I${DIST}/system_wrappers -include ${_topsrcdir}/config/gcc_hidden_dso_handle.h"
       ;;
     *)
-      VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(topsrcdir)/config/gcc_hidden.h'
+      VISIBILITY_FLAGS="-I${DIST}/system_wrappers -include ${_topsrcdir}/config/gcc_hidden.h"
       ;;
     esac
     WRAP_SYSTEM_INCLUDES=1
@@ -2153,13 +2147,13 @@ case "${OS_TARGET}" in
 WINNT|Darwin|Android)
   ;;
 *)
-  STL_FLAGS='-I$(DIST)/stl_wrappers'
+  STL_FLAGS="-I${DIST}/stl_wrappers"
   WRAP_STL_INCLUDES=1
   ;;
 esac
 
 AC_SUBST(WRAP_SYSTEM_INCLUDES)
-AC_SUBST(VISIBILITY_FLAGS)
+AC_SUBST_LIST(VISIBILITY_FLAGS)
 
 dnl Checks for header files.
 dnl ========================================================
@@ -3066,16 +3060,16 @@ dnl ========================================================
 MOZ_ARG_ENABLE_STRING(simulator,
 [  --enable-simulator=ARCH
                           Enable a JIT code simulator for the specified arch.
-                          (arm, arm64, mips32).],
+                          (arm, arm64, mips32, mips64).],
     JS_SIMULATOR="$enableval")
 
 if test -n "$JS_SIMULATOR"; then
     case "$JS_SIMULATOR" in
-        arm|arm64|mips32) ;;
+        arm|arm64|mips32|mips64) ;;
         no)
             JS_SIMULATOR=
             ;;
-        *) AC_MSG_ERROR([Invalid simulator. Valid simulators are: arm, arm64, mips32.]) ;;
+        *) AC_MSG_ERROR([Invalid simulator. Valid simulators are: arm, arm64, mips32, mips64.]) ;;
     esac
 fi
 
@@ -3111,6 +3105,15 @@ elif test "$JS_SIMULATOR" = mips32; then
     AC_DEFINE(JS_CODEGEN_MIPS32)
     JS_SIMULATOR_MIPS32=1
     JS_CODEGEN_MIPS32=1
+elif test "$JS_SIMULATOR" = mips64; then
+    if test "$CPU_ARCH" != "x86_64"; then
+        AC_MSG_ERROR([The MIPS64 simulator only works on x86_64.])
+    fi
+    AC_DEFINE(JS_SIMULATOR)
+    AC_DEFINE(JS_SIMULATOR_MIPS64)
+    AC_DEFINE(JS_CODEGEN_MIPS64)
+    JS_SIMULATOR_MIPS64=1
+    JS_CODEGEN_MIPS64=1
 elif test "$CPU_ARCH" = "x86"; then
     AC_DEFINE(JS_CODEGEN_X86)
     JS_CODEGEN_X86=1
@@ -3132,15 +3135,20 @@ elif test "$CPU_ARCH" = "arm"; then
 elif test "$CPU_ARCH" = "mips32"; then
     AC_DEFINE(JS_CODEGEN_MIPS32)
     JS_CODEGEN_MIPS32=1
+elif test "$CPU_ARCH" = "mips64"; then
+    AC_DEFINE(JS_CODEGEN_MIPS64)
+    JS_CODEGEN_MIPS64=1
 fi
 
 AC_SUBST(JS_SIMULATOR)
 AC_SUBST(JS_SIMULATOR_ARM)
 AC_SUBST(JS_SIMULATOR_ARM64)
 AC_SUBST(JS_SIMULATOR_MIPS32)
+AC_SUBST(JS_SIMULATOR_MIPS64)
 AC_SUBST(JS_CODEGEN_ARM)
 AC_SUBST(JS_CODEGEN_ARM64)
 AC_SUBST(JS_CODEGEN_MIPS32)
+AC_SUBST(JS_CODEGEN_MIPS64)
 AC_SUBST(JS_CODEGEN_X86)
 AC_SUBST(JS_CODEGEN_X64)
 AC_SUBST(JS_CODEGEN_NONE)
@@ -3191,6 +3199,20 @@ MOZ_ARG_ENABLE_BOOL(vtune,
 [  --enable-vtune          Enable vtune profiling. Implies --enable-profiling.],
     MOZ_VTUNE=1,
     MOZ_VTUNE= )
+
+dnl ========================================================
+dnl JitSpew.  Enabled by default in debug builds.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(jitspew,
+[  --enable-jitspew        Enable the Jit spew and IONFLAGS.],
+    JS_JITSPEW=1,
+    JS_JITSPEW= )
+
+if test -n "$JS_JITSPEW" -o -n "$MOZ_DEBUG"; then
+    AC_DEFINE(JS_JITSPEW)
+fi
+
+AC_SUBST(JS_JITSPEW)
 
 dnl ========================================================
 dnl Debug (see Bug 939505)
@@ -3261,24 +3283,6 @@ MOZ_ARG_ENABLE_BOOL(oom-breakpoint,
 if test -n "$JS_OOM_BREAKPOINT"; then
     AC_DEFINE(JS_OOM_BREAKPOINT)
 fi
-
-dnl ========================================================
-dnl = Enable static checking using gcc-dehydra
-dnl ========================================================
-
-MOZ_ARG_WITH_STRING(static-checking,
-[  --with-static-checking=path/to/gcc_dehydra.so
-                          Enable static checking of code using GCC-dehydra],
-    DEHYDRA_PATH=$withval,
-    DEHYDRA_PATH= )
-
-if test -n "$DEHYDRA_PATH"; then
-    if test ! -f "$DEHYDRA_PATH"; then
-        AC_MSG_ERROR([The dehydra plugin is not at the specified path.])
-    fi
-    AC_DEFINE(NS_STATIC_CHECKING)
-fi
-AC_SUBST(DEHYDRA_PATH)
 
 dnl ========================================================
 dnl = Enable using the clang plugin to build
@@ -3621,8 +3625,6 @@ AC_SUBST(FILTER)
 AC_SUBST(BIN_FLAGS)
 AC_SUBST(MOZ_DEBUG)
 AC_SUBST(MOZ_DEBUG_SYMBOLS)
-AC_SUBST(MOZ_DEBUG_ENABLE_DEFS)
-AC_SUBST(MOZ_DEBUG_DISABLE_DEFS)
 AC_SUBST(MOZ_DEBUG_LDFLAGS)
 AC_SUBST(WARNINGS_AS_ERRORS)
 AC_SUBST(MOZ_JPROF)
@@ -3686,8 +3688,6 @@ HOST_CXXFLAGS=`echo \
     $HOST_CXXFLAGS \
     $_DEPEND_CFLAGS`
 
-AC_SUBST(NSPR_CFLAGS)
-AC_SUBST_LIST(NSPR_LIBS)
 AC_SUBST(MOZ_NATIVE_NSPR)
 
 if test -n "$MOZ_NUWA_PROCESS"; then
@@ -3765,7 +3765,12 @@ dnl Set various defines and substitutions
 dnl ========================================================
 
 if test "$OS_ARCH" = "Darwin"; then
-  AC_DEFINE(XP_MACOSX)
+  if test -n "$MOZ_IOS"; then
+    AC_DEFINE(XP_IOS)
+  else
+    AC_DEFINE(XP_MACOSX)
+  fi
+  AC_DEFINE(XP_DARWIN)
   AC_DEFINE(XP_UNIX)
 elif test "$OS_ARCH" != "WINNT"; then
   AC_DEFINE(XP_UNIX)
@@ -3787,6 +3792,17 @@ if test "$ACCESSIBILITY" -a "$MOZ_ENABLE_GTK" ; then
     AC_DEFINE_UNQUOTED(ATK_REV_VERSION, $ATK_REV_VERSION)
 fi
 
+dnl ========================================================
+dnl Determine options to use for running the preprocessor.
+dnl ========================================================
+
+if test -z "$GNU_CC" -a "$OS_ARCH" = "WINNT"; then
+    PREPROCESS_OPTION="-P -Fi"
+else
+    PREPROCESS_OPTION="-E -o "
+fi
+
+AC_SUBST(PREPROCESS_OPTION)
 
 dnl ========================================================
 dnl ECMAScript Internationalization API Support (uses ICU)
@@ -3835,6 +3851,9 @@ if test -n "$MOZ_BUILD_NSPR"; then
 fi
 MOZ_SUBCONFIGURE_FFI()
 MOZ_SUBCONFIGURE_JEMALLOC()
+
+# Avoid using obsolete NSPR features
+AC_DEFINE(NO_NSPR_10_SUPPORT)
 
 dnl Spit out some output
 dnl ========================================================

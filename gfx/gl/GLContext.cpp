@@ -17,6 +17,7 @@
 #include "GLScreenBuffer.h"
 
 #include "gfxCrashReporterUtils.h"
+#include "gfxEnv.h"
 #include "gfxUtils.h"
 #include "GLContextProvider.h"
 #include "GLTextureImage.h"
@@ -39,7 +40,6 @@
 
 #ifdef XP_MACOSX
 #include <CoreServices/CoreServices.h>
-#include "gfxColor.h"
 #endif
 
 #if defined(MOZ_WIDGET_COCOA)
@@ -78,6 +78,7 @@ static const char *sExtensionNames[] = {
     "GL_ANGLE_timer_query",
     "GL_APPLE_client_storage",
     "GL_APPLE_framebuffer_multisample",
+    "GL_APPLE_sync",
     "GL_APPLE_texture_range",
     "GL_APPLE_vertex_array_object",
     "GL_ARB_ES2_compatibility",
@@ -177,6 +178,97 @@ static const char *sExtensionNames[] = {
     "GL_OES_texture_npot",
     "GL_OES_vertex_array_object"
 };
+
+static bool
+ParseGLSLVersion(GLContext* gl, uint32_t* out_version)
+{
+    if (gl->fGetError() != LOCAL_GL_NO_ERROR) {
+        MOZ_ASSERT(false, "An OpenGL error has been triggered before.");
+        return false;
+    }
+
+    /**
+     * OpenGL 2.x, 3.x, 4.x specifications:
+     *  The VERSION and SHADING_LANGUAGE_VERSION strings are laid out as follows:
+     *
+     *    <version number><space><vendor-specific information>
+     *
+     *  The version number is either of the form major_number.minor_number or
+     *  major_number.minor_number.release_number, where the numbers all have
+     *  one or more digits.
+     *
+     * SHADING_LANGUAGE_VERSION is *almost* identical to VERSION. The
+     * difference is that the minor version always has two digits and the
+     * prefix has an additional 'GLSL ES'
+     *
+     *
+     * OpenGL ES 2.0, 3.0 specifications:
+     *  The VERSION string is laid out as follows:
+     *
+     *     "OpenGL ES N.M vendor-specific information"
+     *
+     *  The version number is either of the form major_number.minor_number or
+     *  major_number.minor_number.release_number, where the numbers all have
+     *  one or more digits.
+     *
+     *
+     * Note:
+     *  We don't care about release_number.
+     */
+    const char* versionString = (const char*) gl->fGetString(LOCAL_GL_SHADING_LANGUAGE_VERSION);
+
+    if (gl->fGetError() != LOCAL_GL_NO_ERROR) {
+        MOZ_ASSERT(false, "glGetString(GL_SHADING_LANGUAGE_VERSION) has generated an error");
+        return false;
+    }
+
+    if (!versionString) {
+        // This happens on the Android emulators. We'll just return 100
+        *out_version = 100;
+        return true;
+    }
+
+    const char kGLESVersionPrefix[] = "OpenGL ES GLSL ES";
+    if (strncmp(versionString, kGLESVersionPrefix, strlen(kGLESVersionPrefix)) == 0)
+        versionString += strlen(kGLESVersionPrefix);
+
+    const char* itr = versionString;
+    char* end = nullptr;
+    auto majorVersion = strtol(itr, &end, 10);
+
+    if (!end) {
+        MOZ_ASSERT(false, "Failed to parse the GL major version number.");
+        return false;
+    }
+
+    if (*end != '.') {
+        MOZ_ASSERT(false, "Failed to parse GL's major-minor version number separator.");
+        return false;
+    }
+
+    // we skip the '.' between the major and the minor version
+    itr = end + 1;
+    end = nullptr;
+
+    auto minorVersion = strtol(itr, &end, 10);
+    if (!end) {
+        MOZ_ASSERT(false, "Failed to parse GL's minor version number.");
+        return false;
+    }
+
+    if (majorVersion <= 0 || majorVersion >= 100) {
+        MOZ_ASSERT(false, "Invalid major version.");
+        return false;
+    }
+
+    if (minorVersion < 0 || minorVersion >= 100) {
+        MOZ_ASSERT(false, "Invalid minor version.");
+        return false;
+    }
+
+    *out_version = (uint32_t) majorVersion * 100 + (uint32_t) minorVersion;
+    return true;
+}
 
 static bool
 ParseGLVersion(GLContext* gl, uint32_t* out_version)
@@ -302,11 +394,11 @@ GLContext::GLContext(const SurfaceCaps& caps,
     mContextLost(false),
     mVersion(0),
     mProfile(ContextProfile::Unknown),
+    mShadingLanguageVersion(0),
     mVendor(GLVendor::Other),
     mRenderer(GLRenderer::Other),
     mHasRobustness(false),
     mTopError(LOCAL_GL_NO_ERROR),
-    mLocalErrorScope(nullptr),
     mSharedContext(sharedContext),
     mCaps(caps),
     mScreen(nullptr),
@@ -515,8 +607,12 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         uint32_t version = 0;
         ParseGLVersion(this, &version);
 
+        mShadingLanguageVersion = 100;
+        ParseGLSLVersion(this, &mShadingLanguageVersion);
+
         if (ShouldSpew()) {
             printf_stderr("OpenGL version detected: %u\n", version);
+            printf_stderr("OpenGL shading language version detected: %u\n", mShadingLanguageVersion);
             printf_stderr("OpenGL vendor: %s\n", fGetString(LOCAL_GL_VENDOR));
             printf_stderr("OpenGL renderer: %s\n", fGetString(LOCAL_GL_RENDERER));
         }
@@ -638,16 +734,16 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
 
 
 #ifdef MOZ_GL_DEBUG
-    if (PR_GetEnv("MOZ_GL_DEBUG"))
+    if (gfxEnv::GlDebug())
         sDebugMode |= DebugEnabled;
 
     // enables extra verbose output, informing of the start and finish of every GL call.
     // useful e.g. to record information to investigate graphics system crashes/lockups
-    if (PR_GetEnv("MOZ_GL_DEBUG_VERBOSE"))
+    if (gfxEnv::GlDebugVerbose())
         sDebugMode |= DebugTrace;
 
     // aborts on GL error. Can be useful to debug quicker code that is known not to generate any GL error in principle.
-    if (PR_GetEnv("MOZ_GL_DEBUG_ABORT_ON_ERROR"))
+    if (gfxEnv::GlDebugAbortOnError())
         sDebugMode |= DebugAbortOnError;
 #endif
 
@@ -785,7 +881,6 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         }
 
         if (!IsSupported(GLFeature::framebuffer_object)) {
-
             // Check for aux symbols based on extensions
             if (IsSupported(GLFeature::framebuffer_object_EXT_OES))
             {
@@ -813,11 +908,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
                 }
             }
 
-            if (IsExtensionSupported(GLContext::ANGLE_framebuffer_blit) ||
-                IsExtensionSupported(GLContext::EXT_framebuffer_blit) ||
-                IsExtensionSupported(GLContext::NV_framebuffer_blit))
-
-            {
+            if (IsSupported(GLFeature::framebuffer_blit)) {
                 SymLoadStruct extSymbols[] = {
                     EXT_SYMBOL3(BlitFramebuffer, ANGLE, EXT, NV),
                     END_SYMBOLS
@@ -828,11 +919,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
                 }
             }
 
-            if (IsExtensionSupported(GLContext::ANGLE_framebuffer_multisample) ||
-                IsExtensionSupported(GLContext::APPLE_framebuffer_multisample) ||
-                IsExtensionSupported(GLContext::EXT_framebuffer_multisample) ||
-                IsExtensionSupported(GLContext::EXT_multisampled_render_to_texture))
-            {
+            if (IsSupported(GLFeature::framebuffer_multisample)) {
                 SymLoadStruct extSymbols[] = {
                     EXT_SYMBOL3(RenderbufferStorageMultisample, ANGLE, APPLE, EXT),
                     END_SYMBOLS
@@ -1354,6 +1441,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             SymLoadStruct mapBufferRangeSymbols[] = {
                 { (PRFuncPtr*) &mSymbols.fMapBufferRange, { "MapBufferRange", nullptr } },
                 { (PRFuncPtr*) &mSymbols.fFlushMappedBufferRange, { "FlushMappedBufferRange", nullptr } },
+                { (PRFuncPtr*) &mSymbols.fUnmapBuffer, { "UnmapBuffer", nullptr } },
                 END_SYMBOLS
             };
 
@@ -1432,10 +1520,11 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         }
 
         if (IsSupported(GLFeature::uniform_buffer_object)) {
+            // Note: Don't query for glGetActiveUniformName because it is not
+            // supported by GL ES 3.
             SymLoadStruct uboSymbols[] = {
                 { (PRFuncPtr*) &mSymbols.fGetUniformIndices, { "GetUniformIndices", nullptr } },
                 { (PRFuncPtr*) &mSymbols.fGetActiveUniformsiv, { "GetActiveUniformsiv", nullptr } },
-                { (PRFuncPtr*) &mSymbols.fGetActiveUniformName, { "GetActiveUniformName", nullptr } },
                 { (PRFuncPtr*) &mSymbols.fGetUniformBlockIndex, { "GetUniformBlockIndex", nullptr } },
                 { (PRFuncPtr*) &mSymbols.fGetActiveUniformBlockiv, { "GetActiveUniformBlockiv", nullptr } },
                 { (PRFuncPtr*) &mSymbols.fGetActiveUniformBlockName, { "GetActiveUniformBlockName", nullptr } },
@@ -1546,7 +1635,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
 
         if (IsSupported(GLFeature::read_buffer)) {
             SymLoadStruct extSymbols[] = {
-                { (PRFuncPtr*) &mSymbols.fReadBuffer, { "ReadBuffer",    nullptr } },
+                { (PRFuncPtr*) &mSymbols.fReadBuffer, { "ReadBuffer", nullptr } },
                 END_SYMBOLS
             };
 
@@ -1554,6 +1643,20 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
                 NS_ERROR("GL supports read_buffer without supplying its functions.");
 
                 MarkUnsupported(GLFeature::read_buffer);
+                ClearSymbols(extSymbols);
+            }
+        }
+
+        if (IsExtensionSupported(APPLE_framebuffer_multisample)) {
+            SymLoadStruct extSymbols[] = {
+                { (PRFuncPtr*) &mSymbols.fResolveMultisampleFramebufferAPPLE, { "ResolveMultisampleFramebufferAPPLE", nullptr } },
+                END_SYMBOLS
+            };
+
+            if (!LoadSymbols(&extSymbols[0], trygl, prefix)) {
+                NS_ERROR("GL supports APPLE_framebuffer_multisample without supplying its functions.");
+
+                MarkExtensionUnsupported(APPLE_framebuffer_multisample);
                 ClearSymbols(extSymbols);
             }
         }
@@ -1602,11 +1705,18 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         }
 #endif
 #ifdef MOZ_X11
-        if (mWorkAroundDriverBugs &&
-            mVendor == GLVendor::Nouveau) {
-            // see bug 814716. Clamp MaxCubeMapTextureSize at 2K for Nouveau.
-            mMaxCubeMapTextureSize = std::min(mMaxCubeMapTextureSize, 2048);
-            mNeedsTextureSizeChecks = true;
+        if (mWorkAroundDriverBugs) {
+            if (mVendor == GLVendor::Nouveau) {
+                // see bug 814716. Clamp MaxCubeMapTextureSize at 2K for Nouveau.
+                mMaxCubeMapTextureSize = std::min(mMaxCubeMapTextureSize, 2048);
+                mNeedsTextureSizeChecks = true;
+            } else if (mVendor == GLVendor::Intel) {
+                // Bug 1199923. Driver seems to report a larger max size than
+                // actually supported.
+                mMaxTextureSize /= 2;
+                mMaxRenderbufferSize /= 2;
+                mNeedsTextureSizeChecks = true;
+            }
         }
 #endif
         if (mWorkAroundDriverBugs &&
@@ -2576,8 +2686,7 @@ GLContext::FlushIfHeavyGLCallsSinceLastFlush()
 /*static*/ bool
 GLContext::ShouldDumpExts()
 {
-    static bool ret = PR_GetEnv("MOZ_GL_DUMP_EXTS");
-    return ret;
+    return gfxEnv::GlDumpExtensions();
 }
 
 bool
@@ -2607,8 +2716,7 @@ DoesStringMatch(const char* aString, const char *aWantedString)
 /*static*/ bool
 GLContext::ShouldSpew()
 {
-    static bool ret = PR_GetEnv("MOZ_GL_SPEW");
-    return ret;
+    return gfxEnv::GlSpew();
 }
 
 void
@@ -2652,6 +2760,7 @@ GLContext::Readback(SharedSurface* src, gfx::DataSourceSurface* dest)
     }
 
     GLuint tempFB = 0;
+    GLuint tempTex = 0;
 
     {
         ScopedBindFramebuffer autoFB(this);
@@ -2676,11 +2785,29 @@ GLContext::Readback(SharedSurface* src, gfx::DataSourceSurface* dest)
                                          LOCAL_GL_RENDERBUFFER, src->ProdRenderbuffer());
                 break;
             default:
-                MOZ_CRASH("bad `src->mAttachType`.");
+                MOZ_CRASH("GFX: bad `src->mAttachType`.");
             }
 
             DebugOnly<GLenum> status = fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
             MOZ_ASSERT(status == LOCAL_GL_FRAMEBUFFER_COMPLETE);
+        }
+
+        if (src->NeedsIndirectReads()) {
+            fGenTextures(1, &tempTex);
+            {
+                ScopedBindTexture autoTex(this, tempTex);
+
+                GLenum format = src->mHasAlpha ? LOCAL_GL_RGBA
+                                               : LOCAL_GL_RGB;
+                auto width = src->mSize.width;
+                auto height = src->mSize.height;
+                fCopyTexImage2D(LOCAL_GL_TEXTURE_2D, 0, format, 0, 0, width,
+                                height, 0);
+            }
+
+            fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER,
+                                  LOCAL_GL_COLOR_ATTACHMENT0,
+                                  LOCAL_GL_TEXTURE_2D, tempTex, 0);
         }
 
         ReadPixelsIntoDataSurface(this, dest);
@@ -2690,6 +2817,10 @@ GLContext::Readback(SharedSurface* src, gfx::DataSourceSurface* dest)
 
     if (tempFB)
         fDeleteFramebuffers(1, &tempFB);
+
+    if (tempTex) {
+        fDeleteTextures(1, &tempTex);
+    }
 
     if (needsSwap) {
         src->UnlockProd();
@@ -2890,7 +3021,7 @@ GLContext::GetReadFB()
     if (mScreen)
         return mScreen->GetReadFB();
 
-    GLenum bindEnum = IsSupported(GLFeature::framebuffer_blit)
+    GLenum bindEnum = IsSupported(GLFeature::split_framebuffer)
                         ? LOCAL_GL_READ_FRAMEBUFFER_BINDING_EXT
                         : LOCAL_GL_FRAMEBUFFER_BINDING;
 
@@ -2938,6 +3069,60 @@ GLContext::IsDrawingToDefaultFramebuffer()
 {
     return Screen()->IsDrawFramebufferDefault();
 }
+
+GLuint
+CreateTexture(GLContext* aGL, GLenum aInternalFormat, GLenum aFormat,
+              GLenum aType, const gfx::IntSize& aSize, bool linear)
+{
+    GLuint tex = 0;
+    aGL->fGenTextures(1, &tex);
+    ScopedBindTexture autoTex(aGL, tex);
+
+    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D,
+                        LOCAL_GL_TEXTURE_MIN_FILTER, linear ? LOCAL_GL_LINEAR
+                                                            : LOCAL_GL_NEAREST);
+    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D,
+                        LOCAL_GL_TEXTURE_MAG_FILTER, linear ? LOCAL_GL_LINEAR
+                                                            : LOCAL_GL_NEAREST);
+    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S,
+                        LOCAL_GL_CLAMP_TO_EDGE);
+    aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T,
+                        LOCAL_GL_CLAMP_TO_EDGE);
+
+    aGL->fTexImage2D(LOCAL_GL_TEXTURE_2D,
+                     0,
+                     aInternalFormat,
+                     aSize.width, aSize.height,
+                     0,
+                     aFormat,
+                     aType,
+                     nullptr);
+
+    return tex;
+}
+
+GLuint
+CreateTextureForOffscreen(GLContext* aGL, const GLFormats& aFormats,
+                          const gfx::IntSize& aSize)
+{
+    MOZ_ASSERT(aFormats.color_texInternalFormat);
+    MOZ_ASSERT(aFormats.color_texFormat);
+    MOZ_ASSERT(aFormats.color_texType);
+
+    GLenum internalFormat = aFormats.color_texInternalFormat;
+    GLenum unpackFormat = aFormats.color_texFormat;
+    GLenum unpackType = aFormats.color_texType;
+    if (aGL->IsANGLE()) {
+        MOZ_ASSERT(internalFormat == LOCAL_GL_RGBA);
+        MOZ_ASSERT(unpackFormat == LOCAL_GL_RGBA);
+        MOZ_ASSERT(unpackType == LOCAL_GL_UNSIGNED_BYTE);
+        internalFormat = LOCAL_GL_BGRA_EXT;
+        unpackFormat = LOCAL_GL_BGRA_EXT;
+    }
+
+    return CreateTexture(aGL, internalFormat, unpackFormat, unpackType, aSize);
+}
+
 
 } /* namespace gl */
 } /* namespace mozilla */

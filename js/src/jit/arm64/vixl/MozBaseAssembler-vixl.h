@@ -40,8 +40,8 @@ using js::jit::BufferOffset;
 
 
 class MozBaseAssembler;
-typedef js::jit::AssemblerBufferWithConstantPools<1024, 4, Instruction, MozBaseAssembler> ARMBuffer;
-
+typedef js::jit::AssemblerBufferWithConstantPools<1024, 4, Instruction, MozBaseAssembler,
+                                                  NumShortBranchRangeTypes> ARMBuffer;
 
 // Base class for vixl::Assembler, for isolating Moz-specific changes to VIXL.
 class MozBaseAssembler : public js::jit::AssemblerShared {
@@ -88,6 +88,31 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
   }
 
  protected:
+  // Get the buffer offset of the next inserted instruction. This may flush
+  // constant pools.
+  BufferOffset nextInstrOffset() {
+    return armbuffer_.nextInstrOffset();
+  }
+
+  // Get the next usable buffer offset. Note that a constant pool may be placed
+  // here before the next instruction is emitted.
+  BufferOffset nextOffset() const {
+    return armbuffer_.nextOffset();
+  }
+
+  // Allocate memory in the buffer by forwarding to armbuffer_.
+  // Propagate OOM errors.
+  BufferOffset allocEntry(size_t numInst, unsigned numPoolEntries,
+                          uint8_t* inst, uint8_t* data,
+                          ARMBuffer::PoolEntry* pe = nullptr,
+                          bool markAsBranch = false)
+  {
+    BufferOffset offset = armbuffer_.allocEntry(numInst, numPoolEntries, inst,
+                                                data, pe, markAsBranch);
+    propagateOOM(offset.assigned());
+    return offset;
+  }
+
   // Emit the instruction, returning its offset.
   BufferOffset Emit(Instr instruction, bool isBranch = false) {
     JS_STATIC_ASSERT(sizeof(instruction) == kInstructionSize);
@@ -144,6 +169,8 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
   // Static interface used by IonAssemblerBufferWithConstantPools.
   static void InsertIndexIntoTag(uint8_t* load, uint32_t index);
   static bool PatchConstantPoolLoad(void* loadAddr, void* constPoolAddr);
+  static void PatchShortRangeBranchToVeneer(ARMBuffer*, unsigned rangeIdx, BufferOffset deadline,
+                                            BufferOffset veneer);
   static uint32_t PlaceConstantPoolBarrier(int offset);
 
   static void WritePoolHeader(uint8_t* start, js::jit::Pool* p, bool isNatural);
@@ -156,6 +183,27 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
   static void RetargetFarBranch(Instruction* i, uint8_t** slot, uint8_t* dest, Condition cond);
 
  protected:
+  // Functions for managing Labels and linked lists of Label uses.
+
+  // Get the next Label user in the linked list of Label uses.
+  // Return an unassigned BufferOffset when the end of the list is reached.
+  BufferOffset NextLink(BufferOffset cur);
+
+  // Patch the instruction at cur to link to the instruction at next.
+  void SetNextLink(BufferOffset cur, BufferOffset next);
+
+  // Link the current (not-yet-emitted) instruction to the specified label,
+  // then return a raw offset to be encoded in the instruction.
+  ptrdiff_t LinkAndGetByteOffsetTo(BufferOffset branch, js::jit::Label* label);
+  ptrdiff_t LinkAndGetInstructionOffsetTo(BufferOffset branch, ImmBranchRangeType branchRange,
+                                          js::jit::Label* label);
+  ptrdiff_t LinkAndGetPageOffsetTo(BufferOffset branch, js::jit::Label* label);
+
+  // A common implementation for the LinkAndGet<Type>OffsetTo helpers.
+  ptrdiff_t LinkAndGetOffsetTo(BufferOffset branch, ImmBranchRangeType branchRange,
+                               unsigned elementSizeBits, js::jit::Label* label);
+
+ protected:
   // The buffer into which code and relocation info are generated.
   ARMBuffer armbuffer_;
 
@@ -163,9 +211,6 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
   js::jit::CompactBufferWriter dataRelocations_;
   js::jit::CompactBufferWriter relocations_;
   js::jit::CompactBufferWriter preBarriers_;
-
-  // Literal pools.
-  mozilla::Array<js::jit::Pool, 4> pools_;
 };
 
 

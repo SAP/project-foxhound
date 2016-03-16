@@ -7,7 +7,7 @@
  * This file tests the DirectoryLinksProvider singleton in the DirectoryLinksProvider.jsm module.
  */
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu, Constructor: CC } = Components;
+var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu, Constructor: CC } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource:///modules/DirectoryLinksProvider.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
@@ -22,6 +22,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "NewTabUtils",
   "resource://gre/modules/NewTabUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
+  "resource://testing-common/PlacesTestUtils.jsm");
 
 do_get_profile();
 
@@ -1687,8 +1689,7 @@ add_task(function test_DirectoryLinksProvider_ClickRemoval() {
 
   testObserver = new UrlDeletionTester();
   DirectoryLinksProvider.addObserver(testObserver);
-  // remove all hostory
-  PlacesUtils.bhistory.removeAllPages();
+  yield PlacesTestUtils.clearHistory();
 
   yield testObserver.promise;
   DirectoryLinksProvider.removeObserver(testObserver);

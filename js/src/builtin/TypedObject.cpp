@@ -13,13 +13,13 @@
 #include "jsfun.h"
 #include "jsutil.h"
 
+#include "builtin/SIMD.h"
 #include "gc/Marking.h"
 #include "js/Vector.h"
 #include "vm/GlobalObject.h"
 #include "vm/String.h"
 #include "vm/StringBuffer.h"
 #include "vm/TypedArrayObject.h"
-#include "vm/WeakMapObject.h"
 
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
@@ -225,7 +225,6 @@ const Class js::ScalarTypeDescr::class_ = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     TypeDescr::finalize,
     ScalarTypeDescr::call
 };
@@ -323,7 +322,6 @@ const Class js::ReferenceTypeDescr::class_ = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     TypeDescr::finalize,
     ReferenceTypeDescr::call
 };
@@ -414,36 +412,26 @@ js::ReferenceTypeDescr::call(JSContext* cx, unsigned argc, Value* vp)
  * Note: these are partially defined in SIMD.cpp
  */
 
-static const int32_t SimdSizes[] = {
-#define SIMD_SIZE(_kind, _type, _name, _lanes)                 \
-    sizeof(_type) * _lanes,
-    JS_FOR_EACH_SIMD_TYPE_REPR(SIMD_SIZE) 0
-#undef SIMD_SIZE
-};
-
-static int32_t SimdLanes[] = {
-#define SIMD_LANE(_kind, _type, _name, _lanes)                 \
-    _lanes,
-    JS_FOR_EACH_SIMD_TYPE_REPR(SIMD_LANE) 0
-#undef SIMD_LANE
-};
-
 int32_t
 SimdTypeDescr::size(Type t)
 {
-    return SimdSizes[t];
+    MOZ_ASSERT(unsigned(t) <= SimdTypeDescr::Type::LAST_TYPE);
+    switch (t) {
+      case SimdTypeDescr::Int8x16:
+      case SimdTypeDescr::Int16x8:
+      case SimdTypeDescr::Int32x4:
+      case SimdTypeDescr::Float32x4:
+      case SimdTypeDescr::Float64x2:
+        return 16;
+    }
+    MOZ_CRASH("unexpected SIMD type");
 }
 
 int32_t
 SimdTypeDescr::alignment(Type t)
 {
-    return SimdSizes[t];
-}
-
-int32_t
-SimdTypeDescr::lanes(Type t)
-{
-    return SimdLanes[t];
+    MOZ_ASSERT(unsigned(t) <= SimdTypeDescr::Type::LAST_TYPE);
+    return size(t);
 }
 
 /***************************************************************************
@@ -503,7 +491,6 @@ const Class ArrayTypeDescr::class_ = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     TypeDescr::finalize,
     nullptr, /* call */
     nullptr, /* hasInstance */
@@ -645,11 +632,8 @@ ArrayMetaTypeDescr::construct(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    if (!args.isConstructing()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
-                             JSMSG_NOT_FUNCTION, "ArrayType");
+    if (!ThrowIfNotConstructing(cx, args, "ArrayType"))
         return false;
-    }
 
     RootedObject arrayTypeGlobal(cx, &args.callee());
 
@@ -732,7 +716,6 @@ const Class StructTypeDescr::class_ = {
     nullptr, /* enumerate */
     nullptr, /* resolve */
     nullptr, /* mayResolve */
-    nullptr, /* convert */
     TypeDescr::finalize,
     nullptr, /* call */
     nullptr, /* hasInstance */
@@ -1003,11 +986,8 @@ StructMetaTypeDescr::construct(JSContext* cx, unsigned int argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    if (!args.isConstructing()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
-                             JSMSG_NOT_FUNCTION, "StructType");
+    if (!ThrowIfNotConstructing(cx, args, "StructType"))
         return false;
-    }
 
     if (args.length() >= 1 && args[0].isObject()) {
         RootedObject metaTypeDescr(cx, &args.callee());
@@ -1473,7 +1453,7 @@ OutlineTypedObject::setOwnerAndData(JSObject* owner, uint8_t* data)
     // Trigger a post barrier when attaching an object outside the nursery to
     // one that is inside it.
     if (owner && !IsInsideNursery(this) && IsInsideNursery(owner))
-        runtimeFromMainThread()->gc.storeBuffer.putWholeCellFromMainThread(this);
+        runtimeFromMainThread()->gc.storeBuffer.putWholeCell(this);
 }
 
 /*static*/ OutlineTypedObject*
@@ -1520,8 +1500,11 @@ OutlineTypedObject::attach(JSContext* cx, ArrayBufferObject& buffer, int32_t off
 
     buffer.setHasTypedObjectViews();
 
-    if (!buffer.addView(cx, this))
-        CrashAtUnhandlableOOM("TypedObject::attach");
+    {
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        if (!buffer.addView(cx, this))
+            oomUnsafe.crash("TypedObject::attach");
+    }
 
     setOwnerAndData(&buffer, buffer.dataPointer() + offset);
 }
@@ -1922,7 +1905,7 @@ TypedObject::obj_setProperty(JSContext* cx, HandleObject obj, HandleId id, Handl
         uint32_t index;
         if (IdIsIndex(id, &index)) {
             if (!receiver.isObject() || obj != &receiver.toObject())
-                return SetPropertyByDefining(cx, obj, id, v, receiver, result);
+                return SetPropertyByDefining(cx, id, v, receiver, result);
 
             if (index >= uint32_t(typedObj->length())) {
                 JS_ReportErrorNumber(cx, GetErrorMessage,
@@ -1948,7 +1931,7 @@ TypedObject::obj_setProperty(JSContext* cx, HandleObject obj, HandleId id, Handl
             break;
 
         if (!receiver.isObject() || obj != &receiver.toObject())
-            return SetPropertyByDefining(cx, obj, id, v, receiver, result);
+            return SetPropertyByDefining(cx, id, v, receiver, result);
 
         size_t offset = descr->fieldOffset(fieldIndex);
         Rooted<TypeDescr*> fieldType(cx, &descr->fieldDescr(fieldIndex));
@@ -2226,7 +2209,7 @@ InlineTransparentTypedObject::getOrCreateBuffer(JSContext* cx)
     if (IsInsideNursery(this)) {
         // Make sure the buffer is traced by the next generational collection,
         // so that its data pointer is updated after this typed object moves.
-        cx->runtime()->gc.storeBuffer.putWholeCellFromMainThread(buffer);
+        cx->runtime()->gc.storeBuffer.putWholeCell(buffer);
     }
 
     return buffer;
@@ -2255,7 +2238,6 @@ OutlineTransparentTypedObject::getOrCreateBuffer(JSContext* cx)
         nullptr,        /* enumerate   */                \
         nullptr,        /* resolve     */                \
         nullptr,        /* mayResolve  */                \
-        nullptr,        /* convert     */                \
         nullptr,        /* finalize    */                \
         nullptr,        /* call        */                \
         nullptr,        /* hasInstance */                \
@@ -2274,7 +2256,7 @@ OutlineTransparentTypedObject::getOrCreateBuffer(JSContext* cx)
             nullptr, nullptr, /* watch/unwatch */        \
             nullptr,   /* getElements */                 \
             TypedObject::obj_enumerate,                  \
-            nullptr, /* thisObject */                    \
+            nullptr, /* thisValue */                     \
         }                                                \
     }
 
@@ -2606,7 +2588,7 @@ js::GetFloat32x4TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(global->float32x4TypeDescr());
+    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Float32x4>(cx));
     return true;
 }
 
@@ -2616,7 +2598,7 @@ js::GetFloat64x2TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(global->float64x2TypeDescr());
+    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Float64x2>(cx));
     return true;
 }
 
@@ -2626,7 +2608,7 @@ js::GetInt8x16TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(global->int8x16TypeDescr());
+    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Int8x16>(cx));
     return true;
 }
 
@@ -2636,7 +2618,7 @@ js::GetInt16x8TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(global->int16x8TypeDescr());
+    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Int16x8>(cx));
     return true;
 }
 
@@ -2646,7 +2628,7 @@ js::GetInt32x4TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(global->int32x4TypeDescr());
+    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Int32x4>(cx));
     return true;
 }
 
@@ -3026,8 +3008,9 @@ TraceListVisitor::visitReference(ReferenceTypeDescr& descr, uint8_t* mem)
       default: MOZ_CRASH("Invalid kind");
     }
 
+    AutoEnterOOMUnsafeRegion oomUnsafe;
     if (!offsets->append((uintptr_t) mem))
-        CrashAtUnhandlableOOM("TraceListVisitor::visitReference");
+        oomUnsafe.crash("TraceListVisitor::visitReference");
 }
 
 bool

@@ -3,6 +3,8 @@
 
 "use strict";
 
+requestLongerTimeout(2);
+
 const PAGE_1 = "data:text/html,<html><body>A%20regular,%20everyday,%20normal%20page.";
 const PAGE_2 = "data:text/html,<html><body>Another%20regular,%20everyday,%20normal%20page.";
 
@@ -102,6 +104,23 @@ function promiseHistoryLength(browser, length) {
 }
 
 /**
+ * Returns a Promise that resolves when a browser has fired the
+ * AboutTabCrashedReady event.
+ *
+ * @param browser
+ *        The remote <xul:browser> that will fire the event.
+ * @return Promise
+ */
+function promiseTabCrashedReady(browser) {
+  return new Promise((resolve) => {
+    browser.addEventListener("AboutTabCrashedReady", function ready(e) {
+      browser.removeEventListener("AboutTabCrashedReady", ready, false, true);
+      resolve();
+    }, false, true);
+  });
+}
+
+/**
  * Checks that if a tab crashes, that information about the tab crashed
  * page does not get added to the tab history.
  */
@@ -117,7 +136,7 @@ add_task(function test_crash_page_not_in_history() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
+  yield BrowserTestUtils.crashBrowser(browser);
 
   // Check the tab state and make sure the tab crashed page isn't
   // mentioned.
@@ -146,7 +165,7 @@ add_task(function test_revived_history_from_remote() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
+  yield BrowserTestUtils.crashBrowser(browser);
 
   // Browse to a new site that will cause the browser to
   // become remote again.
@@ -185,7 +204,7 @@ add_task(function test_revived_history_from_non_remote() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
+  yield BrowserTestUtils.crashBrowser(browser);
 
   // Browse to a new site that will not cause the browser to
   // become remote again.
@@ -235,14 +254,17 @@ add_task(function test_revive_tab_from_session_store() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
-  is(newTab2.getAttribute("crashed"), "true", "Second tab should be crashed too.");
+  yield BrowserTestUtils.crashBrowser(browser);
+  // Background tabs should not be crashed, but should be in the "to be restored"
+  // state.
+  ok(!newTab2.hasAttribute("crashed"), "Second tab should not be crashed.");
+  ok(newTab2.hasAttribute("pending"), "Second tab should be pending.");
 
-  // Use SessionStore to revive the tab
+  // Use SessionStore to revive the first tab
   clickButton(browser, "restoreTab");
   yield promiseTabRestored(newTab);
   ok(!newTab.hasAttribute("crashed"), "Tab shouldn't be marked as crashed anymore.");
-  is(newTab2.getAttribute("crashed"), "true", "Second tab should still be crashed though.");
+  ok(newTab2.hasAttribute("pending"), "Second tab should still be pending.");
 
   // We can't just check browser.currentURI.spec, because from
   // the outside, a crashed tab has the same URI as the page
@@ -258,8 +280,8 @@ add_task(function test_revive_tab_from_session_store() {
 });
 
 /**
- * Checks that we can revive a crashed tab back to the page that
- * it was on when it crashed.
+ * Checks that we can revive multiple crashed tabs back to the pages
+ * that they were on when they crashed.
  */
 add_task(function test_revive_all_tabs_from_session_store() {
   let newTab = gBrowser.addTab();
@@ -271,7 +293,12 @@ add_task(function test_revive_all_tabs_from_session_store() {
   browser.loadURI(PAGE_1);
   yield promiseBrowserLoaded(browser);
 
-  let newTab2 = gBrowser.addTab(PAGE_1);
+  // In order to see a second about:tabcrashed page, we'll need
+  // a second window, since only selected tabs will show
+  // about:tabcrashed.
+  let win2 = yield BrowserTestUtils.openNewBrowserWindow();
+  let newTab2 = win2.gBrowser.addTab(PAGE_1);
+  win2.gBrowser.selectedTab = newTab2;
   let browser2 = newTab2.linkedBrowser;
   ok(browser2.isRemoteBrowser, "Should be a remote browser");
   yield promiseBrowserLoaded(browser2);
@@ -286,8 +313,10 @@ add_task(function test_revive_all_tabs_from_session_store() {
   yield TabStateFlusher.flush(browser2);
 
   // Crash the tab
-  yield crashBrowser(browser);
-  is(newTab2.getAttribute("crashed"), "true", "Second tab should be crashed too.");
+  yield BrowserTestUtils.crashBrowser(browser);
+  // Both tabs should now be crashed.
+  is(newTab.getAttribute("crashed"), "true", "First tab should be crashed");
+  is(newTab2.getAttribute("crashed"), "true", "Second window tab should be crashed");
 
   // Use SessionStore to revive all the tabs
   clickButton(browser, "restoreAll");
@@ -295,10 +324,6 @@ add_task(function test_revive_all_tabs_from_session_store() {
   ok(!newTab.hasAttribute("crashed"), "Tab shouldn't be marked as crashed anymore.");
   ok(!newTab.hasAttribute("pending"), "Tab shouldn't be pending.");
   ok(!newTab2.hasAttribute("crashed"), "Second tab shouldn't be marked as crashed anymore.");
-  ok(newTab2.hasAttribute("pending"), "Second tab should be pending.");
-
-  gBrowser.selectedTab = newTab2;
-  yield promiseTabRestored(newTab2);
   ok(!newTab2.hasAttribute("pending"), "Second tab shouldn't be pending.");
 
   // We can't just check browser.currentURI.spec, because from
@@ -311,8 +336,8 @@ add_task(function test_revive_all_tabs_from_session_store() {
   // We should also have two entries in the browser history.
   yield promiseHistoryLength(browser, 2);
 
+  yield BrowserTestUtils.closeWindow(win2);
   gBrowser.removeTab(newTab);
-  gBrowser.removeTab(newTab2);
 });
 
 /**
@@ -331,7 +356,7 @@ add_task(function test_close_tab_after_crash() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
+  yield BrowserTestUtils.crashBrowser(browser);
 
   let promise = promiseEvent(gBrowser.tabContainer, "TabClose");
 
@@ -342,9 +367,10 @@ add_task(function test_close_tab_after_crash() {
   is(gBrowser.tabs.length, 1, "Should have closed the tab");
 });
 
+
 /**
  * Checks that "restore all" button is only shown if more than one tab
- * has crashed.
+ * is showing about:tabcrashed
  */
 add_task(function* test_hide_restore_all_button() {
   let newTab = gBrowser.addTab();
@@ -359,7 +385,7 @@ add_task(function* test_hide_restore_all_button() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
+  yield BrowserTestUtils.crashBrowser(browser);
 
   let doc = browser.contentDocument;
   let restoreAllButton = doc.getElementById("restoreAll");
@@ -374,8 +400,21 @@ add_task(function* test_hide_restore_all_button() {
   browser.loadURI(PAGE_2);
   yield promiseBrowserLoaded(browser);
 
-  // Crash the tab
-  yield crashBrowser(browser);
+  // Load up a second window so we can get another tab to show
+  // about:tabcrashed
+  let win2 = yield BrowserTestUtils.openNewBrowserWindow();
+  let newTab3 = win2.gBrowser.addTab(PAGE_2);
+  win2.gBrowser.selectedTab = newTab3;
+  let otherWinBrowser = newTab3.linkedBrowser;
+  yield promiseBrowserLoaded(otherWinBrowser);
+  // We'll need to make sure the second tab's browser has finished
+  // sending its AboutTabCrashedReady event before we know for
+  // sure whether or not we're showing the right Restore buttons.
+  let otherBrowserReady = promiseTabCrashedReady(otherWinBrowser);
+
+  // Crash the first tab.
+  yield BrowserTestUtils.crashBrowser(browser);
+  yield otherBrowserReady;
 
   doc = browser.contentDocument;
   restoreAllButton = doc.getElementById("restoreAll");
@@ -384,6 +423,7 @@ add_task(function* test_hide_restore_all_button() {
   ok(!restoreAllButton.hasAttribute("hidden"), "Restore All button should not be hidden");
   ok(!(restoreOneButton.classList.contains("primary")), "Restore Tab button should not have the primary class");
 
+  yield BrowserTestUtils.closeWindow(win2);
   gBrowser.removeTab(newTab);
   gBrowser.removeTab(newTab2);
 });
@@ -405,7 +445,7 @@ add_task(function* test_aboutcrashedtabzoom() {
   yield TabStateFlusher.flush(browser);
 
   // Crash the tab
-  yield crashBrowser(browser);
+  yield BrowserTestUtils.crashBrowser(browser);
 
   ok(ZoomManager.getZoomForBrowser(browser) === 1, "zoom should have reset on crash");
 

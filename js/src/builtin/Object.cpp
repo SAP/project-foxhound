@@ -33,7 +33,12 @@ js::obj_construct(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     RootedObject obj(cx, nullptr);
-    if (args.length() > 0 && !args[0].isNullOrUndefined()) {
+    if (args.isConstructing() && (&args.newTarget().toObject() != &args.callee())) {
+        RootedObject newTarget(cx, &args.newTarget().toObject());
+        obj = CreateThis(cx, &PlainObject::class_, newTarget);
+        if (!obj)
+            return false;
+    } else if (args.length() > 0 && !args[0].isNullOrUndefined()) {
         obj = ToObject(cx, args[0]);
         if (!obj)
             return false;
@@ -83,7 +88,7 @@ js::obj_propertyIsEnumerable(JSContext* cx, unsigned argc, Value* vp)
 
     /* Step 1. */
     RootedId idRoot(cx);
-    if (!ValueToId<CanGC>(cx, idValue, &idRoot))
+    if (!ToPropertyKey(cx, idValue, &idRoot))
         return false;
 
     /* Step 2. */
@@ -520,16 +525,6 @@ js::obj_hasOwnProperty(JSContext* cx, unsigned argc, Value* vp)
     jsid id;
     if (args.thisv().isObject() && ValueToId<NoGC>(cx, idValue, &id)) {
         JSObject* obj = &args.thisv().toObject();
-
-#ifndef RELEASE_BUILD
-        if (obj->is<RegExpObject>() && id == NameToId(cx->names().source)) {
-            if (JSScript* script = cx->currentScript()) {
-                const char* filename = script->filename();
-                cx->compartment()->addTelemetry(filename, JSCompartment::RegExpSourceProperty);
-            }
-        }
-#endif
-
         Shape* prop;
         if (obj->isNative() &&
             NativeLookupOwnProperty<NoGC>(cx, &obj->as<NativeObject>(), id, &prop))
@@ -541,7 +536,7 @@ js::obj_hasOwnProperty(JSContext* cx, unsigned argc, Value* vp)
 
     /* Step 1. */
     RootedId idRoot(cx);
-    if (!ValueToId<CanGC>(cx, idValue, &idRoot))
+    if (!ToPropertyKey(cx, idValue, &idRoot))
         return false;
 
     /* Step 2. */
@@ -784,7 +779,7 @@ js::obj_defineProperty(JSContext* cx, unsigned argc, Value* vp)
     if (!GetFirstArgumentAsObject(cx, args, "Object.defineProperty", &obj))
         return false;
     RootedId id(cx);
-    if (!ValueToId<CanGC>(cx, args.get(1), &id))
+    if (!ToPropertyKey(cx, args.get(1), &id))
         return false;
 
     // Steps 4-5.
@@ -1014,6 +1009,10 @@ static const JSFunctionSpec object_static_methods[] = {
     JS_FN("setPrototypeOf",            obj_setPrototypeOf,          2, 0),
     JS_FN("getOwnPropertyDescriptor",  obj_getOwnPropertyDescriptor,2, 0),
     JS_FN("keys",                      obj_keys,                    1, 0),
+#ifndef RELEASE_BUILD
+    JS_SELF_HOSTED_FN("values",        "ObjectValues",              1, JSPROP_DEFINE_LATE),
+    JS_SELF_HOSTED_FN("entries",       "ObjectEntries",             1, JSPROP_DEFINE_LATE),
+#endif
     JS_FN("is",                        obj_is,                      2, 0),
     JS_FN("defineProperty",            obj_defineProperty,          3, 0),
     JS_FN("defineProperties",          obj_defineProperties,        2, 0),
@@ -1055,6 +1054,13 @@ CreateObjectPrototype(JSContext* cx, JSProtoKey key)
                                                                            SingletonObject));
     if (!objectProto)
         return nullptr;
+
+    bool succeeded;
+    if (!SetImmutablePrototype(cx, objectProto, &succeeded))
+        return nullptr;
+    MOZ_ASSERT(succeeded,
+               "should have been able to make a fresh Object.prototype's "
+               "[[Prototype]] immutable");
 
     /*
      * The default 'new' type of Object.prototype is required by type inference
@@ -1121,7 +1127,6 @@ const Class PlainObject::class_ = {
     nullptr,  /* enumerate */
     nullptr,  /* resolve */
     nullptr,  /* mayResolve */
-    nullptr,  /* convert */
     nullptr,  /* finalize */
     nullptr,  /* call */
     nullptr,  /* hasInstance */

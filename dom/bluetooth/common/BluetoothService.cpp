@@ -19,6 +19,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/unused.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 #include "mozilla/dom/ipc/BlobChild.h"
@@ -68,8 +69,6 @@
 #define PROP_BLUETOOTH_ENABLED      "bluetooth.isEnabled"
 
 #define DEFAULT_SHUTDOWN_TIMER_MS 5000
-
-bool gBluetoothDebugFlag = false;
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -242,8 +241,7 @@ BluetoothService::Cleanup()
 
 void
 BluetoothService::RegisterBluetoothSignalHandler(
-                                              const nsAString& aNodeName,
-                                              BluetoothSignalObserver* aHandler)
+  const nsAString& aNodeName, BluetoothSignalObserver* aHandler)
 {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aHandler);
@@ -337,6 +335,48 @@ BluetoothService::DistributeSignal(const nsAString& aName,
 }
 
 void
+BluetoothService::DistributeSignal(const nsAString& aName,
+                                   const BluetoothAddress& aAddress)
+{
+  nsAutoString path;
+  AddressToString(aAddress, path);
+
+  DistributeSignal(aName, path);
+}
+
+void
+BluetoothService::DistributeSignal(const nsAString& aName,
+                                   const BluetoothAddress& aAddress,
+                                   const BluetoothValue& aValue)
+{
+  nsAutoString path;
+  AddressToString(aAddress, path);
+
+  DistributeSignal(aName, path, aValue);
+}
+
+void
+BluetoothService::DistributeSignal(const nsAString& aName,
+                                   const BluetoothUuid& aUuid)
+{
+  nsAutoString path;
+  UuidToString(aUuid, path);
+
+  DistributeSignal(aName, path);
+}
+
+void
+BluetoothService::DistributeSignal(const nsAString& aName,
+                                   const BluetoothUuid& aUuid,
+                                   const BluetoothValue& aValue)
+{
+  nsAutoString path;
+  UuidToString(aUuid, path);
+
+  DistributeSignal(aName, path, aValue);
+}
+
+void
 BluetoothService::DistributeSignal(const BluetoothSignal& aSignal)
 {
   MOZ_ASSERT(NS_IsMainThread());
@@ -391,7 +431,7 @@ BluetoothService::StartBluetooth(bool aIsStartup,
     }
   } else {
     BT_WARNING("Bluetooth has already been enabled before.");
-    nsRefPtr<nsRunnable> runnable = new BluetoothService::ToggleBtAck(true);
+    RefPtr<nsRunnable> runnable = new BluetoothService::ToggleBtAck(true);
     if (NS_FAILED(NS_DispatchToMainThread(runnable))) {
       BT_WARNING("Failed to dispatch to main thread!");
     }
@@ -422,7 +462,7 @@ BluetoothService::StopBluetooth(bool aIsStartup,
     }
   } else {
     BT_WARNING("Bluetooth has already been enabled/disabled before.");
-    nsRefPtr<nsRunnable> runnable = new BluetoothService::ToggleBtAck(false);
+    RefPtr<nsRunnable> runnable = new BluetoothService::ToggleBtAck(false);
     if (NS_FAILED(NS_DispatchToMainThread(runnable))) {
       BT_WARNING("Failed to dispatch to main thread!");
     }
@@ -454,7 +494,7 @@ BluetoothService::SetEnabled(bool aEnabled)
   GetAllBluetoothActors(childActors);
 
   for (uint32_t index = 0; index < childActors.Length(); index++) {
-    unused << childActors[index]->SendEnabled(aEnabled);
+    Unused << childActors[index]->SendEnabled(aEnabled);
   }
 
   /**
@@ -483,7 +523,7 @@ BluetoothService::HandleStartup()
   nsresult rv = settings->CreateLock(nullptr, getter_AddRefs(settingsLock));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsRefPtr<StartupTask> callback = new StartupTask();
+  RefPtr<StartupTask> callback = new StartupTask();
   rv = settingsLock->Get(BLUETOOTH_ENABLED_SETTING, callback);
   NS_ENSURE_SUCCESS(rv, rv);
 

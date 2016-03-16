@@ -15,7 +15,7 @@ if here not in sys.path:
 
 from automation import Automation
 from b2gautomation import B2GRemoteAutomation
-from b2g_desktop import run_desktop_reftests
+from runreftestmulet import run_test_harness as run_mulet
 from remotereftest import RemoteReftestResolver, ReftestServer
 from runreftest import RefTest
 import reftestcommandline
@@ -261,8 +261,6 @@ class B2GRemoteReftest(RefTest):
         # Disable tiles also
         prefs["browser.newtabpage.directory.source"] = ""
         prefs["browser.newtabpage.directory.ping"] = ""
-        # Disable periodic updates of service workers
-        prefs["dom.serviceWorkers.periodic-updates.enabled"] = False
 
         if options.oop:
             prefs['browser.tabs.remote.autostart'] = True
@@ -311,7 +309,8 @@ class B2GRemoteReftest(RefTest):
 
     def runApp(self, profile, binary, cmdargs, env,
                timeout=None, debuggerInfo=None,
-               symbolsPath=None, options=None):
+               symbolsPath=None, options=None,
+               valgrindPath=None, valgrindArgs=None, valgrindSuppFiles=None):
         status = self.automation.runApp(None, env,
                                         binary,
                                         profile.profile,
@@ -431,8 +430,8 @@ def main():
     parser = reftestcommandline.B2GArgumentParser()
     options = parser.parse_args()
 
-    if options.desktop or options.mulet:
-        return run_desktop_reftests(parser, options)
+    if options.mulet:
+        return run_mulet(parser, options)
     return run_remote_reftests(parser, options)
 
 

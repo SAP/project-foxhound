@@ -32,14 +32,17 @@ class AudioOutputObserver;
  */
 struct StreamUpdate
 {
-  nsRefPtr<MediaStream> mStream;
+  RefPtr<MediaStream> mStream;
   StreamTime mNextMainThreadCurrentTime;
   bool mNextMainThreadFinished;
 };
 
 /**
- * This represents a message passed from the main thread to the graph thread.
- * A ControlMessage always has a weak reference a particular affected stream.
+ * This represents a message run on the graph thread to modify stream or graph
+ * state.  These are passed from main thread to graph thread through
+ * AppendMessage(), or scheduled on the graph thread with
+ * RunMessageAfterProcessing().  A ControlMessage
+ * always has a weak reference to a particular affected stream.
  */
 class ControlMessage
 {
@@ -58,6 +61,8 @@ public:
   // All stream data for times < mProcessedTime has already been
   // computed.
   virtual void Run() = 0;
+  // RunDuringShutdown() is only relevant to messages generated on the main
+  // thread (for AppendMessage()).
   // When we're shutting down the application, most messages are ignored but
   // some cleanup messages should still be processed (on the main thread).
   // This must not add new control messages to the graph.
@@ -186,13 +191,6 @@ public:
     return mLifecycleState == LIFECYCLE_RUNNING;
   }
 
-  // Get the message queue, from the current GraphDriver thread.
-  nsTArray<MessageBlock>& MessageQueue()
-  {
-    mMonitor.AssertCurrentThreadOwns();
-    return mFrontMessageQueue;
-  }
-
   /* This is the end of the current iteration, that is, the current time of the
    * graph. */
   GraphTime IterationEnd() const;
@@ -225,13 +223,19 @@ public:
    */
   void UpdateCurrentTimeForStreams(GraphTime aPrevCurrentTime);
   /**
-   * Process graph message for this iteration, update stream processing order,
-   * and recompute stream blocking until aEndBlockingDecisions.
+   * Process graph messages in mFrontMessageQueue.
+   */
+  void RunMessagesInQueue();
+  /**
+   * Update stream processing order and recompute stream blocking until
+   * aEndBlockingDecisions.
    */
   void UpdateGraph(GraphTime aEndBlockingDecisions);
 
   void SwapMessageQueues()
   {
+    MOZ_ASSERT(CurrentDriver()->OnThread());
+    MOZ_ASSERT(mFrontMessageQueue.IsEmpty());
     mMonitor.AssertCurrentThreadOwns();
     mFrontMessageQueue.SwapElements(mBackMessageQueue);
   }
@@ -241,20 +245,19 @@ public:
    */
   void Process();
   /**
-   * Update the consumption state of aStream to reflect whether its data
-   * is needed or not.
-   */
-  void UpdateConsumptionState(SourceMediaStream* aStream);
-  /**
    * Extract any state updates pending in aStream, and apply them.
    */
   void ExtractPendingInput(SourceMediaStream* aStream,
                            GraphTime aDesiredUpToTime,
                            bool* aEnsureNextIteration);
+
   /**
-   * Update "have enough data" flags in aStream.
+   * For use during ProcessedMediaStream::ProcessInput() or
+   * MediaStreamListener callbacks, when graph state cannot be changed.
+   * Schedules |aMessage| to run after processing, at a time when graph state
+   * can be changed.  Graph thread.
    */
-  void UpdateBufferSufficiencyState(SourceMediaStream* aStream);
+  void RunMessageAfterProcessing(nsAutoPtr<ControlMessage> aMessage);
 
   /**
    * Called when a suspend/resume/close operation has been completed, on the
@@ -525,7 +528,7 @@ public:
    * passed to a event that will take care of the asynchronous cleanup, as
    * audio stream can take some time to shut down.
    */
-  nsRefPtr<GraphDriver> mDriver;
+  RefPtr<GraphDriver> mDriver;
 
   // The following state is managed on the graph thread only, unless
   // mLifecycleState > LIFECYCLE_RUNNING in which case the graph thread
@@ -601,9 +604,15 @@ public:
    * A list of batches of messages to process. Each batch is processed
    * as an atomic unit.
    */
-  /* Message queue processed by the MSG thread during an iteration. */
+  /*
+   * Message queue processed by the MSG thread during an iteration.
+   * Accessed on graph thread only.
+   */
   nsTArray<MessageBlock> mFrontMessageQueue;
-  /* Message queue in which the main thread appends messages. */
+  /*
+   * Message queue in which the main thread appends messages.
+   * Access guarded by mMonitor.
+   */
   nsTArray<MessageBlock> mBackMessageQueue;
 
   /* True if there will messages to process if we swap the message queues. */
@@ -711,10 +720,10 @@ public:
   /**
    * Hold a ref to the Latency logger
    */
-  nsRefPtr<AsyncLatencyLogger> mLatencyLog;
+  RefPtr<AsyncLatencyLogger> mLatencyLog;
   AudioMixer mMixer;
 #ifdef MOZ_WEBRTC
-  nsRefPtr<AudioOutputObserver> mFarendObserverRef;
+  RefPtr<AudioOutputObserver> mFarendObserverRef;
 #endif
 
   dom::AudioChannel AudioChannel() const { return mAudioChannel; }
@@ -735,7 +744,7 @@ private:
    * nsRefPtr to itself, giving it a ref-count of 1 during its entire lifetime,
    * and Destroy() nulls this self-reference in order to trigger self-deletion.
    */
-  nsRefPtr<MediaStreamGraphImpl> mSelfRef;
+  RefPtr<MediaStreamGraphImpl> mSelfRef;
   /**
    * Used to pass memory report information across threads.
    */
@@ -744,7 +753,7 @@ private:
   struct WindowAndStream
   {
     uint64_t mWindowId;
-    nsRefPtr<ProcessedMediaStream> mCaptureStreamSink;
+    RefPtr<ProcessedMediaStream> mCaptureStreamSink;
   };
   /**
    * Stream for window audio capture.

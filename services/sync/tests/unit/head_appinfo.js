@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
+var {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -19,9 +19,9 @@ Services.prefs.setCharPref("identity.sync.tokenserver.uri", "http://token-server
 
 // Make sure to provide the right OS so crypto loads the right binaries
 var OS = "XPCShell";
-if ("@mozilla.org/windows-registry-key;1" in Cc)
+if (mozinfo.os == "win")
   OS = "WINNT";
-else if ("nsILocalFileMac" in Ci)
+else if (mozinfo.os == "mac")
   OS = "Darwin";
 else
   OS = "Linux";
@@ -60,7 +60,7 @@ registrar.registerFactory(Components.ID("{fbfae60b-64a4-44ef-a911-08ceb70b9f31}"
 function addResourceAlias() {
   const resProt = Services.io.getProtocolHandler("resource")
                           .QueryInterface(Ci.nsIResProtocolHandler);
-  for each (let s in ["common", "sync", "crypto"]) {
+  for (let s of ["common", "sync", "crypto"]) {
     let uri = Services.io.newURI("resource://gre/modules/services-" + s + "/", null,
                                  null);
     resProt.setSubstitution("services-" + s, uri);

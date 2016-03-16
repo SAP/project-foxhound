@@ -9,6 +9,7 @@
 
 #include "nsAutoPtr.h"
 #include "nsISpeechService.h"
+#include "nsIObserver.h"
 #include "nsRefPtrHashtable.h"
 #include "nsTArray.h"
 #include "mozilla/StaticPtr.h"
@@ -22,10 +23,12 @@ namespace dom {
 class SapiCallback;
 
 class SapiService final : public nsISpeechService
+                        , public nsIObserver
 {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSISPEECHSERVICE
+  NS_DECL_NSIOBSERVER
 
   SapiService();
   bool Init();
@@ -43,8 +46,8 @@ private:
   bool RegisterVoices();
 
   nsRefPtrHashtable<nsStringHashKey, ISpObjectToken> mVoices;
-  nsTArray<nsRefPtr<SapiCallback>> mCallbacks;
-  nsRefPtr<ISpVoice> mSapiClient;
+  nsTArray<RefPtr<SapiCallback>> mCallbacks;
+  RefPtr<ISpVoice> mSapiClient;
 
   bool mInitialized;
 

@@ -10,7 +10,7 @@
 #include "jsfriendapi.h"
 
 #include "gc/Barrier.h"
-#include "js/TraceableHashTable.h"
+#include "js/GCHashTable.h"
 
 namespace js {
 
@@ -54,7 +54,7 @@ namespace js {
 // effect of tracing the edge depends on the JSTracer being used.
 template <typename T>
 void
-TraceEdge(JSTracer* trc, BarrieredBase<T>* thingp, const char* name);
+TraceEdge(JSTracer* trc, WriteBarrieredBase<T>* thingp, const char* name);
 
 // Trace through a "root" edge. These edges are the initial edges in the object
 // graph traversal. Root edges are asserted to only be traversed in the initial
@@ -63,11 +63,19 @@ template <typename T>
 void
 TraceRoot(JSTracer* trc, T* thingp, const char* name);
 
+template <typename T>
+void
+TraceRoot(JSTracer* trc, ReadBarriered<T>* thingp, const char* name);
+
 // Idential to TraceRoot, except that this variant will not crash if |*thingp|
 // is null.
 template <typename T>
 void
 TraceNullableRoot(JSTracer* trc, T* thingp, const char* name);
+
+template <typename T>
+void
+TraceNullableRoot(JSTracer* trc, ReadBarriered<T>* thingp, const char* name);
 
 // Like TraceEdge, but for edges that do not use one of the automatic barrier
 // classes and, thus, must be treated specially for moving GC. This method is
@@ -76,10 +84,17 @@ template <typename T>
 void
 TraceManuallyBarrieredEdge(JSTracer* trc, T* thingp, const char* name);
 
+// Visits a WeakRef, but does not trace its referents. If *thingp is not marked
+// at the end of marking, it is replaced by nullptr. This method records
+// thingp, so the edge location must not change after this function is called.
+template <typename T>
+void
+TraceWeakEdge(JSTracer* trc, WeakRef<T>* thingp, const char* name);
+
 // Trace all edges contained in the given array.
 template <typename T>
 void
-TraceRange(JSTracer* trc, size_t len, BarrieredBase<T>* vec, const char* name);
+TraceRange(JSTracer* trc, size_t len, WriteBarrieredBase<T>* vec, const char* name);
 
 // Trace all root edges in the given array.
 template <typename T>
@@ -90,7 +105,7 @@ TraceRootRange(JSTracer* trc, size_t len, T* vec, const char* name);
 // destination thing is not being GC'd, then the edge will not be traced.
 template <typename T>
 void
-TraceCrossCompartmentEdge(JSTracer* trc, JSObject* src, BarrieredBase<T>* dst,
+TraceCrossCompartmentEdge(JSTracer* trc, JSObject* src, WriteBarrieredBase<T>* dst,
                           const char* name);
 
 // As above but with manual barriers.
@@ -116,7 +131,7 @@ TraceGenericPointerRoot(JSTracer* trc, gc::Cell** thingp, const char* name);
 void
 TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc, gc::Cell** thingp, const char* name);
 
-// Depricated. Please use one of the strongly typed variants above.
+// Deprecated. Please use one of the strongly typed variants above.
 void
 TraceChildren(JSTracer* trc, void* thing, JS::TraceKind kind);
 
@@ -130,23 +145,6 @@ void
 TraceCycleCollectorChildren(JS::CallbackTracer* trc, ObjectGroup* group);
 
 } // namespace gc
-
-template <typename T>
-struct DefaultTracer<T*>
-{
-    static void trace(JSTracer* trc, T** t, const char* name) {
-        TraceManuallyBarrieredEdge(trc, t, name);
-    }
-};
-
-template <typename T>
-struct DefaultTracer<RelocatablePtr<T*>>
-{
-    static void trace(JSTracer* trc, RelocatablePtr<T*> t, const char* name) {
-        TraceEdge(trc, t, name);
-    }
-};
-
 } // namespace js
 
 #endif /* js_Tracer_h */

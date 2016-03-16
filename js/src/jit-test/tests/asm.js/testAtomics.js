@@ -1,5 +1,6 @@
 // |jit-test| test-also-noasmjs
-if (!this.SharedArrayBuffer || !this.SharedInt32Array || !this.Atomics)
+
+if (!this.SharedArrayBuffer || !this.Atomics)
     quit();
 
 // The code duplication below is very far from elegant but provides
@@ -21,7 +22,7 @@ var loadModule_int32_code =
     var atomic_or = stdlib.Atomics.or;
     var atomic_xor = stdlib.Atomics.xor;
 
-    var i32a = new stdlib.SharedInt32Array(heap);
+    var i32a = new stdlib.Int32Array(heap);
 
     function do_fence() {
         atomic_fence();
@@ -232,10 +233,10 @@ var loadModule_int32_code =
 var loadModule_int32 = asmCompile('stdlib', 'foreign', 'heap', loadModule_int32_code);
 
 function test_int32(heap) {
-    var i32a = new SharedInt32Array(heap);
+    var i32a = new Int32Array(heap);
     var i32m = asmLink(loadModule_int32, this, {}, heap);
 
-    var size = SharedInt32Array.BYTES_PER_ELEMENT;
+    var size = Int32Array.BYTES_PER_ELEMENT;
 
     i32m.fence();
 
@@ -338,7 +339,7 @@ var loadModule_uint32_code =
     var atomic_or = stdlib.Atomics.or;
     var atomic_xor = stdlib.Atomics.xor;
 
-    var i32a = new stdlib.SharedUint32Array(heap);
+    var i32a = new stdlib.Uint32Array(heap);
 
     // Load element 0
     function do_load() {
@@ -515,10 +516,10 @@ var loadModule_uint32_code =
 var loadModule_uint32 = asmCompile('stdlib', 'foreign', 'heap', loadModule_uint32_code);
 
 function test_uint32(heap) {
-    var i32a = new SharedUint32Array(heap);
+    var i32a = new Uint32Array(heap);
     var i32m = loadModule_uint32(this, {}, heap);
 
-    var size = SharedUint32Array.BYTES_PER_ELEMENT;
+    var size = Uint32Array.BYTES_PER_ELEMENT;
 
     i32a[0] = 12345;
     assertEq(i32m.load(), 12345);
@@ -619,7 +620,7 @@ var loadModule_int16_code =
     var atomic_or = stdlib.Atomics.or;
     var atomic_xor = stdlib.Atomics.xor;
 
-    var i16a = new stdlib.SharedInt16Array(heap);
+    var i16a = new stdlib.Int16Array(heap);
 
     function do_fence() {
         atomic_fence();
@@ -801,10 +802,10 @@ var loadModule_int16_code =
 var loadModule_int16 = asmCompile('stdlib', 'foreign', 'heap', loadModule_int16_code);
 
 function test_int16(heap) {
-    var i16a = new SharedInt16Array(heap);
+    var i16a = new Int16Array(heap);
     var i16m = loadModule_int16(this, {}, heap);
 
-    var size = SharedInt16Array.BYTES_PER_ELEMENT;
+    var size = Int16Array.BYTES_PER_ELEMENT;
 
     i16m.fence();
 
@@ -914,7 +915,7 @@ var loadModule_uint16_code =
     var atomic_or = stdlib.Atomics.or;
     var atomic_xor = stdlib.Atomics.xor;
 
-    var i16a = new stdlib.SharedUint16Array(heap);
+    var i16a = new stdlib.Uint16Array(heap);
 
     // Load element 0
     function do_load() {
@@ -1091,10 +1092,10 @@ var loadModule_uint16_code =
 var loadModule_uint16 = asmCompile('stdlib', 'foreign', 'heap', loadModule_uint16_code);
 
 function test_uint16(heap) {
-    var i16a = new SharedUint16Array(heap);
+    var i16a = new Uint16Array(heap);
     var i16m = loadModule_uint16(this, {}, heap);
 
-    var size = SharedUint16Array.BYTES_PER_ELEMENT;
+    var size = Uint16Array.BYTES_PER_ELEMENT;
 
     i16a[0] = 12345;
     assertEq(i16m.load(), 12345);
@@ -1202,7 +1203,7 @@ var loadModule_int8_code =
     var atomic_or = stdlib.Atomics.or;
     var atomic_xor = stdlib.Atomics.xor;
 
-    var i8a = new stdlib.SharedInt8Array(heap);
+    var i8a = new stdlib.Int8Array(heap);
 
     // Load element 0
     function do_load() {
@@ -1379,13 +1380,13 @@ var loadModule_int8_code =
 var loadModule_int8 = asmCompile('stdlib', 'foreign', 'heap', loadModule_int8_code);
 
 function test_int8(heap) {
-    var i8a = new SharedInt8Array(heap);
+    var i8a = new Int8Array(heap);
     var i8m = loadModule_int8(this, {}, heap);
 
     for ( var i=0 ; i < i8a.length ; i++ )
 	i8a[i] = 0;
 
-    var size = SharedInt8Array.BYTES_PER_ELEMENT;
+    var size = Int8Array.BYTES_PER_ELEMENT;
 
     i8a[0] = 123;
     assertEq(i8m.load(), 123);
@@ -1483,7 +1484,7 @@ var loadModule_uint8_code =
     var atomic_or = stdlib.Atomics.or;
     var atomic_xor = stdlib.Atomics.xor;
 
-    var i8a = new stdlib.SharedUint8Array(heap);
+    var i8a = new stdlib.Uint8Array(heap);
 
     // Load element 0
     function do_load() {
@@ -1660,13 +1661,13 @@ var loadModule_uint8_code =
 var loadModule_uint8 = asmCompile('stdlib', 'foreign', 'heap', loadModule_uint8_code);
 
 function test_uint8(heap) {
-    var i8a = new SharedUint8Array(heap);
+    var i8a = new Uint8Array(heap);
     var i8m = loadModule_uint8(this, {}, heap);
 
     for ( var i=0 ; i < i8a.length ; i++ )
 	i8a[i] = 0;
 
-    var size = SharedUint8Array.BYTES_PER_ELEMENT;
+    var size = Uint8Array.BYTES_PER_ELEMENT;
 
     i8a[0] = 123;
     assertEq(i8m.load(), 123);
@@ -1830,7 +1831,7 @@ function test_misc(heap) {
     assertEq(misc.ilf9(), 0);
 }
 
-// SharedUint8ClampedArray is not supported for asm.js.
+// Shared-memory Uint8ClampedArray is not supported for asm.js.
 
 var heap = new SharedArrayBuffer(65536);
 
@@ -1848,7 +1849,7 @@ setARMHwCapFlags('vfp');
 asmCompile('stdlib', 'ffi', 'heap',
     USE_ASM + `
     var atomic_exchange = stdlib.Atomics.exchange;
-    var i8a = new stdlib.SharedInt8Array(heap);
+    var i8a = new stdlib.Int8Array(heap);
 
     function do_xchg() {
         var v = 0;

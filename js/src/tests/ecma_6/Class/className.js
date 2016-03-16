@@ -56,7 +56,6 @@ function testName(C, name, hasValue, hasGetter, hasSetter, isFunction=false) {
     }
 }
 
-var test = `
 // ---- declaration ---
 
 class Decl {
@@ -173,10 +172,15 @@ testName(ExtendedExpr3, "base", false, false, false);
 
 // ---- anonymous ----
 
+// Anonymous class expressions don't get name properties unless specified in a
+// static manner.
 let Anon = class {
     constructor() {}
 };
-testName(Anon, "", true, false, false);
+testName(Anon, "", false, false, false);
+
+let AnonDefault = class { };
+testName(AnonDefault, "", false, false, false);
 
 let AnonWithGetter = class {
     constructor() {}
@@ -201,9 +205,10 @@ testName(AnonWithGetterSetter, "base", false, true, true);
 let ExtendedAnon1 = class extends Anon {
     constructor() {}
 };
-testName(ExtendedAnon1, "", true, false, false);
-delete ExtendedAnon1.name;
 testName(ExtendedAnon1, "", false, false, false);
+
+let ExtendedAnonDefault = class extends Anon { };
+testName(ExtendedAnonDefault, "", false, false, false);
 
 let ExtendedAnon2 = class extends AnonWithGetterSetter {
     constructor() {}
@@ -237,10 +242,6 @@ let ExtendedExpr5 = class ExtendedExpr5 extends AnonWithGetterSetter {
 testName(ExtendedExpr5, "extend", false, true, false);
 delete ExtendedExpr5.name;
 testName(ExtendedExpr5, "base", false, false, false);
-`;
-
-if (classesEnabled())
-    eval(test);
 
 if (typeof reportCompare === "function")
     reportCompare(0, 0, "OK");

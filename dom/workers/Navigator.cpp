@@ -6,6 +6,7 @@
 
 #include "DataStore.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DataStore.h"
 #include "mozilla/dom/DataStoreBinding.h"
 #include "mozilla/dom/Promise.h"
@@ -38,7 +39,7 @@ WorkerNavigator::Create(bool aOnLine)
   const RuntimeService::NavigatorProperties& properties =
     rts->GetNavigatorProperties();
 
-  nsRefPtr<WorkerNavigator> navigator =
+  RefPtr<WorkerNavigator> navigator =
     new WorkerNavigator(properties, aOnLine);
 
   return navigator.forget();
@@ -121,20 +122,24 @@ GetDataStoresProxyCloneCallbacksRead(JSContext* aCx,
   // Protect workerStoreObj from moving GC during ~nsRefPtr.
   JS::Rooted<JSObject*> workerStoreObj(aCx, nullptr);
   {
-    nsRefPtr<WorkerDataStore> workerStore =
+    RefPtr<WorkerDataStore> workerStore =
       new WorkerDataStore(workerPrivate->GlobalScope());
     nsMainThreadPtrHandle<DataStore> backingStore(dataStoreholder);
 
     // When we're on the worker thread, prepare a DataStoreChangeEventProxy.
-    nsRefPtr<DataStoreChangeEventProxy> eventProxy =
+    RefPtr<DataStoreChangeEventProxy> eventProxy =
       new DataStoreChangeEventProxy(workerPrivate, workerStore);
 
     // Add the DataStoreChangeEventProxy as an event listener on the main thread.
-    nsRefPtr<DataStoreAddEventListenerRunnable> runnable =
+    RefPtr<DataStoreAddEventListenerRunnable> runnable =
       new DataStoreAddEventListenerRunnable(workerPrivate,
                                             backingStore,
                                             eventProxy);
-    runnable->Dispatch(aCx);
+    ErrorResult rv;
+    runnable->Dispatch(rv);
+    if (rv.MaybeSetPendingException(aCx)) {
+      return nullptr;
+    }
 
     // Point WorkerDataStore to DataStore.
     workerStore->SetBackingDataStore(backingStore);
@@ -202,7 +207,7 @@ kGetDataStoresCloneCallbacks= {
 // main thread.
 class NavigatorGetDataStoresRunnable final : public WorkerMainThreadRunnable
 {
-  nsRefPtr<PromiseWorkerProxy> mPromiseWorkerProxy;
+  RefPtr<PromiseWorkerProxy> mPromiseWorkerProxy;
   const nsString mName;
   const nsString mOwner;
   ErrorResult& mRv;
@@ -228,16 +233,15 @@ public:
                                  &kGetDataStoresCloneCallbacks);
   }
 
-  bool Dispatch(JSContext* aCx)
+  void Dispatch(ErrorResult& aRv)
   {
     if (mPromiseWorkerProxy) {
-      return WorkerMainThreadRunnable::Dispatch(aCx);
+      WorkerMainThreadRunnable::Dispatch(aRv);
     }
 
     // If the creation of mProxyWorkerProxy failed, the worker is terminating.
     // In this case we don't want to dispatch the runnable and we should stop
     // the promise chain here.
-    return true;
   }
 
 
@@ -261,7 +265,7 @@ protected:
       return false;
     }
 
-    nsRefPtr<Promise> promise =
+    RefPtr<Promise> promise =
       Navigator::GetDataStores(window, mName, mOwner, mRv);
     promise->AppendNativeHandler(mPromiseWorkerProxy);
     return true;
@@ -278,14 +282,17 @@ WorkerNavigator::GetDataStores(JSContext* aCx,
   MOZ_ASSERT(workerPrivate);
   workerPrivate->AssertIsOnWorkerThread();
 
-  nsRefPtr<Promise> promise = Promise::Create(workerPrivate->GlobalScope(), aRv);
+  RefPtr<Promise> promise = Promise::Create(workerPrivate->GlobalScope(), aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
 
-  nsRefPtr<NavigatorGetDataStoresRunnable> runnable =
+  RefPtr<NavigatorGetDataStoresRunnable> runnable =
     new NavigatorGetDataStoresRunnable(workerPrivate, promise, aName, aOwner, aRv);
-  runnable->Dispatch(aCx);
+  runnable->Dispatch(aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }
@@ -381,17 +388,15 @@ public:
 } // namespace
 
 void
-WorkerNavigator::GetUserAgent(nsString& aUserAgent) const
+WorkerNavigator::GetUserAgent(nsString& aUserAgent, ErrorResult& aRv) const
 {
   WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
   MOZ_ASSERT(workerPrivate);
 
-  nsRefPtr<GetUserAgentRunnable> runnable =
+  RefPtr<GetUserAgentRunnable> runnable =
     new GetUserAgentRunnable(workerPrivate, aUserAgent);
 
-  if (!runnable->Dispatch(workerPrivate->GetJSContext())) {
-    JS_ReportPendingException(workerPrivate->GetJSContext());
-  }
+  runnable->Dispatch(aRv);
 }
 
 END_WORKERS_NAMESPACE

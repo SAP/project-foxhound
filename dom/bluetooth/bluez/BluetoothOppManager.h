@@ -12,6 +12,7 @@
 #include "BluetoothSocketObserver.h"
 #include "DeviceStorage.h"
 #include "mozilla/ipc/SocketBase.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCOMArray.h"
 
 class nsIOutputStream;
@@ -50,8 +51,8 @@ public:
 
   bool Listen();
 
-  bool SendFile(const nsAString& aDeviceAddress, BlobParent* aActor);
-  bool SendFile(const nsAString& aDeviceAddress, Blob* aBlob);
+  bool SendFile(const BluetoothAddress& aDeviceAddress, BlobParent* aActor);
+  bool SendFile(const BluetoothAddress& aDeviceAddress, Blob* aBlob);
   bool StopSendingFile();
   bool ConfirmReceivingFile(bool aConfirm);
 
@@ -96,10 +97,11 @@ private:
   void NotifyAboutFileChange();
   bool AcquireSdcardMountLock();
   void SendObexData(uint8_t* aData, uint8_t aOpcode, int aSize);
-  void AppendBlobToSend(const nsAString& aDeviceAddress, Blob* aBlob);
+  void SendObexData(UniquePtr<uint8_t[]> aData, uint8_t aOpcode, int aSize);
+  void AppendBlobToSend(const BluetoothAddress& aDeviceAddress, Blob* aBlob);
   void DiscardBlobsToSend();
   bool ProcessNextBatch();
-  void ConnectInternal(const nsAString& aDeviceAddress);
+  void ConnectInternal(const BluetoothAddress& aDeviceAddress);
 
   /**
    * Usually we won't get a full PUT packet in one operation, which means that
@@ -118,7 +120,7 @@ private:
    * Set when OBEX session is established.
    */
   bool mConnected;
-  nsString mConnectedDeviceAddress;
+  BluetoothAddress mConnectedDeviceAddress;
 
   /**
    * Remote information
@@ -193,7 +195,7 @@ private:
   nsAutoArrayPtr<uint8_t> mReceivedDataBuffer;
 
   int mCurrentBlobIndex;
-  nsRefPtr<Blob> mBlob;
+  RefPtr<Blob> mBlob;
   nsTArray<SendFileBatch> mBatches;
 
   /**
@@ -204,20 +206,20 @@ private:
   nsCOMPtr<nsIOutputStream> mOutputStream;
   nsCOMPtr<nsIInputStream> mInputStream;
   nsCOMPtr<nsIVolumeMountLock> mMountLock;
-  nsRefPtr<DeviceStorageFile> mDsFile;
-  nsRefPtr<DeviceStorageFile> mDummyDsFile;
+  RefPtr<DeviceStorageFile> mDsFile;
+  RefPtr<DeviceStorageFile> mDummyDsFile;
 
   // If a connection has been established, mSocket will be the socket
   // communicating with the remote socket. We maintain the invariant that if
   // mSocket is non-null, mRfcommSocket and mL2capSocket must be null (and vice
   // versa).
-  nsRefPtr<BluetoothSocket> mSocket;
+  RefPtr<BluetoothSocket> mSocket;
 
   // Server sockets. Once an inbound connection is established, it will hand
   // over the ownership to mSocket, and get a new server socket while Listen()
   // is called.
-  nsRefPtr<BluetoothSocket> mRfcommSocket;
-  nsRefPtr<BluetoothSocket> mL2capSocket;
+  RefPtr<BluetoothSocket> mRfcommSocket;
+  RefPtr<BluetoothSocket> mL2capSocket;
 
   BluetoothSocketType mSocketType;
 

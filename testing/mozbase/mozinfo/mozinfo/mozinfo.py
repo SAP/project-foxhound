@@ -82,6 +82,10 @@ if system in ["Microsoft", "Windows"]:
         version = "%d.%d.%d" % (major, minor, build_number)
 
     os_version = "%d.%d" % (major, minor)
+elif system.startswith('MINGW'):
+    # windows/mingw python build (msys)
+    info['os'] = 'win'
+    os_version = version = unknown
 elif system == "Linux":
     if hasattr(platform, "linux_distribution"):
         (distro, os_version, codename) = platform.linux_distribution()
@@ -90,6 +94,16 @@ elif system == "Linux":
     if not processor:
         processor = machine
     version = "%s %s" % (distro, os_version)
+
+    # Bug in Python 2's `platform` library:
+    # It will return a triple of empty strings on Arch.
+    # It works on Python 3. If we don't have an OS version,
+    # the unit tests fail to run.
+    if not os_version and "ARCH" in release:
+        distro = 'arch'
+        version = release
+        os_version = release
+
     info['os'] = 'linux'
     info['linux_distro'] = distro
 elif system in ['DragonFly', 'FreeBSD', 'NetBSD', 'OpenBSD']:

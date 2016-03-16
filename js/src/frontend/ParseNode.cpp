@@ -205,7 +205,6 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_TRUE:
       case PNK_FALSE:
       case PNK_NULL:
-      case PNK_THIS:
       case PNK_ELISION:
       case PNK_GENERATOR:
       case PNK_NUMBER:
@@ -214,7 +213,6 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_DEBUGGER:
       case PNK_EXPORT_BATCH_SPEC:
       case PNK_OBJECT_PROPERTY_NAME:
-      case PNK_FRESHENBLOCK:
       case PNK_POSHOLDER:
         MOZ_ASSERT(pn->isArity(PN_NULLARY));
         MOZ_ASSERT(!pn->isUsed(), "handle non-trivial cases separately");
@@ -243,9 +241,11 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_SPREAD:
       case PNK_MUTATEPROTO:
       case PNK_EXPORT:
+      case PNK_SUPERBASE:
         return PushUnaryNodeChild(pn, stack);
 
       // Nodes with a single nullable child.
+      case PNK_THIS:
       case PNK_SEMI: {
         MOZ_ASSERT(pn->isArity(PN_UNARY));
         if (pn->pn_kid)
@@ -274,7 +274,6 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_IMPORT_SPEC:
       case PNK_EXPORT_SPEC:
       case PNK_COLON:
-      case PNK_CASE:
       case PNK_SHORTHAND:
       case PNK_DOWHILE:
       case PNK_WHILE:
@@ -282,14 +281,19 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_LETBLOCK:
       case PNK_CLASSMETHOD:
       case PNK_NEWTARGET:
-      case PNK_FOR: {
+      case PNK_SETTHIS:
+      case PNK_FOR:
+      case PNK_COMPREHENSIONFOR: {
         MOZ_ASSERT(pn->isArity(PN_BINARY));
         stack->push(pn->pn_left);
         stack->push(pn->pn_right);
         return PushResult::Recyclable;
       }
 
-      // Named class expressions do not have outer binding nodes
+      // Default clauses are PNK_CASE but do not have case expressions.
+      // Named class expressions do not have outer binding nodes.
+      // So both are binary nodes with a possibly-null pn_left.
+      case PNK_CASE:
       case PNK_CLASSNAMES: {
         MOZ_ASSERT(pn->isArity(PN_BINARY));
         if (pn->pn_left)
@@ -305,16 +309,6 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_WITH: {
         MOZ_ASSERT(pn->isArity(PN_BINARY_OBJ));
         stack->push(pn->pn_left);
-        stack->push(pn->pn_right);
-        return PushResult::Recyclable;
-      }
-
-      // Default nodes, for dumb reasons that we're not changing now (mostly
-      // structural semi-consistency with PNK_CASE nodes), have a null left
-      // node and a non-null right node.
-      case PNK_DEFAULT: {
-        MOZ_ASSERT(pn->isArity(PN_BINARY));
-        MOZ_ASSERT(pn->pn_left == nullptr);
         stack->push(pn->pn_right);
         return PushResult::Recyclable;
       }
@@ -337,19 +331,12 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
         return PushResult::Recyclable;
       }
 
-      // A return node's left half is what you'd expect: the return expression,
-      // if any.  The right half is non-null only for returns inside generator
-      // functions, with the structure described in the assertions.
+      // A return node's child is what you'd expect: the return expression,
+      // if any.
       case PNK_RETURN: {
-        MOZ_ASSERT(pn->isArity(PN_BINARY));
-        if (pn->pn_left)
-            stack->push(pn->pn_left);
-        if (pn->pn_right) {
-            MOZ_ASSERT(pn->pn_right->isKind(PNK_NAME));
-            MOZ_ASSERT(pn->pn_right->pn_atom->equals(".genrval"));
-            MOZ_ASSERT(pn->pn_right->isAssigned());
-            stack->push(pn->pn_right);
-        }
+        MOZ_ASSERT(pn->isArity(PN_UNARY));
+        if (pn->pn_kid)
+            stack->push(pn->pn_kid);
         return PushResult::Recyclable;
       }
 
@@ -489,6 +476,7 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_COMMA:
       case PNK_NEW:
       case PNK_CALL:
+      case PNK_SUPERCALL:
       case PNK_GENEXP:
       case PNK_ARRAY:
       case PNK_OBJECT:
@@ -497,7 +485,6 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_CALLSITEOBJ:
       case PNK_VAR:
       case PNK_CONST:
-      case PNK_GLOBALCONST:
       case PNK_LET:
       case PNK_CATCHLIST:
       case PNK_STATEMENTLIST:
@@ -507,15 +494,16 @@ PushNodeChildren(ParseNode* pn, NodeStack* stack)
       case PNK_CLASSMETHODLIST:
         return PushListNodeChildren(pn, stack);
 
-      // Array comprehension nodes are lists with a single child -- PNK_FOR for
-      // comprehensions, PNK_LEXICALSCOPE for legacy comprehensions.  Probably
-      // this should be a non-list eventually.
+      // Array comprehension nodes are lists with a single child:
+      // PNK_COMPREHENSIONFOR for comprehensions, PNK_LEXICALSCOPE for legacy
+      // comprehensions.  Probably this should be a non-list eventually.
       case PNK_ARRAYCOMP: {
 #ifdef DEBUG
         MOZ_ASSERT(pn->isKind(PNK_ARRAYCOMP));
         MOZ_ASSERT(pn->isArity(PN_LIST));
         MOZ_ASSERT(pn->pn_count == 1);
-        MOZ_ASSERT(pn->pn_head->isKind(PNK_LEXICALSCOPE) || pn->pn_head->isKind(PNK_FOR));
+        MOZ_ASSERT(pn->pn_head->isKind(PNK_LEXICALSCOPE) ||
+                   pn->pn_head->isKind(PNK_COMPREHENSIONFOR));
 #endif
         return PushListNodeChildren(pn, stack);
       }
@@ -629,7 +617,7 @@ ParseNode::appendOrCreateList(ParseNodeKind kind, JSOp op, ParseNode* left, Pars
         //
         if (left->isKind(kind) &&
             left->isOp(op) &&
-            (js_CodeSpec[op].format & JOF_LEFTASSOC ||
+            (CodeSpec[op].format & JOF_LEFTASSOC ||
              (kind == PNK_POW && !left->pn_parens)))
         {
             ListNode* list = &left->as<ListNode>();
@@ -656,7 +644,6 @@ Definition::kindString(Kind kind)
         "",
         js_var_str,
         js_const_str,
-        js_const_str,
         js_let_str,
         "argument",
         js_function_str,
@@ -664,7 +651,7 @@ Definition::kindString(Kind kind)
         js_import_str
     };
 
-    MOZ_ASSERT(kind < ArrayLength(table));
+    MOZ_ASSERT(size_t(kind) < ArrayLength(table));
     return table[kind];
 }
 

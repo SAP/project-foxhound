@@ -34,7 +34,7 @@ using mozilla::PodCopy;
 
 void
 InterpreterFrame::initExecuteFrame(JSContext* cx, HandleScript script, AbstractFramePtr evalInFramePrev,
-                                   const Value& thisv, const Value& newTargetValue, HandleObject scopeChain,
+                                   const Value& newTargetValue, HandleObject scopeChain,
                                    ExecuteType type)
 {
     /*
@@ -75,8 +75,7 @@ InterpreterFrame::initExecuteFrame(JSContext* cx, HandleScript script, AbstractF
         }
     }
 
-    Value* dstvp = (Value*)this - 3;
-    dstvp[2] = thisv;
+    Value* dstvp = (Value*)this - 2;
 
     if (isFunctionFrame()) {
         dstvp[1] = ObjectValue(*callee);
@@ -109,10 +108,10 @@ InterpreterFrame::initExecuteFrame(JSContext* cx, HandleScript script, AbstractF
 }
 
 bool
-InterpreterFrame::isDirectEvalFrame() const
+InterpreterFrame::isNonGlobalEvalFrame() const
 {
     return isEvalFrame() &&
-           script()->enclosingStaticScope()->as<StaticEvalObject>().isDirect();
+           script()->enclosingStaticScope()->as<StaticEvalObject>().isNonGlobal();
 }
 
 bool
@@ -140,10 +139,15 @@ static inline void
 AssertDynamicScopeMatchesStaticScope(JSContext* cx, JSScript* script, JSObject* scope)
 {
 #ifdef DEBUG
+    RootedObject originalScope(cx, scope);
     RootedObject enclosingScope(cx, script->enclosingStaticScope());
     for (StaticScopeIter<NoGC> i(enclosingScope); !i.done(); i++) {
         if (i.type() == StaticScopeIter<NoGC>::NonSyntactic) {
-            while (scope->is<DynamicWithObject>() || scope->is<NonSyntacticVariablesObject>()) {
+            while (scope->is<DynamicWithObject>() ||
+                   scope->is<NonSyntacticVariablesObject>() ||
+                   (scope->is<ClonedBlockObject>() &&
+                    !scope->as<ClonedBlockObject>().isSyntactic()))
+            {
                 MOZ_ASSERT(!IsSyntacticScope(scope));
                 scope = &scope->as<ScopeObject>().enclosingScope();
             }
@@ -178,7 +182,14 @@ AssertDynamicScopeMatchesStaticScope(JSContext* cx, JSScript* script, JSObject* 
         }
     }
 
-    MOZ_ASSERT(scope->is<GlobalObject>() || scope->is<DebugScopeObject>());
+    // In the case of a non-syntactic scope chain, the immediate parent of the
+    // outermost non-syntactic scope may be the global lexical scope, or, if
+    // called from Debugger, a DebugScopeObject.
+    //
+    // In the case of a syntactic scope chain, the outermost scope is always a
+    // GlobalObject.
+    MOZ_ASSERT(scope->is<GlobalObject>() || IsGlobalLexicalScope(scope) ||
+               scope->is<DebugScopeObject>());
 #endif
 }
 
@@ -208,33 +219,53 @@ InterpreterFrame::prologue(JSContext* cx)
                 return false;
             pushOnScopeChain(*callobj);
             flags_ |= HAS_CALL_OBJ;
+        } else {
+            // Non-strict eval may introduce var bindings that conflict with
+            // lexical bindings in an enclosing lexical scope.
+            RootedObject varObjRoot(cx, &varObj());
+            if (!CheckEvalDeclarationConflicts(cx, script, scopeChain(), varObjRoot))
+                return false;
         }
         return probes::EnterScript(cx, script, nullptr, this);
     }
 
-    if (isGlobalFrame())
+    if (isGlobalFrame()) {
+        Rooted<ClonedBlockObject*> lexicalScope(cx);
+        RootedObject varObjRoot(cx);
+        if (script->hasNonSyntacticScope()) {
+            lexicalScope = &extensibleLexicalScope();
+            varObjRoot = &varObj();
+        } else {
+            lexicalScope = &cx->global()->lexicalScope();
+            varObjRoot = cx->global();
+        }
+        if (!CheckGlobalDeclarationConflicts(cx, script, lexicalScope, varObjRoot))
+            return false;
         return probes::EnterScript(cx, script, nullptr, this);
+    }
 
     AssertDynamicScopeMatchesStaticScope(cx, script, scopeChain());
 
-    if (isModuleFrame()) {
-        RootedModuleEnvironmentObject scope(cx, &script->module()->initialEnvironment());
-        MOZ_ASSERT(&scope->enclosingScope() == scopeChain());
-        pushOnScopeChain(*scope);
+    if (isModuleFrame())
         return probes::EnterScript(cx, script, nullptr, this);
-    }
 
     MOZ_ASSERT(isNonEvalFunctionFrame());
     if (fun()->needsCallObject() && !initFunctionScopeObjects(cx))
         return false;
 
-    if (isConstructing() && functionThis().isPrimitive()) {
-        RootedObject callee(cx, &this->callee());
-        JSObject* obj = CreateThisForFunction(cx, callee,
-                                              createSingleton() ? SingletonObject : GenericObject);
-        if (!obj)
-            return false;
-        functionThis() = ObjectValue(*obj);
+    if (isConstructing()) {
+        if (script->isDerivedClassConstructor()) {
+            MOZ_ASSERT(callee().isClassConstructor());
+            thisArgument() = MagicValue(JS_UNINITIALIZED_LEXICAL);
+        } else if (thisArgument().isPrimitive()) {
+            RootedObject callee(cx, &this->callee());
+            RootedObject newTarget(cx, &this->newTarget().toObject());
+            JSObject* obj = CreateThisForFunction(cx, callee, newTarget,
+                                                  createSingleton() ? SingletonObject : GenericObject);
+            if (!obj)
+                return false;
+            thisArgument() = ObjectValue(*obj);
+        }
     }
 
     return probes::EnterScript(cx, script, script->functionNonDelazifying(), this);
@@ -251,14 +282,19 @@ InterpreterFrame::epilogue(JSContext* cx)
             MOZ_ASSERT_IF(hasCallObj(), scopeChain()->as<CallObject>().isForEval());
             if (MOZ_UNLIKELY(cx->compartment()->isDebuggee()))
                 DebugScopes::onPopStrictEvalScope(this);
-        } else if (isDirectEvalFrame()) {
+        } else if (isNonGlobalEvalFrame()) {
             MOZ_ASSERT_IF(isDebuggerEvalFrame(), !IsSyntacticScope(scopeChain()));
         }
         return;
     }
 
     if (isGlobalFrame()) {
-        MOZ_ASSERT(!IsSyntacticScope(scopeChain()));
+        // Confusingly, global frames may run in non-global scopes (that is,
+        // not directly under the GlobalObject and its lexical scope).
+        //
+        // Gecko often runs global scripts under custom scopes. See users of
+        // CreateNonSyntacticScopeChain.
+        MOZ_ASSERT(IsGlobalLexicalScope(scopeChain()) || !IsSyntacticScope(scopeChain()));
         return;
     }
 
@@ -277,8 +313,36 @@ InterpreterFrame::epilogue(JSContext* cx)
     if (MOZ_UNLIKELY(cx->compartment()->isDebuggee()))
         DebugScopes::onPopCall(this, cx);
 
-    if (!fun()->isGenerator() && isConstructing() && thisValue().isObject() && returnValue().isPrimitive())
-        setReturnValue(ObjectValue(constructorThis()));
+    if (!fun()->isGenerator() &&
+        isConstructing() &&
+        thisArgument().isObject() &&
+        returnValue().isPrimitive())
+    {
+        setReturnValue(thisArgument());
+    }
+}
+
+bool
+InterpreterFrame::checkReturn(JSContext* cx, HandleValue thisv)
+{
+    MOZ_ASSERT(script()->isDerivedClassConstructor());
+    MOZ_ASSERT(isFunctionFrame());
+    MOZ_ASSERT(callee().isClassConstructor());
+
+    HandleValue retVal = returnValue();
+    if (retVal.isObject())
+        return true;
+
+    if (!retVal.isUndefined()) {
+        ReportValueError(cx, JSMSG_BAD_DERIVED_RETURN, JSDVG_IGNORE_STACK, retVal, nullptr);
+        return false;
+    }
+
+    if (thisv.isMagic(JS_UNINITIALIZED_LEXICAL))
+        return ThrowUninitializedThis(cx, this);
+
+    setReturnValue(thisv);
+    return true;
 }
 
 bool
@@ -387,8 +451,8 @@ InterpreterFrame::markValues(JSTracer* trc, Value* sp, jsbytecode* pc)
         unsigned argc = Max(numActualArgs(), numFormalArgs());
         TraceRootRange(trc, argc + 2 + isConstructing(), argv_ - 2, "fp argv");
     } else {
-        // Mark callee, |this|, and newTarget
-        TraceRootRange(trc, 3, ((Value*)this) - 3, "stack callee, this, newTarget");
+        // Mark callee and newTarget
+        TraceRootRange(trc, 2, ((Value*)this) - 2, "stack callee and newTarget");
     }
 }
 
@@ -445,20 +509,20 @@ InterpreterStack::pushInvokeFrame(JSContext* cx, const CallArgs& args, InitialFr
 }
 
 InterpreterFrame*
-InterpreterStack::pushExecuteFrame(JSContext* cx, HandleScript script, const Value& thisv,
-                                   const Value& newTargetValue, HandleObject scopeChain,
-                                   ExecuteType type, AbstractFramePtr evalInFrame)
+InterpreterStack::pushExecuteFrame(JSContext* cx, HandleScript script, const Value& newTargetValue,
+                                   HandleObject scopeChain, ExecuteType type,
+                                   AbstractFramePtr evalInFrame)
 {
     LifoAlloc::Mark mark = allocator_.mark();
 
-    unsigned nvars = 3 /* callee, this, newTarget */ + script->nslots();
+    unsigned nvars = 2 /* callee, newTarget */ + script->nslots();
     uint8_t* buffer = allocateFrame(cx, sizeof(InterpreterFrame) + nvars * sizeof(Value));
     if (!buffer)
         return nullptr;
 
-    InterpreterFrame* fp = reinterpret_cast<InterpreterFrame*>(buffer + 3 * sizeof(Value));
+    InterpreterFrame* fp = reinterpret_cast<InterpreterFrame*>(buffer + 2 * sizeof(Value));
     fp->mark_ = mark;
-    fp->initExecuteFrame(cx, script, evalInFrame, thisv, newTargetValue, scopeChain, type);
+    fp->initExecuteFrame(cx, script, evalInFrame, newTargetValue, scopeChain, type);
     fp->initLocals();
 
     return fp;
@@ -773,6 +837,21 @@ FrameIter::copyDataAsAbstractFramePtr() const
     if (Data* data = copyData())
         frame.ptr_ = uintptr_t(data);
     return frame;
+}
+
+void*
+FrameIter::rawFramePtr() const
+{
+    switch (data_.state_) {
+      case DONE:
+      case ASMJS:
+        return nullptr;
+      case JIT:
+        return data_.jitFrames_.fp();
+      case INTERP:
+        return interpFrame();
+    }
+    MOZ_CRASH("Unexpected state");
 }
 
 JSCompartment*
@@ -1215,23 +1294,11 @@ FrameIter::argsObj() const
     return abstractFramePtr().argsObj();
 }
 
-bool
-FrameIter::computeThis(JSContext* cx) const
-{
-    MOZ_ASSERT(!done() && !isAsmJS());
-    assertSameCompartment(cx, scopeChain(cx));
-    return ComputeThis(cx, abstractFramePtr());
-}
-
 Value
-FrameIter::computedThisValue() const
+FrameIter::thisArgument(JSContext* cx) const
 {
-    return abstractFramePtr().thisValue();
-}
+    MOZ_ASSERT(isNonEvalFunctionFrame());
 
-Value
-FrameIter::thisv(JSContext* cx) const
-{
     switch (data_.state_) {
       case DONE:
       case ASMJS:
@@ -1239,11 +1306,11 @@ FrameIter::thisv(JSContext* cx) const
       case JIT:
         if (data_.jitFrames_.isIonScripted()) {
             jit::MaybeReadFallback recover(cx, activation()->asJit(), &data_.jitFrames_);
-            return ionInlineFrames_.thisValue(recover);
+            return ionInlineFrames_.thisArgument(recover);
         }
-        return data_.jitFrames_.baselineFrame()->thisValue();
+        return data_.jitFrames_.baselineFrame()->thisArgument();
       case INTERP:
-        return interpFrame()->thisValue();
+        return interpFrame()->thisArgument();
     }
     MOZ_CRASH("Unexpected state");
 }
@@ -1378,9 +1445,58 @@ NonBuiltinScriptFrameIter::settle()
     }
 }
 
+ActivationEntryMonitor::ActivationEntryMonitor(JSContext* cx)
+  : cx_(cx), entryMonitor_(cx->runtime()->entryMonitor)
+{
+    cx->runtime()->entryMonitor = nullptr;
+}
+
+Value
+ActivationEntryMonitor::asyncStack(JSContext* cx)
+{
+    RootedValue stack(cx, ObjectOrNullValue(cx->runtime()->asyncStackForNewActivations));
+    if (!cx->compartment()->wrap(cx, &stack)) {
+        cx->clearPendingException();
+        return UndefinedValue();
+    }
+    return stack;
+}
+
+ActivationEntryMonitor::ActivationEntryMonitor(JSContext* cx, InterpreterFrame* entryFrame)
+  : ActivationEntryMonitor(cx)
+{
+    if (entryMonitor_) {
+        // The InterpreterFrame is not yet part of an Activation, so it won't
+        // be traced if we trigger GC here. Suppress GC to avoid this.
+        gc::AutoSuppressGC suppressGC(cx);
+        RootedValue stack(cx, asyncStack(cx));
+        RootedString asyncCause(cx, cx->runtime()->asyncCauseForNewActivations);
+        if (entryFrame->isFunctionFrame())
+            entryMonitor_->Entry(cx, entryFrame->fun(), stack, asyncCause);
+        else
+            entryMonitor_->Entry(cx, entryFrame->script(), stack, asyncCause);
+    }
+}
+
+ActivationEntryMonitor::ActivationEntryMonitor(JSContext* cx, jit::CalleeToken entryToken)
+  : ActivationEntryMonitor(cx)
+{
+    if (entryMonitor_) {
+        // The CalleeToken is not traced at this point and we also don't want
+        // a GC to discard the code we're about to enter, so we suppress GC.
+        gc::AutoSuppressGC suppressGC(cx);
+        RootedValue stack(cx, asyncStack(cx));
+        RootedString asyncCause(cx, cx->runtime()->asyncCauseForNewActivations);
+        if (jit::CalleeTokenIsFunction(entryToken))
+            entryMonitor_->Entry(cx_, jit::CalleeTokenToFunction(entryToken), stack, asyncCause);
+        else
+            entryMonitor_->Entry(cx_, jit::CalleeTokenToScript(entryToken), stack, asyncCause);
+    }
+}
+
 /*****************************************************************************/
 
-jit::JitActivation::JitActivation(JSContext* cx, CalleeToken entryPoint, bool active)
+jit::JitActivation::JitActivation(JSContext* cx, bool active)
   : Activation(cx, Jit),
     active_(active),
     isLazyLinkExitFrame_(false),
@@ -1403,22 +1519,10 @@ jit::JitActivation::JitActivation(JSContext* cx, CalleeToken entryPoint, bool ac
         prevJitJSContext_ = nullptr;
         prevJitActivation_ = nullptr;
     }
-
-    if (entryMonitor_) {
-        MOZ_ASSERT(entryPoint);
-
-        if (CalleeTokenIsFunction(entryPoint))
-            entryMonitor_->Entry(cx_, CalleeTokenToFunction(entryPoint));
-        else
-            entryMonitor_->Entry(cx_, CalleeTokenToScript(entryPoint));
-    }
 }
 
 jit::JitActivation::~JitActivation()
 {
-    if (entryMonitor_)
-        entryMonitor_->Exit(cx_);
-
     if (active_) {
         if (isProfiling())
             unregisterProfiling();
@@ -1646,7 +1750,7 @@ AsmJSActivation::AsmJSActivation(JSContext* cx, AsmJSModule& module)
     entrySP_(nullptr),
     resumePC_(nullptr),
     fp_(nullptr),
-    exitReason_(AsmJSExit::None)
+    packedExitReason_(wasm::ExitReason(wasm::ExitReason::None).pack())
 {
     (void) entrySP_;  // squelch GCC warning
 

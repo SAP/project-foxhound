@@ -29,7 +29,7 @@ using namespace media;
 // Un-comment to enable logging of seek bisections.
 //#define SEEK_LOGGING
 
-extern PRLogModuleInfo* gMediaDecoderLog;
+extern LazyLogModule gMediaDecoderLog;
 #define LOG(type, msg, ...) \
   MOZ_LOG(gMediaDecoderLog, type, ("GStreamerReader(%p) " msg, this, ##__VA_ARGS__))
 
@@ -115,7 +115,7 @@ GStreamerReader::~GStreamerReader()
   NS_ASSERTION(!mPlayBin, "No Shutdown() after Init()");
 }
 
-nsresult GStreamerReader::Init(MediaDecoderReader* aCloneDonor)
+nsresult GStreamerReader::Init()
 {
   GStreamerFormatHelper::Instance();
 
@@ -178,7 +178,7 @@ nsresult GStreamerReader::Init(MediaDecoderReader* aCloneDonor)
   return NS_OK;
 }
 
-nsRefPtr<ShutdownPromise>
+RefPtr<ShutdownPromise>
 GStreamerReader::Shutdown()
 {
   ResetDecode();
@@ -258,7 +258,7 @@ GValueArray *GStreamerReader::ElementFilter(GstURIDecodeBin *aBin,
     GValue *value = &aFactories->values[i];
     GstPluginFeature *factory = GST_PLUGIN_FEATURE(g_value_peek_pointer(value));
 
-    if (!GStreamerFormatHelper::IsPluginFeatureBlacklisted(factory)) {
+    if (!GStreamerFormatHelper::IsPluginFeatureBlocked(factory)) {
       g_value_array_append(filtered, value);
     }
   }
@@ -468,12 +468,15 @@ nsresult GStreamerReader::ReadMetadata(MediaInfo* aInfo,
   /* report the duration */
   gint64 duration;
 
+  bool isMediaSeekable = false;
+
   if (isMP3 && mMP3FrameParser.IsMP3()) {
     // The MP3FrameParser has reported a duration; use that over the gstreamer
     // reported duration for inter-platform consistency.
     mUseParserDuration = true;
     mLastParserDuration = mMP3FrameParser.GetDuration();
     mInfo.mMetadataDuration.emplace(TimeUnit::FromMicroseconds(mLastParserDuration));
+    isMediaSeekable = true;
   } else {
     LOG(LogLevel::Debug, "querying duration");
     // Otherwise use the gstreamer duration.
@@ -488,8 +491,11 @@ nsresult GStreamerReader::ReadMetadata(MediaInfo* aInfo,
       LOG(LogLevel::Debug, "have duration %" GST_TIME_FORMAT, GST_TIME_ARGS(duration));
       duration = GST_TIME_AS_USECONDS (duration);
       mInfo.mMetadataDuration.emplace(TimeUnit::FromMicroseconds(duration));
+      isMediaSeekable = true;
     }
   }
+
+  mInfo.mMediaSeekable = isMediaSeekable;
 
   int n_video = 0, n_audio = 0;
   g_object_get(mPlayBin, "n-video", &n_video, "n-audio", &n_audio, nullptr);
@@ -516,28 +522,6 @@ nsresult GStreamerReader::ReadMetadata(MediaInfo* aInfo,
   gst_element_set_state(mPlayBin, GST_STATE_PLAYING);
 
   return NS_OK;
-}
-
-bool
-GStreamerReader::IsMediaSeekable()
-{
-  if (mUseParserDuration) {
-    return true;
-  }
-
-  gint64 duration;
-#if GST_VERSION_MAJOR >= 1
-  if (gst_element_query_duration(GST_ELEMENT(mPlayBin), GST_FORMAT_TIME,
-                                 &duration)) {
-#else
-  GstFormat format = GST_FORMAT_TIME;
-  if (gst_element_query_duration(GST_ELEMENT(mPlayBin), &format, &duration) &&
-      format == GST_FORMAT_TIME) {
-#endif
-    return true;
-  }
-
-  return false;
 }
 
 nsresult GStreamerReader::CheckSupportedFormats()
@@ -820,7 +804,7 @@ bool GStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
   }
 #endif
 
-  nsRefPtr<PlanarYCbCrImage> image = GetImageFromBuffer(buffer);
+  RefPtr<PlanarYCbCrImage> image = GetImageFromBuffer(buffer);
   if (!image) {
     /* Ugh, upstream is not calling gst_pad_alloc_buffer(). Fallback to
      * allocating a PlanarYCbCrImage backed GstBuffer here and memcpy.
@@ -832,7 +816,7 @@ bool GStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
   }
 
   int64_t offset = mResource.Tell(); // Estimate location in media.
-  nsRefPtr<VideoData> video = VideoData::CreateFromImage(mInfo.mVideo,
+  RefPtr<VideoData> video = VideoData::CreateFromImage(mInfo.mVideo,
                                                          mDecoder->GetImageContainer(),
                                                          offset, timestamp, duration,
                                                          static_cast<Image*>(image.get()),
@@ -844,7 +828,7 @@ bool GStreamerReader::DecodeVideoFrame(bool &aKeyFrameSkip,
   return true;
 }
 
-nsRefPtr<MediaDecoderReader::SeekPromise>
+RefPtr<MediaDecoderReader::SeekPromise>
 GStreamerReader::Seek(int64_t aTarget, int64_t aEndTime)
 {
   MOZ_ASSERT(OnTaskQueue());
@@ -885,7 +869,7 @@ media::TimeIntervals GStreamerReader::GetBuffered()
   GstFormat format = GST_FORMAT_TIME;
 #endif
   AutoPinned<MediaResource> resource(mDecoder->GetResource());
-  nsTArray<MediaByteRange> ranges;
+  MediaByteRangeSet ranges;
   resource->GetCachedRanges(ranges);
 
   if (resource->IsDataCachedToEndOfResource(0)) {
@@ -952,7 +936,7 @@ media::TimeIntervals GStreamerReader::GetBuffered()
 void GStreamerReader::ReadAndPushData(guint aLength)
 {
   int64_t offset1 = mResource.Tell();
-  unused << offset1;
+  Unused << offset1;
   nsresult rv = NS_OK;
 
   GstBuffer* buffer = gst_buffer_new_and_alloc(aLength);
@@ -974,7 +958,7 @@ void GStreamerReader::ReadAndPushData(guint aLength)
   }
 
   int64_t offset2 = mResource.Tell();
-  unused << offset2;
+  Unused << offset2;
 
 #if GST_VERSION_MAJOR >= 1
   gst_buffer_unmap(buffer, &info);
@@ -1200,19 +1184,13 @@ void GStreamerReader::Eos(GstAppSink* aSink)
     }
     mon.NotifyAll();
   }
-
-  {
-    ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    /* Potentially unblock the decode thread in ::DecodeLoop */
-    mon.NotifyAll();
-  }
 }
 
 /**
  * This callback is called while the pipeline is automatically built, after a
  * new element has been added to the pipeline. We use it to find the
  * uridecodebin instance used by playbin and connect to it to apply our
- * blacklist.
+ * block list.
  */
 void
 GStreamerReader::PlayElementAddedCb(GstBin *aBin, GstElement *aElement,
@@ -1249,7 +1227,7 @@ GStreamerReader::ShouldAutoplugFactory(GstElementFactory* aFactory, GstCaps* aCa
 
 /**
  * This is called by uridecodebin (running inside playbin), after it has found
- * candidate factories to continue decoding the stream. We apply the blacklist
+ * candidate factories to continue decoding the stream. We apply the block list
  * here, disallowing known-crashy plugins.
  */
 GValueArray*
@@ -1281,8 +1259,7 @@ GStreamerReader::AutoplugSortCb(GstElement* aElement, GstPad* aPad,
  * If this is an MP3 stream, pass any new data we get to the MP3 frame parser
  * for duration estimation.
  */
-void GStreamerReader::NotifyDataArrivedInternal(uint32_t aLength,
-                                                int64_t aOffset)
+void GStreamerReader::NotifyDataArrivedInternal()
 {
   MOZ_ASSERT(OnTaskQueue());
   if (HasVideo()) {
@@ -1293,19 +1270,20 @@ void GStreamerReader::NotifyDataArrivedInternal(uint32_t aLength,
   }
 
   AutoPinned<MediaResource> resource(mResource.GetResource());
-  nsTArray<MediaByteRange> byteRanges;
+  MediaByteRangeSet byteRanges;
   nsresult rv = resource->GetCachedRanges(byteRanges);
 
   if (NS_FAILED(rv)) {
     return;
   }
-
-  IntervalSet<int64_t> intervals;
-  for (auto& range : byteRanges) {
-    intervals += mFilter.NotifyDataArrived(range.Length(), range.mStart);
+  if (byteRanges == mLastCachedRanges) {
+    return;
   }
+  MediaByteRangeSet intervals = byteRanges - mLastCachedRanges;
+  mLastCachedRanges = byteRanges;
+
   for (const auto& interval : intervals) {
-    nsRefPtr<MediaByteBuffer> bytes =
+    RefPtr<MediaByteBuffer> bytes =
       resource->MediaReadAt(interval.mStart, interval.Length());
     NS_ENSURE_TRUE_VOID(bytes);
     mMP3FrameParser.Parse(bytes->Elements(), interval.Length(), interval.mStart);
@@ -1474,9 +1452,9 @@ void GStreamerReader::ImageDataFromVideoFrame(GstVideoFrame *aFrame,
   aData->mCrSkip = GST_VIDEO_FRAME_COMP_PSTRIDE(aFrame, 2) - 1;
 }
 
-nsRefPtr<PlanarYCbCrImage> GStreamerReader::GetImageFromBuffer(GstBuffer* aBuffer)
+RefPtr<PlanarYCbCrImage> GStreamerReader::GetImageFromBuffer(GstBuffer* aBuffer)
 {
-  nsRefPtr<PlanarYCbCrImage> image = nullptr;
+  RefPtr<PlanarYCbCrImage> image = nullptr;
 
   if (gst_buffer_n_memory(aBuffer) == 1) {
     GstMemory* mem = gst_buffer_peek_memory(aBuffer, 0);
@@ -1497,7 +1475,7 @@ nsRefPtr<PlanarYCbCrImage> GStreamerReader::GetImageFromBuffer(GstBuffer* aBuffe
 
 void GStreamerReader::CopyIntoImageBuffer(GstBuffer* aBuffer,
                                           GstBuffer** aOutBuffer,
-                                          nsRefPtr<PlanarYCbCrImage> &image)
+                                          RefPtr<PlanarYCbCrImage> &image)
 {
   *aOutBuffer = gst_buffer_new_allocate(mAllocator, gst_buffer_get_size(aBuffer), nullptr);
   GstMemory *mem = gst_buffer_peek_memory(*aOutBuffer, 0);

@@ -220,12 +220,11 @@ class Transport(object):
         except Exception:
             # This should probably be more specific
             raise IOError
-        body = resp.read()
+        resp_body = resp.read()
 
         try:
-            data = json.loads(body)
+            data = json.loads(resp_body)
         except:
-            raise
             raise WebDriverException("Could not parse response body as JSON: %s" % body)
 
         if resp.status != 200:
@@ -345,8 +344,27 @@ class Find(object):
         return rv
 
 
+class Cookies(object):
+    def __init__(self, session):
+        self.session = session
+
+    def __getitem__(self, name):
+        self.session.send_command("GET", "cookie/%s" % name, {}, key="value")
+
+    def __setitem__(self, name, value):
+        cookie = {"name": name,
+                  "value": None}
+
+        if isinstance(name, (str, unicode)):
+            cookie["value"] = value
+        elif hasattr(value, "value"):
+            cookie["value"] = value.value
+        self.session.send_command("POST", "cookie/%s" % name, {}, key="value")
+
+
 class Session(object):
-    def __init__(self, host, port, url_prefix="", desired_capabilities=None, port_timeout=60):
+    def __init__(self, host, port, url_prefix="", desired_capabilities=None, port_timeout=60,
+                 extension=None):
         self.transport = Transport(host, port, url_prefix, port_timeout)
         self.desired_capabilities = desired_capabilities
         self.session_id = None
@@ -354,6 +372,8 @@ class Session(object):
         self.window = None
         self.find = None
         self._element_cache = {}
+        self.extension = None
+        self.extension_cls = extension
 
     def start(self):
         desired_capabilities = self.desired_capabilities if self.desired_capabilities else {}
@@ -365,6 +385,8 @@ class Session(object):
         self.timeouts = Timeouts(self)
         self.window = Window(self)
         self.find = Find(self)
+        if self.extension_cls:
+            self.extension = self.extension_cls(self)
 
         return rv["value"]
 
@@ -376,6 +398,7 @@ class Session(object):
         self.timeouts = None
         self.window = None
         self.find = None
+        self.extension = None
         self.transport.close_connection()
 
     def __enter__(self):
@@ -490,7 +513,7 @@ class Session(object):
             body["secure"] = secure
         if expiry is not None:
             body["expiry"] = expiry
-        self.send_command("POST", "cookie", body)
+        self.send_command("POST", "cookie", {"cookie": body})
 
     def delete_cookie(self, name=None):
         if name is None:
@@ -579,9 +602,41 @@ class Element(object):
     @property
     @command
     def text(self):
-        return self.session.send_command("GET", self.url("text"), key="value")
+        return self.session.send_command("GET", self.url("text"))
 
     @property
     @command
     def name(self):
-        return self.session.send_command("GET", self.url("name"), key="value")
+        return self.session.send_command("GET", self.url("name"))
+
+    @command
+    def style(self, property_name):
+        return self.session.send_command("GET", self.url("css/%s" % property_name))
+
+    @property
+    @command
+    def rect(self):
+        return self.session.send_command("GET", self.url("rect"))
+
+    @command
+    def attribute(self, name):
+        return self.session.send_command("GET", self.url("attribute/%s" % name))
+
+class ServoExtensions(object):
+    def __init__(self, session):
+        self.session = session
+
+    @command
+    def get_prefs(self, *prefs):
+        body = {"prefs": list(prefs)}
+        return self.session.send_command("POST", "servo/prefs/get", body)
+
+    @command
+    def set_prefs(self, prefs):
+        body = {"prefs": prefs}
+        return self.session.send_command("POST", "servo/prefs/set", body)
+
+    @command
+    def reset_prefs(self, *prefs):
+        body = {"prefs": list(prefs)}
+        return self.session.send_command("POST", "servo/prefs/reset", body)

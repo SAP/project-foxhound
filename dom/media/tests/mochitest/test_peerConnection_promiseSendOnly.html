@@ -12,8 +12,8 @@
     visible: true
   });
 
-  var pc1 = new mozRTCPeerConnection();
-  var pc2 = new mozRTCPeerConnection();
+  var pc1 = new RTCPeerConnection();
+  var pc2 = new RTCPeerConnection();
 
   var pc2_haveRemoteOffer = new Promise(resolve => pc2.onsignalingstatechange =
     e => (e.target.signalingState == "have-remote-offer") && resolve());
@@ -36,7 +36,7 @@
 
     is(v2.currentTime, 0, "v2.currentTime is zero at outset");
 
-    navigator.mediaDevices.getUserMedia({ fake: true, video: true, audio: true })
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then(stream => pc1.addStream(v1.srcObject = stream))
     .then(() => pc1.createOffer({})) // check that createOffer accepts arg.
     .then(offer => pc1.setLocalDescription(offer))

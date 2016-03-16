@@ -93,9 +93,9 @@ protected:
   // image changes).  Note that mSources is not accessed from other threads
   // for video and is not protected.
   Monitor mMonitor;
-  nsRefPtr<layers::Image> mImage;
+  RefPtr<layers::Image> mImage;
 
-  nsRefPtr<layers::ImageContainer> mImageContainer;
+  RefPtr<layers::ImageContainer> mImageContainer;
 
   MediaEnginePrefs mOpts;
   int mCb;
@@ -130,10 +130,19 @@ public:
                           bool aAgcOn, uint32_t aAGC,
                           bool aNoiseOn, uint32_t aNoise,
                           int32_t aPlayoutDelay) override { return NS_OK; };
+  void AppendToSegment(AudioSegment& aSegment, TrackTicks aSamples);
   virtual void NotifyPull(MediaStreamGraph* aGraph,
                           SourceMediaStream *aSource,
                           TrackID aId,
-                          StreamTime aDesiredTime) override {}
+                          StreamTime aDesiredTime) override
+  {
+#ifdef DEBUG
+    StreamBuffer::Track* data = aSource->FindTrack(aId);
+    NS_WARN_IF_FALSE(!data || data->IsEnded() ||
+                     aDesiredTime <= aSource->GetEndOfAppendedData(aId),
+                     "MediaEngineDefaultAudioSource data underrun");
+#endif
+  }
 
   virtual bool IsFake() override {
     return true;
@@ -161,6 +170,9 @@ protected:
   TrackID mTrackID;
   nsCOMPtr<nsITimer> mTimer;
 
+  TimeStamp mLastNotify;
+  TrackTicks mBufferSize;
+
   SourceMediaStream* mSource;
   nsAutoPtr<SineWaveGenerator> mSineGenerator;
 };
@@ -175,9 +187,9 @@ public:
   {}
 
   virtual void EnumerateVideoDevices(dom::MediaSourceEnum,
-                                     nsTArray<nsRefPtr<MediaEngineVideoSource> >*) override;
+                                     nsTArray<RefPtr<MediaEngineVideoSource> >*) override;
   virtual void EnumerateAudioDevices(dom::MediaSourceEnum,
-                                     nsTArray<nsRefPtr<MediaEngineAudioSource> >*) override;
+                                     nsTArray<RefPtr<MediaEngineAudioSource> >*) override;
   virtual void Shutdown() override {
     MutexAutoLock lock(mMutex);
 
@@ -196,8 +208,8 @@ private:
   Mutex mMutex;
   // protected with mMutex:
 
-  nsTArray<nsRefPtr<MediaEngineVideoSource> > mVSources;
-  nsTArray<nsRefPtr<MediaEngineAudioSource> > mASources;
+  nsTArray<RefPtr<MediaEngineVideoSource> > mVSources;
+  nsTArray<RefPtr<MediaEngineAudioSource> > mASources;
 };
 
 } // namespace mozilla

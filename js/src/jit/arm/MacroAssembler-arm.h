@@ -347,9 +347,8 @@ class MacroAssemblerARM : public Assembler
 
     // Branches when done from within arm-specific code.
     BufferOffset ma_b(Label* dest, Condition c = Always);
+    void ma_b(void* target, Condition c = Always);
     void ma_bx(Register dest, Condition c = Always);
-
-    void ma_b(void* target, Relocation::Kind reloc, Condition c = Always);
 
     // This is almost NEVER necessary, we'll basically never be calling a label
     // except, possibly in the crazy bailout-table case.
@@ -603,25 +602,25 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_dtr(IsLoad, sp, totSpace, reg, PostIndex);
     }
 
-    CodeOffsetLabel toggledJump(Label* label);
+    CodeOffset toggledJump(Label* label);
 
     // Emit a BLX or NOP instruction. ToggleCall can be used to patch this
     // instruction.
-    CodeOffsetLabel toggledCall(JitCode* target, bool enabled);
+    CodeOffset toggledCall(JitCode* target, bool enabled);
 
-    CodeOffsetLabel pushWithPatch(ImmWord imm) {
+    CodeOffset pushWithPatch(ImmWord imm) {
         ScratchRegisterScope scratch(asMasm());
-        CodeOffsetLabel label = movWithPatch(imm, scratch);
+        CodeOffset label = movWithPatch(imm, scratch);
         ma_push(scratch);
         return label;
     }
 
-    CodeOffsetLabel movWithPatch(ImmWord imm, Register dest) {
-        CodeOffsetLabel label = CodeOffsetLabel(currentOffset());
+    CodeOffset movWithPatch(ImmWord imm, Register dest) {
+        CodeOffset label = CodeOffset(currentOffset());
         ma_movPatchable(Imm32(imm.value), dest, Always, HasMOVWT() ? L_MOVWT : L_LDR);
         return label;
     }
-    CodeOffsetLabel movWithPatch(ImmPtr imm, Register dest) {
+    CodeOffset movWithPatch(ImmPtr imm, Register dest) {
         return movWithPatch(ImmWord(uintptr_t(imm.value)), dest);
     }
 
@@ -975,7 +974,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void branchPtr(Condition cond, Register lhs, ImmPtr imm, Label* label) {
         branchPtr(cond, lhs, ImmWord(uintptr_t(imm.value)), label);
     }
-    void branchPtr(Condition cond, Register lhs, AsmJSImmPtr imm, Label* label) {
+    void branchPtr(Condition cond, Register lhs, wasm::SymbolicAddress imm, Label* label) {
         ScratchRegisterScope scratch(asMasm());
         movePtr(imm, scratch);
         branchPtr(cond, lhs, scratch, label);
@@ -1034,7 +1033,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_cmp(scratch, ptr);
         ma_b(label, cond);
     }
-    void branchPtr(Condition cond, AsmJSAbsoluteAddress addr, Register ptr, Label* label) {
+    void branchPtr(Condition cond, wasm::SymbolicAddress addr, Register ptr, Label* label) {
         ScratchRegisterScope scratch(asMasm());
         loadPtr(addr, scratch);
         ma_cmp(scratch, ptr);
@@ -1052,7 +1051,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_cmp(scratch2, rhs);
         ma_b(label, cond);
     }
-    void branch32(Condition cond, AsmJSAbsoluteAddress addr, Imm32 imm, Label* label) {
+    void branch32(Condition cond, wasm::SymbolicAddress addr, Imm32 imm, Label* label) {
         ScratchRegisterScope scratch(asMasm());
         loadPtr(addr, scratch);
         ma_cmp(scratch, imm);
@@ -1189,8 +1188,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void add32(Register src, Register dest);
     void add32(Imm32 imm, Register dest);
     void add32(Imm32 imm, const Address& dest);
-    void sub32(Imm32 imm, Register dest);
-    void sub32(Register src, Register dest);
     template <typename T>
     void branchAdd32(Condition cond, T src, Register dest, Label* label) {
         add32(src, dest);
@@ -1198,7 +1195,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     }
     template <typename T>
     void branchSub32(Condition cond, T src, Register dest, Label* label) {
-        sub32(src, dest);
+        ma_sub(src, dest, SetCC);
         j(cond, label);
     }
 
@@ -1216,7 +1213,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void movePtr(Register src, Register dest);
     void movePtr(ImmWord imm, Register dest);
     void movePtr(ImmPtr imm, Register dest);
-    void movePtr(AsmJSImmPtr imm, Register dest);
+    void movePtr(wasm::SymbolicAddress imm, Register dest);
     void movePtr(ImmGCPtr imm, Register dest);
     void move64(Register64 src, Register64 dest) {
         move32(src.low, dest.low);
@@ -1246,7 +1243,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void loadPtr(const Address& address, Register dest);
     void loadPtr(const BaseIndex& src, Register dest);
     void loadPtr(AbsoluteAddress address, Register dest);
-    void loadPtr(AsmJSAbsoluteAddress address, Register dest);
+    void loadPtr(wasm::SymbolicAddress address, Register dest);
 
     void loadPrivate(const Address& address, Register dest);
 
@@ -1617,6 +1614,14 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         atomicEffectOp(4, AtomicFetchXorOp, value, mem, flagTemp);
     }
 
+    template<typename T>
+    void compareExchangeToTypedIntArray(Scalar::Type arrayType, const T& mem, Register oldval, Register newval,
+                                        Register temp, AnyRegister output);
+
+    template<typename T>
+    void atomicExchangeToTypedIntArray(Scalar::Type arrayType, const T& mem, Register value,
+                                       Register temp, AnyRegister output);
+
     void clampIntToUint8(Register reg) {
         // Look at (reg >> 8) if it is 0, then reg shouldn't be clamped if it is
         // <0, then we want to clamp to 0, otherwise, we wish to clamp to 255
@@ -1759,8 +1764,8 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     bool buildOOLFakeExitFrame(void* fakeReturnAddr);
 
   public:
-    CodeOffsetLabel labelForPatch() {
-        return CodeOffsetLabel(nextOffset().getOffset());
+    CodeOffset labelForPatch() {
+        return CodeOffset(nextOffset().getOffset());
     }
 
     void computeEffectiveAddress(const Address& address, Register dest) {
@@ -1817,10 +1822,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void branchValueIsNurseryObject(Condition cond, ValueOperand value, Register temp, Label* label);
 
     void loadAsmJSActivation(Register dest) {
-        loadPtr(Address(GlobalReg, AsmJSActivationGlobalDataOffset - AsmJSGlobalRegBias), dest);
+        loadPtr(Address(GlobalReg, wasm::ActivationGlobalDataOffset - AsmJSGlobalRegBias), dest);
     }
     void loadAsmJSHeapRegisterFromGlobalData() {
-        loadPtr(Address(GlobalReg, AsmJSHeapGlobalDataOffset - AsmJSGlobalRegBias), HeapReg);
+        loadPtr(Address(GlobalReg, wasm::HeapGlobalDataOffset - AsmJSGlobalRegBias), HeapReg);
     }
     // Instrumentation for entering and leaving the profiler.
     void profilerEnterFrame(Register framePtr, Register scratch);

@@ -138,7 +138,7 @@ public:
     }
 
     rv = BodyDeleteFiles(dbDir, mDeletedBodyIdList);
-    unused << NS_WARN_IF(NS_FAILED(rv));
+    Unused << NS_WARN_IF(NS_FAILED(rv));
 
     aResolver->Resolve(rv);
   }
@@ -182,7 +182,7 @@ public:
     nsresult rv = MaybeCreateInstance();
     if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
-    nsRefPtr<Manager> ref = Get(aManagerId);
+    RefPtr<Manager> ref = Get(aManagerId);
     if (!ref) {
       // TODO: replace this with a thread pool (bug 1119864)
       nsCOMPtr<nsIThread> ioThread;
@@ -194,7 +194,7 @@ public:
       // There may be an old manager for this origin in the process of
       // cleaning up.  We need to tell the new manager about this so
       // that it won't actually start until the old manager is done.
-      nsRefPtr<Manager> oldManager = Get(aManagerId, Closing);
+      RefPtr<Manager> oldManager = Get(aManagerId, Closing);
       ref->Init(oldManager);
 
       MOZ_ASSERT(!sFactory->mManagerList.Contains(ref));
@@ -219,7 +219,7 @@ public:
     // chains to an old Manager we want it to be the most recent one.
     ManagerList::BackwardIterator iter(sFactory->mManagerList);
     while (iter.HasMore()) {
-      nsRefPtr<Manager> manager = iter.GetNext();
+      RefPtr<Manager> manager = iter.GetNext();
       if (aState == manager->GetState() && *manager->mManagerId == *aManagerId) {
         return manager.forget();
       }
@@ -242,55 +242,61 @@ public:
   }
 
   static void
-  StartAbortOnMainThread(const nsACString& aOrigin)
+  Abort(const nsACString& aOrigin)
   {
-    MOZ_ASSERT(NS_IsMainThread());
+    mozilla::ipc::AssertIsOnBackgroundThread();
 
-    // Lock for sBackgroundThread.
-    StaticMutexAutoLock lock(sMutex);
-
-    if (!sBackgroundThread) {
+    if (!sFactory) {
       return;
     }
 
-    // Guaranteed to succeed because we should get abort only before the
-    // background thread is destroyed.
-    nsCOMPtr<nsIRunnable> runnable = new AbortRunnable(aOrigin);
-    nsresult rv = sBackgroundThread->Dispatch(runnable,
-                                              nsIThread::DISPATCH_NORMAL);
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
+    MOZ_ASSERT(!sFactory->mManagerList.IsEmpty());
+
+    {
+      ManagerList::ForwardIterator iter(sFactory->mManagerList);
+      while (iter.HasMore()) {
+        RefPtr<Manager> manager = iter.GetNext();
+        if (aOrigin.IsVoid() ||
+            manager->mManagerId->QuotaOrigin() == aOrigin) {
+          manager->Abort();
+        }
+      }
+    }
   }
 
   static void
-  StartShutdownAllOnMainThread()
+  ShutdownAll()
   {
-    MOZ_ASSERT(NS_IsMainThread());
+    mozilla::ipc::AssertIsOnBackgroundThread();
 
-    // Lock for sFactoryShutdown and sBackgroundThread.
-    StaticMutexAutoLock lock(sMutex);
-
-    sFactoryShutdown = true;
-
-    if (!sBackgroundThread) {
+    if (!sFactory) {
       return;
     }
 
-    // Guaranteed to succeed because we should be shutdown before the
-    // background thread is destroyed.
-    nsCOMPtr<nsIRunnable> runnable = new ShutdownAllRunnable();
-    nsresult rv = sBackgroundThread->Dispatch(runnable,
-                                              nsIThread::DISPATCH_NORMAL);
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
+    MOZ_ASSERT(!sFactory->mManagerList.IsEmpty());
+
+    {
+      // Note that we are synchronously calling shutdown code here.  If any
+      // of the shutdown code synchronously decides to delete the Factory
+      // we need to delay that delete until the end of this method.
+      AutoRestore<bool> restore(sFactory->mInSyncShutdown);
+      sFactory->mInSyncShutdown = true;
+
+      ManagerList::ForwardIterator iter(sFactory->mManagerList);
+      while (iter.HasMore()) {
+        RefPtr<Manager> manager = iter.GetNext();
+        manager->Shutdown();
+      }
+    }
+
+    MaybeDestroyInstance();
   }
 
   static bool
-  IsShutdownAllCompleteOnMainThread()
+  IsShutdownAllComplete()
   {
-    MOZ_ASSERT(NS_IsMainThread());
-    StaticMutexAutoLock lock(sMutex);
-    // Infer whether we have shutdown using the sBackgroundThread value.  We
-    // guarantee this is nullptr when sFactory is destroyed.
-    return sFactoryShutdown && !sBackgroundThread;
+    mozilla::ipc::AssertIsOnBackgroundThread();
+    return !sFactory;
   }
 
 private:
@@ -322,12 +328,6 @@ private:
         if (sFactoryShutdown) {
           return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
         }
-
-        // Cannot use ClearOnShutdown() because we're on the background thread.
-        // This is automatically cleared when Factory::Remove() calls
-        // MaybeDestroyInstance().
-        MOZ_ASSERT(!sBackgroundThread);
-        sBackgroundThread = NS_GetCurrentThread();
       }
 
       // We cannot use ClearOnShutdown() here because we're not on the main
@@ -359,133 +359,20 @@ private:
       return;
     }
 
-    // Be clear about what we are locking.  sFactory is bg thread only, so
-    // we don't need to lock it here.  Just protect sBackgroundThread.
-    {
-      StaticMutexAutoLock lock(sMutex);
-      MOZ_ASSERT(sBackgroundThread);
-      sBackgroundThread = nullptr;
-    }
-
     sFactory = nullptr;
   }
-
-  static void
-  AbortOnBackgroundThread(const nsACString& aOrigin)
-  {
-    mozilla::ipc::AssertIsOnBackgroundThread();
-
-    // The factory was destroyed between when abort started on main thread and
-    // when we could start abort on the worker thread.  Just declare abort
-    // complete.
-    if (!sFactory) {
-#ifdef DEBUG
-      StaticMutexAutoLock lock(sMutex);
-      MOZ_ASSERT(!sBackgroundThread);
-#endif
-      return;
-    }
-
-    MOZ_ASSERT(!sFactory->mManagerList.IsEmpty());
-
-    {
-      ManagerList::ForwardIterator iter(sFactory->mManagerList);
-      while (iter.HasMore()) {
-        nsRefPtr<Manager> manager = iter.GetNext();
-        if (aOrigin.IsVoid() ||
-            manager->mManagerId->QuotaOrigin() == aOrigin) {
-          manager->Abort();
-        }
-      }
-    }
-  }
-
-  static void
-  ShutdownAllOnBackgroundThread()
-  {
-    mozilla::ipc::AssertIsOnBackgroundThread();
-
-    // The factory shutdown between when shutdown started on main thread and
-    // when we could start shutdown on the worker thread.  Just declare
-    // shutdown complete.  The sFactoryShutdown flag prevents the factory
-    // from racing to restart here.
-    if (!sFactory) {
-#ifdef DEBUG
-      StaticMutexAutoLock lock(sMutex);
-      MOZ_ASSERT(!sBackgroundThread);
-#endif
-      return;
-    }
-
-    MOZ_ASSERT(!sFactory->mManagerList.IsEmpty());
-
-    {
-      // Note that we are synchronously calling shutdown code here.  If any
-      // of the shutdown code synchronously decides to delete the Factory
-      // we need to delay that delete until the end of this method.
-      AutoRestore<bool> restore(sFactory->mInSyncShutdown);
-      sFactory->mInSyncShutdown = true;
-
-      ManagerList::ForwardIterator iter(sFactory->mManagerList);
-      while (iter.HasMore()) {
-        nsRefPtr<Manager> manager = iter.GetNext();
-        manager->Shutdown();
-      }
-    }
-
-    MaybeDestroyInstance();
-  }
-
-  class AbortRunnable final : public nsRunnable
-  {
-  public:
-    explicit AbortRunnable(const nsACString& aOrigin)
-      : mOrigin(aOrigin)
-    { }
-
-    NS_IMETHOD
-    Run() override
-    {
-      mozilla::ipc::AssertIsOnBackgroundThread();
-      AbortOnBackgroundThread(mOrigin);
-      return NS_OK;
-    }
-  private:
-    ~AbortRunnable() { }
-
-    const nsCString mOrigin;
-  };
-
-  class ShutdownAllRunnable final : public nsRunnable
-  {
-  public:
-    NS_IMETHOD
-    Run() override
-    {
-      mozilla::ipc::AssertIsOnBackgroundThread();
-      ShutdownAllOnBackgroundThread();
-      return NS_OK;
-    }
-  private:
-    ~ShutdownAllRunnable() { }
-  };
 
   // Singleton created on demand and deleted when last Manager is cleared
   // in Remove().
   // PBackground thread only.
   static StaticAutoPtr<Factory> sFactory;
 
-  // protects following static attributes
+  // protects following static attribute
   static StaticMutex sMutex;
 
   // Indicate if shutdown has occurred to block re-creation of sFactory.
   // Must hold sMutex to access.
   static bool sFactoryShutdown;
-
-  // Background thread owning all Manager objects.  Only set while sFactory is
-  // set.
-  // Must hold sMutex to access.
-  static StaticRefPtr<nsIThread> sBackgroundThread;
 
   // Weak references as we don't want to keep Manager objects alive forever.
   // When a Manager is destroyed it calls Factory::Remove() to clear itself.
@@ -507,9 +394,6 @@ StaticMutex Manager::Factory::sMutex;
 
 // static
 bool Manager::Factory::sFactoryShutdown = false;
-
-// static
-StaticRefPtr<nsIThread> Manager::Factory::sBackgroundThread;
 
 // ----------------------------------------------------------------------------
 
@@ -542,7 +426,7 @@ protected:
     mManager = nullptr;
   }
 
-  nsRefPtr<Manager> mManager;
+  RefPtr<Manager> mManager;
   const ListenerId mListenerId;
 };
 
@@ -585,7 +469,7 @@ public:
   }
 
 private:
-  nsRefPtr<Manager> mManager;
+  RefPtr<Manager> mManager;
   const CacheId mCacheId;
   nsTArray<nsID> mDeletedBodyIdList;
 };
@@ -650,7 +534,7 @@ public:
 private:
   const CacheId mCacheId;
   const CacheMatchArgs mArgs;
-  nsRefPtr<StreamList> mStreamList;
+  RefPtr<StreamList> mStreamList;
   bool mFoundResponse;
   SavedResponse mResponse;
 };
@@ -713,7 +597,7 @@ public:
 private:
   const CacheId mCacheId;
   const CacheMatchAllArgs mArgs;
-  nsRefPtr<StreamList> mStreamList;
+  RefPtr<StreamList> mStreamList;
   nsTArray<SavedResponse> mSavedResponses;
 };
 
@@ -897,7 +781,7 @@ private:
     }
 
     rv = trans.Commit();
-    unused << NS_WARN_IF(NS_FAILED(rv));
+    Unused << NS_WARN_IF(NS_FAILED(rv));
 
     DoResolve(rv);
   }
@@ -1061,13 +945,13 @@ private:
     mTargetThread = nullptr;
 
     // Make sure to de-ref the resolver per the Action API contract.
-    nsRefPtr<Action::Resolver> resolver;
+    RefPtr<Action::Resolver> resolver;
     mResolver.swap(resolver);
     resolver->Resolve(aRv);
   }
 
   // initiating thread only
-  nsRefPtr<Manager> mManager;
+  RefPtr<Manager> mManager;
   const ListenerId mListenerId;
 
   // Set on initiating thread, read on target thread.  State machine guarantees
@@ -1077,7 +961,7 @@ private:
   uint32_t mExpectedAsyncCopyCompletions;
 
   // target thread only
-  nsRefPtr<Resolver> mResolver;
+  RefPtr<Resolver> mResolver;
   nsCOMPtr<nsIFile> mDBDir;
   nsCOMPtr<mozIStorageConnection> mConn;
   nsCOMPtr<nsIThread> mTargetThread;
@@ -1204,7 +1088,7 @@ public:
 private:
   const CacheId mCacheId;
   const CacheKeysArgs mArgs;
-  nsRefPtr<StreamList> mStreamList;
+  RefPtr<StreamList> mStreamList;
   nsTArray<SavedRequest> mSavedRequests;
 };
 
@@ -1266,7 +1150,7 @@ public:
 private:
   const Namespace mNamespace;
   const StorageMatchArgs mArgs;
-  nsRefPtr<StreamList> mStreamList;
+  RefPtr<StreamList> mStreamList;
   bool mFoundResponse;
   SavedResponse mSavedResponse;
 };
@@ -1409,13 +1293,13 @@ public:
       if (!mManager->SetCacheIdOrphanedIfRefed(mCacheId)) {
 
         // no outstanding references, delete immediately
-        nsRefPtr<Context> context = mManager->mContext;
+        RefPtr<Context> context = mManager->mContext;
 
         if (context->IsCanceled()) {
           context->NoteOrphanedData();
         } else {
           context->CancelForCacheId(mCacheId);
-          nsRefPtr<Action> action =
+          RefPtr<Action> action =
             new DeleteOrphanedCacheAction(mManager, mCacheId);
           context->Dispatch(action);
         }
@@ -1531,13 +1415,13 @@ Manager::Get(ManagerId* aManagerId)
 
 // static
 void
-Manager::ShutdownAllOnMainThread()
+Manager::ShutdownAll()
 {
-  MOZ_ASSERT(NS_IsMainThread());
+  mozilla::ipc::AssertIsOnBackgroundThread();
 
-  Factory::StartShutdownAllOnMainThread();
+  Factory::ShutdownAll();
 
-  while (!Factory::IsShutdownAllCompleteOnMainThread()) {
+  while (!Factory::IsShutdownAllComplete()) {
     if (!NS_ProcessNextEvent()) {
       NS_WARNING("Something bad happened!");
       break;
@@ -1547,11 +1431,11 @@ Manager::ShutdownAllOnMainThread()
 
 // static
 void
-Manager::AbortOnMainThread(const nsACString& aOrigin)
+Manager::Abort(const nsACString& aOrigin)
 {
-  MOZ_ASSERT(NS_IsMainThread());
+  mozilla::ipc::AssertIsOnBackgroundThread();
 
-  Factory::StartAbortOnMainThread(aOrigin);
+  Factory::Abort(aOrigin);
 }
 
 void
@@ -1646,7 +1530,7 @@ Manager::ReleaseCacheId(CacheId aCacheId)
       if (mCacheIdRefs[i].mCount == 0) {
         bool orphaned = mCacheIdRefs[i].mOrphaned;
         mCacheIdRefs.RemoveElementAt(i);
-        nsRefPtr<Context> context = mContext;
+        RefPtr<Context> context = mContext;
         // If the context is already gone, then orphan flag should have been
         // set in RemoveContext().
         if (orphaned && context) {
@@ -1654,7 +1538,7 @@ Manager::ReleaseCacheId(CacheId aCacheId)
             context->NoteOrphanedData();
           } else {
             context->CancelForCacheId(aCacheId);
-            nsRefPtr<Action> action = new DeleteOrphanedCacheAction(this,
+            RefPtr<Action> action = new DeleteOrphanedCacheAction(this,
                                                                     aCacheId);
             context->Dispatch(action);
           }
@@ -1695,14 +1579,14 @@ Manager::ReleaseBodyId(const nsID& aBodyId)
       if (mBodyIdRefs[i].mCount < 1) {
         bool orphaned = mBodyIdRefs[i].mOrphaned;
         mBodyIdRefs.RemoveElementAt(i);
-        nsRefPtr<Context> context = mContext;
+        RefPtr<Context> context = mContext;
         // If the context is already gone, then orphan flag should have been
         // set in RemoveContext().
         if (orphaned && context) {
           if (context->IsCanceled()) {
             context->NoteOrphanedData();
           } else {
-            nsRefPtr<Action> action = new DeleteOrphanedBodyAction(aBodyId);
+            RefPtr<Action> action = new DeleteOrphanedBodyAction(aBodyId);
             context->Dispatch(action);
           }
         }
@@ -1717,7 +1601,7 @@ Manager::ReleaseBodyId(const nsID& aBodyId)
 already_AddRefed<ManagerId>
 Manager::GetManagerId() const
 {
-  nsRefPtr<ManagerId> ref = mManagerId;
+  RefPtr<ManagerId> ref = mManagerId;
   return ref.forget();
 }
 
@@ -1750,13 +1634,13 @@ Manager::ExecuteCacheOp(Listener* aListener, CacheId aCacheId,
     return;
   }
 
-  nsRefPtr<Context> context = mContext;
+  RefPtr<Context> context = mContext;
   MOZ_ASSERT(!context->IsCanceled());
 
-  nsRefPtr<StreamList> streamList = new StreamList(this, context);
+  RefPtr<StreamList> streamList = new StreamList(this, context);
   ListenerId listenerId = SaveListener(aListener);
 
-  nsRefPtr<Action> action;
+  RefPtr<Action> action;
   switch(aOpArgs.type()) {
     case CacheOpArgs::TCacheMatchArgs:
       action = new CacheMatchAction(this, listenerId, aCacheId,
@@ -1794,13 +1678,13 @@ Manager::ExecuteStorageOp(Listener* aListener, Namespace aNamespace,
     return;
   }
 
-  nsRefPtr<Context> context = mContext;
+  RefPtr<Context> context = mContext;
   MOZ_ASSERT(!context->IsCanceled());
 
-  nsRefPtr<StreamList> streamList = new StreamList(this, context);
+  RefPtr<StreamList> streamList = new StreamList(this, context);
   ListenerId listenerId = SaveListener(aListener);
 
-  nsRefPtr<Action> action;
+  RefPtr<Action> action;
   switch(aOpArgs.type()) {
     case CacheOpArgs::TStorageMatchArgs:
       action = new StorageMatchAction(this, listenerId, aNamespace,
@@ -1843,12 +1727,12 @@ Manager::ExecutePutAll(Listener* aListener, CacheId aCacheId,
     return;
   }
 
-  nsRefPtr<Context> context = mContext;
+  RefPtr<Context> context = mContext;
   MOZ_ASSERT(!context->IsCanceled());
 
   ListenerId listenerId = SaveListener(aListener);
 
-  nsRefPtr<Action> action = new CachePutAllAction(this, listenerId, aCacheId,
+  RefPtr<Action> action = new CachePutAllAction(this, listenerId, aCacheId,
                                                   aPutList, aRequestStreamList,
                                                   aResponseStreamList);
 
@@ -1887,7 +1771,7 @@ Manager::Init(Manager* aOldManager)
 {
   NS_ASSERT_OWNINGTHREAD(Manager);
 
-  nsRefPtr<Context> oldContext;
+  RefPtr<Context> oldContext;
   if (aOldManager) {
     oldContext = aOldManager->mContext;
   }
@@ -1895,8 +1779,8 @@ Manager::Init(Manager* aOldManager)
   // Create the context immediately.  Since there can at most be one Context
   // per Manager now, this lets us cleanly call Factory::Remove() once the
   // Context goes away.
-  nsRefPtr<Action> setupAction = new SetupAction();
-  nsRefPtr<Context> ref = Context::Create(this, mIOThread, setupAction,
+  RefPtr<Action> setupAction = new SetupAction();
+  RefPtr<Context> ref = Context::Create(this, mIOThread, setupAction,
                                           oldContext);
   mContext = ref;
 }
@@ -1923,7 +1807,7 @@ Manager::Shutdown()
   // If there is a context, then cancel and only note that we are done after
   // its cleaned up.
   if (mContext) {
-    nsRefPtr<Context> context = mContext;
+    RefPtr<Context> context = mContext;
     context->CancelAll();
     return;
   }
@@ -1941,7 +1825,7 @@ Manager::Abort()
   NoteClosing();
 
   // Cancel and only note that we are done after the context is cleaned up.
-  nsRefPtr<Context> context = mContext;
+  RefPtr<Context> context = mContext;
   context->CancelAll();
 }
 
@@ -2028,9 +1912,9 @@ Manager::NoteOrphanedBodyIdList(const nsTArray<nsID>& aDeletedBodyIdList)
   }
 
   // TODO: note that we need to check these bodies for staleness on startup (bug 1110446)
-  nsRefPtr<Context> context = mContext;
+  RefPtr<Context> context = mContext;
   if (!deleteNowList.IsEmpty() && context && !context->IsCanceled()) {
-    nsRefPtr<Action> action = new DeleteOrphanedBodyAction(deleteNowList);
+    RefPtr<Action> action = new DeleteOrphanedBodyAction(deleteNowList);
     context->Dispatch(action);
   }
 }
@@ -2045,7 +1929,7 @@ Manager::MaybeAllowContextToClose()
   // Cache state information to complete before doing this.  Once we allow
   // the Context to close we may not reliably get notified of storage
   // invalidation.
-  nsRefPtr<Context> context = mContext;
+  RefPtr<Context> context = mContext;
   if (context && mListeners.IsEmpty()
               && mCacheIdRefs.IsEmpty()
               && mBodyIdRefs.IsEmpty()) {

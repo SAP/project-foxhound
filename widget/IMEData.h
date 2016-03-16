@@ -10,6 +10,8 @@
 #include "nsRect.h"
 #include "nsStringGlue.h"
 
+class nsIWidget;
+
 namespace mozilla {
 
 class WritingMode;
@@ -69,6 +71,11 @@ struct nsIMEUpdatePreference final
   {
   }
 
+  nsIMEUpdatePreference operator|(const nsIMEUpdatePreference& aOther) const
+  {
+    return nsIMEUpdatePreference(aOther.mWantUpdates | mWantUpdates);
+  }
+
   void DontNotifyChangesCausedByComposition()
   {
     mWantUpdates &= ~DEFAULT_CONDITIONS_OF_NOTIFYING_CHANGES;
@@ -112,7 +119,6 @@ struct nsIMEUpdatePreference final
 
   Notifications mWantUpdates;
 };
-
 
 /**
  * Contains IMEStatus plus information about the current 
@@ -224,11 +230,58 @@ struct IMEState final
   }
 };
 
+// NS_ONLY_ONE_NATIVE_IME_CONTEXT is a special value of native IME context.
+// If there can be only one IME composition in a process, this can be used.
+#define NS_ONLY_ONE_NATIVE_IME_CONTEXT \
+  (reinterpret_cast<void*>(static_cast<intptr_t>(-1)))
+
+struct NativeIMEContext final
+{
+  // Pointer to native IME context.  Typically this is the result of
+  // nsIWidget::GetNativeData(NS_RAW_NATIVE_IME_CONTEXT) in the parent process.
+  // See also NS_ONLY_ONE_NATIVE_IME_CONTEXT.
+  uintptr_t mRawNativeIMEContext;
+  // Process ID of the origin of mNativeIMEContext.
+  uint64_t mOriginProcessID;
+
+  NativeIMEContext()
+  {
+    Init(nullptr);
+  }
+
+  explicit NativeIMEContext(nsIWidget* aWidget)
+  {
+    Init(aWidget);
+  }
+
+  bool IsValid() const
+  {
+    return mRawNativeIMEContext &&
+           mOriginProcessID != static_cast<uintptr_t>(-1);
+  }
+
+  void Init(nsIWidget* aWidget);
+  void InitWithRawNativeIMEContext(const void* aRawNativeIMEContext)
+  {
+    InitWithRawNativeIMEContext(const_cast<void*>(aRawNativeIMEContext));
+  }
+  void InitWithRawNativeIMEContext(void* aRawNativeIMEContext);
+
+  bool operator==(const NativeIMEContext& aOther) const
+  {
+    return mRawNativeIMEContext == aOther.mRawNativeIMEContext &&
+           mOriginProcessID == aOther.mOriginProcessID;
+  }
+  bool operator!=(const NativeIMEContext& aOther) const
+  {
+    return !(*this == aOther);
+  }
+};
+
 struct InputContext final
 {
   InputContext()
-    : mNativeIMEContext(nullptr)
-    , mOrigin(XRE_IsParentProcess() ? ORIGIN_MAIN : ORIGIN_CONTENT)
+    : mOrigin(XRE_IsParentProcess() ? ORIGIN_MAIN : ORIGIN_CONTENT)
     , mMayBeIMEUnaware(false)
   {
   }
@@ -248,11 +301,6 @@ struct InputContext final
 
   /* A hint for the action that is performed when the input is submitted */
   nsString mActionHint;
-
-  /* Native IME context for the widget.  This doesn't come from the argument of
-     SetInputContext().  If there is only one context in the process, this may
-     be nullptr. */
-  void* mNativeIMEContext;
 
   /**
    * mOrigin indicates whether this focus event refers to main or remote
@@ -342,7 +390,7 @@ struct InputContextAction final
   bool UserMightRequestOpenVKB() const
   {
     return (mFocusChange == FOCUS_NOT_CHANGED &&
-            mCause == CAUSE_MOUSE);
+            (mCause == CAUSE_MOUSE || mCause == CAUSE_TOUCH));
   }
 
   InputContextAction()
@@ -427,6 +475,7 @@ struct IMENotification final
         mMouseButtonEventData.mButton = -1;
         mMouseButtonEventData.mButtons = 0;
         mMouseButtonEventData.mModifiers = 0;
+        break;
       default:
         break;
     }
@@ -556,6 +605,7 @@ struct IMENotification final
     bool mReversed;
     bool mCausedByComposition;
     bool mCausedBySelectionEvent;
+    bool mOccurredDuringComposition;
 
     void SetWritingMode(const WritingMode& aWritingMode);
     WritingMode GetWritingMode() const;
@@ -596,6 +646,7 @@ struct IMENotification final
       ClearSelectionData();
       mCausedByComposition = false;
       mCausedBySelectionEvent = false;
+      mOccurredDuringComposition = false;
     }
     bool IsValid() const
     {
@@ -608,13 +659,16 @@ struct IMENotification final
       mWritingMode = aOther.mWritingMode;
       mReversed = aOther.mReversed;
       AssignReason(aOther.mCausedByComposition,
-                   aOther.mCausedBySelectionEvent);
+                   aOther.mCausedBySelectionEvent,
+                   aOther.mOccurredDuringComposition);
     }
     void AssignReason(bool aCausedByComposition,
-                      bool aCausedBySelectionEvent)
+                      bool aCausedBySelectionEvent,
+                      bool aOccurredDuringComposition)
     {
       mCausedByComposition = aCausedByComposition;
       mCausedBySelectionEvent = aCausedBySelectionEvent;
+      mOccurredDuringComposition = aOccurredDuringComposition;
     }
   };
 
@@ -672,6 +726,7 @@ struct IMENotification final
     uint32_t mAddedEndOffset;
 
     bool mCausedByComposition;
+    bool mOccurredDuringComposition;
 
     uint32_t OldLength() const
     {
@@ -732,7 +787,8 @@ struct IMENotification final
     TextChangeData(uint32_t aStartOffset,
                    uint32_t aRemovedEndOffset,
                    uint32_t aAddedEndOffset,
-                   bool aCausedByComposition)
+                   bool aCausedByComposition,
+                   bool aOccurredDuringComposition)
     {
       MOZ_ASSERT(aRemovedEndOffset >= aStartOffset,
                  "removed end offset must not be smaller than start offset");
@@ -742,6 +798,7 @@ struct IMENotification final
       mRemovedEndOffset = aRemovedEndOffset;
       mAddedEndOffset = aAddedEndOffset;
       mCausedByComposition = aCausedByComposition;
+      mOccurredDuringComposition = aOccurredDuringComposition;
     }
   };
 
@@ -793,6 +850,18 @@ struct IMENotification final
         return mSelectionChangeData.mCausedByComposition;
       case NOTIFY_IME_OF_TEXT_CHANGE:
         return mTextChangeData.mCausedByComposition;
+      default:
+        return false;
+    }
+  }
+
+  bool OccurredDuringComposition() const
+  {
+    switch (mMessage) {
+      case NOTIFY_IME_OF_SELECTION_CHANGE:
+        return mSelectionChangeData.mOccurredDuringComposition;
+      case NOTIFY_IME_OF_TEXT_CHANGE:
+        return mTextChangeData.mOccurredDuringComposition;
       default:
         return false;
     }

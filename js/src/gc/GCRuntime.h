@@ -187,10 +187,10 @@ class GCSchedulingTunables
     double highFrequencyHeapGrowthMin() const { return highFrequencyHeapGrowthMin_; }
     double lowFrequencyHeapGrowth() const { return lowFrequencyHeapGrowth_; }
     bool isDynamicMarkSliceEnabled() const { return dynamicMarkSliceEnabled_; }
-    unsigned minEmptyChunkCount() const { return minEmptyChunkCount_; }
+    unsigned minEmptyChunkCount(const AutoLockGC&) const { return minEmptyChunkCount_; }
     unsigned maxEmptyChunkCount() const { return maxEmptyChunkCount_; }
 
-    void setParameter(JSGCParamKey key, uint32_t value);
+    void setParameter(JSGCParamKey key, uint32_t value, const AutoLockGC& lock);
 };
 
 /*
@@ -537,7 +537,7 @@ struct Callback {
 };
 
 template<typename F>
-class CallbackVector : public Vector<Callback<F>, 4, SystemAllocPolicy> {};
+using CallbackVector = Vector<Callback<F>, 4, SystemAllocPolicy>;
 
 template <typename T, typename Iter0, typename Iter1>
 class ChainedIter
@@ -591,9 +591,9 @@ class GCRuntime
 
     bool addRoot(Value* vp, const char* name);
     void removeRoot(Value* vp);
-    void setMarkStackLimit(size_t limit);
+    void setMarkStackLimit(size_t limit, AutoLockGC& lock);
 
-    void setParameter(JSGCParamKey key, uint32_t value);
+    void setParameter(JSGCParamKey key, uint32_t value, AutoLockGC& lock);
     uint32_t getParameter(JSGCParamKey key, const AutoLockGC& lock);
 
     bool triggerGC(JS::gcreason::Reason reason);
@@ -655,10 +655,16 @@ class GCRuntime
 
     size_t maxMallocBytesAllocated() { return maxMallocBytes; }
 
+    uint64_t nextCellUniqueId() {
+        MOZ_ASSERT(nextCellUniqueId_ > 0);
+        return nextCellUniqueId_++;
+    }
+
   public:
     // Internal public interface
     js::gc::State state() const { return incrementalState; }
     bool isHeapCompacting() const { return state() == COMPACT; }
+    bool isForegroundSweeping() const { return state() == SWEEP; }
     bool isBackgroundSweeping() { return helperState.isBackgroundSweeping(); }
     void waitBackgroundSweepEnd() { helperState.waitBackgroundSweepEnd(); }
     void waitBackgroundSweepOrAllocEnd() {
@@ -673,7 +679,7 @@ class GCRuntime
     bool onBackgroundThread() { return helperState.onBackgroundThread(); }
 
     bool currentThreadOwnsGCLock() {
-        return lockOwner == PR_GetCurrentThread();
+        return lockOwner.value == PR_GetCurrentThread();
     }
 
 #endif // DEBUG
@@ -684,15 +690,17 @@ class GCRuntime
 
     void lockGC() {
         PR_Lock(lock);
-        MOZ_ASSERT(!lockOwner);
 #ifdef DEBUG
-        lockOwner = PR_GetCurrentThread();
+        MOZ_ASSERT(!lockOwner.value);
+        lockOwner.value = PR_GetCurrentThread();
 #endif
     }
 
     void unlockGC() {
-        MOZ_ASSERT(lockOwner == PR_GetCurrentThread());
-        lockOwner = nullptr;
+#ifdef DEBUG
+        MOZ_ASSERT(lockOwner.value == PR_GetCurrentThread());
+        lockOwner.value = nullptr;
+#endif
         PR_Unlock(lock);
     }
 
@@ -747,10 +755,13 @@ class GCRuntime
     void onTooMuchMalloc();
 
     void setGCCallback(JSGCCallback callback, void* data);
+    void callGCCallback(JSGCStatus status) const;
     bool addFinalizeCallback(JSFinalizeCallback callback, void* data);
     void removeFinalizeCallback(JSFinalizeCallback func);
-    bool addWeakPointerCallback(JSWeakPointerCallback callback, void* data);
-    void removeWeakPointerCallback(JSWeakPointerCallback func);
+    bool addWeakPointerZoneGroupCallback(JSWeakPointerZoneGroupCallback callback, void* data);
+    void removeWeakPointerZoneGroupCallback(JSWeakPointerZoneGroupCallback callback);
+    bool addWeakPointerCompartmentCallback(JSWeakPointerCompartmentCallback callback, void* data);
+    void removeWeakPointerCompartmentCallback(JSWeakPointerCompartmentCallback callback);
     JS::GCSliceCallback setSliceCallback(JS::GCSliceCallback callback);
 
     void setValidate(bool enable);
@@ -909,6 +920,7 @@ class GCRuntime
     bool shouldPreserveJITCode(JSCompartment* comp, int64_t currentTime,
                                JS::gcreason::Reason reason);
     void bufferGrayRoots();
+    void markCompartments();
     IncrementalProgress drainMarkStack(SliceBudget& sliceBudget, gcstats::Phase phase);
     template <class CompartmentIterT> void markWeakReferences(gcstats::Phase phase);
     void markWeakReferencesInCurrentGroup(gcstats::Phase phase);
@@ -961,7 +973,8 @@ class GCRuntime
 #endif
 
     void callFinalizeCallbacks(FreeOp* fop, JSFinalizeStatus status) const;
-    void callWeakPointerCallbacks() const;
+    void callWeakPointerZoneGroupCallbacks() const;
+    void callWeakPointerCompartmentCallbacks(JSCompartment* comp) const;
 
   public:
     JSRuntime* rt;
@@ -1010,6 +1023,9 @@ class GCRuntime
     RootedValueMap rootsHash;
 
     size_t maxMallocBytes;
+
+    // An incrementing id used to assign unique ids to cells that require one.
+    uint64_t nextCellUniqueId_;
 
     /*
      * Number of the committed arenas in all GC chunks including empty chunks.
@@ -1258,7 +1274,8 @@ class GCRuntime
 
     Callback<JSGCCallback> gcCallback;
     CallbackVector<JSFinalizeCallback> finalizeCallbacks;
-    CallbackVector<JSWeakPointerCallback> updateWeakPointerCallbacks;
+    CallbackVector<JSWeakPointerZoneGroupCallback> updateWeakPointerZoneGroupCallbacks;
+    CallbackVector<JSWeakPointerCompartmentCallback> updateWeakPointerCompartmentCallbacks;
 
     /*
      * Malloc counter to measure memory pressure for GC scheduling. It runs
@@ -1298,7 +1315,7 @@ class GCRuntime
 
     /* Synchronize GC heap access between main thread and GCHelperState. */
     PRLock* lock;
-    mozilla::DebugOnly<PRThread*> lockOwner;
+    mozilla::DebugOnly<mozilla::Atomic<PRThread*>> lockOwner;
 
     BackgroundAllocTask allocTask;
     GCHelperState helperState;

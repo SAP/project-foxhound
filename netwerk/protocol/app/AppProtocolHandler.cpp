@@ -111,8 +111,11 @@ DummyChannel::Open2(nsIInputStream** aStream)
 
 NS_IMETHODIMP DummyChannel::AsyncOpen(nsIStreamListener* aListener, nsISupports* aContext)
 {
-  MOZ_ASSERT(!mLoadInfo || mLoadInfo->GetSecurityMode() == 0 ||
-             mLoadInfo->GetInitialSecurityCheckDone(),
+  MOZ_ASSERT(!mLoadInfo ||
+             mLoadInfo->GetSecurityMode() == 0 ||
+             mLoadInfo->GetInitialSecurityCheckDone() ||
+             (mLoadInfo->GetSecurityMode() == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
+              nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
              "security flags in loadInfo but asyncOpen2() not called");
 
   mListener = aListener;
@@ -399,7 +402,7 @@ AppProtocolHandler::NewChannel2(nsIURI* aUri,
                                 nsIChannel** aResult)
 {
   NS_ENSURE_ARG_POINTER(aUri);
-  nsRefPtr<nsJARChannel> channel = new nsJARChannel();
+  RefPtr<nsJARChannel> channel = new nsJARChannel();
 
   nsAutoCString host;
   nsresult rv = aUri->GetHost(host);
@@ -441,7 +444,7 @@ AppProtocolHandler::NewChannel2(nsIURI* aUri,
     if (NS_FAILED(rv) || !jsInfo.isObject()) {
       // Return a DummyChannel.
       printf_stderr("!! Creating a dummy channel for %s (no appInfo)\n", host.get());
-      nsRefPtr<nsIChannel> dummyChannel = new DummyChannel();
+      RefPtr<nsIChannel> dummyChannel = new DummyChannel();
       dummyChannel->SetLoadInfo(aLoadInfo);
       dummyChannel.forget(aResult);
       return NS_OK;
@@ -452,7 +455,7 @@ AppProtocolHandler::NewChannel2(nsIURI* aUri,
     if (!appInfo->Init(cx, jsInfo) || appInfo->mPath.IsEmpty()) {
       // Return a DummyChannel.
       printf_stderr("!! Creating a dummy channel for %s (invalid appInfo)\n", host.get());
-      nsRefPtr<nsIChannel> dummyChannel = new DummyChannel();
+      RefPtr<nsIChannel> dummyChannel = new DummyChannel();
       dummyChannel->SetLoadInfo(aLoadInfo);
       dummyChannel.forget(aResult);
       return NS_OK;

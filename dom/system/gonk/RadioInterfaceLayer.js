@@ -393,7 +393,8 @@ DataCall.prototype = {
   addreses: null,
   dnses: null,
   gateways: null,
-  pcscf: null
+  pcscf: null,
+  mtu: -1
 };
 
 function RadioInterfaceLayer() {
@@ -766,6 +767,13 @@ RadioInterface.prototype = {
         break;
       case "otastatuschange":
         gMobileConnectionService.notifyOtaStatusChanged(this.clientId, message.status);
+        break;
+      case "deviceidentitieschange":
+        gMobileConnectionService.notifyDeviceIdentitiesChanged(this.clientId,
+                                                               message.deviceIdentities.imei,
+                                                               message.deviceIdentities.imeisv,
+                                                               message.deviceIdentities.esn,
+                                                               message.deviceIdentities.meid);
         break;
       case "radiostatechange":
         // gRadioEnabledController should know the radio state for each client,

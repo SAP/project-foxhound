@@ -125,7 +125,11 @@ this.ForgetAboutSite = {
     }
     // XXXehsan: is there a better way to do this rather than this
     // hacky comparison?
-    catch (ex if ex.message.indexOf("User canceled Master Password entry") != -1) { }
+    catch (ex) {
+      if (ex.message.indexOf("User canceled Master Password entry") == -1) {
+        throw ex;
+      }
+    }
 
     // Clear any "do not save for this site" for this domain
     let disabledHosts = lm.getAllDisabledHosts();
@@ -150,8 +154,8 @@ this.ForgetAboutSite = {
     }
 
     // Offline Storages
-    let qm = Cc["@mozilla.org/dom/quota/manager;1"].
-             getService(Ci.nsIQuotaManager);
+    let qms = Cc["@mozilla.org/dom/quota-manager-service;1"].
+              getService(Ci.nsIQuotaManagerService);
     // delete data from both HTTP and HTTPS sites
     let caUtils = {};
     let scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
@@ -162,8 +166,8 @@ this.ForgetAboutSite = {
     let httpsURI = caUtils.makeURI("https://" + aDomain);
     let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(httpURI, {});
     let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(httpsURI, {});
-    qm.clearStoragesForPrincipal(httpPrincipal);
-    qm.clearStoragesForPrincipal(httpsPrincipal);
+    qms.clearStoragesForPrincipal(httpPrincipal);
+    qms.clearStoragesForPrincipal(httpsPrincipal);
 
     function onContentPrefsRemovalFinished() {
       // Everybody else (including extensions)
@@ -174,7 +178,7 @@ this.ForgetAboutSite = {
     let cps2 = Cc["@mozilla.org/content-pref/service;1"].
                getService(Ci.nsIContentPrefService2);
     cps2.removeBySubdomain(aDomain, null, {
-      handleCompletion: function() onContentPrefsRemovalFinished(),
+      handleCompletion: () => onContentPrefsRemovalFinished(),
       handleError: function() {}
     });
 

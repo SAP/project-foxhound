@@ -37,7 +37,7 @@ class CallChannelOnPush final : public nsRunnable {
   NS_IMETHOD Run()
   {
     MOZ_ASSERT(NS_IsMainThread());
-    nsRefPtr<nsHttpChannel> channel;
+    RefPtr<nsHttpChannel> channel;
     CallQueryInterface(mAssociatedChannel, channel.StartAssignment());
     MOZ_ASSERT(channel);
     if (channel && NS_SUCCEEDED(channel->OnPush(mPushedURI, mPushedStream))) {
@@ -254,7 +254,7 @@ Http2PushTransactionBuffer::Http2PushTransactionBuffer()
   , mBufferedHTTP1Used(0)
   , mBufferedHTTP1Consumed(0)
 {
-  mBufferedHTTP1 = new char[mBufferedHTTP1Size];
+  mBufferedHTTP1 = MakeUnique<char[]>(mBufferedHTTP1Size);
 }
 
 Http2PushTransactionBuffer::~Http2PushTransactionBuffer()
@@ -345,7 +345,7 @@ Http2PushTransactionBuffer::WriteSegments(nsAHttpSegmentWriter *writer,
   }
 
   count = std::min(count, mBufferedHTTP1Size - mBufferedHTTP1Used);
-  nsresult rv = writer->OnWriteSegment(mBufferedHTTP1 + mBufferedHTTP1Used,
+  nsresult rv = writer->OnWriteSegment(&mBufferedHTTP1[mBufferedHTTP1Used],
                                        count, countWritten);
   if (NS_SUCCEEDED(rv)) {
     mBufferedHTTP1Used += *countWritten;
@@ -384,7 +384,7 @@ Http2PushTransactionBuffer::RequestHead()
 
 nsresult
 Http2PushTransactionBuffer::TakeSubTransactions(
-  nsTArray<nsRefPtr<nsAHttpTransaction> > &outTransactions)
+  nsTArray<RefPtr<nsAHttpTransaction> > &outTransactions)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -432,7 +432,7 @@ Http2PushTransactionBuffer::GetBufferedData(char *buf,
 {
   *countWritten = std::min(count, static_cast<uint32_t>(Available()));
   if (*countWritten) {
-    memcpy(buf, mBufferedHTTP1 + mBufferedHTTP1Consumed, *countWritten);
+    memcpy(buf, &mBufferedHTTP1[mBufferedHTTP1Consumed], *countWritten);
     mBufferedHTTP1Consumed += *countWritten;
   }
 

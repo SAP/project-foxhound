@@ -89,7 +89,7 @@ protected:
     tags.AppendElement(NS_LITERAL_CSTRING("h264"));
     tags.AppendElement(NS_LITERAL_CSTRING("fake"));
 
-    nsRefPtr<GeckoMediaPluginService> service =
+    RefPtr<GeckoMediaPluginService> service =
       GeckoMediaPluginService::GetGeckoMediaPluginService();
     return ((*service).*Getter)(&tags, aNodeId, Move(aCallback));
   }
@@ -234,7 +234,7 @@ GMPTestRunner::RunTestGMPCrossOrigin4(GMPTestMonitor& aMonitor)
 static already_AddRefed<nsIThread>
 GetGMPThread()
 {
-  nsRefPtr<GeckoMediaPluginService> service =
+  RefPtr<GeckoMediaPluginService> service =
     GeckoMediaPluginService::GetGeckoMediaPluginService();
   nsCOMPtr<nsIThread> thread;
   EXPECT_TRUE(NS_SUCCEEDED(service->GetThread(getter_AddRefs(thread))));
@@ -273,24 +273,31 @@ EnumerateDir(nsIFile* aPath, T&& aDirIter)
 }
 
 /**
- * Enumerate files under $profileDir/gmp/$aDir/ (non-recursive).
+ * Enumerate files under $profileDir/gmp/$platform/gmp-fake/$aDir/ (non-recursive).
  */
 template<typename T>
 static nsresult
 EnumerateGMPStorageDir(const nsACString& aDir, T&& aDirIter)
 {
-  nsRefPtr<GeckoMediaPluginServiceParent> service =
+  RefPtr<GeckoMediaPluginServiceParent> service =
     GeckoMediaPluginServiceParent::GetSingleton();
   MOZ_ASSERT(service);
 
-  // $profileDir/gmp/
+  // $profileDir/gmp/$platform/
   nsCOMPtr<nsIFile> path;
   nsresult rv = service->GetStorageDir(getter_AddRefs(path));
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  // $profileDir/gmp/$aDir/
+
+  // $profileDir/gmp/$platform/gmp-fake/
+  rv = path->Append(NS_LITERAL_STRING("gmp-fake"));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // $profileDir/gmp/$platform/gmp-fake/$aDir/
   rv = path->AppendNative(aDir);
   if (NS_FAILED(rv)) {
     return rv;
@@ -422,7 +429,7 @@ static void
 ClearGMPStorage(nsIRunnable* aContinuation,
                 nsIThread* aTarget, PRTime aSince = -1)
 {
-  nsRefPtr<ClearGMPStorageTask> task(
+  RefPtr<ClearGMPStorageTask> task(
       new ClearGMPStorageTask(aContinuation, aTarget, aSince));
   NS_DispatchToMainThread(task, NS_DISPATCH_NORMAL);
 }
@@ -458,7 +465,7 @@ GetNodeId(const nsAString& aOrigin,
           const nsAString& aTopLevelOrigin,
           bool aInPBMode)
 {
-  nsRefPtr<GeckoMediaPluginServiceParent> service =
+  RefPtr<GeckoMediaPluginServiceParent> service =
     GeckoMediaPluginServiceParent::GetSingleton();
   EXPECT_TRUE(service);
   nsCString nodeId;
@@ -469,6 +476,7 @@ GetNodeId(const nsAString& aOrigin,
   // GeckoMediaPluginServiceParent is synchronous.
   nsresult rv = service->GetNodeId(aOrigin,
                                    aTopLevelOrigin,
+                                   NS_LITERAL_STRING("gmp-fake"),
                                    aInPBMode,
                                    Move(callback));
   EXPECT_TRUE(NS_SUCCEEDED(rv) && NS_SUCCEEDED(result));
@@ -478,7 +486,7 @@ GetNodeId(const nsAString& aOrigin,
 static bool
 IsGMPStorageIsEmpty()
 {
-  nsRefPtr<GeckoMediaPluginServiceParent> service =
+  RefPtr<GeckoMediaPluginServiceParent> service =
     GeckoMediaPluginServiceParent::GetSingleton();
   MOZ_ASSERT(service);
   nsCOMPtr<nsIFile> storage;
@@ -494,7 +502,7 @@ IsGMPStorageIsEmpty()
 static void
 AssertIsOnGMPThread()
 {
-  nsRefPtr<GeckoMediaPluginService> service =
+  RefPtr<GeckoMediaPluginService> service =
     GeckoMediaPluginService::GetGeckoMediaPluginService();
   MOZ_ASSERT(service);
   nsCOMPtr<nsIThread> thread;
@@ -605,7 +613,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     }
 
   private:
-    nsRefPtr<GMPStorageTest> mRunner;
+    RefPtr<GMPStorageTest> mRunner;
     nsCOMPtr<nsIRunnable> mContinuation;
   };
 
@@ -636,7 +644,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     }
 
   private:
-    nsRefPtr<GMPStorageTest> mRunner;
+    RefPtr<GMPStorageTest> mRunner;
     nsTArray<nsCString> mUpdates;
   };
   void CreateDecryptor(const nsAString& aOrigin,
@@ -650,7 +658,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
                        const nsAString& aTopLevelOrigin,
                        bool aInPBMode,
                        nsIRunnable* aContinuation) {
-    nsRefPtr<GeckoMediaPluginService> service =
+    RefPtr<GeckoMediaPluginService> service =
       GeckoMediaPluginService::GetGeckoMediaPluginService();
     EXPECT_TRUE(service);
 
@@ -671,7 +679,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     AssertIsOnGMPThread();
     EXPECT_TRUE(IsGMPStorageIsEmpty());
 
-    nsRefPtr<GeckoMediaPluginService> service =
+    RefPtr<GeckoMediaPluginService> service =
       GeckoMediaPluginService::GetGeckoMediaPluginService();
 
     // Send a message to the fake GMP for it to run its own tests internally.
@@ -753,7 +761,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
   }
 
   void TestForgetThisSite_Forget(nsAutoPtr<NodeInfo> aSiteInfo) {
-    nsRefPtr<GeckoMediaPluginServiceParent> service =
+    RefPtr<GeckoMediaPluginServiceParent> service =
         GeckoMediaPluginServiceParent::GetSingleton();
     service->ForgetThisSite(NS_ConvertUTF8toUTF16(aSiteInfo->siteToForget));
 
@@ -820,10 +828,10 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
 
   /**
    * 1. Generate some storage data.
-   * 2. Find the max mtime |t| in $profileDir/gmp/id/.
+   * 2. Find the max mtime |t| in $profileDir/gmp/$platform/gmp-fake/id/.
    * 3. Pass |t| to clear recent history.
-   * 4. Check if all directories in $profileDir/gmp/id/ and
-   *    $profileDir/gmp/storage are removed.
+   * 4. Check if all directories in $profileDir/gmp/$platform/gmp-fake/id/ and
+   *    $profileDir/gmp/$platform/gmp-fake/storage are removed.
    */
   void TestClearRecentHistory1() {
     AssertIsOnGMPThread();
@@ -842,10 +850,10 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
 
   /**
    * 1. Generate some storage data.
-   * 2. Find the max mtime |t| in $profileDir/gmp/storage/.
+   * 2. Find the max mtime |t| in $profileDir/gmp/$platform/gmp-fake/storage/.
    * 3. Pass |t| to clear recent history.
-   * 4. Check if all directories in $profileDir/gmp/id/ and
-   *    $profileDir/gmp/storage are removed.
+   * 4. Check if all directories in $profileDir/gmp/$platform/gmp-fake/id/ and
+   *    $profileDir/gmp/$platform/gmp-fake/storage are removed.
    */
   void TestClearRecentHistory2() {
     AssertIsOnGMPThread();
@@ -864,10 +872,10 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
 
   /**
    * 1. Generate some storage data.
-   * 2. Find the max mtime |t| in $profileDir/gmp/storage/.
+   * 2. Find the max mtime |t| in $profileDir/gmp/$platform/gmp-fake/storage/.
    * 3. Pass |t+1| to clear recent history.
-   * 4. Check if all directories in $profileDir/gmp/id/ and
-   *    $profileDir/gmp/storage remain unchanged.
+   * 4. Check if all directories in $profileDir/gmp/$platform/gmp-fake/id/ and
+   *    $profileDir/gmp/$platform/gmp-fake/storage remain unchanged.
    */
   void TestClearRecentHistory3() {
     AssertIsOnGMPThread();
@@ -948,13 +956,13 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     FileCounter c1;
     nsresult rv = EnumerateGMPStorageDir(NS_LITERAL_CSTRING("id"), c1);
     EXPECT_TRUE(NS_SUCCEEDED(rv));
-    // There should be no files under $profileDir/gmp/id/
+    // There should be no files under $profileDir/gmp/$platform/gmp-fake/id/
     EXPECT_EQ(c1.GetCount(), 0);
 
     FileCounter c2;
     rv = EnumerateGMPStorageDir(NS_LITERAL_CSTRING("storage"), c2);
     EXPECT_TRUE(NS_SUCCEEDED(rv));
-    // There should be no files under $profileDir/gmp/storage/
+    // There should be no files under $profileDir/gmp/$platform/gmp-fake/storage/
     EXPECT_EQ(c2.GetCount(), 0);
 
     SetFinished();
@@ -964,13 +972,13 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     FileCounter c1;
     nsresult rv = EnumerateGMPStorageDir(NS_LITERAL_CSTRING("id"), c1);
     EXPECT_TRUE(NS_SUCCEEDED(rv));
-    // There should be one directory under $profileDir/gmp/id/
+    // There should be one directory under $profileDir/gmp/$platform/gmp-fake/id/
     EXPECT_EQ(c1.GetCount(), 1);
 
     FileCounter c2;
     rv = EnumerateGMPStorageDir(NS_LITERAL_CSTRING("storage"), c2);
     EXPECT_TRUE(NS_SUCCEEDED(rv));
-    // There should be one directory under $profileDir/gmp/storage/
+    // There should be one directory under $profileDir/gmp/$platform/gmp-fake/storage/
     EXPECT_EQ(c2.GetCount(), 1);
 
     SetFinished();
@@ -1286,7 +1294,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
       return;
     }
     EXPECT_FALSE(mNodeId.IsEmpty());
-    nsRefPtr<GMPShutdownObserver> task(
+    RefPtr<GMPShutdownObserver> task(
       new GMPShutdownObserver(NS_NewRunnableMethod(this, &GMPStorageTest::Shutdown),
                               aContinuation, mNodeId));
     NS_DispatchToMainThread(task, NS_DISPATCH_NORMAL);
@@ -1391,14 +1399,14 @@ GMPTestRunner::DoTest(void (GMPTestRunner::*aTestMethod)(GMPTestMonitor&))
 }
 
 TEST(GeckoMediaPlugins, GMPTestCodec) {
-  nsRefPtr<GMPTestRunner> runner = new GMPTestRunner();
+  RefPtr<GMPTestRunner> runner = new GMPTestRunner();
   runner->DoTest(&GMPTestRunner::RunTestGMPTestCodec1);
   runner->DoTest(&GMPTestRunner::RunTestGMPTestCodec2);
   runner->DoTest(&GMPTestRunner::RunTestGMPTestCodec3);
 }
 
 TEST(GeckoMediaPlugins, GMPCrossOrigin) {
-  nsRefPtr<GMPTestRunner> runner = new GMPTestRunner();
+  RefPtr<GMPTestRunner> runner = new GMPTestRunner();
   runner->DoTest(&GMPTestRunner::RunTestGMPCrossOrigin1);
   runner->DoTest(&GMPTestRunner::RunTestGMPCrossOrigin2);
   runner->DoTest(&GMPTestRunner::RunTestGMPCrossOrigin3);
@@ -1406,57 +1414,57 @@ TEST(GeckoMediaPlugins, GMPCrossOrigin) {
 }
 
 TEST(GeckoMediaPlugins, GMPStorageGetNodeId) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestGetNodeId);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageBasic) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestBasicStorage);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageForgetThisSite) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestForgetThisSite);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageClearRecentHistory1) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestClearRecentHistory1);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageClearRecentHistory2) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestClearRecentHistory2);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageClearRecentHistory3) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestClearRecentHistory3);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageCrossOrigin) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestCrossOriginStorage);
 }
 
 TEST(GeckoMediaPlugins, GMPStoragePrivateBrowsing) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestPBStorage);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageAsyncShutdownTimeout) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestAsyncShutdownTimeout);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageAsyncShutdownStorage) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestAsyncShutdownStorage);
 }
 
 TEST(GeckoMediaPlugins, GMPPluginVoucher) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestPluginVoucher);
 }
 
@@ -1467,23 +1475,23 @@ TEST(GeckoMediaPlugins, GMPOutputProtection) {
     return;
   }
 
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestOutputProtection);
 }
 #endif
 
 TEST(GeckoMediaPlugins, GMPStorageGetRecordNamesInMemoryStorage) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestGetRecordNamesInMemoryStorage);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageGetRecordNamesPersistentStorage) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::GetRecordNamesPersistentStorage);
 }
 
 TEST(GeckoMediaPlugins, GMPStorageLongRecordNames) {
-  nsRefPtr<GMPStorageTest> runner = new GMPStorageTest();
+  RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestLongRecordNames);
 }
 
@@ -1535,7 +1543,7 @@ private:
     mFinished = false;
   }
 
-  nsRefPtr<mozilla::dom::GMPVideoDecoderTrialCreator> mCreator;
+  RefPtr<mozilla::dom::GMPVideoDecoderTrialCreator> mCreator;
 
   Monitor mMonitor;
   Atomic<bool> mFinished;
@@ -1543,7 +1551,7 @@ private:
 };
 
 TEST(GeckoMediaPlugins, GMPTrialCreateFail) {
-  nsRefPtr<GMPTrialCreateTest> runner = new GMPTrialCreateTest();
+  RefPtr<GMPTrialCreateTest> runner = new GMPTrialCreateTest();
   runner->DoTest();
 }
 

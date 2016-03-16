@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <dlfcn.h>
 #include "BorrowedContext.h"
 #include "DataSurfaceHelpers.h"
 #include "DrawTargetCG.h"
@@ -177,6 +178,7 @@ DrawTargetCG::GetType() const
 BackendType
 DrawTargetCG::GetBackendType() const
 {
+#ifdef MOZ_WIDGET_COCOA
   // It may be worth spliting Bitmap and IOSurface DrawTarget
   // into seperate classes.
   if (GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE) {
@@ -184,15 +186,20 @@ DrawTargetCG::GetBackendType() const
   } else {
     return BackendType::COREGRAPHICS;
   }
+#else
+  return BackendType::COREGRAPHICS;
+#endif
 }
 
 already_AddRefed<SourceSurface>
 DrawTargetCG::Snapshot()
 {
   if (!mSnapshot) {
+#ifdef MOZ_WIDGET_COCOA
     if (GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE) {
       return MakeAndAddRef<SourceSurfaceCGIOSurfaceContext>(this);
     }
+#endif
     Flush();
     mSnapshot = new SourceSurfaceCGBitmapContext(this);
   }
@@ -250,7 +257,7 @@ GetRetainedImageFromSourceSurface(SourceSurface *aSurface)
     {
       RefPtr<DataSourceSurface> data = aSurface->GetDataSurface();
       if (!data) {
-        MOZ_CRASH("unsupported source surface");
+        MOZ_CRASH("GFX: unsupported source CG surface");
       }
       data.get()->AddRef();
       return CreateCGImage(releaseDataSurface, data.get(),
@@ -707,7 +714,7 @@ DrawGradient(CGColorSpaceRef aColorSpace,
 
       CGContextDrawLinearGradient(cg, stops->mGradient, startPoint, endPoint,
                                   kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
-    } else if (stops->mExtend == ExtendMode::REPEAT || stops->mExtend == ExtendMode::REFLECT) {
+    } else {
       DrawLinearRepeatingGradient(aColorSpace, cg, pat, extents, stops->mExtend == ExtendMode::REFLECT);
     }
   } else if (aPattern.GetType() == PatternType::RADIAL_GRADIENT) {
@@ -727,7 +734,7 @@ DrawGradient(CGColorSpaceRef aColorSpace,
       //XXX: are there degenerate radial gradients that we should avoid drawing?
       CGContextDrawRadialGradient(cg, stops->mGradient, startCenter, startRadius, endCenter, endRadius,
                                   kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
-    } else if (stops->mExtend == ExtendMode::REPEAT || stops->mExtend == ExtendMode::REFLECT) {
+    } else {
       DrawRadialRepeatingGradient(aColorSpace, cg, pat, extents, stops->mExtend == ExtendMode::REFLECT);
     }
   } else {
@@ -768,8 +775,14 @@ isGradient(const Pattern &aPattern)
 static bool
 isNonRepeatingSurface(const Pattern& aPattern)
 {
-  return aPattern.GetType() == PatternType::SURFACE &&
-    static_cast<const SurfacePattern&>(aPattern).mExtendMode != ExtendMode::REPEAT;
+  if (aPattern.GetType() != PatternType::SURFACE) {
+    return false;
+  }
+
+  const SurfacePattern& surfacePattern = static_cast<const SurfacePattern&>(aPattern);
+  return surfacePattern.mExtendMode != ExtendMode::REPEAT &&
+         surfacePattern.mExtendMode != ExtendMode::REPEAT_X &&
+         surfacePattern.mExtendMode != ExtendMode::REPEAT_Y;
 }
 
 /* CoreGraphics patterns ignore the userspace transform so
@@ -808,6 +821,15 @@ CreateCGPattern(const Pattern &aPattern, CGAffineTransform aUserSpace)
       //    wkPatternTilingConstantSpacing
       // } wkPatternTiling;
       // extern CGPatternRef (*wkCGPatternCreateWithImageAndTransform)(CGImageRef, CGAffineTransform, int);
+      break;
+    case ExtendMode::REPEAT_X:
+      xStep = static_cast<CGFloat>(CGImageGetWidth(image));
+      yStep = static_cast<CGFloat>(1 << 22);
+      break;
+    case ExtendMode::REPEAT_Y:
+      yStep = static_cast<CGFloat>(CGImageGetHeight(image));
+      xStep = static_cast<CGFloat>(1 << 22);
+      break;
   }
 
   //XXX: We should be using CGContextDrawTiledImage when we can. Even though it
@@ -1532,7 +1554,8 @@ DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pa
   Vector<CGPoint, 64> positions;
   if (!glyphs.resizeUninitialized(aBuffer.mNumGlyphs) ||
       !positions.resizeUninitialized(aBuffer.mNumGlyphs)) {
-    MOZ_CRASH("glyphs/positions allocation failed");
+    gfxDevCrash(LogReason::GlyphAllocFailedCG) << "glyphs/positions allocation failed";
+    return;
   }
 
   // Handle the flip
@@ -1717,12 +1740,14 @@ DrawTargetCG::Init(BackendType aType,
 
   mSize = aSize;
 
+#ifdef MOZ_WIDGET_COCOA
   if (aType == BackendType::COREGRAPHICS_ACCELERATED) {
     RefPtr<MacIOSurface> ioSurface = MacIOSurface::CreateIOSurface(aSize.width, aSize.height);
     mCg = ioSurface->CreateIOSurfaceContext();
     // If we don't have the symbol for 'CreateIOSurfaceContext' mCg will be null
     // and we will fallback to software below
   }
+#endif
 
   mFormat = SurfaceFormat::B8G8R8A8;
 
@@ -1820,6 +1845,7 @@ EnsureValidPremultipliedData(CGContextRef aContext)
 void
 DrawTargetCG::Flush()
 {
+#ifdef MOZ_WIDGET_COCOA
   if (GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE) {
     CGContextFlush(mCg);
   } else if (GetContextType(mCg) == CG_CONTEXT_TYPE_BITMAP &&
@@ -1835,6 +1861,9 @@ DrawTargetCG::Flush()
     EnsureValidPremultipliedData(mCg);
     mMayContainInvalidPremultipliedData = false;
   }
+#else
+  //TODO
+#endif
 }
 
 bool
@@ -1874,7 +1903,9 @@ DrawTargetCG::Init(CGContextRef cgContext, const IntSize &aSize)
   mOriginalTransform = CGContextGetCTM(mCg);
 
   mFormat = SurfaceFormat::B8G8R8A8;
+#ifdef MOZ_WIDGET_COCOA
   if (GetContextType(mCg) == CG_CONTEXT_TYPE_BITMAP) {
+#endif
     CGColorSpaceRef colorspace;
     CGBitmapInfo bitinfo = CGBitmapContextGetBitmapInfo(mCg);
     colorspace = CGBitmapContextGetColorSpace (mCg);
@@ -1883,7 +1914,9 @@ DrawTargetCG::Init(CGContextRef cgContext, const IntSize &aSize)
     } else if ((bitinfo & kCGBitmapAlphaInfoMask) == kCGImageAlphaNoneSkipFirst) {
       mFormat = SurfaceFormat::B8G8R8X8;
     }
+#ifdef MOZ_WIDGET_COCOA
   }
+#endif
 
   return true;
 }
@@ -1906,12 +1939,16 @@ DrawTargetCG::CreatePathBuilder(FillRule aFillRule) const
 void*
 DrawTargetCG::GetNativeSurface(NativeSurfaceType aType)
 {
+#ifdef MOZ_WIDGET_COCOA
   if ((aType == NativeSurfaceType::CGCONTEXT && GetContextType(mCg) == CG_CONTEXT_TYPE_BITMAP) ||
       (aType == NativeSurfaceType::CGCONTEXT_ACCELERATED && GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE)) {
     return mCg;
   } else {
     return nullptr;
   }
+#else
+  return mCg;
+#endif
 }
 
 void
@@ -1919,6 +1956,7 @@ DrawTargetCG::Mask(const Pattern &aSource,
                    const Pattern &aMask,
                    const DrawOptions &aDrawOptions)
 {
+  MOZ_CRASH("not completely implemented");
   MarkChanged();
 
   CGContextSaveGState(mCg);

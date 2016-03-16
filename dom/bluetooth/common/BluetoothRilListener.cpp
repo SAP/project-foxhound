@@ -165,6 +165,12 @@ MobileConnectionListener::NotifyNetworkSelectionModeChanged()
   return NS_OK;
 }
 
+NS_IMETHODIMP
+MobileConnectionListener::NotifyDeviceIdentitiesChanged()
+{
+  return NS_OK;
+}
+
 bool
 MobileConnectionListener::Listen(bool aStart)
 {
@@ -238,12 +244,6 @@ NS_IMETHODIMP
 TelephonyListener::EnumerateCallState(nsITelephonyCallInfo* aInfo)
 {
   return HandleCallInfo(aInfo, false);
-}
-
-NS_IMETHODIMP
-TelephonyListener::ConferenceCallStateChanged(uint16_t aCallState)
-{
-  return NS_OK;
 }
 
 NS_IMETHODIMP

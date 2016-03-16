@@ -17,13 +17,13 @@
 #include "mozilla/DebugOnly.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "mozilla/LoadContext.h"
+#include "nsIInstallPackagedWebapp.h"
 
 namespace mozilla {
 namespace net {
 
 static PackagedAppService *gPackagedAppService = nullptr;
-
-static PRLogModuleInfo *gPASLog = nullptr;
+static LazyLogModule gPASLog("PackagedAppService");
 #undef LOG
 #define LOG(args) MOZ_LOG(gPASLog, mozilla::LogLevel::Debug, args)
 
@@ -59,7 +59,7 @@ PackagedAppService::CacheEntryWriter::Create(nsIURI *aURI,
                                              nsICacheStorage *aStorage,
                                              CacheEntryWriter **aResult)
 {
-  nsRefPtr<CacheEntryWriter> writer = new CacheEntryWriter();
+  RefPtr<CacheEntryWriter> writer = new CacheEntryWriter();
   nsresult rv = aStorage->OpenTruncate(aURI, EmptyCString(),
                                        getter_AddRefs(writer->mEntry));
   if (NS_FAILED(rv)) {
@@ -225,15 +225,12 @@ CreateSharedStringStream(const char* aData, uint32_t aCount)
 static bool
 GetOriginalResponseHeader(nsIRequest* aRequest, nsACString& aHeader)
 {
-  // TODO: The flattened http header might be different from the original.
-  //       See Bug 1198669 for further information.
+  nsCOMPtr<nsIMultiPartChannel> multiPartChannel(do_QueryInterface(aRequest));
+  if (!multiPartChannel) {
+    return false;
+  }
 
-  nsCOMPtr<nsIResponseHeadProvider> headerProvider(do_QueryInterface(aRequest));
-  nsHttpResponseHead *responseHead = headerProvider->GetResponseHead();
-  NS_ENSURE_TRUE(responseHead, false);
-
-  responseHead->Flatten(aHeader, true);
-  aHeader.Append("\r\n");
+  multiPartChannel->GetOriginalResponseHeader(aHeader);
 
   return true;
 }
@@ -253,7 +250,7 @@ PackagedAppService::CacheEntryWriter::CopyHeadersFromChannel(nsIChannel *aChanne
     return NS_ERROR_FAILURE;
   }
 
-  nsRefPtr<HeaderCopier> headerCopier = new HeaderCopier(aHead);
+  RefPtr<HeaderCopier> headerCopier = new HeaderCopier(aHead);
   return httpChan->VisitResponseHeaders(headerCopier);
 }
 
@@ -364,19 +361,19 @@ PackagedAppService::PackagedAppChannelListener::OnStartRequest(nsIRequest *aRequ
   // to know if it's a signed package. Notify requesters if it's signed.
   if (isFromCache) {
     bool isPackageSigned = false;
-    nsCString signedPackageOrigin;
+    nsCString signedPackageId;
     nsCOMPtr<nsICacheEntry> packageCacheEntry = GetPackageCacheEntry(aRequest);
     if (packageCacheEntry) {
-      const char* key = PackagedAppVerifier::kSignedPakOriginMetadataKey;
+      const char* key = PackagedAppVerifier::kSignedPakIdMetadataKey;
       nsXPIDLCString value;
       nsresult rv = packageCacheEntry->GetMetaDataElement(key,
                                                           getter_Copies(value));
       isPackageSigned = (NS_SUCCEEDED(rv) && !value.IsEmpty());
-      signedPackageOrigin = value;
+      signedPackageId = value;
     }
     if (isPackageSigned) {
       LOG(("The cached package is signed. Notify the requesters."));
-      mDownloader->NotifyOnStartSignedPackageRequest(signedPackageOrigin);
+      mDownloader->NotifyOnStartSignedPackageRequest(signedPackageId);
     }
   }
 
@@ -430,6 +427,7 @@ PackagedAppService::PackagedAppDownloader::Init(nsILoadContextInfo* aInfo,
 
   mPackageKey = aKey;
   mPackageOrigin = aPackageOrigin;
+  mProcessingFirstRequest = true;
 
   return NS_OK;
 }
@@ -480,6 +478,12 @@ PackagedAppService::PackagedAppDownloader::OnStartRequest(nsIRequest *aRequest,
   NS_WARN_IF(NS_FAILED(rv));
 
   EnsureVerifier(aRequest);
+
+  if (!mVerifier->WouldVerify()) {
+    // It means there's no signature or the signed app is disabled.
+    return NS_OK;
+  }
+
   mVerifier->OnStartRequest(nullptr, uri);
 
   // Since the header is considered as a part of the streaming data,
@@ -578,14 +582,19 @@ PackagedAppService::PackagedAppDownloader::FinalizeDownload(nsresult aStatusCode
     aStatusCode = NS_ERROR_FILE_NOT_FOUND;
   }
 
-  nsRefPtr<PackagedAppDownloader> kungFuDeathGrip(this);
+  RefPtr<PackagedAppDownloader> kungFuDeathGrip(this);
   // NotifyPackageDownloaded removes the ref from the array. Keep a temp ref
   if (gPackagedAppService) {
     gPackagedAppService->NotifyPackageDownloaded(mPackageKey);
   }
   ClearCallbacks(aStatusCode);
 
-  mVerifier = nullptr;
+  // Explicity remove the downloader from the verifier. The downloader
+  // will die after exiting this function but the verifier may still be
+  // alive for a while since some resources maybe being verified.
+  if (mVerifier) {
+    mVerifier->ClearListener();
+  }
 }
 
 nsCString
@@ -618,6 +627,8 @@ PackagedAppService::PackagedAppDownloader::OnStopRequest(nsIRequest *aRequest,
   LOG(("[%p] PackagedAppDownloader::OnStopRequest > status:%X multiChannel:%p\n",
        this, aStatusCode, multiChannel.get()));
 
+  mProcessingFirstRequest = false;
+
   // lastPart will be true if this is the last part in the package,
   // or if aRequest isn't a multipart channel
   bool lastPart = true;
@@ -634,7 +645,15 @@ PackagedAppService::PackagedAppDownloader::OnStopRequest(nsIRequest *aRequest,
       // Chances to get here:
       //   1) Very likely the package has been cached or
       //   2) Less likely the package is malformed.
-      FinalizeDownload(aStatusCode);
+      if (!mVerifier || !mVerifier->WouldVerify()) {
+        FinalizeDownload(aStatusCode);
+      } else {
+        // We've got a broken last part and some resources might be still
+        // in the verification queue. Send a dummy ResourceCacheInfo to the
+        // verifier so this broken resource will be processed in the correct
+        // order.
+        mVerifier->SetHasBrokenLastPart(aStatusCode);
+      }
     }
     return NS_OK;
   }
@@ -659,8 +678,14 @@ PackagedAppService::PackagedAppDownloader::OnStopRequest(nsIRequest *aRequest,
 
   // The downloader only needs to focus on PackagedAppVerifierListener callback.
   // The PackagedAppVerifier would handle the manifest/resource verification.
-  nsRefPtr<ResourceCacheInfo> info =
+  RefPtr<ResourceCacheInfo> info =
     new ResourceCacheInfo(uri, entry, aStatusCode, lastPart);
+
+  if (!mVerifier->WouldVerify()) {
+    // No manifest at all. Everything is simply a resource.
+    OnResourceVerified(info, true);
+    return NS_OK;
+  }
 
   mVerifier->OnStopRequest(nullptr, info, aStatusCode);
 
@@ -690,6 +715,16 @@ PackagedAppService::PackagedAppDownloader::ConsumeData(nsIInputStream *aStream,
 
   self->mWriter->ConsumeData(aFromRawSegment, aCount, aWriteCount);
 
+  if (!self->mVerifier->WouldVerify()) {
+    // No signature or signed app support is disabled.
+    return NS_OK;
+  }
+
+  if (self->mProcessingFirstRequest) {
+    // mProcessingFirstRequest will be set to false on the first OnStopRequest.
+    self->mManifestContent.Append(aFromRawSegment, aCount);
+  }
+
   nsCOMPtr<nsIInputStream> stream = CreateSharedStringStream(aFromRawSegment, aCount);
   return self->mVerifier->OnDataAvailable(nullptr, nullptr, stream, 0, aCount);
 }
@@ -707,14 +742,17 @@ PackagedAppService::PackagedAppDownloader::OnDataAvailable(nsIRequest *aRequest,
 
 nsresult
 PackagedAppService::PackagedAppDownloader::AddCallback(nsIURI *aURI,
-                                                       nsICacheEntryOpenCallback *aCallback)
+                                                       nsICacheEntryOpenCallback *aCallback,
+                                                       nsIChannel* aRequester)
 {
   MOZ_RELEASE_ASSERT(NS_IsMainThread(), "mCallbacks hashtable is not thread safe");
   nsAutoCString spec;
-  aURI->GetAsciiSpec(spec);
+  aURI->GetSpecIgnoringRef(spec);
 
   LogURI("PackagedAppDownloader::AddCallback", this, aURI);
   LOG(("[%p]    > callback: %p\n", this, aCallback));
+
+  nsCOMPtr<nsIPackagedAppChannelListener> listener = do_QueryInterface(aRequester);
 
   // Check if we already have a resource waiting for this resource
   nsCOMArray<nsICacheEntryOpenCallback>* array = mCallbacks.Get(spec);
@@ -727,9 +765,12 @@ PackagedAppService::PackagedAppDownloader::AddCallback(nsIURI *aURI,
 
       // This is the case where a package downloader is still running and we
       // peek data from it.
-
-      // TODO: Bug 1186290 to notify that the signed packaged content is ready
-      //       to load.
+      if (mVerifier && mVerifier->GetIsPackageSigned()) {
+        // TODO: Bug 1178526 will deal with the package identifier things.
+        //       For now we just use the origin as the identifier.
+        listener->OnStartSignedPackageRequest(mVerifier->GetPackageIdentifier());
+        listener = nullptr; // So that the request will not be added to the queue.
+      }
       mCacheStorage->AsyncOpenURI(aURI, EmptyCString(),
                                   nsICacheStorage::OPEN_READONLY, aCallback);
     } else {
@@ -746,6 +787,12 @@ PackagedAppService::PackagedAppDownloader::AddCallback(nsIURI *aURI,
     newArray->AppendObject(aCallback);
     mCallbacks.Put(spec, newArray);
   }
+
+  // Add the outer channel for notifying OnStartSignedPackageRequest.
+  if (listener) {
+    mRequesters.AppendObject(listener);
+  }
+
   return NS_OK;
 }
 
@@ -840,16 +887,72 @@ PackagedAppService::PackagedAppDownloader::ClearCallbacks(nsresult aResult)
 void
 PackagedAppService::PackagedAppDownloader::NotifyOnStartSignedPackageRequest(const nsACString& aPackageOrigin)
 {
-  // TODO: Bug 1186290 to notify whoever wants to know when the signed package is
-  //       about to load.
-  LOG(("Notifying the signed package is ready to load."));
+  MOZ_RELEASE_ASSERT(NS_IsMainThread(), "mRequesters is not thread safe");
+
+  LOG(("Ready to notify OnStartSignedPackageRequest to all requesters."));
+  // Notify all requesters that a signed package is about to download and let
+  // TabParent to decide if the request needs to be re-made in a new process.
+  for (uint32_t i = 0; i < mRequesters.Length(); i++) {
+    nsCOMPtr<nsIPackagedAppChannelListener> requester = mRequesters.ObjectAt(i);
+    LOG(("Notifying %p OnStartSignedPackageRequest. New origin: %s", requester.get(),
+          nsCString(aPackageOrigin).get()));
+    requester->OnStartSignedPackageRequest(aPackageOrigin);
+  }
+
+  mRequesters.Clear();
 }
 
-void PackagedAppService::PackagedAppDownloader::InstallSignedPackagedApp()
+static bool
+AddPackageIdToOrigin(nsACString& aOrigin, const nsACString& aPackageId)
+{
+  nsAutoCString originNoSuffix;
+  mozilla::NeckoOriginAttributes attrs;
+  if (!attrs.PopulateFromOrigin(aOrigin, originNoSuffix)) {
+    return false;
+  }
+
+  attrs.mSignedPkg = NS_ConvertUTF8toUTF16(aPackageId);
+  nsAutoCString suffixWithPackageId;
+  attrs.CreateSuffix(suffixWithPackageId);
+  aOrigin = originNoSuffix + suffixWithPackageId;
+  return true;
+}
+
+void
+PackagedAppService::PackagedAppDownloader::InstallSignedPackagedApp(const ResourceCacheInfo* aInfo)
 {
   // TODO: Bug 1178533 to register permissions, system messages etc on navigation to
   //       signed packages.
   LOG(("Install this packaged app."));
+  bool isSuccess = false;
+
+  nsCOMPtr<nsIInstallPackagedWebapp> installer =
+    do_GetService("@mozilla.org/newapps/installpackagedwebapp;1");
+
+  if (!installer) {
+    LOG(("InstallSignedPackagedApp: fail to get InstallPackagedWebapp service"));
+    return OnError(ERROR_GET_INSTALLER_FAILED);
+  }
+
+  nsCString manifestURL;
+  aInfo->mURI->GetAsciiSpec(manifestURL);
+
+
+  nsCString originWithPackageId = mPackageOrigin;
+  if (!AddPackageIdToOrigin(originWithPackageId, mVerifier->GetPackageIdentifier())) {
+    NS_WARNING("mPackageOrigin is malformed.");
+  }
+
+  installer->InstallPackagedWebapp(mManifestContent.get(),
+                                   originWithPackageId.get(),
+                                   manifestURL.get(),
+                                   &isSuccess);
+  if (!isSuccess) {
+    LOG(("InstallSignedPackagedApp: failed to install permissions"));
+    return OnError(ERROR_INSTALL_RESOURCE_FAILED);
+  }
+
+  LOG(("InstallSignedPackagedApp: success."));
 }
 
 //------------------------------------------------------------------
@@ -863,6 +966,12 @@ PackagedAppService::PackagedAppDownloader::OnVerified(bool aIsManifest,
                                                       bool aIsLastPart,
                                                       bool aVerificationSuccess)
 {
+  if (!aUri) {
+    NS_WARNING("We've got a broken last part.");
+    FinalizeDownload(aStatusCode);
+    return NS_OK;
+  }
+
   RefPtr<ResourceCacheInfo> info =
     new ResourceCacheInfo(aUri, aCacheEntry, aStatusCode, aIsLastPart);
 
@@ -884,6 +993,12 @@ PackagedAppService::PackagedAppDownloader::OnManifestVerified(const ResourceCach
   // TODO: If we disallow the request for the manifest file, do NOT callback here.
   CallCallbacks(aInfo->mURI, aInfo->mCacheEntry, aInfo->mStatusCode);
 
+  if (aInfo->mIsLastPart) {
+    NS_WARNING("This package has manifest only.");
+    FinalizeDownload(aInfo->mStatusCode);
+    return;
+  }
+
   bool isPackagedSigned;
   mVerifier->GetIsPackageSigned(&isPackagedSigned);
   if (!isPackagedSigned) {
@@ -892,10 +1007,8 @@ PackagedAppService::PackagedAppDownloader::OnManifestVerified(const ResourceCach
     return;
   }
 
-  nsCString packageOrigin;
-  mVerifier->GetPackageOrigin(packageOrigin);
-  NotifyOnStartSignedPackageRequest(packageOrigin);
-  InstallSignedPackagedApp();
+  NotifyOnStartSignedPackageRequest(mVerifier->GetPackageIdentifier());
+  InstallSignedPackagedApp(aInfo);
 }
 
 void
@@ -904,6 +1017,15 @@ PackagedAppService::PackagedAppDownloader::OnResourceVerified(const ResourceCach
 {
   if (!aSuccess) {
     return OnError(ERROR_RESOURCE_VERIFIED_FAILED);
+  }
+
+  // If this package is signed and there is any pending requests, we just notify
+  // right now no matter if this is the requested resource. Doing this can
+  // have the potential process switch be done as early as possible.
+  if (mVerifier->GetIsPackageSigned()) {
+    // TODO: Bug 1178526 will deal with the package identifier things.
+    //       For now we just use the origin as the identifier.
+    NotifyOnStartSignedPackageRequest(mVerifier->GetPackageIdentifier());
   }
 
   // Serve this resource to all listeners.
@@ -920,7 +1042,6 @@ PackagedAppService::PackagedAppDownloader::OnResourceVerified(const ResourceCach
 PackagedAppService::PackagedAppService()
 {
   gPackagedAppService = this;
-  gPASLog = PR_NewLogModule("PackagedAppService");
   LOG(("[%p] Created PackagedAppService\n", this));
 }
 
@@ -1008,7 +1129,7 @@ PackagedAppService::GetResource(nsIChannel *aChannel,
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
 
   nsCOMPtr<nsIURI> uri;
-  rv = principal->GetURI(getter_AddRefs(uri));
+  rv = aChannel->GetURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     LOG(("[%p]    > Error calling GetURI rv=%X\n", this, rv));
     return rv;
@@ -1031,14 +1152,13 @@ PackagedAppService::GetResource(nsIChannel *aChannel,
     key += spec;
   }
 
-  nsRefPtr<PackagedAppDownloader> downloader;
+  RefPtr<PackagedAppDownloader> downloader;
   if (mDownloadingPackages.Get(key, getter_AddRefs(downloader))) {
     // We have determined that the file is not in the cache.
     // If we find that the package that the file belongs to is currently being
     // downloaded, we will add the callback to the package's queue, and it will
     // be called once the file is processed and saved in the cache.
-
-    downloader->AddCallback(uri, aCallback);
+    downloader->AddCallback(uri, aCallback, aChannel);
     return NS_OK;
   }
 
@@ -1062,13 +1182,13 @@ PackagedAppService::GetResource(nsIChannel *aChannel,
 
   downloader = new PackagedAppDownloader();
   nsCString packageOrigin;
-  principal->GetOriginNoSuffix(packageOrigin);
+  principal->GetOrigin(packageOrigin);
   rv = downloader->Init(loadContextInfo, key, packageOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  downloader->AddCallback(uri, aCallback);
+  downloader->AddCallback(uri, aCallback, aChannel);
 
   nsCOMPtr<nsIStreamConverterService> streamconv =
     do_GetService("@mozilla.org/streamConverters;1", &rv);
@@ -1086,7 +1206,7 @@ PackagedAppService::GetResource(nsIChannel *aChannel,
   // Add the package to the hashtable.
   mDownloadingPackages.Put(key, downloader);
 
-  nsRefPtr<PackagedAppChannelListener> listener =
+  RefPtr<PackagedAppChannelListener> listener =
     new PackagedAppChannelListener(downloader, mimeConverter);
 
   nsCOMPtr<nsIInterfaceRequestor> loadContext;

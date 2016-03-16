@@ -76,7 +76,10 @@ public:
   // came from nsDOMWindowUtils.
   bool IsSynthesizedForTests() const { return mIsSynthesizedForTests; }
 
-  bool MatchesNativeContext(nsIWidget* aWidget) const;
+  const widget::NativeIMEContext& GetNativeIMEContext() const
+  {
+    return mNativeContext;
+  }
 
   /**
    * This is called when IMEStateManager stops managing the instance.
@@ -160,7 +163,7 @@ public:
     }
 
   private:
-    nsRefPtr<TextComposition> mComposition;
+    RefPtr<TextComposition> mComposition;
     CompositionChangeEventHandlingMarker();
     CompositionChangeEventHandlingMarker(
       const CompositionChangeEventHandlingMarker& aOther);
@@ -183,15 +186,15 @@ private:
   // this instance.
   nsPresContext* mPresContext;
   nsCOMPtr<nsINode> mNode;
-  nsRefPtr<TabParent> mTabParent;
+  RefPtr<TabParent> mTabParent;
 
   // This is the clause and caret range information which is managed by
   // the focused editor.  This may be null if there is no clauses or caret.
-  nsRefPtr<TextRangeArray> mRanges;
+  RefPtr<TextRangeArray> mRanges;
 
   // mNativeContext stores a opaque pointer.  This works as the "ID" for this
   // composition.  Don't access the instance, it may not be available.
-  void* mNativeContext;
+  widget::NativeIMEContext mNativeContext;
 
   // mEditorWeak is a weak reference to the focused editor handling composition.
   nsWeakPtr mEditorWeak;
@@ -359,7 +362,7 @@ private:
     NS_IMETHOD Run() override;
 
   private:
-    nsRefPtr<TextComposition> mTextComposition;
+    RefPtr<TextComposition> mTextComposition;
     nsCOMPtr<nsINode> mEventTarget;
     nsString mData;
     EventMessage mEventMessage;
@@ -397,14 +400,22 @@ private:
  */
 
 class TextCompositionArray final :
-  public nsAutoTArray<nsRefPtr<TextComposition>, 2>
+  public nsAutoTArray<RefPtr<TextComposition>, 2>
 {
 public:
+  // Looking for per native IME context.
+  index_type IndexOf(const widget::NativeIMEContext& aNativeIMEContext);
   index_type IndexOf(nsIWidget* aWidget);
+
+  TextComposition* GetCompositionFor(nsIWidget* aWidget);
+  TextComposition* GetCompositionFor(
+                     const WidgetCompositionEvent* aCompositionEvent);
+
+  // Looking for per nsPresContext
   index_type IndexOf(nsPresContext* aPresContext);
   index_type IndexOf(nsPresContext* aPresContext, nsINode* aNode);
 
-  TextComposition* GetCompositionFor(nsIWidget* aWidget);
+  TextComposition* GetCompositionFor(nsPresContext* aPresContext);
   TextComposition* GetCompositionFor(nsPresContext* aPresContext,
                                      nsINode* aNode);
   TextComposition* GetCompositionInContent(nsPresContext* aPresContext,

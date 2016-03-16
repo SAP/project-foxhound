@@ -24,13 +24,18 @@ from mozharness.base.python import (
 from mozharness.mozilla.buildbot import BuildbotMixin, TBPL_WARNING
 from mozharness.mozilla.proxxy import Proxxy
 from mozharness.mozilla.structuredlog import StructuredOutputParser
+from mozharness.mozilla.taskcluster_helper import TaskClusterArtifactFinderMixin
 from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
-from mozharness.mozilla.testing.try_tools import TryToolsMixin
+from mozharness.mozilla.testing.try_tools import TryToolsMixin, try_config_options
 from mozharness.mozilla.tooltool import TooltoolMixin
 
 from mozharness.lib.python.authentication import get_credentials
 
-INSTALLER_SUFFIXES = ('.tar.bz2', '.zip', '.dmg', '.exe', '.apk', '.tar.gz')
+INSTALLER_SUFFIXES = ('.apk',  # Android
+                      '.tar.bz2', '.tar.gz',  # Linux
+                      '.dmg',  # Mac
+                      '.installer-stub.exe', '.installer.exe', '.exe', '.zip',  # Windows
+                      )
 
 testing_config_options = [
     [["--installer-url"],
@@ -82,12 +87,12 @@ testing_config_options = [
      "choices": ['ondemand', 'true'],
      "help": "Download and extract crash reporter symbols.",
       }],
-] + copy.deepcopy(virtualenv_config_options)
+] + copy.deepcopy(virtualenv_config_options) + copy.deepcopy(try_config_options)
 
 
 # TestingMixin {{{1
-class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin, TooltoolMixin,
-                   TryToolsMixin):
+class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin,
+                   TaskClusterArtifactFinderMixin, TooltoolMixin, TryToolsMixin):
     """
     The steps to identify + download the proper bits for [browser] unit
     tests and Talos.
@@ -98,7 +103,6 @@ class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin, Tool
     binary_path = None
     test_url = None
     test_packages_url = None
-    test_zip_path = None
     symbols_url = None
     symbols_path = None
     jsshell_url = None
@@ -154,14 +158,27 @@ class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin, Tool
     def query_symbols_url(self):
         if self.symbols_url:
             return self.symbols_url
-        if not self.installer_url:
-            self.fatal("Can't figure out symbols_url without an installer_url!")
-        for suffix in INSTALLER_SUFFIXES:
-            if self.installer_url.endswith(suffix):
-                self.symbols_url = self.installer_url[:-len(suffix)] + '.crashreporter-symbols.zip'
-                return self.symbols_url
+
+        elif self.installer_url:
+            symbols_url = None
+            for suffix in INSTALLER_SUFFIXES:
+                if self.installer_url.endswith(suffix):
+                    symbols_url = self.installer_url[:-len(suffix)] + '.crashreporter-symbols.zip'
+                    break
+
+            # Check if the URL exists. If not, use none to allow mozcrash to auto-check for symbols
+            try:
+                if symbols_url:
+                    self._urlopen(symbols_url)
+                    self.symbols_url = symbols_url
+            except urllib2.URLError:
+                self.warning("Can't figure out symbols_url from installer_url: %s!" %
+                             self.installer_url)
+
         else:
-            self.fatal("Can't figure out symbols_url from installer_url %s!" % self.installer_url)
+            self.fatal("Can't figure out symbols_url without an installer_url!")
+
+        return self.symbols_url
 
     def _pre_config_lock(self, rw_config):
         for i, (target_file, target_dict) in enumerate(rw_config.all_cfg_files_and_dicts):
@@ -196,10 +213,11 @@ class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin, Tool
                     return new_url
             return url
 
-        assert c["installer_url"], "You must use --installer-url with developer_config.py"
+        if c.get("installer_url") is None:
+            self.exception("You must use --installer-url with developer_config.py")
         if c.get("require_test_zip"):
             if not c.get('test_url') and not c.get('test_packages_url'):
-                raise AssertionError("You must use --test-url or --test-packages-url with developer_config.py")
+                self.exception("You must use --test-url or --test-packages-url with developer_config.py")
 
         c["installer_url"] = _replace_url(c["installer_url"], c["replace_urls"])
         if c.get("test_url"):
@@ -246,6 +264,48 @@ class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin, Tool
 
     # read_buildbot_config is in BuildbotMixin.
 
+    def find_artifacts_from_buildbot_changes(self):
+        c = self.config
+        try:
+            files = self.buildbot_config['sourcestamp']['changes'][-1]['files']
+            buildbot_prop_branch = self.buildbot_config['properties']['branch']
+
+            # Bug 868490 - Only require exactly two files if require_test_zip;
+            # otherwise accept either 1 or 2, since we'll be getting a
+            # test_zip url that we don't need.
+            expected_length = [1, 2, 3]
+            if c.get("require_test_zip") and not self.test_url:
+                expected_length = [2, 3]
+            if buildbot_prop_branch.startswith('gaia-try'):
+                expected_length = range(1, 1000)
+            actual_length = len(files)
+            if actual_length not in expected_length:
+                self.fatal("Unexpected number of files in buildbot config %s.\nExpected these number(s) of files: %s, but got: %d" %
+                           (c['buildbot_json_path'], str(expected_length), actual_length))
+            for f in files:
+                if f['name'].endswith('tests.zip'):  # yuk
+                    if not self.test_url:
+                        # str() because of unicode issues on mac
+                        self.test_url = str(f['name'])
+                        self.info("Found test url %s." % self.test_url)
+                elif f['name'].endswith('crashreporter-symbols.zip'):  # yuk
+                    self.symbols_url = str(f['name'])
+                    self.info("Found symbols url %s." % self.symbols_url)
+                elif f['name'].endswith('test_packages.json'):
+                    self.test_packages_url = str(f['name'])
+                    self.info("Found a test packages url %s." % self.test_packages_url)
+                elif not any(f['name'].endswith(s) for s in ('code-coverage-gcno.zip',)):
+                    if not self.installer_url:
+                        self.installer_url = str(f['name'])
+                        self.info("Found installer url %s." % self.installer_url)
+        except IndexError, e:
+            self.error(str(e))
+
+    def find_artifacts_from_taskcluster(self):
+        self.info("Finding installer, test and symbols from parent task. ")
+        task_id = self.buildbot_config['properties']['taskId']
+        self.set_parent_artifacts(task_id)
+
     def postflight_read_buildbot_config(self):
         """
         Determine which files to download from the buildprops.json file
@@ -260,40 +320,21 @@ class TestingMixin(VirtualenvMixin, BuildbotMixin, ResourceMonitoringMixin, Tool
                 self.test_url = c['test_url']
             if c.get("test_packages_url"):
                 self.test_packages_url = c['test_packages_url']
-            try:
-                files = self.buildbot_config['sourcestamp']['changes'][-1]['files']
-                buildbot_prop_branch = self.buildbot_config['properties']['branch']
 
-                # Bug 868490 - Only require exactly two files if require_test_zip;
-                # otherwise accept either 1 or 2, since we'll be getting a
-                # test_zip url that we don't need.
-                expected_length = [1, 2, 3]
-                if c.get("require_test_zip") and not self.test_url:
-                    expected_length = [2, 3]
-                if buildbot_prop_branch.startswith('gaia-try'):
-                    expected_length = range(1, 1000)
-                actual_length = len(files)
-                if actual_length not in expected_length:
-                    self.fatal("Unexpected number of files in buildbot config %s.\nExpected these number(s) of files: %s, but got: %d" %
-                               (c['buildbot_json_path'], str(expected_length), actual_length))
-                for f in files:
-                    if f['name'].endswith('tests.zip'):  # yuk
-                        if not self.test_url:
-                            # str() because of unicode issues on mac
-                            self.test_url = str(f['name'])
-                            self.info("Found test url %s." % self.test_url)
-                    elif f['name'].endswith('crashreporter-symbols.zip'):  # yuk
-                        self.symbols_url = str(f['name'])
-                        self.info("Found symbols url %s." % self.symbols_url)
-                    elif f['name'].endswith('test_packages.json'):
-                        self.test_packages_url = str(f['name'])
-                        self.info("Found a test packages url %s." % self.test_packages_url)
-                    elif not any(f['name'].endswith(s) for s in ('code-coverage-gcno.zip',)):
-                        if not self.installer_url:
-                            self.installer_url = str(f['name'])
-                            self.info("Found installer url %s." % self.installer_url)
-            except IndexError, e:
-                self.error(str(e))
+            # This supports original Buildbot to Buildbot mode
+            if self.buildbot_config['sourcestamp']['changes']:
+                self.find_artifacts_from_buildbot_changes()
+
+            # This supports TaskCluster/BBB task to Buildbot job
+            elif 'testPackagesUrl' in self.buildbot_config['properties'] and \
+                 'packageUrl' in self.buildbot_config['properties']:
+                self.installer_url = self.buildbot_config['properties']['packageUrl']
+                self.test_packages_url = self.buildbot_config['properties']['testPackagesUrl']
+
+            # This supports TaskCluster/BBB task to TaskCluster/BBB task
+            elif 'taskId' in self.buildbot_config['properties']:
+                self.find_artifacts_from_taskcluster()
+
             missing = []
             if not self.installer_url:
                 missing.append("installer_url")
@@ -342,18 +383,6 @@ You can set this by:
                         "You are currently using version %s. Please update to at least 6.0.\n" \
                         "You can visit http://www.info-zip.org/UnZip.html" % version)
 
-    def _download_test_zip(self):
-        dirs = self.query_abs_dirs()
-        file_name = None
-        if self.test_zip_path:
-            file_name = self.test_zip_path
-        # try to use our proxxy servers
-        # create a proxxy object and get the binaries from it
-        source = self.download_file(self.test_url, file_name=file_name,
-                                    parent_dir=dirs['abs_work_dir'],
-                                    error_level=FATAL)
-        self.test_zip_path = os.path.realpath(source)
-
     def _read_packages_manifest(self):
         dirs = self.query_abs_dirs()
         source = self.download_file(self.test_packages_url,
@@ -382,6 +411,9 @@ You can set this by:
             'webapprt': 'mochitest',
             'jsreftest': 'reftest',
             'crashtest': 'reftest',
+            'reftest-debug': 'reftest',
+            'jsreftest-debug': 'reftest',
+            'crashtest-debug': 'reftest',
         }
         suite_categories = [aliases.get(name, name) for name in suite_categories]
 
@@ -407,41 +439,15 @@ You can set this by:
                     unzip_dirs = None
                     target_dir = dirs['abs_test_bin_dir']
                 url = self.query_build_dir_url(file_name)
-                self._download_unzip(url, target_dir,
+                self.download_unzip(url, target_dir,
                                      target_unzip_dirs=unzip_dirs)
 
-    def _download_unzip(self, url, parent_dir, target_unzip_dirs=None):
-        """Generic download+unzip.
-        This is hardcoded to halt on failure.
-        We should probably change some other methods to call this."""
+    def _download_test_zip(self, target_unzip_dirs=None):
         dirs = self.query_abs_dirs()
-        zipfile = self.download_file(url, parent_dir=dirs['abs_work_dir'],
-                                             error_level=FATAL)
-        command = self.query_exe('unzip', return_type='list')
-        command.extend(['-q', '-o', zipfile])
-        if target_unzip_dirs:
-            command.extend(target_unzip_dirs)
-        self.run_command(command, cwd=parent_dir, halt_on_failure=True,
-                         success_codes=[0, 11],
-                         fatal_exit_code=3, output_timeout=1760)
-
-    def _extract_test_zip(self, target_unzip_dirs=None):
-        dirs = self.query_abs_dirs()
-        unzip = self.query_exe("unzip")
         test_install_dir = dirs.get('abs_test_install_dir',
                                     os.path.join(dirs['abs_work_dir'], 'tests'))
-        self.mkdir_p(test_install_dir)
-        # adding overwrite flag otherwise subprocess.Popen hangs on waiting for
-        # input in a hidden pipe whenever this action is run twice without
-        # clobber
-        unzip_cmd = [unzip, '-q', '-o', self.test_zip_path]
-        if target_unzip_dirs:
-            unzip_cmd.extend(target_unzip_dirs)
-        # TODO error_list
-        # unzip return code 11 is 'no matching files were found'
-        self.run_command(unzip_cmd, cwd=test_install_dir,
-                         halt_on_failure=True, success_codes=[0, 11],
-                         fatal_exit_code=3)
+        self.download_unzip(self.test_url, test_install_dir,
+                             target_unzip_dirs=target_unzip_dirs)
 
     def structured_output(self, suite_category):
         """Defines whether structured logging is in use in this configuration. This
@@ -485,14 +491,10 @@ You can set this by:
             return
         if not self.symbols_path:
             self.symbols_path = os.path.join(dirs['abs_work_dir'], 'symbols')
-        self.mkdir_p(self.symbols_path)
-        source = self.download_file(self.symbols_url,
-                                            parent_dir=self.symbols_path,
-                                            error_level=FATAL)
+
         self.set_buildbot_property("symbols_url", self.symbols_url,
                                    write_to_file=True)
-        self.run_command(['unzip', '-q', source], cwd=self.symbols_path,
-                         halt_on_failure=True, fatal_exit_code=3)
+        self.download_unzip(self.symbols_url, self.symbols_path)
 
     def download_and_extract(self, target_unzip_dirs=None, suite_categories=None):
         """
@@ -515,10 +517,9 @@ You can set this by:
             if self.test_packages_url:
                 self.error('Test data will be downloaded from "%s", the specified test '
                            ' package data at "%s" will be ignored.' %
-                           (self.config('test_url'), self.test_packages_url))
+                           (self.config.get('test_url'), self.test_packages_url))
 
-            self._download_test_zip()
-            self._extract_test_zip(target_unzip_dirs=target_unzip_dirs)
+            self._download_test_zip(target_unzip_dirs)
         else:
             if not self.test_packages_url:
                 # The caller intends to download harness specific packages, but doesn't know
@@ -581,6 +582,25 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
     def install(self):
         self.binary_path = self.install_app(app=self.config.get('application'))
 
+    def uninstall_app(self, install_dir=None):
+        """ Dependent on mozinstall """
+        # uninstall the application
+        cmd = self.query_exe("mozuninstall",
+                             default=self.query_python_path("mozuninstall"),
+                             return_type="list")
+        dirs = self.query_abs_dirs()
+        if not install_dir:
+            install_dir = dirs.get('abs_app_install_dir',
+                                   os.path.join(dirs['abs_work_dir'],
+                                                'application'))
+        cmd.append(install_dir)
+        # TODO we'll need some error checking here
+        self.get_output_from_command(cmd, halt_on_failure=True,
+                                     fatal_exit_code=3)
+
+    def uninstall(self):
+        self.uninstall_app()
+
     def query_minidump_tooltool_manifest(self):
         if self.config.get('minidump_tooltool_manifest_path'):
             return self.config['minidump_tooltool_manifest_path']
@@ -621,7 +641,7 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
         else:
             self.fatal('could not determine minidump filename')
 
-    def query_minidump_stackwalk(self):
+    def query_minidump_stackwalk(self, manifest=None):
         if self.minidump_stackwalk_path:
             return self.minidump_stackwalk_path
         c = self.config
@@ -629,13 +649,17 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
 
         if c.get('download_minidump_stackwalk'):
             minidump_stackwalk_path = self.query_minidump_filename()
-            tooltool_manifest_path = self.query_minidump_tooltool_manifest()
+
+            if not manifest:
+                tooltool_manifest_path = self.query_minidump_tooltool_manifest()
+                manifest = os.path.join(dirs.get('abs_test_install_dir',
+                                                 os.path.join(dirs['abs_work_dir'], 'tests')),
+                                        tooltool_manifest_path)
+
             self.info('grabbing minidump binary from tooltool')
             try:
                 self.tooltool_fetch(
-                    manifest=os.path.join(dirs.get('abs_test_install_dir',
-                                                   os.path.join(dirs['abs_work_dir'], 'tests')),
-                                          tooltool_manifest_path),
+                    manifest=manifest,
                     output_dir=dirs['abs_work_dir'],
                     cache=c.get('tooltool_cache')
                 )
@@ -655,6 +679,35 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
 
         return self.minidump_stackwalk_path
 
+    def query_options(self, *args, **kwargs):
+        if "str_format_values" in kwargs:
+            str_format_values = kwargs.pop("str_format_values")
+        else:
+            str_format_values = {}
+
+        arguments = []
+
+        for arg in args:
+            if arg is not None:
+                arguments.extend(argument % str_format_values for argument in arg)
+
+        return arguments
+
+    def query_tests_args(self, *args, **kwargs):
+        if "str_format_values" in kwargs:
+            str_format_values = kwargs.pop("str_format_values")
+        else:
+            str_format_values = {}
+
+        arguments = []
+
+        for arg in reversed(args):
+            if arg:
+                arguments.append("--")
+                arguments.extend(argument % str_format_values for argument in arg)
+                break
+
+        return arguments
 
     def _run_cmd_checks(self, suites):
         if not suites:

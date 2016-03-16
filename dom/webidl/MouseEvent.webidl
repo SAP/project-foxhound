@@ -16,9 +16,7 @@ interface MouseEvent : UIEvent {
   readonly attribute long           screenY;
   readonly attribute long           clientX;
   readonly attribute long           clientY;
-[Pref="dom.mouseEvent.offsetXY.enabled"]
   readonly attribute long           offsetX;
-[Pref="dom.mouseEvent.offsetXY.enabled"]
   readonly attribute long           offsetY;
   readonly attribute boolean        ctrlKey;
   readonly attribute boolean        shiftKey;
@@ -34,7 +32,6 @@ interface MouseEvent : UIEvent {
   readonly attribute long           movementY;
 
   // Deprecated in DOM Level 3:
-  [Throws]
   void                              initMouseEvent(DOMString typeArg, 
                                                    boolean canBubbleArg, 
                                                    boolean cancelableArg, 
@@ -93,7 +90,6 @@ partial interface MouseEvent
 
   readonly attribute unsigned short mozInputSource;
 
-  [Throws]
   void                initNSMouseEvent(DOMString typeArg,
                                        boolean canBubbleArg,
                                        boolean cancelableArg,

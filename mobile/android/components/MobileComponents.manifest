@@ -20,9 +20,7 @@ contract @mozilla.org/network/protocol/about;1?what=blocked {322ba47e-7047-4f71-
 #ifdef MOZ_DEVICES
 contract @mozilla.org/network/protocol/about;1?what=devices {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 #endif
-#ifndef MOZ_ANDROID_NATIVE_ACCOUNT_UI
 contract @mozilla.org/network/protocol/about;1?what=accounts {322ba47e-7047-4f71-aebf-cb7d69325cd9}
-#endif
 contract @mozilla.org/network/protocol/about;1?what=logins {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 
 # DirectoryProvider.js
@@ -54,6 +52,11 @@ contract @mozilla.org/prompter;1 {9a61149b-2276-4a0a-b79c-be994ad106cf}
 contract @mozilla.org/embedcomp/prompt-service;1 {9a61149b-2276-4a0a-b79c-be994ad106cf}
 category wakeup-request PromptService @mozilla.org/embedcomp/prompt-service;1,nsIPromptService,getService,Prompt:Call
 #endif
+
+# ImageBlockingPolicy.js
+component {f55f77f9-d33d-4759-82fc-60db3ee0bb91} ImageBlockingPolicy.js
+contract @mozilla.org/browser/blockimages-policy;1 {f55f77f9-d33d-4759-82fc-60db3ee0bb91}
+category content-policy ImageBlockingPolicy @mozilla.org/browser/blockimages-policy;1
 
 # XPIDialogService.js
 component {c1242012-27d8-477e-a0f1-0b098ffc329b} XPIDialogService.js

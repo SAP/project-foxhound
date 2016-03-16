@@ -49,7 +49,7 @@ using namespace mozilla;
 
 #include "mozilla/Logging.h"
 #undef LOG
-#define LOG(args) MOZ_LOG(net::GetProxyLog(), mozilla::LogLevel::Debug, args)
+#define LOG(args) MOZ_LOG(net::gProxyLog, mozilla::LogLevel::Debug, args)
 
 //----------------------------------------------------------------------------
 
@@ -264,7 +264,7 @@ private:
             nsresult rv = mPPS->ConfigureFromPAC(mPACURL, false);
             if (NS_SUCCEEDED(rv)) {
                 // now that the load is triggered, we can resubmit the query
-                nsRefPtr<nsAsyncResolveRequest> newRequest =
+                RefPtr<nsAsyncResolveRequest> newRequest =
                     new nsAsyncResolveRequest(mPPS, mChannel, mAppId,
                                               mIsInBrowser, mResolveFlags,
                                               mCallback);
@@ -770,8 +770,36 @@ nsProtocolProxyService::CanUseProxy(nsIURI *aURI, int32_t defaultPort)
                 // compare last |filter_host_len| bytes of target hostname.
                 //
                 const char *host_tail = host.get() + host_len - filter_host_len;
-                if (!PL_strncasecmp(host_tail, hinfo->name.host, filter_host_len))
-                    return false; // proxy disallowed
+                if (!PL_strncasecmp(host_tail, hinfo->name.host, filter_host_len)) {
+                    // If the tail of the host string matches the filter
+
+                    if (filter_host_len > 0 && hinfo->name.host[0] == '.') {
+                        // If the filter was of the form .foo.bar.tld, all such
+                        // matches are correct
+                        return false; // proxy disallowed
+                    }
+
+                    // abc-def.example.org should not match def.example.org
+                    // however, *.def.example.org should match .def.example.org
+                    // We check that the filter doesn't start with a `.`. If it does,
+                    // then the strncasecmp above should suffice. If it doesn't,
+                    // then we should only consider it a match if the strncasecmp happened
+                    // at a subdomain boundary
+                    if (host_len > filter_host_len && *(host_tail - 1) == '.') {
+                            // If the host was something.foo.bar.tld and the filter
+                            // was foo.bar.tld, it's still a match.
+                            // the character right before the tail must be a
+                            // `.` for this to work
+                            return false; // proxy disallowed
+                    }
+
+                    if (host_len == filter_host_len) {
+                        // If the host and filter are of the same length,
+                        // they should match
+                        return false; // proxy disallowed
+                    }
+                }
+
             }
         }
     }
@@ -1187,7 +1215,7 @@ nsProtocolProxyService::DeprecatedBlockingResolve(nsIChannel *aChannel,
 
     // Use the PAC thread to do the work, so we don't have to reimplement that
     // code, but block this thread on that completion.
-    nsRefPtr<nsAsyncBridgeRequest> ctx = new nsAsyncBridgeRequest();
+    RefPtr<nsAsyncBridgeRequest> ctx = new nsAsyncBridgeRequest();
     ctx->Lock();
     if (NS_SUCCEEDED(mPACMan->AsyncGetProxyForURI(uri, NECKO_NO_APP_ID, false,
                                                   ctx, false))) {
@@ -1247,7 +1275,7 @@ nsProtocolProxyService::AsyncResolveInternal(nsIChannel *channel, uint32_t flags
     NS_GetAppInfo(channel, &appId, &isInBrowser);
 
     *result = nullptr;
-    nsRefPtr<nsAsyncResolveRequest> ctx =
+    RefPtr<nsAsyncResolveRequest> ctx =
         new nsAsyncResolveRequest(this, channel, appId, isInBrowser, flags,
                                   callback);
 
@@ -1345,6 +1373,23 @@ nsProtocolProxyService::NewProxyInfo(const nsACString &aType,
                                      nsIProxyInfo *aFailoverProxy,
                                      nsIProxyInfo **aResult)
 {
+    return NewProxyInfoWithAuth(aType, aHost, aPort,
+                                EmptyCString(), EmptyCString(),
+                                aFlags, aFailoverTimeout,
+                                aFailoverProxy, aResult);
+}
+
+NS_IMETHODIMP
+nsProtocolProxyService::NewProxyInfoWithAuth(const nsACString &aType,
+                                             const nsACString &aHost,
+                                             int32_t aPort,
+                                             const nsACString &aUsername,
+                                             const nsACString &aPassword,
+                                             uint32_t aFlags,
+                                             uint32_t aFailoverTimeout,
+                                             nsIProxyInfo *aFailoverProxy,
+                                             nsIProxyInfo **aResult)
+{
     static const char *types[] = {
         kProxyType_HTTP,
         kProxyType_HTTPS,
@@ -1364,10 +1409,16 @@ nsProtocolProxyService::NewProxyInfo(const nsACString &aType,
     }
     NS_ENSURE_TRUE(type, NS_ERROR_INVALID_ARG);
 
-    if (aPort <= 0)
-        aPort = -1;
+    // We have only implemented username/password for SOCKS proxies.
+    if ((!aUsername.IsEmpty() || !aPassword.IsEmpty()) &&
+        !aType.LowerCaseEqualsASCII(kProxyType_SOCKS) &&
+        !aType.LowerCaseEqualsASCII(kProxyType_SOCKS4)) {
+        return NS_ERROR_NOT_IMPLEMENTED;
+    }
 
-    return NewProxyInfo_Internal(type, aHost, aPort, aFlags, aFailoverTimeout,
+    return NewProxyInfo_Internal(type, aHost, aPort,
+                                 aUsername, aPassword,
+                                 aFlags, aFailoverTimeout,
                                  aFailoverProxy, 0, aResult);
 }
 
@@ -1675,12 +1726,17 @@ nsresult
 nsProtocolProxyService::NewProxyInfo_Internal(const char *aType,
                                               const nsACString &aHost,
                                               int32_t aPort,
+                                              const nsACString &aUsername,
+                                              const nsACString &aPassword,
                                               uint32_t aFlags,
                                               uint32_t aFailoverTimeout,
                                               nsIProxyInfo *aFailoverProxy,
                                               uint32_t aResolveFlags,
                                               nsIProxyInfo **aResult)
 {
+    if (aPort <= 0)
+        aPort = -1;
+
     nsCOMPtr<nsProxyInfo> failover;
     if (aFailoverProxy) {
         failover = do_QueryInterface(aFailoverProxy);
@@ -1694,6 +1750,8 @@ nsProtocolProxyService::NewProxyInfo_Internal(const char *aType,
     proxyInfo->mType = aType;
     proxyInfo->mHost = aHost;
     proxyInfo->mPort = aPort;
+    proxyInfo->mUsername = aUsername;
+    proxyInfo->mPassword = aPassword;
     proxyInfo->mFlags = aFlags;
     proxyInfo->mResolveFlags = aResolveFlags;
     proxyInfo->mTimeout = aFailoverTimeout == UINT32_MAX
@@ -1862,8 +1920,9 @@ nsProtocolProxyService::Resolve_Internal(nsIChannel *channel,
     }
 
     if (type) {
-        rv = NewProxyInfo_Internal(type, *host, port, proxyFlags,
-                                   UINT32_MAX, nullptr, flags,
+        rv = NewProxyInfo_Internal(type, *host, port,
+                                   EmptyCString(), EmptyCString(),
+                                   proxyFlags, UINT32_MAX, nullptr, flags,
                                    result);
         if (NS_FAILED(rv))
             return rv;

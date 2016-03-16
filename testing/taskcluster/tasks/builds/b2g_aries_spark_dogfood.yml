@@ -16,8 +16,8 @@ task:
     env:
       VARIANT: userdebug
       DOGFOOD: 1
-      HARDWARE_COMPOSER: 0
       MOZHARNESS_CONFIG: b2g/taskcluster-spark-dogfood.py
+      B2G_UPDATE_CHANNEL: '{{b2g_update_channel}}'
   extra:
     treeherderEnv:
       - production

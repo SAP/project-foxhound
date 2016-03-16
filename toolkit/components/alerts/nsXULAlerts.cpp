@@ -7,13 +7,17 @@
 
 #include "nsAutoPtr.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/dom/Notification.h"
+#include "mozilla/unused.h"
 #include "nsIServiceManager.h"
+#include "nsAlertsUtils.h"
 #include "nsISupportsArray.h"
 #include "nsISupportsPrimitives.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWindowWatcher.h"
 
 using namespace mozilla;
+using mozilla::dom::NotificationTelemetryService;
 
 #define ALERT_CHROME_URL "chrome://global/content/alerts/alert.xul"
 
@@ -44,8 +48,24 @@ nsXULAlerts::ShowAlertNotification(const nsAString& aImageUrl, const nsAString& 
                                    const nsAString& aAlertText, bool aAlertTextClickable,
                                    const nsAString& aAlertCookie, nsIObserver* aAlertListener,
                                    const nsAString& aAlertName, const nsAString& aBidi,
-                                   const nsAString& aLang, bool aInPrivateBrowsing)
+                                   const nsAString& aLang, nsIPrincipal* aPrincipal,
+                                   bool aInPrivateBrowsing)
 {
+  if (mDoNotDisturb) {
+    if (!aInPrivateBrowsing) {
+      RefPtr<NotificationTelemetryService> telemetry =
+        NotificationTelemetryService::GetInstance();
+      if (telemetry) {
+        // Record the number of unique senders for XUL alerts. The OS X and
+        // libnotify backends will fire `alertshow` even if "do not disturb"
+        // is enabled. In that case, `NotificationObserver` will record the
+        // sender.
+        Unused << NS_WARN_IF(NS_FAILED(telemetry->RecordSender(aPrincipal)));
+      }
+    }
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIWindowWatcher> wwatch(do_GetService(NS_WINDOWWATCHER_CONTRACTID));
 
   nsCOMPtr<nsISupportsArray> argsArray;
@@ -127,11 +147,21 @@ nsXULAlerts::ShowAlertNotification(const nsAString& aImageUrl, const nsAString& 
   // mNamedWindows when it is closed.
   nsCOMPtr<nsISupportsInterfacePointer> ifptr = do_CreateInstance(NS_SUPPORTS_INTERFACE_POINTER_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsRefPtr<nsXULAlertObserver> alertObserver = new nsXULAlertObserver(this, aAlertName, aAlertListener);
+  RefPtr<nsXULAlertObserver> alertObserver = new nsXULAlertObserver(this, aAlertName, aAlertListener);
   nsCOMPtr<nsISupports> iSupports(do_QueryInterface(alertObserver));
   ifptr->SetData(iSupports);
   ifptr->SetDataIID(&NS_GET_IID(nsIObserver));
   rv = argsArray->AppendElement(ifptr);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // The source contains the host and port of the site that sent the
+  // notification. It is empty for system alerts.
+  nsCOMPtr<nsISupportsString> scriptableAlertSource (do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID));
+  NS_ENSURE_TRUE(scriptableAlertSource, NS_ERROR_FAILURE);
+  nsAutoString source;
+  nsAlertsUtils::GetSourceHostPort(aPrincipal, source);
+  scriptableAlertSource->SetData(source);
+  rv = argsArray->AppendElement(scriptableAlertSource);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDOMWindow> newWindow;
@@ -146,6 +176,20 @@ nsXULAlerts::ShowAlertNotification(const nsAString& aImageUrl, const nsAString& 
   mNamedWindows.Put(aAlertName, newWindow);
   alertObserver->SetAlertWindow(newWindow);
 
+  return NS_OK;
+}
+
+nsresult
+nsXULAlerts::SetManualDoNotDisturb(bool aDoNotDisturb)
+{
+  mDoNotDisturb = aDoNotDisturb;
+  return NS_OK;
+}
+
+nsresult
+nsXULAlerts::GetManualDoNotDisturb(bool* aRetVal)
+{
+  *aRetVal = mDoNotDisturb;
   return NS_OK;
 }
 

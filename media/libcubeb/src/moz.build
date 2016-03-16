@@ -49,6 +49,8 @@ if CONFIG['OS_TARGET'] == 'WINNT':
     ]
     DEFINES['USE_WINMM'] = True
     DEFINES['USE_WASAPI'] = True
+    if CONFIG['_MSC_VER']:
+        CXXFLAGS += ['-wd4005'] # C4005: '_USE_MATH_DEFINES' : macro redefinition
 
 if CONFIG['OS_TARGET'] == 'Android':
     SOURCES += ['cubeb_opensl.c']
@@ -60,18 +62,17 @@ if CONFIG['OS_TARGET'] == 'Android':
         ]
         DEFINES['USE_AUDIOTRACK'] = True
 
-if CONFIG['GKMEDIAS_SHARED_LIBRARY']:
-    NO_VISIBILITY_FLAGS = True
-
 FINAL_LIBRARY = 'gkmedias'
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    CFLAGS += [
-        '-I%s/%s' % (CONFIG['ANDROID_SOURCE'], d) for d in [
-            'frameworks/wilhelm/include',
-            'system/media/wilhelm/include',
+    if CONFIG['ANDROID_VERSION'] >= '17':
+        LOCAL_INCLUDES += [
+            '%' + '%s/frameworks/wilhelm/include' % CONFIG['ANDROID_SOURCE'],
         ]
-    ]
+    else:
+        LOCAL_INCLUDES += [
+            '%' + '%s/system/media/wilhelm/include' % CONFIG['ANDROID_SOURCE'],
+        ]
 
 CFLAGS += CONFIG['MOZ_ALSA_CFLAGS']
 CFLAGS += CONFIG['MOZ_PULSEAUDIO_CFLAGS']

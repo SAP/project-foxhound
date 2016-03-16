@@ -30,6 +30,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
   "resource://gre/modules/AddonManager.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "SocialService",
   "resource://gre/modules/SocialService.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "SyncedTabs",
+  "resource://services-sync/SyncedTabs.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "CharsetBundle", function() {
   const kCharsetBundle = "chrome://global/locale/charsetMenu.properties";
@@ -214,7 +216,7 @@ const CustomizableWidgets = [
                 onHistoryVisit(uri, aEvent, item);
               });
               if (icon) {
-                let iconURL = PlacesUtils.getImageURLForResolution(win, "moz-anno:favicon:" + icon);
+                let iconURL = "moz-anno:favicon:" + icon;
                 item.setAttribute("image", iconURL);
               }
               fragment.appendChild(item);
@@ -242,20 +244,12 @@ const CustomizableWidgets = [
         recentlyClosedWindows.removeChild(recentlyClosedWindows.firstChild);
       }
 
-#ifdef MOZ_SERVICES_SYNC
       let tabsFromOtherComputers = doc.getElementById("sync-tabs-menuitem2");
       if (PlacesUIUtils.shouldShowTabsFromOtherComputersMenuitem()) {
         tabsFromOtherComputers.removeAttribute("hidden");
       } else {
         tabsFromOtherComputers.setAttribute("hidden", true);
       }
-
-      if (PlacesUIUtils.shouldEnableTabsFromOtherComputersMenuitem()) {
-        tabsFromOtherComputers.removeAttribute("disabled");
-      } else {
-        tabsFromOtherComputers.setAttribute("disabled", true);
-      }
-#endif
 
       let utils = RecentlyClosedTabsAndWindowsMenuUtils;
       let tabsFragment = utils.getTabsFragment(doc.defaultView, "toolbarbutton", true,
@@ -294,6 +288,213 @@ const CustomizableWidgets = [
     onViewHiding: function(aEvent) {
       LOG("History view is being hidden!");
     }
+  }, {
+    id: "sync-button",
+    label: "remotetabs-panelmenu.label",
+    tooltiptext: "remotetabs-panelmenu.tooltiptext",
+    type: "view",
+    viewId: "PanelUI-remotetabs",
+    defaultArea: CustomizableUI.AREA_PANEL,
+    deckIndices: {
+      DECKINDEX_TABS: 0,
+      DECKINDEX_TABSDISABLED: 1,
+      DECKINDEX_FETCHING: 2,
+      DECKINDEX_NOCLIENTS: 3,
+    },
+    onCreated(aNode) {
+      // Add an observer to the button so we get the animation during sync.
+      // (Note the observer sets many attributes, including label and
+      // tooltiptext, but we only want the 'syncstatus' attribute for the
+      // animation)
+      let doc = aNode.ownerDocument;
+      let obnode = doc.createElementNS(kNSXUL, "observes");
+      obnode.setAttribute("element", "sync-status");
+      obnode.setAttribute("attribute", "syncstatus");
+      aNode.appendChild(obnode);
+
+      // A somewhat complicated dance to format the mobilepromo label.
+      let bundle = doc.getElementById("bundle_browser");
+      let formatArgs = ["android", "ios"].map(os => {
+        let link = doc.createElement("label");
+        link.textContent = bundle.getString(`appMenuRemoteTabs.mobilePromo.${os}`)
+        link.setAttribute("href", Services.prefs.getCharPref(`identity.mobilepromo.${os}`) + "synced-tabs");
+        link.className = "text-link remotetabs-promo-link";
+        return link.outerHTML;
+      });
+      // Put it all together...
+      let contents = bundle.getFormattedString("appMenuRemoteTabs.mobilePromo", formatArgs);
+      doc.getElementById("PanelUI-remotetabs-mobile-promo").innerHTML = contents;
+    },
+    onViewShowing(aEvent) {
+      let doc = aEvent.target.ownerDocument;
+      this._tabsList = doc.getElementById("PanelUI-remotetabs-tabslist");
+      Services.obs.addObserver(this, SyncedTabs.TOPIC_TABS_CHANGED, false);
+
+      if (SyncedTabs.isConfiguredToSyncTabs) {
+        if (SyncedTabs.hasSyncedThisSession) {
+          this.setDeckIndex(this.deckIndices.DECKINDEX_TABS);
+        } else {
+          // Sync hasn't synced tabs yet, so show the "fetching" panel.
+          this.setDeckIndex(this.deckIndices.DECKINDEX_FETCHING);
+        }
+        // force a background sync.
+        SyncedTabs.syncTabs().catch(ex => {
+          Cu.reportError(ex);
+        });
+        // show the current list - it will be updated by our observer.
+        this._showTabs();
+      } else {
+        // not configured to sync tabs, so no point updating the list.
+        this.setDeckIndex(this.deckIndices.DECKINDEX_TABSDISABLED);
+      }
+    },
+    onViewHiding() {
+      Services.obs.removeObserver(this, SyncedTabs.TOPIC_TABS_CHANGED);
+      this._tabsList = null;
+    },
+    _tabsList: null,
+    observe(subject, topic, data) {
+      switch (topic) {
+        case SyncedTabs.TOPIC_TABS_CHANGED:
+          this._showTabs();
+          break;
+        default:
+          break;
+      }
+    },
+    setDeckIndex(index) {
+      let deck = this._tabsList.ownerDocument.getElementById("PanelUI-remotetabs-deck");
+      // We call setAttribute instead of relying on the XBL property setter due
+      // to things going wrong when we try and set the index before the XBL
+      // binding has been created - see bug 1241851 for the gory details.
+      deck.setAttribute("selectedIndex", index);
+    },
+
+    _showTabsPromise: Promise.resolve(),
+    // Update the tab list after any existing in-flight updates are complete.
+    _showTabs() {
+      this._showTabsPromise = this._showTabsPromise.then(() => {
+        return this.__showTabs();
+      });
+    },
+    // Return a new promise to update the tab list.
+    __showTabs() {
+      let doc = this._tabsList.ownerDocument;
+      return SyncedTabs.getTabClients().then(clients => {
+        // The view may have been hidden while the promise was resolving.
+        if (!this._tabsList) {
+          return;
+        }
+        if (clients.length === 0 && !SyncedTabs.hasSyncedThisSession) {
+          // the "fetching tabs" deck is being shown - let's leave it there.
+          // When that first sync completes we'll be notified and update.
+          return;
+        }
+
+        if (clients.length === 0) {
+          this.setDeckIndex(this.deckIndices.DECKINDEX_NOCLIENTS);
+          return;
+        }
+
+        this.setDeckIndex(this.deckIndices.DECKINDEX_TABS);
+        this._clearTabList();
+        this._sortFilterClientsAndTabs(clients);
+        let fragment = doc.createDocumentFragment();
+
+        for (let client of clients) {
+          // add a menu separator for all clients other than the first.
+          if (fragment.lastChild) {
+            let separator = doc.createElementNS(kNSXUL, "menuseparator");
+            fragment.appendChild(separator);
+          }
+          this._appendClient(client, fragment);
+        }
+        this._tabsList.appendChild(fragment);
+      }).catch(err => {
+        Cu.reportError(err);
+      }).then(() => {
+        // an observer for tests.
+        Services.obs.notifyObservers(null, "synced-tabs-menu:test:tabs-updated", null);
+      });
+    },
+    _clearTabList () {
+      let list = this._tabsList;
+      while (list.lastChild) {
+        list.lastChild.remove();
+      }
+    },
+    _showNoClientMessage() {
+      this._appendMessageLabel("notabslabel");
+    },
+    _appendMessageLabel(messageAttr, appendTo = null) {
+      if (!appendTo) {
+        appendTo = this._tabsList;
+      }
+      let message = this._tabsList.getAttribute(messageAttr);
+      let doc = this._tabsList.ownerDocument;
+      let messageLabel = doc.createElementNS(kNSXUL, "label");
+      messageLabel.textContent = message;
+      appendTo.appendChild(messageLabel);
+      return messageLabel;
+    },
+    _appendClient: function (client, attachFragment) {
+      let doc = attachFragment.ownerDocument;
+      // Create the element for the remote client.
+      let clientItem = doc.createElementNS(kNSXUL, "label");
+      clientItem.setAttribute("itemtype", "client");
+      clientItem.textContent = client.name;
+
+      attachFragment.appendChild(clientItem);
+
+      if (client.tabs.length == 0) {
+        let label = this._appendMessageLabel("notabsforclientlabel", attachFragment);
+        label.setAttribute("class", "PanelUI-remotetabs-notabsforclient-label");
+      } else {
+        for (let tab of client.tabs) {
+          let tabEnt = this._createTabElement(doc, tab);
+          attachFragment.appendChild(tabEnt);
+        }
+      }
+    },
+    _createTabElement(doc, tabInfo) {
+      let win = doc.defaultView;
+      let item = doc.createElementNS(kNSXUL, "toolbarbutton");
+      item.setAttribute("itemtype", "tab");
+      item.setAttribute("class", "subviewbutton");
+      item.setAttribute("targetURI", tabInfo.url);
+      item.setAttribute("label", tabInfo.title != "" ? tabInfo.title : tabInfo.url);
+      item.setAttribute("image", tabInfo.icon);
+      // We need to use "click" instead of "command" here so openUILink
+      // respects different buttons (eg, to open in a new tab).
+      item.addEventListener("click", e => {
+        doc.defaultView.openUILink(tabInfo.url, e);
+        CustomizableUI.hidePanelForNode(item);
+      });
+      return item;
+    },
+    _sortFilterClientsAndTabs(clients) {
+      // First sort and filter the list of tabs for each client. Note that the
+      // SyncedTabs module promises that the objects it returns are never
+      // shared, so we are free to mutate those objects directly.
+      const maxTabs = 15;
+      for (let client of clients) {
+        let tabs = client.tabs;
+        tabs.sort((a, b) => b.lastUsed - a.lastUsed);
+        client.tabs = tabs.slice(0, maxTabs);
+      }
+      // Now sort the clients - the clients are sorted in the order of the
+      // most recent tab for that client (ie, it is important the tabs for
+      // each client are already sorted.)
+      clients.sort((a, b) => {
+        if (a.tabs.length == 0) {
+          return 1; // b comes first.
+        }
+        if (b.tabs.length == 0) {
+          return -1; // a comes first.
+        }
+        return b.tabs[0].lastUsed - a.tabs[0].lastUsed;
+      });
+    },
   }, {
     id: "privatebrowsing-button",
     shortcutId: "key_privatebrowsing",
@@ -951,54 +1152,6 @@ const CustomizableWidgets = [
     onCommand: function(aEvent) {
       let win = aEvent.view;
       win.MailIntegration.sendLinkForBrowser(win.gBrowser.selectedBrowser)
-    }
-  }, {
-    id: "loop-button",
-    type: "custom",
-    label: "loop-call-button3.label",
-    tooltiptext: "loop-call-button3.tooltiptext",
-    privateBrowsingTooltiptext: "loop-call-button3-pb.tooltiptext",
-    defaultArea: CustomizableUI.AREA_NAVBAR,
-    introducedInVersion: 4,
-    onBuild: function(aDocument) {
-      // If we're not supposed to see the button, return zip.
-      if (!Services.prefs.getBoolPref("loop.enabled")) {
-        return null;
-      }
-
-      let isWindowPrivate = PrivateBrowsingUtils.isWindowPrivate(aDocument.defaultView);
-
-      let node = aDocument.createElementNS(kNSXUL, "toolbarbutton");
-      node.setAttribute("id", this.id);
-      node.classList.add("toolbarbutton-1");
-      node.classList.add("chromeclass-toolbar-additional");
-      node.classList.add("badged-button");
-      node.setAttribute("label", CustomizableUI.getLocalizedProperty(this, "label"));
-      if (isWindowPrivate)
-        node.setAttribute("disabled", "true");
-      let tooltiptext = isWindowPrivate ?
-        CustomizableUI.getLocalizedProperty(this, "privateBrowsingTooltiptext",
-          [CustomizableUI.getLocalizedProperty(this, "label")]) :
-        CustomizableUI.getLocalizedProperty(this, "tooltiptext");
-      node.setAttribute("tooltiptext", tooltiptext);
-      node.setAttribute("removable", "true");
-      node.addEventListener("command", function(event) {
-        aDocument.defaultView.LoopUI.togglePanel(event);
-      });
-
-      return node;
-    }
-  }, {
-    id: "web-apps-button",
-    label: "web-apps-button.label",
-    tooltiptext: "web-apps-button.tooltiptext",
-    onCommand: function(aEvent) {
-      let win = aEvent.target &&
-                aEvent.target.ownerDocument &&
-                aEvent.target.ownerDocument.defaultView;
-      if (win && typeof win.BrowserOpenApps == "function") {
-        win.BrowserOpenApps();
-      }
     }
   }];
 

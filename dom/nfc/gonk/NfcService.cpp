@@ -80,10 +80,10 @@ private:
 
   bool IsNfcServiceThread() const;
 
-  nsRefPtr<NfcService> mNfcService;
+  RefPtr<NfcService> mNfcService;
   nsCOMPtr<nsIThread> mThread;
-  nsRefPtr<mozilla::ipc::ListenSocket> mListenSocket;
-  nsRefPtr<mozilla::ipc::StreamSocket> mStreamSocket;
+  RefPtr<mozilla::ipc::ListenSocket> mListenSocket;
+  RefPtr<mozilla::ipc::StreamSocket> mStreamSocket;
   nsAutoPtr<NfcMessageHandler> mHandler;
   nsCString mListenSocketName;
 };
@@ -108,7 +108,7 @@ NfcConsumer::Start()
   // If we could not cleanup properly before and an old
   // instance of the daemon is still running, we kill it
   // here.
-  unused << NS_WARN_IF(property_set("ctl.stop", "nfcd") < 0);
+  Unused << NS_WARN_IF(property_set("ctl.stop", "nfcd") < 0);
 
   mHandler = new NfcMessageHandler();
 
@@ -320,7 +320,7 @@ public:
   }
 
 private:
-  nsRefPtr<NfcService> mNfcService;
+  RefPtr<NfcService> mNfcService;
   EventOptions mEvent;
 };
 
@@ -410,7 +410,7 @@ public:
   }
 
 private:
-  nsRefPtr<NfcService> mNfcService;
+  RefPtr<NfcService> mNfcService;
 };
 
 void
@@ -456,7 +456,7 @@ NfcService::FactoryCreate()
     ClearOnShutdown(&gNfcService);
   }
 
-  nsRefPtr<NfcService> service(gNfcService);
+  RefPtr<NfcService> service(gNfcService);
   return service.forget();
 }
 
@@ -592,8 +592,8 @@ NfcService::Shutdown()
   }
 
   // |CleanupRunnable| will take care of these pointers
-  unused << mNfcConsumer.forget();
-  unused << mThread.forget();
+  Unused << mNfcConsumer.forget();
+  Unused << mThread.forget();
 
   return NS_OK;
 }

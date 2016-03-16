@@ -18,6 +18,9 @@ EXPORTS.mozilla.dom += [
 EXPORTS.mozilla += [
     'AnimationComparator.h',
     'AnimationUtils.h',
+    'ComputedTimingFunction.h',
+    'EffectCompositor.h',
+    'EffectSet.h',
     'PendingAnimationTracker.h',
 ]
 
@@ -25,9 +28,20 @@ UNIFIED_SOURCES += [
     'Animation.cpp',
     'AnimationEffectReadOnly.cpp',
     'AnimationTimeline.cpp',
+    'AnimationUtils.cpp',
+    'ComputedTimingFunction.cpp',
     'DocumentTimeline.cpp',
+    'EffectCompositor.cpp',
+    'EffectSet.cpp',
     'KeyframeEffect.cpp',
     'PendingAnimationTracker.cpp',
 ]
 
+LOCAL_INCLUDES += [
+    '/dom/base',
+]
+
 FINAL_LIBRARY = 'xul'
+
+if CONFIG['GNU_CXX']:
+    CXXFLAGS += ['-Wshadow']

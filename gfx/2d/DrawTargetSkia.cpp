@@ -100,7 +100,8 @@ GetBitmapForSurface(SourceSurface* aSurface)
 
   RefPtr<DataSourceSurface> surf = aSurface->GetDataSurface();
   if (!surf) {
-    MOZ_CRASH("Non-skia SourceSurfaces need to be DataSourceSurfaces");
+    gfxDevCrash(LogReason::SourceSurfaceIncompatible) << "Non-skia SourceSurfaces need to be DataSourceSurfaces";
+    return result;
   }
 
   SkAlphaType alphaType = (surf->GetFormat() == SurfaceFormat::B8G8R8X8) ?
@@ -186,7 +187,7 @@ SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern, TempBitmap& aTmpBitmap
     case PatternType::LINEAR_GRADIENT: {
       const LinearGradientPattern& pat = static_cast<const LinearGradientPattern&>(aPattern);
       GradientStopsSkia *stops = static_cast<GradientStopsSkia*>(pat.mStops.get());
-      SkShader::TileMode mode = ExtendModeToTileMode(stops->mExtendMode);
+      SkShader::TileMode mode = ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
 
       if (stops->mCount >= 2) {
         SkPoint points[2];
@@ -215,7 +216,7 @@ SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern, TempBitmap& aTmpBitmap
     case PatternType::RADIAL_GRADIENT: {
       const RadialGradientPattern& pat = static_cast<const RadialGradientPattern&>(aPattern);
       GradientStopsSkia *stops = static_cast<GradientStopsSkia*>(pat.mStops.get());
-      SkShader::TileMode mode = ExtendModeToTileMode(stops->mExtendMode);
+      SkShader::TileMode mode = ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
 
       if (stops->mCount >= 2) {
         SkPoint points[2];
@@ -257,8 +258,10 @@ SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern, TempBitmap& aTmpBitmap
         mat.preTranslate(rect.x(), rect.y());
       }
 
-      SkShader::TileMode mode = ExtendModeToTileMode(pat.mExtendMode);
-      SkShader* shader = SkShader::CreateBitmapShader(bitmap, mode, mode);
+      SkShader::TileMode xTileMode = ExtendModeToTileMode(pat.mExtendMode, Axis::X_AXIS);
+      SkShader::TileMode yTileMode = ExtendModeToTileMode(pat.mExtendMode, Axis::Y_AXIS);
+
+      SkShader* shader = SkShader::CreateBitmapShader(bitmap, xTileMode, yTileMode);
       SkShader* matrixShader = SkShader::CreateLocalMatrixShader(shader, mat);
       SkSafeUnref(shader);
       SkSafeUnref(aPaint.setShader(matrixShader));
@@ -654,16 +657,20 @@ DrawTargetSkia::MaskSurface(const Pattern &aSource,
 
   TempBitmap bitmap = GetBitmapForSurface(aMask);
   if (bitmap.mBitmap.colorType() == kAlpha_8_SkColorType) {
+    if (aOffset != Point(0, 0)) {
+      SkMatrix transform;
+      transform.setTranslate(SkFloatToScalar(-aOffset.x), SkFloatToScalar(-aOffset.y));
+      SkShader* matrixShader = SkShader::CreateLocalMatrixShader(paint.mPaint.getShader(), transform);
+      SkSafeUnref(paint.mPaint.setShader(matrixShader));
+    }
+
     mCanvas->drawBitmap(bitmap.mBitmap, aOffset.x, aOffset.y, &paint.mPaint);
   } else {
     SkPaint maskPaint;
     TempBitmap tmpBitmap;
-    SetPaintPattern(maskPaint, SurfacePattern(aMask, ExtendMode::CLAMP), tmpBitmap);
-
-    SkMatrix transform = maskPaint.getShader()->getLocalMatrix();
-    transform.postTranslate(SkFloatToScalar(aOffset.x), SkFloatToScalar(aOffset.y));
-    SkShader* matrixShader = SkShader::CreateLocalMatrixShader(maskPaint.getShader(), transform);
-    SkSafeUnref(maskPaint.setShader(matrixShader));
+    SetPaintPattern(maskPaint,
+                    SurfacePattern(aMask, ExtendMode::CLAMP, Matrix::Translation(aOffset)),
+                    tmpBitmap);
 
     SkLayerRasterizer::Builder builder;
     builder.addLayer(maskPaint);
@@ -830,6 +837,10 @@ DrawTargetSkia::CopySurface(SourceSurface *aSurface,
 bool
 DrawTargetSkia::Init(const IntSize &aSize, SurfaceFormat aFormat)
 {
+  if (size_t(std::max(aSize.width, aSize.height)) > GetMaxSurfaceSize()) {
+    return false;
+  }
+
   SkAlphaType alphaType = (aFormat == SurfaceFormat::B8G8R8X8) ?
     kOpaque_SkAlphaType : kPremul_SkAlphaType;
 
@@ -837,20 +848,18 @@ DrawTargetSkia::Init(const IntSize &aSize, SurfaceFormat aFormat)
         aSize.width, aSize.height,
         GfxFormatToSkiaColorType(aFormat),
         alphaType);
+  // we need to have surfaces that have a stride aligned to 4 for interop with cairo
+  int stride = (BytesPerPixel(aFormat)*aSize.width + (4-1)) & -4;
 
-  SkAutoTUnref<SkBaseDevice> device(SkBitmapDevice::Create(skiInfo));
-  if (!device) {
-      return false;
-  }
-
-  SkBitmap bitmap = device->accessBitmap(true);
+  SkBitmap bitmap;
+  bitmap.setInfo(skiInfo, stride);
   if (!bitmap.allocPixels()) {
     return false;
   }
 
   bitmap.eraseARGB(0, 0, 0, 0);
 
-  mCanvas.adopt(new SkCanvas(device.get()));
+  mCanvas.adopt(new SkCanvas(bitmap));
   mSize = aSize;
 
   mFormat = aFormat;
@@ -864,6 +873,10 @@ DrawTargetSkia::InitWithGrContext(GrContext* aGrContext,
                                   SurfaceFormat aFormat)
 {
   MOZ_ASSERT(aGrContext, "null GrContext");
+
+  if (size_t(std::max(aSize.width, aSize.height)) > GetMaxSurfaceSize()) {
+    return false;
+  }
 
   mGrContext = aGrContext;
   mSize = aSize;

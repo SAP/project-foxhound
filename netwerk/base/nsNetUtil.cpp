@@ -6,10 +6,12 @@
 
 #include "mozilla/LoadContext.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/BasePrincipal.h"
 #include "nsNetUtil.h"
 #include "nsNetUtil.inl"
 #include "mozIApplicationClearPrivateDataParams.h"
 #include "nsCategoryCache.h"
+#include "nsContentUtils.h"
 #include "nsHashKeys.h"
 #include "nsHttp.h"
 #include "nsIAsyncStreamCopier.h"
@@ -43,6 +45,7 @@
 #include "nsISocketProviderService.h"
 #include "nsIStandardURL.h"
 #include "nsIStreamLoader.h"
+#include "nsIIncrementalStreamLoader.h"
 #include "nsIStreamTransportService.h"
 #include "nsStringStream.h"
 #include "nsISyncStreamListener.h"
@@ -507,7 +510,7 @@ NS_NewLoadGroup(nsILoadGroup **aResult, nsIPrincipal *aPrincipal)
         do_CreateInstance(NS_LOADGROUP_CONTRACTID, &rv);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsRefPtr<LoadContext> loadContext = new LoadContext(aPrincipal);
+    RefPtr<LoadContext> loadContext = new LoadContext(aPrincipal);
     rv = group->SetNotificationCallbacks(loadContext);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -579,6 +582,23 @@ NS_NewDownloader(nsIStreamListener   **result,
 }
 
 nsresult
+NS_NewIncrementalStreamLoader(nsIIncrementalStreamLoader        **result,
+                              nsIIncrementalStreamLoaderObserver *observer)
+{
+    nsresult rv;
+    nsCOMPtr<nsIIncrementalStreamLoader> loader =
+        do_CreateInstance(NS_INCREMENTALSTREAMLOADER_CONTRACTID, &rv);
+    if (NS_SUCCEEDED(rv)) {
+        rv = loader->Init(observer);
+        if (NS_SUCCEEDED(rv)) {
+            *result = nullptr;
+            loader.swap(*result);
+        }
+    }
+    return rv;
+}
+
+nsresult
 NS_NewStreamLoaderInternal(nsIStreamLoader        **outStream,
                            nsIURI                  *aUri,
                            nsIStreamLoaderObserver *aObserver,
@@ -586,7 +606,6 @@ NS_NewStreamLoaderInternal(nsIStreamLoader        **outStream,
                            nsIPrincipal            *aLoadingPrincipal,
                            nsSecurityFlags          aSecurityFlags,
                            nsContentPolicyType      aContentPolicyType,
-                           nsISupports             *aContext /* = nullptr */,
                            nsILoadGroup            *aLoadGroup /* = nullptr */,
                            nsIInterfaceRequestor   *aCallbacks /* = nullptr */,
                            nsLoadFlags              aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
@@ -611,7 +630,7 @@ NS_NewStreamLoaderInternal(nsIStreamLoader        **outStream,
   }
   rv = NS_NewStreamLoader(outStream, aObserver);
   NS_ENSURE_SUCCESS(rv, rv);
-  return channel->AsyncOpen(*outStream, aContext);
+  return channel->AsyncOpen2(*outStream);
 }
 
 
@@ -622,7 +641,6 @@ NS_NewStreamLoader(nsIStreamLoader        **outStream,
                    nsINode                 *aLoadingNode,
                    nsSecurityFlags          aSecurityFlags,
                    nsContentPolicyType      aContentPolicyType,
-                   nsISupports             *aContext /* = nullptr */,
                    nsILoadGroup            *aLoadGroup /* = nullptr */,
                    nsIInterfaceRequestor   *aCallbacks /* = nullptr */,
                    nsLoadFlags              aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
@@ -636,7 +654,6 @@ NS_NewStreamLoader(nsIStreamLoader        **outStream,
                                     aLoadingNode->NodePrincipal(),
                                     aSecurityFlags,
                                     aContentPolicyType,
-                                    aContext,
                                     aLoadGroup,
                                     aCallbacks,
                                     aLoadFlags,
@@ -650,7 +667,6 @@ NS_NewStreamLoader(nsIStreamLoader        **outStream,
                    nsIPrincipal            *aLoadingPrincipal,
                    nsSecurityFlags          aSecurityFlags,
                    nsContentPolicyType      aContentPolicyType,
-                   nsISupports             *aContext /* = nullptr */,
                    nsILoadGroup            *aLoadGroup /* = nullptr */,
                    nsIInterfaceRequestor   *aCallbacks /* = nullptr */,
                    nsLoadFlags              aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
@@ -663,7 +679,6 @@ NS_NewStreamLoader(nsIStreamLoader        **outStream,
                                     aLoadingPrincipal,
                                     aSecurityFlags,
                                     aContentPolicyType,
-                                    aContext,
                                     aLoadGroup,
                                     aCallbacks,
                                     aLoadFlags,
@@ -1157,25 +1172,22 @@ NS_ReadInputStreamToString(nsIInputStream *aInputStream,
 #endif
 
 nsresult
-NS_LoadPersistentPropertiesFromURI(nsIPersistentProperties **outResult,
-                                   nsIURI                   *aUri,
-                                   nsIPrincipal             *aLoadingPrincipal,
-                                   nsContentPolicyType       aContentPolicyType,
-                                   nsIIOService             *aIoService /* = nullptr */)
+NS_LoadPersistentPropertiesFromURISpec(nsIPersistentProperties **outResult,
+                                       const nsACString         &aSpec)
 {
+    nsCOMPtr<nsIURI> uri;
+    nsresult rv = NS_NewURI(getter_AddRefs(uri), aSpec);
+    NS_ENSURE_SUCCESS(rv, rv);
+
     nsCOMPtr<nsIChannel> channel;
-    nsresult rv = NS_NewChannel(getter_AddRefs(channel),
-                                aUri,
-                                aLoadingPrincipal,
-                                nsILoadInfo::SEC_NORMAL,
-                                aContentPolicyType,
-                                nullptr,     // aLoadGroup
-                                nullptr,     // aCallbacks
-                                nsIRequest::LOAD_NORMAL,
-                                aIoService);
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       uri,
+                       nsContentUtils::GetSystemPrincipal(),
+                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                       nsIContentPolicy::TYPE_OTHER);
     NS_ENSURE_SUCCESS(rv, rv);
     nsCOMPtr<nsIInputStream> in;
-    rv = channel->Open(getter_AddRefs(in));
+    rv = channel->Open2(getter_AddRefs(in));
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIPersistentProperties> properties =
@@ -1186,46 +1198,37 @@ NS_LoadPersistentPropertiesFromURI(nsIPersistentProperties **outResult,
 
     properties.swap(*outResult);
     return NS_OK;
- }
-
-nsresult
-NS_LoadPersistentPropertiesFromURISpec(nsIPersistentProperties **outResult,
-                                       const nsACString         &aSpec,
-                                       nsIPrincipal             *aLoadingPrincipal,
-                                       nsContentPolicyType       aContentPolicyType,
-                                       const char               *aCharset /* = nullptr */,
-                                       nsIURI                   *aBaseURI /* = nullptr */,
-                                       nsIIOService             *aIoService /* = nullptr */)
-{
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv = NS_NewURI(getter_AddRefs(uri),
-                            aSpec,
-                            aCharset,
-                            aBaseURI,
-                            aIoService);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    return NS_LoadPersistentPropertiesFromURI(outResult,
-                                              uri,
-                                              aLoadingPrincipal,
-                                              aContentPolicyType,
-                                              aIoService);
 }
 
 bool
 NS_UsePrivateBrowsing(nsIChannel *channel)
 {
     bool isPrivate = false;
-    bool isOverriden = false;
     nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(channel);
-    if (pbChannel &&
-        NS_SUCCEEDED(pbChannel->IsPrivateModeOverriden(&isPrivate, &isOverriden)) &&
-        isOverriden) {
+    if (pbChannel && NS_SUCCEEDED(pbChannel->GetIsChannelPrivate(&isPrivate))) {
         return isPrivate;
     }
+
+    // Some channels may not implement nsIPrivateBrowsingChannel
     nsCOMPtr<nsILoadContext> loadContext;
     NS_QueryNotificationCallbacks(channel, loadContext);
     return loadContext && loadContext->UsePrivateBrowsing();
+}
+
+bool
+NS_GetOriginAttributes(nsIChannel *aChannel,
+                       mozilla::NeckoOriginAttributes &aAttributes)
+{
+    nsCOMPtr<nsILoadContext> loadContext;
+    NS_QueryNotificationCallbacks(aChannel, loadContext);
+    if (!loadContext) {
+        return false;
+    }
+
+    DocShellOriginAttributes doa;
+    loadContext->GetOriginAttributes(doa);
+    aAttributes.InheritFromDocShellToNecko(doa);
+    return true;
 }
 
 bool
@@ -1246,6 +1249,55 @@ NS_GetAppInfo(nsIChannel *aChannel,
     NS_ENSURE_SUCCESS(rv, false);
 
     return true;
+}
+
+bool
+NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport)
+{
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->GetLoadInfo();
+  MOZ_RELEASE_ASSERT(loadInfo, "Origin tracking only works for channels created with a loadinfo");
+
+  // Always treat tainted channels as cross-origin.
+  if (loadInfo->GetTainting() != LoadTainting::Basic) {
+    return true;
+  }
+
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
+  uint32_t mode = loadInfo->GetSecurityMode();
+  bool dataInherits =
+    mode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
+    mode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
+    mode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+
+  bool aboutBlankInherits = dataInherits && loadInfo->GetAboutBlankInherits();
+
+  for (nsIPrincipal* principal : loadInfo->RedirectChain()) {
+    nsCOMPtr<nsIURI> uri;
+    principal->GetURI(getter_AddRefs(uri));
+    if (!uri) {
+      return true;
+    }
+
+    if (aboutBlankInherits && NS_IsAboutBlank(uri)) {
+      continue;
+    }
+
+    if (NS_FAILED(loadingPrincipal->CheckMayLoad(uri, aReport, dataInherits))) {
+      return true;
+    }
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
+  if (!uri) {
+    return true;
+  }
+
+  if (aboutBlankInherits && NS_IsAboutBlank(uri)) {
+    return false;
+  }
+
+  return NS_FAILED(loadingPrincipal->CheckMayLoad(uri, aReport, dataInherits));
 }
 
 nsresult
@@ -1516,18 +1568,6 @@ NS_TryToMakeImmutable(nsIURI *uri,
     }
 
     return result.forget();
-}
-
-nsresult
-NS_URIChainHasFlags(nsIURI   *uri,
-                    uint32_t  flags,
-                    bool     *result)
-{
-    nsresult rv;
-    nsCOMPtr<nsINetUtil> util = do_GetNetUtil(&rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    return util->URIChainHasFlags(uri, flags, result);
 }
 
 already_AddRefed<nsIURI>

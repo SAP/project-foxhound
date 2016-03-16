@@ -188,9 +188,28 @@ public:
 
 namespace xpc {
 
+CompartmentPrivate::CompartmentPrivate(JSCompartment* c)
+    : wantXrays(false)
+    , allowWaivers(true)
+    , writeToGlobalPrototype(false)
+    , skipWriteToGlobalPrototype(false)
+    , isWebExtensionContentScript(false)
+    , waiveInterposition(false)
+    , universalXPConnectEnabled(false)
+    , forcePermissiveCOWs(false)
+    , scriptability(c)
+    , scope(nullptr)
+    , mWrappedJSMap(JSObject2WrappedJSMap::newMap(XPC_JS_MAP_LENGTH))
+{
+    MOZ_COUNT_CTOR(xpc::CompartmentPrivate);
+    mozilla::PodArrayZero(wrapperDenialWarnings);
+}
+
 CompartmentPrivate::~CompartmentPrivate()
 {
     MOZ_COUNT_DTOR(xpc::CompartmentPrivate);
+    mWrappedJSMap->ShutdownMarker();
+    delete mWrappedJSMap;
 }
 
 static bool
@@ -531,7 +550,7 @@ AddonWindowOrNull(JSObject* aObj)
     // about it and get them to change their code.
     MOZ_RELEASE_ASSERT(js::IsCrossCompartmentWrapper(proto) ||
                        xpc::IsSandboxPrototypeProxy(proto));
-    JSObject* mainGlobal = js::UncheckedUnwrap(proto, /* stopAtOuter = */ false);
+    JSObject* mainGlobal = js::UncheckedUnwrap(proto, /* stopAtWindowProxy = */ false);
     MOZ_RELEASE_ASSERT(JS_IsGlobalObject(mainGlobal));
 
     return WindowOrNull(mainGlobal);
@@ -661,21 +680,6 @@ xpc_UnmarkSkippableJSHolders()
     }
 }
 
-template<class T> static void
-DoDeferredRelease(nsTArray<T>& array)
-{
-    while (1) {
-        uint32_t count = array.Length();
-        if (!count) {
-            array.Compact();
-            break;
-        }
-        T wrapper = array[count-1];
-        array.RemoveElementAt(count-1);
-        NS_RELEASE(wrapper);
-    }
-}
-
 /* static */ void
 XPCJSRuntime::GCSliceCallback(JSRuntime* rt,
                               JS::GCProgress progress,
@@ -727,10 +731,6 @@ XPCJSRuntime::FinalizeCallback(JSFreeOp* fop,
         {
             MOZ_ASSERT(self->mDoingFinalization, "bad state");
             self->mDoingFinalization = false;
-
-            // Release all the members whose JSObjects are now known
-            // to be dead.
-            DoDeferredRelease(self->mWrappedJSToReleaseArray);
 
             // Sweep scopes needing cleanup
             XPCWrappedNativeScope::KillDyingScopes();
@@ -919,16 +919,33 @@ XPCJSRuntime::FinalizeCallback(JSFreeOp* fop,
 }
 
 /* static */ void
-XPCJSRuntime::WeakPointerCallback(JSRuntime* rt, void* data)
+XPCJSRuntime::WeakPointerZoneGroupCallback(JSRuntime* rt, void* data)
 {
-    // Called to remove any weak pointers to GC things that are about to be
-    // finalized and fixup any pointers that may have been moved.
-
+    // Called before each sweeping slice -- after processing any final marking
+    // triggered by barriers -- to clear out any references to things that are
+    // about to be finalized and update any pointers to moved GC things.
     XPCJSRuntime* self = static_cast<XPCJSRuntime*>(data);
 
     self->mWrappedJSMap->UpdateWeakPointersAfterGC(self);
 
     XPCWrappedNativeScope::UpdateWeakPointersAfterGC(self);
+}
+
+/* static */ void
+XPCJSRuntime::WeakPointerCompartmentCallback(JSRuntime* rt, JSCompartment* comp, void* data)
+{
+    // Called immediately after the ZoneGroup weak pointer callback, but only
+    // once for each compartment that is being swept.
+    XPCJSRuntime* self = static_cast<XPCJSRuntime*>(data);
+    CompartmentPrivate* xpcComp = CompartmentPrivate::Get(comp);
+    if (xpcComp)
+        xpcComp->UpdateWeakPointersAfterGC(self);
+}
+
+void
+CompartmentPrivate::UpdateWeakPointersAfterGC(XPCJSRuntime* runtime)
+{
+    mWrappedJSMap->UpdateWeakPointersAfterGC(runtime);
 }
 
 static void WatchdogMain(void* arg);
@@ -1311,16 +1328,25 @@ xpc::SimulateActivityCallback(bool aActive)
     XPCJSRuntime::ActivityCallback(XPCJSRuntime::Get(), aActive);
 }
 
-// static
-bool
+void
 XPCJSRuntime::EnvironmentPreparer::invoke(HandleObject scope, js::ScriptEnvironmentPreparer::Closure& closure)
 {
     MOZ_ASSERT(NS_IsMainThread());
     nsIGlobalObject* global = NativeGlobal(scope);
-    NS_ENSURE_TRUE(global && global->GetGlobalJSObject(), false);
+
+    // Not much we can do if we simply don't have a usable global here...
+    NS_ENSURE_TRUE_VOID(global && global->GetGlobalJSObject());
     AutoEntryScript aes(global, "JS-engine-initiated execution");
     aes.TakeOwnershipOfErrorReporting();
-    return closure(aes.cx());
+
+    MOZ_ASSERT(!JS_IsExceptionPending(aes.cx()));
+
+    DebugOnly<bool> ok = closure(aes.cx());
+
+    MOZ_ASSERT_IF(ok, !JS_IsExceptionPending(aes.cx()));
+
+    // The AutoEntryScript will check for JS_IsExceptionPending on the
+    // JSContext and report it as needed as it comes off the stack.
 }
 
 // static
@@ -1387,7 +1413,7 @@ XPCJSRuntime::InterruptCallback(JSContext* cx)
     // Get the DOM window associated with the running script. If the script is
     // running in a non-DOM scope, we have to just let it keep running.
     RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
-    nsRefPtr<nsGlobalWindow> win = WindowOrNull(global);
+    RefPtr<nsGlobalWindow> win = WindowOrNull(global);
     if (!win && IsSandbox(global)) {
         // If this is a sandbox associated with a DOMWindow via a
         // sandboxPrototype, use that DOMWindow. This supports GreaseMonkey
@@ -1396,7 +1422,7 @@ XPCJSRuntime::InterruptCallback(JSContext* cx)
         if (!JS_GetPrototype(cx, global, &proto))
             return false;
         if (proto && IsSandboxPrototypeProxy(proto) &&
-            (proto = js::CheckedUnwrap(proto, /* stopAtOuter = */ false)))
+            (proto = js::CheckedUnwrap(proto, /* stopAtWindowProxy = */ false)))
         {
             win = WindowGlobalOrNull(proto);
         }
@@ -1479,6 +1505,12 @@ XPCJSRuntime::SizeOfIncludingThis(MallocSizeOf mallocSizeOf)
     return n;
 }
 
+size_t
+CompartmentPrivate::SizeOfIncludingThis(MallocSizeOf mallocSizeOf)
+{
+    return mallocSizeOf(this) + mWrappedJSMap->SizeOfWrappedJS(mallocSizeOf);
+}
+
 /***************************************************************************/
 
 void XPCJSRuntime::DestroyJSContextStack()
@@ -1513,6 +1545,8 @@ ReloadPrefsCallback(const char* pref, void* data)
     bool useBaseline = Preferences::GetBool(JS_OPTIONS_DOT_STR "baselinejit") && !safeMode;
     bool useIon = Preferences::GetBool(JS_OPTIONS_DOT_STR "ion") && !safeMode;
     bool useAsmJS = Preferences::GetBool(JS_OPTIONS_DOT_STR "asmjs") && !safeMode;
+    bool throwOnAsmJSValidationFailure = Preferences::GetBool(JS_OPTIONS_DOT_STR
+                                                              "throw_on_asmjs_validation_failure");
     bool useNativeRegExp = Preferences::GetBool(JS_OPTIONS_DOT_STR "native_regexp") && !safeMode;
 
     bool parallelParsing = Preferences::GetBool(JS_OPTIONS_DOT_STR "parallel_parsing");
@@ -1536,6 +1570,7 @@ ReloadPrefsCallback(const char* pref, void* data)
     JS::RuntimeOptionsRef(rt).setBaseline(useBaseline)
                              .setIon(useIon)
                              .setAsmJS(useAsmJS)
+                             .setThrowOnAsmJSValidationFailure(throwOnAsmJSValidationFailure)
                              .setNativeRegExp(useNativeRegExp)
                              .setAsyncStack(useAsyncStack)
                              .setWerror(werror)
@@ -1557,7 +1592,8 @@ XPCJSRuntime::~XPCJSRuntime()
     // callback if we aren't careful. Null out the relevant callbacks.
     js::SetActivityCallback(Runtime(), nullptr, nullptr);
     JS_RemoveFinalizeCallback(Runtime(), FinalizeCallback);
-    JS_RemoveWeakPointerCallback(Runtime(), WeakPointerCallback);
+    JS_RemoveWeakPointerZoneGroupCallback(Runtime(), WeakPointerZoneGroupCallback);
+    JS_RemoveWeakPointerCompartmentCallback(Runtime(), WeakPointerCompartmentCallback);
 
     // Clear any pending exception.  It might be an XPCWrappedJS, and if we try
     // to destroy it later we will crash.
@@ -1884,7 +1920,7 @@ ReportZoneStats(const JS::ZoneStats& zStats,
                 bool anonymize,
                 size_t* gcTotalOut = nullptr)
 {
-    const nsAutoCString& pathPrefix = extras.pathPrefix;
+    const nsCString& pathPrefix = extras.pathPrefix;
     size_t gcTotal = 0, sundriesGCHeap = 0, sundriesMallocHeap = 0;
 
     MOZ_ASSERT(!gcTotalOut == zStats.isTotals);
@@ -1900,6 +1936,10 @@ ReportZoneStats(const JS::ZoneStats& zStats,
     ZCREPORT_GC_BYTES(pathPrefix + NS_LITERAL_CSTRING("unused-gc-things"),
         zStats.unusedGCThings.totalSize(),
         "Unused GC thing cells within non-empty arenas.");
+
+    ZCREPORT_BYTES(pathPrefix + NS_LITERAL_CSTRING("unique-id-map"),
+        zStats.uniqueIdMap,
+        "Address-independent cell identities.");
 
     ZCREPORT_GC_BYTES(pathPrefix + NS_LITERAL_CSTRING("lazy-scripts/gc-heap"),
         zStats.lazyScriptsGCHeap,
@@ -2192,8 +2232,8 @@ ReportCompartmentStats(const JS::CompartmentStats& cStats,
     static const nsDependentCString addonPrefix("explicit/add-ons/");
 
     size_t gcTotal = 0, sundriesGCHeap = 0, sundriesMallocHeap = 0;
-    nsAutoCString cJSPathPrefix = extras.jsPathPrefix;
-    nsAutoCString cDOMPathPrefix = extras.domPathPrefix;
+    nsAutoCString cJSPathPrefix(extras.jsPathPrefix);
+    nsAutoCString cDOMPathPrefix(extras.domPathPrefix);
     nsresult rv;
 
     MOZ_ASSERT(!gcTotalOut == cStats.isTotals);
@@ -2244,6 +2284,11 @@ ReportCompartmentStats(const JS::CompartmentStats& cStats,
         cStats.objectsPrivate,
         "Orphan DOM nodes, i.e. those that are only reachable from JavaScript "
         "objects.");
+
+    ZCREPORT_BYTES(cDOMPathPrefix + NS_LITERAL_CSTRING("private-data"),
+        extras.sizeOfXPCPrivate,
+        "Extra data attached to the compartment by XPConnect, including "\
+        "wrapped-js that is local to a single compartment.");
 
     ZCREPORT_GC_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("scripts/gc-heap"),
         cStats.scriptsGCHeap,
@@ -2751,14 +2796,16 @@ class XPCJSRuntimeStats : public JS::RuntimeStats
         xpc::CompartmentStatsExtras* extras = new xpc::CompartmentStatsExtras;
         nsCString cName;
         GetCompartmentName(c, cName, &mAnonymizeID, /* replaceSlashes = */ true);
-        if (mGetLocations) {
-            CompartmentPrivate* cp = CompartmentPrivate::Get(c);
-            if (cp)
-              cp->GetLocationURI(CompartmentPrivate::LocationHintAddon,
-                                 getter_AddRefs(extras->location));
+        CompartmentPrivate* cp = CompartmentPrivate::Get(c);
+        if (cp) {
+            if (mGetLocations) {
+                cp->GetLocationURI(CompartmentPrivate::LocationHintAddon,
+                                   getter_AddRefs(extras->location));
+            }
             // Note: cannot use amIAddonManager implementation at this point,
             // as it is a JS service and the JS heap is currently not idle.
             // Otherwise, we could have computed the add-on id at this point.
+            extras->sizeOfXPCPrivate = cp->SizeOfIncludingThis(mallocSizeOf_);
         }
 
         // Get the compartment's global.
@@ -2849,7 +2896,7 @@ JSReporter::CollectReports(WindowPaths* windowPaths,
 
     size_t xpcJSRuntimeSize = xpcrt->SizeOfIncludingThis(JSMallocSizeOf);
 
-    size_t wrappedJSSize = xpcrt->GetWrappedJSMap()->SizeOfWrappedJS(JSMallocSizeOf);
+    size_t wrappedJSSize = xpcrt->GetMultiCompartmentWrappedJSMap()->SizeOfWrappedJS(JSMallocSizeOf);
 
     XPCWrappedNativeScope::ScopeSizeInfo sizeInfo(JSMallocSizeOf);
     XPCWrappedNativeScope::AddSizeOfAllScopesIncludingThis(&sizeInfo);
@@ -3112,6 +3159,9 @@ AccumulateTelemetryCallback(int id, uint32_t sample, const char* key)
       case JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_CONTENT:
         Telemetry::Accumulate(Telemetry::JS_DEPRECATED_LANGUAGE_EXTENSIONS_IN_CONTENT, sample);
         break;
+      case JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_ADDONS:
+        Telemetry::Accumulate(Telemetry::JS_DEPRECATED_LANGUAGE_EXTENSIONS_IN_ADDONS, sample);
+        break;
       case JS_TELEMETRY_ADDON_EXCEPTIONS:
         Telemetry::Accumulate(Telemetry::JS_TELEMETRY_ADDON_EXCEPTIONS, nsDependentCString(key), sample);
         break;
@@ -3258,47 +3308,6 @@ static const JSWrapObjectCallbacks WrapObjectCallbacks = {
     xpc::WrapperFactory::PrepareForWrapping
 };
 
-/**
- * Group JSCompartments into PerformanceGroups.
- *
- * - All JSCompartments from the same add-on belong to the same
- *   PerformanceGroup.
- * - All JSCompartments from the same same webpage (including
- *   frames) belong to the same PerformanceGroup.
- * - All other JSCompartments (normally, system add-ons)
- *   belong to to a big uncategorized PerformanceGroup.
- */
-static void*
-GetCurrentPerfGroupCallback(JSContext* cx) {
-    RootedObject global(cx, CurrentGlobalOrNull(cx));
-    if (!global) {
-        // This can happen for the atom compartments, which is system
-        // code.
-        return nullptr;
-    }
-
-    JSAddonId* addonId = AddonIdOfObject(global);
-    if (addonId) {
-        // If this is an add-on, use the id as key.
-        return addonId;
-    }
-
-    // If the compartment belongs to a webpage, use the address of the
-    // topmost scriptable window, hence regrouping all frames of a
-    // window.
-    nsRefPtr<nsGlobalWindow> win = WindowOrNull(global);
-    if (win) {
-        nsCOMPtr<nsIDOMWindow> top;
-        nsresult rv = win->GetScriptableTop(getter_AddRefs(top));
-        NS_ENSURE_SUCCESS(rv, nullptr);
-
-        return top.get();
-    }
-
-    // Otherwise, this is platform code, use `nullptr` as key.
-    return nullptr;
-}
-
 XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    : CycleCollectedJSRuntime(nullptr, JS::DefaultHeapMaxBytes, JS::DefaultNurseryBytes),
    mJSContextStack(new XPCJSContextStack(this)),
@@ -3316,7 +3325,6 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    mDyingWrappedNativeProtoMap(XPCWrappedNativeProtoMap::newMap(XPC_DYING_NATIVE_PROTO_MAP_LENGTH)),
    mDetachedWrappedNativeProtoMap(XPCWrappedNativeProtoMap::newMap(XPC_DETACHED_NATIVE_PROTO_MAP_LENGTH)),
    mGCIsRunning(false),
-   mWrappedJSToReleaseArray(),
    mNativesToReleaseArray(),
    mDoingFinalization(false),
    mVariantRoots(nullptr),
@@ -3429,7 +3437,8 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     JS_SetCompartmentNameCallback(runtime, CompartmentNameCallback);
     mPrevGCSliceCallback = JS::SetGCSliceCallback(runtime, GCSliceCallback);
     JS_AddFinalizeCallback(runtime, FinalizeCallback, nullptr);
-    JS_AddWeakPointerCallback(runtime, WeakPointerCallback, this);
+    JS_AddWeakPointerZoneGroupCallback(runtime, WeakPointerZoneGroupCallback, this);
+    JS_AddWeakPointerCompartmentCallback(runtime, WeakPointerCompartmentCallback, this);
     JS_SetWrapObjectCallbacks(runtime, &WrapObjectCallbacks);
     js::SetPreserveWrapperCallback(runtime, PreserveWrapper);
 #ifdef MOZ_ENABLE_PROFILER_SPS
@@ -3440,6 +3449,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     js::SetScriptEnvironmentPreparer(runtime, &mEnvironmentPreparer);
     js::SetActivityCallback(runtime, ActivityCallback, this);
     JS_SetInterruptCallback(runtime, InterruptCallback);
+    js::SetWindowProxyClass(runtime, &OuterWindowProxyClass);
 
     // The JS engine needs to keep the source code around in order to implement
     // Function.prototype.toSource(). It'd be nice to not have to do this for
@@ -3478,8 +3488,6 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     // Watch for the JS boolean options.
     ReloadPrefsCallback(nullptr, this);
     Preferences::RegisterCallback(ReloadPrefsCallback, JS_OPTIONS_DOT_STR, this);
-
-    JS_SetCurrentPerfGroupCallback(runtime, ::GetCurrentPerfGroupCallback);
 }
 
 // static
@@ -3492,7 +3500,7 @@ XPCJSRuntime::newXPCJSRuntime(nsXPConnect* aXPConnect)
 
     if (self                                    &&
         self->Runtime()                         &&
-        self->GetWrappedJSMap()                 &&
+        self->GetMultiCompartmentWrappedJSMap() &&
         self->GetWrappedJSClassMap()            &&
         self->GetIID2NativeInterfaceMap()       &&
         self->GetClassInfo2NativeSetMap()       &&
@@ -3655,10 +3663,6 @@ XPCJSRuntime::DebugDump(int16_t depth)
         XPC_LOG_INDENT();
         XPC_LOG_ALWAYS(("mJSRuntime @ %x", Runtime()));
 
-        XPC_LOG_ALWAYS(("mWrappedJSToReleaseArray @ %x with %d wrappers(s)",
-                        &mWrappedJSToReleaseArray,
-                        mWrappedJSToReleaseArray.Length()));
-
         int cxCount = 0;
         JSContext* iter = nullptr;
         while (JS_ContextIterator(Runtime(), &iter))
@@ -3684,9 +3688,10 @@ XPCJSRuntime::DebugDump(int16_t depth)
             }
             XPC_LOG_OUTDENT();
         }
+
+        // iterate wrappers...
         XPC_LOG_ALWAYS(("mWrappedJSMap @ %x with %d wrappers(s)",
                         mWrappedJSMap, mWrappedJSMap->Count()));
-        // iterate wrappers...
         if (depth && mWrappedJSMap->Count()) {
             XPC_LOG_INDENT();
             mWrappedJSMap->Dump(depth);

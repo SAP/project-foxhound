@@ -83,36 +83,20 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsBindingManager)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 
-static PLDHashOperator
-DocumentInfoHashtableTraverser(nsIURI* key,
-                               nsXBLDocumentInfo* di,
-                               void* userArg)
-{
-  nsCycleCollectionTraversalCallback *cb =
-    static_cast<nsCycleCollectionTraversalCallback*>(userArg);
-  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb, "mDocumentTable value");
-  cb->NoteXPCOMChild(di);
-  return PL_DHASH_NEXT;
-}
-
-static PLDHashOperator
-LoadingDocHashtableTraverser(nsIURI* key,
-                             nsIStreamListener* sl,
-                             void* userArg)
-{
-  nsCycleCollectionTraversalCallback *cb =
-    static_cast<nsCycleCollectionTraversalCallback*>(userArg);
-  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb, "mLoadingDocTable value");
-  cb->NoteXPCOMChild(sl);
-  return PL_DHASH_NEXT;
-}
-
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsBindingManager)
   // The hashes keyed on nsIContent are traversed from the nsIContent itself.
-  if (tmp->mDocumentTable)
-      tmp->mDocumentTable->EnumerateRead(&DocumentInfoHashtableTraverser, &cb);
-  if (tmp->mLoadingDocTable)
-      tmp->mLoadingDocTable->EnumerateRead(&LoadingDocHashtableTraverser, &cb);
+  if (tmp->mDocumentTable) {
+    for (auto iter = tmp->mDocumentTable->Iter(); !iter.Done(); iter.Next()) {
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mDocumentTable value");
+      cb.NoteXPCOMChild(iter.UserData());
+    }
+  }
+  if (tmp->mLoadingDocTable) {
+    for (auto iter = tmp->mLoadingDocTable->Iter(); !iter.Done(); iter.Next()) {
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mLoadingDocTable value");
+      cb.NoteXPCOMChild(iter.UserData());
+    }
+  }
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAttachedStack)
   // No need to traverse mProcessAttachedQueueEvent, since it'll just
   // fire at some point or become revoke and drop its ref to us.
@@ -217,7 +201,7 @@ nsBindingManager::RemovedFromDocumentInternal(nsIContent* aContent,
 {
   NS_PRECONDITION(aOldDocument != nullptr, "no old document");
 
-  nsRefPtr<nsXBLBinding> binding = aContent->GetXBLBinding();
+  RefPtr<nsXBLBinding> binding = aContent->GetXBLBinding();
   if (binding) {
     // The binding manager may have been destroyed before a runnable
     // has had a chance to reach this point. If so, we bail out on calling
@@ -272,7 +256,7 @@ nsresult
 nsBindingManager::ClearBinding(nsIContent* aContent)
 {
   // Hold a ref to the binding so it won't die when we remove it from our table
-  nsRefPtr<nsXBLBinding> binding =
+  RefPtr<nsXBLBinding> binding =
     aContent ? aContent->GetXBLBinding() : nullptr;
 
   if (!binding) {
@@ -320,7 +304,7 @@ nsBindingManager::LoadBindingDocument(nsIDocument* aBoundDoc,
     return NS_ERROR_FAILURE;
 
   // Load the binding doc.
-  nsRefPtr<nsXBLDocumentInfo> info;
+  RefPtr<nsXBLDocumentInfo> info;
   xblService->LoadBindingDocumentInfo(nullptr, aBoundDoc, aURL,
                                       aOriginPrincipal, true,
                                       getter_AddRefs(info));
@@ -374,7 +358,7 @@ nsBindingManager::PostProcessAttachedQueueEvent()
 void
 nsBindingManager::PostPAQEventCallback(nsITimer* aTimer, void* aClosure)
 {
-  nsRefPtr<nsBindingManager> mgr = 
+  RefPtr<nsBindingManager> mgr = 
     already_AddRefed<nsBindingManager>(static_cast<nsBindingManager*>(aClosure));
   mgr->PostProcessAttachedQueueEvent();
   NS_RELEASE(aTimer);
@@ -407,7 +391,7 @@ nsBindingManager::DoProcessAttachedQueue()
       NS_ADDREF_THIS();
       // We drop our reference to the timer here, since the timer callback is
       // responsible for releasing the object.
-      unused << timer.forget().take();
+      Unused << timer.forget().take();
     }
   }
 
@@ -431,7 +415,7 @@ nsBindingManager::ProcessAttachedQueue(uint32_t aSkipSize)
   // Excute constructors. Do this from high index to low
   while (mAttachedStack.Length() > aSkipSize) {
     uint32_t lastItem = mAttachedStack.Length() - 1;
-    nsRefPtr<nsXBLBinding> binding = mAttachedStack.ElementAt(lastItem);
+    RefPtr<nsXBLBinding> binding = mAttachedStack.ElementAt(lastItem);
     mAttachedStack.RemoveElementAt(lastItem);
     if (binding) {
       binding->ExecuteAttachedHandler();

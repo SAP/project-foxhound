@@ -31,6 +31,7 @@
       <xul:textbox class="searchbar-textbox"
                    anonid="searchbar-textbox"
                    type="autocomplete"
+                   inputtype="search"
                    flex="1"
                    autocompletepopup="PopupSearchAutoComplete"
                    autocompletesearch="search-autocomplete"
@@ -118,9 +119,6 @@
       <field name="_engines">null</field>
       <field name="FormHistory" readonly="true">
         (Components.utils.import("resource://gre/modules/FormHistory.jsm", {})).FormHistory;
-      </field>
-      <field name="PlacesUtils" readonly="true">
-        (Components.utils.import("resource://gre/modules/PlacesUtils.jsm", {})).PlacesUtils;
       </field>
 
       <property name="engines" readonly="true">
@@ -265,9 +263,6 @@
         <parameter name="element"/>
         <parameter name="uri"/>
         <body><![CDATA[
-          if (uri) {
-            uri = this.PlacesUtils.getImageURLForResolution(window, uri);
-          }
           element.setAttribute("src", uri);
         ]]></body>
       </method>
@@ -446,13 +441,11 @@
         if (target.engine) {
           this.currentEngine = target.engine;
         } else if (target.classList.contains("addengine-item")) {
-          // We only detect OpenSearch files
-          var type = Ci.nsISearchEngine.DATA_XML;
           // Select the installed engine if the installation succeeds
           var installCallback = {
             onSuccess: engine => this.currentEngine = engine
           }
-          Services.search.addEngine(target.getAttribute("uri"), type,
+          Services.search.addEngine(target.getAttribute("uri"), null,
                                     target.getAttribute("src"), false,
                                     installCallback);
         }
@@ -735,7 +728,7 @@
 
           let engine;
           let oneOff = this.selectedButton;
-          if (oneOff && !this.selectionFromMouseOver) {
+          if (oneOff) {
             if (!oneOff.engine) {
               oneOff.doCommand();
               this.mEnterEvent = null;
@@ -757,11 +750,19 @@
       <field name="_selectedButton"/>
       <property name="selectedButton" onget="return this._selectedButton;">
         <setter><![CDATA[
-          // Set to true from the mouseover handler right after this setter call.
-          this.selectionFromMouseOver = false;
-
-          if (this._selectedButton)
-            this._selectedButton.removeAttribute("selected");
+          this._changeVisuallySelectedButton(val, true);
+        ]]></setter>
+      </property>
+      <method name="_changeVisuallySelectedButton">
+        <parameter name="val"/>
+        <parameter name="aUpdateLogicallySelectedButton"/>
+        <body><![CDATA[
+          let list = this.getSelectableButtons();
+          let visuallySelectedButton = list.find(button => {
+            return button.getAttribute("selected") == "true"
+          });
+          if (visuallySelectedButton)
+            visuallySelectedButton.removeAttribute("selected");
 
           let textbox = document.getBindingParent(this).textbox;
           let header =
@@ -770,7 +771,8 @@
           // Avoid selecting dummy buttons.
           if (val && !val.classList.contains("dummy")) {
             val.setAttribute("selected", "true");
-            this._selectedButton = val;
+            if (aUpdateLogicallySelectedButton)
+              this._selectedButton = val;
             if (val.classList.contains("searchbar-engine-one-off-item")) {
               let headerEngineText =
                 document.getAnonymousElementByAttribute(this.popup, "anonid",
@@ -782,14 +784,14 @@
               header.selectedIndex = textbox.value ? 1 : 0;
             }
             this.setAttribute("aria-activedescendant", val.id);
-            return;
+          } else {
+            header.selectedIndex = textbox.value ? 1 : 0;
+            this.removeAttribute("aria-activedescendant");
+            if (aUpdateLogicallySelectedButton)
+              this._selectedButton = null;
           }
-
-          header.selectedIndex = textbox.value ? 1 : 0;
-          this.removeAttribute("aria-activedescendant");
-          this._selectedButton = null;
-        ]]></setter>
-      </property>
+        ]]></body>
+      </method>
 
       <method name="getSelectableButtons">
         <parameter name="aCycleEngines"/>
@@ -1093,8 +1095,7 @@
           let currentEngine = Services.search.currentEngine;
           let uri = currentEngine.iconURI;
           if (uri) {
-            uri = uri.spec;
-            this.setAttribute("src", PlacesUtils.getImageURLForResolution(window, uri));
+            this.setAttribute("src", uri.spec);
           }
           else {
             // If the default has just been changed to a provider without icon,
@@ -1256,8 +1257,7 @@
             button.setAttribute("tooltiptext", engine.uri);
             button.setAttribute("uri", engine.uri);
             if (engine.icon) {
-              let uri = PlacesUtils.getImageURLForResolution(window, engine.icon);
-              button.setAttribute("image", uri);
+              button.setAttribute("image", engine.icon);
             }
             button.setAttribute("title", engine.title);
             addEngineList.appendChild(button);
@@ -1330,7 +1330,7 @@
           button.id = "searchbar-engine-one-off-item-" + engine.name.replace(/ /g, '-');
           let uri = "chrome://browser/skin/search-engine-placeholder.png";
           if (engine.iconURI) {
-            uri = PlacesUtils.getImageURLForResolution(window, engine.iconURI.spec);
+            uri = engine.iconURI.spec;
           }
           button.setAttribute("image", uri);
           button.setAttribute("class", "searchbar-engine-one-off-item");
@@ -1378,23 +1378,30 @@
             target.classList.contains("addengine-item") ||
             target.classList.contains("search-setting-button")) {
           let textbox = document.getElementById("searchbar").textbox;
-          textbox.selectedButton = target;
-          textbox.selectionFromMouseOver = true;
+          textbox._changeVisuallySelectedButton(target);
         }
       ]]></handler>
 
       <handler event="mouseout"><![CDATA[
         let target = event.originalTarget;
-        if (target.localName != "button")
+        if (target.localName != "button") {
           return;
+        }
 
         // Don't deselect the current button if the context menu is open.
         if (this._ignoreMouseEvents)
           return;
 
         let textbox = document.getElementById("searchbar").textbox;
-        if (textbox.selectedButton == target)
-          textbox.selectedButton = null;
+        // Unfortunately this will fire before mouseover hits another item.
+        // If this button is selected, we replace that selection only if
+        // we're not moving to a different one-off item:
+        if (target.getAttribute("selected") == "true" &&
+            (!event.relatedTarget ||
+             !event.relatedTarget.classList.contains("searchbar-engine-one-off-item") ||
+             event.relatedTarget.classList.contains("dummy"))) {
+          textbox._changeVisuallySelectedButton(textbox.selectedButton);
+        }
       ]]></handler>
 
       <handler event="click"><![CDATA[
@@ -1432,8 +1439,7 @@
               Components.utils.reportError("Error adding search engine: " + errorCode);
             }
           }
-          Services.search.addEngine(target.getAttribute("uri"),
-                                    Ci.nsISearchEngine.DATA_XML,
+          Services.search.addEngine(target.getAttribute("uri"), null,
                                     target.getAttribute("image"), false,
                                     installCallback);
         }
@@ -1453,7 +1459,7 @@
           button.id = "searchbar-engine-one-off-item-" + currentEngine.name.replace(/ /g, '-');
           let uri = "chrome://browser/skin/search-engine-placeholder.png";
           if (currentEngine.iconURI)
-            uri = PlacesUtils.getImageURLForResolution(window, currentEngine.iconURI.spec);
+            uri = currentEngine.iconURI.spec;
           button.setAttribute("image", uri);
           button.setAttribute("tooltiptext", currentEngine.name);
           button.engine = currentEngine;

@@ -10,6 +10,7 @@
 #include "imgIContainer.h"
 #include "imgTools.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/Preferences.h"
 #include "nsClipboardProxy.h"
 #include "nsISupportsPrimitives.h"
 #include "nsComponentManagerUtils.h"
@@ -44,12 +45,32 @@ nsClipboard::SetData(nsITransferable *aTransferable,
 
   if (!XRE_IsParentProcess()) {
     // Re-direct to the clipboard proxy.
-    nsRefPtr<nsClipboardProxy> clipboardProxy = new nsClipboardProxy();
+    RefPtr<nsClipboardProxy> clipboardProxy = new nsClipboardProxy();
     return clipboardProxy->SetData(aTransferable, anOwner, aWhichClipboard);
   }
 
-  // Clear out the clipboard in order to set the new data
+  // Clear out the clipboard in order to set the new data.
   EmptyClipboard(aWhichClipboard);
+
+  // Use a pref to toggle rich text/non-text support.
+  if (Preferences::GetBool("clipboard.plainTextOnly")) {
+    nsCOMPtr<nsISupports> clip;
+    uint32_t len;
+    nsresult rv = aTransferable->GetTransferData(kUnicodeMime,
+                                                 getter_AddRefs(clip),
+                                                 &len);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+    nsCOMPtr<nsISupportsString> wideString = do_QueryInterface(clip);
+    if (!wideString) {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
+    nsAutoString utf16string;
+    wideString->GetData(utf16string);
+    mClipboard->SetText(utf16string);
+    return NS_OK;
+  }
 
   // Get the types of supported flavors.
   nsCOMPtr<nsISupportsArray> flavorList;
@@ -99,13 +120,12 @@ nsClipboard::SetData(nsITransferable *aTransferable,
                  (flavorStr.EqualsLiteral(kNativeImageMime) ||
                   flavorStr.EqualsLiteral(kPNGImageMime) ||
                   flavorStr.EqualsLiteral(kJPEGImageMime) ||
-                  flavorStr.EqualsLiteral(kJPGImageMime) ||
-                  flavorStr.EqualsLiteral(kGIFImageMime))) {
-        // image/[png|jpeg|jpg|gif] or application/x-moz-nativeimage
+                  flavorStr.EqualsLiteral(kJPGImageMime))) {
+        // image/[png|jpeg|jpg] or application/x-moz-nativeimage
 
         // Look through our transfer data for the image.
         static const char* const imageMimeTypes[] = {
-          kNativeImageMime, kPNGImageMime, kJPEGImageMime, kJPGImageMime, kGIFImageMime };
+          kNativeImageMime, kPNGImageMime, kJPEGImageMime, kJPGImageMime };
 
         nsCOMPtr<nsISupportsInterfacePointer> imgPtr;
         for (uint32_t i = 0; !imgPtr && i < ArrayLength(imageMimeTypes); ++i) {
@@ -157,8 +177,26 @@ nsClipboard::GetData(nsITransferable *aTransferable,
 
   if (!XRE_IsParentProcess()) {
     // Re-direct to the clipboard proxy.
-    nsRefPtr<nsClipboardProxy> clipboardProxy = new nsClipboardProxy();
+    RefPtr<nsClipboardProxy> clipboardProxy = new nsClipboardProxy();
     return clipboardProxy->GetData(aTransferable, aWhichClipboard);
+  }
+
+  // Use a pref to toggle rich text/non-text support.
+  if (Preferences::GetBool("clipboard.plainTextOnly")) {
+    nsresult rv;
+    nsCOMPtr<nsISupportsString> dataWrapper =
+      do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID, &rv);
+    rv = dataWrapper->SetData(mClipboard->GetText());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    nsCOMPtr<nsISupports> genericDataWrapper = do_QueryInterface(dataWrapper);
+    uint32_t len = mClipboard->GetText().Length() * sizeof(char16_t);
+    rv = aTransferable->SetTransferData(kUnicodeMime, genericDataWrapper, len);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    return NS_OK;
   }
 
   // Get flavor list that includes all acceptable flavors (including
@@ -220,17 +258,16 @@ nsClipboard::GetData(nsITransferable *aTransferable,
         break;
       }
 
-      // image/[png|jpeg|jpg|gif]
+      // image/[png|jpeg|jpg]
       if ((flavorStr.EqualsLiteral(kPNGImageMime) ||
            flavorStr.EqualsLiteral(kJPEGImageMime) ||
-           flavorStr.EqualsLiteral(kJPGImageMime) ||
-           flavorStr.EqualsLiteral(kGIFImageMime)) &&
+           flavorStr.EqualsLiteral(kJPGImageMime)) &&
           mClipboard->HasImage() ) {
         // Get image buffer from clipboard.
         RefPtr<gfx::DataSourceSurface> image = mClipboard->GetImage();
 
         // Encode according to MIME type.
-        nsRefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(image, image->GetSize());
+        RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(image, image->GetSize());
         nsCOMPtr<imgIContainer> imageContainer(image::ImageOps::CreateFromDrawable(drawable));
         nsCOMPtr<imgITools> imgTool = do_GetService(NS_IMGTOOLS_CID);
 
@@ -289,8 +326,7 @@ nsClipboard::HasDataMatchingFlavors(const char **aFlavorList,
         *aHasType = true;
       } else if (!strcmp(flavor, kJPEGImageMime) ||
                  !strcmp(flavor, kJPGImageMime) ||
-                 !strcmp(flavor, kPNGImageMime) ||
-                 !strcmp(flavor, kGIFImageMime)) {
+                 !strcmp(flavor, kPNGImageMime)) {
         // We will encode the image into any format you want, so we don't
         // need to check each specific format
         if (mClipboard->HasImage()) {
@@ -299,7 +335,7 @@ nsClipboard::HasDataMatchingFlavors(const char **aFlavorList,
       }
     }
   } else {
-    nsRefPtr<nsClipboardProxy> clipboardProxy = new nsClipboardProxy();
+    RefPtr<nsClipboardProxy> clipboardProxy = new nsClipboardProxy();
     return clipboardProxy->HasDataMatchingFlavors(aFlavorList, aLength, aWhichClipboard, aHasType);
   }
   return NS_OK;

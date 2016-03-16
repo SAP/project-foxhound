@@ -106,7 +106,7 @@ public:
    */
   bool IsDirectory() const;
 
-  const nsTArray<nsRefPtr<BlobImpl>>* GetSubBlobImpls() const;
+  const nsTArray<RefPtr<BlobImpl>>* GetSubBlobImpls() const;
 
   // This method returns null if this Blob is not a File; it returns
   // the same object in case this Blob already implements the File interface;
@@ -118,7 +118,8 @@ public:
 
   // This method creates a new File object with the given name and the same
   // BlobImpl.
-  already_AddRefed<File> ToFile(const nsAString& aName) const;
+  already_AddRefed<File> ToFile(const nsAString& aName,
+                                ErrorResult& aRv) const;
 
   already_AddRefed<Blob>
   CreateSlice(uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
@@ -173,7 +174,7 @@ protected:
   // It's thread-safe and not CC-able and it's the only element that is moved
   // between threads.
   // Note: we should not store any other state in this class!
-  nsRefPtr<BlobImpl> mImpl;
+  RefPtr<BlobImpl> mImpl;
 
 private:
   nsCOMPtr<nsISupports> mParent;
@@ -311,7 +312,7 @@ public:
   CreateSlice(uint64_t aStart, uint64_t aLength,
               const nsAString& aContentType, ErrorResult& aRv) = 0;
 
-  virtual const nsTArray<nsRefPtr<BlobImpl>>*
+  virtual const nsTArray<RefPtr<BlobImpl>>*
   GetSubBlobImpls() const = 0;
 
   virtual void GetInternalStream(nsIInputStream** aStream,
@@ -472,7 +473,7 @@ public:
     return nullptr;
   }
 
-  virtual const nsTArray<nsRefPtr<BlobImpl>>*
+  virtual const nsTArray<RefPtr<BlobImpl>>*
   GetSubBlobImpls() const override
   {
     return nullptr;
@@ -680,7 +681,7 @@ private:
   ~BlobImplMemory() {}
 
   // Used when backed by a memory store
-  nsRefPtr<DataOwner> mDataOwner;
+  RefPtr<DataOwner> mDataOwner;
 };
 
 class BlobImplTemporaryBlob final : public BlobImplBase
@@ -715,7 +716,7 @@ private:
   ~BlobImplTemporaryBlob() {}
 
   uint64_t mStartPos;
-  nsRefPtr<nsTemporaryFileInputStream::FileDescOwner> mFileDescOwner;
+  RefPtr<nsTemporaryFileInputStream::FileDescOwner> mFileDescOwner;
 };
 
 class BlobImplFile : public BlobImplBase
@@ -797,6 +798,10 @@ public:
   void SetPath(const nsAString& aFullPath);
 
   virtual void LookupAndCacheIsDirectory() override;
+
+  // We always have size and date for this kind of blob.
+  virtual bool IsSizeUnknown() const override { return false; }
+  virtual bool IsDateUnknown() const override { return false; }
 
 protected:
   virtual ~BlobImplFile() {

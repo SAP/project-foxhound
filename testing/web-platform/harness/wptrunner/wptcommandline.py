@@ -155,7 +155,7 @@ def create_parser(product_choices=None):
     gecko_group.add_argument("--prefs-root", dest="prefs_root", action="store", type=abs_path,
                              help="Path to the folder containing browser prefs")
     gecko_group.add_argument("--e10s", dest="gecko_e10s", action="store_true",
-                             help="Path to the folder containing browser prefs")
+                             help="Run tests with electrolysis preferences")
 
     b2g_group = parser.add_argument_group("B2G-specific")
     b2g_group.add_argument("--b2g-no-backup", action="store_true", default=False,
@@ -165,6 +165,10 @@ def create_parser(product_choices=None):
     servo_group.add_argument("--user-stylesheet",
                              default=[], action="append", dest="user_stylesheets",
                              help="Inject a user CSS stylesheet into every test.")
+    servo_group.add_argument("--servo-backend",
+                             default="cpu", choices=["cpu", "webrender"],
+                             help="Rendering backend to use with Servo.")
+
 
     parser.add_argument("test_list", nargs="*",
                         help="List of URLs for tests to run, or paths including tests to run. "

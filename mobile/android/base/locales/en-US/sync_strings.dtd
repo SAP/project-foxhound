@@ -223,6 +223,7 @@
 <!ENTITY fxaccount_status_linktos 'Terms of Service'>
 <!ENTITY fxaccount_status_linkprivacy 'Privacy Notice'>
 <!ENTITY fxaccount_status_more 'More&ellipsis;'>
+<!ENTITY fxaccount_remove_account 'Disconnect&ellipsis;'>
 
 <!ENTITY fxaccount_remove_account_dialog_title 'Remove Firefox Account?'>
 <!ENTITY fxaccount_remove_account_dialog_message '&brandShortName; will stop syncing with your account, but won’t delete any of your browsing data on this device.'>
@@ -230,7 +231,6 @@
      with the Firefox Account's email address. -->
 <!ENTITY fxaccount_remove_account_toast 'Firefox Account &formatS; removed.'>
 
-<!ENTITY fxaccount_remove_account_menu_item 'Remove Account'>
 <!ENTITY fxaccount_enable_debug_mode 'Enable Debug Mode'>
 
 <!-- Localization note: this is the name shown by the Android system
@@ -270,3 +270,8 @@
 <!-- Localization note: the format string below will be replaced
      with the Firefox Account's email address. -->
 <!ENTITY fxaccount_sync_finish_migrating_notification_text 'Tap to sign in as &formatS;'>
+
+<!-- Localization note: the following strings are used in a
+     notification and should be kept as short as possible. -->
+<!ENTITY old_sync_deprecated_notification_title 'Sign in to continue syncing'>
+<!ENTITY old_sync_deprecated_notification_content 'Your account is no longer supported'>

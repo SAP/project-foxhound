@@ -308,7 +308,7 @@ nsTableCellFrame::DecorateForSelection(nsRenderingContext& aRenderingContext,
   nsPresContext* presContext = PresContext();
   displaySelection = DisplaySelection(presContext);
   if (displaySelection) {
-    nsRefPtr<nsFrameSelection> frameSelection =
+    RefPtr<nsFrameSelection> frameSelection =
       presContext->PresShell()->FrameSelection();
 
     if (frameSelection->GetTableCellSelection()) {
@@ -627,8 +627,9 @@ void nsTableCellFrame::BlockDirAlignChild(WritingMode aWM, nscoord aMaxAscent)
       // Align the middle of the child frame with the middle of the content area,
       kidBStart = (bSize - childBSize - bEndInset + bStartInset) / 2;
   }
-  // if the content is larger than the cell bsize, align from bstart
-  kidBStart = std::max(0, kidBStart);
+  // If the content is larger than the cell bsize, align from bStartInset
+  // (cell's content-box bstart edge).
+  kidBStart = std::max(bStartInset, kidBStart);
 
   if (kidBStart != kidRect.BStart(aWM)) {
     // Invalidate at the old position first
@@ -824,10 +825,9 @@ void DebugCheckChildSize(nsIFrame*            aChild,
 // it is the bsize (minus border, padding) of the cell's first in flow during its final
 // reflow without an unconstrained bsize.
 static nscoord
-CalcUnpaginatedBSize(nsPresContext*     aPresContext,
-                      nsTableCellFrame& aCellFrame,
-                      nsTableFrame&     aTableFrame,
-                      nscoord           aBlockDirBorderPadding)
+CalcUnpaginatedBSize(nsTableCellFrame& aCellFrame,
+                     nsTableFrame&     aTableFrame,
+                     nscoord           aBlockDirBorderPadding)
 {
   const nsTableCellFrame* firstCellInFlow =
     static_cast<nsTableCellFrame*>(aCellFrame.FirstInFlow());
@@ -851,7 +851,7 @@ CalcUnpaginatedBSize(nsPresContext*     aPresContext,
       break;
     }
     else if (rowX >= rowIndex) {
-      computedBSize += row->GetUnpaginatedBSize(aPresContext);
+      computedBSize += row->GetUnpaginatedBSize();
     }
   }
   return computedBSize;
@@ -909,7 +909,7 @@ nsTableCellFrame::Reflow(nsPresContext*           aPresContext,
   }
   else if (aPresContext->IsPaginated()) {
     nscoord computedUnpaginatedBSize =
-      CalcUnpaginatedBSize(aPresContext, (nsTableCellFrame&)*this,
+      CalcUnpaginatedBSize((nsTableCellFrame&)*this,
                            *tableFrame, borderPadding.BStartEnd(wm));
     if (computedUnpaginatedBSize > 0) {
       const_cast<nsHTMLReflowState&>(aReflowState).SetComputedBSize(computedUnpaginatedBSize);

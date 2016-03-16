@@ -148,9 +148,10 @@ Statement::initialize(Connection *aDBConnection,
   mResultColumnCount = ::sqlite3_column_count(mDBStatement);
   mColumnNames.Clear();
 
+  nsCString* columnNames = mColumnNames.AppendElements(mResultColumnCount);
   for (uint32_t i = 0; i < mResultColumnCount; i++) {
       const char *name = ::sqlite3_column_name(mDBStatement, i);
-      (void)mColumnNames.AppendElement(nsDependentCString(name));
+      columnNames[i].Assign(name);
   }
 
 #ifdef DEBUG
@@ -207,7 +208,7 @@ Statement::getParams()
 
   // If there isn't already any rows added, we'll have to add one to use.
   if (mParamsArray->length() == 0) {
-    nsRefPtr<BindingParams> params(new BindingParams(mParamsArray, this));
+    RefPtr<BindingParams> params(new BindingParams(mParamsArray, this));
     NS_ENSURE_TRUE(params, nullptr);
 
     rv = mParamsArray->AddParams(params);
@@ -317,7 +318,7 @@ MIXIN_IMPL_STORAGEBASESTATEMENTINTERNAL(Statement, (void)0;)
 NS_IMETHODIMP
 Statement::Clone(mozIStorageStatement **_statement)
 {
-  nsRefPtr<Statement> statement(new Statement());
+  RefPtr<Statement> statement(new Statement());
   NS_ENSURE_TRUE(statement, NS_ERROR_OUT_OF_MEMORY);
 
   nsAutoCString sql(::sqlite3_sql(mDBStatement));

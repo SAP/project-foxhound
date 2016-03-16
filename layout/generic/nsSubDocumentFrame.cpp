@@ -82,6 +82,7 @@ public:
   explicit AsyncFrameInit(nsIFrame* aFrame) : mFrame(aFrame) {}
   NS_IMETHOD Run()
   {
+    PROFILER_LABEL("mozilla", "AsyncFrameInit::Run", js::ProfileEntry::Category::OTHER);
     if (mFrame.IsAlive()) {
       static_cast<nsSubDocumentFrame*>(mFrame.GetFrame())->ShowViewer();
     }
@@ -129,7 +130,7 @@ nsSubDocumentFrame::Init(nsIContent*       aContent,
   // it into the view tree. This happens when we've been reframed, and
   // ensures the presentation persists across reframes. If the frame element
   // has changed documents however, we blow away the presentation.
-  nsRefPtr<nsFrameLoader> frameloader = FrameLoader();
+  RefPtr<nsFrameLoader> frameloader = FrameLoader();
   if (frameloader) {
     nsCOMPtr<nsIDocument> oldContainerDoc;
     nsView* detachedViews =
@@ -162,7 +163,7 @@ nsSubDocumentFrame::ShowViewer()
     // create the inner view for it to use.
     (void) EnsureInnerView();
   } else {
-    nsRefPtr<nsFrameLoader> frameloader = FrameLoader();
+    RefPtr<nsFrameLoader> frameloader = FrameLoader();
     if (frameloader) {
       CSSIntSize margin = GetMarginAttributes();
       nsWeakFrame weakThis(this);
@@ -251,7 +252,7 @@ ScreenIntSize
 nsSubDocumentFrame::GetSubdocumentSize()
 {
   if (GetStateBits() & NS_FRAME_FIRST_REFLOW) {
-    nsRefPtr<nsFrameLoader> frameloader = FrameLoader();
+    RefPtr<nsFrameLoader> frameloader = FrameLoader();
     if (frameloader) {
       nsCOMPtr<nsIDocument> oldContainerDoc;
       nsView* detachedViews =
@@ -416,18 +417,13 @@ nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     dirty = dirty.ScaleToOtherAppUnitsRoundOut(parentAPD, subdocAPD);
 
     if (nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame()) {
-      if (gfxPrefs::LayoutUseContainersForRootFrames()) {
-        // for root content documents we want the base to be the composition bounds
-        nsRect displayportBase = presContext->IsRootContentDocument() ?
-            nsRect(nsPoint(0,0), nsLayoutUtils::CalculateCompositionSizeForFrame(rootScrollFrame)) :
-            dirty.Intersect(nsRect(nsPoint(0,0), subdocRootFrame->GetSize()));
-        nsRect displayPort;
-        if (aBuilder->IsPaintingToWindow() &&
-            nsLayoutUtils::GetOrMaybeCreateDisplayPort(
-              *aBuilder, rootScrollFrame, displayportBase, &displayPort)) {
-          haveDisplayPort = true;
-          dirty = displayPort;
-        }
+      nsIScrollableFrame* rootScrollableFrame = presShell->GetRootScrollFrameAsScrollable();
+      MOZ_ASSERT(rootScrollableFrame);
+      haveDisplayPort = rootScrollableFrame->DecideScrollableLayer(aBuilder,
+                          &dirty, /* aAllowCreateDisplayPort = */ true);
+
+      if (!gfxPrefs::LayoutUseContainersForRootFrames()) {
+        haveDisplayPort = false;
       }
 
       ignoreViewportScrolling = presShell->IgnoringViewportScrolling();
@@ -446,6 +442,11 @@ nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
     aBuilder->EnterPresShell(subdocRootFrame,
                              pointerEventsNone && !passPointerEventsToChildren);
+
+    if (!haveDisplayPort) {
+      // Remove nsPresShell resolution
+      dirty = dirty.RemoveResolution(presShell->ScaleToResolution() ? presShell->GetResolution () : 1.0f);
+    }
   } else {
     dirty = aDirtyRect;
   }
@@ -899,12 +900,12 @@ nsSubDocumentFrame::AttributeChanged(int32_t aNameSpaceID,
     CSSIntSize margins = GetMarginAttributes();
 
     // Notify the frameloader
-    nsRefPtr<nsFrameLoader> frameloader = FrameLoader();
+    RefPtr<nsFrameLoader> frameloader = FrameLoader();
     if (frameloader)
       frameloader->MarginsChanged(margins.width, margins.height);
   }
   else if (aAttribute == nsGkAtoms::mozpasspointerevents) {
-    nsRefPtr<nsFrameLoader> frameloader = FrameLoader();
+    RefPtr<nsFrameLoader> frameloader = FrameLoader();
     if (frameloader) {
       if (aModType == nsIDOMMutationEvent::ADDITION) {
         frameloader->ActivateUpdateHitRegion();
@@ -962,7 +963,7 @@ public:
   }
 private:
   nsCOMPtr<nsIContent> mFrameElement;
-  nsRefPtr<nsFrameLoader> mFrameLoader;
+  RefPtr<nsFrameLoader> mFrameLoader;
   nsCOMPtr<nsIPresShell> mPresShell;
   bool mHideViewerIfFrameless;
 };
@@ -1153,7 +1154,7 @@ EndSwapDocShellsForDocument(nsIDocument* aDocument, void*)
     nsCOMPtr<nsIContentViewer> cv;
     ds->GetContentViewer(getter_AddRefs(cv));
     while (cv) {
-      nsRefPtr<nsPresContext> pc;
+      RefPtr<nsPresContext> pc;
       cv->GetPresContext(getter_AddRefs(pc));
       if (pc && pc->GetPresShell()) {
         pc->GetPresShell()->SetNeverPainting(ds->IsInvisible());

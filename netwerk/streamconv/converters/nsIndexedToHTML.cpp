@@ -546,11 +546,19 @@ nsIndexedToHTML::DoOnStartRequest(nsIRequest* request, nsISupports *aContext,
     {
         // Great, the baseUri does not contain a char that
         // will prematurely close the string.  Go ahead an
-        // add a base href.
-        buffer.AppendLiteral("<base href=\"");
-        nsAdoptingCString htmlEscapedUri(nsEscapeHTML(baseUri.get()));
-        buffer.Append(htmlEscapedUri);
-        buffer.AppendLiteral("\" />\n");
+        // add a base href, but only do so if we're not
+        // dealing with a resource URI.
+        nsCOMPtr<nsIURI> originalUri;
+        rv = channel->GetOriginalURI(getter_AddRefs(originalUri));
+        bool wasResource = false;
+        if (NS_FAILED(rv) ||
+            NS_FAILED(originalUri->SchemeIs("resource", &wasResource)) ||
+            !wasResource) {
+            buffer.AppendLiteral("<base href=\"");
+            nsAdoptingCString htmlEscapedUri(nsEscapeHTML(baseUri.get()));
+            buffer.Append(htmlEscapedUri);
+            buffer.AppendLiteral("\" />\n");
+        }
     }
     else
     {

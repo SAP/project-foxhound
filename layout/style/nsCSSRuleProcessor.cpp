@@ -56,6 +56,7 @@
 #include "mozilla/TypedEnumBits.h"
 #include "RuleProcessorCache.h"
 #include "nsIDOMMutationEvent.h"
+#include "nsIMozBrowserFrame.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -543,7 +544,7 @@ RuleHash::~RuleHash()
         RuleValue* value = &(mUniversalRules[i]);
         nsAutoString selectorText;
         uint32_t lineNumber = value->mRule->GetLineNumber();
-        nsRefPtr<CSSStyleSheet> cssSheet = value->mRule->GetStyleSheet();
+        RefPtr<CSSStyleSheet> cssSheet = value->mRule->GetStyleSheet();
         value->mSelector->ToString(selectorText, cssSheet);
 
         printf("    line %d, %s\n",
@@ -1013,7 +1014,7 @@ RuleCascadeData::AttributeListFor(nsIAtom* aAttribute)
 //
 
 nsCSSRuleProcessor::nsCSSRuleProcessor(const sheet_array_type& aSheets,
-                                       uint8_t aSheetType,
+                                       SheetType aSheetType,
                                        Element* aScopeElement,
                                        nsCSSRuleProcessor*
                                          aPreviousCSSRuleProcessor,
@@ -1034,7 +1035,7 @@ nsCSSRuleProcessor::nsCSSRuleProcessor(const sheet_array_type& aSheets,
   , mDocumentRulesAndCacheKeyValid(false)
 #endif
 {
-  NS_ASSERTION(!!mScopeElement == (aSheetType == nsStyleSet::eScopedDocSheet),
+  NS_ASSERTION(!!mScopeElement == (aSheetType == SheetType::ScopedDoc),
                "aScopeElement must be specified iff aSheetType is "
                "eScopedDocSheet");
   for (sheet_array_type::size_type i = mSheets.Length(); i-- != 0; ) {
@@ -1571,8 +1572,11 @@ nthChildGenericMatches(Element* aElement,
   // Integer division in C does truncation (towards 0).  So
   // check that the result is nonnegative, and that there was no
   // truncation.
-  const int32_t n = (index - b) / a;
-  return n >= 0 && (a * n == index - b);
+  const CheckedInt<int32_t> indexMinusB = CheckedInt<int32_t>(index) - b;
+  const CheckedInt<int32_t> n = indexMinusB / a;
+  return n.isValid() &&
+         n.value() >= 0 &&
+         a * n == indexMinusB;
 }
 
 static inline bool
@@ -1880,8 +1884,7 @@ static bool SelectorMatches(Element* aElement,
           // from the parent we have to be prepared to look at all parent
           // nodes.  The language itself is encoded in the LANG attribute.
           nsAutoString language;
-          aElement->GetLang(language);
-          if (!language.IsEmpty()) {
+          if (aElement->GetLang(language)) {
             if (!nsStyleUtil::DashMatchCompare(language,
                                                nsDependentString(pseudoClass->u.mString),
                                                nsASCIICaseInsensitiveStringComparator())) {
@@ -2148,6 +2151,17 @@ static bool SelectorMatches(Element* aElement,
           if (!val ||
               (val->Type() == nsAttrValue::eInteger &&
                val->GetIntegerValue() == 0)) {
+            return false;
+          }
+        }
+        break;
+
+      case nsCSSPseudoClasses::ePseudoClass_mozBrowserFrame:
+        {
+          nsCOMPtr<nsIMozBrowserFrame>
+            browserFrame = do_QueryInterface(aElement);
+          if (!browserFrame ||
+              !browserFrame->GetReallyIsBrowserOrApp()) {
             return false;
           }
         }
@@ -2604,9 +2618,9 @@ void ContentEnumFunc(const RuleValue& value, nsCSSSelector* aSelector,
                             nodeContext.mIsRelevantLink ?
                               SelectorMatchesTreeFlags(0) :
                               eLookForRelevantLink)) {
-      css::StyleRule *rule = value.mRule;
-      rule->RuleMatched();
-      data->mRuleWalker->Forward(rule);
+      css::Declaration* declaration = value.mRule->GetDeclaration();
+      declaration->SetImmutable();
+      data->mRuleWalker->Forward(declaration);
       // nsStyleSet will deal with the !important rule
     }
   }
@@ -2651,8 +2665,9 @@ nsCSSRuleProcessor::RulesMatching(AnonBoxRuleProcessorData* aData)
       nsTArray<RuleValue>& rules = entry->mRules;
       for (RuleValue *value = rules.Elements(), *end = value + rules.Length();
            value != end; ++value) {
-        value->mRule->RuleMatched();
-        aData->mRuleWalker->Forward(value->mRule);
+        css::Declaration* declaration = value->mRule->GetDeclaration();
+        declaration->SetImmutable();
+        aData->mRuleWalker->Forward(declaration);
       }
     }
   }
@@ -2995,7 +3010,8 @@ nsCSSRuleProcessor::HasAttributeDependentStyle(
       EnumerateSelectors(cascade->mPossiblyNegatedIDSelectors, &data);
     }
 
-    if (aData->mAttribute == nsGkAtoms::_class) {
+    if (aData->mAttribute == nsGkAtoms::_class &&
+        aData->mNameSpaceID == kNameSpaceID_None) {
       const nsAttrValue* otherClasses = aData->mOtherValue;
       NS_ASSERTION(otherClasses ||
                    aData->mModType == nsIDOMMutationEvent::REMOVAL,
@@ -3537,7 +3553,7 @@ struct CascadeEnumData {
                   nsTArray<css::DocumentRule*>& aDocumentRules,
                   nsMediaQueryResultCacheKey& aKey,
                   nsDocumentRuleResultCacheKey& aDocumentKey,
-                  uint8_t aSheetType,
+                  SheetType aSheetType,
                   bool aMustGatherDocumentRules)
     : mPresContext(aPresContext),
       mFontFaceRules(aFontFaceRules),
@@ -3575,7 +3591,7 @@ struct CascadeEnumData {
   // Hooray, a manual PLDHashTable since nsClassHashtable doesn't
   // provide a getter that gives me a *reference* to the value.
   PLDHashTable mRulesByWeight; // of PerWeightDataListItem linked lists
-  uint8_t mSheetType;
+  SheetType mSheetType;
   bool mMustGatherDocumentRules;
 };
 
@@ -3846,13 +3862,13 @@ nsCSSRuleProcessor::RefreshRuleCascade(nsPresContext* aPresContext)
 
       // Sort the hash table of per-weight linked lists by weight.
       uint32_t weightCount = data.mRulesByWeight.EntryCount();
-      nsAutoArrayPtr<PerWeightData> weightArray(new PerWeightData[weightCount]);
+      auto weightArray = MakeUnique<PerWeightData[]>(weightCount);
       int32_t j = 0;
       for (auto iter = data.mRulesByWeight.Iter(); !iter.Done(); iter.Next()) {
         auto entry = static_cast<const RuleByWeightEntry*>(iter.Get());
         weightArray[j++] = entry->data;
       }
-      NS_QuickSort(weightArray, weightCount, sizeof(PerWeightData),
+      NS_QuickSort(weightArray.get(), weightCount, sizeof(PerWeightData),
                    CompareWeightData, nullptr);
 
       // Put things into the rule hash.
@@ -4111,6 +4127,11 @@ AncestorFilter::AssertHasAllAncestors(Element *aElement) const
 void
 TreeMatchContext::AssertHasAllStyleScopes(Element* aElement) const
 {
+  if (aElement->IsInNativeAnonymousSubtree()) {
+    // Document style sheets are never applied to native anonymous content,
+    // so it's not possible for them to be in a <style scoped> scope.
+    return;
+  }
   Element* cur = aElement->GetParentElementCrossingShadowRoot();
   while (cur) {
     if (cur->IsScopedStyleRoot()) {

@@ -34,7 +34,7 @@ already_AddRefed<GeckoMediaPluginServiceChild>
 GeckoMediaPluginServiceChild::GetSingleton()
 {
   MOZ_ASSERT(!XRE_IsParentProcess());
-  nsRefPtr<GeckoMediaPluginService> service(
+  RefPtr<GeckoMediaPluginService> service(
     GeckoMediaPluginService::GetGeckoMediaPluginService());
 #ifdef DEBUG
   if (service) {
@@ -80,7 +80,7 @@ public:
       return;
     }
 
-    nsRefPtr<GMPContentParent> parent;
+    RefPtr<GMPContentParent> parent;
     aGMPServiceChild->GetBridgedGMPContentParent(otherProcess,
                                                  getter_AddRefs(parent));
     if (!alreadyBridgedTo.Contains(otherProcess)) {
@@ -137,9 +137,11 @@ class GetNodeIdDone : public GetServiceChildCallback
 {
 public:
   GetNodeIdDone(const nsAString& aOrigin, const nsAString& aTopLevelOrigin,
+                const nsAString& aGMPName,
                 bool aInPrivateBrowsing, UniquePtr<GetNodeIdCallback>&& aCallback)
     : mOrigin(aOrigin),
       mTopLevelOrigin(aTopLevelOrigin),
+      mGMPName(aGMPName),
       mInPrivateBrowsing(aInPrivateBrowsing),
       mCallback(Move(aCallback))
   {
@@ -154,6 +156,7 @@ public:
 
     nsCString outId;
     if (!aGMPServiceChild->SendGetGMPNodeId(mOrigin, mTopLevelOrigin,
+                                            mGMPName,
                                             mInPrivateBrowsing, &outId)) {
       mCallback->Done(NS_ERROR_FAILURE, EmptyCString());
       return;
@@ -165,6 +168,7 @@ public:
 private:
   nsString mOrigin;
   nsString mTopLevelOrigin;
+  nsString mGMPName;
   bool mInPrivateBrowsing;
   UniquePtr<GetNodeIdCallback> mCallback;
 };
@@ -172,11 +176,12 @@ private:
 NS_IMETHODIMP
 GeckoMediaPluginServiceChild::GetNodeId(const nsAString& aOrigin,
                                         const nsAString& aTopLevelOrigin,
+                                        const nsAString& aGMPName,
                                         bool aInPrivateBrowsing,
                                         UniquePtr<GetNodeIdCallback>&& aCallback)
 {
   UniquePtr<GetServiceChildCallback> callback(
-    new GetNodeIdDone(aOrigin, aTopLevelOrigin, aInPrivateBrowsing, Move(aCallback)));
+    new GetNodeIdDone(aOrigin, aTopLevelOrigin, aGMPName, aInPrivateBrowsing, Move(aCallback)));
   GetServiceChild(Move(callback));
   return NS_OK;
 }
@@ -293,7 +298,7 @@ GMPServiceChild::AllocPGMPContentParent(Transport* aTransport,
   nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
   MOZ_ASSERT(mainThread);
 
-  nsRefPtr<GMPContentParent> parent = new GMPContentParent();
+  RefPtr<GMPContentParent> parent = new GMPContentParent();
 
   DebugOnly<bool> ok = parent->Open(aTransport, aOtherPid,
                                     XRE_GetIOMessageLoop(),
@@ -311,34 +316,26 @@ GMPServiceChild::GetBridgedGMPContentParent(ProcessId aOtherPid,
   mContentParents.Get(aOtherPid, aGMPContentParent);
 }
 
-static PLDHashOperator
-FindAndRemoveGMPContentParent(const uint64_t& aKey,
-                              nsRefPtr<GMPContentParent>& aData,
-                              void* aUserArg)
-{
-  return aData == aUserArg ?
-         (PLDHashOperator)(PL_DHASH_STOP | PL_DHASH_REMOVE) :
-         PL_DHASH_NEXT;
-}
-
 void
 GMPServiceChild::RemoveGMPContentParent(GMPContentParent* aGMPContentParent)
 {
-  mContentParents.Enumerate(FindAndRemoveGMPContentParent, aGMPContentParent);
-}
-
-static PLDHashOperator
-FillProcessIDArray(const uint64_t& aKey, GMPContentParent*, void* aUserArg)
-{
-  static_cast<nsTArray<base::ProcessId>*>(aUserArg)->AppendElement(aKey);
-  return PL_DHASH_NEXT;
+  for (auto iter = mContentParents.Iter(); !iter.Done(); iter.Next()) {
+    RefPtr<GMPContentParent>& parent = iter.Data();
+    if (parent == aGMPContentParent) {
+      iter.Remove();
+      break;
+    }
+  }
 }
 
 void
 GMPServiceChild::GetAlreadyBridgedTo(nsTArray<base::ProcessId>& aAlreadyBridgedTo)
 {
   aAlreadyBridgedTo.SetCapacity(mContentParents.Count());
-  mContentParents.EnumerateRead(FillProcessIDArray, &aAlreadyBridgedTo);
+  for (auto iter = mContentParents.Iter(); !iter.Done(); iter.Next()) {
+    const uint64_t& id = iter.Key();
+    aAlreadyBridgedTo.AppendElement(id);
+  }
 }
 
 class OpenPGMPServiceChild : public nsRunnable
@@ -355,7 +352,7 @@ public:
 
   NS_IMETHOD Run()
   {
-    nsRefPtr<GeckoMediaPluginServiceChild> gmp =
+    RefPtr<GeckoMediaPluginServiceChild> gmp =
       GeckoMediaPluginServiceChild::GetSingleton();
     MOZ_ASSERT(!gmp->mServiceChild);
     if (mGMPServiceChild->Open(mTransport, mOtherPid, XRE_GetIOMessageLoop(),
@@ -377,7 +374,7 @@ private:
 PGMPServiceChild*
 GMPServiceChild::Create(Transport* aTransport, ProcessId aOtherPid)
 {
-  nsRefPtr<GeckoMediaPluginServiceChild> gmp =
+  RefPtr<GeckoMediaPluginServiceChild> gmp =
     GeckoMediaPluginServiceChild::GetSingleton();
   MOZ_ASSERT(!gmp->mServiceChild);
 

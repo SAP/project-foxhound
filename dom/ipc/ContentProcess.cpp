@@ -28,9 +28,9 @@ SetUpSandboxEnvironment()
     "SetUpSandboxEnvironment relies on nsDirectoryService being initialized");
 
   // A low integrity temp only currently makes sense for Vista or Later and
-  // sandbox pref level 1.
+  // sandbox pref level >= 1.
   if (!IsVistaOrLater() ||
-      Preferences::GetInt("security.sandbox.content.level") != 1) {
+      Preferences::GetInt("security.sandbox.content.level") < 1) {
     return;
   }
 
@@ -58,7 +58,7 @@ SetUpSandboxEnvironment()
 
   // Change the gecko defined temp directory to our low integrity one.
   // Undefine returns a failure if the property is not already set.
-  unused << nsDirectoryService::gService->Undefine(NS_OS_TEMP_DIR);
+  Unused << nsDirectoryService::gService->Undefine(NS_OS_TEMP_DIR);
   rv = nsDirectoryService::gService->Set(NS_OS_TEMP_DIR, lowIntegrityTemp);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;

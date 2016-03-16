@@ -35,12 +35,13 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(BrowserElementAudioChannel,
                                            DOMEventTargetHelper)
 
-  BrowserElementAudioChannel(nsPIDOMWindow* aWindow,
-                             nsIFrameLoader* aFrameLoader,
-                             nsIBrowserElementAPI* aAPI,
-                             AudioChannel aAudioChannel);
-
-  nsresult Initialize();
+  static already_AddRefed<BrowserElementAudioChannel>
+  Create(nsPIDOMWindow* aWindow,
+         nsIFrameLoader* aFrameLoader,
+         nsIBrowserElementAPI* aAPI,
+         AudioChannel aAudioChannel,
+         const nsAString& aManifestURL,
+         ErrorResult& aRv);
 
   // WebIDL methods
 
@@ -57,10 +58,21 @@ public:
 
   already_AddRefed<dom::DOMRequest> IsActive(ErrorResult& aRv);
 
+  already_AddRefed<dom::DOMRequest> NotifyChannel(const nsAString& aEvent,
+                                                  ErrorResult& aRv);
+
   IMPL_EVENT_HANDLER(activestatechanged);
 
 private:
+  BrowserElementAudioChannel(nsPIDOMWindow* aWindow,
+                             nsIFrameLoader* aFrameLoader,
+                             nsIBrowserElementAPI* aAPI,
+                             AudioChannel aAudioChannel,
+                             const nsAString& aManifestURL);
+
   ~BrowserElementAudioChannel();
+
+  nsresult Initialize();
 
   void ProcessStateChanged(const char16_t* aData);
 
@@ -69,6 +81,7 @@ private:
   nsCOMPtr<nsITabParent> mTabParent;
   nsCOMPtr<nsPIDOMWindow> mFrameWindow;
   AudioChannel mAudioChannel;
+  nsString mManifestURL;
 
   enum {
     eStateActive,

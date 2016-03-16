@@ -22,7 +22,9 @@
 #include "BaseRect.h"
 #include "Matrix.h"
 
-extern GFX2D_API PRLogModuleInfo *GetGFX2DLog();
+#if defined(MOZ_LOGGING)
+extern GFX2D_API mozilla::LogModule* GetGFX2DLog();
+#endif
 
 namespace mozilla {
 namespace gfx {
@@ -42,6 +44,7 @@ const int LOG_DEFAULT = LOG_EVERYTHING;
 const int LOG_DEFAULT = LOG_CRITICAL;
 #endif
 
+#if defined(MOZ_LOGGING)
 inline mozilla::LogLevel PRLogLevelForLevel(int aLevel) {
   switch (aLevel) {
   case LOG_CRITICAL:
@@ -57,6 +60,7 @@ inline mozilla::LogLevel PRLogLevelForLevel(int aLevel) {
   }
   return LogLevel::Debug;
 }
+#endif
 
 class PreferenceAccess
 {
@@ -118,9 +122,9 @@ private:
 /// by preference gfx.logging.crash.length (default is six, so by default,
 /// the first as well as the last five would show up in the crash log.)
 ///
-/// On platforms that support PR_LOGGING, the story is slightly more involved.
+/// On platforms that support MOZ_LOGGING, the story is slightly more involved.
 /// In that case, unless gfx.logging.level is set to 4 or higher, the output
-/// is further controlled by "gfx2d" PR logging module.  However, in the case
+/// is further controlled by the "gfx2d" logging module.  However, in the case
 /// where such module would disable the output, in all but gfxDebug cases,
 /// we will still send a printf.
 
@@ -129,7 +133,27 @@ enum class LogReason : int {
   MustBeMoreThanThis = -1,
   // Start.  Do not insert, always add at end.  If you remove items,
   // make sure the other items retain their values.
-
+  D3D11InvalidCallDeviceRemoved = 0,
+  D3D11InvalidCall,
+  D3DLockTimeout,
+  D3D10FinalizeFrame,
+  D3D11FinalizeFrame,
+  D3D10SyncLock,
+  D3D11SyncLock,
+  D2D1NoWriteMap,
+  JobStatusError,
+  FilterInputError,
+  FilterInputData, // 10
+  FilterInputRect,
+  FilterInputSet,
+  FilterInputFormat,
+  FilterNodeD2D1Target,
+  FilterNodeD2D1Backend,
+  SourceSurfaceIncompatible,
+  GlyphAllocFailedCairo,
+  GlyphAllocFailedCG,
+  InvalidRect,
+  CannotDraw3D, // 20
   // End
   MustBeLessThanThis = 101,
 };
@@ -144,9 +168,12 @@ struct BasicLogger
 #if defined(MOZ_WIDGET_GONK) || defined(MOZ_WIDGET_ANDROID)
       return true;
 #else
+#if defined(MOZ_LOGGING)
       if (MOZ_LOG_TEST(GetGFX2DLog(), PRLogLevelForLevel(aLevel))) {
         return true;
-      } else if ((PreferenceAccess::sGfxLogLevel >= LOG_DEBUG_PRLOG) ||
+      } else
+#endif
+      if ((PreferenceAccess::sGfxLogLevel >= LOG_DEBUG_PRLOG) ||
                  (aLevel < LOG_DEBUG)) {
         return true;
       }
@@ -174,9 +201,12 @@ struct BasicLogger
 #if defined(MOZ_WIDGET_GONK) || defined(MOZ_WIDGET_ANDROID)
       printf_stderr("%s%s", aString.c_str(), aNoNewline ? "" : "\n");
 #else
+#if defined(MOZ_LOGGING)
       if (MOZ_LOG_TEST(GetGFX2DLog(), PRLogLevelForLevel(aLevel))) {
         PR_LogPrint("%s%s", aString.c_str(), aNoNewline ? "" : "\n");
-      } else if ((PreferenceAccess::sGfxLogLevel >= LOG_DEBUG_PRLOG) ||
+      } else
+#endif
+      if ((PreferenceAccess::sGfxLogLevel >= LOG_DEBUG_PRLOG) ||
                  (aLevel < LOG_DEBUG)) {
         printf("%s%s", aString.c_str(), aNoNewline ? "" : "\n");
       }
@@ -389,8 +419,8 @@ public:
         case SurfaceFormat::R8G8B8X8:
           mMessage << "SurfaceFormat::R8G8B8X8";
           break;
-        case SurfaceFormat::R5G6B5:
-          mMessage << "SurfaceFormat::R5G6B5";
+        case SurfaceFormat::R5G6B5_UINT16:
+          mMessage << "SurfaceFormat::R5G6B5_UINT16";
           break;
         case SurfaceFormat::A8:
           mMessage << "SurfaceFormat::A8";
@@ -536,20 +566,17 @@ typedef Log<LOG_CRITICAL, CriticalLogger> CriticalLog;
 //   firstTime = false;
 //   gfxCriticalError() << "This message only shows up once;
 // }
-#ifdef GFX_LOG_DEBUG
+#if defined(DEBUG)
 #define gfxDebug mozilla::gfx::DebugLog
 #define gfxDebugOnce static gfxDebug GFX_LOGGING_GLUE(sOnceAtLine,__LINE__) = gfxDebug
 #else
 #define gfxDebug if (1) ; else mozilla::gfx::NoLog
 #define gfxDebugOnce if (1) ; else mozilla::gfx::NoLog
 #endif
-#ifdef GFX_LOG_WARNING
+
+// Have gfxWarning available (behind a runtime preference)
 #define gfxWarning mozilla::gfx::WarningLog
 #define gfxWarningOnce static gfxWarning GFX_LOGGING_GLUE(sOnceAtLine,__LINE__) = gfxWarning
-#else
-#define gfxWarning if (1) ; else mozilla::gfx::NoLog
-#define gfxWarningOnce if (1) ; else mozilla::gfx::NoLog
-#endif
 
 // In the debug build, this is equivalent to the default gfxCriticalError.
 // In the non-debug build, on nightly and dev edition, it will MOZ_CRASH.
@@ -557,7 +584,7 @@ typedef Log<LOG_CRITICAL, CriticalLogger> CriticalLog;
 //
 // You should create a (new) enum in the LogReason and use it for the reason
 // parameter to ensure uniqueness.
-#define gfxCrash(reason) gfxCriticalError(int(LogOptions::AutoPrefix) | int(LogOptions::AssertOnCall) | int(LogOptions::CrashAction), (reason))
+#define gfxDevCrash(reason) gfxCriticalError(int(gfx::LogOptions::AutoPrefix) | int(gfx::LogOptions::AssertOnCall) | int(gfx::LogOptions::CrashAction), (reason))
 
 // See nsDebug.h and the NS_WARN_IF macro
 

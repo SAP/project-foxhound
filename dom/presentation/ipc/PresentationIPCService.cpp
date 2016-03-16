@@ -71,11 +71,19 @@ PresentationIPCService::SendSessionMessage(const nsAString& aSessionId,
 }
 
 NS_IMETHODIMP
-PresentationIPCService::Terminate(const nsAString& aSessionId)
+PresentationIPCService::CloseSession(const nsAString& aSessionId)
 {
   MOZ_ASSERT(!aSessionId.IsEmpty());
 
-  return SendRequest(nullptr, TerminateRequest(nsAutoString(aSessionId)));
+  return SendRequest(nullptr, CloseSessionRequest(nsAutoString(aSessionId)));
+}
+
+NS_IMETHODIMP
+PresentationIPCService::TerminateSession(const nsAString& aSessionId)
+{
+  MOZ_ASSERT(!aSessionId.IsEmpty());
+
+  return SendRequest(nullptr, TerminateSessionRequest(nsAutoString(aSessionId)));
 }
 
 nsresult
@@ -246,8 +254,11 @@ PresentationIPCService::NotifyReceiverReady(const nsAString& aSessionId,
   mRespondingSessionIds.Put(aWindowId, new nsAutoString(aSessionId));
   mRespondingWindowIds.Put(aSessionId, aWindowId);
 
-  mCallback = nullptr;
   NS_WARN_IF(!sPresentationChild->SendNotifyReceiverReady(nsAutoString(aSessionId)));
+
+  // Release mCallback after using aSessionId
+  // because aSessionId is held by mCallback.
+  mCallback = nullptr;
   return NS_OK;
 }
 

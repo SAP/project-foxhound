@@ -6,8 +6,46 @@ ANDROID_MANIFEST_FILE := src/main/AndroidManifest.xml
 
 JAVAFILES := \
   src/main/java/org/mozilla/b2gdroid/Apps.java \
+  src/main/java/org/mozilla/b2gdroid/GeckoEventReceiver.java \
+  src/main/java/org/mozilla/b2gdroid/HeadlessSmsSendService.java \
   src/main/java/org/mozilla/b2gdroid/Launcher.java \
+  src/main/java/org/mozilla/b2gdroid/MmsService.java \
+  src/main/java/org/mozilla/b2gdroid/NotificationObserver.java \
+  src/main/java/org/mozilla/b2gdroid/RemoteGeckoEventProxy.java \
   src/main/java/org/mozilla/b2gdroid/ScreenStateObserver.java \
+  src/main/java/org/mozilla/b2gdroid/SettingsMapper.java \
+  src/main/java/org/mozilla/b2gdroid/GeckoEventReceiver.java \
+  src/main/java/org/mozilla/b2gdroid/NotificationObserver.java \
+  src/main/java/org/mozilla/b2gdroid/RemoteGeckoEventProxy.java \
+  src/main/java/com/google/android/mms/ContentType.java \
+  src/main/java/com/google/android/mms/InvalidHeaderValueException.java \
+  src/main/java/com/google/android/mms/MmsException.java \
+  src/main/java/com/google/android/mms/pdu/AcknowledgeInd.java \
+  src/main/java/com/google/android/mms/pdu/Base64.java \
+  src/main/java/com/google/android/mms/pdu/CharacterSets.java \
+  src/main/java/com/google/android/mms/pdu/DeliveryInd.java \
+  src/main/java/com/google/android/mms/pdu/EncodedStringValue.java \
+  src/main/java/com/google/android/mms/pdu/GenericPdu.java \
+  src/main/java/com/google/android/mms/pdu/MultimediaMessagePdu.java \
+  src/main/java/com/google/android/mms/pdu/NotificationInd.java \
+  src/main/java/com/google/android/mms/pdu/NotifyRespInd.java \
+  src/main/java/com/google/android/mms/pdu/PduBody.java \
+  src/main/java/com/google/android/mms/pdu/PduComposer.java \
+  src/main/java/com/google/android/mms/pdu/PduContentTypes.java \
+  src/main/java/com/google/android/mms/pdu/PduHeaders.java \
+  src/main/java/com/google/android/mms/pdu/PduParser.java \
+  src/main/java/com/google/android/mms/pdu/PduPart.java \
+  src/main/java/com/google/android/mms/pdu/PduPersister.java \
+  src/main/java/com/google/android/mms/pdu/QuotedPrintable.java \
+  src/main/java/com/google/android/mms/pdu/ReadOrigInd.java \
+  src/main/java/com/google/android/mms/pdu/ReadRecInd.java \
+  src/main/java/com/google/android/mms/pdu/RetrieveConf.java \
+  src/main/java/com/google/android/mms/pdu/SendConf.java \
+  src/main/java/com/google/android/mms/pdu/SendReq.java \
+  src/main/java/com/google/android/mms/util/AbstractCache.java \
+  src/main/java/com/google/android/mms/util/PduCache.java \
+  src/main/java/com/google/android/mms/util/PduCacheEntry.java \
+  src/main/java/com/google/android/mms/util/SqliteWrapper.java \
   $(NULL)
 
 # The GeckoView consuming APK depends on the GeckoView JAR files.  There are two
@@ -21,6 +59,15 @@ JAVAFILES := \
 # org.mozilla.gecko.R itself.
 jars_dir := $(DEPTH)/mobile/android/base
 ANDROID_EXTRA_JARS := $(filter-out %gecko-R.jar,$(wildcard $(jars_dir)/*.jar))
+# Needed for the UpdateService
+ANDROID_EXTRA_JARS += $(ANDROID_COMPAT_LIB)
+
+ANDROID_EXTRA_JARS += \
+	$(ANDROID_SUPPORT_ANNOTATIONS_JAR_LIB) \
+	$(ANDROID_SUPPORT_V4_AAR_LIB) \
+	$(ANDROID_SUPPORT_V4_AAR_INTERNAL_LIB) \
+	$(ANDROID_APPCOMPAT_V7_AAR_LIB) \
+	$(NULL)
 
 # The GeckoView consuming APK depends on the GeckoView resources.  This hacks a
 # type of poor man's AAR support.

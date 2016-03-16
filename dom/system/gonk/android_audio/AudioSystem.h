@@ -74,7 +74,9 @@ typedef enum {
     AUDIO_STREAM_ENFORCED_AUDIBLE = 7, /* Sounds that cannot be muted by user and must be routed to speaker */
     AUDIO_STREAM_DTMF             = 8,
     AUDIO_STREAM_TTS              = 9,
+#if ANDROID_VERSION < 19
     AUDIO_STREAM_FM               = 10,
+#endif
 
     AUDIO_STREAM_CNT,
     AUDIO_STREAM_MAX              = AUDIO_STREAM_CNT - 1,
@@ -545,6 +547,22 @@ enum {
 typedef uint32_t audio_devices_t;
 #endif
 
+static inline bool audio_is_output_device(uint32_t device)
+{
+#if ANDROID_VERSION < 17
+    if ((__builtin_popcount(device) == 1) && ((device & ~AUDIO_DEVICE_OUT_ALL) == 0))
+        return true;
+    else
+        return false;
+#else
+    if (((device & AUDIO_DEVICE_BIT_IN) == 0) &&
+            (__builtin_popcount(device) == 1) && ((device & ~AUDIO_DEVICE_OUT_ALL) == 0))
+        return true;
+    else
+        return false;
+#endif
+}
+
 /* device connection states used for audio_policy->set_device_connection_state()
  *  */
 typedef enum {
@@ -967,6 +985,9 @@ public:
     static status_t getStreamVolumeIndex(audio_stream_type_t stream, int *index);
 
     static uint32_t getStrategyForStream(stream_type stream);
+#if ANDROID_VERSION >= 17
+    static audio_devices_t getDevicesForStream(audio_stream_type_t stream);
+#endif
 
     static audio_io_handle_t getOutputForEffect(effect_descriptor_t *desc);
     static status_t registerEffect(effect_descriptor_t *desc,
@@ -992,6 +1013,23 @@ public:
     static bool isValidFormat(uint32_t format);
     static bool isLinearPCM(uint32_t format);
     static bool isModeInCall();
+
+#if ANDROID_VERSION >= 21
+    class AudioPortCallback : public RefBase
+    {
+    public:
+
+                AudioPortCallback() {}
+        virtual ~AudioPortCallback() {}
+
+        virtual void onAudioPortListUpdate() = 0;
+        virtual void onAudioPatchListUpdate() = 0;
+        virtual void onServiceDied() = 0;
+
+    };
+
+    static void setAudioPortCallback(sp<AudioPortCallback> callBack);
+#endif
 
 private:
 

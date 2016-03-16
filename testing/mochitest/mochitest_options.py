@@ -30,6 +30,26 @@ except ImportError:
     conditions = None
 
 
+def get_default_valgrind_suppression_files():
+    # We are trying to locate files in the source tree.  So if we
+    # don't know where the source tree is, we must give up.
+    if build_obj is None or build_obj.topsrcdir is None:
+        return []
+
+    supps_path = os.path.join(build_obj.topsrcdir, "build", "valgrind")
+
+    rv = []
+    if mozinfo.os == "linux":
+        if mozinfo.processor == "x86_64":
+            rv.append(os.path.join(supps_path, "x86_64-redhat-linux-gnu.sup"))
+            rv.append(os.path.join(supps_path, "cross-architecture.sup"))
+        elif mozinfo.processor == "x86":
+            rv.append(os.path.join(supps_path, "i386-redhat-linux-gnu.sup"))
+            rv.append(os.path.join(supps_path, "cross-architecture.sup"))
+
+    return rv
+
+
 class ArgumentContainer():
     __metaclass__ = ABCMeta
 
@@ -374,6 +394,13 @@ class MochitestArguments(ArgumentContainer):
           "default": False,
           "help": "Run tests with electrolysis preferences and test filtering enabled.",
           }],
+        [["--store-chrome-manifest"],
+         {"action": "store",
+          "help": "Destination path to write a copy of any chrome manifest "
+                  "written by the harness.",
+          "default": None,
+          "suppress": True,
+          }],
         [["--strict-content-sandbox"],
          {"action": "store_true",
           "default": False,
@@ -475,6 +502,20 @@ class MochitestArguments(ArgumentContainer):
           "default": None,
           "help": "Arguments to pass to the debugger.",
           }],
+        [["--valgrind"],
+         {"default": None,
+          "help": "Valgrind binary to run tests with. Program name or path.",
+          }],
+        [["--valgrind-args"],
+         {"dest": "valgrindArgs",
+          "default": None,
+          "help": "Extra arguments to pass to Valgrind.",
+          }],
+        [["--valgrind-supp-files"],
+         {"dest": "valgrindSuppFiles",
+          "default": None,
+          "help": "Comma-separated list of suppression files to pass to Valgrind.",
+          }],
         [["--debugger-interactive"],
          {"action": "store_true",
           "dest": "debuggerInteractive",
@@ -555,7 +596,7 @@ class MochitestArguments(ArgumentContainer):
 
         if options.extra_mozinfo_json:
             if not os.path.isfile(options.extra_mozinfo_json):
-               parser.error("Error: couldn't find mozinfo.json at '%s'."\
+                parser.error("Error: couldn't find mozinfo.json at '%s'."
                              % options.extra_mozinfo_json)
 
             options.extra_mozinfo_json = json.load(open(options.extra_mozinfo_json))
@@ -634,6 +675,13 @@ class MochitestArguments(ArgumentContainer):
         if options.debuggerArgs and not options.debugger:
             parser.error(
                 "--debugger-args requires --debugger.")
+
+        if options.store_chrome_manifest:
+            options.store_chrome_manifest = os.path.abspath(options.store_chrome_manifest)
+            if not os.path.isdir(os.path.dirname(options.store_chrome_manifest)):
+                parser.error(
+                    "directory for %s does not exist as a destination to copy a "
+                    "chrome manifest." % options.store_chrome_manifest)
 
         if options.testingModulesDir is None:
             if build_obj:
@@ -731,7 +779,7 @@ class MochitestArguments(ArgumentContainer):
         if options.test_paths and build_obj:
             # Normalize test paths so they are relative to test root
             options.test_paths = [build_obj._wrap_path_argument(p).relpath()
-                for p in options.test_paths]
+                                  for p in options.test_paths]
 
         return options
 
@@ -744,12 +792,6 @@ class B2GArguments(ArgumentContainer):
          {"dest": "b2gPath",
           "default": None,
           "help": "Path to B2G repo or QEMU directory.",
-          "suppress": True,
-          }],
-        [["--desktop"],
-         {"action": "store_true",
-          "default": False,
-          "help": "Run the tests on a B2G desktop build.",
           "suppress": True,
           }],
         [["--marionette"],
@@ -778,7 +820,7 @@ class B2GArguments(ArgumentContainer):
           }],
         [["--adbpath"],
          {"dest": "adbPath",
-          "default": "adb",
+          "default": None,
           "help": "Path to adb binary.",
           "suppress": True,
           }],
@@ -825,11 +867,6 @@ class B2GArguments(ArgumentContainer):
                   "prior to test.",
           "suppress": True,
           }],
-        [["--profile"],
-         {"dest": "profile",
-          "default": None,
-          "help": "For desktop testing, the path to the gaia profile to use.",
-          }],
         [["--logdir"],
          {"dest": "logdir",
           "default": None,
@@ -851,6 +888,8 @@ class B2GArguments(ArgumentContainer):
 
     defaults = {
         'logFile': 'mochitest.log',
+        # Specialpowers is integrated with marionette for b2g,
+        # see marionette's jar.mn.
         'extensionsToExclude': ['specialpowers'],
         # See dependencies of bug 1038943.
         'defaultLeakThreshold': 5536,
@@ -858,20 +897,6 @@ class B2GArguments(ArgumentContainer):
 
     def validate(self, parser, options, context):
         """Validate b2g options."""
-
-        if options.desktop and not options.app:
-            if not (build_obj and conditions.is_b2g_desktop(build_obj)):
-                parser.error(
-                    "--desktop specified, but no b2g desktop build detected! Either "
-                    "build for b2g desktop, or point --appname to a b2g desktop binary.")
-        elif build_obj and conditions.is_b2g_desktop(build_obj):
-            options.desktop = True
-            if not options.app:
-                options.app = build_obj.get_binary_path()
-                if not options.app.endswith('-bin'):
-                    options.app = '%s-bin' % options.app
-                if not os.path.isfile(options.app):
-                    options.app = options.app[:-len('-bin')]
 
         if options.remoteWebServer is None:
             if os.name != "nt":
@@ -1105,7 +1130,8 @@ class AndroidArguments(ArgumentContainer):
             options.robocopIni = os.path.abspath(options.robocopIni)
 
             if not options.robocopApk and build_obj:
-                options.robocopApk = os.path.join(build_obj.topobjdir, 'build', 'mobile',
+                options.robocopApk = os.path.join(build_obj.topobjdir, 'mobile', 'android',
+                                                  'tests', 'browser',
                                                   'robocop', 'robocop-debug.apk')
 
         if options.robocopApk != "":
@@ -1142,7 +1168,7 @@ class MochitestArgumentParser(ArgumentParser):
         if not self.app and build_obj:
             if conditions.is_android(build_obj):
                 self.app = 'android'
-            elif conditions.is_b2g(build_obj) or conditions.is_b2g_desktop(build_obj):
+            elif conditions.is_b2g(build_obj):
                 self.app = 'b2g'
         if not self.app:
             # platform can't be determined and app wasn't specified explicitly,

@@ -9,6 +9,7 @@
 
 #include "mozilla/Move.h"
 
+#include "js/Utility.h"
 #include "js/Vector.h"
 
 namespace js {
@@ -135,8 +136,9 @@ class Fifo
             // Attempt to remain in a valid state by reinserting the element
             // back at the front. If we can't remain in a valid state in the
             // face of OOMs, crash.
+            AutoEnterOOMUnsafeRegion oomUnsafe;
             if (!front_.append(mozilla::Move(t)))
-                CrashAtUnhandlableOOM("js::Fifo::popFront");
+                oomUnsafe.crash("js::Fifo::popFront");
             return false;
         }
         return true;

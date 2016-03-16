@@ -7,6 +7,7 @@
 
 #include "mozilla/dom/Selection.h"      // local var
 #include "mozilla/dom/Text.h"           // mTextNode
+#include "mozilla/Preferences.h"        // nsCaret Visibility
 #include "nsAString.h"                  // params
 #include "nsDebug.h"                    // for NS_ASSERTION, etc
 #include "nsEditor.h"                   // mEditor
@@ -17,6 +18,10 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+
+/*static*/ bool
+IMETextTxn::sCaretsExtendedVisibility = false;
+
 
 IMETextTxn::IMETextTxn(Text& aTextNode, uint32_t aOffset,
                        uint32_t aReplaceLength,
@@ -32,6 +37,12 @@ IMETextTxn::IMETextTxn(Text& aTextNode, uint32_t aOffset,
   , mEditor(aEditor)
   , mFixed(false)
 {
+  static bool addedPrefs = false;
+  if (!addedPrefs) {
+    mozilla::Preferences::AddBoolVarCache(&sCaretsExtendedVisibility,
+                                          "layout.accessiblecaret.extendedvisibility");
+    addedPrefs = true;
+  }
 }
 
 IMETextTxn::~IMETextTxn()
@@ -79,7 +90,7 @@ IMETextTxn::UndoTransaction()
 {
   // Get the selection first so we'll fail before making any changes if we
   // can't get it
-  nsRefPtr<Selection> selection = mEditor.GetSelection();
+  RefPtr<Selection> selection = mEditor.GetSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NOT_INITIALIZED);
 
   nsresult res = mTextNode->DeleteData(mOffset, mStringToInsert.Length());
@@ -106,7 +117,7 @@ IMETextTxn::Merge(nsITransaction* aTransaction, bool* aDidMerge)
   }
 
   // If aTransaction is another IMETextTxn then absorb it
-  nsRefPtr<IMETextTxn> otherTxn = do_QueryObject(aTransaction);
+  RefPtr<IMETextTxn> otherTxn = do_QueryObject(aTransaction);
   if (otherTxn) {
     // We absorb the next IME transaction by adopting its insert string
     mStringToInsert = otherTxn->mStringToInsert;
@@ -167,7 +178,7 @@ IMETextTxn::SetIMESelection(nsEditor& aEditor,
                             uint32_t aLengthOfCompositionString,
                             const TextRangeArray* aRanges)
 {
-  nsRefPtr<Selection> selection = aEditor.GetSelection();
+  RefPtr<Selection> selection = aEditor.GetSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NOT_INITIALIZED);
 
   nsresult rv = selection->StartBatchChanges();
@@ -238,7 +249,7 @@ IMETextTxn::SetIMESelection(nsEditor& aEditor,
       continue;
     }
 
-    nsRefPtr<nsRange> clauseRange;
+    RefPtr<nsRange> clauseRange;
     int32_t startOffset = static_cast<int32_t>(
       aOffsetInNode +
         std::min(textRange.mStartOffset, aLengthOfCompositionString));
@@ -297,11 +308,16 @@ IMETextTxn::SetIMESelection(nsEditor& aEditor,
     rv = selection->Collapse(aTextNode, caretOffset);
     NS_ASSERTION(NS_SUCCEEDED(rv),
                  "Failed to set caret at the end of composition string");
+
     // If caret range isn't specified explicitly, we should hide the caret.
-    aEditor.HideCaret(true);
+    // Hiding the caret benefits a Windows build (see bug 555642 comment #6),
+    // but causes loss of Fennec AccessibleCaret visibility during Caret drag.
+    if (!sCaretsExtendedVisibility) {
+      aEditor.HideCaret(true);
+    }
   }
 
-  rv = selection->EndBatchChanges();
+  rv = selection->EndBatchChangesInternal();
   NS_ASSERTION(NS_SUCCEEDED(rv), "Failed to end batch changes");
 
   return rv;

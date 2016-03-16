@@ -24,7 +24,7 @@ template <class> struct already_AddRefed;
 
 namespace mozilla {
 
-extern PRLogModuleInfo* GetGMPLog();
+extern LogModule* GetGMPLog();
 
 namespace gmp {
 
@@ -136,7 +136,7 @@ protected:
   static const size_t MAX_PLUGIN_CRASHES = 100;
   nsTArray<PluginCrash> mPluginCrashes;
 
-  nsTArray<nsRefPtr<GMPCrashCallback>> mPluginCrashCallbacks;
+  nsTArray<RefPtr<GMPCrashCallback>> mPluginCrashCallbacks;
 };
 
 } // namespace gmp

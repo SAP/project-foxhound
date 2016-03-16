@@ -27,7 +27,6 @@
 // If the pref is true, the antanna will be always available.
 #define DOM_FM_ANTENNA_INTERNAL_PREF "dom.fmradio.antenna.internal"
 
-using namespace mozilla::hal;
 using mozilla::Preferences;
 
 BEGIN_FMRADIO_NAMESPACE
@@ -106,7 +105,7 @@ private:
 NS_IMPL_ISUPPORTS_INHERITED0(FMRadioRequest, DOMRequest)
 
 FMRadio::FMRadio()
-  : mHeadphoneState(SWITCH_STATE_OFF)
+  : mHeadphoneState(hal::SWITCH_STATE_OFF)
   , mRdsGroupMask(0)
   , mAudioChannelAgentEnabled(false)
   , mHasInternalAntenna(false)
@@ -131,8 +130,8 @@ FMRadio::Init(nsPIDOMWindow *aWindow)
   if (mHasInternalAntenna) {
     LOG("We have an internal antenna.");
   } else {
-    mHeadphoneState = GetCurrentSwitchState(SWITCH_HEADPHONES);
-    RegisterSwitchObserver(SWITCH_HEADPHONES, this);
+    mHeadphoneState = hal::GetCurrentSwitchState(hal::SWITCH_HEADPHONES);
+    hal::RegisterSwitchObserver(hal::SWITCH_HEADPHONES, this);
   }
 
   nsCOMPtr<nsIAudioChannelAgent> audioChannelAgent =
@@ -155,7 +154,7 @@ FMRadio::Shutdown()
   IFMRadioService::Singleton()->RemoveObserver(this);
 
   if (!mHasInternalAntenna) {
-    UnregisterSwitchObserver(SWITCH_HEADPHONES, this);
+    hal::UnregisterSwitchObserver(hal::SWITCH_HEADPHONES, this);
   }
 
   mIsShutdown = true;
@@ -168,7 +167,7 @@ FMRadio::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 }
 
 void
-FMRadio::Notify(const SwitchEvent& aEvent)
+FMRadio::Notify(const hal::SwitchEvent& aEvent)
 {
   MOZ_ASSERT(!mHasInternalAntenna);
 
@@ -191,7 +190,7 @@ FMRadio::Notify(const FMRadioEventType& aType)
         DispatchTrustedEvent(NS_LITERAL_STRING("enabled"));
       } else {
         if (mAudioChannelAgentEnabled) {
-          mAudioChannelAgent->NotifyStoppedPlaying(nsIAudioChannelAgent::AUDIO_AGENT_NOTIFY);
+          mAudioChannelAgent->NotifyStoppedPlaying();
           mAudioChannelAgentEnabled = false;
         }
 
@@ -241,8 +240,8 @@ FMRadio::RdsEnabled()
 bool
 FMRadio::AntennaAvailable() const
 {
-  return mHasInternalAntenna ? true : (mHeadphoneState != SWITCH_STATE_OFF) &&
-    (mHeadphoneState != SWITCH_STATE_UNKNOWN);
+  return mHasInternalAntenna ? true : (mHeadphoneState != hal::SWITCH_STATE_OFF) &&
+    (mHeadphoneState != hal::SWITCH_STATE_UNKNOWN);
 }
 
 Nullable<double>
@@ -322,7 +321,9 @@ FMRadio::GetRdsgroup(JSContext* cx, JS::MutableHandle<JSObject*> retval)
 
   JSObject *rdsgroup = Uint16Array::Create(cx, this, 4);
   JS::AutoCheckCannotGC nogc;
-  uint16_t *data = JS_GetUint16ArrayData(rdsgroup, nogc);
+  bool isShared = false;
+  uint16_t *data = JS_GetUint16ArrayData(rdsgroup, &isShared, nogc);
+  MOZ_ASSERT(!isShared);  // Because created above.
   data[3] = group & 0xFFFF;
   group >>= 16;
   data[2] = group & 0xFFFF;
@@ -343,7 +344,7 @@ FMRadio::Enable(double aFrequency)
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r =
+  RefPtr<FMRadioRequest> r =
     new FMRadioRequest(win, this, FMRadioRequestArgs::TEnableRequestArgs);
   IFMRadioService::Singleton()->Enable(aFrequency, r);
 
@@ -358,7 +359,7 @@ FMRadio::Disable()
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
   IFMRadioService::Singleton()->Disable(r);
 
   return r.forget();
@@ -372,7 +373,7 @@ FMRadio::SetFrequency(double aFrequency)
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
   IFMRadioService::Singleton()->SetFrequency(aFrequency, r);
 
   return r.forget();
@@ -386,8 +387,8 @@ FMRadio::SeekUp()
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
-  IFMRadioService::Singleton()->Seek(FM_RADIO_SEEK_DIRECTION_UP, r);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  IFMRadioService::Singleton()->Seek(hal::FM_RADIO_SEEK_DIRECTION_UP, r);
 
   return r.forget();
 }
@@ -400,8 +401,8 @@ FMRadio::SeekDown()
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
-  IFMRadioService::Singleton()->Seek(FM_RADIO_SEEK_DIRECTION_DOWN, r);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  IFMRadioService::Singleton()->Seek(hal::FM_RADIO_SEEK_DIRECTION_DOWN, r);
 
   return r.forget();
 }
@@ -414,7 +415,7 @@ FMRadio::CancelSeek()
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
   IFMRadioService::Singleton()->CancelSeek(r);
 
   return r.forget();
@@ -428,7 +429,7 @@ FMRadio::EnableRDS()
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
   IFMRadioService::Singleton()->EnableRDS(r);
   return r.forget();
 }
@@ -441,7 +442,7 @@ FMRadio::DisableRDS()
     return nullptr;
   }
 
-  nsRefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
+  RefPtr<FMRadioRequest> r = new FMRadioRequest(win, this);
   FMRadioService::Singleton()->DisableRDS(r);
   return r.forget();
 }

@@ -7,6 +7,8 @@
 #ifndef vm_SavedStacks_h
 #define vm_SavedStacks_h
 
+#include "mozilla/FastBernoulliTrial.h"
+
 #include "jscntxt.h"
 #include "jsmath.h"
 #include "jswrapper.h"
@@ -146,6 +148,7 @@ namespace js {
 // principals.
 
 class SavedStacks {
+    friend class SavedFrame;
     friend JSObject* SavedStacksMetadataCallback(JSContext* cx, JSObject* target);
     friend bool JS::ubi::ConstructSavedFrameStackSlow(JSContext* cx,
                                                       JS::ubi::StackFrame& ubiFrame,
@@ -154,29 +157,32 @@ class SavedStacks {
   public:
     SavedStacks()
       : frames(),
-        allocationSamplingProbability(1.0),
-        allocationSkipCount(0),
-        rngState(0),
+        bernoulli(1.0, 0x59fdad7f6b4cc573, 0x91adf38db96a9354),
         creatingSavedFrame(false)
     { }
 
     bool     init();
     bool     initialized() const { return frames.initialized(); }
     bool     saveCurrentStack(JSContext* cx, MutableHandleSavedFrame frame, unsigned maxFrameCount = 0);
+    bool     copyAsyncStack(JSContext* cx, HandleObject asyncStack, HandleString asyncCause,
+                            MutableHandleSavedFrame adoptedStack, unsigned maxFrameCount = 0);
     void     sweep(JSRuntime* rt);
     void     trace(JSTracer* trc);
     uint32_t count();
     void     clear();
-    void     setRNGState(uint64_t state) { rngState = state; }
+    void     chooseSamplingProbability(JSCompartment*);
+
+    // Set the sampling random number generator's state to |state0| and
+    // |state1|. One or the other must be non-zero. See the comments for
+    // mozilla::non_crypto::XorShift128PlusRNG::setState for details.
+    void     setRNGState(uint64_t state0, uint64_t state1) { bernoulli.setRandomState(state0, state1); }
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
   private:
     SavedFrame::Set frames;
-    double          allocationSamplingProbability;
-    uint32_t        allocationSkipCount;
-    uint64_t        rngState;
-    bool            creatingSavedFrame;
+    mozilla::FastBernoulliTrial bernoulli;
+    bool creatingSavedFrame;
 
     // Similar to mozilla::ReentrancyGuard, but instead of asserting against
     // reentrancy, just change the behavior of SavedStacks::saveCurrentStack to
@@ -206,7 +212,6 @@ class SavedStacks {
                                 unsigned maxFrameCount);
     SavedFrame* getOrCreateSavedFrame(JSContext* cx, SavedFrame::HandleLookup lookup);
     SavedFrame* createFrameFromLookup(JSContext* cx, SavedFrame::HandleLookup lookup);
-    void        chooseSamplingProbability(JSContext* cx);
 
     // Cache for memoizing PCToLineNumber lookups.
 

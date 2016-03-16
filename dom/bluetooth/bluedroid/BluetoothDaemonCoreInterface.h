@@ -65,73 +65,73 @@ public:
                         DaemonSocketResultHandler* aRes) = 0;
 
   void SetNotificationHandler(
-    BluetoothNotificationHandler* aNotificationHandler);
-
-  BluetoothNotificationHandler* GetNotificationHandler();
+    BluetoothCoreNotificationHandler* aNotificationHandler);
 
   //
   // Commands
   //
 
-  nsresult EnableCmd(BluetoothResultHandler* aRes);
+  nsresult EnableCmd(BluetoothCoreResultHandler* aRes);
 
-  nsresult DisableCmd(BluetoothResultHandler* aRes);
+  nsresult DisableCmd(BluetoothCoreResultHandler* aRes);
 
-  nsresult GetAdapterPropertiesCmd(BluetoothResultHandler* aRes);
+  nsresult GetAdapterPropertiesCmd(BluetoothCoreResultHandler* aRes);
 
-  nsresult GetAdapterPropertyCmd(const nsAString& aName,
-                                 BluetoothResultHandler* aRes);
+  nsresult GetAdapterPropertyCmd(BluetoothPropertyType aType,
+                                 BluetoothCoreResultHandler* aRes);
 
-  nsresult SetAdapterPropertyCmd(const BluetoothNamedValue& aProperty,
-                                 BluetoothResultHandler* aRes);
+  nsresult SetAdapterPropertyCmd(const BluetoothProperty& aProperty,
+                                 BluetoothCoreResultHandler* aRes);
 
-  nsresult GetRemoteDevicePropertiesCmd(const nsAString& aRemoteAddr,
-                                        BluetoothResultHandler* aRes);
+  nsresult GetRemoteDevicePropertiesCmd(const BluetoothAddress& aRemoteAddr,
+                                        BluetoothCoreResultHandler* aRes);
 
-  nsresult GetRemoteDevicePropertyCmd(const nsAString& aRemoteAddr,
-                                      const nsAString& aName,
-                                      BluetoothResultHandler* aRes);
+  nsresult GetRemoteDevicePropertyCmd(const BluetoothAddress& aRemoteAddr,
+                                      BluetoothPropertyType aType,
+                                      BluetoothCoreResultHandler* aRes);
 
-  nsresult SetRemoteDevicePropertyCmd(const nsAString& aRemoteAddr,
-                                      const BluetoothNamedValue& aProperty,
-                                      BluetoothResultHandler* aRes);
+  nsresult SetRemoteDevicePropertyCmd(const BluetoothAddress& aRemoteAddr,
+                                      const BluetoothProperty& aProperty,
+                                      BluetoothCoreResultHandler* aRes);
 
-  nsresult GetRemoteServiceRecordCmd(const nsAString& aRemoteAddr,
-                                     const uint8_t aUuid[16],
-                                     BluetoothResultHandler* aRes);
+  nsresult GetRemoteServiceRecordCmd(const BluetoothAddress& aRemoteAddr,
+                                     const BluetoothUuid& aUuid,
+                                     BluetoothCoreResultHandler* aRes);
 
-  nsresult GetRemoteServicesCmd(const nsAString& aRemoteAddr,
-                                BluetoothResultHandler* aRes);
+  nsresult GetRemoteServicesCmd(const BluetoothAddress& aRemoteAddr,
+                                BluetoothCoreResultHandler* aRes);
 
-  nsresult StartDiscoveryCmd(BluetoothResultHandler* aRes);
+  nsresult StartDiscoveryCmd(BluetoothCoreResultHandler* aRes);
 
-  nsresult CancelDiscoveryCmd(BluetoothResultHandler* aRes);
+  nsresult CancelDiscoveryCmd(BluetoothCoreResultHandler* aRes);
 
-  nsresult CreateBondCmd(const nsAString& aBdAddr,
+  nsresult CreateBondCmd(const BluetoothAddress& aBdAddr,
                          BluetoothTransport aTransport,
-                         BluetoothResultHandler* aRes);
+                         BluetoothCoreResultHandler* aRes);
 
-  nsresult RemoveBondCmd(const nsAString& aBdAddr,
-                         BluetoothResultHandler* aRes);
+  nsresult RemoveBondCmd(const BluetoothAddress& aBdAddr,
+                         BluetoothCoreResultHandler* aRes);
 
-  nsresult CancelBondCmd(const nsAString& aBdAddr,
-                         BluetoothResultHandler* aRes);
+  nsresult CancelBondCmd(const BluetoothAddress& aBdAddr,
+                         BluetoothCoreResultHandler* aRes);
 
-  nsresult PinReplyCmd(const nsAString& aBdAddr, bool aAccept,
-                       const nsAString& aPinCode,
-                       BluetoothResultHandler* aRes);
+  nsresult PinReplyCmd(const BluetoothAddress& aBdAddr, bool aAccept,
+                       const BluetoothPinCode& aPinCode,
+                       BluetoothCoreResultHandler* aRes);
 
-  nsresult SspReplyCmd(const nsAString& aBdAddr, BluetoothSspVariant aVariant,
+  nsresult SspReplyCmd(const BluetoothAddress& aBdAddr,
+                       BluetoothSspVariant aVariant,
                        bool aAccept, uint32_t aPasskey,
-                       BluetoothResultHandler* aRes);
+                       BluetoothCoreResultHandler* aRes);
 
-  nsresult DutModeConfigureCmd(bool aEnable, BluetoothResultHandler* aRes);
+  nsresult DutModeConfigureCmd(bool aEnable,
+                               BluetoothCoreResultHandler* aRes);
 
   nsresult DutModeSendCmd(uint16_t aOpcode, uint8_t* aBuf, uint8_t aLen,
-                          BluetoothResultHandler* aRes);
+                          BluetoothCoreResultHandler* aRes);
 
   nsresult LeTestModeCmd(uint16_t aOpcode, uint8_t* aBuf, uint8_t aLen,
-                         BluetoothResultHandler* aRes);
+                         BluetoothCoreResultHandler* aRes);
 
 protected:
   void HandleSvc(const DaemonSocketPDUHeader& aHeader,
@@ -144,91 +144,90 @@ private:
   //
 
   typedef mozilla::ipc::DaemonResultRunnable0<
-    BluetoothResultHandler, void>
+    BluetoothCoreResultHandler, void>
     ResultRunnable;
 
   typedef mozilla::ipc::DaemonResultRunnable1<
-    BluetoothResultHandler, void, BluetoothStatus, BluetoothStatus>
+    BluetoothCoreResultHandler, void, BluetoothStatus, BluetoothStatus>
     ErrorRunnable;
 
   void ErrorRsp(const DaemonSocketPDUHeader& aHeader,
                 DaemonSocketPDU& aPDU,
-                BluetoothResultHandler* aRes);
+                BluetoothCoreResultHandler* aRes);
 
   void EnableRsp(const DaemonSocketPDUHeader& aHeader,
                  DaemonSocketPDU& aPDU,
-                 BluetoothResultHandler* aRes);
+                 BluetoothCoreResultHandler* aRes);
 
   void DisableRsp(const DaemonSocketPDUHeader& aHeader,
                   DaemonSocketPDU& aPDU,
-                  BluetoothResultHandler* aRes);
+                  BluetoothCoreResultHandler* aRes);
 
   void GetAdapterPropertiesRsp(const DaemonSocketPDUHeader& aHeader,
                                DaemonSocketPDU& aPDU,
-                               BluetoothResultHandler* aRes);
+                               BluetoothCoreResultHandler* aRes);
 
   void GetAdapterPropertyRsp(const DaemonSocketPDUHeader& aHeader,
                              DaemonSocketPDU& aPDU,
-                             BluetoothResultHandler* aRes);
+                             BluetoothCoreResultHandler* aRes);
 
   void SetAdapterPropertyRsp(const DaemonSocketPDUHeader& aHeader,
                              DaemonSocketPDU& aPDU,
-                             BluetoothResultHandler* aRes);
+                             BluetoothCoreResultHandler* aRes);
 
   void GetRemoteDevicePropertiesRsp(const DaemonSocketPDUHeader& aHeader,
                                     DaemonSocketPDU& aPDU,
-                                    BluetoothResultHandler* aRes);
+                                    BluetoothCoreResultHandler* aRes);
 
-  void
-  GetRemoteDevicePropertyRsp(const DaemonSocketPDUHeader& aHeader,
-                             DaemonSocketPDU& aPDU,
-                             BluetoothResultHandler* aRes);
+  void GetRemoteDevicePropertyRsp(const DaemonSocketPDUHeader& aHeader,
+                                  DaemonSocketPDU& aPDU,
+                                  BluetoothCoreResultHandler* aRes);
 
   void SetRemoteDevicePropertyRsp(const DaemonSocketPDUHeader& aHeader,
                                   DaemonSocketPDU& aPDU,
-                                  BluetoothResultHandler* aRes);
+                                  BluetoothCoreResultHandler* aRes);
   void GetRemoteServiceRecordRsp(const DaemonSocketPDUHeader& aHeader,
                                  DaemonSocketPDU& aPDU,
-                                 BluetoothResultHandler* aRes);
+                                 BluetoothCoreResultHandler* aRes);
   void GetRemoteServicesRsp(const DaemonSocketPDUHeader& aHeader,
                             DaemonSocketPDU& aPDU,
-                            BluetoothResultHandler* aRes);
+                            BluetoothCoreResultHandler* aRes);
 
   void StartDiscoveryRsp(const DaemonSocketPDUHeader& aHeader,
                          DaemonSocketPDU& aPDU,
-                         BluetoothResultHandler* aRes);
+                         BluetoothCoreResultHandler* aRes);
   void CancelDiscoveryRsp(const DaemonSocketPDUHeader& aHeader,
                           DaemonSocketPDU& aPDU,
-                          BluetoothResultHandler* aRes);
+                          BluetoothCoreResultHandler* aRes);
 
   void CreateBondRsp(const DaemonSocketPDUHeader& aHeader,
                      DaemonSocketPDU& aPDU,
-                     BluetoothResultHandler* aRes);
+                     BluetoothCoreResultHandler* aRes);
   void RemoveBondRsp(const DaemonSocketPDUHeader& aHeader,
                      DaemonSocketPDU& aPDU,
-                     BluetoothResultHandler* aRes);
+                     BluetoothCoreResultHandler* aRes);
   void CancelBondRsp(const DaemonSocketPDUHeader& aHeader,
                      DaemonSocketPDU& aPDU,
-                     BluetoothResultHandler* aRes);
+                     BluetoothCoreResultHandler* aRes);
 
   void PinReplyRsp(const DaemonSocketPDUHeader& aHeader,
                    DaemonSocketPDU& aPDU,
-                   BluetoothResultHandler* aRes);
+                   BluetoothCoreResultHandler* aRes);
   void SspReplyRsp(const DaemonSocketPDUHeader& aHeader,
                    DaemonSocketPDU& aPDU,
-                   BluetoothResultHandler* aRes);
+                   BluetoothCoreResultHandler* aRes);
 
   void DutModeConfigureRsp(const DaemonSocketPDUHeader& aHeader,
                            DaemonSocketPDU& aPDU,
-                           BluetoothResultHandler* aRes);
+                           BluetoothCoreResultHandler* aRes);
 
   void DutModeSendRsp(const DaemonSocketPDUHeader& aHeader,
                       DaemonSocketPDU& aPDU,
-                      BluetoothResultHandler* aRes);
+                      BluetoothCoreResultHandler* aRes);
 
   void LeTestModeRsp(const DaemonSocketPDUHeader& aHeader,
                      DaemonSocketPDU& aPDU,
-                     BluetoothResultHandler* aRes);
+                     BluetoothCoreResultHandler* aRes);
 
   void HandleRsp(const DaemonSocketPDUHeader& aHeader,
                  DaemonSocketPDU& aPDU, DaemonSocketResultHandler* aRes);
@@ -250,9 +249,9 @@ private:
     AdapterPropertiesNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable4<
-    NotificationHandlerWrapper, void, BluetoothStatus, nsString, int,
-    nsAutoArrayPtr<BluetoothProperty>, BluetoothStatus, const nsAString&,
-    int, const BluetoothProperty*>
+    NotificationHandlerWrapper, void, BluetoothStatus, BluetoothAddress, int,
+    nsAutoArrayPtr<BluetoothProperty>, BluetoothStatus,
+    const BluetoothAddress&, int, const BluetoothProperty*>
     RemoteDevicePropertiesNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable2<
@@ -265,23 +264,27 @@ private:
     DiscoveryStateChangedNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable3<
-    NotificationHandlerWrapper, void, nsString, nsString, uint32_t,
-    const nsAString&, const nsAString&>
+    NotificationHandlerWrapper, void,
+    BluetoothAddress, BluetoothRemoteName, uint32_t,
+    const BluetoothAddress&, const BluetoothRemoteName&>
     PinRequestNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable5<
-    NotificationHandlerWrapper, void, nsString, nsString, uint32_t,
-    BluetoothSspVariant, uint32_t, const nsAString&, const nsAString&>
+    NotificationHandlerWrapper, void,
+    BluetoothAddress, BluetoothRemoteName, uint32_t, BluetoothSspVariant,
+    uint32_t,
+    const BluetoothAddress&, const BluetoothRemoteName&>
     SspRequestNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable3<
-    NotificationHandlerWrapper, void, BluetoothStatus, nsString,
-    BluetoothBondState, BluetoothStatus, const nsAString&>
+    NotificationHandlerWrapper, void, BluetoothStatus, BluetoothAddress,
+    BluetoothBondState, BluetoothStatus, const BluetoothAddress&>
     BondStateChangedNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable3<
-    NotificationHandlerWrapper, void, BluetoothStatus, nsString, bool,
-    BluetoothStatus, const nsAString&>
+    NotificationHandlerWrapper, void,
+    BluetoothStatus, BluetoothAddress, BluetoothAclState,
+    BluetoothStatus, const BluetoothAddress&>
     AclStateChangedNotification;
 
   typedef mozilla::ipc::DaemonNotificationRunnable3<
@@ -293,14 +296,10 @@ private:
     NotificationHandlerWrapper, void, BluetoothStatus, uint16_t>
     LeTestModeNotification;
 
-  class AclStateChangedInitOp;
   class AdapterPropertiesInitOp;
-  class BondStateChangedInitOp;
   class DeviceFoundInitOp;
   class DutModeRecvInitOp;
-  class PinRequestInitOp;
   class RemoteDevicePropertiesInitOp;
-  class SspRequestInitOp;
 
   void AdapterStateChangedNtf(const DaemonSocketPDUHeader& aHeader,
                               DaemonSocketPDU& aPDU);
@@ -338,7 +337,104 @@ private:
   void HandleNtf(const DaemonSocketPDUHeader& aHeader,
                  DaemonSocketPDU& aPDU, DaemonSocketResultHandler* aRes);
 
-  static BluetoothNotificationHandler* sNotificationHandler;
+  static BluetoothCoreNotificationHandler* sNotificationHandler;
+};
+
+class BluetoothDaemonCoreInterface final
+  : public BluetoothCoreInterface
+{
+public:
+  BluetoothDaemonCoreInterface(BluetoothDaemonCoreModule* aModule);
+  ~BluetoothDaemonCoreInterface();
+
+  void SetNotificationHandler(
+    BluetoothCoreNotificationHandler* aNotificationHandler) override;
+
+  /* Enable / Disable */
+
+  void Enable(BluetoothCoreResultHandler* aRes) override;
+  void Disable(BluetoothCoreResultHandler* aRes) override;
+
+  /* Adapter Properties */
+
+  void GetAdapterProperties(BluetoothCoreResultHandler* aRes) override;
+  void GetAdapterProperty(BluetoothPropertyType aType,
+                          BluetoothCoreResultHandler* aRes) override;
+  void SetAdapterProperty(const BluetoothProperty& aProperty,
+                          BluetoothCoreResultHandler* aRes) override;
+
+  /* Remote Device Properties */
+
+  void GetRemoteDeviceProperties(const BluetoothAddress& aRemoteAddr,
+                                 BluetoothCoreResultHandler* aRes) override;
+  void GetRemoteDeviceProperty(const BluetoothAddress& aRemoteAddr,
+                               BluetoothPropertyType aType,
+                               BluetoothCoreResultHandler* aRes) override;
+  void SetRemoteDeviceProperty(const BluetoothAddress& aRemoteAddr,
+                               const BluetoothProperty& aProperty,
+                               BluetoothCoreResultHandler* aRes) override;
+
+  /* Remote Services */
+
+  void GetRemoteServiceRecord(const BluetoothAddress& aRemoteAddr,
+                              const BluetoothUuid& aUuid,
+                              BluetoothCoreResultHandler* aRes) override;
+  void GetRemoteServices(const BluetoothAddress& aRemoteAddr,
+                         BluetoothCoreResultHandler* aRes) override;
+
+  /* Discovery */
+
+  void StartDiscovery(BluetoothCoreResultHandler* aRes) override;
+  void CancelDiscovery(BluetoothCoreResultHandler* aRes) override;
+
+  /* Bonds */
+
+  void CreateBond(const BluetoothAddress& aBdAddr,
+                  BluetoothTransport aTransport,
+                  BluetoothCoreResultHandler* aRes) override;
+  void RemoveBond(const BluetoothAddress& aBdAddr,
+                  BluetoothCoreResultHandler* aRes) override;
+  void CancelBond(const BluetoothAddress& aBdAddr,
+                  BluetoothCoreResultHandler* aRes) override;
+
+  /* Connection */
+
+  void GetConnectionState(const BluetoothAddress& aBdAddr,
+                          BluetoothCoreResultHandler* aRes) override;
+
+  /* Authentication */
+
+  void PinReply(const BluetoothAddress& aBdAddr, bool aAccept,
+                const BluetoothPinCode& aPinCode,
+                BluetoothCoreResultHandler* aRes) override;
+
+  void SspReply(const BluetoothAddress& aBdAddr,
+                BluetoothSspVariant aVariant,
+                bool aAccept, uint32_t aPasskey,
+                BluetoothCoreResultHandler* aRes) override;
+
+  /* DUT Mode */
+
+  void DutModeConfigure(bool aEnable, BluetoothCoreResultHandler* aRes);
+  void DutModeSend(uint16_t aOpcode, uint8_t* aBuf, uint8_t aLen,
+                   BluetoothCoreResultHandler* aRes) override;
+
+  /* LE Mode */
+
+  void LeTestMode(uint16_t aOpcode, uint8_t* aBuf, uint8_t aLen,
+                  BluetoothCoreResultHandler* aRes) override;
+
+  /* Energy Information */
+
+  void ReadEnergyInfo(BluetoothCoreResultHandler* aRes) override;
+
+private:
+  void DispatchError(BluetoothCoreResultHandler* aRes,
+                     BluetoothStatus aStatus);
+  void DispatchError(BluetoothCoreResultHandler* aRes,
+                     nsresult aRv);
+
+  BluetoothDaemonCoreModule* mModule;
 };
 
 END_BLUETOOTH_NAMESPACE

@@ -45,8 +45,17 @@
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+
+#include "webrtc/common_types.h"
+#include "webrtc/common_video/interface/native_handle.h"
+#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/video_engine/include/vie_errors.h"
 
 #include "logging.h"
+
+// Should come from MediaEngineWebRTC.h, but that's a pain to include here
+#define DEFAULT_SAMPLE_RATE 32000
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -76,7 +85,7 @@ nsresult MediaPipeline::Init() {
 
   RUN_ON_THREAD(sts_thread_,
                 WrapRunnable(
-                    nsRefPtr<MediaPipeline>(this),
+                    RefPtr<MediaPipeline>(this),
                     &MediaPipeline::Init_s),
                 NS_DISPATCH_NORMAL);
 
@@ -680,7 +689,7 @@ nsresult MediaPipelineTransmit::ReplaceTrack(DOMMediaStream *domstream,
                                              const std::string& track_id) {
   // MainThread, checked in calls we make
   MOZ_MTLOG(ML_DEBUG, "Reattaching pipeline " << description_ << " to stream "
-            << static_cast<void *>(domstream->GetStream())
+            << static_cast<void *>(domstream->GetOwnedStream())
             << " track " << track_id << " conduit type=" <<
             (conduit_->type() == MediaSessionConduit::AUDIO ?"audio":"video"));
 
@@ -688,7 +697,7 @@ nsresult MediaPipelineTransmit::ReplaceTrack(DOMMediaStream *domstream,
     DetachMediaStream();
   }
   domstream_ = domstream; // Detach clears it
-  stream_ = domstream->GetStream();
+  stream_ = domstream->GetOwnedStream();
   // Unsets the track id after RemoveListener() takes effect.
   listener_->UnsetTrackId(stream_->GraphImpl());
   track_id_ = track_id;
@@ -843,7 +852,7 @@ UnsetTrackId(MediaStreamGraphImpl* graph) {
     {
       listener_->UnsetTrackIdImpl();
     }
-    nsRefPtr<PipelineListener> listener_;
+    RefPtr<PipelineListener> listener_;
   };
   graph->AppendMessage(new Message(this));
 #else
@@ -865,7 +874,9 @@ void MediaPipelineTransmit::PipelineListener::
 NotifyQueuedTrackChanges(MediaStreamGraph* graph, TrackID tid,
                          StreamTime offset,
                          uint32_t events,
-                         const MediaSegment& queued_media) {
+                         const MediaSegment& queued_media,
+                         MediaStream* aInputStream,
+                         TrackID aInputTrackID) {
   MOZ_MTLOG(ML_DEBUG, "MediaPipeline::NotifyQueuedTrackChanges()");
 
   // ignore non-direct data if we're also getting direct data
@@ -1095,11 +1106,39 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
     uint32_t width = graphicBuffer->getWidth();
     uint32_t height = graphicBuffer->getHeight();
     // XXX gralloc buffer's width and stride could be different depends on implementations.
-    conduit->SendVideoFrame(static_cast<unsigned char*>(basePtr),
-                            I420SIZE(width, height),
-                            width,
-                            height,
-                            destFormat, 0);
+
+    if (destFormat != mozilla::kVideoI420) {
+      unsigned char *video_frame = static_cast<unsigned char*>(basePtr);
+      webrtc::I420VideoFrame i420_frame;
+      int stride_y = width;
+      int stride_uv = (width + 1) / 2;
+      int target_width = width;
+      int target_height = height;
+      if (i420_frame.CreateEmptyFrame(target_width,
+                                      abs(target_height),
+                                      stride_y,
+                                      stride_uv, stride_uv) < 0) {
+        MOZ_ASSERT(false, "Can't allocate empty i420frame");
+        return;
+      }
+      webrtc::VideoType commonVideoType =
+        webrtc::RawVideoTypeToCommonVideoVideoType(
+          static_cast<webrtc::RawVideoType>((int)destFormat));
+      if (ConvertToI420(commonVideoType, video_frame, 0, 0, width, height,
+                        I420SIZE(width, height), webrtc::kVideoRotation_0,
+                        &i420_frame)) {
+        MOZ_ASSERT(false, "Can't convert video type for sending to I420");
+        return;
+      }
+      i420_frame.set_ntp_time_ms(0);
+      conduit->SendVideoFrame(i420_frame);
+    } else {
+      conduit->SendVideoFrame(static_cast<unsigned char*>(basePtr),
+                              I420SIZE(width, height),
+                              width,
+                              height,
+                              destFormat, 0);
+    }
     graphicBuffer->unlock();
     return;
   } else
@@ -1174,7 +1213,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
   int half_height = (size.height + 1) >> 1;
   int c_size = half_width * half_height;
   int buffer_size = YSIZE(size.width, size.height) + 2 * c_size;
-  UniquePtr<uint8[]> yuv_scoped(new (fallible) uint8[buffer_size]);
+  auto yuv_scoped = MakeUniqueFallible<uint8[]>(buffer_size);
   if (!yuv_scoped)
     return;
   uint8* yuv = yuv_scoped.get();
@@ -1200,7 +1239,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
                               yuv + cr_offset, half_width,
                               size.width, size.height);
       break;
-    case SurfaceFormat::R5G6B5:
+    case SurfaceFormat::R5G6B5_UINT16:
       rv = libyuv::RGB565ToI420(static_cast<uint8*>(map.GetData()),
                                 map.GetStride(),
                                 yuv, size.width,
@@ -1293,7 +1332,7 @@ static void AddTrackAndListener(MediaStream* source,
     TrackID track_id_;
     TrackRate track_rate_;
     nsAutoPtr<MediaSegment> segment_;
-    nsRefPtr<MediaStreamListener> listener_;
+    RefPtr<MediaStreamListener> listener_;
     const RefPtr<TrackAddedCallback> completed_;
   };
 
@@ -1332,7 +1371,7 @@ void GenericReceiveListener::AddSelf(MediaSegment* segment) {
 MediaPipelineReceiveAudio::PipelineListener::PipelineListener(
     SourceMediaStream * source, TrackID track_id,
     const RefPtr<MediaSessionConduit>& conduit, bool queue_track)
-  : GenericReceiveListener(source, track_id, 16000, queue_track), // XXX rate assumption
+  : GenericReceiveListener(source, track_id, DEFAULT_SAMPLE_RATE, queue_track), // XXX rate assumption
     conduit_(conduit)
 {
   MOZ_ASSERT(track_rate_%100 == 0);
@@ -1380,7 +1419,7 @@ NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
     MOZ_MTLOG(ML_DEBUG, "Audio conduit returned buffer of length "
               << samples_length);
 
-    nsRefPtr<SharedBuffer> samples = SharedBuffer::Create(samples_length * sizeof(uint16_t));
+    RefPtr<SharedBuffer> samples = SharedBuffer::Create(samples_length * sizeof(uint16_t));
     int16_t *samples_data = static_cast<int16_t *>(samples->Data());
     AudioSegment segment;
     // We derive the number of channels of the stream from the number of samples
@@ -1458,7 +1497,19 @@ MediaPipelineReceiveVideo::PipelineListener::PipelineListener(
 
 void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
     const unsigned char* buffer,
-    unsigned int buffer_size,
+    size_t buffer_size,
+    uint32_t time_stamp,
+    int64_t render_time,
+    const RefPtr<Image>& video_image) {
+  RenderVideoFrame(buffer, buffer_size, width_, (width_ + 1) >> 1,
+                   time_stamp, render_time, video_image);
+}
+
+void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
+    const unsigned char* buffer,
+    size_t buffer_size,
+    uint32_t y_stride,
+    uint32_t cbcr_stride,
     uint32_t time_stamp,
     int64_t render_time,
     const RefPtr<Image>& video_image) {
@@ -1475,22 +1526,20 @@ void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
   if (buffer) {
     // Create a video frame using |buffer|.
 #ifdef MOZ_WIDGET_GONK
-    ImageFormat format = ImageFormat::GRALLOC_PLANAR_YCBCR;
+    RefPtr<PlanarYCbCrImage> yuvImage = new GrallocImage();
 #else
-    ImageFormat format = ImageFormat::PLANAR_YCBCR;
+    RefPtr<PlanarYCbCrImage> yuvImage = image_container_->CreatePlanarYCbCrImage();
 #endif
-    nsRefPtr<Image> image = image_container_->CreateImage(format);
-    PlanarYCbCrImage* yuvImage = static_cast<PlanarYCbCrImage*>(image.get());
     uint8_t* frame = const_cast<uint8_t*>(static_cast<const uint8_t*> (buffer));
 
     PlanarYCbCrData yuvData;
     yuvData.mYChannel = frame;
-    yuvData.mYSize = IntSize(width_, height_);
-    yuvData.mYStride = width_;
-    yuvData.mCbCrStride = (width_ + 1) >> 1;
+    yuvData.mYSize = IntSize(y_stride, height_);
+    yuvData.mYStride = y_stride;
+    yuvData.mCbCrStride = cbcr_stride;
     yuvData.mCbChannel = frame + height_ * yuvData.mYStride;
     yuvData.mCrChannel = yuvData.mCbChannel + ((height_ + 1) >> 1) * yuvData.mCbCrStride;
-    yuvData.mCbCrSize = IntSize((width_ + 1) >> 1, (height_ + 1) >> 1);
+    yuvData.mCbCrSize = IntSize(yuvData.mCbCrStride, (height_ + 1) >> 1);
     yuvData.mPicX = 0;
     yuvData.mPicY = 0;
     yuvData.mPicSize = IntSize(width_, height_);
@@ -1501,7 +1550,7 @@ void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
       return;
     }
 
-    image_ = image.forget();
+    image_ = yuvImage;
   }
 #ifdef WEBRTC_GONK
   else {
@@ -1518,9 +1567,9 @@ NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
   ReentrantMonitorAutoEnter enter(monitor_);
 
 #if defined(MOZILLA_XPCOMRT_API)
-  nsRefPtr<SimpleImageBuffer> image = image_;
+  RefPtr<SimpleImageBuffer> image = image_;
 #elif defined(MOZILLA_INTERNAL_API)
-  nsRefPtr<Image> image = image_;
+  RefPtr<Image> image = image_;
   // our constructor sets track_rate_ to the graph rate
   MOZ_ASSERT(track_rate_ == source_->GraphRate());
 #endif

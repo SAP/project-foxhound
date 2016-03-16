@@ -15,8 +15,7 @@
 #include "nsIConsoleService.h"
 #include "nsHttpRequestHead.h"
 #include "nsServiceManagerUtils.h"
-
-extern PRThread *gSocketThread;
+#include "nsSocketTransportService2.h"
 
 namespace mozilla {
 namespace net {
@@ -28,7 +27,7 @@ nsHttpConnectionMgr::PrintDiagnostics()
 }
 
 void
-nsHttpConnectionMgr::OnMsgPrintDiagnostics(int32_t, void *)
+nsHttpConnectionMgr::OnMsgPrintDiagnostics(int32_t, ARefBase *)
 {
   MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
 

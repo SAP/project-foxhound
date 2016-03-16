@@ -287,8 +287,12 @@ this.EventManager.prototype = {
       case Events.DOCUMENT_LOAD_COMPLETE:
       {
         let position = this.contentControl.vc.position;
+        // Check if position is in the subtree of the DOCUMENT_LOAD_COMPLETE
+        // event's dialog accesible or accessible document
+        let subtreeRoot = aEvent.accessible.role === Roles.DIALOG ?
+          aEvent.accessible : aEvent.accessibleDocument;
         if (aEvent.accessible === aEvent.accessibleDocument ||
-            (position && Utils.isInSubtree(position, aEvent.accessible))) {
+            (position && Utils.isInSubtree(position, subtreeRoot))) {
           // Do not automove into the document if the virtual cursor is already
           // positioned inside it.
           break;
@@ -298,6 +302,7 @@ this.EventManager.prototype = {
         break;
       }
       case Events.VALUE_CHANGE:
+      case Events.TEXT_VALUE_CHANGE:
       {
         let position = this.contentControl.vc.position;
         let target = aEvent.accessible;

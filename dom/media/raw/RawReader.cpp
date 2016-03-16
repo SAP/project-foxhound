@@ -10,6 +10,7 @@
 #include "VideoUtils.h"
 #include "nsISeekableStream.h"
 #include "gfx2DGlue.h"
+#include "mozilla/UniquePtr.h"
 
 using namespace mozilla;
 using namespace mozilla::media;
@@ -24,11 +25,6 @@ RawReader::RawReader(AbstractMediaDecoder* aDecoder)
 RawReader::~RawReader()
 {
   MOZ_COUNT_DTOR(RawReader);
-}
-
-nsresult RawReader::Init(MediaDecoderReader* aCloneDonor)
-{
-  return NS_OK;
 }
 
 nsresult RawReader::ResetDecode()
@@ -106,16 +102,9 @@ nsresult RawReader::ReadMetadata(MediaInfo* aInfo,
   return NS_OK;
 }
 
-bool
-RawReader::IsMediaSeekable()
-{
-  // not used
-  return true;
-}
-
  bool RawReader::DecodeAudioData()
 {
-  MOZ_ASSERT(OnTaskQueue() || mDecoder->OnStateMachineTaskQueue());
+  MOZ_ASSERT(OnTaskQueue());
   return false;
 }
 
@@ -150,7 +139,7 @@ bool RawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   int64_t currentFrameTime = USECS_PER_S * mCurrentFrame / mFrameRate;
   uint32_t length = mFrameSize - sizeof(RawPacketHeader);
 
-  nsAutoArrayPtr<uint8_t> buffer(new uint8_t[length]);
+  auto buffer = MakeUnique<uint8_t[]>(length);
 
   // We're always decoding one frame when called
   while(true) {
@@ -163,7 +152,7 @@ bool RawReader::DecodeVideoFrame(bool &aKeyframeSkip,
       return false;
     }
 
-    if (!ReadFromResource(buffer, length)) {
+    if (!ReadFromResource(buffer.get(), length)) {
       return false;
     }
 
@@ -177,7 +166,7 @@ bool RawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   }
 
   VideoData::YCbCrBuffer b;
-  b.mPlanes[0].mData = buffer;
+  b.mPlanes[0].mData = buffer.get();
   b.mPlanes[0].mStride = mMetadata.frameWidth * mMetadata.lumaChannelBpp / 8.0;
   b.mPlanes[0].mHeight = mMetadata.frameHeight;
   b.mPlanes[0].mWidth = mMetadata.frameWidth;
@@ -185,7 +174,7 @@ bool RawReader::DecodeVideoFrame(bool &aKeyframeSkip,
 
   uint32_t cbcrStride = mMetadata.frameWidth * mMetadata.chromaChannelBpp / 8.0;
 
-  b.mPlanes[1].mData = buffer + mMetadata.frameHeight * b.mPlanes[0].mStride;
+  b.mPlanes[1].mData = buffer.get() + mMetadata.frameHeight * b.mPlanes[0].mStride;
   b.mPlanes[1].mStride = cbcrStride;
   b.mPlanes[1].mHeight = mMetadata.frameHeight / 2;
   b.mPlanes[1].mWidth = mMetadata.frameWidth / 2;
@@ -197,7 +186,7 @@ bool RawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   b.mPlanes[2].mWidth = mMetadata.frameWidth / 2;
   b.mPlanes[2].mOffset = b.mPlanes[2].mSkip = 0;
 
-  nsRefPtr<VideoData> v = VideoData::Create(mInfo.mVideo,
+  RefPtr<VideoData> v = VideoData::Create(mInfo.mVideo,
                                             mDecoder->GetImageContainer(),
                                             -1,
                                             currentFrameTime,
@@ -216,7 +205,7 @@ bool RawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   return true;
 }
 
-nsRefPtr<MediaDecoderReader::SeekPromise>
+RefPtr<MediaDecoderReader::SeekPromise>
 RawReader::Seek(int64_t aTime, int64_t aEndTime)
 {
   MOZ_ASSERT(OnTaskQueue());
@@ -234,8 +223,8 @@ RawReader::Seek(int64_t aTime, int64_t aEndTime)
   NS_ENSURE_SUCCESS(rv, SeekPromise::CreateAndReject(rv, __func__));
 
   mVideoQueue.Reset();
-  nsRefPtr<SeekPromise::Private> p = new SeekPromise::Private(__func__);
-  nsRefPtr<RawReader> self = this;
+  RefPtr<SeekPromise::Private> p = new SeekPromise::Private(__func__);
+  RefPtr<RawReader> self = this;
   InvokeUntil([self] () {
     MOZ_ASSERT(self->OnTaskQueue());
     NS_ENSURE_TRUE(!self->mShutdown, false);
@@ -247,7 +236,7 @@ RawReader::Seek(int64_t aTime, int64_t aEndTime)
            self->mVideoQueue.Peek()->GetEndTime() >= aTime;
   })->Then(OwnerThread(), __func__, [self, p, aTime] () {
     while (self->mVideoQueue.GetSize() >= 2) {
-      nsRefPtr<VideoData> releaseMe = self->mVideoQueue.PopFront();
+      RefPtr<VideoData> releaseMe = self->mVideoQueue.PopFront();
     }
     p->Resolve(aTime, __func__);
   }, [self, p, frame] {

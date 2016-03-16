@@ -15,11 +15,11 @@ namespace mozilla {
 namespace layers {
 
 
-D3D9SurfaceImage::D3D9SurfaceImage()
+D3D9SurfaceImage::D3D9SurfaceImage(bool aIsFirstFrame)
   : Image(nullptr, ImageFormat::D3D9_RGB32_TEXTURE)
   , mSize(0, 0)
   , mValid(false)
-  , mIsFirstFrame(false)
+  , mIsFirstFrame(aIsFirstFrame)
 {}
 
 D3D9SurfaceImage::~D3D9SurfaceImage()
@@ -27,18 +27,20 @@ D3D9SurfaceImage::~D3D9SurfaceImage()
 }
 
 HRESULT
-D3D9SurfaceImage::SetData(const Data& aData)
+D3D9SurfaceImage::AllocateAndCopy(D3D9RecycleAllocator* aAllocator,
+                                  IDirect3DSurface9* aSurface,
+                                  const gfx::IntRect& aRegion)
 {
-  NS_ENSURE_TRUE(aData.mSurface, E_POINTER);
+  NS_ENSURE_TRUE(aSurface, E_POINTER);
   HRESULT hr;
-  RefPtr<IDirect3DSurface9> surface = aData.mSurface;
+  RefPtr<IDirect3DSurface9> surface = aSurface;
 
   RefPtr<IDirect3DDevice9> device;
-  hr = surface->GetDevice(byRef(device));
+  hr = surface->GetDevice(getter_AddRefs(device));
   NS_ENSURE_TRUE(SUCCEEDED(hr), E_FAIL);
 
   RefPtr<IDirect3D9> d3d9;
-  hr = device->GetDirect3D(byRef(d3d9));
+  hr = device->GetDirect3D(getter_AddRefs(d3d9));
   NS_ENSURE_TRUE(SUCCEEDED(hr), E_FAIL);
 
   D3DSURFACE_DESC desc;
@@ -54,21 +56,20 @@ D3D9SurfaceImage::SetData(const Data& aData)
   // DXVA surfaces aren't created sharable, so we need to copy the surface
   // to a sharable texture to that it's accessible to the layer manager's
   // device.
-  const gfx::IntRect& region = aData.mRegion;
-  RefPtr<SharedTextureClientD3D9> textureClient =
-    aData.mAllocator->CreateOrRecycleClient(gfx::SurfaceFormat::B8G8R8X8,
-                                            region.Size());
+  RefPtr<TextureClient> textureClient =
+    aAllocator->CreateOrRecycleClient(gfx::SurfaceFormat::B8G8R8X8, aRegion.Size());
   if (!textureClient) {
     return E_FAIL;
   }
 
   // Copy the image onto the texture, preforming YUV -> RGB conversion if necessary.
-  RefPtr<IDirect3DSurface9> textureSurface = textureClient->GetD3D9Surface();
+  RefPtr<IDirect3DSurface9> textureSurface = static_cast<DXGID3D9TextureData*>(
+    textureClient->GetInternalData())->GetD3D9Surface();
   if (!textureSurface) {
     return E_FAIL;
   }
 
-  RECT src = { region.x, region.y, region.x+region.width, region.y+region.height };
+  RECT src = { aRegion.x, aRegion.y, aRegion.x+aRegion.width, aRegion.y+aRegion.height };
   hr = device->StretchRect(surface, &src, textureSurface, nullptr, D3DTEXF_NONE);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
@@ -76,16 +77,14 @@ D3D9SurfaceImage::SetData(const Data& aData)
   // image, we're less likely to need to wait for the draw operation to
   // complete.
   RefPtr<IDirect3DQuery9> query;
-  hr = device->CreateQuery(D3DQUERYTYPE_EVENT, byRef(query));
+  hr = device->CreateQuery(D3DQUERYTYPE_EVENT, getter_AddRefs(query));
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
   hr = query->Issue(D3DISSUE_END);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
   mTextureClient = textureClient;
-  mSize = region.Size();
+  mSize = aRegion.Size();
   mQuery = query;
-  mIsFirstFrame = aData.mIsFirstFrame;
-
   return S_OK;
 }
 
@@ -123,7 +122,7 @@ D3D9SurfaceImage::EnsureSynchronized()
 const D3DSURFACE_DESC&
 D3D9SurfaceImage::GetDesc() const
 {
-  return mTextureClient->GetDesc();
+  return static_cast<DXGID3D9TextureData*>(mTextureClient->GetInternalData())->GetDesc();
 }
 
 gfx::IntSize
@@ -144,7 +143,9 @@ D3D9SurfaceImage::GetTextureClient(CompositableClient* aClient)
 already_AddRefed<gfx::SourceSurface>
 D3D9SurfaceImage::GetAsSourceSurface()
 {
-  NS_ENSURE_TRUE(mTextureClient, nullptr);
+  if (!mTextureClient) {
+    return nullptr;
+  }
 
   HRESULT hr;
   RefPtr<gfx::DataSourceSurface> surface = gfx::Factory::CreateDataSourceSurface(mSize, gfx::SurfaceFormat::B8G8R8X8);
@@ -155,14 +156,15 @@ D3D9SurfaceImage::GetAsSourceSurface()
   // Ensure that the texture is ready to be used.
   EnsureSynchronized();
 
+  DXGID3D9TextureData* texData = static_cast<DXGID3D9TextureData*>(mTextureClient->GetInternalData());
   // Readback the texture from GPU memory into system memory, so that
   // we can copy it into the Cairo image. This is expensive.
-  RefPtr<IDirect3DSurface9> textureSurface = mTextureClient->GetD3D9Surface();
+  RefPtr<IDirect3DSurface9> textureSurface = texData->GetD3D9Surface();
   if (!textureSurface) {
     return nullptr;
   }
 
-  RefPtr<IDirect3DDevice9> device = mTextureClient->GetD3D9Device();
+  RefPtr<IDirect3DDevice9> device = texData->GetD3D9Device();
   if (!device) {
     return nullptr;
   }
@@ -172,7 +174,7 @@ D3D9SurfaceImage::GetAsSourceSurface()
                                            mSize.height,
                                            D3DFMT_X8R8G8B8,
                                            D3DPOOL_SYSTEMMEM,
-                                           byRef(systemMemorySurface),
+                                           getter_AddRefs(systemMemorySurface),
                                            0);
   NS_ENSURE_TRUE(SUCCEEDED(hr), nullptr);
 
@@ -210,28 +212,20 @@ D3D9RecycleAllocator::Allocate(gfx::SurfaceFormat aFormat,
                                TextureFlags aTextureFlags,
                                TextureAllocationFlags aAllocFlags)
 {
-  return SharedTextureClientD3D9::Create(mSurfaceAllocator,
-                                         aFormat,
-                                         aTextureFlags,
-                                         mDevice,
-                                         aSize);
-}
-
-already_AddRefed<SharedTextureClientD3D9>
-D3D9RecycleAllocator::CreateOrRecycleClient(gfx::SurfaceFormat aFormat,
-                                            const gfx::IntSize& aSize)
-{
-  RefPtr<TextureClient> textureClient =
-    CreateOrRecycle(aFormat,
-                    aSize,
-                    BackendSelector::Content,
-                    layers::TextureFlags::DEFAULT);
-  if (!textureClient) {
+  TextureData* data = DXGID3D9TextureData::Create(aSize, aFormat, aTextureFlags, mDevice);
+  if (!data) {
     return nullptr;
   }
 
-  RefPtr<SharedTextureClientD3D9> textureD3D9 = static_cast<SharedTextureClientD3D9*>(textureClient.get());
-  return textureD3D9.forget();
+  return MakeAndAddRef<TextureClient>(data, aTextureFlags, mSurfaceAllocator);
+}
+
+already_AddRefed<TextureClient>
+D3D9RecycleAllocator::CreateOrRecycleClient(gfx::SurfaceFormat aFormat,
+                                            const gfx::IntSize& aSize)
+{
+  return CreateOrRecycle(aFormat, aSize, BackendSelector::Content,
+                         TextureFlags::DEFAULT);
 }
 
 } // namespace layers

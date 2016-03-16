@@ -26,7 +26,6 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "nsContentUtils.h"
 #include "nsWrapperCache.h"
 #include "nsJSEnvironment.h"
 #include "xpcpublic.h"
@@ -261,7 +260,6 @@ protected:
     // we should re-throw them.
     ErrorResult& mErrorResult;
     const ExceptionHandling mExceptionHandling;
-    JS::ContextOptions mSavedJSContextOptions;
     const bool mIsMainThread;
   };
 };
@@ -406,7 +404,7 @@ public:
   already_AddRefed<XPCOMCallbackT> ToXPCOMCallback() const
   {
     if (!HasWebIDLCallback()) {
-      nsRefPtr<XPCOMCallbackT> callback = GetXPCOMCallback();
+      RefPtr<XPCOMCallbackT> callback = GetXPCOMCallback();
       return callback.forget();
     }
 
@@ -421,7 +419,7 @@ public:
   already_AddRefed<WebIDLCallbackT> ToWebIDLCallback() const
   {
     if (HasWebIDLCallback()) {
-      nsRefPtr<WebIDLCallbackT> callback = GetWebIDLCallback();
+      RefPtr<WebIDLCallbackT> callback = GetWebIDLCallback();
       return callback.forget();
     }
     return nullptr;

@@ -4,7 +4,7 @@
 
 'use strict';
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
@@ -55,9 +55,9 @@ function init() {
   }
 
   for (let i = 0; i < length; ++i) {
-    let info = data.queryElementAt(i, Ci.nsIServiceWorkerInfo);
+    let info = data.queryElementAt(i, Ci.nsIServiceWorkerRegistrationInfo);
     if (!info) {
-      dump("AboutServiceWorkers: Invalid nsIServiceWorkerInfo interface.\n");
+      dump("AboutServiceWorkers: Invalid nsIServiceWorkerRegistrationInfo interface.\n");
       continue;
     }
 
@@ -116,9 +116,12 @@ function display(info, pushNotificationService) {
 
   createItem(bundle.GetStringFromName('scope'), info.scope);
   createItem(bundle.GetStringFromName('scriptSpec'), info.scriptSpec, true);
-  createItem(bundle.GetStringFromName('currentWorkerURL'), info.currentWorkerURL, true);
-  createItem(bundle.GetStringFromName('activeCacheName'), info.activeCacheName);
-  createItem(bundle.GetStringFromName('waitingCacheName'), info.waitingCacheName);
+  let currentWorkerURL = info.activeWorker ? info.activeWorker.scriptSpec : "";
+  createItem(bundle.GetStringFromName('currentWorkerURL'), currentWorkerURL, true);
+  let activeCacheName = info.activeWorker ? info.activeWorker.cacheName : "";
+  createItem(bundle.GetStringFromName('activeCacheName'), activeCacheName);
+  let waitingCacheName = info.waitingWorker ? info.waitingWorker.cacheName : "";
+  createItem(bundle.GetStringFromName('waitingCacheName'), waitingCacheName);
 
   let pushItem = createItem(bundle.GetStringFromName('pushEndpoint'), bundle.GetStringFromName('waiting'));
   if (pushNotificationService) {

@@ -113,7 +113,7 @@ public:
 
       NS_IMETHOD Run() override
       {
-        nsRefPtr<DeviceStorageUsedSpaceCache::CacheEntry> cacheEntry;
+        RefPtr<DeviceStorageUsedSpaceCache::CacheEntry> cacheEntry;
         cacheEntry = mCache->GetCacheEntry(mStorageName);
         if (cacheEntry) {
           cacheEntry->mDirty = true;
@@ -130,16 +130,16 @@ public:
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mIOThread);
 
-    nsRefPtr<InvalidateRunnable> r = new InvalidateRunnable(this, aStorageName);
-    mIOThread->Dispatch(r, NS_DISPATCH_NORMAL);
+    mIOThread->Dispatch(new InvalidateRunnable(this, aStorageName),
+                        NS_DISPATCH_NORMAL);
   }
 
-  void Dispatch(nsIRunnable* aRunnable)
+  void Dispatch(already_AddRefed<nsIRunnable>&& aRunnable)
   {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mIOThread);
 
-    mIOThread->Dispatch(aRunnable, NS_DISPATCH_NORMAL);
+    mIOThread->Dispatch(mozilla::Move(aRunnable), NS_DISPATCH_NORMAL);
   }
 
   nsresult AccumUsedSizes(const nsAString& aStorageName,
@@ -173,7 +173,7 @@ private:
   };
   already_AddRefed<CacheEntry> GetCacheEntry(const nsAString& aStorageName);
 
-  nsTArray<nsRefPtr<CacheEntry>> mCacheEntries;
+  nsTArray<RefPtr<CacheEntry>> mCacheEntries;
 
   nsCOMPtr<nsIThread> mIOThread;
 
@@ -232,7 +232,7 @@ private:
   virtual ~nsDOMDeviceStorageCursor();
 
   bool mOkToCallContinue;
-  nsRefPtr<DeviceStorageCursorRequest> mRequest;
+  RefPtr<DeviceStorageCursorRequest> mRequest;
 };
 
 class DeviceStorageRequestManager final
@@ -245,7 +245,7 @@ public:
   DeviceStorageRequestManager();
 
   bool IsOwningThread();
-  nsresult DispatchToOwningThread(nsIRunnable* aRunnable);
+  nsresult DispatchToOwningThread(already_AddRefed<nsIRunnable>&& aRunnable);
 
   void StorePermission(size_t aAccess, bool aAllow);
   uint32_t CheckPermission(size_t aAccess);
@@ -278,7 +278,7 @@ private:
   DeviceStorageRequestManager& operator=(const DeviceStorageRequestManager&) = delete;
 
   struct ListEntry {
-    nsRefPtr<mozilla::dom::DOMRequest> mRequest;
+    RefPtr<mozilla::dom::DOMRequest> mRequest;
     uint32_t mId;
     bool mCursor;
   };
@@ -290,7 +290,8 @@ private:
   uint32_t CreateInternal(mozilla::dom::DOMRequest* aRequest, bool aCursor);
   nsresult ResolveInternal(ListIndex aIndex, JS::HandleValue aResult);
   nsresult RejectInternal(ListIndex aIndex, const nsString& aReason);
-  nsresult DispatchOrAbandon(uint32_t aId, nsIRunnable* aRunnable);
+  nsresult DispatchOrAbandon(uint32_t aId,
+                             already_AddRefed<nsIRunnable>&& aRunnable);
   ListType::index_type Find(uint32_t aId);
 
   nsCOMPtr<nsIThread> mOwningThread;
@@ -311,16 +312,16 @@ protected:
 
 public:
   virtual void Initialize(DeviceStorageRequestManager* aManager,
-                          DeviceStorageFile* aFile,
+                          already_AddRefed<DeviceStorageFile>&& aFile,
                           uint32_t aRequest);
 
   virtual void Initialize(DeviceStorageRequestManager* aManager,
-                          DeviceStorageFile* aFile,
+                          already_AddRefed<DeviceStorageFile>&& aFile,
                           uint32_t aRequest,
                           mozilla::dom::BlobImpl* aBlob);
 
   virtual void Initialize(DeviceStorageRequestManager* aManager,
-                          DeviceStorageFile* aFile,
+                          already_AddRefed<DeviceStorageFile>&& aFile,
                           uint32_t aRequest,
                           DeviceStorageFileDescriptor* aDSFileDescriptor);
 
@@ -378,18 +379,19 @@ protected:
   }
 
   virtual ~DeviceStorageRequest();
-  virtual void Prepare();
+  virtual nsresult Prepare();
   virtual nsresult CreateSendParams(mozilla::dom::DeviceStorageParams& aParams);
   nsresult AllowInternal();
   nsresult SendToParentProcess();
 
-  nsRefPtr<DeviceStorageRequestManager> mManager;
-  nsRefPtr<DeviceStorageFile> mFile;
+  RefPtr<DeviceStorageRequestManager> mManager;
+  RefPtr<DeviceStorageFile> mFile;
   uint32_t mId;
-  nsRefPtr<mozilla::dom::BlobImpl> mBlob;
-  nsRefPtr<DeviceStorageFileDescriptor> mDSFileDescriptor;
+  RefPtr<mozilla::dom::BlobImpl> mBlob;
+  RefPtr<DeviceStorageFileDescriptor> mDSFileDescriptor;
   DeviceStorageAccessType mAccess;
   bool mSendToParent;
+  bool mUseMainThread;
   bool mUseStreamTransport;
   bool mCheckFile;
   bool mCheckBlob;
@@ -410,7 +412,7 @@ public:
   using DeviceStorageRequest::Initialize;
 
   virtual void Initialize(DeviceStorageRequestManager* aManager,
-                          DeviceStorageFile* aFile,
+                          already_AddRefed<DeviceStorageFile>&& aFile,
                           uint32_t aRequest,
                           PRTime aSince);
 
@@ -429,7 +431,7 @@ protected:
   size_t mIndex;
   PRTime mSince;
   nsString mStorageType;
-  nsTArray<nsRefPtr<DeviceStorageFile> > mFiles;
+  nsTArray<RefPtr<DeviceStorageFile> > mFiles;
 };
 
 #endif

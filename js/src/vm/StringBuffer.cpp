@@ -118,6 +118,7 @@ StringBuffer::finishString()
         if (JSInlineString::lengthFits<Latin1Char>(len)) {
             mozilla::Range<const Latin1Char> range(latin1Chars().begin(), len);
             JSFlatString* res = NewInlineString<CanGC>(cx, range);
+            // TaintFox: propagate taint.
             res->setTaint(taint());
             return res;
         }
@@ -125,6 +126,7 @@ StringBuffer::finishString()
         if (JSInlineString::lengthFits<char16_t>(len)) {
             mozilla::Range<const char16_t> range(twoByteChars().begin(), len);
             JSFlatString* res = NewInlineString<CanGC>(cx, range);
+            // TaintFox: propagate taint.
             res->setTaint(taint());
             return res;
         }
@@ -133,32 +135,6 @@ StringBuffer::finishString()
     return isLatin1()
         ? FinishStringFlat<Latin1Char>(cx, *this, latin1Chars())
         : FinishStringFlat<char16_t>(cx, *this, twoByteChars());
-}
-
-template <typename CharT, class Buffer>
-static void
-ReassignChars(ExclusiveContext *cx, Buffer &cb, JSFlatString *str)
-{
-    cb.resize(str->length());
-    ScopedJSFreePtr<CharT> buf(cb.begin());
-    {
-        JS::AutoCheckCannotGC nogc;
-        PodCopy(buf.get(), str->chars<CharT>(nogc), str->length());
-    }
-
-    buf.forget();
-}
-
-JSFlatString *
-StringBuffer::finishCurrentString()
-{
-    JSFlatString *str = finishString();
-    if(isLatin1())
-        ReassignChars<Latin1Char>(cx, latin1Chars(), str);
-    else
-        ReassignChars<char16_t>(cx, twoByteChars(), str);
-
-    return str;
 }
 
 JSAtom*
@@ -176,7 +152,6 @@ StringBuffer::finishAtom()
 
     JSAtom* atom = AtomizeChars(cx, twoByteChars().begin(), len);
     twoByteChars().clear();
-
     // TaintFox: We loose taint here, can't taint atoms..
     return atom;
 }

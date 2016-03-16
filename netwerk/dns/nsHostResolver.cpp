@@ -68,7 +68,7 @@ PR_STATIC_ASSERT (HighThreadThreshold <= MAX_RESOLVER_THREADS);
 
 //----------------------------------------------------------------------------
 
-static PRLogModuleInfo *gHostResolverLog = nullptr;
+static LazyLogModule gHostResolverLog("nsHostResolver");
 #define LOG(args) MOZ_LOG(gHostResolverLog, mozilla::LogLevel::Debug, args)
 
 #define LOG_HOST(host, interface) host,                                        \
@@ -349,7 +349,7 @@ nsHostRecord::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) const
 
     n += mBlacklistedItems.ShallowSizeOfExcludingThis(mallocSizeOf);
     for (size_t i = 0; i < mBlacklistedItems.Length(); i++) {
-        n += mBlacklistedItems[i].SizeOfExcludingThisMustBeUnshared(mallocSizeOf);
+        n += mBlacklistedItems[i].SizeOfExcludingThisIfUnshared(mallocSizeOf);
     }
     return n;
 }
@@ -737,7 +737,7 @@ nsHostResolver::ResolveHost(const char            *host,
 
     // if result is set inside the lock, then we need to issue the
     // callback before returning.
-    nsRefPtr<nsHostRecord> result;
+    RefPtr<nsHostRecord> result;
     nsresult status = NS_OK, rv = NS_OK;
     {
         MutexAutoLock lock(mLock);
@@ -971,7 +971,7 @@ nsHostResolver::DetachCallback(const char            *host,
                                nsResolveHostCallback *callback,
                                nsresult               status)
 {
-    nsRefPtr<nsHostRecord> rec;
+    RefPtr<nsHostRecord> rec;
     {
         MutexAutoLock lock(mLock);
 
@@ -1458,9 +1458,6 @@ nsHostResolver::Create(uint32_t maxCacheEntries,
                        uint32_t defaultGracePeriod,
                        nsHostResolver **result)
 {
-    if (!gHostResolverLog)
-        gHostResolverLog = PR_NewLogModule("nsHostResolver");
-
     nsHostResolver *res = new nsHostResolver(maxCacheEntries, defaultCacheEntryLifetime,
                                              defaultGracePeriod);
     NS_ADDREF(res);

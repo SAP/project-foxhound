@@ -11,6 +11,7 @@
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "nsMemory.h"
+#include "GeckoProfiler.h"
 
 #include "nsLocalFile.h"
 #include "nsIDirectoryEnumerator.h"
@@ -328,8 +329,8 @@ public:
 
 private:
   Mutex                  mLock;
-  nsRefPtr<IPersistFile> mPersistFile;
-  nsRefPtr<IShellLinkW>  mShellLink;
+  RefPtr<IPersistFile> mPersistFile;
+  RefPtr<IShellLinkW>  mShellLink;
 };
 
 ShortcutResolver::ShortcutResolver() :
@@ -1075,6 +1076,7 @@ nsLocalFile::ResolveAndStat()
     return NS_OK;
   }
 
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
   // we can't resolve/stat anything that isn't a valid NSPR addressable path
   if (mWorkingPath.IsEmpty()) {
     return NS_ERROR_FILE_INVALID_PATH;
@@ -1179,7 +1181,7 @@ NS_IMETHODIMP
 nsLocalFile::Clone(nsIFile** aFile)
 {
   // Just copy-construct ourselves
-  nsRefPtr<nsLocalFile> file = new nsLocalFile(*this);
+  RefPtr<nsLocalFile> file = new nsLocalFile(*this);
   file.forget(aFile);
 
   return NS_OK;
@@ -2115,7 +2117,7 @@ nsLocalFile::CopyMove(nsIFile* aParentDir, const nsAString& aNewName,
       }
     }
 
-    nsRefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
+    RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
 
     rv = dirEnum->Init(this);
     if (NS_FAILED(rv)) {
@@ -2359,7 +2361,7 @@ nsLocalFile::Remove(bool aRecursive)
 
   if (isDir) {
     if (aRecursive) {
-      nsRefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
+      RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
 
       rv = dirEnum->Init(this);
       if (NS_FAILED(rv)) {
@@ -3214,7 +3216,7 @@ nsLocalFile::GetDirectoryEntries(nsISimpleEnumerator** aEntries)
 
   *aEntries = nullptr;
   if (mWorkingPath.EqualsLiteral("\\\\.")) {
-    nsRefPtr<nsDriveEnumerator> drives = new nsDriveEnumerator;
+    RefPtr<nsDriveEnumerator> drives = new nsDriveEnumerator;
     rv = drives->Init();
     if (NS_FAILED(rv)) {
       return rv;
@@ -3223,7 +3225,7 @@ nsLocalFile::GetDirectoryEntries(nsISimpleEnumerator** aEntries)
     return NS_OK;
   }
 
-  nsRefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
+  RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
   rv = dirEnum->Init(this);
   if (NS_FAILED(rv)) {
     return rv;
@@ -3358,7 +3360,7 @@ nsLocalFile::Launch()
 nsresult
 NS_NewLocalFile(const nsAString& aPath, bool aFollowLinks, nsIFile** aResult)
 {
-  nsRefPtr<nsLocalFile> file = new nsLocalFile();
+  RefPtr<nsLocalFile> file = new nsLocalFile();
 
   file->SetFollowLinks(aFollowLinks);
 

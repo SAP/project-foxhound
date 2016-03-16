@@ -12,8 +12,7 @@
 #include "nsCOMPtr.h"
 #include "nsStringFwd.h"
 #include "mozilla/Logging.h"
-
-extern PRLogModuleInfo *gHttpLog;
+#include "ARefBase.h"
 
 //-----------------------------------------------------------------------------
 // nsHttpConnectionInfo - holds the properties of a connection
@@ -30,7 +29,9 @@ extern PRLogModuleInfo *gHttpLog;
 
 namespace mozilla { namespace net {
 
-class nsHttpConnectionInfo
+extern LazyLogModule gHttpLog;
+
+class nsHttpConnectionInfo: public ARefBase
 {
 public:
     nsHttpConnectionInfo(const nsACString &originHost,
@@ -83,6 +84,8 @@ public:
     const char *ProxyHost() const { return mProxyInfo ? mProxyInfo->Host().get() : nullptr; }
     int32_t     ProxyPort() const { return mProxyInfo ? mProxyInfo->Port() : -1; }
     const char *ProxyType() const { return mProxyInfo ? mProxyInfo->Type() : nullptr; }
+    const char *ProxyUsername() const { return mProxyInfo ? mProxyInfo->Username().get() : nullptr; }
+    const char *ProxyPassword() const { return mProxyInfo ? mProxyInfo->Password().get() : nullptr; }
 
     // Compare this connection info to another...
     // Two connections are 'equal' if they end up talking the same
@@ -162,7 +165,7 @@ private:
     bool                   mUsingConnect;  // if will use CONNECT with http proxy
     nsCString              mNPNToken;
 
-// for nsRefPtr
+// for RefPtr
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHttpConnectionInfo)
 };
 

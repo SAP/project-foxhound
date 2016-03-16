@@ -38,7 +38,6 @@ import org.mozilla.gecko.fxa.authenticator.AndroidFxAccount;
 import org.mozilla.gecko.fxa.login.Married;
 import org.mozilla.gecko.fxa.login.State;
 import org.mozilla.gecko.fxa.sync.FxAccountSyncStatusHelper;
-import org.mozilla.gecko.fxa.tasks.FxAccountCodeResender;
 import org.mozilla.gecko.sync.ExtendedJSONObject;
 import org.mozilla.gecko.sync.SharedPreferencesClientsDataDelegate;
 import org.mozilla.gecko.sync.SyncConfiguration;
@@ -167,9 +166,6 @@ public class FxAccountStatusFragment
     accountCategory = (PreferenceCategory) ensureFindPreference("signed_in_as_category");
     profilePreference = ensureFindPreference("profile");
     manageAccountPreference = ensureFindPreference("manage_account");
-    if (AppConstants.MOZ_ANDROID_NATIVE_ACCOUNT_UI) {
-      accountCategory.removePreference(manageAccountPreference);
-    }
     authServerPreference = ensureFindPreference("auth_server");
     removeAccountPreference = ensureFindPreference("remove_account");
 
@@ -231,16 +227,11 @@ public class FxAccountStatusFragment
   @Override
   public boolean onPreferenceClick(Preference preference) {
     if (preference == profilePreference) {
-      if (!AppConstants.MOZ_ANDROID_NATIVE_ACCOUNT_UI) {
-        // There is no native equivalent, bind the click action to fire an intent.
-        ActivityUtils.openURLInFennec(getActivity().getApplicationContext(), "about:accounts?action=avatar");
-      }
-      // Either we handled the event or there is no native equivalent.
+      ActivityUtils.openURLInFennec(getActivity().getApplicationContext(), "about:accounts?action=avatar");
       return true;
     }
 
     if (preference == manageAccountPreference) {
-      // There's no native equivalent, so no need to re-direct through an Intent filter.
       ActivityUtils.openURLInFennec(getActivity().getApplicationContext(), "about:accounts?action=manage");
       return true;
     }
@@ -253,10 +244,6 @@ public class FxAccountStatusFragment
     if (preference == needsPasswordPreference) {
       final Intent intent = new Intent(FxAccountConstants.ACTION_FXA_UPDATE_CREDENTIALS);
       intent.putExtra(FxAccountWebFlowActivity.EXTRA_ENDPOINT, FxAccountConstants.ENDPOINT_PREFERENCES);
-      final Bundle extras = getExtrasForAccount();
-      if (extras != null) {
-        intent.putExtras(extras);
-      }
       // Per http://stackoverflow.com/a/8992365, this triggers a known bug with
       // the soft keyboard not being shown for the started activity. Why, Android, why?
       intent.setFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
@@ -268,10 +255,6 @@ public class FxAccountStatusFragment
     if (preference == needsFinishMigratingPreference) {
       final Intent intent = new Intent(FxAccountConstants.ACTION_FXA_FINISH_MIGRATING);
       intent.putExtra(FxAccountWebFlowActivity.EXTRA_ENDPOINT, FxAccountConstants.ENDPOINT_PREFERENCES);
-      final Bundle extras = getExtrasForAccount();
-      if (extras != null) {
-        intent.putExtras(extras);
-      }
       // Per http://stackoverflow.com/a/8992365, this triggers a known bug with
       // the soft keyboard not being shown for the started activity. Why, Android, why?
       intent.setFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
@@ -281,10 +264,6 @@ public class FxAccountStatusFragment
     }
 
     if (preference == needsVerificationPreference) {
-      if (AppConstants.MOZ_ANDROID_NATIVE_ACCOUNT_UI) {
-        FxAccountCodeResender.resendCode(getActivity().getApplicationContext(), fxAccount);
-      }
-
       final Intent intent = new Intent(FxAccountConstants.ACTION_FXA_CONFIRM_ACCOUNT);
       // Per http://stackoverflow.com/a/8992365, this triggers a known bug with
       // the soft keyboard not being shown for the started activity. Why, Android, why?
@@ -316,18 +295,6 @@ public class FxAccountStatusFragment
     }
 
     return false;
-  }
-
-  protected Bundle getExtrasForAccount() {
-    final Bundle extras = new Bundle();
-    final ExtendedJSONObject o = new ExtendedJSONObject();
-    o.put(FxAccountAbstractSetupActivity.JSON_KEY_AUTH, fxAccount.getAccountServerURI());
-    final ExtendedJSONObject services = new ExtendedJSONObject();
-    services.put(FxAccountAbstractSetupActivity.JSON_KEY_SYNC, fxAccount.getTokenServerURI());
-    services.put(FxAccountAbstractSetupActivity.JSON_KEY_PROFILE, fxAccount.getProfileServerURI());
-    o.put(FxAccountAbstractSetupActivity.JSON_KEY_SERVICES, services);
-    extras.putString(FxAccountAbstractSetupActivity.EXTRA_EXTRAS, o.toJSONString());
-    return extras;
   }
 
   protected void setCheckboxesEnabled(boolean enabled) {

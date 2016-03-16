@@ -27,6 +27,7 @@ EXPORTS.mozilla.dom += [
     'DOMString.h',
     'Errors.msg',
     'Exceptions.h',
+    'IterableIterator.h',
     'JSSlots.h',
     'MozMap.h',
     'NonRefcountedDOMObject.h',
@@ -37,6 +38,16 @@ EXPORTS.mozilla.dom += [
     'ToJSValue.h',
     'TypedArray.h',
     'UnionMember.h',
+]
+
+# Generated bindings reference *Binding.h, not mozilla/dom/*Binding.h. And,
+# since we generate exported bindings directly to $(DIST)/include, we need
+# to add that path to the search list.
+#
+# Ideally, binding generation uses the prefixed header file names.
+# Bug 932082 tracks.
+LOCAL_INCLUDES += [
+    '!/dist/include/mozilla/dom',
 ]
 
 LOCAL_INCLUDES += [
@@ -74,6 +85,7 @@ UNIFIED_SOURCES += [
     'Date.cpp',
     'DOMJSProxyHandler.cpp',
     'Exceptions.cpp',
+    'IterableIterator.cpp',
     'ToJSValue.cpp',
 ]
 
@@ -88,12 +100,16 @@ SOURCES += [
 # them are only run in debug mode.
 if CONFIG['MOZ_DEBUG']:
     EXPORTS.mozilla.dom += [
+        "test/TestInterfaceIterableDouble.h",
+        "test/TestInterfaceIterableSingle.h",
         "test/TestInterfaceMaplike.h",
         "test/TestInterfaceMaplikeObject.h",
         "test/TestInterfaceSetlike.h",
         "test/TestInterfaceSetlikeNode.h"
         ]
     UNIFIED_SOURCES += [
+        "test/TestInterfaceIterableDouble.cpp",
+        "test/TestInterfaceIterableSingle.cpp",
         "test/TestInterfaceMaplike.cpp",
         "test/TestInterfaceMaplikeObject.cpp",
         "test/TestInterfaceSetlike.cpp",
@@ -123,3 +139,8 @@ if CONFIG['MOZ_SIMPLEPUSH']:
 PYTHON_UNIT_TESTS += [
     'mozwebidlcodegen/test/test_mozwebidlcodegen.py',
 ]
+
+if CONFIG['GNU_CC']:
+    CXXFLAGS += [
+        '-Wno-uninitialized',
+    ]

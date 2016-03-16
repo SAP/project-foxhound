@@ -243,14 +243,6 @@ Classifier::Check(const nsACString& aSpec,
     Completion lookupHash;
     lookupHash.FromPlaintext(fragments[i], mCryptoHash);
 
-    // Get list of host keys to look up
-    Completion hostKey;
-    rv = LookupCache::GetKey(fragments[i], &hostKey, mCryptoHash);
-    if (NS_FAILED(rv)) {
-      // Local host on the network.
-      continue;
-    }
-
     if (LOG_ENABLED()) {
       nsAutoCString checking;
       lookupHash.ToHexString(checking);
@@ -366,6 +358,15 @@ Classifier::MarkSpoiled(nsTArray<nsCString>& aTables)
     }
   }
   return NS_OK;
+}
+
+void
+Classifier::SetLastUpdateTime(const nsACString &aTable,
+                              uint64_t updateTime)
+{
+  LOG(("Marking table %s as last updated on %u",
+       PromiseFlatCString(aTable).get(), updateTime));
+  mTableFreshness.Put(aTable, updateTime / PR_MSEC_PER_SEC);
 }
 
 void

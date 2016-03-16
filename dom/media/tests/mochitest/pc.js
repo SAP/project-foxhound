@@ -62,6 +62,7 @@ function PeerConnectionTest(options) {
   options.h264 = "h264" in options ? options.h264 : false;
   options.bundle = "bundle" in options ? options.bundle : true;
   options.rtcpmux = "rtcpmux" in options ? options.rtcpmux : true;
+  options.opus = "opus" in options ? options.opus : true;
 
   if (typeof turnServers !== "undefined") {
     if ((!options.turn_disabled_local) && (turnServers.local)) {
@@ -214,11 +215,21 @@ PeerConnectionTest.prototype.send = function(data, options) {
            this.pcLocal.dataChannels[this.pcLocal.dataChannels.length - 1];
   var target = options.targetChannel ||
            this.pcRemote.dataChannels[this.pcRemote.dataChannels.length - 1];
+  var bufferedamount = options.bufferedAmountLowThreshold || 0;
+  var bufferlow_fired = true; // to make testing later easier
+  if (bufferedamount != 0) {
+    source.bufferedAmountLowThreshold = bufferedamount;
+    bufferlow_fired = false;
+    source.onbufferedamountlow = function() {
+      bufferlow_fired = true;
+    };
+  }
 
   return new Promise(resolve => {
     // Register event handler for the target channel
-    target.onmessage = e => {
-      resolve({ channel: target, data: e.data });
+      target.onmessage = e => {
+        ok(bufferlow_fired, "bufferedamountlow event fired");
+	resolve({ channel: target, data: e.data });
     };
 
     source.send(data);
@@ -271,7 +282,7 @@ PeerConnectionTest.prototype.createDataChannel = function(options) {
 PeerConnectionTest.prototype.createAnswer = function(peer) {
   return peer.createAnswer().then(answer => {
     // make a copy so this does not get updated with ICE candidates
-    this.originalAnswer = new mozRTCSessionDescription(JSON.parse(JSON.stringify(answer)));
+    this.originalAnswer = new RTCSessionDescription(JSON.parse(JSON.stringify(answer)));
     return answer;
   });
 };
@@ -286,7 +297,7 @@ PeerConnectionTest.prototype.createAnswer = function(peer) {
 PeerConnectionTest.prototype.createOffer = function(peer) {
   return peer.createOffer().then(offer => {
     // make a copy so this does not get updated with ICE candidates
-    this.originalOffer = new mozRTCSessionDescription(JSON.parse(JSON.stringify(offer)));
+    this.originalOffer = new RTCSessionDescription(JSON.parse(JSON.stringify(offer)));
     return offer;
   });
 };
@@ -297,7 +308,7 @@ PeerConnectionTest.prototype.createOffer = function(peer) {
  *
  * @param {PeerConnectionWrapper} peer
           The peer connection wrapper to run the command on
- * @param {mozRTCSessionDescription} desc
+ * @param {RTCSessionDescription} desc
  *        Session description for the local description request
  */
 PeerConnectionTest.prototype.setLocalDescription =
@@ -366,7 +377,7 @@ PeerConnectionTest.prototype.setOfferOptions = function(options) {
  *
  * @param {PeerConnectionWrapper} peer
           The peer connection wrapper to run the command on
- * @param {mozRTCSessionDescription} desc
+ * @param {RTCSessionDescription} desc
  *        Session description for the remote description request
  */
 PeerConnectionTest.prototype.setRemoteDescription =
@@ -563,6 +574,7 @@ function DataChannelWrapper(dataChannel, peerConnectionWrapper) {
   createOneShotEventWrapper(this, this._channel, 'close');
   createOneShotEventWrapper(this, this._channel, 'error');
   createOneShotEventWrapper(this, this._channel, 'message');
+  createOneShotEventWrapper(this, this._channel, 'bufferedamountlow');
 
   this.opened = timerGuard(new Promise(resolve => {
     this._channel.onopen = () => {
@@ -641,6 +653,16 @@ DataChannelWrapper.prototype = {
   },
 
   /**
+   * Sets the bufferlowthreshold of the channel
+   *
+   * @param {integer} amoutn
+   *        The new threshold for the chanel
+   */
+  set bufferedAmountLowThreshold(amount) {
+    this._channel.bufferedAmountLowThreshold = amount;
+  },
+
+  /**
    * Close the data channel
    */
   close : function () {
@@ -709,7 +731,7 @@ function PeerConnectionWrapper(label, configuration) {
   this.iceCheckingRestartExpected = false;
 
   info("Creating " + this);
-  this._pc = new mozRTCPeerConnection(this.configuration);
+  this._pc = new RTCPeerConnection(this.configuration);
 
   /**
    * Setup callback handlers
@@ -963,7 +985,7 @@ PeerConnectionWrapper.prototype = {
    * Sets the local description and automatically handles the failure case.
    *
    * @param {object} desc
-   *        mozRTCSessionDescription for the local description request
+   *        RTCSessionDescription for the local description request
    */
   setLocalDescription : function(desc) {
     this.observedNegotiationNeeded = undefined;
@@ -977,7 +999,7 @@ PeerConnectionWrapper.prototype = {
    * causes the test case to fail if the call succeeds.
    *
    * @param {object} desc
-   *        mozRTCSessionDescription for the local description request
+   *        RTCSessionDescription for the local description request
    * @returns {Promise}
    *        A promise that resolves to the expected error
    */
@@ -994,7 +1016,7 @@ PeerConnectionWrapper.prototype = {
    * Sets the remote description and automatically handles the failure case.
    *
    * @param {object} desc
-   *        mozRTCSessionDescription for the remote description request
+   *        RTCSessionDescription for the remote description request
    */
   setRemoteDescription : function(desc) {
     this.observedNegotiationNeeded = undefined;
@@ -1014,7 +1036,7 @@ PeerConnectionWrapper.prototype = {
    * causes the test case to fail if the call succeeds.
    *
    * @param {object} desc
-   *        mozRTCSessionDescription for the remote description request
+   *        RTCSessionDescription for the remote description request
    * @returns {Promise}
    *        a promise that resolve to the returned error
    */
@@ -1115,7 +1137,7 @@ PeerConnectionWrapper.prototype = {
    * later, depending on the state of the PeerConnection.
    *
    * @param {object} candidate
-   *        The mozRTCIceCandidate to be added or stored
+   *        The RTCIceCandidate to be added or stored
    */
   storeOrAddIceCandidate : function(candidate) {
     this._remote_ice_candidates.push(candidate);
@@ -1254,6 +1276,13 @@ PeerConnectionWrapper.prototype = {
       info(this.label + ": iceCandidate = " + JSON.stringify(anEvent.candidate));
       ok(anEvent.candidate.candidate.length > 0, "ICE candidate contains candidate");
       ok(anEvent.candidate.sdpMid.length > 0, "SDP mid not empty");
+
+      // only check the m-section for the updated default addr that corresponds
+      // with this candidate.
+      var mSections = this.localDescription.sdp.split("\r\nm=");
+      sdputils.checkSdpCLineNotDefault(
+        mSections[anEvent.candidate.sdpMLineIndex+1], this.label
+      );
 
       ok(typeof anEvent.candidate.sdpMLineIndex === 'number', "SDP MLine Index needs to exist");
       this._local_ice_candidates.push(anEvent.candidate);
@@ -1489,14 +1518,21 @@ PeerConnectionWrapper.prototype = {
         if (isWinXP) {
           todo(false, "Can't reliably test rtcp timestamps on WinXP (Bug 979649)");
         } else if (!twoMachines) {
-          ok(res.timestamp >= minimum,
-             "Valid " + (res.isRemote? "rtcp" : "rtp") + " timestamp " +
-                 res.timestamp + " >= " + minimum + " (" +
-                 (res.timestamp - minimum) + " ms)");
-          ok(res.timestamp <= nowish,
-             "Valid " + (res.isRemote? "rtcp" : "rtp") + " timestamp " +
-                 res.timestamp + " <= " + nowish + " (" +
-                 (res.timestamp - nowish) + " ms)");
+          // Bug 1225729: On android, sometimes the first RTCP of the first
+          // test run gets this value, likely because no RTP has been sent yet.
+          if (res.timestamp != 2085978496000) {
+            ok(res.timestamp >= minimum,
+               "Valid " + (res.isRemote? "rtcp" : "rtp") + " timestamp " +
+                   res.timestamp + " >= " + minimum + " (" +
+                   (res.timestamp - minimum) + " ms)");
+            ok(res.timestamp <= nowish,
+               "Valid " + (res.isRemote? "rtcp" : "rtp") + " timestamp " +
+                   res.timestamp + " <= " + nowish + " (" +
+                   (res.timestamp - nowish) + " ms)");
+          } else {
+            info("Bug 1225729: Uninitialized timestamp (" + res.timestamp +
+                 "), should be >=" + minimum + " and <= " + nowish);
+          }
         }
         if (!res.isRemote) {
           counters[res.type] = toNum(counters[res.type]) + 1;

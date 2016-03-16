@@ -41,7 +41,7 @@ interface NavigatorID {
   readonly attribute DOMString appVersion;
   [Constant, Cached]
   readonly attribute DOMString platform;
-  [Constant, Cached]
+  [Constant, Cached, Throws=Workers]
   readonly attribute DOMString userAgent;
   [Constant, Cached]
   readonly attribute DOMString product; // constant "Gecko"
@@ -54,8 +54,10 @@ interface NavigatorID {
 [NoInterfaceObject, Exposed=(Window,Worker)]
 interface NavigatorLanguage {
 
-  // These 2 values are cached. They are updated when pref
-  // intl.accept_languages is changed.
+  // These two attributes are cached because this interface is also implemented
+  // by Workernavigator and this way we don't have to go back to the
+  // main-thread from the worker thread anytime we need to retrieve them. They
+  // are updated when pref intl.accept_languages is changed.
 
   [Pure, Cached]
   readonly attribute DOMString? language;
@@ -389,7 +391,8 @@ partial interface Navigator {
   readonly attribute MediaDevices mediaDevices;
 
   // Deprecated. Use mediaDevices.getUserMedia instead.
-  [Throws, Func="Navigator::HasUserMediaSupport", UnsafeInPrerendering]
+  [Deprecated="NavigatorGetUserMedia", Throws,
+   Func="Navigator::HasUserMediaSupport", UnsafeInPrerendering]
   void mozGetUserMedia(MediaStreamConstraints constraints,
                        NavigatorUserMediaSuccessCallback successCallback,
                        NavigatorUserMediaErrorCallback errorCallback);
@@ -405,7 +408,13 @@ partial interface Navigator {
                               // The originating innerWindowID is needed to
                               // avoid calling the callbacks if the window has
                               // navigated away. It is optional only as legacy.
-                              optional unsigned long long innerWindowID = 0);
+                              optional unsigned long long innerWindowID = 0,
+                              // The callID is needed in case of multiple
+                              // concurrent requests to find the right one.
+                              // It is optional only as legacy.
+                              // TODO: Rewrite to not need this method anymore,
+                              // now that devices are enumerated earlier.
+                              optional DOMString callID = "");
 };
 #endif // MOZ_MEDIA_NAVIGATOR
 
@@ -422,7 +431,7 @@ partial interface Navigator {
 };
 
 partial interface Navigator {
-  [Pref="dom.tv.enabled", CheckAnyPermissions="tv", Func="Navigator::HasTVSupport"]
+  [Pref="dom.tv.enabled", CheckAnyPermissions="tv", AvailableIn=CertifiedApps]
   readonly attribute TVManager? tv;
 };
 
@@ -432,7 +441,7 @@ partial interface Navigator {
 };
 
 partial interface Navigator {
-  [Throws, Pref="dom.presentation.enabled", CheckAnyPermissions="presentation", AvailableIn="PrivilegedApps", SameObject]
+  [Throws, Pref="dom.presentation.enabled", Func="Navigator::HasPresentationSupport", SameObject]
   readonly attribute Presentation? presentation;
 };
 

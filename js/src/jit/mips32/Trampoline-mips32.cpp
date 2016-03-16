@@ -13,7 +13,7 @@
 #include "jit/JitFrames.h"
 #include "jit/JitSpewer.h"
 #include "jit/Linker.h"
-#include "jit/mips-shared/Bailouts-mips-shared.h"
+#include "jit/mips32/Bailouts-mips32.h"
 #include "jit/mips32/SharedICHelpers-mips32.h"
 #ifdef JS_ION_PERF
 # include "jit/PerfSpewer.h"
@@ -204,12 +204,14 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     masm.push(s4); // descriptor
 
     CodeLabel returnLabel;
+    CodeLabel oomReturnLabel;
     if (type == EnterJitBaseline) {
         // Handle OSR.
         AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
         regs.take(OsrFrameReg);
         regs.take(BaselineFrameReg);
         regs.take(reg_code);
+        regs.take(ReturnReg);
 
         const Address slotNumStackValues(BaselineFrameReg, sizeof(EnterJITRegs) +
                                          offsetof(EnterJITArgs, numStackValues));
@@ -226,7 +228,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
 
         // Push return address.
         masm.subPtr(Imm32(sizeof(uintptr_t)), StackPointer);
-        masm.ma_li(scratch, returnLabel.dest());
+        masm.ma_li(scratch, returnLabel.patchAt());
         masm.storePtr(scratch, Address(StackPointer, 0));
 
         // Push previous frame pointer.
@@ -265,10 +267,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, jit::InitBaselineFrameForOsr));
 
         regs.add(OsrFrameReg);
-        regs.add(scratch);
-        regs.add(numStackValues);
         regs.take(JSReturnOperand);
-        regs.take(ReturnReg);
         Register jitcode = regs.takeAny();
         masm.loadPtr(Address(StackPointer, 0), jitcode);
         masm.loadPtr(Address(StackPointer, sizeof(uintptr_t)), framePtr);
@@ -300,7 +299,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.movePtr(framePtr, StackPointer);
         masm.addPtr(Imm32(2 * sizeof(uintptr_t)), StackPointer);
         masm.moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
-        masm.ma_li(scratch, returnLabel.dest());
+        masm.ma_li(scratch, oomReturnLabel.patchAt());
         masm.jump(scratch);
 
         masm.bind(&notOsr);
@@ -318,8 +317,10 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
 
     if (type == EnterJitBaseline) {
         // Baseline OSR will return here.
-        masm.bind(returnLabel.src());
+        masm.bind(returnLabel.target());
         masm.addCodeLabel(returnLabel);
+        masm.bind(oomReturnLabel.target());
+        masm.addCodeLabel(oomReturnLabel);
     }
 
     // Pop arguments off the stack.
@@ -559,10 +560,8 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     AutoFlushICache afc("ArgumentsRectifier");
     JitCode* code = linker.newCode<NoGC>(cx, OTHER_CODE);
 
-    CodeOffsetLabel returnLabel(returnOffset);
-    returnLabel.fixup(&masm);
     if (returnAddrOut)
-        *returnAddrOut = (void*) (code->raw() + returnLabel.offset());
+        *returnAddrOut = (void*) (code->raw() + returnOffset);
 
 #ifdef JS_ION_PERF
     writePerfSpewerJitCodeProfile(code, "ArgumentsRectifier");

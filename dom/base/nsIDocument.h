@@ -28,6 +28,7 @@
 #include "mozilla/UseCounter.h"
 #include "mozilla/WeakPtr.h"
 #include "Units.h"
+#include "nsContentListDeclarations.h"
 #include "nsExpirationTracker.h"
 #include "nsClassHashtable.h"
 #include "prclist.h"
@@ -71,8 +72,6 @@ class nsIRequest;
 class nsIRunnable;
 class nsIStreamListener;
 class nsIStructuredCloneContainer;
-class nsIStyleRule;
-class nsIStyleSheet;
 class nsIURI;
 class nsIVariant;
 class nsLocation;
@@ -100,6 +99,7 @@ template<typename> class OwningNonNull;
 namespace css {
 class Loader;
 class ImageLoader;
+class Rule;
 } // namespace css
 
 namespace gfx {
@@ -155,8 +155,8 @@ typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0x72391609, 0x673d, 0x4bec, \
-  { 0xbd, 0x75, 0x64, 0xbf, 0x1f, 0x6a, 0x6b, 0x5e } }
+{ 0x13011a82, 0x46cd, 0x4c33, \
+  { 0x9d, 0x4e, 0x31, 0x41, 0xbb, 0x3f, 0x18, 0xe9 } }
 
 // Enum for requesting a particular type of document when creating a doc
 enum DocumentFlavor {
@@ -175,11 +175,6 @@ enum DocumentFlavor {
 
 // Some function forward-declarations
 class nsContentList;
-
-already_AddRefed<nsContentList>
-NS_GetContentList(nsINode* aRootNode,
-                  int32_t aMatchNameSpaceId,
-                  const nsAString& aTagname);
 
 //----------------------------------------------------------------------
 
@@ -254,9 +249,12 @@ public:
   /**
    * Return the URI for the document. May return null.
    *
-   * The value returned corresponds to the "document's current address" in
+   * The value returned corresponds to the "document's address" in
    * HTML5.  As such, it may change over the lifetime of the document, for
-   * instance as a result of a call to pushState() or replaceState().
+   * instance as a result of the user navigating to a fragment identifier on
+   * the page, or as a result to a call to pushState() or replaceState().
+   *
+   * https://html.spec.whatwg.org/multipage/dom.html#the-document%27s-address
    */
   nsIURI* GetDocumentURI() const
   {
@@ -265,11 +263,14 @@ public:
 
   /**
    * Return the original URI of the document.  This is the same as the
-   * document's URI unless history.pushState() or replaceState() is invoked on
-   * the document.
+   * document's URI unless that has changed from its original value (for
+   * example, due to history.pushState() or replaceState() being invoked on the
+   * document).
    *
-   * This method corresponds to the "document's address" in HTML5 and, once
-   * set, doesn't change over the lifetime of the document.
+   * This method corresponds to the "creation URL" in HTML5 and, once set,
+   * doesn't change over the lifetime of the document.
+   *
+   * https://html.spec.whatwg.org/multipage/webappapis.html#creation-url
    */
   nsIURI* GetOriginalURI() const
   {
@@ -295,6 +296,11 @@ public:
   virtual void SetChromeXHRDocBaseURI(nsIURI* aURI) = 0;
 
   /**
+   * Set referrer policy and upgrade-insecure-requests flags
+   */
+  virtual void ApplySettingsFromCSP(bool aSpeculative) = 0;
+
+  /**
    * Return the referrer policy of the document. Return "default" if there's no
    * valid meta referrer tag found in the document.
    */
@@ -318,8 +324,11 @@ public:
    * of the document's ancestors up to the toplevel document makes use
    * of the CSP directive 'upgrade-insecure-requests'.
    */
-  bool GetUpgradeInsecureRequests() const
+  bool GetUpgradeInsecureRequests(bool aPreload) const
   {
+    if (aPreload) {
+      return mUpgradeInsecurePreloads;
+    }
     return mUpgradeInsecureRequests;
   }
 
@@ -661,6 +670,8 @@ public:
     return GetBFCacheEntry() ? nullptr : mPresShell;
   }
 
+  // Instead using this method, what you probably want is
+  // RemoveFromBFCacheSync() as we do in MessagePort and BroadcastChannel.
   void DisallowBFCaching()
   {
     NS_ASSERTION(!mBFCacheEntry, "We're already in the bfcache!");
@@ -734,6 +745,19 @@ public:
    */
   Element* GetRootElement() const;
 
+  /**
+   * Retrieve information about the viewport as a data structure.
+   * This will return information in the viewport META data section
+   * of the document. This can be used in lieu of ProcessViewportInfo(),
+   * which places the viewport information in the document header instead
+   * of returning it directly.
+   *
+   * @param aDisplaySize size of the on-screen display area for this
+   * document, in device pixels.
+   *
+   * NOTE: If the site is optimized for mobile (via the doctype), this
+   * will return viewport information that specifies default information.
+   */
   virtual nsViewportInfo GetViewportInfo(const mozilla::ScreenIntSize& aDisplaySize) = 0;
 
   /**
@@ -773,11 +797,13 @@ public:
                          mozilla::ErrorResult& aError);
   void RemoveAnonymousContent(mozilla::dom::AnonymousContent& aContent,
                               mozilla::ErrorResult& aError);
-  nsTArray<nsRefPtr<mozilla::dom::AnonymousContent>>& GetAnonymousContents() {
+  nsTArray<RefPtr<mozilla::dom::AnonymousContent>>& GetAnonymousContents() {
     return mAnonymousContents;
   }
 
-  nsresult GetId(nsAString& aId);
+  static nsresult GenerateDocumentId(nsAString& aId);
+  nsresult GetOrCreateId(nsAString& aId);
+  void SetId(const nsAString& aId);
 
 protected:
   virtual Element *GetRootElementInternal() const = 0;
@@ -895,7 +921,7 @@ public:
    * @return the stylesheet at aIndex.  Null if aIndex is out of range.
    * @throws no exceptions
    */
-  virtual nsIStyleSheet* GetStyleSheetAt(int32_t aIndex) const = 0;
+  virtual mozilla::CSSStyleSheet* GetStyleSheetAt(int32_t aIndex) const = 0;
 
   /**
    * Insert a sheet at a particular spot in the stylesheet list (zero-based)
@@ -904,7 +930,8 @@ public:
    *   adjusted for the "special" sheets.
    * @throws no exceptions
    */
-  virtual void InsertStyleSheetAt(nsIStyleSheet* aSheet, int32_t aIndex) = 0;
+  virtual void InsertStyleSheetAt(mozilla::CSSStyleSheet* aSheet,
+                                  int32_t aIndex) = 0;
 
   /**
    * Get the index of a particular stylesheet.  This will _always_
@@ -912,7 +939,7 @@ public:
    * @param aSheet the sheet to get the index of
    * @return aIndex the index of the sheet in the full list
    */
-  virtual int32_t GetIndexOfStyleSheet(nsIStyleSheet* aSheet) const = 0;
+  virtual int32_t GetIndexOfStyleSheet(mozilla::CSSStyleSheet* aSheet) const = 0;
 
   /**
    * Replace the stylesheets in aOldSheets with the stylesheets in
@@ -922,37 +949,41 @@ public:
    * may be null; if so the corresponding sheets in the first list
    * will simply be removed.
    */
-  virtual void UpdateStyleSheets(nsCOMArray<nsIStyleSheet>& aOldSheets,
-                                 nsCOMArray<nsIStyleSheet>& aNewSheets) = 0;
+  virtual void UpdateStyleSheets(
+      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aOldSheets,
+      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aNewSheets) = 0;
 
   /**
    * Add a stylesheet to the document
    */
-  virtual void AddStyleSheet(nsIStyleSheet* aSheet) = 0;
+  virtual void AddStyleSheet(mozilla::CSSStyleSheet* aSheet) = 0;
 
   /**
    * Remove a stylesheet from the document
    */
-  virtual void RemoveStyleSheet(nsIStyleSheet* aSheet) = 0;
+  virtual void RemoveStyleSheet(mozilla::CSSStyleSheet* aSheet) = 0;
 
   /**
    * Notify the document that the applicable state of the sheet changed
    * and that observers should be notified and style sets updated
    */
-  virtual void SetStyleSheetApplicableState(nsIStyleSheet* aSheet,
+  virtual void SetStyleSheetApplicableState(mozilla::CSSStyleSheet* aSheet,
                                             bool aApplicable) = 0;
 
   enum additionalSheetType {
     eAgentSheet,
     eUserSheet,
     eAuthorSheet,
-    SheetTypeCount
+    AdditionalSheetTypeCount
   };
 
-  virtual nsresult LoadAdditionalStyleSheet(additionalSheetType aType, nsIURI* aSheetURI) = 0;
-  virtual nsresult AddAdditionalStyleSheet(additionalSheetType aType, nsIStyleSheet* aSheet) = 0;
-  virtual void RemoveAdditionalStyleSheet(additionalSheetType aType, nsIURI* sheetURI) = 0;
-  virtual nsIStyleSheet* FirstAdditionalAuthorSheet() = 0;
+  virtual nsresult LoadAdditionalStyleSheet(additionalSheetType aType,
+                                            nsIURI* aSheetURI) = 0;
+  virtual nsresult AddAdditionalStyleSheet(additionalSheetType aType,
+                                           mozilla::CSSStyleSheet* aSheet) = 0;
+  virtual void RemoveAdditionalStyleSheet(additionalSheetType aType,
+                                          nsIURI* sheetURI) = 0;
+  virtual mozilla::CSSStyleSheet* FirstAdditionalAuthorSheet() = 0;
 
   /**
    * Get this document's CSSLoader.  This is guaranteed to not return null.
@@ -1093,6 +1124,11 @@ public:
    * this document.
    */
   virtual Element* GetFullScreenElement() = 0;
+
+  /**
+   * Returns all elements in the fullscreen stack in the insertion order.
+   */
+  virtual nsTArray<Element*> GetFullscreenStack() const = 0;
 
   /**
    * Asynchronously requests that the document make aElement the fullscreen
@@ -1250,13 +1286,12 @@ public:
 
   // Observation hooks for style data to propagate notifications
   // to document observers
-  virtual void StyleRuleChanged(nsIStyleSheet* aStyleSheet,
-                                nsIStyleRule* aOldStyleRule,
-                                nsIStyleRule* aNewStyleRule) = 0;
-  virtual void StyleRuleAdded(nsIStyleSheet* aStyleSheet,
-                              nsIStyleRule* aStyleRule) = 0;
-  virtual void StyleRuleRemoved(nsIStyleSheet* aStyleSheet,
-                                nsIStyleRule* aStyleRule) = 0;
+  virtual void StyleRuleChanged(mozilla::CSSStyleSheet* aStyleSheet,
+                                mozilla::css::Rule* aStyleRule) = 0;
+  virtual void StyleRuleAdded(mozilla::CSSStyleSheet* aStyleSheet,
+                              mozilla::css::Rule* aStyleRule) = 0;
+  virtual void StyleRuleRemoved(mozilla::CSSStyleSheet* aStyleSheet,
+                                mozilla::css::Rule* aStyleRule) = 0;
 
   /**
    * Flush notifications for this document and its parent documents
@@ -2124,7 +2159,7 @@ public:
                                         int32_t *aHandle);
   void CancelFrameRequestCallback(int32_t aHandle);
 
-  typedef nsTArray<nsRefPtr<mozilla::dom::FrameRequestCallback>> FrameRequestCallbackList;
+  typedef nsTArray<RefPtr<mozilla::dom::FrameRequestCallback>> FrameRequestCallbackList;
   /**
    * Put this document's frame request callbacks into the provided
    * list, and forget about them.
@@ -2602,6 +2637,16 @@ public:
 
   void PropagateUseCounters(nsIDocument* aParentDocument);
 
+  void SetUserHasInteracted(bool aUserHasInteracted)
+  {
+    mUserHasInteracted = aUserHasInteracted;
+  }
+
+  bool UserHasInteracted()
+  {
+    return mUserHasInteracted;
+  }
+
 protected:
   bool GetUseCounter(mozilla::UseCounter aUseCounter)
   {
@@ -2681,6 +2726,7 @@ protected:
   ReferrerPolicyEnum mReferrerPolicy;
 
   bool mUpgradeInsecureRequests;
+  bool mUpgradeInsecurePreloads;
 
   mozilla::WeakPtr<nsDocShell> mDocumentContainer;
 
@@ -2696,11 +2742,11 @@ protected:
   // This is a weak reference, but we hold a strong reference to mNodeInfo,
   // which in turn holds a strong reference to this mNodeInfoManager.
   nsNodeInfoManager* mNodeInfoManager;
-  nsRefPtr<mozilla::css::Loader> mCSSLoader;
-  nsRefPtr<mozilla::css::ImageLoader> mStyleImageLoader;
-  nsRefPtr<nsHTMLStyleSheet> mAttrStyleSheet;
-  nsRefPtr<nsHTMLCSSStyleSheet> mStyleAttrStyleSheet;
-  nsRefPtr<mozilla::SVGAttrAnimationRuleProcessor> mSVGAttrAnimationRuleProcessor;
+  RefPtr<mozilla::css::Loader> mCSSLoader;
+  RefPtr<mozilla::css::ImageLoader> mStyleImageLoader;
+  RefPtr<nsHTMLStyleSheet> mAttrStyleSheet;
+  RefPtr<nsHTMLCSSStyleSheet> mStyleAttrStyleSheet;
+  RefPtr<mozilla::SVGAttrAnimationRuleProcessor> mSVGAttrAnimationRuleProcessor;
 
   // The set of all object, embed, applet, video/audio elements or
   // nsIObjectLoadingContent or nsIDocumentActivity for which this is the
@@ -2715,7 +2761,7 @@ protected:
   nsTHashtable<nsPtrHashKey<mozilla::dom::Link> > mLinksToUpdate;
 
   // SMIL Animation Controller, lazily-initialized in GetAnimationController
-  nsRefPtr<nsSMILAnimationController> mAnimationController;
+  RefPtr<nsSMILAnimationController> mAnimationController;
 
   // Table of element properties for this document.
   nsPropertyTable mPropertyTable;
@@ -2725,7 +2771,7 @@ protected:
   nsCOMPtr<nsIHTMLCollection> mChildrenCollection;
 
   // container for per-context fonts (downloadable, SVG, etc.)
-  nsRefPtr<mozilla::dom::FontFaceSet> mFontFaceSet;
+  RefPtr<mozilla::dom::FontFaceSet> mFontFaceSet;
 
   // Compatibility mode
   nsCompatibility mCompatMode;
@@ -2763,11 +2809,15 @@ protected:
   // True iff we've ever fired a DOMTitleChanged event for this document
   bool mHaveFiredTitleChange : 1;
 
-  // True iff IsShowing() should be returning true
+  // State for IsShowing(). mIsShowing starts off false. It becomes true when
+  // OnPageShow happens and becomes false when OnPageHide happens. So it's false
+  // before the initial load completes and when we're in bfcache or unloaded,
+  // true otherwise.
   bool mIsShowing : 1;
 
-  // True iff the document "page" is not hidden (i.e. currently in the
-  // bfcache)
+  // State for IsVisible(). mVisible starts off true. It becomes false when
+  // OnPageHide happens, and becomes true again when OnPageShow happens.  So
+  // it's false only when we're in bfcache or unloaded.
   bool mVisible : 1;
 
   // True if our content viewer has been removed from the docshell
@@ -2833,10 +2883,6 @@ protected:
 
   // True if DisallowBFCaching has been called on this document.
   bool mBFCacheDisallowed : 1;
-
-  // If true, we have an input encoding.  If this is false, then the
-  // document was created entirely in memory
-  bool mHaveInputEncoding : 1;
 
   bool mHasHadDefaultView : 1;
 
@@ -2994,9 +3040,9 @@ protected:
 
   uint32_t mInSyncOperationCount;
 
-  nsRefPtr<mozilla::dom::XPathEvaluator> mXPathEvaluator;
+  RefPtr<mozilla::dom::XPathEvaluator> mXPathEvaluator;
 
-  nsTArray<nsRefPtr<mozilla::dom::AnonymousContent>> mAnonymousContents;
+  nsTArray<RefPtr<mozilla::dom::AnonymousContent>> mAnonymousContents;
 
   uint32_t mBlockDOMContentLoaded;
   bool mDidFireDOMContentLoaded:1;
@@ -3011,6 +3057,9 @@ protected:
   // Flags for whether we've notified our top-level "page" of a use counter
   // for this child document.
   std::bitset<mozilla::eUseCounter_Count> mNotifiedPageForUseCounter;
+
+  // Whether the user has interacted with the document or not:
+  bool mUserHasInteracted;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocument, NS_IDOCUMENT_IID)

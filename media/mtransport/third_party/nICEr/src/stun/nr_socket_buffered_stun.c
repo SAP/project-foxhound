@@ -86,6 +86,8 @@ static int nr_socket_buffered_stun_close(void *obj);
 static int nr_socket_buffered_stun_connect(void *sock, nr_transport_addr *addr);
 static int nr_socket_buffered_stun_write(void *obj,const void *msg, size_t len, size_t *written);
 static void nr_socket_buffered_stun_writable_cb(NR_SOCKET s, int how, void *arg);
+static int nr_socket_buffered_stun_listen(void *obj, int backlog);
+static int nr_socket_buffered_stun_accept(void *obj, nr_transport_addr *addrp, nr_socket **sockp);
 
 static nr_socket_vtbl nr_socket_buffered_stun_vtbl={
   2,
@@ -98,8 +100,8 @@ static nr_socket_vtbl nr_socket_buffered_stun_vtbl={
   0,
   0,
   nr_socket_buffered_stun_close,
-  0,
-  0
+  nr_socket_buffered_stun_listen,
+  nr_socket_buffered_stun_accept
 };
 
 int nr_socket_buffered_set_connected_to(nr_socket *sock, nr_transport_addr *remote_addr)
@@ -368,6 +370,30 @@ static int nr_socket_buffered_stun_close(void *obj)
   return nr_socket_close(sock->inner);
 }
 
+static int nr_socket_buffered_stun_listen(void *obj, int backlog)
+{
+  int r, _status;
+  nr_socket_buffered_stun *sock = (nr_socket_buffered_stun *)obj;
+
+  if (!sock->inner)
+    ABORT(R_FAILED);
+
+  if ((r=nr_socket_listen(sock->inner, backlog)))
+    ABORT(r);
+
+  _status=0;
+abort:
+  return(_status);
+}
+
+
+static int nr_socket_buffered_stun_accept(void *obj, nr_transport_addr *addrp, nr_socket **sockp)
+{
+  nr_socket_buffered_stun *bsock = (nr_socket_buffered_stun *)obj;
+
+  return nr_socket_accept(bsock->inner, addrp, sockp);
+}
+
 static void nr_socket_buffered_stun_connected_cb(NR_SOCKET s, int how, void *arg)
 {
   nr_socket_buffered_stun *sock = (nr_socket_buffered_stun *)arg;
@@ -475,13 +501,15 @@ static int nr_socket_buffered_stun_write(void *obj,const void *msg, size_t len, 
     sock->pending += len;
   }
 
-  if (sock->pending && !already_armed) {
+  if (sock->pending) {
+    if (!already_armed) {
       if ((r=nr_socket_buffered_stun_arm_writable_cb(sock)))
         ABORT(r);
+    }
+    r_log(LOG_GENERIC, LOG_INFO, "Write buffer not empty for %s  %u - %s armed (@%p)",
+          sock->remote_addr.as_string, (uint32_t)sock->pending,
+          already_armed ? "already" : "", &sock->pending);
   }
-  r_log(LOG_GENERIC, LOG_INFO, "Write buffer not empty for %s  %u - %s armed (@%p)",
-        sock->remote_addr.as_string, (uint32_t)sock->pending,
-        already_armed ? "already" : "", &sock->pending);
 
   *written = original_len;
 

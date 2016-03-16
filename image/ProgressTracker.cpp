@@ -148,8 +148,8 @@ class AsyncNotifyRunnable : public nsRunnable
   private:
     friend class ProgressTracker;
 
-    nsRefPtr<ProgressTracker> mTracker;
-    nsTArray<nsRefPtr<IProgressObserver>> mObservers;
+    RefPtr<ProgressTracker> mTracker;
+    nsTArray<RefPtr<IProgressObserver>> mObservers;
 };
 
 void
@@ -157,16 +157,16 @@ ProgressTracker::Notify(IProgressObserver* aObserver)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (MOZ_LOG_TEST(GetImgLog(), LogLevel::Debug)) {
-    nsRefPtr<Image> image = GetImage();
+  if (MOZ_LOG_TEST(gImgLog, LogLevel::Debug)) {
+    RefPtr<Image> image = GetImage();
     if (image && image->GetURI()) {
-      nsRefPtr<ImageURL> uri(image->GetURI());
+      RefPtr<ImageURL> uri(image->GetURI());
       nsAutoCString spec;
       uri->GetSpec(spec);
-      LOG_FUNC_WITH_PARAM(GetImgLog(),
+      LOG_FUNC_WITH_PARAM(gImgLog,
                           "ProgressTracker::Notify async", "uri", spec.get());
     } else {
-      LOG_FUNC_WITH_PARAM(GetImgLog(),
+      LOG_FUNC_WITH_PARAM(gImgLog,
                           "ProgressTracker::Notify async", "uri", "<unknown>");
     }
   }
@@ -213,12 +213,12 @@ class AsyncNotifyCurrentStateRunnable : public nsRunnable
     }
 
   private:
-    nsRefPtr<ProgressTracker> mProgressTracker;
-    nsRefPtr<IProgressObserver> mObserver;
+    RefPtr<ProgressTracker> mProgressTracker;
+    RefPtr<IProgressObserver> mObserver;
 
     // We have to hold on to a reference to the tracker's image, just in case
     // it goes away while we're in the event queue.
-    nsRefPtr<Image> mImage;
+    RefPtr<Image> mImage;
 };
 
 void
@@ -226,13 +226,13 @@ ProgressTracker::NotifyCurrentState(IProgressObserver* aObserver)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (MOZ_LOG_TEST(GetImgLog(), LogLevel::Debug)) {
-    nsRefPtr<Image> image = GetImage();
+  if (MOZ_LOG_TEST(gImgLog, LogLevel::Debug)) {
+    RefPtr<Image> image = GetImage();
     nsAutoCString spec;
     if (image && image->GetURI()) {
       image->GetURI()->GetSpec(spec);
     }
-    LOG_FUNC_WITH_PARAM(GetImgLog(),
+    LOG_FUNC_WITH_PARAM(gImgLog,
                         "ProgressTracker::NotifyCurrentState", "uri", spec.get());
   }
 
@@ -264,7 +264,7 @@ struct MOZ_STACK_CLASS ImageObserverNotifier<const ObserverTable*>
   void operator()(Lambda aFunc)
   {
     for (auto iter = mObservers->ConstIter(); !iter.Done(); iter.Next()) {
-      nsRefPtr<IProgressObserver> observer = iter.Data().get();
+      RefPtr<IProgressObserver> observer = iter.Data().get();
       if (observer &&
           (mIgnoreDeferral || !observer->NotificationsDeferred())) {
         aFunc(observer);
@@ -400,13 +400,13 @@ ProgressTracker::SyncNotify(IProgressObserver* aObserver)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsRefPtr<Image> image = GetImage();
+  RefPtr<Image> image = GetImage();
 
   nsAutoCString spec;
   if (image && image->GetURI()) {
     image->GetURI()->GetSpec(spec);
   }
-  LOG_SCOPE_WITH_PARAM(GetImgLog(),
+  LOG_SCOPE_WITH_PARAM(gImgLog,
                        "ProgressTracker::SyncNotify", "uri", spec.get());
 
   nsIntRect rect;
@@ -426,7 +426,7 @@ ProgressTracker::EmulateRequestFinished(IProgressObserver* aObserver)
 {
   MOZ_ASSERT(NS_IsMainThread(),
              "SyncNotifyState and mObservers are not threadsafe");
-  nsRefPtr<IProgressObserver> kungFuDeathGrip(aObserver);
+  RefPtr<IProgressObserver> kungFuDeathGrip(aObserver);
 
   if (mProgress & FLAG_ONLOAD_BLOCKED && !(mProgress & FLAG_ONLOAD_UNBLOCKED)) {
     aObserver->UnblockOnload();
@@ -441,7 +441,7 @@ void
 ProgressTracker::AddObserver(IProgressObserver* aObserver)
 {
   MOZ_ASSERT(NS_IsMainThread());
-  nsRefPtr<IProgressObserver> observer = aObserver;
+  RefPtr<IProgressObserver> observer = aObserver;
 
   mObservers.Write([=](ObserverTable* aTable) {
     MOZ_ASSERT(!aTable->Get(observer, nullptr),
@@ -456,7 +456,7 @@ bool
 ProgressTracker::RemoveObserver(IProgressObserver* aObserver)
 {
   MOZ_ASSERT(NS_IsMainThread());
-  nsRefPtr<IProgressObserver> observer = aObserver;
+  RefPtr<IProgressObserver> observer = aObserver;
 
   // Remove the observer from the list.
   bool removed = mObservers.Write([=](ObserverTable* aTable) {
@@ -546,12 +546,12 @@ ProgressTracker::FireFailureNotification()
 
   // Some kind of problem has happened with image decoding.
   // Report the URI to net:failed-to-process-uri-conent observers.
-  nsRefPtr<Image> image = GetImage();
+  RefPtr<Image> image = GetImage();
   if (image) {
     // Should be on main thread, so ok to create a new nsIURI.
     nsCOMPtr<nsIURI> uri;
     {
-      nsRefPtr<ImageURL> threadsafeUriData = image->GetURI();
+      RefPtr<ImageURL> threadsafeUriData = image->GetURI();
       uri = threadsafeUriData ? threadsafeUriData->ToIURI() : nullptr;
     }
     if (uri) {

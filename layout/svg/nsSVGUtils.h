@@ -7,7 +7,6 @@
 #define NS_SVGUTILS_H
 
 // include math.h to pick up definition of M_ maths defines e.g. M_PI
-#define _USE_MATH_DEFINES
 #include <math.h>
 
 #include "DrawMode.h"
@@ -25,7 +24,6 @@
 #include "nsISupportsBase.h"
 #include "nsMathUtils.h"
 #include "nsStyleStruct.h"
-#include "mozilla/Constants.h"
 #include <algorithm>
 
 class gfxContext;
@@ -351,8 +349,8 @@ public:
    * @param aResultOverflows true if the desired surface size is too big
    * @return the surface size to use
    */
-  static gfxIntSize ConvertToSurfaceSize(const gfxSize& aSize,
-                                         bool *aResultOverflows);
+  static mozilla::gfx::IntSize ConvertToSurfaceSize(const gfxSize& aSize,
+                                                    bool *aResultOverflows);
 
   /*
    * Hit test a given rectangle/matrix.

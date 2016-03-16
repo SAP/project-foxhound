@@ -131,14 +131,6 @@ public:
   virtual void SetSampleSize(int aSampleSize) { }
 
   /**
-   * Set the requested resolution for this decoder. Used to implement the
-   * -moz-resolution media fragment.
-   *
-   *  XXX(seth): Support for -moz-resolution will be removed in bug 1118926.
-   */
-  virtual void SetResolution(const gfx::IntSize& aResolution) { }
-
-  /**
    * Set an iterator to the SourceBuffer which will feed data to this decoder.
    *
    * This should be called for almost all decoders; the exceptions are the
@@ -291,9 +283,14 @@ protected:
   /*
    * Internal hooks. Decoder implementations may override these and
    * only these methods.
+   *
+   * BeforeFinishInternal() can be used to detect if decoding is in an
+   * incomplete state, e.g. due to file truncation, in which case it should
+   * call PostDataError().
    */
   virtual void InitInternal();
   virtual void WriteInternal(const char* aBuffer, uint32_t aCount) = 0;
+  virtual void BeforeFinishInternal();
   virtual void FinishInternal();
   virtual void FinishWithErrorInternal();
 
@@ -407,7 +404,7 @@ protected:
   uint32_t mColormapSize;
 
 private:
-  nsRefPtr<RasterImage> mImage;
+  RefPtr<RasterImage> mImage;
   Maybe<SourceBufferIterator> mIterator;
   RawAccessFrameRef mCurrentFrame;
   ImageMetadata mImageMetadata;

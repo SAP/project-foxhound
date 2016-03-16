@@ -82,7 +82,7 @@ nsresult nsMathMLmencloseFrame::AllocateMathMLChar(nsMencloseNotation mask)
   }
 
   nsPresContext *presContext = PresContext();
-  mMathMLChar[i].SetData(presContext, Char);
+  mMathMLChar[i].SetData(Char);
   ResolveMathMLCharStyle(presContext, mContent, mStyleContext, &mMathMLChar[i]);
 
   return NS_OK;
@@ -344,7 +344,7 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
   nscoord onePixel = nsPresContext::CSSPixelsToAppUnits(1);
 
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
-  nsRefPtr<nsFontMetrics> fm;
+  RefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
                                         fontSizeInflation);
   GetRuleThickness(aRenderingContext, fm, mRuleThickness);

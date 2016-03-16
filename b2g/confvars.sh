@@ -5,12 +5,12 @@
 MOZ_APP_BASENAME=B2G
 MOZ_APP_VENDOR=Mozilla
 
-MOZ_APP_VERSION=43.0
+MOZ_APP_VERSION=45.0a2
 MOZ_APP_UA_NAME=Firefox
 
 MOZ_UA_OS_AGNOSTIC=1
 
-MOZ_B2G_VERSION=2.5.0.0-prerelease
+MOZ_B2G_VERSION=2.6.0.0-prerelease
 MOZ_B2G_OS_NAME=Boot2Gecko
 
 MOZ_BRANDING_DIRECTORY=b2g/branding/unofficial
@@ -44,11 +44,7 @@ fi
 # use custom widget for html:select
 MOZ_USE_NATIVE_POPUP_WINDOWS=1
 
-if test "$LIBXUL_SDK"; then
-MOZ_XULRUNNER=1
-else
 MOZ_XULRUNNER=
-fi
 
 MOZ_MEDIA_NAVIGATOR=1
 

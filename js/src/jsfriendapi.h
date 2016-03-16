@@ -59,10 +59,12 @@ JS_SplicePrototype(JSContext* cx, JS::HandleObject obj, JS::HandleObject proto);
 extern JS_FRIEND_API(JSObject*)
 JS_NewObjectWithUniqueType(JSContext* cx, const JSClass* clasp, JS::HandleObject proto);
 
-// Allocate an object in exactly the same way as JS_NewObjectWithGivenProto, but
-// without invoking the metadata callback on it.  This allows creation of
-// internal bookkeeping objects that are guaranteed to not have metadata
-// attached to them.
+/**
+ * Allocate an object in exactly the same way as JS_NewObjectWithGivenProto, but
+ * without invoking the metadata callback on it.  This allows creation of
+ * internal bookkeeping objects that are guaranteed to not have metadata
+ * attached to them.
+ */
 extern JS_FRIEND_API(JSObject*)
 JS_NewObjectWithoutMetadata(JSContext* cx, const JSClass* clasp, JS::Handle<JSObject*> proto);
 
@@ -72,17 +74,23 @@ JS_ObjectCountDynamicSlots(JS::HandleObject obj);
 extern JS_FRIEND_API(size_t)
 JS_SetProtoCalled(JSContext* cx);
 
+extern JS_FRIEND_API(bool)
+JS_ImmutablePrototypesEnabled();
+
 extern JS_FRIEND_API(size_t)
 JS_GetCustomIteratorCount(JSContext* cx);
 
 extern JS_FRIEND_API(bool)
 JS_NondeterministicGetWeakMapKeys(JSContext* cx, JS::HandleObject obj, JS::MutableHandleObject ret);
 
+extern JS_FRIEND_API(bool)
+JS_NondeterministicGetWeakSetKeys(JSContext* cx, JS::HandleObject obj, JS::MutableHandleObject ret);
+
 // Raw JSScript* because this needs to be callable from a signal handler.
 extern JS_FRIEND_API(unsigned)
 JS_PCToLineNumber(JSScript* script, jsbytecode* pc, unsigned* columnp = nullptr);
 
-/*
+/**
  * Determine whether the given object is backed by a DeadObjectProxy.
  *
  * Such objects hold no other objects (they have no outgoing reference edges)
@@ -123,6 +131,7 @@ enum {
     JS_TELEMETRY_GC_MINOR_REASON_LONG,
     JS_TELEMETRY_GC_MINOR_US,
     JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_CONTENT,
+    JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_ADDONS,
     JS_TELEMETRY_ADDON_EXCEPTIONS
 };
 
@@ -144,18 +153,10 @@ JS_GetScriptPrincipals(JSScript* script);
 extern JS_FRIEND_API(bool)
 JS_ScriptHasMutedErrors(JSScript* script);
 
-/* Safe to call with input obj == nullptr. Returns non-nullptr iff obj != nullptr. */
-extern JS_FRIEND_API(JSObject*)
-JS_ObjectToInnerObject(JSContext* cx, JS::HandleObject obj);
-
-/* Requires obj != nullptr. */
-extern JS_FRIEND_API(JSObject*)
-JS_ObjectToOuterObject(JSContext* cx, JS::HandleObject obj);
-
 extern JS_FRIEND_API(JSObject*)
 JS_CloneObject(JSContext* cx, JS::HandleObject obj, JS::HandleObject proto);
 
-/*
+/**
  * Copy the own properties of src to dst in a fast way.  src and dst must both
  * be native and must be in the compartment of cx.  They must have the same
  * class, the same parent, and the same prototype.  Class reserved slots will
@@ -179,7 +180,7 @@ JS_BasicObjectToString(JSContext* cx, JS::HandleObject obj);
 namespace js {
 
 JS_FRIEND_API(bool)
-ObjectClassIs(JSContext* cx, JS::HandleObject obj, ESClassValue classValue);
+GetBuiltinClass(JSContext* cx, JS::HandleObject obj, ESClassValue* classValue);
 
 JS_FRIEND_API(const char*)
 ObjectClassName(JSContext* cx, JS::HandleObject obj);
@@ -240,13 +241,13 @@ DumpBacktrace(JSContext* cx);
 
 namespace JS {
 
-// Exposed for DumpJSStack
+/** Exposed for DumpJSStack */
 extern JS_FRIEND_API(char*)
 FormatStackDump(JSContext* cx, char* buf, bool showArgs, bool showLocals, bool showThisProps);
 
 } // namespace JS
 
-/*
+/**
  * Copies all own properties from |obj| to |target|. |obj| must be a "native"
  * object (that is to say, normal-ish - not an Array or a Proxy).
  *
@@ -307,11 +308,8 @@ namespace js {
  * NB: The macro invocation must be surrounded by braces, so as to
  *     allow for potential JSClass extensions.
  */
-#define PROXY_MAKE_EXT(outerObject, innerObject, isWrappedNative,       \
-                       objectMoved)                                     \
+#define PROXY_MAKE_EXT(isWrappedNative, objectMoved)                    \
     {                                                                   \
-        outerObject,                                                    \
-        innerObject,                                                    \
         isWrappedNative,                                                \
         js::proxy_WeakmapKeyDelegate,                                   \
         objectMoved                                                     \
@@ -331,7 +329,6 @@ namespace js {
         nullptr,                 /* enumerate */                                        \
         nullptr,                 /* resolve */                                          \
         nullptr,                 /* mayResolve */                                       \
-        js::proxy_Convert,                                                              \
         js::proxy_Finalize,      /* finalize    */                                      \
         nullptr,                 /* call        */                                      \
         js::proxy_HasInstance,   /* hasInstance */                                      \
@@ -350,15 +347,13 @@ namespace js {
             js::proxy_Watch, js::proxy_Unwatch,                                         \
             js::proxy_GetElements,                                                      \
             nullptr,             /* enumerate       */                                  \
-            nullptr,             /* thisObject      */                                  \
+            js::proxy_FunToString,                                                      \
         }                                                                               \
     }
 
 #define PROXY_CLASS_DEF(name, flags)                                    \
   PROXY_CLASS_WITH_EXT(name, flags,                                     \
                        PROXY_MAKE_EXT(                                  \
-                         nullptr, /* outerObject */                     \
-                         nullptr, /* innerObject */                     \
                          false,   /* isWrappedNative */                 \
                          js::proxy_ObjectMoved                          \
                        ))
@@ -416,8 +411,10 @@ proxy_Unwatch(JSContext* cx, JS::HandleObject obj, JS::HandleId id);
 extern JS_FRIEND_API(bool)
 proxy_GetElements(JSContext* cx, JS::HandleObject proxy, uint32_t begin, uint32_t end,
                   ElementAdder* adder);
+extern JS_FRIEND_API(JSString*)
+proxy_FunToString(JSContext* cx, JS::HandleObject proxy, unsigned indent);
 
-/*
+/**
  * A class of objects that return source code on demand.
  *
  * When code is compiled with setSourceIsLazy(true), SpiderMonkey doesn't
@@ -432,7 +429,7 @@ class SourceHook {
   public:
     virtual ~SourceHook() { }
 
-    /*
+    /**
      * Set |*src| and |*length| to refer to the source code for |filename|.
      * On success, the caller owns the buffer to which |*src| points, and
      * should use JS_free to free it.
@@ -440,7 +437,7 @@ class SourceHook {
     virtual bool load(JSContext* cx, const char* filename, char16_t** src, size_t* length) = 0;
 };
 
-/*
+/**
  * Have |rt| use |hook| to retrieve lazily-retrieved source code. See the
  * comments for SourceHook. The runtime takes ownership of the hook, and
  * will delete it when the runtime itself is deleted, or when a new hook is
@@ -449,7 +446,7 @@ class SourceHook {
 extern JS_FRIEND_API(void)
 SetSourceHook(JSRuntime* rt, mozilla::UniquePtr<SourceHook> hook);
 
-/* Remove |rt|'s source hook, and return it. The caller now owns the hook. */
+/** Remove |rt|'s source hook, and return it. The caller now owns the hook. */
 extern JS_FRIEND_API(mozilla::UniquePtr<SourceHook>)
 ForgetSourceHook(JSRuntime* rt);
 
@@ -464,7 +461,7 @@ typedef enum  {
     IgnoreNurseryObjects
 } DumpHeapNurseryBehaviour;
 
- /*
+ /**
   * Dump the complete object graph of heap-allocated things.
   * fp is the file for the dump output.
   */
@@ -524,7 +521,7 @@ GetWeakmapKeyDelegate(JSObject* key);
 JS_FRIEND_API(JS::TraceKind)
 GCThingTraceKind(void* thing);
 
-/*
+/**
  * Invoke cellCallback on every gray JS_OBJECT in the given zone.
  */
 extern JS_FRIEND_API(void)
@@ -566,9 +563,11 @@ public:
     static const uint32_t FIXED_SLOTS_SHIFT = 27;
 };
 
-// This layout is shared by all native objects. For non-native objects, the
-// group may always be accessed safely, and other members may be as well,
-// depending on the object's specific layout.
+/**
+ * This layout is shared by all native objects. For non-native objects, the
+ * group may always be accessed safely, and other members may be as well,
+ * depending on the object's specific layout.
+ */
 struct Object {
     shadow::ObjectGroup* group;
     shadow::Shape*      shape;
@@ -675,16 +674,6 @@ ParentKeyForStandardClass(JSProtoKey key)
     return JSProto_Object;
 }
 
-inline bool
-IsInnerObject(JSObject* obj) {
-    return !!GetObjectClass(obj)->ext.outerObject;
-}
-
-inline bool
-IsOuterObject(JSObject* obj) {
-    return !!GetObjectClass(obj)->ext.innerObject;
-}
-
 JS_FRIEND_API(bool)
 IsFunctionObject(JSObject* obj);
 
@@ -713,7 +702,7 @@ inline void AssertSameCompartment(JSObject* objA, JSObject* objB) {}
 JS_FRIEND_API(void)
 NotifyAnimationActivity(JSObject* obj);
 
-/*
+/**
  * Return the outermost enclosing function (script) of the scripted caller.
  * This function returns nullptr in several cases:
  *  - no script is running on the context
@@ -935,6 +924,27 @@ CopyFlatStringChars(char16_t* dest, JSFlatString* s, size_t len)
     CopyLinearStringChars(dest, FlatStringToLinearString(s), len);
 }
 
+/**
+ * Add some or all property keys of obj to the id vector *props.
+ *
+ * The flags parameter controls which property keys are added. Pass a
+ * combination of the following bits:
+ *
+ *     JSITER_OWNONLY - Don't also search the prototype chain; only consider
+ *       obj's own properties.
+ *
+ *     JSITER_HIDDEN - Include nonenumerable properties.
+ *
+ *     JSITER_SYMBOLS - Include property keys that are symbols. The default
+ *       behavior is to filter out symbols.
+ *
+ *     JSITER_SYMBOLSONLY - Exclude non-symbol property keys.
+ *
+ * This is the closest C++ API we have to `Reflect.ownKeys(obj)`, or
+ * equivalently, the ES6 [[OwnPropertyKeys]] internal method. Pass
+ * `JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS` as flags to get
+ * results that match the output of Reflect.ownKeys.
+ */
 JS_FRIEND_API(bool)
 GetPropertyKeys(JSContext* cx, JS::HandleObject obj, unsigned flags, JS::AutoIdVector* props);
 
@@ -954,6 +964,8 @@ IsObjectInContextCompartment(JSObject* obj, const JSContext* cx);
  * NB: these flag bits are encoded into the bytecode stream in the immediate
  * operand of JSOP_ITER, so don't change them without advancing vm/Xdr.h's
  * XDR_BYTECODE_VERSION.
+ * NB: keep these in sync with the copy in builtin/SelfHostingDefines.h.
+ * The first three are omitted because they shouldn't be used in new code.
  */
 #define JSITER_ENUMERATE  0x1   /* for-in compatible hidden default iterator */
 #define JSITER_FOREACH    0x2   /* get obj[key] for each property */
@@ -1066,12 +1078,14 @@ GetPCCountScriptSummary(JSContext* cx, size_t script);
 JS_FRIEND_API(JSString*)
 GetPCCountScriptContents(JSContext* cx, size_t script);
 
-// Generate lcov trace file content for the current compartment, and allocate a
-// new buffer and return the content in it, the size of the newly allocated
-// content within the buffer would be set to the length out-param.
-//
-// In case of out-of-memory, this function returns nullptr and does not set any
-// value to the length out-param.
+/**
+ * Generate lcov trace file content for the current compartment, and allocate a
+ * new buffer and return the content in it, the size of the newly allocated
+ * content within the buffer would be set to the length out-param.
+ *
+ * In case of out-of-memory, this function returns nullptr and does not set any
+ * value to the length out-param.
+ */
 JS_FRIEND_API(char*)
 GetCodeCoverageSummary(JSContext* cx, size_t* length);
 
@@ -1081,19 +1095,13 @@ ContextHasOutstandingRequests(const JSContext* cx);
 typedef void
 (* ActivityCallback)(void* arg, bool active);
 
-/*
+/**
  * Sets a callback that is run whenever the runtime goes idle - the
  * last active request ceases - and begins activity - when it was
  * idle and a request begins.
  */
 JS_FRIEND_API(void)
 SetActivityCallback(JSRuntime* rt, ActivityCallback cb, void* arg);
-
-extern JS_FRIEND_API(const JSStructuredCloneCallbacks*)
-GetContextStructuredCloneCallbacks(JSContext* cx);
-
-extern JS_FRIEND_API(bool)
-IsContextRunningJS(JSContext* cx);
 
 typedef bool
 (* DOMInstanceClassHasProtoAtDepth)(const Class* instanceClass,
@@ -1112,7 +1120,7 @@ GetDOMCallbacks(JSRuntime* rt);
 extern JS_FRIEND_API(JSObject*)
 GetTestingFunctions(JSContext* cx);
 
-/*
+/**
  * Helper to convert FreeOp to JSFreeOp when the definition of FreeOp is not
  * available and the compiler does not know that FreeOp inherits from
  * JSFreeOp.
@@ -1125,7 +1133,7 @@ CastToJSFreeOp(FreeOp* fop)
 
 /* Implemented in jsexn.cpp. */
 
-/*
+/**
  * Get an error type name from a JSExnType constant.
  * Returns nullptr for invalid arguments and JSEXN_INTERNALERR
  */
@@ -1267,21 +1275,18 @@ inline bool DOMProxyIsShadowing(DOMProxyShadowsResult result) {
 
 /* Implemented in jsdate.cpp. */
 
-/*
- * Detect whether the internal date value is NaN.  (Because failure is
- * out-of-band for js_DateGet*)
- */
+/** Detect whether the internal date value is NaN. */
 extern JS_FRIEND_API(bool)
-DateIsValid(JSContext* cx, JSObject* obj);
+DateIsValid(JSContext* cx, JS::HandleObject obj, bool* isValid);
 
-extern JS_FRIEND_API(double)
-DateGetMsecSinceEpoch(JSContext* cx, JSObject* obj);
+extern JS_FRIEND_API(bool)
+DateGetMsecSinceEpoch(JSContext* cx, JS::HandleObject obj, double* msecSinceEpoch);
 
 } /* namespace js */
 
 /* Implemented in jscntxt.cpp. */
 
-/*
+/**
  * Report an exception, which is currently realized as a printf-style format
  * string and its arguments.
  */
@@ -1301,7 +1306,7 @@ GetErrorMessage(void* userRef, const unsigned errorNumber);
 // AutoStableStringChars is here so we can use it in ErrorReport.  It
 // should get moved out of here if we can manage it.  See bug 1040316.
 
-/*
+/**
  * This class provides safe access to a string's chars across a GC. Once
  * we allocate strings and chars in the nursery (bug 903519), this class
  * will have to make a copy of the string's chars if they are allocated
@@ -1370,8 +1375,10 @@ class MOZ_STACK_CLASS AutoStableStringChars
     void operator=(const AutoStableStringChars& other) = delete;
 };
 
-// Creates a string of the form |ErrorType: ErrorMessage| for a JSErrorReport,
-// which generally matches the toString() behavior of an ErrorObject.
+/**
+ * Creates a string of the form |ErrorType: ErrorMessage| for a JSErrorReport,
+ * which generally matches the toString() behavior of an ErrorObject.
+ */
 extern JS_FRIEND_API(JSString*)
 ErrorReportToString(JSContext* cx, JSErrorReport* reportp);
 
@@ -1444,7 +1451,7 @@ GetSCOffset(JSStructuredCloneWriter* writer);
 
 namespace Scalar {
 
-/*
+/**
  * Scalar types that can appear in typed arrays and typed objects.  The enum
  * values must to be kept in sync with the JS_SCALARTYPEREPR_ constants, as
  * well as the TypedArrayObject::classes and TypedArrayObject::protoClasses
@@ -1460,13 +1467,13 @@ enum Type {
     Float32,
     Float64,
 
-    /*
+    /**
      * Special type that is a uint8_t, but assignments are clamped to [0, 256).
      * Treat the raw data type as a uint8_t.
      */
     Uint8Clamped,
 
-    /*
+    /**
      * SIMD types don't have their own TypedArray equivalent, for now.
      */
     MaxTypedArrayViewType,
@@ -1592,25 +1599,6 @@ JS_NewFloat32Array(JSContext* cx, uint32_t nelements);
 extern JS_FRIEND_API(JSObject*)
 JS_NewFloat64Array(JSContext* cx, uint32_t nelements);
 
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedInt8Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint8Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint8ClampedArray(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedInt16Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint16Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedInt32Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint32Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedFloat32Array(JSContext* cx, uint32_t nelements);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedFloat64Array(JSContext* cx, uint32_t nelements);
-
 /*
  * Create a new typed array and copy in values from the given object. The
  * object is used as if it were an array; that is, the new array (if
@@ -1639,9 +1627,10 @@ extern JS_FRIEND_API(JSObject*)
 JS_NewFloat64ArrayFromArray(JSContext* cx, JS::HandleObject array);
 
 /*
- * Create a new typed array using the given ArrayBuffer for storage.  The
- * length value is optional; if -1 is passed, enough elements to use up the
- * remainder of the byte array is used as the default value.
+ * Create a new typed array using the given ArrayBuffer or
+ * SharedArrayBuffer for storage.  The length value is optional; if -1
+ * is passed, enough elements to use up the remainder of the byte
+ * array is used as the default value.
  */
 
 extern JS_FRIEND_API(JSObject*)
@@ -1672,50 +1661,19 @@ extern JS_FRIEND_API(JSObject*)
 JS_NewFloat64ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
                              uint32_t byteOffset, int32_t length);
 
-// As for the above, passing length==(uint32_t)-1 signifies "up to the
-// end of the buffer".
-
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedInt8ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint8ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                 uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint8ClampedArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                        uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedInt16ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                 uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint16ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                  uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedInt32ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                 uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedUint32ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                  uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedFloat32ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                   uint32_t byteOffset, uint32_t length);
-extern JS_FRIEND_API(JSObject*)
-JS_NewSharedFloat64ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
-                                   uint32_t byteOffset, uint32_t length);
-
-/*
+/**
  * Create a new SharedArrayBuffer with the given byte length.
  */
 extern JS_FRIEND_API(JSObject*)
 JS_NewSharedArrayBuffer(JSContext* cx, uint32_t nbytes);
 
-/*
+/**
  * Create a new ArrayBuffer with the given byte length.
  */
 extern JS_FRIEND_API(JSObject*)
 JS_NewArrayBuffer(JSContext* cx, uint32_t nbytes);
 
-/*
+/**
  * Check whether obj supports JS_GetTypedArray* APIs. Note that this may return
  * false if a security wrapper is encountered that denies the unwrapping. If
  * this test or one of the JS_Is*Array tests succeeds, then it is safe to call
@@ -1724,13 +1682,7 @@ JS_NewArrayBuffer(JSContext* cx, uint32_t nbytes);
 extern JS_FRIEND_API(bool)
 JS_IsTypedArrayObject(JSObject* obj);
 
-/*
- * Ditto for JS_GetSharedTypedArray* APIs.
- */
-extern JS_FRIEND_API(bool)
-JS_IsSharedTypedArrayObject(JSObject* obj);
-
-/*
+/**
  * Check whether obj supports JS_GetArrayBufferView* APIs. Note that this may
  * return false if a security wrapper is encountered that denies the
  * unwrapping. If this test or one of the more specific tests succeeds, then it
@@ -1763,24 +1715,16 @@ JS_IsFloat32Array(JSObject* obj);
 extern JS_FRIEND_API(bool)
 JS_IsFloat64Array(JSObject* obj);
 
+/**
+ * Return the isShared flag of a typed array, which denotes whether
+ * the underlying buffer is a SharedArrayBuffer.
+ *
+ * |obj| must have passed a JS_IsTypedArrayObject/JS_Is*Array test, or somehow
+ * be known that it would pass such a test: it is a typed array or a wrapper of
+ * a typed array, and the unwrapping will succeed.
+ */
 extern JS_FRIEND_API(bool)
-JS_IsSharedInt8Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedUint8Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedUint8ClampedArray(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedInt16Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedUint16Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedInt32Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedUint32Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedFloat32Array(JSObject* obj);
-extern JS_FRIEND_API(bool)
-JS_IsSharedFloat64Array(JSObject* obj);
+JS_GetTypedArraySharedness(JSObject* obj);
 
 /*
  * Test for specific typed array types (ArrayBufferView subtypes) and return
@@ -1815,29 +1759,7 @@ extern JS_FRIEND_API(JSObject*)
 UnwrapArrayBufferView(JSObject* obj);
 
 extern JS_FRIEND_API(JSObject*)
-UnwrapSharedInt8Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedUint8Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedUint8ClampedArray(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedInt16Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedUint16Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedInt32Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedUint32Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedFloat32Array(JSObject* obj);
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedFloat64Array(JSObject* obj);
-
-extern JS_FRIEND_API(JSObject*)
 UnwrapSharedArrayBuffer(JSObject* obj);
-
-extern JS_FRIEND_API(JSObject*)
-UnwrapSharedArrayBufferView(JSObject* obj);
 
 
 namespace detail {
@@ -1852,32 +1774,18 @@ extern JS_FRIEND_DATA(const Class* const) Uint32ArrayClassPtr;
 extern JS_FRIEND_DATA(const Class* const) Float32ArrayClassPtr;
 extern JS_FRIEND_DATA(const Class* const) Float64ArrayClassPtr;
 
-extern JS_FRIEND_DATA(const Class* const) SharedInt8ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedUint8ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedUint8ClampedArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedInt16ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedUint16ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedInt32ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedUint32ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedFloat32ArrayClassPtr;
-extern JS_FRIEND_DATA(const Class* const) SharedFloat64ArrayClassPtr;
-
 const size_t TypedArrayLengthSlot = 1;
 
 } // namespace detail
 
-/*
- * Test for specific typed array types (ArrayBufferView subtypes) and return
- * the unwrapped object if so, else nullptr.  Never throws.
- */
-
 #define JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(Type, type) \
 inline void \
-Get ## Type ## ArrayLengthAndData(JSObject* obj, uint32_t* length, type** data) \
+Get ## Type ## ArrayLengthAndData(JSObject* obj, uint32_t* length, bool* isSharedMemory, type** data) \
 { \
     MOZ_ASSERT(GetObjectClass(obj) == detail::Type ## ArrayClassPtr); \
-    const JS::Value& slot = GetReservedSlot(obj, detail::TypedArrayLengthSlot); \
-    *length = mozilla::AssertedCast<uint32_t>(slot.toInt32()); \
+    const JS::Value& lenSlot = GetReservedSlot(obj, detail::TypedArrayLengthSlot); \
+    *length = mozilla::AssertedCast<uint32_t>(lenSlot.toInt32()); \
+    *isSharedMemory = JS_GetTypedArraySharedness(obj); \
     *data = static_cast<type*>(GetObjectPrivate(obj)); \
 }
 
@@ -1891,35 +1799,32 @@ JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(Uint32, uint32_t)
 JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(Float32, float)
 JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(Float64, double)
 
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedInt8, int8_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedUint8, uint8_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedUint8Clamped, uint8_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedInt16, int16_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedUint16, uint16_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedInt32, int32_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedUint32, uint32_t)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedFloat32, float)
-JS_DEFINE_DATA_AND_LENGTH_ACCESSOR(SharedFloat64, double)
-
 #undef JS_DEFINE_DATA_AND_LENGTH_ACCESSOR
 
 // This one isn't inlined because it's rather tricky (by dint of having to deal
 // with a dozen-plus classes and varying slot layouts.
 extern JS_FRIEND_API(void)
-GetArrayBufferViewLengthAndData(JSObject* obj, uint32_t* length, uint8_t** data);
-
-extern JS_FRIEND_API(void)
-GetSharedArrayBufferViewLengthAndData(JSObject* obj, uint32_t* length, uint8_t** data);
+GetArrayBufferViewLengthAndData(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data);
 
 // This one isn't inlined because there are a bunch of different ArrayBuffer
 // classes that would have to be individually handled here.
+//
+// There is an isShared out argument for API consistency (eases use from DOM).
+// It will always be set to false.
 extern JS_FRIEND_API(void)
-GetArrayBufferLengthAndData(JSObject* obj, uint32_t* length, uint8_t** data);
+GetArrayBufferLengthAndData(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data);
 
+// Ditto for SharedArrayBuffer.
+//
+// There is an isShared out argument for API consistency (eases use from DOM).
+// It will always be set to true.
 extern JS_FRIEND_API(void)
-GetSharedArrayBufferLengthAndData(JSObject* obj, uint32_t* length, uint8_t** data);
+GetSharedArrayBufferLengthAndData(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data);
 
 } // namespace js
+
+JS_FRIEND_API(uint8_t*)
+JS_GetSharedArrayBufferData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 
 /*
  * Unwrap Typed arrays all at once. Return nullptr without throwing if the
@@ -1927,25 +1832,29 @@ GetSharedArrayBufferLengthAndData(JSObject* obj, uint32_t* length, uint8_t** dat
  * object on success, filling both outparameters.
  */
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsInt8Array(JSObject* obj, uint32_t* length, int8_t** data);
+JS_GetObjectAsInt8Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, int8_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsUint8Array(JSObject* obj, uint32_t* length, uint8_t** data);
+JS_GetObjectAsUint8Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsUint8ClampedArray(JSObject* obj, uint32_t* length, uint8_t** data);
+JS_GetObjectAsUint8ClampedArray(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsInt16Array(JSObject* obj, uint32_t* length, int16_t** data);
+JS_GetObjectAsInt16Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, int16_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsUint16Array(JSObject* obj, uint32_t* length, uint16_t** data);
+JS_GetObjectAsUint16Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint16_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsInt32Array(JSObject* obj, uint32_t* length, int32_t** data);
+JS_GetObjectAsInt32Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, int32_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsUint32Array(JSObject* obj, uint32_t* length, uint32_t** data);
+JS_GetObjectAsUint32Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint32_t** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsFloat32Array(JSObject* obj, uint32_t* length, float** data);
+JS_GetObjectAsFloat32Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, float** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsFloat64Array(JSObject* obj, uint32_t* length, double** data);
+JS_GetObjectAsFloat64Array(JSObject* obj, uint32_t* length, bool* isSharedMemory, double** data);
 extern JS_FRIEND_API(JSObject*)
-JS_GetObjectAsArrayBufferView(JSObject* obj, uint32_t* length, uint8_t** data);
+JS_GetObjectAsArrayBufferView(JSObject* obj, uint32_t* length, bool* isSharedMemory, uint8_t** data);
+
+/*
+ * Unwrap an ArrayBuffer, return nullptr if it's a different type.
+ */
 extern JS_FRIEND_API(JSObject*)
 JS_GetObjectAsArrayBuffer(JSObject* obj, uint32_t* length, uint8_t** data);
 
@@ -1974,7 +1883,7 @@ JS_IsArrayBufferObject(JSObject* obj);
 extern JS_FRIEND_API(bool)
 JS_IsSharedArrayBufferObject(JSObject* obj);
 
-/*
+/**
  * Return the available byte length of an array buffer.
  *
  * |obj| must have passed a JS_IsArrayBufferObject test, or somehow be known
@@ -1984,7 +1893,10 @@ JS_IsSharedArrayBufferObject(JSObject* obj);
 extern JS_FRIEND_API(uint32_t)
 JS_GetArrayBufferByteLength(JSObject* obj);
 
-/*
+extern JS_FRIEND_API(uint32_t)
+JS_GetSharedArrayBufferByteLength(JSObject* obj);
+
+/**
  * Return true if the arrayBuffer contains any data. This will return false for
  * ArrayBuffer.prototype and neutered ArrayBuffers.
  *
@@ -1995,7 +1907,24 @@ JS_GetArrayBufferByteLength(JSObject* obj);
 extern JS_FRIEND_API(bool)
 JS_ArrayBufferHasData(JSObject* obj);
 
-/*
+/**
+ * Return a pointer to the start of the data referenced by a typed array. The
+ * data is still owned by the typed array, and should not be modified on
+ * another thread. Furthermore, the pointer can become invalid on GC (if the
+ * data is small and fits inside the array's GC header), so callers must take
+ * care not to hold on across anything that could GC.
+ *
+ * |obj| must have passed a JS_IsArrayBufferObject test, or somehow be known
+ * that it would pass such a test: it is an ArrayBuffer or a wrapper of an
+ * ArrayBuffer, and the unwrapping will succeed.
+ *
+ * *isSharedMemory will be set to false, the argument is present to simplify
+ * its use from code that also interacts with SharedArrayBuffer.
+ */
+extern JS_FRIEND_API(uint8_t*)
+JS_GetArrayBufferData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
+
+/**
  * Check whether the obj is ArrayBufferObject and memory mapped. Note that this
  * may return false if a security wrapper is encountered that denies the
  * unwrapping.
@@ -2003,7 +1932,7 @@ JS_ArrayBufferHasData(JSObject* obj);
 extern JS_FRIEND_API(bool)
 JS_IsMappedArrayBufferObject(JSObject* obj);
 
-/*
+/**
  * Return the number of elements in a typed array.
  *
  * |obj| must have passed a JS_IsTypedArrayObject/JS_Is*Array test, or somehow
@@ -2013,7 +1942,7 @@ JS_IsMappedArrayBufferObject(JSObject* obj);
 extern JS_FRIEND_API(uint32_t)
 JS_GetTypedArrayLength(JSObject* obj);
 
-/*
+/**
  * Return the byte offset from the start of an array buffer to the start of a
  * typed array view.
  *
@@ -2024,7 +1953,7 @@ JS_GetTypedArrayLength(JSObject* obj);
 extern JS_FRIEND_API(uint32_t)
 JS_GetTypedArrayByteOffset(JSObject* obj);
 
-/*
+/**
  * Return the byte length of a typed array.
  *
  * |obj| must have passed a JS_IsTypedArrayObject/JS_Is*Array test, or somehow
@@ -2034,7 +1963,7 @@ JS_GetTypedArrayByteOffset(JSObject* obj);
 extern JS_FRIEND_API(uint32_t)
 JS_GetTypedArrayByteLength(JSObject* obj);
 
-/*
+/**
  * Check whether obj supports JS_ArrayBufferView* APIs. Note that this may
  * return false if a security wrapper is encountered that denies the
  * unwrapping.
@@ -2042,7 +1971,7 @@ JS_GetTypedArrayByteLength(JSObject* obj);
 extern JS_FRIEND_API(bool)
 JS_IsArrayBufferViewObject(JSObject* obj);
 
-/*
+/**
  * More generic name for JS_GetTypedArrayByteLength to cover DataViews as well
  */
 extern JS_FRIEND_API(uint32_t)
@@ -2058,71 +1987,52 @@ JS_GetArrayBufferViewByteLength(JSObject* obj);
  * |obj| must have passed a JS_Is*Array test, or somehow be known that it would
  * pass such a test: it is a typed array or a wrapper of a typed array, and the
  * unwrapping will succeed.
+ *
+ * *isSharedMemory will be set to true if the typed array maps a
+ * SharedArrayBuffer, otherwise to false.
  */
 
-extern JS_FRIEND_API(uint8_t*)
-JS_GetArrayBufferData(JSObject* obj, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(int8_t*)
-JS_GetInt8ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetInt8ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(uint8_t*)
-JS_GetUint8ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetUint8ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(uint8_t*)
-JS_GetUint8ClampedArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetUint8ClampedArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(int16_t*)
-JS_GetInt16ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetInt16ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(uint16_t*)
-JS_GetUint16ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetUint16ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(int32_t*)
-JS_GetInt32ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetInt32ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(uint32_t*)
-JS_GetUint32ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetUint32ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(float*)
-JS_GetFloat32ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetFloat32ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 extern JS_FRIEND_API(double*)
-JS_GetFloat64ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetFloat64ArrayData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 
-extern JS_FRIEND_API(uint8_t*)
-JS_GetSharedArrayBufferData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(int8_t*)
-JS_GetSharedInt8ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(uint8_t*)
-JS_GetSharedUint8ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(uint8_t*)
-JS_GetSharedUint8ClampedArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(int16_t*)
-JS_GetSharedInt16ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(uint16_t*)
-JS_GetSharedUint16ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(int32_t*)
-JS_GetSharedInt32ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(uint32_t*)
-JS_GetSharedUint32ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(float*)
-JS_GetSharedFloat32ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-extern JS_FRIEND_API(double*)
-JS_GetSharedFloat64ArrayData(JSObject* obj, const JS::AutoCheckCannotGC&);
-
-/*
+/**
  * Same as above, but for any kind of ArrayBufferView. Prefer the type-specific
  * versions when possible.
  */
 extern JS_FRIEND_API(void*)
-JS_GetArrayBufferViewData(JSObject* obj, const JS::AutoCheckCannotGC&);
+JS_GetArrayBufferViewData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 
-/*
- * Return the ArrayBuffer underlying an ArrayBufferView. If the buffer has been
- * neutered, this will still return the neutered buffer. |obj| must be an
- * object that would return true for JS_IsArrayBufferViewObject().
+/**
+ * Return the ArrayBuffer or SharedArrayBuffer underlying an
+ * ArrayBufferView. If the buffer has been neutered, this will still
+ * return the neutered buffer. |obj| must be an object that would
+ * return true for JS_IsArrayBufferViewObject().
  */
 extern JS_FRIEND_API(JSObject*)
-JS_GetArrayBufferViewBuffer(JSContext* cx, JS::HandleObject obj);
+JS_GetArrayBufferViewBuffer(JSContext* cx, JS::HandleObject obj, bool* isSharedMemory);
 
 typedef enum {
     ChangeData,
     KeepData
 } NeuterDataDisposition;
 
-/*
+/**
  * Set an ArrayBuffer's length to 0 and neuter all of its views.
  *
  * The |changeData| argument is a hint to inform internal behavior with respect
@@ -2135,7 +2045,7 @@ extern JS_FRIEND_API(bool)
 JS_NeuterArrayBuffer(JSContext* cx, JS::HandleObject obj,
                      NeuterDataDisposition changeData);
 
-/*
+/**
  * Check whether the obj is ArrayBufferObject and neutered. Note that this
  * may return false if a security wrapper is encountered that denies the
  * unwrapping.
@@ -2143,13 +2053,13 @@ JS_NeuterArrayBuffer(JSContext* cx, JS::HandleObject obj,
 extern JS_FRIEND_API(bool)
 JS_IsNeuteredArrayBufferObject(JSObject* obj);
 
-/*
+/**
  * Check whether obj supports JS_GetDataView* APIs.
  */
 JS_FRIEND_API(bool)
 JS_IsDataViewObject(JSObject* obj);
 
-/*
+/**
  * Create a new DataView using the given ArrayBuffer for storage. The given
  * buffer must be an ArrayBuffer (or a cross-compartment wrapper of an
  * ArrayBuffer), and the offset and length must fit within the bounds of the
@@ -2159,7 +2069,7 @@ JS_IsDataViewObject(JSObject* obj);
 JS_FRIEND_API(JSObject*)
 JS_NewDataView(JSContext* cx, JS::HandleObject arrayBuffer, uint32_t byteOffset, int32_t byteLength);
 
-/*
+/**
  * Return the byte offset of a data view into its array buffer. |obj| must be a
  * DataView.
  *
@@ -2170,7 +2080,7 @@ JS_NewDataView(JSContext* cx, JS::HandleObject arrayBuffer, uint32_t byteOffset,
 JS_FRIEND_API(uint32_t)
 JS_GetDataViewByteOffset(JSObject* obj);
 
-/*
+/**
  * Return the byte length of a data view.
  *
  * |obj| must have passed a JS_IsDataViewObject test, or somehow be known that
@@ -2181,7 +2091,7 @@ JS_GetDataViewByteOffset(JSObject* obj);
 JS_FRIEND_API(uint32_t)
 JS_GetDataViewByteLength(JSObject* obj);
 
-/*
+/**
  * Return a pointer to the beginning of the data referenced by a DataView.
  *
  * |obj| must have passed a JS_IsDataViewObject test, or somehow be known that
@@ -2194,7 +2104,7 @@ JS_GetDataViewData(JSObject* obj, const JS::AutoCheckCannotGC&);
 
 namespace js {
 
-/*
+/**
  * Add a watchpoint -- in the Object.prototype.watch sense -- to |obj| for the
  * property |id|, using the callable object |callable| as the function to be
  * called for notifications.
@@ -2206,7 +2116,7 @@ namespace js {
 extern JS_FRIEND_API(bool)
 WatchGuts(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::HandleObject callable);
 
-/*
+/**
  * Remove a watchpoint -- in the Object.prototype.watch sense -- from |obj| for
  * the property |id|.
  *
@@ -2225,7 +2135,7 @@ enum class InlinableNative : uint16_t;
 
 } // namespace js
 
-/*
+/**
  * A class, expected to be passed by value, which represents the CallArgs for a
  * JSJitGetterOp.
  */
@@ -2245,7 +2155,7 @@ class JSJitGetterCallArgs : protected JS::MutableHandleValue
     }
 };
 
-/*
+/**
  * A class, expected to be passed by value, which represents the CallArgs for a
  * JSJitSetterOp.
  */
@@ -2268,7 +2178,7 @@ class JSJitSetterCallArgs : protected JS::MutableHandleValue
 
 struct JSJitMethodCallArgsTraits;
 
-/*
+/**
  * A class, expected to be passed by reference, which represents the CallArgs
  * for a JSJitMethodOp.
  */
@@ -2315,11 +2225,6 @@ struct JSJitMethodCallArgsTraits
     static const size_t offsetOfArgc = offsetof(JSJitMethodCallArgs, argc_);
 };
 
-/*
- * This struct contains metadata passed from the DOM to the JS Engine for JIT
- * optimizations on DOM property accessors. Eventually, this should be made
- * available to general JSAPI users, but we are not currently ready to do so.
- */
 typedef bool
 (* JSJitGetterOp)(JSContext* cx, JS::HandleObject thisObj,
                   void* specializedThis, JSJitGetterCallArgs args);
@@ -2330,6 +2235,11 @@ typedef bool
 (* JSJitMethodOp)(JSContext* cx, JS::HandleObject thisObj,
                   void* specializedThis, const JSJitMethodCallArgs& args);
 
+/**
+ * This struct contains metadata passed from the DOM to the JS Engine for JIT
+ * optimizations on DOM property accessors. Eventually, this should be made
+ * available to general JSAPI users, but we are not currently ready to do so.
+ */
 struct JSJitInfo {
     enum OpType {
         Getter,
@@ -2369,24 +2279,31 @@ struct JSJitInfo {
     static_assert(Any & Object, "Any must include Object.");
     static_assert(Any & Null, "Any must include Null.");
 
+    /**
+     * An enum that describes what this getter/setter/method aliases.  This
+     * determines what things can be hoisted past this call, and if this
+     * call is movable what it can be hoisted past.
+     */
     enum AliasSet {
-        // An enum that describes what this getter/setter/method aliases.  This
-        // determines what things can be hoisted past this call, and if this
-        // call is movable what it can be hoisted past.
-
-        // Alias nothing: a constant value, getting it can't affect any other
-        // values, nothing can affect it.
+        /**
+         * Alias nothing: a constant value, getting it can't affect any other
+         * values, nothing can affect it.
+         */
         AliasNone,
 
-        // Alias things that can modify the DOM but nothing else.  Doing the
-        // call can't affect the behavior of any other function.
+        /**
+         * Alias things that can modify the DOM but nothing else.  Doing the
+         * call can't affect the behavior of any other function.
+         */
         AliasDOMSets,
 
-        // Alias the world.  Calling this can change arbitrary values anywhere
-        // in the system.  Most things fall in this bucket.
+        /**
+         * Alias the world.  Calling this can change arbitrary values anywhere
+         * in the system.  Most things fall in this bucket.
+         */
         AliasEverything,
 
-        // Must be last.
+        /** Must be last. */
         AliasSetCount
     };
 
@@ -2419,7 +2336,7 @@ struct JSJitInfo {
         JSJitGetterOp getter;
         JSJitSetterOp setter;
         JSJitMethodOp method;
-        /* A DOM static method, used for Promise wrappers */
+        /** A DOM static method, used for Promise wrappers */
         JSNative staticMethod;
     };
 
@@ -2439,16 +2356,18 @@ struct JSJitInfo {
 #define JITINFO_RETURN_TYPE_BITS 8
 #define JITINFO_SLOT_INDEX_BITS 10
 
-    // The OpType that says what sort of function we are.
+    /** The OpType that says what sort of function we are. */
     uint32_t type_ : JITINFO_OP_TYPE_BITS;
 
-    // The alias set for this op.  This is a _minimal_ alias set; in
-    // particular for a method it does not include whatever argument
-    // conversions might do.  That's covered by argTypes and runtime
-    // analysis of the actual argument types being passed in.
+    /**
+     * The alias set for this op.  This is a _minimal_ alias set; in
+     * particular for a method it does not include whatever argument
+     * conversions might do.  That's covered by argTypes and runtime
+     * analysis of the actual argument types being passed in.
+     */
     uint32_t aliasSet_ : JITINFO_ALIAS_SET_BITS;
 
-    // The return type tag.  Might be JSVAL_TYPE_UNKNOWN.
+    /** The return type tag.  Might be JSVAL_TYPE_UNKNOWN. */
     uint32_t returnType_ : JITINFO_RETURN_TYPE_BITS;
 
     static_assert(OpTypeCount <= (1 << JITINFO_OP_TYPE_BITS),
@@ -2462,29 +2381,46 @@ struct JSJitInfo {
 #undef JITINFO_ALIAS_SET_BITS
 #undef JITINFO_OP_TYPE_BITS
 
-    uint32_t isInfallible : 1; /* Is op fallible? False in setters. */
-    uint32_t isMovable : 1;    /* Is op movable?  To be movable the op must
-                                  not AliasEverything, but even that might
-                                  not be enough (e.g. in cases when it can
-                                  throw or is explicitly not movable). */
-    uint32_t isEliminatable : 1; /* Can op be dead-code eliminated? Again, this
-                                    depends on whether the op can throw, in
-                                    addition to the alias set. */
+    /** Is op fallible? False in setters. */
+    uint32_t isInfallible : 1;
+
+    /**
+     * Is op movable?  To be movable the op must
+     * not AliasEverything, but even that might
+     * not be enough (e.g. in cases when it can
+     * throw or is explicitly not movable).
+     */
+    uint32_t isMovable : 1;
+
+    /**
+     * Can op be dead-code eliminated? Again, this
+     * depends on whether the op can throw, in
+     * addition to the alias set.
+     */
+    uint32_t isEliminatable : 1;
+
     // XXXbz should we have a JSValueType for the type of the member?
-    uint32_t isAlwaysInSlot : 1; /* True if this is a getter that can always
-                                    get the value from a slot of the "this"
-                                    object. */
-    uint32_t isLazilyCachedInSlot : 1; /* True if this is a getter that can
-                                          sometimes (if the slot doesn't contain
-                                          UndefinedValue()) get the value from a
-                                          slot of the "this" object. */
-    uint32_t isTypedMethod : 1; /* True if this is an instance of
-                                   JSTypedMethodJitInfo. */
-    uint32_t slotIndex : JITINFO_SLOT_INDEX_BITS; /* If isAlwaysInSlot or
-                                                     isSometimesInSlot is true,
-                                                     the index of the slot to
-                                                     get the value from.
-                                                     Otherwise 0. */
+    /**
+     * True if this is a getter that can always
+     * get the value from a slot of the "this" object.
+     */
+    uint32_t isAlwaysInSlot : 1;
+
+    /**
+     * True if this is a getter that can sometimes (if the slot doesn't contain
+     * UndefinedValue()) get the value from a slot of the "this" object.
+     */
+    uint32_t isLazilyCachedInSlot : 1;
+
+    /** True if this is an instance of JSTypedMethodJitInfo. */
+    uint32_t isTypedMethod : 1;
+
+    /**
+     * If isAlwaysInSlot or isSometimesInSlot is true,
+     * the index of the slot to get the value from.
+     * Otherwise 0.
+     */
+    uint32_t slotIndex : JITINFO_SLOT_INDEX_BITS;
 
     static const size_t maxSlotIndex = (1 << JITINFO_SLOT_INDEX_BITS) - 1;
 
@@ -2579,7 +2515,7 @@ bool IdMatchesAtom(jsid id, JSAtom* atom);
 } // namespace detail
 } // namespace js
 
-/*
+/**
  * Must not be used on atoms that are representable as integer jsids.
  * Prefer NameToId or AtomToId over this function:
  *
@@ -2645,16 +2581,21 @@ IdToValue(jsid id)
     return JS::UndefinedValue();
 }
 
-/*
+/**
  * If the embedder has registered a ScriptEnvironmentPreparer,
  * PrepareScriptEnvironmentAndInvoke will call the preparer's 'invoke' method
  * with the given |closure|, with the assumption that the preparer will set up
  * any state necessary to run script in |scope|, invoke |closure| with a valid
- * JSContext*, and return.
+ * JSContext*, report any exceptions thrown from the closure, and return.
  *
  * If no preparer is registered, PrepareScriptEnvironmentAndInvoke will assert
  * that |rt| has exactly one JSContext associated with it, enter the compartment
  * of |scope| on that context, and invoke |closure|.
+ *
+ * In both cases, PrepareScriptEnvironmentAndInvoke will report any exceptions
+ * that are thrown by the closure.  Consumers who want to propagate back
+ * whether the closure succeeded should do so via members of the closure
+ * itself.
  */
 
 struct ScriptEnvironmentPreparer {
@@ -2662,18 +2603,18 @@ struct ScriptEnvironmentPreparer {
         virtual bool operator()(JSContext* cx) = 0;
     };
 
-    virtual bool invoke(JS::HandleObject scope, Closure& closure) = 0;
+    virtual void invoke(JS::HandleObject scope, Closure& closure) = 0;
 };
 
-extern JS_FRIEND_API(bool)
-PrepareScriptEnvironmentAndInvoke(JSRuntime* rt, JS::HandleObject scope,
+extern JS_FRIEND_API(void)
+PrepareScriptEnvironmentAndInvoke(JSContext* cx, JS::HandleObject scope,
                                   ScriptEnvironmentPreparer::Closure& closure);
 
 JS_FRIEND_API(void)
 SetScriptEnvironmentPreparer(JSRuntime* rt, ScriptEnvironmentPreparer*
 preparer);
 
-/*
+/**
  * To help embedders enforce their invariants, we allow them to specify in
  * advance which JSContext should be passed to JSAPI calls. If this is set
  * to a non-null value, the assertSameCompartment machinery does double-
@@ -2697,7 +2638,7 @@ enum CTypesActivityType {
 typedef void
 (* CTypesActivityCallback)(JSContext* cx, CTypesActivityType type);
 
-/*
+/**
  * Sets a callback that is run whenever js-ctypes is about to be used when
  * calling into C.
  */
@@ -2729,7 +2670,7 @@ class MOZ_RAII JS_FRIEND_API(AutoCTypesActivityCallback) {
 typedef JSObject*
 (* ObjectMetadataCallback)(JSContext* cx, JSObject* obj);
 
-/*
+/**
  * Specify a callback to invoke when creating each JS object in the current
  * compartment, which may return a metadata object to associate with the
  * object.
@@ -2737,7 +2678,7 @@ typedef JSObject*
 JS_FRIEND_API(void)
 SetObjectMetadataCallback(JSContext* cx, ObjectMetadataCallback callback);
 
-/* Get the metadata associated with an object. */
+/** Get the metadata associated with an object. */
 JS_FRIEND_API(JSObject*)
 GetObjectMetadata(JSObject* obj);
 
@@ -2748,7 +2689,7 @@ GetElementsWithAdder(JSContext* cx, JS::HandleObject obj, JS::HandleObject recei
 JS_FRIEND_API(bool)
 ForwardToNative(JSContext* cx, JSNative native, const JS::CallArgs& args);
 
-/*
+/**
  * Helper function for HTMLDocument and HTMLFormElement.
  *
  * These are the only two interfaces that have [OverrideBuiltins], a named
@@ -2789,37 +2730,38 @@ typedef long
 (*JitExceptionHandler)(void* exceptionRecord,  // PEXECTION_RECORD
                        void* context);         // PCONTEXT
 
-// Windows uses "structured exception handling" to handle faults. When a fault
-// occurs, the stack is searched for a handler (similar to C++ exception
-// handling). If the search does not find a handler, the "unhandled exception
-// filter" is called. Breakpad uses the unhandled exception filter to do crash
-// reporting. Unfortunately, on Win64, JIT code on the stack completely throws
-// off this unwinding process and prevents the unhandled exception filter from
-// being called. The reason is that Win64 requires unwind information be
-// registered for all code regions and JIT code has none. While it is possible
-// to register full unwind information for JIT code, this is a lot of work (one
-// has to be able to recover the frame pointer at any PC) so instead we register
-// a handler for all JIT code that simply calls breakpad's unhandled exception
-// filter (which will perform crash reporting and then terminate the process).
-// This would be wrong if there was an outer __try block that expected to handle
-// the fault, but this is not generally allowed.
-//
-// Gecko must call SetJitExceptionFilter before any JIT code is compiled and
-// only once per process.
+/**
+ * Windows uses "structured exception handling" to handle faults. When a fault
+ * occurs, the stack is searched for a handler (similar to C++ exception
+ * handling). If the search does not find a handler, the "unhandled exception
+ * filter" is called. Breakpad uses the unhandled exception filter to do crash
+ * reporting. Unfortunately, on Win64, JIT code on the stack completely throws
+ * off this unwinding process and prevents the unhandled exception filter from
+ * being called. The reason is that Win64 requires unwind information be
+ * registered for all code regions and JIT code has none. While it is possible
+ * to register full unwind information for JIT code, this is a lot of work (one
+ * has to be able to recover the frame pointer at any PC) so instead we register
+ * a handler for all JIT code that simply calls breakpad's unhandled exception
+ * filter (which will perform crash reporting and then terminate the process).
+ * This would be wrong if there was an outer __try block that expected to handle
+ * the fault, but this is not generally allowed.
+ *
+ * Gecko must call SetJitExceptionFilter before any JIT code is compiled and
+ * only once per process.
+ */
 extern JS_FRIEND_API(void)
 SetJitExceptionHandler(JitExceptionHandler handler);
 #endif
 
-/*
- * Get the object underlying the object environment (in the ES
- * NewObjectEnvironment) sense for a given function.  If the function is not
- * scripted or does not have an object environment, just returns the function's
- * parent.
+/**
+ * Get the nearest enclosing with scope object for a given function. If the
+ * function is not scripted or is not enclosed by a with scope, returns the
+ * global.
  */
 extern JS_FRIEND_API(JSObject*)
-GetObjectEnvironmentObjectForFunction(JSFunction* fun);
+GetNearestEnclosingWithScopeObjectForFunction(JSFunction* fun);
 
-/*
+/**
  * Get the first SavedFrame object in this SavedFrame stack whose principals are
  * subsumed by the cx's principals. If there is no such frame, return nullptr.
  *
@@ -2828,13 +2770,84 @@ GetObjectEnvironmentObjectForFunction(JSFunction* fun);
  * The savedFrame and cx do not need to be in the same compartment.
  */
 extern JS_FRIEND_API(JSObject*)
-GetFirstSubsumedSavedFrame(JSContext* cx, JS::HandleObject savedFrame);
+GetFirstSubsumedSavedFrame(JSContext* cx, JS::HandleObject savedFrame, JS::SavedFrameSelfHosted selfHosted);
 
 extern JS_FRIEND_API(bool)
 ReportIsNotFunction(JSContext* cx, JS::HandleValue v);
 
 extern JS_FRIEND_API(JSObject*)
 ConvertArgsToArray(JSContext* cx, const JS::CallArgs& args);
+
+/**
+ * Window and WindowProxy
+ *
+ * The functions below have to do with Windows and WindowProxies. There's an
+ * invariant that actual Window objects (the global objects of web pages) are
+ * never directly exposed to script. Instead we often substitute a WindowProxy.
+ *
+ * The scope chain, on the other hand, contains the Window and never its
+ * WindowProxy.
+ *
+ * As a result, we have calls to these "substitute-this-object-for-that-object"
+ * functions sprinkled at apparently arbitrary (but actually *very* carefully
+ * and nervously selected) places throughout the engine and indeed the
+ * universe.
+ */
+
+/**
+ * Tell the JS engine which Class is used for WindowProxy objects. Used by the
+ * functions below.
+ */
+extern JS_FRIEND_API(void)
+SetWindowProxyClass(JSRuntime* rt, const Class* clasp);
+
+/**
+ * Associates a WindowProxy with a Window (global object). `windowProxy` must
+ * have the Class set by SetWindowProxyClass.
+ */
+extern JS_FRIEND_API(void)
+SetWindowProxy(JSContext* cx, JS::HandleObject global, JS::HandleObject windowProxy);
+
+namespace detail {
+
+JS_FRIEND_API(bool)
+IsWindowSlow(JSObject* obj);
+
+} // namespace detail
+
+/**
+ * Returns true iff `obj` is a global object with an associated WindowProxy,
+ * see SetWindowProxy.
+ */
+inline bool
+IsWindow(JSObject* obj)
+{
+    if (GetObjectClass(obj)->flags & JSCLASS_IS_GLOBAL)
+        return detail::IsWindowSlow(obj);
+    return false;
+}
+
+/**
+ * Returns true iff `obj` has the WindowProxy Class (see SetWindowProxyClass).
+ */
+JS_FRIEND_API(bool)
+IsWindowProxy(JSObject* obj);
+
+/**
+ * If `obj` is a Window, get its associated WindowProxy (or a CCW or dead
+ * wrapper if the page was navigated away from), else return `obj`. This
+ * function is infallible and never returns nullptr.
+ */
+extern JS_FRIEND_API(JSObject*)
+ToWindowProxyIfWindow(JSObject* obj);
+
+/**
+ * If `obj` is a WindowProxy, get its associated Window (the compartment's
+ * global), else return `obj`. This function is infallible and never returns
+ * nullptr.
+ */
+extern JS_FRIEND_API(JSObject*)
+ToWindowIfWindowProxy(JSObject* obj);
 
 } /* namespace js */
 
@@ -2848,7 +2861,7 @@ JS_StoreStringPostBarrierCallback(JSContext* cx,
                                   void (*callback)(JSTracer* trc, JSString* key, void* data),
                                   JSString* key, void* data);
 
-/*
+/**
  * Forcibly clear postbarrier callbacks queued by the previous two methods.
  * This should be used when the object owning the postbarriered pointers is
  * being destroyed outside of a garbage collection.

@@ -124,6 +124,7 @@ public:
   const nsCString& GetDisplayName() const;
   const nsCString& GetVersion() const;
   const uint32_t GetPluginId() const;
+  nsString GetPluginBaseName() const;
 
   // Returns true if a plugin can be or is being used across multiple NodeIds.
   bool CanBeSharedCrossNodeIds() const;
@@ -151,7 +152,7 @@ public:
 
 private:
   ~GMPParent();
-  nsRefPtr<GeckoMediaPluginServiceParent> mService;
+  RefPtr<GeckoMediaPluginServiceParent> mService;
   bool EnsureProcessLoaded();
   nsresult ReadGMPMetaData();
 #ifdef MOZ_CRASHREPORTER
@@ -202,16 +203,16 @@ private:
 
   bool mCanDecrypt;
 
-  nsTArray<nsRefPtr<GMPTimerParent>> mTimers;
-  nsTArray<nsRefPtr<GMPStorageParent>> mStorage;
+  nsTArray<RefPtr<GMPTimerParent>> mTimers;
+  nsTArray<RefPtr<GMPStorageParent>> mStorage;
   nsCOMPtr<nsIThread> mGMPThread;
   nsCOMPtr<nsITimer> mAsyncShutdownTimeout; // GMP Thread only.
   // NodeId the plugin is assigned to, or empty if the the plugin is not
   // assigned to a NodeId.
-  nsAutoCString mNodeId;
+  nsCString mNodeId;
   // This is used for GMP content in the parent, there may be more of these in
   // the content processes.
-  nsRefPtr<GMPContentParent> mGMPContentParent;
+  RefPtr<GMPContentParent> mGMPContentParent;
   nsTArray<UniquePtr<GetGMPContentParentCallback>> mCallbacks;
   uint32_t mGMPContentChildCount;
 

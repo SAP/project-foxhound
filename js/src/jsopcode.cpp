@@ -36,7 +36,9 @@
 #include "asmjs/AsmJSModule.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/SourceNotes.h"
+#include "gc/GCInternals.h"
 #include "js/CharacterEncoding.h"
+#include "vm/CodeCoverage.h"
 #include "vm/Opcodes.h"
 #include "vm/ScopeObject.h"
 #include "vm/Shape.h"
@@ -59,13 +61,13 @@ using js::frontend::IsIdentifier;
  */
 JS_STATIC_ASSERT(sizeof(uint32_t) * JS_BITS_PER_BYTE >= INDEX_LIMIT_LOG2 + 1);
 
-const JSCodeSpec js_CodeSpec[] = {
+const JSCodeSpec js::CodeSpec[] = {
 #define MAKE_CODESPEC(op,val,name,token,length,nuses,ndefs,format)  {length,nuses,ndefs,format},
     FOR_EACH_OPCODE(MAKE_CODESPEC)
 #undef MAKE_CODESPEC
 };
 
-const unsigned js_NumCodeSpecs = JS_ARRAY_LENGTH(js_CodeSpec);
+const unsigned js::NumCodeSpecs = JS_ARRAY_LENGTH(CodeSpec);
 
 /*
  * Each element of the array is either a source literal associated with JS
@@ -81,7 +83,7 @@ static const char * const CodeToken[] = {
  * Array of JS bytecode names used by PC count JSON, DEBUG-only Disassemble
  * and JIT debug spew.
  */
-const char * const js_CodeName[] = {
+const char * const js::CodeName[] = {
 #define OPNAME(op, val, name, ...)  name,
     FOR_EACH_OPCODE(OPNAME)
 #undef OPNAME
@@ -95,7 +97,7 @@ size_t
 js::GetVariableBytecodeLength(jsbytecode* pc)
 {
     JSOp op = JSOp(*pc);
-    MOZ_ASSERT(js_CodeSpec[op].length == -1);
+    MOZ_ASSERT(CodeSpec[op].length == -1);
     switch (op) {
       case JSOP_TABLESWITCH: {
         /* Structure: default-jump case-low case-high case1-jump ... */
@@ -115,19 +117,20 @@ unsigned
 js::StackUses(JSScript* script, jsbytecode* pc)
 {
     JSOp op = (JSOp) *pc;
-    const JSCodeSpec& cs = js_CodeSpec[op];
+    const JSCodeSpec& cs = CodeSpec[op];
     if (cs.nuses >= 0)
         return cs.nuses;
 
-    MOZ_ASSERT(js_CodeSpec[op].nuses == -1);
+    MOZ_ASSERT(CodeSpec[op].nuses == -1);
     switch (op) {
       case JSOP_POPN:
         return GET_UINT16(pc);
       case JSOP_NEW:
+      case JSOP_SUPERCALL:
         return 2 + GET_ARGC(pc) + 1;
       default:
         /* stack: fun, this, [argc arguments] */
-        MOZ_ASSERT(op == JSOP_CALL || op == JSOP_EVAL ||
+        MOZ_ASSERT(op == JSOP_CALL || op == JSOP_EVAL || op == JSOP_CALLITER ||
                    op == JSOP_STRICTEVAL || op == JSOP_FUNCALL || op == JSOP_FUNAPPLY);
         return 2 + GET_ARGC(pc);
     }
@@ -137,7 +140,7 @@ unsigned
 js::StackDefs(JSScript* script, jsbytecode* pc)
 {
     JSOp op = (JSOp) *pc;
-    const JSCodeSpec& cs = js_CodeSpec[op];
+    const JSCodeSpec& cs = CodeSpec[op];
     MOZ_ASSERT(cs.ndefs >= 0);
     return cs.ndefs;
 }
@@ -209,32 +212,6 @@ js::DumpCompartmentPCCounts(JSContext* cx)
             DumpPCCounts(cx, script, &sprinter);
             fputs(sprinter.string(), stdout);
             fprintf(stdout, "--- END SCRIPT %s:%" PRIuSIZE " ---\n", script->filename(), script->lineno());
-        }
-    }
-
-    for (auto thingKind : ObjectAllocKinds()) {
-        for (ZoneCellIter i(cx->zone(), thingKind); !i.done(); i.next()) {
-            JSObject* obj = i.get<JSObject>();
-            if (obj->compartment() != cx->compartment())
-                continue;
-
-            if (obj->is<AsmJSModuleObject>()) {
-                AsmJSModule& module = obj->as<AsmJSModuleObject>().module();
-
-                Sprinter sprinter(cx);
-                if (!sprinter.init())
-                    return;
-
-                fprintf(stdout, "--- Asm.js Module ---\n");
-
-                for (size_t i = 0; i < module.numFunctionCounts(); i++) {
-                    jit::IonScriptCounts* counts = module.functionCounts(i);
-                    DumpIonScriptCounts(&sprinter, counts);
-                }
-
-                fputs(sprinter.string(), stdout);
-                fprintf(stdout, "--- END Asm.js Module ---\n");
-            }
         }
     }
 }
@@ -843,12 +820,12 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
                              JSMSG_BYTECODE_TOO_BIG, numBuf1, numBuf2);
         return 0;
     }
-    const JSCodeSpec* cs = &js_CodeSpec[op];
+    const JSCodeSpec* cs = &CodeSpec[op];
     ptrdiff_t len = (ptrdiff_t) cs->length;
     Sprint(sp, "%05u:", loc);
     if (lines)
         Sprint(sp, "%4u", PCToLineNumber(script, pc));
-    Sprint(sp, "  %s", js_CodeName[op]);
+    Sprint(sp, "  %s", CodeName[op]);
 
     switch (JOF_TYPE(cs->format)) {
       case JOF_BYTE:
@@ -1085,7 +1062,7 @@ ExpressionDecompiler::decompilePC(jsbytecode* pc)
 
     if (const char* token = CodeToken[op]) {
         // Handle simple cases of binary and unary operators.
-        switch (js_CodeSpec[op].nuses) {
+        switch (CodeSpec[op].nuses) {
           case 2: {
             jssrcnote* sn = GetSrcNote(cx, script, pc);
             if (!sn || SN_TYPE(sn) != SRC_ASSIGNOP)
@@ -1183,13 +1160,14 @@ ExpressionDecompiler::decompilePC(jsbytecode* pc)
       }
       case JSOP_UNDEFINED:
         return write(js_undefined_str);
-      case JSOP_THIS:
+      case JSOP_GLOBALTHIS:
         // |this| could convert to a very long object initialiser, so cite it by
         // its keyword name.
         return write(js_this_str);
       case JSOP_NEWTARGET:
         return write("new.target");
       case JSOP_CALL:
+      case JSOP_CALLITER:
       case JSOP_FUNCALL:
         return decompilePCForStackOperand(pc, -int32_t(GET_ARGC(pc) + 2)) &&
                write("(...)");
@@ -1241,6 +1219,8 @@ ExpressionDecompiler::write(const char* s)
 bool
 ExpressionDecompiler::write(JSString* str)
 {
+    if (str == cx->names().dotThis)
+        return write("this");
     return sprinter.putString(str) >= 0;
 }
 
@@ -1825,7 +1805,7 @@ GetPCCountJSON(JSContext* cx, const ScriptAndCounts& sac, StringBuffer& buf)
         NumberValueToStringBuffer(cx, Int32Value(scanner.getLine()), buf);
 
         {
-            const char* name = js_CodeName[op];
+            const char* name = CodeName[op];
             AppendJSONProperty(buf, "name");
             buf.append('\"');
             buf.append(name, strlen(name));
@@ -1945,181 +1925,24 @@ js::GetPCCountScriptContents(JSContext* cx, size_t index)
 }
 
 static bool
-LcovWriteScriptName(GenericPrinter& out, JSScript* script)
-{
-    JSFunction* fun = script->functionNonDelazifying();
-    if (fun && fun->displayAtom())
-        return EscapedStringPrinter(out, fun->displayAtom(), 0);
-    out.printf("top-level");
-    return true;
-}
-
-struct LcovSourceFile
-{
-    const char* filename;
-
-    LSprinter outFN;
-    LSprinter outFNDA;
-    size_t numFunctionsFound;
-    size_t numFunctionsHit;
-
-    LSprinter outBRDA;
-    size_t numBranchesFound;
-    size_t numBranchesHit;
-
-    LSprinter outDA;
-    size_t numLinesInstrumented;
-    size_t numLinesHit;
-
-    LcovSourceFile(LifoAlloc* alloc, JSScript *script)
-      : filename(script->filename()),
-        outFN(alloc),
-        outFNDA(alloc),
-        numFunctionsFound(0),
-        numFunctionsHit(0),
-        outBRDA(alloc),
-        numBranchesFound(0),
-        numBranchesHit(0),
-        outDA(alloc),
-        numLinesInstrumented(0),
-        numLinesHit(0)
-    { }
-};
-
-static bool
-LcovWriteScript(JSContext* cx, LcovSourceFile& lsf, JSScript* script)
-{
-    lsf.numFunctionsFound++;
-    lsf.outFN.printf("FN:%d,", script->lineno());
-    if (!LcovWriteScriptName(lsf.outFN, script))
-        return false;
-    lsf.outFN.put("\n", 1);
-
-    uint64_t hits = 0;
-    ScriptCounts* sc = nullptr;
-    if (script->hasScriptCounts()) {
-        sc = &script->getScriptCounts();
-        lsf.numFunctionsHit++;
-        const PCCounts* counts = sc->maybeGetPCCounts(script->pcToOffset(script->main()));
-        lsf.outFNDA.printf("FNDA:%" PRIu64 ",", counts->numExec());
-        if (!LcovWriteScriptName(lsf.outFNDA, script))
-            return false;
-        lsf.outFNDA.put("\n", 1);
-
-        // Set the hit count of the pre-main code to 1, if the function ever got
-        // visited.
-        hits = 1;
-    }
-
-    jsbytecode* snpc = script->code();
-    jssrcnote* sn = script->notes();
-    if (!SN_IS_TERMINATOR(sn))
-        snpc += SN_DELTA(sn);
-
-    size_t lineno = script->lineno();
-    jsbytecode* end = script->codeEnd();
-    size_t blockId = 0;
-    for (jsbytecode* pc = script->code(); pc != end; pc = GetNextPc(pc)) {
-        JSOp op = JSOp(*pc);
-        bool jump = IsJumpOpcode(op);
-        bool fallsthrough = BytecodeFallsThrough(op);
-
-        // If the current script & pc has a hit-count report, then update the
-        // current number of hits.
-        if (sc) {
-            const PCCounts* counts = sc->maybeGetPCCounts(script->pcToOffset(pc));
-            if (counts)
-                hits = counts->numExec();
-        }
-
-        // If we have additional source notes, walk all the source notes of the
-        // current pc.
-        if (snpc <= pc) {
-            size_t oldLine = lineno;
-            while (!SN_IS_TERMINATOR(sn) && snpc <= pc) {
-                SrcNoteType type = (SrcNoteType) SN_TYPE(sn);
-                if (type == SRC_SETLINE)
-                    lineno = size_t(GetSrcNoteOffset(sn, 0));
-                else if (type == SRC_NEWLINE)
-                    lineno++;
-
-                sn = SN_NEXT(sn);
-                snpc += SN_DELTA(sn);
-            }
-
-            if (oldLine != lineno && fallsthrough) {
-                lsf.outDA.printf("DA:%d,%" PRIu64 "\n", lineno, hits);
-
-                // Count the number of lines instrumented & hit.
-                lsf.numLinesInstrumented++;
-                if (hits)
-                    lsf.numLinesHit++;
-            }
-        }
-
-        // If the current instruction has thrown, then decrement the hit counts
-        // with the number of throws.
-        if (sc) {
-            const PCCounts* counts = sc->maybeGetThrowCounts(script->pcToOffset(pc));
-            if (counts)
-                hits -= counts->numExec();
-        }
-
-        // If the current pc corresponds to a conditional jump instruction, then reports
-        // branch hits.
-        if (jump && fallsthrough) {
-            jsbytecode* target = pc + GET_JUMP_OFFSET(pc);
-            jsbytecode* fallthroughTarget = GetNextPc(pc);
-            uint64_t fallthroughHits = 0;
-            if (sc) {
-                const PCCounts* counts = sc->maybeGetPCCounts(script->pcToOffset(fallthroughTarget));
-                if (counts)
-                    fallthroughHits = counts->numExec();
-            }
-
-            size_t targetId = script->pcToOffset(target);
-            uint64_t taken = hits - fallthroughHits;
-            lsf.outBRDA.printf("BRDA:%d,%d,%d,", lineno, blockId, targetId);
-            if (hits)
-                lsf.outBRDA.printf("%d\n", taken);
-            else
-                lsf.outBRDA.put("-\n", 2);
-
-            // Count the number of branches, and the number of branches hit.
-            lsf.numBranchesFound++;
-            if (hits)
-                lsf.numBranchesHit++;
-
-            // Update the blockId when there is a discontinuity.
-            blockId = script->pcToOffset(fallthroughTarget);
-        }
-    }
-
-    return true;
-}
-
-static bool
 GenerateLcovInfo(JSContext* cx, JSCompartment* comp, GenericPrinter& out)
 {
     JSRuntime* rt = cx->runtime();
 
     // Collect the list of scripts which are part of the current compartment.
+    {
+        js::gc::AutoPrepareForTracing apft(rt, SkipAtoms);
+    }
     Rooted<ScriptVector> topScripts(cx, ScriptVector(cx));
     for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
         for (ZoneCellIter i(zone, AllocKind::SCRIPT); !i.done(); i.next()) {
             JSScript* script = i.get<JSScript>();
-            if (script->compartment() != comp)
+            if (script->compartment() != comp ||
+                !script->isTopLevel() ||
+                !script->filename())
+            {
                 continue;
-
-            // If we evaluate some code which contains a syntax error, then we
-            // might produce a JSScript which has no associated bytecode. This
-            // line filters out this kind of scripts.
-            if (!script->code())
-                continue;
-
-            // Filter out any JSScript which is not the top-level of a file.
-            if (script->functionNonDelazifying())
-                continue;
+            }
 
             if (!topScripts.append(script))
                 return false;
@@ -2129,50 +1952,14 @@ GenerateLcovInfo(JSContext* cx, JSCompartment* comp, GenericPrinter& out)
     if (topScripts.length() == 0)
         return true;
 
-    // Sort the information to avoid generating multiple file entries, and to
-    // generate functions in the right order.
-    auto lessFun = [](const JSScript* lhs, const JSScript* rhs) -> bool {
-        int d = strcmp(lhs->filename(), rhs->filename());
-        /*
-          This should not be necessary as we are supposed to have only the
-          top-level script.
-
-          d = (d != 0) ? d : lhs->lineno() - rhs->lineno();
-          d = (d != 0) ? d : lhs->column() - rhs->column();
-        */
-        return d < 0;
-    };
-    std::sort(topScripts.begin(), topScripts.end(), lessFun);
-
-    // lcov trace files are starting with an optional test case name, that we
-    // recycle to be a compartment name.
-    out.put("TN:");
-    if (rt->compartmentNameCallback) {
-        char name[1024];
-        (*rt->compartmentNameCallback)(rt, comp, name, sizeof(name));
-        for (char *s = name; s < name + sizeof(name) && *s; s++) {
-            if (('a' <= *s && *s <= 'z') ||
-                ('A' <= *s && *s <= 'Z') ||
-                ('0' <= *s && *s <= '9'))
-            {
-                out.put(s, 1);
-                continue;
-            }
-            out.printf("_%p", (void*) size_t(*s));
-        }
-        out.put("\n", 1);
-    } else {
-        out.printf("Compartment_%p%p\n", (void*) size_t('_'), comp);
-    }
-
-    // For each source file
-    LifoAlloc printerAlloc(4096);
+    // Collect code coverage info for one compartment.
+    coverage::LCovCompartment compCover;
     for (JSScript* topLevel: topScripts) {
-        LifoAllocScope printerScope(&printerAlloc);
-        LcovSourceFile lsf(&printerAlloc, topLevel);
+        RootedScript topScript(cx, topLevel);
+        compCover.collectSourceFile(comp, &topScript->scriptSourceUnwrap());
 
         // We found the top-level script, visit all the functions reachable
-        // from the top-level function.
+        // from the top-level function, and delazify them.
         Rooted<ScriptVector> queue(cx, ScriptVector(cx));
         if (!queue.append(topLevel))
             return false;
@@ -2180,10 +1967,7 @@ GenerateLcovInfo(JSContext* cx, JSCompartment* comp, GenericPrinter& out)
         RootedScript script(cx);
         do {
             script = queue.popCopy();
-
-            // Code the current script before pushing.
-            if (!LcovWriteScript(cx, lsf, script))
-                return false;
+            compCover.collectCodeCoverageInfo(comp, script->sourceObject(), script);
 
             // Iterate from the last to the first object in order to have
             // the functions them visited in the opposite order when popping
@@ -2206,38 +1990,15 @@ GenerateLcovInfo(JSContext* cx, JSCompartment* comp, GenericPrinter& out)
 
                 // Queue the script in the list of script associated to the
                 // current source.
-                if (!queue.append(fun.getOrCreateScript(cx)))
+                JSScript* childScript = fun.getOrCreateScript(cx);
+                if (!childScript || !queue.append(childScript))
                     return false;
             }
         } while (!queue.empty());
-
-        if (lsf.outFN.hadOutOfMemory() ||
-            lsf.outFNDA.hadOutOfMemory() ||
-            lsf.outBRDA.hadOutOfMemory() ||
-            lsf.outDA.hadOutOfMemory())
-        {
-            out.reportOutOfMemory();
-            return false;
-        }
-
-        out.printf("SF:%s\n", lsf.filename);
-
-        lsf.outFN.exportInto(out);
-        lsf.outFNDA.exportInto(out);
-        out.printf("FNF:%d\n", lsf.numFunctionsFound);
-        out.printf("FNH:%d\n", lsf.numFunctionsHit);
-
-        lsf.outBRDA.exportInto(out);
-        out.printf("BRF:%d\n", lsf.numBranchesFound);
-        out.printf("BRH:%d\n", lsf.numBranchesHit);
-
-        lsf.outDA.exportInto(out);
-        out.printf("LF:%d\n", lsf.numLinesInstrumented);
-        out.printf("LH:%d\n", lsf.numLinesHit);
-
-        out.put("end_of_record\n");
     }
 
+    bool isEmpty = true;
+    compCover.exportInto(out, &isEmpty);
     if (out.hadOutOfMemory())
         return false;
     return true;

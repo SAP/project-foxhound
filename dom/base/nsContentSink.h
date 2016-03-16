@@ -47,13 +47,13 @@ class Loader;
 
 #ifdef DEBUG
 
-extern PRLogModuleInfo* gContentSinkLogModuleInfo;
+extern mozilla::LazyLogModule gContentSinkLogModuleInfo;
 
 #define SINK_TRACE_CALLS              0x1
 #define SINK_TRACE_REFLOW             0x2
 #define SINK_ALWAYS_REFLOW            0x4
 
-#define SINK_LOG_TEST(_lm, _bit) (int((_lm)->level) & (_bit))
+#define SINK_LOG_TEST(_lm, _bit) (int((_lm)->Level()) & (_bit))
 
 #define SINK_TRACE(_lm, _bit, _args) \
   PR_BEGIN_MACRO                     \
@@ -273,12 +273,12 @@ private:
 protected:
 
   nsCOMPtr<nsIDocument>         mDocument;
-  nsRefPtr<nsParserBase>        mParser;
+  RefPtr<nsParserBase>        mParser;
   nsCOMPtr<nsIURI>              mDocumentURI;
   nsCOMPtr<nsIDocShell>         mDocShell;
-  nsRefPtr<mozilla::css::Loader> mCSSLoader;
-  nsRefPtr<nsNodeInfoManager>   mNodeInfoManager;
-  nsRefPtr<nsScriptLoader>      mScriptLoader;
+  RefPtr<mozilla::css::Loader> mCSSLoader;
+  RefPtr<nsNodeInfoManager>   mNodeInfoManager;
+  RefPtr<nsScriptLoader>      mScriptLoader;
 
   // back off timer notification after count
   int32_t mBackoffCount;

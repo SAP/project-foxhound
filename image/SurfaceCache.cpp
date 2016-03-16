@@ -28,7 +28,6 @@
 #include "imgFrame.h"
 #include "Image.h"
 #include "LookupResult.h"
-#include "nsAutoPtr.h"
 #include "nsExpirationTracker.h"
 #include "nsHashKeys.h"
 #include "nsRefPtrHashtable.h"
@@ -221,7 +220,7 @@ public:
 
 private:
   nsExpirationState  mExpirationState;
-  nsRefPtr<imgFrame> mSurface;
+  RefPtr<imgFrame> mSurface;
   DrawableFrameRef   mDrawableRef;
   const Cost         mCost;
   const ImageKey     mImageKey;
@@ -270,32 +269,90 @@ public:
 
   already_AddRefed<CachedSurface> Lookup(const SurfaceKey& aSurfaceKey)
   {
-    nsRefPtr<CachedSurface> surface;
+    RefPtr<CachedSurface> surface;
     mSurfaces.Get(aSurfaceKey, getter_AddRefs(surface));
     return surface.forget();
   }
 
   Pair<already_AddRefed<CachedSurface>, MatchType>
-  LookupBestMatch(const SurfaceKey&      aSurfaceKey,
-                  const Maybe<SurfaceFlags>& aAlternateFlags)
+  LookupBestMatch(const SurfaceKey& aSurfaceKey)
   {
     // Try for an exact match first.
-    nsRefPtr<CachedSurface> exactMatch;
+    RefPtr<CachedSurface> exactMatch;
     mSurfaces.Get(aSurfaceKey, getter_AddRefs(exactMatch));
     if (exactMatch && exactMatch->IsDecoded()) {
       return MakePair(exactMatch.forget(), MatchType::EXACT);
     }
 
     // There's no perfect match, so find the best match we can.
-    MatchContext matchContext(aSurfaceKey, aAlternateFlags);
-    ForEach(TryToImproveMatch, &matchContext);
+    RefPtr<CachedSurface> bestMatch;
+    for (auto iter = ConstIter(); !iter.Done(); iter.Next()) {
+      CachedSurface* surface = iter.UserData();
+      const SurfaceKey& idealKey = aSurfaceKey;
+
+      // We never match a placeholder.
+      if (surface->IsPlaceholder()) {
+        continue;
+      }
+      // Matching the animation time and SVG context is required.
+      if (aSurfaceKey.AnimationTime() != idealKey.AnimationTime() ||
+          aSurfaceKey.SVGContext() != idealKey.SVGContext()) {
+        continue;
+      }
+      // Matching the flags is required.
+      if (aSurfaceKey.Flags() != idealKey.Flags()) {
+        continue;
+      }
+      // Anything is better than nothing! (Within the constraints we just
+      // checked, of course.)
+      if (!bestMatch) {
+        bestMatch = surface;
+        continue;
+      }
+
+      MOZ_ASSERT(bestMatch, "Should have a current best match");
+
+      // Always prefer completely decoded surfaces.
+      bool bestMatchIsDecoded = bestMatch->IsDecoded();
+      if (bestMatchIsDecoded && !surface->IsDecoded()) {
+        continue;
+      }
+      if (!bestMatchIsDecoded && surface->IsDecoded()) {
+        bestMatch = surface;
+        continue;
+      }
+
+      SurfaceKey bestMatchKey = bestMatch->GetSurfaceKey();
+
+      // Compare sizes. We use an area-based heuristic here instead of computing a
+      // truly optimal answer, since it seems very unlikely to make a difference
+      // for realistic sizes.
+      int64_t idealArea = idealKey.Size().width * idealKey.Size().height;
+      int64_t surfaceArea = aSurfaceKey.Size().width * aSurfaceKey.Size().height;
+      int64_t bestMatchArea =
+        bestMatchKey.Size().width * bestMatchKey.Size().height;
+
+      // If the best match is smaller than the ideal size, prefer bigger sizes.
+      if (bestMatchArea < idealArea) {
+        if (surfaceArea > bestMatchArea) {
+          bestMatch = surface;
+        }
+        continue;
+      }
+      // Other, prefer sizes closer to the ideal size, but still not smaller.
+      if (idealArea <= surfaceArea && surfaceArea < bestMatchArea) {
+        bestMatch = surface;
+        continue;
+      }
+      // This surface isn't an improvement over the current best match.
+    }
 
     MatchType matchType;
-    if (matchContext.mBestMatch) {
+    if (bestMatch) {
       if (!exactMatch) {
         // No exact match, but we found a substitute.
         matchType = MatchType::SUBSTITUTE_BECAUSE_NOT_FOUND;
-      } else if (exactMatch != matchContext.mBestMatch) {
+      } else if (exactMatch != bestMatch) {
         // The exact match is still decoding, but we found a substitute.
         matchType = MatchType::SUBSTITUTE_BECAUSE_PENDING;
       } else {
@@ -304,8 +361,7 @@ public:
       }
     } else {
       if (exactMatch) {
-        // We found an "exact match", but since TryToImproveMatch didn't return
-        // it, it must have been a placeholder.
+        // We found an "exact match", it must have been a placeholder.
         MOZ_ASSERT(exactMatch->IsPlaceholder());
         matchType = MatchType::PENDING;
       } else {
@@ -314,103 +370,18 @@ public:
       }
     }
 
-    return MakePair(matchContext.mBestMatch.forget(), matchType);
+    return MakePair(bestMatch.forget(), matchType);
   }
 
-  void ForEach(SurfaceTable::EnumReadFunction aFunction, void* aData)
+  SurfaceTable::Iterator ConstIter() const
   {
-    mSurfaces.EnumerateRead(aFunction, aData);
+    return mSurfaces.ConstIter();
   }
 
   void SetLocked(bool aLocked) { mLocked = aLocked; }
   bool IsLocked() const { return mLocked; }
 
 private:
-  struct MatchContext
-  {
-    MatchContext(const SurfaceKey& aIdealKey,
-                 const Maybe<SurfaceFlags>& aAlternateFlags)
-      : mIdealKey(aIdealKey)
-      , mAlternateFlags(aAlternateFlags)
-    { }
-
-    const SurfaceKey& mIdealKey;
-    const Maybe<SurfaceFlags> mAlternateFlags;
-    nsRefPtr<CachedSurface> mBestMatch;
-  };
-
-  static PLDHashOperator TryToImproveMatch(const SurfaceKey& aSurfaceKey,
-                                           CachedSurface*    aSurface,
-                                           void*             aContext)
-  {
-    auto context = static_cast<MatchContext*>(aContext);
-    const SurfaceKey& idealKey = context->mIdealKey;
-
-    // We never match a placeholder.
-    if (aSurface->IsPlaceholder()) {
-      return PL_DHASH_NEXT;
-    }
-
-    // Matching the animation time and SVG context is required.
-    if (aSurfaceKey.AnimationTime() != idealKey.AnimationTime() ||
-        aSurfaceKey.SVGContext() != idealKey.SVGContext()) {
-      return PL_DHASH_NEXT;
-    }
-
-    // Matching the flags is required, but we can match the alternate flags as
-    // well if some were provided.
-    if (aSurfaceKey.Flags() != idealKey.Flags() &&
-        Some(aSurfaceKey.Flags()) != context->mAlternateFlags) {
-      return PL_DHASH_NEXT;
-    }
-
-    // Anything is better than nothing! (Within the constraints we just
-    // checked, of course.)
-    if (!context->mBestMatch) {
-      context->mBestMatch = aSurface;
-      return PL_DHASH_NEXT;
-    }
-
-    MOZ_ASSERT(context->mBestMatch, "Should have a current best match");
-
-    // Always prefer completely decoded surfaces.
-    bool bestMatchIsDecoded = context->mBestMatch->IsDecoded();
-    if (bestMatchIsDecoded && !aSurface->IsDecoded()) {
-      return PL_DHASH_NEXT;
-    }
-    if (!bestMatchIsDecoded && aSurface->IsDecoded()) {
-      context->mBestMatch = aSurface;
-      return PL_DHASH_NEXT;
-    }
-
-    SurfaceKey bestMatchKey = context->mBestMatch->GetSurfaceKey();
-
-    // Compare sizes. We use an area-based heuristic here instead of computing a
-    // truly optimal answer, since it seems very unlikely to make a difference
-    // for realistic sizes.
-    int64_t idealArea = idealKey.Size().width * idealKey.Size().height;
-    int64_t surfaceArea = aSurfaceKey.Size().width * aSurfaceKey.Size().height;
-    int64_t bestMatchArea =
-      bestMatchKey.Size().width * bestMatchKey.Size().height;
-
-    // If the best match is smaller than the ideal size, prefer bigger sizes.
-    if (bestMatchArea < idealArea) {
-      if (surfaceArea > bestMatchArea) {
-        context->mBestMatch = aSurface;
-      }
-      return PL_DHASH_NEXT;
-    }
-
-    // Other, prefer sizes closer to the ideal size, but still not smaller.
-    if (idealArea <= surfaceArea && surfaceArea < bestMatchArea) {
-      context->mBestMatch = aSurface;
-      return PL_DHASH_NEXT;
-    }
-
-    // This surface isn't an improvement over the current best match.
-    return PL_DHASH_NEXT;
-  }
-
   SurfaceTable mSurfaces;
   bool         mLocked;
 };
@@ -499,13 +470,13 @@ public:
 
     // Locate the appropriate per-image cache. If there's not an existing cache
     // for this image, create it.
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       cache = new ImageSurfaceCache;
       mImageCaches.Put(aImageKey, cache);
     }
 
-    nsRefPtr<CachedSurface> surface =
+    RefPtr<CachedSurface> surface =
       new CachedSurface(aSurface, aCost, aImageKey, aSurfaceKey);
 
     // We require that locking succeed if the image is locked and we're not
@@ -531,7 +502,7 @@ public:
     MOZ_ASSERT(aSurface, "Should have a surface");
     ImageKey imageKey = aSurface->GetImageKey();
 
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(imageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(imageKey);
     MOZ_ASSERT(cache, "Shouldn't try to remove a surface with no image cache");
 
     // If the surface was not a placeholder, tell its image that we discarded it.
@@ -602,13 +573,13 @@ public:
                       const SurfaceKey& aSurfaceKey,
                       bool aMarkUsed = true)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       // No cached surfaces for this image.
       return LookupResult(MatchType::NOT_FOUND);
     }
 
-    nsRefPtr<CachedSurface> surface = cache->Lookup(aSurfaceKey);
+    RefPtr<CachedSurface> surface = cache->Lookup(aSurfaceKey);
     if (!surface) {
       // Lookup in the per-image cache missed.
       return LookupResult(MatchType::NOT_FOUND);
@@ -636,10 +607,9 @@ public:
   }
 
   LookupResult LookupBestMatch(const ImageKey         aImageKey,
-                               const SurfaceKey&      aSurfaceKey,
-                               const Maybe<SurfaceFlags>& aAlternateFlags)
+                               const SurfaceKey&      aSurfaceKey)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       // No cached surfaces for this image.
       return LookupResult(MatchType::NOT_FOUND);
@@ -651,12 +621,11 @@ public:
     // XXX(seth): This is O(N^2), but N is expected to be very small. If we
     // encounter a performance problem here we can revisit this.
 
-    nsRefPtr<CachedSurface> surface;
+    RefPtr<CachedSurface> surface;
     DrawableFrameRef ref;
     MatchType matchType = MatchType::NOT_FOUND;
     while (true) {
-      Tie(surface, matchType) =
-        cache->LookupBestMatch(aSurfaceKey, aAlternateFlags);
+      Tie(surface, matchType) = cache->LookupBestMatch(aSurfaceKey);
 
       if (!surface) {
         return LookupResult(matchType);  // Lookup in the per-image cache missed.
@@ -672,12 +641,13 @@ public:
       Remove(surface);
     }
 
-    MOZ_ASSERT((matchType == MatchType::EXACT) ==
-      (surface->GetSurfaceKey() == aSurfaceKey ||
-         (aAlternateFlags &&
-          surface->GetSurfaceKey() ==
-            aSurfaceKey.WithNewFlags(*aAlternateFlags))),
-      "Result differs in a way other than size or alternate flags");
+    MOZ_ASSERT_IF(matchType == MatchType::EXACT,
+                  surface->GetSurfaceKey() == aSurfaceKey);
+    MOZ_ASSERT_IF(matchType == MatchType::SUBSTITUTE_BECAUSE_NOT_FOUND ||
+                  matchType == MatchType::SUBSTITUTE_BECAUSE_PENDING,
+      surface->GetSurfaceKey().SVGContext() == aSurfaceKey.SVGContext() &&
+      surface->GetSurfaceKey().AnimationTime() == aSurfaceKey.AnimationTime() &&
+      surface->GetSurfaceKey().Flags() == aSurfaceKey.Flags());
 
     if (matchType == MatchType::EXACT) {
       MarkUsed(surface, cache);
@@ -689,12 +659,12 @@ public:
   void RemoveSurface(const ImageKey    aImageKey,
                      const SurfaceKey& aSurfaceKey)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       return;  // No cached surfaces for this image.
     }
 
-    nsRefPtr<CachedSurface> surface = cache->Lookup(aSurfaceKey);
+    RefPtr<CachedSurface> surface = cache->Lookup(aSurfaceKey);
     if (!surface) {
       return;  // Lookup in the per-image cache missed.
     }
@@ -709,7 +679,7 @@ public:
 
   void LockImage(const ImageKey aImageKey)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       cache = new ImageSurfaceCache;
       mImageCaches.Put(aImageKey, cache);
@@ -723,34 +693,30 @@ public:
 
   void UnlockImage(const ImageKey aImageKey)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache || !cache->IsLocked()) {
       return;  // Already unlocked.
     }
 
     cache->SetLocked(false);
-
-    // Unlock all the surfaces the per-image cache is holding.
-    cache->ForEach(DoUnlockSurface, this);
+    DoUnlockSurfaces(cache);
   }
 
   void UnlockSurfaces(const ImageKey aImageKey)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache || !cache->IsLocked()) {
       return;  // Already unlocked.
     }
 
     // (Note that we *don't* unlock the per-image cache here; that's the
     // difference between this and UnlockImage.)
-
-    // Unlock all the surfaces the per-image cache is holding.
-    cache->ForEach(DoUnlockSurface, this);
+    DoUnlockSurfaces(cache);
   }
 
   void RemoveImage(const ImageKey aImageKey)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       return;  // No cached surfaces for this image, so nothing to do.
     }
@@ -760,7 +726,9 @@ public:
     // removing an element from the costs array. Since n is expected to be
     // small, performance should be good, but if usage patterns change we should
     // change the data structure used for mCosts.
-    cache->ForEach(DoStopTracking, this);
+    for (auto iter = cache->ConstIter(); !iter.Done(); iter.Next()) {
+      StopTracking(iter.UserData());
+    }
 
     // The per-image cache isn't needed anymore, so remove it as well.
     // This implicitly unlocks the image if it was locked.
@@ -816,31 +784,6 @@ public:
     StartTracking(aSurface);
   }
 
-  static PLDHashOperator DoStopTracking(const SurfaceKey&,
-                                        CachedSurface*    aSurface,
-                                        void*             aCache)
-  {
-    static_cast<SurfaceCacheImpl*>(aCache)->StopTracking(aSurface);
-    return PL_DHASH_NEXT;
-  }
-
-  static PLDHashOperator DoUnlockSurface(const SurfaceKey&,
-                                         CachedSurface*    aSurface,
-                                         void*             aCache)
-  {
-    if (aSurface->IsPlaceholder() || !aSurface->IsLocked()) {
-      return PL_DHASH_NEXT;
-    }
-
-    auto cache = static_cast<SurfaceCacheImpl*>(aCache);
-    cache->StopTracking(aSurface);
-
-    aSurface->SetLocked(false);
-    cache->StartTracking(aSurface);
-
-    return PL_DHASH_NEXT;
-  }
-
   NS_IMETHOD
   CollectReports(nsIHandleReportCallback* aHandleReport,
                  nsISupports*             aData,
@@ -882,29 +825,22 @@ public:
                              nsTArray<SurfaceMemoryCounter>& aCounters,
                              MallocSizeOf                    aMallocSizeOf)
   {
-    nsRefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
+    RefPtr<ImageSurfaceCache> cache = GetImageCache(aImageKey);
     if (!cache) {
       return;  // No surfaces for this image.
     }
 
     // Report all surfaces in the per-image cache.
     CachedSurface::SurfaceMemoryReport report(aCounters, aMallocSizeOf);
-    cache->ForEach(DoCollectSizeOfSurface, &report);
-  }
-
-  static PLDHashOperator DoCollectSizeOfSurface(const SurfaceKey&,
-                                                CachedSurface*    aSurface,
-                                                void*             aReport)
-  {
-    auto report = static_cast<CachedSurface::SurfaceMemoryReport*>(aReport);
-    report->Add(aSurface);
-    return PL_DHASH_NEXT;
+    for (auto iter = cache->ConstIter(); !iter.Done(); iter.Next()) {
+      report.Add(iter.UserData());
+    }
   }
 
 private:
   already_AddRefed<ImageSurfaceCache> GetImageCache(const ImageKey aImageKey)
   {
-    nsRefPtr<ImageSurfaceCache> imageCache;
+    RefPtr<ImageSurfaceCache> imageCache;
     mImageCaches.Get(aImageKey, getter_AddRefs(imageCache));
     return imageCache.forget();
   }
@@ -925,6 +861,20 @@ private:
       LockSurface(aSurface);
     } else {
       mExpirationTracker.MarkUsed(aSurface);
+    }
+  }
+
+  void DoUnlockSurfaces(ImageSurfaceCache* aCache)
+  {
+    // Unlock all the surfaces the per-image cache is holding.
+    for (auto iter = aCache->ConstIter(); !iter.Done(); iter.Next()) {
+      CachedSurface* surface = iter.UserData();
+      if (surface->IsPlaceholder() || !surface->IsLocked()) {
+        continue;
+      }
+      StopTracking(surface);
+      surface->SetLocked(false);
+      StartTracking(surface);
     }
   }
 
@@ -968,7 +918,7 @@ private:
   nsRefPtrHashtable<nsPtrHashKey<Image>,
     ImageSurfaceCache> mImageCaches;
   SurfaceTracker                          mExpirationTracker;
-  nsRefPtr<MemoryPressureObserver>        mMemoryPressureObserver;
+  RefPtr<MemoryPressureObserver>        mMemoryPressureObserver;
   Mutex                                   mMutex;
   const uint32_t                          mDiscardFactor;
   const Cost                              mMaxCost;
@@ -1050,37 +1000,26 @@ SurfaceCache::Shutdown()
 
 /* static */ LookupResult
 SurfaceCache::Lookup(const ImageKey         aImageKey,
-                     const SurfaceKey&      aSurfaceKey,
-                     const Maybe<SurfaceFlags>& aAlternateFlags
-                       /* = Nothing() */)
+                     const SurfaceKey&      aSurfaceKey)
 {
   if (!sInstance) {
     return LookupResult(MatchType::NOT_FOUND);
   }
 
   MutexAutoLock lock(sInstance->GetMutex());
-
-  LookupResult result = sInstance->Lookup(aImageKey, aSurfaceKey);
-  if (!result && aAlternateFlags) {
-    result = sInstance->Lookup(aImageKey,
-                               aSurfaceKey.WithNewFlags(*aAlternateFlags));
-  }
-
-  return result;
+  return sInstance->Lookup(aImageKey, aSurfaceKey);
 }
 
 /* static */ LookupResult
 SurfaceCache::LookupBestMatch(const ImageKey         aImageKey,
-                              const SurfaceKey&      aSurfaceKey,
-                              const Maybe<SurfaceFlags>& aAlternateFlags
-                                /* = Nothing() */)
+                              const SurfaceKey&      aSurfaceKey)
 {
   if (!sInstance) {
     return LookupResult(MatchType::NOT_FOUND);
   }
 
   MutexAutoLock lock(sInstance->GetMutex());
-  return sInstance->LookupBestMatch(aImageKey, aSurfaceKey, aAlternateFlags);
+  return sInstance->LookupBestMatch(aImageKey, aSurfaceKey);
 }
 
 /* static */ InsertOutcome

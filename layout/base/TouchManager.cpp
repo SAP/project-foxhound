@@ -8,7 +8,6 @@
 #include "TouchManager.h"
 #include "nsPresShell.h"
 
-bool TouchManager::gPreventMouseEvents = false;
 nsRefPtrHashtable<nsUint32HashKey, dom::Touch>* TouchManager::gCaptureTouchList;
 
 /*static*/ void
@@ -42,7 +41,7 @@ TouchManager::Destroy()
 }
 
 static void
-EvictTouchPoint(nsRefPtr<dom::Touch>& aTouch,
+EvictTouchPoint(RefPtr<dom::Touch>& aTouch,
                 nsIDocument* aLimitToDocument = nullptr)
 {
   nsCOMPtr<nsINode> node(do_QueryInterface(aTouch->mTarget));
@@ -75,7 +74,7 @@ EvictTouchPoint(nsRefPtr<dom::Touch>& aTouch,
 }
 
 static PLDHashOperator
-AppendToTouchList(const uint32_t& aKey, nsRefPtr<dom::Touch>& aData, void *aTouchList)
+AppendToTouchList(const uint32_t& aKey, RefPtr<dom::Touch>& aData, void *aTouchList)
 {
   WidgetTouchEvent::TouchArray* touches =
     static_cast<WidgetTouchEvent::TouchArray*>(aTouchList);
@@ -142,7 +141,7 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
         int32_t id = touch->Identifier();
         touch->mMessage = aEvent->mMessage;
 
-        nsRefPtr<dom::Touch> oldTouch = gCaptureTouchList->GetWeak(id);
+        RefPtr<dom::Touch> oldTouch = gCaptureTouchList->GetWeak(id);
         if (!oldTouch) {
           touches.RemoveElementAt(i);
           continue;
@@ -182,9 +181,6 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
             }
           }
         } else {
-          if (gPreventMouseEvents) {
-            *aStatus = nsEventStatus_eConsumeNoDefault;
-          }
           return false;
         }
       }
@@ -207,7 +203,7 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
         touch->mChanged = true;
 
         int32_t id = touch->Identifier();
-        nsRefPtr<dom::Touch> oldTouch = gCaptureTouchList->GetWeak(id);
+        RefPtr<dom::Touch> oldTouch = gCaptureTouchList->GetWeak(id);
         if (!oldTouch) {
           continue;
         }

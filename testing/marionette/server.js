@@ -4,9 +4,9 @@
 
 "use strict";
 
-const {Constructor: CC, classes: Cc, interfaces: Ci, utils: Cu} = Components;
+var {Constructor: CC, classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-const loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
+var loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
 const ServerSocket = CC("@mozilla.org/network/server-socket;1", "nsIServerSocket", "initSpecialConnection");
 
 Cu.import("resource://gre/modules/Log.jsm");
@@ -18,7 +18,7 @@ Cu.import("chrome://marionette/content/elements.js");
 Cu.import("chrome://marionette/content/simpletest.js");
 
 // Bug 1083711: Load transport.js as an SDK module instead of subscript
-loader.loadSubScript("resource://gre/modules/devtools/transport/transport.js");
+loader.loadSubScript("resource://devtools/shared/transport/transport.js");
 
 // Preserve this import order:
 var events = {};
@@ -93,7 +93,8 @@ MarionetteServer.prototype.driverFactory = function(emulator) {
     Services.io.offline = false;
   }
 
-  return new GeckoDriver(appName, device, emulator);
+  let stopSignal = () => this.stop();
+  return new GeckoDriver(appName, device, stopSignal, emulator);
 };
 
 MarionetteServer.prototype.start = function() {
@@ -129,20 +130,17 @@ MarionetteServer.prototype.onSocketAccepted = function(
   let transport = new DebuggerTransport(input, output);
   let connId = "conn" + this.nextConnId++;
 
-  let stopSignal = () => this.stop();
-  let dispatcher = new Dispatcher(connId, transport, this.driverFactory, stopSignal);
+  let dispatcher = new Dispatcher(connId, transport, this.driverFactory.bind(this));
   dispatcher.onclose = this.onConnectionClosed.bind(this);
   this.conns[connId] = dispatcher;
 
   logger.info(`Accepted connection ${connId} from ${clientSocket.host}:${clientSocket.port}`);
-
-  // Create a root actor for the connection and send the hello packet
   dispatcher.sayHello();
   transport.ready();
 };
 
 MarionetteServer.prototype.onConnectionClosed = function(conn) {
-  let id = conn.id;
+  let id = conn.connId;
   delete this.conns[id];
   logger.info(`Closed connection ${id}`);
 };

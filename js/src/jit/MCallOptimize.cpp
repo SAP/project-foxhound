@@ -250,6 +250,8 @@ IonBuilder::inlineNativeCall(CallInfo& callInfo, JSFunction* target)
         return inlineHasClass(callInfo, &MapIteratorObject::class_);
       case InlinableNative::IntrinsicIsStringIterator:
         return inlineHasClass(callInfo, &StringIteratorObject::class_);
+      case InlinableNative::IntrinsicIsListIterator:
+        return inlineHasClass(callInfo, &ListIteratorObject::class_);
       case InlinableNative::IntrinsicDefineDataProperty:
         return inlineDefineDataProperty(callInfo);
 
@@ -304,25 +306,13 @@ IonBuilder::inlineNativeGetter(CallInfo& callInfo, JSFunction* target)
     TemporaryTypeSet* thisTypes = callInfo.thisArg()->resultTypeSet();
     MOZ_ASSERT(callInfo.argc() == 0);
 
-    // Try to optimize typed array lengths. There is one getter on
-    // %TypedArray%.prototype for typed arrays and one getter on
-    // SharedTypedArray.prototype for shared typed arrays.  Make sure we're
-    // accessing the right one for the type of the instance object.
+    // Try to optimize typed array lengths.
     if (thisTypes) {
         Scalar::Type type;
 
         type = thisTypes->getTypedArrayType(constraints());
         if (type != Scalar::MaxTypedArrayViewType &&
             TypedArrayObject::isOriginalLengthGetter(native))
-        {
-            MInstruction* length = addTypedArrayLength(callInfo.thisArg());
-            current->push(length);
-            return InliningStatus_Inlined;
-        }
-
-        type = thisTypes->getSharedTypedArrayType(constraints());
-        if (type != Scalar::MaxTypedArrayViewType &&
-            SharedTypedArrayObject::isOriginalLengthGetter(type, native))
         {
             MInstruction* length = addTypedArrayLength(callInfo.thisArg());
             current->push(length);
@@ -442,8 +432,9 @@ IonBuilder::inlineArray(CallInfo& callInfo)
 
         // Negative lengths generate a RangeError, unhandled by the inline path.
         initLength = arg->constantValue().toInt32();
-        if (initLength >= NativeObject::NELEMENTS_LIMIT)
+        if (initLength > NativeObject::MAX_DENSE_ELEMENTS_COUNT)
             return InliningStatus_NotInlined;
+        MOZ_ASSERT(initLength <= INT32_MAX);
 
         // Make sure initLength matches the template object's length. This is
         // not guaranteed to be the case, for instance if we're inlining the
@@ -723,7 +714,7 @@ IonBuilder::inlineArrayPush(CallInfo& callInfo)
     if (unboxedType == JSVAL_TYPE_MAGIC)
         obj = addMaybeCopyElementsForWrite(obj, /* checkNative = */ false);
 
-    if (NeedsPostBarrier(info(), value))
+    if (NeedsPostBarrier(value))
         current->add(MPostWriteBarrier::New(alloc(), obj, value));
 
     MArrayPush* ins = MArrayPush::New(alloc(), obj, value, unboxedType);
@@ -1368,6 +1359,11 @@ IonBuilder::inlineMathRandom(CallInfo& callInfo)
 
     if (getInlineReturnType() != MIRType_Double)
         return InliningStatus_NotInlined;
+
+    // MRandom JIT code directly accesses the RNG. It's (barely) possible to
+    // inline Math.random without it having been called yet, so ensure RNG
+    // state that isn't guaranteed to be initialized already.
+    script()->compartment()->ensureRandomNumberGenerator();
 
     callInfo.setImplicitlyUsedUnchecked();
 
@@ -2351,7 +2347,7 @@ IonBuilder::inlineUnsafeSetReservedSlot(CallInfo& callInfo)
     current->add(store);
     current->push(store);
 
-    if (NeedsPostBarrier(info(), callInfo.getArg(2)))
+    if (NeedsPostBarrier(callInfo.getArg(2)))
         current->add(MPostWriteBarrier::New(alloc(), callInfo.getArg(0), callInfo.getArg(2)));
 
     return InliningStatus_Inlined;
@@ -2577,7 +2573,7 @@ IonBuilder::inlineAssertRecoveredOnBailout(CallInfo& callInfo)
     if (callInfo.argc() != 2)
         return InliningStatus_NotInlined;
 
-    if (js_JitOptions.checkRangeAnalysis) {
+    if (JitOptions.checkRangeAnalysis) {
         // If we are checking the range of all instructions, then the guards
         // inserted by Range Analysis prevent the use of recover
         // instruction. Thus, we just disable these checks.
@@ -2698,7 +2694,8 @@ IonBuilder::inlineAtomicsCompareExchange(CallInfo& callInfo)
         return InliningStatus_NotInlined;
 
     Scalar::Type arrayType;
-    if (!atomicsMeetsPreconditions(callInfo, &arrayType))
+    bool requiresCheck = false;
+    if (!atomicsMeetsPreconditions(callInfo, &arrayType, &requiresCheck))
         return InliningStatus_NotInlined;
 
     callInfo.setImplicitlyUsedUnchecked();
@@ -2706,6 +2703,9 @@ IonBuilder::inlineAtomicsCompareExchange(CallInfo& callInfo)
     MInstruction* elements;
     MDefinition* index;
     atomicsCheckBounds(callInfo, &elements, &index);
+
+    if (requiresCheck)
+        addSharedTypedArrayGuard(callInfo.getArg(0));
 
     MCompareExchangeTypedArrayElement* cas =
         MCompareExchangeTypedArrayElement::New(alloc(), elements, index, arrayType, oldval, newval);
@@ -2732,7 +2732,8 @@ IonBuilder::inlineAtomicsExchange(CallInfo& callInfo)
         return InliningStatus_NotInlined;
 
     Scalar::Type arrayType;
-    if (!atomicsMeetsPreconditions(callInfo, &arrayType))
+    bool requiresCheck = false;
+    if (!atomicsMeetsPreconditions(callInfo, &arrayType, &requiresCheck))
         return InliningStatus_NotInlined;
 
     callInfo.setImplicitlyUsedUnchecked();
@@ -2740,6 +2741,9 @@ IonBuilder::inlineAtomicsExchange(CallInfo& callInfo)
     MInstruction* elements;
     MDefinition* index;
     atomicsCheckBounds(callInfo, &elements, &index);
+
+    if (requiresCheck)
+        addSharedTypedArrayGuard(callInfo.getArg(0));
 
     MInstruction* exchange =
         MAtomicExchangeTypedArrayElement::New(alloc(), elements, index, value, arrayType);
@@ -2762,7 +2766,8 @@ IonBuilder::inlineAtomicsLoad(CallInfo& callInfo)
     }
 
     Scalar::Type arrayType;
-    if (!atomicsMeetsPreconditions(callInfo, &arrayType))
+    bool requiresCheck = false;
+    if (!atomicsMeetsPreconditions(callInfo, &arrayType, &requiresCheck))
         return InliningStatus_NotInlined;
 
     callInfo.setImplicitlyUsedUnchecked();
@@ -2770,6 +2775,9 @@ IonBuilder::inlineAtomicsLoad(CallInfo& callInfo)
     MInstruction* elements;
     MDefinition* index;
     atomicsCheckBounds(callInfo, &elements, &index);
+
+    if (requiresCheck)
+        addSharedTypedArrayGuard(callInfo.getArg(0));
 
     MLoadUnboxedScalar* load =
         MLoadUnboxedScalar::New(alloc(), elements, index, arrayType,
@@ -2798,7 +2806,8 @@ IonBuilder::inlineAtomicsStore(CallInfo& callInfo)
         return InliningStatus_NotInlined;
 
     Scalar::Type arrayType;
-    if (!atomicsMeetsPreconditions(callInfo, &arrayType, DontCheckAtomicResult))
+    bool requiresCheck = false;
+    if (!atomicsMeetsPreconditions(callInfo, &arrayType, &requiresCheck, DontCheckAtomicResult))
         return InliningStatus_NotInlined;
 
     callInfo.setImplicitlyUsedUnchecked();
@@ -2806,6 +2815,9 @@ IonBuilder::inlineAtomicsStore(CallInfo& callInfo)
     MInstruction* elements;
     MDefinition* index;
     atomicsCheckBounds(callInfo, &elements, &index);
+
+    if (requiresCheck)
+        addSharedTypedArrayGuard(callInfo.getArg(0));
 
     MDefinition* toWrite = value;
     if (value->type() != MIRType_Int32) {
@@ -2861,10 +2873,14 @@ IonBuilder::inlineAtomicsBinop(CallInfo& callInfo, InlinableNative target)
         return InliningStatus_NotInlined;
 
     Scalar::Type arrayType;
-    if (!atomicsMeetsPreconditions(callInfo, &arrayType))
+    bool requiresCheck = false;
+    if (!atomicsMeetsPreconditions(callInfo, &arrayType, &requiresCheck))
         return InliningStatus_NotInlined;
 
     callInfo.setImplicitlyUsedUnchecked();
+
+    if (requiresCheck)
+        addSharedTypedArrayGuard(callInfo.getArg(0));
 
     MInstruction* elements;
     MDefinition* index;
@@ -2923,7 +2939,7 @@ IonBuilder::inlineAtomicsIsLockFree(CallInfo& callInfo)
 
 bool
 IonBuilder::atomicsMeetsPreconditions(CallInfo& callInfo, Scalar::Type* arrayType,
-                                      AtomicCheckResult checkResult)
+                                      bool* requiresTagCheck, AtomicCheckResult checkResult)
 {
     if (!JitSupportsAtomics())
         return false;
@@ -2934,7 +2950,8 @@ IonBuilder::atomicsMeetsPreconditions(CallInfo& callInfo, Scalar::Type* arrayTyp
     if (callInfo.getArg(1)->type() != MIRType_Int32)
         return false;
 
-    // Ensure that the first argument is a valid SharedTypedArray.
+    // Ensure that the first argument is a TypedArray that maps shared
+    // memory.
     //
     // Then check both that the element type is something we can
     // optimize and that the return type is suitable for that element
@@ -2944,7 +2961,9 @@ IonBuilder::atomicsMeetsPreconditions(CallInfo& callInfo, Scalar::Type* arrayTyp
     if (!arg0Types)
         return false;
 
-    *arrayType = arg0Types->getSharedTypedArrayType(constraints());
+    TemporaryTypeSet::TypedArraySharedness sharedness;
+    *arrayType = arg0Types->getTypedArrayType(constraints(), &sharedness);
+    *requiresTagCheck = sharedness != TemporaryTypeSet::KnownShared;
     switch (*arrayType) {
       case Scalar::Int8:
       case Scalar::Uint8:
@@ -2958,7 +2977,7 @@ IonBuilder::atomicsMeetsPreconditions(CallInfo& callInfo, Scalar::Type* arrayTyp
         // be.
         return checkResult == DontCheckAtomicResult || getInlineReturnType() == MIRType_Double;
       default:
-        // Excludes floating types and Uint8Clamped
+        // Excludes floating types and Uint8Clamped.
         return false;
     }
 }
@@ -3113,9 +3132,6 @@ IonBuilder::inlineSimdInt32x4(CallInfo& callInfo, JSNative native)
     if (native == js::simd_int32x4_store3)
         return inlineSimdStore(callInfo, native, SimdTypeDescr::Int32x4, 3);
 
-    if (native == js::simd_int32x4_bool)
-        return inlineSimdBool(callInfo, native, SimdTypeDescr::Int32x4);
-
     return InliningStatus_NotInlined;
 }
 
@@ -3231,13 +3247,13 @@ IonBuilder::inlineConstructSimdObject(CallInfo& callInfo, SimdTypeDescr* descr)
     // containing the coercion of 'undefined' to the right type.
     MConstant* defVal = nullptr;
     if (callInfo.argc() < SimdTypeToLength(simdType)) {
-        MIRType scalarType = SimdTypeToScalarType(simdType);
-        if (scalarType == MIRType_Int32) {
+        MIRType laneType = SimdTypeToLaneType(simdType);
+        if (laneType == MIRType_Int32) {
             defVal = constant(Int32Value(0));
         } else {
-            MOZ_ASSERT(IsFloatingPointType(scalarType));
+            MOZ_ASSERT(IsFloatingPointType(laneType));
             defVal = constant(DoubleNaNValue());
-            defVal->setResultType(scalarType);
+            defVal->setResultType(laneType);
         }
     }
 
@@ -3366,9 +3382,9 @@ IonBuilder::inlineSimdExtractLane(CallInfo& callInfo, JSNative native, SimdTypeD
 
     // See comment in inlineBinarySimd
     MIRType vecType = SimdTypeDescrToMIRType(type);
-    MIRType scalarType = SimdTypeToScalarType(vecType);
+    MIRType laneType = SimdTypeToLaneType(vecType);
     MSimdExtractElement* ins = MSimdExtractElement::New(alloc(), callInfo.getArg(0),
-                                                        vecType, scalarType, SimdLane(lane));
+                                                        vecType, laneType, SimdLane(lane));
     current->add(ins);
     current->push(ins);
     callInfo.setImplicitlyUsedUnchecked();
@@ -3470,8 +3486,10 @@ IonBuilder::inlineSimdShuffle(CallInfo& callInfo, JSNative native, SimdTypeDescr
     return boxSimd(callInfo, ins, templateObj);
 }
 
+// Get the typed array element type corresponding to the lanes in a SIMD vector type.
+// This only applies to SIMD types that can be loaded and stored to a typed array.
 static Scalar::Type
-SimdTypeToScalarType(SimdTypeDescr::Type type)
+SimdTypeToArrayElementType(SimdTypeDescr::Type type)
 {
     switch (type) {
       case SimdTypeDescr::Float32x4: return Scalar::Float32x4;
@@ -3535,7 +3553,7 @@ IonBuilder::inlineSimdLoad(CallInfo& callInfo, JSNative native, SimdTypeDescr::T
     if (!checkInlineSimd(callInfo, native, type, 2, &templateObj))
         return InliningStatus_NotInlined;
 
-    Scalar::Type simdType = SimdTypeToScalarType(type);
+    Scalar::Type simdType = SimdTypeToArrayElementType(type);
 
     MDefinition* index = nullptr;
     MInstruction* elements = nullptr;
@@ -3558,7 +3576,7 @@ IonBuilder::inlineSimdStore(CallInfo& callInfo, JSNative native, SimdTypeDescr::
     if (!checkInlineSimd(callInfo, native, type, 3, &templateObj))
         return InliningStatus_NotInlined;
 
-    Scalar::Type simdType = SimdTypeToScalarType(type);
+    Scalar::Type simdType = SimdTypeToArrayElementType(type);
 
     MDefinition* index = nullptr;
     MInstruction* elements = nullptr;
@@ -3581,34 +3599,6 @@ IonBuilder::inlineSimdStore(CallInfo& callInfo, JSNative native, SimdTypeDescr::
         return InliningStatus_Error;
 
     return InliningStatus_Inlined;
-}
-
-IonBuilder::InliningStatus
-IonBuilder::inlineSimdBool(CallInfo& callInfo, JSNative native, SimdTypeDescr::Type type)
-{
-    InlineTypedObject* templateObj = nullptr;
-    if (!checkInlineSimd(callInfo, native, type, 4, &templateObj))
-        return InliningStatus_NotInlined;
-
-    MOZ_ASSERT(type == SimdTypeDescr::Int32x4, "at the moment, only int32x4.bool is inlined");
-
-    MInstruction* operands[4];
-    for (unsigned i = 0; i < 4; i++) {
-        operands[i] = MNot::New(alloc(), callInfo.getArg(i), constraints());
-        current->add(operands[i]);
-    }
-
-    // Inline int32x4.bool(x, y, z, w) as int32x4(!x - 1, !y - 1, !z - 1, !w - 1);
-    MSimdValueX4* vector = MSimdValueX4::New(alloc(), MIRType_Int32x4, operands[0], operands[1],
-                                             operands[2], operands[3]);
-    current->add(vector);
-
-    MSimdConstant* one = MSimdConstant::New(alloc(), SimdConstant::SplatX4(1), MIRType_Int32x4);
-    current->add(one);
-
-    MSimdBinaryArith* result = MSimdBinaryArith::New(alloc(), vector, one, MSimdBinaryArith::Op_sub,
-                                                     MIRType_Int32x4);
-    return boxSimd(callInfo, result, templateObj);
 }
 
 #define ADD_NATIVE(native) const JSJitInfo JitInfo_##native { \

@@ -14,7 +14,9 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/CSSStyleSheet.h"
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/SheetType.h"
 
 #include "nsIStyleRuleProcessor.h"
 #include "nsBindingManager.h"
@@ -37,6 +39,7 @@ struct nsFontFaceRuleContainer;
 struct TreeMatchContext;
 
 namespace mozilla {
+class CSSStyleSheet;
 class EventStates;
 } // namespace mozilla
 
@@ -48,6 +51,7 @@ private:
 public:
   NS_DECL_ISUPPORTS
   virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+  virtual bool MightMapInheritedStyleData() override;
 #ifdef DEBUG
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
 #endif
@@ -61,6 +65,7 @@ private:
 public:
   NS_DECL_ISUPPORTS
   virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+  virtual bool MightMapInheritedStyleData() override;
 #ifdef DEBUG
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
 #endif
@@ -74,6 +79,7 @@ private:
 public:
   NS_DECL_ISUPPORTS
   virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
+  virtual bool MightMapInheritedStyleData() override;
 #ifdef DEBUG
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
 #endif
@@ -283,6 +289,7 @@ class nsStyleSet final
 
   // Test if style is dependent on the presence of an attribute.
   nsRestyleHint HasAttributeDependentStyle(mozilla::dom::Element* aElement,
+                                           int32_t        aNameSpaceID,
                                            nsIAtom*       aAttribute,
                                            int32_t        aModType,
                                            bool           aAttrHasChanged,
@@ -304,47 +311,31 @@ class nsStyleSet final
     mBindingManager = aBindingManager;
   }
 
-  // The "origins" of the CSS cascade, from lowest precedence to
-  // highest (for non-!important rules).
-  enum sheetType {
-    eAgentSheet, // CSS
-    eUserSheet, // CSS
-    ePresHintSheet,
-    eSVGAttrAnimationSheet,
-    eDocSheet, // CSS
-    eScopedDocSheet,
-    eStyleAttrSheet,
-    eOverrideSheet, // CSS
-    eAnimationSheet,
-    eTransitionSheet,
-    eSheetTypeCount
-    // be sure to keep the number of bits in |mDirty| below and in
-    // NS_RULE_NODE_LEVEL_MASK updated when changing the number of sheet
-    // types
-  };
-
   // APIs to manipulate the style sheet lists.  The sheets in each
   // list are stored with the most significant sheet last.
-  nsresult AppendStyleSheet(sheetType aType, nsIStyleSheet *aSheet);
-  nsresult PrependStyleSheet(sheetType aType, nsIStyleSheet *aSheet);
-  nsresult RemoveStyleSheet(sheetType aType, nsIStyleSheet *aSheet);
-  nsresult ReplaceSheets(sheetType aType,
-                         const nsCOMArray<nsIStyleSheet> &aNewSheets);
-  nsresult InsertStyleSheetBefore(sheetType aType, nsIStyleSheet *aNewSheet,
-                                  nsIStyleSheet *aReferenceSheet);
-
-  nsresult DirtyRuleProcessors(sheetType aType);
+  nsresult AppendStyleSheet(mozilla::SheetType aType,
+                            mozilla::CSSStyleSheet* aSheet);
+  nsresult PrependStyleSheet(mozilla::SheetType aType,
+                             mozilla::CSSStyleSheet* aSheet);
+  nsresult RemoveStyleSheet(mozilla::SheetType aType,
+                            mozilla::CSSStyleSheet* aSheet);
+  nsresult ReplaceSheets(mozilla::SheetType aType,
+                         const nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aNewSheets);
+  nsresult InsertStyleSheetBefore(mozilla::SheetType aType,
+                                  mozilla::CSSStyleSheet* aNewSheet,
+                                  mozilla::CSSStyleSheet* aReferenceSheet);
 
   // Enable/Disable entire author style level (Doc, ScopedDoc & PresHint levels)
   bool GetAuthorStyleDisabled();
   nsresult SetAuthorStyleDisabled(bool aStyleDisabled);
 
-  int32_t SheetCount(sheetType aType) const {
-    return mSheets[aType].Count();
+  int32_t SheetCount(mozilla::SheetType aType) const {
+    return mSheets[aType].Length();
   }
 
-  nsIStyleSheet* StyleSheetAt(sheetType aType, int32_t aIndex) const {
-    return mSheets[aType].ObjectAt(aIndex);
+  mozilla::CSSStyleSheet* StyleSheetAt(mozilla::SheetType aType,
+                                       int32_t aIndex) const {
+    return mSheets[aType][aIndex];
   }
 
   void AppendAllXBLStyleSheets(nsTArray<mozilla::CSSStyleSheet*>& aArray) const {
@@ -353,8 +344,9 @@ class nsStyleSet final
     }
   }
 
-  nsresult RemoveDocStyleSheet(nsIStyleSheet* aSheet);
-  nsresult AddDocStyleSheet(nsIStyleSheet* aSheet, nsIDocument* aDocument);
+  nsresult RemoveDocStyleSheet(mozilla::CSSStyleSheet* aSheet);
+  nsresult AddDocStyleSheet(mozilla::CSSStyleSheet* aSheet,
+                            nsIDocument* aDocument);
 
   void     BeginUpdate();
   nsresult EndUpdate();
@@ -403,21 +395,23 @@ class nsStyleSet final
 
   nsIStyleRule* InitialStyleRule();
 
-  bool HasRuleProcessorUsedByMultipleStyleSets(sheetType aSheetType);
+  bool HasRuleProcessorUsedByMultipleStyleSets(mozilla::SheetType aSheetType);
 
   // Tells the RestyleManager for the document using this style set
   // to drop any nsCSSSelector pointers it has.
   void ClearSelectors();
 
- private:
+private:
   nsStyleSet(const nsStyleSet& aCopy) = delete;
   nsStyleSet& operator=(const nsStyleSet& aCopy) = delete;
 
   // Run mark-and-sweep GC on mRuleTree and mOldRuleTrees, based on mRoots.
   void GCRuleTrees();
 
+  nsresult DirtyRuleProcessors(mozilla::SheetType aType);
+
   // Update the rule processor list after a change to the style sheet list.
-  nsresult GatherRuleProcessors(sheetType aType);
+  nsresult GatherRuleProcessors(mozilla::SheetType aType);
 
   void AddImportantRules(nsRuleNode* aCurrLevelNode,
                          nsRuleNode* aLastPrevLevelNode,
@@ -485,16 +479,18 @@ class nsStyleSet final
   // The arrays for ePresHintSheet, eStyleAttrSheet, eTransitionSheet,
   // eAnimationSheet and eSVGAttrAnimationSheet are always empty.
   // (FIXME:  We should reduce the storage needed for them.)
-  nsCOMArray<nsIStyleSheet> mSheets[eSheetTypeCount];
+  mozilla::EnumeratedArray<mozilla::SheetType, mozilla::SheetType::Count,
+                           nsTArray<RefPtr<mozilla::CSSStyleSheet>>> mSheets;
 
   // mRuleProcessors[eScopedDocSheet] is always null; rule processors
   // for scoped style sheets are stored in mScopedDocSheetRuleProcessors.
-  nsCOMPtr<nsIStyleRuleProcessor> mRuleProcessors[eSheetTypeCount];
+  mozilla::EnumeratedArray<mozilla::SheetType, mozilla::SheetType::Count,
+                           nsCOMPtr<nsIStyleRuleProcessor>> mRuleProcessors;
 
   // Rule processors for HTML5 scoped style sheets, one per scope.
   nsTArray<nsCOMPtr<nsIStyleRuleProcessor> > mScopedDocSheetRuleProcessors;
 
-  nsRefPtr<nsBindingManager> mBindingManager;
+  RefPtr<nsBindingManager> mBindingManager;
 
   nsRuleNode* mRuleTree; // This is the root of our rule tree.  It is a
                          // lexicographic tree of matched rules that style
@@ -507,22 +503,22 @@ class nsStyleSet final
   unsigned mInReconstruct : 1;
   unsigned mInitFontFeatureValuesLookup : 1;
   unsigned mNeedsRestyleAfterEnsureUniqueInner : 1;
-  unsigned mDirty : 10;  // one dirty bit is used per sheet type
+  unsigned mDirty : int(mozilla::SheetType::Count);  // one bit per sheet type
 
   uint32_t mUnusedRuleNodeCount; // used to batch rule node GC
   nsTArray<nsStyleContext*> mRoots; // style contexts with no parent
 
   // Empty style rules to force things that restrict which properties
   // apply into different branches of the rule tree.
-  nsRefPtr<nsEmptyStyleRule> mFirstLineRule, mFirstLetterRule, mPlaceholderRule;
+  RefPtr<nsEmptyStyleRule> mFirstLineRule, mFirstLetterRule, mPlaceholderRule;
 
   // Style rule which sets all properties to their initial values for
   // determining when context-sensitive values are in use.
-  nsRefPtr<nsInitialStyleRule> mInitialStyleRule;
+  RefPtr<nsInitialStyleRule> mInitialStyleRule;
 
   // Style rule that sets the internal -x-text-zoom property on
   // <svg:text> elements to disable the effect of text zooming.
-  nsRefPtr<nsDisableTextZoomStyleRule> mDisableTextZoomStyleRule;
+  RefPtr<nsDisableTextZoomStyleRule> mDisableTextZoomStyleRule;
 
   // Old rule trees, which should only be non-empty between
   // BeginReconstruct and EndReconstruct, but in case of bugs that cause
@@ -530,7 +526,7 @@ class nsStyleSet final
   nsTArray<nsRuleNode*> mOldRuleTrees;
 
   // whether font feature values lookup object needs initialization
-  nsRefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
+  RefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
 };
 
 #ifdef MOZILLA_INTERNAL_API

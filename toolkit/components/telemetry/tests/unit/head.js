@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { classes: Cc, utils: Cu, interfaces: Ci, results: Cr } = Components;
+var { classes: Cc, utils: Cu, interfaces: Ci, results: Cr } = Components;
 
 Cu.import("resource://gre/modules/TelemetryController.jsm", this);
 Cu.import("resource://gre/modules/Services.jsm", this);
@@ -23,6 +23,8 @@ const MILLISECONDS_PER_HOUR = 60 * MILLISECONDS_PER_MINUTE;
 const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
 
 const HAS_DATAREPORTINGSERVICE = "@mozilla.org/datareporting/service;1" in Cc;
+
+const PREF_TELEMETRY_ENABLED = "toolkit.telemetry.enabled";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -96,7 +98,7 @@ const PingServer = {
 
   promiseNextPings: function(count) {
     return this.promiseNextRequests(count).then(requests => {
-      return [for (req of requests) decodeRequestPayload(req)];
+      return Array.from(requests, decodeRequestPayload);
     });
   },
 };
@@ -134,7 +136,7 @@ function decodeRequestPayload(request) {
     unicodeConverter.charset = "UTF-8";
     let utf8string = unicodeConverter.ConvertToUnicode(observer.buffer);
     utf8string += unicodeConverter.Finish();
-    payload = decoder.decode(utf8string);
+    payload = JSON.parse(utf8string);
   } else {
     payload = decoder.decodeFromStream(s, s.available());
   }
@@ -146,7 +148,10 @@ function wrapWithExceptionHandler(f) {
   function wrapper(...args) {
     try {
       f(...args);
-    } catch (ex if typeof(ex) == 'object') {
+    } catch (ex) {
+      if (typeof(ex) != 'object') {
+        throw ex;
+      }
       dump("Caught exception: " + ex.message + "\n");
       dump(ex.stack);
       do_test_finished();

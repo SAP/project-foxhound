@@ -42,21 +42,20 @@ namespace mozilla {
 #undef STREAM_LOG
 #endif
 
-PRLogModuleInfo* gTrackUnionStreamLog;
+LazyLogModule gTrackUnionStreamLog("TrackUnionStream");
 #define STREAM_LOG(type, msg) MOZ_LOG(gTrackUnionStreamLog, type, msg)
 
 TrackUnionStream::TrackUnionStream(DOMMediaStream* aWrapper) :
   ProcessedMediaStream(aWrapper), mNextAvailableTrackID(1)
 {
-  if (!gTrackUnionStreamLog) {
-    gTrackUnionStreamLog = PR_NewLogModule("TrackUnionStream");
-  }
 }
 
   void TrackUnionStream::RemoveInput(MediaInputPort* aPort)
   {
+    STREAM_LOG(LogLevel::Debug, ("TrackUnionStream %p removing input %p", this, aPort));
     for (int32_t i = mTrackMap.Length() - 1; i >= 0; --i) {
       if (mTrackMap[i].mInputPort == aPort) {
+        STREAM_LOG(LogLevel::Debug, ("TrackUnionStream %p removing trackmap entry %d", this, i));
         EndTrack(i);
         mTrackMap.RemoveElementAt(i);
       }
@@ -96,18 +95,19 @@ TrackUnionStream::TrackUnionStream(DOMMediaStream* aWrapper) :
           if (map->mInputPort == mInputs[i] && map->mInputTrackID == tracks->GetID()) {
             bool trackFinished;
             StreamBuffer::Track* outputTrack = mBuffer.FindTrack(map->mOutputTrackID);
-            if (!outputTrack || outputTrack->IsEnded()) {
+            found = true;
+            if (!outputTrack || outputTrack->IsEnded() ||
+                !mInputs[i]->PassTrackThrough(tracks->GetID())) {
               trackFinished = true;
             } else {
               CopyTrackData(tracks.get(), j, aFrom, aTo, &trackFinished);
             }
             mappedTracksFinished[j] = trackFinished;
             mappedTracksWithMatchingInputTracks[j] = true;
-            found = true;
             break;
           }
         }
-        if (!found) {
+        if (!found && mInputs[i]->PassTrackThrough(tracks->GetID())) {
           bool trackFinished = false;
           trackAdded = true;
           uint32_t mapIndex = AddTrack(mInputs[i], tracks.get(), aFrom);
@@ -146,18 +146,6 @@ TrackUnionStream::TrackUnionStream(DOMMediaStream* aWrapper) :
     }
   }
 
-  // Forward SetTrackEnabled(output_track_id, enabled) to the Source MediaStream,
-  // translating the output track ID into the correct ID in the source.
-  void TrackUnionStream::ForwardTrackEnabled(TrackID aOutputID, bool aEnabled)
-  {
-    for (int32_t i = mTrackMap.Length() - 1; i >= 0; --i) {
-      if (mTrackMap[i].mOutputTrackID == aOutputID) {
-        mTrackMap[i].mInputPort->GetSource()->
-          SetTrackEnabled(mTrackMap[i].mInputTrackID, aEnabled);
-      }
-    }
-  }
-
   uint32_t TrackUnionStream::AddTrack(MediaInputPort* aPort, StreamBuffer::Track* aTrack,
                     GraphTime aFrom)
   {
@@ -191,7 +179,8 @@ TrackUnionStream::TrackUnionStream(DOMMediaStream* aWrapper) :
       MediaStreamListener* l = mListeners[j];
       l->NotifyQueuedTrackChanges(Graph(), id, outputStart,
                                   MediaStreamListener::TRACK_EVENT_CREATED,
-                                  *segment);
+                                  *segment,
+                                  aPort->GetSource(), aTrack->GetID());
     }
     segment->AppendNullData(outputStart);
     StreamBuffer::Track* track =
@@ -216,6 +205,7 @@ TrackUnionStream::TrackUnionStream(DOMMediaStream* aWrapper) :
     StreamBuffer::Track* outputTrack = mBuffer.FindTrack(mTrackMap[aIndex].mOutputTrackID);
     if (!outputTrack || outputTrack->IsEnded())
       return;
+    STREAM_LOG(LogLevel::Debug, ("TrackUnionStream %p ending track %d", this, outputTrack->GetID()));
     for (uint32_t j = 0; j < mListeners.Length(); ++j) {
       MediaStreamListener* l = mListeners[j];
       StreamTime offset = outputTrack->GetSegment()->GetDuration();
@@ -223,7 +213,9 @@ TrackUnionStream::TrackUnionStream(DOMMediaStream* aWrapper) :
       segment = outputTrack->GetSegment()->CreateEmptyClone();
       l->NotifyQueuedTrackChanges(Graph(), outputTrack->GetID(), offset,
                                   MediaStreamListener::TRACK_EVENT_ENDED,
-                                  *segment);
+                                  *segment,
+                                  mTrackMap[aIndex].mInputPort->GetSource(),
+                                  mTrackMap[aIndex].mInputTrackID);
     }
     outputTrack->SetEnded();
   }

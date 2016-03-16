@@ -23,12 +23,12 @@
 #include "ScaledFontWin.h"
 #endif
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 #include "ScaledFontMac.h"
 #endif
 
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 #include "DrawTargetCG.h"
 #endif
 
@@ -52,14 +52,14 @@
 
 #include "mozilla/CheckedInt.h"
 
-GFX2D_API PRLogModuleInfo *
+#if defined(MOZ_LOGGING)
+GFX2D_API mozilla::LogModule*
 GetGFX2DLog()
 {
-  static PRLogModuleInfo *sLog;
-  if (!sLog)
-    sLog = PR_NewLogModule("gfx2d");
+  static mozilla::LazyLogModule sLog("gfx2d");
   return sLog;
 }
+#endif
 
 // The following code was largely taken from xpcom/glue/SSE.cpp and
 // made a little simpler.
@@ -345,7 +345,7 @@ Factory::CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFor
       }
       break;
     }
-#elif defined XP_MACOSX
+#elif defined XP_DARWIN
   case BackendType::COREGRAPHICS:
   case BackendType::COREGRAPHICS_ACCELERATED:
     {
@@ -428,7 +428,7 @@ Factory::CreateDrawTargetForData(BackendType aBackend,
       break;
     }
 #endif
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
   case BackendType::COREGRAPHICS:
     {
       RefPtr<DrawTargetCG> newTarget = new DrawTargetCG();
@@ -506,8 +506,10 @@ Factory::GetMaxSurfaceSize(BackendType aType)
   case BackendType::COREGRAPHICS_ACCELERATED:
     return DrawTargetCG::GetMaxSurfaceSize();
 #endif
+#ifdef USE_SKIA
   case BackendType::SKIA:
-    return INT_MAX;
+    return DrawTargetSkia::GetMaxSurfaceSize();
+#endif
 #ifdef WIN32
   case BackendType::DIRECT2D:
     return DrawTargetD2D::GetMaxSurfaceSize();
@@ -535,7 +537,7 @@ Factory::CreateScaledFontForNativeFont(const NativeFont &aNativeFont, Float aSiz
     }
 #endif
 #endif
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
   case NativeFontType::MAC_FONT_FACE:
     {
       return MakeAndAddRef<ScaledFontMac>(static_cast<CGFontRef>(aNativeFont.mFont), aSize);
@@ -728,7 +730,7 @@ Factory::SetDirect3D11Device(ID3D11Device *aDevice)
   RefPtr<ID2D1Factory1> factory = D2DFactory1();
 
   RefPtr<IDXGIDevice> device;
-  aDevice->QueryInterface((IDXGIDevice**)byRef(device));
+  aDevice->QueryInterface((IDXGIDevice**)getter_AddRefs(device));
   HRESULT hr = factory->CreateDevice(device, &mD2D1Device);
   if (FAILED(hr)) {
     gfxCriticalError() << "[D2D1] Failed to create gfx factory's D2D1 device, code: " << hexa(hr);
@@ -837,7 +839,7 @@ Factory::CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface, const IntSiz
   return retVal.forget();
 }
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 already_AddRefed<DrawTarget>
 Factory::CreateDrawTargetForCairoCGContext(CGContextRef cg, const IntSize& aSize)
 {
@@ -874,11 +876,8 @@ Factory::CreateWrappingDataSourceSurface(uint8_t *aData, int32_t aStride,
 
   RefPtr<SourceSurfaceRawData> newSurf = new SourceSurfaceRawData();
 
-  if (newSurf->InitWrappingData(aData, aSize, aStride, aFormat, false)) {
-    return newSurf.forget();
-  }
-
-  return nullptr;
+  newSurf->InitWrappingData(aData, aSize, aStride, aFormat, false);
+  return newSurf.forget();
 }
 
 already_AddRefed<DataSourceSurface>

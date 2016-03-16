@@ -241,6 +241,9 @@ public:
     mScrollgrab = aValue;
   }
 
+  void GetInnerText(mozilla::dom::DOMString& aValue, mozilla::ErrorResult& aError);
+  void SetInnerText(const nsAString& aValue);
+
   /**
    * Determine whether an attribute is an event (onclick, etc.)
    * @param aName the attribute
@@ -337,7 +340,7 @@ public:
    * Pass a reference to the image request, since the method may change the
    * value and we want to use the updated value.
    */
-  nsSize GetWidthHeightForImage(nsRefPtr<imgRequestProxy>& aImageRequest);
+  nsSize GetWidthHeightForImage(RefPtr<imgRequestProxy>& aImageRequest);
 
   // XPIDL methods
   NS_FORWARD_NSIDOMNODE_TO_NSINODE
@@ -409,7 +412,7 @@ public:
   NS_IMETHOD GetItemId(nsAString& aId) final override {
     nsString id;
     GetItemId(id);
-    aId.Assign(aId);
+    aId.Assign(id);
     return NS_OK;
   }
   NS_IMETHOD SetItemId(const nsAString& aId) final override {
@@ -957,10 +960,16 @@ public:
   static inline bool
   ShouldExposeIdAsHTMLDocumentProperty(Element* aElement)
   {
-    return aElement->IsAnyOfHTMLElements(nsGkAtoms::img,
-                                         nsGkAtoms::applet,
-                                         nsGkAtoms::embed,
-                                         nsGkAtoms::object);
+    if (aElement->IsAnyOfHTMLElements(nsGkAtoms::applet,
+                                      nsGkAtoms::embed,
+                                      nsGkAtoms::object)) {
+      return true;
+    }
+
+    // Per spec, <img> is exposed by id only if it also has a nonempty
+    // name (which doesn't have to match the id or anything).
+    // HasName() is true precisely when name is nonempty.
+    return aElement->IsHTMLElement(nsGkAtoms::img) && aElement->HasName();
   }
 
   static bool
