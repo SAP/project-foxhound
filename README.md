@@ -26,12 +26,16 @@ cp taintfox_mozconfig .mozconfig
 ./mach build
 ```
 
-If you need an installer follow up with
+If you need an windows installer follow up with
 ```bash
 ./mach build installer
 ```
-The installer can then be found under "obj-tf-release/dist/install/sea".
+The installer can then be found under "obj-tf-release\dist\install\sea\".
 
+If you need a OSX DMG package follow up with
+```bash
+./mach package
+```
 
 ## Internals
 
