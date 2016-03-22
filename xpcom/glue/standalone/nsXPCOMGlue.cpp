@@ -986,3 +986,22 @@ NS_CycleCollectorForget2(nsPurpleBufferEntry* aEntry)
 
   return xpcomFunctions.cycleForget2Func(aEntry);
 }
+
+// TaintFox: frozen string API, taint access.
+XPCOM_API(const StringTaint&)
+NS_StringGetTaint(const nsAString& aStr)
+{
+  if (!xpcomFunctions.stringGetTaint) {
+    return EmptyTaint;
+  }
+  return xpcomFunctions.stringGetTaint(aStr);
+}
+
+XPCOM_API(const StringTaint&)
+NS_CStringGetTaint(const nsACString& aStr)
+{
+  if (!xpcomFunctions.cstringGetTaint) {
+    return EmptyTaint;
+  }
+  return xpcomFunctions.cstringGetTaint(aStr);
+}

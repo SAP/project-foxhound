@@ -372,3 +372,15 @@ NS_UTF16ToCString(const nsAString& aSrc,
 
   return NS_OK; // XXX report errors
 }
+
+/* ------------------------------------------------------------------------- */
+
+XPCOM_API(const StringTaint&) NS_StringGetTaint(const nsAString& aStr)
+{
+  return aStr.Taint();
+}
+
+XPCOM_API(const StringTaint&) NS_CStringGetTaint(const nsACString& aStr)
+{
+  return aStr.Taint();
+}

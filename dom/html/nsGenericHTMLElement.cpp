@@ -308,7 +308,7 @@ static bool
 IsOffsetParent(nsIFrame* aFrame)
 {
   nsIAtom* frameType = aFrame->GetType();
-  
+
   if (IS_TABLE_CELL(frameType) || frameType == nsGkAtoms::tableFrame) {
     // Per the IDL for Element, only td, th, and table are acceptable offsetParents
     // apart from body or positioned elements; we need to check the content type as
@@ -545,7 +545,7 @@ nsGenericHTMLElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 
   if (aDocument) {
     if (HasProperties()) {
-      HTMLPropertiesCollection* properties = 
+      HTMLPropertiesCollection* properties =
         static_cast<HTMLPropertiesCollection*>(GetProperty(nsGkAtoms::microdataProperties));
       if (properties) {
         properties->SetDocument(aDocument);
@@ -574,9 +574,9 @@ nsGenericHTMLElement::UnbindFromTree(bool aDeep, bool aNullParent)
   if (IsInDoc()) {
     UnregAccessKey();
   }
-  
+
   if(HasProperties()) {
-    HTMLPropertiesCollection* properties = 
+    HTMLPropertiesCollection* properties =
       static_cast<HTMLPropertiesCollection*>(GetProperty(nsGkAtoms::microdataProperties));
     if (properties) {
       properties->SetDocument(nullptr);
@@ -657,7 +657,7 @@ nsGenericHTMLElement::CheckHandleEventForAnchorsPreconditions(
     // We need a pres context to do link stuff. Some events (e.g. mutation
     // events) don't have one.
     // XXX: ideally, shouldn't we be able to do what we need without one?
-    return false; 
+    return false;
   }
 
   //Need to check if we hit an imagemap area and if so see if we're handling
@@ -897,7 +897,7 @@ nsGenericHTMLElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            aName == nsGkAtoms::contenteditable;
   bool undoScope = aNameSpaceID == kNameSpaceID_None &&
                            aName == nsGkAtoms::undoscope;
-  bool accessKey = aName == nsGkAtoms::accesskey && 
+  bool accessKey = aName == nsGkAtoms::accesskey &&
                      aNameSpaceID == kNameSpaceID_None;
 
   int32_t change = 0;
@@ -998,7 +998,7 @@ nsGenericHTMLElement::ParseAttribute(int32_t aNamespaceID,
     if (aAttribute == nsGkAtoms::dir) {
       return aResult.ParseEnumValue(aValue, kDirTable, false);
     }
-  
+
     if (aAttribute == nsGkAtoms::tabindex) {
       return aResult.ParseIntValue(aValue);
     }
@@ -1022,7 +1022,7 @@ nsGenericHTMLElement::ParseAttribute(int32_t aNamespaceID,
         SetHasName();
         AddToNameTable(aResult.GetAtomValue());
       }
-      
+
       return true;
     }
 
@@ -1085,7 +1085,7 @@ nsGenericHTMLElement::IsAttributeMapped(const nsIAtom* aAttribute) const
   static const MappedAttributeEntry* const map[] = {
     sCommonAttributeMap
   };
-  
+
   return FindAttributeDependence(aAttribute, map);
 }
 
@@ -1519,7 +1519,7 @@ nsGenericHTMLElement::MapImageMarginAttributeInto(const nsMappedAttributes* aAtt
       vval.SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
     else if (value->Type() == nsAttrValue::ePercent)
       vval.SetPercentValue(value->GetPercentValue());
-  
+
     if (vval.GetUnit() != eCSSUnit_Null) {
       nsCSSValue* top = aData->ValueForMarginTop();
       if (top->GetUnit() == eCSSUnit_Null)
@@ -1553,7 +1553,7 @@ nsGenericHTMLElement::MapImageSizeAttributesInto(const nsMappedAttributes* aAttr
   if (height->GetUnit() == eCSSUnit_Null) {
     const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::height);
     if (value && value->Type() == nsAttrValue::eInteger)
-      height->SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel); 
+      height->SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
     else if (value && value->Type() == nsAttrValue::ePercent)
       height->SetPercentValue(value->GetPercentValue());
   }
@@ -1570,7 +1570,7 @@ nsGenericHTMLElement::MapImageBorderAttributeInto(const nsMappedAttributes* aAtt
   const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::border);
   if (!value)
     return;
-  
+
   nscoord val = 0;
   if (value->Type() == nsAttrValue::eInteger)
     val = value->GetIntegerValue();
@@ -1783,7 +1783,7 @@ nsGenericHTMLElement::GetURIListAttr(nsIAtom* aAttr, nsAString& aResult)
   if (!GetAttr(kNameSpaceID_None, aAttr, value))
     return NS_OK;
 
-  nsIDocument* doc = OwnerDoc(); 
+  nsIDocument* doc = OwnerDoc();
   nsCOMPtr<nsIURI> baseURI = GetBaseURI();
 
   nsString::const_iterator end;
@@ -2017,7 +2017,7 @@ nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm)
   if (!mForm) {
     return;
   }
-  
+
   if (aRemoveFromForm) {
     nsAutoString nameVal, idVal;
     GetAttr(kNameSpaceID_None, nsGkAtoms::name, nameVal);
@@ -2120,7 +2120,7 @@ nsGenericHTMLFormElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
   // Save state before doing anything
   SaveState();
-  
+
   if (mForm) {
     // Might need to unset mForm
     if (aNullParent) {
@@ -2365,7 +2365,7 @@ nsGenericHTMLFormElement::IntrinsicState() const
       state |= NS_EVENT_STATE_ENABLED;
     }
   }
-  
+
   if (mForm && mForm->IsDefaultSubmitElement(this)) {
       NS_ASSERTION(IsSubmitControl(),
                    "Default submit element that isn't a submit control.");
@@ -2482,7 +2482,7 @@ nsGenericHTMLFormElement::FormIdUpdated(Element* aOldElement,
   return true;
 }
 
-bool 
+bool
 nsGenericHTMLFormElement::IsElementDisabledForEvents(EventMessage aMessage,
                                                      nsIFrame* aFrame)
 {
@@ -2753,7 +2753,7 @@ nsGenericHTMLElement::IsHTMLFocusable(bool aWithMouse,
   }
 
   // If a tabindex is specified at all, or the default tabindex is 0, we're focusable
-  *aIsFocusable = 
+  *aIsFocusable =
     (tabIndex >= 0 || (!disabled && HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex)));
 
   return override;
@@ -3400,6 +3400,7 @@ nsGenericHTMLElement::SetInnerText(const nsAString& aValue)
   nsString str;
   const char16_t* s = aValue.BeginReading();
   const char16_t* end = aValue.EndReading();
+  uint32_t startTaintIndex = 0, curTaintIndex = 0;
   while (true) {
     if (s != end && *s == '\r' && s + 1 != end && s[1] == '\n') {
       // a \r\n pair should only generate one <br>, so just skip the \r
@@ -3407,6 +3408,11 @@ nsGenericHTMLElement::SetInnerText(const nsAString& aValue)
     }
     if (s == end || *s == '\r' || *s == '\n') {
       if (!str.IsEmpty()) {
+        // TaintFox: extract input taint for innerText.
+        str.AssignTaint(aValue.Taint().subtaint(startTaintIndex, curTaintIndex));
+        curTaintIndex = s - aValue.BeginReading();
+        startTaintIndex = curTaintIndex + 1;
+
         RefPtr<nsTextNode> textContent =
           new nsTextNode(NodeInfo()->NodeInfoManager());
         textContent->SetText(str, true);
@@ -3425,6 +3431,7 @@ nsGenericHTMLElement::SetInnerText(const nsAString& aValue)
       str.Append(*s);
     }
     ++s;
+    ++curTaintIndex;
   }
 
   mb.NodesAdded();

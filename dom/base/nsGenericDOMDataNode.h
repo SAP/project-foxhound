@@ -127,19 +127,14 @@ public:
   virtual const nsTextFragment *GetText() override;
   virtual uint32_t TextLength() const override;
   virtual nsresult SetText(const char16_t* aBuffer, uint32_t aLength,
-                           bool aNotify) override;
+                           bool aNotify, const StringTaint& aTaint) override;
   // Need to implement this here too to avoid hiding.
   nsresult SetText(const nsAString& aStr, bool aNotify)
   {
-    nsresult res = SetText(aStr.BeginReading(), aStr.Length(), aNotify);
-
-    // TaintFox: propagate taint when assigning text content to DOM nodes.
-    mText.AssignTaint(aStr.Taint());
-
-    return res;
+    return SetText(aStr.BeginReading(), aStr.Length(), aNotify, aStr.Taint());
   }
   virtual nsresult AppendText(const char16_t* aBuffer, uint32_t aLength,
-                              bool aNotify) override;
+                              bool aNotify, const StringTaint& aTaint) override;
   virtual bool TextIsOnlyWhitespace() override;
   virtual bool HasTextForTranslation() override;
   virtual void AppendTextTo(nsAString& aResult) override;

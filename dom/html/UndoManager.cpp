@@ -259,7 +259,7 @@ UndoTextChanged::RedoTransaction()
     // Text length should match the change start unless there was a
     // mutation exterior to the UndoManager in which case we do nothing.
     if (text.Length() == mChange.mChangeStart) {
-      mContent->AppendText(mRedoValue.get(), mRedoValue.Length(), true);
+      mContent->AppendText(mRedoValue.get(), mRedoValue.Length(), true, mRedoValue.Taint());
     }
   } else {
     int32_t numReplaced = mChange.mChangeEnd - mChange.mChangeStart;

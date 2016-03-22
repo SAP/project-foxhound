@@ -1002,19 +1002,19 @@ nsGenericDOMDataNode::TextLength() const
 nsresult
 nsGenericDOMDataNode::SetText(const char16_t* aBuffer,
                               uint32_t aLength,
-                              bool aNotify)
+                              bool aNotify,
+                              const StringTaint& aTaint)
 {
-  // TaintFox: no taint available. TODO(samuel) can we add aTaint to SetText?
-  return SetTextInternal(0, mText.GetLength(), aBuffer, aLength, aNotify, EmptyTaint);
+  return SetTextInternal(0, mText.GetLength(), aBuffer, aLength, aNotify, aTaint);
 }
 
 nsresult
 nsGenericDOMDataNode::AppendText(const char16_t* aBuffer,
                                  uint32_t aLength,
-                                 bool aNotify)
+                                 bool aNotify,
+                                 const StringTaint& aTaint)
 {
-  // TaintFox: no taint available. TODO(samuel) can we add aTaint to AppendText?
-  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, EmptyTaint);
+  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, aTaint);
 }
 
 bool

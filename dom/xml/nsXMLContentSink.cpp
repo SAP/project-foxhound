@@ -772,7 +772,9 @@ nsXMLContentSink::FlushText(bool aReleaseTextNode)
       if (notify) {
         ++mInNotification;
       }
-      rv = mLastTextNode->AppendText(mText, mTextLength, notify);
+
+      // TaintFox: nsXMLContentSink isn't taint aware..
+      rv = mLastTextNode->AppendText(mText, mTextLength, notify, EmptyTaint);
       if (notify) {
         --mInNotification;
       }
@@ -784,7 +786,7 @@ nsXMLContentSink::FlushText(bool aReleaseTextNode)
       mLastTextNode = textContent;
 
       // Set the text in the text node
-      textContent->SetText(mText, mTextLength, false);
+      textContent->SetText(mText, mTextLength, false, EmptyTaint);
       mTextLength = 0;
 
       // Add text to its parent
@@ -1132,7 +1134,8 @@ nsXMLContentSink::HandleCDataSection(const char16_t *aData,
   FlushText();
 
   RefPtr<CDATASection> cdata = new CDATASection(mNodeInfoManager);
-  cdata->SetText(aData, aLength, false);
+  // TaintFox: here and above, no taint available..
+  cdata->SetText(aData, aLength, false, EmptyTaint);
   nsresult rv = AddContentAsLeaf(cdata);
   DidAddContent();
 

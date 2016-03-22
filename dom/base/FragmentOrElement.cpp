@@ -2006,7 +2006,7 @@ FragmentOrElement::TextLength() const
 
 nsresult
 FragmentOrElement::SetText(const char16_t* aBuffer, uint32_t aLength,
-                          bool aNotify)
+                          bool aNotify, const StringTaint& aTaint)
 {
   NS_ERROR("called FragmentOrElement::SetText");
 
@@ -2015,7 +2015,7 @@ FragmentOrElement::SetText(const char16_t* aBuffer, uint32_t aLength,
 
 nsresult
 FragmentOrElement::AppendText(const char16_t* aBuffer, uint32_t aLength,
-                             bool aNotify)
+                             bool aNotify, const StringTaint& aTaint)
 {
   NS_ERROR("called FragmentOrElement::AppendText");
 

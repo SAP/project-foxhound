@@ -11,6 +11,8 @@
 #include "nscore.h"
 #include <limits>
 
+#include "Taint.h"
+
 /**
  * nsXPCOMStrings.h
  *
@@ -746,5 +748,23 @@ XPCOM_API(nsresult) NS_CStringToUTF16(const nsACString& aSource,
 XPCOM_API(nsresult) NS_UTF16ToCString(const nsAString& aSource,
                                       nsCStringEncoding aDestEncoding,
                                       nsACString& aDest);
+
+/* ------------------------------------------------------------------------- */
+
+/**
+ * TaintFox: NS_StringGetTaint
+ *
+ * This function provides a way to access the taint information associated with
+ * a string.
+ */
+XPCOM_API(const StringTaint&) NS_StringGetTaint(const nsAString& aStr);
+
+/**
+ * TaintFox: NS_CStringGetTaint
+ *
+ * This function provides a way to access the taint information associated with
+ * a string.
+ */
+XPCOM_API(const StringTaint&) NS_CStringGetTaint(const nsACString& aStr);
 
 #endif // nsXPCOMStrings_h__

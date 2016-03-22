@@ -19,6 +19,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Char16.h"
 
+#include "Taint.h"
+
 #include "nsXPCOMStrings.h"
 #include "nsISupportsImpl.h"
 #include "mozilla/Logging.h"
@@ -456,6 +458,11 @@ public:
                                   uint32_t aRadix = 10) const;
 #endif // XPCOM_GLUE_AVOID_NSPR
 
+  // TaintFox: Basic taint access for the frozen string API.
+  const StringTaint& Taint() const {
+    return NS_StringGetTaint(*this);
+  }
+
 protected:
   // Prevent people from allocating a nsAString directly.
   ~nsAString() {}
@@ -868,6 +875,11 @@ public:
   NS_HIDDEN_(int64_t) ToInteger64(nsresult* aErrorCode,
                                   uint32_t aRadix = 10) const;
 #endif // XPCOM_GLUE_AVOID_NSPR
+
+  // TaintFox: Basic taint access for the frozen string API.
+  const StringTaint& Taint() const {
+    return NS_CStringGetTaint(*this);
+  }
 
 protected:
   // Prevent people from allocating a nsAString directly.

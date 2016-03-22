@@ -50,6 +50,7 @@ if CONFIG['GNU_CXX']:
 # Include fallible for third party code using the xpcom glue
 USE_LIBS += [
     'fallible',
+    'taint',
 ]
 
 # Force to build a static library only

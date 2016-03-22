@@ -35,7 +35,7 @@ struct IMEState;
 enum nsLinkState {
   eLinkState_Unvisited  = 1,
   eLinkState_Visited    = 2,
-  eLinkState_NotLink    = 3 
+  eLinkState_NotLink    = 3
 };
 
 // IID for the nsIContent interface
@@ -102,7 +102,7 @@ public:
    * and binding parent to null.  In the typical case of a node being removed
    * from a parent, this will be called after it has been removed from the
    * parent's child list and after the nsIDocumentObserver notifications for
-   * the removal have been dispatched.   
+   * the removal have been dispatched.
    * @param aDeep Whether to recursively unbind the entire subtree rooted at
    *        this node.  The only time false should be passed is when the
    *        parent node of the content is being destroyed.
@@ -393,7 +393,7 @@ public:
                    nsIAtom* aName,
                    const nsAString& aValue,
                    nsCaseTreatment aCaseSensitive) const;
-  
+
   /**
    * Test whether this content node's given attribute has the given value.  If
    * the attribute is not set at all, this will return false.
@@ -408,7 +408,7 @@ public:
                    nsIAtom* aName,
                    nsIAtom* aValue,
                    nsCaseTreatment aCaseSensitive) const;
-  
+
   enum {
     ATTR_MISSING = -1,
     ATTR_VALUE_NO_MATCH = -2
@@ -420,7 +420,7 @@ public:
    * we return ATTR_MISSING. If there was an attribute but it didn't
    * match, we return ATTR_VALUE_NO_MATCH. A non-negative result always
    * indicates a match.
-   * 
+   *
    * @param aNameSpaceID The namespace ID of the attribute.  Must not
    *                     be kNameSpaceID_Unknown.
    * @param aName The name atom of the attribute.  Must not be null.
@@ -447,13 +447,13 @@ public:
    * @param aNotify specifies whether or not the document should be
    * notified of the attribute change
    */
-  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr, 
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
                              bool aNotify) = 0;
 
 
   /**
    * Get the namespace / name / prefix of a given attribute.
-   * 
+   *
    * @param   aIndex the index of the attribute name
    * @returns The name at the given index, or null if the index is
    *          out-of-bounds.
@@ -502,7 +502,7 @@ public:
    * NOTE: For elements this always ASSERTS and returns NS_ERROR_FAILURE
    */
   virtual nsresult SetText(const char16_t* aBuffer, uint32_t aLength,
-                           bool aNotify) = 0;
+                           bool aNotify, const StringTaint& aTaint) = 0;
 
   /**
    * Append the given value to the current text. If aNotify is true then
@@ -510,7 +510,7 @@ public:
    * NOTE: For elements this always ASSERTS and returns NS_ERROR_FAILURE
    */
   virtual nsresult AppendText(const char16_t* aBuffer, uint32_t aLength,
-                              bool aNotify) = 0;
+                              bool aNotify, const StringTaint& aTaint) = 0;
 
   /**
    * Set the text to the given value. If aNotify is true then
@@ -519,7 +519,7 @@ public:
    */
   nsresult SetText(const nsAString& aStr, bool aNotify)
   {
-    return SetText(aStr.BeginReading(), aStr.Length(), aNotify);
+    return SetText(aStr.BeginReading(), aStr.Length(), aNotify, aStr.Taint());
   }
 
   /**
@@ -551,13 +551,13 @@ public:
 
   /**
    * Check if this content is focusable and in the current tab order.
-   * Note: most callers should use nsIFrame::IsFocusable() instead as it 
+   * Note: most callers should use nsIFrame::IsFocusable() instead as it
    *       checks visibility and other layout factors as well.
    * Tabbable is indicated by a nonnegative tabindex & is a subset of focusable.
-   * For example, only the selected radio button in a group is in the 
+   * For example, only the selected radio button in a group is in the
    * tab order, unless the radio group has no selection in which case
-   * all of the visible, non-disabled radio buttons in the group are 
-   * in the tab order. On the other hand, all of the visible, non-disabled 
+   * all of the visible, non-disabled radio buttons in the group are
+   * in the tab order. On the other hand, all of the visible, non-disabled
    * radio buttons are always focusable via clicking or script.
    * Also, depending on either the accessibility.tabfocus pref or
    * a system setting (nowadays: Full keyboard access, mac only)
@@ -778,7 +778,7 @@ public:
   }
 
   /**
-   * This method is called when the parser begins creating the element's 
+   * This method is called when the parser begins creating the element's
    * children, if any are present.
    *
    * This is only called for XTF elements currently.

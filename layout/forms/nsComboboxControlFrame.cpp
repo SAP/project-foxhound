@@ -1049,7 +1049,8 @@ nsComboboxControlFrame::ActuallyDisplayText(bool aNotify)
     // Have to use a non-breaking space for line-block-size calculations
     // to be right
     static const char16_t space = 0xA0;
-    mDisplayContent->SetText(&space, 1, aNotify);
+    // TaintFox: no taint available here.
+    mDisplayContent->SetText(&space, 1, aNotify, EmptyTaint);
   } else {
     mDisplayContent->SetText(mDisplayedOptionText, aNotify);
   }

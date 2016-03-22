@@ -96,6 +96,10 @@ static const XPCOMFunctions kFrozenFunctions = {
   nullptr,
 
   &NS_CycleCollectorSuspect3,
+
+  // TaintFox: basic taint access for the frozen string API.
+  &NS_StringGetTaint,
+  &NS_CStringGetTaint,
 };
 
 EXPORT_XPCOM_API(nsresult)
