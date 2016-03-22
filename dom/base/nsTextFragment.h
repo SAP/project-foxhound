@@ -35,7 +35,9 @@ class nsString;
  * This class does not have a virtual destructor therefore it is not
  * meant to be subclassed.
  *
- * TaintFox: This class is taint aware.
+ * TaintFox: nsTextFragment is taint aware.
+ * Various methods have been modified to accept a StringTaint argument for taint
+ * propagation.
  */
 class nsTextFragment final : public TaintableString {
 public:
@@ -116,14 +118,14 @@ public:
    * buffer. If aUpdateBidi is true, contents of the fragment will be scanned,
    * and mState.mIsBidi will be turned on if it includes any Bidi characters.
    */
-  bool SetTo(const char16_t* aBuffer, int32_t aLength, bool aUpdateBidi);
+  bool SetTo(const char16_t* aBuffer, int32_t aLength, bool aUpdateBidi, const StringTaint& aTaint);
 
   /**
    * Append aData to the end of this fragment. If aUpdateBidi is true, contents
    * of the fragment will be scanned, and mState.mIsBidi will be turned on if
    * it includes any Bidi characters.
    */
-  bool Append(const char16_t* aBuffer, uint32_t aLength, bool aUpdateBidi);
+  bool Append(const char16_t* aBuffer, uint32_t aLength, bool aUpdateBidi, const StringTaint& aTaint);
 
   /**
    * Append the contents of this string fragment to aString
@@ -141,7 +143,7 @@ public:
   MOZ_WARN_UNUSED_RESULT
   bool AppendTo(nsAString& aString,
                 const mozilla::fallible_t& aFallible) const {
-    // TaintFox: propagate taint when accessing text contents.
+    // TaintFox: propagate taint when accessing text fragments.
     aString.AppendTaint(Taint());
 
     if (mState.mIs2b) {
@@ -180,7 +182,7 @@ public:
   bool AppendTo(nsAString& aString, int32_t aOffset, int32_t aLength,
                 const mozilla::fallible_t& aFallible) const
   {
-    // TaintFox: propagate taint when accessing text contents.
+    // TaintFox: propagate taint when accessing text fragments.
     aString.AppendTaint(Taint().subtaint(aOffset, aOffset + aLength));
 
     if (mState.mIs2b) {
@@ -227,12 +229,6 @@ public:
   };
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
-
-  // TaintFox: helper method for appending taint.
-  void AppendTaint(const StringTaint& aTaint)
-  {
-    taint_.concat(aTaint, GetLength());
-  }
 
 private:
   void ReleaseText();

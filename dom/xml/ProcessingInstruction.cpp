@@ -53,9 +53,10 @@ ProcessingInstruction::ProcessingInstruction(already_AddRefed<mozilla::dom::Node
   MOZ_ASSERT(mNodeInfo->NodeType() == nsIDOMNode::PROCESSING_INSTRUCTION_NODE,
              "Bad NodeType in aNodeInfo");
 
+  // TaintFox: pass taint information.
   SetTextInternal(0, mText.GetLength(),
                   aData.BeginReading(), aData.Length(),
-                  false);  // Don't notify (bug 420429).
+                  false, aData.Taint());  // Don't notify (bug 420429).
 }
 
 ProcessingInstruction::~ProcessingInstruction()

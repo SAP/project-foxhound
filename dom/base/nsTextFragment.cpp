@@ -104,9 +104,6 @@ nsTextFragment::operator=(const nsTextFragment& aOther)
 {
   ReleaseText();
 
-  // TaintFox: propagate taint.
-  AssignTaint(aOther.Taint());
-
   if (aOther.mState.mLength) {
     if (!aOther.mState.mInHeap) {
       m1b = aOther.m1b; // This will work even if aOther is using m2b
@@ -135,6 +132,9 @@ nsTextFragment::operator=(const nsTextFragment& aOther)
       mAllBits = aOther.mAllBits;
     }
   }
+
+  // TaintFox: propagate taint.
+  AssignTaint(aOther.Taint());
 
   return *this;
 }
@@ -202,9 +202,12 @@ FirstNon8Bit(const char16_t *str, const char16_t *end)
 }
 
 bool
-nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength, bool aUpdateBidi)
+nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength, bool aUpdateBidi, const StringTaint& aTaint)
 {
   ReleaseText();
+
+  // TaintFox: propagate taint.
+  AssignTaint(aTaint);
 
   if (aLength == 0) {
     return true;
@@ -330,15 +333,18 @@ nsTextFragment::CopyTo(char16_t *aDest, int32_t aOffset, int32_t aCount)
 }
 
 bool
-nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength, bool aUpdateBidi)
+nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength, bool aUpdateBidi, const StringTaint& aTaint)
 {
   // This is a common case because some callsites create a textnode
   // with a value by creating the node and then calling AppendData.
   if (mState.mLength == 0) {
-    return SetTo(aBuffer, aLength, aUpdateBidi);
+    return SetTo(aBuffer, aLength, aUpdateBidi, aTaint);
   }
 
   // Should we optimize for aData.Length() == 0?
+
+  // TaintFox: propagate taint.
+  AppendTaintAt(GetLength(), aTaint);
 
   CheckedUint32 length = mState.mLength;
   length += aLength;

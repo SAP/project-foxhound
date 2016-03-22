@@ -33,7 +33,7 @@ class nsAttributeTextNode final : public nsTextNode,
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
-  
+
   nsAttributeTextNode(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
                       int32_t aNameSpaceID,
                       nsIAtom* aAttrName) :
@@ -131,7 +131,8 @@ nsTextNode::AppendTextForNormalize(const char16_t* aBuffer, uint32_t aLength,
   CharacterDataChangeInfo::Details details = {
     CharacterDataChangeInfo::Details::eMerge, aNextSibling
   };
-  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, &details);
+  // TaintFox: no taint information available here. TODO(samuel) can add aTaint?
+  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, EmptyTaint, &details);
 }
 
 nsresult
@@ -206,7 +207,7 @@ NS_NewAttributeContent(nsNodeInfoManager *aNodeInfoManager,
   NS_PRECONDITION(aNodeInfoManager, "Missing nodeInfoManager");
   NS_PRECONDITION(aAttrName, "Must have an attr name");
   NS_PRECONDITION(aNameSpaceID != kNameSpaceID_Unknown, "Must know namespace");
-  
+
   *aResult = nullptr;
 
   already_AddRefed<mozilla::dom::NodeInfo> ni = aNodeInfoManager->GetTextNodeInfo();
@@ -292,6 +293,6 @@ nsAttributeTextNode::UpdateText(bool aNotify)
     nsAutoString attrValue;
     mGrandparent->GetAttr(mNameSpaceID, mAttrName, attrValue);
     SetText(attrValue, aNotify);
-  }  
+  }
 }
 

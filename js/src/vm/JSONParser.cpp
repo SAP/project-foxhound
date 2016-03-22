@@ -166,8 +166,7 @@ JSONParser<CharT>::readString()
     do {
         // TaintFox: add taint information for next chunk of characters.
         if (inputTaint && inputTaint->hasTaint()) {
-            buffer.appendTaint(StringTaint::substr(*inputTaint, start - begin, current - begin), buffer.length());
-            //buffer.appendTaint(inputTaint->between(start - begin, current - begin), buffer.length());
+            buffer.appendTaintAt(buffer.length(), inputTaint->subtaint(start - begin, current - begin));
         }
 
         if (start < current && !buffer.append(start.get(), current.get()))

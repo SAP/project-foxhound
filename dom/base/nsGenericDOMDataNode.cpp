@@ -154,11 +154,8 @@ void
 nsGenericDOMDataNode::SetNodeValueInternal(const nsAString& aNodeValue,
                                            ErrorResult& aError)
 {
-  // TaintFox: propagate taint into data nodes.
-  mText.AssignTaint(aNodeValue.Taint());
-
   aError = SetTextInternal(0, mText.GetLength(), aNodeValue.BeginReading(),
-                           aNodeValue.Length(), true);
+                           aNodeValue.Length(), true, aNodeValue.Taint());
 }
 
 //----------------------------------------------------------------------
@@ -191,13 +188,8 @@ nsGenericDOMDataNode::GetData(nsAString& aData) const
 nsresult
 nsGenericDOMDataNode::SetData(const nsAString& aData)
 {
-  nsresult res = SetTextInternal(0, mText.GetLength(), aData.BeginReading(),
-                                 aData.Length(), true);
-
-  // TaintFox: Propagate taint into mText.
-  mText.AssignTaint(aData.Taint());
-
-  return res;
+  return SetTextInternal(0, mText.GetLength(), aData.BeginReading(),
+                         aData.Length(), true, aData.Taint());
 }
 
 nsresult
@@ -259,58 +251,37 @@ nsGenericDOMDataNode::MozRemove()
 nsresult
 nsGenericDOMDataNode::AppendData(const nsAString& aData)
 {
-  auto len = aData.Length();
-  nsresult res = SetTextInternal(mText.GetLength(), 0, aData.BeginReading(),
-                                 aData.Length(), true);
-
-  // TaintFox: append taint information. TODO(samuel)
-  mText.appendTaint(aData.Taint(), len);
-
-  return res;
+  return SetTextInternal(mText.GetLength(), 0, aData.BeginReading(),
+                         aData.Length(), true, aData.Taint());
 }
 
 nsresult
 nsGenericDOMDataNode::InsertData(uint32_t aOffset,
                                  const nsAString& aData)
 {
-  nsresult res = SetTextInternal(aOffset, 0, aData.BeginReading(),
-                                 aData.Length(), true);
-  // TaintFox: propagate taint.
-  // TODO(samuel) maybe insert() should do the shifting instead?
-  mText.Taint().shift(aOffset, aData.Length());
-  mText.Taint().insert(aOffset, aData.Taint());
-
-  return res;
+  return SetTextInternal(aOffset, 0, aData.BeginReading(),
+                         aData.Length(), true, aData.Taint());
 }
 
 nsresult
 nsGenericDOMDataNode::DeleteData(uint32_t aOffset, uint32_t aCount)
 {
-  nsresult res = SetTextInternal(aOffset, aCount, nullptr, 0, true);
-
-  // TaintFox: remove taint here if necessary.
-  mText.Taint().clearBetween(aOffset, aOffset + aCount);
-
-  return res;
+  return SetTextInternal(aOffset, aCount, nullptr, 0, true, EmptyTaint);
 }
 
 nsresult
 nsGenericDOMDataNode::ReplaceData(uint32_t aOffset, uint32_t aCount,
                                   const nsAString& aData)
 {
-  nsresult res = SetTextInternal(aOffset, aCount, aData.BeginReading(),
-                                 aData.Length(), true);
-
-  // TaintFox: handle taint information.
-  mText.Taint().replace(aOffset, aCount, aData.Length(), aData.Taint());
-
-  return res;
+  return SetTextInternal(aOffset, aCount, aData.BeginReading(),
+                         aData.Length(), true, aData.Taint());
 }
 
 nsresult
 nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
                                       const char16_t* aBuffer,
                                       uint32_t aLength, bool aNotify,
+                                      const StringTaint& aTaint,
                                       CharacterDataChangeInfo::Details* aDetails)
 {
   NS_PRECONDITION(aBuffer || !aLength,
@@ -364,16 +335,19 @@ nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
   if (aOffset == 0 && endOffset == textLength) {
     // Replacing whole text or old text was empty.  Don't bother to check for
     // bidi in this string if the document already has bidi enabled.
-    bool ok = mText.SetTo(aBuffer, aLength, !document || !document->GetBidiEnabled());
+    bool ok = mText.SetTo(aBuffer, aLength, !document || !document->GetBidiEnabled(), aTaint);
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   }
   else if (aOffset == textLength) {
     // Appending to existing
-    bool ok = mText.Append(aBuffer, aLength, !document || !document->GetBidiEnabled());
+    bool ok = mText.Append(aBuffer, aLength, !document || !document->GetBidiEnabled(), aTaint);
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   }
   else {
     // Merging old and new
+
+    StringTaint newTaint = mText.Taint();
+    newTaint.replace(aOffset, aOffset + aCount, aLength, aTaint);
 
     // Allocate new buffer
     int32_t newLength = textLength - aCount + aLength;
@@ -390,7 +364,7 @@ nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
       mText.CopyTo(to + aOffset + aLength, endOffset, textLength - endOffset);
     }
 
-    bool ok = mText.SetTo(to, newLength, !document || !document->GetBidiEnabled());
+    bool ok = mText.SetTo(to, newLength, !document || !document->GetBidiEnabled(), newTaint);
 
     delete [] to;
 
@@ -922,7 +896,7 @@ nsGenericDOMDataNode::SplitData(uint32_t aOffset, nsIContent** aReturn,
   CharacterDataChangeInfo::Details details = {
     CharacterDataChangeInfo::Details::eSplit, newContent
   };
-  rv = SetTextInternal(cutStartOffset, cutLength, nullptr, 0, true,
+  rv = SetTextInternal(cutStartOffset, cutLength, nullptr, 0, true, EmptyTaint,
                        aCloneAfterOriginal ? &details : nullptr);
   if (NS_FAILED(rv)) {
     return rv;
@@ -1030,7 +1004,8 @@ nsGenericDOMDataNode::SetText(const char16_t* aBuffer,
                               uint32_t aLength,
                               bool aNotify)
 {
-  return SetTextInternal(0, mText.GetLength(), aBuffer, aLength, aNotify);
+  // TaintFox: no taint available. TODO(samuel) can we add aTaint to SetText?
+  return SetTextInternal(0, mText.GetLength(), aBuffer, aLength, aNotify, EmptyTaint);
 }
 
 nsresult
@@ -1038,7 +1013,8 @@ nsGenericDOMDataNode::AppendText(const char16_t* aBuffer,
                                  uint32_t aLength,
                                  bool aNotify)
 {
-  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify);
+  // TaintFox: no taint available. TODO(samuel) can we add aTaint to AppendText?
+  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, EmptyTaint);
 }
 
 bool

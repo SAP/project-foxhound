@@ -372,12 +372,14 @@ class StringTaint
         clearBetween(index, index+1);
     }
 
-    // Shifts all taint information after some index by the given amount.
+    // Shifts all taint information after the givne index by the given amount
+    // to the right.
     void shift(uint32_t index, int amount);
 
     // Inserts new taint information at the given offset.
+    //
     // The ranges must not overlap, i.e. the range [index, length of given taint)
-    // must be empty before inserting.
+    // must be empty before inserting. Use shift() to achieve this if required.
     void insert(uint32_t index, const StringTaint& taint);
 
     // Replaces taint in the provided range.
@@ -404,7 +406,6 @@ class StringTaint
 
     // Returns the taint flow associated with the character at the given index
     // or nullptr if the character is not tainted.
-    //const TaintFlow* chartaint(uint32_t index) const;
     const TaintFlow* at(uint32_t index) const;
     const TaintFlow* operator[](uint32_t index) const {
         return at(index);
@@ -529,8 +530,10 @@ class TaintableString {
     void clearTaint() { taint_.clear(); }
     void ClearTaint() { taint_.clear(); }
 
-    // TODO make protected?
-    void appendTaint(const StringTaint& taint, uint32_t offset) { taint_.concat(taint, offset); }
+    // Since we don't have access to the string length of our child class (TODO
+    // possible using CRTP somehow?), this API is the best we can offer.
+    void appendTaintAt(uint32_t offset, const StringTaint& taint) { taint_.concat(taint, offset); }
+    void AppendTaintAt(uint32_t offset, const StringTaint& taint) { taint_.concat(taint, offset); }
 
     // Initialize the taint information.
     //

@@ -299,9 +299,11 @@ protected:
                                                int32_t aIndex,
                                                uint32_t aCount);
 
+  // TaintFox: method extended to accept taint information.
   nsresult SetTextInternal(uint32_t aOffset, uint32_t aCount,
                            const char16_t* aBuffer, uint32_t aLength,
                            bool aNotify,
+                           const StringTaint& aTaint,
                            CharacterDataChangeInfo::Details* aDetails = nullptr);
 
   /**
