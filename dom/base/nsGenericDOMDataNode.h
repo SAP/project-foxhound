@@ -133,7 +133,7 @@ public:
   {
     nsresult res = SetText(aStr.BeginReading(), aStr.Length(), aNotify);
 
-    // TaintFox: propagate taint.
+    // TaintFox: propagate taint when assigning text content to DOM nodes.
     mText.AssignTaint(aStr.Taint());
 
     return res;

@@ -141,6 +141,9 @@ public:
   MOZ_WARN_UNUSED_RESULT
   bool AppendTo(nsAString& aString,
                 const mozilla::fallible_t& aFallible) const {
+    // TaintFox: propagate taint when accessing text contents.
+    aString.AppendTaint(Taint());
+
     if (mState.mIs2b) {
       bool ok = aString.Append(m2b, mState.mLength, aFallible);
       if (!ok) {
@@ -177,6 +180,9 @@ public:
   bool AppendTo(nsAString& aString, int32_t aOffset, int32_t aLength,
                 const mozilla::fallible_t& aFallible) const
   {
+    // TaintFox: propagate taint when accessing text contents.
+    aString.AppendTaint(Taint().subtaint(aOffset, aOffset + aLength));
+
     if (mState.mIs2b) {
       bool ok = aString.Append(m2b + aOffset, aLength, aFallible);
       if (!ok) {

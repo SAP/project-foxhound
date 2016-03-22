@@ -173,7 +173,6 @@ nsGenericDOMDataNode::GetData(nsAString& aData) const
   } else {
     // Must use Substring() since nsDependentCString() requires null
     // terminated strings.
-
     const char *data = mText.Get1b();
 
     if (data) {
@@ -183,7 +182,7 @@ nsGenericDOMDataNode::GetData(nsAString& aData) const
     }
   }
 
-  // TaintFox: also copy taint information here.
+  // TaintFox: propagate taint when accessing text data from DOM nodes.
   aData.AssignTaint(mText.Taint());
 
   return NS_OK;
@@ -192,11 +191,13 @@ nsGenericDOMDataNode::GetData(nsAString& aData) const
 nsresult
 nsGenericDOMDataNode::SetData(const nsAString& aData)
 {
+  nsresult res = SetTextInternal(0, mText.GetLength(), aData.BeginReading(),
+                                 aData.Length(), true);
+
   // TaintFox: Propagate taint into mText.
   mText.AssignTaint(aData.Taint());
 
-  return SetTextInternal(0, mText.GetLength(), aData.BeginReading(),
-                         aData.Length(), true);
+  return res;
 }
 
 nsresult
@@ -258,43 +259,52 @@ nsGenericDOMDataNode::MozRemove()
 nsresult
 nsGenericDOMDataNode::AppendData(const nsAString& aData)
 {
-  // TaintFox: append taint information.
-  mText.AppendTaint(aData.Taint());
+  auto len = aData.Length();
+  nsresult res = SetTextInternal(mText.GetLength(), 0, aData.BeginReading(),
+                                 aData.Length(), true);
 
-  return SetTextInternal(mText.GetLength(), 0, aData.BeginReading(),
-                         aData.Length(), true);
+  // TaintFox: append taint information. TODO(samuel)
+  mText.appendTaint(aData.Taint(), len);
+
+  return res;
 }
 
 nsresult
 nsGenericDOMDataNode::InsertData(uint32_t aOffset,
                                  const nsAString& aData)
 {
+  nsresult res = SetTextInternal(aOffset, 0, aData.BeginReading(),
+                                 aData.Length(), true);
   // TaintFox: propagate taint.
   // TODO(samuel) maybe insert() should do the shifting instead?
   mText.Taint().shift(aOffset, aData.Length());
   mText.Taint().insert(aOffset, aData.Taint());
 
-  return SetTextInternal(aOffset, 0, aData.BeginReading(),
-                         aData.Length(), true);
+  return res;
 }
 
 nsresult
 nsGenericDOMDataNode::DeleteData(uint32_t aOffset, uint32_t aCount)
 {
+  nsresult res = SetTextInternal(aOffset, aCount, nullptr, 0, true);
+
   // TaintFox: remove taint here if necessary.
   mText.Taint().clearBetween(aOffset, aOffset + aCount);
-  return SetTextInternal(aOffset, aCount, nullptr, 0, true);
+
+  return res;
 }
 
 nsresult
 nsGenericDOMDataNode::ReplaceData(uint32_t aOffset, uint32_t aCount,
                                   const nsAString& aData)
 {
+  nsresult res = SetTextInternal(aOffset, aCount, aData.BeginReading(),
+                                 aData.Length(), true);
+
   // TaintFox: handle taint information.
   mText.Taint().replace(aOffset, aCount, aData.Length(), aData.Taint());
 
-  return SetTextInternal(aOffset, aCount, aData.BeginReading(),
-                         aData.Length(), true);
+  return res;
 }
 
 nsresult

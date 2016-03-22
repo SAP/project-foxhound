@@ -89,7 +89,8 @@ void
 LossyAppendUTF16toASCII(const nsAString& aSource, nsACString& aDest)
 {
   // TaintFox: copy taint information.
-  aDest.AppendTaint(aSource.Taint());
+  if (aSource.IsTainted())
+    aDest.AppendTaint(aSource.Taint());
 
   uint32_t old_dest_length = aDest.Length();
   aDest.SetLength(old_dest_length + aSource.Length());
@@ -121,7 +122,8 @@ AppendASCIItoUTF16(const nsACString& aSource, nsAString& aDest,
                    const mozilla::fallible_t& aFallible)
 {
   // TaintFox: copy taint information.
-  aDest.AppendTaint(aSource.Taint());
+  if (aSource.IsTainted())
+    aDest.AppendTaint(aSource.Taint());
 
   uint32_t old_dest_length = aDest.Length();
   if (!aDest.SetLength(old_dest_length + aSource.Length(),
@@ -195,7 +197,8 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
   if (count) {
     // TaintFox: taint information is stored per symbol (not byte, etc.) so
     // we can simply copy the taint information here.
-    aDest.AppendTaint(aSource.Taint());
+    if (aSource.IsTainted())
+      aDest.AppendTaint(aSource.Taint());
 
     uint32_t old_dest_length = aDest.Length();
 
@@ -243,7 +246,8 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
   if (count) {
     // TaintFox: taint information is stored per symbol (not byte, etc.) so
     // we can simply copy the taint information here.
-    aDest.AppendTaint(aSource.Taint());
+    if (aSource.IsTainted())
+      aDest.AppendTaint(aSource.Taint());
 
     uint32_t old_dest_length = aDest.Length();
 
