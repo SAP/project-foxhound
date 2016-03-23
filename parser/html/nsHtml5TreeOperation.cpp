@@ -144,6 +144,7 @@ nsHtml5TreeOperation::AppendTextToTextNode(const char16_t* aBuffer,
 
 nsresult
 nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
+                                 const StringTaint& taint,
                                  uint32_t aLength,
                                  nsIContent* aParent,
                                  nsHtml5DocumentBuilder* aBuilder)
@@ -163,7 +164,7 @@ nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
   RefPtr<nsTextNode> text = new nsTextNode(nodeInfoManager);
   NS_ASSERTION(text, "Infallible malloc failed?");
   // TaintFox: TODO(samuel) need taint information here!
-  rv = text->SetText(aBuffer, aLength, false, EmptyTaint);
+  rv = text->SetText(aBuffer, aLength, false, taint);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return Append(text, aParent, aBuilder);
@@ -488,7 +489,8 @@ nsHtml5TreeOperation::AppendIsindexPrompt(nsIContent* parent, nsHtml5DocumentBui
     // Don't bother appending a zero-length text node.
     return NS_OK;
   }
-  return AppendText(prompt.BeginReading(), len, parent, aBuilder);
+  // TODO(samuel)
+  return AppendText(prompt.BeginReading(), EmptyTaint, len, parent, aBuilder);
 }
 
 nsresult
@@ -530,7 +532,8 @@ nsHtml5TreeOperation::FosterParentText(nsIContent* aStackParent,
     return rv;
   }
 
-  return AppendText(aBuffer, aLength, aStackParent, aBuilder);
+  // TODO(samuel)
+  return AppendText(aBuffer, EmptyTaint, aLength, aStackParent, aBuilder);
 }
 
 nsresult
@@ -710,7 +713,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* parent = *mOne.node;
       char16_t* buffer = mTwo.unicharPtr;
       uint32_t length = mFour.integer;
-      return AppendText(buffer, length, parent, aBuilder);
+      // TODO(samuel)
+      return AppendText(buffer, EmptyTaint, length, parent, aBuilder);
     }
     case eTreeOpAppendIsindexPrompt: {
       nsIContent* parent = *mOne.node;

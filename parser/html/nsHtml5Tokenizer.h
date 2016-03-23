@@ -1,25 +1,25 @@
 /*
  * Copyright (c) 2005-2007 Henri Sivonen
  * Copyright (c) 2007-2015 Mozilla Foundation
- * Portions of comments Copyright 2004-2010 Apple Computer, Inc., Mozilla 
+ * Portions of comments Copyright 2004-2010 Apple Computer, Inc., Mozilla
  * Foundation, and Opera Software ASA.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a 
- * copy of this software and associated documentation files (the "Software"), 
- * to deal in the Software without restriction, including without limitation 
- * the rights to use, copy, modify, merge, publish, distribute, sublicense, 
- * and/or sell copies of the Software, and to permit persons to whom the 
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in 
+ * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
 
@@ -203,7 +203,7 @@ class nsHtml5Tokenizer
 
     void emitComment(int32_t provisionalHyphens, int32_t pos);
   protected:
-    void flushChars(char16_t* buf, int32_t pos);
+    void flushChars(char16_t* buf, const StringTaint& taint, int32_t pos);
   private:
     void strBufToElementNameString();
     int32_t emitCurrentTagToken(bool selfClosing, int32_t pos);
@@ -214,7 +214,7 @@ class nsHtml5Tokenizer
     void start();
     bool tokenizeBuffer(nsHtml5UTF16Buffer* buffer);
   private:
-    template<class P> int32_t stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* buf, bool reconsume, int32_t returnState, int32_t endPos);
+    template<class P> int32_t stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* buf, const StringTaint& taint, bool reconsume, int32_t returnState, int32_t endPos);
     void initDoctypeFields();
     inline void adjustDoubleHyphenAndAppendToStrBufCarriageReturn()
     {
@@ -253,9 +253,9 @@ class nsHtml5Tokenizer
     }
 
   private:
-    void emitCarriageReturn(char16_t* buf, int32_t pos);
-    void emitReplacementCharacter(char16_t* buf, int32_t pos);
-    void emitPlaintextReplacementCharacter(char16_t* buf, int32_t pos);
+    void emitCarriageReturn(char16_t* buf, const StringTaint& taint, int32_t pos);
+    void emitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
+    void emitPlaintextReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
     void setAdditionalAndRememberAmpersandLocation(char16_t add);
     void bogusDoctype();
     void bogusDoctypeWithoutQuirks();

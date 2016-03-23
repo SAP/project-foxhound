@@ -4,8 +4,9 @@
 
 #include "nsHtml5OwningUTF16Buffer.h"
 
+// TaintFox: no taint available here. TODO(samuel) taint needed?
 nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(char16_t* aBuffer)
-  : nsHtml5UTF16Buffer(aBuffer, 0),
+  : nsHtml5UTF16Buffer(aBuffer, EmptyTaint, 0),
     next(nullptr),
     key(nullptr)
 {
@@ -13,7 +14,7 @@ nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(char16_t* aBuffer)
 }
 
 nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(void* aKey)
-  : nsHtml5UTF16Buffer(nullptr, 0),
+  : nsHtml5UTF16Buffer(nullptr, EmptyTaint, 0),
     next(nullptr),
     key(aKey)
 {

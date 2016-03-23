@@ -74,8 +74,8 @@ nsHtml5TreeBuilder::createElement(int32_t aNamespace, nsIAtom* aName,
 {
   NS_PRECONDITION(aAttributes, "Got null attributes.");
   NS_PRECONDITION(aName, "Got null name.");
-  NS_PRECONDITION(aNamespace == kNameSpaceID_XHTML || 
-                  aNamespace == kNameSpaceID_SVG || 
+  NS_PRECONDITION(aNamespace == kNameSpaceID_XHTML ||
+                  aNamespace == kNameSpaceID_SVG ||
                   aNamespace == kNameSpaceID_MathML,
                   "Bogus namespace.");
 
@@ -313,7 +313,7 @@ nsHtml5TreeBuilder::createElement(int32_t aNamespace, nsIAtom* aName,
       NS_ASSERTION(treeOp, "Tree op allocation failed.");
       treeOp->Init(eTreeOpSetScriptLineNumberAndFreeze, content, tokenizer->getLineNumber());
       if (aNamespace == kNameSpaceID_XHTML) {
-        mCurrentHtmlScriptIsAsyncOrDefer = 
+        mCurrentHtmlScriptIsAsyncOrDefer =
           aAttributes->contains(nsHtml5AttributeName::ATTR_SRC) &&
           (aAttributes->contains(nsHtml5AttributeName::ATTR_ASYNC) ||
            aAttributes->contains(nsHtml5AttributeName::ATTR_DEFER));
@@ -332,13 +332,13 @@ nsHtml5TreeBuilder::createElement(int32_t aNamespace, nsIAtom* aName,
         nsString* url = aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
         if (url) {
           mViewSource->AddBase(*url);
-        } 
+        }
       }
     }
   }
 
   // End wall of code for speculative loading
-  
+
   return content;
 }
 
@@ -520,7 +520,7 @@ nsHtml5TreeBuilder::insertFosterParentedCharacters(char16_t* aBuffer, int32_t aS
   }
 
   memcpy(bufferCopy, aBuffer, aLength * sizeof(char16_t));
-  
+
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
   treeOp->Init(eTreeOpFosterParentText, bufferCopy, aLength, aStackParent, aTable);
@@ -551,7 +551,7 @@ nsHtml5TreeBuilder::insertFosterParentedChild(nsIContentHandle* aChild, nsIConte
 }
 
 void
-nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffer, int32_t aStart, int32_t aLength)
+nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffer, const StringTaint& aTaint, int32_t aStart, int32_t aLength)
 {
   NS_PRECONDITION(aBuffer, "Null buffer");
   NS_PRECONDITION(aParent, "Null parent");
@@ -560,6 +560,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
   if (mBuilder) {
     nsresult rv = nsHtml5TreeOperation::AppendText(
       aBuffer, // XXX aStart always ignored???
+      aTaint,
       aLength,
       static_cast<nsIContent*>(deepTreeSurrogateParent ?
                                deepTreeSurrogateParent : aParent),
@@ -580,7 +581,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
   }
 
   memcpy(bufferCopy, aBuffer, aLength * sizeof(char16_t));
-  
+
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
   treeOp->Init(eTreeOpAppendText, bufferCopy, aLength,
@@ -640,7 +641,7 @@ nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent, char16_t* aBuffer, 
   }
 
   memcpy(bufferCopy, aBuffer, aLength * sizeof(char16_t));
-  
+
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
   treeOp->Init(eTreeOpAppendComment, bufferCopy, aLength, aParent);
@@ -673,7 +674,7 @@ nsHtml5TreeBuilder::appendCommentToDocument(char16_t* aBuffer, int32_t aStart, i
   }
 
   memcpy(bufferCopy, aBuffer, aLength * sizeof(char16_t));
-  
+
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
   treeOp->Init(eTreeOpAppendCommentToDocument, bufferCopy, aLength);
@@ -870,11 +871,11 @@ nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsIAtom* aName, nsIContent
       return;
     }
     if (mCurrentHtmlScriptIsAsyncOrDefer) {
-      NS_ASSERTION(aNamespace == kNameSpaceID_XHTML, 
+      NS_ASSERTION(aNamespace == kNameSpaceID_XHTML,
                    "Only HTML scripts may be async/defer.");
       nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
       NS_ASSERTION(treeOp, "Tree op allocation failed.");
-      treeOp->Init(eTreeOpRunScriptAsyncDefer, aElement);      
+      treeOp->Init(eTreeOpRunScriptAsyncDefer, aElement);
       mCurrentHtmlScriptIsAsyncOrDefer = false;
       return;
     }
@@ -924,7 +925,7 @@ nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsIAtom* aName, nsIContent
   // XXX expose ElementName group here and do switch
   if (aName == nsHtml5Atoms::object ||
       aName == nsHtml5Atoms::applet ||
-      aName == nsHtml5Atoms::select || 
+      aName == nsHtml5Atoms::select ||
       aName == nsHtml5Atoms::textarea ||
       aName == nsHtml5Atoms::output) {
     if (mBuilder) {
@@ -953,11 +954,12 @@ nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsIAtom* aName, nsIContent
 }
 
 void
-nsHtml5TreeBuilder::accumulateCharacters(const char16_t* aBuf, int32_t aStart, int32_t aLength)
+nsHtml5TreeBuilder::accumulateCharacters(const char16_t* aBuf, const StringTaint& taint, int32_t aStart, int32_t aLength)
 {
   MOZ_ASSERT(charBufferLen + aLength <= charBuffer.length,
              "About to memcpy past the end of the buffer!");
   memcpy(charBuffer + charBufferLen, aBuf + aStart, sizeof(char16_t) * aLength);
+  charTaint.concat(taint.subtaint(aStart, aStart + aLength), charBufferLen);
   charBufferLen += aLength;
 }
 
@@ -1071,7 +1073,7 @@ nsHtml5TreeBuilder::FlushLoads()
 }
 
 void
-nsHtml5TreeBuilder::SetDocumentCharset(nsACString& aCharset, 
+nsHtml5TreeBuilder::SetDocumentCharset(nsACString& aCharset,
                                        int32_t aCharsetSource)
 {
   if (mBuilder) {
@@ -1180,7 +1182,7 @@ nsHtml5TreeBuilder::StartPlainTextViewSource(const nsAutoString& aTitle)
   if (length > INT32_MAX) {
     length = INT32_MAX;
   }
-  characters(aTitle.get(), 0, (int32_t)length);
+  characters(aTitle.get(), EmptyTaint, 0, (int32_t)length);
   endTag(nsHtml5ElementName::ELT_TITLE);
 
   startTag(nsHtml5ElementName::ELT_LINK,

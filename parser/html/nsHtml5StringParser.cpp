@@ -99,7 +99,7 @@ nsHtml5StringParser::Tokenize(const nsAString& aSourceBuffer,
   nsresult rv = mBuilder->MarkAsBroken(NS_OK);
 
   mTreeBuilder->setScriptingEnabled(aScriptingEnabledForNoscriptParsing);
-  mTreeBuilder->setIsSrcdocDocument(aDocument->IsSrcdocDocument()); 
+  mTreeBuilder->setIsSrcdocDocument(aDocument->IsSrcdocDocument());
   mBuilder->Start();
   mTokenizer->start();
   if (!aSourceBuffer.IsEmpty()) {

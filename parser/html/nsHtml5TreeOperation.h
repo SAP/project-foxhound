@@ -1,7 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
+
 #ifndef nsHtml5TreeOperation_h
 #define nsHtml5TreeOperation_h
 
@@ -68,19 +68,19 @@ class nsHtml5TreeOperationStringPair {
     nsString mPublicId;
     nsString mSystemId;
   public:
-    nsHtml5TreeOperationStringPair(const nsAString& aPublicId, 
+    nsHtml5TreeOperationStringPair(const nsAString& aPublicId,
                                    const nsAString& aSystemId)
       : mPublicId(aPublicId)
       , mSystemId(aSystemId)
     {
       MOZ_COUNT_CTOR(nsHtml5TreeOperationStringPair);
     }
-    
+
     ~nsHtml5TreeOperationStringPair()
     {
-      MOZ_COUNT_DTOR(nsHtml5TreeOperationStringPair);    
+      MOZ_COUNT_DTOR(nsHtml5TreeOperationStringPair);
     }
-    
+
     inline void Get(nsAString& aPublicId, nsAString& aSystemId)
     {
       aPublicId.Assign(mPublicId);
@@ -119,6 +119,7 @@ class nsHtml5TreeOperation {
                                          nsHtml5DocumentBuilder* aBuilder);
 
     static nsresult AppendText(const char16_t* aBuffer,
+                               const StringTaint& taint,
                                uint32_t aLength,
                                nsIContent* aParent,
                                nsHtml5DocumentBuilder* aBuilder);
@@ -211,7 +212,7 @@ class nsHtml5TreeOperation {
       mOne.node = static_cast<nsIContent**>(aNode);
     }
 
-    inline void Init(eHtml5TreeOperation aOpCode, 
+    inline void Init(eHtml5TreeOperation aOpCode,
                      nsIContentHandle* aNode,
                      nsIContentHandle* aParent)
     {
@@ -223,8 +224,8 @@ class nsHtml5TreeOperation {
       mOne.node = static_cast<nsIContent**>(aNode);
       mTwo.node = static_cast<nsIContent**>(aParent);
     }
-    
-    inline void Init(eHtml5TreeOperation aOpCode, 
+
+    inline void Init(eHtml5TreeOperation aOpCode,
                      const nsACString& aString,
                      int32_t aInt32)
     {
@@ -276,7 +277,7 @@ class nsHtml5TreeOperation {
       mOpCode = eTreeOpDocumentMode;
       mOne.mode = aMode;
     }
-    
+
     inline void InitScript(nsIContentHandle* aNode)
     {
       NS_PRECONDITION(mOpCode == eTreeOpUninitialized,
@@ -286,9 +287,9 @@ class nsHtml5TreeOperation {
       mOne.node = static_cast<nsIContent**>(aNode);
       mTwo.state = nullptr;
     }
-    
-    inline void Init(int32_t aNamespace, 
-                     nsIAtom* aName, 
+
+    inline void Init(int32_t aNamespace,
+                     nsIAtom* aName,
                      nsHtml5HtmlAttributes* aAttributes,
                      nsIContentHandle* aTarget,
                      nsIContentHandle* aIntendedParent,
@@ -312,9 +313,9 @@ class nsHtml5TreeOperation {
       }
     }
 
-    inline void Init(eHtml5TreeOperation aOpCode, 
-                     char16_t* aBuffer, 
-                     int32_t aLength, 
+    inline void Init(eHtml5TreeOperation aOpCode,
+                     char16_t* aBuffer,
+                     int32_t aLength,
                      nsIContentHandle* aStackParent,
                      nsIContentHandle* aTable)
     {
@@ -328,9 +329,9 @@ class nsHtml5TreeOperation {
       mFour.integer = aLength;
     }
 
-    inline void Init(eHtml5TreeOperation aOpCode, 
-                     char16_t* aBuffer, 
-                     int32_t aLength, 
+    inline void Init(eHtml5TreeOperation aOpCode,
+                     char16_t* aBuffer,
+                     int32_t aLength,
                      nsIContentHandle* aParent)
     {
       NS_PRECONDITION(mOpCode == eTreeOpUninitialized,
@@ -342,8 +343,8 @@ class nsHtml5TreeOperation {
       mFour.integer = aLength;
     }
 
-    inline void Init(eHtml5TreeOperation aOpCode, 
-                     char16_t* aBuffer, 
+    inline void Init(eHtml5TreeOperation aOpCode,
+                     char16_t* aBuffer,
                      int32_t aLength)
     {
       NS_PRECONDITION(mOpCode == eTreeOpUninitialized,
@@ -353,7 +354,7 @@ class nsHtml5TreeOperation {
       mTwo.unicharPtr = aBuffer;
       mFour.integer = aLength;
     }
-    
+
     inline void Init(nsIContentHandle* aElement,
                      nsHtml5HtmlAttributes* aAttributes)
     {
@@ -364,9 +365,9 @@ class nsHtml5TreeOperation {
       mOne.node = static_cast<nsIContent**>(aElement);
       mTwo.attributes = aAttributes;
     }
-    
-    inline void Init(nsIAtom* aName, 
-                     const nsAString& aPublicId, 
+
+    inline void Init(nsIAtom* aName,
+                     const nsAString& aPublicId,
                      const nsAString& aSystemId)
     {
       NS_PRECONDITION(mOpCode == eTreeOpUninitialized,
@@ -375,7 +376,7 @@ class nsHtml5TreeOperation {
       mOne.atom = aName;
       mTwo.stringPair = new nsHtml5TreeOperationStringPair(aPublicId, aSystemId);
     }
-    
+
     inline void Init(nsIContentHandle* aElement,
                      const char* aMsgId,
                      nsIAtom* aAtom,
@@ -424,7 +425,7 @@ class nsHtml5TreeOperation {
       mOpCode = aOpCode;
       mOne.unicharPtr = str;
     }
-    
+
     inline void Init(eHtml5TreeOperation aOpCode,
                      nsIContentHandle* aNode,
                      int32_t aInt)
@@ -475,7 +476,7 @@ class nsHtml5TreeOperation {
     {
       return mOpCode == eTreeOpRunScript;
     }
-    
+
     inline bool IsMarkAsBroken()
     {
       return mOpCode == eTreeOpMarkAsBroken;
@@ -483,7 +484,7 @@ class nsHtml5TreeOperation {
 
     inline void SetSnapshot(nsAHtml5TreeBuilderState* aSnapshot, int32_t aLine)
     {
-      NS_ASSERTION(IsRunScript(), 
+      NS_ASSERTION(IsRunScript(),
         "Setting a snapshot for a tree operation other than eTreeOpRunScript!");
       NS_PRECONDITION(aSnapshot, "Initialized tree op with null snapshot.");
       mTwo.state = aSnapshot;

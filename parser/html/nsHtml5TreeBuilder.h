@@ -97,6 +97,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState
     nsIContentHandle* deepTreeSurrogateParent;
   protected:
     autoJArray<char16_t,int32_t> charBuffer;
+    StringTaint charTaint;
     int32_t charBufferLen;
   private:
     bool quirks;
@@ -105,7 +106,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState
     void startTokenization(nsHtml5Tokenizer* self);
     void doctype(nsIAtom* name, nsString* publicIdentifier, nsString* systemIdentifier, bool forceQuirks);
     void comment(char16_t* buf, int32_t start, int32_t length);
-    void characters(const char16_t* buf, int32_t start, int32_t length);
+    void characters(const char16_t* buf, const StringTaint& taint, int32_t start, int32_t length);
     void zeroOriginatingReplacementCharacter();
     void eof();
     void endTokenization();
@@ -204,7 +205,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState
     void appendVoidElementToCurrent(nsIAtom* name, nsHtml5HtmlAttributes* attributes, nsIContentHandle* form);
     void appendVoidFormToCurrent(nsHtml5HtmlAttributes* attributes);
   protected:
-    void accumulateCharacters(const char16_t* buf, int32_t start, int32_t length);
+    void accumulateCharacters(const char16_t* buf, const StringTaint& taint, int32_t start, int32_t length);
     void requestSuspension();
     nsIContentHandle* createElement(int32_t ns, nsIAtom* name, nsHtml5HtmlAttributes* attributes, nsIContentHandle* intendedParent);
     nsIContentHandle* createElement(int32_t ns, nsIAtom* name, nsHtml5HtmlAttributes* attributes, nsIContentHandle* form, nsIContentHandle* intendedParent);
@@ -216,7 +217,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState
     void insertFosterParentedChild(nsIContentHandle* child, nsIContentHandle* table, nsIContentHandle* stackParent);
     nsIContentHandle* createAndInsertFosterParentedElement(int32_t ns, nsIAtom* name, nsHtml5HtmlAttributes* attributes, nsIContentHandle* form, nsIContentHandle* table, nsIContentHandle* stackParent);
     ;void insertFosterParentedCharacters(char16_t* buf, int32_t start, int32_t length, nsIContentHandle* table, nsIContentHandle* stackParent);
-    void appendCharacters(nsIContentHandle* parent, char16_t* buf, int32_t start, int32_t length);
+    void appendCharacters(nsIContentHandle* parent, char16_t* buf, const StringTaint& taint, int32_t start, int32_t length);
     void appendIsindexPrompt(nsIContentHandle* parent);
     void appendComment(nsIContentHandle* parent, char16_t* buf, int32_t start, int32_t length);
     void appendCommentToDocument(char16_t* buf, int32_t start, int32_t length);

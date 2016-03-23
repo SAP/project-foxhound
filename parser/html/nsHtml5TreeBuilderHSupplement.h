@@ -59,10 +59,11 @@
      * core casts both to nsIContentHandle*.
      */
     nsIContentHandle* AllocateContentHandle();
-    
+
     void accumulateCharactersForced(const char16_t* aBuf, int32_t aStart, int32_t aLength)
     {
-      accumulateCharacters(aBuf, aStart, aLength);
+        // TODO(samuel)
+      accumulateCharacters(aBuf, EmptyTaint, aStart, aLength);
     }
 
     void MarkAsBrokenAndRequestSuspension(nsresult aRv)
@@ -81,7 +82,7 @@
                        nsHtml5TreeOpStage* aStage);
 
     ~nsHtml5TreeBuilder();
-    
+
     void StartPlainTextViewSource(const nsAutoString& aTitle);
 
     void StartPlainText();
@@ -89,7 +90,7 @@
     void StartPlainTextBody();
 
     bool HasScript();
-    
+
     void SetOpSink(nsAHtml5TreeOpSink* aOpSink)
     {
       mOpSink = aOpSink;
@@ -99,9 +100,10 @@
     {
       mOpQueue.Clear();
     }
-    
+
     bool Flush(bool aDiscretionary = false);
-    
+
+
     void FlushLoads();
 
     void SetDocumentCharset(nsACString& aCharset, int32_t aCharsetSource);

@@ -6,7 +6,7 @@
 
 nsHtml5DependentUTF16Buffer::nsHtml5DependentUTF16Buffer(const nsAString& aToWrap)
   : nsHtml5UTF16Buffer(const_cast<char16_t*> (aToWrap.BeginReading()),
-                       aToWrap.Length())
+                       aToWrap.Taint(), aToWrap.Length())
 {
   MOZ_COUNT_CTOR(nsHtml5DependentUTF16Buffer);
 }
