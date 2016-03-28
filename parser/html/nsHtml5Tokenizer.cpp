@@ -92,6 +92,7 @@ nsHtml5Tokenizer::nsHtml5Tokenizer(nsHtml5TreeBuilder* tokenHandler, bool viewin
   : tokenHandler(tokenHandler),
     encodingDeclarationHandler(nullptr),
     charRefBuf(jArray<char16_t,int32_t>::newJArray(32)),
+    charRefTaint(),
     bmpChar(jArray<char16_t,int32_t>::newJArray(1)),
     astralChar(jArray<char16_t,int32_t>::newJArray(2)),
     tagName(nullptr),
@@ -212,11 +213,11 @@ void
 nsHtml5Tokenizer::emitOrAppendCharRefBuf(int32_t returnState)
 {
   if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
+    // TODO(samuel)
     appendCharRefBufToStrBuf();
   } else {
     if (charRefBufLen > 0) {
-        // TODO(samuel)
-      tokenHandler->characters(charRefBuf, EmptyTaint, 0, charRefBufLen);
+      tokenHandler->characters(charRefBuf, charRefTaint, 0, charRefBufLen);
     }
   }
 }
@@ -433,7 +434,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
           switch(c) {
             case '&': {
               flushChars(buf, taint, pos);
-              clearCharRefBufAndAppend(c);
+              clearCharRefBufAndAppend(c, taint[pos]);
               setAdditionalAndRememberAmpersandLocation('\0');
               returnState = state;
               state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_CHARACTER_REFERENCE, reconsume, pos);
@@ -778,7 +779,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
               NS_HTML5_BREAK(attributevaluedoublequotedloop);
             }
             case '&': {
-              clearCharRefBufAndAppend(c);
+              clearCharRefBufAndAppend(c, taint[pos]);
               setAdditionalAndRememberAmpersandLocation('\"');
               returnState = state;
               state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_CHARACTER_REFERENCE, reconsume, pos);
@@ -898,7 +899,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
               NS_HTML5_CONTINUE(stateloop);
             }
             case '&': {
-              clearCharRefBufAndAppend(c);
+              clearCharRefBufAndAppend(c, taint[pos]);
               setAdditionalAndRememberAmpersandLocation('>');
               returnState = state;
               state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_CHARACTER_REFERENCE, reconsume, pos);
@@ -1412,7 +1413,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
               NS_HTML5_CONTINUE(stateloop);
             }
             case '&': {
-              clearCharRefBufAndAppend(c);
+              clearCharRefBufAndAppend(c, taint[pos]);
               setAdditionalAndRememberAmpersandLocation('\'');
               returnState = state;
               state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_CHARACTER_REFERENCE, reconsume, pos);
@@ -1462,7 +1463,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
             NS_HTML5_CONTINUE(stateloop);
           }
           case '#': {
-            appendCharRefBuf('#');
+            appendCharRefBuf('#', taint[pos]);
             state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_NCR, reconsume, pos);
             NS_HTML5_CONTINUE(stateloop);
           }
@@ -1489,7 +1490,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
               state = P::transition(mViewSource, returnState, reconsume, pos);
               NS_HTML5_CONTINUE(stateloop);
             }
-            appendCharRefBuf(c);
+            appendCharRefBuf(c, taint[pos]);
             state = P::transition(mViewSource, NS_HTML5TOKENIZER_CHARACTER_REFERENCE_HILO_LOOKUP, reconsume, pos);
           }
         }
@@ -1522,7 +1523,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
             state = P::transition(mViewSource, returnState, reconsume, pos);
             NS_HTML5_CONTINUE(stateloop);
           }
-          appendCharRefBuf(c);
+          appendCharRefBuf(c, taint[pos]);
           lo = hilo & 0xFFFF;
           hi = hilo >> 16;
           entCol = -1;
@@ -1584,7 +1585,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
           if (hi < lo) {
             NS_HTML5_BREAK(outer);
           }
-          appendCharRefBuf(c);
+          appendCharRefBuf(c, taint[pos]);
           continue;
         }
         outer_end: ;
@@ -1631,10 +1632,13 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
           }
           P::completedNamedCharacterReference(mViewSource);
           const char16_t* val = nsHtml5NamedCharacters::VALUES[candidate];
+          // TaintFox: for sane input, charRefTaint is either fully tainted or not tainted at all. In both cases
+          // we can just reuse charRefTaint directly as taint for val.
+          // TODO(samuel) warn if unsane input.
           if (!val[1]) {
-            emitOrAppendOne(val, returnState);
+            emitOrAppendOne(val, charRefTaint, returnState);
           } else {
-            emitOrAppendTwo(val, returnState);
+            emitOrAppendTwo(val, charRefTaint, returnState);
           }
           if (charRefBufMark < charRefBufLen) {
             if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
@@ -1663,7 +1667,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
         switch(c) {
           case 'x':
           case 'X': {
-            appendCharRefBuf(c);
+            appendCharRefBuf(c, taint[pos]);
             state = P::transition(mViewSource, NS_HTML5TOKENIZER_HEX_NCR_LOOP, reconsume, pos);
             NS_HTML5_CONTINUE(stateloop);
           }
@@ -1702,7 +1706,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
               if (P::reportErrors) {
                 errNoDigitsInNCR();
               }
-              appendCharRefBuf(';');
+              appendCharRefBuf(';', taint[pos]);
               emitOrAppendCharRefBuf(returnState);
               if (!(returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
                 cstart = pos + 1;
@@ -1781,7 +1785,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
               if (P::reportErrors) {
                 errNoDigitsInNCR();
               }
-              appendCharRefBuf(';');
+              appendCharRefBuf(';', taint[pos]);
               emitOrAppendCharRefBuf(returnState);
               if (!(returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
                 cstart = pos + 1;
@@ -1912,7 +1916,7 @@ nsHtml5Tokenizer::stateLoop(int32_t state, char16_t c, int32_t pos, char16_t* bu
           switch(c) {
             case '&': {
               flushChars(buf, taint, pos);
-              clearCharRefBufAndAppend(c);
+              clearCharRefBufAndAppend(c, taint[pos]);
               setAdditionalAndRememberAmpersandLocation('\0');
               returnState = state;
               state = P::transition(mViewSource, NS_HTML5TOKENIZER_CONSUME_CHARACTER_REFERENCE, reconsume, pos);
@@ -3521,25 +3525,25 @@ nsHtml5Tokenizer::handleNcrValue(int32_t returnState)
     if (value >= 0x80 && value <= 0x9f) {
       errNcrInC1Range();
       char16_t* val = nsHtml5NamedCharacters::WINDOWS_1252[value - 0x80];
-      emitOrAppendOne(val, returnState);
+      emitOrAppendOne(val, EmptyTaint, returnState);
     } else if (value == 0x0) {
       errNcrZero();
-      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, returnState);
+      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, EmptyTaint, returnState);
     } else if ((value & 0xF800) == 0xD800) {
       errNcrSurrogate();
-      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, returnState);
+      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, EmptyTaint, returnState);
     } else {
       char16_t ch = (char16_t) value;
       bmpChar[0] = ch;
-      emitOrAppendOne(bmpChar, returnState);
+      emitOrAppendOne(bmpChar, EmptyTaint, returnState);
     }
   } else if (value <= 0x10FFFF) {
     astralChar[0] = (char16_t) (NS_HTML5TOKENIZER_LEAD_OFFSET + (value >> 10));
     astralChar[1] = (char16_t) (0xDC00 + (value & 0x3FF));
-    emitOrAppendTwo(astralChar, returnState);
+    emitOrAppendTwo(astralChar, EmptyTaint, returnState);
   } else {
     errNcrOutOfRange();
-    emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, returnState);
+    emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, EmptyTaint, returnState);
   }
 }
 
@@ -3804,9 +3808,9 @@ nsHtml5Tokenizer::eof()
           }
           const char16_t* val = nsHtml5NamedCharacters::VALUES[candidate];
           if (!val[1]) {
-            emitOrAppendOne(val, returnState);
+            emitOrAppendOne(val, charRefTaint, returnState);
           } else {
-            emitOrAppendTwo(val, returnState);
+            emitOrAppendTwo(val, charRefTaint, returnState);
           }
           if (charRefBufMark < charRefBufLen) {
             if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
@@ -3876,25 +3880,25 @@ nsHtml5Tokenizer::internalEncodingDeclaration(nsString* internalCharset)
 }
 
 void
-nsHtml5Tokenizer::emitOrAppendTwo(const char16_t* val, int32_t returnState)
+nsHtml5Tokenizer::emitOrAppendTwo(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
   if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
+    // TODO(samuel)
     appendStrBuf(val[0]);
     appendStrBuf(val[1]);
   } else {
-      // TODO(samuel)
-    tokenHandler->characters(val, EmptyTaint, 0, 2);
+    tokenHandler->characters(val, taint, 0, 2);
   }
 }
 
 void
-nsHtml5Tokenizer::emitOrAppendOne(const char16_t* val, int32_t returnState)
+nsHtml5Tokenizer::emitOrAppendOne(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
   if ((returnState & NS_HTML5TOKENIZER_DATA_AND_RCDATA_MASK)) {
+    // TODO(samuel)
     appendStrBuf(val[0]);
   } else {
-      // TODO(samuel)
-    tokenHandler->characters(val, EmptyTaint, 0, 1);
+    tokenHandler->characters(val, taint, 0, 1);
   }
 }
 
@@ -3942,6 +3946,7 @@ nsHtml5Tokenizer::resetToDataState()
 {
   strBufLen = 0;
   charRefBufLen = 0;
+  charRefTaint.clear();
   stateSave = NS_HTML5TOKENIZER_DATA;
   lastCR = false;
   index = 0;
@@ -3984,6 +3989,7 @@ nsHtml5Tokenizer::loadState(nsHtml5Tokenizer* other)
   nsHtml5ArrayCopy::arraycopy(other->strBuf, strBuf, strBufLen);
   charRefBufLen = other->charRefBufLen;
   nsHtml5ArrayCopy::arraycopy(other->charRefBuf, charRefBuf, charRefBufLen);
+  charRefTaint = other->charRefTaint;
   stateSave = other->stateSave;
   returnStateSave = other->returnStateSave;
   endTagExpectation = other->endTagExpectation;

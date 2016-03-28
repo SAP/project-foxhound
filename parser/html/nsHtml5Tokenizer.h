@@ -112,6 +112,7 @@ class nsHtml5Tokenizer
     int32_t strBufLen;
     autoJArray<char16_t,int32_t> charRefBuf;
     int32_t charRefBufLen;
+    StringTaint charRefTaint;
     autoJArray<char16_t,int32_t> bmpChar;
     autoJArray<char16_t,int32_t> astralChar;
   protected:
@@ -155,15 +156,20 @@ class nsHtml5Tokenizer
 
     nsHtml5HtmlAttributes* emptyAttributes();
   private:
-    inline void appendCharRefBuf(char16_t c)
+    inline void appendCharRefBuf(char16_t c, const TaintFlow* t)
     {
+      if (t)
+        charRefTaint.set(charRefBufLen, *t);
       charRefBuf[charRefBufLen++] = c;
     }
 
-    inline void clearCharRefBufAndAppend(char16_t c)
+    inline void clearCharRefBufAndAppend(char16_t c, const TaintFlow* t)
     {
       charRefBuf[0] = c;
       charRefBufLen = 1;
+      charRefTaint.clear();
+      if (t)
+        charRefTaint.set(0, *t);
     }
 
     void emitOrAppendCharRefBuf(int32_t returnState);
@@ -273,8 +279,8 @@ class nsHtml5Tokenizer
   public:
     bool internalEncodingDeclaration(nsString* internalCharset);
   private:
-    void emitOrAppendTwo(const char16_t* val, int32_t returnState);
-    void emitOrAppendOne(const char16_t* val, int32_t returnState);
+    void emitOrAppendTwo(const char16_t* val, const StringTaint& taint, int32_t returnState);
+    void emitOrAppendOne(const char16_t* val, const StringTaint& taint, int32_t returnState);
   public:
     void end();
     void requestSuspension();

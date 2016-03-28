@@ -267,7 +267,6 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
 {
     auto ranges = new std::vector<TaintRange>();
     auto it = begin();
-    StringTaint newtaint;
 
     while (it != end() && it->begin() < index) {
         auto& range = *it;
@@ -300,6 +299,17 @@ const TaintFlow* StringTaint::at(uint32_t index) const
             return &range.flow();
     }
     return nullptr;
+}
+
+void StringTaint::set(uint32_t index, const TaintFlow& flow)
+{
+    // Common case: append a single character to a string.
+    if (!ranges_ || index >= ranges_->back().end()) {
+        append(TaintRange(index, index+1, flow));
+    } else {
+        clearAt(index);
+        insert(index, StringTaint(TaintRange(index, index+1, flow)));
+    }
 }
 
 StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const

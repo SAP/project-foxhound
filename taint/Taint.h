@@ -284,7 +284,7 @@ class TaintRange {
     TaintRange();
 
     // Standard range constructor.
-    // |end| must be larger or equal to |begin|.
+    // |end| must be larger than or equal to |begin|.
     TaintRange(uint32_t begin, uint32_t end, TaintFlow flow);
 
     TaintRange(const TaintRange& other);
@@ -330,6 +330,9 @@ class TaintRange {
  * will result in |x|'s StringTaint instance to contain two taint ranges: one from
  * [0, 3) and one from [6, 9). Both will have different taint flows associated
  * with them.
+ *
+ * This class stores no information about the length of the associated string
+ * (to avoid data duplication). Thus, most methods require an index.
  */
 class StringTaint
 {
@@ -344,6 +347,7 @@ class StringTaint
     explicit StringTaint(TaintRange range);
 
     // As above, but also constructs the taint range.
+    // TODO make StringTaint(operaton, length) instead.
     StringTaint(uint32_t begin, uint32_t end, TaintOperation operation);
 
     ~StringTaint();
@@ -354,12 +358,15 @@ class StringTaint
     StringTaint& operator=(StringTaint&& other);
 
     // Returns true if any characters are tainted.
-    bool hasTaint() const { return !!ranges_; }
+    bool hasTaint() const {
+        return !!ranges_;
+    }
 
     // Removes all taint information.
     void clear();
 
     // Removes all taint information for the characters in the provided range.
+    // TODO rename to clearRange
     void clearBetween(uint32_t begin, uint32_t end);
 
     // Removes all taint information starting at the given index.
@@ -410,6 +417,10 @@ class StringTaint
     const TaintFlow* operator[](uint32_t index) const {
         return at(index);
     }
+
+    // Sets the taint flow for the character at the given index.
+    // This will override any previous taint information for that character.
+    void set(uint32_t index, const TaintFlow& flow);
 
     // Returns a new string taint instance holding the taint information of
     // a part of the current string, and thus of a substring of the associated
