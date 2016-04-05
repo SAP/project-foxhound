@@ -152,7 +152,7 @@ js::str_newAllTainted(JSContext* cx, unsigned argc, Value* vp)
  * This builds a JS representation of the taint information associated with a string.
  */
 static bool
-str_taint_prop(JSContext* cx, unsigned argc, Value* vp)
+str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -218,6 +218,99 @@ str_taint_prop(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     args.rval().setObject(*array);
+    return true;
+}
+
+static bool
+construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
+{
+    bool is_array;
+    if (!JS_IsArrayObject(cx, flow_object, &is_array) || !is_array)
+        return false;
+
+    uint32_t length;
+    if (!JS_GetArrayLength(cx, flow_object, &length))
+        return false;
+
+    RootedValue v(cx);
+    *flow = nullptr;
+
+    MOZ_ASSERT(length <= 0x7fffffff);
+    for (int32_t i = length - 1; i >= 0; --i) {
+        if (!JS_GetElement(cx, flow_object, i, &v) || !v.isObject())
+            return false;
+        RootedObject node(cx, &v.toObject());
+
+        if (!JS_GetProperty(cx, node, "operation", &v) || !v.isString())
+            return false;
+        RootedString operation(cx, v.toString());
+
+        // TODO process arguments as well
+
+        // FIXME this is a memory leak here (JS_EncodeString)...
+        *flow = new TaintNode(*flow, TaintOperation(JS_EncodeString(cx, operation)));
+        if ((*flow)->parent())
+            (*flow)->parent()->release();
+    }
+
+    return true;
+}
+
+static bool
+str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+    if (!str)
+        return false;
+
+    RootedObject array(cx, ToObject(cx, args.get(0)));
+    if (!array)
+        return false;
+
+    bool is_array;
+    if (!JS_IsArrayObject(cx, array, &is_array) || !is_array)
+        return false;
+
+    uint32_t length;
+    if (!JS_GetArrayLength(cx, array, &length))
+        return false;
+
+    RootedValue v(cx);
+    StringTaint taint;
+
+    for (uint32_t i = 0; i < length; ++i) {
+        if (!JS_GetElement(cx, array, i, &v) || !v.isObject())
+            return false;
+        RootedObject range(cx, &v.toObject());
+
+        uint32_t begin, end;
+
+        if (!JS_GetProperty(cx, range, "begin", &v))
+            return false;
+        if (!ToUint32(cx, v, &begin))
+            return false;
+
+        if (!JS_GetProperty(cx, range, "end", &v))
+            return false;
+        if (!ToUint32(cx, v, &end))
+            return false;
+
+        if (!JS_GetProperty(cx, range, "flow", &v) || !v.isObject())
+            return false;
+        RootedObject flow_object(cx, &v.toObject());
+
+        TaintNode* flow = nullptr;
+        if (!construct_taint_flow(cx, flow_object, &flow))
+            return false;
+
+        taint.append(TaintRange(begin, end, TaintFlow(flow)));
+    }
+
+    str->setTaint(taint);
+
+    args.rval().setUndefined();
     return true;
 }
 
@@ -4319,7 +4412,7 @@ static const JSFunctionSpec string_methods[] = {
 /* TaintFox: Add |taint| property. */
 static const
 JSPropertySpec string_taint_properties[] = {
-    JS_PSG("taint",                 str_taint_prop,                 JSPROP_PERMANENT),
+    JS_PSGS("taint", str_taint_getter, str_taint_setter, JSPROP_PERMANENT),
     JS_PS_END
 };
 
