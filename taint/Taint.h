@@ -490,7 +490,9 @@ class StringTaint
 static_assert(sizeof(StringTaint) == sizeof(void*), "Class StringTaint must be compatible with a raw pointer.");
 
 // Empty taint instance for convenience.
-extern const StringTaint EmptyTaint;
+// Using a macro here (instead of an exported instance) should be slightly
+// faster since no memory accesses are required.
+#define EmptyTaint (StringTaint())
 
 /*
  * Base class for taint aware string-like objects.

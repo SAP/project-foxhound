@@ -8,7 +8,9 @@ include('../../objs.mozbuild')
 
 SOURCES += xpcom_glue_src_cppsrcs
 
+# TaintFox: including the taint library here causes linker errors (duplicate symbols)...
 SOURCES += [
+    '../../../../taint/Taint.cpp',
     '../../nsStringAPI.cpp',
     '../nsXPCOMGlue.cpp',
 ]

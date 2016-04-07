@@ -427,5 +427,3 @@ void StringTaint::assign(std::vector<TaintRange>* ranges)
         delete ranges;
     }
 }
-
-const StringTaint EmptyTaint;
