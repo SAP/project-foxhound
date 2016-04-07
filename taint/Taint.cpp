@@ -183,14 +183,15 @@ StringTaint::StringTaint(uint32_t begin, uint32_t end, TaintOperation operation)
 
 StringTaint& StringTaint::operator=(const StringTaint& other)
 {
-    if (this == &other) {
+    if (this == &other)
         return *this;
-    }
 
     delete ranges_;
 
     if (other.ranges_)
         ranges_ = new std::vector<TaintRange>(*other.ranges_);
+    else
+        ranges_ = nullptr;
 
     return *this;
 }
