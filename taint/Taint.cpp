@@ -9,19 +9,19 @@ TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> arg
 
 TaintOperation::TaintOperation(const char* name) : name_(name), arguments_() { }
 
-TaintOperation::TaintOperation(TaintOperation&& other) : name_(other.name_), arguments_(std::move(other.arguments_)) { }
+TaintOperation::TaintOperation(TaintOperation&& other) : name_(std::move(other.name_)), arguments_(std::move(other.arguments_)) { }
 
 TaintOperation& TaintOperation::operator=(TaintOperation&& other)
 {
-    name_ = other.name_;
+    name_ = std::move(other.name_);
     arguments_ = std::move(other.arguments_);
     return *this;
 }
 
 TaintNode::TaintNode(TaintNode* parent, TaintOperation operation) : parent_(parent), refcount_(1), operation_(operation)
 {
-    MOZ_ASSERT(parent);
-    parent_->addref();
+    if (parent_)
+        parent_->addref();
 }
 
 TaintNode::TaintNode(TaintOperation operation) : parent_(nullptr), refcount_(1), operation_(operation) { }

@@ -81,16 +81,16 @@ class TaintOperation
     TaintOperation(TaintOperation&& other);
     TaintOperation& operator=(TaintOperation&& other);
 
-    const char* name() const { return name_; }
+    const char* name() const { return name_.c_str(); }
 
     const std::vector<std::u16string>& arguments() const { return arguments_; }
 
   private:
-    // The operation name is not owned by this instance as it is usually a
-    // string in constant memory.
-    const char* name_;
+    // The operation name is owned by this instance. It will be copied from the
+    // argument string during construction.
+    std::string name_;
 
-    // The arguments on the other hand are owned by node instances.
+    // The argument strings are owned by node instances as well.
     std::vector<std::u16string> arguments_;
 };
 

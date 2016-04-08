@@ -247,10 +247,15 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
 
         // TODO process arguments as well
 
-        // FIXME this is a memory leak here (JS_EncodeString)...
-        *flow = new TaintNode(*flow, TaintOperation(JS_EncodeString(cx, operation)));
+        char* op_str = JS_EncodeString(cx, operation);
+        if (!op_str)
+            return false;
+
+        *flow = new TaintNode(*flow, TaintOperation(op_str));
         if ((*flow)->parent())
             (*flow)->parent()->release();
+
+        js_free(op_str);
     }
 
     return true;
