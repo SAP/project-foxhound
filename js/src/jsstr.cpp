@@ -319,6 +319,22 @@ str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+static bool
+str_untaint(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+    if (!str)
+        return false;
+
+    str->clearTaint();
+
+    args.rval().setUndefined();
+    return true;
+}
+
+
 /* ES5 B.2.1 */
 template <typename CharT>
 static Latin1Char *
@@ -4408,6 +4424,9 @@ static const JSFunctionSpec string_methods[] = {
     JS_SELF_HOSTED_FN("fontsize", "String_fontsize",   1,0),
 
     JS_SELF_HOSTED_SYM_FN(iterator, "String_iterator", 0,0),
+
+    /* TaintFox: add untaint method to strings. */
+    JS_FN("untaint", str_untaint, 0, JSFUN_GENERIC_NATIVE),
 
     JS_FS_END
 };
