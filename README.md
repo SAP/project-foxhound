@@ -14,7 +14,9 @@ Browse websites as usual and check stdout for tainted flows. Alternatively insta
 
 ## Building
 
-The default build settings should work fine:
+Choose the appropriate mozconfig by copying "taintfox_mozconfig_[mac|win]" to ".mozconfig".
+
+The default build settings should now work fine:
 
 ```bash
 ./mach build
