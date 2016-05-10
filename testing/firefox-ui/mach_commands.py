@@ -25,9 +25,8 @@ def setup_argument_parser():
 
 def run_firefox_ui_test(tests, testtype=None,
                         binary=None, topsrcdir=None, **kwargs):
-    from marionette.runtests import MarionetteHarness
     from mozlog.structured import commandline
-    from firefox_ui_harness.cli_functional import FirefoxUITestRunner
+    from firefox_ui_harness import cli_functional
     from firefox_ui_harness.arguments import FirefoxUIArguments
 
     parser = FirefoxUIArguments()
@@ -50,16 +49,11 @@ def run_firefox_ui_test(tests, testtype=None,
     args.logger = commandline.setup_logging("Firefox UI - Functional Tests",
                                             args,
                                             {"mach": sys.stdout})
-    try:
-        failed = MarionetteHarness(FirefoxUITestRunner,
-                                   FirefoxUIArguments,
-                                   args=args).run()
-        if failed > 0:
-            sys.exit(10)
-    except Exception:
-        args.logger.error('Failure during harness setup', exc_info=True)
-        sys.exit(1)
-    sys.exit(0)
+    failed = cli_functional.mn_cli(cli_functional.FirefoxUITestRunner, args=args)
+    if failed > 0:
+        return 1
+    else:
+        return 0
 
 
 @CommandProvider

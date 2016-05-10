@@ -722,15 +722,15 @@ TypedArrayObjectTemplate<T>::fromArray(JSContext* cx, HandleObject other,
     RootedObject proto(cx);
 
     uint32_t len;
-    if (IsAnyTypedArray(other)) {
+    if (other->is<TypedArrayObject>()) {
         if (!GetPrototypeForInstance(cx, newTarget, &proto))
             return nullptr;
 
-        if (AnyTypedArrayIsDetached(other)) {
+        if (other->as<TypedArrayObject>().isNeutered()) {
             JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_DETACHED);
             return nullptr;
         }
-        len = AnyTypedArrayLength(other);
+        len = other->as<TypedArrayObject>().length();
     } else {
         if (!GetLengthProperty(cx, other, &len))
             return nullptr;
@@ -865,6 +865,7 @@ TypedArrayObject::protoFunctions[] = {
     JS_SELF_HOSTED_FN("reverse", "TypedArrayReverse", 0, 0),
     JS_SELF_HOSTED_FN("slice", "TypedArraySlice", 2, 0),
     JS_SELF_HOSTED_FN("some", "TypedArraySome", 2, 0),
+    JS_SELF_HOSTED_FN("sort", "TypedArraySort", 1, 0),
     JS_SELF_HOSTED_FN("entries", "TypedArrayEntries", 0, 0),
     JS_SELF_HOSTED_FN("keys", "TypedArrayKeys", 0, 0),
     // Both of these are actually defined to the same object in FinishTypedArrayInit.
@@ -2098,11 +2099,14 @@ bool
 DataViewObject::defineGetter(JSContext* cx, PropertyName* name, HandleNativeObject proto)
 {
     RootedId id(cx, NameToId(name));
+    RootedAtom atom(cx, IdToFunctionName(cx, id, "get"));
+    if (!atom)
+        return false;
     unsigned attrs = JSPROP_SHARED | JSPROP_GETTER;
 
     Rooted<GlobalObject*> global(cx, cx->compartment()->maybeGlobal());
     JSObject* getter =
-        NewNativeFunction(cx, DataViewObject::getter<ValueGetter>, 0, nullptr);
+        NewNativeFunction(cx, DataViewObject::getter<ValueGetter>, 0, atom);
     if (!getter)
         return false;
 
@@ -2262,12 +2266,12 @@ bool
 js::DefineTypedArrayElement(JSContext* cx, HandleObject obj, uint64_t index,
                             Handle<PropertyDescriptor> desc, ObjectOpResult& result)
 {
-    MOZ_ASSERT(IsAnyTypedArray(obj));
+    MOZ_ASSERT(obj->is<TypedArrayObject>());
 
     // These are all substeps of 3.c.
     // Steps i-vi.
     // We (wrongly) ignore out of range defines with a value.
-    if (index >= AnyTypedArrayLength(obj))
+    if (index >= obj->as<TypedArrayObject>().length())
         return result.succeed();
 
     // Step vii.

@@ -649,7 +649,8 @@ var SessionStoreInternal = {
         this.onClose(aSubject);
         break;
       case "quit-application-granted":
-        this.onQuitApplicationGranted();
+        let syncShutdown = aData == "syncShutdown";
+        this.onQuitApplicationGranted(syncShutdown);
         break;
       case "browser-lastwindow-close-granted":
         this.onLastWindowCloseGranted();
@@ -1435,7 +1436,7 @@ var SessionStoreInternal = {
   /**
    * On quit application granted
    */
-  onQuitApplicationGranted: function ssi_onQuitApplicationGranted() {
+  onQuitApplicationGranted: function ssi_onQuitApplicationGranted(syncShutdown=false) {
     // Collect an initial snapshot of window data before we do the flush
     this._forEachBrowserWindow((win) => {
       this._collectWindowData(win);
@@ -1453,10 +1454,16 @@ var SessionStoreInternal = {
     // tabs correctly.
     RunState.setQuitting();
 
-    AsyncShutdown.quitApplicationGranted.addBlocker(
-      "SessionStore: flushing all windows",
-      this.flushAllWindowsAsync(progress),
-      () => progress);
+    if (!syncShutdown) {
+      // We've got some time to shut down, so let's do this properly.
+      AsyncShutdown.quitApplicationGranted.addBlocker(
+        "SessionStore: flushing all windows",
+        this.flushAllWindowsAsync(progress),
+        () => progress);
+    } else {
+      // We have to shut down NOW, which means we only get to save whatever
+      // we already had cached.
+    }
   },
 
   /**
@@ -1575,7 +1582,7 @@ var SessionStoreInternal = {
     }
 
     this._clearRestoringWindows();
-    this._saveableClosedWindowData.clear();
+    this._saveableClosedWindowData = new WeakSet();
   },
 
   /**
@@ -1915,10 +1922,10 @@ var SessionStoreInternal = {
     this._cleanupOldData([this._closedWindows]);
 
     // Remove closed tabs of closed windows
-    this._cleanupOldData([winData._closedTabs for (winData of this._closedWindows)]);
+    this._cleanupOldData(this._closedWindows.map((winData) => winData._closedTabs));
 
     // Remove closed tabs of open windows
-    this._cleanupOldData([this._windows[key]._closedTabs for (key of Object.keys(this._windows))]);
+    this._cleanupOldData(Object.keys(this._windows).map((key) => this._windows[key]._closedTabs));
   },
 
   // Remove "old" data from an array
@@ -2522,7 +2529,7 @@ var SessionStoreInternal = {
       let window = tab.ownerDocument && tab.ownerDocument.defaultView;
 
       // The tab or its window might be gone.
-      if (!window || !window.__SSi) {
+      if (!window || !window.__SSi || window.closed) {
         return;
       }
 
@@ -3200,6 +3207,10 @@ var SessionStoreInternal = {
       tabbrowser.hideTab(tab);
     } else {
       tabbrowser.showTab(tab);
+    }
+
+    if (tabData.userContextId) {
+      tab.setUserContextId(tabData.userContextId);
     }
 
     if (!!tabData.muted != browser.audioMuted) {
@@ -4326,7 +4337,7 @@ var DirtyWindows = {
   },
 
   clear: function (window) {
-    this._data.clear();
+    this._data = new WeakMap();
   }
 };
 

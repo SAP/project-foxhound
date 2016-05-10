@@ -12,6 +12,7 @@
 #include "SpeechSynthesisVoice.h"
 #include "nsSynthVoiceRegistry.h"
 #include "nsSpeechTask.h"
+#include "AudioChannelService.h"
 
 #include "nsString.h"
 #include "mozilla/StaticPtr.h"
@@ -619,6 +620,22 @@ nsSynthVoiceRegistry::SpeakUtterance(SpeechSynthesisUtterance& aUtterance,
     aUtterance.mVoice->GetVoiceURI(uri);
   }
 
+  // Get current audio volume to apply speech call
+  float volume = aUtterance.Volume();
+  RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
+  if (service) {
+    nsCOMPtr<nsPIDOMWindow> topWindow =
+      do_QueryInterface(aUtterance.GetOwner());
+    if (topWindow) {
+      float audioVolume = 1.0f;
+      bool muted = false;
+      service->GetState(topWindow->GetOuterWindow(),
+                        static_cast<uint32_t>(AudioChannelService::GetDefaultAudioChannel()),
+                        &audioVolume, &muted);
+      volume = muted ? 0.0f : audioVolume * volume; 
+    }
+  }
+
   RefPtr<nsSpeechTask> task;
   if (XRE_IsContentProcess()) {
     task = new SpeechTaskChild(&aUtterance);
@@ -628,13 +645,13 @@ nsSynthVoiceRegistry::SpeakUtterance(SpeechSynthesisUtterance& aUtterance,
                                                               aUtterance.mText,
                                                               lang,
                                                               uri,
-                                                              aUtterance.Volume(),
+                                                              volume,
                                                               aUtterance.Rate(),
                                                               aUtterance.Pitch());
   } else {
     task = new nsSpeechTask(&aUtterance);
     Speak(aUtterance.mText, lang, uri,
-          aUtterance.Volume(), aUtterance.Rate(), aUtterance.Pitch(), task);
+          volume, aUtterance.Rate(), aUtterance.Pitch(), task);
   }
 
   return task.forget();
@@ -772,7 +789,13 @@ nsSynthVoiceRegistry::SpeakImpl(VoiceData* aVoice,
     aTask->InitDirectAudio();
   }
 
-  aVoice->mService->Speak(aText, aVoice->mUri, aVolume, aRate, aPitch, aTask);
+  if (NS_FAILED(aVoice->mService->Speak(aText, aVoice->mUri, aVolume, aRate,
+                                        aPitch, aTask))) {
+    if (serviceType == nsISpeechService::SERVICETYPE_INDIRECT_AUDIO) {
+      aTask->DispatchError(0, 0);
+    }
+    // XXX When using direct audio, no way to dispatch error
+  }
 }
 
 } // namespace dom

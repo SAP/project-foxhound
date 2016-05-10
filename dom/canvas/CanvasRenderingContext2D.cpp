@@ -990,9 +990,10 @@ CanvasRenderingContext2D::~CanvasRenderingContext2D()
   }
 #ifdef USE_SKIA_GPU
   if (mVideoTexture) {
-    MOZ_ASSERT(gfxPlatform::GetPlatform()->GetSkiaGLGlue(), "null SkiaGLGlue");
-    gfxPlatform::GetPlatform()->GetSkiaGLGlue()->GetGLContext()->MakeCurrent();
-    gfxPlatform::GetPlatform()->GetSkiaGLGlue()->GetGLContext()->fDeleteTextures(1, &mVideoTexture);
+    SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
+    MOZ_ASSERT(glue);
+    glue->GetGLContext()->MakeCurrent();
+    glue->GetGLContext()->fDeleteTextures(1, &mVideoTexture);
   }
 #endif
 
@@ -2488,8 +2489,11 @@ CanvasRenderingContext2D::UpdateFilter()
 //
 
 static bool
-ValidateRect(double& aX, double& aY, double& aWidth, double& aHeight)
+ValidateRect(double& aX, double& aY, double& aWidth, double& aHeight, bool aIsZeroSizeValid)
 {
+  if (!aIsZeroSizeValid && (aWidth == 0.0 || aHeight == 0.0)) {
+    return false;
+  }
 
   // bug 1018527
   // The values of canvas API input are in double precision, but Moz2D APIs are
@@ -2520,7 +2524,8 @@ void
 CanvasRenderingContext2D::ClearRect(double x, double y, double w,
                                     double h)
 {
-  if(!ValidateRect(x, y, w, h)) {
+  // Do not allow zeros - it's a no-op at that point per spec.
+  if (!ValidateRect(x, y, w, h, false)) {
     return;
   }
 
@@ -2537,7 +2542,7 @@ CanvasRenderingContext2D::FillRect(double x, double y, double w,
 {
   const ContextState &state = CurrentState();
 
-  if(!ValidateRect(x, y, w, h)) {
+  if (!ValidateRect(x, y, w, h, true)) {
     return;
   }
 
@@ -2615,7 +2620,7 @@ CanvasRenderingContext2D::StrokeRect(double x, double y, double w,
     return;
   }
 
-  if(!ValidateRect(x, y, w, h)) {
+  if (!ValidateRect(x, y, w, h, true)) {
     return;
   }
 
@@ -2804,7 +2809,7 @@ void CanvasRenderingContext2D::DrawFocusIfNeeded(mozilla::dom::Element& aElement
     return;
   }
 
-  if(DrawCustomFocusRing(aElement)) {
+  if (DrawCustomFocusRing(aElement)) {
     Save();
 
     // set state to conforming focus state
@@ -3051,7 +3056,7 @@ void
 CanvasRenderingContext2D::EnsureUserSpacePath(const CanvasWindingRule& winding)
 {
   FillRule fillRule = CurrentState().fillRule;
-  if(winding == CanvasWindingRule::Evenodd)
+  if (winding == CanvasWindingRule::Evenodd)
     fillRule = FillRule::FILL_EVEN_ODD;
 
   EnsureTarget();
@@ -3342,7 +3347,7 @@ CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& options, ErrorRes
     path = mPath;
   }
 
-  if(!path) {
+  if (!path) {
     error.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return;
   }
@@ -3458,7 +3463,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
     }
     mTextRun = mFontgrp->MakeTextRun(text,
                                      length,
-                                     mThebes,
+                                     mDrawTarget,
                                      mAppUnitsPerDevPixel,
                                      flags,
                                      mMissingFonts);
@@ -3471,7 +3476,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
                                                                mDoMeasureBoundingBox ?
                                                                  gfxFont::TIGHT_INK_EXTENTS :
                                                                  gfxFont::LOOSE_INK_EXTENTS,
-                                                               mThebes,
+                                                               mDrawTarget,
                                                                nullptr);
 
     // this only measures the height; the total width is gotten from the
@@ -3507,7 +3512,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
                               mDoMeasureBoundingBox ?
                                   gfxFont::TIGHT_INK_EXTENTS :
                                   gfxFont::LOOSE_INK_EXTENTS,
-                              mThebes,
+                              mDrawTarget,
                               nullptr);
       inlineCoord += textRunMetrics.mAdvanceWidth;
       // old code was:
@@ -3706,7 +3711,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
   nsAutoPtr<gfxTextRun> mTextRun;
 
   // pointer to a screen reference context used to measure text and such
-  RefPtr<gfxContext> mThebes;
+  RefPtr<DrawTarget> mDrawTarget;
 
   // Pointer to the draw target we should fill our text to
   CanvasRenderingContext2D *mCtx;
@@ -3811,6 +3816,10 @@ CanvasRenderingContext2D::DrawOrMeasureText(const nsAString& aRawText,
     return NS_OK;
   }
 
+  if (!IsFinite(aX) || !IsFinite(aY)) {
+    return NS_OK;
+  }
+
   const ContextState &state = CurrentState();
 
   // This is only needed to know if we can know the drawing bounding box easily.
@@ -3828,15 +3837,14 @@ CanvasRenderingContext2D::DrawOrMeasureText(const nsAString& aRawText,
 
   GetAppUnitsValues(&processor.mAppUnitsPerDevPixel, nullptr);
   processor.mPt = gfxPoint(aX, aY);
-  processor.mThebes =
-    new gfxContext(gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget());
+  processor.mDrawTarget =
+    gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
 
   // If we don't have a target then we don't have a transform. A target won't
   // be needed in the case where we're measuring the text size. This allows
   // to avoid creating a target if it's only being used to measure text sizes.
   if (mTarget) {
-    Matrix matrix = mTarget->GetTransform();
-    processor.mThebes->SetMatrix(gfxMatrix(matrix._11, matrix._12, matrix._21, matrix._22, matrix._31, matrix._32));
+    processor.mDrawTarget->SetTransform(mTarget->GetTransform());
   }
   processor.mCtx = this;
   processor.mOp = aOp;
@@ -4393,8 +4401,8 @@ CanvasRenderingContext2D::DrawImage(const CanvasImageSource& image,
   MOZ_ASSERT(optional_argc == 0 || optional_argc == 2 || optional_argc == 6);
 
   if (optional_argc == 6) {
-    if (!ValidateRect(sx, sy, sw, sh) ||
-        !ValidateRect(dx, dy, dw, dh)) {
+    if  (!ValidateRect(sx, sy, sw, sh, true) ||
+         !ValidateRect(dx, dy, dw, dh, true)) {
       return;
     }
   }
@@ -4443,8 +4451,9 @@ CanvasRenderingContext2D::DrawImage(const CanvasImageSource& image,
       mIsSkiaGL &&
       !srcSurf &&
       image.IsHTMLVideoElement() &&
-      gfxPlatform::GetPlatform()->GetSkiaGLGlue()) {
+      gfxPlatform::GetPlatform()->UseAcceleratedSkiaCanvas()) {
     mozilla::gl::GLContext* gl = gfxPlatform::GetPlatform()->GetSkiaGLGlue()->GetGLContext();
+    MOZ_ASSERT(gl);
 
     HTMLVideoElement* video = &image.GetAsHTMLVideoElement();
     if (!video) {
@@ -4909,6 +4918,10 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
   EnsureTarget();
   if (drawDT) {
     RefPtr<SourceSurface> snapshot = drawDT->Snapshot();
+    if (NS_WARN_IF(!snapshot)) {
+      error.Throw(NS_ERROR_FAILURE);
+      return;
+    }
     RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
 
     DataSourceSurface::MappedSurface rawData;
@@ -5220,19 +5233,17 @@ CanvasRenderingContext2D::GetImageDataArray(JSContext* aCx,
   IntRect dstWriteRect = srcReadRect;
   dstWriteRect.MoveBy(-aX, -aY);
 
-  uint8_t* src;
-  uint32_t srcStride;
-
-  if (readback) {
-    srcStride = rawData.mStride;
-    src = rawData.mData + srcReadRect.y * srcStride + srcReadRect.x * 4;
-  }
-
   JS::AutoCheckCannotGC nogc;
   bool isShared;
   uint8_t* data = JS_GetUint8ClampedArrayData(darray, &isShared, nogc);
   MOZ_ASSERT(!isShared);        // Should not happen, data was created above
-  if (!readback) {
+
+  uint8_t* src;
+  uint32_t srcStride;
+  if (readback) {
+    srcStride = rawData.mStride;
+    src = rawData.mData + srcReadRect.y * srcStride + srcReadRect.x * 4;
+  } else {
     src = data;
     srcStride = aWidth * 4;
   }
@@ -5423,7 +5434,7 @@ CanvasRenderingContext2D::PutImageData_explicit(int32_t x, int32_t y, uint32_t w
   uint32_t copyWidth = dirtyRect.Width();
   uint32_t copyHeight = dirtyRect.Height();
   RefPtr<gfxImageSurface> imgsurf = new gfxImageSurface(gfx::IntSize(copyWidth, copyHeight),
-                                                          gfxImageFormat::ARGB32,
+                                                          SurfaceFormat::A8R8G8B8_UINT32,
                                                           false);
   if (!imgsurf || imgsurf->CairoStatus()) {
     return NS_ERROR_FAILURE;
@@ -5580,9 +5591,9 @@ CanvasRenderingContext2D::GetBufferProvider(LayerManager* aManager)
   return mBufferProvider;
 }
 
-already_AddRefed<CanvasLayer>
+already_AddRefed<Layer>
 CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
-                                         CanvasLayer *aOldLayer,
+                                         Layer *aOldLayer,
                                          LayerManager *aManager)
 {
   if (mOpaque || mIsSkiaGL) {
@@ -5612,7 +5623,7 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
     CanvasLayer::Data data;
 
     GLuint skiaGLTex = SkiaGLTex();
-    if (skiaGLTex) {
+    if (mIsSkiaGL && skiaGLTex) {
       SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
       MOZ_ASSERT(glue);
 
@@ -5625,8 +5636,10 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
       data.mBufferProvider = provider;
     }
 
-    if (userData && userData->IsForContext(this) && aOldLayer->IsDataValid(data)) {
-      RefPtr<CanvasLayer> ret = aOldLayer;
+    if (userData &&
+        userData->IsForContext(this) &&
+        static_cast<CanvasLayer*>(aOldLayer)->IsDataValid(data)) {
+      RefPtr<Layer> ret = aOldLayer;
       return ret.forget();
     }
   }
@@ -5664,7 +5677,7 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
           CanvasRenderingContext2DUserData::PreTransactionCallback, userData);
 
   GLuint skiaGLTex = SkiaGLTex();
-  if (skiaGLTex) {
+  if (mIsSkiaGL && skiaGLTex) {
     SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
     MOZ_ASSERT(glue);
 

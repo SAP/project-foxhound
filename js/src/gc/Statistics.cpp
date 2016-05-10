@@ -9,7 +9,6 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/UniquePtr.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -32,9 +31,6 @@ using mozilla::MakeRange;
 using mozilla::PodArrayZero;
 using mozilla::PodZero;
 
-/* Except for the first and last, slices of less than 10ms are not reported. */
-static const int64_t SLICE_MIN_REPORT_TIME = 10 * PRMJ_USEC_PER_MSEC;
-
 /*
  * If this fails, then you can either delete this assertion and allow all
  * larger-numbered reasons to pile up in the last telemetry bucket, or switch
@@ -52,8 +48,8 @@ js::gcstats::ExplainInvocationKind(JSGCInvocationKind gckind)
          return "Shrinking";
 }
 
-const char*
-js::gcstats::ExplainReason(JS::gcreason::Reason reason)
+JS_PUBLIC_API(const char*)
+JS::gcreason::ExplainReason(JS::gcreason::Reason reason)
 {
     switch (reason) {
 #define SWITCH_REASON(name)                         \
@@ -349,7 +345,7 @@ Statistics::formatCompactSliceMessage() const
                 slice.resetReason ? "yes - " : "no", slice.resetReason ? slice.resetReason : "");
 
     FragmentVector fragments;
-    if (!fragments.append(make_string_copy(buffer)) ||
+    if (!fragments.append(DuplicateString(buffer)) ||
         !fragments.append(formatCompactSlicePhaseTimes(slices[index].phaseTimes)))
     {
         return UniqueChars(nullptr);
@@ -363,7 +359,7 @@ Statistics::formatCompactSummaryMessage() const
     const double bytesPerMiB = 1024 * 1024;
 
     FragmentVector fragments;
-    if (!fragments.append(make_string_copy("Summary - ")))
+    if (!fragments.append(DuplicateString("Summary - ")))
         return UniqueChars(nullptr);
 
     int64_t total, longest;
@@ -381,7 +377,7 @@ Statistics::formatCompactSummaryMessage() const
         JS_snprintf(buffer, sizeof(buffer), "Non-Incremental: %.3fms (%s); ",
                     t(total), nonincrementalReason_);
     }
-    if (!fragments.append(make_string_copy(buffer)))
+    if (!fragments.append(DuplicateString(buffer)))
         return UniqueChars(nullptr);
 
     JS_snprintf(buffer, sizeof(buffer),
@@ -392,7 +388,7 @@ Statistics::formatCompactSummaryMessage() const
                 double(preBytes) / bytesPerMiB,
                 counts[STAT_NEW_CHUNK] - counts[STAT_DESTROY_CHUNK],
                 counts[STAT_NEW_CHUNK] + counts[STAT_DESTROY_CHUNK]);
-    if (!fragments.append(make_string_copy(buffer)))
+    if (!fragments.append(DuplicateString(buffer)))
         return UniqueChars(nullptr);
 
     MOZ_ASSERT_IF(counts[STAT_ARENA_RELOCATED], gckind == GC_SHRINK);
@@ -401,7 +397,7 @@ Statistics::formatCompactSummaryMessage() const
                     "Kind: %s; Relocated: %.3f MiB; ",
                     ExplainInvocationKind(gckind),
                     double(ArenaSize * counts[STAT_ARENA_RELOCATED]) / bytesPerMiB);
-        if (!fragments.append(make_string_copy(buffer)))
+        if (!fragments.append(DuplicateString(buffer)))
             return UniqueChars(nullptr);
     }
 
@@ -426,13 +422,13 @@ Statistics::formatCompactSlicePhaseTimes(const PhaseTimeTable phaseTimes) const
         int64_t childTime = SumChildTimes(dagSlot, phase, phaseTimes);
         if (ownTime > MaxUnaccountedTimeUS) {
             JS_snprintf(buffer, sizeof(buffer), "%s: %.3fms", phases[phase].name, t(ownTime));
-            if (!fragments.append(make_string_copy(buffer)))
+            if (!fragments.append(DuplicateString(buffer)))
                 return UniqueChars(nullptr);
 
             if (childTime && (ownTime - childTime) > MaxUnaccountedTimeUS) {
                 MOZ_ASSERT(level < 3);
                 JS_snprintf(buffer, sizeof(buffer), "%s: %.3fms", "Other", t(ownTime - childTime));
-                if (!fragments.append(make_string_copy(buffer)))
+                if (!fragments.append(DuplicateString(buffer)))
                     return UniqueChars(nullptr);
             }
         }
@@ -507,7 +503,7 @@ Statistics::formatDetailedDescription()
                 counts[STAT_NEW_CHUNK] - counts[STAT_DESTROY_CHUNK], counts[STAT_NEW_CHUNK] +
                                                                      counts[STAT_DESTROY_CHUNK],
                 double(ArenaSize * counts[STAT_ARENA_RELOCATED]) / bytesPerMiB);
-    return make_string_copy(buffer);
+    return DuplicateString(buffer);
 }
 
 UniqueChars
@@ -531,7 +527,7 @@ Statistics::formatDetailedSliceDescription(unsigned i, const SliceData& slice)
                 slice.resetReason ? "yes - " : "no", slice.resetReason ? slice.resetReason : "",
                 uint64_t(slice.endFaults - slice.startFaults),
                 t(slice.duration()), budgetDescription, t(slice.start - slices[0].start));
-    return make_string_copy(buffer);
+    return DuplicateString(buffer);
 }
 
 UniqueChars
@@ -554,14 +550,14 @@ Statistics::formatDetailedPhaseTimes(const PhaseTimeTable phaseTimes)
         if (ownTime > 0) {
             JS_snprintf(buffer, sizeof(buffer), "      %s%s: %.3fms\n",
                         LevelToIndent[level], phases[phase].name, t(ownTime));
-            if (!fragments.append(make_string_copy(buffer)))
+            if (!fragments.append(DuplicateString(buffer)))
                 return UniqueChars(nullptr);
 
             if (childTime && (ownTime - childTime) > MaxUnaccountedChildTimeUS) {
                 MOZ_ASSERT(level < 3);
                 JS_snprintf(buffer, sizeof(buffer), "      %s%s: %.3fms\n",
                             LevelToIndent[level + 1], "Other", t(ownTime - childTime));
-                if (!fragments.append(make_string_copy(buffer)))
+                if (!fragments.append(DuplicateString(buffer)))
                     return UniqueChars(nullptr);
             }
         }
@@ -584,7 +580,7 @@ Statistics::formatDetailedTotals()
     char buffer[1024];
     memset(buffer, 0, sizeof(buffer));
     JS_snprintf(buffer, sizeof(buffer), format, t(total), t(longest));
-    return make_string_copy(buffer);
+    return DuplicateString(buffer);
 }
 
 UniqueChars
@@ -594,28 +590,28 @@ Statistics::formatJsonMessage(uint64_t timestamp)
 
     FragmentVector fragments;
 
-    if (!fragments.append(make_string_copy("{")) ||
+    if (!fragments.append(DuplicateString("{")) ||
         !fragments.append(formatJsonDescription(timestamp)) ||
-        !fragments.append(make_string_copy("\"slices\":[")))
+        !fragments.append(DuplicateString("\"slices\":[")))
     {
         return UniqueChars(nullptr);
     }
 
     for (unsigned i = 0; i < slices.length(); i++) {
-        if (!fragments.append(make_string_copy("{")) ||
+        if (!fragments.append(DuplicateString("{")) ||
             !fragments.append(formatJsonSliceDescription(i, slices[i])) ||
-            !fragments.append(make_string_copy("\"times\":{")) ||
+            !fragments.append(DuplicateString("\"times\":{")) ||
             !fragments.append(formatJsonPhaseTimes(slices[i].phaseTimes)) ||
-            !fragments.append(make_string_copy("}}")) ||
-            (i < (slices.length() - 1) && !fragments.append(make_string_copy(","))))
+            !fragments.append(DuplicateString("}}")) ||
+            (i < (slices.length() - 1) && !fragments.append(DuplicateString(","))))
         {
             return UniqueChars(nullptr);
         }
     }
 
-    if (!fragments.append(make_string_copy("],\"totals\":{")) ||
+    if (!fragments.append(DuplicateString("],\"totals\":{")) ||
         !fragments.append(formatJsonPhaseTimes(phaseTimes)) ||
-        !fragments.append(make_string_copy("}}")))
+        !fragments.append(DuplicateString("}}")))
     {
         return UniqueChars(nullptr);
     }
@@ -671,7 +667,7 @@ Statistics::formatJsonDescription(uint64_t timestamp)
                 unsigned(preBytes / 1024 / 1024),
                 counts[STAT_NEW_CHUNK],
                 counts[STAT_DESTROY_CHUNK]);
-    return make_string_copy(buffer);
+    return DuplicateString(buffer);
 }
 
 UniqueChars
@@ -703,7 +699,7 @@ Statistics::formatJsonSliceDescription(unsigned i, const SliceData& slice)
                 pageFaults,
                 slices[i].start,
                 slices[i].end);
-    return make_string_copy(buffer);
+    return DuplicateString(buffer);
 }
 
 UniqueChars
@@ -736,7 +732,7 @@ Statistics::formatJsonPhaseTimes(const PhaseTimeTable phaseTimes)
         JS_snprintf(buffer, sizeof(buffer), "\"%s\":%llu.%03llu",
                     name.get(), ownTime / 1000, ownTime % 1000);
 
-        if (!fragments.append(make_string_copy(buffer)))
+        if (!fragments.append(DuplicateString(buffer)))
             return UniqueChars(nullptr);
     }
     return Join(fragments, ",");
@@ -755,6 +751,7 @@ Statistics::Statistics(JSRuntime* rt)
     activeDagSlot(PHASE_DAG_NONE),
     suspendedPhaseNestingDepth(0),
     sliceCallback(nullptr),
+    nurseryCollectionCallback(nullptr),
     aborted(false)
 {
     PodArrayZero(phaseTotals);
@@ -762,55 +759,6 @@ Statistics::Statistics(JSRuntime* rt)
     PodArrayZero(phaseStartTimes);
     for (auto d : MakeRange(NumTimingArrays))
         PodArrayZero(phaseTimes[d]);
-
-    static bool initialized = false;
-    if (!initialized) {
-        initialized = true;
-
-        for (size_t i = 0; i < PHASE_LIMIT; i++) {
-            MOZ_ASSERT(phases[i].index == i);
-            for (size_t j = 0; j < PHASE_LIMIT; j++)
-                MOZ_ASSERT_IF(i != j, phases[i].telemetryBucket != phases[j].telemetryBucket);
-        }
-
-        // Create a static table of descendants for every phase with multiple
-        // children. This assumes that all descendants come linearly in the
-        // list, which is reasonable since full dags are not supported; any
-        // path from the leaf to the root must encounter at most one node with
-        // multiple parents.
-        size_t dagSlot = 0;
-        for (size_t i = 0; i < mozilla::ArrayLength(dagChildEdges); i++) {
-            Phase parent = dagChildEdges[i].parent;
-            if (!phaseExtra[parent].dagSlot)
-                phaseExtra[parent].dagSlot = ++dagSlot;
-
-            Phase child = dagChildEdges[i].child;
-            MOZ_ASSERT(phases[child].parent == PHASE_MULTI_PARENTS);
-            int j = child;
-            do {
-                dagDescendants[phaseExtra[parent].dagSlot].append(Phase(j));
-                j++;
-            } while (j != PHASE_LIMIT && phases[j].parent != PHASE_MULTI_PARENTS);
-        }
-        MOZ_ASSERT(dagSlot <= MaxMultiparentPhases - 1);
-
-        // Fill in the depth of each node in the tree. Multi-parented nodes
-        // have depth 0.
-        mozilla::Vector<Phase> stack;
-        stack.append(PHASE_LIMIT); // Dummy entry to avoid special-casing the first node
-        for (int i = 0; i < PHASE_LIMIT; i++) {
-            if (phases[i].parent == PHASE_NO_PARENT ||
-                phases[i].parent == PHASE_MULTI_PARENTS)
-            {
-                stack.clear();
-            } else {
-                while (stack.back() != phases[i].parent)
-                    stack.popBack();
-            }
-            phaseExtra[i].depth = stack.length();
-            stack.append(Phase(i));
-        }
-    }
 
     char* env = getenv("MOZ_GCTIMER");
     if (env) {
@@ -834,11 +782,72 @@ Statistics::~Statistics()
         fclose(fp);
 }
 
+/* static */ bool
+Statistics::initialize()
+{
+    for (size_t i = 0; i < PHASE_LIMIT; i++) {
+        MOZ_ASSERT(phases[i].index == i);
+        for (size_t j = 0; j < PHASE_LIMIT; j++)
+            MOZ_ASSERT_IF(i != j, phases[i].telemetryBucket != phases[j].telemetryBucket);
+    }
+
+    // Create a static table of descendants for every phase with multiple
+    // children. This assumes that all descendants come linearly in the
+    // list, which is reasonable since full dags are not supported; any
+    // path from the leaf to the root must encounter at most one node with
+    // multiple parents.
+    size_t dagSlot = 0;
+    for (size_t i = 0; i < mozilla::ArrayLength(dagChildEdges); i++) {
+        Phase parent = dagChildEdges[i].parent;
+        if (!phaseExtra[parent].dagSlot)
+            phaseExtra[parent].dagSlot = ++dagSlot;
+
+        Phase child = dagChildEdges[i].child;
+        MOZ_ASSERT(phases[child].parent == PHASE_MULTI_PARENTS);
+        int j = child;
+        do {
+            if (!dagDescendants[phaseExtra[parent].dagSlot].append(Phase(j)))
+                return false;
+            j++;
+        } while (j != PHASE_LIMIT && phases[j].parent != PHASE_MULTI_PARENTS);
+    }
+    MOZ_ASSERT(dagSlot <= MaxMultiparentPhases - 1);
+
+    // Fill in the depth of each node in the tree. Multi-parented nodes
+    // have depth 0.
+    mozilla::Vector<Phase> stack;
+    if (!stack.append(PHASE_LIMIT)) // Dummy entry to avoid special-casing the first node
+        return false;
+    for (int i = 0; i < PHASE_LIMIT; i++) {
+        if (phases[i].parent == PHASE_NO_PARENT ||
+            phases[i].parent == PHASE_MULTI_PARENTS)
+        {
+            stack.clear();
+        } else {
+            while (stack.back() != phases[i].parent)
+                stack.popBack();
+        }
+        phaseExtra[i].depth = stack.length();
+        if (!stack.append(Phase(i)))
+            return false;
+    }
+
+    return true;
+}
+
 JS::GCSliceCallback
 Statistics::setSliceCallback(JS::GCSliceCallback newCallback)
 {
     JS::GCSliceCallback oldCallback = sliceCallback;
     sliceCallback = newCallback;
+    return oldCallback;
+}
+
+JS::GCNurseryCollectionCallback
+Statistics::setNurseryCollectionCallback(JS::GCNurseryCollectionCallback newCallback)
+{
+    auto oldCallback = nurseryCollectionCallback;
+    nurseryCollectionCallback = newCallback;
     return oldCallback;
 }
 

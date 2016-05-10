@@ -5,6 +5,7 @@
 
 package org.mozilla.gecko.preferences;
 
+import android.Manifest;
 import android.annotation.TargetApi;
 import org.mozilla.gecko.AboutPages;
 import org.mozilla.gecko.AdjustConstants;
@@ -32,8 +33,10 @@ import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.TelemetryContract.Method;
 import org.mozilla.gecko.background.common.GlobalConstants;
 import org.mozilla.gecko.db.BrowserContract.SuggestedSites;
+import org.mozilla.gecko.permissions.Permissions;
 import org.mozilla.gecko.restrictions.Restrictable;
 import org.mozilla.gecko.tabqueue.TabQueueHelper;
+import org.mozilla.gecko.tabqueue.TabQueuePrompt;
 import org.mozilla.gecko.updater.UpdateService;
 import org.mozilla.gecko.updater.UpdateServiceHelper;
 import org.mozilla.gecko.util.EventCallback;
@@ -112,6 +115,7 @@ OnSharedPreferenceChangeListener
     public static final String INTENT_EXTRA_RESOURCES = "resource";
     public static final String PREFS_TRACKING_PROTECTION_PROMPT_SHOWN = NON_PREF_PREFIX + "trackingProtectionPromptShown";
     public static String PREFS_HEALTHREPORT_UPLOAD_ENABLED = NON_PREF_PREFIX + "healthreport.uploadEnabled";
+    public static final String PREFS_SYNC = NON_PREF_PREFIX + "sync";
 
     private static boolean sIsCharEncodingEnabled;
     private boolean mInitialized;
@@ -125,7 +129,6 @@ OnSharedPreferenceChangeListener
     private static final String PREFS_CRASHREPORTER_ENABLED = "datareporting.crashreporter.submitEnabled";
     private static final String PREFS_MENU_CHAR_ENCODING = "browser.menu.showCharacterEncoding";
     private static final String PREFS_MP_ENABLED = "privacy.masterpassword.enabled";
-    private static final String PREFS_ZOOMED_VIEW_ENABLED = "ui.zoomedview.enabled";
     private static final String PREFS_UPDATER_AUTODOWNLOAD = "app.update.autodownload";
     private static final String PREFS_UPDATER_URL = "app.update.url.android";
     private static final String PREFS_GEO_REPORTING = NON_PREF_PREFIX + "app.geo.reportdata";
@@ -134,24 +137,20 @@ OnSharedPreferenceChangeListener
     private static final String PREFS_DEVTOOLS_REMOTE_USB_ENABLED = "devtools.remote.usb.enabled";
     private static final String PREFS_DEVTOOLS_REMOTE_WIFI_ENABLED = "devtools.remote.wifi.enabled";
     private static final String PREFS_DEVTOOLS_REMOTE_LINK = NON_PREF_PREFIX + "remote_debugging.link";
-    private static final String PREFS_SYNC = NON_PREF_PREFIX + "sync";
     private static final String PREFS_TRACKING_PROTECTION = "privacy.trackingprotection.state";
     private static final String PREFS_TRACKING_PROTECTION_PB = "privacy.trackingprotection.pbmode.enabled";
-    public static final String PREFS_OPEN_URLS_IN_PRIVATE = NON_PREF_PREFIX + "openExternalURLsPrivately";
+    private static final String PREFS_ZOOMED_VIEW_ENABLED = "ui.zoomedview.enabled";
     public static final String PREFS_VOICE_INPUT_ENABLED = NON_PREF_PREFIX + "voice_input_enabled";
     public static final String PREFS_QRCODE_ENABLED = NON_PREF_PREFIX + "qrcode_enabled";
-    private static final String PREFS_ADVANCED = NON_PREF_PREFIX + "advanced.enabled";
-    private static final String PREFS_ACCESSIBILITY = NON_PREF_PREFIX + "accessibility.enabled";
-    private static final String PREFS_CUSTOMIZE_HOME = NON_PREF_PREFIX + "customize_home";
     private static final String PREFS_TRACKING_PROTECTION_PRIVATE_BROWSING = "privacy.trackingprotection.pbmode.enabled";
     private static final String PREFS_TRACKING_PROTECTION_LEARN_MORE = NON_PREF_PREFIX + "trackingprotection.learn_more";
     private static final String PREFS_CLEAR_PRIVATE_DATA = NON_PREF_PREFIX + "privacy.clear";
     private static final String PREFS_CLEAR_PRIVATE_DATA_EXIT = NON_PREF_PREFIX + "history.clear_on_exit";
     private static final String PREFS_SCREEN_ADVANCED = NON_PREF_PREFIX + "advanced_screen";
-    private static final String PREFS_CATEGORY_HOMEPAGE = NON_PREF_PREFIX + "category_homepage";
     public static final String PREFS_HOMEPAGE = NON_PREF_PREFIX + "homepage";
     public static final String PREFS_HISTORY_SAVED_SEARCH = NON_PREF_PREFIX + "search.search_history.enabled";
     private static final String PREFS_FAQ_LINK = NON_PREF_PREFIX + "faq.link";
+    private static final String PREFS_FEEDBACK_LINK = NON_PREF_PREFIX + "feedback.link";
 
     private static final String ACTION_STUMBLER_UPLOAD_PREF = AppConstants.ANDROID_PACKAGE_NAME + ".STUMBLER_PREF";
 
@@ -175,6 +174,10 @@ OnSharedPreferenceChangeListener
     // Callers can recognize this code to refresh themselves to
     // accommodate a locale change.
     public static final int RESULT_CODE_LOCALE_DID_CHANGE = 7;
+
+    private static final int REQUEST_CODE_TAB_QUEUE = 8;
+
+    private CheckBoxPreference tabQueuePreference;
 
     /**
      * Track the last locale so we know whether to redisplay.
@@ -464,6 +467,7 @@ OnSharedPreferenceChangeListener
         return GeckoPreferenceFragment.class.getName().equals(fragmentName);
     }
 
+    @TargetApi(11)
     @Override
     public void onBuildHeaders(List<Header> target) {
         if (onIsMultiPane()) {
@@ -475,6 +479,9 @@ OnSharedPreferenceChangeListener
                 Header header = iterator.next();
 
                 if (header.id == R.id.pref_header_advanced && !Restrictions.isAllowed(this, Restrictable.ADVANCED_SETTINGS)) {
+                    iterator.remove();
+                } else if (header.id == R.id.pref_header_clear_private_data
+                           && !Restrictions.isAllowed(this, Restrictable.CLEAR_HISTORY)) {
                     iterator.remove();
                 }
             }
@@ -624,7 +631,17 @@ OnSharedPreferenceChangeListener
                   break;
               }
               break;
+            case REQUEST_CODE_TAB_QUEUE:
+                if (TabQueueHelper.processTabQueuePromptResponse(resultCode, this)) {
+                    tabQueuePreference.setChecked(true);
+                }
+                break;
         }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        Permissions.onRequestPermissionsResult(this, permissions, grantResults);
     }
 
     @Override
@@ -716,13 +733,6 @@ OnSharedPreferenceChangeListener
                 pref.setOnPreferenceChangeListener(this);
                 if (PREFS_UPDATER_AUTODOWNLOAD.equals(key)) {
                     if (!AppConstants.MOZ_UPDATER) {
-                        preferences.removePreference(pref);
-                        i--;
-                        continue;
-                    }
-                } else if (PREFS_OPEN_URLS_IN_PRIVATE.equals(key)) {
-                    // Remove UI for opening external links in private browsing on non-Nightly builds.
-                    if (!AppConstants.NIGHTLY_BUILD || !Restrictions.isAllowed(this, Restrictable.PRIVATE_BROWSING)) {
                         preferences.removePreference(pref);
                         i--;
                         continue;
@@ -819,6 +829,7 @@ OnSharedPreferenceChangeListener
                         }
                     });
                 } else if (PREFS_TAB_QUEUE.equals(key)) {
+                    tabQueuePreference = (CheckBoxPreference) pref;
                     // Only show tab queue pref on nightly builds with the tab queue build flag.
                     if (!TabQueueHelper.TAB_QUEUE_ENABLED) {
                         preferences.removePreference(pref);
@@ -881,6 +892,18 @@ OnSharedPreferenceChangeListener
 
                     final String url = getResources().getString(R.string.faq_link, VERSION, OS, LOCALE);
                     ((LinkPreference) pref).setUrl(url);
+                } else if (PREFS_FEEDBACK_LINK.equals(key)) {
+                    PrefsHelper.getPref("app.feedbackURL", new PrefsHelper.PrefHandlerBase() {
+                        @Override
+                        public void prefValue(String prefName, final String value) {
+                            ThreadUtils.postToUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    ((LinkPreference) pref).setUrl(value);
+                                }
+                            });
+                        }
+                    });
                 } else if (PREFS_DYNAMIC_TOOLBAR.equals(key)) {
                     if (DynamicToolbar.isForceDisabled()) {
                         preferences.removePreference(pref);
@@ -1223,9 +1246,19 @@ OnSharedPreferenceChangeListener
             broadcastHealthReportUploadPref(this, newBooleanValue);
             AdjustConstants.getAdjustHelper().setEnabled(newBooleanValue);
         } else if (PREFS_GEO_REPORTING.equals(prefName)) {
-            broadcastStumblerPref(this, (Boolean) newValue);
-            // Translate boolean value to int for geo reporting pref.
-            newValue = (Boolean) newValue ? 1 : 0;
+            if ((Boolean) newValue) {
+                enableStumbler((CheckBoxPreference) preference);
+                return false;
+            } else {
+                broadcastStumblerPref(GeckoPreferences.this, false);
+                return true;
+            }
+        } else if (PREFS_TAB_QUEUE.equals(prefName)) {
+            if ((Boolean) newValue && !TabQueueHelper.canDrawOverlays(this)) {
+                Intent promptIntent = new Intent(this, TabQueuePrompt.class);
+                startActivityForResult(promptIntent, REQUEST_CODE_TAB_QUEUE);
+                return false;
+            }
         } else if (handlers.containsKey(prefName)) {
             PrefHandler handler = handlers.get(prefName);
             handler.onChange(this, preference, newValue);
@@ -1250,6 +1283,26 @@ OnSharedPreferenceChangeListener
         }
 
         return true;
+    }
+
+    private void enableStumbler(final CheckBoxPreference preference) {
+        Permissions
+                .from(this)
+                .withPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+                .onUIThread()
+                .andFallback(new Runnable() {
+                    @Override
+                    public void run() {
+                        preference.setChecked(false);
+                    }
+                })
+                .run(new Runnable() {
+                    @Override
+                    public void run() {
+                        preference.setChecked(true);
+                        broadcastStumblerPref(GeckoPreferences.this, true);
+                    }
+                });
     }
 
     private EditText getTextBox(int aHintText) {

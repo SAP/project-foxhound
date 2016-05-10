@@ -8,7 +8,7 @@
 #include "OmxPlatformLayer.h"
 #include "OmxDataDecoder.h"
 
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION < 21
+#if defined(MOZ_WIDGET_GONK) && (ANDROID_VERSION == 20 || ANDROID_VERSION == 19)
 #include "GonkOmxPlatformLayer.h"
 #endif
 
@@ -18,16 +18,19 @@ extern mozilla::LogModule* GetPDMLog();
 #undef LOG
 #endif
 
-#define LOG(arg, ...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, ("OmxPromiseLayer:: " arg, ##__VA_ARGS__))
+#define LOG(arg, ...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, ("OmxPromiseLayer(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
 namespace mozilla {
 
-OmxPromiseLayer::OmxPromiseLayer(TaskQueue* aTaskQueue, OmxDataDecoder* aDataDecoder)
+extern void GetPortIndex(nsTArray<uint32_t>& aPortIndex);
+
+OmxPromiseLayer::OmxPromiseLayer(TaskQueue* aTaskQueue,
+                                 OmxDataDecoder* aDataDecoder,
+                                 layers::ImageContainer* aImageContainer)
   : mTaskQueue(aTaskQueue)
-  , mFlushPortIndex(0)
 {
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION < 21
-  mPlatformLayer = new GonkOmxPlatformLayer(aDataDecoder, this, aTaskQueue);
+#if defined(MOZ_WIDGET_GONK) && (ANDROID_VERSION == 20 || ANDROID_VERSION == 19)
+  mPlatformLayer = new GonkOmxPlatformLayer(aDataDecoder, this, aTaskQueue, aImageContainer);
 #endif
   MOZ_ASSERT(!!mPlatformLayer);
 }
@@ -59,7 +62,7 @@ RefPtr<OmxPromiseLayer::OmxBufferPromise>
 OmxPromiseLayer::FillBuffer(BufferData* aData)
 {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
-  LOG("FillBuffer: buffer %p", aData->mBuffer);
+  LOG("buffer %p", aData->mBuffer);
 
   RefPtr<OmxBufferPromise> p = aData->mPromise.Ensure(__func__);
 
@@ -80,7 +83,7 @@ RefPtr<OmxPromiseLayer::OmxBufferPromise>
 OmxPromiseLayer::EmptyBuffer(BufferData* aData)
 {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
-  LOG("EmptyBuffer: buffer %p, size %d", aData->mBuffer, aData->mBuffer->nFilledLen);
+  LOG("buffer %p, size %d", aData->mBuffer, aData->mBuffer->nFilledLen);
 
   RefPtr<OmxBufferPromise> p = aData->mPromise.Ensure(__func__);
 
@@ -116,7 +119,7 @@ already_AddRefed<MediaRawData>
 OmxPromiseLayer::FindAndRemoveRawData(OMX_TICKS aTimecode)
 {
   for (auto raw : mRawDatas) {
-    if (raw->mTimecode == aTimecode) {
+    if (raw->mTime == aTimecode) {
       mRawDatas.RemoveElement(raw);
       return raw.forget();
     }
@@ -166,7 +169,7 @@ void
 OmxPromiseLayer::EmptyFillBufferDone(OMX_DIRTYPE aType, BufferData* aData)
 {
   MOZ_ASSERT(!!aData);
-  LOG("EmptyFillBufferDone: type %d, buffer %p", aType, aData->mBuffer);
+  LOG("type %d, buffer %p", aType, aData->mBuffer);
   if (aData) {
     if (aType == OMX_DirOutput) {
       aData->mRawData = nullptr;
@@ -181,42 +184,54 @@ void
 OmxPromiseLayer::EmptyFillBufferDone(OMX_DIRTYPE aType, BufferData::BufferID aID)
 {
   RefPtr<BufferData> holder = FindAndRemoveBufferHolder(aType, aID);
-  MOZ_ASSERT(!!holder);
-  LOG("EmptyFillBufferDone: type %d, buffer %p", aType, holder->mBuffer);
-  if (holder) {
-    if (aType == OMX_DirOutput) {
-      holder->mRawData = nullptr;
-      holder->mRawData = FindAndRemoveRawData(holder->mBuffer->nTimeStamp);
-    }
-    holder->mStatus = BufferData::BufferStatus::OMX_CLIENT;
-    holder->mPromise.Resolve(holder, __func__);
-  }
+  EmptyFillBufferDone(aType, holder);
 }
 
 RefPtr<OmxPromiseLayer::OmxCommandPromise>
 OmxPromiseLayer::SendCommand(OMX_COMMANDTYPE aCmd, OMX_U32 aParam1, OMX_PTR aCmdData)
 {
-  // No need to issue flush because of buffers are in client already.
-  //
-  // Some components fail to respond flush event when all of buffers are in
-  // client.
   if (aCmd == OMX_CommandFlush) {
-    bool needFlush = false;
-    if ((aParam1 & OMX_DirInput && mInbufferHolders.Length()) ||
-        (aParam1 & OMX_DirOutput && mOutbufferHolders.Length())) {
-      needFlush = true;
-    }
-    if (!needFlush) {
-      LOG("SendCommand: buffers are in client already, no need to flush");
-      mRawDatas.Clear();
-      return OmxCommandPromise::CreateAndResolve(OMX_CommandFlush, __func__);
-    }
-  }
+    // It doesn't support another flush commands before previous one is completed.
+    MOZ_RELEASE_ASSERT(!mFlushCommands.Length());
 
-  OMX_ERRORTYPE err = mPlatformLayer->SendCommand(aCmd, aParam1, aCmdData);
-  if (err != OMX_ErrorNone) {
-    OmxCommandFailureHolder failure(OMX_ErrorNotReady, aCmd);
-    return OmxCommandPromise::CreateAndReject(failure, __func__);
+    // Some coomponents don't send event with OMX_ALL, they send flush complete
+    // event with input port and another event for output port.
+    // In prupose of better compatibility, we interpret the OMX_ALL to OMX_DirInput
+    // and OMX_DirOutput flush separately.
+    OMX_DIRTYPE types[] = {OMX_DIRTYPE::OMX_DirInput, OMX_DIRTYPE::OMX_DirOutput};
+    for(const auto type : types) {
+      if ((aParam1 == type) || (aParam1 == OMX_ALL)) {
+        mFlushCommands.AppendElement(FlushCommand({type, aCmdData}));
+      }
+
+      if (type == OMX_DirInput) {
+        // Clear all buffered raw data.
+        mRawDatas.Clear();
+      }
+    }
+
+    // Don't overlay more than one flush command, some components can't overlay flush commands.
+    // So here we send another flush after receiving the previous flush completed event.
+    if (mFlushCommands.Length()) {
+      OMX_ERRORTYPE err =
+        mPlatformLayer->SendCommand(OMX_CommandFlush,
+                                    mFlushCommands.ElementAt(0).type,
+                                    mFlushCommands.ElementAt(0).cmd);
+      if (err != OMX_ErrorNone) {
+        OmxCommandFailureHolder failure(OMX_ErrorNotReady, OMX_CommandFlush);
+        return OmxCommandPromise::CreateAndReject(failure, __func__);
+      }
+    } else {
+      LOG("OMX_CommandFlush parameter error");
+      OmxCommandFailureHolder failure(OMX_ErrorNotReady, OMX_CommandFlush);
+      return OmxCommandPromise::CreateAndReject(failure, __func__);
+    }
+  } else {
+    OMX_ERRORTYPE err = mPlatformLayer->SendCommand(aCmd, aParam1, aCmdData);
+    if (err != OMX_ErrorNone) {
+      OmxCommandFailureHolder failure(OMX_ErrorNotReady, aCmd);
+      return OmxCommandPromise::CreateAndReject(failure, __func__);
+    }
   }
 
   RefPtr<OmxCommandPromise> p;
@@ -224,15 +239,12 @@ OmxPromiseLayer::SendCommand(OMX_COMMANDTYPE aCmd, OMX_U32 aParam1, OMX_PTR aCmd
     p = mCommandStatePromise.Ensure(__func__);
   } else if (aCmd == OMX_CommandFlush) {
     p = mFlushPromise.Ensure(__func__);
-    mFlushPortIndex = aParam1;
-    // Clear all buffered raw data.
-    mRawDatas.Clear();
   } else if (aCmd == OMX_CommandPortEnable) {
     p = mPortEnablePromise.Ensure(__func__);
   } else if (aCmd == OMX_CommandPortDisable) {
     p = mPortDisablePromise.Ensure(__func__);
   } else {
-    LOG("SendCommand: error unsupport command");
+    LOG("error unsupport command");
     MOZ_ASSERT(0);
   }
 
@@ -248,8 +260,24 @@ OmxPromiseLayer::Event(OMX_EVENTTYPE aEvent, OMX_U32 aData1, OMX_U32 aData2)
     {
       if (cmd == OMX_CommandStateSet) {
         mCommandStatePromise.Resolve(OMX_CommandStateSet, __func__);
-      } else if (cmd == OMX_CommandFlush && mFlushPortIndex == aData2) {
-        mFlushPromise.Resolve(OMX_CommandFlush, __func__);
+      } else if (cmd == OMX_CommandFlush) {
+        MOZ_RELEASE_ASSERT(mFlushCommands.ElementAt(0).type == aData2);
+        LOG("OMX_CommandFlush completed port type %d", aData2);
+        mFlushCommands.RemoveElementAt(0);
+
+        // Sending next flush command.
+        if (mFlushCommands.Length()) {
+          OMX_ERRORTYPE err =
+            mPlatformLayer->SendCommand(OMX_CommandFlush,
+                                        mFlushCommands.ElementAt(0).type,
+                                        mFlushCommands.ElementAt(0).cmd);
+          if (err != OMX_ErrorNone) {
+            OmxCommandFailureHolder failure(OMX_ErrorNotReady, OMX_CommandFlush);
+            mFlushPromise.Reject(failure, __func__);
+          }
+        } else {
+          mFlushPromise.Resolve(OMX_CommandFlush, __func__);
+        }
       } else if (cmd == OMX_CommandPortDisable) {
         mPortDisablePromise.Resolve(OMX_CommandPortDisable, __func__);
       } else if (cmd == OMX_CommandPortEnable) {
@@ -262,7 +290,7 @@ OmxPromiseLayer::Event(OMX_EVENTTYPE aEvent, OMX_U32 aData1, OMX_U32 aData2)
       if (cmd == OMX_CommandStateSet) {
         OmxCommandFailureHolder failure(OMX_ErrorUndefined, OMX_CommandStateSet);
         mCommandStatePromise.Reject(failure, __func__);
-      } else if (cmd == OMX_CommandFlush && mFlushPortIndex == aData2) {
+      } else if (cmd == OMX_CommandFlush) {
         OmxCommandFailureHolder failure(OMX_ErrorUndefined, OMX_CommandFlush);
         mFlushPromise.Reject(failure, __func__);
       } else if (cmd == OMX_CommandPortDisable) {
@@ -271,6 +299,8 @@ OmxPromiseLayer::Event(OMX_EVENTTYPE aEvent, OMX_U32 aData1, OMX_U32 aData2)
       } else if (cmd == OMX_CommandPortEnable) {
         OmxCommandFailureHolder failure(OMX_ErrorUndefined, OMX_CommandPortEnable);
         mPortEnablePromise.Reject(failure, __func__);
+      } else {
+        return false;
       }
       break;
     }
@@ -325,7 +355,7 @@ OmxPromiseLayer::SetParameter(OMX_INDEXTYPE aParamIndex,
 nsresult
 OmxPromiseLayer::Shutdown()
 {
-  LOG("Shutdown");
+  LOG("");
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   MOZ_ASSERT(!GetBufferHolders(OMX_DirInput)->Length());
   MOZ_ASSERT(!GetBufferHolders(OMX_DirOutput)->Length());

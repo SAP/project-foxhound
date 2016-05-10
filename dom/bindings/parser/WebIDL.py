@@ -501,6 +501,10 @@ class IDLExposureMixins():
     def isExposedInWindow(self):
         return 'Window' in self.exposureSet
 
+    def isExposedOnMainThread(self):
+        return (self.isExposedInWindow() or
+                self.isExposedInSystemGlobals())
+
     def isExposedInAnyWorker(self):
         return len(self.getWorkerExposureSet()) > 0
 
@@ -562,6 +566,9 @@ class IDLExternalInterface(IDLObjectWithIdentifier, IDLExposureMixins):
         return None
 
     def isJSImplemented(self):
+        return False
+
+    def isProbablyShortLivingObject(self):
         return False
 
     def getNavigatorProperty(self):
@@ -1408,7 +1415,8 @@ class IDLInterface(IDLObjectWithScope, IDLExposureMixins):
                   identifier == "ChromeOnly" or
                   identifier == "Unforgeable" or
                   identifier == "UnsafeInPrerendering" or
-                  identifier == "LegacyEventInit"):
+                  identifier == "LegacyEventInit" or
+                  identifier == "ProbablyShortLivingObject"):
                 # Known extended attributes that do not take values
                 if not attr.noArguments():
                     raise WebIDLError("[%s] must take no arguments" % identifier,
@@ -1521,6 +1529,14 @@ class IDLInterface(IDLObjectWithScope, IDLExposureMixins):
 
     def isJSImplemented(self):
         return bool(self.getJSImplementation())
+
+    def isProbablyShortLivingObject(self):
+        current = self
+        while current:
+            if current.getExtendedAttribute("ProbablyShortLivingObject"):
+                return True
+            current = current.parent
+        return False
 
     def getNavigatorProperty(self):
         naviProp = self.getExtendedAttribute("NavigatorProperty")

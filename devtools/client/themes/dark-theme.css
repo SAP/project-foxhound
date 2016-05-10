@@ -168,7 +168,7 @@ body {
 .devtools-toolbar,
 .devtools-sidebar-tabs tabs,
 .devtools-sidebar-alltabs,
-.CodeMirror-dialog { /* General toolbar styling */
+.cm-s-mozilla .CodeMirror-dialog { /* General toolbar styling */
   color: var(--theme-body-color-alt);
   background-color: var(--theme-toolbar-background);
   border-color: hsla(210,8%,5%,.6);
@@ -187,13 +187,13 @@ body {
  * Best effort to match the existing theme, some of the colors
  * are duplicated here to prevent weirdness in the main theme. */
 
-.CodeMirror { /* Inherit platform specific font sizing and styles */
+.CodeMirror.cm-s-mozilla  { /* Inherit platform specific font sizing and styles */
   font-family: inherit;
   font-size: inherit;
   background: transparent;
 }
 
-.CodeMirror pre,
+.CodeMirror.cm-s-mozilla  pre,
 .cm-s-mozilla .cm-variable-2,
 .cm-s-mozilla .cm-variable-3,
 .cm-s-mozilla .cm-operator,
@@ -326,23 +326,35 @@ div.CodeMirror span.eval-text {
   --arrow-margin: -7px;
 }
 
-.theme-tooltip-panel .panel-arrow[side="top"] {
+.theme-tooltip-panel .panel-arrow[side="top"],
+.theme-tooltip-panel .panel-arrow[side="bottom"] {
   list-style-image: url("chrome://devtools/skin/tooltip/arrow-vertical-dark.png");
+  /* !important is needed to override the popup.css rules in toolkit/themes */
+  width: 39px !important;
+  height: 16px !important;
+}
+
+.theme-tooltip-panel .panel-arrow[side="left"],
+.theme-tooltip-panel .panel-arrow[side="right"] {
+  list-style-image: url("chrome://devtools/skin/tooltip/arrow-horizontal-dark.png");
+  /* !important is needed to override the popup.css rules in toolkit/themes */
+  width: 16px !important;
+  height: 39px !important;
+}
+
+.theme-tooltip-panel .panel-arrow[side="top"] {
   margin-bottom: var(--arrow-margin);
 }
 
 .theme-tooltip-panel .panel-arrow[side="bottom"] {
-  list-style-image: url("chrome://devtools/skin/tooltip/arrow-vertical-dark.png");
   margin-top: var(--arrow-margin);
 }
 
 .theme-tooltip-panel .panel-arrow[side="left"] {
-  list-style-image: url("chrome://devtools/skin/tooltip/arrow-horizontal-dark.png");
   margin-right: var(--arrow-margin);
 }
 
 .theme-tooltip-panel .panel-arrow[side="right"] {
-  list-style-image: url("chrome://devtools/skin/tooltip/arrow-horizontal-dark.png");
   margin-left: var(--arrow-margin);
 }
 

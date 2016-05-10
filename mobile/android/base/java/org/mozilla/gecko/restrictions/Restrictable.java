@@ -66,15 +66,19 @@ public enum Restrictable {
             R.string.restrictable_feature_camera_microphone,
             R.string.restrictable_feature_camera_microphone_description),
 
-    TELEMETRY(19, "telemetry",
+    BLOCK_LIST(19, "block_list",
+            R.string.restrictable_feature_block_list,
+            R.string.restrictable_feature_block_list_description),
+
+    TELEMETRY(20, "telemetry",
             R.string.datareporting_telemetry_title,
             R.string.datareporting_telemetry_summary),
 
-    HEALTH_REPORT(20, "health_report",
+    HEALTH_REPORT(21, "health_report",
             R.string.datareporting_fhr_title,
             R.string.datareporting_fhr_summary2),
 
-    DEFAULT_THEME(21, "default_theme", 0, 0);
+    DEFAULT_THEME(22, "default_theme", 0, 0);
 
     public final int id;
     public final String name;

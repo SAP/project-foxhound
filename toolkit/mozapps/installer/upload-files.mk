@@ -46,7 +46,7 @@ STAGEPATH = universal/
 endif
 endif
 
-PACKAGE_BASE_DIR = $(_ABS_DIST)
+PACKAGE_BASE_DIR = $(ABS_DIST)
 PACKAGE       = $(PKG_PATH)$(PKG_BASENAME)$(PKG_SUFFIX)
 
 # By default, the SDK uses the same packaging type as the main bundle,
@@ -110,8 +110,7 @@ endif # WINNT
 endif # MOZ_STATIC_JS
 MAKE_JSSHELL  = $(call py_action,zip,-C $(DIST)/bin $(abspath $(PKG_JSSHELL)) $(JSSHELL_BINS))
 
-_ABS_DIST = $(abspath $(DIST))
-JARLOG_DIR = $(abspath $(DEPTH)/jarlog/)
+JARLOG_DIR = $(topobjdir)/jarlog/
 JARLOG_FILE_AB_CD = $(JARLOG_DIR)/$(AB_CD).log
 
 TAR_CREATE_FLAGS := --exclude=.mkdir.done $(TAR_CREATE_FLAGS)
@@ -171,12 +170,12 @@ PKG_SUFFIX  = .rpm
 MOZ_NUMERIC_APP_VERSION = $(shell echo $(MOZ_PKG_VERSION) | sed 's/[^0-9.].*//' )
 MOZ_RPM_RELEASE = $(shell echo $(MOZ_PKG_VERSION) | sed 's/[0-9.]*//' )
 
-RPMBUILD_TOPDIR=$(_ABS_DIST)/rpmbuild
-RPMBUILD_RPMDIR=$(_ABS_DIST)
-RPMBUILD_SRPMDIR=$(_ABS_DIST)
+RPMBUILD_TOPDIR=$(ABS_DIST)/rpmbuild
+RPMBUILD_RPMDIR=$(ABS_DIST)
+RPMBUILD_SRPMDIR=$(ABS_DIST)
 RPMBUILD_SOURCEDIR=$(RPMBUILD_TOPDIR)/SOURCES
 RPMBUILD_SPECDIR=$(topsrcdir)/toolkit/mozapps/installer/linux/rpm
-RPMBUILD_BUILDDIR=$(_ABS_DIST)/..
+RPMBUILD_BUILDDIR=$(ABS_DIST)/..
 
 SPEC_FILE = $(RPMBUILD_SPECDIR)/mozilla.spec
 RPM_INCIDENTALS=$(topsrcdir)/toolkit/mozapps/installer/linux/rpm
@@ -188,7 +187,7 @@ RPM_CMD = \
 	-DMOZ_APP_DISPLAYNAME='$(MOZ_APP_DISPLAYNAME)' \
 	$(RPM_INCIDENTALS)/mozilla.desktop \
 	-o $(RPMBUILD_SOURCEDIR)/$(MOZ_APP_NAME).desktop && \
-  rm -rf $(_ABS_DIST)/$(TARGET_CPU) && \
+  rm -rf $(ABS_DIST)/$(TARGET_CPU) && \
   $(RPMBUILD) -bb \
   $(SPEC_FILE) \
   --target $(TARGET_CPU) \
@@ -233,18 +232,18 @@ endif
 #uploaded and that they are beside the other build artifacts
 MAIN_RPM= $(MOZ_APP_NAME)-$(MOZ_NUMERIC_APP_VERSION)-$(MOZ_RPM_RELEASE).$(BUILDID).$(TARGET_CPU)$(PKG_SUFFIX)
 UPLOAD_EXTRA_FILES += $(MAIN_RPM)
-RPM_CMD += && mv $(TARGET_CPU)/$(MAIN_RPM) $(_ABS_DIST)/
+RPM_CMD += && mv $(TARGET_CPU)/$(MAIN_RPM) $(ABS_DIST)/
 
 ifdef ENABLE_TESTS
 TESTS_RPM=$(MOZ_APP_NAME)-tests-$(MOZ_NUMERIC_APP_VERSION)-$(MOZ_RPM_RELEASE).$(BUILDID).$(TARGET_CPU)$(PKG_SUFFIX)
 UPLOAD_EXTRA_FILES += $(TESTS_RPM)
-RPM_CMD += && mv $(TARGET_CPU)/$(TESTS_RPM) $(_ABS_DIST)/
+RPM_CMD += && mv $(TARGET_CPU)/$(TESTS_RPM) $(ABS_DIST)/
 endif
 
 ifdef INSTALL_SDK
 SDK_RPM=$(MOZ_APP_NAME)-devel-$(MOZ_NUMERIC_APP_VERSION)-$(MOZ_RPM_RELEASE).$(BUILDID).$(TARGET_CPU)$(PKG_SUFFIX)
 UPLOAD_EXTRA_FILES += $(SDK_RPM)
-RPM_CMD += && mv $(TARGET_CPU)/$(SDK_RPM) $(_ABS_DIST)/
+RPM_CMD += && mv $(TARGET_CPU)/$(SDK_RPM) $(ABS_DIST)/
 endif
 
 INNER_MAKE_PACKAGE = $(RPM_CMD)
@@ -313,7 +312,7 @@ UPLOAD_EXTRA_FILES += gecko-unsigned-unaligned.apk
 
 DIST_FILES += $(MOZ_CHILD_PROCESS_NAME)
 
-GECKO_APP_AP_PATH = $(abspath $(DEPTH)/mobile/android/base)
+GECKO_APP_AP_PATH = $(topobjdir)/mobile/android/base
 
 ifdef ENABLE_TESTS
 INNER_ROBOCOP_PACKAGE=echo
@@ -322,37 +321,53 @@ UPLOAD_EXTRA_FILES += robocop.apk
 UPLOAD_EXTRA_FILES += fennec_ids.txt
 UPLOAD_EXTRA_FILES += geckoview_library/geckoview_library.zip
 UPLOAD_EXTRA_FILES += geckoview_library/geckoview_assets.zip
-UPLOAD_EXTRA_FILES += ../embedding/android/geckoview_example/geckoview_example.apk
 
 # Robocop/Robotium tests, Android Background tests, and Fennec need to
 # be signed with the same key, which means release signing them all.
 
-ROBOCOP_PATH = $(abspath $(DEPTH)/mobile/android/tests/browser/robocop)
+ROBOCOP_PATH = $(topobjdir)/mobile/android/tests/browser/robocop
 # Normally, $(NSINSTALL) would be used instead of cp, but INNER_ROBOCOP_PACKAGE
 # is used in a series of commands that run under a "cd something", while
 # $(NSINSTALL) is relative.
 INNER_ROBOCOP_PACKAGE= \
-  cp $(GECKO_APP_AP_PATH)/fennec_ids.txt $(_ABS_DIST) && \
-  $(call RELEASE_SIGN_ANDROID_APK,$(ROBOCOP_PATH)/robocop-debug-unsigned-unaligned.apk,$(_ABS_DIST)/robocop.apk)
+  cp $(GECKO_APP_AP_PATH)/fennec_ids.txt $(ABS_DIST) && \
+  $(call RELEASE_SIGN_ANDROID_APK,$(ROBOCOP_PATH)/robocop-debug-unsigned-unaligned.apk,$(ABS_DIST)/robocop.apk)
 endif
 else
 INNER_ROBOCOP_PACKAGE=echo 'Testing is disabled - No Android Robocop for you'
 endif
+
+ifdef MOZ_ANDROID_PACKAGE_INSTALL_BOUNCER
+UPLOAD_EXTRA_FILES += bouncer.apk
+
+bouncer_package=$(ABS_DIST)/bouncer.apk
+
+# Package and release sign the install bouncer APK.  This assumes that the main
+# APK (that is, $(PACKAGE)) has already been produced, and verifies that the
+# bouncer APK and the main APK define the same set of permissions.  The
+# intention is to avoid permission-related surprises when bouncing to the
+# installation process in the Play Store.  N.b.: sort -u is Posix and saves
+# invoking uniq separately.  diff -u is *not* Posix, so we only add -c.
+INNER_INSTALL_BOUNCER_PACKAGE=\
+  $(call RELEASE_SIGN_ANDROID_APK,$(topobjdir)/mobile/android/bouncer/bouncer-unsigned-unaligned.apk,$(bouncer_package)) && \
+  ($(AAPT) dump permissions $(PACKAGE) | sort -u > $(PACKAGE).permissions && \
+   $(AAPT) dump permissions $(bouncer_package) | sort -u > $(bouncer_package).permissions && \
+   diff -c $(PACKAGE).permissions $(bouncer_package).permissions || \
+   (echo "*** Error: The permissions of the bouncer package differ from the permissions of the main package.  Ensure the bouncer and main package Android manifests agree, rebuild mobile/android, and re-package." && exit 1))
+else
+INNER_INSTALL_BOUNCER_PACKAGE=echo 'Install bouncer is disabled - No trampolines for you'
+endif # MOZ_ANDROID_PACKAGE_INSTALL_BOUNCER
 
 # Create geckoview_library/geckoview_{assets,library}.zip for third-party GeckoView consumers.
 ifdef NIGHTLY_BUILD
 ifndef MOZ_DISABLE_GECKOVIEW
 INNER_MAKE_GECKOVIEW_LIBRARY= \
   $(MAKE) -C ../mobile/android/geckoview_library package
-INNER_MAKE_GECKOVIEW_EXAMPLE= \
-	$(MAKE) -C ../embedding/android/geckoview_example package
 else
 INNER_MAKE_GECKOVIEW_LIBRARY=echo 'GeckoView library packaging is disabled'
-INNER_MAKE_GECKOVIEW_EXAMPLE=echo 'GeckoView example packaging is disabled'
 endif
 else
 INNER_MAKE_GECKOVIEW_LIBRARY=echo 'GeckoView library packaging is only enabled on Nightly'
-INNER_MAKE_GECKOVIEW_EXAMPLE=echo 'GeckoView example packaging is only enabled on Nightly'
 endif
 
 # Create Android ARchives and metadata for download by local
@@ -381,9 +396,10 @@ INNER_MAKE_GECKOLIBS_AAR= \
     --verbose \
     --revision $(geckoaar-revision) \
     --topsrcdir '$(topsrcdir)' \
-    --distdir '$(_ABS_DIST)' \
+    --distdir '$(ABS_DIST)' \
     --appname '$(MOZ_APP_NAME)' \
-    '$(_ABS_DIST)'
+    --purge-old \
+    '$(ABS_DIST)'
 else
 INNER_MAKE_GECKOLIBS_AAR=echo 'Android geckolibs.aar packaging requires packaging geckoview'
 endif # MOZ_DISABLE_GECKOVIEW
@@ -455,44 +471,44 @@ INNER_SZIP_LIBRARIES = \
   $(if $(ALREADY_SZIPPED),,$(foreach lib,$(SZIP_LIBRARIES),host/bin/szip $(MOZ_SZIP_FLAGS) $(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)/$(lib) && )) true
 
 # Insert $(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)/classes.dex into
-# $(_ABS_DIST)/gecko.ap_, producing $(_ABS_DIST)/gecko.apk.
+# $(ABS_DIST)/gecko.ap_, producing $(ABS_DIST)/gecko.apk.
 INNER_MAKE_APK = \
   ( cd $(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH) && \
-    unzip -o $(_ABS_DIST)/gecko.ap_ && \
-    rm $(_ABS_DIST)/gecko.ap_ && \
-    $(ZIP) -r9D $(_ABS_DIST)/gecko.ap_ assets && \
-    $(ZIP) $(if $(ALREADY_SZIPPED),-0 ,$(if $(MOZ_ENABLE_SZIP),-0 ))$(_ABS_DIST)/gecko.ap_ $(ASSET_SO_LIBRARIES) && \
-    $(ZIP) -r9D $(_ABS_DIST)/gecko.ap_ $(DIST_FILES) -x $(NON_DIST_FILES) $(SZIP_LIBRARIES) && \
+    unzip -o $(ABS_DIST)/gecko.ap_ && \
+    rm $(ABS_DIST)/gecko.ap_ && \
+    $(ZIP) -r9D $(ABS_DIST)/gecko.ap_ assets && \
+    $(ZIP) $(if $(ALREADY_SZIPPED),-0 ,$(if $(MOZ_ENABLE_SZIP),-0 ))$(ABS_DIST)/gecko.ap_ $(ASSET_SO_LIBRARIES) && \
+    $(ZIP) -r9D $(ABS_DIST)/gecko.ap_ $(DIST_FILES) -x $(NON_DIST_FILES) $(SZIP_LIBRARIES) && \
     $(if $(filter-out ./,$(OMNIJAR_DIR)), \
       mkdir -p $(OMNIJAR_DIR) && mv $(OMNIJAR_NAME) $(OMNIJAR_DIR) && ) \
-    $(ZIP) -0 $(_ABS_DIST)/gecko.ap_ $(OMNIJAR_DIR)$(OMNIJAR_NAME)) && \
-  rm -f $(_ABS_DIST)/gecko.apk && \
-  cp $(_ABS_DIST)/gecko.ap_ $(_ABS_DIST)/gecko.apk && \
-  $(ZIP) -j0 $(_ABS_DIST)/gecko.apk $(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)/classes.dex && \
-  cp $(_ABS_DIST)/gecko.apk $(_ABS_DIST)/gecko-unsigned-unaligned.apk && \
-  $(RELEASE_JARSIGNER) $(_ABS_DIST)/gecko.apk && \
-  $(ZIPALIGN) -f -v 4 $(_ABS_DIST)/gecko.apk $(PACKAGE)
+    $(ZIP) -0 $(ABS_DIST)/gecko.ap_ $(OMNIJAR_DIR)$(OMNIJAR_NAME)) && \
+  rm -f $(ABS_DIST)/gecko.apk && \
+  cp $(ABS_DIST)/gecko.ap_ $(ABS_DIST)/gecko.apk && \
+  $(ZIP) -j0 $(ABS_DIST)/gecko.apk $(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)/classes.dex && \
+  cp $(ABS_DIST)/gecko.apk $(ABS_DIST)/gecko-unsigned-unaligned.apk && \
+  $(RELEASE_JARSIGNER) $(ABS_DIST)/gecko.apk && \
+  $(ZIPALIGN) -f -v 4 $(ABS_DIST)/gecko.apk $(PACKAGE)
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
 INNER_MAKE_PACKAGE	= \
   $(INNER_SZIP_LIBRARIES) && \
   make -C $(GECKO_APP_AP_PATH) gecko-nodeps.ap_ && \
-  cp $(GECKO_APP_AP_PATH)/gecko-nodeps.ap_ $(_ABS_DIST)/gecko.ap_ && \
+  cp $(GECKO_APP_AP_PATH)/gecko-nodeps.ap_ $(ABS_DIST)/gecko.ap_ && \
   ( (test ! -f $(GECKO_APP_AP_PATH)/R.txt && echo "*** Warning: The R.txt that is being packaged might not agree with the R.txt that was built. This is normal during l10n repacks.") || \
     diff $(GECKO_APP_AP_PATH)/R.txt $(GECKO_APP_AP_PATH)/gecko-nodeps/R.txt >/dev/null || \
     (echo "*** Error: The R.txt that was built and the R.txt that is being packaged are not the same. Rebuild mobile/android/base and re-package." && exit 1)) && \
   $(INNER_MAKE_APK) && \
   $(INNER_ROBOCOP_PACKAGE) && \
+  $(INNER_INSTALL_BOUNCER_PACKAGE) && \
   $(INNER_MAKE_GECKOLIBS_AAR) && \
-  $(INNER_MAKE_GECKOVIEW_LIBRARY) && \
-  $(INNER_MAKE_GECKOVIEW_EXAMPLE)
+  $(INNER_MAKE_GECKOVIEW_LIBRARY)
 endif
 
 ifeq ($(MOZ_BUILD_APP),mobile/android/b2gdroid)
 INNER_MAKE_PACKAGE	= \
   $(INNER_SZIP_LIBRARIES) && \
-  cp $(abspath $(DEPTH)/mobile/android/b2gdroid/app)/classes.dex $(_ABS_DIST)/classes.dex && \
-  cp $(abspath $(DEPTH)/mobile/android/b2gdroid/app)/b2gdroid-unsigned-unaligned.apk $(_ABS_DIST)/gecko.ap_ && \
+  cp $(topobjdir)/mobile/android/b2gdroid/app/classes.dex $(ABS_DIST)/classes.dex && \
+  cp $(topobjdir)/mobile/android/b2gdroid/app/b2gdroid-unsigned-unaligned.apk $(ABS_DIST)/gecko.ap_ && \
   $(INNER_MAKE_APK)
 endif
 
@@ -519,17 +535,17 @@ PKG_DMG_SOURCE = $(STAGEPATH)$(MOZ_PKG_DIR)
 INNER_MAKE_PACKAGE	= $(call py_action,make_dmg,'$(PKG_DMG_SOURCE)' '$(PACKAGE)')
 INNER_UNMAKE_PACKAGE	= \
   set -ex; \
-  rm -rf $(_ABS_DIST)/unpack.tmp; \
-  mkdir -p $(_ABS_DIST)/unpack.tmp; \
-  $(_ABS_MOZSRCDIR)/build/package/mac_osx/unpack-diskimage $(UNPACKAGE) /tmp/$(MOZ_PKG_APPNAME)-unpack $(_ABS_DIST)/unpack.tmp; \
-  rsync -a '$(_ABS_DIST)/unpack.tmp/$(_APPNAME)' $(MOZ_PKG_DIR); \
+  rm -rf $(ABS_DIST)/unpack.tmp; \
+  mkdir -p $(ABS_DIST)/unpack.tmp; \
+  $(_ABS_MOZSRCDIR)/build/package/mac_osx/unpack-diskimage $(UNPACKAGE) /tmp/$(MOZ_PKG_APPNAME)-unpack $(ABS_DIST)/unpack.tmp; \
+  rsync -a '$(ABS_DIST)/unpack.tmp/$(_APPNAME)' $(MOZ_PKG_DIR); \
   test -n '$(MOZ_PKG_MAC_DSSTORE)' && \
-    rsync -a '$(_ABS_DIST)/unpack.tmp/.DS_Store' '$(MOZ_PKG_MAC_DSSTORE)'; \
+    rsync -a '$(ABS_DIST)/unpack.tmp/.DS_Store' '$(MOZ_PKG_MAC_DSSTORE)'; \
   test -n '$(MOZ_PKG_MAC_BACKGROUND)' && \
-    rsync -a '$(_ABS_DIST)/unpack.tmp/.background/$(notdir $(MOZ_PKG_MAC_BACKGROUND))' '$(MOZ_PKG_MAC_BACKGROUND)'; \
+    rsync -a '$(ABS_DIST)/unpack.tmp/.background/$(notdir $(MOZ_PKG_MAC_BACKGROUND))' '$(MOZ_PKG_MAC_BACKGROUND)'; \
   test -n '$(MOZ_PKG_MAC_ICON)' && \
-    rsync -a '$(_ABS_DIST)/unpack.tmp/.VolumeIcon.icns' '$(MOZ_PKG_MAC_ICON)'; \
-  rm -rf $(_ABS_DIST)/unpack.tmp; \
+    rsync -a '$(ABS_DIST)/unpack.tmp/.VolumeIcon.icns' '$(MOZ_PKG_MAC_ICON)'; \
+  rm -rf $(ABS_DIST)/unpack.tmp; \
   if test -n '$(MOZ_PKG_MAC_RSRC)' ; then \
     cp $(UNPACKAGE) $(MOZ_PKG_APPNAME).tmp.dmg && \
     hdiutil unflatten $(MOZ_PKG_APPNAME).tmp.dmg && \
@@ -545,7 +561,7 @@ endif
 ifdef MOZ_INTERNAL_SIGNING_FORMAT
 MOZ_SIGN_PREPARED_PACKAGE_CMD=$(MOZ_SIGN_CMD) $(foreach f,$(MOZ_INTERNAL_SIGNING_FORMAT),-f $(f)) $(foreach i,$(SIGN_INCLUDES),-i $(i)) $(foreach x,$(SIGN_EXCLUDES),-x $(x))
 ifeq (WINNT,$(OS_ARCH))
-MOZ_SIGN_PREPARED_PACKAGE_CMD += --nsscmd '$(_ABS_DIST)/bin/shlibsign$(BIN_SUFFIX) -v -i'
+MOZ_SIGN_PREPARED_PACKAGE_CMD += --nsscmd '$(ABS_DIST)/bin/shlibsign$(BIN_SUFFIX) -v -i'
 endif
 endif
 
@@ -669,6 +685,11 @@ endif
 
 ifneq (android,$(MOZ_WIDGET_TOOLKIT))
 OPTIMIZEJARS = 1
+ifneq (gonk,$(MOZ_WIDGET_TOOLKIT))
+ifdef NIGHTLY_BUILD
+DISABLE_JAR_COMPRESSION = 1
+endif
+endif
 endif
 
 # A js binary is needed to perform verification of JavaScript minification.
@@ -727,11 +748,13 @@ UPLOAD_FILES= \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(TALOS_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(REFTEST_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(WP_TEST_PACKAGE)) \
+  $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(GTEST_PACKAGE)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip) \
   $(call QUOTED_WILDCARD,$(DIST)/$(SDK)) \
   $(call QUOTED_WILDCARD,$(DIST)/$(SDK).asc) \
   $(call QUOTED_WILDCARD,$(MOZ_SOURCESTAMP_FILE)) \
   $(call QUOTED_WILDCARD,$(MOZ_BUILDINFO_FILE)) \
+  $(call QUOTED_WILDCARD,$(MOZ_BUILDID_INFO_TXT_FILE)) \
   $(call QUOTED_WILDCARD,$(MOZ_MOZINFO_FILE)) \
   $(call QUOTED_WILDCARD,$(MOZ_TEST_PACKAGES_FILE)) \
   $(call QUOTED_WILDCARD,$(PKG_JSSHELL)) \

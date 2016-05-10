@@ -429,15 +429,6 @@ File::Create(nsISupports* aParent, const nsAString& aName,
 }
 
 /* static */ already_AddRefed<File>
-File::Create(nsISupports* aParent, const nsAString& aName,
-             const nsAString& aContentType, uint64_t aLength)
-{
-  RefPtr<File> file = new File(aParent,
-    new BlobImplBase(aName, aContentType, aLength));
-  return file.forget();
-}
-
-/* static */ already_AddRefed<File>
 File::CreateMemoryFile(nsISupports* aParent, void* aMemoryBuffer,
                        uint64_t aLength, const nsAString& aName,
                        const nsAString& aContentType,
@@ -964,6 +955,32 @@ BlobImplFile::LookupAndCacheIsDirectory()
   bool isDir;
   mFile->IsDirectory(&isDir);
   mDirState = isDir ? BlobDirState::eIsDir : BlobDirState::eIsNotDir;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// EmptyBlobImpl implementation
+
+NS_IMPL_ISUPPORTS_INHERITED0(EmptyBlobImpl, BlobImpl)
+
+already_AddRefed<BlobImpl>
+EmptyBlobImpl::CreateSlice(uint64_t aStart, uint64_t aLength,
+                           const nsAString& aContentType,
+                           ErrorResult& aRv)
+{
+  MOZ_ASSERT(!aStart && !aLength);
+  RefPtr<BlobImpl> impl = new EmptyBlobImpl(aContentType);
+  return impl.forget();
+}
+
+void
+EmptyBlobImpl::GetInternalStream(nsIInputStream** aStream,
+                                 ErrorResult& aRv)
+{
+  nsresult rv = NS_NewCStringInputStream(aStream, EmptyCString());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////

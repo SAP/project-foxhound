@@ -14,7 +14,9 @@
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/TreeWalker.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/Preferences.h"
 #include "nsCaret.h"
+#include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
 #include "nsFrame.h"
@@ -63,6 +65,8 @@ std::ostream& operator<<(std::ostream& aStream,
 #undef AC_PROCESS_ENUM_TO_STREAM
 
 /*static*/ bool
+AccessibleCaretManager::sSelectionBarEnabled = false;
+/*static*/ bool
 AccessibleCaretManager::sCaretsExtendedVisibility = false;
 /*static*/ bool
 AccessibleCaretManager::sHapticFeedback = false;
@@ -81,6 +85,8 @@ AccessibleCaretManager::AccessibleCaretManager(nsIPresShell* aPresShell)
 
   static bool addedPrefs = false;
   if (!addedPrefs) {
+    Preferences::AddBoolVarCache(&sSelectionBarEnabled,
+                                 "layout.accessiblecaret.bar.enabled");
     Preferences::AddBoolVarCache(&sCaretsExtendedVisibility,
                                  "layout.accessiblecaret.extendedvisibility");
     Preferences::AddBoolVarCache(&sHapticFeedback,
@@ -196,7 +202,7 @@ AccessibleCaretManager::UpdateCarets(UpdateCaretsHint aHint)
     UpdateCaretsForCursorMode(aHint);
     break;
   case CaretMode::Selection:
-    UpdateCaretsForSelectionMode(aHint);
+    UpdateCaretsForSelectionMode();
     break;
   }
 }
@@ -263,7 +269,10 @@ AccessibleCaretManager::UpdateCaretsForCursorMode(UpdateCaretsHint aHint)
     case PositionChangedResult::Changed:
       switch (aHint) {
         case UpdateCaretsHint::Default:
-          if (HasNonEmptyTextContent(GetEditingHostForFrame(frame))) {
+          // On Fennec, always show accessiblecaret even if the input is empty
+          // to make ActionBar visible.
+          if (sCaretsExtendedVisibility ||
+              HasNonEmptyTextContent(GetEditingHostForFrame(frame))) {
             mFirstCaret->SetAppearance(Appearance::Normal);
           } else {
             mFirstCaret->SetAppearance(Appearance::NormalNotShown);
@@ -294,7 +303,7 @@ AccessibleCaretManager::UpdateCaretsForCursorMode(UpdateCaretsHint aHint)
 }
 
 void
-AccessibleCaretManager::UpdateCaretsForSelectionMode(UpdateCaretsHint aHint)
+AccessibleCaretManager::UpdateCaretsForSelectionMode()
 {
   AC_LOG("%s: selection: %p", __FUNCTION__, GetSelection());
 
@@ -314,7 +323,7 @@ AccessibleCaretManager::UpdateCaretsForSelectionMode(UpdateCaretsHint aHint)
                               int32_t aOffset) -> PositionChangedResult
   {
     PositionChangedResult result = aCaret->SetPosition(aFrame, aOffset);
-    aCaret->SetSelectionBarEnabled(true);
+    aCaret->SetSelectionBarEnabled(sSelectionBarEnabled);
 
     switch (result) {
       case PositionChangedResult::NotChanged:

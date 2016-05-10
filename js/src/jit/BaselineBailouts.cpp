@@ -1149,8 +1149,10 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
                 filename = "<unknown>";
             unsigned len = strlen(filename) + 200;
             char* buf = js_pod_malloc<char>(len);
-            if (buf == nullptr)
+            if (buf == nullptr) {
+                ReportOutOfMemory(cx);
                 return false;
+            }
             JS_snprintf(buf, len, "%s %s %s on line %u of %s:%" PRIuSIZE,
                                   BailoutKindString(bailoutKind),
                                   resumeAfter ? "after" : "at",
@@ -1721,7 +1723,7 @@ CopyFromRematerializedFrame(JSContext* cx, JitActivation* act, uint8_t* fp, size
 
     frame->setScopeChain(rematFrame->scopeChain());
 
-    if (frame->isNonEvalFunctionFrame())
+    if (frame->isFunctionFrame())
         frame->thisArgument() = rematFrame->thisArgument();
 
     for (unsigned i = 0; i < frame->numActualArgs(); i++)
@@ -1893,6 +1895,7 @@ jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfo)
       case Bailout_NonObjectInput:
       case Bailout_NonStringInput:
       case Bailout_NonSymbolInput:
+      case Bailout_NonSimdBool32x4Input:
       case Bailout_NonSimdInt32x4Input:
       case Bailout_NonSimdFloat32x4Input:
       case Bailout_NonSharedTypedArrayInput:
@@ -1911,6 +1914,8 @@ jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfo)
 
       // Invalid assumption based on baseline code.
       case Bailout_OverflowInvalidate:
+        outerScript->setHadOverflowBailout();
+        MOZ_FALLTHROUGH;
       case Bailout_NonStringInputInvalidate:
       case Bailout_DoubleOutput:
       case Bailout_ObjectIdentityOrTypeGuard:

@@ -285,6 +285,7 @@ TimeStamp EventStateManager::sHandlingInputStart;
 
 EventStateManager::WheelPrefs*
   EventStateManager::WheelPrefs::sInstance = nullptr;
+bool EventStateManager::WheelPrefs::sWheelEventsEnabledOnPlugins = true;
 EventStateManager::DeltaAccumulator*
   EventStateManager::DeltaAccumulator::sInstance = nullptr;
 
@@ -1209,6 +1210,10 @@ EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
                                             action, dropEffect);
 
     return retval;
+  }
+  case ePluginEventClass: {
+    *aStatus = nsEventStatus_eConsumeNoDefault;
+    return remote->SendPluginEvent(*aEvent->AsPluginEvent());
   }
   default: {
     MOZ_CRASH("Attempt to send non-whitelisted event?");
@@ -2370,6 +2375,11 @@ EventStateManager::ComputeScrollTarget(nsIFrame* aTargetFrame,
                                        WidgetWheelEvent* aEvent,
                                        ComputeScrollTargetOptions aOptions)
 {
+  if ((aOptions & INCLUDE_PLUGIN_AS_TARGET) &&
+      !WheelPrefs::WheelEventsEnabledOnPlugins()) {
+    aOptions = RemovePluginFromTarget(aOptions);
+  }
+
   if (aOptions & PREFER_MOUSE_WHEEL_TRANSACTION) {
     // If the user recently scrolled with the mousewheel, then they probably
     // want to scroll the same view as before instead of the view under the
@@ -3163,10 +3173,15 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       if (pluginFrame) {
         MOZ_ASSERT(pluginFrame->WantsToHandleWheelEventAsDefaultAction());
         action = WheelPrefs::ACTION_SEND_TO_PLUGIN;
-      } else if (nsLayoutUtils::IsScrollFrameWithSnapping(frameToScroll)) {
+      } else if (!wheelEvent->mayHaveMomentum &&
+            nsLayoutUtils::IsScrollFrameWithSnapping(frameToScroll)) {
         // If the target has scroll-snapping points then we want to handle
         // the wheel event on the main thread even if we have APZ enabled. Do
-        // so and let the APZ know that it should ignore this event.
+        // so and let the APZ know that it should ignore this event. However,
+        // if the wheel event is synthesized from a Mac trackpad or other device
+        // that can generate additional momentum events, then we should allow
+        // APZ to handle it, because it will track the velocity and predicted
+        // destination from the momentum.
         if (wheelEvent->mFlags.mHandledByAPZ) {
           wheelEvent->mFlags.mDefaultPrevented = true;
         }
@@ -5511,6 +5526,9 @@ EventStateManager::WheelPrefs::WheelPrefs()
 {
   Reset();
   Preferences::RegisterCallback(OnPrefChanged, "mousewheel.", nullptr);
+  Preferences::AddBoolVarCache(&sWheelEventsEnabledOnPlugins,
+                               "plugin.mousewheel.enabled",
+                               true);
 }
 
 EventStateManager::WheelPrefs::~WheelPrefs()
@@ -5728,6 +5746,16 @@ EventStateManager::WheelPrefs::GetUserPrefsForEvent(WidgetWheelEvent* aEvent,
 
   *aOutMultiplierX = mMultiplierX[index];
   *aOutMultiplierY = mMultiplierY[index];
+}
+
+// static
+bool
+EventStateManager::WheelPrefs::WheelEventsEnabledOnPlugins()
+{
+  if (!sInstance) {
+    GetInstance(); // initializing sWheelEventsEnabledOnPlugins
+  }
+  return sWheelEventsEnabledOnPlugins;
 }
 
 bool

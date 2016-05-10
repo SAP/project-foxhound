@@ -491,7 +491,8 @@ public:
       row->GetUTF8String(IDX_ORIGIN_ATTRIBUTES, suffix);
       tuple->key.mOriginAttributes.PopulateFromSuffix(suffix);
 
-      tuple->cookie = gCookieService->GetCookieFromRow(row);
+      tuple->cookie =
+        gCookieService->GetCookieFromRow(row, tuple->key.mOriginAttributes);
     }
 
     return NS_OK;
@@ -995,6 +996,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
       }
       // Fall through to the next upgrade.
+      MOZ_FALLTHROUGH;
 
     case 2:
       {
@@ -1053,6 +1055,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
       }
       // Fall through to the next upgrade.
+      MOZ_FALLTHROUGH;
 
     case 3:
       {
@@ -1149,6 +1152,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
       }
       // Fall through to the next upgrade.
+      MOZ_FALLTHROUGH;
 
     case 4:
       {
@@ -1196,6 +1200,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
           ("Upgraded database to schema version 5"));
       }
       // Fall through to the next upgrade.
+      MOZ_FALLTHROUGH;
 
     case 5:
       {
@@ -1261,6 +1266,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         COOKIE_LOGSTRING(LogLevel::Debug,
           ("Upgraded database to schema version 6"));
       }
+      MOZ_FALLTHROUGH;
 
     case 6:
       {
@@ -1320,6 +1326,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
       // No more upgrades. Update the schema version.
       rv = mDefaultDBState->dbConn->SetSchemaVersion(COOKIES_SCHEMA_VERSION);
       NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+      MOZ_FALLTHROUGH;
 
     case COOKIES_SCHEMA_VERSION:
       break;
@@ -1327,7 +1334,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
     case 0:
       {
         NS_WARNING("couldn't get schema version!");
-          
+
         // the table may be usable; someone might've just clobbered the schema
         // version. we can treat this case like a downgrade using the codepath
         // below, by verifying the columns we care about are all there. for now,
@@ -1337,6 +1344,7 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
       }
       // fall through to downgrade check
+      MOZ_FALLTHROUGH;
 
     // downgrading.
     // if columns have been added to the table, we can still use the ones we
@@ -2281,6 +2289,7 @@ nsCookieService::Add(const nsACString &aHost,
   NS_ENSURE_SUCCESS(rv, rv);
 
   int64_t currentTimeInUsec = PR_Now();
+  nsCookieKey key = DEFAULT_APP_KEY(baseDomain);
 
   RefPtr<nsCookie> cookie =
     nsCookie::Create(aName, aValue, host, aPath,
@@ -2289,12 +2298,13 @@ nsCookieService::Add(const nsACString &aHost,
                      nsCookie::GenerateUniqueCreationTime(currentTimeInUsec),
                      aIsSession,
                      aIsSecure,
-                     aIsHttpOnly);
+                     aIsHttpOnly,
+                     key.mOriginAttributes);
   if (!cookie) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  AddInternal(DEFAULT_APP_KEY(baseDomain), cookie, currentTimeInUsec, nullptr, nullptr, true);
+  AddInternal(key, cookie, currentTimeInUsec, nullptr, nullptr, true);
   return NS_OK;
 }
 
@@ -2429,7 +2439,7 @@ nsCookieService::Read()
 // Extract data from a single result row and create an nsCookie.
 // This is templated since 'T' is different for sync vs async results.
 template<class T> nsCookie*
-nsCookieService::GetCookieFromRow(T &aRow)
+nsCookieService::GetCookieFromRow(T &aRow, const OriginAttributes& aOriginAttributes)
 {
   // Skip reading 'baseDomain' -- up to the caller.
   nsCString name, value, host, path;
@@ -2455,7 +2465,8 @@ nsCookieService::GetCookieFromRow(T &aRow)
                           creationTime,
                           false,
                           isSecure,
-                          isHttpOnly);
+                          isHttpOnly,
+                          aOriginAttributes);
 }
 
 void
@@ -2602,7 +2613,8 @@ nsCookieService::EnsureReadDomain(const nsCookieKey &aKey)
     if (!hasResult)
       break;
 
-    array.AppendElement(GetCookieFromRow(mDefaultDBState->stmtReadDomain));
+    array.AppendElement(GetCookieFromRow(mDefaultDBState->stmtReadDomain,
+                                         aKey.mOriginAttributes));
   }
 
   // Add the cookies to the table in a single operation. This makes sure that
@@ -2692,7 +2704,7 @@ nsCookieService::EnsureReadComplete()
 
     CookieDomainTuple* tuple = array.AppendElement();
     tuple->key = key;
-    tuple->cookie = GetCookieFromRow(stmt);
+    tuple->cookie = GetCookieFromRow(stmt, attrs);
   }
 
   // Add the cookies to the table in a single operation. This makes sure that
@@ -2846,7 +2858,8 @@ nsCookieService::ImportCookies(nsIFile *aCookieFile)
                        nsCookie::GenerateUniqueCreationTime(currentTimeInUsec),
                        false,
                        Substring(buffer, secureIndex, expiresIndex - secureIndex - 1).EqualsLiteral(kTrue),
-                       isHttpOnly);
+                       isHttpOnly,
+                       key.mOriginAttributes);
     if (!newCookie) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -2964,6 +2977,11 @@ nsCookieService::GetCookieStringInternal(nsIURI *aHostURI,
   default:
     break;
   }
+
+  // Note: The following permissions logic is mirrored in
+  // toolkit/modules/addons/MatchPattern.jsm:MatchPattern.matchesCookie().
+  // If it changes, please update that function, or file a bug for someone
+  // else to do so.
 
   // check if aHostURI is using an https secure protocol.
   // if it isn't, then we can't send a secure cookie over the connection.
@@ -3220,7 +3238,8 @@ nsCookieService::SetCookieInternal(nsIURI                        *aHostURI,
                      nsCookie::GenerateUniqueCreationTime(currentTimeInUsec),
                      cookieAttributes.isSession,
                      cookieAttributes.isSecure,
-                     cookieAttributes.isHttpOnly);
+                     cookieAttributes.isHttpOnly,
+                     aKey.mOriginAttributes);
   if (!cookie)
     return newCookie;
 
@@ -3832,6 +3851,11 @@ nsCookieService::CheckDomain(nsCookieAttributes &aCookieAttributes,
                              const nsCString    &aBaseDomain,
                              bool                aRequireHostMatch)
 {
+  // Note: The logic in this function is mirrored in
+  // toolkit/components/extensions/ext-cookies.js:checkSetCookiePermissions().
+  // If it changes, please update that function, or file a bug for someone
+  // else to do so.
+
   // get host from aHostURI
   nsAutoCString hostFromURI;
   aHostURI->GetAsciiHost(hostFromURI);

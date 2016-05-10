@@ -115,7 +115,9 @@ struct HttpChannelOpenArgs
   nsCString                   schedulingContextID;
   OptionalCorsPreflightArgs   preflightArgs;
   uint32_t                    initialRwin;
+  bool                        blockAuthPrompt;
   bool                        suspendAfterSynthesizeResponse;
+  bool                        allowStaleCacheContent;
 };
 
 struct HttpChannelConnectArgs

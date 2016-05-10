@@ -2106,6 +2106,7 @@ WebSocketChannel::PrimeNewOutgoingMessage()
       msgType = kMsgTypeBinaryString;
 
       // no break: fall down into binary string case
+      MOZ_FALLTHROUGH;
 
     case kMsgTypeBinaryString:
       mOutHeader[0] = kFinalFragBit | nsIWebSocketFrame::OPCODE_BINARY;
@@ -2802,18 +2803,15 @@ WebSocketChannel::StartWebsocketData()
   MOZ_ASSERT(!mDataStarted, "StartWebsocketData twice");
   mDataStarted = 1;
 
-  LOG(("WebSocketChannel::StartWebsocketData Notifying Listener %p\n",
-       mListenerMT ? mListenerMT->mListener.get() : nullptr));
-
-  if (mListenerMT) {
-    mListenerMT->mListener->OnStart(mListenerMT->mContext);
-  }
-
   rv = mSocketIn->AsyncWait(this, 0, 0, mSocketThread);
   if (NS_FAILED(rv)) {
     LOG(("WebSocketChannel::StartWebsocketData mSocketIn->AsyncWait() failed "
-         "with error %0x%08x\n", rv));
-    return rv;
+         "with error 0x%08x", rv));
+    return mSocketThread->Dispatch(
+      NS_NewRunnableMethodWithArgs<nsresult>(this,
+                                             &WebSocketChannel::AbortSession,
+                                             rv),
+      NS_DISPATCH_NORMAL);
   }
 
   if (mPingInterval) {
@@ -2821,8 +2819,17 @@ WebSocketChannel::StartWebsocketData()
       NS_NewRunnableMethod(this, &WebSocketChannel::StartPinging),
       NS_DISPATCH_NORMAL);
     if (NS_FAILED(rv)) {
+      LOG(("WebSocketChannel::StartWebsocketData Could not start pinging, "
+           "rv=0x%08x", rv));
       return rv;
     }
+  }
+
+  LOG(("WebSocketChannel::StartWebsocketData Notifying Listener %p",
+       mListenerMT ? mListenerMT->mListener.get() : nullptr));
+
+  if (mListenerMT) {
+    mListenerMT->mListener->OnStart(mListenerMT->mContext);
   }
 
   return NS_OK;

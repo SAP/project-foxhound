@@ -40,7 +40,7 @@ function* check_normal() {
   BootstrapMonitor.checkAddonNotStarted(ID);
   BootstrapMonitor.checkAddonNotInstalled(ID);
 
-  restartManager();
+  yield promiseRestartManager();
 }
 
 // Installing the add-on normally doesn't require a restart
@@ -113,7 +113,7 @@ add_task(function*() {
   BootstrapMonitor.checkAddonNotStarted(ID);
   BootstrapMonitor.checkAddonNotInstalled(ID);
 
-  restartManager();
+  yield promiseRestartManager();
 });
 
 add_task(function*() {
@@ -285,6 +285,7 @@ add_task(function*() {
   gAppInfo.browserTabsRemoteAutostart = true;
   Services.prefs.setBoolPref("extensions.e10sBlocksEnabling", true);
   Services.prefs.setCharPref("extensions.hotfix.id", ID);
+  Services.prefs.setBoolPref("extensions.hotfix.cert.checkAttributes", false);
 
   yield check_normal();
 });

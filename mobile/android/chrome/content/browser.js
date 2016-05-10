@@ -93,11 +93,6 @@ XPCOMUtils.defineLazyServiceGetter(this, "Profiler",
 XPCOMUtils.defineLazyModuleGetter(this, "SimpleServiceDiscovery",
                                   "resource://gre/modules/SimpleServiceDiscovery.jsm");
 
-if (AppConstants.NIGHTLY_BUILD) {
-  XPCOMUtils.defineLazyModuleGetter(this, "ShumwayUtils",
-                                    "resource://shumway/ShumwayUtils.jsm");
-}
-
 XPCOMUtils.defineLazyModuleGetter(this, "WebappManager",
                                   "resource://gre/modules/WebappManager.jsm");
 
@@ -119,6 +114,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Notifications",
 XPCOMUtils.defineLazyModuleGetter(this, "ReaderMode", "resource://gre/modules/ReaderMode.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "RuntimePermissions", "resource://gre/modules/RuntimePermissions.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "FontEnumerator",
   "@mozilla.org/gfx/fontenumerator;1",
@@ -506,6 +503,7 @@ var BrowserApp = {
     Distribution.init();
     Tabs.init();
     SearchEngines.init();
+    Experiments.init();
 
     if ("arguments" in window) {
       if (window.arguments[0])
@@ -537,13 +535,17 @@ var BrowserApp = {
       Services.prefs.setBoolPref("xpinstall.enabled", true);
     }
 
-     if (ParentalControls.parentalControlsEnabled) {
+    if (ParentalControls.parentalControlsEnabled) {
+        let isBlockListEnabled = ParentalControls.isAllowed(ParentalControls.BLOCK_LIST);
+        Services.prefs.setBoolPref("browser.safebrowsing.forbiddenURIs.enabled", isBlockListEnabled);
+        Services.prefs.setBoolPref("browser.safebrowsing.allowOverride", !isBlockListEnabled);
+
         let isTelemetryEnabled = ParentalControls.isAllowed(ParentalControls.TELEMETRY);
         Services.prefs.setBoolPref("toolkit.telemetry.enabled", isTelemetryEnabled);
 
         let isHealthReportEnabled = ParentalControls.isAllowed(ParentalControls.HEALTH_REPORT);
         SharedPreferences.forApp().setBoolPref("android.not_a_preference.healthreport.uploadEnabled", isHealthReportEnabled);
-     }
+    }
 
     let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
     if (sysInfo.get("version") < 16) {
@@ -558,14 +560,14 @@ var BrowserApp = {
       ExternalApps.init();
     }, NativeWindow, "contextmenus");
 
-    InitLater(() => {
-      let mm = window.getGroupMessageManager("browsers");
-      mm.loadFrameScript("chrome://browser/content/content.js", true);
-    });
-
     if (AppConstants.ACCESSIBILITY) {
       InitLater(() => AccessFu.attach(window), window, "AccessFu");
     }
+
+    // Don't delay loading content.js because when we restore reader mode tabs,
+    // we require the reader mode scripts in content.js right away.
+    let mm = window.getGroupMessageManager("browsers");
+    mm.loadFrameScript("chrome://browser/content/content.js", true);
 
     // We can't delay registering WebChannel listeners: if the first page is
     // about:accounts, which can happen when starting the Firefox Account flow
@@ -594,17 +596,13 @@ var BrowserApp = {
       InitLater(() => Messaging.sendRequest({ type: "Gecko:DelayedStartup" }));
 
       if (AppConstants.NIGHTLY_BUILD) {
-        InitLater(() => ShumwayUtils.init(), window, "ShumwayUtils");
-        InitLater(() => Telemetry.addData("TRACKING_PROTECTION_ENABLED",
-            Services.prefs.getBoolPref("privacy.trackingprotection.enabled")));
-        InitLater(() => Telemetry.addData("TRACKING_PROTECTION_PBM_DISABLED",
-            !Services.prefs.getBoolPref("privacy.trackingprotection.pbmode.enabled")));
         InitLater(() => WebcompatReporter.init());
       }
 
       // Collect telemetry data.
       // We do this at startup because we want to move away from "gather-telemetry" (bug 1127907)
       InitLater(() => {
+        Telemetry.addData("FENNEC_TRACKING_PROTECTION_STATE", parseInt(BrowserApp.getTrackingProtectionState()));
         Telemetry.addData("ZOOMED_VIEW_ENABLED", Services.prefs.getBoolPref("ui.zoomedview.enabled"));
       });
 
@@ -962,9 +960,15 @@ var BrowserApp = {
         UITelemetry.addEvent("action.1", "contextmenu", null, "web_save_image");
         UITelemetry.addEvent("save.1", "contextmenu", null, "image");
 
-        ContentAreaUtils.saveImageURL(aTarget.currentURI.spec, null, "SaveImageTitle",
-                                      false, true, aTarget.ownerDocument.documentURIObject,
-                                      aTarget.ownerDocument);
+        RuntimePermissions.waitForPermissions(RuntimePermissions.WRITE_EXTERNAL_STORAGE).then(function(permissionGranted) {
+            if (!permissionGranted) {
+                return;
+            }
+
+            ContentAreaUtils.saveImageURL(aTarget.currentURI.spec, null, "SaveImageTitle",
+                                          false, true, aTarget.ownerDocument.documentURIObject,
+                                          aTarget.ownerDocument);
+        });
       });
 
     NativeWindow.contextmenus.add(stringGetter("contextmenu.setImageAs"),
@@ -1045,7 +1049,7 @@ var BrowserApp = {
   },
 
   _migrateUI: function() {
-    const UI_VERSION = 1;
+    const UI_VERSION = 2;
     let currentUIVersion = 0;
     try {
       currentUIVersion = Services.prefs.getIntPref("browser.migration.version");
@@ -1088,6 +1092,25 @@ var BrowserApp = {
       // Power users can go into about:config to re-enable this if they choose.
       if (Services.prefs.prefHasUserValue("nglayout.debug.paint_flashing")) {
         Services.prefs.clearUserPref("nglayout.debug.paint_flashing");
+      }
+    }
+
+    if (currentUIVersion < 2) {
+      let name;
+      if (Services.prefs.prefHasUserValue("browser.search.defaultenginename")) {
+        name = Services.prefs.getCharPref("browser.search.defaultenginename");
+      }
+      if (!name && Services.prefs.prefHasUserValue("browser.search.defaultenginename.US")) {
+        name = Services.prefs.getCharPref("browser.search.defaultenginename.US");
+      }
+      if (name) {
+        Services.search.init(() => {
+          let engine = Services.search.getEngineByName(name);
+          if (engine) {
+            Services.search.defaultEngine = engine;
+            Services.obs.notifyObservers(null, "default-search-engine-migrated", "");
+          }
+        });
       }
     }
 
@@ -1425,28 +1448,34 @@ var BrowserApp = {
   },
 
   saveAsPDF: function saveAsPDF(aBrowser) {
-    Task.spawn(function* () {
-      let fileName = ContentAreaUtils.getDefaultFileName(aBrowser.contentTitle, aBrowser.currentURI, null, null);
-      fileName = fileName.trim() + ".pdf";
+    RuntimePermissions.waitForPermissions(RuntimePermissions.WRITE_EXTERNAL_STORAGE).then(function(permissionGranted) {
+      if (!permissionGranted) {
+        return;
+      }
 
-      let downloadsDir = yield Downloads.getPreferredDownloadsDirectory();
-      let file = OS.Path.join(downloadsDir, fileName);
+      Task.spawn(function* () {
+        let fileName = ContentAreaUtils.getDefaultFileName(aBrowser.contentTitle, aBrowser.currentURI, null, null);
+        fileName = fileName.trim() + ".pdf";
 
-      // Force this to have a unique name.
-      let openedFile = yield OS.File.openUnique(file, { humanReadable: true });
-      file = openedFile.path;
-      yield openedFile.file.close();
+        let downloadsDir = yield Downloads.getPreferredDownloadsDirectory();
+        let file = OS.Path.join(downloadsDir, fileName);
 
-      let download = yield Downloads.createDownload({
-        source: aBrowser.contentWindow,
-        target: file,
-        saver: "pdf",
-        startTime: Date.now(),
+        // Force this to have a unique name.
+        let openedFile = yield OS.File.openUnique(file, { humanReadable: true });
+        file = openedFile.path;
+        yield openedFile.file.close();
+
+        let download = yield Downloads.createDownload({
+          source: aBrowser.contentWindow,
+          target: file,
+          saver: "pdf",
+          startTime: Date.now(),
+        });
+
+        let list = yield Downloads.getList(download.source.isPrivate ? Downloads.PRIVATE : Downloads.PUBLIC)
+        yield list.add(download);
+        yield download.start();
       });
-
-      let list = yield Downloads.getList(download.source.isPrivate ? Downloads.PRIVATE : Downloads.PUBLIC)
-      yield list.add(download);
-      yield download.start();
     });
   },
 
@@ -1460,6 +1489,20 @@ var BrowserApp = {
   PREF_TRACKING_PROTECTION_ENABLED: "2",
   PREF_TRACKING_PROTECTION_ENABLED_PB: "1",
   PREF_TRACKING_PROTECTION_DISABLED: "0",
+
+  /**
+   * Returns the current state of the tracking protection pref.
+   * (0 = Disabled, 1 = Enabled in PB, 2 = Enabled)
+   */
+  getTrackingProtectionState: function() {
+    if (Services.prefs.getBoolPref("privacy.trackingprotection.enabled")) {
+      return this.PREF_TRACKING_PROTECTION_ENABLED;
+    }
+    if (Services.prefs.getBoolPref("privacy.trackingprotection.pbmode.enabled")) {
+      return this.PREF_TRACKING_PROTECTION_ENABLED_PB;
+    }
+    return this.PREF_TRACKING_PROTECTION_DISABLED;
+  },
 
   handlePreferencesRequest: function handlePreferencesRequest(aRequestId,
                                                               aPrefNames,
@@ -1501,13 +1544,7 @@ var BrowserApp = {
           continue;
         case "privacy.trackingprotection.state": {
           pref.type = "string";
-          if (Services.prefs.getBoolPref("privacy.trackingprotection.enabled")) {
-            pref.value = this.PREF_TRACKING_PROTECTION_ENABLED;
-          } else if (Services.prefs.getBoolPref("privacy.trackingprotection.pbmode.enabled")) {
-            pref.value = this.PREF_TRACKING_PROTECTION_ENABLED_PB;
-          } else {
-            pref.value = this.PREF_TRACKING_PROTECTION_DISABLED;
-          }
+          pref.value = this.getTrackingProtectionState();
           prefs.push(pref);
           continue;
         }
@@ -1746,15 +1783,22 @@ var BrowserApp = {
     if (formHelperMode == kFormHelperModeDisabled)
       return;
 
-    let focused = this.getFocusedInput(aBrowser);
-
-    if (focused) {
-      let shouldZoom = Services.prefs.getBoolPref("formhelper.autozoom");
-      if (formHelperMode == kFormHelperModeDynamic && this.isTablet)
-        shouldZoom = false;
-      // ZoomHelper.zoomToElement will handle not sending any message if this input is already mostly filling the screen
-      ZoomHelper.zoomToElement(focused, -1, false,
-          aAllowZoom && shouldZoom && !ViewportHandler.isViewportSpecified(aBrowser.contentWindow));
+    if (!AppConstants.MOZ_ANDROID_APZ) {
+      let focused = this.getFocusedInput(aBrowser);
+      if (focused) {
+        let shouldZoom = Services.prefs.getBoolPref("formhelper.autozoom");
+        if (formHelperMode == kFormHelperModeDynamic && this.isTablet)
+          shouldZoom = false;
+        // ZoomHelper.zoomToElement will handle not sending any message if this input is already mostly filling the screen
+        ZoomHelper.zoomToElement(focused, -1, false,
+            aAllowZoom && shouldZoom && !ViewportHandler.isViewportSpecified(aBrowser.contentWindow));
+      }
+    } else {
+      // Using a timeout to let the viewport propagate to the compositor thread before requesting a pan and zoom animation
+      // so the element will end up in the middle of the correctly sized viewport. See Bug 1231517.
+      setTimeout(function(e) {
+        aBrowser.contentWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).zoomToFocusedInput();
+      }, 500);
     }
   },
 
@@ -3549,7 +3593,7 @@ Tab.prototype = {
       }
     }
 
-    // Must be called after appendChild so the docshell has been created.
+    // Must be called after appendChild so the docShell has been created.
     this.setActive(false);
 
     let isPrivate = ("isPrivate" in aParams) && aParams.isPrivate;
@@ -3557,9 +3601,14 @@ Tab.prototype = {
       this.browser.docShell.QueryInterface(Ci.nsILoadContext).usePrivateBrowsing = true;
     }
 
+    // Set the new docShell load flags based on network state.
+    if (Tabs.useCache) {
+      this.browser.docShell.defaultLoadFlags |= Ci.nsIRequest.LOAD_FROM_CACHE;
+    }
+
     this.browser.stop();
 
-    // only set tab uri if uri is valid
+    // Only set tab uri if uri is valid
     let uri = null;
     let title = aParams.title || aURL;
     try {
@@ -3934,8 +3983,8 @@ Tab.prototype = {
        * error should be no more than one app unit so doing the floor is overkill, but safe in the
        * sense that the extra page size updates that get sent as a result will be mostly harmless.
        */
-      let pageLargerThanScreen = (cssPageRect.width >= Math.floor(viewport.cssWidth))
-                              && (cssPageRect.height >= Math.floor(viewport.cssHeight));
+      let pageLargerThanScreen = (Math.ceil(cssPageRect.width) >= Math.floor(viewport.cssWidth))
+                              && (Math.ceil(cssPageRect.height) >= Math.floor(viewport.cssHeight));
       if (doc.readyState === 'complete' || pageLargerThanScreen) {
         viewport.cssPageLeft = cssPageRect.left;
         viewport.cssPageTop = cssPageRect.top;
@@ -3975,7 +4024,12 @@ Tab.prototype = {
       };
     }
 
-    if (!this.metatags[type] || this.metatags[type + "_quality"] < quality) {
+    if (type == "touchIconList") {
+      if (!this.metatags['touchIconList']) {
+        this.metatags['touchIconList'] = {};
+      }
+      this.metatags.touchIconList[quality] = value;
+    } else if (!this.metatags[type] || this.metatags[type + "_quality"] < quality) {
       this.metatags[type] = value;
       this.metatags[type + "_quality"] = quality;
     }
@@ -4212,6 +4266,10 @@ Tab.prototype = {
         let list = this.sanitizeRelString(target.rel);
         if (list.indexOf("[icon]") != -1) {
           jsonMessage = this.makeFaviconMessage(target);
+        } else if (list.indexOf("[apple-touch-icon]") != -1 ||
+            list.indexOf("[apple-touch-icon-precomposed]") != -1) {
+          let message = this.makeFaviconMessage(target);
+          this.addMetadata("touchIconList", message.href, message.size);
         } else if (list.indexOf("[alternate]") != -1 && aEvent.type == "DOMLinkAdded") {
           let type = target.type.toLowerCase().replace(/^\s+|\s*(?:;.*)?$/g, "");
           let isFeed = (type == "application/rss+xml" || type == "application/atom+xml");
@@ -5288,6 +5346,9 @@ var ErrorPageEventHandler = {
             // ....but add a notify bar as a reminder, so that they don't lose
             // track after, e.g., tab switching.
             NativeWindow.doorhanger.show(Strings.browser.GetStringFromName("safeBrowsingDoorhanger"), "safebrowsing-warning", [], BrowserApp.selectedTab.id);
+          } else if (target == errorDoc.getElementById("whyForbiddenButton")) {
+            // This is the "Why is this site blocked" button for family friendly browsing.
+            BrowserApp.selectedBrowser.loadURI("https://support.mozilla.org/kb/controlledaccess");
           }
         }
         break;
@@ -6303,6 +6364,9 @@ var IdentityHandler = {
   // Extended-Validation SSL CA-signed identity information (EV). A more rigorous validation process.
   IDENTITY_MODE_VERIFIED: "verified",
 
+  // Part of the product's UI (built in about: pages)
+  IDENTITY_MODE_CHROMEUI: "chromeUI",
+
   // The following mixed content modes are only used if "security.mixed_content.block_active_content"
   // is enabled. Our Java frontend coalesces them into one indicator.
 
@@ -6367,13 +6431,19 @@ var IdentityHandler = {
   /**
    * Determines the identity mode corresponding to the icon we show in the urlbar.
    */
-  getIdentityMode: function getIdentityMode(aState) {
+  getIdentityMode: function getIdentityMode(aState, uri) {
     if (aState & Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL) {
       return this.IDENTITY_MODE_VERIFIED;
     }
 
     if (aState & Ci.nsIWebProgressListener.STATE_IS_SECURE) {
       return this.IDENTITY_MODE_IDENTIFIED;
+    }
+
+    // We also allow "about:" by allowing the selector to be empty (i.e. '(|.....|...|...)'
+    let whitelist = /^about:($|about|accounts|addons|buildconfig|cache|config|crashes|devices|downloads|fennec|firefox|feedback|healthreport|license|logins|logo|memory|mozilla|networking|plugins|privatebrowsing|rights|serviceworkers|support|telemetry|webrtc)($|\?)/i;
+    if (uri.schemeIs("about") && whitelist.test(uri.spec)) {
+        return this.IDENTITY_MODE_CHROMEUI;
     }
 
     return this.IDENTITY_MODE_UNKNOWN;
@@ -6470,7 +6540,12 @@ var IdentityHandler = {
     }
     this._lastLocation = locationObj;
 
-    let identityMode = this.getIdentityMode(aState);
+    let uri = aBrowser.currentURI;
+    try {
+      uri = Services.uriFixup.createExposableURI(uri);
+    } catch (e) {}
+
+    let identityMode = this.getIdentityMode(aState, uri);
     let mixedDisplay = this.getMixedDisplayMode(aState);
     let mixedActive = this.getMixedActiveMode(aState);
     let trackingMode = this.getTrackingMode(aState, aBrowser);
@@ -6486,7 +6561,12 @@ var IdentityHandler = {
 
     // Don't show identity data for pages with an unknown identity or if any
     // mixed content is loaded (mixed display content is loaded by default).
-    if (identityMode == this.IDENTITY_MODE_UNKNOWN || aState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
+    // We also return for CHROMEUI pages since they don't have any certificate
+    // information to load either. result.secure specifically refers to connection
+    // security, which is irrelevant for about: pages, as they're loaded locally.
+    if (identityMode == this.IDENTITY_MODE_UNKNOWN ||
+        identityMode == this.IDENTITY_MODE_CHROMEUI ||
+        aState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
       result.secure = false;
       return result;
     }
@@ -6857,6 +6937,8 @@ var ActivityObserver = {
     let isForeground = false;
     let tab = BrowserApp.selectedTab;
 
+    UITelemetry.addEvent("show.1", "system", null, aTopic);
+
     switch (aTopic) {
       case "application-background" :
         let doc = (tab ? tab.browser.contentDocument : null);
@@ -6881,6 +6963,41 @@ var Telemetry = {
     let histogram = Services.telemetry.getHistogramById(aHistogramId);
     histogram.add(aValue);
   },
+};
+
+var Experiments = {
+  // Enable malware download protection (bug 936041)
+  MALWARE_DOWNLOAD_PROTECTION: "malware-download-protection",
+
+  // Try to load pages from disk cache when network is offline (bug 935190)
+  OFFLINE_CACHE: "offline-cache",
+
+  init() {
+    Messaging.sendRequestForResult({
+      type: "Experiments:GetActive"
+    }).then(experiments => {
+      let names = JSON.parse(experiments);
+      for (let name of names) {
+        switch (name) {
+          case this.MALWARE_DOWNLOAD_PROTECTION: {
+            // Apply experiment preferences on the default branch. This allows
+            // us to avoid migrating user prefs when experiments are enabled/disabled,
+            // and it also allows users to override these prefs in about:config.
+            let defaults = Services.prefs.getDefaultBranch(null);
+            defaults.setBoolPref("browser.safebrowsing.downloads.enabled", true);
+            defaults.setBoolPref("browser.safebrowsing.downloads.remote.enabled", true);
+            continue;
+          }
+
+          case this.OFFLINE_CACHE: {
+            let defaults = Services.prefs.getDefaultBranch(null);
+            defaults.setBoolPref("browser.tabs.useCache", true);
+            continue;
+          }
+        }
+      }
+    });
+  }
 };
 
 var ExternalApps = {
@@ -7241,6 +7358,7 @@ var Distribution = {
 
 var Tabs = {
   _enableTabExpiration: false,
+  _useCache: false,
   _domains: new Set(),
 
   init: function() {
@@ -7252,7 +7370,14 @@ var Tabs = {
       Services.obs.addObserver(this, "memory-pressure", false);
     }
 
+    // Watch for opportunities to pre-connect to high probability targets.
     Services.obs.addObserver(this, "Session:Prefetch", false);
+
+    // Track the network connection so we can efficiently use the cache
+    // for possible offline rendering.
+    Services.obs.addObserver(this, "network:link-status-changed", false);
+    let network = Cc["@mozilla.org/network/network-link-service;1"].getService(Ci.nsINetworkLinkService);
+    this.useCache = !network.isLinkUp;
 
     BrowserApp.deck.addEventListener("pageshow", this, false);
     BrowserApp.deck.addEventListener("TabOpen", this, false);
@@ -7273,8 +7398,8 @@ var Tabs = {
         break;
       case "Session:Prefetch":
         if (aData) {
-          let uri = Services.io.newURI(aData, null, null);
           try {
+            let uri = Services.io.newURI(aData, null, null);
             if (uri && !this._domains.has(uri.host)) {
               Services.io.QueryInterface(Ci.nsISpeculativeConnect).speculativeConnect(uri, null);
               this._domains.add(uri.host);
@@ -7282,14 +7407,33 @@ var Tabs = {
           } catch (e) {}
         }
         break;
+      case "network:link-status-changed":
+        if (["down", "unknown", "up"].indexOf(aData) == -1) {
+          return;
+        }
+        this.useCache = (aData != "up");
+        break;
     }
   },
 
   handleEvent: function(aEvent) {
     switch (aEvent.type) {
       case "pageshow":
-        // Clear the domain cache whenever a page get loaded into any browser.
+        // Clear the domain cache whenever a page is loaded into any browser.
         this._domains.clear();
+
+        // Notify if we are loading a page from cache.
+        if (this._useCache) {
+          let targetDoc = aEvent.originalTarget;
+          let isTopLevel = (targetDoc.defaultView.parent === targetDoc.defaultView);
+
+          // Ignore any about: pages, especially about:neterror since it means we failed to find the page in cache.
+          let targetURI = targetDoc.documentURI;
+          if (isTopLevel && !targetURI.startsWith("about:")) {
+            UITelemetry.addEvent("neterror.1", "toast", null, "usecache");
+            Snackbars.show(Strings.browser.GetStringFromName("networkOffline.message"), Snackbars.LENGTH_INDEFINITE);
+          }
+        }
         break;
       case "TabOpen":
         // Use opening a new tab as a trigger to expire the most stale tab.
@@ -7331,6 +7475,34 @@ var Tabs = {
       }
     }
     return false;
+  },
+
+  get useCache() {
+    if (!Services.prefs.getBoolPref("browser.tabs.useCache")) {
+      return false;
+    }
+    return this._useCache;
+  },
+
+  set useCache(aUseCache) {
+    if (!Services.prefs.getBoolPref("browser.tabs.useCache")) {
+      return;
+    }
+
+    if (this._useCache == aUseCache) {
+      return;
+    }
+
+    BrowserApp.tabs.forEach(function(tab) {
+      if (tab.browser && tab.browser.docShell) {
+        if (aUseCache) {
+          tab.browser.docShell.defaultLoadFlags &= ~Ci.nsIRequest.LOAD_FROM_CACHE;
+        } else {
+          tab.browser.docShell.defaultLoadFlags |= Ci.nsIRequest.LOAD_FROM_CACHE;
+        }
+      }
+    });
+    this._useCache = aUseCache;
   },
 
   // For debugging

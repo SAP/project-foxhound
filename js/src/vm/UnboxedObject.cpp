@@ -19,7 +19,6 @@
 using mozilla::ArrayLength;
 using mozilla::DebugOnly;
 using mozilla::PodCopy;
-using mozilla::UniquePtr;
 
 using namespace js;
 
@@ -103,6 +102,11 @@ UnboxedLayout::makeConstructorCode(JSContext* cx, HandleObjectGroup group)
 #else
     propertiesReg = IntArgReg0;
     newKindReg = IntArgReg1;
+#endif
+
+#ifdef JS_CODEGEN_ARM64
+    // ARM64 communicates stack address via sp, but uses a pseudo-sp for addressing.
+    masm.initStackPtr();
 #endif
 
     MOZ_ASSERT(propertiesReg.volatile_());
@@ -342,6 +346,11 @@ UnboxedPlainObject::ensureExpando(JSContext* cx, Handle<UnboxedPlainObject*> obj
         NewObjectWithGivenProto<UnboxedExpandoObject>(cx, nullptr, gc::AllocKind::OBJECT4);
     if (!expando)
         return nullptr;
+
+    // Don't track property types for expando objects. This allows Baseline
+    // and Ion AddSlot ICs to guard on the unboxed group without guarding on
+    // the expando group.
+    MarkObjectGroupUnknownProperties(cx, expando->group());
 
     // If the expando is tenured then the original object must also be tenured.
     // Otherwise barriers triggered on the original object for writes to the

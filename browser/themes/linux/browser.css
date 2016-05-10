@@ -19,8 +19,8 @@
 
 :root {
   --backbutton-urlbar-overlap: 6px;
-  /* icon width + border + horizontal padding (includes the overlap from backbutton-urlbar-overlap) */
-  --forwardbutton-width: 31px;
+  /* icon width + border + horizontal padding (without the overlap from backbutton-urlbar-overlap) */
+  --forwardbutton-width: 25px;
 
   --toolbarbutton-hover-background: rgba(255,255,255,.5) linear-gradient(rgba(255,255,255,.5), transparent);
   --toolbarbutton-hover-bordercolor: rgba(0,0,0,.25);
@@ -69,6 +69,10 @@
   background-image: linear-gradient(@toolbarHighlight@, @toolbarHighlight@);
 }
 
+#navigator-toolbox > toolbar:not(#toolbar-menubar):not(#TabsToolbar):-moz-lwtheme {
+  background-image: linear-gradient(@toolbarHighlightLWT@, @toolbarHighlightLWT@);
+}
+
 #navigator-toolbox > toolbar:not(:-moz-lwtheme):not(#toolbar-menubar):not(#TabsToolbar) {
   -moz-appearance: none;
   border-style: none;
@@ -103,7 +107,7 @@
 }
 
 #nav-bar {
-  box-shadow: 0 1px 0 @toolbarHighlight@ inset;
+  box-shadow: 0 1px 0 @navbarInsetHighlight@ inset;
   padding-top: 2px;
   padding-bottom: 2px;
 }
@@ -525,12 +529,6 @@ menuitem:not([type]):not(.menuitem-tooltip):not(.menuitem-iconic-tooltip) {
   list-style-image: url("chrome://browser/skin/places/unsortedBookmarks.png");
 }
 
-#panelMenu_pocket,
-#menu_pocket,
-#BMB_pocket {
-  list-style-image: url("chrome://browser/content/pocket/panels/img/pocketmenuitem16.png");
-}
-
 #menu_openDownloads {
   list-style-image: url("chrome://browser/skin/Toolbar-small.png");
   -moz-image-region: rect(0px 16px 16px 0px);
@@ -750,7 +748,7 @@ menuitem:not([type]):not(.menuitem-tooltip):not(.menuitem-iconic-tooltip) {
   padding-right: 3px;
   border-left-style: none;
   border-radius: 0;
-  max-width: var(--forwardbutton-width);
+  max-width: calc(var(--forwardbutton-width) + var(--backbutton-urlbar-overlap));
 }
 
 @conditionalForwardWithUrlbar@:not([switchingtabs]) > #forward-button {
@@ -758,7 +756,7 @@ menuitem:not([type]):not(.menuitem-tooltip):not(.menuitem-iconic-tooltip) {
 }
 
 @conditionalForwardWithUrlbar@ > #forward-button[disabled] {
-  margin-left: calc(0px - var(--forwardbutton-width));
+  margin-left: calc(0px - var(--forwardbutton-width) - var(--backbutton-urlbar-overlap));
 }
 
 @conditionalForwardWithUrlbar@:hover:not([switchingtabs]) > #forward-button[disabled] {
@@ -768,7 +766,7 @@ menuitem:not([type]):not(.menuitem-tooltip):not(.menuitem-iconic-tooltip) {
 
 @conditionalForwardWithUrlbar@:not(:hover) > #forward-button[disabled] {
   /* when not hovered anymore, trigger a new transition to hide the forward button immediately */
-  margin-left: calc(-0.01px - var(--forwardbutton-width));
+  margin-left: calc(-0.01px - var(--forwardbutton-width) - var(--backbutton-urlbar-overlap));
 }
 
 /* undo close tab menu item */
@@ -1445,6 +1443,10 @@ richlistitem[type~="action"][actiontype$="tab"] > .ac-url-box > .ac-action-icon 
 /* Content area */
 #sidebar {
   background-color: Window;
+}
+
+#sidebar-header > .close-icon:not(:hover):-moz-lwtheme-brighttext {
+  background-image: -moz-image-rect(url("chrome://global/skin/icons/close.svg"), 0, 80, 16, 64);
 }
 
 .browserContainer > findbar {

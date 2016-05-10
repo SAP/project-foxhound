@@ -60,6 +60,8 @@ public:
 #endif // defined(XP_WIN)
 
 public:
+    typedef mozilla::gfx::DrawTarget DrawTarget;
+
     PluginInstanceParent(PluginModuleParent* parent,
                          NPP npp,
                          const nsCString& mimeType,
@@ -338,9 +340,8 @@ public:
 #endif
     nsresult SetBackgroundUnknown();
     nsresult BeginUpdateBackground(const nsIntRect& aRect,
-                                   gfxContext** aCtx);
-    nsresult EndUpdateBackground(gfxContext* aCtx,
-                                 const nsIntRect& aRect);
+                                   DrawTarget** aDrawTarget);
+    nsresult EndUpdateBackground(const nsIntRect& aRect);
     void DidComposite();
 
     bool IsUsingDirectDrawing();
@@ -352,8 +353,15 @@ public:
     static PluginInstanceParent* Cast(NPP instance,
                                       PluginAsyncSurrogate** aSurrogate = nullptr);
 
+    // for IME hook
     virtual bool
-    RecvPluginDidSetCursor() override;
+    RecvGetCompositionString(const uint32_t& aIndex,
+                             nsTArray<uint8_t>* aBuffer,
+                             int32_t* aLength) override;
+    virtual bool
+    RecvSetCandidateWindow(const int32_t& aX, const int32_t& aY) override;
+    virtual bool
+    RecvRequestCommitOrCancel(const bool& aCommitted) override;
 
 private:
     // Create an appropriate platform surface for a background of size

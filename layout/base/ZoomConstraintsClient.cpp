@@ -7,8 +7,11 @@
 
 #include <inttypes.h>
 #include "FrameMetrics.h"
+#include "gfxPrefs.h"
 #include "LayersLogging.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/Event.h"
 #include "nsDocument.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"

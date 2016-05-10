@@ -48,9 +48,9 @@ function run_test() {
 
   do_get_profile();
 
-  disableServiceWorkerEvents(
-    'https://example.com/page'
-  );
+  servicePrefs.set('testing.notifyWorkers', false);
+  servicePrefs.set('testing.notifyAllObservers', true);
+  setPrefs();
 
   run_next_test();
 }

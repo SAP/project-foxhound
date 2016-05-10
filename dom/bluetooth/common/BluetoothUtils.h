@@ -14,6 +14,7 @@ namespace mozilla {
 namespace dom {
 class GattPermissions;
 class GattCharacteristicProperties;
+class BluetoothAdvertisingData;
 }
 }
 
@@ -175,6 +176,19 @@ void
 GeneratePathFromGattId(const BluetoothGattId& aId,
                        nsAString& aPath);
 
+/**
+ * Convert BluetoothAdvertisingData object used by applications to
+ * BluetoothGattAdvertisingData object used by gecko backend.
+ *
+ * @param aAdvData [in] BluetoothAdvertisingData object.
+ * @param aGattAdData [out] Target BluetoothGattAdvertisingData.
+ * @return NS_OK on success, NS_ERROR_ILLEGAL_VALUE otherwise.
+ */
+nsresult
+AdvertisingDataToGattAdvertisingData(
+  const BluetoothAdvertisingData& aAdvData,
+  BluetoothGattAdvertisingData& aGattAdvData);
+
 //
 // Register/Unregister bluetooth signal handlers
 //
@@ -313,7 +327,7 @@ DispatchReplyError(BluetoothReplyRunnable* aRunnable,
 
 void
 DispatchStatusChangedEvent(const nsAString& aType,
-                           const nsAString& aDeviceAddress,
+                           const BluetoothAddress& aDeviceAddress,
                            bool aStatus);
 
 //

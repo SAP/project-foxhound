@@ -57,6 +57,10 @@ public:
   nsresult Drain() override;
   nsresult Shutdown() override;
   nsresult Input(MediaRawData* aSample) override;
+  const char* GetDescriptionName() const override
+  {
+    return "android decoder";
+  }
 
 protected:
   enum ModuleState {
@@ -94,7 +98,7 @@ protected:
 
   nsresult GetInputBuffer(JNIEnv* env, int index, jni::Object::LocalRef* buffer);
   bool WaitForInput();
-  MediaRawData* PeekNextSample();
+  already_AddRefed<MediaRawData> PeekNextSample();
   nsresult QueueSample(const MediaRawData* aSample);
   nsresult QueueEOS();
   void HandleEOS(int32_t aOutputStatus);

@@ -13,6 +13,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/CSSStyleSheet.h"
+#include "mozilla/EffectCompositor.h"
 #include "mozilla/EnumeratedRange.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
@@ -28,7 +29,6 @@
 #include "nsIContent.h"
 #include "nsRuleData.h"
 #include "nsRuleProcessorData.h"
-#include "nsTransitionManager.h"
 #include "nsAnimationManager.h"
 #include "nsStyleSheetService.h"
 #include "mozilla/dom/Element.h"
@@ -450,11 +450,13 @@ nsStyleSet::GatherRuleProcessors(SheetType aType)
     // levels that do not contain CSS style sheets
     case SheetType::Animation:
       MOZ_ASSERT(mSheets[aType].IsEmpty());
-      mRuleProcessors[aType] = PresContext()->AnimationManager();
+      mRuleProcessors[aType] = PresContext()->EffectCompositor()->
+        RuleProcessor(EffectCompositor::CascadeLevel::Animations);
       return NS_OK;
     case SheetType::Transition:
       MOZ_ASSERT(mSheets[aType].IsEmpty());
-      mRuleProcessors[aType] = PresContext()->TransitionManager();
+      mRuleProcessors[aType] = PresContext()->EffectCompositor()->
+        RuleProcessor(EffectCompositor::CascadeLevel::Transitions);
       return NS_OK;
     case SheetType::StyleAttr:
       MOZ_ASSERT(mSheets[aType].IsEmpty());
@@ -689,7 +691,7 @@ nsStyleSet::DirtyRuleProcessors(SheetType aType)
 }
 
 bool
-nsStyleSet::GetAuthorStyleDisabled()
+nsStyleSet::GetAuthorStyleDisabled() const
 {
   return mAuthorStyleDisabled;
 }
@@ -948,18 +950,12 @@ nsStyleSet::GetContext(nsStyleContext* aParentContext,
         NS_NewStyleContext(parentIfVisited, aPseudoTag, aPseudoType,
                            aVisitedRuleNode,
                            aFlags & eSkipParentDisplayBasedStyleFixup);
-      if (!parentIfVisited) {
-        mRoots.AppendElement(resultIfVisited);
-      }
       resultIfVisited->SetIsStyleIfVisited();
       result->SetStyleIfVisited(resultIfVisited.forget());
 
       if (relevantLinkVisited) {
         result->AddStyleBit(NS_STYLE_RELEVANT_LINK_VISITED);
       }
-    }
-    if (!aParentContext) {
-      mRoots.AppendElement(result);
     }
   }
   else {
@@ -1519,7 +1515,9 @@ nsStyleSet::RuleNodeWithReplacement(Element* aElement,
   // rule tree from ElementRestyler::RestyleSelf to avoid taking that
   // path when we're rebuilding the rule tree.
 
-  nsTArray<RuleNodeInfo> rules;
+  // This array can be hot and often grows to ~20 elements, so inline storage
+  // is best.
+  nsAutoTArray<RuleNodeInfo, 30> rules;
   for (nsRuleNode* ruleNode = aOldRuleNode; !ruleNode->IsRoot();
        ruleNode = ruleNode->GetParent()) {
     RuleNodeInfo* curRule = rules.AppendElement();
@@ -1553,8 +1551,9 @@ nsStyleSet::RuleNodeWithReplacement(Element* aElement,
           if (aPseudoType == nsCSSPseudoElements::ePseudo_NotPseudoElement ||
               aPseudoType == nsCSSPseudoElements::ePseudo_before ||
               aPseudoType == nsCSSPseudoElements::ePseudo_after) {
-            nsIStyleRule* rule = PresContext()->AnimationManager()->
-              GetAnimationRule(aElement, aPseudoType);
+            nsIStyleRule* rule = PresContext()->EffectCompositor()->
+              GetAnimationRule(aElement, aPseudoType,
+                               EffectCompositor::CascadeLevel::Animations);
             if (rule) {
               ruleWalker.ForwardOnPossiblyCSSRule(rule);
               ruleWalker.CurrentNode()->SetIsAnimationRule();
@@ -1566,8 +1565,9 @@ nsStyleSet::RuleNodeWithReplacement(Element* aElement,
           if (aPseudoType == nsCSSPseudoElements::ePseudo_NotPseudoElement ||
               aPseudoType == nsCSSPseudoElements::ePseudo_before ||
               aPseudoType == nsCSSPseudoElements::ePseudo_after) {
-            nsIStyleRule* rule = PresContext()->TransitionManager()->
-              GetAnimationRule(aElement, aPseudoType);
+            nsIStyleRule* rule = PresContext()->EffectCompositor()->
+              GetAnimationRule(aElement, aPseudoType,
+                               EffectCompositor::CascadeLevel::Transitions);
             if (rule) {
               ruleWalker.ForwardOnPossiblyCSSRule(rule);
               ruleWalker.CurrentNode()->SetIsAnimationRule();
@@ -1956,7 +1956,7 @@ nsStyleSet::ResolveAnonymousBoxStyle(nsIAtom* aPseudoTag,
     // Add any @page rules that are specified.
     nsTArray<nsCSSPageRule*> rules;
     nsTArray<css::ImportantStyleData*> importantRules;
-    PresContext()->StyleSet()->AppendPageRules(rules);
+    AppendPageRules(rules);
     for (uint32_t i = 0, i_end = rules.Length(); i != i_end; ++i) {
       css::Declaration* declaration = rules[i]->Declaration();
       declaration->SetImmutable();
@@ -2176,6 +2176,16 @@ nsStyleSet::Shutdown()
 }
 
 static const uint32_t kGCInterval = 300;
+
+// Notification that a style context with a null parent has been created.
+void
+nsStyleSet::AddStyleContextRoot(nsStyleContext* aStyleContext)
+{
+  // aStyleContext has not been fully initialized, but its parent and
+  // rule node are correct.
+  MOZ_ASSERT(!aStyleContext->GetParent());
+  mRoots.AppendElement(aStyleContext);
+}
 
 void
 nsStyleSet::NotifyStyleContextDestroyed(nsStyleContext* aStyleContext)

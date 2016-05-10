@@ -8,6 +8,7 @@
 
 #include "nscore.h"
 #include "nsIWidget.h"
+#include "npapi.h"
 #include <windows.h>
 #include <inputscope.h>
 
@@ -103,6 +104,17 @@ public:
    */
   static void InitInputContext(nsWindow* aWindow, InputContext& aInputContext);
 
+  /*
+   * For windowless plugin helper.
+   */
+  static void SetCandidateWindow(nsWindow* aWindow, CANDIDATEFORM* aForm);
+
+  /*
+   * For WM_IME_*COMPOSITION messages and e10s with windowless plugin
+   */
+  static void DefaultProcOfPluginEvent(nsWindow* aWindow,
+                                       const NPEvent* aPluginEvent);
+
 #ifdef DEBUG
   /**
    * Returns true when current keyboard layout has IME.  Otherwise, false.
@@ -133,6 +145,7 @@ private:
   static void MaybeDismissOnScreenKeyboard(nsWindow* aWindow);
   static bool WStringStartsWithCaseInsensitive(const std::wstring& aHaystack,
                                                const std::wstring& aNeedle);
+  static bool NeedOnScreenKeyboard();
   static bool IsKeyboardPresentOnSlate();
   static bool IsInTabletMode();
   static bool AutoInvokeOnScreenKeyboardInDesktopMode();

@@ -10,10 +10,12 @@
 
 #include "nsDocument.h"
 
+#include "mozilla/AnimationComparator.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/EffectSet.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Likely.h"
@@ -742,8 +744,7 @@ nsDOMStyleSheetList::NodeWillBeDestroyed(const nsINode *aNode)
 }
 
 void
-nsDOMStyleSheetList::StyleSheetAdded(nsIDocument *aDocument,
-                                     CSSStyleSheet* aStyleSheet,
+nsDOMStyleSheetList::StyleSheetAdded(CSSStyleSheet* aStyleSheet,
                                      bool aDocumentSheet)
 {
   if (aDocumentSheet && -1 != mLength) {
@@ -752,8 +753,7 @@ nsDOMStyleSheetList::StyleSheetAdded(nsIDocument *aDocument,
 }
 
 void
-nsDOMStyleSheetList::StyleSheetRemoved(nsIDocument *aDocument,
-                                       CSSStyleSheet* aStyleSheet,
+nsDOMStyleSheetList::StyleSheetRemoved(CSSStyleSheet* aStyleSheet,
                                        bool aDocumentSheet)
 {
   if (aDocumentSheet && -1 != mLength) {
@@ -1435,6 +1435,7 @@ nsIDocument::nsIDocument()
     mPostedFlushUserFontSet(false),
     mPartID(0),
     mDidFireDOMContentLoaded(true),
+    mHasScrollLinkedEffect(false),
     mUserHasInteracted(false)
 {
   SetInDocument();
@@ -1555,6 +1556,8 @@ nsDocument::~nsDocument()
         mixedContentLevel = MIXED_DISPLAY_CONTENT;
       }
       Accumulate(Telemetry::MIXED_CONTENT_PAGE_LOAD, mixedContentLevel);
+
+      Accumulate(Telemetry::SCROLL_LINKED_EFFECT_FOUND, mHasScrollLinkedEffect);
     }
   }
 
@@ -2689,6 +2692,16 @@ nsDocument::InitCSP(nsIChannel* aChannel)
   nsAutoCString tCspHeaderValue, tCspROHeaderValue;
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+  if (!httpChannel) {
+    // check baseChannel for CSP when loading a multipart channel
+    nsCOMPtr<nsIMultiPartChannel> multipart = do_QueryInterface(aChannel);
+    if (multipart) {
+      nsCOMPtr<nsIChannel> baseChannel;
+      multipart->GetBaseChannel(getter_AddRefs(baseChannel));
+      httpChannel = do_QueryInterface(baseChannel);
+    }
+  }
+
   if (httpChannel) {
     httpChannel->GetResponseHeader(
         NS_LITERAL_CSTRING("content-security-policy"),
@@ -2775,19 +2788,8 @@ nsDocument::InitCSP(nsIChannel* aChannel)
     }
   }
 
-  csp = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gCspPRLog, LogLevel::Debug, ("Failed to create CSP object: %x", rv));
-    return rv;
-  }
-
-  // used as a "self" identifier for the CSP.
-  nsCOMPtr<nsIURI> selfURI;
-  aChannel->GetURI(getter_AddRefs(selfURI));
-
-  // Store the request context for violation reports
-  csp->SetRequestContext(this, nullptr);
+  rv = principal->EnsureCSP(this, getter_AddRefs(csp));
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // ----- if the doc is an app and we want a default CSP, apply it.
   if (applyAppDefaultCSP) {
@@ -2837,14 +2839,7 @@ nsDocument::InitCSP(nsIChannel* aChannel)
       aChannel->Cancel(NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION);
     }
   }
-
-  rv = principal->SetCsp(csp);
-  NS_ENSURE_SUCCESS(rv, rv);
-  MOZ_LOG(gCspPRLog, LogLevel::Debug,
-         ("Inserted CSP into principal %p", principal));
-
   ApplySettingsFromCSP(false);
-
   return NS_OK;
 }
 
@@ -3126,6 +3121,32 @@ nsDocument::Timeline()
   return mDocumentTimeline;
 }
 
+void
+nsDocument::GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations)
+{
+  FlushPendingNotifications(Flush_Style);
+
+  // Bug 1174575: Until we implement a suitable PseudoElement interface we
+  // don't have anything to return for the |target| attribute of
+  // KeyframeEffect(ReadOnly) objects that refer to pseudo-elements.
+  // Rather than return some half-baked version of these objects (e.g.
+  // we a null effect attribute) we simply don't provide access to animations
+  // whose effect refers to a pseudo-element until we can support them
+  // properly.
+  for (nsIContent* node = nsINode::GetFirstChild();
+       node;
+       node = node->GetNextNode(this)) {
+    if (!node->IsElement()) {
+      continue;
+    }
+
+    node->AsElement()->GetAnimationsUnsorted(aAnimations);
+  }
+
+  // Sort animations by priority
+  aAnimations.Sort(AnimationPtrComparator<RefPtr<Animation>>());
+}
+
 /* Return true if the document is in the focused top-level window, and is an
  * ancestor of the focused DOMWindow. */
 NS_IMETHODIMP
@@ -3270,14 +3291,38 @@ nsIDocument::ElementFromPoint(float aX, float aY)
   return ElementFromPointHelper(aX, aY, false, true);
 }
 
+void
+nsIDocument::ElementsFromPoint(float aX, float aY,
+                               nsTArray<RefPtr<Element>>& aElements)
+{
+  ElementsFromPointHelper(aX, aY, nsIDocument::FLUSH_LAYOUT, aElements);
+}
+
 Element*
 nsDocument::ElementFromPointHelper(float aX, float aY,
                                    bool aIgnoreRootScrollFrame,
                                    bool aFlushLayout)
 {
-  // As per the the spec, we return null if either coord is negative
-  if (!aIgnoreRootScrollFrame && (aX < 0 || aY < 0)) {
+  nsAutoTArray<RefPtr<Element>, 1> elementArray;
+  ElementsFromPointHelper(aX, aY,
+                          ((aIgnoreRootScrollFrame ? nsIDocument::IGNORE_ROOT_SCROLL_FRAME : 0) |
+                           (aFlushLayout ? nsIDocument::FLUSH_LAYOUT : 0) |
+                           nsIDocument::IS_ELEMENT_FROM_POINT),
+                          elementArray);
+  if (elementArray.IsEmpty()) {
     return nullptr;
+  }
+  return elementArray[0];
+}
+
+void
+nsDocument::ElementsFromPointHelper(float aX, float aY,
+                                    uint32_t aFlags,
+                                    nsTArray<RefPtr<mozilla::dom::Element>>& aElements)
+{
+  // As per the the spec, we return null if either coord is negative
+  if (!(aFlags & nsIDocument::IGNORE_ROOT_SCROLL_FRAME) && (aX < 0 || aY < 0)) {
+    return;
   }
 
   nscoord x = nsPresContext::CSSPixelsToAppUnits(aX);
@@ -3286,32 +3331,58 @@ nsDocument::ElementFromPointHelper(float aX, float aY,
 
   // Make sure the layout information we get is up-to-date, and
   // ensure we get a root frame (for everything but XUL)
-  if (aFlushLayout)
+  if (aFlags & nsIDocument::FLUSH_LAYOUT) {
     FlushPendingNotifications(Flush_Layout);
+  }
 
   nsIPresShell *ps = GetShell();
   if (!ps) {
-    return nullptr;
+    return;
   }
   nsIFrame *rootFrame = ps->GetRootFrame();
 
   // XUL docs, unlike HTML, have no frame tree until everything's done loading
   if (!rootFrame) {
-    return nullptr; // return null to premature XUL callers as a reminder to wait
+    return; // return null to premature XUL callers as a reminder to wait
   }
 
-  nsIFrame *ptFrame = nsLayoutUtils::GetFrameForPoint(rootFrame, pt,
+  nsTArray<nsIFrame*> outFrames;
+  // Emulate what GetFrameAtPoint does, since we want all the frames under our
+  // point.
+  nsLayoutUtils::GetFramesForArea(rootFrame, nsRect(pt, nsSize(1, 1)), outFrames,
     nsLayoutUtils::IGNORE_PAINT_SUPPRESSION | nsLayoutUtils::IGNORE_CROSS_DOC |
-    (aIgnoreRootScrollFrame ? nsLayoutUtils::IGNORE_ROOT_SCROLL_FRAME : 0));
-  if (!ptFrame) {
-    return nullptr;
+    ((aFlags & nsIDocument::IGNORE_ROOT_SCROLL_FRAME) ? nsLayoutUtils::IGNORE_ROOT_SCROLL_FRAME : 0));
+
+  // Dunno when this would ever happen, as we should at least have a root frame under us?
+  if (outFrames.IsEmpty()) {
+    return;
   }
 
-  nsIContent* elem = GetContentInThisDocument(ptFrame);
-  if (elem && !elem->IsElement()) {
-    elem = elem->GetParent();
+  // Used to filter out repeated elements in sequence.
+  nsIContent* lastAdded = nullptr;
+
+  for (uint32_t i = 0; i < outFrames.Length(); i++) {
+    nsIContent* node = GetContentInThisDocument(outFrames[i]);
+
+    if (!node || !node->IsElement()) {
+      // If this helper is called via ElementsFromPoint, we need to make sure
+      // our frame is an element. Otherwise return whatever the top frame is
+      // even if it isn't the top-painted element.
+      if (!(aFlags & nsIDocument::IS_ELEMENT_FROM_POINT)) {
+        continue;
+      }
+      node = node->GetParent();
+    }
+    if (node && node != lastAdded) {
+      aElements.AppendElement(node->AsElement());
+      lastAdded = node;
+      // If this helper is called via ElementFromPoint, just return the first
+      // element we find.
+      if (aFlags & nsIDocument::IS_ELEMENT_FROM_POINT) {
+        return;
+      }
+    }
   }
-  return elem ? elem->AsElement() : nullptr;
 }
 
 nsresult
@@ -3659,14 +3730,12 @@ nsDocument::CreateShell(nsPresContext* aContext, nsViewManager* aViewManager,
   // Don't add anything here.  Add it to |doCreateShell| instead.
   // This exists so that subclasses can pass other values for the 4th
   // parameter some of the time.
-  return doCreateShell(aContext, aViewManager, aStyleSet,
-                       eCompatibility_FullStandards);
+  return doCreateShell(aContext, aViewManager, aStyleSet);
 }
 
 already_AddRefed<nsIPresShell>
 nsDocument::doCreateShell(nsPresContext* aContext,
-                          nsViewManager* aViewManager, nsStyleSet* aStyleSet,
-                          nsCompatibility aCompatMode)
+                          nsViewManager* aViewManager, nsStyleSet* aStyleSet)
 {
   NS_ASSERTION(!mPresShell, "We have a presshell already!");
 
@@ -3675,7 +3744,7 @@ nsDocument::doCreateShell(nsPresContext* aContext,
   FillStyleSet(aStyleSet);
 
   RefPtr<PresShell> shell = new PresShell;
-  shell->Init(this, aContext, aViewManager, aStyleSet, aCompatMode);
+  shell->Init(this, aContext, aViewManager, aStyleSet);
 
   // Note: we don't hold a ref to the shell (it holds a ref to us)
   mPresShell = shell;
@@ -4068,7 +4137,7 @@ nsDocument::AddStyleSheetToStyleSets(CSSStyleSheet* aSheet)
 void
 nsDocument::NotifyStyleSheetAdded(CSSStyleSheet* aSheet, bool aDocumentSheet)
 {
-  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleSheetAdded, (this, aSheet, aDocumentSheet));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleSheetAdded, (aSheet, aDocumentSheet));
 
   if (StyleSheetChangeEventsEnabled()) {
     DO_STYLESHEET_NOTIFICATION(StyleSheetChangeEvent,
@@ -4081,7 +4150,7 @@ nsDocument::NotifyStyleSheetAdded(CSSStyleSheet* aSheet, bool aDocumentSheet)
 void
 nsDocument::NotifyStyleSheetRemoved(CSSStyleSheet* aSheet, bool aDocumentSheet)
 {
-  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleSheetRemoved, (this, aSheet, aDocumentSheet));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleSheetRemoved, (aSheet, aDocumentSheet));
 
   if (StyleSheetChangeEventsEnabled()) {
     DO_STYLESHEET_NOTIFICATION(StyleSheetChangeEvent,
@@ -4209,8 +4278,7 @@ nsDocument::SetStyleSheetApplicableState(CSSStyleSheet* aSheet,
   // that are children of sheets in our style set, as well as some
   // sheets for nsHTMLEditor.
 
-  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleSheetApplicableStateChanged,
-                               (this, aSheet, aApplicable));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleSheetApplicableStateChanged, (aSheet));
 
   if (StyleSheetChangeEventsEnabled()) {
     DO_STYLESHEET_NOTIFICATION(StyleSheetApplicableStateChangeEvent,
@@ -5133,9 +5201,7 @@ void
 nsDocument::StyleRuleChanged(CSSStyleSheet* aSheet,
                              css::Rule* aStyleRule)
 {
-  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleRuleChanged,
-                               (this, aSheet,
-                                aStyleRule));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleRuleChanged, (aSheet));
 
   if (StyleSheetChangeEventsEnabled()) {
     DO_STYLESHEET_NOTIFICATION(StyleRuleChangeEvent,
@@ -5149,8 +5215,7 @@ void
 nsDocument::StyleRuleAdded(CSSStyleSheet* aSheet,
                            css::Rule* aStyleRule)
 {
-  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleRuleAdded,
-                               (this, aSheet, aStyleRule));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleRuleAdded, (aSheet));
 
   if (StyleSheetChangeEventsEnabled()) {
     DO_STYLESHEET_NOTIFICATION(StyleRuleChangeEvent,
@@ -5165,8 +5230,7 @@ void
 nsDocument::StyleRuleRemoved(CSSStyleSheet* aSheet,
                              css::Rule* aStyleRule)
 {
-  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleRuleRemoved,
-                               (this, aSheet, aStyleRule));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(StyleRuleRemoved, (aSheet));
 
   if (StyleSheetChangeEventsEnabled()) {
     DO_STYLESHEET_NOTIFICATION(StyleRuleChangeEvent,
@@ -5658,7 +5722,7 @@ nsIDocument::CreateAttribute(const nsAString& aName, ErrorResult& rv)
   }
 
   RefPtr<Attr> attribute = new Attr(nullptr, nodeInfo.forget(),
-                                      EmptyString(), false);
+                                    EmptyString());
   return attribute.forget();
 }
 
@@ -5691,7 +5755,7 @@ nsIDocument::CreateAttributeNS(const nsAString& aNamespaceURI,
   }
 
   RefPtr<Attr> attribute = new Attr(nullptr, nodeInfo.forget(),
-                                      EmptyString(), true);
+                                    EmptyString());
   return attribute.forget();
 }
 
@@ -6584,6 +6648,7 @@ nsIDocument::ImportNode(nsINode& aNode, bool aDeep, ErrorResult& rv) const
       if (ShadowRoot::FromNode(imported)) {
         break;
       }
+      MOZ_FALLTHROUGH;
     }
     case nsIDOMNode::ATTRIBUTE_NODE:
     case nsIDOMNode::ELEMENT_NODE:
@@ -7626,6 +7691,7 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
         rv.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
         return nullptr;
       }
+      MOZ_FALLTHROUGH;
     }
     case nsIDOMNode::ELEMENT_NODE:
     case nsIDOMNode::PROCESSING_INSTRUCTION_NODE:
@@ -7770,7 +7836,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
   // pixel an integer, and we want the adjusted value.
   float fullZoom = context ? context->DeviceContext()->GetFullZoom() : 1.0;
   fullZoom = (fullZoom == 0.0) ? 1.0 : fullZoom;
-  CSSToLayoutDeviceScale layoutDeviceScale = context->CSSToDevPixelScale();
+  CSSToLayoutDeviceScale layoutDeviceScale = context ? context->CSSToDevPixelScale() : CSSToLayoutDeviceScale(1);
 
   CSSToScreenScale defaultScale = layoutDeviceScale
                                 * LayoutDeviceToScreenScale(1.0);
@@ -7917,6 +7983,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
     mValidMaxScale = !maxScaleStr.IsEmpty() && NS_SUCCEEDED(scaleMaxErrorCode);
 
     mViewportType = Specified;
+    MOZ_FALLTHROUGH;
   }
   case Specified:
   default:
@@ -8757,6 +8824,15 @@ nsDocument::CanSavePresentation(nsIRequest *aNewRequest)
     }
   }
 
+#ifdef MOZ_WEBSPEECH
+  if (win) {
+    nsGlobalWindow* globalWindow = static_cast<nsGlobalWindow*>(win);
+    if (globalWindow->HasActiveSpeechSynthesis()) {
+      return false;
+    }
+  }
+#endif
+
   return true;
 }
 
@@ -9109,15 +9185,17 @@ nsDocument::OnPageShow(bool aPersisted,
 
   // Dispatch observer notification to notify observers page is shown.
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-  nsIPrincipal *principal = GetPrincipal();
-  os->NotifyObservers(static_cast<nsIDocument*>(this),
-                      nsContentUtils::IsSystemPrincipal(principal) ?
-                        "chrome-page-shown" :
-                        "content-page-shown",
-                      nullptr);
-  if (!mObservingAppThemeChanged) {
-    os->AddObserver(this, "app-theme-changed", /* ownsWeak */ false);
-    mObservingAppThemeChanged = true;
+  if (os) {
+    nsIPrincipal *principal = GetPrincipal();
+    os->NotifyObservers(static_cast<nsIDocument*>(this),
+                        nsContentUtils::IsSystemPrincipal(principal) ?
+                          "chrome-page-shown" :
+                          "content-page-shown",
+                        nullptr);
+    if (!mObservingAppThemeChanged) {
+      os->AddObserver(this, "app-theme-changed", /* ownsWeak */ false);
+      mObservingAppThemeChanged = true;
+    }
   }
 
   DispatchPageTransition(target, NS_LITERAL_STRING("pageshow"), aPersisted);
@@ -11441,10 +11519,10 @@ nsresult nsDocument::RemoteFrameFullscreenReverted()
 }
 
 static void
-ReleaseHMDInfoRef(void *, nsIAtom*, void *aPropertyValue, void *)
+ReleaseVRDeviceProxyRef(void *, nsIAtom*, void *aPropertyValue, void *)
 {
   if (aPropertyValue) {
-    static_cast<gfx::VRHMDInfo*>(aPropertyValue)->Release();
+    static_cast<gfx::VRDeviceProxy*>(aPropertyValue)->Release();
   }
 }
 
@@ -11763,9 +11841,9 @@ nsDocument::ApplyFullscreen(const FullscreenRequest& aRequest)
 
   // Process options -- in this case, just HMD
   if (aRequest.mVRHMDDevice) {
-    RefPtr<gfx::VRHMDInfo> hmdRef = aRequest.mVRHMDDevice;
+    RefPtr<gfx::VRDeviceProxy> hmdRef = aRequest.mVRHMDDevice;
     elem->SetProperty(nsGkAtoms::vr_state, hmdRef.forget().take(),
-                      ReleaseHMDInfoRef, true);
+                      ReleaseVRDeviceProxyRef, true);
   }
 
   // Set the full-screen element. This sets the full-screen style on the
@@ -12020,7 +12098,7 @@ public:
     mUserInputOrChromeCaller(aUserInputOrChromeCaller)
   {
     nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocument);
-    if (doc) {
+    if (doc && doc->GetInnerWindow()) {
       mRequester = new nsContentPermissionRequester(doc->GetInnerWindow());
     }
   }
@@ -13295,4 +13373,18 @@ nsIDocument::Fonts()
     GetUserFontSet();  // this will cause the user font set to be created/updated
   }
   return mFontFaceSet;
+}
+
+void
+nsIDocument::ReportHasScrollLinkedEffect()
+{
+  if (mHasScrollLinkedEffect) {
+    // We already did this once for this document, don't do it again.
+    return;
+  }
+  mHasScrollLinkedEffect = true;
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  NS_LITERAL_CSTRING("Async Pan/Zoom"),
+                                  this, nsContentUtils::eLAYOUT_PROPERTIES,
+                                  "ScrollLinkedEffectFound");
 }

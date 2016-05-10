@@ -143,6 +143,11 @@ class MediaPipeline : public sigslot::has_slots<> {
                          RefPtr<TransportFlow> rtcp_transport,
                          nsAutoPtr<MediaPipelineFilter> filter);
 
+  // Used only for testing; installs a MediaPipelineFilter that filters
+  // everything but the nth ssrc
+  void SelectSsrc_m(size_t ssrc_index);
+  void SelectSsrc_s(size_t ssrc_index);
+
   virtual Direction direction() const { return direction_; }
   virtual const std::string& trackid() const { return track_id_; }
   virtual int level() const { return level_; }
@@ -288,6 +293,8 @@ class MediaPipeline : public sigslot::has_slots<> {
   int64_t rtp_bytes_sent_;
   int64_t rtp_bytes_received_;
 
+  std::vector<uint32_t> ssrcs_received_;
+
   // Written on Init. Read on STS thread.
   std::string pc_;
   std::string description_;
@@ -403,7 +410,7 @@ public:
   // Index used to refer to this before we know the TrackID
   // Note: unlike MediaPipeline::trackid(), this is threadsafe
   // Not set until first media is received
-  virtual TrackID const trackid_locked() { return listener_->trackid(); }
+  virtual TrackID trackid_locked() const { return listener_->trackid(); }
   // written and used from MainThread
   virtual bool IsVideo() const override { return is_video_; }
 

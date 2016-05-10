@@ -6,6 +6,7 @@
 package org.mozilla.gecko.restrictions;
 
 import org.mozilla.gecko.AboutPages;
+import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.annotation.TargetApi;
@@ -15,6 +16,7 @@ import android.os.Bundle;
 import android.os.StrictMode;
 import android.os.UserManager;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +35,7 @@ public class RestrictedProfileConfiguration implements RestrictionConfiguration 
         configuration.put(Restrictable.ADVANCED_SETTINGS, false);
         configuration.put(Restrictable.CAMERA_MICROPHONE, false);
         configuration.put(Restrictable.DATA_CHOICES, false);
+        configuration.put(Restrictable.BLOCK_LIST, false);
         configuration.put(Restrictable.TELEMETRY, false);
         configuration.put(Restrictable.HEALTH_REPORT, true);
         configuration.put(Restrictable.DEFAULT_THEME, true);
@@ -41,12 +44,18 @@ public class RestrictedProfileConfiguration implements RestrictionConfiguration 
     /**
      * These restrictions are hidden from the admin configuration UI.
      */
-    private static List<Restrictable> hiddenRestrictions = Arrays.asList(
-            Restrictable.MASTER_PASSWORD,
-            Restrictable.GUEST_BROWSING,
-            Restrictable.DATA_CHOICES,
-            Restrictable.DEFAULT_THEME
-    );
+    private static List<Restrictable> hiddenRestrictions = new ArrayList<>();
+    static {
+        hiddenRestrictions.add(Restrictable.MASTER_PASSWORD);
+        hiddenRestrictions.add(Restrictable.GUEST_BROWSING);
+        hiddenRestrictions.add(Restrictable.DATA_CHOICES);
+        hiddenRestrictions.add(Restrictable.DEFAULT_THEME);
+
+        // Hold behind Nightly flag until we have an actual block list deployed.
+        if (!AppConstants.NIGHTLY_BUILD){
+            hiddenRestrictions.add(Restrictable.BLOCK_LIST);
+        }
+    }
 
     /* package-private */ static boolean shouldHide(Restrictable restrictable) {
         return hiddenRestrictions.contains(restrictable);
@@ -127,6 +136,19 @@ public class RestrictedProfileConfiguration implements RestrictionConfiguration 
     @Override
     public synchronized void update() {
         isCacheInvalid = true;
+    }
+
+    public static List<Restrictable> getVisibleRestrictions() {
+        final List<Restrictable> visibleList = new ArrayList<>();
+
+        for (Restrictable restrictable : configuration.keySet()) {
+            if (hiddenRestrictions.contains(restrictable)) {
+                continue;
+            }
+            visibleList.add(restrictable);
+        }
+
+        return visibleList;
     }
 
     /**

@@ -308,5 +308,6 @@ LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 
 DEFINES['GRAPHITE2_STATIC'] = True
 
-if CONFIG['OS_ARCH'] == 'WINNT':
-    del DEFINES['UNICODE']
+if CONFIG['CLANG_CXX']:
+    # Suppress warnings from Skia header files.
+    SOURCES['gfxPlatform.cpp'].flags += ['-Wno-implicit-fallthrough']

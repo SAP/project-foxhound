@@ -54,8 +54,6 @@ class DebianBootstrapper(BaseBootstrapper):
         'libdbus-1-dev',
         'libdbus-glib-1-dev',
         'libgconf2-dev',
-        'libgstreamer0.10-dev',
-        'libgstreamer-plugins-base0.10-dev',
         'libgtk2.0-dev',
         'libgtk-3-dev',
         'libiw-dev',
@@ -76,7 +74,6 @@ class DebianBootstrapper(BaseBootstrapper):
     MOBILE_ANDROID_COMMON_PACKAGES = [
         'zlib1g-dev',  # mobile/android requires system zlib.
         'openjdk-7-jdk',
-        'ant',
         'wget',  # For downloading the Android SDK and NDK.
         'libncurses5:i386',  # See comments about i386 below.
         'libstdc++6:i386',

@@ -943,7 +943,8 @@ nsLineLayout::ReflowFrame(nsIFrame* aFrame,
     aFrame->Reflow(mPresContext, metrics, *reflowStateHolder, aReflowStatus);
   } else {
     static_cast<nsTextFrame*>(aFrame)->
-      ReflowText(*this, availableSpaceOnLine, psd->mReflowState->rendContext,
+      ReflowText(*this, availableSpaceOnLine,
+                 psd->mReflowState->rendContext->GetDrawTarget(),
                  metrics, aReflowStatus);
   }
 
@@ -2592,7 +2593,7 @@ nsLineLayout::TrimTrailingWhiteSpaceIn(PerSpanData* psd,
       // might have a soft hyphen which should now appear, changing the frame's
       // width
       nsTextFrame::TrimOutput trimOutput = static_cast<nsTextFrame*>(pfd->mFrame)->
-          TrimTrailingWhiteSpace(mBlockReflowState->rendContext);
+          TrimTrailingWhiteSpace(mBlockReflowState->rendContext->GetDrawTarget());
 #ifdef NOISY_TRIM
       nsFrame::ListTag(stdout, psd->mFrame->mFrame);
       printf(": trim of ");
@@ -3008,6 +3009,7 @@ nsLineLayout::ExpandRubyBox(PerFrameData* aFrame, nscoord aReservedISize,
       }
       // If there are no justification opportunities for space-between,
       // fall-through to center per spec.
+      MOZ_FALLTHROUGH;
     }
     case NS_STYLE_RUBY_ALIGN_CENTER:
       // Indent all children by half of the reserved inline size.
@@ -3199,6 +3201,7 @@ nsLineLayout::TextAlignLine(nsLineBox* aLine,
         }
         // Fall through to the default case if we could not justify to fill
         // the space.
+        MOZ_FALLTHROUGH;
       }
 
       case NS_STYLE_TEXT_ALIGN_DEFAULT:

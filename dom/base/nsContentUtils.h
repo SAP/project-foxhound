@@ -31,6 +31,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/net/ReferrerPolicy.h"
+#include "mozilla/Logging.h"
 #include "nsIContentPolicy.h"
 
 #if defined(XP_WIN)
@@ -985,20 +986,6 @@ public:
   static nsContentPolicyType InternalContentPolicyTypeToExternal(nsContentPolicyType aType);
 
   /**
-   * Map internal content policy types to external ones or script types or preload types:
-   *   * TYPE_INTERNAL_SCRIPT
-   *   * TYPE_INTERNAL_WORKER
-   *   * TYPE_INTERNAL_SHARED_WORKER
-   *   * TYPE_INTERNAL_SERVICE_WORKER
-   *   * TYPE_INTERNAL_SCRIPT_PRELOAD
-   *   * TYPE_INTERNAL_IMAGE_PRELOAD
-   *   * TYPE_INTERNAL_STYLESHEET_PRELOAD
-   *
-   * Note: DO NOT call this function unless you know what you're doing!
-   */
-  static nsContentPolicyType InternalContentPolicyTypeToExternalOrMCBInternal(nsContentPolicyType aType);
-
-  /**
    * Map internal content policy types to external ones or preload types:
    *   * TYPE_INTERNAL_SCRIPT_PRELOAD
    *   * TYPE_INTERNAL_IMAGE_PRELOAD
@@ -1007,19 +994,6 @@ public:
    * Note: DO NOT call this function unless you know what you're doing!
    */
   static nsContentPolicyType InternalContentPolicyTypeToExternalOrPreload(nsContentPolicyType aType);
-
-  /**
-   * Map internal content policy types to external ones, worker, or preload types:
-   *   * TYPE_INTERNAL_WORKER
-   *   * TYPE_INTERNAL_SHARED_WORKER
-   *   * TYPE_INTERNAL_SERVICE_WORKER
-   *   * TYPE_INTERNAL_SCRIPT_PRELOAD
-   *   * TYPE_INTERNAL_IMAGE_PRELOAD
-   *   * TYPE_INTERNAL_STYLESHEET_PRELOAD
-   *
-   * Note: DO NOT call this function unless you know what you're doing!
-   */
-  static nsContentPolicyType InternalContentPolicyTypeToExternalOrCSPInternal(nsContentPolicyType aType);
 
   /**
    * Map internal content policy types to external ones, worker, or preload types:
@@ -2062,14 +2036,6 @@ public:
   }
 
   /**
-   * Returns true if the doc tree branch which contains aDoc contains any
-   * plugins which we don't control event dispatch for, i.e. do any plugins
-   * in the same tab as this document receive key events outside of our
-   * control? This always returns false on MacOSX.
-   */
-  static bool HasPluginWithUncontrolledEventDispatch(nsIDocument* aDoc);
-
-  /**
    * Return true if this doc is controlled by a ServiceWorker.
    */
   static bool IsControlledByServiceWorker(nsIDocument* aDocument);
@@ -2375,9 +2341,16 @@ public:
                                   const nsAString& aVersion);
 
   /**
-   * Return true if the browser.dom.window.dump.enabled pref is set.
+   * Returns true if the browser.dom.window.dump.enabled pref is set.
    */
   static bool DOMWindowDumpEnabled();
+
+  /**
+   * Returns a LogModule that dump calls from content script are logged to.
+   * This can be enabled with the 'Dump' module, and is useful for synchronizing
+   * content JS to other logging modules.
+   */
+  static mozilla::LogModule* DOMDumpLog();
 
   /**
    * Returns whether a content is an insertion point for XBL
@@ -2592,6 +2565,14 @@ public:
                                     bool aDescendentsOnly,
                                     nsAString& aOut);
 
+  /*
+   * Returns true iff the provided JSObject is a global, and its URI matches
+   * the provided about: URI.
+   * @param aGlobal the JSObject whose URI to check, if it is a global.
+   * @param aUri the URI to match, e.g. "about:feeds"
+   */
+  static bool IsSpecificAboutPage(JSObject* aGlobal, const char* aUri);
+
 private:
   static bool InitializeEventTable();
 
@@ -2732,6 +2713,7 @@ private:
 #if !(defined(DEBUG) || defined(MOZ_ENABLE_JS_DUMP))
   static bool sDOMWindowDumpEnabled;
 #endif
+  static mozilla::LazyLogModule sDOMDumpLog;
 };
 
 class MOZ_RAII nsAutoScriptBlocker {

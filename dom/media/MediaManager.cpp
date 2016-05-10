@@ -78,6 +78,9 @@
 #endif
 #if defined (XP_WIN)
 #include "mozilla/WindowsVersion.h"
+#include <winsock2.h>
+#include <iphlpapi.h>
+#include <tchar.h>
 #endif
 
 // GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
@@ -671,20 +674,7 @@ public:
                        VideoDevice *aVideoDevice) :
     mListener(aListener),
     mAudioDevice(aAudioDevice),
-    mVideoDevice(aVideoDevice),
-    mEchoOn(true),
-    mAgcOn(false),
-    mNoiseOn(true),
-#ifdef MOZ_WEBRTC
-    mEcho(webrtc::kEcDefault),
-    mAgc(webrtc::kAgcDefault),
-    mNoise(webrtc::kNsDefault),
-#else
-    mEcho(0),
-    mAgc(0),
-    mNoise(0),
-#endif
-    mPlayoutDelay(20)
+    mVideoDevice(aVideoDevice)
   {}
 
   virtual ~nsDOMUserMediaStream()
@@ -700,7 +690,7 @@ public:
   // single-source trackunion like we have here, the TrackUnion will assign trackids
   // that match the source's trackids, so we can avoid needing a mapping function.
   // XXX This will not handle more complex cases well.
-  virtual void StopTrack(TrackID aTrackID) override
+  void StopTrack(TrackID aTrackID) override
   {
     if (GetSourceStream()) {
       GetSourceStream()->EndTrack(aTrackID);
@@ -716,7 +706,7 @@ public:
     }
   }
 
-  virtual already_AddRefed<Promise>
+  already_AddRefed<Promise>
   ApplyConstraintsToTrack(TrackID aTrackID,
                           const MediaTrackConstraints& aConstraints,
                           ErrorResult &aRv) override
@@ -778,7 +768,7 @@ public:
 #endif
 
   // Allow getUserMedia to pass input data directly to PeerConnection/MediaPipeline
-  virtual bool AddDirectListener(MediaStreamDirectListener *aListener) override
+  bool AddDirectListener(MediaStreamDirectListener *aListener) override
   {
     if (GetSourceStream()) {
       GetSourceStream()->AddDirectListener(aListener);
@@ -787,34 +777,19 @@ public:
     return false;
   }
 
-  virtual void
-  AudioConfig(bool aEchoOn, uint32_t aEcho,
-              bool aAgcOn, uint32_t aAgc,
-              bool aNoiseOn, uint32_t aNoise,
-              int32_t aPlayoutDelay)
-  {
-    mEchoOn = aEchoOn;
-    mEcho = aEcho;
-    mAgcOn = aAgcOn;
-    mAgc = aAgc;
-    mNoiseOn = aNoiseOn;
-    mNoise = aNoise;
-    mPlayoutDelay = aPlayoutDelay;
-  }
-
-  virtual void RemoveDirectListener(MediaStreamDirectListener *aListener) override
+  void RemoveDirectListener(MediaStreamDirectListener *aListener) override
   {
     if (GetSourceStream()) {
       GetSourceStream()->RemoveDirectListener(aListener);
     }
   }
 
-  virtual DOMLocalMediaStream* AsDOMLocalMediaStream() override
+  DOMLocalMediaStream* AsDOMLocalMediaStream() override
   {
     return this;
   }
 
-  virtual MediaEngineSource* GetMediaEngine(TrackID aTrackID) override
+  MediaEngineSource* GetMediaEngine(TrackID aTrackID) override
   {
     // MediaEngine supports only one video and on video track now and TrackID is
     // fixed in MediaEngine.
@@ -839,13 +814,6 @@ public:
   RefPtr<GetUserMediaCallbackMediaStreamListener> mListener;
   RefPtr<AudioDevice> mAudioDevice; // so we can turn on AEC
   RefPtr<VideoDevice> mVideoDevice;
-  bool mEchoOn;
-  bool mAgcOn;
-  bool mNoiseOn;
-  uint32_t mEcho;
-  uint32_t mAgc;
-  uint32_t mNoise;
-  uint32_t mPlayoutDelay;
 };
 
 
@@ -917,7 +885,7 @@ public:
                             DOMMediaStream* aStream)
       : mWindowID(aWindowID), mOnSuccess(aSuccess), mManager(aManager),
         mStream(aStream) {}
-    virtual void NotifyTracksAvailable(DOMMediaStream* aStream) override
+    void NotifyTracksAvailable(DOMMediaStream* aStream) override
     {
       // We're in the main thread, so no worries here.
       if (!(mManager->IsWindowStillActive(mWindowID))) {
@@ -950,16 +918,6 @@ public:
   NS_IMETHOD
   Run()
   {
-#ifdef MOZ_WEBRTC
-    int32_t aec = (int32_t) webrtc::kEcUnchanged;
-    int32_t agc = (int32_t) webrtc::kAgcUnchanged;
-    int32_t noise = (int32_t) webrtc::kNsUnchanged;
-#else
-    int32_t aec = 0, agc = 0, noise = 0;
-#endif
-    bool aec_on = false, agc_on = false, noise_on = false;
-    int32_t playout_delay = 0;
-
     MOZ_ASSERT(NS_IsMainThread());
     nsPIDOMWindow *window = static_cast<nsPIDOMWindow*>
       (nsGlobalWindow::GetInnerWindowWithId(mWindowID));
@@ -971,25 +929,6 @@ public:
       // This window is no longer live.  mListener has already been removed
       return NS_OK;
     }
-
-#ifdef MOZ_WEBRTC
-    // Right now these configs are only of use if webrtc is available
-    nsresult rv;
-    nsCOMPtr<nsIPrefService> prefs = do_GetService("@mozilla.org/preferences-service;1", &rv);
-    if (NS_SUCCEEDED(rv)) {
-      nsCOMPtr<nsIPrefBranch> branch = do_QueryInterface(prefs);
-
-      if (branch) {
-        branch->GetBoolPref("media.getusermedia.aec_enabled", &aec_on);
-        branch->GetIntPref("media.getusermedia.aec", &aec);
-        branch->GetBoolPref("media.getusermedia.agc_enabled", &agc_on);
-        branch->GetIntPref("media.getusermedia.agc", &agc);
-        branch->GetBoolPref("media.getusermedia.noise_enabled", &noise_on);
-        branch->GetIntPref("media.getusermedia.noise", &noise);
-        branch->GetIntPref("media.getusermedia.playout_delay", &playout_delay);
-      }
-    }
-#endif
 
     MediaStreamGraph::GraphDriverType graphDriverType =
       mAudioDevice ? MediaStreamGraph::AUDIO_THREAD_DRIVER
@@ -1022,10 +961,14 @@ public:
                                                            msg);
 
       if (mAudioDevice) {
-        domStream->CreateOwnDOMTrack(kAudioTrack, MediaSegment::AUDIO);
+        nsString audioDeviceName;
+        mAudioDevice->GetName(audioDeviceName);
+        domStream->CreateOwnDOMTrack(kAudioTrack, MediaSegment::AUDIO, audioDeviceName);
       }
       if (mVideoDevice) {
-        domStream->CreateOwnDOMTrack(kVideoTrack, MediaSegment::VIDEO);
+        nsString videoDeviceName;
+        mVideoDevice->GetName(videoDeviceName);
+        domStream->CreateOwnDOMTrack(kVideoTrack, MediaSegment::VIDEO, videoDeviceName);
       }
 
       nsCOMPtr<nsIPrincipal> principal;
@@ -1064,11 +1007,6 @@ public:
     // Note: includes JS callbacks; must be released on MainThread
     TracksAvailableCallback* tracksAvailableCallback =
       new TracksAvailableCallback(mManager, mOnSuccess, mWindowID, domStream);
-
-    mListener->AudioConfig(aec_on, (uint32_t) aec,
-                           agc_on, (uint32_t) agc,
-                           noise_on, (uint32_t) noise,
-                           playout_delay);
 
     // Dispatch to the media thread to ask it to start the sources,
     // because that can take a while.
@@ -1507,11 +1445,25 @@ MediaManager::EnumerateRawDevices(uint64_t aWindowId,
 MediaManager::MediaManager()
   : mMediaThread(nullptr)
   , mBackend(nullptr) {
-  mPrefs.mFreq   = 1000; // 1KHz test tone
-  mPrefs.mWidth  = 0; // adaptive default
-  mPrefs.mHeight = 0; // adaptive default
-  mPrefs.mFPS    = MediaEngine::DEFAULT_VIDEO_FPS;
-  mPrefs.mMinFPS = MediaEngine::DEFAULT_VIDEO_MIN_FPS;
+  mPrefs.mFreq         = 1000; // 1KHz test tone
+  mPrefs.mWidth        = 0; // adaptive default
+  mPrefs.mHeight       = 0; // adaptive default
+  mPrefs.mFPS          = MediaEngine::DEFAULT_VIDEO_FPS;
+  mPrefs.mMinFPS       = MediaEngine::DEFAULT_VIDEO_MIN_FPS;
+  mPrefs.mAecOn        = false;
+  mPrefs.mAgcOn        = false;
+  mPrefs.mNoiseOn      = false;
+#ifdef MOZ_WEBRTC
+  mPrefs.mAec          = webrtc::kEcUnchanged;
+  mPrefs.mAgc          = webrtc::kAgcUnchanged;
+  mPrefs.mNoise        = webrtc::kNsUnchanged;
+#else
+  mPrefs.mAec          = 0;
+  mPrefs.mAgc          = 0;
+  mPrefs.mNoise        = 0;
+#endif
+  mPrefs.mPlayoutDelay = 0;
+  mPrefs.mFullDuplex = false;
   nsresult rv;
   nsCOMPtr<nsIPrefService> prefs = do_GetService("@mozilla.org/preferences-service;1", &rv);
   if (NS_SUCCEEDED(rv)) {
@@ -1520,8 +1472,12 @@ MediaManager::MediaManager()
       GetPrefs(branch, nullptr);
     }
   }
-  LOG(("%s: default prefs: %dx%d @%dfps (min %d), %dHz test tones", __FUNCTION__,
-       mPrefs.mWidth, mPrefs.mHeight, mPrefs.mFPS, mPrefs.mMinFPS, mPrefs.mFreq));
+  LOG(("%s: default prefs: %dx%d @%dfps (min %d), %dHz test tones, aec: %s,"
+       "agc: %s, noise: %s, aec level: %d, agc level: %d, noise level: %d,"
+       "playout delay: %d, %sfull_duplex", __FUNCTION__, mPrefs.mWidth, mPrefs.mHeight,
+       mPrefs.mFPS, mPrefs.mMinFPS, mPrefs.mFreq, mPrefs.mAecOn ? "on" : "off",
+       mPrefs.mAgcOn ? "on": "off", mPrefs.mNoiseOn ? "on": "off", mPrefs.mAec,
+       mPrefs.mAgc, mPrefs.mNoise, mPrefs.mPlayoutDelay, mPrefs.mFullDuplex ? "" : "not "));
 }
 
 NS_IMPL_ISUPPORTS(MediaManager, nsIMediaManagerService, nsIObserver)
@@ -1583,6 +1539,17 @@ MediaManager::Get() {
       prefs->AddObserver("media.navigator.video.default_height", sSingleton, false);
       prefs->AddObserver("media.navigator.video.default_fps", sSingleton, false);
       prefs->AddObserver("media.navigator.video.default_minfps", sSingleton, false);
+      prefs->AddObserver("media.navigator.audio.fake_frequency", sSingleton, false);
+      prefs->AddObserver("media.navigator.audio.full_duplex", sSingleton, false);
+#ifdef MOZ_WEBRTC
+      prefs->AddObserver("media.getusermedia.aec_enabled", sSingleton, false);
+      prefs->AddObserver("media.getusermedia.aec", sSingleton, false);
+      prefs->AddObserver("media.getusermedia.agc_enabled", sSingleton, false);
+      prefs->AddObserver("media.getusermedia.agc", sSingleton, false);
+      prefs->AddObserver("media.getusermedia.noise_enabled", sSingleton, false);
+      prefs->AddObserver("media.getusermedia.noise", sSingleton, false);
+      prefs->AddObserver("media.getusermedia.playout_delay", sSingleton, false);
+#endif
     }
 
     // Prepare async shutdown
@@ -1638,6 +1605,28 @@ MediaManager::GetNonE10sParent()
     mNonE10sParent = new media::Parent<media::NonE10s>(true);
   }
   return mNonE10sParent;
+}
+
+/* static */ void
+MediaManager::StartupInit()
+{
+#ifdef WIN32
+  if (IsVistaOrLater() && !IsWin8OrLater()) {
+    // Bug 1107702 - Older Windows fail in GetAdaptersInfo (and others) if the
+    // first(?) call occurs after the process size is over 2GB (kb/2588507).
+    // Attempt to 'prime' the pump by making a call at startup.
+    unsigned long out_buf_len = sizeof(IP_ADAPTER_INFO);
+    PIP_ADAPTER_INFO pAdapterInfo = (IP_ADAPTER_INFO *) moz_xmalloc(out_buf_len);
+    if (GetAdaptersInfo(pAdapterInfo, &out_buf_len) == ERROR_BUFFER_OVERFLOW) {
+      free(pAdapterInfo);
+      pAdapterInfo = (IP_ADAPTER_INFO *) moz_xmalloc(out_buf_len);
+      GetAdaptersInfo(pAdapterInfo, &out_buf_len);
+    }
+    if (pAdapterInfo) {
+      free(pAdapterInfo);
+    }
+  }
+#endif
 }
 
 /* static */
@@ -1900,8 +1889,7 @@ MediaManager::GetUserMedia(nsPIDOMWindow* aWindow,
           nsPIDOMWindow *outer = aWindow->GetOuterWindow();
           vc.mBrowserWindow.Construct(outer->WindowID());
         }
-        // | Fall through
-        // V
+        MOZ_FALLTHROUGH;
       case dom::MediaSourceEnum::Screen:
       case dom::MediaSourceEnum::Application:
       case dom::MediaSourceEnum::Window:
@@ -2595,6 +2583,16 @@ MediaManager::GetPrefs(nsIPrefBranch *aBranch, const char *aData)
   GetPref(aBranch, "media.navigator.video.default_fps", aData, &mPrefs.mFPS);
   GetPref(aBranch, "media.navigator.video.default_minfps", aData, &mPrefs.mMinFPS);
   GetPref(aBranch, "media.navigator.audio.fake_frequency", aData, &mPrefs.mFreq);
+#ifdef MOZ_WEBRTC
+  GetPrefBool(aBranch, "media.getusermedia.aec_enabled", aData, &mPrefs.mAecOn);
+  GetPrefBool(aBranch, "media.getusermedia.agc_enabled", aData, &mPrefs.mAgcOn);
+  GetPrefBool(aBranch, "media.getusermedia.noise_enabled", aData, &mPrefs.mNoiseOn);
+  GetPref(aBranch, "media.getusermedia.aec", aData, &mPrefs.mAec);
+  GetPref(aBranch, "media.getusermedia.agc", aData, &mPrefs.mAgc);
+  GetPref(aBranch, "media.getusermedia.noise", aData, &mPrefs.mNoise);
+  GetPref(aBranch, "media.getusermedia.playout_delay", aData, &mPrefs.mPlayoutDelay);
+#endif
+  GetPrefBool(aBranch, "media.navigator.audio.full_duplex", aData, &mPrefs.mFullDuplex);
 }
 
 void
@@ -2621,6 +2619,16 @@ MediaManager::Shutdown()
     prefs->RemoveObserver("media.navigator.video.default_fps", this);
     prefs->RemoveObserver("media.navigator.video.default_minfps", this);
     prefs->RemoveObserver("media.navigator.audio.fake_frequency", this);
+#ifdef MOZ_WEBRTC
+    prefs->RemoveObserver("media.getusermedia.aec_enabled", this);
+    prefs->RemoveObserver("media.getusermedia.aec", this);
+    prefs->RemoveObserver("media.getusermedia.agc_enabled", this);
+    prefs->RemoveObserver("media.getusermedia.agc", this);
+    prefs->RemoveObserver("media.getusermedia.noise_enabled", this);
+    prefs->RemoveObserver("media.getusermedia.noise", this);
+    prefs->RemoveObserver("media.getusermedia.playout_delay", this);
+#endif
+    prefs->RemoveObserver("media.navigator.audio.full_duplex", this);
   }
 
   // Close off any remaining active windows.
@@ -2642,8 +2650,8 @@ MediaManager::Shutdown()
       : mManager(aManager)
       , mReply(aReply) {}
   private:
-    virtual void
-    Run()
+    void
+    Run() override
     {
       LOG(("MediaManager Thread Shutdown"));
       MOZ_ASSERT(MediaManager::IsInMediaThread());
@@ -3093,23 +3101,6 @@ MediaManager::IsActivelyCapturingOrHasAPermission(uint64_t aWindowId)
   }
   return audio == nsIPermissionManager::ALLOW_ACTION ||
          video == nsIPermissionManager::ALLOW_ACTION;
-}
-
-void
-GetUserMediaCallbackMediaStreamListener::AudioConfig(bool aEchoOn,
-              uint32_t aEcho,
-              bool aAgcOn, uint32_t aAGC,
-              bool aNoiseOn, uint32_t aNoise,
-              int32_t aPlayoutDelay)
-{
-  if (mAudioDevice) {
-#ifdef MOZ_WEBRTC
-    MediaManager::PostTask(FROM_HERE,
-      NewRunnableMethod(mAudioDevice->GetSource(), &MediaEngineSource::Config,
-                        aEchoOn, aEcho, aAgcOn, aAGC, aNoiseOn,
-                        aNoise, aPlayoutDelay));
-#endif
-  }
 }
 
 void

@@ -42,6 +42,7 @@
 #include "nsIHttpChannel.h"
 #include "nsISecurityConsoleMessage.h"
 #include "nsCOMArray.h"
+#include "mozilla/net/ChannelEventQueue.h"
 
 class nsPerformance;
 class nsISecurityConsoleMessage;
@@ -100,6 +101,7 @@ public:
   NS_IMETHOD SetLoadGroup(nsILoadGroup *aLoadGroup) override;
   NS_IMETHOD GetLoadFlags(nsLoadFlags *aLoadFlags) override;
   NS_IMETHOD SetLoadFlags(nsLoadFlags aLoadFlags) override;
+  NS_IMETHOD SetDocshellUserAgentOverride();
 
   // nsIChannel
   NS_IMETHOD GetOriginalURI(nsIURI **aOriginalURI) override;
@@ -124,6 +126,8 @@ public:
   NS_IMETHOD SetContentLength(int64_t aContentLength) override;
   NS_IMETHOD Open(nsIInputStream **aResult) override;
   NS_IMETHOD Open2(nsIInputStream **aResult) override;
+  NS_IMETHOD GetBlockAuthPrompt(bool* aValue) override;
+  NS_IMETHOD SetBlockAuthPrompt(bool aValue) override;
 
   // nsIEncodedChannel
   NS_IMETHOD GetApplyConversion(bool *value) override;
@@ -298,6 +302,10 @@ public: /* Necko internal use only... */
     // the new mUploadStream.
     void EnsureUploadStreamIsCloneableComplete(nsresult aStatus);
 
+    // Returns an https URI for channels that need to go through secure
+    // upgrades.
+    static nsresult GetSecureUpgradedURI(nsIURI* aURI, nsIURI** aUpgradedURI);
+
 protected:
   nsCOMArray<nsISecurityConsoleMessage> mSecurityConsoleMessages;
 
@@ -342,7 +350,7 @@ protected:
 
   // Returns true if this channel should intercept the network request and prepare
   // for a possible synthesized response instead.
-  bool ShouldIntercept();
+  bool ShouldIntercept(nsIURI* aURI = nullptr);
 
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
@@ -424,6 +432,12 @@ protected:
 
   // True if this channel was intercepted and could receive a synthesized response.
   uint32_t                          mResponseCouldBeSynthesized : 1;
+
+  uint32_t                          mBlockAuthPrompt : 1;
+
+  // If true, we behave as if the LOAD_FROM_CACHE flag has been set.
+  // Used to enforce that flag's behavior but not expose it externally.
+  uint32_t                          mAllowStaleCacheContent : 1;
 
   // Current suspension depth for this channel object
   uint32_t                          mSuspendCount;

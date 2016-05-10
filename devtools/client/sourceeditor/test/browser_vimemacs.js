@@ -5,7 +5,8 @@
 
 requestLongerTimeout(2);
 
-const URI = "chrome://mochitests/content/browser/devtools/client/sourceeditor/test/codemirror/vimemacs.html";
+const URI = "chrome://mochitests/content/browser/devtools/client" +
+            "/sourceeditor/test/codemirror/vimemacs.html";
 loadHelperScript("helper_codemirror_runner.js");
 
 function test() {

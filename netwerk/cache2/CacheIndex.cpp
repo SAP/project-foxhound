@@ -127,7 +127,7 @@ private:
         if (!mDoNotSearchInUpdates) {
           entry = mIndex->mPendingUpdates.GetEntry(*mHash);
         }
-        // no break
+        MOZ_FALLTHROUGH;
       case CacheIndex::BUILDING:
       case CacheIndex::UPDATING:
       case CacheIndex::READY:
@@ -341,13 +341,15 @@ CacheIndex::PreShutdown()
   nsCOMPtr<nsIRunnable> event;
   event = NS_NewRunnableMethod(index, &CacheIndex::PreShutdownInternal);
 
-  nsCOMPtr<nsIEventTarget> ioTarget = CacheFileIOManager::IOTarget();
-  MOZ_ASSERT(ioTarget);
+  RefPtr<CacheIOThread> ioThread = CacheFileIOManager::IOThread();
+  MOZ_ASSERT(ioThread);
 
-  // PreShutdownInternal() will be executed before any queued event on INDEX
-  // level. That's OK since we don't want to wait for any operation in progess.
-  // We need to interrupt it and save journal as quickly as possible.
-  rv = ioTarget->Dispatch(event, nsIEventTarget::DISPATCH_NORMAL);
+  // Executing PreShutdownInternal() on WRITE level ensures that read/write
+  // events holding pointer to mRWBuf will be executed before we release the
+  // buffer by calling FinishRead()/FinishWrite() in PreShutdownInternal(), but
+  // it will be executed before any queued event on INDEX level. That's OK since
+  // we don't want to wait until updating of the index finishes.
+  rv = ioThread->Dispatch(event, CacheIOThread::WRITE);
   if (NS_FAILED(rv)) {
     NS_WARNING("CacheIndex::PreShutdown() - Can't dispatch event");
     LOG(("CacheIndex::PreShutdown() - Can't dispatch event" ));
@@ -430,7 +432,7 @@ CacheIndex::Shutdown()
   switch (oldState) {
     case WRITING:
       index->FinishWrite(false);
-      // no break
+      MOZ_FALLTHROUGH;
     case READY:
       if (index->mIndexOnDiskIsValid && !index->mDontMarkIndexClean) {
         if (!sanitize && NS_FAILED(index->WriteLogToDisk())) {
@@ -1125,7 +1127,7 @@ CacheIndex::HasEntry(const SHA1Sum::Hash &hash, EntryStatus *_retval, bool *_pin
     case READING:
     case WRITING:
       entry = index->mPendingUpdates.GetEntry(hash);
-      // no break
+      MOZ_FALLTHROUGH;
     case BUILDING:
     case UPDATING:
     case READY:

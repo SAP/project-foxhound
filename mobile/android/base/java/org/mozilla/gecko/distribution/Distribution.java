@@ -42,6 +42,7 @@ import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.Telemetry;
+import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.util.FileUtils;
 import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.ThreadUtils;
@@ -50,6 +51,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.SystemClock;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 /**
@@ -461,11 +463,13 @@ public class Distribution {
             return true;
         }
 
-        // We try the install intent, then the APK, then the system directory.
+        // We try to find the install intent, then the APK, then the system directory, and finally
+        // an already copied distribution.  Already copied might originate from the bouncer APK.
         final boolean distributionSet =
                 checkIntentDistribution(referrer) ||
-                checkAPKDistribution() ||
-                checkSystemDistribution();
+                copyAndCheckAPKDistribution() ||
+                checkSystemDistribution() ||
+                checkDataDistribution();
 
         // If this is our first run -- and thus we weren't already in STATE_NONE or STATE_SET above --
         // and we didn't find a distribution already, then we should hold on to callbacks in case we
@@ -540,10 +544,8 @@ public class Distribution {
                     Log.d(LOGTAG, "Copying files from fetched zip.");
                     if (copyFilesFromStream(distro)) {
                         // We always copy to the data dir, and we only copy files from
-                        // a 'distribution' subdirectory. Track our dist dir now that
-                        // we know it.
-                        this.distributionDir = new File(getDataDir(), DISTRIBUTION_PATH);
-                        return true;
+                        // a 'distribution' subdirectory. Now determine our actual distribution directory.
+                        return checkDataDistribution();
                     }
                 } catch (SecurityException e) {
                     Log.e(LOGTAG, "Security exception copying files. Corrupt or malicious?", e);
@@ -640,15 +642,13 @@ public class Distribution {
     /**
      * @return true if we copied files out of the APK. Sets distributionDir in that case.
      */
-    private boolean checkAPKDistribution() {
+    private boolean copyAndCheckAPKDistribution() {
         try {
             // First, try copying distribution files out of the APK.
             if (copyFilesFromPackagedAssets()) {
                 // We always copy to the data dir, and we only copy files from
-                // a 'distribution' subdirectory. Track our dist dir now that
-                // we know it.
-                this.distributionDir = new File(getDataDir(), DISTRIBUTION_PATH);
-                return true;
+                // a 'distribution' subdirectory. Now determine our actual distribution directory.
+                return checkDataDistribution();
             }
         } catch (IOException e) {
             Log.e(LOGTAG, "Error copying distribution files from APK.", e);
@@ -657,14 +657,29 @@ public class Distribution {
     }
 
     /**
+     * @return true if we found a data distribution (copied from APK or OTA). Sets distributionDir in that case.
+     */
+    private boolean checkDataDistribution() {
+        return checkDirectories(getDataDistributionDirectories(context));
+    }
+
+    /**
      * @return true if we found a system distribution. Sets distributionDir in that case.
      */
     private boolean checkSystemDistribution() {
-        // If there aren't any distribution files in the APK, look in the /system directory.
-        final File distDir = getSystemDistributionDir();
-        if (distDir.exists()) {
-            this.distributionDir = distDir;
-            return true;
+        return checkDirectories(getSystemDistributionDirectories(context));
+    }
+
+    /**
+     * @return true if one of the specified distribution directories exists.  Sets distributionDir in that case.
+     */
+    private boolean checkDirectories(String[] directories) {
+        for (String path : directories) {
+            File directory = new File(path);
+            if (directory.exists()) {
+                distributionDir = directory;
+                return true;
+            }
         }
         return false;
     }
@@ -835,14 +850,10 @@ public class Distribution {
         // the APK, or it exists in /system/.
         // Look in each location in turn.
         // (This could be optimized by caching the path in shared prefs.)
-        File copied = new File(getDataDir(), DISTRIBUTION_PATH);
-        if (copied.exists()) {
-            return this.distributionDir = copied;
+        if (checkDataDistribution() || checkSystemDistribution()) {
+            return distributionDir;
         }
-        File system = getSystemDistributionDir();
-        if (system.exists()) {
-            return this.distributionDir = system;
-        }
+
         return null;
     }
 
@@ -850,8 +861,69 @@ public class Distribution {
         return context.getApplicationInfo().dataDir;
     }
 
-    private File getSystemDistributionDir() {
-        return new File("/system/" + context.getPackageName() + "/distribution");
+    @WrapForJNI
+    public static String[] getDistributionDirectories() {
+        final Context context = GeckoAppShell.getApplicationContext();
+
+        final String[] dataDirectories = getDataDistributionDirectories(context);
+        final String[] systemDirectories = getSystemDistributionDirectories(context);
+
+        final String[] directories = new String[dataDirectories.length + systemDirectories.length];
+
+        System.arraycopy(dataDirectories, 0, directories, 0, dataDirectories.length);
+        System.arraycopy(systemDirectories, 0, directories, dataDirectories.length, systemDirectories.length);
+
+        return directories;
+    }
+
+    /**
+     * Get a list of system distribution folder candidates.
+     *
+     * /system/<package>/distribution/<mcc>/<mnc> - For bundled distributions for specific network providers
+     * /system/<package>/distribution/<mcc>       - For bundled distributions for specific countries
+     * /system/<package>/distribution/default     - For bundled distributions with no matching mcc/mnc
+     * /system/<package>/distribution             - Default non-bundled system distribution
+     */
+    private static String[] getSystemDistributionDirectories(Context context) {
+        final String baseDirectory = "/system/" + context.getPackageName() + "/distribution";
+        return getDistributionDirectoriesFromBaseDirectory(context, baseDirectory);
+    }
+
+    /**
+     * Get a list of data distribution folder candidates.
+     *
+     * <dataDir>/distribution/<mcc>/<mnc> - For bundled distributions for specific network providers
+     * <dataDir>/distribution/<mcc>       - For bundled distributions for specific countries
+     * <dataDir>/distribution/default     - For bundled distributions with no matching mcc/mnc
+     * <dataDir>/distribution             - Default non-bundled system distribution
+     */
+    private static String[] getDataDistributionDirectories(Context context) {
+        final String baseDirectory = new File(context.getApplicationInfo().dataDir, DISTRIBUTION_PATH).getAbsolutePath();
+        return getDistributionDirectoriesFromBaseDirectory(context, baseDirectory);
+    }
+
+    /**
+     * Get a list of distribution folder candidates inside the specified base directory.
+     */
+    private static String[] getDistributionDirectoriesFromBaseDirectory(Context context, String baseDirectory) {
+        final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+        if (telephonyManager != null && telephonyManager.getSimState() == TelephonyManager.SIM_STATE_READY) {
+            final String simOperator = telephonyManager.getSimOperator();
+
+            if (simOperator != null && simOperator.length() >= 5) {
+                final String mcc = simOperator.substring(0, 3);
+                final String mnc = simOperator.substring(3);
+
+                return new String[] {
+                        baseDirectory + "/" + mcc + "/" + mnc,
+                        baseDirectory + "/" + mcc,
+                        baseDirectory + "/default",
+                        baseDirectory
+                };
+            }
+        }
+
+        return new String[] { baseDirectory };
     }
 
     /**

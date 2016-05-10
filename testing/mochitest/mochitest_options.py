@@ -401,6 +401,14 @@ class MochitestArguments(ArgumentContainer):
           "default": None,
           "suppress": True,
           }],
+        [["--jscov-dir-prefix"],
+         {"action": "store",
+          "help": "Directory to store per-test line coverage data as json "
+                  "(browser-chrome only). To emit lcov formatted data, set "
+                  "JS_CODE_COVERAGE_OUTPUT_DIR in the environment.",
+          "default": None,
+          "suppress": True,
+          }],
         [["--strict-content-sandbox"],
          {"action": "store_true",
           "default": False,
@@ -537,13 +545,27 @@ class MochitestArguments(ArgumentContainer):
           "help": "Enable logging of unsafe CPOW usage, which is disabled by default for tests",
           "suppress": True,
           }],
+        [["--marionette"],
+         {"default": None,
+          "help": "host:port to use when connecting to Marionette",
+          }],
+        [["--marionette-port-timeout"],
+         {"default": None,
+          "help": "Timeout while waiting for the marionette port to open.",
+          "suppress": True,
+          }],
+        [["--marionette-socket-timeout"],
+         {"default": None,
+          "help": "Timeout while waiting to receive a message from the marionette server.",
+          "suppress": True,
+          }],
     ]
 
     defaults = {
         # Bug 1065098 - The geckomediaplugin process fails to produce a leak
         # log for some reason.
         'ignoreMissingLeaks': ["geckomediaplugin"],
-
+        'extensionsToExclude': ['specialpowers'],
         # Set server information on the args object
         'webServer': '127.0.0.1',
         'httpPort': DEFAULT_PORTS['http'],
@@ -676,12 +698,25 @@ class MochitestArguments(ArgumentContainer):
             parser.error(
                 "--debugger-args requires --debugger.")
 
+        if options.valgrind or options.debugger:
+            # valgrind and some debuggers may cause Gecko to start slowly. Make sure
+            # marionette waits long enough to connect.
+            options.marionette_port_timeout = 900
+            options.marionette_socket_timeout = 540
+
         if options.store_chrome_manifest:
             options.store_chrome_manifest = os.path.abspath(options.store_chrome_manifest)
             if not os.path.isdir(os.path.dirname(options.store_chrome_manifest)):
                 parser.error(
                     "directory for %s does not exist as a destination to copy a "
                     "chrome manifest." % options.store_chrome_manifest)
+
+        if options.jscov_dir_prefix:
+            options.jscov_dir_prefix = os.path.abspath(options.jscov_dir_prefix)
+            if not os.path.isdir(options.jscov_dir_prefix):
+                parser.error(
+                    "directory %s does not exist as a destination for coverage "
+                    "data." % options.jscov_dir_prefix)
 
         if options.testingModulesDir is None:
             if build_obj:
@@ -794,10 +829,6 @@ class B2GArguments(ArgumentContainer):
           "help": "Path to B2G repo or QEMU directory.",
           "suppress": True,
           }],
-        [["--marionette"],
-         {"default": None,
-          "help": "host:port to use when connecting to Marionette",
-          }],
         [["--emulator"],
          {"default": None,
           "help": "Architecture of emulator to use, x86 or arm",
@@ -891,6 +922,8 @@ class B2GArguments(ArgumentContainer):
         # Specialpowers is integrated with marionette for b2g,
         # see marionette's jar.mn.
         'extensionsToExclude': ['specialpowers'],
+        # mochijar doesn't get installed via marionette on android
+        'extensionsToInstall': [os.path.join(here, 'mochijar')],
         # See dependencies of bug 1038943.
         'defaultLeakThreshold': 5536,
     }
@@ -1043,6 +1076,10 @@ class AndroidArguments(ArgumentContainer):
 
     defaults = {
         'dm': None,
+        # we don't want to exclude specialpowers on android just yet
+        'extensionsToExclude': [],
+        # mochijar doesn't get installed via marionette on android
+        'extensionsToInstall': [os.path.join(here, 'mochijar')],
         'logFile': 'mochitest.log',
         'utilityPath': None,
     }

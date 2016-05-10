@@ -323,10 +323,12 @@ class DeviceManagerADB(DeviceManager):
         return data
 
     def getProcessList(self):
+        ret = []
         p = self._runCmd(["shell", "ps"], timeout=self.short_timeout)
+        if not p or not p.output or len(p.output) < 1:
+            return ret
         # first line is the headers
         p.output.pop(0)
-        ret = []
         for proc in p.output:
             els = proc.split()
             # We need to figure out if this is "user pid name" or
@@ -470,8 +472,9 @@ class DeviceManagerADB(DeviceManager):
         # we must determine the device root ourselves
         paths = [('/storage/sdcard0', 'tests'),
                  ('/storage/sdcard1', 'tests'),
-                 ('/sdcard', 'tests'),
+                 ('/storage/sdcard', 'tests'),
                  ('/mnt/sdcard', 'tests'),
+                 ('/sdcard', 'tests'),
                  ('/data/local', 'tests')]
         for (basePath, subPath) in paths:
             if self.dirExists(basePath):

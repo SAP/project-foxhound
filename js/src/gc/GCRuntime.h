@@ -18,11 +18,6 @@
 #include "gc/StoreBuffer.h"
 #include "gc/Tracer.h"
 
-/* Perform validation of incremental marking in debug builds but not on B2G. */
-#if defined(DEBUG) && !defined(MOZ_B2G)
-#define JS_GC_MARKING_VALIDATION
-#endif
-
 namespace js {
 
 class AutoLockGC;
@@ -154,8 +149,8 @@ class GCSchedulingTunables
     /*
      * Controls the number of empty chunks reserved for future allocation.
      */
-    unsigned minEmptyChunkCount_;
-    unsigned maxEmptyChunkCount_;
+    uint32_t minEmptyChunkCount_;
+    uint32_t maxEmptyChunkCount_;
 
   public:
     GCSchedulingTunables()
@@ -190,7 +185,7 @@ class GCSchedulingTunables
     unsigned minEmptyChunkCount(const AutoLockGC&) const { return minEmptyChunkCount_; }
     unsigned maxEmptyChunkCount() const { return maxEmptyChunkCount_; }
 
-    void setParameter(JSGCParamKey key, uint32_t value, const AutoLockGC& lock);
+    bool setParameter(JSGCParamKey key, uint32_t value, const AutoLockGC& lock);
 };
 
 /*
@@ -593,7 +588,7 @@ class GCRuntime
     void removeRoot(Value* vp);
     void setMarkStackLimit(size_t limit, AutoLockGC& lock);
 
-    void setParameter(JSGCParamKey key, uint32_t value, AutoLockGC& lock);
+    bool setParameter(JSGCParamKey key, uint32_t value, AutoLockGC& lock);
     uint32_t getParameter(JSGCParamKey key, const AutoLockGC& lock);
 
     bool triggerGC(JS::gcreason::Reason reason);
@@ -756,6 +751,9 @@ class GCRuntime
 
     void setGCCallback(JSGCCallback callback, void* data);
     void callGCCallback(JSGCStatus status) const;
+    void setObjectsTenuredCallback(JSObjectsTenuredCallback callback,
+                                   void* data);
+    void callObjectsTenuredCallback();
     bool addFinalizeCallback(JSFinalizeCallback callback, void* data);
     void removeFinalizeCallback(JSFinalizeCallback func);
     bool addWeakPointerZoneGroupCallback(JSWeakPointerZoneGroupCallback callback, void* data);
@@ -763,8 +761,9 @@ class GCRuntime
     bool addWeakPointerCompartmentCallback(JSWeakPointerCompartmentCallback callback, void* data);
     void removeWeakPointerCompartmentCallback(JSWeakPointerCompartmentCallback callback);
     JS::GCSliceCallback setSliceCallback(JS::GCSliceCallback callback);
+    JS::GCNurseryCollectionCallback setNurseryCollectionCallback(
+        JS::GCNurseryCollectionCallback callback);
 
-    void setValidate(bool enable);
     void setFullCompartmentChecks(bool enable);
 
     bool isManipulatingDeadZones() { return manipulatingDeadZones; }
@@ -1178,7 +1177,7 @@ class GCRuntime
     js::gc::ZoneList zonesToMaybeCompact;
     ArenaHeader* relocatedArenasToRelease;
 
-#ifdef JS_GC_MARKING_VALIDATION
+#ifdef JS_GC_ZEAL
     js::gc::MarkingValidator* markingValidator;
 #endif
 
@@ -1269,10 +1268,10 @@ class GCRuntime
     js::Vector<JSObject*, 0, js::SystemAllocPolicy> selectedForMarking;
 #endif
 
-    bool validate;
     bool fullCompartmentChecks;
 
     Callback<JSGCCallback> gcCallback;
+    Callback<JSObjectsTenuredCallback> tenuredCallback;
     CallbackVector<JSFinalizeCallback> finalizeCallbacks;
     CallbackVector<JSWeakPointerZoneGroupCallback> updateWeakPointerZoneGroupCallbacks;
     CallbackVector<JSWeakPointerCompartmentCallback> updateWeakPointerCompartmentCallbacks;

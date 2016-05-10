@@ -145,6 +145,7 @@
 #include "mozilla/LateWriteChecks.h"
 
 #include <stdlib.h>
+#include <locale.h>
 
 #ifdef XP_UNIX
 #include <sys/stat.h>
@@ -197,9 +198,7 @@
 #endif
 
 #include "base/command_line.h"
-#ifdef MOZ_ENABLE_TESTS
 #include "GTestRunner.h"
-#endif
 
 #ifdef MOZ_B2G_LOADER
 #include "ProcessUtils.h"
@@ -209,8 +208,12 @@
 #include "AndroidBridge.h"
 #endif
 
-#if defined(MOZ_SANDBOX) && defined(XP_LINUX) && !defined(ANDROID)
+#if defined(MOZ_SANDBOX)
+#if defined(XP_LINUX) && !defined(ANDROID)
 #include "mozilla/SandboxInfo.h"
+#elif defined(XP_WIN)
+#include "SandboxBroker.h"
+#endif
 #endif
 
 extern uint32_t gRestartMode;
@@ -597,42 +600,54 @@ CanShowProfileManager()
   return true;
 }
 
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
+#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
 static already_AddRefed<nsIFile>
-GetAndCleanLowIntegrityTemp(const nsAString& aTempDirSuffix)
+GetAndCleanTempDir()
 {
-  // Get the base low integrity Mozilla temp directory.
-  nsCOMPtr<nsIFile> lowIntegrityTemp;
-  nsresult rv = NS_GetSpecialDirectory(NS_WIN_LOW_INTEGRITY_TEMP_BASE,
-                                       getter_AddRefs(lowIntegrityTemp));
+  // Get the directory within which we'll place the
+  // sandbox-writable temp directory
+  nsCOMPtr<nsIFile> tempDir;
+  nsresult rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
+                                       getter_AddRefs(tempDir));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
 
-  // Append our profile specific temp name.
-  rv = lowIntegrityTemp->Append(NS_LITERAL_STRING("Temp-") + aTempDirSuffix);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
-
-  rv = lowIntegrityTemp->Remove(/* aRecursive */ true);
+  rv = tempDir->Remove(/* aRecursive */ true);
   if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
-    NS_WARNING("Failed to delete low integrity temp directory.");
+    NS_WARNING("Failed to delete temp directory.");
     return nullptr;
   }
 
-  return lowIntegrityTemp.forget();
+  return tempDir.forget();
 }
 
 static void
 SetUpSandboxEnvironment()
 {
-  // A low integrity temp only currently makes sense for Vista and later, e10s
-  // and sandbox pref level >= 1.
-  if (!IsVistaOrLater() || !BrowserTabsRemoteAutostart() ||
-      Preferences::GetInt("security.sandbox.content.level") < 1) {
+  // Setup a sandbox-writable temp directory. i.e., a directory
+  // that is writable by a sandboxed content process. This
+  // only applies when e10s is enabled, depending on the platform
+  // and setting of security.sandbox.content.level.
+  if (!BrowserTabsRemoteAutostart()) {
     return;
   }
+
+#if defined(XP_WIN)
+  // For Windows, the temp dir only makes sense for Vista and later
+  // with a sandbox pref level >= 1
+  if (!IsVistaOrLater() ||
+      (Preferences::GetInt("security.sandbox.content.level") < 1)) {
+    return;
+  }
+#endif
+
+#if defined(XP_MACOSX)
+  // For OSX, we just require sandbox pref level >= 1.
+  if (Preferences::GetInt("security.sandbox.content.level") < 1) {
+    return;
+  }
+#endif
 
   // Get (and create if blank) temp directory suffix pref.
   nsresult rv;
@@ -673,14 +688,14 @@ SetUpSandboxEnvironment()
     }
   }
 
-  // Get (and clean up if still there) the low integrity Mozilla temp directory.
-  nsCOMPtr<nsIFile> lowIntegrityTemp = GetAndCleanLowIntegrityTemp(tempDirSuffix);
-  if (!lowIntegrityTemp) {
-    NS_WARNING("Failed to get or clean low integrity Mozilla temp directory.");
+  // Get (and clean up if still there) the sandbox-writable temp directory.
+  nsCOMPtr<nsIFile> tempDir = GetAndCleanTempDir();
+  if (!tempDir) {
+    NS_WARNING("Failed to get or clean sandboxed temp directory.");
     return;
   }
 
-  rv = lowIntegrityTemp->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  rv = tempDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -734,25 +749,20 @@ CleanUpOldSandboxEnvironment()
 static void
 CleanUpSandboxEnvironment()
 {
+#if defined(XP_WIN)
   // We can't have created a low integrity temp before Vista.
   if (!IsVistaOrLater()) {
     return;
   }
+#endif
 
 #if defined(NIGHTLY_BUILD)
   CleanUpOldSandboxEnvironment();
 #endif
 
-  // Get temp directory suffix pref.
-  nsAdoptingString tempDirSuffix =
-    Preferences::GetString("security.sandbox.content.tempDirSuffix");
-  if (tempDirSuffix.IsEmpty()) {
-    return;
-  }
-
   // Get and remove the low integrity Mozilla temp directory.
   // This function already warns if the deletion fails.
-  nsCOMPtr<nsIFile> lowIntegrityTemp = GetAndCleanLowIntegrityTemp(tempDirSuffix);
+  nsCOMPtr<nsIFile> tempDir = GetAndCleanTempDir();
 }
 #endif
 
@@ -993,17 +1003,20 @@ nsXULAppInfo::GetProcessID(uint32_t* aResult)
 }
 
 static bool gBrowserTabsRemoteAutostart = false;
-static nsString gBrowserTabsRemoteDisabledReason;
+static uint64_t gBrowserTabsRemoteStatus = 0;
 static bool gBrowserTabsRemoteAutostartInitialized = false;
+
+static bool gMultiprocessBlockPolicyInitialized = false;
+static uint32_t gMultiprocessBlockPolicy = 0;
 
 NS_IMETHODIMP
 nsXULAppInfo::Observe(nsISupports *aSubject, const char *aTopic, const char16_t *aData) {
   if (!nsCRT::strcmp(aTopic, "getE10SBlocked")) {
-    nsCOMPtr<nsISupportsString> ret = do_QueryInterface(aSubject);
+    nsCOMPtr<nsISupportsPRUint64> ret = do_QueryInterface(aSubject);
     if (!ret)
       return NS_ERROR_FAILURE;
 
-    ret->SetData(gBrowserTabsRemoteDisabledReason);
+    ret->SetData(gBrowserTabsRemoteStatus);
 
     return NS_OK;
   }
@@ -1014,6 +1027,13 @@ NS_IMETHODIMP
 nsXULAppInfo::GetBrowserTabsRemoteAutostart(bool* aResult)
 {
   *aResult = BrowserTabsRemoteAutostart();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::GetMultiprocessBlockPolicy(uint32_t* aResult)
+{
+  *aResult = MultiprocessBlockPolicy();
   return NS_OK;
 }
 
@@ -1394,6 +1414,13 @@ nsXULAppInfo::SaveMemoryReport()
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::SetTelemetrySessionId(const nsACString& id)
+{
+  CrashReporter::SetTelemetrySessionId(id);
   return NS_OK;
 }
 
@@ -2957,7 +2984,42 @@ static void MOZ_gdk_display_close(GdkDisplay *display)
   (void) display;
 #endif
 }
-#endif // MOZ_WIDGET_GTK2
+
+static const char* detectDisplay(void)
+{
+  bool tryX11 = false;
+  bool tryWayland = false;
+  bool tryBroadway = false;
+
+  // Honor user backend selection
+  const char *backend = PR_GetEnv("GDK_BACKEND");
+  if (!backend || strstr(backend, "*")) {
+    // Try all backends
+    tryX11 = true;
+    tryWayland = true;
+    tryBroadway = true;
+  } else if (backend) {
+    if (strstr(backend, "x11"))
+      tryX11 = true;
+    if (strstr(backend, "wayland"))
+      tryWayland = true;
+    if (strstr(backend, "broadway"))
+      tryBroadway = true;
+  }
+
+  const char *display_name;
+  if (tryX11 && (display_name = PR_GetEnv("DISPLAY"))) {
+    return display_name;
+  } else if (tryWayland && (display_name = PR_GetEnv("WAYLAND_DISPLAY"))) {
+    return display_name;
+  } else if (tryBroadway && (display_name = PR_GetEnv("BROADWAY_DISPLAY"))) {
+    return display_name;
+  }
+
+  PR_fprintf(PR_STDERR, "Error: GDK_BACKEND does not match available displays\n");
+  return nullptr;
+}
+#endif // MOZ_WIDGET_GTK
 
 /** 
  * NSPR will search for the "nspr_use_zone_allocator" symbol throughout
@@ -3331,6 +3393,24 @@ XREMain::XRE_mainInit(bool* aExitFlag)
         SaveWordToEnv("MOZ_CRASHREPORTER_STRINGS_OVERRIDE", overridePath);
       }
     }
+  }
+#endif
+
+#if defined(MOZ_SANDBOX) && defined(XP_WIN)
+  bool brokerInitialized = SandboxBroker::Initialize();
+  Telemetry::Accumulate(Telemetry::SANDBOX_BROKER_INITIALIZED,
+                        brokerInitialized);
+  if (!brokerInitialized) {
+#if defined(MOZ_CONTENT_SANDBOX)
+    // If we're sandboxing content and we fail to initialize, then crashing here
+    // seems like the sensible option.
+    if (BrowserTabsRemoteAutostart()) {
+      MOZ_CRASH("Failed to initialize broker services, can't continue.");
+    }
+#endif
+    // Otherwise just warn for the moment, as most things will work.
+    NS_WARNING("Failed to initialize broker services, sandboxed processes will "
+               "fail to start.");
   }
 #endif
 
@@ -3714,12 +3794,12 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
 #if defined(MOZ_WIDGET_GTK)
   // display_name is owned by gdk.
   const char *display_name = gdk_get_display_arg_name();
+  bool saveDisplayArg = false;
   if (display_name) {
-    SaveWordToEnv("DISPLAY", nsDependentCString(display_name));
+    saveDisplayArg = true;
   } else {
-    display_name = PR_GetEnv("DISPLAY");
+    display_name = detectDisplay();
     if (!display_name) {
-      PR_fprintf(PR_STDERR, "Error: no display specified\n");
       return 1;
     }
   }
@@ -3730,16 +3810,19 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   XInitThreads();
 #endif
 #if defined(MOZ_WIDGET_GTK)
-  {
-    mGdkDisplay = gdk_display_open(display_name);
-    if (!mGdkDisplay) {
-      PR_fprintf(PR_STDERR, "Error: cannot open display: %s\n", display_name);
-      return 1;
+  mGdkDisplay = gdk_display_open(display_name);
+  if (!mGdkDisplay) {
+    PR_fprintf(PR_STDERR, "Error: cannot open display: %s\n", display_name);
+    return 1;
+  }
+  gdk_display_manager_set_default_display (gdk_display_manager_get(),
+                                           mGdkDisplay);
+  if (GDK_IS_X11_DISPLAY(mGdkDisplay)) {
+    if (saveDisplayArg) {
+      SaveWordToEnv("DISPLAY", nsDependentCString(display_name));
     }
-    gdk_display_manager_set_default_display (gdk_display_manager_get(),
-                                             mGdkDisplay);
-    if (!GDK_IS_X11_DISPLAY(mGdkDisplay))
-      mDisableRemote = true;
+  } else {
+    mDisableRemote = true;
   }
 #endif
 #ifdef MOZ_ENABLE_XREMOTE
@@ -4149,6 +4232,8 @@ XREMain::XRE_mainRun()
   }
 
   mDirProvider.DoStartup();
+
+  OverrideDefaultLocaleIfNeeded();
 
 #ifdef MOZ_CRASHREPORTER
   nsCString userAgentLocale;
@@ -4589,19 +4674,7 @@ XRE_IsContentProcess()
   return XRE_GetProcessType() == GeckoProcessType_Content;
 }
 
-static void
-LogE10sBlockedReason(const char *reason) {
-  gBrowserTabsRemoteDisabledReason.Assign(NS_ConvertASCIItoUTF16(reason));
-
-  nsAutoString msg(NS_LITERAL_STRING("==================\nE10s has been blocked from running because:\n"));
-  msg.Append(gBrowserTabsRemoteDisabledReason);
-  msg.AppendLiteral("\n==================\n");
-  nsCOMPtr<nsIConsoleService> console(do_GetService("@mozilla.org/consoleservice;1"));
-  if (console) {
-    console->LogStringMessage(msg.get());
-  }
-}
-
+// If you add anything to this enum, please update about:support to reflect it
 enum {
   kE10sEnabledByUser = 0,
   kE10sEnabledByDefault = 1,
@@ -4611,6 +4684,7 @@ enum {
   kE10sDisabledForMacGfx = 5,
   kE10sDisabledForBidi = 6,
   kE10sDisabledForAddons = 7,
+  kE10sForceDisabled = 8,
 };
 
 #ifdef XP_WIN
@@ -4618,6 +4692,7 @@ const char* kAccessibilityLastRunDatePref = "accessibility.lastLoadDate";
 const char* kAccessibilityLoadedLastSessionPref = "accessibility.loadedInLastSession";
 #endif // XP_WIN
 const char* kForceEnableE10sPref = "browser.tabs.remote.force-enable";
+const char* kForceDisableE10sPref = "browser.tabs.remote.force-disable";
 
 #ifdef XP_WIN
 static inline uint32_t
@@ -4628,13 +4703,29 @@ PRTimeToSeconds(PRTime t_usec)
 }
 #endif // XP_WIN
 
-bool
-mozilla::BrowserTabsRemoteAutostart()
-{
-  if (gBrowserTabsRemoteAutostartInitialized) {
-    return gBrowserTabsRemoteAutostart;
+uint32_t
+MultiprocessBlockPolicy() {
+  if (gMultiprocessBlockPolicyInitialized) {
+    return gMultiprocessBlockPolicy;
   }
-  gBrowserTabsRemoteAutostartInitialized = true;
+  gMultiprocessBlockPolicyInitialized = true;
+
+  /**
+   * Avoids enabling e10s if there are add-ons installed.
+   */
+  bool addonsCanDisable = Preferences::GetBool("extensions.e10sBlocksEnabling", false);
+  bool disabledByAddons = Preferences::GetBool("extensions.e10sBlockedByAddons", false);
+
+#ifdef MOZ_CRASHREPORTER
+  CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AddonsShouldHaveBlockedE10s"),
+                                     disabledByAddons ? NS_LITERAL_CSTRING("1")
+                                                      : NS_LITERAL_CSTRING("0"));
+#endif
+
+  if (addonsCanDisable && disabledByAddons) {
+    gMultiprocessBlockPolicy = kE10sDisabledForAddons;
+    return gMultiprocessBlockPolicy;
+  }
 
   bool disabledForA11y = false;
 #ifdef XP_WIN
@@ -4666,30 +4757,80 @@ mozilla::BrowserTabsRemoteAutostart()
   }
 #endif // XP_WIN
 
+  if (disabledForA11y) {
+    gMultiprocessBlockPolicy = kE10sDisabledForAccessibility;
+    return gMultiprocessBlockPolicy;
+  }
+
   /**
    * Avoids enabling e10s for certain locales that require bidi selection,
    * which currently doesn't work well with e10s.
    */
   bool disabledForBidi = false;
 
-  nsAutoCString locale;
   nsCOMPtr<nsIXULChromeRegistry> registry =
    mozilla::services::GetXULChromeRegistryService();
   if (registry) {
-     registry->GetSelectedLocale(NS_LITERAL_CSTRING("global"), locale);
+     registry->IsLocaleRTL(NS_LITERAL_CSTRING("global"), &disabledForBidi);
   }
 
-  int32_t index = locale.FindChar('-');
-  if (index >= 0) {
-    locale.Truncate(index);
+  if (disabledForBidi) {
+    gMultiprocessBlockPolicy = kE10sDisabledForBidi;
+    return gMultiprocessBlockPolicy;
   }
 
-  if (locale.EqualsLiteral("ar") ||
-      locale.EqualsLiteral("fa") ||
-      locale.EqualsLiteral("he") ||
-      locale.EqualsLiteral("ur")) {
-    disabledForBidi = true;
+
+#if defined(XP_MACOSX)
+  // If for any reason we suspect acceleration will be disabled, disable
+  // e10s auto start on mac.
+
+  // Check prefs
+  bool accelDisabled = gfxPrefs::GetSingleton().LayersAccelerationDisabled() &&
+                       !gfxPrefs::LayersAccelerationForceEnabled();
+
+  accelDisabled = accelDisabled || !nsCocoaFeatures::AccelerateByDefault();
+
+  // Check for blocked drivers
+  if (!accelDisabled) {
+    nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+    if (gfxInfo) {
+      int32_t status;
+      if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_OPENGL_LAYERS, &status)) &&
+          status != nsIGfxInfo::FEATURE_STATUS_OK) {
+        accelDisabled = true;
+      }
+    }
   }
+
+  // Check env flags
+  if (accelDisabled) {
+    const char *acceleratedEnv = PR_GetEnv("MOZ_ACCELERATED");
+    if (acceleratedEnv && (*acceleratedEnv != '0')) {
+      accelDisabled = false;
+    }
+  }
+
+  if (accelDisabled) {
+    gMultiprocessBlockPolicy = kE10sDisabledForMacGfx;
+    return gMultiprocessBlockPolicy;
+  }
+#endif // defined(XP_MACOSX)
+
+  /*
+   * None of the blocking policies matched, so e10s is allowed to run.
+   * Cache the information and return 0, indicating success.
+   */
+  gMultiprocessBlockPolicy = 0;
+  return 0;
+}
+
+bool
+mozilla::BrowserTabsRemoteAutostart()
+{
+  if (gBrowserTabsRemoteAutostartInitialized) {
+    return gBrowserTabsRemoteAutostart;
+  }
+  gBrowserTabsRemoteAutostartInitialized = true;
 
   bool optInPref = Preferences::GetBool("browser.tabs.remote.autostart", false);
   bool trialPref = Preferences::GetBool("browser.tabs.remote.autostart.2", false);
@@ -4713,73 +4854,14 @@ mozilla::BrowserTabsRemoteAutostart()
                      gfxPrefs::GetSingleton().LayersOffMainThreadCompositionTestingEnabled();
 #endif
 
-  // Disable for VR
-  bool disabledForVR = Preferences::GetBool("dom.vr.enabled", false);
-
-  bool addonsCanDisable = Preferences::GetBool("extensions.e10sBlocksEnabling", false);
-  bool disabledByAddons = Preferences::GetBool("extensions.e10sBlockedByAddons", false);
-
-#ifdef MOZ_CRASHREPORTER
-  CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AddonsShouldHaveBlockedE10s"),
-                                     disabledByAddons ? NS_LITERAL_CSTRING("1")
-                                                      : NS_LITERAL_CSTRING("0"));
-#endif
-
   if (e10sAllowed && prefEnabled) {
-    if (disabledForA11y) {
-      status = kE10sDisabledForAccessibility;
-      LogE10sBlockedReason("An accessibility tool is or was active. See bug 1198459.");
-    } else if (disabledForBidi) {
-      status = kE10sDisabledForBidi;
-      LogE10sBlockedReason("Disabled for RTL locales due to broken bidi detection.");
-    } else if (disabledForVR) {
-      LogE10sBlockedReason("Experimental VR interfaces are enabled");
-    } else if (addonsCanDisable && disabledByAddons) {
-      status = kE10sDisabledForAddons;
-      LogE10sBlockedReason("3rd party add-ons are installed and enabled.");
+    uint32_t blockPolicy = MultiprocessBlockPolicy();
+    if (blockPolicy != 0) {
+      status = blockPolicy;
     } else {
       gBrowserTabsRemoteAutostart = true;
     }
   }
-
-#if defined(XP_MACOSX)
-  // If for any reason we suspect acceleration will be disabled, disabled
-  // e10s auto start on mac.
-  if (gBrowserTabsRemoteAutostart) {
-    // Check prefs
-    bool accelDisabled = gfxPrefs::GetSingleton().LayersAccelerationDisabled() &&
-                         !gfxPrefs::LayersAccelerationForceEnabled();
-
-    accelDisabled = accelDisabled || !nsCocoaFeatures::AccelerateByDefault();
-
-    // Check for blocked drivers
-    if (!accelDisabled) {
-      nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
-      if (gfxInfo) {
-        int32_t status;
-        if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_OPENGL_LAYERS, &status)) &&
-            status != nsIGfxInfo::FEATURE_STATUS_OK) {
-          accelDisabled = true;
-        }
-      }
-    }
-
-    // Check env flags
-    if (accelDisabled) {
-      const char *acceleratedEnv = PR_GetEnv("MOZ_ACCELERATED");
-      if (acceleratedEnv && (*acceleratedEnv != '0')) {
-        accelDisabled = false;
-      }
-    }
-
-    if (accelDisabled) {
-      gBrowserTabsRemoteAutostart = false;
-
-      status = kE10sDisabledForMacGfx;
-      LogE10sBlockedReason("Hardware acceleration is disabled");
-    }
-  }
-#endif // defined(XP_MACOSX)
 
   // Uber override pref for manual testing purposes
   if (Preferences::GetBool(kForceEnableE10sPref, false)) {
@@ -4788,7 +4870,15 @@ mozilla::BrowserTabsRemoteAutostart()
     status = kE10sEnabledByUser;
   }
 
-  mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_AUTOSTART, gBrowserTabsRemoteAutostart);
+  // Uber override pref for emergency blocking
+  if (gBrowserTabsRemoteAutostart &&
+      Preferences::GetBool(kForceDisableE10sPref, false)) {
+    gBrowserTabsRemoteAutostart = false;
+    status = kE10sForceDisabled;
+  }
+
+  gBrowserTabsRemoteStatus = status;
+
   mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_STATUS, status);
   if (Preferences::GetBool("browser.enabledE10SFromPrompt", false)) {
     mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_STILL_ACCEPTED_FROM_PROMPT,
@@ -4857,4 +4947,16 @@ SetupErrorHandling(const char* progname)
 
   // Unbuffer stdout, needed for tinderbox tests.
   setbuf(stdout, 0);
+}
+
+void
+OverrideDefaultLocaleIfNeeded() {
+  // Read pref to decide whether to override default locale with US English.
+  if (mozilla::Preferences::GetBool("javascript.use_us_english_locale", false)) {
+    // Set the application-wide C-locale. Needed to resist fingerprinting
+    // of Date.toLocaleFormat(). We use the locale to "C.UTF-8" if possible,
+    // to avoid interfering with non-ASCII keyboard input on some Linux desktops.
+    // Otherwise fall back to the "C" locale, which is available on all platforms.
+    setlocale(LC_ALL, "C.UTF-8") || setlocale(LC_ALL, "C");
+  }
 }

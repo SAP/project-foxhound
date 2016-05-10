@@ -16,7 +16,7 @@ import traceback
 import unittest
 import warnings
 import mozprofile
-import xml.dom.minidom as dom
+
 
 from manifestparser import TestManifest
 from manifestparser.filters import tags
@@ -31,6 +31,19 @@ import httpd
 
 
 here = os.path.abspath(os.path.dirname(__file__))
+
+def update_mozinfo(path=None):
+    """walk up directories to find mozinfo.json and update the info"""
+
+    path = path or here
+    dirs = set()
+    while path != os.path.expanduser('~'):
+        if path in dirs:
+            break
+        dirs.add(path)
+        path = os.path.split(path)[0]
+
+    return mozinfo.find_and_update_from_json(*dirs)
 
 
 class MarionetteTest(TestResult):
@@ -262,6 +275,10 @@ class BaseMarionetteArguments(ArgumentParser):
                           nargs='*',
                           default=[],
                           help='Tests to run.')
+        self.add_argument('-v', '--verbose',
+                        action='count',
+                        help='Increase verbosity to include debug messages with -v, '
+                            'and trace messages with -vv.')
         self.add_argument('--emulator',
                         choices=['x86', 'arm'],
                         help='if no --address is given, then the harness will launch a B2G emulator on which to run '
@@ -337,8 +354,6 @@ class BaseMarionetteArguments(ArgumentParser):
                         type=int,
                         default=0,
                         help='number of times to repeat the test(s)')
-        self.add_argument('-x', '--xml-output',
-                        help='xml output')
         self.add_argument('--testvars',
                         action='append',
                         help='path to a json file with any test data required')
@@ -495,7 +510,8 @@ class BaseMarionetteArguments(ArgumentParser):
 
         if args.e10s:
             args.prefs.update({
-                'browser.tabs.remote.autostart': True
+                'browser.tabs.remote.autostart': True,
+                'extensions.e10sBlocksEnabling': False
             })
 
         for container in self.argument_containers:
@@ -514,14 +530,15 @@ class BaseMarionetteTestRunner(object):
                  emulator_img=None, emulator_res='480x800', homedir=None,
                  app=None, app_args=None, binary=None, profile=None,
                  logger=None, no_window=False, logdir=None, logcat_stdout=False,
-                 xml_output=None, repeat=0, testvars=None, tree=None, type=None,
+                 repeat=0, testvars=None, tree=None, type=None,
                  device_serial=None, symbols_path=None, timeout=None,
                  shuffle=False, shuffle_seed=random.randint(0, sys.maxint),
                  sdcard=None, this_chunk=1, total_chunks=1, sources=None,
                  server_root=None, gecko_log=None, result_callbacks=None,
                  adb_host=None, adb_port=None, prefs=None, test_tags=None,
                  socket_timeout=BaseMarionetteArguments.socket_timeout_default,
-                 startup_timeout=None, addons=None, workspace=None, **kwargs):
+                 startup_timeout=None, addons=None, workspace=None,
+                 verbose=0, **kwargs):
         self.address = address
         self.emulator = emulator
         self.emulator_binary = emulator_binary
@@ -539,7 +556,6 @@ class BaseMarionetteTestRunner(object):
         self.marionette = None
         self.logdir = logdir
         self.logcat_stdout = logcat_stdout
-        self.xml_output = xml_output
         self.repeat = repeat
         self.test_kwargs = kwargs
         self.tree = tree
@@ -550,6 +566,7 @@ class BaseMarionetteTestRunner(object):
         self.socket_timeout = socket_timeout
         self._device = None
         self._capabilities = None
+        self._appinfo = None
         self._appName = None
         self.shuffle = shuffle
         self.shuffle_seed = shuffle_seed
@@ -571,6 +588,7 @@ class BaseMarionetteTestRunner(object):
         # If no workspace is set, default location for logcat and gecko.log is .
         # and default location for profile is TMP
         self.workspace_path = workspace or os.getcwd()
+        self.verbose = verbose
 
         def gather_debug(test, status):
             rv = {}
@@ -634,8 +652,6 @@ class BaseMarionetteTestRunner(object):
         else:
             self.gecko_log = gecko_log
 
-        # for XML output
-        self.testvars['xml_output'] = self.xml_output
         self.results = []
 
     @property
@@ -647,6 +663,23 @@ class BaseMarionetteTestRunner(object):
         self._capabilities = self.marionette.session_capabilities
         self.marionette.delete_session()
         return self._capabilities
+
+    @property
+    def appinfo(self):
+        if self._appinfo:
+            return self._appinfo
+
+        self.marionette.start_session()
+        with self.marionette.using_context('chrome'):
+            self._appinfo = self.marionette.execute_script("""
+            try {
+              return Services.appinfo;
+            } catch (e) {
+              return null;
+            }""")
+        self.marionette.delete_session()
+        self._appinfo = self._appinfo or {}
+        return self._appinfo
 
     @property
     def device(self):
@@ -701,6 +734,7 @@ class BaseMarionetteTestRunner(object):
             'adb_port': self._adb_port,
             'prefs': self.prefs,
             'startup_timeout': self.startup_timeout,
+            'verbose': self.verbose,
         }
         if self.bin:
             kwargs.update({
@@ -918,13 +952,6 @@ setReq.onerror = function() {
         self.end_time = time.time()
         self.elapsedtime = self.end_time - self.start_time
 
-        if self.xml_output:
-            xml_dir = os.path.dirname(os.path.abspath(self.xml_output))
-            if not os.path.exists(xml_dir):
-                os.makedirs(xml_dir)
-            with open(self.xml_output, 'w') as f:
-                f.write(self.generate_xml(self.results))
-
         if self.marionette.instance:
             self.marionette.instance.close()
             self.marionette.instance = None
@@ -986,11 +1013,15 @@ setReq.onerror = function() {
             filters = []
             if self.test_tags:
                 filters.append(tags(self.test_tags))
+            e10s = self.appinfo.get('browserTabsRemoteAutostart', False)
+            json_path = update_mozinfo(filepath)
+            self.logger.info("mozinfo updated with the following: {}".format(None))
             manifest_tests = manifest.active_tests(exists=False,
                                                    disabled=True,
                                                    filters=filters,
                                                    device=self.device,
                                                    app=self.appName,
+                                                   e10s=e10s,
                                                    **mozinfo.info)
             if len(manifest_tests) == 0:
                 self.logger.error("no tests to run using specified "
@@ -1114,92 +1145,3 @@ setReq.onerror = function() {
             self.marionette.cleanup()
 
     __del__ = cleanup
-
-    def generate_xml(self, results_list):
-
-        def _extract_xml_from_result(test_result, result='passed'):
-            _extract_xml(
-                test_name=unicode(test_result.name).split()[0],
-                test_class=test_result.test_class,
-                duration=test_result.duration,
-                result=result,
-                output='\n'.join(test_result.output))
-
-        def _extract_xml_from_skipped_manifest_test(test):
-            _extract_xml(
-                test_name=test['name'],
-                result='skipped',
-                output=test['disabled'])
-
-        def _extract_xml(test_name, test_class='', duration=0,
-                         result='passed', output=''):
-            testcase = doc.createElement('testcase')
-            testcase.setAttribute('classname', test_class)
-            testcase.setAttribute('name', test_name)
-            testcase.setAttribute('time', str(duration))
-            testsuite.appendChild(testcase)
-
-            if result in ['failure', 'error', 'skipped']:
-                f = doc.createElement(result)
-                f.setAttribute('message', 'test %s' % result)
-                f.appendChild(doc.createTextNode(output))
-                testcase.appendChild(f)
-
-        doc = dom.Document()
-
-        testsuite = doc.createElement('testsuite')
-        testsuite.setAttribute('name', 'Marionette')
-        testsuite.setAttribute('time', str(self.elapsedtime))
-        testsuite.setAttribute('tests', str(sum([results.testsRun for
-                                                 results in results_list])))
-
-        def failed_count(results):
-            count = len(results.failures)
-            if hasattr(results, 'unexpectedSuccesses'):
-                count += len(results.unexpectedSuccesses)
-            return count
-
-        testsuite.setAttribute('failures', str(sum([failed_count(results)
-                                               for results in results_list])))
-        testsuite.setAttribute('errors', str(sum([len(results.errors)
-                                             for results in results_list])))
-        testsuite.setAttribute(
-            'skips', str(sum([len(results.skipped) +
-                         len(results.expectedFailures)
-                         for results in results_list]) +
-                         len(self.manifest_skipped_tests)))
-
-        for results in results_list:
-
-            for result in results.errors:
-                _extract_xml_from_result(result, result='error')
-
-            for result in results.failures:
-                _extract_xml_from_result(result, result='failure')
-
-            if hasattr(results, 'unexpectedSuccesses'):
-                for test in results.unexpectedSuccesses:
-                    # unexpectedSuccesses is a list of Testcases only, no tuples
-                    _extract_xml_from_result(test, result='failure')
-
-            if hasattr(results, 'skipped'):
-                for result in results.skipped:
-                    _extract_xml_from_result(result, result='skipped')
-
-            if hasattr(results, 'expectedFailures'):
-                for result in results.expectedFailures:
-                    _extract_xml_from_result(result, result='skipped')
-
-            for result in results.tests_passed:
-                _extract_xml_from_result(result)
-
-        for test in self.manifest_skipped_tests:
-            _extract_xml_from_skipped_manifest_test(test)
-
-        doc.appendChild(testsuite)
-
-        # change default encoding to avoid encoding problem for page source
-        reload(sys)
-        sys.setdefaultencoding('utf-8')
-
-        return doc.toprettyxml(encoding='utf-8')

@@ -12,10 +12,7 @@
 #include "mozilla/StateMirroring.h"
 #include "SourceBufferResource.h"
 #include "SourceBuffer.h"
-
-#ifdef MOZ_WEBM
 #include "WebMDemuxer.h"
-#endif
 
 #ifdef MOZ_FMP4
 #include "MP4Demuxer.h"
@@ -304,6 +301,13 @@ TrackBuffersManager::CompleteResetParserState()
 {
   MOZ_ASSERT(OnTaskQueue());
   MSE_DEBUG("");
+
+  // We shouldn't change mInputDemuxer while a demuxer init/reset request is
+  // being processed. See bug 1239983.
+  NS_ASSERTION(!mDemuxerInitRequest.Exists(), "Previous AppendBuffer didn't complete");
+  if (mDemuxerInitRequest.Exists()) {
+    mDemuxerInitRequest.Disconnect();
+  }
 
   for (auto& track : GetTracksList()) {
     // 2. Unset the last decode timestamp on all track buffers.
@@ -752,12 +756,10 @@ TrackBuffersManager::CreateDemuxerforMIMEType()
 {
   ShutdownDemuxers();
 
-#ifdef MOZ_WEBM
   if (mType.LowerCaseEqualsLiteral("video/webm") || mType.LowerCaseEqualsLiteral("audio/webm")) {
     mInputDemuxer = new WebMDemuxer(mCurrentInputBuffer, true /* IsMediaSource*/ );
     return;
   }
-#endif
 
 #ifdef MOZ_FMP4
   if (mType.LowerCaseEqualsLiteral("video/mp4") || mType.LowerCaseEqualsLiteral("audio/mp4")) {
@@ -870,9 +872,13 @@ TrackBuffersManager::OnDemuxerInitDone(nsresult)
   MOZ_ASSERT(OnTaskQueue());
   mDemuxerInitRequest.Complete();
 
-  // mInputDemuxer shouldn't have been destroyed while a demuxer init/reset
-  // request was being processed. See bug 1239983.
-  MOZ_DIAGNOSTIC_ASSERT(mInputDemuxer);
+  if (!mInputDemuxer) {
+    // mInputDemuxer shouldn't have been destroyed while a demuxer init/reset
+    // request was being processed. See bug 1239983.
+    NS_ASSERTION(false, "mInputDemuxer has been destroyed");
+    RejectAppend(NS_ERROR_ABORT, __func__);
+    return;
+  }
 
   MediaInfo info;
 

@@ -98,6 +98,7 @@ add_task(function* initializeState() {
 
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("experiments.enabled");
+    Services.prefs.clearUserPref("toolkit.telemetry.enabled");
     if (gHttpServer) {
       gHttpServer.stop(() => {});
       if (gSavedManifestURI !== undefined) {
@@ -224,7 +225,12 @@ add_task(function* testOpenPreferences() {
   }, "advanced-pane-loaded", false);
 
   info("Loading preferences pane.");
-  EventUtils.synthesizeMouseAtCenter(btn, {}, gManagerWindow);
+  // We need to focus before synthesizing the mouse event (bug 1240052) as
+  // synthesizeMouseAtCenter currently only synthesizes the mouse in the child process.
+  // This can cause some subtle differences if the child isn't focused.
+  yield SimpleTest.promiseFocus();
+  yield BrowserTestUtils.synthesizeMouseAtCenter("#experiments-change-telemetry", {},
+                                                 gBrowser.selectedBrowser);
 
   yield deferred.promise;
 });
@@ -294,6 +300,7 @@ add_task(function* testActivateExperiment() {
   // We need to remove the cache file to help ensure consistent state.
   yield OS.File.remove(gExperiments._cacheFilePath);
 
+  Services.prefs.setBoolPref("toolkit.telemetry.enabled", true);
   Services.prefs.setBoolPref("experiments.enabled", true);
 
   info("Initializing experiments service.");
@@ -635,6 +642,8 @@ add_task(function* testCleanup() {
     yield OS.File.remove(gExperiments._cacheFilePath);
     yield gExperiments.uninit();
     yield gExperiments.init();
+
+    Services.prefs.clearUserPref("toolkit.telemetry.enabled");
   }
 
   // Check post-conditions.

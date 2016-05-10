@@ -15,7 +15,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SizePrintfMacros.h"
 #include "mozilla/TemplateLib.h"
-#include "mozilla/UniquePtr.h"
 
 #include <string.h>
 
@@ -38,7 +37,7 @@
 #include "jswin.h"
 #include "jswrapper.h"
 
-#include "asmjs/AsmJSModule.h"
+#include "asmjs/WasmModule.h"
 #include "builtin/Eval.h"
 #include "builtin/Object.h"
 #include "builtin/SymbolObject.h"
@@ -48,6 +47,7 @@
 #include "js/MemoryMetrics.h"
 #include "js/Proxy.h"
 #include "js/UbiNode.h"
+#include "js/UniquePtr.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/Interpreter.h"
 #include "vm/ProxyObject.h"
@@ -74,7 +74,6 @@ using namespace js::gc;
 
 using mozilla::DebugOnly;
 using mozilla::Maybe;
-using mozilla::UniquePtr;
 
 void
 js::ReportNotObject(JSContext* cx, const Value& v)
@@ -82,8 +81,7 @@ js::ReportNotObject(JSContext* cx, const Value& v)
     MOZ_ASSERT(!v.isObject());
 
     RootedValue value(cx, v);
-    UniquePtr<char[], JS::FreePolicy> bytes =
-        DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, value, nullptr);
+    UniqueChars bytes = DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, value, nullptr);
     if (bytes)
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_NONNULL_OBJECT, bytes.get());
 }
@@ -196,8 +194,7 @@ js::GetFirstArgumentAsObject(JSContext* cx, const CallArgs& args, const char* me
 
     HandleValue v = args[0];
     if (!v.isObject()) {
-        UniquePtr<char[], JS::FreePolicy> bytes =
-            DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, v, nullptr);
+        UniqueChars bytes = DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, v, nullptr);
         if (!bytes)
             return false;
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
@@ -488,7 +485,9 @@ js::SetIntegrityLevel(JSContext* cx, HandleObject obj, IntegrityLevel level)
     MOZ_ASSERT_IF(obj->isNative(), obj->as<NativeObject>().getDenseCapacity() == 0);
 
     // Steps 8-9, loosely interpreted.
-    if (obj->isNative() && !obj->as<NativeObject>().inDictionaryMode() && !IsAnyTypedArray(obj)) {
+    if (obj->isNative() && !obj->as<NativeObject>().inDictionaryMode() &&
+        !obj->is<TypedArrayObject>())
+    {
         HandleNativeObject nobj = obj.as<NativeObject>();
 
         // Seal/freeze non-dictionary objects by constructing a new shape
@@ -932,8 +931,9 @@ CreateThisForFunctionWithGroup(JSContext* cx, HandleObjectGroup group,
         if (!res)
             return nullptr;
 
-        if (newKind != SingletonObject)
-            newScript->registerNewObject(res);
+        // Make sure group->newScript is still there.
+        if (newKind != SingletonObject && group->newScript())
+            group->newScript()->registerNewObject(res);
 
         return res;
     }
@@ -1275,7 +1275,7 @@ js::DeepCloneObjectLiteral(JSContext* cx, HandleObject obj, NewObjectKind newKin
 {
     /* NB: Keep this in sync with XDRObjectLiteral. */
     MOZ_ASSERT_IF(obj->isSingleton(),
-                  JS::CompartmentOptionsRef(cx).getSingletonsAsTemplates());
+                  cx->compartment()->behaviors().getSingletonsAsTemplates());
     MOZ_ASSERT(obj->is<PlainObject>() || obj->is<UnboxedPlainObject>() ||
                obj->is<ArrayObject>() || obj->is<UnboxedArrayObject>());
     MOZ_ASSERT(newKind != SingletonObject);
@@ -1389,7 +1389,7 @@ js::XDRObjectLiteral(XDRState<mode>* xdr, MutableHandleObject obj)
 
     JSContext* cx = xdr->cx();
     MOZ_ASSERT_IF(mode == XDR_ENCODE && obj->isSingleton(),
-                  JS::CompartmentOptionsRef(cx).getSingletonsAsTemplates());
+                  cx->compartment()->behaviors().getSingletonsAsTemplates());
 
     // Distinguish between objects and array classes.
     uint32_t isArray = 0;
@@ -1923,6 +1923,9 @@ js::SetClassAndProto(JSContext* cx, HandleObject obj,
     RootedObject oldproto(cx, obj);
     while (oldproto && oldproto->isNative()) {
         if (oldproto->isSingleton()) {
+            // We always generate a new shape if the object is a singleton,
+            // regardless of the uncacheable-proto flag. ICs may rely on
+            // this.
             if (!oldproto->as<NativeObject>().generateOwnShape(cx))
                 return false;
         } else {
@@ -2282,10 +2285,10 @@ js::LookupPropertyPure(ExclusiveContext* cx, JSObject* obj, jsid id, JSObject** 
                 return true;
             }
 
-            if (IsAnyTypedArray(obj)) {
+            if (obj->is<TypedArrayObject>()) {
                 uint64_t index;
                 if (IsTypedArrayIndex(id, &index)) {
-                    if (index < AnyTypedArrayLength(obj)) {
+                    if (index < obj->as<TypedArrayObject>().length()) {
                         *objp = obj;
                         MarkDenseOrTypedArrayElementFound<NoGC>(propp);
                     } else {
@@ -2809,7 +2812,7 @@ js::WatchProperty(JSContext* cx, HandleObject obj, HandleId id, HandleObject cal
     if (WatchOp op = obj->getOps()->watch)
         return op(cx, obj, id, callable);
 
-    if (!obj->isNative() || IsAnyTypedArray(obj)) {
+    if (!obj->isNative() || obj->is<TypedArrayObject>()) {
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_CANT_WATCH,
                              obj->getClass()->name);
         return false;
@@ -2867,6 +2870,118 @@ js::HasDataProperty(JSContext* cx, NativeObject* obj, jsid id, Value* vp)
     }
 
     return false;
+}
+
+static bool
+GenericNativeMethodDispatcher(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    const JSFunctionSpec* fs = (JSFunctionSpec*)
+        args.callee().as<JSFunction>().getExtendedSlot(0).toPrivate();
+    MOZ_ASSERT((fs->flags & JSFUN_GENERIC_NATIVE) != 0);
+
+    if (argc < 1) {
+        ReportMissingArg(cx, args.calleev(), 0);
+        return false;
+    }
+
+    /*
+     * Copy all actual (argc) arguments down over our |this| parameter, vp[1],
+     * which is almost always the class constructor object, e.g. Array.  Then
+     * call the corresponding prototype native method with our first argument
+     * passed as |this|.
+     */
+    memmove(vp + 1, vp + 2, argc * sizeof(Value));
+
+    /* Clear the last parameter in case too few arguments were passed. */
+    vp[2 + --argc].setUndefined();
+
+    return fs->call.op(cx, argc, vp);
+}
+
+extern bool
+PropertySpecNameToId(JSContext* cx, const char* name, MutableHandleId id,
+                     js::PinningBehavior pin = js::DoNotPinAtom);
+
+static bool
+DefineFunctionFromSpec(JSContext* cx, HandleObject obj, const JSFunctionSpec* fs, unsigned flags,
+                       DefineAsIntrinsic intrinsic)
+{
+    GetterOp gop;
+    SetterOp sop;
+    if (flags & JSFUN_STUB_GSOPS) {
+        // JSFUN_STUB_GSOPS is a request flag only, not stored in fun->flags or
+        // the defined property's attributes.
+        flags &= ~JSFUN_STUB_GSOPS;
+        gop = nullptr;
+        sop = nullptr;
+    } else {
+        gop = obj->getClass()->getProperty;
+        sop = obj->getClass()->setProperty;
+        MOZ_ASSERT(gop != JS_PropertyStub);
+        MOZ_ASSERT(sop != JS_StrictPropertyStub);
+    }
+
+    RootedId id(cx);
+    if (!PropertySpecNameToId(cx, fs->name, &id))
+        return false;
+
+    // Define a generic arity N+1 static method for the arity N prototype
+    // method if flags contains JSFUN_GENERIC_NATIVE.
+    if (flags & JSFUN_GENERIC_NATIVE) {
+        // We require that any consumers using JSFUN_GENERIC_NATIVE stash
+        // the prototype and constructor in the global slots before invoking
+        // JS_DefineFunctions on the proto.
+        JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(obj->getClass());
+        MOZ_ASSERT(obj == &obj->global().getPrototype(key).toObject());
+        RootedObject ctor(cx, &obj->global().getConstructor(key).toObject());
+
+        flags &= ~JSFUN_GENERIC_NATIVE;
+        JSFunction* fun = DefineFunction(cx, ctor, id,
+                                         GenericNativeMethodDispatcher,
+                                         fs->nargs + 1, flags,
+                                         gc::AllocKind::FUNCTION_EXTENDED);
+        if (!fun)
+            return false;
+
+        fun->setExtendedSlot(0, PrivateValue(const_cast<JSFunctionSpec*>(fs)));
+    }
+
+    JSFunction* fun = NewFunctionFromSpec(cx, fs, id);
+    if (!fun)
+        return false;
+
+    if (intrinsic == AsIntrinsic)
+        fun->setIsIntrinsic();
+
+    RootedValue funVal(cx, ObjectValue(*fun));
+    return DefineProperty(cx, obj, id, funVal, gop, sop, flags & ~JSFUN_FLAGS_MASK);
+}
+
+bool
+js::DefineFunctions(JSContext* cx, HandleObject obj, const JSFunctionSpec* fs,
+                    DefineAsIntrinsic intrinsic, PropertyDefinitionBehavior behavior)
+{
+    for (; fs->name; fs++) {
+        unsigned flags = fs->flags;
+        switch (behavior) {
+          case DefineAllProperties:
+            break;
+          case OnlyDefineLateProperties:
+            if (!(flags & JSPROP_DEFINE_LATE))
+                continue;
+            break;
+          default:
+            MOZ_ASSERT(behavior == DontDefineLateProperties);
+            if (flags & JSPROP_DEFINE_LATE)
+                continue;
+        }
+
+        if (!DefineFunctionFromSpec(cx, obj, fs, flags & ~JSPROP_DEFINE_LATE, intrinsic))
+            return false;
+    }
+    return true;
 }
 
 
@@ -3191,12 +3306,12 @@ GetObjectSlotNameFunctor::operator()(JS::CallbackTracer* trc, char* buf, size_t 
             if (slotname)
                 JS_snprintf(buf, bufsize, pattern, slotname);
             else
-                JS_snprintf(buf, bufsize, "**UNKNOWN SLOT %ld**", (long)slot);
+                JS_snprintf(buf, bufsize, "**UNKNOWN SLOT %" PRIu32 "**", slot);
         } while (false);
     } else {
         jsid propid = shape->propid();
         if (JSID_IS_INT(propid)) {
-            JS_snprintf(buf, bufsize, "%ld", (long)JSID_TO_INT(propid));
+            JS_snprintf(buf, bufsize, "%" PRId32 "", JSID_TO_INT(propid));
         } else if (JSID_IS_ATOM(propid)) {
             PutEscapedString(buf, bufsize, JSID_TO_ATOM(propid), 0);
         } else if (JSID_IS_SYMBOL(propid)) {
@@ -3425,8 +3540,12 @@ JSObject::dump()
     if (obj->isNative()) {
         fprintf(stderr, "properties:\n");
         Vector<Shape*, 8, SystemAllocPolicy> props;
-        for (Shape::Range<NoGC> r(obj->as<NativeObject>().lastProperty()); !r.empty(); r.popFront())
-            props.append(&r.front());
+        for (Shape::Range<NoGC> r(obj->as<NativeObject>().lastProperty()); !r.empty(); r.popFront()) {
+            if (!props.append(&r.front())) {
+                fprintf(stderr, "(OOM while appending properties)\n");
+                break;
+            }
+        }
         for (size_t i = props.length(); i-- != 0;)
             DumpProperty(&obj->as<NativeObject>(), *props[i]);
     }
@@ -3487,7 +3606,7 @@ js::DumpInterpreterFrame(JSContext* cx, InterpreterFrame* start)
             v.setObject(*fun);
             dumpValue(v);
         } else {
-            fprintf(stderr, "global frame, no callee");
+            fprintf(stderr, "global or eval frame, no callee");
         }
         fputc('\n', stderr);
 
@@ -3499,7 +3618,7 @@ js::DumpInterpreterFrame(JSContext* cx, InterpreterFrame* start)
             fprintf(stderr, "  current op: %s\n", CodeName[*pc]);
             MaybeDumpObject("staticScope", i.script()->getStaticBlockScope(pc));
         }
-        if (i.isNonEvalFunctionFrame())
+        if (i.isFunctionFrame())
             MaybeDumpValue("this", i.thisArgument(cx));
         if (!i.isJit()) {
             fprintf(stderr, "  rval: ");
@@ -3527,8 +3646,11 @@ js::DumpInterpreterFrame(JSContext* cx, InterpreterFrame* start)
 JS_FRIEND_API(void)
 js::DumpBacktrace(JSContext* cx)
 {
-    Sprinter sprinter(cx);
-    sprinter.init();
+    Sprinter sprinter(cx, false);
+    if (!sprinter.init()) {
+        fprintf(stdout, "js::DumpBacktrace: OOM\n");
+        return;
+    }
     size_t depth = 0;
     for (AllFramesIter i(cx); !i.done(); ++i, ++depth) {
         const char* filename = JS_GetScriptFilename(i.script());
@@ -3538,7 +3660,7 @@ js::DumpBacktrace(JSContext* cx)
             i.isInterp() ? 'i' :
             i.isBaseline() ? 'b' :
             i.isIon() ? 'I' :
-            i.isAsmJS() ? 'A' :
+            i.isWasm() ? 'W' :
             '?';
 
         sprinter.printf("#%d %14p %c   %s:%d (%p @ %d)\n",
@@ -3547,9 +3669,8 @@ js::DumpBacktrace(JSContext* cx)
     }
     fprintf(stdout, "%s", sprinter.string());
 #ifdef XP_WIN32
-    if (IsDebuggerPresent()) {
+    if (IsDebuggerPresent())
         OutputDebugStringA(sprinter.string());
-    }
 #endif
 }
 
@@ -3673,9 +3794,9 @@ JSObject::addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::ClassIn
         ArrayBufferObject::addSizeOfExcludingThis(this, mallocSizeOf, info);
     } else if (is<SharedArrayBufferObject>()) {
         SharedArrayBufferObject::addSizeOfExcludingThis(this, mallocSizeOf, info);
-    } else if (is<AsmJSModuleObject>()) {
-        as<AsmJSModuleObject>().addSizeOfMisc(mallocSizeOf, &info->objectsNonHeapCodeAsmJS,
-                                              &info->objectsMallocHeapMisc);
+    } else if (is<WasmModuleObject>()) {
+        as<WasmModuleObject>().addSizeOfMisc(mallocSizeOf, &info->objectsNonHeapCodeAsmJS,
+                                             &info->objectsMallocHeapMisc);
 #ifdef JS_HAS_CTYPES
     } else {
         // This must be the last case.

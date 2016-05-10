@@ -18,8 +18,7 @@
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
 #include "nsContentUtils.h"
-
-#include "prprf.h"
+#include "mozilla/Snprintf.h"
 
 // Undo the damage done by mozzconf.h
 #undef compress
@@ -142,7 +141,7 @@ private:
 
 public:
     InterruptFrame(Direction direction, const Message* msg)
-      : mMessageName(strdup(msg->name())),
+      : mMessageName(msg->name()),
         mMessageRoutingId(msg->routing_id()),
         mMesageSemantics(msg->is_interrupt() ? INTR_SEMS :
                           msg->is_sync() ? SYNC_SEMS :
@@ -168,9 +167,6 @@ public:
     ~InterruptFrame()
     {
         MOZ_ASSERT_IF(!mMessageName, mMoved);
-
-        if (mMessageName)
-            free(const_cast<char*>(mMessageName));
     }
 
     InterruptFrame& operator=(InterruptFrame&& aOther)
@@ -235,7 +231,8 @@ public:
         if (mThat.mCxxStackFrames.empty())
             mThat.EnteredCxxStack();
 
-        mThat.mCxxStackFrames.append(InterruptFrame(direction, msg));
+        if (!mThat.mCxxStackFrames.append(InterruptFrame(direction, msg)))
+            MOZ_CRASH();
 
         const InterruptFrame& frame = mThat.mCxxStackFrames.back();
 
@@ -826,7 +823,8 @@ MessageChannel::ProcessPendingRequests(int seqno, int transaction)
             }
 
             if (!defer) {
-                toProcess.append(Move(msg));
+                if (!toProcess.append(Move(msg)))
+                    MOZ_CRASH();
                 it = mPending.erase(it);
                 continue;
             }
@@ -1785,9 +1783,8 @@ MessageChannel::ReportConnectionError(const char* aChannelName, Message* aMsg) c
 
     if (aMsg) {
         char reason[512];
-        PR_snprintf(reason, sizeof(reason),
-                    "(msgtype=0x%lX,name=%s) %s",
-                    aMsg->type(), aMsg->name(), errorMsg);
+        snprintf_literal(reason,"(msgtype=0x%X,name=%s) %s",
+                         aMsg->type(), aMsg->name(), errorMsg);
 
         PrintErrorMessage(mSide, aChannelName, reason);
     } else {
@@ -1831,9 +1828,8 @@ MessageChannel::MaybeHandleError(Result code, const Message& aMsg, const char* c
     }
 
     char reason[512];
-    PR_snprintf(reason, sizeof(reason),
-                "(msgtype=0x%lX,name=%s) %s",
-                aMsg.type(), aMsg.name(), errorMsg);
+    snprintf_literal(reason,"(msgtype=0x%X,name=%s) %s",
+                     aMsg.type(), aMsg.name(), errorMsg);
 
     PrintErrorMessage(mSide, channelName, reason);
 

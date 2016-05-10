@@ -247,7 +247,7 @@ CacheObserver::AttachToPreferences()
 }
 
 // static
-uint32_t const CacheObserver::MemoryCacheCapacity()
+uint32_t CacheObserver::MemoryCacheCapacity()
 {
   if (sMemoryCacheCapacity >= 0)
     return sMemoryCacheCapacity << 10;
@@ -285,7 +285,7 @@ uint32_t const CacheObserver::MemoryCacheCapacity()
 }
 
 // static
-bool const CacheObserver::UseNewCache()
+bool CacheObserver::UseNewCache()
 {
   uint32_t useNewCache = sUseNewCache;
 
@@ -448,7 +448,7 @@ nsresult Run(NeckoOriginAttributes const &aOa)
 } // anon
 
 // static
-bool const CacheObserver::EntryIsTooBig(int64_t aSize, bool aUsingDisk)
+bool CacheObserver::EntryIsTooBig(int64_t aSize, bool aUsingDisk)
 {
   // If custom limit is set, check it.
   int64_t preferredLimit = aUsingDisk ? sMaxDiskEntrySize : sMaxMemoryEntrySize;
@@ -503,18 +503,13 @@ CacheObserver::Observe(nsISupports* aSubject,
     return NS_OK;
   }
 
-  if (!strcmp(aTopic, "profile-before-change")) {
+  if (!strcmp(aTopic, "profile-change-net-teardown") ||
+      !strcmp(aTopic, "profile-before-change") ||
+      !strcmp(aTopic, "xpcom-shutdown")) {
     RefPtr<CacheStorageService> service = CacheStorageService::Self();
-    if (service)
+    if (service) {
       service->Shutdown();
-
-    return NS_OK;
-  }
-
-  if (!strcmp(aTopic, "xpcom-shutdown")) {
-    RefPtr<CacheStorageService> service = CacheStorageService::Self();
-    if (service)
-      service->Shutdown();
+    }
 
     CacheFileIOManager::Shutdown();
     return NS_OK;
@@ -522,8 +517,9 @@ CacheObserver::Observe(nsISupports* aSubject,
 
   if (!strcmp(aTopic, "last-pb-context-exited")) {
     RefPtr<CacheStorageService> service = CacheStorageService::Self();
-    if (service)
+    if (service) {
       service->DropPrivateBrowsingEntries();
+    }
 
     return NS_OK;
   }

@@ -393,7 +393,7 @@ final class GeckoEditable extends JNIObject
     }
 
     @WrapForJNI
-    GeckoEditable() {
+    GeckoEditable(final GeckoView v) {
         if (DEBUG) {
             // Called by nsWindow.
             ThreadUtils.assertOnGeckoThread();
@@ -408,6 +408,8 @@ final class GeckoEditable extends JNIObject
                 PROXY_INTERFACES, this);
 
         mIcRunHandler = mIcPostHandler = ThreadUtils.getUiHandler();
+
+        onViewChange(v);
     }
 
     @WrapForJNI @Override
@@ -1108,8 +1110,8 @@ final class GeckoEditable extends JNIObject
             // Nothing to do because the text is the same. This could happen when
             // the composition is updated for example, in which case we want to keep the
             // Java selection.
-            mIgnoreSelectionChange = mIgnoreSelectionChange ||
-                    (action != null && action.mType == Action.TYPE_UPDATE_COMPOSITION);
+            mIgnoreSelectionChange |= (action != null &&
+                    action.mType == Action.TYPE_UPDATE_COMPOSITION);
             return;
 
         } else {

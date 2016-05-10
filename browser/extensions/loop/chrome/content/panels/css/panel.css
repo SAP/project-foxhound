@@ -25,17 +25,13 @@ body {
   overflow: hidden;
   font: menu;
   background-color: #fbfbfb;
-  height: 410px;
   width: 330px;
 }
 
-/* Panel container flexbox */
+/* Panel container */
 .panel-content {
-  height: 410px;
   width: 330px;
-  display: flex;
-  flex-flow: column nowrap;
-  align-items: flex-start;
+  display: block;
 }
 
 .panel-content > .beta-ribbon {
@@ -43,6 +39,15 @@ body {
   left: 0;
   top: 0;
   z-index: 1000;
+}
+
+.panel-container {
+  flex: 1;
+  display: flex;
+  flex-flow: column nowrap;
+  width: 100%;
+  height: 100%;
+  position: relative;
 }
 
 /* Notifications displayed over tabs */
@@ -148,27 +153,24 @@ body {
 /* Rooms CSS */
 
 .room-list-loading {
-  position: relative;
   text-align: center;
-  /* makes sure that buttons are anchored above footer */
-  flex: 1;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 .room-list-loading > img {
   width: 66px;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
 }
-
 
 /* Rooms */
 .rooms {
-  flex: 1;
-  display: flex;
-  flex-flow: column nowrap;
+  display: block;
   width: 100%;
+  flex-grow: 2;
+}
+
+.rooms > .fte-get-started-content {
+  padding-top: 2.4rem;
 }
 
 .rooms > h1 {
@@ -207,21 +209,61 @@ body {
 }
 
 .room-list {
-  /* xxx  not sure why flex needs the 3 value setting
-    but setting flex to just 1, the whole tab including the new room is scrollable.
-    seems to not like the 0% of the default setting - may be FF bug */
-  flex: 1 1 0;
   overflow-y: auto;
   overflow-x: hidden;
-  display: flex;
   flex-flow: column nowrap;
   width: 100%;
+  /* max number of rooms shown @ 28px */
+  max-height: calc(5 * 28px);
+  /* min-height because there is a browser min-height on panel */
+  min-height: 53px;
+  padding-top: 4px;
+  transition: opacity .2s ease-in-out .2s;
+}
+
+.room-list-empty {
+  display: inline-block;
+  /* min height so empty empty room list panel is same height as loading and
+  room-list panels */
+  min-height: 80px;
+}
+
+
+/* Adds blur to bottom of room-list to indicate more items in list */
+.room-list-blur {
+  /* height of room-list item */
+  height: 2.4rem;
+  /* -15px for scrollbar */
+  width: calc(100% - 15px);
+  /* At same DOM level as room-list, positioned after and moved to bottom of room-list */
+  position: absolute;
+  margin-top: -2.4rem;
+  /* starts gradient at about the 50% mark on the text, eyeballed the percentages */
+  background: linear-gradient(
+    to bottom,
+    rgba(251, 251, 251, 0) 0%,
+    rgba(251, 251, 251, 0) 38%, /* Because of padding and lineheight, start gradient at 38% */
+    rgba(251, 251, 251, 1) 65%, /* and end around 65% */
+    rgba(251, 251, 251, 1) 100%
+  );
+  pointer-events: none;
 }
 
 .room-list > .room-entry {
   padding: .2rem 15px;
   /* Always show the default pointer, even over the text part of the entry. */
   cursor: default;
+}
+
+/* Adds margin to the last room-entry to make gradient fade disappear for last item */
+.room-list-add-space > .room-entry:last-child {
+  margin-bottom: 8px;
+}
+
+/* Disable interacting with the room list when creating */
+.room-list-pending-creation {
+  opacity: .5;
+  pointer-events: none;
 }
 
 .room-list > .room-entry > h2 {
@@ -237,6 +279,14 @@ body {
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.room-list > .room-entry > input {
+  display: inline-block;
+  vertical-align: middle;
+  /* See .room-entry-context-item for the margin/size reductions. */
+  width: calc(100% - 1rem - 16px);
+  font-size: 1.3rem;
 }
 
 .room-list > .room-entry.room-active:not(.room-opened) > h2 {
@@ -546,8 +596,8 @@ html[dir="rtl"] .generate-url-spinner {
 /* Settings (gear) menu */
 
 .button-settings {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   padding: 0;
   border: none;
@@ -557,7 +607,6 @@ html[dir="rtl"] .generate-url-spinner {
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  -moz-margin-start: .5em;
 }
 
 .settings-menu .dropdown-menu {
@@ -618,10 +667,7 @@ html[dir="rtl"] .settings-menu .dropdown-menu {
 
 .fte-get-started-content {
   /* Manual vertical centering */
-  flex: 1;
   padding: 2rem 0 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .fte-title {
@@ -634,6 +680,8 @@ html[dir="rtl"] .settings-menu .dropdown-menu {
 
 img.fte-logo {
   height: 32px;
+  /* Setting svg img to display:block fixed svg/panel sizing issue */
+  display: block;
 }
 
 .fte-subheader, .fte-content {
@@ -659,10 +707,11 @@ img.fte-logo {
 }
 
 img.fte-hello-web-share {
-  /* Set custom SVG size and position to align with powered-by-wrapper element. */
+  /* Set custom SVG size to align with powered-by-wrapper element. */
   width: 290px;
-  height: 148px;
-  margin-bottom: -4px;
+  height: 168px;
+  /* Setting svg img to display:block fixed svg/panel sizing issue */
+  display: block;
 }
 
 .fte-get-started-content + .powered-by-wrapper {
@@ -675,11 +724,15 @@ img.fte-hello-web-share {
 }
 
 .fte-get-started-container {
-  height: 410px;
-  width: 330px;
+  width: 330px; /* XXXremove me after this comment exists on 1.1 */
   display: flex;
   flex-flow: column nowrap;
   background: #fbfbfb;
+}
+
+.fte-get-started-content-borders {
+  border-top: 1px solid #D8D8D8;
+  border-bottom: 1px solid #D8D8D8;
 }
 
 .fte-button-container {

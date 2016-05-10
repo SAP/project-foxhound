@@ -6,6 +6,8 @@
 
 DIRS += ['locales']
 
+CONFIGURE_SUBST_FILES += ['adjust_sdk_app_token']
+
 include('android-services.mozbuild')
 
 thirdparty_source_dir = TOPSRCDIR + '/mobile/android/thirdparty/'
@@ -116,11 +118,11 @@ gujar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'util/NativeEventListener.java',
     'util/NativeJSContainer.java',
     'util/NativeJSObject.java',
+    'util/NetworkUtils.java',
     'util/NonEvictingLruCache.java',
     'util/PrefUtils.java',
     'util/ProxySelector.java',
     'util/RawResource.java',
-    'util/ScreenshotObserver.java',
     'util/StringUtils.java',
     'util/ThreadUtils.java',
     'util/UIAsyncTask.java',
@@ -199,11 +201,9 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'animation/HeightChangeAnimation.java',
     'animation/PropertyAnimator.java',
     'animation/Rotate3DAnimation.java',
-    'animation/TransitionsTracker.java',
     'animation/ViewHelper.java',
     'ANRReporter.java',
     'AppNotificationClient.java',
-    'Assert.java',
     'BaseGeckoInterface.java',
     'BrowserApp.java',
     'BrowserLocaleManager.java',
@@ -247,13 +247,17 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'db/URLMetadataTable.java',
     'DevToolsAuthHelper.java',
     'distribution/Distribution.java',
+    'distribution/DistributionStoreCallback.java',
     'distribution/ReferrerDescriptor.java',
     'distribution/ReferrerReceiver.java',
+    'dlc/BaseAction.java',
     'dlc/catalog/DownloadContent.java',
     'dlc/catalog/DownloadContentBootstrap.java',
     'dlc/catalog/DownloadContentCatalog.java',
-    'dlc/DownloadContentHelper.java',
+    'dlc/DownloadAction.java',
     'dlc/DownloadContentService.java',
+    'dlc/StudyAction.java',
+    'dlc/VerifyAction.java',
     'DoorHangerPopup.java',
     'DownloadsIntegration.java',
     'DynamicToolbar.java',
@@ -273,11 +277,11 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'FilePicker.java',
     'FilePickerResultHandler.java',
     'FindInPageBar.java',
+    'firstrun/DataPanel.java',
+    'firstrun/FirstrunAnimationContainer.java',
     'firstrun/FirstrunPager.java',
     'firstrun/FirstrunPagerConfig.java',
-    'firstrun/FirstrunPane.java',
     'firstrun/FirstrunPanel.java',
-    'firstrun/ImportPanel.java',
     'firstrun/RestrictedWelcomePanel.java',
     'firstrun/SyncPanel.java',
     'firstrun/WelcomePanel.java',
@@ -412,7 +416,6 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'home/TopSitesGridView.java',
     'home/TopSitesPanel.java',
     'home/TopSitesThumbnailView.java',
-    'home/TransitionAwareCursorLoaderCallbacks.java',
     'home/TwoLinePageRow.java',
     'InputConnectionListener.java',
     'InputMethods.java',
@@ -453,6 +456,9 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'overlays/ui/SendTabList.java',
     'overlays/ui/SendTabTargetSelectedListener.java',
     'overlays/ui/ShareDialog.java',
+    'permissions/PermissionBlock.java',
+    'permissions/Permissions.java',
+    'permissions/PermissionsHelper.java',
     'preferences/AlignRightLinkPreference.java',
     'preferences/AndroidImport.java',
     'preferences/AndroidImportPreference.java',
@@ -502,6 +508,7 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'restrictions/RestrictedProfileConfiguration.java',
     'restrictions/RestrictionConfiguration.java',
     'restrictions/RestrictionProvider.java',
+    'ScreenshotObserver.java',
     'ServiceNotificationClient.java',
     'SessionParser.java',
     'SharedPreferencesHelper.java',
@@ -666,10 +673,6 @@ if max_sdk_version >= 11:
         'tabs/TabStripItemView.java',
         'tabs/TabStripView.java'
     ]]
-
-# Selectively include reading list service code.
-if CONFIG['MOZ_ANDROID_READING_LIST_SERVICE']:
-    gbjar.sources += reading_list_service_java_files
 
 gbjar.extra_jars += [
     OBJDIR + '/../javaaddons/javaaddons-1.0.jar',
@@ -913,9 +916,13 @@ ANDROID_ASSETS_DIRS += [
 ]
 
 if CONFIG['MOZ_ANDROID_DISTRIBUTION_DIRECTORY']:
-    ANDROID_ASSETS_DIRS += [
-        '%' + CONFIG['MOZ_ANDROID_DISTRIBUTION_DIRECTORY'] + '/assets',
-    ]
+    # If you change this, also change its equivalent in mobile/android/bouncer.
+    if not CONFIG['MOZ_ANDROID_PACKAGE_INSTALL_BOUNCER']:
+        # If we are packaging the bouncer, it will have the distribution, so don't put
+        # it in the main APK as well.
+        ANDROID_ASSETS_DIRS += [
+            '%' + CONFIG['MOZ_ANDROID_DISTRIBUTION_DIRECTORY'] + '/assets',
+        ]
 
 # We do not expose MOZ_INSTALL_TRACKING_ADJUST_SDK_APP_TOKEN here because that
 # would leak the value to build logs.  Instead we expose the token quietly where
@@ -923,7 +930,7 @@ if CONFIG['MOZ_ANDROID_DISTRIBUTION_DIRECTORY']:
 for var in ('MOZ_ANDROID_ANR_REPORTER', 'MOZ_LINKER_EXTRACT', 'MOZ_DEBUG',
             'MOZ_ANDROID_SEARCH_ACTIVITY', 'MOZ_NATIVE_DEVICES', 'MOZ_ANDROID_MLS_STUMBLER',
             'MOZ_ANDROID_DOWNLOADS_INTEGRATION', 'MOZ_INSTALL_TRACKING',
-            'MOZ_ANDROID_GCM', 'MOZ_ANDROID_TAB_QUEUE'):
+            'MOZ_ANDROID_GCM'):
     if CONFIG[var]:
         DEFINES[var] = 1
 
@@ -976,3 +983,5 @@ if CONFIG['MOZ_ANDROID_SEARCH_ACTIVITY']:
     ]
 
 FINAL_TARGET_PP_FILES += ['package-name.txt.in']
+
+DEFINES['OBJDIR'] = OBJDIR

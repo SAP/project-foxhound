@@ -116,7 +116,7 @@ function acceptDialog()
 function exitDialog()
 {
   updateStartupPrefs();
-  
+
   return true;
 }
 
@@ -258,7 +258,7 @@ function ConfirmDelete()
     if (buttonPressed == 2)
       deleteFiles = true;
   }
-  
+
   selectedProfile.remove(deleteFiles);
   profileList.removeChild(selectedItem);
   if (profileList.firstChild != undefined) {

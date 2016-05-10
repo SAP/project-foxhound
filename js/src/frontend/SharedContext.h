@@ -285,10 +285,10 @@ class SharedContext
 
 class MOZ_STACK_CLASS GlobalSharedContext : public SharedContext
 {
-    Rooted<ScopeObject*> staticScope_;
+    Rooted<StaticScope*> staticScope_;
 
   public:
-    GlobalSharedContext(ExclusiveContext* cx, ScopeObject* staticScope, Directives directives,
+    GlobalSharedContext(ExclusiveContext* cx, StaticScope* staticScope, Directives directives,
                         bool extraWarnings, JSFunction* maybeEvalCaller = nullptr)
       : SharedContext(cx, directives, extraWarnings),
         staticScope_(cx, staticScope)
@@ -330,6 +330,7 @@ class FunctionBox : public ObjectBox, public SharedContext
     bool            usesArguments:1;  /* contains a free use of 'arguments' */
     bool            usesApply:1;      /* contains an f.apply() call */
     bool            usesThis:1;       /* contains 'this' */
+    bool            usesReturn:1;     /* contains a 'return' statement */
 
     FunctionContextFlags funCxFlags;
 
@@ -342,6 +343,10 @@ class FunctionBox : public ObjectBox, public SharedContext
     JSFunction* function() const { return &object->as<JSFunction>(); }
     JSObject* staticScope() const override { return function(); }
     JSObject* enclosingStaticScope() const { return enclosingStaticScope_; }
+
+    bool isLikelyConstructorWrapper() const {
+        return usesArguments && usesApply && usesThis && !usesReturn;
+    }
 
     GeneratorKind generatorKind() const { return GeneratorKindFromBits(generatorKindBits_); }
     bool isGenerator() const { return generatorKind() != NotGenerator; }
@@ -411,21 +416,25 @@ class FunctionBox : public ObjectBox, public SharedContext
                isDerivedClassConstructor() ||
                isGenerator();
     }
+
+    void trace(JSTracer* trc) override;
 };
 
 class ModuleBox : public ObjectBox, public SharedContext
 {
   public:
     Bindings bindings;
-    TraceableVector<JSAtom*> exportNames;
+    ModuleBuilder& builder;
 
     template <typename ParseHandler>
     ModuleBox(ExclusiveContext* cx, ObjectBox* traceListHead, ModuleObject* module,
-              ParseContext<ParseHandler>* pc);
+              ModuleBuilder& builder, ParseContext<ParseHandler>* pc);
 
     ObjectBox* toObjectBox() override { return this; }
     ModuleObject* module() const { return &object->as<ModuleObject>(); }
     JSObject* staticScope() const override { return module(); }
+
+    void trace(JSTracer* trc) override;
 };
 
 inline FunctionBox*
@@ -454,34 +463,33 @@ SharedContext::allLocalsAliased()
     return bindingsAccessedDynamically() || (isFunctionBox() && asFunctionBox()->isGenerator());
 }
 
+// NOTE: If you add a new type of statement that is a scope, add it between
+//       WITH and CATCH, or you'll break StmtInfoBase::linksScope.  If you add
+//       a non-looping statement type, add it before DO_LOOP or you'll break
+//       StmtInfoBase::isLoop().
+#define FOR_EACH_STATEMENT_TYPE(macro) \
+    macro(LABEL, "label statement") \
+    macro(IF, "if statement") \
+    macro(ELSE, "else statement") \
+    macro(SEQ, "destructuring body") \
+    macro(BLOCK, "block") \
+    macro(SWITCH, "switch statement") \
+    macro(WITH, "with statement") \
+    macro(CATCH, "catch block") \
+    macro(TRY, "try block") \
+    macro(FINALLY, "finally block") \
+    macro(SUBROUTINE, "finally block") \
+    macro(DO_LOOP, "do loop") \
+    macro(FOR_LOOP, "for loop") \
+    macro(FOR_IN_LOOP, "for/in loop") \
+    macro(FOR_OF_LOOP, "for/of loop") \
+    macro(WHILE_LOOP, "while loop") \
+    macro(SPREAD, "spread")
 
-/*
- * NB: If you add a new type of statement that is a scope, add it between
- * STMT_WITH and STMT_CATCH, or you will break StmtInfoBase::linksScope. If you
- * add a non-looping statement type, add it before STMT_DO_LOOP or you will
- * break StmtInfoBase::isLoop().
- *
- * Also remember to keep the statementName array in BytecodeEmitter.cpp in
- * sync.
- */
 enum class StmtType : uint16_t {
-    LABEL,                 /* labeled statement:  L: s */
-    IF,                    /* if (then) statement */
-    ELSE,                  /* else clause of if statement */
-    SEQ,                   /* synthetic sequence of statements */
-    BLOCK,                 /* compound statement: { s1[;... sN] } */
-    SWITCH,                /* switch statement */
-    WITH,                  /* with statement */
-    CATCH,                 /* catch block */
-    TRY,                   /* try block */
-    FINALLY,               /* finally block */
-    SUBROUTINE,            /* gosub-target subroutine body */
-    DO_LOOP,               /* do/while loop statement */
-    FOR_LOOP,              /* for loop statement */
-    FOR_IN_LOOP,           /* for/in loop statement */
-    FOR_OF_LOOP,           /* for/of loop statement */
-    WHILE_LOOP,            /* while loop statement */
-    SPREAD,                /* spread operator (pseudo for/of) */
+#define DECLARE_STMTTYPE_ENUM(name, desc) name,
+    FOR_EACH_STATEMENT_TYPE(DECLARE_STMTTYPE_ENUM)
+#undef DECLARE_STMTTYPE_ENUM
     LIMIT
 };
 
@@ -527,7 +535,7 @@ struct StmtInfoBase
     RootedAtom      label;
 
     // Compile-time scope chain node for this scope.
-    Rooted<NestedScopeObject*> staticScope;
+    Rooted<NestedStaticScope*> staticScope;
 
     explicit StmtInfoBase(ExclusiveContext* cx)
         : isBlockScope(false), isForLetBlock(false),
@@ -551,10 +559,10 @@ struct StmtInfoBase
                type == StmtType::CATCH;
     }
 
-    StaticBlockObject& staticBlock() const {
+    StaticBlockScope& staticBlock() const {
         MOZ_ASSERT(staticScope);
         MOZ_ASSERT(isBlockScope);
-        return staticScope->as<StaticBlockObject>();
+        return staticScope->as<StaticBlockScope>();
     }
 
     bool isLoop() const {
@@ -583,6 +591,12 @@ class MOZ_STACK_CLASS StmtInfoStack
 
     StmtInfo* innermost() const { return innermostStmt_; }
     StmtInfo* innermostScopeStmt() const { return innermostScopeStmt_; }
+    StmtInfo* innermostNonLabel() const {
+        StmtInfo* stmt = innermost();
+        while (stmt && stmt->type == StmtType::LABEL)
+            stmt = stmt->enclosing;
+        return stmt;
+    }
 
     void push(StmtInfo* stmt, StmtType type) {
         stmt->type = type;
@@ -595,7 +609,7 @@ class MOZ_STACK_CLASS StmtInfoStack
         innermostStmt_ = stmt;
     }
 
-    void pushNestedScope(StmtInfo* stmt, StmtType type, NestedScopeObject& staticScope) {
+    void pushNestedScope(StmtInfo* stmt, StmtType type, NestedStaticScope& staticScope) {
         push(stmt, type);
         linkAsInnermostScopeStmt(stmt, staticScope);
     }
@@ -607,7 +621,7 @@ class MOZ_STACK_CLASS StmtInfoStack
             innermostScopeStmt_ = stmt->enclosingScope;
     }
 
-    void linkAsInnermostScopeStmt(StmtInfo* stmt, NestedScopeObject& staticScope) {
+    void linkAsInnermostScopeStmt(StmtInfo* stmt, NestedStaticScope& staticScope) {
         MOZ_ASSERT(stmt != innermostScopeStmt_);
         MOZ_ASSERT(!stmt->enclosingScope);
         stmt->enclosingScope = innermostScopeStmt_;
@@ -615,11 +629,11 @@ class MOZ_STACK_CLASS StmtInfoStack
         stmt->staticScope = &staticScope;
     }
 
-    void makeInnermostLexicalScope(StaticBlockObject& blockObj) {
+    void makeInnermostLexicalScope(StaticBlockScope& blockScope) {
         MOZ_ASSERT(!innermostStmt_->isBlockScope);
         MOZ_ASSERT(innermostStmt_->canBeBlockScope());
         innermostStmt_->isBlockScope = true;
-        linkAsInnermostScopeStmt(innermostStmt_, blockObj);
+        linkAsInnermostScopeStmt(innermostStmt_, blockScope);
     }
 };
 

@@ -106,7 +106,7 @@
 #include "mozilla/dom/Promise.h"
 
 #include "nsIUploadChannel2.h"
-#include "nsFormData.h"
+#include "mozilla/dom/FormData.h"
 #include "nsIDocShell.h"
 
 #include "WorkerPrivate.h"
@@ -220,6 +220,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
 #endif
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDeviceStorageAreaListener)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPresentation)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRGetDevicesPromises)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -360,6 +361,8 @@ Navigator::Invalidate()
   if (mDeviceStorageAreaListener) {
     mDeviceStorageAreaListener = nullptr;
   }
+
+  mVRGetDevicesPromises.Clear();
 }
 
 //*****************************************************************************
@@ -372,11 +375,22 @@ Navigator::GetUserAgent(nsAString& aUserAgent)
   nsCOMPtr<nsIURI> codebaseURI;
   nsCOMPtr<nsPIDOMWindow> window;
 
-  if (mWindow && mWindow->GetDocShell()) {
+  if (mWindow) {
     window = mWindow;
-    nsIDocument* doc = mWindow->GetExtantDoc();
-    if (doc) {
-      doc->NodePrincipal()->GetURI(getter_AddRefs(codebaseURI));
+    nsIDocShell* docshell = window->GetDocShell();
+    nsString customUserAgent;
+    if (docshell) {
+      docshell->GetCustomUserAgent(customUserAgent);
+
+      if (!customUserAgent.IsEmpty()) {
+        aUserAgent = customUserAgent;
+        return NS_OK;
+      }
+
+      nsIDocument* doc = mWindow->GetExtantDoc();
+      if (doc) {
+        doc->NodePrincipal()->GetURI(getter_AddRefs(codebaseURI));
+      }
     }
   }
 
@@ -1200,13 +1214,19 @@ Navigator::SendBeacon(const nsAString& aUrl,
     return false;
   }
 
+  nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL |
+    nsIChannel::LOAD_CLASSIFY_URI;
+
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel),
                      uri,
                      doc,
                      nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS |
                        nsILoadInfo::SEC_COOKIES_INCLUDE,
-                     nsIContentPolicy::TYPE_BEACON);
+                     nsIContentPolicy::TYPE_BEACON,
+                     nullptr, // aLoadGroup
+                     nullptr, // aCallbacks
+                     loadFlags);
 
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
@@ -1272,7 +1292,7 @@ Navigator::SendBeacon(const nsAString& aUrl,
       mimeType = NS_ConvertUTF16toUTF8(type);
 
     } else if (aData.Value().IsFormData()) {
-      nsFormData& form = aData.Value().GetAsFormData();
+      FormData& form = aData.Value().GetAsFormData();
       uint64_t len;
       nsAutoCString charset;
       form.GetSendInfo(getter_AddRefs(in),
@@ -1923,16 +1943,35 @@ Navigator::GetVRDevices(ErrorResult& aRv)
     return nullptr;
   }
 
+  // We pass ourself to RefreshVRDevices, so NotifyVRDevicesUpdated will
+  // be called asynchronously, resolving the promises in mVRGetDevicesPromises.
+  if (!VRDevice::RefreshVRDevices(this)) {
+    p->MaybeReject(NS_ERROR_FAILURE);
+    return p.forget();
+  }
+
+  mVRGetDevicesPromises.AppendElement(p);
+  return p.forget();
+}
+
+void
+Navigator::NotifyVRDevicesUpdated()
+{
+  // Synchronize the VR devices and resolve the promises in
+  // mVRGetDevicesPromises
   nsGlobalWindow* win = static_cast<nsGlobalWindow*>(mWindow.get());
 
   nsTArray<RefPtr<VRDevice>> vrDevs;
-  if (!win->GetVRDevices(vrDevs)) {
-    p->MaybeReject(NS_ERROR_FAILURE);
+  if (win->UpdateVRDevices(vrDevs)) {
+    for (auto p: mVRGetDevicesPromises) {
+      p->MaybeResolve(vrDevs);
+    }
   } else {
-    p->MaybeResolve(vrDevs);
+    for (auto p: mVRGetDevicesPromises) {
+      p->MaybeReject(NS_ERROR_FAILURE);
+    }
   }
-
-  return p.forget();
+  mVRGetDevicesPromises.Clear();
 }
 
 //*****************************************************************************
@@ -2740,6 +2779,12 @@ Navigator::AppName(nsAString& aAppName, bool aUsePrefOverriddenValue)
   }
 
   aAppName.AssignLiteral("Netscape");
+}
+
+void
+Navigator::ClearUserAgentCache()
+{
+  NavigatorBinding::ClearCachedUserAgentValue(this);
 }
 
 nsresult

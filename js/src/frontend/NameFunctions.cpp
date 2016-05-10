@@ -156,7 +156,7 @@ class NameResolver
                  * flagged as a contributor.
                  */
                 pos--;
-                /* fallthrough */
+                MOZ_FALLTHROUGH;
 
               default:
                 /* Save any other nodes we encounter on the way up. */
@@ -727,8 +727,8 @@ class NameResolver
           // Import/export spec lists contain import/export specs containing
           // only pairs of names. Alternatively, an export spec lists may
           // contain a single export batch specifier.
-          case PNK_IMPORT_SPEC_LIST: {
           case PNK_EXPORT_SPEC_LIST:
+          case PNK_IMPORT_SPEC_LIST: {
             MOZ_ASSERT(cur->isArity(PN_LIST));
 #ifdef DEBUG
             bool isImport = cur->isKind(PNK_IMPORT_SPEC_LIST);
@@ -788,6 +788,12 @@ class NameResolver
           case PNK_MODULE:
             MOZ_ASSERT(cur->isArity(PN_CODE));
             if (!resolve(cur->pn_body, prefix))
+                return false;
+            break;
+
+          case PNK_ANNEXB_FUNCTION:
+            MOZ_ASSERT(cur->isArity(PN_BINARY));
+            if (!resolve(cur->pn_left, prefix))
                 return false;
             break;
 

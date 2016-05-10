@@ -15,6 +15,7 @@
 #include "jstypes.h"
 
 #include "builtin/AtomicsObject.h"
+#include "gc/Statistics.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/Ion.h"
 #include "js/Utility.h"
@@ -74,7 +75,7 @@ JS_Init(void)
 #endif
 
     using js::TlsPerThreadData;
-    if (!TlsPerThreadData.initialized() && !TlsPerThreadData.init())
+    if (!TlsPerThreadData.init())
         return false;
 
 #if defined(DEBUG) || defined(JS_OOM_BREAKPOINT)
@@ -101,6 +102,9 @@ JS_Init(void)
         return false;
 
     if (!FutexRuntime::initialize())
+        return false;
+
+    if (!js::gcstats::Statistics::initialize())
         return false;
 
     libraryInitState = InitState::Running;

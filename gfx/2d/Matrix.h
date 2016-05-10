@@ -1251,24 +1251,6 @@ public:
     return *this;
   }
 
-  // Nudge the 3D components to integer so that this matrix will become 2D if
-  // it's very close to already being 2D.
-  // This doesn't change the _41 and _42 components.
-  Matrix4x4Typed &NudgeTo2D()
-  {
-    NudgeToInteger(&_13);
-    NudgeToInteger(&_14);
-    NudgeToInteger(&_23);
-    NudgeToInteger(&_24);
-    NudgeToInteger(&_31);
-    NudgeToInteger(&_32);
-    NudgeToInteger(&_33);
-    NudgeToInteger(&_34);
-    NudgeToInteger(&_43);
-    NudgeToInteger(&_44);
-    return *this;
-  }
-
   Point4D TransposedVector(int aIndex) const
   {
       MOZ_ASSERT(aIndex >= 0 && aIndex <= 3, "Invalid matrix array index");
@@ -1455,6 +1437,36 @@ public:
     Point3D ac = c - a;
 
     return ac.CrossProduct(ab);
+  }
+
+  /**
+   * Returns true if the matrix has any transform other
+   * than a straight translation.
+   */
+  bool HasNonTranslation() const {
+    return !gfx::FuzzyEqual(_11, 1.0) || !gfx::FuzzyEqual(_22, 1.0) ||
+           !gfx::FuzzyEqual(_12, 0.0) || !gfx::FuzzyEqual(_21, 0.0) ||
+           !gfx::FuzzyEqual(_13, 0.0) || !gfx::FuzzyEqual(_23, 0.0) ||
+           !gfx::FuzzyEqual(_31, 0.0) || !gfx::FuzzyEqual(_32, 0.0) ||
+           !gfx::FuzzyEqual(_33, 1.0);
+  }
+
+  /**
+   * Returns true if the matrix is anything other than a straight
+   * translation by integers.
+  */
+  bool HasNonIntegerTranslation() const {
+    return HasNonTranslation() ||
+      !gfx::FuzzyEqual(_41, floor(_41 + 0.5)) ||
+      !gfx::FuzzyEqual(_42, floor(_42 + 0.5)) ||
+      !gfx::FuzzyEqual(_43, floor(_43 + 0.5));
+  }
+
+  /**
+   * Return true if the matrix is with perspective (w).
+   */
+  bool HasPerspectiveComponent() const {
+    return _14 != 0 || _24 != 0 || _34 != 0 || _44 != 1;
   }
 
   /**

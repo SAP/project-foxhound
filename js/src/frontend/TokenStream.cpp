@@ -10,7 +10,6 @@
 
 #include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/UniquePtr.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -25,6 +24,7 @@
 
 #include "frontend/BytecodeCompiler.h"
 #include "js/CharacterEncoding.h"
+#include "js/UniquePtr.h"
 #include "vm/HelperThreads.h"
 #include "vm/Keywords.h"
 #include "vm/StringBuffer.h"
@@ -37,7 +37,6 @@ using mozilla::Maybe;
 using mozilla::PodAssign;
 using mozilla::PodCopy;
 using mozilla::PodZero;
-using mozilla::UniquePtr;
 
 struct KeywordInfo {
     const char* chars;         // C string with keyword text
@@ -585,8 +584,7 @@ CompileError::throwError(JSContext* cx)
 
 CompileError::~CompileError()
 {
-    js_free((void*)report.uclinebuf);
-    js_free((void*)report.linebuf);
+    js_free((void*)report.linebuf());
     js_free((void*)report.ucmessage);
     js_free(message);
     message = nullptr;
@@ -617,7 +615,10 @@ TokenStream::reportCompileErrorNumberVA(uint32_t offset, unsigned flags, unsigne
     // On the main thread, report the error immediately. When compiling off
     // thread, save the error so that the main thread can report it later.
     CompileError tempErr;
-    CompileError& err = cx->isJSContext() ? tempErr : cx->addPendingCompileError();
+    CompileError* tempErrPtr = &tempErr;
+    if (!cx->isJSContext() && !cx->addPendingCompileError(&tempErrPtr))
+        return false;
+    CompileError& err = *tempErrPtr;
 
     err.report.flags = flags;
     err.report.errorNumber = errorNumber;
@@ -638,9 +639,9 @@ TokenStream::reportCompileErrorNumberVA(uint32_t offset, unsigned flags, unsigne
                                  FrameIter::ALL_CONTEXTS, FrameIter::GO_THROUGH_SAVED,
                                  FrameIter::FOLLOW_DEBUGGER_EVAL_PREV_LINK,
                                  cx->compartment()->principals());
-        if (!iter.done() && iter.scriptFilename()) {
+        if (!iter.done() && iter.filename()) {
             callerFilename = true;
-            err.report.filename = iter.scriptFilename();
+            err.report.filename = iter.filename();
             err.report.lineno = iter.computeLine(&err.report.column);
         }
     }
@@ -689,22 +690,17 @@ TokenStream::reportCompileErrorNumberVA(uint32_t offset, unsigned flags, unsigne
         // Create the windowed strings.
         StringBuffer windowBuf(cx);
         if (!windowBuf.append(userbuf.rawCharPtrAt(windowStart), windowLength) ||
-            !windowBuf.append((char16_t)0))
+            !windowBuf.append('\0'))
+        {
+            return false;
+        }
+
+        // The window into the offending source line, without final \n.
+        UniqueTwoByteChars linebuf(windowBuf.stealChars());
+        if (!linebuf)
             return false;
 
-        // Unicode and char versions of the window into the offending source
-        // line, without final \n.
-        err.report.uclinebuf = windowBuf.stealChars();
-        if (!err.report.uclinebuf)
-            return false;
-
-        mozilla::Range<const char16_t> tbchars(err.report.uclinebuf, windowLength);
-        err.report.linebuf = JS::LossyTwoByteCharsToNewLatin1CharsZ(cx, tbchars).c_str();
-        if (!err.report.linebuf)
-            return false;
-
-        err.report.tokenptr = err.report.linebuf + (offset - windowStart);
-        err.report.uctokenptr = err.report.uclinebuf + (offset - windowStart);
+        err.report.initLinebuf(linebuf.release(), windowLength, offset - windowStart);
     }
 
     if (cx->isJSContext())
@@ -854,7 +850,7 @@ bool
 TokenStream::getDirective(bool isMultiline, bool shouldWarnDeprecated,
                           const char* directive, int directiveLength,
                           const char* errorMsgPragma,
-                          UniquePtr<char16_t[], JS::FreePolicy>* destination)
+                          UniqueTwoByteChars* destination)
 {
     MOZ_ASSERT(directiveLength <= 18);
     char16_t peeked[18];
@@ -1588,6 +1584,8 @@ TokenStream::getTokenInternal(TokenKind* ttp, Modifier modifier)
                     reflags = RegExpFlag(reflags | MultilineFlag);
                 else if (c == 'y' && !(reflags & StickyFlag))
                     reflags = RegExpFlag(reflags | StickyFlag);
+                else if (c == 'u' && !(reflags & UnicodeFlag))
+                    reflags = RegExpFlag(reflags | UnicodeFlag);
                 else
                     break;
                 getChar();

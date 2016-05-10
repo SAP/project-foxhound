@@ -18,6 +18,9 @@ UNIFIED_SOURCES += [
 
 DEFINES['EXPORT_JS_API'] = True
 
+# Also set in ../moz.build
+DEFINES['ENABLE_SHARED_ARRAY_BUFFER'] = True
+
 if CONFIG['_MSC_VER']:
     # unnecessary PGO for js shell.  But gcc cannot turn off pgo because it is
     # necessary to link PGO lib on gcc when a object/static lib are compiled

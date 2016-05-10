@@ -58,7 +58,10 @@ struct AudioTimelineEvent final
 
   explicit AudioTimelineEvent(MediaStream* aStream)
     : mType(Stream)
+    , mCurve(nullptr)
     , mStream(aStream)
+    , mTimeConstant(0.0)
+    , mDuration(0.0)
 #ifdef DEBUG
     , mTimeIsInTicks(false)
 #endif
@@ -566,7 +569,7 @@ public:
                                        aPrevious->mCurve, aPrevious->mCurveLength,
                                        aPrevious->mDuration, aTime);
         case AudioTimelineEvent::SetTarget:
-          MOZ_ASSERT(false, "unreached");
+          MOZ_FALLTHROUGH_ASSERT("AudioTimelineEvent::SetTarget");
         case AudioTimelineEvent::SetValue:
         case AudioTimelineEvent::Cancel:
         case AudioTimelineEvent::Stream:
@@ -614,7 +617,7 @@ public:
                                    aPrevious->mCurve, aPrevious->mCurveLength,
                                    aPrevious->mDuration, aTime);
     case AudioTimelineEvent::SetTarget:
-      MOZ_ASSERT(false, "unreached");
+      MOZ_FALLTHROUGH_ASSERT("AudioTimelineEvent::SetTarget");
     case AudioTimelineEvent::SetValue:
     case AudioTimelineEvent::Cancel:
     case AudioTimelineEvent::Stream:

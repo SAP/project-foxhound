@@ -4,13 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-FINAL_TARGET = 'dist/bin/browser/features/loop@mozilla.org'
+DIRS += ['chrome/locale']
 
-FINAL_TARGET_FILES += [
+DEFINES['MOZ_APP_MAXVERSION'] = CONFIG['MOZ_APP_MAXVERSION']
+
+FINAL_TARGET_FILES.features['loop@mozilla.org'] += [
  'bootstrap.js'
 ]
 
-FINAL_TARGET_PP_FILES += [
+FINAL_TARGET_PP_FILES.features['loop@mozilla.org'] += [
   'install.rdf.in'
 ]
 
@@ -21,6 +23,7 @@ XPCSHELL_TESTS_MANIFESTS += ['chrome/test/xpcshell/xpcshell.ini']
 BROWSER_CHROME_MANIFESTS += [
     'chrome/test/mochitest/browser.ini',
 ]
+MARIONETTE_LOOP_MANIFESTS += ['manifest.ini']
 
 with Files('**'):
     BUG_COMPONENT = ('Loop', 'Client')

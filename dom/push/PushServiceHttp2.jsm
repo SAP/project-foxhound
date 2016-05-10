@@ -14,6 +14,7 @@ const {PushDB} = Cu.import("resource://gre/modules/PushDB.jsm");
 const {PushRecord} = Cu.import("resource://gre/modules/PushRecord.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/IndexedDBHelper.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
 Cu.import("resource://gre/modules/Preferences.jsm");
@@ -103,7 +104,7 @@ PushSubscriptionListener.prototype = {
   onPush: function(associatedChannel, pushChannel) {
     console.debug("PushSubscriptionListener: onPush()");
     var pushChannelListener = new PushChannelListener(this);
-    pushChannel.asyncOpen(pushChannelListener, pushChannel);
+    pushChannel.asyncOpen2(pushChannelListener);
   },
 
   disconnect: function() {
@@ -154,6 +155,7 @@ PushChannelListener.prototype = {
         encryption_key: getHeaderField(aRequest, "Encryption-Key"),
         crypto_key: getHeaderField(aRequest, "Crypto-Key"),
         encryption: getHeaderField(aRequest, "Encryption"),
+        encoding: getHeaderField(aRequest, "Content-Encoding"),
       };
       let cryptoParams = getCryptoParams(headers);
       let msg = concatArray(this._message);
@@ -321,7 +323,7 @@ SubscriptionListener.prototype = {
       pushReceiptEndpoint: linkParserResult.pushReceiptEndpoint,
       scope: this._subInfo.record.scope,
       originAttributes: this._subInfo.record.originAttributes,
-      quota: this._subInfo.record.maxQuota,
+      systemRecord: this._subInfo.record.systemRecord,
       ctime: Date.now(),
     });
 
@@ -434,19 +436,8 @@ this.PushServiceHttp2 = {
   },
 
   _makeChannel: function(aUri) {
-
-    var ios = Cc["@mozilla.org/network/io-service;1"]
-                .getService(Ci.nsIIOService);
-
-    var chan = ios.newChannel2(aUri,
-                               null,
-                               null,
-                               null,      // aLoadingNode
-                               Services.scriptSecurityManager.getSystemPrincipal(),
-                               null,      // aTriggeringPrincipal
-                               Ci.nsILoadInfo.SEC_NORMAL,
-                               Ci.nsIContentPolicy.TYPE_OTHER)
-                 .QueryInterface(Ci.nsIHttpChannel);
+    var chan = NetUtil.newChannel({uri: aUri, loadUsingSystemPrincipal: true})
+                      .QueryInterface(Ci.nsIHttpChannel);
 
     var loadGroup = Cc["@mozilla.org/network/load-group;1"]
                       .createInstance(Ci.nsILoadGroup);
@@ -495,7 +486,7 @@ this.PushServiceHttp2 = {
 
       var chan = this._makeChannel(this._serverURI.spec);
       chan.requestMethod = "POST";
-      chan.asyncOpen(listener, null);
+      chan.asyncOpen2(listener);
     })
     .catch(err => {
       if ("retry" in err) {
@@ -511,7 +502,7 @@ this.PushServiceHttp2 = {
     return new Promise((resolve,reject) => {
       var chan = this._makeChannel(aUri);
       chan.requestMethod = "DELETE";
-      chan.asyncOpen(new PushServiceDelete(resolve, reject), null);
+      chan.asyncOpen2(new PushServiceDelete(resolve, reject));
     });
   },
 
@@ -545,10 +536,10 @@ this.PushServiceHttp2 = {
     chan.notificationCallbacks = listener;
 
     try {
-      chan.asyncOpen(listener, chan);
+      chan.asyncOpen2(listener);
     } catch (e) {
       console.error("listenForMsgs: Error connecting to push server.",
-        "asyncOpen failed", e);
+        "asyncOpen2 failed", e);
       conn.listener.disconnect();
       chan.cancel(Cr.NS_ERROR_ABORT);
       this._retryAfterBackoff(aSubscriptionUri, -1);
@@ -572,6 +563,8 @@ this.PushServiceHttp2 = {
     console.debug("init()");
     this._mainPushService = aMainPushService;
     this._serverURI = aServerURL;
+
+    return Promise.resolve();
   },
 
   _retryAfterBackoff: function(aSubscriptionUri, retryAfter) {

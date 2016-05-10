@@ -55,11 +55,15 @@ using mozilla::DefaultXDisplay;
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/HTMLObjectElementBinding.h"
 #include "mozilla/dom/TabChild.h"
 #include "nsFrameSelection.h"
 #include "PuppetWidget.h"
 #include "nsPIWindowRoot.h"
+#include "mozilla/IMEStateManager.h"
+#include "mozilla/TextComposition.h"
+#include "mozilla/AutoRestore.h"
 
 #include "nsContentCID.h"
 #include "nsWidgetsCID.h"
@@ -166,27 +170,6 @@ nsPluginInstanceOwner::NotifyPaintWaiter(nsDisplayListBuilder* aBuilder)
 
 #if MOZ_WIDGET_ANDROID
 static void
-AttachToContainerAsEGLImage(ImageContainer* container,
-                            nsNPAPIPluginInstance* instance,
-                            const LayoutDeviceRect& rect,
-                            RefPtr<Image>* out_image)
-{
-  MOZ_ASSERT(out_image);
-  MOZ_ASSERT(!*out_image);
-
-  EGLImage image = instance->AsEGLImage();
-  if (!image) {
-    return;
-  }
-
-  RefPtr<EGLImageImage> img = new EGLImageImage(
-    image, nullptr,
-    gfx::IntSize(rect.width, rect.height), instance->OriginPos(),
-    false /* owns */);
-  *out_image = img;
-}
-
-static void
 AttachToContainerAsSurfaceTexture(ImageContainer* container,
                                   nsNPAPIPluginInstance* instance,
                                   const LayoutDeviceRect& rect,
@@ -234,10 +217,7 @@ nsPluginInstanceOwner::GetImageContainer()
 
   // Try to get it as an EGLImage first.
   RefPtr<Image> img;
-  AttachToContainerAsEGLImage(container, mInstance, r, &img);
-  if (!img) {
-    AttachToContainerAsSurfaceTexture(container, mInstance, r, &img);
-  }
+  AttachToContainerAsSurfaceTexture(container, mInstance, r, &img);
 
   if (img) {
     container->SetCurrentImageInTransaction(img);
@@ -265,25 +245,24 @@ nsPluginInstanceOwner::SetBackgroundUnknown()
   }
 }
 
-already_AddRefed<gfxContext>
+already_AddRefed<mozilla::gfx::DrawTarget>
 nsPluginInstanceOwner::BeginUpdateBackground(const nsIntRect& aRect)
 {
   nsIntRect rect = aRect;
-  RefPtr<gfxContext> ctx;
+  RefPtr<DrawTarget> dt;
   if (mInstance &&
-      NS_SUCCEEDED(mInstance->BeginUpdateBackground(&rect, getter_AddRefs(ctx)))) {
-    return ctx.forget();
+      NS_SUCCEEDED(mInstance->BeginUpdateBackground(&rect, getter_AddRefs(dt)))) {
+    return dt.forget();
   }
   return nullptr;
 }
 
 void
-nsPluginInstanceOwner::EndUpdateBackground(gfxContext* aContext,
-                                           const nsIntRect& aRect)
+nsPluginInstanceOwner::EndUpdateBackground(const nsIntRect& aRect)
 {
   nsIntRect rect = aRect;
   if (mInstance) {
-    mInstance->EndUpdateBackground(aContext, &rect);
+    mInstance->EndUpdateBackground(&rect);
   }
 }
 
@@ -365,6 +344,12 @@ nsPluginInstanceOwner::nsPluginInstanceOwner()
 #ifdef MOZ_WIDGET_ANDROID
   mFullScreen = false;
   mJavaView = nullptr;
+#endif
+
+#ifdef XP_WIN
+  mGotCompositionData = false;
+  mSentStartComposition = false;
+  mPluginDidNotHandleIMEComposition = false;
 #endif
 }
 
@@ -791,7 +776,185 @@ nsPluginInstanceOwner::SetNetscapeWindowAsParent(HWND aWindowToAdopt)
                             reinterpret_cast<uintptr_t>(aWindowToAdopt));
   return NS_OK;
 }
-#endif
+
+bool
+nsPluginInstanceOwner::GetCompositionString(uint32_t aType,
+                                            nsTArray<uint8_t>* aDist,
+                                            int32_t* aLength)
+{
+  // Mark pkugin calls ImmGetCompositionStringW correctly
+  mGotCompositionData = true;
+
+  RefPtr<TextComposition> composition = GetTextComposition();
+  if (NS_WARN_IF(!composition)) {
+    return false;
+  }
+
+  switch(aType) {
+    case GCS_COMPSTR: {
+      if (!composition->IsComposing()) {
+        *aLength = 0;
+        return true;
+      }
+
+      uint32_t len = composition->LastData().Length() * sizeof(char16_t);
+      if (len) {
+        aDist->SetLength(len);
+        memcpy(aDist->Elements(), composition->LastData().get(), len);
+      }
+      *aLength = len;
+      return true;
+    }
+
+    case GCS_RESULTSTR: {
+      if (composition->IsComposing()) {
+        *aLength = 0;
+        return true;
+      }
+
+      uint32_t len = composition->LastData().Length() * sizeof(char16_t);
+      if (len) {
+        aDist->SetLength(len);
+        memcpy(aDist->Elements(), composition->LastData().get(), len);
+      }
+      *aLength = len;
+      return true;
+    }
+
+    case GCS_CURSORPOS: {
+      *aLength = 0;
+      TextRangeArray* ranges = composition->GetLastRanges();
+      if (!ranges) {
+        return true;
+      }
+      *aLength = ranges->GetCaretPosition();
+      if (*aLength < 0) {
+        return false;
+      }
+      return true;
+    }
+
+    case GCS_COMPATTR: {
+      TextRangeArray* ranges = composition->GetLastRanges();
+      if (!ranges || ranges->IsEmpty()) {
+        *aLength = 0;
+        return true;
+      }
+
+      aDist->SetLength(composition->LastData().Length());
+      memset(aDist->Elements(), ATTR_INPUT, aDist->Length());
+
+      for (TextRange& range : *ranges) {
+        uint8_t type = ATTR_INPUT;
+        switch(range.mRangeType) {
+          case NS_TEXTRANGE_RAWINPUT:
+            type = ATTR_INPUT;
+            break;
+          case NS_TEXTRANGE_SELECTEDRAWTEXT:
+            type = ATTR_TARGET_NOTCONVERTED;
+            break;
+          case NS_TEXTRANGE_CONVERTEDTEXT:
+            type = ATTR_CONVERTED;
+            break;
+          case NS_TEXTRANGE_SELECTEDCONVERTEDTEXT:
+            type = ATTR_TARGET_CONVERTED;
+            break;
+          default:
+            continue;
+        }
+
+        size_t minLen = std::min<size_t>(range.mEndOffset, aDist->Length());
+        for (size_t i = range.mStartOffset; i < minLen; i++) {
+          (*aDist)[i] = type;
+        }
+      }
+      *aLength = aDist->Length();
+      return true;
+    }
+
+    case GCS_COMPCLAUSE: {
+      RefPtr<TextRangeArray> ranges = composition->GetLastRanges();
+      if (!ranges || ranges->IsEmpty()) {
+        aDist->SetLength(sizeof(uint32_t));
+        memset(aDist->Elements(), 0, sizeof(uint32_t));
+        *aLength = aDist->Length();
+        return true;
+      }
+      nsAutoTArray<uint32_t, 16> clauses;
+      clauses.AppendElement(0);
+      for (TextRange& range : *ranges) {
+        if (!range.IsClause()) {
+          continue;
+        }
+        clauses.AppendElement(range.mEndOffset);
+      }
+
+      aDist->SetLength(clauses.Length() * sizeof(uint32_t));
+      memcpy(aDist->Elements(), clauses.Elements(), aDist->Length());
+      *aLength = aDist->Length();
+      return true;
+    }
+
+    case GCS_RESULTREADSTR: {
+      // When returning error causes unexpected error, so we return 0 instead.
+      *aLength = 0;
+      return true;
+    }
+
+    case GCS_RESULTCLAUSE: {
+      // When returning error causes unexpected error, so we return 0 instead.
+      *aLength = 0;
+      return true;
+    }
+
+    default:
+      NS_WARNING(
+        nsPrintfCString("Unsupported type %x of ImmGetCompositionStringW hook",
+                        aType).get());
+      break;
+  }
+
+  return false;
+}
+
+bool
+nsPluginInstanceOwner::SetCandidateWindow(int32_t aX, int32_t aY)
+{
+  if (NS_WARN_IF(!mPluginFrame)) {
+    return false;
+  }
+
+  nsCOMPtr<nsIWidget> widget = GetContainingWidgetIfOffset();
+  if (!widget) {
+    widget = GetRootWidgetForPluginFrame(mPluginFrame);
+    if (NS_WARN_IF(!widget)) {
+      return false;
+    }
+  }
+
+  widget->SetCandidateWindowForPlugin(aX, aY);
+  return true;
+}
+
+bool
+nsPluginInstanceOwner::RequestCommitOrCancel(bool aCommitted)
+{
+  nsCOMPtr<nsIWidget> widget = GetContainingWidgetIfOffset();
+  if (!widget) {
+    widget = GetRootWidgetForPluginFrame(mPluginFrame);
+    if (NS_WARN_IF(!widget)) {
+      return false;
+    }
+  }
+
+  if (aCommitted) {
+    widget->NotifyIME(widget::REQUEST_TO_COMMIT_COMPOSITION);
+  } else {
+    widget->NotifyIME(widget::REQUEST_TO_CANCEL_COMPOSITION);
+  }
+  return true;
+}
+#endif // #ifdef XP_WIN
 
 NS_IMETHODIMP nsPluginInstanceOwner::SetEventModel(int32_t eventModel)
 {
@@ -1262,9 +1425,8 @@ GetOffsetRootContent(nsIFrame* aFrame)
   const nsIFrame* f = aFrame;
   int32_t currAPD = aFrame->PresContext()->AppUnitsPerDevPixel();
   int32_t apd = currAPD;
-  nsRect displayPort;
   while (f) {
-    if (f->GetContent() && nsLayoutUtils::GetDisplayPort(f->GetContent(), &displayPort))
+    if (f->GetContent() && nsLayoutUtils::HasDisplayPort(f->GetContent()))
       break;
 
     docOffset += f->GetPosition();
@@ -1597,6 +1759,186 @@ nsresult nsPluginInstanceOwner::DispatchMouseToPlugin(nsIDOMEvent* aMouseEvent,
   return NS_OK;
 }
 
+#ifdef XP_WIN
+void
+nsPluginInstanceOwner::CallDefaultProc(const WidgetGUIEvent* aEvent)
+{
+  nsCOMPtr<nsIWidget> widget = GetContainingWidgetIfOffset();
+  if (!widget) {
+    widget = GetRootWidgetForPluginFrame(mPluginFrame);
+    if (NS_WARN_IF(!widget)) {
+      return;
+    }
+  }
+
+  const NPEvent* npEvent =
+    static_cast<const NPEvent*>(aEvent->mPluginEvent);
+  if (NS_WARN_IF(!npEvent)) {
+    return;
+  }
+
+  WidgetPluginEvent pluginEvent(true, ePluginInputEvent, widget);
+  pluginEvent.mPluginEvent.Copy(*npEvent);
+  widget->DefaultProcOfPluginEvent(pluginEvent);
+}
+
+already_AddRefed<TextComposition>
+nsPluginInstanceOwner::GetTextComposition()
+{
+  if (NS_WARN_IF(!mPluginFrame)) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIWidget> widget = GetContainingWidgetIfOffset();
+  if (!widget) {
+    widget = GetRootWidgetForPluginFrame(mPluginFrame);
+    if (NS_WARN_IF(!widget)) {
+      return nullptr;
+    }
+  }
+
+  RefPtr<TextComposition> composition =
+    IMEStateManager::GetTextCompositionFor(widget);
+  if (NS_WARN_IF(!composition)) {
+    return nullptr;
+  }
+
+  return composition.forget();
+}
+
+void
+nsPluginInstanceOwner::HandleNoConsumedCompositionMessage(
+  WidgetCompositionEvent* aCompositionEvent,
+  const NPEvent* aPluginEvent)
+{
+  nsCOMPtr<nsIWidget> widget = GetContainingWidgetIfOffset();
+  if (!widget) {
+    widget = GetRootWidgetForPluginFrame(mPluginFrame);
+    if (NS_WARN_IF(!widget)) {
+      return;
+    }
+  }
+
+  NPEvent npevent;
+  if (aPluginEvent->lParam & GCS_RESULTSTR) {
+    // GCS_RESULTSTR's default proc will generate WM_CHAR. So emulate it.
+    for (size_t i = 0; i < aCompositionEvent->mData.Length(); i++) {
+      WidgetPluginEvent charEvent(true, ePluginInputEvent, widget);
+      npevent.event = WM_CHAR;
+      npevent.wParam = aCompositionEvent->mData[i];
+      npevent.lParam = 0;
+      charEvent.mPluginEvent.Copy(npevent);
+      ProcessEvent(charEvent);
+    }
+    return;
+  }
+  if (!mSentStartComposition) {
+    // We post WM_IME_COMPOSITION to default proc, but
+    // WM_IME_STARTCOMPOSITION isn't post yet.  We should post it at first.
+    WidgetPluginEvent startEvent(true, ePluginInputEvent, widget);
+    npevent.event = WM_IME_STARTCOMPOSITION;
+    npevent.wParam = 0;
+    npevent.lParam = 0;
+    startEvent.mPluginEvent.Copy(npevent);
+    CallDefaultProc(&startEvent);
+    mSentStartComposition = true;
+  }
+
+  CallDefaultProc(aCompositionEvent);
+}
+#endif
+
+nsresult
+nsPluginInstanceOwner::DispatchCompositionToPlugin(nsIDOMEvent* aEvent)
+{
+#ifdef XP_WIN
+  if (!mPluginWindow) {
+    // CompositionEvent isn't cancellable.  So it is unnecessary to call
+    // PreventDefaults() to consume event
+    return NS_OK;
+  }
+  WidgetCompositionEvent* compositionEvent =
+    aEvent->GetInternalNSEvent()->AsCompositionEvent();
+  if (NS_WARN_IF(!compositionEvent)) {
+      return NS_ERROR_INVALID_ARG;
+  }
+
+  if (compositionEvent->mMessage == eCompositionChange) {
+    RefPtr<TextComposition> composition = GetTextComposition();
+    if (NS_WARN_IF(!composition)) {
+      return NS_ERROR_FAILURE;
+    }
+    TextComposition::CompositionChangeEventHandlingMarker
+      compositionChangeEventHandlingMarker(composition, compositionEvent);
+  }
+
+  const NPEvent* pPluginEvent =
+    static_cast<const NPEvent*>(compositionEvent->mPluginEvent);
+  if (pPluginEvent && pPluginEvent->event == WM_IME_COMPOSITION &&
+      mPluginDidNotHandleIMEComposition) {
+    // This is a workaround when running windowed and windowless Flash on
+    // same process.
+    // Flash with protected mode calls IMM APIs on own render process.  This
+    // is a bug of Flash's protected mode.
+    // ImmGetCompositionString with GCS_RESULTSTR returns *LAST* committed
+    // string.  So when windowed mode Flash handles IME composition,
+    // windowless plugin can get windowed mode's commited string by that API.
+    // So we never post WM_IME_COMPOSITION when plugin doesn't call
+    // ImmGetCompositionString() during WM_IME_COMPOSITION correctly.
+    HandleNoConsumedCompositionMessage(compositionEvent, pPluginEvent);
+    aEvent->StopImmediatePropagation();
+    return NS_OK;
+  }
+
+  // Protected mode Flash returns noDefault by NPP_HandleEvent, but
+  // composition information into plugin is invalid because plugin's bug.
+  // So if plugin doesn't get composition data by WM_IME_COMPOSITION, we
+  // recongnize it isn't handled
+  AutoRestore<bool> restore(mGotCompositionData);
+  mGotCompositionData = false;
+
+  nsEventStatus status = ProcessEvent(*compositionEvent);
+  aEvent->StopImmediatePropagation();
+
+  // Composition event isn't handled by plugin, so we have to call default proc.
+
+  if (NS_WARN_IF(!pPluginEvent)) {
+    return NS_OK;
+  }
+
+  if (pPluginEvent->event == WM_IME_STARTCOMPOSITION) {
+    // Flash's protected mode lies that composition event is handled, but it
+    // cannot do it well.  So even if handled, we should post this message when
+    // no IMM API calls during WM_IME_COMPOSITION.
+    if (nsEventStatus_eConsumeNoDefault != status)  {
+      CallDefaultProc(compositionEvent);
+      mSentStartComposition = true;
+    } else {
+      mSentStartComposition = false;
+    }
+    mPluginDidNotHandleIMEComposition = false;
+    return NS_OK;
+  }
+
+  if (pPluginEvent->event == WM_IME_ENDCOMPOSITION) {
+    // Always post WM_END_COMPOSITION to default proc. Because Flash may lie
+    // that it doesn't handle composition well, but event is handled.
+    // Even if posting this message, default proc do nothing if unnecessary.
+    CallDefaultProc(compositionEvent);
+    return NS_OK;
+  }
+
+  if (pPluginEvent->event == WM_IME_COMPOSITION && !mGotCompositionData) {
+    // If plugin doesn't handle WM_IME_COMPOSITION correctly, we don't send
+    // composition event until end composition.
+    mPluginDidNotHandleIMEComposition = true;
+
+    HandleNoConsumedCompositionMessage(compositionEvent, pPluginEvent);
+  }
+#endif // #ifdef XP_WIN
+  return NS_OK;
+}
+
 nsresult
 nsPluginInstanceOwner::HandleEvent(nsIDOMEvent* aEvent)
 {
@@ -1650,6 +1992,11 @@ nsPluginInstanceOwner::HandleEvent(nsIDOMEvent* aEvent)
   }
   if (eventType.EqualsLiteral("keypress")) {
     return ProcessKeyPress(aEvent);
+  }
+  if (eventType.EqualsLiteral("compositionstart") ||
+      eventType.EqualsLiteral("compositionend") ||
+      eventType.EqualsLiteral("text")) {
+    return DispatchCompositionToPlugin(aEvent);
   }
 
   nsCOMPtr<nsIDOMDragEvent> dragEvent(do_QueryInterface(aEvent));
@@ -2477,6 +2824,11 @@ nsPluginInstanceOwner::Destroy()
   content->RemoveEventListener(NS_LITERAL_STRING("dragstart"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("draggesture"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragend"), this, true);
+  content->RemoveSystemEventListener(NS_LITERAL_STRING("compositionstart"),
+                                     this, true);
+  content->RemoveSystemEventListener(NS_LITERAL_STRING("compositionend"),
+                                     this, true);
+  content->RemoveSystemEventListener(NS_LITERAL_STRING("text"), this, true);
 
 #if MOZ_WIDGET_ANDROID
   RemovePluginView();
@@ -2580,7 +2932,7 @@ void nsPluginInstanceOwner::Paint(gfxContext* aContext,
       aFrameRect.height != pluginSurface->Height()) {
 
     pluginSurface = new gfxImageSurface(gfx::IntSize(aFrameRect.width, aFrameRect.height),
-                                        gfxImageFormat::ARGB32);
+                                        SurfaceFormat::A8R8G8B8_UINT32);
     if (!pluginSurface)
       return;
   }
@@ -2872,6 +3224,11 @@ nsresult nsPluginInstanceOwner::Init(nsIContent* aContent)
   aContent->AddEventListener(NS_LITERAL_STRING("dragstart"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("draggesture"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragend"), this, true);
+  aContent->AddSystemEventListener(NS_LITERAL_STRING("compositionstart"),
+    this, true);
+  aContent->AddSystemEventListener(NS_LITERAL_STRING("compositionend"), this,
+    true);
+  aContent->AddSystemEventListener(NS_LITERAL_STRING("text"), this, true);
 
   return NS_OK;
 }
@@ -3025,22 +3382,6 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
 
   return NS_OK;
 }
-
-#if defined(XP_WIN)
-// See QUIRK_FLASH_FIXUP_MOUSE_CURSOR
-void
-nsPluginInstanceOwner::ResetWidgetCursorCaching()
-{
-  if (!mPluginFrame || !XRE_IsContentProcess()) {
-    return;
-  }
-  nsIWidget* aWidget = mPluginFrame->GetNearestWidget();
-  if (!aWidget) {
-    return;
-  }
-  aWidget->ClearCachedCursor();
-}
-#endif
 
 // Mac specific code to fix up the port location and clipping region
 #ifdef XP_MACOSX
@@ -3390,6 +3731,51 @@ already_AddRefed<nsIURI> nsPluginInstanceOwner::GetBaseURI() const
     return nullptr;
   }
   return content->GetBaseURI();
+}
+
+// static
+void
+nsPluginInstanceOwner::GeneratePluginEvent(
+  const WidgetCompositionEvent* aSrcCompositionEvent,
+  WidgetCompositionEvent* aDistCompositionEvent)
+{
+#ifdef XP_WIN
+  NPEvent newEvent;
+  switch (aDistCompositionEvent->mMessage) {
+    case eCompositionChange: {
+      newEvent.event = WM_IME_COMPOSITION;
+      newEvent.wParam = 0;
+      if (aSrcCompositionEvent &&
+          (aSrcCompositionEvent->mMessage == eCompositionCommit ||
+           aSrcCompositionEvent->mMessage == eCompositionCommitAsIs)) {
+        newEvent.lParam = GCS_RESULTSTR;
+      } else {
+        newEvent.lParam = GCS_COMPSTR | GCS_COMPATTR | GCS_COMPCLAUSE;
+      }
+      TextRangeArray* ranges = aDistCompositionEvent->mRanges;
+      if (ranges && ranges->HasCaret()) {
+        newEvent.lParam |= GCS_CURSORPOS;
+      }
+      break;
+    }
+
+    case eCompositionStart:
+      newEvent.event = WM_IME_STARTCOMPOSITION;
+      newEvent.wParam = 0;
+      newEvent.lParam = 0;
+      break;
+
+    case eCompositionEnd:
+      newEvent.event = WM_IME_ENDCOMPOSITION;
+      newEvent.wParam = 0;
+      newEvent.lParam = 0;
+      break;
+
+    default:
+      return;
+  }
+  aDistCompositionEvent->mPluginEvent.Copy(newEvent);
+#endif
 }
 
 // nsPluginDOMContextMenuListener class implementation

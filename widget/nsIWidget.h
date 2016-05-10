@@ -128,10 +128,13 @@ typedef void* nsNativeWidget;
 // set/get nsPluginNativeWindowGtk, e10s specific
 #define NS_NATIVE_PLUGIN_OBJECT_PTR    104
 #endif
+#ifdef MOZ_WIDGET_ANDROID
+#define NS_NATIVE_NEW_EGL_SURFACE      100
+#endif
 
 #define NS_IWIDGET_IID \
-{ 0xaaa79c8d, 0xc99d, 0x4fe1, \
-  { 0xa5, 0x11, 0xd3, 0xeb, 0xb1, 0x61, 0x9e, 0x26 } }
+{ 0x06396bf6, 0x2dd8, 0x45e5, \
+  { 0xac, 0x45, 0x75, 0x26, 0x53, 0xb1, 0xc9, 0x80 } }
 
 /*
  * Window shadow styles
@@ -346,6 +349,7 @@ class nsIWidget : public nsISupports {
     typedef mozilla::LayoutDeviceIntRegion LayoutDeviceIntRegion;
     typedef mozilla::LayoutDeviceIntSize LayoutDeviceIntSize;
     typedef mozilla::ScreenIntPoint ScreenIntPoint;
+    typedef mozilla::CSSRect CSSRect;
 
     // Used in UpdateThemeGeometries.
     struct ThemeGeometry {
@@ -1139,6 +1143,10 @@ class nsIWidget : public nsISupports {
      * if possible.  (If not, it behaves as if aTargetScreen is null.)
      * If !aFullScreen, aTargetScreen is ignored.
      * aTargetScreen support is currently only implemented on Windows.
+     *
+     * @return NS_OK if the widget is setup properly for fullscreen and
+     * FullscreenChanged callback has been or will be called. If other
+     * value is returned, the caller should continue the change itself.
      */
     NS_IMETHOD MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen = nullptr) = 0;
 
@@ -1253,7 +1261,7 @@ class nsIWidget : public nsISupports {
      * before each composition.
      */
     virtual already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawing() = 0;
-    virtual already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawingInRegion(nsIntRegion& aInvalidRegion) {
+    virtual already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawingInRegion(LayoutDeviceIntRegion& aInvalidRegion) {
       return StartRemoteDrawing();
     }
 
@@ -1265,7 +1273,7 @@ class nsIWidget : public nsISupports {
      * after each composition.
      */
     virtual void EndRemoteDrawing() = 0;
-    virtual void EndRemoteDrawingInRegion(mozilla::gfx::DrawTarget* aDrawTarget, nsIntRegion& aInvalidRegion) {
+    virtual void EndRemoteDrawingInRegion(mozilla::gfx::DrawTarget* aDrawTarget, LayoutDeviceIntRegion& aInvalidRegion) {
       EndRemoteDrawing();
     }
 
@@ -1789,6 +1797,25 @@ public:
     NS_IMETHOD SetPluginFocused(bool& aFocused) = 0;
 
     /*
+     * Tell the plugin has focus.  It is unnecessary to use IPC
+     */
+    bool PluginHasFocus() 
+    {
+      return GetInputContext().mIMEState.mEnabled == IMEState::PLUGIN;
+    }
+
+    /**
+     * Set IME candidate window position by windowless plugin.
+     */
+    virtual void SetCandidateWindowForPlugin(int32_t aX, int32_t aY) = 0;
+
+    /**
+     * Handle default action when PluginEvent isn't handled
+     */
+    virtual void DefaultProcOfPluginEvent(
+                   const mozilla::WidgetPluginEvent& aEvent) = 0;
+
+    /*
      * Notifies the input context changes.
      */
     NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
@@ -1840,32 +1867,6 @@ public:
      * The button's rectangle should be supplied in aButtonRect.
      */
     NS_IMETHOD OnDefaultButtonLoaded(const LayoutDeviceIntRect& aButtonRect) = 0;
-
-    /**
-     * Compute the overridden system mouse scroll speed on the root content of
-     * web pages.  The widget may set the same value as aOriginalDelta.  E.g.,
-     * when the system scrolling settings were customized, widget can respect
-     * the will of the user.
-     *
-     * This is called only when the mouse wheel event scrolls the root content
-     * of the web pages by line.  In other words, this isn't called when the
-     * mouse wheel event is used for zoom, page scroll and other special
-     * actions.  And also this isn't called when the user doesn't use the
-     * system wheel speed settings.
-     *
-     * @param aOriginalDeltaX   The X delta value of the current mouse wheel
-     *                          scrolling event.
-     * @param aOriginalDeltaX   The Y delta value of the current mouse wheel
-     *                          scrolling event.
-     * @param aOverriddenDeltaX The overridden mouse scrolling speed along X
-     *                          axis. This value may be same as aOriginalDeltaX.
-     * @param aOverriddenDeltaY The overridden mouse scrolling speed along Y
-     *                          axis. This value may be same as aOriginalDeltaY.
-     */
-    NS_IMETHOD OverrideSystemMouseScrollSpeed(double aOriginalDeltaX,
-                                              double aOriginalDeltaY,
-                                              double& aOverriddenDeltaX,
-                                              double& aOverriddenDeltaY) = 0;
 
     /**
      * Return true if this process shouldn't use platform widgets, and
@@ -2014,6 +2015,11 @@ public:
      * widget.  Note that this never returns nullptr.
      */
     NS_IMETHOD_(TextEventDispatcher*) GetTextEventDispatcher() = 0;
+
+    virtual void ZoomToRect(const uint32_t& aPresShellId,
+                            const FrameMetrics::ViewID& aViewId,
+                            const CSSRect& aRect,
+                            const uint32_t& aFlags) = 0;
 
 protected:
     /**

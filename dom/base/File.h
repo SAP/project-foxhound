@@ -70,6 +70,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Blob, nsIDOMBlob)
 
+  // This creates a Blob or a File based on the type of BlobImpl.
   static Blob*
   Create(nsISupports* aParent, BlobImpl* aImpl);
 
@@ -194,10 +195,6 @@ public:
   Create(nsISupports* aParent, const nsAString& aName,
          const nsAString& aContentType, uint64_t aLength,
          int64_t aLastModifiedDate, BlobDirState aDirState);
-
-  static already_AddRefed<File>
-  Create(nsISupports* aParent, const nsAString& aName,
-         const nsAString& aContentType, uint64_t aLength);
 
   // The returned File takes ownership of aMemoryBuffer. aMemoryBuffer will be
   // freed by free so it must be allocated by malloc or something
@@ -332,8 +329,7 @@ public:
   virtual void SetLazyData(const nsAString& aName,
                            const nsAString& aContentType,
                            uint64_t aLength,
-                           int64_t aLastModifiedDate,
-                           BlobDirState aDirState) = 0;
+                           int64_t aLastModifiedDate) = 0;
 
   virtual bool IsMemoryFile() const = 0;
 
@@ -498,8 +494,7 @@ public:
 
   virtual void
   SetLazyData(const nsAString& aName, const nsAString& aContentType,
-              uint64_t aLength, int64_t aLastModifiedDate,
-              BlobDirState aDirState) override
+              uint64_t aLength, int64_t aLastModifiedDate) override
   {
     mName = aName;
     mContentType = aContentType;
@@ -837,6 +832,31 @@ private:
   nsCOMPtr<nsIFile> mFile;
   bool mWholeFile;
   bool mIsTemporary;
+};
+
+class EmptyBlobImpl final : public BlobImplBase
+{
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  explicit EmptyBlobImpl(const nsAString& aContentType)
+    : BlobImplBase(aContentType, 0 /* aLength */)
+  {}
+
+  virtual void GetInternalStream(nsIInputStream** aStream,
+                                 ErrorResult& aRv) override;
+
+  virtual already_AddRefed<BlobImpl>
+  CreateSlice(uint64_t aStart, uint64_t aLength,
+              const nsAString& aContentType, ErrorResult& aRv) override;
+
+  virtual bool IsMemoryFile() const override
+  {
+    return true;
+  }
+
+private:
+  ~EmptyBlobImpl() {}
 };
 
 } // namespace dom

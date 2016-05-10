@@ -69,6 +69,7 @@
 
 #include <unistd.h>
 #include <time.h>
+#include <dlfcn.h>
 
 using namespace mozilla;
 
@@ -622,7 +623,6 @@ gfxSingleFaceMacFontFamily::ReadOtherFamilyNames(gfxPlatformFontList *aPlatformF
     mOtherFamilyNamesInitialized = true;
 }
 
-
 /* gfxMacPlatformFontList */
 #pragma mark-
 
@@ -800,8 +800,8 @@ gfxMacPlatformFontList::InitSystemFonts()
 
     // display font family, if on OSX 10.11
     if (mUseSizeSensitiveSystemFont) {
-        sys = [NSFont systemFontOfSize: 128.0];
-        NSString* displayFamilyName = GetRealFamilyName(sys);
+        NSFont* displaySys = [NSFont systemFontOfSize: 128.0];
+        NSString* displayFamilyName = GetRealFamilyName(displaySys);
         nsCocoaUtils::GetStringForNSString(displayFamilyName, familyName);
         mSystemDisplayFontFamily = FindSystemFontFamily(familyName);
         NS_ASSERTION(mSystemDisplayFontFamily, "null system display font family");

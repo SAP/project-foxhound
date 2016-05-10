@@ -33,7 +33,6 @@
 #include "nsQueryFrame.h"
 #include "nsCoord.h"
 #include "nsColor.h"
-#include "nsCompatibility.h"
 #include "nsFrameManagerBase.h"
 #include "nsRect.h"
 #include "nsRegionFwd.h"
@@ -63,8 +62,6 @@ class nsCaret;
 namespace mozilla {
 class AccessibleCaretEventHub;
 class CSSStyleSheet;
-class TouchCaret;
-class SelectionCarets;
 } // namespace mozilla
 class nsFrameSelection;
 class nsFrameManager;
@@ -140,10 +137,10 @@ typedef struct CapturingContentInfo {
   mozilla::StaticRefPtr<nsIContent> mContent;
 } CapturingContentInfo;
 
-// 5023beaa-0e54-4fc7-b9dc-0344dc4fb8be
+// f17842ee-f1f0-4193-814f-70d706b67060
 #define NS_IPRESSHELL_IID \
-{ 0x5023beaa, 0x0e54, 0x4fc7, \
-  { 0xb9, 0xdc, 0x03, 0x44, 0xdc, 0x4f, 0xb8, 0xbe } }
+{ 0xf17842ee, 0xf1f0, 0x4193, \
+  { 0x81, 0x4f, 0x70, 0xd7, 0x06, 0xb6, 0x70, 0x60 } }
 
 // debug VerifyReflow flags
 #define VERIFY_REFLOW_ON                    0x01
@@ -808,31 +805,6 @@ public:
   virtual void NotifyDestroyingFrame(nsIFrame* aFrame) = 0;
 
   /**
-   * Get the touch caret, if it exists. AddRefs it.
-   */
-  virtual already_AddRefed<mozilla::TouchCaret> GetTouchCaret() const = 0;
-
-  /**
-   * Returns the touch caret element of the presshell.
-   */
-  virtual mozilla::dom::Element* GetTouchCaretElement() const = 0;
-
-  /**
-   * Get the selection caret, if it exists. AddRefs it.
-   */
-  virtual already_AddRefed<mozilla::SelectionCarets> GetSelectionCarets() const = 0;
-
-  /**
-   * Returns the start part of selection caret element of the presshell.
-   */
-  virtual mozilla::dom::Element* GetSelectionCaretsStartElement() const = 0;
-
-  /**
-   * Returns the end part of selection caret element of the presshell.
-   */
-  virtual mozilla::dom::Element* GetSelectionCaretsEndElement() const = 0;
-
-  /**
    * Get the AccessibleCaretEventHub, if it exists. AddRefs it.
    */
   virtual already_AddRefed<mozilla::AccessibleCaretEventHub> GetAccessibleCaretEventHub() const = 0;
@@ -935,6 +907,20 @@ public:
    * recur into our children.
    */
   bool IsPaintingSuppressed() const { return mPaintingSuppressed; }
+
+  /**
+   * Pause painting by freezing the refresh driver of this and all parent
+   * presentations. This may not have the desired effect if this pres shell
+   * has its own refresh driver.
+   */
+  virtual void PausePainting() = 0;
+
+  /**
+   * Resume painting by thawing the refresh driver of this and all parent
+   * presentations. This may not have the desired effect if this pres shell
+   * has its own refresh driver.
+   */
+  virtual void ResumePainting() = 0;
 
   /**
    * Unsuppress painting.
@@ -1305,7 +1291,7 @@ public:
                                                    bool aIsPrimary,
                                                    nsIContent* aCaptureTarget);
   static void SetPointerCapturingContent(uint32_t aPointerId, nsIContent* aContent);
-  static void ReleasePointerCapturingContent(uint32_t aPointerId, nsIContent* aContent);
+  static void ReleasePointerCapturingContent(uint32_t aPointerId);
   static nsIContent* GetPointerCapturingContent(uint32_t aPointerId);
 
   // CheckPointerCaptureState checks cases, when got/lostpointercapture events should be fired.
@@ -1688,6 +1674,10 @@ public:
 
   void SyncWindowProperties(nsView* aView);
 
+#ifdef ANDROID
+  virtual nsIDocument* GetTouchEventTargetDocument() = 0;
+#endif
+
 protected:
   friend class nsRefreshDriver;
 
@@ -1805,6 +1795,7 @@ protected:
   bool mFontSizeInflationForceEnabled;
   bool mFontSizeInflationDisabledInMasterProcess;
   bool mFontSizeInflationEnabled;
+  bool mPaintingIsFrozen;
 
   // Dirty bit indicating that mFontSizeInflationEnabled needs to be recomputed.
   bool mFontSizeInflationEnabledIsDirty;

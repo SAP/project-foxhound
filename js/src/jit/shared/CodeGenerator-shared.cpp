@@ -458,6 +458,7 @@ CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot, MDefinition* mir,
         break;
       }
       case MIRType_Float32:
+      case MIRType_Bool32x4:
       case MIRType_Int32x4:
       case MIRType_Float32x4:
       {
@@ -1520,7 +1521,7 @@ CodeGeneratorShared::emitAsmJSCall(LAsmJSCall* ins)
         masm.call(mir->desc(), ToRegister(ins->getOperand(mir->dynamicCalleeOperandIndex())));
         break;
       case MAsmJSCall::Callee::Builtin:
-        masm.call(BuiltinToImmediate(callee.builtin()));
+        masm.call(callee.builtin());
         break;
     }
 
@@ -1529,13 +1530,13 @@ CodeGeneratorShared::emitAsmJSCall(LAsmJSCall* ins)
 }
 
 void
-CodeGeneratorShared::emitPreBarrier(Register base, const LAllocation* index)
+CodeGeneratorShared::emitPreBarrier(Register base, const LAllocation* index, int32_t offsetAdjustment)
 {
     if (index->isConstant()) {
-        Address address(base, ToInt32(index) * sizeof(Value));
+        Address address(base, ToInt32(index) * sizeof(Value) + offsetAdjustment);
         masm.patchableCallPreBarrier(address, MIRType_Value);
     } else {
-        BaseIndex address(base, ToRegister(index), TimesEight);
+        BaseIndex address(base, ToRegister(index), TimesEight, offsetAdjustment);
         masm.patchableCallPreBarrier(address, MIRType_Value);
     }
 }
@@ -1558,12 +1559,12 @@ CodeGeneratorShared::labelForBackedgeWithImplicitCheck(MBasicBlock* mir)
         for (LInstructionIterator iter = mir->lir()->begin(); iter != mir->lir()->end(); iter++) {
             if (iter->isMoveGroup()) {
                 // Continue searching for an interrupt check.
-            } else if (iter->isInterruptCheckImplicit()) {
-                return iter->toInterruptCheckImplicit()->oolEntry();
             } else {
                 // The interrupt check should be the first instruction in the
-                // loop header other than the initial label and move groups.
+                // loop header other than move groups.
                 MOZ_ASSERT(iter->isInterruptCheck());
+                if (iter->toInterruptCheck()->implicit())
+                    return iter->toInterruptCheck()->oolEntry();
                 return nullptr;
             }
         }

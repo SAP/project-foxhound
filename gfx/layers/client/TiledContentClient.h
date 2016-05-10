@@ -318,10 +318,10 @@ struct BasicTiledLayerPaintData {
 
   /*
    * The critical displayport of the content from the nearest ancestor layer
-   * that represents scrollable content with a display port set. Empty if a
-   * critical displayport is not set.
+   * that represents scrollable content with a display port set. isNothing()
+   * if a critical displayport is not set.
    */
-  LayerIntRect mCriticalDisplayPort;
+  Maybe<LayerIntRect> mCriticalDisplayPort;
 
   /*
    * The render resolution of the document that the content this layer
@@ -377,7 +377,7 @@ public:
   bool UpdateFromCompositorFrameMetrics(const LayerMetricsWrapper& aLayer,
                                         bool aHasPendingNewThebesContent,
                                         bool aLowPrecision,
-                                        ViewTransform& aViewTransform);
+                                        AsyncTransform& aViewTransform);
 
   /**
    * Determines if the compositor's upcoming composition bounds has fallen
@@ -627,9 +627,6 @@ public:
     LOW_PRECISION_TILED_BUFFER
   };
   virtual void UpdatedBuffer(TiledBufferType aType) = 0;
-
-  virtual bool SupportsLayerSize(const gfx::IntSize& aSize, ClientLayerManager* aManager) const
-  { return true; }
 
 private:
   const char* mName;

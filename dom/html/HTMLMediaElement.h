@@ -221,9 +221,6 @@ public:
 
   virtual bool IsHidden() const final override;
 
-  // In order to create overlayImageContainer to support DOMHwMediaStream.
-  VideoFrameContainer* GetOverlayImageVideoFrameContainer();
-
   // Called by the media decoder and the video frame to get the
   // ImageContainer containing the video data.
   B2G_ACL_EXPORT virtual VideoFrameContainer* GetVideoFrameContainer() final override;
@@ -403,6 +400,9 @@ public:
   // when the connection between Rtsp server and client gets lost.
   virtual void ResetConnectionState() final override;
 
+  // Called by media decoder when the audible state changed.
+  virtual void NotifyAudibleStateChanged(bool aAudible) final override;
+
   // XPCOM GetPreload() is OK
   void SetPreload(const nsAString& aValue, ErrorResult& aRv)
   {
@@ -559,6 +559,10 @@ public:
   }
 
   already_AddRefed<MediaSource> GetMozMediaSourceObject() const;
+  // Returns a string describing the state of the media player internal
+  // data. Used for debugging purposes.
+  void GetMozDebugReaderData(nsAString& aString);
+
   already_AddRefed<DOMMediaStream> GetSrcObject() const;
   void SetSrcObject(DOMMediaStream& aValue);
   void SetSrcObject(DOMMediaStream* aValue);
@@ -1527,6 +1531,9 @@ private:
   // initially be set to zero seconds. This time is used to allow the element to
   // be seeked even before the media is loaded.
   double mDefaultPlaybackStartPosition;
+
+  // True if the audio track is producing audible sound.
+  bool mIsAudioTrackAudible;
 };
 
 } // namespace dom

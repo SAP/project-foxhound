@@ -1511,7 +1511,7 @@ DocAccessible::DoInitialUpdate()
   uint32_t childCount = ChildCount();
   for (uint32_t i = 0; i < childCount; i++) {
     Accessible* child = GetChildAt(i);
-    RefPtr<AccShowEvent> event = new AccShowEvent(child, child->GetContent());
+    RefPtr<AccShowEvent> event = new AccShowEvent(child);
   FireDelayedEvent(event);
   }
 }
@@ -1841,34 +1841,9 @@ DocAccessible::UpdateTreeOnRemoval(Accessible* aContainer, nsIContent* aChildNod
   if (child) {
     updateFlags |= UpdateTreeInternal(child, false, reorderEvent);
   } else {
-    // aChildNode may not coorespond to a particular accessible, to handle
-    // this we go through all the children of aContainer.  Then if a child
-    // has aChildNode as an ancestor, or does not have the node for
-    // aContainer as an ancestor remove that child of aContainer.  Note that
-    // when we are called aChildNode may already have been removed from the DOM
-    // so we can't expect it to have a parent or what was it's parent to have
-    // it as a child.
-    nsINode* containerNode = aContainer->GetNode();
-    for (uint32_t idx = 0; idx < aContainer->ContentChildCount();) {
-      Accessible* child = aContainer->ContentChildAt(idx);
-
-      // If accessible doesn't have its own content then we assume parent
-      // will handle its update.  If child is DocAccessible then we don't
-      // handle updating it here either.
-      if (!child->HasOwnContent() || child->IsDoc()) {
-        idx++;
-        continue;
-      }
-
-      nsINode* childNode = child->GetContent();
-      while (childNode != aChildNode && childNode != containerNode &&
-             (childNode = childNode->GetParentNode()));
-
-      if (childNode != containerNode) {
-        updateFlags |= UpdateTreeInternal(child, false, reorderEvent);
-      } else {
-        idx++;
-      }
+    TreeWalker walker(aContainer, aChildNode, TreeWalker::eWalkCache);
+    while (Accessible* child = walker.NextChild()) {
+      updateFlags |= UpdateTreeInternal(child, false, reorderEvent);
     }
   }
 
@@ -1892,7 +1867,6 @@ DocAccessible::UpdateTreeInternal(Accessible* aChild, bool aIsInsert,
   // this node already then it will be suppressed by this one.
   Accessible* focusedAcc = nullptr;
 
-  nsINode* node = aChild->GetNode();
   if (aIsInsert) {
     // Create accessible tree for shown accessible.
     CacheChildrenInSubtree(aChild, &focusedAcc);
@@ -1914,9 +1888,9 @@ DocAccessible::UpdateTreeInternal(Accessible* aChild, bool aIsInsert,
   // Fire show/hide event.
   RefPtr<AccMutationEvent> event;
   if (aIsInsert)
-    event = new AccShowEvent(aChild, node);
+    event = new AccShowEvent(aChild);
   else
-    event = new AccHideEvent(aChild, node);
+    event = new AccHideEvent(aChild);
 
   FireDelayedEvent(event);
   aReorderEvent->AddSubMutationEvent(event);
@@ -1983,7 +1957,8 @@ DocAccessible::ValidateARIAOwned()
     nsTArray<RefPtr<Accessible> >* children = it.UserData();
 
     // Owner is about to die, put children back if applicable.
-    if (!owner->IsInDocument()) {
+    if (!mAccessibleCache.GetWeak(reinterpret_cast<void*>(owner)) ||
+        !owner->IsInDocument()) {
       PutChildrenBack(children, 0);
       it.Remove();
       continue;
@@ -2088,8 +2063,7 @@ DocAccessible::SeizeChild(Accessible* aNewParent, Accessible* aChild,
   int32_t oldIdxInParent = aChild->IndexInParent();
 
   RefPtr<AccReorderEvent> reorderEvent = new AccReorderEvent(oldParent);
-  RefPtr<AccMutationEvent> hideEvent =
-    new AccHideEvent(aChild, aChild->GetContent(), false);
+  RefPtr<AccMutationEvent> hideEvent = new AccHideEvent(aChild, false);
   reorderEvent->AddSubMutationEvent(hideEvent);
 
   {
@@ -2120,8 +2094,7 @@ DocAccessible::SeizeChild(Accessible* aNewParent, Accessible* aChild,
   FireDelayedEvent(reorderEvent);
 
   reorderEvent = new AccReorderEvent(aNewParent);
-  RefPtr<AccMutationEvent> showEvent =
-    new AccShowEvent(aChild, aChild->GetContent());
+  RefPtr<AccMutationEvent> showEvent = new AccShowEvent(aChild);
   reorderEvent->AddSubMutationEvent(showEvent);
 
   FireDelayedEvent(showEvent);
@@ -2139,8 +2112,7 @@ DocAccessible::MoveChild(Accessible* aChild, int32_t aIdxInParent)
 
   Accessible* parent = aChild->Parent();
   RefPtr<AccReorderEvent> reorderEvent = new AccReorderEvent(parent);
-  RefPtr<AccMutationEvent> hideEvent =
-    new AccHideEvent(aChild, aChild->GetContent(), false);
+  RefPtr<AccMutationEvent> hideEvent = new AccHideEvent(aChild, false);
   reorderEvent->AddSubMutationEvent(hideEvent);
 
   AutoTreeMutation mut(parent);
@@ -2151,8 +2123,7 @@ DocAccessible::MoveChild(Accessible* aChild, int32_t aIdxInParent)
 
   FireDelayedEvent(hideEvent);
 
-  RefPtr<AccMutationEvent> showEvent =
-    new AccShowEvent(aChild, aChild->GetContent());
+  RefPtr<AccMutationEvent> showEvent = new AccShowEvent(aChild);
   reorderEvent->AddSubMutationEvent(showEvent);
   FireDelayedEvent(showEvent);
 
@@ -2176,8 +2147,7 @@ DocAccessible::PutChildrenBack(nsTArray<RefPtr<Accessible> >* aChildren,
         continue;
       }
       RefPtr<AccReorderEvent> reorderEvent = new AccReorderEvent(owner);
-      RefPtr<AccMutationEvent> hideEvent =
-        new AccHideEvent(child, child->GetContent(), false);
+      RefPtr<AccMutationEvent> hideEvent = new AccHideEvent(child, false);
       reorderEvent->AddSubMutationEvent(hideEvent);
 
       {

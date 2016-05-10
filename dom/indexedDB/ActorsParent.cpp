@@ -10299,7 +10299,7 @@ DatabaseConnection::Close()
   AssertIsOnConnectionThread();
   MOZ_ASSERT(mStorageConnection);
   MOZ_ASSERT(!mDEBUGSavepointCount);
-  MOZ_ASSERT(!mInWriteTransaction);
+  MOZ_RELEASE_ASSERT(!mInWriteTransaction);
 
   PROFILER_LABEL("IndexedDB",
                  "DatabaseConnection::Close",
@@ -11209,7 +11209,9 @@ ConnectionPool::Start(const nsID& aBackgroundChildLoggingId,
                                   /* aFromQueuedTransactions */ false);
   }
 
-  if (!databaseInfoIsNew && mIdleDatabases.RemoveElement(dbInfo)) {
+  if (!databaseInfoIsNew &&
+      (mIdleDatabases.RemoveElement(dbInfo) ||
+       mDatabasesPerformingIdleMaintenance.RemoveElement(dbInfo))) {
     AdjustIdleTimer();
   }
 
@@ -12076,7 +12078,7 @@ IdleConnectionRunnable::Run()
   RefPtr<ConnectionPool> connectionPool = mDatabaseInfo->mConnectionPool;
   MOZ_ASSERT(connectionPool);
 
-  if (mDatabaseInfo->mClosing) {
+  if (mDatabaseInfo->mClosing || mDatabaseInfo->TotalTransactionCount()) {
     MOZ_ASSERT(!connectionPool->
                  mDatabasesPerformingIdleMaintenance.Contains(mDatabaseInfo));
   } else {
@@ -12084,9 +12086,7 @@ IdleConnectionRunnable::Run()
       connectionPool->
         mDatabasesPerformingIdleMaintenance.RemoveElement(mDatabaseInfo));
 
-    if (!mDatabaseInfo->TotalTransactionCount()) {
-      connectionPool->NoteIdleDatabase(mDatabaseInfo);
-    }
+    connectionPool->NoteIdleDatabase(mDatabaseInfo);
   }
 
   return NS_OK;
@@ -19360,9 +19360,6 @@ FactoryOp::WaitForTransactions()
   MOZ_ASSERT(!mDatabaseId.IsEmpty());
   MOZ_ASSERT(!IsActorDestroyed());
 
-  nsTArray<nsCString> databaseIds;
-  databaseIds.AppendElement(mDatabaseId);
-
   mState = State::WaitingForTransactionsToComplete;
 
   RefPtr<WaitForTransactionsHelper> helper =
@@ -23232,8 +23229,9 @@ NormalJSRuntime::Init()
 
   JSAutoRequest ar(mContext);
 
+  JS::CompartmentOptions options;
   mGlobal = JS_NewGlobalObject(mContext, &kGlobalClass, nullptr,
-                               JS::FireOnNewGlobalHook);
+                               JS::FireOnNewGlobalHook, options);
   if (NS_WARN_IF(!mGlobal)) {
     return false;
   }

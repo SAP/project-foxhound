@@ -186,6 +186,7 @@
 
 #include "mozilla/layers/APZCTreeManager.h"
 #include "mozilla/layers/InputAPZContext.h"
+#include "ClientLayerManager.h"
 #include "InputData.h"
 
 #include "mozilla/Telemetry.h"
@@ -250,10 +251,21 @@ int             nsWindow::sTrimOnMinimize         = 2;
 
 TriStateBool nsWindow::sHasBogusPopupsDropShadowOnMultiMonitor = TRI_UNKNOWN;
 
+static SystemTimeConverter<DWORD>&
+TimeConverter() {
+  static SystemTimeConverter<DWORD> timeConverterSingleton;
+  return timeConverterSingleton;
+}
+
 namespace mozilla {
 
 class CurrentWindowsTimeGetter {
 public:
+  CurrentWindowsTimeGetter(HWND aWnd)
+    : mWnd(aWnd)
+  {
+  }
+
   DWORD GetCurrentTime() const
   {
     return ::GetTickCount();
@@ -261,17 +273,41 @@ public:
 
   void GetTimeAsyncForPossibleBackwardsSkew(const TimeStamp& aNow)
   {
-    // FIXME: Get time async
+    DWORD currentTime = GetCurrentTime();
+    if (sBackwardsSkewStamp && currentTime == sLastPostTime) {
+      // There's already one inflight with this timestamp. Don't
+      // send a duplicate.
+      return;
+    }
+    sBackwardsSkewStamp = Some(aNow);
+    sLastPostTime = currentTime;
+    static_assert(sizeof(WPARAM) >= sizeof(DWORD), "Can't fit a DWORD in a WPARAM");
+    ::PostMessage(mWnd, MOZ_WM_SKEWFIX, sLastPostTime, 0);
   }
+
+  static bool GetAndClearBackwardsSkewStamp(DWORD aPostTime, TimeStamp* aOutSkewStamp)
+  {
+    if (aPostTime != sLastPostTime) {
+      // The SKEWFIX message is stale; we've sent a new one since then.
+      // Ignore this one.
+      return false;
+    }
+    MOZ_ASSERT(sBackwardsSkewStamp);
+    *aOutSkewStamp = sBackwardsSkewStamp.value();
+    sBackwardsSkewStamp = Nothing();
+    return true;
+  }
+
+private:
+  static Maybe<TimeStamp> sBackwardsSkewStamp;
+  static DWORD sLastPostTime;
+  HWND mWnd;
 };
 
-} // namespace mozilla
+Maybe<TimeStamp> CurrentWindowsTimeGetter::sBackwardsSkewStamp;
+DWORD CurrentWindowsTimeGetter::sLastPostTime = 0;
 
-static SystemTimeConverter<DWORD>&
-TimeConverter() {
-  static SystemTimeConverter<DWORD> timeConverterSingleton;
-  return timeConverterSingleton;
-}
+} // namespace mozilla
 
 /**************************************************************
  *
@@ -507,7 +543,7 @@ nsWindow::Create(nsIWidget* aParent,
                           nullptr : aParent;
 
   mIsTopWidgetWindow = (nullptr == baseParent);
-  mBounds = aRect.ToUnknownRect();
+  mBounds = aRect;
 
   // Ensure that the toolkit is created.
   nsToolkit::GetToolkit();
@@ -1360,6 +1396,19 @@ nsWindow::SetSizeConstraints(const SizeConstraints& aConstraints)
     c.mMinSize.width = std::max(int32_t(::GetSystemMetrics(SM_CXMINTRACK)), c.mMinSize.width);
     c.mMinSize.height = std::max(int32_t(::GetSystemMetrics(SM_CYMINTRACK)), c.mMinSize.height);
   }
+  ClientLayerManager *clientLayerManager =
+      (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_CLIENT)
+      ? static_cast<ClientLayerManager*>(GetLayerManager())
+      : nullptr;
+
+  if (clientLayerManager) {
+    int32_t maxSize = clientLayerManager->GetMaxTextureSize();
+    // We can't make ThebesLayers bigger than this anyway.. no point it letting
+    // a window grow bigger as we won't be able to draw content there in
+    // general.
+    c.mMaxSize.width = std::min(c.mMaxSize.width, maxSize);
+    c.mMaxSize.height = std::min(c.mMaxSize.height, maxSize);
+  }
 
   nsBaseWidget::SetSizeConstraints(c);
 }
@@ -1652,6 +1701,15 @@ NS_METHOD nsWindow::PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
   return NS_OK;
 }
 
+static UINT
+GetCurrentShowCmd(HWND aWnd)
+{
+  WINDOWPLACEMENT pl;
+  pl.length = sizeof(pl);
+  ::GetWindowPlacement(aWnd, &pl);
+  return pl.showCmd;
+}
+
 // Maximize, minimize or restore the window.
 NS_IMETHODIMP
 nsWindow::SetSizeMode(nsSizeMode aMode) {
@@ -1693,14 +1751,11 @@ nsWindow::SetSizeMode(nsSizeMode aMode) {
         mode = SW_RESTORE;
     }
 
-    WINDOWPLACEMENT pl;
-    pl.length = sizeof(pl);
-    ::GetWindowPlacement(mWnd, &pl);
     // Don't call ::ShowWindow if we're trying to "restore" a window that is
     // already in a normal state.  Prevents a bug where snapping to one side
     // of the screen and then minimizing would cause Windows to forget our
     // window's correct restored position/size.
-    if( !(pl.showCmd == SW_SHOWNORMAL && mode == SW_RESTORE) ) {
+    if(!(GetCurrentShowCmd(mWnd) == SW_SHOWNORMAL && mode == SW_RESTORE)) {
       ::ShowWindow(mWnd, mode);
     }
     // we activate here to ensure that the right child window is focused
@@ -1927,7 +1982,7 @@ NS_METHOD nsWindow::GetBounds(LayoutDeviceIntRect& aRect)
     aRect.x = r.left;
     aRect.y = r.top;
   } else {
-    aRect = LayoutDeviceIntRect::FromUnknownRect(mBounds);
+    aRect = mBounds;
   }
   return NS_OK;
 }
@@ -1963,7 +2018,7 @@ NS_METHOD nsWindow::GetScreenBounds(LayoutDeviceIntRect& aRect)
     aRect.x = r.left;
     aRect.y = r.top;
   } else {
-    aRect = LayoutDeviceIntRect::FromUnknownRect(mBounds);
+    aRect = mBounds;
   }
   return NS_OK;
 }
@@ -3594,92 +3649,6 @@ nsWindow::OnDefaultButtonLoaded(const LayoutDeviceIntRect& aButtonRect)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWindow::OverrideSystemMouseScrollSpeed(double aOriginalDeltaX,
-                                         double aOriginalDeltaY,
-                                         double& aOverriddenDeltaX,
-                                         double& aOverriddenDeltaY)
-{
-  // The default vertical and horizontal scrolling speed is 3, this is defined
-  // on the document of SystemParametersInfo in MSDN.
-  const uint32_t kSystemDefaultScrollingSpeed = 3;
-
-  double absOriginDeltaX = Abs(aOriginalDeltaX);
-  double absOriginDeltaY = Abs(aOriginalDeltaY);
-
-  // Compute the simple overridden speed.
-  double absComputedOverriddenDeltaX, absComputedOverriddenDeltaY;
-  nsresult rv =
-    nsBaseWidget::OverrideSystemMouseScrollSpeed(absOriginDeltaX,
-                                                 absOriginDeltaY,
-                                                 absComputedOverriddenDeltaX,
-                                                 absComputedOverriddenDeltaY);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  aOverriddenDeltaX = aOriginalDeltaX;
-  aOverriddenDeltaY = aOriginalDeltaY;
-
-  if (absComputedOverriddenDeltaX == absOriginDeltaX &&
-      absComputedOverriddenDeltaY == absOriginDeltaY) {
-    // We don't override now.
-    return NS_OK;
-  }
-
-  // Otherwise, we should check whether the user customized the system settings
-  // or not.  If the user did it, we should respect the will.
-  UINT systemSpeed;
-  if (!::SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, &systemSpeed, 0)) {
-    return NS_ERROR_FAILURE;
-  }
-  // The default vertical scrolling speed is 3, this is defined on the document
-  // of SystemParametersInfo in MSDN.
-  if (systemSpeed != kSystemDefaultScrollingSpeed) {
-    return NS_OK;
-  }
-
-  // Only Vista and later, Windows has the system setting of horizontal
-  // scrolling by the mouse wheel.
-  if (IsVistaOrLater()) {
-    if (!::SystemParametersInfo(SPI_GETWHEELSCROLLCHARS, 0, &systemSpeed, 0)) {
-      return NS_ERROR_FAILURE;
-    }
-    // The default horizontal scrolling speed is 3, this is defined on the
-    // document of SystemParametersInfo in MSDN.
-    if (systemSpeed != kSystemDefaultScrollingSpeed) {
-      return NS_OK;
-    }
-  }
-
-  // Limit the overridden delta value from the system settings.  The mouse
-  // driver might accelerate the scrolling speed already.  If so, we shouldn't
-  // override the scrolling speed for preventing the unexpected high speed
-  // scrolling.
-  double absDeltaLimitX, absDeltaLimitY;
-  rv =
-    nsBaseWidget::OverrideSystemMouseScrollSpeed(kSystemDefaultScrollingSpeed,
-                                                 kSystemDefaultScrollingSpeed,
-                                                 absDeltaLimitX,
-                                                 absDeltaLimitY);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // If the given delta is larger than our computed limitation value, the delta
-  // was accelerated by the mouse driver.  So, we should do nothing here.
-  if (absDeltaLimitX <= absOriginDeltaX || absDeltaLimitY <= absOriginDeltaY) {
-    return NS_OK;
-  }
-
-  aOverriddenDeltaX = std::min(absComputedOverriddenDeltaX, absDeltaLimitX);
-  aOverriddenDeltaY = std::min(absComputedOverriddenDeltaY, absDeltaLimitY);
-
-  if (aOriginalDeltaX < 0) {
-    aOverriddenDeltaX *= -1;
-  }
-  if (aOriginalDeltaY < 0) {
-    aOverriddenDeltaY *= -1;
-  }
-  return NS_OK;
-}
-
 already_AddRefed<mozilla::gfx::DrawTarget>
 nsWindow::StartRemoteDrawing()
 {
@@ -4770,7 +4739,8 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         nsCOMPtr<nsIObserverService> obsServ =
           mozilla::services::GetObserverService();
         NS_NAMED_LITERAL_STRING(context, "shutdown-persist");
-        obsServ->NotifyObservers(nullptr, "quit-application-granted", nullptr);
+        NS_NAMED_LITERAL_STRING(syncShutdown, "syncShutdown");
+        obsServ->NotifyObservers(nullptr, "quit-application-granted", syncShutdown.get());
         obsServ->NotifyObservers(nullptr, "quit-application-forced", nullptr);
         obsServ->NotifyObservers(nullptr, "quit-application", nullptr);
         obsServ->NotifyObservers(nullptr, "profile-change-net-teardown", context.get());
@@ -5088,7 +5058,7 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
     case WM_MOUSEMOVE:
     {
       if (!mMousePresent && !sIsInMouseCapture) {
-        // First MOOUSEMOVE over the client area. Ask for MOUSELEAVE
+        // First MOUSEMOVE over the client area. Ask for MOUSELEAVE
         TRACKMOUSEEVENT mTrack;
         mTrack.cbSize = sizeof(TRACKMOUSEEVENT);
         mTrack.dwFlags = TME_LEAVE;
@@ -5314,6 +5284,29 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       DispatchPendingEvents();
       break;
 
+    // Windows doesn't provide to customize the behavior of 4th nor 5th button
+    // of mouse.  If 5-button mouse works with standard mouse deriver of
+    // Windows, users cannot disable 4th button (browser back) nor 5th button
+    // (browser forward).  We should allow to do it with our prefs since we can
+    // prevent Windows to generate WM_APPCOMMAND message if WM_XBUTTONUP
+    // messages are not sent to DefWindowProc.
+    case WM_XBUTTONDOWN:
+    case WM_XBUTTONUP:
+    case WM_NCXBUTTONDOWN:
+    case WM_NCXBUTTONUP:
+      *aRetValue = TRUE;
+      switch (GET_XBUTTON_WPARAM(wParam)) {
+        case XBUTTON1:
+          result = !Preferences::GetBool("mousebutton.4th.enabled", true);
+          break;
+        case XBUTTON2:
+          result = !Preferences::GetBool("mousebutton.5th.enabled", true);
+          break;
+        default:
+          break;
+      }
+      break;
+
     case WM_SIZING:
     {
       // When we get WM_ENTERSIZEMOVE we don't know yet if we're in a live
@@ -5525,8 +5518,10 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         ::ShowWindow(mWnd, SW_SHOWMINIMIZED);
         result = true;
       }
-	  
-      if (mSizeMode == nsSizeMode_Fullscreen && filteredWParam == SC_RESTORE) {
+
+      if (mSizeMode == nsSizeMode_Fullscreen &&
+          filteredWParam == SC_RESTORE &&
+          GetCurrentShowCmd(mWnd) != SW_SHOWMINIMIZED) {
         MakeFullScreen(false);
         result = true;
       }
@@ -5699,6 +5694,15 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       DispatchWindowEvent(&command);
       *aRetValue = (LRESULT)(command.mSucceeded && command.mIsEnabled);
       result = true;
+    }
+    break;
+
+    case MOZ_WM_SKEWFIX:
+    {
+      TimeStamp skewStamp;
+      if (CurrentWindowsTimeGetter::GetAndClearBackwardsSkewStamp(wParam, &skewStamp)) {
+        TimeConverter().CompensateForBackwardsSkew(::GetMessageTime(), skewStamp);
+      }
     }
     break;
 
@@ -5904,7 +5908,7 @@ nsWindow::ClientMarginHitTestPoint(int32_t mx, int32_t my)
 TimeStamp
 nsWindow::GetMessageTimeStamp(LONG aEventTime)
 {
-  CurrentWindowsTimeGetter getCurrentTime;
+  CurrentWindowsTimeGetter getCurrentTime(mWnd);
   return TimeConverter().GetTimeStampFromSystemTime(aEventTime,
                                                     getCurrentTime);
 }
@@ -6144,7 +6148,7 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp)
       default:
           MOZ_LOG(gWindowsLog, LogLevel::Info, ("*** mSizeMode: ??????\n"));
         break;
-    };
+    }
 #endif
 
     if (mWidgetListener)
@@ -6937,7 +6941,7 @@ void nsWindow::ResizeTranslucentWindow(int32_t aNewWidth, int32_t aNewHeight, bo
     return;
 
   RefPtr<gfxWindowsSurface> newSurface =
-    new gfxWindowsSurface(IntSize(aNewWidth, aNewHeight), gfxImageFormat::ARGB32);
+    new gfxWindowsSurface(IntSize(aNewWidth, aNewHeight), SurfaceFormat::A8R8G8B8_UINT32);
   mTransparentSurface = newSurface;
   mMemoryDC = newSurface->GetDC();
 }
@@ -7754,6 +7758,39 @@ nsWindow::ComputeShouldAccelerate()
     return false;
   }
   return nsBaseWidget::ComputeShouldAccelerate();
+}
+
+void
+nsWindow::SetCandidateWindowForPlugin(int32_t aX, int32_t aY)
+{
+  CANDIDATEFORM form;
+  form.dwIndex = 0;
+  form.dwStyle = CFS_CANDIDATEPOS;
+  form.ptCurrentPos.x = aX;
+  form.ptCurrentPos.y = aY;
+
+  IMEHandler::SetCandidateWindow(this, &form);
+}
+
+void
+nsWindow::DefaultProcOfPluginEvent(const WidgetPluginEvent& aEvent)
+{
+  const NPEvent* pPluginEvent =
+   static_cast<const NPEvent*>(aEvent.mPluginEvent);
+
+  if (NS_WARN_IF(!pPluginEvent)) {
+    return;
+  }
+
+  if (!mWnd) {
+    return;
+  }
+
+  // For WM_IME_*COMPOSITION
+  IMEHandler::DefaultProcOfPluginEvent(this, pPluginEvent);
+
+  CallWindowProcW(GetPrevWindowProc(), mWnd, pPluginEvent->event,
+                  pPluginEvent->wParam, pPluginEvent->lParam);
 }
 
 /**************************************************************

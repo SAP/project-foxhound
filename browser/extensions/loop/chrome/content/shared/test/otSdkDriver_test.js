@@ -10,6 +10,7 @@ describe("loop.OTSdkDriver", function() {
   var STREAM_PROPERTIES = loop.shared.utils.STREAM_PROPERTIES;
   var SCREEN_SHARE_STATES = loop.shared.utils.SCREEN_SHARE_STATES;
   var CHAT_CONTENT_TYPES = loop.shared.utils.CHAT_CONTENT_TYPES;
+  var CURSOR_MESSAGE_TYPES = loop.shared.utils.CURSOR_MESSAGE_TYPES;
 
   var sandbox, constants;
   var dispatcher, driver, requestStubs, publisher, screenshare, sdk, session;
@@ -68,8 +69,10 @@ describe("loop.OTSdkDriver", function() {
     });
 
     sdk = _.extend({
+      DEBUG: "fakeDebug",
       initPublisher: sinon.stub().returns(publisher),
-      initSession: sinon.stub().returns(session)
+      initSession: sinon.stub().returns(session),
+      setLogLevel: sinon.stub()
     }, Backbone.Events);
 
     window.OT = {
@@ -140,6 +143,41 @@ describe("loop.OTSdkDriver", function() {
         recvStreams: 0
       });
     });
+
+    it("should enable debug for two way media telemetry if required", function() {
+      // Simulate the pref being enabled.
+      sandbox.stub(loop.shared.utils, "getBoolPreference", function(prefName, callback) {
+        if (prefName === "debug.twoWayMediaTelemetry") {
+          callback(true);
+        }
+      });
+
+      driver = new loop.OTSdkDriver({
+        constants: constants,
+        dispatcher: dispatcher,
+        sdk: sdk
+      });
+
+      expect(driver._debugTwoWayMediaTelemetry).eql(true);
+    });
+
+    it("should enable debug on the sdk if required", function() {
+      // Simulate the pref being enabled.
+      sandbox.stub(loop.shared.utils, "getBoolPreference", function(prefName, callback) {
+        if (prefName === "debug.sdk") {
+          callback(true);
+        }
+      });
+
+      driver = new loop.OTSdkDriver({
+        constants: constants,
+        dispatcher: dispatcher,
+        sdk: sdk
+      });
+
+      sinon.assert.calledOnce(sdk.setLogLevel);
+      sinon.assert.calledWithExactly(sdk.setLogLevel, sdk.DEBUG);
+    });
   });
 
   describe("#setupStreamElements", function() {
@@ -153,7 +191,10 @@ describe("loop.OTSdkDriver", function() {
     it("should call initPublisher", function() {
       var expectedConfig = _.extend({
         channels: {
-          text: {}
+          text: {},
+          cursor: {
+            reliable: true
+          }
         }
       }, publisherConfig);
 
@@ -238,7 +279,6 @@ describe("loop.OTSdkDriver", function() {
 
     beforeEach(function() {
       sandbox.stub(screenshare, "off");
-      sandbox.stub(driver, "_noteSharingState");
       options = {
         videoSource: "browser",
         constraints: {
@@ -254,10 +294,6 @@ describe("loop.OTSdkDriver", function() {
       sinon.assert.calledOnce(sdk.initPublisher);
       sinon.assert.calledWithMatch(sdk.initPublisher,
       sinon.match.instanceOf(HTMLDivElement), options);
-    });
-
-    it("should log a telemetry action", function() {
-      sinon.assert.calledWithExactly(driver._noteSharingState, "browser", true);
     });
 
     it("should not do anything if publisher completed successfully", function() {
@@ -303,7 +339,6 @@ describe("loop.OTSdkDriver", function() {
   describe("Screenshare Access Denied", function() {
     beforeEach(function() {
       sandbox.stub(screenshare, "off");
-      sandbox.stub(driver, "_noteSharingState");
       var options = {
         videoSource: "browser",
         constraints: {
@@ -359,10 +394,6 @@ describe("loop.OTSdkDriver", function() {
   });
 
   describe("#endScreenShare", function() {
-    beforeEach(function() {
-      sandbox.stub(driver, "_noteSharingState");
-    });
-
     it("should unpublish the share", function() {
       driver.startScreenShare({
         videoSource: "window"
@@ -372,17 +403,6 @@ describe("loop.OTSdkDriver", function() {
       driver.endScreenShare(new sharedActions.EndScreenShare());
 
       sinon.assert.calledOnce(session.unpublish);
-    });
-
-    it("should log a telemetry action", function() {
-      driver.startScreenShare({
-        videoSource: "window"
-      });
-      driver.session = session;
-
-      driver.endScreenShare(new sharedActions.EndScreenShare());
-
-      sinon.assert.calledWithExactly(driver._noteSharingState, "window", false);
     });
 
     it("should destroy the share", function() {
@@ -408,20 +428,6 @@ describe("loop.OTSdkDriver", function() {
       driver.endScreenShare(new sharedActions.EndScreenShare());
 
       sinon.assert.calledOnce(session.unpublish);
-    });
-
-    it("should log a telemetry action too when type is 'browser'", function() {
-      driver.startScreenShare({
-        videoSource: "browser",
-        constraints: {
-          browserWindow: 42
-        }
-      });
-      driver.session = session;
-
-      driver.endScreenShare(new sharedActions.EndScreenShare());
-
-      sinon.assert.calledWithExactly(driver._noteSharingState, "browser", false);
     });
 
     it("should dispatch a ConnectionStatus action", function() {
@@ -763,44 +769,6 @@ describe("loop.OTSdkDriver", function() {
       });
   });
 
-  describe("#_noteSharingState", function() {
-    it("should record enabled sharing states for window", function() {
-      driver._noteSharingState("window", true);
-
-      sinon.assert.calledOnce(requestStubs.TelemetryAddValue);
-      sinon.assert.calledWithExactly(requestStubs.TelemetryAddValue,
-        "LOOP_SHARING_STATE_CHANGE_1",
-        constants.SHARING_STATE_CHANGE.WINDOW_ENABLED);
-    });
-
-    it("should record enabled sharing states for browser", function() {
-      driver._noteSharingState("browser", true);
-
-      sinon.assert.calledOnce(requestStubs.TelemetryAddValue);
-      sinon.assert.calledWithExactly(requestStubs.TelemetryAddValue,
-        "LOOP_SHARING_STATE_CHANGE_1",
-        constants.SHARING_STATE_CHANGE.BROWSER_ENABLED);
-    });
-
-    it("should record disabled sharing states for window", function() {
-      driver._noteSharingState("window", false);
-
-      sinon.assert.calledOnce(requestStubs.TelemetryAddValue);
-      sinon.assert.calledWithExactly(requestStubs.TelemetryAddValue,
-        "LOOP_SHARING_STATE_CHANGE_1",
-        constants.SHARING_STATE_CHANGE.WINDOW_DISABLED);
-    });
-
-    it("should record disabled sharing states for browser", function() {
-      driver._noteSharingState("browser", false);
-
-      sinon.assert.calledOnce(requestStubs.TelemetryAddValue);
-      sinon.assert.calledWithExactly(requestStubs.TelemetryAddValue,
-        "LOOP_SHARING_STATE_CHANGE_1",
-        constants.SHARING_STATE_CHANGE.BROWSER_DISABLED);
-    });
-  });
-
   describe("#forceDisconnectAll", function() {
     it("should not disconnect anything when not connected", function() {
       driver.session = session;
@@ -854,6 +822,54 @@ describe("loop.OTSdkDriver", function() {
         sinon.assert.calledWithExactly(driver._publisherChannel.send,
           JSON.stringify(message));
       });
+    });
+  });
+
+  describe("#sendCursorMessage", function() {
+    beforeEach(function() {
+      driver.session = session;
+    });
+
+    it("should send a message on the publisher cursor data channel", function() {
+      driver._publisherCursorChannel = {
+        send: sinon.stub()
+      };
+
+      driver._subscriberCursorChannel = {};
+
+      var message = {
+        contentType: CURSOR_MESSAGE_TYPES.POSITION,
+        top: 10,
+        left: 10,
+        width: 100,
+        height: 100
+      };
+
+      driver.sendCursorMessage(message);
+
+      sinon.assert.calledOnce(driver._publisherCursorChannel.send);
+      sinon.assert.calledWithExactly(driver._publisherCursorChannel.send,
+        JSON.stringify(message));
+    });
+
+    it("should not send a message if no cursor data channel has been set", function() {
+      driver._publisherCursorChannel = {
+        send: sinon.stub()
+      };
+
+      driver._subscriberCursorChannel = null;
+
+      var message = {
+        contentType: CURSOR_MESSAGE_TYPES.POSITION,
+        top: 10,
+        left: 10,
+        width: 100,
+        height: 100
+      };
+
+      driver.sendCursorMessage(message);
+
+      sinon.assert.notCalled(driver._publisherCursorChannel.send);
     });
   });
 
@@ -1225,8 +1241,9 @@ describe("loop.OTSdkDriver", function() {
           it("should get the data channel after subscribe is complete", function() {
             session.trigger("streamCreated", { stream: fakeStream });
 
-            sinon.assert.calledOnce(fakeSubscriberObject._.getDataChannel);
-            sinon.assert.calledWith(fakeSubscriberObject._.getDataChannel, "text", {});
+            sinon.assert.calledTwice(fakeSubscriberObject._.getDataChannel);
+            sinon.assert.calledWith(fakeSubscriberObject._.getDataChannel.getCall(0), "text", {});
+            sinon.assert.calledWith(fakeSubscriberObject._.getDataChannel.getCall(1), "cursor", {});
           });
 
           it("should not get the data channel if data channels are not wanted", function() {
@@ -1244,7 +1261,7 @@ describe("loop.OTSdkDriver", function() {
 
             session.trigger("streamCreated", { stream: fakeStream });
 
-            sinon.assert.calledOnce(console.error);
+            sinon.assert.calledTwice(console.error);
             sinon.assert.calledWithMatch(console.error, err);
           });
 
@@ -1257,7 +1274,7 @@ describe("loop.OTSdkDriver", function() {
             sinon.assert.calledWithExactly(dispatcher.dispatch,
               new sharedActions.ConnectionStatus({
                 connections: 0,
-                event: "sdk.datachannel.sub.fakeError",
+                event: "sdk.datachannel.sub.text.fakeError",
                 sendStreams: 0,
                 state: "receiving",
                 recvStreams: 1
@@ -1345,6 +1362,18 @@ describe("loop.OTSdkDriver", function() {
 
           sinon.assert.neverCalledWithMatch(dispatcher.dispatch,
             new sharedActions.ReceivingScreenShare({ receiving: true }));
+        });
+
+        it("should dispatch a VideoScreenStreamChanged action for paused screen sharing streams", function() {
+          fakeStream.videoType = "screen";
+          fakeStream.hasVideo = false;
+
+          session.trigger("streamCreated", { stream: fakeStream });
+
+          // Called twice due to the VideoDimensionsChanged above.
+          sinon.assert.called(dispatcher.dispatch);
+          sinon.assert.calledWithExactly(dispatcher.dispatch,
+            new sharedActions.VideoScreenStreamChanged({ hasVideo: false }));
         });
 
         it("should dispatch a ReceivingScreenShare action for screen sharing streams", function() {
@@ -1497,19 +1526,6 @@ describe("loop.OTSdkDriver", function() {
         }
       };
 
-      it("should not dispatch a VideoDimensionsChanged action for other properties", function() {
-        session.trigger("streamPropertyChanged", {
-          stream: stream,
-          changedProperty: STREAM_PROPERTIES.HAS_AUDIO
-        });
-        session.trigger("streamPropertyChanged", {
-          stream: stream,
-          changedProperty: STREAM_PROPERTIES.HAS_VIDEO
-        });
-
-        sinon.assert.notCalled(dispatcher.dispatch);
-      });
-
       it("should dispatch a VideoDimensionsChanged action", function() {
         session.connection = {
           id: "localUser"
@@ -1522,6 +1538,22 @@ describe("loop.OTSdkDriver", function() {
         sinon.assert.calledOnce(dispatcher.dispatch);
         sinon.assert.calledWithMatch(dispatcher.dispatch,
           sinon.match.hasOwn("name", "videoDimensionsChanged"));
+      });
+
+      it("should dispatch a VideoScreenShareChanged action", function() {
+        session.connection = {
+          id: "localUser"
+        };
+        session.trigger("streamPropertyChanged", {
+          stream: stream,
+          oldValue: false,
+          newValue: true,
+          changedProperty: STREAM_PROPERTIES.HAS_VIDEO
+        });
+
+        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledWithMatch(dispatcher.dispatch,
+          sinon.match.hasOwn("name", "videoScreenStreamChanged"));
       });
     });
 
@@ -1703,20 +1735,20 @@ describe("loop.OTSdkDriver", function() {
         sinon.assert.notCalled(subscriber._.getDataChannel);
       });
 
-      it("should get the data channel for the publisher", function() {
+      it("should get the data channels for the publisher", function() {
         session.trigger("signal:readyForDataChannel");
 
-        sinon.assert.calledOnce(publisher._.getDataChannel);
+        sinon.assert.calledTwice(publisher._.getDataChannel);
       });
 
-      it("should log an error if the data channel couldn't be obtained", function() {
+      it("should log an error if the data channels couldn't be obtained", function() {
         var err = new Error("fakeError");
 
         publisher._.getDataChannel.callsArgWith(2, err);
 
         session.trigger("signal:readyForDataChannel");
 
-        sinon.assert.calledOnce(console.error);
+        sinon.assert.calledTwice(console.error);
         sinon.assert.calledWithMatch(console.error, err);
       });
 
@@ -1725,11 +1757,11 @@ describe("loop.OTSdkDriver", function() {
 
         session.trigger("signal:readyForDataChannel");
 
-        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledTwice(dispatcher.dispatch);
         sinon.assert.calledWithExactly(dispatcher.dispatch,
           new sharedActions.ConnectionStatus({
             connections: 0,
-            event: "sdk.datachannel.pub.fakeError",
+            event: "sdk.datachannel.pub.text.fakeError",
             sendStreams: 0,
             state: "starting",
             recvStreams: 0

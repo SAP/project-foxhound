@@ -7,6 +7,7 @@ package org.mozilla.gecko.home;
 
 import java.util.EnumSet;
 
+import android.util.Log;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.ReaderModeUtils;
@@ -14,7 +15,6 @@ import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.db.BrowserContract.ReadingListItems;
 import org.mozilla.gecko.db.BrowserContract.URLColumns;
-import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.ReadingListAccessor;
 import org.mozilla.gecko.home.HomeContextMenuInfo.RemoveItemType;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenListener;
@@ -24,6 +24,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.support.v4.content.Loader;
+import android.support.v4.app.LoaderManager;
 import android.support.v4.widget.CursorAdapter;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -33,7 +34,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStub;
 import android.widget.AdapterView;
+import android.widget.ImageView;
 import android.widget.TextView;
+import org.mozilla.gecko.util.NetworkUtils;
 
 /**
  * Fragment that displays reading list contents in a ListView.
@@ -63,7 +66,7 @@ public class ReadingListPanel extends HomeFragment {
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.home_reading_list_panel, container, false);
+        return inflater.inflate(R.layout.home_list_panel, container, false);
     }
 
     @Override
@@ -92,6 +95,7 @@ public class ReadingListPanel extends HomeFragment {
                 url = ReaderModeUtils.getAboutReaderForUrl(url);
 
                 Telemetry.sendUIEvent(TelemetryContract.Event.LOAD_URL, TelemetryContract.Method.LIST_ITEM, "reading_list");
+                Telemetry.addToHistogram("FENNEC_LOAD_SAVED_PAGE", NetworkUtils.isConnected(context) ? 0 : 1);
 
                 // This item is a TwoLinePageRow, so we allow switch-to-tab.
                 mUrlOpenListener.onUrlOpen(url, EnumSet.of(OnUrlOpenListener.Flags.ALLOW_SWITCH_TO_TAB));
@@ -159,28 +163,11 @@ public class ReadingListPanel extends HomeFragment {
             final ViewStub emptyViewStub = (ViewStub) mTopView.findViewById(R.id.home_empty_view_stub);
             mEmptyView = emptyViewStub.inflate();
 
-            final TextView emptyHint = (TextView) mEmptyView.findViewById(R.id.home_empty_hint);
-            if (HardwareUtils.isLowMemoryPlatform()) {
-                emptyHint.setVisibility(View.GONE);
-            } else {
-                String readingListHint = emptyHint.getText().toString();
+            final TextView emptyText = (TextView) mEmptyView.findViewById(R.id.home_empty_text);
+            emptyText.setText(R.string.home_reading_list_empty);
 
-                // Use an ImageSpan to include the reader icon in the "Tip".
-                int imageSpanIndex = readingListHint.indexOf(MATCH_STRING);
-                if (imageSpanIndex != -1) {
-                    final ImageSpan readingListIcon = new ImageSpan(getActivity(), R.drawable.reader_cropped, ImageSpan.ALIGN_BOTTOM);
-                    final SpannableStringBuilder hintBuilder = new SpannableStringBuilder(readingListHint);
-
-                    // Add additional spacing.
-                    hintBuilder.insert(imageSpanIndex + MATCH_STRING.length(), " ");
-                    hintBuilder.insert(imageSpanIndex, " ");
-
-                    // Add icon.
-                    hintBuilder.setSpan(readingListIcon, imageSpanIndex + 1, imageSpanIndex + MATCH_STRING.length() + 1, Spanned.SPAN_INCLUSIVE_INCLUSIVE);
-
-                    emptyHint.setText(hintBuilder, TextView.BufferType.SPANNABLE);
-                }
-            }
+            final ImageView emptyImage = (ImageView) mEmptyView.findViewById(R.id.home_empty_image);
+            emptyImage.setImageResource(R.drawable.icon_reading_list_empty);
 
             mList.setEmptyView(mEmptyView);
         }
@@ -226,21 +213,20 @@ public class ReadingListPanel extends HomeFragment {
     /**
      * LoaderCallbacks implementation that interacts with the LoaderManager.
      */
-    private class CursorLoaderCallbacks extends TransitionAwareCursorLoaderCallbacks {
+    private class CursorLoaderCallbacks implements LoaderManager.LoaderCallbacks<Cursor> {
         @Override
         public Loader<Cursor> onCreateLoader(int id, Bundle args) {
             return new ReadingListLoader(getActivity());
         }
 
         @Override
-        public void onLoadFinishedAfterTransitions(Loader<Cursor> loader, Cursor c) {
+        public void onLoadFinished(Loader<Cursor> loader, Cursor c) {
             mAdapter.swapCursor(c);
             updateUiFromCursor(c);
         }
 
         @Override
         public void onLoaderReset(Loader<Cursor> loader) {
-            super.onLoaderReset(loader);
             mAdapter.swapCursor(null);
         }
     }

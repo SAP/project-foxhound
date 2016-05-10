@@ -466,6 +466,13 @@ nsContentSecurityManager::CheckChannel(nsIChannel* aChannel)
     return NS_OK;
   }
 
+  // Allow the load if TriggeringPrincipal is the SystemPrincipal which
+  // is e.g. necessary to allow user user stylesheets to load XBL from
+  // external files.
+  if (nsContentUtils::IsSystemPrincipal(loadInfo->TriggeringPrincipal())) {
+    return NS_OK;
+  }
+
   // if none of the REQUIRE_SAME_ORIGIN flags are set, then SOP does not apply
   if ((securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS) ||
       (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED)) {
@@ -518,8 +525,14 @@ nsContentSecurityManager::IsURIPotentiallyTrustworthy(nsIURI* aURI, bool* aIsTru
     return NS_OK;
   }
 
+  // According to the specification, the user agent may choose to extend the
+  // trust to other, vendor-specific URL schemes. We use this for "resource:",
+  // which is technically a substituting protocol handler that is not limited to
+  // local resource mapping, but in practice is never mapped remotely as this
+  // would violate assumptions a lot of code makes.
   if (scheme.EqualsLiteral("https") ||
       scheme.EqualsLiteral("file") ||
+      scheme.EqualsLiteral("resource") ||
       scheme.EqualsLiteral("app") ||
       scheme.EqualsLiteral("wss")) {
     *aIsTrustWorthy = true;

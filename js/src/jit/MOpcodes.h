@@ -21,7 +21,6 @@ namespace jit {
     _(SimdReinterpretCast)                                                  \
     _(SimdExtractElement)                                                   \
     _(SimdInsertElement)                                                    \
-    _(SimdSignMask)                                                         \
     _(SimdSwizzle)                                                          \
     _(SimdGeneralShuffle)                                                   \
     _(SimdShuffle)                                                          \
@@ -31,6 +30,8 @@ namespace jit {
     _(SimdBinaryBitwise)                                                    \
     _(SimdShift)                                                            \
     _(SimdSelect)                                                           \
+    _(SimdAllTrue)                                                          \
+    _(SimdAnyTrue)                                                          \
     _(CloneLiteral)                                                         \
     _(Parameter)                                                            \
     _(Callee)                                                               \
@@ -138,8 +139,8 @@ namespace jit {
     _(Nop)                                                                  \
     _(LimitedTruncate)                                                      \
     _(RegExp)                                                               \
-    _(RegExpExec)                                                           \
-    _(RegExpTest)                                                           \
+    _(RegExpMatcher)                                                        \
+    _(RegExpTester)                                                         \
     _(RegExpReplace)                                                        \
     _(StringReplace)                                                        \
     _(Lambda)                                                               \
@@ -162,6 +163,7 @@ namespace jit {
     _(GetPropertyPolymorphic)                                               \
     _(SetPropertyPolymorphic)                                               \
     _(BindNameCache)                                                        \
+    _(CallBindVar)                                                          \
     _(GuardShape)                                                           \
     _(GuardReceiverPolymorphic)                                             \
     _(GuardObjectGroup)                                                     \
@@ -279,7 +281,8 @@ namespace jit {
     _(NewTarget)                                                            \
     _(ArrowNewTarget)                                                       \
     _(CheckReturn)                                                          \
-    _(CheckObjCoercible)
+    _(CheckObjCoercible)                                                    \
+    _(DebugCheckSelfHosted)
 
 // Forward declarations of MIR types.
 #define FORWARD_DECLARE(op) class M##op;

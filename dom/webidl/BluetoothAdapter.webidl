@@ -43,7 +43,7 @@ interface BluetoothAdapter : EventTarget {
   readonly attribute BluetoothGattServer?   gattServer;
 
   [AvailableIn=CertifiedApps]
-  readonly attribute BluetoothPairingListener pairingReqs;
+  readonly attribute BluetoothPairingListener? pairingReqs;
 
   // Fired when attribute(s) of BluetoothAdapter changed
            attribute EventHandler   onattributechanged;
@@ -128,10 +128,17 @@ interface BluetoothAdapter : EventTarget {
 
   sequence<BluetoothDevice> getPairedDevices();
 
-  [NewObject]
+  /**
+   * [B2G only GATT client API]
+   * |startLeScan| and |stopLeScan| methods are exposed only if
+   * "dom.bluetooth.webbluetooth.enabled" preference is false.
+   */
+  [NewObject,
+   Func="mozilla::dom::bluetooth::BluetoothManager::B2GGattClientEnabled"]
   Promise<BluetoothDiscoveryHandle> startLeScan(sequence<DOMString> serviceUuids);
 
-  [NewObject]
+  [NewObject,
+   Func="mozilla::dom::bluetooth::BluetoothManager::B2GGattClientEnabled"]
   Promise<void> stopLeScan(BluetoothDiscoveryHandle discoveryHandle);
 
   [NewObject, Throws, AvailableIn=CertifiedApps]

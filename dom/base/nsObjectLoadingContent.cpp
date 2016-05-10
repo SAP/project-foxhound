@@ -103,6 +103,7 @@
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
 static const char *kPrefJavaMIME = "plugin.java.mime";
+static const char *kPrefYoutubeRewrite = "plugins.rewrite_youtube_embeds";
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1216,6 +1217,17 @@ nsObjectLoadingContent::GetFrameLoader()
 }
 
 NS_IMETHODIMP
+nsObjectLoadingContent::GetParentApplication(mozIApplication** aApplication)
+{
+  if (!aApplication) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aApplication = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsObjectLoadingContent::SetIsPrerendered()
 {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -1425,7 +1437,7 @@ nsObjectLoadingContent::ObjectState() const
         case eFallbackVulnerableNoUpdate:
           return NS_EVENT_STATE_VULNERABLE_NO_UPDATE;
       }
-  };
+  }
   NS_NOTREACHED("unknown type?");
   return NS_EVENT_STATE_LOADING;
 }
@@ -1471,7 +1483,7 @@ nsObjectLoadingContent::CheckJavaCodebase()
 }
 
 bool
-nsObjectLoadingContent::IsYoutubeEmbed()
+nsObjectLoadingContent::ShouldRewriteYoutubeEmbed(nsIURI* aURI)
 {
   nsCOMPtr<nsIContent> thisContent =
     do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
@@ -1489,25 +1501,41 @@ nsObjectLoadingContent::IsYoutubeEmbed()
     NS_WARNING("Could not get TLD service!");
     return false;
   }
+
   nsAutoCString currentBaseDomain;
-  bool ok = NS_SUCCEEDED(tldService->GetBaseDomain(mURI, 0, currentBaseDomain));
+  bool ok = NS_SUCCEEDED(tldService->GetBaseDomain(aURI, 0, currentBaseDomain));
   if (!ok) {
-    // Data URIs won't parse correctly, so just fail silently here.
+    // Data URIs (commonly used for things like svg embeds) won't parse
+    // correctly, so just fail silently here.
     return false;
   }
+
   // See if URL is referencing youtube
-  nsAutoCString domain("youtube.com");
-  if (!StringEndsWith(domain, currentBaseDomain)) {
+  if (!currentBaseDomain.EqualsLiteral("youtube.com")) {
     return false;
   }
+
+  // We should only rewrite URLs with paths starting with "/v/", as we shouldn't
+  // touch object nodes with "/embed/" urls that already do that right thing.
+  nsAutoCString path;
+  aURI->GetPath(path);
+  if (!StringBeginsWith(path, NS_LITERAL_CSTRING("/v/"))) {
+    return false;
+  }
+
   // See if requester is planning on using the JS API.
   nsAutoCString uri;
-  mURI->GetSpec(uri);
-  // Only log urls that are rewritable, e.g. not using enablejsapi=1
+  aURI->GetSpec(uri);
   if (uri.Find("enablejsapi=1", true, 0, -1) != kNotFound) {
     return false;
   }
-  return true;
+
+  // If we've made it this far, we've got a rewritable embed. Log it in
+  // telemetry.
+  Telemetry::Accumulate(Telemetry::YOUTUBE_REWRITABLE_EMBED_SEEN, 1);
+
+  // Even if node is rewritable, only rewrite if the pref tells us we should.
+  return Preferences::GetBool(kPrefYoutubeRewrite);
 }
 
 bool
@@ -1765,6 +1793,18 @@ nsObjectLoadingContent::UpdateObjectParameters(bool aJavaURI)
                                                    uriStr,
                                                    thisContent->OwnerDoc(),
                                                    newBaseURI);
+    if (ShouldRewriteYoutubeEmbed(newURI)) {
+      // Switch out video access url formats, which should possibly allow HTML5
+      // video loading.
+      uriStr.ReplaceSubstring(NS_LITERAL_STRING("/v/"),
+                              NS_LITERAL_STRING("/embed/"));
+      rv = nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(newURI),
+                                                     uriStr,
+                                                     thisContent->OwnerDoc(),
+                                                     newBaseURI);
+      newMime = NS_LITERAL_CSTRING("text/html");
+    }
+
     if (NS_SUCCEEDED(rv)) {
       NS_TryToSetImmutable(newURI);
     } else {
@@ -1928,9 +1968,9 @@ nsObjectLoadingContent::UpdateObjectParameters(bool aJavaURI)
     newType = eType_Null;
     newMime.Truncate();
   } else if (newChannel) {
-      // If newChannel is set above, we considered it in setting newMime
-      newType = GetTypeOfContent(newMime);
-      LOG(("OBJLC [%p]: Using channel type", this));
+    // If newChannel is set above, we considered it in setting newMime
+    newType = GetTypeOfContent(newMime);
+    LOG(("OBJLC [%p]: Using channel type", this));
   } else if (((caps & eAllowPluginSkipChannel) || !newURI) &&
              GetTypeOfContent(newMime) == eType_Plugin) {
     newType = eType_Plugin;
@@ -2159,11 +2199,6 @@ nsObjectLoadingContent::LoadObject(bool aNotify,
     return NS_OK;
   }
 
-  // Check whether this is a youtube embed.
-  if (IsYoutubeEmbed()) {
-    Telemetry::Accumulate(Telemetry::YOUTUBE_REWRITABLE_EMBED_SEEN, 1);
-  }
-
   //
   // Security checks
   //
@@ -2387,7 +2422,7 @@ nsObjectLoadingContent::LoadObject(bool aNotify,
     case eType_Null:
       // Handled below, silence compiler warnings
     break;
-  };
+  }
 
   //
   // Loaded, handle notifications and fallback
@@ -2578,8 +2613,7 @@ nsObjectLoadingContent::GetCapabilities() const
 {
   return eSupportImages |
          eSupportPlugins |
-         eSupportDocuments |
-         eSupportSVG;
+         eSupportDocuments;
 }
 
 void
@@ -2685,8 +2719,8 @@ nsObjectLoadingContent::NotifyStateChanged(ObjectType aOldType,
   EventStates newState = ObjectState();
 
   if (newState != aOldState) {
+    NS_ASSERTION(thisContent->IsInComposedDoc(), "Something is confused");
     // This will trigger frame construction
-    NS_ASSERTION(InActiveDocument(thisContent), "Something is confused");
     EventStates changedBits = aOldState ^ newState;
 
     {
@@ -2694,6 +2728,7 @@ nsObjectLoadingContent::NotifyStateChanged(ObjectType aOldType,
       doc->ContentStateChanged(thisContent, changedBits);
     }
     if (aSync) {
+      NS_ASSERTION(InActiveDocument(thisContent), "Something is confused");
       // Make sure that frames are actually constructed immediately.
       doc->FlushPendingNotifications(Flush_Frames);
     }
@@ -2734,10 +2769,7 @@ nsObjectLoadingContent::GetTypeOfContent(const nsCString& aMIMEType)
     return eType_Document;
   }
 
-  // SVGs load as documents, but are their own capability
-  bool isSVG = aMIMEType.LowerCaseEqualsLiteral("image/svg+xml");
-  Capabilities supportType = isSVG ? eSupportSVG : eSupportDocuments;
-  if ((caps & supportType) && IsSupportedDocument(aMIMEType)) {
+  if ((caps & eSupportDocuments) && IsSupportedDocument(aMIMEType)) {
     return eType_Document;
   }
 

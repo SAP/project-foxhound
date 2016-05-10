@@ -37,6 +37,7 @@ import android.content.DialogInterface;
 import android.database.Cursor;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.support.v4.app.LoaderManager;
 import android.support.v4.content.Loader;
 import android.support.v4.widget.CursorAdapter;
 import android.text.SpannableStringBuilder;
@@ -310,7 +311,11 @@ public class HistoryPanel extends HomeFragment {
             emptyIcon.setImageResource(R.drawable.icon_most_recent_empty);
 
             final TextView emptyText = (TextView) mEmptyView.findViewById(R.id.home_empty_text);
-            emptyText.setText(R.string.home_most_recent_empty);
+            if (selected == null || mRangeAdapter == null || mRangeList == null) {
+                emptyText.setText(R.string.home_most_recent_empty);
+            } else {
+                emptyText.setText(R.string.home_selected_empty);
+            }
 
             final TextView emptyHint = (TextView) mEmptyView.findViewById(R.id.home_empty_hint);
             final String hintText = getResources().getString(R.string.home_most_recent_emptyhint);
@@ -331,7 +336,7 @@ public class HistoryPanel extends HomeFragment {
     }
 
     /**
-     * Make Span that is clickable, italicized, and underlined
+     * Make Span that is clickable, and underlined
      * between the string markers <code>FORMAT_S1</code> and
      * <code>FORMAT_S2</code>.
      *
@@ -351,14 +356,11 @@ public class HistoryPanel extends HomeFragment {
 
         final SpannableStringBuilder ssb = new SpannableStringBuilder(text);
 
-        // Set italicization.
-        ssb.setSpan(new StyleSpan(Typeface.ITALIC), 0, ssb.length(), 0);
-
         // Set clickable text.
         final ClickableSpan clickableSpan = new ClickableSpan() {
             @Override
             public void onClick(View widget) {
-                Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.HOMESCREEN, "hint-private-browsing");
+                Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.PANEL, "hint-private-browsing");
                 try {
                     final JSONObject json = new JSONObject();
                     json.put("type", "Menu:Open");
@@ -496,21 +498,20 @@ public class HistoryPanel extends HomeFragment {
         }
     }
 
-    private class CursorLoaderCallbacks extends TransitionAwareCursorLoaderCallbacks {
+    private class CursorLoaderCallbacks implements LoaderManager.LoaderCallbacks<Cursor> {
         @Override
         public Loader<Cursor> onCreateLoader(int id, Bundle args) {
             return new HistoryCursorLoader(getActivity());
         }
 
         @Override
-        public void onLoadFinishedAfterTransitions(Loader<Cursor> loader, Cursor c) {
+        public void onLoadFinished(Loader<Cursor> loader, Cursor c) {
             mAdapter.swapCursor(c);
             updateUiFromCursor(c);
         }
 
         @Override
         public void onLoaderReset(Loader<Cursor> loader) {
-            super.onLoaderReset(loader);
             mAdapter.swapCursor(null);
         }
     }

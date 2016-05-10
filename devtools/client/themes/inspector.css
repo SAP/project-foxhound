@@ -3,17 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-%ifdef XP_MACOSX
 
-#inspector-toolbar:-moz-locale-dir(ltr) {
+:root[platform="mac"] #inspector-toolbar:-moz-locale-dir(ltr) {
   padding-left: 2px;
 }
 
-#inspector-toolbar:-moz-locale-dir(rtl) {
+:root[platform="mac"] #inspector-toolbar:-moz-locale-dir(rtl) {
   padding-left: 4px;
 }
-
-%endif
 
 #inspector-searchlabel {
   overflow: hidden;
@@ -75,6 +72,14 @@
   cursor: pointer;
 }
 
+.event-header:first-child {
+  border-width: 0;
+}
+
+.event-header:not(:first-child) {
+  border-width: 1px 0 0 0;
+}
+
 .event-tooltip-event-type,
 .event-tooltip-filename,
 .event-tooltip-attributes {
@@ -108,8 +113,15 @@
 
 .event-tooltip-content-box {
   display: none;
-  overflow: auto;
+  height: 100px;
+  overflow: hidden;
   -moz-margin-end: 0;
+  border: 1px solid var(--theme-splitter-color);
+  border-width: 1px 0 0 0;
+}
+
+.event-toolbox-content-box iframe {
+  height: 100%;
 }
 
 .event-tooltip-content-box[open] {

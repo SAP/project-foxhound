@@ -13,6 +13,7 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/unused.h"
 
 #include <algorithm>  // for std::max
 #include <fcntl.h>
@@ -43,7 +44,7 @@
 // "Community Additions" comment on MSDN here:
 // https://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
 # define SystemFunction036 NTAPI SystemFunction036
-# include <NTSecAPI.h>
+# include <ntsecapi.h>
 # undef SystemFunction036
 #endif
 
@@ -484,21 +485,27 @@ js::math_floor(JSContext* cx, unsigned argc, Value* vp)
 }
 
 bool
+js::math_imul_handle(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
+{
+    uint32_t a = 0, b = 0;
+    if (!lhs.isUndefined() && !ToUint32(cx, lhs, &a))
+        return false;
+    if (!rhs.isUndefined() && !ToUint32(cx, rhs, &b))
+        return false;
+
+    uint32_t product = a * b;
+    res.setInt32(product > INT32_MAX
+                 ? int32_t(INT32_MIN + (product - INT32_MAX - 1))
+                 : int32_t(product));
+    return true;
+}
+
+bool
 js::math_imul(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    uint32_t a = 0, b = 0;
-    if (args.hasDefined(0) && !ToUint32(cx, args[0], &a))
-        return false;
-    if (args.hasDefined(1) && !ToUint32(cx, args[1], &b))
-        return false;
-
-    uint32_t product = a * b;
-    args.rval().setInt32(product > INT32_MAX
-                         ? int32_t(INT32_MIN + (product - INT32_MAX - 1))
-                         : int32_t(product));
-    return true;
+    return math_imul_handle(cx, args.get(0), args.get(1), args.rval());
 }
 
 // Implements Math.fround (20.2.2.16) up to step 3
@@ -753,7 +760,7 @@ GenerateSeed()
 #elif defined(XP_UNIX)
     int fd = open("/dev/urandom", O_RDONLY);
     if (fd >= 0) {
-        read(fd, static_cast<void*>(&seed), sizeof(seed));
+        mozilla::Unused << read(fd, static_cast<void*>(&seed), sizeof(seed));
         close(fd);
     }
 #else

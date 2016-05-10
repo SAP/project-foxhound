@@ -1,3 +1,8 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict";
+
 var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 const loaders = Cu.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
@@ -6,6 +11,7 @@ const { joinURI } = devtools.require("devtools/shared/path");
 Cu.import("resource://gre/modules/AppConstants.jsm");
 
 const BROWSER_BASED_DIRS = [
+  "resource://devtools/client/jsonview",
   "resource://devtools/client/shared/vendor",
   "resource://devtools/client/shared/components",
   "resource://devtools/client/shared/redux"
@@ -62,6 +68,16 @@ function BrowserLoader(baseURI, window) {
       }
 
       return require(uri);
+    },
+    globals: {
+      // Allow modules to use the window's console to ensure logs appear in a
+      // tab toolbox, if one exists, instead of just the browser console.
+      console: window.console,
+      // Make sure 'define' function exists. This allows reusing AMD modules.
+      define: function(callback) {
+        callback(this.require, this.exports, this.module);
+        return this.exports;
+      }
     }
   };
 

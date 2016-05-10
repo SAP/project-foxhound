@@ -17,12 +17,16 @@ Cu.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Locale",
                                   "resource://gre/modules/Locale.jsm");
 
+function filterStack(error) {
+  return String(error.stack).replace(/(^.*(Task\.jsm|Promise-backend\.js).*\n)+/gm, "<Promise Chain>\n");
+}
+
 // Run a function and report exceptions.
 function runSafeSyncWithoutClone(f, ...args) {
   try {
     return f(...args);
   } catch (e) {
-    dump(`Extension error: ${e} ${e.fileName} ${e.lineNumber}\n[[Exception stack\n${e.stack}Current stack\n${Error().stack}]]\n`);
+    dump(`Extension error: ${e} ${e.fileName} ${e.lineNumber}\n[[Exception stack\n${filterStack(e)}Current stack\n${filterStack(Error())}]]\n`);
     Cu.reportError(e);
   }
 }
@@ -30,13 +34,13 @@ function runSafeSyncWithoutClone(f, ...args) {
 // Run a function and report exceptions.
 function runSafeWithoutClone(f, ...args) {
   if (typeof(f) != "function") {
-    dump(`Extension error: expected function\n${Error().stack}`);
+    dump(`Extension error: expected function\n${filterStack(Error())}`);
     return;
   }
 
-  Services.tm.currentThread.dispatch(function() {
+  Promise.resolve().then(() => {
     runSafeSyncWithoutClone(f, ...args);
-  }, Ci.nsIEventTarget.DISPATCH_NORMAL);
+  });
 }
 
 // Run a function, cloning arguments into context.cloneScope, and
@@ -46,7 +50,7 @@ function runSafeSync(context, f, ...args) {
     args = Cu.cloneInto(args, context.cloneScope);
   } catch (e) {
     Cu.reportError(e);
-    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${Error().stack}`);
+    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${filterStack(Error())}`);
   }
   return runSafeSyncWithoutClone(f, ...args);
 }
@@ -58,7 +62,7 @@ function runSafe(context, f, ...args) {
     args = Cu.cloneInto(args, context.cloneScope);
   } catch (e) {
     Cu.reportError(e);
-    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${Error().stack}`);
+    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${filterStack(Error())}`);
   }
   return runSafeWithoutClone(f, ...args);
 }
@@ -113,11 +117,15 @@ function LocaleData(data) {
   this.selectedLocale = data.selectedLocale;
   this.locales = data.locales || new Map();
 
-  // Map(locale-name -> Map(message-key -> localized-strings))
+  // Map(locale-name -> Map(message-key -> localized-string))
   //
   // Contains a key for each loaded locale, each of which is a
   // Map of message keys to their localized strings.
   this.messages = data.messages || new Map();
+
+  if (data.builtinMessages) {
+    this.messages.set(this.BUILTIN, data.builtinMessages);
+  }
 }
 
 LocaleData.prototype = {
@@ -132,13 +140,15 @@ LocaleData.prototype = {
     };
   },
 
+  BUILTIN: "@@BUILTIN_MESSAGES",
+
   has(locale) {
     return this.messages.has(locale);
   },
 
   // https://developer.chrome.com/extensions/i18n
   localizeMessage(message, substitutions = [], locale = this.selectedLocale, defaultValue = "??") {
-    let locales = new Set([locale, this.defaultLocale]
+    let locales = new Set([this.BUILTIN, locale, this.defaultLocale]
                           .filter(locale => this.messages.has(locale)));
 
     // Message names are case-insensitive, so normalize them to lower-case.
@@ -170,15 +180,7 @@ LocaleData.prototype = {
     }
 
     // Check for certain pre-defined messages.
-    if (message == "@@extension_id") {
-      if ("uuid" in this) {
-        // Per Chrome, this isn't available before an ID is guaranteed
-        // to have been assigned, namely, in manifest files.
-        // This should only be present in instances of the |Extension|
-        // subclass.
-        return this.uuid;
-      }
-    } else if (message == "@@ui_locale") {
+    if (message == "@@ui_locale") {
       // Return the browser locale, but convert it to a Chrome-style
       // locale code.
       return Locale.getLocale().replace(/-/g, "_");
@@ -657,11 +659,10 @@ Port.prototype = {
 };
 
 function getMessageManager(target) {
-  if (target instanceof Ci.nsIDOMXULElement) {
-    return target.messageManager;
-  } else {
-    return target;
+  if (target instanceof Ci.nsIFrameLoaderOwner) {
+    return target.QueryInterface(Ci.nsIFrameLoaderOwner).frameLoader.messageManager;
   }
+  return target;
 }
 
 // Each extension scope gets its own Messenger object. It handles the
@@ -669,7 +670,7 @@ function getMessageManager(target) {
 //
 // |context| is the extension scope.
 // |broker| is a MessageBroker used to receive and send messages.
-// |sender| is an object describing the sender (usually giving its extensionId, tabId, etc.)
+// |sender| is an object describing the sender (usually giving its extension id, tabId, etc.)
 // |filter| is a recipient filter to apply to incoming messages from the broker.
 // |delegate| is an object that must implement a few methods:
 //    getSender(context, messageManagerTarget, sender): returns a MessageSender

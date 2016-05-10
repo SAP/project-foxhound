@@ -32,7 +32,7 @@ loop.store.ROOM_STATES = {
     CLOSING: "room-closing"
 };
 
-loop.store.ActiveRoomStore = (function() {
+loop.store.ActiveRoomStore = (function(mozL10n) {
   "use strict";
 
   var sharedActions = loop.shared.actions;
@@ -109,9 +109,11 @@ loop.store.ActiveRoomStore = (function() {
       "localVideoDimensions",
       "mediaConnected",
       "receivingScreenShare",
+      "remotePeerDisconnected",
       "remoteSrcMediaElement",
       "remoteVideoDimensions",
       "remoteVideoEnabled",
+      "streamPaused",
       "screenSharingState",
       "screenShareMediaElement",
       "videoMuted"
@@ -141,8 +143,10 @@ loop.store.ActiveRoomStore = (function() {
         localVideoDimensions: {},
         remoteVideoDimensions: {},
         screenSharingState: SCREEN_SHARE_STATES.INACTIVE,
+        sharingPaused: false,
         receivingScreenShare: false,
-        // Any urls (aka context) associated with the room.
+        remotePeerDisconnected: false,
+        // Any urls (aka context) associated with the room. null if no context.
         roomContextUrls: null,
         // The description for a room as stored in the context data.
         roomDescription: null,
@@ -150,6 +154,8 @@ loop.store.ActiveRoomStore = (function() {
         roomInfoFailure: null,
         // The name of the room.
         roomName: null,
+        // True when sharing screen has been paused.
+        streamPaused: false,
         // Social API state.
         socialShareProviders: null,
         // True if media has been connected both-ways.
@@ -264,9 +270,11 @@ loop.store.ActiveRoomStore = (function() {
         "videoDimensionsChanged",
         "startBrowserShare",
         "endScreenShare",
+        "toggleBrowserSharing",
         "updateSocialShareInfo",
         "connectionStatus",
-        "mediaConnected"
+        "mediaConnected",
+        "videoScreenStreamChanged"
       ];
       // Register actions that are only used on Desktop.
       if (this._isDesktop) {
@@ -693,7 +701,8 @@ loop.store.ActiveRoomStore = (function() {
     gotMediaPermission: function() {
       this.setStoreState({ roomState: ROOM_STATES.JOINING });
 
-      loop.request("Rooms:Join", this._storeState.roomToken).then(function(result) {
+      loop.request("Rooms:Join", this._storeState.roomToken,
+                   mozL10n.get("display_name_guest")).then(function(result) {
         if (result.isError) {
           this.dispatchAction(new sharedActions.RoomFailure({
             error: result,
@@ -923,10 +932,19 @@ loop.store.ActiveRoomStore = (function() {
         console.error("Unexpectedly received windowId for browser sharing when pending");
       }
 
-      // The browser being shared changed, so update to the new context
+      // Only update context if sharing is not paused and there's somebody.
+      if (!this.getStoreState().sharingPaused && this._hasParticipants()) {
+        this._checkTabContext();
+      }
+    },
+
+    /**
+     * Get the current tab context to update the room context.
+     */
+    _checkTabContext: function() {
       loop.request("GetSelectedTabMetadata").then(function(meta) {
-        // Avoid sending the event if there is no data nor participants nor url
-        if (!meta || !meta.url || !this._hasParticipants()) {
+        // Avoid sending the event if there is no data nor url.
+        if (!meta || !meta.url) {
           return;
         }
 
@@ -952,6 +970,11 @@ loop.store.ActiveRoomStore = (function() {
      * @param {sharedActions.StartBrowserShare} actionData
      */
     startBrowserShare: function() {
+      if (this._storeState.screenSharingState !== SCREEN_SHARE_STATES.INACTIVE) {
+        console.error("Attempting to start browser sharing when already running.");
+        return;
+      }
+
       // For the unit test we already set the state here, instead of indirectly
       // via an action, because actions are queued thus depending on the
       // asynchronous nature of `loop.request`.
@@ -989,10 +1012,27 @@ loop.store.ActiveRoomStore = (function() {
     },
 
     /**
+     * Handle browser sharing being enabled or disabled.
+     *
+     * @param {sharedActions.ToggleBrowserSharing} actionData
+     */
+    toggleBrowserSharing: function(actionData) {
+      this.setStoreState({
+        sharingPaused: !actionData.enabled
+      });
+
+      // If unpausing, check the context as it might have changed.
+      if (actionData.enabled) {
+        this._checkTabContext();
+      }
+    },
+
+    /**
      * Handles recording when a remote peer has connected to the servers.
      */
     remotePeerConnected: function() {
       this.setStoreState({
+        remotePeerDisconnected: false,
         roomState: ROOM_STATES.HAS_PARTICIPANTS,
         used: true
       });
@@ -1016,7 +1056,9 @@ loop.store.ActiveRoomStore = (function() {
         mediaConnected: false,
         participants: participants,
         roomState: ROOM_STATES.SESSION_CONNECTED,
-        remoteSrcMediaElement: null
+        remotePeerDisconnected: true,
+        remoteSrcMediaElement: null,
+        streamPaused: false
       });
     },
 
@@ -1053,9 +1095,11 @@ loop.store.ActiveRoomStore = (function() {
 
     /**
      * Handles a room being left.
+     *
+     * @param {sharedActions.LeaveRoom} actionData
      */
-    leaveRoom: function() {
-      this._leaveRoom(ROOM_STATES.ENDED);
+    leaveRoom: function(actionData) {
+      this._leaveRoom(ROOM_STATES.ENDED, false, actionData && actionData.windowStayingOpen);
     },
 
     /**
@@ -1099,8 +1143,11 @@ loop.store.ActiveRoomStore = (function() {
      * @param {Boolean}     failedJoinRequest Optional. Set to true if the join
      *                                        request to loop-server failed. It
      *                                        will skip the leave message.
+     * @param {Boolean}     windowStayingOpen Optional. Set to true to ensure
+     *                                        that messages relating to ending
+     *                                        of the conversation are sent on desktop.
      */
-    _leaveRoom: function(nextState, failedJoinRequest) {
+    _leaveRoom: function(nextState, failedJoinRequest, windowStayingOpen) {
       if (this._storeState.standalone && this._storeState.userAgentHandlesRoom) {
         // If the user agent is handling the room, all we need to do is advance
         // to the next state.
@@ -1141,7 +1188,8 @@ loop.store.ActiveRoomStore = (function() {
       // NOTE: when the window _is_ closed, hanging up the call is performed by
       //       MozLoopService, because we can't get a message across to LoopAPI
       //       in time whilst a window is closing.
-      if ((nextState === ROOM_STATES.FAILED || !this._isDesktop) && !failedJoinRequest) {
+      if ((nextState === ROOM_STATES.FAILED || windowStayingOpen || !this._isDesktop) &&
+          !failedJoinRequest) {
         loop.request("HangupNow", this._storeState.roomToken,
           this._storeState.sessionToken, this._storeState.windowId);
       }
@@ -1177,6 +1225,18 @@ loop.store.ActiveRoomStore = (function() {
       nextState[storeProp] = this.getStoreState()[storeProp];
       nextState[storeProp][actionData.videoType] = actionData.dimensions;
       this.setStoreState(nextState);
+    },
+
+    /**
+     * Listen to screen stream changes in order to check if sharing screen
+     * has been paused.
+     *
+     * @param {sharedActions.VideoScreenStreamChanged} actionData
+     */
+    videoScreenStreamChanged: function(actionData) {
+      this.setStoreState({
+        streamPaused: !actionData.hasVideo
+      });
     },
 
     /**
@@ -1243,4 +1303,4 @@ loop.store.ActiveRoomStore = (function() {
   });
 
   return ActiveRoomStore;
-})();
+})(navigator.mozL10n || document.mozL10n);

@@ -92,6 +92,40 @@ class GCHashMap : public HashMap<Key, Value, HashPolicy, AllocPolicy>,
     GCHashMap& operator=(const GCHashMap& hm) = delete;
 };
 
+// HashMap that supports rekeying.
+template <typename Key,
+          typename Value,
+          typename HashPolicy = DefaultHasher<Key>,
+          typename AllocPolicy = TempAllocPolicy,
+          typename GCPolicy = DefaultMapGCPolicy<Key, Value>>
+class GCRekeyableHashMap : public GCHashMap<Key, Value, HashPolicy, AllocPolicy, GCPolicy>
+{
+    using Base = GCHashMap<Key, Value, HashPolicy, AllocPolicy>;
+
+  public:
+    explicit GCRekeyableHashMap(AllocPolicy a = AllocPolicy()) : Base(a)  {}
+
+    void sweep() {
+        if (!this->initialized())
+            return;
+
+        for (typename Base::Enum e(*this); !e.empty(); e.popFront()) {
+            Key key(e.front().key());
+            if (GCPolicy::needsSweep(&key, &e.front().value()))
+                e.removeFront();
+            else if (!HashPolicy::match(key, e.front().key()))
+                e.rekeyFront(key);
+        }
+    }
+
+    // GCRekeyableHashMap is movable
+    GCRekeyableHashMap(GCRekeyableHashMap&& rhs) : Base(mozilla::Forward<GCRekeyableHashMap>(rhs)) {}
+    void operator=(GCRekeyableHashMap&& rhs) {
+        MOZ_ASSERT(this != &rhs, "self-move assignment is prohibited");
+        Base::operator=(mozilla::Forward<GCRekeyableHashMap>(rhs));
+    }
+};
+
 template <typename Outer, typename... Args>
 class GCHashMapOperations
 {
@@ -112,7 +146,6 @@ class GCHashMapOperations
     bool empty() const                         { return map().empty(); }
     uint32_t count() const                     { return map().count(); }
     size_t capacity() const                    { return map().capacity(); }
-    uint32_t generation() const                { return map().generation(); }
     bool has(const Lookup& l) const            { return map().lookup(l).found(); }
 };
 
@@ -253,7 +286,6 @@ class GCHashSetOperations
     bool empty() const                         { return set().empty(); }
     uint32_t count() const                     { return set().count(); }
     size_t capacity() const                    { return set().capacity(); }
-    uint32_t generation() const                { return set().generation(); }
     bool has(const Lookup& l) const            { return set().lookup(l).found(); }
 };
 

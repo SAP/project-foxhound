@@ -20,25 +20,6 @@ Java_org_mozilla_gecko_GeckoAppShell_registerJavaUiThread(JNIEnv * arg0, jclass 
 
 #ifdef JNI_STUBS
 
-typedef void (*Java_org_mozilla_gecko_GeckoAppShell_onResume_t)(JNIEnv *, jclass);
-static Java_org_mozilla_gecko_GeckoAppShell_onResume_t f_Java_org_mozilla_gecko_GeckoAppShell_onResume;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_GeckoAppShell_onResume(JNIEnv * arg0, jclass arg1) {
-    if (!f_Java_org_mozilla_gecko_GeckoAppShell_onResume) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_GeckoAppShell_onResume(arg0, arg1);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_GeckoAppShell_onResume", &f_Java_org_mozilla_gecko_GeckoAppShell_onResume);
-#endif
-
-#ifdef JNI_STUBS
-
 typedef void (*Java_org_mozilla_gecko_GeckoAppShell_onSurfaceTextureFrameAvailable_t)(JNIEnv *, jclass, jobject, jint);
 static Java_org_mozilla_gecko_GeckoAppShell_onSurfaceTextureFrameAvailable_t f_Java_org_mozilla_gecko_GeckoAppShell_onSurfaceTextureFrameAvailable;
 extern "C" NS_EXPORT void MOZ_JNICALL
@@ -96,25 +77,6 @@ Java_org_mozilla_gecko_GeckoAppShell_reportJavaCrash(JNIEnv * arg0, jclass arg1,
 
 #ifdef JNI_STUBS
 
-typedef void (*Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent_t)(JNIEnv *, jclass, jboolean);
-static Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent_t f_Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent(JNIEnv * arg0, jclass arg1, jboolean arg2) {
-    if (!f_Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent(arg0, arg1, arg2);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent", &f_Java_org_mozilla_gecko_GeckoAppShell_processNextNativeEvent);
-#endif
-
-#ifdef JNI_STUBS
-
 typedef void (*Java_org_mozilla_gecko_GeckoAppShell_notifyBatteryChange_t)(JNIEnv *, jclass, jdouble, jboolean, jdouble);
 static Java_org_mozilla_gecko_GeckoAppShell_notifyBatteryChange_t f_Java_org_mozilla_gecko_GeckoAppShell_notifyBatteryChange;
 extern "C" NS_EXPORT void MOZ_JNICALL
@@ -149,25 +111,6 @@ Java_org_mozilla_gecko_GeckoAppShell_invalidateAndScheduleComposite(JNIEnv * arg
 
 #ifdef JNI_BINDINGS
   xul_dlsym("Java_org_mozilla_gecko_GeckoAppShell_invalidateAndScheduleComposite", &f_Java_org_mozilla_gecko_GeckoAppShell_invalidateAndScheduleComposite);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef void (*Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition_t)(JNIEnv *, jclass, jint, jint);
-static Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition_t f_Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition(JNIEnv * arg0, jclass arg1, jint arg2, jint arg3) {
-    if (!f_Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition(arg0, arg1, arg2, arg3);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition", &f_Java_org_mozilla_gecko_GeckoAppShell_scheduleResumeComposition);
 #endif
 
 #ifdef JNI_STUBS
@@ -624,138 +567,5 @@ Java_org_mozilla_gecko_GeckoSmsManager_notifyCursorDone(JNIEnv * arg0, jclass ar
 
 #ifdef JNI_BINDINGS
   xul_dlsym("Java_org_mozilla_gecko_GeckoSmsManager_notifyCursorDone", &f_Java_org_mozilla_gecko_GeckoSmsManager_notifyCursorDone);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef void (*Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation_t)(JNIEnv *, jobject);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation(JNIEnv * arg0, jobject arg1) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation(arg0, arg1);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_abortAnimation);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef void (*Java_org_mozilla_gecko_gfx_NativePanZoomController_init_t)(JNIEnv *, jobject);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_init_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_init;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_init(JNIEnv * arg0, jobject arg1) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_init) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_gfx_NativePanZoomController_init(arg0, arg1);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_init", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_init);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef jboolean (*Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent_t)(JNIEnv *, jobject, jobject);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent;
-extern "C" NS_EXPORT jboolean MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent(JNIEnv * arg0, jobject arg1, jobject arg2) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return false;
-    }
-    return f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent(arg0, arg1, arg2);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleTouchEvent);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef void (*Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent_t)(JNIEnv *, jobject, jobject);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent(JNIEnv * arg0, jobject arg1, jobject arg2) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent(arg0, arg1, arg2);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_handleMotionEvent);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef void (*Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy_t)(JNIEnv *, jobject);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy(JNIEnv * arg0, jobject arg1) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy(arg0, arg1);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_destroy);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef jboolean (*Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint_t)(JNIEnv *, jobject);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint;
-extern "C" NS_EXPORT jboolean MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint(JNIEnv * arg0, jobject arg1) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return false;
-    }
-    return f_Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint(arg0, arg1);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_getRedrawHint);
-#endif
-
-#ifdef JNI_STUBS
-
-typedef void (*Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled_t)(JNIEnv *, jobject, jboolean);
-static Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled_t f_Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled;
-extern "C" NS_EXPORT void MOZ_JNICALL
-Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled(JNIEnv * arg0, jobject arg1, jboolean arg2) {
-    if (!f_Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled) {
-        arg0->ThrowNew(arg0->FindClass("java/lang/UnsupportedOperationException"),
-                       "JNI Function called before it was loaded");
-        return ;
-    }
-     f_Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled(arg0, arg1, arg2);
-}
-#endif
-
-#ifdef JNI_BINDINGS
-  xul_dlsym("Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled", &f_Java_org_mozilla_gecko_gfx_NativePanZoomController_setIsLongpressEnabled);
 #endif
 

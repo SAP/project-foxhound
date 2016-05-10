@@ -88,7 +88,7 @@ CacheStorageService::MemoryPool::~MemoryPool()
   }
 }
 
-uint32_t const
+uint32_t
 CacheStorageService::MemoryPool::Limit() const
 {
   switch (mType) {
@@ -420,7 +420,7 @@ private:
         }
 
         mPass = ITERATE_METADATA;
-        // no break
+        MOZ_FALLTHROUGH;
 
       case ITERATE_METADATA:
         // Now grab the context iterator.

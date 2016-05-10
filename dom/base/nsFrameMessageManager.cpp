@@ -1809,8 +1809,12 @@ nsMessageManagerScriptExecutor::InitChildGlobalInternal(
   const uint32_t flags = nsIXPConnect::INIT_JS_STANDARD_CLASSES;
 
   JS::CompartmentOptions options;
-  options.setZone(JS::SystemZone)
-         .setVersion(JSVERSION_LATEST);
+  options.creationOptions().setZone(JS::SystemZone);
+  options.behaviors().setVersion(JSVERSION_LATEST);
+
+  if (xpc::SharedMemoryEnabled()) {
+    options.creationOptions().setSharedMemoryAndAtomicsEnabled(true);
+  }
 
   nsresult rv =
     xpc->InitClassesWithNewWrappedGlobal(cx, aScope, mPrincipal,

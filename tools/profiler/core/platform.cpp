@@ -31,6 +31,10 @@
 #endif
 #include "ProfilerMarkers.h"
 
+#ifdef MOZ_TASK_TRACER
+#include "GeckoTaskTracer.h"
+#endif
+
 #if defined(SPS_OS_android) && !defined(MOZ_WIDGET_GONK)
   #include "AndroidBridge.h"
 #endif
@@ -63,9 +67,9 @@ public:
 };
 #endif
 
-mozilla::ThreadLocal<PseudoStack *> tlsPseudoStack;
-mozilla::ThreadLocal<GeckoSampler *> tlsTicker;
-mozilla::ThreadLocal<void *> tlsStackTop;
+MOZ_THREAD_LOCAL(PseudoStack *) tlsPseudoStack;
+MOZ_THREAD_LOCAL(GeckoSampler *) tlsTicker;
+MOZ_THREAD_LOCAL(void *) tlsStackTop;
 // We need to track whether we've been initialized otherwise
 // we end up using tlsStack without initializing it.
 // Because tlsStack is totally opaque to us we can't reuse
@@ -458,6 +462,10 @@ void mozilla_sampler_init(void* stackTop)
   if (stack_key_initialized)
     return;
 
+#ifdef MOZ_TASK_TRACER
+  mozilla::tasktracer::InitTaskTracer();
+#endif
+
 #ifdef SPS_STANDALONE
   mozilla::TimeStamp::Startup();
 #endif
@@ -564,6 +572,10 @@ void mozilla_sampler_shutdown()
   PseudoStack *stack = tlsPseudoStack.get();
   stack->deref();
   tlsPseudoStack.set(nullptr);
+
+#ifdef MOZ_TASK_TRACER
+  mozilla::tasktracer::ShutdownTaskTracer();
+#endif
 }
 
 void mozilla_sampler_save()

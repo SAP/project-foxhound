@@ -80,9 +80,12 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     ]
 if CONFIG['MOZ_ENABLE_SKIA_GPU']:
     EXPORTS += ['SkiaGLGlue.h']
-    UNIFIED_SOURCES += [
+    SOURCES += [
         'SkiaGLGlue.cpp',
     ]
+    if CONFIG['CLANG_CXX']:
+        # Suppress warnings from Skia header files.
+        SOURCES['SkiaGLGlue.cpp'].flags += ['-Wno-implicit-fallthrough']
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
     UNIFIED_SOURCES += ['SharedSurfaceGralloc.cpp']
@@ -169,9 +172,6 @@ CFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 CFLAGS += CONFIG['TK_CFLAGS']
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
-
-if CONFIG['OS_ARCH'] == 'WINNT':
-    del DEFINES['UNICODE']
 
 if CONFIG['CLANG_CXX']:
     CXXFLAGS += ['-Wshadow']

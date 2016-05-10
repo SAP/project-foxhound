@@ -23,13 +23,11 @@
     // devtools coding style.
 
     // Rules from the mozilla plugin
-    "mozilla/balanced-listeners": 2,
-    "mozilla/components-imports": 1,
-    "mozilla/import-globals-from": 1,
-    "mozilla/import-headjs-globals": 1,
     "mozilla/mark-test-function-used": 1,
     "mozilla/no-aArgs": 1,
     "mozilla/no-cpows-in-tests": 1,
+    // See bug 1224289.
+    "mozilla/reject-importGlobalProperties": 1,
     "mozilla/var-only-at-top-level": 1,
 
     // Disallow using variables outside the blocks they are defined (especially
@@ -94,7 +92,7 @@
     // rule is a better rule to check this.
     "max-depth": 0,
     // Maximum length of a line.
-    "max-len": [1, 80],
+    "max-len": [1, 80, 2, {"ignoreUrls": true, "ignorePattern": "^\\s*loader\\.lazy"}],
     // Maximum depth callbacks can be nested.
     "max-nested-callbacks": [2, 3],
     // Don't limit the number of parameters that can be used in a function.

@@ -38,42 +38,38 @@ class MediaEngineDefaultVideoSource : public nsITimerCallback,
 public:
   MediaEngineDefaultVideoSource();
 
-  virtual void Shutdown() override {};
+  void Shutdown() override {};
 
-  virtual void GetName(nsAString&) override;
-  virtual void GetUUID(nsACString&) override;
+  void GetName(nsAString&) override;
+  void GetUUID(nsACString&) override;
 
-  virtual nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
-                            const MediaEnginePrefs &aPrefs,
-                            const nsString& aDeviceId) override;
-  virtual nsresult Deallocate() override;
-  virtual nsresult Start(SourceMediaStream*, TrackID) override;
-  virtual nsresult Stop(SourceMediaStream*, TrackID) override;
-  virtual nsresult Restart(const dom::MediaTrackConstraints& aConstraints,
-                           const MediaEnginePrefs &aPrefs,
-                           const nsString& aDeviceId) override;
-  virtual void SetDirectListeners(bool aHasDirectListeners) override {};
-  virtual nsresult Config(bool aEchoOn, uint32_t aEcho,
-                          bool aAgcOn, uint32_t aAGC,
-                          bool aNoiseOn, uint32_t aNoise,
-                          int32_t aPlayoutDelay) override { return NS_OK; };
-  virtual void NotifyPull(MediaStreamGraph* aGraph,
-                          SourceMediaStream *aSource,
-                          TrackID aId,
-                          StreamTime aDesiredTime) override;
-  virtual uint32_t GetBestFitnessDistance(
+  nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
+                    const MediaEnginePrefs &aPrefs,
+                    const nsString& aDeviceId) override;
+  nsresult Deallocate() override;
+  nsresult Start(SourceMediaStream*, TrackID) override;
+  nsresult Stop(SourceMediaStream*, TrackID) override;
+  nsresult Restart(const dom::MediaTrackConstraints& aConstraints,
+                   const MediaEnginePrefs &aPrefs,
+                   const nsString& aDeviceId) override;
+  void SetDirectListeners(bool aHasDirectListeners) override {};
+  void NotifyPull(MediaStreamGraph* aGraph,
+                  SourceMediaStream *aSource,
+                  TrackID aId,
+                  StreamTime aDesiredTime) override;
+  uint32_t GetBestFitnessDistance(
       const nsTArray<const dom::MediaTrackConstraintSet*>& aConstraintSets,
       const nsString& aDeviceId) override;
 
-  virtual bool IsFake() override {
+  bool IsFake() override {
     return true;
   }
 
-  virtual const dom::MediaSourceEnum GetMediaSource() override {
+  dom::MediaSourceEnum GetMediaSource() const override {
     return dom::MediaSourceEnum::Camera;
   }
 
-  virtual nsresult TakePhoto(PhotoCallback* aCallback) override
+  nsresult TakePhoto(PhotoCallback* aCallback) override
   {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -111,30 +107,26 @@ class MediaEngineDefaultAudioSource : public nsITimerCallback,
 public:
   MediaEngineDefaultAudioSource();
 
-  virtual void Shutdown() override {};
+  void Shutdown() override {};
 
-  virtual void GetName(nsAString&) override;
-  virtual void GetUUID(nsACString&) override;
+  void GetName(nsAString&) override;
+  void GetUUID(nsACString&) override;
 
-  virtual nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
-                            const MediaEnginePrefs &aPrefs,
-                            const nsString& aDeviceId) override;
-  virtual nsresult Deallocate() override;
-  virtual nsresult Start(SourceMediaStream*, TrackID) override;
-  virtual nsresult Stop(SourceMediaStream*, TrackID) override;
-  virtual nsresult Restart(const dom::MediaTrackConstraints& aConstraints,
-                           const MediaEnginePrefs &aPrefs,
-                           const nsString& aDeviceId) override;
-  virtual void SetDirectListeners(bool aHasDirectListeners) override {};
-  virtual nsresult Config(bool aEchoOn, uint32_t aEcho,
-                          bool aAgcOn, uint32_t aAGC,
-                          bool aNoiseOn, uint32_t aNoise,
-                          int32_t aPlayoutDelay) override { return NS_OK; };
+  nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
+                    const MediaEnginePrefs &aPrefs,
+                    const nsString& aDeviceId) override;
+  nsresult Deallocate() override;
+  nsresult Start(SourceMediaStream*, TrackID) override;
+  nsresult Stop(SourceMediaStream*, TrackID) override;
+  nsresult Restart(const dom::MediaTrackConstraints& aConstraints,
+                   const MediaEnginePrefs &aPrefs,
+                   const nsString& aDeviceId) override;
+  void SetDirectListeners(bool aHasDirectListeners) override {};
   void AppendToSegment(AudioSegment& aSegment, TrackTicks aSamples);
-  virtual void NotifyPull(MediaStreamGraph* aGraph,
-                          SourceMediaStream *aSource,
-                          TrackID aId,
-                          StreamTime aDesiredTime) override
+  void NotifyPull(MediaStreamGraph* aGraph,
+                  SourceMediaStream *aSource,
+                  TrackID aId,
+                  StreamTime aDesiredTime) override
   {
 #ifdef DEBUG
     StreamBuffer::Track* data = aSource->FindTrack(aId);
@@ -144,20 +136,28 @@ public:
 #endif
   }
 
-  virtual bool IsFake() override {
+  void NotifyOutputData(MediaStreamGraph* aGraph,
+                        AudioDataValue* aBuffer, size_t aFrames,
+                        uint32_t aChannels) override
+  {}
+  void NotifyInputData(MediaStreamGraph* aGraph,
+                       const AudioDataValue* aBuffer, size_t aFrames,
+                       uint32_t aChannels) override
+  {}
+  bool IsFake() override {
     return true;
   }
 
-  virtual const dom::MediaSourceEnum GetMediaSource() override {
+  dom::MediaSourceEnum GetMediaSource() const override {
     return dom::MediaSourceEnum::Microphone;
   }
 
-  virtual nsresult TakePhoto(PhotoCallback* aCallback) override
+  nsresult TakePhoto(PhotoCallback* aCallback) override
   {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  virtual uint32_t GetBestFitnessDistance(
+  uint32_t GetBestFitnessDistance(
       const nsTArray<const dom::MediaTrackConstraintSet*>& aConstraintSets,
       const nsString& aDeviceId) override;
 
@@ -186,11 +186,11 @@ public:
     , mMutex("mozilla::MediaEngineDefault")
   {}
 
-  virtual void EnumerateVideoDevices(dom::MediaSourceEnum,
-                                     nsTArray<RefPtr<MediaEngineVideoSource> >*) override;
-  virtual void EnumerateAudioDevices(dom::MediaSourceEnum,
-                                     nsTArray<RefPtr<MediaEngineAudioSource> >*) override;
-  virtual void Shutdown() override {
+  void EnumerateVideoDevices(dom::MediaSourceEnum,
+                             nsTArray<RefPtr<MediaEngineVideoSource> >*) override;
+  void EnumerateAudioDevices(dom::MediaSourceEnum,
+                             nsTArray<RefPtr<MediaEngineAudioSource> >*) override;
+  void Shutdown() override {
     MutexAutoLock lock(mMutex);
 
     mVSources.Clear();

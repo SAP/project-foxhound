@@ -260,6 +260,15 @@ parent:
   // returned by NPN_GetValue_NPNVnetscapeWindow. Only used on Windows.
   async SetNetscapeWindowAsParent(NativeWindowHandle childWindow);
 
+  sync GetCompositionString(uint32_t aType)
+                            returns (uint8_t[] aDist, int32_t aLength);
+  // Set candidate window position.
+  //
+  // @param aX  x position of candidate window
+  // @param aY  y position of candidate window
+  async SetCandidateWindow(int32_t aX, int32_t aY);
+  async RequestCommitOrCancel(bool aCommitted);
+
 both:
   async PPluginScriptableObject();
 
@@ -288,9 +297,6 @@ parent:
 
 parent:
   intr PluginFocusChange(bool gotFocus);
-
-  // Notify the instance parent that this flash instance just set the cursor.
-  async PluginDidSetCursor();
 
 child:
   intr SetPluginFocus();

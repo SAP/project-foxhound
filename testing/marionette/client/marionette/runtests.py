@@ -38,16 +38,16 @@ class MarionetteHarness(object):
         self.args = args or self.parse_args()
 
     def parse_args(self, logger_defaults=None):
-        parser = self._parser_class(
-            usage='%(prog)s [options] test_file_or_dir <test_file_or_dir> ...',
+        parser = self._parser_class(usage='%(prog)s [options] test_file_or_dir <test_file_or_dir> ...')
+        parser.add_argument('--version', action='version',
+            help="Show version information.",
             version="%(prog)s {version}"
                     " (using marionette-driver: {driver_version}, "
                     "marionette-transport: {transport_version})".format(
                         version=__version__,
                         driver_version=driver_version,
                         transport_version=transport_version
-                    )
-        )
+                    ))
         mozlog.commandline.add_logging_group(parser)
         args = parser.parse_args()
         parser.verify_usage(args)
@@ -77,7 +77,7 @@ class MarionetteHarness(object):
 
 
 def cli(runner_class=MarionetteTestRunner, parser_class=MarionetteArguments,
-        harness_class=MarionetteHarness):
+        harness_class=MarionetteHarness, args=None):
     """
     Call the harness to parse args and run tests.
 
@@ -88,7 +88,7 @@ def cli(runner_class=MarionetteTestRunner, parser_class=MarionetteArguments,
     """
     logger = mozlog.commandline.setup_logging('Marionette test runner', {})
     try:
-        failed = harness_class(runner_class, parser_class).run()
+        failed = harness_class(runner_class, parser_class, args=args).run()
         if failed > 0:
             sys.exit(10)
     except Exception:

@@ -68,6 +68,10 @@ describe("loop.store.ActiveRoomStore", function() {
     store = new loop.store.ActiveRoomStore(dispatcher, {
       sdkDriver: fakeSdkDriver
     });
+
+    sandbox.stub(document.mozL10n ? document.mozL10n : navigator.mozL10n, "get", function(x) {
+      return x;
+    });
   });
 
   afterEach(function() {
@@ -81,6 +85,14 @@ describe("loop.store.ActiveRoomStore", function() {
       expect(function() {
         new loop.store.ActiveRoomStore(dispatcher, { mozLoop: {} });
       }).to.Throw(/sdkDriver/);
+    });
+  });
+
+  describe("#getInitialStoreState", function() {
+    it("should return an object with roomContextUrls set to null", function() {
+      var initialState = store.getInitialStoreState();
+
+      expect(initialState).to.have.a.property("roomContextUrls", null);
     });
   });
 
@@ -744,6 +756,17 @@ describe("loop.store.ActiveRoomStore", function() {
     });
   });
 
+  describe("#videoScreenStreamChanged", function() {
+    it("should set streamPaused if screen stream has no video", function() {
+      var actionData = {
+        hasVideo: false
+      };
+
+      store.videoScreenStreamChanged(new sharedActions.VideoScreenStreamChanged(actionData));
+      expect(store.getStoreState().streamPaused).eql(true);
+    });
+  });
+
   describe("#updateRoomInfo", function() {
     var fakeRoomInfo;
 
@@ -1003,7 +1026,7 @@ describe("loop.store.ActiveRoomStore", function() {
       store.gotMediaPermission();
 
       sinon.assert.calledOnce(requestStubs["Rooms:Join"]);
-      sinon.assert.calledWith(requestStubs["Rooms:Join"], "tokenFake");
+      sinon.assert.calledWith(requestStubs["Rooms:Join"], "tokenFake", "display_name_guest");
     });
 
     it("should dispatch `JoinedRoom` on success", function() {
@@ -1561,10 +1584,33 @@ describe("loop.store.ActiveRoomStore", function() {
           owner: false
         }]
       });
+
+      sandbox.stub(console, "error");
     });
 
     afterEach(function() {
       store.endScreenShare();
+    });
+
+    it("should log an error if the state is not inactive", function() {
+      store.setStoreState({
+        screenSharingState: SCREEN_SHARE_STATES.PENDING
+      });
+
+      store.startBrowserShare(new sharedActions.StartBrowserShare());
+
+      sinon.assert.calledOnce(console.error);
+    });
+
+    it("should not do anything if the state is not inactive", function() {
+      store.setStoreState({
+        screenSharingState: SCREEN_SHARE_STATES.PENDING
+      });
+
+      store.startBrowserShare(new sharedActions.StartBrowserShare());
+
+      sinon.assert.notCalled(requestStubs.AddBrowserSharingListener);
+      sinon.assert.notCalled(fakeSdkDriver.startScreenShare);
     });
 
     it("should set the state to 'pending'", function() {
@@ -1596,6 +1642,7 @@ describe("loop.store.ActiveRoomStore", function() {
     it("should request the new metadata when the browser being shared change", function() {
       store.startBrowserShare(new sharedActions.StartBrowserShare());
       clock.tick(500);
+
       sinon.assert.calledOnce(getSelectedTabMetadataStub);
       sinon.assert.calledTwice(dispatcher.dispatch);
       sinon.assert.calledWith(dispatcher.dispatch.getCall(1),
@@ -1626,35 +1673,42 @@ describe("loop.store.ActiveRoomStore", function() {
     });
 
     it("should not process a request without url", function() {
-      clock.tick(500);
       getSelectedTabMetadataStub.returns({
         title: "fakeTitle",
         favicon: "fakeFavicon"
       });
 
       store.startBrowserShare(new sharedActions.StartBrowserShare());
+      clock.tick(500);
+
       sinon.assert.calledOnce(getSelectedTabMetadataStub);
+      sinon.assert.calledOnce(dispatcher.dispatch);
+    });
+
+    it("should not process a request if sharing is paused", function() {
+      store.setStoreState({
+        sharingPaused: true
+      });
+
+      store.startBrowserShare(new sharedActions.StartBrowserShare());
+      clock.tick(500);
+
+      sinon.assert.notCalled(getSelectedTabMetadataStub);
       sinon.assert.calledOnce(dispatcher.dispatch);
     });
 
     it("should not process a request if no-one is in the room", function() {
       store.setStoreState({
-        roomState: ROOM_STATES.JOINED,
-        roomToken: "fakeToken",
-        sessionToken: "1627384950",
         participants: [{
           displayName: "Owner",
           owner: true
         }]
       });
-      clock.tick(500);
-      getSelectedTabMetadataStub.returns({
-        title: "fakeTitle",
-        favicon: "fakeFavicon"
-      });
 
       store.startBrowserShare(new sharedActions.StartBrowserShare());
-      sinon.assert.calledOnce(getSelectedTabMetadataStub);
+      clock.tick(500);
+
+      sinon.assert.notCalled(getSelectedTabMetadataStub);
       sinon.assert.calledOnce(dispatcher.dispatch);
     });
   });
@@ -1727,6 +1781,54 @@ describe("loop.store.ActiveRoomStore", function() {
     });
   });
 
+  describe("#toggleBrowserSharing", function() {
+    it("should set paused to false when enabled", function() {
+      store.toggleBrowserSharing(new sharedActions.ToggleBrowserSharing({
+        enabled: true
+      }));
+
+      expect(store.getStoreState().sharingPaused).eql(false);
+    });
+
+    it("should set paused to true when not enabled", function() {
+      store.toggleBrowserSharing(new sharedActions.ToggleBrowserSharing({
+        enabled: false
+      }));
+
+      expect(store.getStoreState().sharingPaused).eql(true);
+    });
+
+    it("should update context when enabled", function() {
+      var getSelectedTabMetadataStub = sinon.stub();
+      LoopMochaUtils.stubLoopRequest({
+        GetSelectedTabMetadata: getSelectedTabMetadataStub.returns({
+          title: "fakeTitle",
+          favicon: "fakeFavicon",
+          url: "http://www.fakeurl.com"
+        })
+      });
+      store.setStoreState({
+        roomState: ROOM_STATES.JOINED,
+        roomToken: "fakeToken"
+      });
+
+      store.toggleBrowserSharing(new sharedActions.ToggleBrowserSharing({
+        enabled: true
+      }));
+      clock.tick(500);
+
+      sinon.assert.calledOnce(getSelectedTabMetadataStub);
+      sinon.assert.calledOnce(dispatcher.dispatch);
+      sinon.assert.calledWith(dispatcher.dispatch,
+        new sharedActions.UpdateRoomContext({
+          newRoomDescription: "fakeTitle",
+          newRoomThumbnail: "fakeFavicon",
+          newRoomURL: "http://www.fakeurl.com",
+          roomToken: "fakeToken"
+      }));
+    });
+  });
+
   describe("#remotePeerConnected", function() {
     it("should set the state to `HAS_PARTICIPANTS`", function() {
       store.remotePeerConnected();
@@ -1784,6 +1886,26 @@ describe("loop.store.ActiveRoomStore", function() {
       var participants = store.getStoreState().participants;
       expect(participants).to.have.length.of(1);
       expect(participants[0].owner).eql(true);
+    });
+
+    it("should clear the streamPaused state", function() {
+      store.setStoreState({
+        streamPaused: true
+      });
+
+      store.remotePeerDisconnected();
+
+      expect(store.getStoreState().streamPaused).eql(false);
+    });
+
+    it("should set the remotePeerDisconnected to `true", function() {
+      store.setStoreState({
+        remotePeerDisconnected: false
+      });
+
+      store.remotePeerDisconnected();
+
+      expect(store.getStoreState().remotePeerDisconnected).eql(true);
     });
   });
 
@@ -1926,6 +2048,16 @@ describe("loop.store.ActiveRoomStore", function() {
       sinon.assert.calledWith(requestStubs["HangupNow"], "fakeToken", "1627384950");
     });
 
+    it("should call 'HangupNow' when _isDesktop is true and windowStayingOpen", function() {
+      store._isDesktop = true;
+
+      store.leaveRoom({
+        windowStayingOpen: true
+      });
+
+      sinon.assert.calledOnce(requestStubs["HangupNow"]);
+    });
+
     it("should not call 'HangupNow' Loop API when _isDesktop is true", function() {
       store._isDesktop = true;
 
@@ -1958,6 +2090,7 @@ describe("loop.store.ActiveRoomStore", function() {
         audioMuted: true,
         localVideoDimensions: { x: 10 },
         receivingScreenShare: true,
+        remotePeerDisconnected: true,
         remoteVideoDimensions: { y: 10 },
         screenSharingState: true,
         videoMuted: true,
@@ -1969,6 +2102,7 @@ describe("loop.store.ActiveRoomStore", function() {
       expect(store._storeState.audioMuted).eql(false);
       expect(store._storeState.localVideoDimensions).eql({});
       expect(store._storeState.receivingScreenShare).eql(false);
+      expect(store._storeState.remotePeerDisconnected).eql(false);
       expect(store._storeState.remoteVideoDimensions).eql({});
       expect(store._storeState.screenSharingState).eql(SCREEN_SHARE_STATES.INACTIVE);
       expect(store._storeState.videoMuted).eql(false);

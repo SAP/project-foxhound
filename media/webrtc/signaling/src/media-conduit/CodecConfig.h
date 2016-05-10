@@ -29,6 +29,9 @@ struct AudioCodecConfig
   int mChannels;
   int mRate;
 
+  // OPUS-specific
+  int mMaxPlaybackRate;
+
   /* Default constructor is not provided since as a consumer, we
    * can't decide the default configuration for the codec
    */
@@ -40,8 +43,8 @@ struct AudioCodecConfig
                                                      mFreq(freq),
                                                      mPacSize(pacSize),
                                                      mChannels(channels),
-                                                     mRate(rate)
-
+                                                     mRate(rate),
+                                                     mMaxPlaybackRate(0)
   {
   }
 };
@@ -79,6 +82,11 @@ public:
   std::vector<std::string> mCcmFbTypes;
 
   EncodingConstraints mEncodingConstraints;
+  struct SimulcastEncoding {
+    std::string rid;
+    EncodingConstraints constraints;
+  };
+  std::vector<SimulcastEncoding> mSimulcastEncodings;
   std::string mSpropParameterSets;
   uint8_t mProfile;
   uint8_t mConstraints;

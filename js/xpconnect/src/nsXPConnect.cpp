@@ -194,7 +194,7 @@ xpc::ErrorReport::Init(JSErrorReport* aReport, const char* aFallbackMessage,
         mFileName.AssignWithConversion(aReport->filename);
     }
 
-    mSourceLine = static_cast<const char16_t*>(aReport->uclinebuf);
+    mSourceLine.Assign(aReport->linebuf(), aReport->linebufLength());
 
     mLineNumber = aReport->lineno;
     mColumn = aReport->column;
@@ -411,14 +411,14 @@ InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal, uint32_t 
             isSystem = status == nsIPrincipal::APP_STATUS_PRIVILEGED ||
                        status == nsIPrincipal::APP_STATUS_CERTIFIED;
         }
-        JS::CompartmentOptionsRef(aGlobal).setDiscardSource(isSystem);
+        JS::CompartmentBehaviorsRef(aGlobal).setDiscardSource(isSystem);
     }
 
     if (ExtraWarningsForSystemJS()) {
         nsIPrincipal* prin = GetObjectPrincipal(aGlobal);
         bool isSystem = nsContentUtils::IsSystemPrincipal(prin);
         if (isSystem)
-            JS::CompartmentOptionsRef(aGlobal).extraWarningsOverride().set(true);
+            JS::CompartmentBehaviorsRef(aGlobal).extraWarningsOverride().set(true);
     }
 
     // Stuff coming through this path always ends up as a DOM global.

@@ -16,105 +16,213 @@
  * limitations under the License.
  */
 
-#ifndef asmjs_wasm_generator_h
-#define asmjs_wasm_generator_h
+#ifndef wasm_generator_h
+#define wasm_generator_h
 
+#include "asmjs/WasmBinary.h"
 #include "asmjs/WasmIonCompile.h"
-#include "asmjs/WasmStubs.h"
+#include "asmjs/WasmModule.h"
 #include "jit/MacroAssembler.h"
 
 namespace js {
-
-class AsmJSModule;
-namespace fronted { class TokenStream; }
-
 namespace wasm {
 
 class FunctionGenerator;
+typedef Vector<uint32_t, 0, SystemAllocPolicy> Uint32Vector;
+
+// A slow function describes a function that took longer than msThreshold to
+// validate and compile.
 
 struct SlowFunction
 {
-    SlowFunction(PropertyName* name, unsigned ms, unsigned line, unsigned column)
-     : name(name), ms(ms), line(line), column(column)
+    SlowFunction(uint32_t index, unsigned ms, unsigned lineOrBytecode)
+     : index(index), ms(ms), lineOrBytecode(lineOrBytecode)
     {}
 
     static const unsigned msThreshold = 250;
 
-    PropertyName* name;
+    uint32_t index;
     unsigned ms;
-    unsigned line;
-    unsigned column;
+    unsigned lineOrBytecode;
+};
+typedef Vector<SlowFunction> SlowFunctionVector;
+
+// The ModuleGeneratorData holds all the state shared between the
+// ModuleGenerator and ModuleGeneratorThreadView. The ModuleGeneratorData is
+// encapsulated by ModuleGenerator/ModuleGeneratorThreadView classes which
+// present a race-free interface to the code in each thread assuming any given
+// element is initialized by the ModuleGenerator thread before an index to that
+// element is written to Bytecode sent to a ModuleGeneratorThreadView thread.
+// Once created, the Vectors are never resized.
+
+struct ModuleImportGeneratorData
+{
+    DeclaredSig* sig;
+    uint32_t globalDataOffset;
 };
 
-typedef Vector<SlowFunction> SlowFunctionVector;
+typedef Vector<ModuleImportGeneratorData, 0, SystemAllocPolicy> ModuleImportGeneratorDataVector;
+
+// Global variable descriptor, in asm.js only.
+
+struct AsmJSGlobalVariable {
+    ExprType type;
+    unsigned globalDataOffset;
+    bool isConst;
+    AsmJSGlobalVariable(ExprType type, unsigned offset, bool isConst)
+      : type(type), globalDataOffset(offset), isConst(isConst)
+    {}
+};
+
+typedef Vector<AsmJSGlobalVariable, 0, SystemAllocPolicy> AsmJSGlobalVariableVector;
+
+struct ModuleGeneratorData
+{
+    DeclaredSigVector               sigs;
+    DeclaredSigPtrVector            funcSigs;
+    ModuleImportGeneratorDataVector imports;
+    AsmJSGlobalVariableVector       globals;
+};
+
+typedef UniquePtr<ModuleGeneratorData> UniqueModuleGeneratorData;
+
+// The ModuleGeneratorThreadView class presents a restricted, read-only view of
+// the shared state needed by helper threads. There is only one
+// ModuleGeneratorThreadView object owned by ModuleGenerator and referenced by
+// all compile tasks.
+
+class ModuleGeneratorThreadView
+{
+    const ModuleGeneratorData& shared_;
+
+  public:
+    explicit ModuleGeneratorThreadView(const ModuleGeneratorData& shared)
+      : shared_(shared)
+    {}
+    const DeclaredSig& sig(uint32_t sigIndex) const {
+        return shared_.sigs[sigIndex];
+    }
+    const DeclaredSig& funcSig(uint32_t funcIndex) const {
+        MOZ_ASSERT(shared_.funcSigs[funcIndex]);
+        return *shared_.funcSigs[funcIndex];
+    }
+    const ModuleImportGeneratorData& import(uint32_t importIndex) const {
+        MOZ_ASSERT(shared_.imports[importIndex].sig);
+        return shared_.imports[importIndex];
+    }
+    const AsmJSGlobalVariable& globalVar(uint32_t globalIndex) const {
+        return shared_.globals[globalIndex];
+    }
+};
 
 // A ModuleGenerator encapsulates the creation of a wasm module. During the
 // lifetime of a ModuleGenerator, a sequence of FunctionGenerators are created
 // and destroyed to compile the individual function bodies. After generating all
 // functions, ModuleGenerator::finish() must be called to complete the
 // compilation and extract the resulting wasm module.
+
 class MOZ_STACK_CLASS ModuleGenerator
 {
-  public:
-    typedef Vector<uint32_t, 0, SystemAllocPolicy> FuncIndexVector;
+    typedef UniquePtr<ModuleGeneratorThreadView> UniqueModuleGeneratorThreadView;
+    typedef HashMap<uint32_t, uint32_t> FuncIndexMap;
 
-  private:
-    struct FuncPtrTable
-    {
-        uint32_t numDeclared;
-        FuncIndexVector elems;
+    ExclusiveContext*               cx_;
+    jit::JitContext                 jcx_;
 
-        explicit FuncPtrTable(uint32_t numDeclared) : numDeclared(numDeclared) {}
-        FuncPtrTable(FuncPtrTable&& rhs) : numDeclared(rhs.numDeclared), elems(Move(rhs.elems)) {}
-    };
-    typedef Vector<FuncPtrTable> FuncPtrTableVector;
+    // Data handed back to the caller in finish()
+    UniqueModuleData                module_;
+    UniqueStaticLinkData            link_;
+    SlowFunctionVector              slowFuncs_;
 
-    struct SigHashPolicy
-    {
-        typedef const MallocSig& Lookup;
-        static HashNumber hash(Lookup l) { return l.hash(); }
-        static bool match(const LifoSig* lhs, Lookup rhs) { return *lhs == rhs; }
-    };
-    typedef HashSet<const LifoSig*, SigHashPolicy> SigSet;
+    // Data scoped to the ModuleGenerator's lifetime
+    UniqueModuleGeneratorData       shared_;
+    uint32_t                        numSigs_;
+    LifoAlloc                       lifo_;
+    jit::TempAllocator              alloc_;
+    jit::MacroAssembler             masm_;
+    Uint32Vector                    funcEntryOffsets_;
+    Uint32Vector                    exportFuncIndices_;
+    FuncIndexMap                    funcIndexToExport_;
 
-    ExclusiveContext*                      cx_;
-    ScopedJSDeletePtr<AsmJSModule>         module_;
+    // Parallel compilation
+    bool                            parallel_;
+    uint32_t                        outstanding_;
+    UniqueModuleGeneratorThreadView threadView_;
+    Vector<IonCompileTask>          tasks_;
+    Vector<IonCompileTask*>         freeTasks_;
 
-    LifoAlloc                              lifo_;
-    jit::TempAllocator                     alloc_;
-    jit::MacroAssembler                    masm_;
-    SigSet                                 sigs_;
-
-    bool                                   parallel_;
-    uint32_t                               outstanding_;
-    Vector<CompileTask>                    tasks_;
-    Vector<CompileTask*>                   freeTasks_;
-
-    FuncOffsetVector                       funcEntryOffsets_;
-    FuncPtrTableVector                     funcPtrTables_;
-
-    SlowFunctionVector                     slowFuncs_;
-    mozilla::DebugOnly<FunctionGenerator*> active_;
+    // Assertions
+    DebugOnly<FunctionGenerator*>   activeFunc_;
+    DebugOnly<bool>                 finishedFuncs_;
 
     bool finishOutstandingTask();
-    bool finishTask(CompileTask* task);
-    CompileArgs args() const;
+    bool finishTask(IonCompileTask* task);
+    bool addImport(const Sig& sig, uint32_t globalDataOffset);
+    bool startedFuncDefs() const { return !!threadView_; }
 
   public:
     explicit ModuleGenerator(ExclusiveContext* cx);
     ~ModuleGenerator();
 
-    bool init(ScriptSource* ss, uint32_t srcStart, uint32_t srcBodyStart, bool strict);
-    AsmJSModule& module() const { return *module_; }
+    bool init(UniqueModuleGeneratorData shared, ModuleKind = ModuleKind::Wasm);
 
-    const LifoSig* newLifoSig(const MallocSig& sig);
-    bool declareFuncPtrTable(uint32_t numElems, uint32_t* funcPtrTableIndex);
-    bool defineFuncPtrTable(uint32_t funcPtrTableIndex, FuncIndexVector&& elems);
+    CompileArgs args() const { return module_->compileArgs; }
+    jit::MacroAssembler& masm() { return masm_; }
+    const Uint32Vector& funcEntryOffsets() const { return funcEntryOffsets_; }
 
-    bool startFunc(PropertyName* name, unsigned line, unsigned column, FunctionGenerator* fg);
-    bool finishFunc(uint32_t funcIndex, const LifoSig& sig, unsigned generateTime, FunctionGenerator* fg);
+    // Global data:
+    bool allocateGlobalBytes(uint32_t bytes, uint32_t align, uint32_t* globalDataOffset);
+    bool allocateGlobalVar(ValType type, bool isConst, uint32_t* index);
+    const AsmJSGlobalVariable& globalVar(unsigned index) const { return shared_->globals[index]; }
 
-    bool finish(frontend::TokenStream& ts, ScopedJSDeletePtr<AsmJSModule>* module,
+    // Signatures:
+    void initSig(uint32_t sigIndex, Sig&& sig);
+    uint32_t numSigs() const { return numSigs_; }
+    const DeclaredSig& sig(uint32_t sigIndex) const;
+
+    // Function declarations:
+    bool initFuncSig(uint32_t funcIndex, uint32_t sigIndex);
+    uint32_t numFuncSigs() const { return module_->numFuncs; }
+    const DeclaredSig& funcSig(uint32_t funcIndex) const;
+
+    // Imports:
+    bool initImport(uint32_t importIndex, uint32_t sigIndex, uint32_t globalDataOffset);
+    uint32_t numImports() const;
+    const ModuleImportGeneratorData& import(uint32_t index) const;
+    bool defineImport(uint32_t index, ProfilingOffsets interpExit, ProfilingOffsets jitExit);
+
+    // Exports:
+    bool declareExport(uint32_t funcIndex, uint32_t* exportIndex);
+    uint32_t numExports() const;
+    uint32_t exportFuncIndex(uint32_t index) const;
+    const Sig& exportSig(uint32_t index) const;
+    bool defineExport(uint32_t index, Offsets offsets);
+
+    // Function definitions:
+    bool startFuncDefs();
+    bool startFuncDef(uint32_t lineOrBytecode, FunctionGenerator* fg);
+    bool finishFuncDef(uint32_t funcIndex, unsigned generateTime, FunctionGenerator* fg);
+    bool finishFuncDefs();
+
+    // Function-pointer tables:
+    bool declareFuncPtrTable(uint32_t numElems, uint32_t* index);
+    uint32_t funcPtrTableGlobalDataOffset(uint32_t index) const;
+    void defineFuncPtrTable(uint32_t index, const Vector<uint32_t>& elemFuncIndices);
+
+    // Stubs:
+    bool defineInlineStub(Offsets offsets);
+    bool defineSyncInterruptStub(ProfilingOffsets offsets);
+    bool defineAsyncInterruptStub(Offsets offsets);
+    bool defineOutOfBoundsStub(Offsets offsets);
+
+    // Return a ModuleData object which may be used to construct a Module, the
+    // StaticLinkData required to call Module::staticallyLink, and the list of
+    // functions that took a long time to compile.
+    bool finish(HeapUsage heapUsage,
+                CacheableChars filename,
+                CacheableCharsVector&& prettyFuncNames,
+                UniqueModuleData* module,
+                UniqueStaticLinkData* staticLinkData,
                 SlowFunctionVector* slowFuncs);
 };
 
@@ -123,20 +231,40 @@ class MOZ_STACK_CLASS ModuleGenerator
 // anything else. After the body is complete, ModuleGenerator::finishFunc must
 // be called before the FunctionGenerator is destroyed and the next function is
 // started.
+
 class MOZ_STACK_CLASS FunctionGenerator
 {
     friend class ModuleGenerator;
 
-    ModuleGenerator* m_;
-    CompileTask*     task_;
-    FuncIR*          func_;
+    ModuleGenerator*   m_;
+    IonCompileTask*    task_;
+
+    // Data created during function generation, then handed over to the
+    // FuncBytecode in ModuleGenerator::finishFunc().
+    UniqueBytecode     bytecode_;
+    SourceCoordsVector callSourceCoords_;
+    ValTypeVector      localVars_;
+
+    uint32_t lineOrBytecode_;
 
   public:
-    FunctionGenerator() : m_(nullptr), task_(nullptr), func_(nullptr) {}
-    FuncIR& func() const { MOZ_ASSERT(func_); return *func_; }
+    FunctionGenerator()
+      : m_(nullptr), task_(nullptr), lineOrBytecode_(0)
+    {}
+
+    Bytecode& bytecode() const {
+        return *bytecode_;
+    }
+    bool addSourceCoords(size_t byteOffset, uint32_t line, uint32_t column) {
+        SourceCoords sc = { byteOffset, line, column };
+        return callSourceCoords_.append(sc);
+    }
+    bool addLocal(ValType v) {
+        return localVars_.append(v);
+    }
 };
 
 } // namespace wasm
 } // namespace js
 
-#endif // asmjs_wasm_generator_h
+#endif // wasm_generator_h

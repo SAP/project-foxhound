@@ -14,7 +14,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=789315
 <form id="a"><input name="b" type="file"/></form>
 
 <script type="text/javascript">
-  is(new FormData(document.getElementById('a')).get('b'), "", "This should return an empty string.");
+  var obj = new FormData(document.getElementById('a')).get('b');
+  is(obj, "", "We want an empty string.");
+
 </script>
 
 </body>

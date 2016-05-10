@@ -34,6 +34,7 @@ EXPORTS.mozilla.dom += [
     'CanvasRenderingContextHelper.h',
     'CanvasUtils.h',
     'ImageBitmap.h',
+    'ImageBitmapRenderingContext.h',
     'ImageBitmapSource.h',
     'ImageData.h',
     'OffscreenCanvas.h',
@@ -50,13 +51,13 @@ UNIFIED_SOURCES += [
     'DocumentRendererChild.cpp',
     'DocumentRendererParent.cpp',
     'ImageBitmap.cpp',
+    'ImageBitmapRenderingContext.cpp',
     'ImageData.cpp',
     'OffscreenCanvas.cpp',
 ]
 
 # WebGL Sources
 UNIFIED_SOURCES += [
-    'MurmurHash3.cpp',
     'TexUnpackBlob.cpp',
     'WebGL1Context.cpp',
     'WebGL1ContextBuffers.cpp',
@@ -99,6 +100,7 @@ UNIFIED_SOURCES += [
     'WebGLExtensionColorBufferFloat.cpp',
     'WebGLExtensionColorBufferHalfFloat.cpp',
     'WebGLExtensionCompressedTextureATC.cpp',
+    'WebGLExtensionCompressedTextureES3.cpp',
     'WebGLExtensionCompressedTextureETC1.cpp',
     'WebGLExtensionCompressedTexturePVRTC.cpp',
     'WebGLExtensionCompressedTextureS3TC.cpp',
@@ -145,6 +147,14 @@ UNIFIED_SOURCES += [
     'WebGLVertexArrayGL.cpp',
     'WebGLVertexArrayObject.cpp',
 ]
+
+SOURCES += [
+    'MurmurHash3.cpp',
+]
+
+# Suppress warnings from third-party code.
+if CONFIG['CLANG_CXX']:
+    SOURCES['MurmurHash3.cpp'].flags += ['-Wno-implicit-fallthrough']
 
 LOCAL_INCLUDES += [
     '/js/xpconnect/wrappers',

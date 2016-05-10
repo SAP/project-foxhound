@@ -422,6 +422,8 @@ class CGDOMJSClass(CGThing):
             classFlags += "JSCLASS_HAS_RESERVED_SLOTS(%d)" % slotCount
             traceHook = 'nullptr'
             reservedSlots = slotCount
+        if self.descriptor.interface.isProbablyShortLivingObject():
+            classFlags += " | JSCLASS_SKIP_NURSERY_FINALIZE"
         if self.descriptor.interface.getExtendedAttribute("NeedResolve"):
             resolveHook = RESOLVE_HOOK_NAME
             mayResolveHook = MAY_RESOLVE_HOOK_NAME
@@ -3238,7 +3240,7 @@ class CGConstructorEnabled(CGAbstractMethod):
         conditions = []
         iface = self.descriptor.interface
 
-        if not iface.isExposedInWindow():
+        if not iface.isExposedOnMainThread():
             exposedInWindowCheck = dedent(
                 """
                 MOZ_ASSERT(!NS_IsMainThread(), "Why did we even get called?");
@@ -3257,7 +3259,7 @@ class CGConstructorEnabled(CGAbstractMethod):
                 }
                 """, workerCondition=workerCondition.define())
             exposedInWorkerCheck = CGGeneric(exposedInWorkerCheck)
-            if iface.isExposedInWindow():
+            if iface.isExposedOnMainThread():
                 exposedInWorkerCheck = CGIfWrapper(exposedInWorkerCheck,
                                                    "!NS_IsMainThread()")
             body.append(exposedInWorkerCheck)
@@ -5034,11 +5036,6 @@ def getJSToNativeConversionInfo(type, descriptorProvider, failureCode=None,
                                           failureCode)
             return JSToNativeConversionInfo(template, declType=declType,
                                             dealWithOptional=isOptional)
-
-        if descriptor.interface.identifier.name == "AbortablePromise":
-            raise TypeError("Need to figure out what argument conversion "
-                            "should look like for AbortablePromise: %s" %
-                            sourceDescription)
 
         # This is an interface that we implement as a concrete class
         # or an XPCOM interface.
@@ -7147,8 +7144,7 @@ class CGPerSignatureCall(CGThing):
 
         # Hack for making Promise.prototype.then work well over Xrays.
         if (not static and
-            (descriptor.name == "Promise" or
-             descriptor.name == "MozAbortablePromise") and
+            descriptor.name == "Promise" and
             idlNode.isMethod() and
             idlNode.identifier.name == "then"):
             cgThings.append(CGGeneric(dedent(
@@ -7160,7 +7156,7 @@ class CGPerSignatureCall(CGThing):
         needsUnwrap = False
         argsPost = []
         if isConstructor:
-            if descriptor.name == "Promise" or descriptor.name == "MozAbortablePromise":
+            if descriptor.name == "Promise":
                 # Hack for Promise for now: pass in our desired proto so the
                 # implementation can create the reflector with the right proto.
                 argsPost.append("desiredProto")
@@ -8103,7 +8099,7 @@ class CGGenericMethod(CGAbstractBindingMethod):
     """
     def __init__(self, descriptor, allowCrossOriginThis=False):
         unwrapFailureCode = (
-            'return ThrowInvalidThis(cx, args, GetInvalidThisErrorForMethod(%%(securityError)s), "%s");\n' %
+            'return ThrowInvalidThis(cx, args, %%(securityError)s, "%s");\n' %
             descriptor.interface.identifier.name)
         name = "genericCrossOriginMethod" if allowCrossOriginThis else "genericMethod"
         CGAbstractBindingMethod.__init__(self, descriptor, name,
@@ -8134,7 +8130,7 @@ class CGGenericPromiseReturningMethod(CGAbstractBindingMethod):
     """
     def __init__(self, descriptor):
         unwrapFailureCode = dedent("""
-            ThrowInvalidThis(cx, args, GetInvalidThisErrorForMethod(%%(securityError)s), "%s");\n
+            ThrowInvalidThis(cx, args, %%(securityError)s, "%s");\n
             return ConvertExceptionToPromise(cx, xpc::XrayAwareCalleeGlobal(callee),
                                              args.rval());\n""" %
                                    descriptor.interface.identifier.name)
@@ -8475,7 +8471,7 @@ class CGGenericGetter(CGAbstractBindingMethod):
             else:
                 name = "genericGetter"
             unwrapFailureCode = (
-                'return ThrowInvalidThis(cx, args, GetInvalidThisErrorForGetter(%%(securityError)s), "%s");\n' %
+                'return ThrowInvalidThis(cx, args, %%(securityError)s, "%s");\n' %
                 descriptor.interface.identifier.name)
         CGAbstractBindingMethod.__init__(self, descriptor, name, JSNativeArguments(),
                                          unwrapFailureCode,
@@ -8606,7 +8602,7 @@ class CGGenericSetter(CGAbstractBindingMethod):
             else:
                 name = "genericSetter"
             unwrapFailureCode = (
-                'return ThrowInvalidThis(cx, args, GetInvalidThisErrorForSetter(%%(securityError)s), "%s");\n' %
+                'return ThrowInvalidThis(cx, args, %%(securityError)s, "%s");\n' %
                 descriptor.interface.identifier.name)
 
         CGAbstractBindingMethod.__init__(self, descriptor, name, JSNativeArguments(),
@@ -8770,7 +8766,7 @@ class CGMemberJITInfo(CGThing):
                 {
                   { ${opName} },
                   { prototypes::id::${name} },
-                  PrototypeTraits<prototypes::id::${name}>::Depth,
+                  { PrototypeTraits<prototypes::id::${name}>::Depth },
                   JSJitInfo::${opType},
                   JSJitInfo::${aliasSet}, /* aliasSet.  Not relevant for setters. */
                   ${returnType},  /* returnType.  Not relevant for setters. */
@@ -9150,7 +9146,7 @@ class CGStaticMethodJitinfo(CGGeneric):
             "\n"
             "static const JSJitInfo %s_methodinfo = {\n"
             "  { (JSJitGetterOp)%s },\n"
-            "  { prototypes::id::_ID_Count }, 0, JSJitInfo::StaticMethod,\n"
+            "  { prototypes::id::_ID_Count }, { 0 }, JSJitInfo::StaticMethod,\n"
             "  JSJitInfo::AliasEverything, JSVAL_TYPE_MISSING, false, false,\n"
             "  false, false, 0\n"
             "};\n" %
@@ -9618,7 +9614,7 @@ class CGUnionStruct(CGThing):
                 if t.isObject():
                     traceCases.append(
                         CGCase("e" + vars["name"],
-                               CGGeneric('JS_CallUnbarrieredObjectTracer(trc, %s, "%s");\n' %
+                               CGGeneric('JS::UnsafeTraceRoot(trc, %s, "%s");\n' %
                                          ("&mValue.m" + vars["name"] + ".Value()",
                                           "mValue.m" + vars["name"]))))
                 elif t.isDictionary():
@@ -12601,12 +12597,12 @@ class CGDictionary(CGThing):
                                 memberLoc)
 
         if type.isObject():
-            trace = CGGeneric('JS_CallUnbarrieredObjectTracer(trc, %s, "%s");\n' %
+            trace = CGGeneric('JS::UnsafeTraceRoot(trc, %s, "%s");\n' %
                               ("&"+memberData, memberName))
             if type.nullable():
                 trace = CGIfWrapper(trace, memberData)
         elif type.isAny():
-            trace = CGGeneric('JS_CallUnbarrieredValueTracer(trc, %s, "%s");\n' %
+            trace = CGGeneric('JS::UnsafeTraceRoot(trc, %s, "%s");\n' %
                               ("&"+memberData, memberName))
         elif (type.isSequence() or type.isDictionary() or
               type.isSpiderMonkeyInterface() or type.isUnion()):

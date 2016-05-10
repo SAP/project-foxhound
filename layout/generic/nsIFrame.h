@@ -423,6 +423,7 @@ public:
   typedef mozilla::layout::FrameChildListIDs ChildListIDs;
   typedef mozilla::layout::FrameChildListIterator ChildListIterator;
   typedef mozilla::layout::FrameChildListArrayIterator ChildListArrayIterator;
+  typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Matrix Matrix;
   typedef mozilla::gfx::Matrix4x4 Matrix4x4;
   typedef mozilla::Sides Sides;
@@ -894,8 +895,7 @@ public:
   NS_DECLARE_FRAME_PROPERTY(LineBaselineOffset, nullptr)
 
   NS_DECLARE_FRAME_PROPERTY(CachedBackgroundImage, ReleaseValue<gfxASurface>)
-  NS_DECLARE_FRAME_PROPERTY(CachedBackgroundImageDT,
-                            ReleaseValue<mozilla::gfx::DrawTarget>)
+  NS_DECLARE_FRAME_PROPERTY(CachedBackgroundImageDT, ReleaseValue<DrawTarget>)
 
   NS_DECLARE_FRAME_PROPERTY(InvalidationRect, DeleteValue<nsRect>)
 
@@ -1246,18 +1246,29 @@ public:
                                 Matrix *aFromParentTransforms = nullptr) const;
 
   /**
-   * Returns whether this frame will attempt to preserve the 3d transforms of its
+   * Returns whether this frame will attempt to extend the 3d transforms of its
    * children. This requires transform-style: preserve-3d, as well as no clipping
    * or svg effects.
    */
-  bool Preserves3DChildren() const;
+  bool Extend3DContext() const;
 
   /**
-   * Returns whether this frame has a parent that Preserves3DChildren() and has
+   * Returns whether this frame has a parent that Extend3DContext() and has
    * its own transform (or hidden backface) to be combined with the parent's
    * transform.
    */
-  bool Preserves3D() const;
+  bool Combines3DTransformWithAncestors() const;
+
+  /**
+   * Returns whether this frame has a hidden backface and has a parent that
+   * Extend3DContext(). This is useful because in some cases the hidden
+   * backface can safely be ignored if it could not be visible anyway.
+   */
+  bool In3DContextAndBackfaceIsHidden() const;
+
+  bool IsPreserve3DLeaf() const {
+    return Combines3DTransformWithAncestors() && !Extend3DContext();
+  }
 
   bool HasPerspective() const;
 
@@ -1795,10 +1806,10 @@ public:
    * text decorations, but today it sometimes includes other things that
    * contribute to visual overflow.
    *
-   * @param aContext a rendering context that can be used if we need
+   * @param aDrawTarget a draw target that can be used if we need
    * to do measurement
    */
-  virtual nsRect ComputeTightBounds(gfxContext* aContext) const;
+  virtual nsRect ComputeTightBounds(DrawTarget* aDrawTarget) const;
 
   /**
    * This function is similar to GetPrefISize and ComputeTightBounds: it
@@ -2115,6 +2126,11 @@ public:
     // will be excluded during the construction of children. 
     eExcludesIgnorableWhitespace =      1 << 14,
     eSupportsCSSTransforms =            1 << 15,
+
+    // A replaced element that has replaced-element sizing
+    // characteristics (i.e., like images or iframes), as opposed to
+    // inline-block sizing characteristics (like form controls).
+    eReplacedSizing =                   1 << 16,
 
     // These are to allow nsFrame::Init to assert that IsFrameOfType
     // implementations all call the base class method.  They are only
@@ -2776,7 +2792,7 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
   // Implemented in nsBox, used in nsBoxFrame
   uint32_t GetOrdinal();
 
-  virtual nscoord GetFlex(nsBoxLayoutState& aBoxLayoutState) = 0;
+  virtual nscoord GetFlex() = 0;
   virtual nscoord GetBoxAscent(nsBoxLayoutState& aBoxLayoutState) = 0;
   virtual bool IsCollapsed() = 0;
   // This does not alter the overflow area. If the caller is changing
@@ -2805,7 +2821,7 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
   bool IsNormalDirection() const { return (mState & NS_STATE_IS_DIRECTION_NORMAL) != 0; }
 
   nsresult Redraw(nsBoxLayoutState& aState);
-  virtual nsresult RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIFrame* aChild)=0;
+  virtual nsresult RelayoutChildAtOrdinal(nsIFrame* aChild)=0;
   // XXX take this out after we've branched
   virtual bool GetMouseThrough() const { return false; }
 
@@ -2826,7 +2842,7 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
   static bool AddCSSMinSize(nsBoxLayoutState& aState, nsIFrame* aBox,
                             nsSize& aSize, bool& aWidth, bool& aHeightSet);
   static bool AddCSSMaxSize(nsIFrame* aBox, nsSize& aSize, bool& aWidth, bool& aHeightSet);
-  static bool AddCSSFlex(nsBoxLayoutState& aState, nsIFrame* aBox, nscoord& aFlex);
+  static bool AddCSSFlex(nsIFrame* aBox, nscoord& aFlex);
 
   // END OF BOX LAYOUT METHODS
   // The above methods have been migrated from nsIBox and are in the process of
@@ -3075,6 +3091,10 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
    * or nullptr if there is no such anonymous content.
    */
   virtual mozilla::dom::Element* GetPseudoElement(nsCSSPseudoElements::Type aType);
+
+  bool BackfaceIsHidden() {
+    return StyleDisplay()->BackfaceIsHidden();
+  }
 
 protected:
   // Members

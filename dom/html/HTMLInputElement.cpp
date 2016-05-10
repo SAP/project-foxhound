@@ -295,20 +295,25 @@ NS_IMPL_ISUPPORTS(UploadLastDir::ContentPrefCallback, nsIContentPrefCallback2)
 NS_IMETHODIMP
 UploadLastDir::ContentPrefCallback::HandleCompletion(uint16_t aReason)
 {
-  nsCOMPtr<nsIFile> localFile = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID);
-  NS_ENSURE_STATE(localFile);
+  nsCOMPtr<nsIFile> localFile;
+  nsAutoString prefStr;
 
-  if (aReason == nsIContentPrefCallback2::COMPLETE_ERROR ||
-      !mResult) {
-    // Default to "desktop" directory for each platform
-    nsCOMPtr<nsIFile> homeDir;
-    NS_GetSpecialDirectory(NS_OS_DESKTOP_DIR, getter_AddRefs(homeDir));
-    localFile = do_QueryInterface(homeDir);
-  } else {
-    nsAutoString prefStr;
-    nsCOMPtr<nsIVariant> pref;
-    mResult->GetValue(getter_AddRefs(pref));
-    pref->GetAsAString(prefStr);
+  if (aReason == nsIContentPrefCallback2::COMPLETE_ERROR || !mResult) {
+    prefStr = Preferences::GetString("dom.input.fallbackUploadDir");
+    if (prefStr.IsEmpty()) {
+      // If no custom directory was set through the pref, default to
+      // "desktop" directory for each platform.
+      NS_GetSpecialDirectory(NS_OS_DESKTOP_DIR, getter_AddRefs(localFile));
+    }
+  }
+
+  if (!localFile) {
+    if (prefStr.IsEmpty() && mResult) {
+      nsCOMPtr<nsIVariant> pref;
+      mResult->GetValue(getter_AddRefs(pref));
+      pref->GetAsAString(prefStr);
+    }
+    localFile = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID);
     localFile->InitWithPath(prefStr);
   }
 
@@ -381,7 +386,8 @@ HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
   nsTArray<RefPtr<File>> newFiles;
   if (mode == static_cast<int16_t>(nsIFilePicker::modeOpenMultiple)) {
     nsCOMPtr<nsISimpleEnumerator> iter;
-    nsresult rv = mFilePicker->GetDomfiles(getter_AddRefs(iter));
+    nsresult rv =
+      mFilePicker->GetDomFileOrDirectoryEnumerator(getter_AddRefs(iter));
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (!iter) {
@@ -404,7 +410,7 @@ HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
     MOZ_ASSERT(mode == static_cast<int16_t>(nsIFilePicker::modeOpen) ||
                mode == static_cast<int16_t>(nsIFilePicker::modeGetFolder));
     nsCOMPtr<nsISupports> tmp;
-    nsresult rv = mFilePicker->GetDomfile(getter_AddRefs(tmp));
+    nsresult rv = mFilePicker->GetDomFileOrDirectory(getter_AddRefs(tmp));
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIDOMBlob> blob = do_QueryInterface(tmp);
@@ -931,6 +937,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLInputElement,
   }
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFiles)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFileList)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFilesAndDirectoriesPromise)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLInputElement,
@@ -939,6 +946,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLInputElement,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mControllers)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFiles)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFileList)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFilesAndDirectoriesPromise)
   if (tmp->IsSingleLineTextControl(false)) {
     tmp->mInputData.mState->Unlink();
   }
@@ -2479,7 +2487,8 @@ HTMLInputElement::GetFiles()
     return nullptr;
   }
 
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::directory)) {
+  if (Preferences::GetBool("dom.input.dirpicker", false) &&
+      HasAttr(kNameSpaceID_None, nsGkAtoms::directory)) {
     return nullptr;
   }
 
@@ -3797,6 +3806,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
                   break;  // If we are submitting, do not send click event
                 }
                 // else fall through and treat Space like click...
+                MOZ_FALLTHROUGH;
               }
               case NS_FORM_INPUT_BUTTON:
               case NS_FORM_INPUT_RESET:
@@ -3825,7 +3835,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
               case NS_VK_UP:
               case NS_VK_LEFT:
                 isMovingBack = true;
-                // FALLTHROUGH
+                MOZ_FALLTHROUGH;
               case NS_VK_DOWN:
               case NS_VK_RIGHT:
               // Arrow key pressed, focus+select prev/next radio button
@@ -4864,27 +4874,6 @@ HTMLInputElement::ChooseDirectory(ErrorResult& aRv)
                  );
 }
 
-static already_AddRefed<OSFileSystem>
-MakeOrReuseFileSystem(const nsAString& aNewLocalRootPath,
-                      OSFileSystem* aFS,
-                      nsPIDOMWindow* aWindow)
-{
-  MOZ_ASSERT(aWindow);
-
-  RefPtr<OSFileSystem> fs;
-  if (aFS) {
-    const nsAString& prevLocalRootPath = aFS->GetLocalRootPath();
-    if (aNewLocalRootPath == prevLocalRootPath) {
-      fs = aFS;
-    }
-  }
-  if (!fs) {
-    fs = new OSFileSystem(aNewLocalRootPath);
-    fs->Init(aWindow);
-  }
-  return fs.forget();
-}
-
 already_AddRefed<Promise>
 HTMLInputElement::GetFilesAndDirectories(ErrorResult& aRv)
 {
@@ -4917,8 +4906,6 @@ HTMLInputElement::GetFilesAndDirectories(ErrorResult& aRv)
     return p.forget();
   }
 
-  nsPIDOMWindow* window = OwnerDoc()->GetInnerWindow();
-  RefPtr<OSFileSystem> fs;
   for (uint32_t i = 0; i < filesAndDirs.Length(); ++i) {
     if (filesAndDirs[i]->IsDirectory()) {
 #if defined(ANDROID) || defined(MOZ_B2G)
@@ -4934,7 +4921,10 @@ HTMLInputElement::GetFilesAndDirectories(ErrorResult& aRv)
       }
       int32_t leafSeparatorIndex = path.RFind(FILE_PATH_SEPARATOR);
       nsDependentSubstring dirname = Substring(path, 0, leafSeparatorIndex);
-      fs = MakeOrReuseFileSystem(dirname, fs, window);
+
+      RefPtr<OSFileSystem> fs = new OSFileSystem(dirname);
+      fs->Init(OwnerDoc()->GetInnerWindow());
+
       nsAutoString dompath(NS_LITERAL_STRING(FILESYSTEM_DOM_PATH_SEPARATOR));
       dompath.Append(Substring(path, leafSeparatorIndex + 1));
       RefPtr<Directory> directory = new Directory(fs, dompath);
@@ -5582,13 +5572,11 @@ HTMLInputElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
     const nsTArray<RefPtr<File>>& files = GetFilesInternal();
 
     for (uint32_t i = 0; i < files.Length(); ++i) {
-      aFormSubmission->AddNameFilePair(name, files[i]);
+      aFormSubmission->AddNameBlobOrNullPair(name, files[i]);
     }
 
     if (files.IsEmpty()) {
-      // If no file was selected, pretend we had an empty file with an
-      // empty filename.
-      aFormSubmission->AddNameFilePair(name, nullptr);
+      aFormSubmission->AddNameBlobOrNullPair(name, nullptr);
     }
 
     return NS_OK;

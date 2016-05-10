@@ -135,7 +135,7 @@ bool EnsureNSSInitialized(EnsureNSSOperator op)
   case nssInitFailed:
     NS_ASSERTION(loading, "Bad call to EnsureNSSInitialized(nssInitFailed)");
     loading = false;
-    // no break
+    MOZ_FALLTHROUGH;
 
   case nssShutdown:
     PR_AtomicSet(&haveLoaded, 0);
@@ -862,8 +862,14 @@ void nsNSSComponent::setValidationOptions(bool isInitialSetting,
   CertVerifier::SHA1Mode sha1Mode = static_cast<CertVerifier::SHA1Mode>
       (Preferences::GetInt("security.pki.sha1_enforcement_level",
                            static_cast<int32_t>(CertVerifier::SHA1Mode::Allowed)));
-  if (sha1Mode > CertVerifier::SHA1Mode::OnlyBefore2016) {
-    sha1Mode = CertVerifier::SHA1Mode::Allowed;
+  switch (sha1Mode) {
+    case CertVerifier::SHA1Mode::Allowed:
+    case CertVerifier::SHA1Mode::Forbidden:
+    case CertVerifier::SHA1Mode::Before2016:
+    case CertVerifier::SHA1Mode::ImportedRoot:
+      break;
+    default:
+      sha1Mode = CertVerifier::SHA1Mode::Allowed;
   }
 
   CertVerifier::OcspDownloadConfig odc;
@@ -1063,6 +1069,8 @@ nsNSSComponent::InitializeNSS()
   SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION, requireSafeNegotiation);
 
   SSL_OptionSetDefault(SSL_ENABLE_RENEGOTIATION, SSL_RENEGOTIATE_REQUIRES_XTN);
+
+  SSL_OptionSetDefault(SSL_ENABLE_EXTENDED_MASTER_SECRET, true);
 
   SSL_OptionSetDefault(SSL_ENABLE_FALSE_START,
                        Preferences::GetBool("security.ssl.enable_false_start",

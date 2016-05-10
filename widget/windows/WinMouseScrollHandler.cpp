@@ -236,7 +236,7 @@ MouseScrollHandler::ProcessMessage(nsWindowBase* aWidget, UINT msg,
                     msg == WM_KEYUP ? "WM_KEYUP" : "Unknown", msg, wParam,
          ::GetMessageTime()));
       LOG_KEYSTATE();
-      if (Device::Elantech::HandleKeyMessage(aWidget, msg, wParam)) {
+      if (Device::Elantech::HandleKeyMessage(aWidget, msg, wParam, lParam)) {
         aResult.mResult = 0;
         aResult.mConsumed = true;
         return true;
@@ -613,7 +613,7 @@ MouseScrollHandler::HandleMouseWheelMessage(nsWindowBase* aWidget,
 
   // If it's not allowed to cache system settings, we need to reset the cache
   // before handling the mouse wheel message.
-  mSystemSettings.TrustedScrollSettingsDriver(aMessage == MOZ_WM_MOUSEVWHEEL);
+  mSystemSettings.TrustedScrollSettingsDriver();
 
   EventInfo eventInfo(aWidget, WinUtils::GetNativeMessage(aMessage),
                       aWParam, aLParam);
@@ -863,11 +863,43 @@ MouseScrollHandler::LastEventInfo::InitWheelEvent(
   mAccumulatedDelta -=
     lineOrPageDelta * orienter * RoundDelta(nativeDeltaPerUnit);
 
+  if (aWheelEvent.deltaMode != nsIDOMWheelEvent::DOM_DELTA_LINE) {
+    // If the scroll delta mode isn't per line scroll, we shouldn't allow to
+    // override the system scroll speed setting.
+    aWheelEvent.mAllowToOverrideSystemScrollSpeed = false;
+  } else if (!MouseScrollHandler::sInstance->
+                mSystemSettings.IsOverridingSystemScrollSpeedAllowed()) {
+    // If the system settings are customized by either the user or
+    // the mouse utility, we shouldn't allow to override the system scroll
+    // speed setting.
+    aWheelEvent.mAllowToOverrideSystemScrollSpeed = false;
+  } else {
+    // For suppressing too fast scroll, we should ensure that the maximum
+    // overridden delta value should be less than overridden scroll speed
+    // with default scroll amount.
+    double defaultScrollAmount =
+      mIsVertical ? SystemSettings::DefaultScrollLines() :
+                    SystemSettings::DefaultScrollChars();
+    double maxDelta =
+      WidgetWheelEvent::ComputeOverriddenDelta(defaultScrollAmount,
+                                               mIsVertical);
+    if (maxDelta != defaultScrollAmount) {
+      double overriddenDelta =
+        WidgetWheelEvent::ComputeOverriddenDelta(Abs(delta), mIsVertical);
+      if (overriddenDelta > maxDelta) {
+        // Suppress to fast scroll since overriding system scroll speed with
+        // current delta value causes too big delta value.
+        aWheelEvent.mAllowToOverrideSystemScrollSpeed = false;
+      }
+    }
+  }
+
   MOZ_LOG(gMouseScrollLog, LogLevel::Info,
     ("MouseScroll::LastEventInfo::InitWheelEvent: aWidget=%p, "
      "aWheelEvent { refPoint: { x: %d, y: %d }, deltaX: %f, deltaY: %f, "
      "lineOrPageDeltaX: %d, lineOrPageDeltaY: %d, "
-     "isShift: %s, isControl: %s, isAlt: %s, isMeta: %s }, "
+     "isShift: %s, isControl: %s, isAlt: %s, isMeta: %s, "
+     "mAllowToOverrideSystemScrollSpeed: %s }, "
      "mAccumulatedDelta: %d",
      aWidget, aWheelEvent.refPoint.x, aWheelEvent.refPoint.y,
      aWheelEvent.deltaX, aWheelEvent.deltaY,
@@ -875,7 +907,9 @@ MouseScrollHandler::LastEventInfo::InitWheelEvent(
      GetBoolName(aWheelEvent.IsShift()),
      GetBoolName(aWheelEvent.IsControl()),
      GetBoolName(aWheelEvent.IsAlt()),
-     GetBoolName(aWheelEvent.IsMeta()), mAccumulatedDelta));
+     GetBoolName(aWheelEvent.IsMeta()),
+     GetBoolName(aWheelEvent.mAllowToOverrideSystemScrollSpeed),
+     mAccumulatedDelta));
 
   return (delta != 0);
 }
@@ -923,7 +957,7 @@ MouseScrollHandler::SystemSettings::InitScrollLines()
     MOZ_LOG(gMouseScrollLog, LogLevel::Info,
       ("MouseScroll::SystemSettings::InitScrollLines(): ::SystemParametersInfo("
        "SPI_GETWHEELSCROLLLINES) failed"));
-    mScrollLines = 3;
+    mScrollLines = DefaultScrollLines();
   }
 
   if (mScrollLines > WHEEL_DELTA) {
@@ -965,6 +999,7 @@ MouseScrollHandler::SystemSettings::InitScrollChars()
        IsVistaOrLater() ?
          "this is unexpected on Vista or later" :
          "but on XP or earlier, this is not a problem"));
+    // XXX Should we use DefaultScrollChars()?
     mScrollChars = 1;
   }
 
@@ -994,9 +1029,10 @@ MouseScrollHandler::SystemSettings::MarkDirty()
 }
 
 void
-MouseScrollHandler::SystemSettings::RefreshCache(bool aForVertical)
+MouseScrollHandler::SystemSettings::RefreshCache()
 {
-  bool isChanged = aForVertical ? InitScrollLines() : InitScrollChars();
+  bool isChanged = InitScrollLines();
+  isChanged = InitScrollChars() || isChanged;
   if (!isChanged) {
     return;
   }
@@ -1007,16 +1043,14 @@ MouseScrollHandler::SystemSettings::RefreshCache(bool aForVertical)
 }
 
 void
-MouseScrollHandler::SystemSettings::TrustedScrollSettingsDriver(
-                                      bool aIsVertical)
+MouseScrollHandler::SystemSettings::TrustedScrollSettingsDriver()
 {
   if (!mInitialized) {
     return;
   }
 
   // if the cache is initialized with prefs, we don't need to refresh it.
-  if ((aIsVertical && mIsReliableScrollLines) ||
-      (!aIsVertical && mIsReliableScrollChars)) {
+  if (mIsReliableScrollLines && mIsReliableScrollChars) {
     return;
   }
 
@@ -1025,7 +1059,7 @@ MouseScrollHandler::SystemSettings::TrustedScrollSettingsDriver(
 
   // If system settings cache is disabled, we should always refresh them.
   if (!userPrefs.IsSystemSettingCacheEnabled()) {
-    RefreshCache(aIsVertical);
+    RefreshCache();
     return;
   }
 
@@ -1039,11 +1073,18 @@ MouseScrollHandler::SystemSettings::TrustedScrollSettingsDriver(
   // ::SystemParametersInfo() and returns different value from system settings.
   if (Device::SynTP::IsDriverInstalled() ||
       Device::Apoint::IsDriverInstalled()) {
-    RefreshCache(aIsVertical);
+    RefreshCache();
     return;
   }
 
   // XXX We're not sure about other touchpad drivers...
+}
+
+bool
+MouseScrollHandler::SystemSettings::IsOverridingSystemScrollSpeedAllowed()
+{
+  return mScrollLines == DefaultScrollLines() &&
+         (!IsVistaOrLater() || mScrollChars == DefaultScrollChars());
 }
 
 /******************************************************************************
@@ -1325,7 +1366,8 @@ MouseScrollHandler::Device::Elantech::IsHelperWindow(HWND aWnd)
 bool
 MouseScrollHandler::Device::Elantech::HandleKeyMessage(nsWindowBase* aWidget,
                                                        UINT aMsg,
-                                                       WPARAM aWParam)
+                                                       WPARAM aWParam,
+                                                       LPARAM aLParam)
 {
   // The Elantech touchpad driver understands three-finger swipe left and
   // right gestures, and translates them into Page Up and Page Down key
@@ -1338,17 +1380,24 @@ MouseScrollHandler::Device::Elantech::HandleKeyMessage(nsWindowBase* aWidget,
   // The Elantech driver actually sends these messages for a three-finger
   // swipe right:
   //
-  //   WM_KEYDOWN virtual_key = 0xCC or 0xFF (depending on driver version)
-  //   WM_KEYDOWN virtual_key = VK_NEXT
-  //   WM_KEYUP   virtual_key = VK_NEXT
-  //   WM_KEYUP   virtual_key = 0xCC or 0xFF
+  //   WM_KEYDOWN virtual_key = 0xCC or 0xFF ScanCode = 00
+  //   WM_KEYDOWN virtual_key = VK_NEXT      ScanCode = 00
+  //   WM_KEYUP   virtual_key = VK_NEXT      ScanCode = 00
+  //   WM_KEYUP   virtual_key = 0xCC or 0xFF ScanCode = 00
   //
-  // so we use the 0xCC or 0xFF key modifier to detect whether the Page Down
-  // is due to the gesture rather than a regular Page Down keypress.  We then
-  // pretend that we should dispatch "Go Forward" command.  Similarly
+  // Whether 0xCC or 0xFF is sent is suspected to depend on the driver
+  // version.  7.0.4.12_14Jul09_WHQL, 7.0.5.10, and 7.0.6.0 generate 0xCC.
+  // 7.0.4.3 from Asus on EeePC generates 0xFF.
+  //
+  // On some hardware, IS_VK_DOWN(0xFF) returns true even when Elantech
+  // messages are not involved, meaning that alone is not enough to
+  // distinguish the gesture from a regular Page Up or Page Down key press.
+  // The ScanCode is therefore also tested to detect the gesture.
+  // We then pretend that we should dispatch "Go Forward" command.  Similarly
   // for VK_PRIOR and "Go Back" command.
   if (sUseSwipeHack &&
       (aWParam == VK_NEXT || aWParam == VK_PRIOR) &&
+      WinUtils::GetScanCode(aLParam) == 0 &&
       (IS_VK_DOWN(0xFF) || IS_VK_DOWN(0xCC))) {
     if (aMsg == WM_KEYDOWN) {
       MOZ_LOG(gMouseScrollLog, LogLevel::Info,

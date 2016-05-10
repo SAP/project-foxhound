@@ -17,6 +17,7 @@
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/HttpChannelChild.h"
 
+#include "nsISupportsPrimitives.h"
 #include "nsChannelClassifier.h"
 #include "nsStringStream.h"
 #include "nsHttpHandler.h"
@@ -36,6 +37,7 @@
 #include "nsContentSecurityManager.h"
 #include "nsIDeprecationWarner.h"
 #include "nsICompressConvStats.h"
+#include "nsStreamUtils.h"
 
 #ifdef OS_POSIX
 #include "chrome/common/file_descriptor_set_posix.h"
@@ -62,29 +64,6 @@ static_assert(FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE == 250,
 
 } // namespace
 
-// A stream listener interposed between the nsInputStreamPump used for intercepted channels
-// and this channel's original listener. This is only used to ensure the original listener
-// sees the channel as the request object, and to synthesize OnStatus and OnProgress notifications.
-class InterceptStreamListener : public nsIStreamListener
-                              , public nsIProgressEventSink
-{
-  RefPtr<HttpChannelChild> mOwner;
-  nsCOMPtr<nsISupports> mContext;
-  virtual ~InterceptStreamListener() {}
- public:
-  InterceptStreamListener(HttpChannelChild* aOwner, nsISupports* aContext)
-  : mOwner(aOwner)
-  , mContext(aContext)
-  {
-  }
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIREQUESTOBSERVER
-  NS_DECL_NSISTREAMLISTENER
-  NS_DECL_NSIPROGRESSEVENTSINK
-
-  void Cleanup();
-};
 
 NS_IMPL_ISUPPORTS(InterceptStreamListener,
                   nsIStreamListener,
@@ -187,6 +166,8 @@ HttpChannelChild::HttpChannelChild()
   , mSynthesizedResponse(false)
   , mShouldInterceptSubsequentRedirect(false)
   , mRedirectingForSubsequentSynthesizedResponse(false)
+  , mPostRedirectChannelShouldIntercept(false)
+  , mPostRedirectChannelShouldUpgrade(false)
   , mShouldParentIntercept(false)
   , mSuspendParentAfterSynthesizeResponse(false)
 {
@@ -458,6 +439,8 @@ HttpChannelChild::OnStartRequest(const nsresult& channelStatus,
   mCacheEntryAvailable = cacheEntryAvailable;
   mCacheExpirationTime = cacheExpirationTime;
   mCachedCharset = cachedCharset;
+  mSelfAddr = selfAddr;
+  mPeerAddr = peerAddr;
 
   AutoEventEnqueuer ensureSerialDispatch(mEventQ);
 
@@ -487,9 +470,6 @@ HttpChannelChild::OnStartRequest(const nsresult& channelStatus,
   mTracingEnabled = false;
 
   DoOnStartRequest(this, mListenerContext);
-
-  mSelfAddr = selfAddr;
-  mPeerAddr = peerAddr;
 }
 
 namespace {
@@ -927,6 +907,9 @@ HttpChannelChild::OnStopRequest(const nsresult& channelStatus,
   mEncodedBodySize = timing.encodedBodySize;
   mProtocolVersion = timing.protocolVersion;
 
+  mCacheReadStart = timing.cacheReadStart;
+  mCacheReadEnd = timing.cacheReadEnd;
+
   nsPerformance* documentPerformance = GetPerformance();
   if (documentPerformance) {
       documentPerformance->AddEntry(this, this);
@@ -1145,11 +1128,14 @@ void
 HttpChannelChild::DoNotifyListenerCleanup()
 {
   LOG(("HttpChannelChild::DoNotifyListenerCleanup [this=%p]\n", this));
-  if (mIPCOpen)
-    PHttpChannelChild::Send__delete__(this);
+
   if (mInterceptListener) {
     mInterceptListener->Cleanup();
     mInterceptListener = nullptr;
+  }
+
+  if (mIPCOpen) {
+    PHttpChannelChild::Send__delete__(this);
   }
 }
 
@@ -1271,11 +1257,25 @@ HttpChannelChild::SetupRedirect(nsIURI* uri,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIHttpChannelChild> httpChannelChild = do_QueryInterface(newChannel);
-  if (mShouldInterceptSubsequentRedirect && httpChannelChild) {
-    // In the case where there was a synthesized response that caused a redirection,
-    // we must force the new channel to intercept the request in the parent before a
-    // network transaction is initiated.
-    httpChannelChild->ForceIntercepted();
+  if (httpChannelChild) {
+    bool shouldUpgrade = false;
+    auto channelChild = static_cast<HttpChannelChild*>(httpChannelChild.get());
+    if (mShouldInterceptSubsequentRedirect) {
+      // In the case where there was a synthesized response that caused a redirection,
+      // we must force the new channel to intercept the request in the parent before a
+      // network transaction is initiated.
+      httpChannelChild->ForceIntercepted(false, false);
+    } else if (mRedirectMode == nsIHttpChannelInternal::REDIRECT_MODE_MANUAL &&
+               ((redirectFlags & (nsIChannelEventSink::REDIRECT_TEMPORARY |
+                                  nsIChannelEventSink::REDIRECT_PERMANENT)) != 0) &&
+               channelChild->ShouldInterceptURI(uri, shouldUpgrade)) {
+      // In the case where the redirect mode is manual, we need to check whether
+      // the post-redirect channel needs to be intercepted.  If that is the
+      // case, force the new channel to intercept the request in the parent
+      // similar to the case above, but also remember that ShouldInterceptURI()
+      // returned true to avoid calling it a second time.
+      httpChannelChild->ForceIntercepted(true, shouldUpgrade);
+    }
   }
 
   mRedirectChannelChild = do_QueryInterface(newChannel);
@@ -1811,7 +1811,14 @@ HttpChannelChild::AsyncOpen(nsIStreamListener *listener, nsISupports *aContext)
     return NS_OK;
   }
 
-  if (ShouldIntercept()) {
+  // Set user agent override
+  HttpBaseChannel::SetDocshellUserAgentOverride();
+
+  MOZ_ASSERT_IF(mPostRedirectChannelShouldUpgrade,
+                mPostRedirectChannelShouldIntercept);
+  bool shouldUpgrade = mPostRedirectChannelShouldUpgrade;
+  if (mPostRedirectChannelShouldIntercept ||
+      ShouldInterceptURI(mURI, shouldUpgrade)) {
     mResponseCouldBeSynthesized = true;
 
     nsCOMPtr<nsINetworkInterceptController> controller;
@@ -1820,7 +1827,8 @@ HttpChannelChild::AsyncOpen(nsIStreamListener *listener, nsISupports *aContext)
     mInterceptListener = new InterceptStreamListener(this, mListenerContext);
 
     RefPtr<InterceptedChannelContent> intercepted =
-        new InterceptedChannelContent(this, controller, mInterceptListener);
+        new InterceptedChannelContent(this, controller,
+                                      mInterceptListener, shouldUpgrade);
     intercepted->NotifyController();
     return NS_OK;
   }
@@ -1962,6 +1970,10 @@ HttpChannelChild::ContinueAsyncOpen()
   }
   openArgs.cacheKey() = cacheKey;
 
+  openArgs.blockAuthPrompt() = mBlockAuthPrompt;
+
+  openArgs.allowStaleCacheContent() = mAllowStaleCacheContent;
+
   nsresult rv = mozilla::ipc::LoadInfoToLoadInfoArgs(mLoadInfo, &openArgs.loadInfo());
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2059,36 +2071,6 @@ HttpChannelChild::SetupFallbackChannel(const char *aFallbackKey)
   DROP_DEAD();
 }
 
-// The next four _should_ be implemented, but we need to figure out how
-// to transfer the data from the chrome process first.
-
-NS_IMETHODIMP
-HttpChannelChild::GetRemoteAddress(nsACString & _result)
-{
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP
-HttpChannelChild::GetRemotePort(int32_t * _result)
-{
-  NS_ENSURE_ARG_POINTER(_result);
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP
-HttpChannelChild::GetLocalAddress(nsACString & _result)
-{
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP
-HttpChannelChild::GetLocalPort(int32_t * _result)
-{
-  NS_ENSURE_ARG_POINTER(_result);
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
-
 //-----------------------------------------------------------------------------
 // HttpChannelChild::nsICacheInfoChannel
 //-----------------------------------------------------------------------------
@@ -2148,6 +2130,20 @@ HttpChannelChild::SetCacheKey(nsISupports *cacheKey)
   ENSURE_CALLED_BEFORE_ASYNC_OPEN();
 
   mCacheKey = cacheKey;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpChannelChild::SetAllowStaleCacheContent(bool aAllowStaleCacheContent)
+{
+  mAllowStaleCacheContent = aAllowStaleCacheContent;
+  return NS_OK;
+}
+NS_IMETHODIMP
+HttpChannelChild::GetAllowStaleCacheContent(bool *aAllowStaleCacheContent)
+{
+  NS_ENSURE_ARG(aAllowStaleCacheContent);
+  *aAllowStaleCacheContent = mAllowStaleCacheContent;
   return NS_OK;
 }
 
@@ -2610,9 +2606,12 @@ HttpChannelChild::OverrideWithSynthesizedResponse(nsAutoPtr<nsHttpResponseHead>&
 }
 
 NS_IMETHODIMP
-HttpChannelChild::ForceIntercepted()
+HttpChannelChild::ForceIntercepted(bool aPostRedirectChannelShouldIntercept,
+                                   bool aPostRedirectChannelShouldUpgrade)
 {
   mShouldParentIntercept = true;
+  mPostRedirectChannelShouldIntercept = aPostRedirectChannelShouldIntercept;
+  mPostRedirectChannelShouldUpgrade = aPostRedirectChannelShouldUpgrade;
   return NS_OK;
 }
 
@@ -2643,31 +2642,32 @@ HttpChannelChild::RecvIssueDeprecationWarning(const uint32_t& warning,
 }
 
 bool
-HttpChannelChild::RecvReportRedirectionError()
+HttpChannelChild::ShouldInterceptURI(nsIURI* aURI,
+                                     bool& aShouldUpgrade)
 {
-  nsCOMPtr<nsIURI> uri;
-  GetURI(getter_AddRefs(uri));
-  nsCString spec;
-  uri->GetSpec(spec);
-  nsString wideSpec = NS_ConvertUTF8toUTF16(spec);
+  bool isHttps = false;
+  nsresult rv = aURI->SchemeIs("https", &isHttps);
+  NS_ENSURE_SUCCESS(rv, false);
+  nsCOMPtr<nsIPrincipal> resultPrincipal;
+  if (!isHttps && mLoadInfo) {
+      nsContentUtils::GetSecurityManager()->
+        GetChannelResultPrincipal(this, getter_AddRefs(resultPrincipal));
+  }
+  rv = NS_ShouldSecureUpgrade(aURI,
+                              mLoadInfo,
+                              resultPrincipal,
+                              mPrivateBrowsing,
+                              mAllowSTS,
+                              aShouldUpgrade);
+  NS_ENSURE_SUCCESS(rv, false);
 
-  nsCOMPtr<nsIDocument> doc;
-  GetCallback(doc);
+  nsCOMPtr<nsIURI> upgradedURI;
+  if (aShouldUpgrade) {
+    rv = GetSecureUpgradedURI(aURI, getter_AddRefs(upgradedURI));
+    NS_ENSURE_SUCCESS(rv, false);
+  }
 
-  nsString msg = NS_LITERAL_STRING("Failed to load '");
-  msg.Append(wideSpec);
-  msg.AppendLiteral("'. A Service Worker for a multiprocess window encountered a redirection ");
-  msg.AppendLiteral("response, which is currently unsupported and tracked in bug 1219469.");
-  nsContentUtils::ReportToConsoleNonLocalized(msg,
-                                              nsIScriptError::errorFlag,
-                                              NS_LITERAL_CSTRING("Service Worker Interception"),
-                                              doc,
-                                              uri,
-                                              EmptyString(),
-                                              0,
-                                              0);
-  Cancel(NS_ERROR_NOT_AVAILABLE);
-  return true;
+  return ShouldIntercept(upgradedURI ? upgradedURI.get() : aURI);
 }
 
 } // namespace net

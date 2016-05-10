@@ -36,6 +36,7 @@
 #include "sslt.h"
 #include "mozilla/Snprintf.h"
 #include "nsSocketTransportService2.h"
+#include "nsNetUtil.h"
 
 namespace mozilla {
 namespace net {
@@ -653,6 +654,7 @@ Http2Session::CreateFrameHeader(charType dest, uint16_t frameLength,
 {
   MOZ_ASSERT(frameLength <= kMaxFrameData, "framelength too large");
   MOZ_ASSERT(!(streamID & 0x80000000));
+  MOZ_ASSERT(!frameFlags || (frameType != FRAME_TYPE_PRIORITY));
 
   dest[0] = 0x00;
   NetworkEndian::writeUint16(dest + 1, frameLength);
@@ -1033,8 +1035,10 @@ Http2Session::CleanupStream(Http2Stream *aStream, nsresult aResult,
     pushSource->SetConsumerStream(nullptr);
   }
 
-  if (!aStream->RecvdFin() && !aStream->RecvdReset() && aStream->StreamID()) {
-    LOG3(("Stream had not processed recv FIN, sending RST code %X\n", aResetCode));
+  // don't reset a stream that has recevied a fin or rst
+  if (!aStream->RecvdFin() && !aStream->RecvdReset() && aStream->StreamID() &&
+      !(mInputFrameFinal && (aStream == mInputFrameDataStream))) { // !(recvdfin with mark pending)
+    LOG3(("Stream 0x%X had not processed recv FIN, sending RST code %X\n", aStream->StreamID(), aResetCode));
     GenerateRstStream(aResetCode, aStream->StreamID());
   }
 

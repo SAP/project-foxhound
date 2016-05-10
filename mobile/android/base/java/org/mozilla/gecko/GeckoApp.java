@@ -25,6 +25,7 @@ import org.mozilla.gecko.menu.MenuPanel;
 import org.mozilla.gecko.mozglue.ContextUtils;
 import org.mozilla.gecko.mozglue.ContextUtils.SafeIntent;
 import org.mozilla.gecko.mozglue.GeckoLoader;
+import org.mozilla.gecko.permissions.Permissions;
 import org.mozilla.gecko.preferences.ClearOnShutdownPref;
 import org.mozilla.gecko.preferences.GeckoPreferences;
 import org.mozilla.gecko.prompts.PromptService;
@@ -139,13 +140,14 @@ public abstract class GeckoApp
     private static final String LOGTAG = "GeckoApp";
     private static final int ONE_DAY_MS = 1000*60*60*24;
 
-    public static enum StartupAction {
+    public enum StartupAction {
         NORMAL,     /* normal application start */
         URL,        /* launched with a passed URL */
         PREFETCH,   /* launched with a passed URL that we prefetch */
         WEBAPP,     /* launched as a webapp runtime */
         GUEST,      /* launched in guest browsing */
-        RESTRICTED  /* launched with restricted profile */
+        RESTRICTED, /* launched with restricted profile */
+        SHORTCUT    /* launched from a homescreen shortcut */
     }
 
     public static final String ACTION_ALERT_CALLBACK       = "org.mozilla.gecko.ACTION_ALERT_CALLBACK";
@@ -663,6 +665,26 @@ public abstract class GeckoApp
             UpdateServiceHelper.downloadUpdate(this);
         } else if ("Update:Install".equals(event)) {
             UpdateServiceHelper.applyUpdate(this);
+        } else if ("RuntimePermissions:Prompt".equals(event)) {
+            String[] permissions = message.getStringArray("permissions");
+            if (callback == null || permissions == null) {
+                return;
+            }
+
+            Permissions.from(this)
+                       .withPermissions(permissions)
+                       .andFallback(new Runnable() {
+                           @Override
+                           public void run() {
+                               callback.sendSuccess(false);
+                           }
+                       })
+                       .run(new Runnable() {
+                           @Override
+                           public void run() {
+                               callback.sendSuccess(true);
+                           }
+                       });
         }
     }
 
@@ -1262,6 +1284,7 @@ public abstract class GeckoApp
             "Locale:Set",
             "Permissions:Data",
             "PrivateBrowsing:Data",
+            "RuntimePermissions:Prompt",
             "Session:StatePurged",
             "Share:Text",
             "Snackbar:Show",
@@ -1566,7 +1589,7 @@ public abstract class GeckoApp
             getProfile().moveSessionFile();
         }
 
-        final StartupAction startupAction = getStartupAction(passedUri);
+        final StartupAction startupAction = getStartupAction(passedUri, action);
         Telemetry.addToHistogram("FENNEC_GECKOAPP_STARTUP_ACTION", startupAction.ordinal());
 
         // Check if launched from data reporting notification.
@@ -2087,6 +2110,7 @@ public abstract class GeckoApp
             "Locale:Set",
             "Permissions:Data",
             "PrivateBrowsing:Data",
+            "RuntimePermissions:Prompt",
             "Session:StatePurged",
             "Share:Text",
             "Snackbar:Show",
@@ -2108,8 +2132,6 @@ public abstract class GeckoApp
 
         deleteTempFiles();
 
-        if (mLayerView != null)
-            mLayerView.destroy();
         if (mDoorHangerPopup != null)
             mDoorHangerPopup.destroy();
         if (mFormAssistPopup != null)
@@ -2455,6 +2477,11 @@ public abstract class GeckoApp
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        Permissions.onRequestPermissionsResult(this, permissions, grantResults);
+    }
+
+    @Override
     public AbsoluteLayout getPluginContainer() { return mPluginContainer; }
 
     // Accelerometer.
@@ -2523,8 +2550,7 @@ public abstract class GeckoApp
         GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Update:CheckResult", result));
     }
 
-    protected void geckoConnected() {
-        mLayerView.geckoConnected();
+    private void geckoConnected() {
         mLayerView.setOverScrollMode(View.OVER_SCROLL_NEVER);
     }
 
@@ -2769,7 +2795,7 @@ public abstract class GeckoApp
         return new StubbedHealthRecorder();
     }
 
-    protected StartupAction getStartupAction(final String passedURL) {
+    protected StartupAction getStartupAction(final String passedURL, final String action) {
         // Default to NORMAL here. Subclasses can handle the other types.
         return StartupAction.NORMAL;
     }

@@ -21,6 +21,8 @@ const Cc = Components.classes;
 const Cu = Components.utils;
 const Cr = Components.results;
 
+Cu.importGlobalProperties(["TextEncoder"]);
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
@@ -46,6 +48,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Schemas",
                                   "resource://gre/modules/Schemas.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
+                                  "resource://gre/modules/AppConstants.jsm");
 
 Cu.import("resource://gre/modules/ExtensionManagement.jsm");
 
@@ -65,7 +69,11 @@ ExtensionManagement.registerScript("chrome://extensions/content/ext-storage.js")
 ExtensionManagement.registerScript("chrome://extensions/content/ext-test.js");
 
 ExtensionManagement.registerSchema("chrome://extensions/content/schemas/cookies.json");
+ExtensionManagement.registerSchema("chrome://extensions/content/schemas/extension.json");
 ExtensionManagement.registerSchema("chrome://extensions/content/schemas/extension_types.json");
+ExtensionManagement.registerSchema("chrome://extensions/content/schemas/i18n.json");
+ExtensionManagement.registerSchema("chrome://extensions/content/schemas/idle.json");
+ExtensionManagement.registerSchema("chrome://extensions/content/schemas/runtime.json");
 ExtensionManagement.registerSchema("chrome://extensions/content/schemas/web_navigation.json");
 ExtensionManagement.registerSchema("chrome://extensions/content/schemas/web_request.json");
 
@@ -75,6 +83,7 @@ var {
   MessageBroker,
   Messenger,
   injectAPI,
+  instanceOf,
   extend,
   flushJarCache,
 } = ExtensionUtils;
@@ -214,16 +223,20 @@ ExtensionPage = function(extension, params) {
   this.incognito = params.incognito || false;
   this.onClose = new Set();
 
-  // This is the sender property passed to the Messenger for this
-  // page. It can be augmented by the "page-open" hook.
-  let sender = {id: extension.id};
+  // This is the MessageSender property passed to extension.
+  // It can be augmented by the "page-open" hook.
+  let sender = {id: extension.uuid};
   if (uri) {
     sender.url = uri.spec;
   }
-  let delegate = {};
+  let delegate = {
+    getSender() {},
+  };
   Management.emit("page-load", this, params, sender, delegate);
 
-  let filter = {id: extension.id};
+  // Properties in |filter| must match those in the |recipient|
+  // parameter of sendMessage.
+  let filter = {extensionId: extension.id};
   this.messenger = new Messenger(this, globalBroker, sender, filter, delegate);
 
   this.extension.views.add(this);
@@ -350,12 +363,16 @@ GlobalManager = {
       Schemas.inject(chromeObj, schemaWrapper);
     };
 
-    // Find the add-on associated with this document via the
-    // principal's originAttributes. This value is computed by
-    // extensionURIToAddonID, which ensures that we don't inject our
-    // API into webAccessibleResources or remote web pages.
-    let principal = contentWindow.document.nodePrincipal;
-    let id = principal.originAttributes.addonId;
+    let id = ExtensionManagement.getAddonIdForWindow(contentWindow);
+
+    // We don't inject privileged APIs into sub-frames of a UI page.
+    const { FULL_PRIVILEGES } = ExtensionManagement.API_LEVELS;
+    if (ExtensionManagement.getAPILevelForWindow(contentWindow, id) !== FULL_PRIVILEGES) {
+      return;
+    }
+
+    // We don't inject privileged APIs if the addonId is null
+    // or doesn't exist.
     if (!this.extensionMap.has(id)) {
       return;
     }
@@ -374,10 +391,6 @@ GlobalManager = {
       return;
     }
 
-    // We don't inject into sub-frames of a UI page.
-    if (contentWindow != contentWindow.top) {
-      return;
-    }
     let extension = this.extensionMap.get(id);
     let uri = contentWindow.document.documentURIObject;
     let incognito = PrivateBrowsingUtils.isContentWindowPrivate(contentWindow);
@@ -416,6 +429,8 @@ this.ExtensionData = function(rootURI) {
 };
 
 ExtensionData.prototype = {
+  builtinMessages: null,
+
   get logger() {
     let id = this.id || "<unknown>";
     return Log.repository.getLogger(LOGGER_ID_BASE + id);
@@ -510,7 +525,8 @@ ExtensionData.prototype = {
           return;
         }
         try {
-          let text = NetUtil.readInputStreamToString(inputStream, inputStream.available());
+          let text = NetUtil.readInputStreamToString(inputStream, inputStream.available(),
+                                                     { charset: "utf-8" });
           resolve(JSON.parse(text));
         } catch (e) {
           reject(e);
@@ -599,6 +615,12 @@ ExtensionData.prototype = {
           }
         }
 
+        this.localeData = new LocaleData({
+          defaultLocale: this.defaultLocale,
+          locales,
+          builtinMessages: this.builtinMessages,
+        });
+
         return locales;
       }.bind(this));
     }
@@ -612,7 +634,6 @@ ExtensionData.prototype = {
   // as returned by |readLocaleFile|.
   initAllLocales: Task.async(function* () {
     let locales = yield this.promiseLocales();
-    this.localeData = new LocaleData({ defaultLocale: this.defaultLocale, locales });
 
     yield Promise.all(Array.from(locales.keys(),
                                  locale => this.readLocaleFile(locale)));
@@ -641,8 +662,6 @@ ExtensionData.prototype = {
   //
   // If no locales are unavailable, resolves to |null|.
   initLocale: Task.async(function* (locale = this.defaultLocale) {
-    this.localeData = new LocaleData({ defaultLocale: this.defaultLocale });
-
     if (locale == null) {
       return null;
     }
@@ -817,12 +836,16 @@ this.Extension.generateXPI = function(id, data) {
     let script = files[filename];
     if (typeof(script) == "function") {
       script = "(" + script.toString() + ")()";
-    } else if (typeof(script) == "object") {
+    } else if (instanceOf(script, "Object")) {
       script = JSON.stringify(script);
     }
 
-    let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(Ci.nsIStringInputStream);
-    stream.data = script;
+    if (!instanceOf(script, "ArrayBuffer")) {
+      script = new TextEncoder("utf-8").encode(script).buffer;
+    }
+
+    let stream = Cc["@mozilla.org/io/arraybuffer-input-stream;1"].createInstance(Ci.nsIArrayBufferInputStream);
+    stream.setData(script, 0, script.byteLength);
 
     generateFile(filename);
     zipW.addEntryStream(filename, time, 0, stream, false);
@@ -903,6 +926,10 @@ Extension.prototype = extend(Object.create(ExtensionData.prototype), {
   broadcast(msg, data) {
     return new Promise(resolve => {
       let count = Services.ppmm.childCount;
+      if (AppConstants.MOZ_NUWA_PROCESS) {
+        // The nuwa process is frozen, so don't expect it to answer.
+        count--;
+      }
       Services.ppmm.addMessageListener(msg + "Complete", function listener() {
         count--;
         if (count == 0) {
@@ -954,6 +981,12 @@ Extension.prototype = extend(Object.create(ExtensionData.prototype), {
 
   forgetOnClose(obj) {
     this.onShutdown.delete(obj);
+  },
+
+  get builtinMessages() {
+    return new Map([
+      ["@@extension_id", this.uuid],
+    ]);
   },
 
   // Reads the locale file for the given Gecko-compatible locale code, or if

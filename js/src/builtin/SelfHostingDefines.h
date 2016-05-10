@@ -15,11 +15,9 @@
 #define IS_UINT32(x) ((x) >>> 0 === (x))
 #define MAX_NUMERIC_INDEX 0x1fffffffffffff // == Math.pow(2, 53) - 1
 
-// Unforgeable versions of ARRAY.push(ELEMENT) and ARRAY.slice.
-#define ARRAY_PUSH(ARRAY, ELEMENT) \
-  callFunction(std_Array_push, ARRAY, ELEMENT);
-#define ARRAY_SLICE(ARRAY, ELEMENT) \
-  callFunction(std_Array_slice, ARRAY, ELEMENT);
+// Unforgeable version of Function.prototype.apply.
+#define FUN_APPLY(FUN, RECEIVER, ARGS) \
+  callFunction(std_Function_apply, FUN, RECEIVER, ARGS)
 
 // Property descriptor attributes.
 #define ATTR_ENUMERABLE         0x01
@@ -33,6 +31,15 @@
 // The extended slot in which the self-hosted name for self-hosted builtins is
 // stored.
 #define LAZY_FUNCTION_NAME_SLOT 0
+
+// The extended slot which contains a boolean value that indicates whether
+// that the canonical name of the self-hosted builtins is set in self-hosted
+// global. This slot is used only in debug build.
+#define HAS_SELFHOSTED_CANONICAL_NAME_SLOT 0
+
+// Stores the length for bound functions, so the .length property doesn't need
+// to be resolved eagerly.
+#define BOUND_FUN_LENGTH_SLOT 1
 
 // Stores the private WeakMap slot used for WeakSets
 #define WEAKSET_MAP_SLOT 0

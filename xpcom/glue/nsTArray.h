@@ -13,6 +13,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/fallible.h"
+#include "mozilla/InitializerList.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
@@ -260,6 +261,7 @@ template<class E, class Derived>
 struct nsTArray_SafeElementAtHelper<E*, Derived>
 {
   typedef E*       elem_type;
+  //typedef const E* const_elem_type;   XXX: see below
   typedef size_t   index_type;
 
   elem_type SafeElementAt(index_type aIndex)
@@ -267,7 +269,11 @@ struct nsTArray_SafeElementAtHelper<E*, Derived>
     return static_cast<Derived*>(this)->SafeElementAt(aIndex, nullptr);
   }
 
-  const elem_type SafeElementAt(index_type aIndex) const
+  // XXX: Probably should return const_elem_type, but callsites must be fixed.
+  // Also, the use of const_elem_type for nsTArray<xpcGCCallback> in
+  // xpcprivate.h causes build failures on Windows because xpcGCCallback is a
+  // function pointer and MSVC doesn't like qualifying it with |const|.
+  elem_type SafeElementAt(index_type aIndex) const
   {
     return static_cast<const Derived*>(this)->SafeElementAt(aIndex, nullptr);
   }
@@ -279,6 +285,7 @@ template<class E, class Derived>
 struct nsTArray_SafeElementAtSmartPtrHelper
 {
   typedef E*       elem_type;
+  typedef const E* const_elem_type;
   typedef size_t   index_type;
 
   elem_type SafeElementAt(index_type aIndex)
@@ -286,7 +293,8 @@ struct nsTArray_SafeElementAtSmartPtrHelper
     return static_cast<Derived*>(this)->SafeElementAt(aIndex, nullptr);
   }
 
-  const elem_type SafeElementAt(index_type aIndex) const
+  // XXX: Probably should return const_elem_type, but callsites must be fixed.
+  elem_type SafeElementAt(index_type aIndex) const
   {
     return static_cast<const Derived*>(this)->SafeElementAt(aIndex, nullptr);
   }
@@ -313,8 +321,9 @@ template<class T> class OwningNonNull;
 template<class E, class Derived>
 struct nsTArray_SafeElementAtHelper<mozilla::OwningNonNull<E>, Derived>
 {
-  typedef E*     elem_type;
-  typedef size_t index_type;
+  typedef E*       elem_type;
+  typedef const E* const_elem_type;
+  typedef size_t   index_type;
 
   elem_type SafeElementAt(index_type aIndex)
   {
@@ -324,7 +333,8 @@ struct nsTArray_SafeElementAtHelper<mozilla::OwningNonNull<E>, Derived>
     return nullptr;
   }
 
-  const elem_type SafeElementAt(index_type aIndex) const
+  // XXX: Probably should return const_elem_type, but callsites must be fixed.
+  elem_type SafeElementAt(index_type aIndex) const
   {
     if (aIndex < static_cast<const Derived*>(this)->Length()) {
       return static_cast<const Derived*>(this)->ElementAt(aIndex);
@@ -858,6 +868,7 @@ public:
   // |const nsTArray_Impl<E, OtherAlloc>&|.
   explicit nsTArray_Impl(const self_type& aOther) { AppendElements(aOther); }
 
+  explicit nsTArray_Impl(std::initializer_list<E> aIL) { AppendElements(aIL.begin(), aIL.size()); }
   // Allow converting to a const array with a different kind of allocator,
   // Since the allocator doesn't matter for const arrays
   template<typename Allocator>
@@ -2092,6 +2103,7 @@ public:
   explicit nsTArray(size_type aCapacity) : base_type(aCapacity) {}
   explicit nsTArray(const nsTArray& aOther) : base_type(aOther) {}
   MOZ_IMPLICIT nsTArray(nsTArray&& aOther) : base_type(mozilla::Move(aOther)) {}
+  MOZ_IMPLICIT nsTArray(std::initializer_list<E> aIL) : base_type(aIL) {}
 
   template<class Allocator>
   explicit nsTArray(const nsTArray_Impl<E, Allocator>& aOther)

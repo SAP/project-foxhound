@@ -9,6 +9,11 @@ const Cc = Components.classes;
 const Cu = Components.utils;
 const Cr = Components.results;
 
+Cu.import("resource://gre/modules/ExtensionUtils.jsm");
+var {
+  instanceOf,
+} = ExtensionUtils;
+
 this.EXPORTED_SYMBOLS = ["Schemas"];
 
 /* globals Schemas */
@@ -127,6 +132,8 @@ class ChoiceType extends Type {
         return r;
       }
     }
+
+    return {error: "No valid choice"};
   }
 
   checkBaseType(baseType) {
@@ -209,21 +216,12 @@ class StringType extends Type {
   }
 }
 
-class UnrestrictedObjectType extends Type {
-  normalize(value) {
-    return this.normalizeBase("object", value);
-  }
-
-  checkBaseType(baseType) {
-    return baseType == "object";
-  }
-}
-
 class ObjectType extends Type {
-  constructor(properties, additionalProperties) {
+  constructor(properties, additionalProperties, isInstanceOf) {
     super();
     this.properties = properties;
     this.additionalProperties = additionalProperties;
+    this.isInstanceOf = isInstanceOf;
   }
 
   checkBaseType(baseType) {
@@ -236,18 +234,64 @@ class ObjectType extends Type {
       return v;
     }
 
+    if (this.isInstanceOf) {
+      if (Object.keys(this.properties).length ||
+          !(this.additionalProperties instanceof AnyType)) {
+        throw new Error("InternalError: isInstanceOf can only be used with objects that are otherwise unrestricted");
+      }
+
+      if (!instanceOf(value, this.isInstanceOf)) {
+        return {error: `Object must be an instance of ${this.isInstanceOf}`};
+      }
+
+      // This is kind of a hack, but we can't normalize things that
+      // aren't JSON, so we just return them.
+      return {value};
+    }
+
+    // |value| should be a JS Xray wrapping an object in the
+    // extension compartment. This works well except when we need to
+    // access callable properties on |value| since JS Xrays don't
+    // support those. To work around the problem, we verify that
+    // |value| is a plain JS object (i.e., not anything scary like a
+    // Proxy). Then we copy the properties out of it into a normal
+    // object using a waiver wrapper.
+
+    let klass = Cu.getClassName(value, true);
+    if (klass != "Object") {
+      return {error: `Expected a plain JavaScript object, got a ${klass}`};
+    }
+
+    let properties = Object.create(null);
+    {
+      // |waived| is scoped locally to avoid accessing it when we
+      // don't mean to.
+      let waived = Cu.waiveXrays(value);
+      for (let prop of Object.getOwnPropertyNames(waived)) {
+        let desc = Object.getOwnPropertyDescriptor(waived, prop);
+        if (desc.get || desc.set) {
+          return {error: "Objects cannot have getters or setters on properties"};
+        }
+        if (!desc.enumerable) {
+          // Chrome ignores non-enumerable properties.
+          continue;
+        }
+        properties[prop] = Cu.unwaiveXrays(desc.value);
+      }
+    }
+
     let result = {};
     for (let prop of Object.keys(this.properties)) {
       let {type, optional, unsupported} = this.properties[prop];
       if (unsupported) {
-        if (prop in value) {
+        if (prop in properties) {
           return {error: `Property "${prop}" is unsupported by Firefox`};
         }
-      } else if (prop in value) {
-        if (optional && (value[prop] === null || value[prop] === undefined)) {
+      } else if (prop in properties) {
+        if (optional && (properties[prop] === null || properties[prop] === undefined)) {
           result[prop] = null;
         } else {
-          let r = type.normalize(value[prop]);
+          let r = type.normalize(properties[prop]);
           if (r.error) {
             return r;
           }
@@ -260,10 +304,10 @@ class ObjectType extends Type {
       }
     }
 
-    for (let prop of Object.keys(value)) {
+    for (let prop of Object.keys(properties)) {
       if (!(prop in this.properties)) {
         if (this.additionalProperties) {
-          let r = this.additionalProperties.normalize(value[prop]);
+          let r = this.additionalProperties.normalize(properties[prop]);
           if (r.error) {
             return r;
           }
@@ -341,9 +385,11 @@ class BooleanType extends Type {
 }
 
 class ArrayType extends Type {
-  constructor(itemType) {
+  constructor(itemType, minItems, maxItems) {
     super();
     this.itemType = itemType;
+    this.minItems = minItems;
+    this.maxItems = maxItems;
   }
 
   normalize(value) {
@@ -359,6 +405,14 @@ class ArrayType extends Type {
         return element;
       }
       result.push(element.value);
+    }
+
+    if (result.length < this.minItems) {
+      return {error: `Array requires at least ${this.minItems} items; you have ${result.length}`};
+    }
+
+    if (result.length > this.maxItems) {
+      return {error: `Array requires at most ${this.maxItems} items; you have ${result.length}`};
     }
 
     return {value: result};
@@ -412,11 +466,12 @@ class TypeProperty extends Entry {
 // care of validating parameter lists (i.e., handling of optional
 // parameters and parameter type checking).
 class CallEntry extends Entry {
-  constructor(namespaceName, name, parameters) {
+  constructor(namespaceName, name, parameters, allowAmbiguousOptionalArguments) {
     super();
     this.namespaceName = namespaceName;
     this.name = name;
     this.parameters = parameters;
+    this.allowAmbiguousOptionalArguments = allowAmbiguousOptionalArguments;
   }
 
   throwError(global, msg) {
@@ -465,9 +520,15 @@ class CallEntry extends Entry {
       return check(parameterIndex + 1, argIndex + 1);
     };
 
-    let success = check(0, 0);
-    if (!success) {
-      this.throwError(global, "Incorrect argument types");
+    if (this.allowAmbiguousOptionalArguments) {
+      // When this option is set, it's up to the implementation to
+      // parse arguments.
+      return args;
+    } else {
+      let success = check(0, 0);
+      if (!success) {
+        this.throwError(global, "Incorrect argument types");
+      }
     }
 
     // Now we normalize (and fully type check) all non-omitted arguments.
@@ -490,8 +551,8 @@ class CallEntry extends Entry {
 
 // Represents a "function" defined in a schema namespace.
 class FunctionEntry extends CallEntry {
-  constructor(namespaceName, name, type, unsupported) {
-    super(namespaceName, name, type.parameters);
+  constructor(namespaceName, name, type, unsupported, allowAmbiguousOptionalArguments) {
+    super(namespaceName, name, type.parameters, allowAmbiguousOptionalArguments);
     this.unsupported = unsupported;
   }
 
@@ -621,12 +682,8 @@ this.Schemas = {
                             type.minLength || 0,
                             type.maxLength || Infinity);
     } else if (type.type == "object") {
-      if (!type.properties) {
-        checkTypeProperties();
-        return new UnrestrictedObjectType();
-      }
       let properties = {};
-      for (let propName of Object.keys(type.properties)) {
+      for (let propName of Object.keys(type.properties || {})) {
         let propType = this.parseType(namespaceName, type.properties[propName],
                                       ["optional", "unsupported", "deprecated"]);
         properties[propName] = {
@@ -641,10 +698,12 @@ this.Schemas = {
         additionalProperties = this.parseType(namespaceName, type.additionalProperties);
       }
 
-      return new ObjectType(properties, additionalProperties);
+      checkTypeProperties("properties", "additionalProperties", "isInstanceOf");
+      return new ObjectType(properties, additionalProperties, type.isInstanceOf || null);
     } else if (type.type == "array") {
-      checkTypeProperties("items");
-      return new ArrayType(this.parseType(namespaceName, type.items));
+      checkTypeProperties("items", "minItems", "maxItems");
+      return new ArrayType(this.parseType(namespaceName, type.items),
+                           type.minItems || 0, type.maxItems || Infinity);
     } else if (type.type == "number") {
       checkTypeProperties();
       return new NumberType();
@@ -686,7 +745,9 @@ this.Schemas = {
     if ("value" in prop) {
       this.register(namespaceName, name, new ValueProperty(name, prop.value));
     } else {
-      let type = this.parseType(namespaceName, prop);
+      // We ignore the "optional" attribute on properties since we
+      // don't inject anything here anyway.
+      let type = this.parseType(namespaceName, prop, ["optional"]);
       this.register(namespaceName, name, new TypeProperty(name, type));
     }
   },
@@ -697,8 +758,10 @@ this.Schemas = {
 
     let f = new FunctionEntry(namespaceName, fun.name,
                               this.parseType(namespaceName, fun,
-                                             ["name", "unsupported", "deprecated", "returns"]),
-                              fun.unsupported || false);
+                                             ["name", "unsupported", "deprecated", "returns",
+                                              "allowAmbiguousOptionalArguments"]),
+                              fun.unsupported || false,
+                              fun.allowAmbiguousOptionalArguments || false);
     this.register(namespaceName, fun.name, f);
   },
 

@@ -35,6 +35,11 @@ describe("loop.shared.views", function() {
     sandbox.stub(loop.shared.utils, "getOSVersion", function() {
       return OSVersion;
     });
+
+    loop.config = {
+      tilesIframeUrl: "",
+      tilesSupportUrl: ""
+    };
   });
 
   afterEach(function() {
@@ -50,7 +55,7 @@ describe("loop.shared.views", function() {
           scope: "local",
           type: "audio",
           action: function() {},
-          enabled: true
+          muted: false
         }));
 
       expect(comp.getDOMNode().classList.contains("muted")).eql(false);
@@ -62,7 +67,7 @@ describe("loop.shared.views", function() {
           scope: "local",
           type: "audio",
           action: function() {},
-          enabled: false
+          muted: true
         }));
 
       expect(comp.getDOMNode().classList.contains("muted")).eql(true);
@@ -74,7 +79,7 @@ describe("loop.shared.views", function() {
           scope: "local",
           type: "video",
           action: function() {},
-          enabled: true
+          muted: false
         }));
 
       expect(comp.getDOMNode().classList.contains("muted")).eql(false);
@@ -86,15 +91,123 @@ describe("loop.shared.views", function() {
           scope: "local",
           type: "video",
           action: function() {},
-          enabled: false
+          muted: true
         }));
 
       expect(comp.getDOMNode().classList.contains("muted")).eql(true);
     });
   });
 
+  describe("AudioMuteButton", function() {
+    it("should set the muted class when not enabled", function() {
+      var comp = TestUtils.renderIntoDocument(
+        React.createElement(sharedViews.AudioMuteButton, {
+          muted: true
+        }));
+
+      var node = comp.getDOMNode();
+      expect(node.classList.contains("muted")).eql(true);
+    });
+
+    it("should not set the muted class when enabled", function() {
+      var comp = TestUtils.renderIntoDocument(
+        React.createElement(sharedViews.AudioMuteButton, {
+          muted: false
+        }));
+
+      var node = comp.getDOMNode();
+      expect(node.classList.contains("muted")).eql(false);
+    });
+
+    it("should dispatch SetMute('audio', false) if clicked when audio is disabled",
+      function() {
+        var comp = TestUtils.renderIntoDocument(
+          React.createElement(sharedViews.AudioMuteButton, {
+            dispatcher: dispatcher,
+            muted: false
+          }));
+
+        TestUtils.Simulate.click(comp.getDOMNode());
+
+        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledWithExactly(dispatcher.dispatch,
+          new sharedActions.SetMute({ type: "audio", enabled: false })
+        );
+      });
+
+    it("should dispatch SetMute('audio', true) if clicked when audio is enabled",
+      function() {
+        var comp = TestUtils.renderIntoDocument(
+          React.createElement(sharedViews.AudioMuteButton, {
+            dispatcher: dispatcher,
+            muted: true
+          }));
+
+        TestUtils.Simulate.click(comp.getDOMNode());
+
+        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledWithExactly(dispatcher.dispatch,
+          new sharedActions.SetMute({ type: "audio", enabled: true })
+        );
+      });
+  });
+
+  describe("VideoMuteButton", function() {
+    it("should set the muted class when not enabled", function() {
+      var comp = TestUtils.renderIntoDocument(
+        React.createElement(sharedViews.VideoMuteButton, {
+          muted: true
+        }));
+
+      var node = comp.getDOMNode();
+      expect(node.classList.contains("muted")).eql(true);
+    });
+
+    it("should not set the muted class when enabled", function() {
+      var comp = TestUtils.renderIntoDocument(
+        React.createElement(sharedViews.VideoMuteButton, {
+          muted: false
+        }));
+
+      var node = comp.getDOMNode();
+      expect(node.classList.contains("muted")).eql(false);
+    });
+
+    it("should dispatch SetMute('audio', false) if clicked when audio is disabled",
+      function() {
+        var comp = TestUtils.renderIntoDocument(
+          React.createElement(sharedViews.VideoMuteButton, {
+            dispatcher: dispatcher,
+            muted: false
+          }));
+
+        TestUtils.Simulate.click(comp.getDOMNode());
+
+        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledWithExactly(dispatcher.dispatch,
+          new sharedActions.SetMute({ type: "video", enabled: false })
+        );
+      });
+
+    it("should dispatch SetMute('audio', true) if clicked when audio is enabled",
+      function() {
+        var comp = TestUtils.renderIntoDocument(
+          React.createElement(sharedViews.VideoMuteButton, {
+            dispatcher: dispatcher,
+            muted: true
+          }));
+
+        TestUtils.Simulate.click(comp.getDOMNode());
+
+        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledWithExactly(dispatcher.dispatch,
+          new sharedActions.SetMute({ type: "video", enabled: true })
+        );
+      });
+  });
+
   describe("ConversationToolbar", function() {
-    var hangup, publishStream;
+    var hangup;
 
     function mountTestComponent(props) {
       props = _.extend({
@@ -106,14 +219,12 @@ describe("loop.shared.views", function() {
 
     beforeEach(function() {
       hangup = sandbox.stub();
-      publishStream = sandbox.stub();
     });
 
     it("should start no idle", function() {
       var comp = mountTestComponent({
         hangupButtonLabel: "foo",
-        hangup: hangup,
-        publishStream: publishStream
+        hangup: hangup
       });
       expect(comp.getDOMNode().classList.contains("idle")).eql(false);
     });
@@ -121,8 +232,7 @@ describe("loop.shared.views", function() {
     it("should be on idle state after 6 seconds", function() {
       var comp = mountTestComponent({
         hangupButtonLabel: "foo",
-        hangup: hangup,
-        publishStream: publishStream
+        hangup: hangup
       });
       expect(comp.getDOMNode().classList.contains("idle")).eql(false);
 
@@ -133,8 +243,7 @@ describe("loop.shared.views", function() {
     it("should remove idle state when the user moves the mouse", function() {
       var comp = mountTestComponent({
         hangupButtonLabel: "foo",
-        hangup: hangup,
-        publishStream: publishStream
+        hangup: hangup
       });
 
       clock.tick(6001);
@@ -148,8 +257,7 @@ describe("loop.shared.views", function() {
     it("should accept a showHangup optional prop", function() {
       var comp = mountTestComponent({
         showHangup: false,
-        hangup: hangup,
-        publishStream: publishStream
+        hangup: hangup
       });
 
       expect(comp.getDOMNode().querySelector(".btn-hangup-entry")).to.eql(null);
@@ -158,7 +266,6 @@ describe("loop.shared.views", function() {
     it("should hangup when hangup button is clicked", function() {
       var comp = mountTestComponent({
         hangup: hangup,
-        publishStream: publishStream,
         audio: { enabled: true }
       });
 
@@ -167,62 +274,6 @@ describe("loop.shared.views", function() {
 
       sinon.assert.calledOnce(hangup);
       sinon.assert.calledWithExactly(hangup);
-    });
-
-    it("should unpublish audio when audio mute btn is clicked", function() {
-      var comp = mountTestComponent({
-        hangup: hangup,
-        publishStream: publishStream,
-        audio: { enabled: true }
-      });
-
-      TestUtils.Simulate.click(
-        comp.getDOMNode().querySelector(".btn-mute-audio"));
-
-      sinon.assert.calledOnce(publishStream);
-      sinon.assert.calledWithExactly(publishStream, "audio", false);
-    });
-
-    it("should publish audio when audio mute btn is clicked", function() {
-      var comp = mountTestComponent({
-        hangup: hangup,
-        publishStream: publishStream,
-        audio: { enabled: false }
-      });
-
-      TestUtils.Simulate.click(
-        comp.getDOMNode().querySelector(".btn-mute-audio"));
-
-      sinon.assert.calledOnce(publishStream);
-      sinon.assert.calledWithExactly(publishStream, "audio", true);
-    });
-
-    it("should unpublish video when video mute btn is clicked", function() {
-      var comp = mountTestComponent({
-        hangup: hangup,
-        publishStream: publishStream,
-        video: { enabled: true }
-      });
-
-      TestUtils.Simulate.click(
-        comp.getDOMNode().querySelector(".btn-mute-video"));
-
-      sinon.assert.calledOnce(publishStream);
-      sinon.assert.calledWithExactly(publishStream, "video", false);
-    });
-
-    it("should publish video when video mute btn is clicked", function() {
-      var comp = mountTestComponent({
-        hangup: hangup,
-        publishStream: publishStream,
-        video: { enabled: false }
-      });
-
-      TestUtils.Simulate.click(
-        comp.getDOMNode().querySelector(".btn-mute-video"));
-
-      sinon.assert.calledOnce(publishStream);
-      sinon.assert.calledWithExactly(publishStream, "video", true);
     });
   });
 
@@ -411,8 +462,7 @@ describe("loop.shared.views", function() {
         allowClick: false,
         description: "test",
         dispatcher: dispatcher,
-        showContextTitle: false,
-        useDesktopPaths: false
+        showContextTitle: false
       }, extraProps);
       return TestUtils.renderIntoDocument(
         React.createElement(sharedViews.ContextUrlView, props));
@@ -448,6 +498,24 @@ describe("loop.shared.views", function() {
       expect(view.getDOMNode()).eql(null);
     });
 
+    it("should display nothing if it is an about url", function() {
+      view = mountTestComponent({
+        url: "about:config"
+      });
+
+      expect(view.getDOMNode()).eql(null);
+    });
+
+    it("should display nothing if it is a javascript url", function() {
+      /* eslint-disable no-script-url */
+      view = mountTestComponent({
+        url: "javascript:alert('hello')"
+      });
+
+      expect(view.getDOMNode()).eql(null);
+      /* eslint-enable no-script-url */
+    });
+
     it("should use a default thumbnail if one is not supplied", function() {
       view = mountTestComponent({
         url: "http://wonderful.invalid"
@@ -459,7 +527,6 @@ describe("loop.shared.views", function() {
 
     it("should use a default thumbnail for desktop if one is not supplied", function() {
       view = mountTestComponent({
-        useDesktopPaths: true,
         url: "http://wonderful.invalid"
       });
 
@@ -518,6 +585,7 @@ describe("loop.shared.views", function() {
 
   describe("MediaView", function() {
     var view;
+    var remoteCursorStore;
 
     function mountTestComponent(props) {
       props = _.extend({
@@ -526,6 +594,13 @@ describe("loop.shared.views", function() {
       return TestUtils.renderIntoDocument(
         React.createElement(sharedViews.MediaView, props));
     }
+
+    beforeEach(function() {
+      remoteCursorStore = new loop.store.RemoteCursorStore(dispatcher, {
+        sdkDriver: {}
+      });
+      loop.store.StoreMixin.register({ remoteCursorStore: remoteCursorStore });
+    });
 
     it("should display an avatar view", function() {
       view = mountTestComponent({
@@ -559,7 +634,7 @@ describe("loop.shared.views", function() {
         }
       });
 
-      var element = view.getDOMNode();
+      var element = view.getDOMNode().querySelector("video");
 
       expect(element).not.eql(null);
       expect(element.className).eql("local-video");
@@ -580,17 +655,28 @@ describe("loop.shared.views", function() {
     // We test this function by itself, as otherwise we'd be into creating fake
     // streams etc.
     describe("#attachVideo", function() {
-      var fakeViewElement;
+      var fakeViewElement,
+          fakeVideoElement;
 
       beforeEach(function() {
-        fakeViewElement = {
+        fakeVideoElement = {
           play: sinon.stub(),
-          tagName: "VIDEO"
+          tagName: "VIDEO",
+          addEventListener: sinon.stub()
+        };
+
+        fakeViewElement = {
+          tagName: "DIV",
+          querySelector: function() {
+            return fakeVideoElement;
+          }
         };
 
         view = mountTestComponent({
+          cursorStore: remoteCursorStore,
           displayAvatar: false,
           mediaType: "local",
+          shareCursor: true,
           srcMediaElement: {
             fake: 1
           }
@@ -605,7 +691,13 @@ describe("loop.shared.views", function() {
 
       it("should not throw if the element is not a video object", function() {
         sinon.stub(view, "getDOMNode").returns({
-          tagName: "DIV"
+          tagName: "DIV",
+          querySelector: function() {
+            return {
+              tagName: "DIV",
+              addEventListener: sinon.stub()
+            };
+          }
         });
 
         expect(function() {
@@ -614,7 +706,7 @@ describe("loop.shared.views", function() {
       });
 
       it("should attach a video object according to the standard", function() {
-        fakeViewElement.srcObject = null;
+        fakeVideoElement.srcObject = null;
 
         sinon.stub(view, "getDOMNode").returns(fakeViewElement);
 
@@ -622,11 +714,24 @@ describe("loop.shared.views", function() {
           srcObject: { fake: 1 }
         });
 
-        expect(fakeViewElement.srcObject).eql({ fake: 1 });
+        expect(fakeVideoElement.srcObject).eql({ fake: 1 });
+      });
+
+      it("should attach events to the video", function() {
+        fakeVideoElement.srcObject = null;
+        sinon.stub(view, "getDOMNode").returns(fakeViewElement);
+        view.attachVideo({
+          src: { fake: 1 }
+        });
+
+        sinon.assert.calledThrice(fakeVideoElement.addEventListener);
+        sinon.assert.calledWith(fakeVideoElement.addEventListener, "loadeddata");
+        sinon.assert.calledWith(fakeVideoElement.addEventListener, "mousemove");
+        sinon.assert.calledWith(fakeVideoElement.addEventListener, "click");
       });
 
       it("should attach a video object for Firefox", function() {
-        fakeViewElement.mozSrcObject = null;
+        fakeVideoElement.mozSrcObject = null;
 
         sinon.stub(view, "getDOMNode").returns(fakeViewElement);
 
@@ -634,11 +739,11 @@ describe("loop.shared.views", function() {
           mozSrcObject: { fake: 2 }
         });
 
-        expect(fakeViewElement.mozSrcObject).eql({ fake: 2 });
+        expect(fakeVideoElement.mozSrcObject).eql({ fake: 2 });
       });
 
       it("should attach a video object for Chrome", function() {
-        fakeViewElement.src = null;
+        fakeVideoElement.src = null;
 
         sinon.stub(view, "getDOMNode").returns(fakeViewElement);
 
@@ -646,16 +751,77 @@ describe("loop.shared.views", function() {
           src: { fake: 2 }
         });
 
-        expect(fakeViewElement.src).eql({ fake: 2 });
+        expect(fakeVideoElement.src).eql({ fake: 2 });
+      });
+    });
+
+    describe("#handleVideoDimensions", function() {
+      var fakeViewElement, fakeVideoElement;
+
+      beforeEach(function() {
+        fakeVideoElement = {
+          clientWidth: 1000,
+          clientHeight: 1000,
+          play: sinon.stub(),
+          srcObject: null,
+          tagName: "VIDEO"
+        };
+
+        fakeViewElement = {
+          tagName: "DIV",
+          querySelector: function() {
+            return fakeVideoElement;
+          }
+        };
+
+        view = mountTestComponent({
+          displayAvatar: false,
+          mediaType: "local",
+          srcMediaElement: {
+            fake: 1
+          }
+        });
+
+        sinon.stub(view, "getDOMNode").returns(fakeViewElement);
+      });
+
+      it("should save the video size", function() {
+        view.handleVideoDimensions();
+
+        expect(view.state.videoElementSize).eql({
+          clientWidth: fakeVideoElement.clientWidth,
+          clientHeight: fakeVideoElement.clientHeight
+        });
+      });
+    });
+
+    describe("handleMouseClick", function() {
+      beforeEach(function() {
+        view = mountTestComponent({
+          dispatcher: dispatcher,
+          displayAvatar: false,
+          mediaType: "local",
+          srcMediaElement: {
+            fake: 1
+          }
+        });
+      });
+
+      it("should dispatch cursor click event when video element is clicked", function() {
+        view.handleMouseClick();
+        sinon.assert.calledOnce(dispatcher.dispatch);
       });
     });
   });
 
   describe("MediaLayoutView", function() {
-    var textChatStore, view;
+    var textChatStore,
+        remoteCursorStore,
+        view;
 
     function mountTestComponent(extraProps) {
       var defaultProps = {
+        cursorStore: remoteCursorStore,
         dispatcher: dispatcher,
         displayScreenShare: false,
         isLocalLoading: false,
@@ -665,7 +831,8 @@ describe("loop.shared.views", function() {
         matchMedia: window.matchMedia,
         renderRemoteVideo: false,
         showInitialContext: false,
-        useDesktopPaths: false
+        showMediaWait: false,
+        showTile: false
       };
 
       return TestUtils.renderIntoDocument(
@@ -674,11 +841,23 @@ describe("loop.shared.views", function() {
     }
 
     beforeEach(function() {
+      loop.config = {
+        tilesIframeUrl: "",
+        tilesSupportUrl: ""
+      };
       textChatStore = new loop.store.TextChatStore(dispatcher, {
+        sdkDriver: {}
+      });
+      remoteCursorStore = new loop.store.RemoteCursorStore(dispatcher, {
         sdkDriver: {}
       });
 
       loop.store.StoreMixin.register({ textChatStore: textChatStore });
+
+      // Need to stub these methods because when mounting the AdsTileView we are
+      // attaching listeners to the window object and "AdsTileView" tests will failed
+      sandbox.stub(window, "addEventListener");
+      sandbox.stub(window, "removeEventListener");
     });
 
     it("should mark the remote stream as the focus stream when not displaying screen share", function() {
@@ -701,6 +880,16 @@ describe("loop.shared.views", function() {
 
       expect(node.querySelector(".remote").classList.contains("focus-stream")).eql(false);
       expect(node.querySelector(".screen").classList.contains("focus-stream")).eql(true);
+    });
+
+    it("should mark the screen share stream as paused when screen shared has been paused", function() {
+      view = mountTestComponent({
+        screenSharingPaused: true
+      });
+
+      var node = view.getDOMNode();
+
+      expect(node.querySelector(".screen").classList.contains("screen-sharing-paused")).eql(true);
     });
 
     it("should not mark the wrapper as receiving screen share when not displaying a screen share", function() {
@@ -779,6 +968,230 @@ describe("loop.shared.views", function() {
 
       expect(view.getDOMNode().querySelector(".media-wrapper")
         .classList.contains("showing-remote-streams")).eql(true);
+    });
+
+    it("should mark the wrapper as showing media wait tile when asking for user media", function() {
+      view = mountTestComponent({
+        showMediaWait: true
+      });
+
+      expect(view.getDOMNode().querySelector(".media-wrapper")
+        .classList.contains("showing-media-wait")).eql(true);
+    });
+
+    it("should display a media wait tile when asking for user media", function() {
+      view = mountTestComponent({
+        showMediaWait: true
+      });
+
+      expect(view.getDOMNode().querySelector(".prompt-media-message-wrapper"))
+        .not.eql(null);
+    });
+  });
+
+  describe("RemoteCursorView", function() {
+    var view;
+    var fakeVideoElementSize;
+    var remoteCursorStore;
+
+    function mountTestComponent(props) {
+      props = props || {};
+      var testView = TestUtils.renderIntoDocument(
+        React.createElement(sharedViews.RemoteCursorView, props));
+
+      testView.setState(remoteCursorStore.getStoreState());
+
+      return testView;
+    }
+
+    beforeEach(function() {
+      remoteCursorStore = new loop.store.RemoteCursorStore(dispatcher, {
+        sdkDriver: {}
+      });
+
+      loop.store.StoreMixin.register({ remoteCursorStore: remoteCursorStore });
+
+      remoteCursorStore.setStoreState({
+        realVideoSize: {
+          height: 1536,
+          width: 2580
+        },
+        remoteCursorPosition: {
+          ratioX: 0,
+          ratioY: 0
+        }
+      });
+    });
+
+    it("video element ratio is not wider than stream video ratio", function() {
+      fakeVideoElementSize = {
+        clientWidth: 1280,
+        clientHeight: 768
+      };
+      view = mountTestComponent({
+        videoElementSize: fakeVideoElementSize
+      });
+
+      view._calculateVideoLetterboxing();
+      var clientWidth = fakeVideoElementSize.clientWidth;
+      var clientHeight = fakeVideoElementSize.clientHeight;
+
+      var realVideoWidth = view.state.realVideoSize.width;
+      var realVideoHeight = view.state.realVideoSize.height;
+      var realVideoRatio = realVideoWidth / realVideoHeight;
+
+      var streamVideoHeight = clientWidth / realVideoRatio;
+      var streamVideoWidth = clientWidth;
+
+      expect(view.state.videoLetterboxing).eql({
+        left: (clientWidth - streamVideoWidth) / 2,
+        top: (clientHeight - streamVideoHeight) / 2
+      });
+    });
+
+    it("video element ratio is wider than stream video ratio", function() {
+      fakeVideoElementSize = {
+        clientWidth: 1152,
+        clientHeight: 768
+      };
+      remoteCursorStore.setStoreState({
+        realVideoSize: {
+          height: 2580,
+          width: 2580
+        }
+      });
+      view = mountTestComponent({
+        videoElementSize: fakeVideoElementSize
+      });
+
+      view._calculateVideoLetterboxing();
+      var clientWidth = fakeVideoElementSize.clientWidth;
+      var clientHeight = fakeVideoElementSize.clientHeight;
+
+      var realVideoWidth = view.state.realVideoSize.width;
+      var realVideoHeight = view.state.realVideoSize.height;
+      var realVideoRatio = realVideoWidth / realVideoHeight;
+
+      var streamVideoHeight = clientHeight;
+      var streamVideoWidth = clientHeight * realVideoRatio;
+
+      expect(view.state.videoLetterboxing).eql({
+        left: (clientWidth - streamVideoWidth) / 2,
+        top: (clientHeight - streamVideoHeight) / 2
+      });
+    });
+
+    describe("#calculateCursorPosition", function() {
+      beforeEach(function() {
+        remoteCursorStore.setStoreState({
+          remoteCursorPosition: {
+            ratioX: 0.3,
+            ratioY: 0.3
+          }
+        });
+      });
+
+      it("should calculate the cursor position coords in the stream video", function() {
+        fakeVideoElementSize = {
+          clientWidth: 1280,
+          clientHeight: 768
+        };
+        remoteCursorStore.setStoreState({
+          realVideoSize: {
+            height: 2580,
+            width: 2580
+          }
+        });
+        view = mountTestComponent({
+          videoElementSize: fakeVideoElementSize
+        });
+        view._calculateVideoLetterboxing();
+
+        var cursorPositionX = view.state.streamVideoWidth * view.state.remoteCursorPosition.ratioX;
+        var cursorPositionY = view.state.streamVideoHeight * view.state.remoteCursorPosition.ratioY;
+
+        expect(view.calculateCursorPosition()).eql({
+          left: cursorPositionX + view.state.videoLetterboxing.left,
+          top: cursorPositionY + view.state.videoLetterboxing.top
+        });
+      });
+    });
+
+    describe("resetClickState", function() {
+      beforeEach(function() {
+        remoteCursorStore.setStoreState({ remoteCursorClick: true });
+        view = mountTestComponent({
+          videoElementSize: fakeVideoElementSize
+        });
+      });
+
+      it("should restore the state to its default value", function() {
+        view.resetClickState();
+
+        expect(view.getStore().getStoreState().remoteCursorClick).eql(false);
+      });
+    });
+
+    describe("#render", function() {
+      beforeEach(function() {
+        remoteCursorStore.setStoreState({ remoteCursorClick: true });
+        view = mountTestComponent({
+          videoElementSize: fakeVideoElementSize
+        });
+      });
+
+      it("should add click class to the remote cursor", function() {
+        expect(view.getDOMNode().classList.contains("remote-cursor-clicked")).eql(true);
+      });
+
+      it("should remove the click class when the animation is completed", function() {
+        clock.tick(sharedViews.RemoteCursorView.TRIGGERED_RESET_DELAY);
+        expect(view.getDOMNode().classList.contains("remote-cursor-clicked")).eql(false);
+      });
+    });
+  });
+
+  describe("AdsTileView", function() {
+    it("should dispatch a RecordClick action when the tile is clicked", function(done) {
+      // Point the iframe to a page that will auto-"click"
+      loop.config.tilesIframeUrl = "data:text/html,<script>parent.postMessage('tile-click', '*');</script>";
+
+      // Render the iframe into the fixture to cause it to load
+      React.render(React.createElement(
+        sharedViews.AdsTileView, {
+          dispatcher: dispatcher,
+          showTile: true
+        }), document.querySelector("#fixtures"));
+
+      // Wait for the iframe to load and trigger a message that should also
+      // cause the RecordClick action
+      window.addEventListener("message", function onMessage() {
+        window.removeEventListener("message", onMessage);
+
+        sinon.assert.calledOnce(dispatcher.dispatch);
+        sinon.assert.calledWithExactly(dispatcher.dispatch,
+          new sharedActions.RecordClick({
+            linkInfo: "Tiles iframe click"
+          }));
+
+        done();
+      });
+    });
+
+    it("should dispatch a RecordClick action when the support button is clicked", function() {
+      var view = TestUtils.renderIntoDocument(
+        React.createElement(sharedViews.AdsTileView, {
+          dispatcher: dispatcher,
+          showTile: true
+        }));
+
+      var node = view.getDOMNode().querySelector("a");
+      TestUtils.Simulate.click(node);
+      sinon.assert.calledOnce(dispatcher.dispatch);
+      sinon.assert.calledWithExactly(dispatcher.dispatch,
+        new sharedActions.RecordClick({
+          linkInfo: "Tiles support link click"
+        }));
     });
   });
 });

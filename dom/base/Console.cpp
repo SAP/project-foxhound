@@ -740,7 +740,8 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(Console)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Console)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END
 
 Console::Console(nsPIDOMWindow* aWindow)
@@ -764,7 +765,7 @@ Console::Console(nsPIDOMWindow* aWindow)
   if (NS_IsMainThread()) {
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     if (obs) {
-      obs->AddObserver(this, "inner-window-destroyed", false);
+      obs->AddObserver(this, "inner-window-destroyed", true);
     }
   }
 

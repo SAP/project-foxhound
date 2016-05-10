@@ -10,6 +10,7 @@
 #include "mozilla/layers/SharedBufferManagerChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"     // for GfxMemoryImageReporter
 #include "mozilla/Telemetry.h"
+#include "mozilla/TimeStamp.h"
 
 #include "mozilla/Logging.h"
 #include "mozilla/Services.h"
@@ -19,7 +20,6 @@
 #include "gfxPrefs.h"
 #include "gfxEnv.h"
 #include "gfxTextRun.h"
-#include "gfxVR.h"
 
 #ifdef XP_WIN
 #include <process.h>
@@ -131,6 +131,8 @@ class mozilla::gl::SkiaGLGlue : public GenericAtomicRefCounted {
 #include "SoftwareVsyncSource.h"
 #include "nscore.h" // for NS_FREE_PERMANENT_DATA
 #include "mozilla/dom/ContentChild.h"
+#include "gfxVR.h"
+#include "VRManagerChild.h"
 
 namespace mozilla {
 namespace layers {
@@ -194,7 +196,7 @@ public:
   virtual void Log(const std::string& aString) override;
   virtual void CrashAction(LogReason aReason) override;
 
-  virtual std::vector<std::pair<int32_t,std::string> > StringsVectorCopy() override;
+  virtual LoggingRecord LoggingRecordCopy() override;
 
   void SetCircularBufferSize(uint32_t aCapacity);
 
@@ -204,7 +206,7 @@ private:
   void UpdateCrashReport();
 
 private:
-  std::vector<std::pair<int32_t,std::string> > mBuffer;
+  LoggingRecord mBuffer;
   nsCString mCrashCriticalKey;
   uint32_t mMaxCapacity;
   int32_t mIndex;
@@ -228,8 +230,8 @@ void CrashStatsLogForwarder::SetCircularBufferSize(uint32_t aCapacity)
   mBuffer.reserve(static_cast<size_t>(aCapacity));
 }
 
-std::vector<std::pair<int32_t,std::string> >
-CrashStatsLogForwarder::StringsVectorCopy()
+LoggingRecord
+CrashStatsLogForwarder::LoggingRecordCopy()
 {
   MutexAutoLock lock(mMutex);
   return mBuffer;
@@ -251,9 +253,12 @@ CrashStatsLogForwarder::UpdateStringsVector(const std::string& aString)
   MOZ_ASSERT(index >= 0 && index < (int32_t)mMaxCapacity);
   MOZ_ASSERT(index <= mIndex && index <= (int32_t)mBuffer.size());
 
+  bool ignored;
+  double tStamp = (TimeStamp::NowLoRes()-TimeStamp::ProcessCreation(ignored)).ToSecondsSigDigits();
+
   // Checking for index >= mBuffer.size(), rather than index == mBuffer.size()
   // just out of paranoia, but we know index <= mBuffer.size().
-  std::pair<int32_t,std::string> newEntry(mIndex,aString);
+  LoggingRecordEntry newEntry(mIndex,aString,tStamp);
   if (index >= static_cast<int32_t>(mBuffer.size())) {
     mBuffer.push_back(newEntry);
   } else {
@@ -265,8 +270,8 @@ CrashStatsLogForwarder::UpdateStringsVector(const std::string& aString)
 void CrashStatsLogForwarder::UpdateCrashReport()
 {
   std::stringstream message;
-  for(std::vector<std::pair<int32_t, std::string> >::iterator it = mBuffer.begin(); it != mBuffer.end(); ++it) {
-    message << "|[" << (*it).first << "]" << (*it).second;
+  for(LoggingRecord::iterator it = mBuffer.begin(); it != mBuffer.end(); ++it) {
+    message << "|[" << Get<0>(*it) << "]" << Get<1>(*it) << " (t=" << Get<2>(*it) << ")";
   }
 
 #ifdef MOZ_CRASHREPORTER
@@ -449,8 +454,7 @@ gfxPlatform::gfxPlatform()
                      contentMask, BackendType::CAIRO);
     mTotalSystemMemory = mozilla::hal::GetTotalSystemMemory();
 
-    // give HMDs a chance to be initialized very early on
-    VRHMDManager::ManagerInit();
+    VRManager::ManagerInit();
 }
 
 gfxPlatform*
@@ -549,6 +553,10 @@ gfxPlatform::Init()
     #error "No gfxPlatform implementation available"
 #endif
 
+#ifdef USE_SKIA
+    SkGraphics::Init();
+#endif
+
 #ifdef MOZ_GL_DEBUG
     GLContext::StaticInit();
 #endif
@@ -577,7 +585,7 @@ gfxPlatform::Init()
 
     gPlatform->mScreenReferenceSurface =
         gPlatform->CreateOffscreenSurface(IntSize(1, 1),
-                                          gfxImageFormat::ARGB32);
+                                          SurfaceFormat::A8R8G8B8_UINT32);
     if (!gPlatform->mScreenReferenceSurface) {
         NS_RUNTIMEABORT("Could not initialize mScreenReferenceSurface");
     }
@@ -739,6 +747,7 @@ gfxPlatform::InitLayersIPC()
         SharedBufferManagerChild::StartUp();
 #endif
         mozilla::layers::ImageBridgeChild::StartUp();
+        gfx::VRManagerChild::StartUpSameProcess();
     }
 }
 
@@ -754,22 +763,22 @@ gfxPlatform::ShutdownLayersIPC()
     {
         // This must happen after the shutdown of media and widgets, which
         // are triggered by the NS_XPCOM_SHUTDOWN_OBSERVER_ID notification.
+        gfx::VRManagerChild::ShutDown();
         layers::ImageBridgeChild::ShutDown();
 #ifdef MOZ_WIDGET_GONK
         layers::SharedBufferManagerChild::ShutDown();
 #endif
 
         layers::CompositorParent::ShutDown();
-    }
+	} else if (XRE_GetProcessType() == GeckoProcessType_Content) {
+		gfx::VRManagerChild::ShutDown();
+	}
 }
 
 gfxPlatform::~gfxPlatform()
 {
     mScreenReferenceSurface = nullptr;
     mScreenReferenceDrawTarget = nullptr;
-
-    // Clean up any VR stuff
-    VRHMDManager::ManagerDestroy();
 
     // The cairo folks think we should only clean up in debug builds,
     // but we're generally in the habit of trying to shut down as
@@ -781,7 +790,7 @@ gfxPlatform::~gfxPlatform()
 #ifdef USE_SKIA
     // must do Skia cleanup before Cairo cleanup, because Skia may be referencing
     // Cairo objects e.g. through SkCairoFTTypeface
-    SkGraphics::Term();
+    SkGraphics::PurgeFontCache();
 #endif
 
 #if MOZ_TREE_CAIRO
@@ -897,11 +906,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
     // readback of aSurface's surface into memory if, for example, aSurface
     // wraps an xlib cairo surface (which can be important to avoid a major
     // slowdown).
-    NativeSurface surf;
-    surf.mFormat = format;
-    surf.mType = NativeSurfaceType::CAIRO_SURFACE;
-    surf.mSurface = aSurface->CairoSurface();
-    surf.mSize = aSurface->GetSize();
+    //
     // We return here regardless of whether CreateSourceSurfaceFromNativeSurface
     // succeeds or not since we don't expect to be able to do any better below
     // if it fails.
@@ -914,7 +919,8 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
     // strong reference back to srcBuffer, creating a reference loop and a
     // memory leak. Not caching is fine since wrapping is cheap enough (no
     // copying) so we can just wrap again next time we're called.
-    return aTarget->CreateSourceSurfaceFromNativeSurface(surf);
+    return Factory::CreateSourceSurfaceForCairoSurface(aSurface->CairoSurface(),
+                                                       aSurface->GetSize(), format);
   }
 
   RefPtr<SourceSurface> srcBuffer;
@@ -955,18 +961,8 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
     // readback), and the OptimizeSourceSurface may well copy again and upload
     // to the GPU. So, while this code path is rarely hit, hitting it may be
     // very slow.
-    NativeSurface surf;
-    surf.mFormat = format;
-    surf.mType = NativeSurfaceType::CAIRO_SURFACE;
-    surf.mSurface = aSurface->CairoSurface();
-    surf.mSize = aSurface->GetSize();
-    RefPtr<DrawTarget> drawTarget =
-      Factory::CreateDrawTarget(BackendType::CAIRO, IntSize(1, 1), format);
-    if (!drawTarget) {
-      gfxWarning() << "gfxPlatform::GetSourceSurfaceForSurface failed in CreateDrawTarget";
-      return nullptr;
-    }
-    srcBuffer = drawTarget->CreateSourceSurfaceFromNativeSurface(surf);
+    srcBuffer = Factory::CreateSourceSurfaceForCairoSurface(aSurface->CairoSurface(),
+                                                            aSurface->GetSize(), format);
     if (srcBuffer) {
       srcBuffer = aTarget->OptimizeSourceSurface(srcBuffer);
     }
@@ -1180,7 +1176,10 @@ SkiaGLGlue*
 gfxPlatform::GetSkiaGLGlue()
 {
 #ifdef USE_SKIA_GPU
-  if (!gfxPlatform::GetPlatform()->UseAcceleratedSkiaCanvas()) {
+  if (!mSkiaGlue &&
+      !gfxPlatform::GetPlatform()->UseAcceleratedSkiaCanvas()) {
+  // Check the accelerated Canvas is enabled for the first time,
+  // because the callers should check it before using.
     gfxCriticalNote << "Accelerated Skia canvas is disabled";
     return nullptr;
   }
@@ -1863,11 +1862,11 @@ gfxPlatform::Optimal2DFormatForContent(gfxContentType aContent)
   switch (aContent) {
   case gfxContentType::COLOR:
     switch (GetOffscreenFormat()) {
-    case gfxImageFormat::ARGB32:
+    case SurfaceFormat::A8R8G8B8_UINT32:
       return mozilla::gfx::SurfaceFormat::B8G8R8A8;
-    case gfxImageFormat::RGB24:
+    case SurfaceFormat::X8R8G8B8_UINT32:
       return mozilla::gfx::SurfaceFormat::B8G8R8X8;
-    case gfxImageFormat::RGB16_565:
+    case SurfaceFormat::R5G6B5_UINT16:
       return mozilla::gfx::SurfaceFormat::R5G6B5_UINT16;
     default:
       NS_NOTREACHED("unknown gfxImageFormat for gfxContentType::COLOR");
@@ -1890,12 +1889,12 @@ gfxPlatform::OptimalFormatForContent(gfxContentType aContent)
   case gfxContentType::COLOR:
     return GetOffscreenFormat();
   case gfxContentType::ALPHA:
-    return gfxImageFormat::A8;
+    return SurfaceFormat::A8;
   case gfxContentType::COLOR_ALPHA:
-    return gfxImageFormat::ARGB32;
+    return SurfaceFormat::A8R8G8B8_UINT32;
   default:
     NS_NOTREACHED("unknown gfxContentType");
-    return gfxImageFormat::ARGB32;
+    return SurfaceFormat::A8R8G8B8_UINT32;
   }
 }
 
@@ -2182,7 +2181,11 @@ gfxPlatform::AsyncPanZoomEnabled()
     return false;
   }
 #endif
+#ifdef MOZ_ANDROID_APZ
+  return true;
+#else
   return gfxPrefs::AsyncPanZoomEnabledDoNotUseDirectly();
+#endif
 }
 
 /*virtual*/ bool

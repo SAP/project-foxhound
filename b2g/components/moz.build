@@ -70,6 +70,7 @@ EXTRA_JS_MODULES += [
     'LogShake.jsm',
     'MultiscreenHandler.jsm',
     'OrientationChangeHandler.jsm',
+    'PersistentDataBlock.jsm',
     'SafeMode.jsm',
     'Screenshot.jsm',
     'SignInToWebsite.jsm',

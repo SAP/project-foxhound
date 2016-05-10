@@ -89,6 +89,7 @@ browser.jar:
         content/browser/browser-gestureSupport.js     (content/browser-gestureSupport.js)
         content/browser/browser-places.js             (content/browser-places.js)
         content/browser/browser-plugins.js            (content/browser-plugins.js)
+        content/browser/browser-refreshblocker.js     (content/browser-refreshblocker.js)
 #ifdef MOZ_SAFE_BROWSING
         content/browser/browser-safebrowsing.js       (content/browser-safebrowsing.js)
 #endif
@@ -136,9 +137,6 @@ browser.jar:
 *       content/browser/newtab/newTab.js              (content/newtab/newTab.js)
         content/browser/newtab/newTab.css             (content/newtab/newTab.css)
         content/browser/newtab/newTab.inadjacent.json         (content/newtab/newTab.inadjacent.json)
-        content/browser/remote-newtab/newTab.xhtml    (content/remote-newtab/newTab.xhtml)
-        content/browser/remote-newtab/newTab.js       (content/remote-newtab/newTab.js)
-        content/browser/remote-newtab/newTab.css      (content/remote-newtab/newTab.css)
 *       content/browser/pageinfo/pageInfo.xul         (content/pageinfo/pageInfo.xul)
         content/browser/pageinfo/pageInfo.js          (content/pageinfo/pageInfo.js)
         content/browser/pageinfo/pageInfo.css         (content/pageinfo/pageInfo.css)
@@ -165,7 +163,7 @@ browser.jar:
         content/browser/safeMode.css                  (content/safeMode.css)
         content/browser/safeMode.js                   (content/safeMode.js)
         content/browser/safeMode.xul                  (content/safeMode.xul)
-*       content/browser/sanitize.js                   (content/sanitize.js)
+        content/browser/sanitize.js                   (content/sanitize.js)
 *       content/browser/sanitize.xul                  (content/sanitize.xul)
 *       content/browser/sanitizeDialog.js             (content/sanitizeDialog.js)
         content/browser/sanitizeDialog.css            (content/sanitizeDialog.css)

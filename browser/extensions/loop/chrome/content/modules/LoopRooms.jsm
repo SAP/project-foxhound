@@ -22,10 +22,9 @@ XPCOMUtils.defineLazyGetter(this, "eventEmitter", function() {
   const { EventEmitter } = Cu.import("resource://devtools/shared/event-emitter.js", {});
   return new EventEmitter();
 });
-XPCOMUtils.defineLazyGetter(this, "gLoopBundle", function() {
-  return Services.strings.createBundle("chrome://browser/locale/loop/loop.properties");
-});
 
+XPCOMUtils.defineLazyModuleGetter(this, "DomainWhitelist",
+  "chrome://loop/content/modules/DomainWhitelist.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "LoopRoomsCache",
   "chrome://loop/content/modules/LoopRoomsCache.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "loopUtils",
@@ -772,19 +771,13 @@ var LoopRoomsInternal = {
    * Joins a room. The sessionToken that is returned by the server will be stored
    * locally, for future use.
    *
-   * @param {String} roomToken  The room token.
-   * @param {Function} callback Function that will be invoked once the operation
-   *                            finished. The first argument passed will be an
-   *                            `Error` object or `null`.
+   * @param {String} roomToken   The room token.
+   * @param {String} displayName The user's display name.
+   * @param {Function} callback  Function that will be invoked once the operation
+   *                             finished. The first argument passed will be an
+   *                             `Error` object or `null`.
    */
-  join: function(roomToken, callback) {
-    let displayName;
-    if (MozLoopService.userProfile && MozLoopService.userProfile.email) {
-      displayName = MozLoopService.userProfile.email;
-    } else {
-      displayName = gLoopBundle.GetStringFromName("display_name_guest");
-    }
-
+  join: function(roomToken, displayName, callback) {
     this._postToRoom(roomToken, {
       action: "join",
       displayName: displayName,
@@ -873,6 +866,80 @@ var LoopRoomsInternal = {
     }, callback);
   },
 
+  _domainLog: {
+    domainMap: new Map(),
+    roomToken: null
+  },
+
+  /**
+   * Record a url associated to a room for batch submission if whitelisted.
+   *
+   * @param {String} roomToken The room token
+   * @param {String} url       Url with the domain to record
+   */
+  _recordUrl(roomToken, url) {
+    // Reset the log of domains if somehow we changed room tokens.
+    if (this._domainLog.roomToken !== roomToken) {
+      this._domainLog.roomToken = roomToken;
+      this._domainLog.domainMap.clear();
+    }
+
+    let domain;
+    try {
+      domain = Services.eTLD.getBaseDomain(Services.io.newURI(url, null, null));
+    }
+    catch (ex) {
+      // Failed to extract domain, so don't record it.
+      return;
+    }
+
+    // Only record domains that are whitelisted.
+    if (!DomainWhitelist.check(domain)) {
+      return;
+    }
+
+    // Increment the count for previously recorded domains.
+    if (this._domainLog.domainMap.has(domain)) {
+      this._domainLog.domainMap.get(domain).count++;
+    }
+    // Initialize the map for the domain with a value that can be submitted.
+    else {
+      this._domainLog.domainMap.set(domain, { count: 1, domain });
+    }
+  },
+
+  /**
+   * Log the domains associated to a room token.
+   *
+   * @param {String} roomToken  The room token
+   * @param {Function} callback Function that will be invoked once the operation
+   *                            finished. The first argument passed will be an
+   *                            `Error` object or `null`.
+   */
+  logDomains(roomToken, callback) {
+    if (!callback) {
+      callback = error => {
+        if (error) {
+          MozLoopService.log.error(error);
+        }
+      };
+    }
+
+    // Submit the domains that have been collected so far.
+    if (this._domainLog.roomToken === roomToken &&
+        this._domainLog.domainMap.size > 0) {
+      this._postToRoom(roomToken, {
+        action: "logDomain",
+        domains: [...this._domainLog.domainMap.values()]
+      }, callback);
+      this._domainLog.domainMap.clear();
+    }
+    // Indicate that nothing was logged.
+    else {
+      callback(null);
+    }
+  },
+
   /**
    * Updates a room.
    *
@@ -902,7 +969,13 @@ var LoopRoomsInternal = {
     }
     if (roomData.urls && roomData.urls.length) {
       // For now we only support adding one URL to the room context.
-      room.decryptedContext.urls = [roomData.urls[0]];
+      let context = roomData.urls[0];
+      room.decryptedContext.urls = [context];
+
+      // Record the url for reporting if enabled.
+      if (Services.prefs.getBoolPref("loop.logDomains")) {
+        this._recordUrl(roomToken, context.location);
+      }
     }
 
     Task.spawn(function* () {
@@ -1067,8 +1140,8 @@ this.LoopRooms = {
     return LoopRoomsInternal.delete(roomToken, callback);
   },
 
-  join: function(roomToken, callback) {
-    return LoopRoomsInternal.join(roomToken, callback);
+  join: function(roomToken, displayName, callback) {
+    return LoopRoomsInternal.join(roomToken, displayName, callback);
   },
 
   refreshMembership: function(roomToken, sessionToken, callback) {
@@ -1082,6 +1155,10 @@ this.LoopRooms = {
 
   sendConnectionStatus: function(roomToken, sessionToken, status, callback) {
     return LoopRoomsInternal.sendConnectionStatus(roomToken, sessionToken, status, callback);
+  },
+
+  logDomains(roomToken, callback) {
+    return LoopRoomsInternal.logDomains(roomToken, callback);
   },
 
   update: function(roomToken, roomData, callback) {

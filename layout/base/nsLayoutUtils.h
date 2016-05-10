@@ -30,6 +30,7 @@
 #include "mozilla/ToString.h"
 #include "nsHTMLReflowMetrics.h"
 #include "ImageContainer.h"
+#include "gfx2DGlue.h"
 
 #include <limits>
 #include <algorithm>
@@ -74,6 +75,7 @@ class Element;
 class HTMLImageElement;
 class HTMLCanvasElement;
 class HTMLVideoElement;
+class OffscreenCanvas;
 class Selection;
 } // namespace dom
 namespace gfx {
@@ -108,6 +110,12 @@ struct DisplayPortMarginsPropertyData {
 
 } // namespace mozilla
 
+// For GetDisplayPort
+enum class RelativeTo {
+  ScrollPort,
+  ScrollFrame
+};
+
 /**
  * nsLayoutUtils is a namespace class used for various helper
  * functions that are useful in multiple places in layout.  The goal
@@ -139,6 +147,7 @@ public:
   typedef mozilla::CSSPoint CSSPoint;
   typedef mozilla::CSSSize CSSSize;
   typedef mozilla::CSSIntSize CSSIntSize;
+  typedef mozilla::CSSRect CSSRect;
   typedef mozilla::ScreenMargin ScreenMargin;
   typedef mozilla::LayoutDeviceIntSize LayoutDeviceIntSize;
 
@@ -165,9 +174,16 @@ public:
   static nsIScrollableFrame* FindScrollableFrameFor(ViewID aId);
 
   /**
-   * Get display port for the given element.
+   * Get display port for the given element, relative to the specified entity,
+   * defaulting to the scrollport.
    */
-  static bool GetDisplayPort(nsIContent* aContent, nsRect *aResult = nullptr);
+  static bool GetDisplayPort(nsIContent* aContent, nsRect *aResult,
+    RelativeTo aRelativeTo = RelativeTo::ScrollPort);
+
+  /**
+   * Check whether the given element has a displayport.
+   */
+  static bool HasDisplayPort(nsIContent* aContent);
 
   /**
    * @return the display port for the given element which should be used for
@@ -176,8 +192,10 @@ public:
    * If low-precision buffers are enabled, this is the critical display port;
    * otherwise, it's the same display port returned by GetDisplayPort().
    */
-  static bool GetDisplayPortForVisibilityTesting(nsIContent* aContent,
-                                                 nsRect* aResult = nullptr);
+  static bool GetDisplayPortForVisibilityTesting(
+    nsIContent* aContent,
+    nsRect* aResult,
+    RelativeTo aRelativeTo = RelativeTo::ScrollPort);
 
   enum class RepaintMode : uint8_t {
     Repaint,
@@ -217,7 +235,12 @@ public:
   /**
    * Get the critical display port for the given element.
    */
-  static bool GetCriticalDisplayPort(nsIContent* aContent, nsRect* aResult = nullptr);
+  static bool GetCriticalDisplayPort(nsIContent* aContent, nsRect* aResult);
+
+  /**
+   * Check whether the given element has a critical display port.
+   */
+  static bool HasCriticalDisplayPort(nsIContent* aContent);
 
   /**
    * Use heuristics to figure out the child list that
@@ -303,6 +326,10 @@ public:
    * return the frame that has the non-psuedoelement style context for
    * the content.
    * This is aPrimaryFrame itself except for tableOuter frames.
+   *
+   * Given a non-null input, this will return null if and only if its
+   * argument is a table outer frame that is mid-destruction (and its
+   * table frame has been destroyed).
    */
   static nsIFrame* GetStyleFrame(nsIFrame* aPrimaryFrame);
 
@@ -516,10 +543,8 @@ public:
 
   /**
    * Return true if aPresContext's viewport has a displayport.
-   * Fills in aDisplayPort with the displayport rectangle if non-null.
    */
-  static bool ViewportHasDisplayPort(nsPresContext* aPresContext,
-                                     nsRect* aDisplayPort = nullptr);
+  static bool ViewportHasDisplayPort(nsPresContext* aPresContext);
 
   /**
    * Return true if aFrame is a fixed-pos frame and is a child of a viewport
@@ -527,8 +552,7 @@ public:
    * aDisplayPort, if non-null, is set to the display port rectangle (relative to
    * the viewport).
    */
-  static bool IsFixedPosFrameInDisplayPort(const nsIFrame* aFrame,
-                                           nsRect* aDisplayPort = nullptr);
+  static bool IsFixedPosFrameInDisplayPort(const nsIFrame* aFrame);
 
   /**
    * Store whether aThumbFrame wants its own layer. This sets a property on
@@ -920,18 +944,6 @@ public:
                                     const Matrix4x4 &aMatrix, float aFactor);
 
   /**
-   * Helper function that, given a rectangle and a matrix, returns the smallest
-   * rectangle containing the image of the source rectangle rounded out to the nearest
-   * pixel value.
-   *
-   * @param aBounds The rectangle to transform.
-   * @param aMatrix The matrix to transform it with.
-   * @param aFactor The number of app units per graphics unit.
-   * @return The smallest rect that contains the image of aBounds.
-   */
-  static nsRect MatrixTransformRectOut(const nsRect &aBounds,
-                                       const Matrix4x4 &aMatrix, float aFactor);
-  /**
    * Helper function that, given a point and a matrix, returns the image
    * of that point under the matrix transform.
    *
@@ -1061,7 +1073,7 @@ public:
    * falls.
    */
   static bool
-  BinarySearchForPosition(nsRenderingContext* acx,
+  BinarySearchForPosition(DrawTarget* aDrawTarget,
                           nsFontMetrics& aFontMetrics,
                           const char16_t* aText,
                           int32_t    aBaseWidth,
@@ -1393,40 +1405,6 @@ public:
   static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
                                          const nsStyleCoord& aCoord);
 
-  /*
-   * Convert nsStyleCoord to nscoord when percentages depend on the
-   * containing block width, and enumerated values are for width,
-   * min-width, or max-width.  Returns the content-box width value based
-   * on aContentEdgeToBoxSizing and aBoxSizingToMarginEdge (which are
-   * also used for the enumerated values for width.  This function does
-   * not handle 'auto'.  It ensures that the result is nonnegative.
-   *
-   * @param aRenderingContext Rendering context for font measurement/metrics.
-   * @param aFrame Frame whose (min-/max-/)width is being computed.
-   * @param aContainingBlockWidth Width of aFrame's containing block.
-   * @param aContentEdgeToBoxSizing The sum of any left/right padding and
-   *          border that goes inside the rect chosen by box-sizing.
-   * @param aBoxSizingToMarginEdge The sum of any left/right padding, border,
-   *          and margin that goes outside the rect chosen by box-sizing.
-   * @param aCoord The width value to compute.
-   */
-  // XXX to be removed
-  static nscoord ComputeWidthValue(
-                   nsRenderingContext* aRenderingContext,
-                   nsIFrame*            aFrame,
-                   nscoord              aContainingBlockWidth,
-                   nscoord              aContentEdgeToBoxSizing,
-                   nscoord              aBoxSizingToMarginEdge,
-                   const nsStyleCoord&  aCoord)
-  {
-    return ComputeISizeValue(aRenderingContext,
-                             aFrame,
-                             aContainingBlockWidth,
-                             aContentEdgeToBoxSizing,
-                             aBoxSizingToMarginEdge,
-                             aCoord);
-  }
-
   static nscoord ComputeISizeValue(
                    nsRenderingContext* aRenderingContext,
                    nsIFrame*           aFrame,
@@ -1435,34 +1413,9 @@ public:
                    nscoord             aBoxSizingToMarginEdge,
                    const nsStyleCoord& aCoord);
 
-  /*
-   * Convert nsStyleCoord to nscoord when percentages depend on the
-   * containing block height.
-   */
-  // XXX to be removed
-  static nscoord ComputeHeightDependentValue(
-                   nscoord              aContainingBlockHeight,
-                   const nsStyleCoord&  aCoord)
-  {
-    return ComputeBSizeDependentValue(aContainingBlockHeight, aCoord);
-  }
-
   static nscoord ComputeBSizeDependentValue(
                    nscoord              aContainingBlockBSize,
                    const nsStyleCoord&  aCoord);
-
-  /*
-   * Likewise, but for 'height', 'min-height', or 'max-height'.
-   */
-  // XXX to be removed
-  static nscoord ComputeHeightValue(nscoord aContainingBlockHeight,
-                                    nscoord aContentEdgeToBoxSizingBoxEdge,
-                                    const nsStyleCoord& aCoord)
-  {
-    return ComputeBSizeValue(aContainingBlockHeight,
-                             aContentEdgeToBoxSizingBoxEdge,
-                             aCoord);
-  }
 
   static nscoord ComputeBSizeValue(nscoord aContainingBlockBSize,
                                     nscoord aContentEdgeToBoxSizingBoxEdge,
@@ -1573,19 +1526,19 @@ public:
 
   static nscoord AppUnitWidthOfString(char16_t aC,
                                       nsFontMetrics& aFontMetrics,
-                                      nsRenderingContext& aContext) {
-    return AppUnitWidthOfString(&aC, 1, aFontMetrics, aContext);
+                                      DrawTarget* aDrawTarget) {
+    return AppUnitWidthOfString(&aC, 1, aFontMetrics, aDrawTarget);
   }
   static nscoord AppUnitWidthOfString(const nsString& aString,
                                       nsFontMetrics& aFontMetrics,
-                                      nsRenderingContext& aContext) {
+                                      DrawTarget* aDrawTarget) {
     return nsLayoutUtils::AppUnitWidthOfString(aString.get(), aString.Length(),
-                                               aFontMetrics, aContext);
+                                               aFontMetrics, aDrawTarget);
   }
   static nscoord AppUnitWidthOfString(const char16_t *aString,
                                       uint32_t aLength,
                                       nsFontMetrics& aFontMetrics,
-                                      nsRenderingContext& aContext);
+                                      DrawTarget* aDrawTarget);
   static nscoord AppUnitWidthOfStringBidi(const nsString& aString,
                                           const nsIFrame* aFrame,
                                           nsFontMetrics& aFontMetrics,
@@ -1602,13 +1555,13 @@ public:
 
   static bool StringWidthIsGreaterThan(const nsString& aString,
                                        nsFontMetrics& aFontMetrics,
-                                       nsRenderingContext& aContext,
+                                       DrawTarget* aDrawTarget,
                                        nscoord aWidth);
 
   static nsBoundingMetrics AppUnitBoundsOfString(const char16_t* aString,
                                                  uint32_t aLength,
                                                  nsFontMetrics& aFontMetrics,
-                                                 nsRenderingContext& aContext);
+                                                 DrawTarget* aDrawTarget);
 
   static void DrawString(const nsIFrame*       aFrame,
                          nsFontMetrics&        aFontMetrics,
@@ -1980,10 +1933,8 @@ public:
 
   /**
    * Get the reference frame that would be used when constructing a
-   * display item for this frame.  (Note, however, that
-   * nsDisplayTransform use the reference frame appropriate for their
-   * GetTransformRootFrame(), rather than using their own frame as a
-   * reference frame.)
+   * display item for this frame.  Rather than using their own frame
+   * as a reference frame.)
    *
    * This duplicates some of the logic of GetDisplayRootFrame above and
    * of nsDisplayListBuilder::FindReferenceFrameFor.
@@ -1992,16 +1943,6 @@ public:
    * frame from it instead of calling this.
    */
   static nsIFrame* GetReferenceFrame(nsIFrame* aFrame);
-
-  /**
-   * Get the parent of this frame, except if that parent is part of a
-   * preserve-3d hierarchy, get the parent of the root of the
-   * preserve-3d hierarchy.
-   *
-   * (This is used as the starting point for reference frame computation
-   * for nsDisplayTransform display items.)
-   */
-  static nsIFrame* GetTransformRootFrame(nsIFrame* aFrame);
 
   /**
    * Get textrun construction flags determined by a given style; in particular
@@ -2077,7 +2018,10 @@ public:
     SFE_PREFER_NO_PREMULTIPLY_ALPHA = 1 << 3,
     /* Whether we should skip getting a surface for vector images and
        return a DirectDrawInfo containing an imgIContainer instead. */
-    SFE_NO_RASTERIZING_VECTORS = 1 << 4
+    SFE_NO_RASTERIZING_VECTORS = 1 << 4,
+    /* If image type is vector, the return surface size will same as
+       element size, not image's intrinsic size. */
+    SFE_USE_ELEMENT_SIZE_IF_VECTOR = 1 << 5
   };
 
   struct DirectDrawInfo {
@@ -2139,10 +2083,21 @@ public:
     const RefPtr<mozilla::gfx::SourceSurface>& GetSourceSurface();
   };
 
+  // This function can be called on any thread.
+  static SurfaceFromElementResult
+  SurfaceFromOffscreenCanvas(mozilla::dom::OffscreenCanvas *aOffscreenCanvas,
+                             uint32_t aSurfaceFlags,
+                             RefPtr<DrawTarget>& aTarget);
+  static SurfaceFromElementResult
+  SurfaceFromOffscreenCanvas(mozilla::dom::OffscreenCanvas *aOffscreenCanvas,
+                             uint32_t aSurfaceFlags = 0) {
+    RefPtr<DrawTarget> target = nullptr;
+    return SurfaceFromOffscreenCanvas(aOffscreenCanvas, aSurfaceFlags, target);
+  }
+
   static SurfaceFromElementResult SurfaceFromElement(mozilla::dom::Element *aElement,
                                                      uint32_t aSurfaceFlags,
                                                      RefPtr<DrawTarget>& aTarget);
-
   static SurfaceFromElementResult SurfaceFromElement(mozilla::dom::Element *aElement,
                                                      uint32_t aSurfaceFlags = 0) {
     RefPtr<DrawTarget> target = nullptr;
@@ -2714,24 +2669,18 @@ public:
                                                 RepaintMode aRepaintMode);
 
   /**
-   * Get the display port for |aScrollFrame|'s content. If |aScrollFrame|
-   * WantsAsyncScroll() and we don't have a scrollable displayport yet (as
-   * tracked by |aBuilder|), calculate and set a display port. Returns true if
-   * there is (now) a displayport, and if so the displayport is returned in
-   * |aOutDisplayport|.
+   * If |aScrollFrame| WantsAsyncScroll() and we don't have a scrollable
+   * displayport yet (as tracked by |aBuilder|), calculate and set a
+   * displayport.
    *
-   * Note that a displayport can either be stored as a rect, or as a base
-   * rect + margins. If it is stored as a base rect + margins, the base rect
-   * is updated to |aDisplayPortBase|, and the rect assembled from the
-   * base rect and margins is returned. If this function creates a displayport,
-   * it computes margins and stores |aDisplayPortBase| as the base rect.
+   * If this function creates a displayport, it computes margins and stores
+   * |aDisplayPortBase| as the base rect.
    *
    * This is intended to be called during display list building.
    */
-  static bool GetOrMaybeCreateDisplayPort(nsDisplayListBuilder& aBuilder,
-                                          nsIFrame* aScrollFrame,
-                                          nsRect aDisplayPortBase,
-                                          nsRect* aOutDisplayport);
+  static void MaybeCreateDisplayPort(nsDisplayListBuilder& aBuilder,
+                                     nsIFrame* aScrollFrame,
+                                     nsRect aDisplayPortBase);
 
   static nsIScrollableFrame* GetAsyncScrollableAncestorFrame(nsIFrame* aTarget);
 
@@ -2825,6 +2774,14 @@ public:
    * Returns true if the given frame is a scrollframe and it has snap points.
    */
   static bool IsScrollFrameWithSnapping(nsIFrame* aFrame);
+  /**
+   * Calculate the bounding rect of |aContent|, relative to the origin
+   * of the scrolled content of |aRootScrollFrame|.
+   * Where the element is contained inside a scrollable subframe, the
+   * bounding rect is clipped to the bounds of the subframe.
+   */
+  static CSSRect GetBoundingContentRect(const nsIContent* aContent,
+                                        const nsIScrollableFrame* aRootScrollFrame);
 
 private:
   static uint32_t sFontSizeInflationEmPerLine;

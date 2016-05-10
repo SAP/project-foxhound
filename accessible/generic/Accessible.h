@@ -758,6 +758,12 @@ public:
    */
   virtual already_AddRefed<nsIURI> AnchorURIAt(uint32_t aAnchorIndex);
 
+  /**
+   * Returns a text point for the accessible element.
+   */
+  void ToTextPoint(HyperTextAccessible** aContainer, int32_t* aOffset,
+                   bool aIsBefore = true) const;
+
   //////////////////////////////////////////////////////////////////////////////
   // SelectAccessible
 
@@ -858,7 +864,7 @@ public:
   bool IsDefunct() const { return mStateFlags & eIsDefunct; }
 
   /**
-   * Return true if the accessible is no longer in the document.
+   * Return false if the accessible is no longer in the document.
    */
   bool IsInDocument() const { return !(mStateFlags & eIsNotInDocument); }
 

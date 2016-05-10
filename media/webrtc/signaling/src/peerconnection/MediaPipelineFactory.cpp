@@ -72,8 +72,9 @@ JsepCodecDescToCodecConfig(const JsepCodecDescription& aCodec,
                                   desc.mName,
                                   desc.mClock,
                                   desc.mPacketSize,
-                                  desc.mChannels,
+                                  desc.mForceMono ? 1 : desc.mChannels,
                                   desc.mBitrate);
+  (*aConfig)->mMaxPlaybackRate = desc.mMaxPlaybackRate;
 
   return NS_OK;
 }
@@ -162,8 +163,12 @@ NegotiatedDetailsToVideoCodecConfigs(const JsepTrackNegotiatedDetails& aDetails,
     }
 
     for (size_t i = 0; i < aDetails.GetEncodingCount(); ++i) {
-      if (aDetails.GetEncoding(i).HasFormat(codec->mDefaultPt)) {
-        // TODO(bug 1192390): Roll constraints into simulcast entries
+      const JsepTrackEncoding& jsepEncoding(aDetails.GetEncoding(i));
+      if (jsepEncoding.HasFormat(codec->mDefaultPt)) {
+        VideoCodecConfig::SimulcastEncoding encoding;
+        encoding.rid = jsepEncoding.mRid;
+        encoding.constraints = jsepEncoding.mConstraints;
+        config->mSimulcastEncodings.push_back(encoding);
       }
     }
     aConfigs->values.push_back(config);
@@ -342,13 +347,6 @@ MediaPipelineFactory::GetTransportParameters(
       auto uniquePts = aTrack.GetNegotiatedDetails()->GetUniquePayloadTypes();
       for (auto i = uniquePts.begin(); i != uniquePts.end(); ++i) {
         (*aFilterOut)->AddUniquePT(*i);
-      }
-    } else {
-      // Add local SSRCs so we can distinguish which RTCP packets actually
-      // belong to this pipeline.
-      for (auto i = aTrack.GetSsrcs().begin();
-           i != aTrack.GetSsrcs().end(); ++i) {
-        (*aFilterOut)->AddLocalSSRC(*i);
       }
     }
   }

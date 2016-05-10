@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"
 
+#include "builtin/ModuleObject.h"
 #include "frontend/TokenStream.h"
 
 namespace js {
@@ -165,6 +166,7 @@ class PackedScopeCoordinate
     F(FORIN) \
     F(FOROF) \
     F(FORHEAD) \
+    F(ANNEXB_FUNCTION) \
     F(ARGSBODY) \
     F(SPREAD) \
     F(MUTATEPROTO) \
@@ -271,6 +273,9 @@ IsDeleteKind(ParseNodeKind kind)
  *                          pn_scopecoord: hops and var index for function
  *                          pn_dflags: PND_* definition/use flags (see below)
  *                          pn_blockid: block id number
+ * PNK_ANNEXB_FUNCTION binary pn_left: PNK_FUNCTION
+ *                            pn_right: assignment for annex B semantics for
+ *                              block-scoped function
  * PNK_ARGSBODY list        list of formal parameters with
  *                              PNK_NAME node with non-empty name for
  *                                SingleNameBinding without Initializer
@@ -341,7 +346,7 @@ IsDeleteKind(ParseNodeKind kind)
  *                          pn_kid3: catch block statements
  * PNK_BREAK    name        pn_atom: label or null
  * PNK_CONTINUE name        pn_atom: label or null
- * PNK_WITH     binary-obj  pn_left: head expr; pn_right: body; pn_binary_obj: StaticWithObject
+ * PNK_WITH     binary-obj  pn_left: head expr; pn_right: body; pn_binary_obj: StaticWithScope
  * PNK_VAR,     list        pn_head: list of PNK_NAME or PNK_ASSIGN nodes
  * PNK_CONST                         each name node has either
  *                                     pn_used: false
@@ -780,7 +785,8 @@ class ParseNode
                    isOp(JSOP_DEFFUN) ||        // non-body-level function statement
                    isOp(JSOP_NOP) ||           // body-level function stmt in global code
                    isOp(JSOP_GETLOCAL) ||      // body-level function stmt in function code
-                   isOp(JSOP_GETARG));         // body-level function redeclaring formal
+                   isOp(JSOP_GETARG) ||        // body-level function redeclaring formal
+                   isOp(JSOP_INITLEXICAL));    // block-level function stmt
         return !isOp(JSOP_LAMBDA) && !isOp(JSOP_LAMBDA_ARROW) && !isOp(JSOP_DEFFUN);
     }
 
@@ -833,7 +839,6 @@ class ParseNode
     /* Return true if this node appears in a Directive Prologue. */
     bool isDirectivePrologueMember() const { return pn_prologue; }
 
-#ifdef JS_HAS_GENERATOR_EXPRS
     ParseNode* generatorExpr() const {
         MOZ_ASSERT(isKind(PNK_GENEXP));
         ParseNode* callee = this->pn_head;
@@ -843,7 +848,6 @@ class ParseNode
                    body->last()->isKind(PNK_COMPREHENSIONFOR));
         return body->last();
     }
-#endif
 
     inline void markAsAssigned();
 
@@ -1481,7 +1485,7 @@ struct ClassNode : public TernaryNode {
         MOZ_ASSERT(list->isKind(PNK_CLASSMETHODLIST));
         return list;
     }
-    ObjectBox* scopeObject() const {
+    ObjectBox* scopeObjectBox() const {
         MOZ_ASSERT(pn_kid3->is<LexicalScopeNode>());
         return pn_kid3->pn_objbox;
     }
@@ -1607,6 +1611,8 @@ struct Definition : public ParseNode
         IMPORT
     };
 
+    static bool test(const ParseNode& pn) { return pn.isDefn(); }
+
     bool canHaveInitializer() { return int(kind()) <= int(ARG); }
 
     static const char* kindString(Kind kind);
@@ -1615,6 +1621,8 @@ struct Definition : public ParseNode
         if (getKind() == PNK_FUNCTION) {
             if (isOp(JSOP_GETARG))
                 return ARG;
+            if (isOp(JSOP_INITLEXICAL))
+                return LET;
             return VAR;
         }
         MOZ_ASSERT(getKind() == PNK_NAME);
@@ -1711,9 +1719,11 @@ class ObjectBox
     ObjectBox(JSObject* object, ObjectBox* traceLink);
     bool isFunctionBox() { return object->is<JSFunction>(); }
     FunctionBox* asFunctionBox();
-    bool isModuleBox() { return object->is<ModuleObject>(); }
+    bool isModuleBox();
     ModuleBox* asModuleBox();
-    void trace(JSTracer* trc);
+    virtual void trace(JSTracer* trc);
+
+    static void TraceList(JSTracer* trc, ObjectBox* listHead);
 
   protected:
     friend struct CGObjectList;

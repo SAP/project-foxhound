@@ -31,6 +31,11 @@ pref("browser.chromeURL", "chrome://browser/content/");
 // expiration (but low-memory conditions may still require the tab to be zombified).
 pref("browser.tabs.expireTime", 900);
 
+// Control whether tab content should try to load from disk cache when network
+// is offline.
+// Controlled by Switchboard experiment "offline-cache".
+pref("browser.tabs.useCache", false);
+
 // From libpref/src/init/all.js, extended to allow a slightly wider zoom range.
 pref("zoom.minPercent", 20);
 pref("zoom.maxPercent", 400);
@@ -184,7 +189,7 @@ pref("xpinstall.whitelist.fileRequest", false);
 pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
 pref("xpinstall.whitelist.add.180", "https://marketplace.firefox.com");
 
-pref("xpinstall.signatures.required", false);
+pref("xpinstall.signatures.required", true);
 
 pref("extensions.enabledScopes", 1);
 pref("extensions.autoupdate.enabled", true);
@@ -469,8 +474,13 @@ pref("plugin.default.state", 1);
 // The breakpad report server to link to in about:crashes
 pref("breakpad.reportURL", "https://crash-stats.mozilla.com/report/index/");
 pref("app.support.baseURL", "http://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/");
+
 // Used to submit data to input from about:feedback
 pref("app.feedback.postURL", "https://input.mozilla.org/api/v1/feedback/");
+
+// URL for feedback page
+pref("app.feedbackURL", "about:feedback");
+
 pref("app.privacyURL", "https://www.mozilla.org/privacy/firefox/");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
 pref("app.channelURL", "http://www.mozilla.org/%LOCALE%/firefox/channel/");
@@ -495,6 +505,8 @@ pref("security.mixed_content.block_active_content", true);
 // Enable pinning
 pref("security.cert_pinning.enforcement_level", 1);
 
+// NB: Changes to this pref affect CERT_CHAIN_SHA1_POLICY_STATUS telemetry.
+// See the comment in CertVerifier.cpp.
 // Allow SHA-1 certificates
 pref("security.pki.sha1_enforcement_level", 0);
 
@@ -565,15 +577,21 @@ pref("layers.async-video.enabled", true);
 
 #ifdef MOZ_ANDROID_APZ
 pref("layers.async-pan-zoom.enabled", true);
-// APZ physics settings, copied from B2G
-pref("apz.axis_lock.mode", 2); // Use "sticky" axis locking
+// APZ prefs that are different from B2G
+pref("apz.allow_immediate_handoff", false);
+pref("apz.touch_start_tolerance", "0.06");
+pref("apz.axis_lock.breakout_angle", "0.7853982");    // PI / 4 (45 degrees)
+// APZ physics settings reviewed by UX
+pref("apz.axis_lock.mode", 1); // Use "strict" axis locking
 pref("apz.fling_curve_function_x1", "0.41");
 pref("apz.fling_curve_function_y1", "0.0");
 pref("apz.fling_curve_function_x2", "0.80");
 pref("apz.fling_curve_function_y2", "1.0");
 pref("apz.fling_curve_threshold_inches_per_ms", "0.01");
-pref("apz.fling_friction", "0.0019");
+pref("apz.fling_friction", "0.004");
+pref("apz.fling_stopped_threshold", "0.1");
 pref("apz.max_velocity_inches_per_ms", "0.07");
+pref("apz.fling_accel_interval_ms", 750);
 #endif
 
 pref("layers.progressive-paint", true);
@@ -620,29 +638,23 @@ pref("media.mediasource.enabled", true);
 // optimize images memory usage
 pref("image.downscale-during-decode.enabled", true);
 
-#ifdef NIGHTLY_BUILD
-// Shumway component (SWF player) is disabled by default. Also see bug 904346.
-pref("shumway.disabled", true);
-#endif
-
 #ifdef MOZ_SAFE_BROWSING
 pref("browser.safebrowsing.enabled", true);
 pref("browser.safebrowsing.malware.enabled", true);
 pref("browser.safebrowsing.downloads.enabled", false);
 pref("browser.safebrowsing.downloads.remote.enabled", false);
 pref("browser.safebrowsing.downloads.remote.timeout_ms", 10000);
+pref("browser.safebrowsing.downloads.remote.url", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 pref("browser.safebrowsing.debug", false);
 
 pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-downloadwhite-digest256,goog-phish-shavar,goog-malware-shavar,goog-unwanted-shavar");
 pref("browser.safebrowsing.provider.google.updateURL", "https://safebrowsing.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2&key=%GOOGLE_API_KEY%");
 pref("browser.safebrowsing.provider.google.gethashURL", "https://safebrowsing.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
 pref("browser.safebrowsing.provider.google.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
-pref("browser.safebrowsing.provider.google.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
 pref("browser.safebrowsing.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportMalwareMistakeURL", "https://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%&url=");
-pref("browser.safebrowsing.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
 pref("browser.safebrowsing.id", @MOZ_APP_UA_NAME@);
 
@@ -660,6 +672,9 @@ pref("urlclassifier.gethash.timeout_ms", 5000);
 // a gethash request will be forced to check that the result is still in
 // the database.
 pref("urlclassifier.max-complete-age", 2700);
+
+// Tables for application reputation.
+pref("urlclassifier.downloadBlockTable", "goog-badbinurl-shavar");
 #endif
 
 // True if this is the first time we are showing about:firstrun
@@ -771,9 +786,6 @@ pref("layout.imagevisibility.numscrollportwidths", 1);
 pref("layout.imagevisibility.numscrollportheights", 1);
 
 pref("layers.enable-tiles", true);
-
-// Speculative 'fix' to work around OOM issues
-pref("layers.tiles.adjust", false);
 
 // Enable the dynamic toolbar
 pref("browser.chrome.dynamictoolbar", true);

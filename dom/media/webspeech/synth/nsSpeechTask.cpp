@@ -52,8 +52,8 @@ public:
     }
   }
 
-  virtual void NotifyEvent(MediaStreamGraph* aGraph,
-                           MediaStreamListener::MediaStreamGraphEvent event) override
+  void NotifyEvent(MediaStreamGraph* aGraph,
+                   MediaStreamListener::MediaStreamGraphEvent event) override
   {
     switch (event) {
       case EVENT_FINISHED:
@@ -73,7 +73,7 @@ public:
     }
   }
 
-  virtual void NotifyBlockingChanged(MediaStreamGraph* aGraph, Blocking aBlocked) override
+  void NotifyBlockingChanged(MediaStreamGraph* aGraph, Blocking aBlocked) override
   {
     if (aBlocked == MediaStreamListener::UNBLOCKED && !mStarted) {
       mStarted = true;
@@ -498,9 +498,15 @@ nsSpeechTask::DispatchResumeImpl(float aElapsedTime, uint32_t aCharIndex)
 NS_IMETHODIMP
 nsSpeechTask::DispatchError(float aElapsedTime, uint32_t aCharIndex)
 {
+  LOG(LogLevel::Debug, ("nsSpeechTask::DispatchError"));
+
   if (!mIndirectAudio) {
     NS_WARNING("Can't call DispatchError() from a direct audio speech service");
     return NS_ERROR_FAILURE;
+  }
+
+  if (!mPreCanceled) {
+    nsSynthVoiceRegistry::GetInstance()->SpeakNext();
   }
 
   return DispatchErrorImpl(aElapsedTime, aCharIndex);
@@ -512,6 +518,10 @@ nsSpeechTask::DispatchErrorImpl(float aElapsedTime, uint32_t aCharIndex)
   MOZ_ASSERT(mUtterance);
   if(NS_WARN_IF(mUtterance->mState == SpeechSynthesisUtterance::STATE_ENDED)) {
     return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (mSpeechSynthesis) {
+    mSpeechSynthesis->OnEnd(this);
   }
 
   mUtterance->mState = SpeechSynthesisUtterance::STATE_ENDED;
@@ -696,8 +706,7 @@ nsSpeechTask::CreateAudioChannelAgent()
                                            this);
   float volume = 0.0f;
   bool muted = true;
-  mAudioChannelAgent->NotifyStartedPlaying(nsIAudioChannelAgent::AUDIO_AGENT_NOTIFY, &volume, &muted);
-  WindowVolumeChanged(volume, muted);
+  mAudioChannelAgent->NotifyStartedPlaying(&volume, &muted);
 }
 
 void
@@ -717,7 +726,7 @@ nsSpeechTask::WindowVolumeChanged(float aVolume, bool aMuted)
 }
 
 NS_IMETHODIMP
-nsSpeechTask::WindowAudioCaptureChanged()
+nsSpeechTask::WindowAudioCaptureChanged(bool aCapture)
 {
   // This is not supported yet.
   return NS_OK;

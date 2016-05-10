@@ -231,8 +231,8 @@ const Class js::ScalarTypeDescr::class_ = {
 
 const JSFunctionSpec js::ScalarTypeDescr::typeObjectMethods[] = {
     JS_SELF_HOSTED_FN("toSource", "DescrToSource", 0, 0),
-    {"array", {nullptr, nullptr}, 1, 0, "ArrayShorthand"},
-    {"equivalent", {nullptr, nullptr}, 1, 0, "TypeDescrEquivalent"},
+    JS_SELF_HOSTED_FN("array", "ArrayShorthand", 1, JSFUN_HAS_REST),
+    JS_SELF_HOSTED_FN("equivalent", "TypeDescrEquivalent", 1, 0),
     JS_FS_END
 };
 
@@ -412,25 +412,41 @@ js::ReferenceTypeDescr::call(JSContext* cx, unsigned argc, Value* vp)
  * Note: these are partially defined in SIMD.cpp
  */
 
+SimdType
+SimdTypeDescr::type() const {
+    uint32_t t = uint32_t(getReservedSlot(JS_DESCR_SLOT_TYPE).toInt32());
+    MOZ_ASSERT(t < uint32_t(SimdType::Count));
+    return SimdType(t);
+}
+
 int32_t
-SimdTypeDescr::size(Type t)
+SimdTypeDescr::size(SimdType t)
 {
-    MOZ_ASSERT(unsigned(t) <= SimdTypeDescr::Type::LAST_TYPE);
+    MOZ_ASSERT(unsigned(t) < unsigned(SimdType::Count));
     switch (t) {
-      case SimdTypeDescr::Int8x16:
-      case SimdTypeDescr::Int16x8:
-      case SimdTypeDescr::Int32x4:
-      case SimdTypeDescr::Float32x4:
-      case SimdTypeDescr::Float64x2:
+      case SimdType::Int8x16:
+      case SimdType::Int16x8:
+      case SimdType::Int32x4:
+      case SimdType::Uint8x16:
+      case SimdType::Uint16x8:
+      case SimdType::Uint32x4:
+      case SimdType::Float32x4:
+      case SimdType::Float64x2:
+      case SimdType::Bool8x16:
+      case SimdType::Bool16x8:
+      case SimdType::Bool32x4:
+      case SimdType::Bool64x2:
         return 16;
+      case SimdType::Count:
+        break;
     }
     MOZ_CRASH("unexpected SIMD type");
 }
 
 int32_t
-SimdTypeDescr::alignment(Type t)
+SimdTypeDescr::alignment(SimdType t)
 {
-    MOZ_ASSERT(unsigned(t) <= SimdTypeDescr::Type::LAST_TYPE);
+    MOZ_ASSERT(unsigned(t) < unsigned(SimdType::Count));
     return size(t);
 }
 
@@ -2588,7 +2604,7 @@ js::GetFloat32x4TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Float32x4>(cx));
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Float32x4>(cx, global));
     return true;
 }
 
@@ -2598,7 +2614,7 @@ js::GetFloat64x2TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Float64x2>(cx));
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Float64x2>(cx, global));
     return true;
 }
 
@@ -2608,7 +2624,7 @@ js::GetInt8x16TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Int8x16>(cx));
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Int8x16>(cx, global));
     return true;
 }
 
@@ -2618,7 +2634,7 @@ js::GetInt16x8TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Int16x8>(cx));
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Int16x8>(cx, global));
     return true;
 }
 
@@ -2628,7 +2644,77 @@ js::GetInt32x4TypeDescr(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     Rooted<GlobalObject*> global(cx, cx->global());
     MOZ_ASSERT(global);
-    args.rval().setObject(*global->getOrCreateSimdTypeDescr<Int32x4>(cx));
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Int32x4>(cx, global));
+    return true;
+}
+
+bool
+js::GetUint8x16TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Uint8x16>(cx, global));
+    return true;
+}
+
+bool
+js::GetUint16x8TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Uint16x8>(cx, global));
+    return true;
+}
+
+bool
+js::GetUint32x4TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Uint32x4>(cx, global));
+    return true;
+}
+
+bool
+js::GetBool8x16TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Bool8x16>(cx, global));
+    return true;
+}
+
+bool
+js::GetBool16x8TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Bool16x8>(cx, global));
+    return true;
+}
+
+bool
+js::GetBool32x4TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Bool32x4>(cx, global));
+    return true;
+}
+
+bool
+js::GetBool64x2TypeDescr(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    MOZ_ASSERT(global);
+    args.rval().setObject(*GlobalObject::getOrCreateSimdTypeDescr<Bool64x2>(cx, global));
     return true;
 }
 

@@ -27,7 +27,7 @@ public:
     };
 
     bool Initialize();
-    virtual bool ShapeText(gfxContext      *aContext,
+    virtual bool ShapeText(DrawTarget      *aDrawTarget,
                            const char16_t *aText,
                            uint32_t         aOffset,
                            uint32_t         aLength,
@@ -61,11 +61,6 @@ public:
                        hb_codepoint_t glyph, void *user_data);
 
     static hb_bool_t
-    HBGetGlyphHOrigin(hb_font_t *font, void *font_data,
-                      hb_codepoint_t glyph,
-                      hb_position_t *x, hb_position_t *y,
-                      void *user_data);
-    static hb_bool_t
     HBGetGlyphVOrigin(hb_font_t *font, void *font_data,
                       hb_codepoint_t glyph,
                       hb_position_t *x, hb_position_t *y,
@@ -98,7 +93,7 @@ public:
     }
 
 protected:
-    nsresult SetGlyphsFromRun(gfxContext     *aContext,
+    nsresult SetGlyphsFromRun(DrawTarget     *aDrawTarget,
                               gfxShapedText  *aShapedText,
                               uint32_t        aOffset,
                               uint32_t        aLength,

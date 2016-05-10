@@ -58,17 +58,15 @@
 using namespace js;
 using namespace js::jit;
 
-using mozilla::ThreadLocal;
-
 // Assert that JitCode is gc::Cell aligned.
 JS_STATIC_ASSERT(sizeof(JitCode) % gc::CellSize == 0);
 
-static ThreadLocal<JitContext*> TlsJitContext;
+static MOZ_THREAD_LOCAL(JitContext*) TlsJitContext;
 
 static JitContext*
 CurrentJitContext()
 {
-    if (!TlsJitContext.initialized())
+    if (!TlsJitContext.init())
         return nullptr;
     return TlsJitContext.get();
 }
@@ -155,7 +153,7 @@ JitContext::~JitContext()
 bool
 jit::InitializeIon()
 {
-    if (!TlsJitContext.initialized() && !TlsJitContext.init())
+    if (!TlsJitContext.init())
         return false;
     CheckLogging();
 #if defined(JS_CODEGEN_ARM)
@@ -165,8 +163,9 @@ jit::InitializeIon()
     return true;
 }
 
-JitRuntime::JitRuntime()
-  : execAlloc_(),
+JitRuntime::JitRuntime(JSRuntime* rt)
+  : execAlloc_(rt),
+    backedgeExecAlloc_(rt),
     exceptionTail_(nullptr),
     bailoutTail_(nullptr),
     profilerExitFrameTail_(nullptr),
@@ -179,7 +178,8 @@ JitRuntime::JitRuntime()
     baselineDebugModeOSRHandler_(nullptr),
     functionWrappers_(nullptr),
     osrTempData_(nullptr),
-    mutatingBackedgeList_(false),
+    preventBackedgePatching_(false),
+    backedgeTarget_(BackedgeLoopHeader),
     ionReturnOverride_(MagicValue(JS_ARG_POISON)),
     jitcodeGlobalTable_(nullptr)
 {
@@ -357,8 +357,26 @@ JitRuntime::freeOsrTempData()
 void
 JitRuntime::patchIonBackedges(JSRuntime* rt, BackedgeTarget target)
 {
-    MOZ_ASSERT_IF(target == BackedgeLoopHeader, mutatingBackedgeList_);
-    MOZ_ASSERT_IF(target == BackedgeInterruptCheck, !mutatingBackedgeList_);
+    if (target == BackedgeLoopHeader) {
+        // We must be on the main thread. The caller must use
+        // AutoPreventBackedgePatching to ensure we don't reenter.
+        MOZ_ASSERT(preventBackedgePatching_);
+        MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+    } else {
+        // We must be called from InterruptRunningJitCode, or a signal handler
+        // triggered there. rt->handlingJitInterrupt() ensures we can't reenter
+        // this code.
+        MOZ_ASSERT(!preventBackedgePatching_);
+        MOZ_ASSERT(rt->handlingJitInterrupt());
+    }
+
+    // Do nothing if we know all backedges are already jumping to `target`.
+    if (backedgeTarget_ == target)
+        return;
+
+    backedgeTarget_ = target;
+
+    backedgeExecAlloc_.makeAllWritable();
 
     // Patch all loop backedges in Ion code so that they either jump to the
     // normal loop header or to an interrupt handler each time they run.
@@ -372,6 +390,8 @@ JitRuntime::patchIonBackedges(JSRuntime* rt, BackedgeTarget target)
         else
             PatchBackedge(patchableBackedge->backedge, patchableBackedge->interruptCheck, target);
     }
+
+    backedgeExecAlloc_.makeAllExecutable();
 }
 
 JitCompartment::JitCompartment()
@@ -379,8 +399,8 @@ JitCompartment::JitCompartment()
     baselineGetPropReturnAddr_(nullptr),
     baselineSetPropReturnAddr_(nullptr),
     stringConcatStub_(nullptr),
-    regExpExecStub_(nullptr),
-    regExpTestStub_(nullptr)
+    regExpMatcherStub_(nullptr),
+    regExpTesterStub_(nullptr)
 {
     baselineCallReturnAddrs_[0] = baselineCallReturnAddrs_[1] = nullptr;
 }
@@ -393,7 +413,7 @@ JitCompartment::~JitCompartment()
 bool
 JitCompartment::initialize(JSContext* cx)
 {
-    stubCodes_ = cx->new_<ICStubCodeMap>(cx);
+    stubCodes_ = cx->new_<ICStubCodeMap>(cx->runtime());
     if (!stubCodes_)
         return false;
 
@@ -708,7 +728,7 @@ JitCompartment::sweep(FreeOp* fop, JSCompartment* compartment)
     CancelOffThreadIonCompile(compartment, nullptr);
     FinishAllOffThreadCompilations(compartment);
 
-    stubCodes_->sweep(fop);
+    stubCodes_->sweep();
 
     // If the sweep removed the ICCall_Fallback stub, nullptr the baselineCallReturnAddr_ field.
     if (!stubCodes_->lookup(ICCall_Fallback::Compiler::BASELINE_CALL_KEY))
@@ -725,14 +745,13 @@ JitCompartment::sweep(FreeOp* fop, JSCompartment* compartment)
     if (stringConcatStub_ && !IsMarkedUnbarriered(&stringConcatStub_))
         stringConcatStub_ = nullptr;
 
-    if (regExpExecStub_ && !IsMarkedUnbarriered(&regExpExecStub_))
-        regExpExecStub_ = nullptr;
+    if (regExpMatcherStub_ && !IsMarkedUnbarriered(&regExpMatcherStub_))
+        regExpMatcherStub_ = nullptr;
 
-    if (regExpTestStub_ && !IsMarkedUnbarriered(&regExpTestStub_))
-        regExpTestStub_ = nullptr;
+    if (regExpTesterStub_ && !IsMarkedUnbarriered(&regExpTesterStub_))
+        regExpTesterStub_ = nullptr;
 
-    for (size_t i = 0; i <= SimdTypeDescr::LAST_TYPE; i++) {
-        ReadBarrieredObject& obj = simdTemplateObjects_[i];
+    for (ReadBarrieredObject& obj : simdTemplateObjects_) {
         if (obj && IsAboutToBeFinalized(&obj))
             obj.set(nullptr);
     }
@@ -742,15 +761,15 @@ void
 JitCompartment::toggleBarriers(bool enabled)
 {
     // Toggle barriers in compartment wide stubs that have patchable pre barriers.
-    if (regExpExecStub_)
-        regExpExecStub_->togglePreBarriers(enabled);
-    if (regExpTestStub_)
-        regExpTestStub_->togglePreBarriers(enabled);
+    if (regExpMatcherStub_)
+        regExpMatcherStub_->togglePreBarriers(enabled, Reprotect);
+    if (regExpTesterStub_)
+        regExpTesterStub_->togglePreBarriers(enabled, Reprotect);
 
     // Toggle barriers in baseline IC stubs.
     for (ICStubCodeMap::Enum e(*stubCodes_); !e.empty(); e.popFront()) {
         JitCode* code = *e.front().value().unsafeGet();
-        code->togglePreBarriers(enabled);
+        code->togglePreBarriers(enabled, Reprotect);
     }
 }
 
@@ -826,18 +845,16 @@ JitCode::traceChildren(JSTracer* trc)
     if (invalidated())
         return;
 
-    // If we're moving objects, we need writable JIT code.
-    ReprotectCode reprotect = (trc->runtime()->isHeapMinorCollecting() || zone()->isGCCompacting())
-                              ? Reprotect
-                              : DontReprotect;
-    MaybeAutoWritableJitCode awjc(this, reprotect);
-
     if (jumpRelocTableBytes_) {
         uint8_t* start = code_ + jumpRelocTableOffset();
         CompactBufferReader reader(start, start + jumpRelocTableBytes_);
         MacroAssembler::TraceJumpRelocations(trc, this, reader);
     }
     if (dataRelocTableBytes_) {
+        // If we're moving objects, we need writable JIT code.
+        bool movingObjects = trc->runtime()->isHeapMinorCollecting() || zone()->isGCCompacting();
+        MaybeAutoWritableJitCode awjc(this, movingObjects ? Reprotect : DontReprotect);
+
         uint8_t* start = code_ + dataRelocTableOffset();
         CompactBufferReader reader(start, start + dataRelocTableBytes_);
         MacroAssembler::TraceDataRelocations(trc, this, reader);
@@ -857,41 +874,42 @@ JitCode::finalize(FreeOp* fop)
     }
 #endif
 
-    // Buffer can be freed at any time hereafter. Catch use-after-free bugs.
-    // Don't do this if the Ion code is protected, as the signal handler will
-    // deadlock trying to reacquire the interrupt lock.
-    {
-        AutoWritableJitCode awjc(this);
-        memset(code_, JS_SWEPT_CODE_PATTERN, bufferSize_);
-        code_ = nullptr;
-    }
+    MOZ_ASSERT(pool_);
 
-    // Code buffers are stored inside JSC pools.
-    // Pools are refcounted. Releasing the pool may free it.
-    if (pool_) {
-        // Horrible hack: if we are using perf integration, we don't
-        // want to reuse code addresses, so we just leak the memory instead.
-        if (!PerfEnabled())
-            pool_->release(headerSize_ + bufferSize_, CodeKind(kind_));
-        pool_ = nullptr;
-    }
+    // With W^X JIT code, reprotecting memory for each JitCode instance is
+    // slow, so we record the ranges and poison them later all at once. It's
+    // safe to ignore OOM here, it just means we won't poison the code.
+    if (fop->appendJitPoisonRange(JitPoisonRange(pool_, code_, bufferSize_)))
+        pool_->addRef();
+    code_ = nullptr;
+
+    // Code buffers are stored inside ExecutablePools. Pools are refcounted.
+    // Releasing the pool may free it. Horrible hack: if we are using perf
+    // integration, we don't want to reuse code addresses, so we just leak the
+    // memory instead.
+    if (!PerfEnabled())
+        pool_->release(headerSize_ + bufferSize_, CodeKind(kind_));
+    pool_ = nullptr;
 }
 
 void
-JitCode::togglePreBarriers(bool enabled)
+JitCode::togglePreBarriers(bool enabled, ReprotectCode reprotect)
 {
-    AutoWritableJitCode awjc(this);
     uint8_t* start = code_ + preBarrierTableOffset();
     CompactBufferReader reader(start, start + preBarrierTableBytes_);
 
-    while (reader.more()) {
+    if (!reader.more())
+        return;
+
+    MaybeAutoWritableJitCode awjc(this, reprotect);
+    do {
         size_t offset = reader.readUnsigned();
         CodeLocationLabel loc(this, CodeOffset(offset));
         if (enabled)
             Assembler::ToggleToCmp(loc);
         else
             Assembler::ToggleToJmp(loc);
-    }
+    } while (reader.more());
 }
 
 IonScript::IonScript()
@@ -1121,7 +1139,7 @@ IonScript::copyPatchableBackedges(JSContext* cx, JitCode* code,
                                   MacroAssembler& masm)
 {
     JitRuntime* jrt = cx->runtime()->jitRuntime();
-    JitRuntime::AutoMutateBackedges amb(jrt);
+    JitRuntime::AutoPreventBackedgePatching apbp(cx->runtime());
 
     for (size_t i = 0; i < backedgeEntries_; i++) {
         PatchableBackedgeInfo& info = backedges[i];
@@ -1133,11 +1151,9 @@ IonScript::copyPatchableBackedges(JSContext* cx, JitCode* code,
         CodeLocationLabel interruptCheck(code, CodeOffset(info.interruptCheck->offset()));
         new(patchableBackedge) PatchableBackedge(backedge, loopHeader, interruptCheck);
 
-        // Point the backedge to either of its possible targets, according to
-        // whether an interrupt is currently desired, matching the targets
-        // established by ensureIonCodeAccessible() above. We don't handle the
-        // interrupt immediately as the interrupt lock is held here.
-        if (cx->runtime()->hasPendingInterrupt())
+        // Point the backedge to either of its possible targets, matching the
+        // other backedges in the runtime.
+        if (jrt->backedgeTarget() == JitRuntime::BackedgeInterruptCheck)
             PatchBackedge(backedge, interruptCheck, JitRuntime::BackedgeInterruptCheck);
         else
             PatchBackedge(backedge, loopHeader, JitRuntime::BackedgeLoopHeader);
@@ -1269,9 +1285,9 @@ IonScript::Destroy(FreeOp* fop, IonScript* script)
 }
 
 void
-IonScript::toggleBarriers(bool enabled)
+IonScript::toggleBarriers(bool enabled, ReprotectCode reprotect)
 {
-    method()->togglePreBarriers(enabled);
+    method()->togglePreBarriers(enabled, reprotect);
 }
 
 void
@@ -1343,6 +1359,9 @@ IonScript::purgeCaches()
     if (invalidated())
         return;
 
+    if (numCaches() == 0)
+        return;
+
     AutoWritableJitCode awjc(method());
     for (size_t i = 0; i < numCaches(); i++)
         getCacheFromIndex(i).reset(DontReprotect);
@@ -1355,7 +1374,7 @@ IonScript::unlinkFromRuntime(FreeOp* fop)
     // make sure that those backedges are unlinked from the runtime and not
     // reclobbered with garbage if an interrupt is requested.
     JitRuntime* jrt = fop->runtime()->jitRuntime();
-    JitRuntime::AutoMutateBackedges amb(jrt);
+    JitRuntime::AutoPreventBackedgePatching apbp(fop->runtime());
     for (size_t i = 0; i < backedgeEntries_; i++)
         jrt->removePatchableBackedge(&backedgeList()[i]);
 
@@ -2108,8 +2127,6 @@ IonCompile(JSContext* cx, JSScript* script,
     AutoTraceLog logScript(logger, event);
     AutoTraceLog logCompile(logger, TraceLogger_IonCompilation);
 
-    MOZ_ASSERT(optimizationLevel > Optimization_DontCompile);
-
     // Make sure the script's canonical function isn't lazy. We can't de-lazify
     // it in a helper thread.
     script->ensureNonLazyCanonicalFunction(cx);
@@ -2285,6 +2302,7 @@ CheckFrame(JSContext* cx, BaselineFrame* frame)
 {
     MOZ_ASSERT(!frame->script()->isGenerator());
     MOZ_ASSERT(!frame->isDebuggerEvalFrame());
+    MOZ_ASSERT(!frame->isEvalFrame());
 
     // This check is to not overrun the stack.
     if (frame->isFunctionFrame()) {
@@ -2396,7 +2414,7 @@ Compile(JSContext* cx, HandleScript script, BaselineFrame* osrFrame, jsbytecode*
 
     bool recompile = false;
     OptimizationLevel optimizationLevel = GetOptimizationLevel(script, osrPc);
-    if (optimizationLevel == Optimization_DontCompile)
+    if (optimizationLevel == OptimizationLevel::DontCompile)
         return Method_Skipped;
 
     if (script->hasIonScript()) {
@@ -2460,76 +2478,6 @@ jit::OffThreadCompilationAvailable(JSContext* cx)
     return cx->runtime()->canUseOffthreadIonCompilation()
         && HelperThreadState().cpuCount > 1
         && CanUseExtraThreads();
-}
-
-// Decide if a transition from interpreter execution to Ion code should occur.
-// May compile or recompile the target JSScript.
-MethodStatus
-jit::CanEnterAtBranch(JSContext* cx, HandleScript script, BaselineFrame* osrFrame, jsbytecode* pc)
-{
-    MOZ_ASSERT(jit::IsIonEnabled(cx));
-    MOZ_ASSERT((JSOp)*pc == JSOP_LOOPENTRY);
-    MOZ_ASSERT(LoopEntryCanIonOsr(pc));
-
-    // Skip if the script has been disabled.
-    if (!script->canIonCompile())
-        return Method_Skipped;
-
-    // Skip if the script is being compiled off thread.
-    if (script->isIonCompilingOffThread())
-        return Method_Skipped;
-
-    // Skip if the code is expected to result in a bailout.
-    if (script->hasIonScript() && script->ionScript()->bailoutExpected())
-        return Method_Skipped;
-
-    // Optionally ignore on user request.
-    if (!JitOptions.osr)
-        return Method_Skipped;
-
-    // Mark as forbidden if frame can't be handled.
-    if (!CheckFrame(cx, osrFrame)) {
-        ForbidCompilation(cx, script);
-        return Method_CantCompile;
-    }
-
-    // Check if the jitcode still needs to get linked and do this
-    // to have a valid IonScript.
-    if (script->baselineScript()->hasPendingIonBuilder())
-        LazyLink(cx, script);
-
-    // By default a recompilation doesn't happen on osr mismatch.
-    // Decide if we want to force a recompilation if this happens too much.
-    bool force = false;
-    if (script->hasIonScript() && pc != script->ionScript()->osrPc()) {
-        uint32_t count = script->ionScript()->incrOsrPcMismatchCounter();
-        if (count <= JitOptions.osrPcMismatchesBeforeRecompile)
-            return Method_Skipped;
-        force = true;
-    }
-
-    // Attempt compilation.
-    // - Returns Method_Compiled if the right ionscript is present
-    //   (Meaning it was present or a sequantial compile finished)
-    // - Returns Method_Skipped if pc doesn't match
-    //   (This means a background thread compilation with that pc could have started or not.)
-    RootedScript rscript(cx, script);
-    MethodStatus status = Compile(cx, rscript, osrFrame, pc, osrFrame->isConstructing(),
-                                  force);
-    if (status != Method_Compiled) {
-        if (status == Method_CantCompile)
-            ForbidCompilation(cx, script);
-        return status;
-    }
-
-    // Return the compilation was skipped when the osr pc wasn't adjusted.
-    // This can happen when there was still an IonScript available and a
-    // background compilation started, but hasn't finished yet.
-    // Or when we didn't force a recompile.
-    if (script->hasIonScript() && pc != script->ionScript()->osrPc())
-        return Method_Skipped;
-
-    return Method_Compiled;
 }
 
 MethodStatus
@@ -2606,13 +2554,13 @@ jit::CanEnter(JSContext* cx, RunState& state)
     return Method_Compiled;
 }
 
-MethodStatus
-jit::CompileFunctionForBaseline(JSContext* cx, HandleScript script, BaselineFrame* frame)
+static MethodStatus
+BaselineCanEnterAtEntry(JSContext* cx, HandleScript script, BaselineFrame* frame)
 {
     MOZ_ASSERT(jit::IsIonEnabled(cx));
-    MOZ_ASSERT(frame->fun()->nonLazyScript()->canIonCompile());
-    MOZ_ASSERT(!frame->fun()->nonLazyScript()->isIonCompilingOffThread());
-    MOZ_ASSERT(!frame->fun()->nonLazyScript()->hasIonScript());
+    MOZ_ASSERT(frame->callee()->nonLazyScript()->canIonCompile());
+    MOZ_ASSERT(!frame->callee()->nonLazyScript()->isIonCompilingOffThread());
+    MOZ_ASSERT(!frame->callee()->nonLazyScript()->hasIonScript());
     MOZ_ASSERT(frame->isFunctionFrame());
 
     // Mark as forbidden if frame can't be handled.
@@ -2631,6 +2579,157 @@ jit::CompileFunctionForBaseline(JSContext* cx, HandleScript script, BaselineFram
 
     return Method_Compiled;
 }
+
+// Decide if a transition from baseline execution to Ion code should occur.
+// May compile or recompile the target JSScript.
+static MethodStatus
+BaselineCanEnterAtBranch(JSContext* cx, HandleScript script, BaselineFrame* osrFrame, jsbytecode* pc)
+{
+    MOZ_ASSERT(jit::IsIonEnabled(cx));
+    MOZ_ASSERT((JSOp)*pc == JSOP_LOOPENTRY);
+    MOZ_ASSERT(LoopEntryCanIonOsr(pc));
+
+    // Skip if the script has been disabled.
+    if (!script->canIonCompile())
+        return Method_Skipped;
+
+    // Skip if the script is being compiled off thread.
+    if (script->isIonCompilingOffThread())
+        return Method_Skipped;
+
+    // Skip if the code is expected to result in a bailout.
+    if (script->hasIonScript() && script->ionScript()->bailoutExpected())
+        return Method_Skipped;
+
+    // Optionally ignore on user request.
+    if (!JitOptions.osr)
+        return Method_Skipped;
+
+    // Mark as forbidden if frame can't be handled.
+    if (!CheckFrame(cx, osrFrame)) {
+        ForbidCompilation(cx, script);
+        return Method_CantCompile;
+    }
+
+    // Check if the jitcode still needs to get linked and do this
+    // to have a valid IonScript.
+    if (script->baselineScript()->hasPendingIonBuilder())
+        LazyLink(cx, script);
+
+    // By default a recompilation doesn't happen on osr mismatch.
+    // Decide if we want to force a recompilation if this happens too much.
+    bool force = false;
+    if (script->hasIonScript() && pc != script->ionScript()->osrPc()) {
+        uint32_t count = script->ionScript()->incrOsrPcMismatchCounter();
+        if (count <= JitOptions.osrPcMismatchesBeforeRecompile)
+            return Method_Skipped;
+        force = true;
+    }
+
+    // Attempt compilation.
+    // - Returns Method_Compiled if the right ionscript is present
+    //   (Meaning it was present or a sequantial compile finished)
+    // - Returns Method_Skipped if pc doesn't match
+    //   (This means a background thread compilation with that pc could have started or not.)
+    RootedScript rscript(cx, script);
+    MethodStatus status = Compile(cx, rscript, osrFrame, pc, osrFrame->isConstructing(),
+                                  force);
+    if (status != Method_Compiled) {
+        if (status == Method_CantCompile)
+            ForbidCompilation(cx, script);
+        return status;
+    }
+
+    // Return the compilation was skipped when the osr pc wasn't adjusted.
+    // This can happen when there was still an IonScript available and a
+    // background compilation started, but hasn't finished yet.
+    // Or when we didn't force a recompile.
+    if (script->hasIonScript() && pc != script->ionScript()->osrPc())
+        return Method_Skipped;
+
+    return Method_Compiled;
+}
+
+bool
+jit::IonCompileScriptForBaseline(JSContext* cx, BaselineFrame* frame, jsbytecode* pc)
+{
+    // A TI OOM will disable TI and Ion.
+    if (!jit::IsIonEnabled(cx))
+        return true;
+
+    RootedScript script(cx, frame->script());
+    bool isLoopEntry = JSOp(*pc) == JSOP_LOOPENTRY;
+
+    MOZ_ASSERT(!isLoopEntry || LoopEntryCanIonOsr(pc));
+
+    if (!script->canIonCompile()) {
+        // TODO: ASSERT that ion-compilation-disabled checker stub doesn't exist.
+        // TODO: Clear all optimized stubs.
+        // TODO: Add a ion-compilation-disabled checker IC stub
+        script->resetWarmUpCounter();
+        return true;
+    }
+
+    MOZ_ASSERT(!script->isIonCompilingOffThread());
+
+    // If Ion script exists, but PC is not at a loop entry, then Ion will be entered for
+    // this script at an appropriate LOOPENTRY or the next time this function is called.
+    if (script->hasIonScript() && !isLoopEntry) {
+        JitSpew(JitSpew_BaselineOSR, "IonScript exists, but not at loop entry!");
+        // TODO: ASSERT that a ion-script-already-exists checker stub doesn't exist.
+        // TODO: Clear all optimized stubs.
+        // TODO: Add a ion-script-already-exists checker stub.
+        return true;
+    }
+
+    // Ensure that Ion-compiled code is available.
+    JitSpew(JitSpew_BaselineOSR,
+            "WarmUpCounter for %s:%" PRIuSIZE " reached %d at pc %p, trying to switch to Ion!",
+            script->filename(), script->lineno(), (int) script->getWarmUpCount(), (void*) pc);
+
+    MethodStatus stat;
+    if (isLoopEntry) {
+        MOZ_ASSERT(LoopEntryCanIonOsr(pc));
+        JitSpew(JitSpew_BaselineOSR, "  Compile at loop entry!");
+        stat = BaselineCanEnterAtBranch(cx, script, frame, pc);
+    } else if (frame->isFunctionFrame()) {
+        JitSpew(JitSpew_BaselineOSR, "  Compile function from top for later entry!");
+        stat = BaselineCanEnterAtEntry(cx, script, frame);
+    } else {
+        return true;
+    }
+
+    if (stat == Method_Error) {
+        JitSpew(JitSpew_BaselineOSR, "  Compile with Ion errored!");
+        return false;
+    }
+
+    if (stat == Method_CantCompile)
+        JitSpew(JitSpew_BaselineOSR, "  Can't compile with Ion!");
+    else if (stat == Method_Skipped)
+        JitSpew(JitSpew_BaselineOSR, "  Skipped compile with Ion!");
+    else if (stat == Method_Compiled)
+        JitSpew(JitSpew_BaselineOSR, "  Compiled with Ion!");
+    else
+        MOZ_CRASH("Invalid MethodStatus!");
+
+    // Failed to compile.  Reset warm-up counter and return.
+    if (stat != Method_Compiled) {
+        // TODO: If stat == Method_CantCompile, insert stub that just skips the
+        // warm-up counter entirely, instead of resetting it.
+        bool bailoutExpected = script->hasIonScript() && script->ionScript()->bailoutExpected();
+        if (stat == Method_CantCompile || bailoutExpected) {
+            JitSpew(JitSpew_BaselineOSR, "  Reset WarmUpCounter cantCompile=%s bailoutExpected=%s!",
+                    stat == Method_CantCompile ? "yes" : "no",
+                    bailoutExpected ? "yes" : "no");
+            script->resetWarmUpCounter();
+        }
+        return true;
+    }
+
+    return true;
+}
+
 
 MethodStatus
 jit::Recompile(JSContext* cx, HandleScript script, BaselineFrame* osrFrame, jsbytecode* osrPc,
@@ -2771,27 +2870,18 @@ jit::SetEnterJitData(JSContext* cx, EnterJitData& data, RunState& state, AutoVal
 
         data.calleeToken = CalleeToToken(state.script());
 
-        if (state.script()->isForEval() &&
-            !(state.asExecute()->type() & InterpreterFrame::GLOBAL))
-        {
-            ScriptFrameIter iter(cx);
-            if (iter.isFunctionFrame())
-                data.calleeToken = CalleeToToken(iter.callee(cx), /* constructing = */ false);
-
+        if (state.script()->isForEval() && state.script()->isDirectEvalInFunction()) {
             // Push newTarget onto the stack.
             if (!vals.reserve(1))
                 return false;
 
+            ScriptFrameIter iter(cx);
             data.maxArgc = 1;
             data.maxArgv = vals.begin();
-            if (iter.isFunctionFrame()) {
-                if (state.asExecute()->newTarget().isNull())
-                    vals.infallibleAppend(iter.newTarget());
-                else
-                    vals.infallibleAppend(state.asExecute()->newTarget());
-            } else {
-                vals.infallibleAppend(NullValue());
-            }
+            if (state.asExecute()->newTarget().isNull())
+                vals.infallibleAppend(iter.newTarget());
+            else
+                vals.infallibleAppend(state.asExecute()->newTarget());
         }
     }
 
@@ -3134,17 +3224,17 @@ jit::Invalidate(JSContext* cx, const RecompileInfoVector& invalid, bool resetUse
                     cancelOffThread);
 }
 
-bool
+void
 jit::IonScript::invalidate(JSContext* cx, bool resetUses, const char* reason)
 {
     JitSpew(JitSpew_IonInvalidate, " Invalidate IonScript %p: %s", this, reason);
+
+    // RecompileInfoVector has inline space for at least one element.
     RecompileInfoVector list;
-    if (!list.append(recompileInfo())) {
-        ReportOutOfMemory(cx);
-        return false;
-    }
+    MOZ_RELEASE_ASSERT(list.reserve(1));
+    list.infallibleAppend(recompileInfo());
+
     Invalidate(cx, list, resetUses, true);
-    return true;
 }
 
 bool
@@ -3173,12 +3263,11 @@ jit::Invalidate(JSContext* cx, JSScript* script, bool resetUses, bool cancelOffT
         js_free(buf);
     }
 
+    // RecompileInfoVector has inline space for at least one element.
     RecompileInfoVector scripts;
     MOZ_ASSERT(script->hasIonScript());
-    if (!scripts.append(script->ionScript()->recompileInfo())) {
-        ReportOutOfMemory(cx);
-        return false;
-    }
+    MOZ_RELEASE_ASSERT(scripts.reserve(1));
+    scripts.infallibleAppend(script->ionScript()->recompileInfo());
 
     Invalidate(cx, scripts, resetUses, cancelOffThread);
     return true;

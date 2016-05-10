@@ -54,6 +54,7 @@
 #include "gfxWindowsSurface.h"
 #endif
 
+#include "DisplayItemScrollClip.h"
 #include "Layers.h"
 #include "ReadbackLayer.h"
 #include "ImageContainer.h"
@@ -119,7 +120,7 @@ public:
     mFrame->mInstanceOwner->SetBackgroundUnknown();
   }
 
-  virtual already_AddRefed<gfxContext>
+  virtual already_AddRefed<DrawTarget>
       BeginUpdate(const nsIntRect& aRect, uint64_t aSequenceNumber)
   {
     if (!AcceptUpdate(aSequenceNumber))
@@ -127,9 +128,9 @@ public:
     return mFrame->mInstanceOwner->BeginUpdateBackground(aRect);
   }
 
-  virtual void EndUpdate(gfxContext* aContext, const nsIntRect& aRect)
+  virtual void EndUpdate(const nsIntRect& aRect)
   {
-    return mFrame->mInstanceOwner->EndUpdateBackground(aContext, aRect);
+    return mFrame->mInstanceOwner->EndUpdateBackground(aRect);
   }
 
   void Destroy() { mFrame = nullptr; }
@@ -1002,6 +1003,19 @@ nsDisplayPlugin::Paint(nsDisplayListBuilder* aBuilder,
   f->PaintPlugin(aBuilder, *aCtx, mVisibleRect, GetBounds(aBuilder, &snap));
 }
 
+static nsRect
+GetClippedBoundsIncludingAllScrollClips(nsDisplayItem* aItem,
+                                        nsDisplayListBuilder* aBuilder)
+{
+  nsRect r = aItem->GetClippedBounds(aBuilder);
+  for (auto* sc = aItem->ScrollClip(); sc; sc = sc->mParent) {
+    if (sc->mClip) {
+      r = sc->mClip->ApplyNonRoundedIntersection(r);
+    }
+  }
+  return r;
+}
+
 bool
 nsDisplayPlugin::ComputeVisibility(nsDisplayListBuilder* aBuilder,
                                    nsRegion* aVisibleRegion)
@@ -1019,7 +1033,10 @@ nsDisplayPlugin::ComputeVisibility(nsDisplayListBuilder* aBuilder,
         rAncestor.ToNearestPixels(appUnitsPerDevPixel));
 
       nsRegion visibleRegion;
-      visibleRegion.And(*aVisibleRegion, GetClippedBounds(aBuilder));
+      // Apply all scroll clips when computing the clipped bounds of this item.
+      // We hide windowed plugins during APZ scrolling, so there never is an
+      // async transform that we need to take into account when clipping.
+      visibleRegion.And(*aVisibleRegion, GetClippedBoundsIncludingAllScrollClips(this, aBuilder));
       // Make visibleRegion relative to f
       visibleRegion.MoveBy(-ToReferenceFrame());
 
@@ -1400,7 +1417,7 @@ nsPluginFrame::GetLayerState(nsDisplayListBuilder* aBuilder,
     return LAYER_NONE;
   }
 
-  return LAYER_ACTIVE;
+  return LAYER_ACTIVE_FORCE;
 }
 
 class PluginFrameDidCompositeObserver final : public ClientLayerManager::

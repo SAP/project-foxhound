@@ -9,9 +9,6 @@
 #include "mozilla/Logging.h"
 #include "GMPParent.h"
 #include "GMPVideoDecoderParent.h"
-#ifdef MOZ_EME
-#include "mozilla/dom/GMPVideoDecoderTrialCreator.h"
-#endif
 #include "nsIObserverService.h"
 #include "GeckoChildProcessHost.h"
 #include "mozilla/Preferences.h"
@@ -84,7 +81,8 @@ NS_IMPL_ISUPPORTS_INHERITED(GeckoMediaPluginServiceParent,
                             mozIGeckoMediaPluginChromeService)
 
 static int32_t sMaxAsyncShutdownWaitMs = 0;
-static bool sHaveSetTimeoutPrefCache = false;
+static bool sAllowInsecureGMP = false;
+static bool sHaveSetGMPServiceParentPrefCaches = false;
 
 GeckoMediaPluginServiceParent::GeckoMediaPluginServiceParent()
   : mShuttingDown(false)
@@ -95,11 +93,13 @@ GeckoMediaPluginServiceParent::GeckoMediaPluginServiceParent()
   , mWaitingForPluginsSyncShutdown(false)
 {
   MOZ_ASSERT(NS_IsMainThread());
-  if (!sHaveSetTimeoutPrefCache) {
-    sHaveSetTimeoutPrefCache = true;
+  if (!sHaveSetGMPServiceParentPrefCaches) {
+    sHaveSetGMPServiceParentPrefCaches = true;
     Preferences::AddIntVarCache(&sMaxAsyncShutdownWaitMs,
                                 "media.gmp.async-shutdown-timeout",
                                 GMP_DEFAULT_ASYNC_SHUTDONW_TIMEOUT);
+    Preferences::AddBoolVarCache(&sAllowInsecureGMP,
+                                 "media.gmp.insecure.allow", false);
   }
 }
 
@@ -112,7 +112,7 @@ GeckoMediaPluginServiceParent::~GeckoMediaPluginServiceParent()
 int32_t
 GeckoMediaPluginServiceParent::AsyncShutdownTimeoutMs()
 {
-  MOZ_ASSERT(sHaveSetTimeoutPrefCache);
+  MOZ_ASSERT(sHaveSetGMPServiceParentPrefCaches);
   return sMaxAsyncShutdownWaitMs;
 }
 
@@ -651,30 +651,34 @@ GeckoMediaPluginServiceParent::UnloadPlugins()
         NS_LITERAL_CSTRING("Starting to unload plugins"));
 #endif
 
+  nsTArray<RefPtr<GMPParent>> plugins;
   {
     MutexAutoLock lock(mMutex);
-    LOGD(("%s::%s plugins:%u including async:%u", __CLASS__, __FUNCTION__,
-          mPlugins.Length(), mAsyncShutdownPlugins.Length()));
+    // Move all plugins references to a local array. This way mMutex won't be
+    // locked when calling CloseActive (to avoid inter-locking).
+    plugins = Move(mPlugins);
+  }
+
+  LOGD(("%s::%s plugins:%u including async:%u", __CLASS__, __FUNCTION__,
+        plugins.Length(), mAsyncShutdownPlugins.Length()));
 #ifdef DEBUG
-    for (const auto& plugin : mPlugins) {
-      LOGD(("%s::%s plugin: '%s'", __CLASS__, __FUNCTION__,
-            plugin->GetDisplayName().get()));
-    }
-    for (const auto& plugin : mAsyncShutdownPlugins) {
-      LOGD(("%s::%s async plugin: '%s'", __CLASS__, __FUNCTION__,
-            plugin->GetDisplayName().get()));
-    }
+  for (const auto& plugin : plugins) {
+    LOGD(("%s::%s plugin: '%s'", __CLASS__, __FUNCTION__,
+          plugin->GetDisplayName().get()));
+  }
+  for (const auto& plugin : mAsyncShutdownPlugins) {
+    LOGD(("%s::%s async plugin: '%s'", __CLASS__, __FUNCTION__,
+          plugin->GetDisplayName().get()));
+  }
 #endif
-    // Note: CloseActive may be async; it could actually finish
-    // shutting down when all the plugins have unloaded.
-    for (size_t i = 0; i < mPlugins.Length(); i++) {
+  // Note: CloseActive may be async; it could actually finish
+  // shutting down when all the plugins have unloaded.
+  for (const auto& plugin : plugins) {
 #ifdef MOZ_CRASHREPORTER
-      SetAsyncShutdownPluginState(mPlugins[i], 'S',
-          NS_LITERAL_CSTRING("CloseActive"));
+    SetAsyncShutdownPluginState(plugin, 'S',
+        NS_LITERAL_CSTRING("CloseActive"));
 #endif
-      mPlugins[i]->CloseActive(true);
-    }
-    mPlugins.Clear();
+    plugin->CloseActive(true);
   }
 
 #ifdef MOZ_CRASHREPORTER
@@ -945,45 +949,28 @@ GeckoMediaPluginServiceParent::SelectPluginForAPI(const nsACString& aNodeId,
   return nullptr;
 }
 
-class CreateGMPParentTask : public nsRunnable {
-public:
-  NS_IMETHOD Run() {
-    MOZ_ASSERT(NS_IsMainThread());
+RefPtr<GMPParent>
+CreateGMPParent()
+{
 #if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
-    if (!SandboxInfo::Get().CanSandboxMedia()) {
-      if (!Preferences::GetBool("media.gmp.insecure.allow")) {
-        NS_WARNING("Denying media plugin load due to lack of sandboxing.");
-        return NS_ERROR_NOT_AVAILABLE;
-      }
-      NS_WARNING("Loading media plugin despite lack of sandboxing.");
+  if (!SandboxInfo::Get().CanSandboxMedia()) {
+    if (!sAllowInsecureGMP) {
+      NS_WARNING("Denying media plugin load due to lack of sandboxing.");
+      return nullptr;
     }
+    NS_WARNING("Loading media plugin despite lack of sandboxing.");
+  }
 #endif
-    mParent = new GMPParent();
-    return NS_OK;
-  }
-  already_AddRefed<GMPParent> GetParent() {
-    return mParent.forget();
-  }
-private:
-  RefPtr<GMPParent> mParent;
-};
+  return new GMPParent();
+}
 
 GMPParent*
 GeckoMediaPluginServiceParent::ClonePlugin(const GMPParent* aOriginal)
 {
   MOZ_ASSERT(aOriginal);
 
-  // The GMPParent inherits from IToplevelProtocol, which must be created
-  // on the main thread to be threadsafe. See Bug 1035653.
-  RefPtr<CreateGMPParentTask> task(new CreateGMPParentTask());
-  if (!NS_IsMainThread()) {
-    nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-    MOZ_ASSERT(mainThread);
-    mozilla::SyncRunnable::DispatchToThread(mainThread, task);
-  }
-
-  RefPtr<GMPParent> gmp = task->GetParent();
-  nsresult rv = gmp->CloneFrom(aOriginal);
+  RefPtr<GMPParent> gmp = CreateGMPParent();
+  nsresult rv = gmp ? gmp->CloneFrom(aOriginal) : NS_ERROR_NOT_AVAILABLE;
 
   if (NS_FAILED(rv)) {
     NS_WARNING("Can't Create GMPParent");
@@ -1008,13 +995,7 @@ GeckoMediaPluginServiceParent::AddOnGMPThread(const nsAString& aDirectory)
     return;
   }
 
-  // The GMPParent inherits from IToplevelProtocol, which must be created
-  // on the main thread to be threadsafe. See Bug 1035653.
-  RefPtr<CreateGMPParentTask> task(new CreateGMPParentTask());
-  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-  MOZ_ASSERT(mainThread);
-  mozilla::SyncRunnable::DispatchToThread(mainThread, task);
-  RefPtr<GMPParent> gmp = task->GetParent();
+  RefPtr<GMPParent> gmp = CreateGMPParent();
   rv = gmp ? gmp->Init(this, directory) : NS_ERROR_NOT_AVAILABLE;
   if (NS_FAILED(rv)) {
     NS_WARNING("Can't Create GMPParent");
@@ -1241,7 +1222,11 @@ GeckoMediaPluginServiceParent::IsPersistentStorageAllowed(const nsACString& aNod
 {
   MOZ_ASSERT(NS_GetCurrentThread() == mGMPThread);
   NS_ENSURE_ARG(aOutAllowed);
-  *aOutAllowed = mPersistentStorageAllowed.Get(aNodeId);
+  // We disallow persistent storage for the NodeId used for shared GMP
+  // decoding, to prevent GMP decoding being used to track what a user
+  // watches somehow.
+  *aOutAllowed = !aNodeId.Equals(SHARED_GMP_DECODING_NODE_ID) &&
+                 mPersistentStorageAllowed.Get(aNodeId);
   return NS_OK;
 }
 
@@ -1417,22 +1402,6 @@ GeckoMediaPluginServiceParent::GetNodeId(const nsAString& aOrigin,
   nsresult rv = GetNodeId(aOrigin, aTopLevelOrigin, aGMPName, aInPrivateBrowsing, nodeId);
   aCallback->Done(rv, nodeId);
   return rv;
-}
-
-NS_IMETHODIMP
-GeckoMediaPluginServiceParent::UpdateTrialCreateState(const nsAString& aKeySystem,
-                                                      uint32_t aState)
-{
-#ifdef MOZ_EME
-  nsString keySystem(aKeySystem);
-  NS_DispatchToMainThread(NS_NewRunnableFunction([keySystem, aState] {
-    mozilla::dom::GMPVideoDecoderTrialCreator::UpdateTrialCreateState(keySystem, aState);
-  }));
-
-  return NS_OK;
-#else
-  return NS_ERROR_FAILURE;
-#endif
 }
 
 static bool
@@ -1613,7 +1582,7 @@ GeckoMediaPluginServiceParent::ForgetThisSiteOnGMPThread(const nsACString& aSite
 
   struct OriginFilter : public DirectoryFilter {
     explicit OriginFilter(const nsACString& aSite) : mSite(aSite) {}
-    virtual bool operator()(nsIFile* aPath) {
+    bool operator()(nsIFile* aPath) override {
       return MatchOrigin(aPath, mSite);
     }
   private:
@@ -1650,7 +1619,7 @@ GeckoMediaPluginServiceParent::ClearRecentHistoryOnGMPThread(PRTime aSince)
     }
 
     // |aPath| is $profileDir/gmp/$platform/$gmpName/id/$originHash/
-    virtual bool operator()(nsIFile* aPath) {
+    bool operator()(nsIFile* aPath) override {
       if (IsModifiedAfter(aPath)) {
         return true;
       }
@@ -1761,14 +1730,6 @@ GMPServiceParent::RecvGetGMPNodeId(const nsString& aOrigin,
   nsresult rv = mService->GetNodeId(aOrigin, aTopLevelOrigin, aGMPName,
                                     aInPrivateBrowsing, *aID);
   return NS_SUCCEEDED(rv);
-}
-
-bool
-GMPServiceParent::RecvUpdateGMPTrialCreateState(const nsString& aKeySystem,
-                                                const uint32_t& aState)
-{
-  mService->UpdateTrialCreateState(aKeySystem, aState);
-  return true;
 }
 
 /* static */

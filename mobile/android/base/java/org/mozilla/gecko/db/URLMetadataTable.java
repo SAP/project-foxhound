@@ -27,6 +27,7 @@ public class URLMetadataTable extends BaseTable {
     public static final String URL_COLUMN = "url";
     public static final String TILE_IMAGE_URL_COLUMN = "tileImage";
     public static final String TILE_COLOR_COLUMN = "tileColor";
+    public static final String TOUCH_ICON_COLUMN = "touchIcon";
 
     URLMetadataTable() { }
 
@@ -41,17 +42,30 @@ public class URLMetadataTable extends BaseTable {
             ID_COLUMN + " INTEGER PRIMARY KEY, " +
             URL_COLUMN + " TEXT NON NULL UNIQUE, " +
             TILE_IMAGE_URL_COLUMN + " STRING, " +
-            TILE_COLOR_COLUMN + " STRING);";
+            TILE_COLOR_COLUMN + " STRING, " +
+            TOUCH_ICON_COLUMN + " STRING);";
         db.execSQL(create);
+    }
 
-        db.execSQL("CREATE INDEX metadata_url_idx ON " + TABLE + " (" + URL_COLUMN + ")");
+    private void upgradeDatabaseFrom26To27(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE " + TABLE +
+                   " ADD COLUMN " + TOUCH_ICON_COLUMN + " STRING");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // This table was added in v19 of the db. Force its creation if we're coming from an earlier version
+        // This table was added in v21 of the db. Force its creation if we're coming from an earlier version
         if (newVersion >= 21 && oldVersion < 21) {
             onCreate(db);
+            return;
+        }
+
+        // Removed the redundant metadata_url_idx index in version 26
+        if (newVersion >= 26 && oldVersion < 26) {
+            db.execSQL("DROP INDEX IF EXISTS metadata_url_idx");
+        }
+        if (newVersion >= 27 && oldVersion < 27) {
+            upgradeDatabaseFrom26To27(db);
         }
     }
 

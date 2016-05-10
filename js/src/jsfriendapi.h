@@ -245,6 +245,13 @@ namespace JS {
 extern JS_FRIEND_API(char*)
 FormatStackDump(JSContext* cx, char* buf, bool showArgs, bool showLocals, bool showThisProps);
 
+/**
+ * Set all of the uninitialized lexicals on an object to undefined. Return
+ * true if any lexicals were initialized and false otherwise.
+ * */
+extern JS_FRIEND_API(bool)
+ForceLexicalInitialization(JSContext *cx, HandleObject obj);
+
 } // namespace JS
 
 /**
@@ -1218,7 +1225,7 @@ NukeCrossCompartmentWrappers(JSContext* cx,
  * * If DoesntShadowUnique is returned then the slot at listBaseExpandoSlot
  *   should contain a private pointer to a ExpandoAndGeneration, which contains
  *   a JS::Value that should either be undefined or point to an expando object,
- *   and a uint32 value. If that value changes then the IC for getting a
+ *   and a uint64 value. If that value changes then the IC for getting a
  *   property will be invalidated.
  * * If Shadows is returned, that means the property is an own property of the
  *   proxy but doesn't live on the expando object.
@@ -1247,7 +1254,7 @@ struct ExpandoAndGeneration {
   }
 
   JS::Heap<JS::Value> expando;
-  uint32_t generation;
+  uint64_t generation;
 };
 
 typedef enum DOMProxyShadowsResult {
@@ -1662,7 +1669,10 @@ JS_NewFloat64ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
                              uint32_t byteOffset, int32_t length);
 
 /**
- * Create a new SharedArrayBuffer with the given byte length.
+ * Create a new SharedArrayBuffer with the given byte length.  This
+ * may only be called if
+ * JS::CompartmentCreationOptionsRef(cx).getSharedMemoryAndAtomicsEnabled() is
+ * true.
  */
 extern JS_FRIEND_API(JSObject*)
 JS_NewSharedArrayBuffer(JSContext* cx, uint32_t nbytes);
@@ -2345,7 +2355,12 @@ struct JSJitInfo {
         js::jit::InlinableNative inlinableNative;
     };
 
-    uint16_t depth;
+    union {
+        uint16_t depth;
+
+        // Additional opcode for some InlinableNative functions.
+        uint16_t nativeOp;
+    };
 
     // These fields are carefully packed to take up 4 bytes.  If you need more
     // bits for whatever reason, please see if you can steal bits from existing

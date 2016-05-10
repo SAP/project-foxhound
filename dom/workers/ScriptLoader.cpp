@@ -632,6 +632,7 @@ private:
     // If one load info cancels or hits an error, it can race with the start
     // callback coming from another load info.
     if (mCanceledMainThread || !mCacheCreator) {
+      aRequest->Cancel(NS_ERROR_FAILURE);
       return NS_ERROR_FAILURE;
     }
 
@@ -1996,7 +1997,7 @@ void ReportLoadError(JSContext* aCx, nsresult aLoadResult)
 
     case NS_ERROR_MALFORMED_URI:
       aLoadResult = NS_ERROR_DOM_SYNTAX_ERR;
-      // fall through
+      MOZ_FALLTHROUGH;
     case NS_ERROR_DOM_SECURITY_ERR:
     case NS_ERROR_DOM_SYNTAX_ERR:
       Throw(aCx, aLoadResult);

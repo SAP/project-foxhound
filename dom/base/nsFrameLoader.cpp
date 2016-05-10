@@ -930,7 +930,7 @@ nsFrameLoader::SwapWithOtherRemoteLoader(nsFrameLoader* aOther,
   nsCOMPtr<nsIBrowserDOMWindow> browserDOMWindow =
     mRemoteBrowser->GetBrowserDOMWindow();
 
-  if (!otherBrowserDOMWindow || !browserDOMWindow) {
+  if (!!otherBrowserDOMWindow != !!browserDOMWindow) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
@@ -1800,10 +1800,13 @@ nsFrameLoader::MaybeCreateDocShell()
   }
 
   if (!userContextIdStr.IsEmpty()) {
-    nsresult err;
-    nsDocShell * ds = nsDocShell::Cast(mDocShell);
-    ds->SetUserContextId(userContextIdStr.ToInteger(&err));
-    NS_ENSURE_SUCCESS(err, err);
+    nsresult rv;
+    uint32_t userContextId =
+      static_cast<uint32_t>(userContextIdStr.ToInteger(&rv));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = mDocShell->SetUserContextId(userContextId);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // Inform our docShell that it has a new child.
@@ -2584,6 +2587,8 @@ nsFrameLoader::EnsureMessageManager()
     if (!parentManager) {
       chromeWindow->GetMessageManager(getter_AddRefs(parentManager));
     }
+  } else {
+    parentManager = do_GetService("@mozilla.org/globalmessagemanager;1");
   }
 
   mMessageManager = new nsFrameMessageManager(nullptr,
@@ -3084,19 +3089,17 @@ nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
 
   // set the userContextId on the attrs before we pass them into
   // the tab context
-  if (mOwnerContent) {
-    nsAutoString userContextIdStr;
-    if (mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::usercontextid)) {
-      mOwnerContent->GetAttr(kNameSpaceID_None,
-                             nsGkAtoms::usercontextid,
-                             userContextIdStr);
-    }
-    if (!userContextIdStr.IsEmpty()) {
-      nsresult err;
-      uint32_t userContextId = userContextIdStr.ToInteger(&err);
-      NS_ENSURE_SUCCESS(err, err);
-      attrs.mUserContextId = userContextId;
-    }
+  nsAutoString userContextIdStr;
+  if (mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::usercontextid)) {
+    mOwnerContent->GetAttr(kNameSpaceID_None,
+                           nsGkAtoms::usercontextid,
+                           userContextIdStr);
+  }
+  if (!userContextIdStr.IsEmpty()) {
+    nsresult err;
+    uint32_t userContextId = userContextIdStr.ToInteger(&err);
+    NS_ENSURE_SUCCESS(err, err);
+    attrs.mUserContextId = userContextId;
   }
 
   bool tabContextUpdated =

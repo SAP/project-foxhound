@@ -11,6 +11,7 @@ DIST = dist
 else
 DIST = $(DEPTH)/dist
 endif
+ABS_DIST = $(topobjdir)/dist
 
 # We do magic with OBJ_SUFFIX in config.mk, the following ensures we don't
 # manually use it before config.mk inclusion
@@ -44,7 +45,7 @@ endif # WINNT
 ifndef INCLUDED_AUTOCONF_MK
 default::
 else
-TIERS := export $(if $(COMPILE_ENVIRONMENT),compile )misc libs tools
+TIERS := pre-export export $(if $(COMPILE_ENVIRONMENT),compile )misc libs tools
 endif
 
 # These defines are used to support the twin-topsrcdir model for comm-central.

@@ -130,6 +130,15 @@ FetchDriver::HttpFetch()
     return NS_ERROR_DOM_BAD_URI;
   }
 
+  // non-GET requests aren't allowed for blob.
+  if (IsBlobURI(uri)) {
+    nsAutoCString method;
+    mRequest->GetMethod(method);
+    if (!method.EqualsLiteral("GET")) {
+      return NS_ERROR_DOM_NETWORK_ERR;
+    }
+  }
+
   // Step 2 deals with letting ServiceWorkers intercept requests. This is
   // handled by Necko after the channel is opened.
   // FIXME(nsm): Bug 1119026: The channel's skip service worker flag should be
@@ -161,7 +170,8 @@ FetchDriver::HttpFetch()
   nsSecurityFlags secFlags = nsILoadInfo::SEC_ABOUT_BLANK_INHERITS;
   if (mRequest->Mode() == RequestMode::Cors) {
     secFlags |= nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
-  } else if (mRequest->Mode() == RequestMode::Same_origin) {
+  } else if (mRequest->Mode() == RequestMode::Same_origin ||
+             mRequest->Mode() == RequestMode::Navigate) {
     secFlags |= nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS;
   } else if (mRequest->Mode() == RequestMode::No_cors) {
     secFlags |= nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;

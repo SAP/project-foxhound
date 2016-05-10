@@ -34,6 +34,7 @@ loop.store.ConversationAppStore = (function() {
 
     this._activeRoomStore = options.activeRoomStore;
     this._dispatcher = options.dispatcher;
+    this._facebookEnabled = options.facebookEnabled;
     this._feedbackPeriod = options.feedbackPeriod;
     this._feedbackTimestamp = options.feedbackTimestamp;
     this._rootObj = ("rootObject" in options) ? options.rootObject : window;
@@ -41,7 +42,7 @@ loop.store.ConversationAppStore = (function() {
 
     // Start listening for specific events, coming from the window object.
     this._eventHandlers = {};
-    ["unload", "LoopHangupNow", "socialFrameAttached", "socialFrameDetached"]
+    ["unload", "LoopHangupNow", "socialFrameAttached", "socialFrameDetached", "ToggleBrowserSharing"]
       .forEach(function(eventName) {
         var handlerName = eventName + "Handler";
         this._eventHandlers[eventName] = this[handlerName].bind(this);
@@ -50,7 +51,8 @@ loop.store.ConversationAppStore = (function() {
 
     this._dispatcher.register(this, [
       "getWindowData",
-      "showFeedbackForm"
+      "showFeedbackForm",
+      "leaveConversation"
     ]);
   };
 
@@ -58,6 +60,7 @@ loop.store.ConversationAppStore = (function() {
     getInitialStoreState: function() {
       return {
         chatWindowDetached: false,
+        facebookEnabled: this._facebookEnabled,
         // How often to display the form. Convert seconds to ms.
         feedbackPeriod: this._feedbackPeriod * 1000,
         // Date when the feedback form was last presented. Convert to ms.
@@ -145,19 +148,46 @@ loop.store.ConversationAppStore = (function() {
      * the window when no session is currently active.
      */
     LoopHangupNowHandler: function() {
-      switch (this.getStoreState().windowType) {
-        case "room":
-          if (this._activeRoomStore.getStoreState().used &&
-              !this._storeState.showFeedbackForm) {
-            this._dispatcher.dispatch(new loop.shared.actions.LeaveRoom());
-          } else {
-            loop.shared.mixins.WindowCloseMixin.closeWindow();
-          }
-          break;
-        default:
-          loop.shared.mixins.WindowCloseMixin.closeWindow();
-          break;
+      this._dispatcher.dispatch(new loop.shared.actions.LeaveConversation());
+    },
+
+    /**
+     * Handles leaving the conversation, displaying the feedback form if it
+     * is time to.
+     */
+    leaveConversation: function() {
+      if (this.getStoreState().windowType !== "room" ||
+          !this._activeRoomStore.getStoreState().used ||
+          this.getStoreState().showFeedbackForm) {
+        loop.shared.mixins.WindowCloseMixin.closeWindow();
+        return;
       }
+
+      var delta = new Date() - new Date(this.getStoreState().feedbackTimestamp);
+
+      // Show timestamp if feedback period (6 months) passed.
+      // 0 is default value for pref. Always show feedback form on first use.
+      if (this.getStoreState().feedbackTimestamp === 0 ||
+          delta >= this.getStoreState().feedbackPeriod) {
+        this._dispatcher.dispatch(new loop.shared.actions.LeaveRoom({
+          windowStayingOpen: true
+        }));
+        this._dispatcher.dispatch(new loop.shared.actions.ShowFeedbackForm());
+        return;
+      }
+
+      loop.shared.mixins.WindowCloseMixin.closeWindow();
+    },
+
+    /**
+     * Event handler; invoked when the 'PauseScreenShare' event is dispatched from
+     * the window object.
+     * It'll attempt to pause or resume the screen share as appropriate.
+     */
+    ToggleBrowserSharingHandler: function(actionData) {
+      this._dispatcher.dispatch(new loop.shared.actions.ToggleBrowserSharing({
+        enabled: !actionData.detail
+      }));
     },
 
     /**

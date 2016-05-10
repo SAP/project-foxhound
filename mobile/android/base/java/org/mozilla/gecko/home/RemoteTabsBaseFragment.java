@@ -10,6 +10,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.v4.app.LoaderManager;
 import android.support.v4.content.Loader;
 import android.support.v4.widget.SwipeRefreshLayout;
 import android.util.Log;
@@ -214,7 +215,7 @@ public abstract class RemoteTabsBaseFragment extends HomeFragment implements Rem
         }
     }
 
-    protected class CursorLoaderCallbacks extends TransitionAwareCursorLoaderCallbacks {
+    protected class CursorLoaderCallbacks implements LoaderManager.LoaderCallbacks<Cursor> {
         private BrowserDB mDB;    // Pseudo-final: set in onCreateLoader.
 
         @Override
@@ -224,7 +225,7 @@ public abstract class RemoteTabsBaseFragment extends HomeFragment implements Rem
         }
 
         @Override
-        public void onLoadFinishedAfterTransitions(Loader<Cursor> loader, Cursor c) {
+        public void onLoadFinished(Loader<Cursor> loader, Cursor c) {
             final List<RemoteClient> clients = mDB.getTabsAccessor().getClientsFromCursor(c);
 
             // Filter the hidden clients out of the clients list. The clients
@@ -247,7 +248,6 @@ public abstract class RemoteTabsBaseFragment extends HomeFragment implements Rem
 
         @Override
         public void onLoaderReset(Loader<Cursor> loader) {
-            super.onLoaderReset(loader);
             mAdapter.replaceClients(null);
         }
     }
@@ -257,7 +257,7 @@ public abstract class RemoteTabsBaseFragment extends HomeFragment implements Rem
         public void onRefresh() {
             if (FirefoxAccounts.firefoxAccountsExist(getActivity())) {
                 final Account account = FirefoxAccounts.getFirefoxAccount(getActivity());
-                FirefoxAccounts.requestSync(account, FirefoxAccounts.FORCE, STAGES_TO_SYNC_ON_REFRESH, null);
+                FirefoxAccounts.requestImmediateSync(account, STAGES_TO_SYNC_ON_REFRESH, null);
             } else {
                 Log.wtf(LOGTAG, "No Firefox Account found; this should never happen. Ignoring.");
                 mRefreshLayout.setRefreshing(false);

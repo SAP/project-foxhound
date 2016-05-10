@@ -100,6 +100,11 @@ ContainsHoistedDeclaration(ExclusiveContext* cx, ParseNode* node, bool* result)
         *result = false;
         return true;
 
+      case PNK_ANNEXB_FUNCTION:
+        MOZ_ASSERT(node->isArity(PN_BINARY));
+        *result = false;
+        return true;
+
       case PNK_MODULE:
         *result = false;
         return true;
@@ -1782,6 +1787,17 @@ Fold(ExclusiveContext* cx, ParseNode** pnp, Parser<FullParseHandler>& parser, bo
 
       case PNK_FUNCTION:
         return FoldFunction(cx, pn, parser, inGenexpLambda);
+
+      case PNK_ANNEXB_FUNCTION:
+        // XXXshu NOP check used only for phasing in block-scope function
+        // XXXshu early errors.
+        // XXXshu
+        // XXXshu Back out when major version >= 50. See [1].
+        // XXXshu
+        // XXXshu [1] https://bugzilla.mozilla.org/show_bug.cgi?id=1235590#c10
+        if (pn->pn_left->isKind(PNK_NOP))
+            return true;
+        return FoldFunction(cx, pn->pn_left, parser, inGenexpLambda);
 
       case PNK_MODULE:
         return FoldModule(cx, pn, parser);

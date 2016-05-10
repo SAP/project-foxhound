@@ -4110,6 +4110,7 @@ TSFTextStore::RecordCompositionStartAction(ITfCompositionView* aComposition,
   }
 
   lockedContent.StartComposition(aComposition, *action, aPreserveSelection);
+  action->mData = mComposition.mString;
 
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p   TSFTextStore::RecordCompositionStartAction() succeeded: "
@@ -4147,6 +4148,33 @@ TSFTextStore::RecordCompositionEndAction()
     return E_FAIL;
   }
   lockedContent.EndComposition(*action);
+
+  // If this composition was restart but the composition doesn't modify
+  // anything, we should remove the pending composition for preventing to
+  // dispatch redundant composition events.
+  for (size_t i = mPendingActions.Length(), j = 1; i > 0; --i, ++j) {
+    PendingAction& pendingAction = mPendingActions[i - 1];
+    if (pendingAction.mType == PendingAction::COMPOSITION_START) {
+      if (pendingAction.mData != action->mData) {
+        break;
+      }
+      // When only setting selection is necessary, we should append it.
+      if (pendingAction.mAdjustSelection) {
+        PendingAction* setSelection = mPendingActions.AppendElement();
+        setSelection->mType = PendingAction::SET_SELECTION;
+        setSelection->mSelectionStart = pendingAction.mSelectionStart;
+        setSelection->mSelectionLength = pendingAction.mSelectionLength;
+        setSelection->mSelectionReversed = false;
+      }
+      // Remove the redundant pending composition.
+      mPendingActions.RemoveElementsAt(i - 1, j);
+      MOZ_LOG(sTextStoreLog, LogLevel::Info,
+             ("TSF: 0x%p   TSFTextStore::RecordCompositionEndAction(), "
+              "succeeded, but the composition was canceled due to redundant",
+              this));
+      return S_OK;
+    }
+  }
 
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p   TSFTextStore::RecordCompositionEndAction(), succeeded",
@@ -4486,28 +4514,29 @@ TSFTextStore::CreateAndSetFocus(nsWindowBase* aFocusedWidget,
   // TSF might do something which causes that we need to access static methods
   // of TSFTextStore.  At that time, sEnabledTextStore may be necessary.
   // So, we should set sEnabledTextStore directly.
-  sEnabledTextStore = new TSFTextStore();
-  if (NS_WARN_IF(!sEnabledTextStore->Init(aFocusedWidget))) {
+  RefPtr<TSFTextStore> textStore = new TSFTextStore();
+  sEnabledTextStore = textStore;
+  if (NS_WARN_IF(!textStore->Init(aFocusedWidget))) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
            ("TSF:   TSFTextStore::CreateAndSetFocus() FAILED due to "
             "TSFTextStore::Init() failure"));
     return false;
   }
-  if (NS_WARN_IF(!sEnabledTextStore->mDocumentMgr)) {
+  if (NS_WARN_IF(!textStore->mDocumentMgr)) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
            ("TSF:   TSFTextStore::CreateAndSetFocus() FAILED due to "
             "invalid TSFTextStore::mDocumentMgr"));
     return false;
   }
   if (aContext.mIMEState.mEnabled == IMEState::PASSWORD) {
-    MarkContextAsKeyboardDisabled(sEnabledTextStore->mContext);
+    MarkContextAsKeyboardDisabled(textStore->mContext);
     RefPtr<ITfContext> topContext;
-    sEnabledTextStore->mDocumentMgr->GetTop(getter_AddRefs(topContext));
-    if (topContext && topContext != sEnabledTextStore->mContext) {
+    textStore->mDocumentMgr->GetTop(getter_AddRefs(topContext));
+    if (topContext && topContext != textStore->mContext) {
       MarkContextAsKeyboardDisabled(topContext);
     }
   }
-  HRESULT hr = sThreadMgr->SetFocus(sEnabledTextStore->mDocumentMgr);
+  HRESULT hr = sThreadMgr->SetFocus(textStore->mDocumentMgr);
   if (NS_WARN_IF(FAILED(hr))) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
            ("TSF:   TSFTextStore::CreateAndSetFocus() FAILED due to "
@@ -4518,7 +4547,7 @@ TSFTextStore::CreateAndSetFocus(nsWindowBase* aFocusedWidget,
   // never steal focus from our documentMgr.
   RefPtr<ITfDocumentMgr> prevFocusedDocumentMgr;
   hr = sThreadMgr->AssociateFocus(aFocusedWidget->GetWindowHandle(),
-                                  sEnabledTextStore->mDocumentMgr,
+                                  textStore->mDocumentMgr,
                                   getter_AddRefs(prevFocusedDocumentMgr));
   if (NS_WARN_IF(FAILED(hr))) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
@@ -4526,16 +4555,15 @@ TSFTextStore::CreateAndSetFocus(nsWindowBase* aFocusedWidget,
             "ITfTheadMgr::AssociateFocus() failure"));
     return false;
   }
-  sEnabledTextStore->SetInputScope(aContext.mHTMLInputType,
-                                   aContext.mHTMLInputInputmode);
+  textStore->SetInputScope(aContext.mHTMLInputType,
+                           aContext.mHTMLInputInputmode);
 
-  if (sEnabledTextStore->mSink) {
+  if (textStore->mSink) {
     MOZ_LOG(sTextStoreLog, LogLevel::Info,
       ("TSF:   TSFTextStore::CreateAndSetFocus(), calling "
        "ITextStoreACPSink::OnLayoutChange(TS_LC_CREATE) for 0x%p...",
-       sEnabledTextStore.get()));
-    sEnabledTextStore->mSink->OnLayoutChange(TS_LC_CREATE,
-                                             TEXTSTORE_DEFAULT_VIEW);
+       textStore.get()));
+    textStore->mSink->OnLayoutChange(TS_LC_CREATE, TEXTSTORE_DEFAULT_VIEW);
   }
   return true;
 }
@@ -4573,21 +4601,35 @@ TSFTextStore::OnTextChangeInternal(const IMENotification& aIMENotification)
          ("TSF: 0x%p   TSFTextStore::OnTextChangeInternal(aIMENotification={ "
           "mMessage=0x%08X, mTextChangeData={ mStartOffset=%lu, "
           "mRemovedEndOffset=%lu, mAddedEndOffset=%lu, "
-          "mCausedByComposition=%s, mOccurredDuringComposition=%s }), "
+          "mCausedOnlyByComposition=%s, "
+          "mIncludingChangesDuringComposition=%s, "
+          "mIncludingChangesWithoutComposition=%s }), "
           "mSink=0x%p, mSinkMask=%s, mComposition.IsComposing()=%s",
           this, aIMENotification.mMessage,
           textChangeData.mStartOffset,
           textChangeData.mRemovedEndOffset,
           textChangeData.mAddedEndOffset,
-          GetBoolName(textChangeData.mCausedByComposition),
-          GetBoolName(textChangeData.mOccurredDuringComposition),
+          GetBoolName(textChangeData.mCausedOnlyByComposition),
+          GetBoolName(textChangeData.mIncludingChangesDuringComposition),
+          GetBoolName(textChangeData.mIncludingChangesWithoutComposition),
           mSink.get(),
           GetSinkMaskNameStr(mSinkMask).get(),
           GetBoolName(mComposition.IsComposing())));
 
-  if (textChangeData.mCausedByComposition) {
-    // Ignore text change notifications caused by composition since it's
+  if (textChangeData.mCausedOnlyByComposition) {
+    // Ignore text change notifications caused only by composition since it's
     // already been handled internally.
+    return NS_OK;
+  }
+
+  if (mComposition.IsComposing() &&
+      !textChangeData.mIncludingChangesDuringComposition) {
+    // Ignore text changes when they don't include changes caused not by
+    // composition at the latest composition because changes before current
+    // composition start shouldn't cause forcibly committing composition.
+    // In the future, we should notify TSF of such delayed text changes
+    // after current composition is active (In such case,
+    // mIncludingChangesWithoutComposition is true).
     return NS_OK;
   }
 
@@ -5225,8 +5267,9 @@ TSFTextStore::SetInputContext(nsWindowBase* aWidget,
 
   if (aAction.mFocusChange != InputContextAction::FOCUS_NOT_CHANGED) {
     if (sEnabledTextStore) {
-      sEnabledTextStore->SetInputScope(aContext.mHTMLInputType,
-                                       aContext.mHTMLInputInputmode);
+      RefPtr<TSFTextStore> textStore = sEnabledTextStore;
+      textStore->SetInputScope(aContext.mHTMLInputType,
+                               aContext.mHTMLInputInputmode);
     }
     return;
   }
@@ -5567,8 +5610,9 @@ TSFTextStore::ProcessMessage(nsWindowBase* aWindow,
       CommitComposition(false);
       break;
     case MOZ_WM_NOTIY_TSF_OF_LAYOUT_CHANGE: {
-      TSFTextStore* textStore = reinterpret_cast<TSFTextStore*>(aWParam);
-      if (textStore == sEnabledTextStore) {
+      TSFTextStore* maybeTextStore = reinterpret_cast<TSFTextStore*>(aWParam);
+      if (maybeTextStore == sEnabledTextStore) {
+        RefPtr<TSFTextStore> textStore(maybeTextStore);
         textStore->NotifyTSFOfLayoutChangeAgain();
       }
       break;

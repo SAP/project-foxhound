@@ -40,6 +40,25 @@ using namespace mozilla;
 
 #define kVisibilityChange "visibilitychange"
 
+class VisibilityChangeListener final : public nsIDOMEventListener
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIDOMEVENTLISTENER
+
+  explicit VisibilityChangeListener(nsPIDOMWindow* aWindow);
+
+  void RemoveListener();
+  void SetCallback(nsIContentPermissionRequestCallback* aCallback);
+  already_AddRefed<nsIContentPermissionRequestCallback> GetCallback();
+
+private:
+  virtual ~VisibilityChangeListener() {}
+
+  nsWeakPtr mWindow;
+  nsCOMPtr<nsIContentPermissionRequestCallback> mCallback;
+};
+
 NS_IMPL_ISUPPORTS(VisibilityChangeListener, nsIDOMEventListener)
 
 VisibilityChangeListener::VisibilityChangeListener(nsPIDOMWindow* aWindow)
@@ -445,9 +464,9 @@ nsContentPermissionUtils::NotifyRemoveContentPermissionRequestChild(
 NS_IMPL_ISUPPORTS(nsContentPermissionRequester, nsIContentPermissionRequester)
 
 nsContentPermissionRequester::nsContentPermissionRequester(nsPIDOMWindow* aWindow)
-  : mWindow(aWindow)
+  : mWindow(do_GetWeakReference(aWindow))
+  , mListener(new VisibilityChangeListener(aWindow))
 {
-  mListener = new VisibilityChangeListener(mWindow);
 }
 
 nsContentPermissionRequester::~nsContentPermissionRequester()
@@ -461,12 +480,12 @@ nsContentPermissionRequester::GetVisibility(nsIContentPermissionRequestCallback*
 {
   NS_ENSURE_ARG_POINTER(aCallback);
 
-  if (!mWindow) {
-    MOZ_ASSERT(false);
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+  if (!window) {
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIDocShell> docshell = mWindow->GetDocShell();
+  nsCOMPtr<nsIDocShell> docshell = window->GetDocShell();
   if (!docshell) {
     return NS_ERROR_FAILURE;
   }
@@ -754,6 +773,11 @@ RemotePermissionRequest::RemotePermissionRequest(
 {
   mListener = new VisibilityChangeListener(mWindow);
   mListener->SetCallback(this);
+}
+
+RemotePermissionRequest::~RemotePermissionRequest()
+{
+  MOZ_ASSERT(!mIPCOpen, "Protocol must not be open when RemotePermissionRequest is destroyed.");
 }
 
 void

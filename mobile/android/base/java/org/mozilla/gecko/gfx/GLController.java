@@ -5,11 +5,10 @@
 
 package org.mozilla.gecko.gfx;
 
-import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.GeckoAppShell;
-import org.mozilla.gecko.GeckoEvent;
-import org.mozilla.gecko.GeckoThread;
+import org.mozilla.gecko.annotation.WrapForJNI;
+import org.mozilla.gecko.mozglue.JNIObject;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.util.Log;
@@ -30,13 +29,11 @@ import javax.microedition.khronos.egl.EGLSurface;
  * the mCompositorCreated field and other state variables are always
  * accurate.
  */
-public class GLController {
+public class GLController extends JNIObject {
     private static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
     private static final String LOGTAG = "GeckoGLController";
 
-    private static GLController sInstance;
-
-    private LayerView mView;
+    /* package */ LayerView mView;
     private boolean mServerSurfaceValid;
     private int mWidth, mHeight;
 
@@ -44,9 +41,9 @@ public class GLController {
      * is blocked on it) and read by the UI thread. */
     private volatile boolean mCompositorCreated;
 
-    private EGL10 mEGL;
-    private EGLDisplay mEGLDisplay;
-    private EGLConfig mEGLConfig;
+    private static EGL10 sEGL;
+    private static EGLDisplay sEGLDisplay;
+    private static EGLConfig sEGLConfig;
     private EGLSurface mEGLSurfaceForCompositor;
 
     private static final int LOCAL_EGL_OPENGL_ES2_BIT = 4;
@@ -69,15 +66,30 @@ public class GLController {
         EGL10.EGL_NONE
     };
 
-    private GLController() {
-    }
+    @WrapForJNI @Override // JNIObject
+    protected native void disposeNative();
 
-    static GLController getInstance(LayerView view) {
-        if (sInstance == null) {
-            sInstance = new GLController();
-        }
-        sInstance.mView = view;
-        return sInstance;
+    // Gecko thread sets its Java instances; does not block UI thread.
+    @WrapForJNI
+    /* package */ native void attachToJava(GeckoLayerClient layerClient,
+                                           NativePanZoomController npzc);
+
+    // Gecko thread creates compositor; blocks UI thread.
+    @WrapForJNI
+    private native void createCompositor(int width, int height);
+
+    // Gecko thread pauses compositor; blocks UI thread.
+    @WrapForJNI
+    private native void pauseCompositor();
+
+    // UI thread resumes compositor and notifies Gecko thread; does not block UI thread.
+    @WrapForJNI
+    private native void syncResumeResizeCompositor(int width, int height);
+
+    @WrapForJNI
+    private native void syncInvalidateAndScheduleComposite();
+
+    public GLController() {
     }
 
     synchronized void serverSurfaceDestroyed() {
@@ -86,7 +98,7 @@ public class GLController {
         mServerSurfaceValid = false;
 
         if (mEGLSurfaceForCompositor != null) {
-          mEGL.eglDestroySurface(mEGLDisplay, mEGLSurfaceForCompositor);
+          sEGL.eglDestroySurface(sEGLDisplay, mEGLSurfaceForCompositor);
           mEGLSurfaceForCompositor = null;
         }
 
@@ -99,7 +111,7 @@ public class GLController {
         // definitely paused -- it'll synchronize with the Gecko event loop, which
         // in turn will synchronize with the compositor thread.
         if (mCompositorCreated) {
-            GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createCompositorPauseEvent());
+            pauseCompositor();
         }
     }
 
@@ -111,7 +123,7 @@ public class GLController {
         mServerSurfaceValid = true;
 
         // we defer to a runnable the task of updating the compositor, because this is going to
-        // call back into createEGLSurfaceForCompositor, which will try to create an EGLSurface
+        // call back into createEGLSurface, which will try to create an EGLSurface
         // against mView, which we suspect might fail if called too early. By posting this to
         // mView, we hope to ensure that it is deferred until mView is actually "ready" for some
         // sense of "ready".
@@ -142,8 +154,8 @@ public class GLController {
         // two conditions are satisfied, we can be relatively sure that the compositor creation will
         // happen without needing to block anywhere. Do it with a synchronous Gecko event so that the
         // Android doesn't have a chance to destroy our surface in between.
-        if (GeckoThread.isRunning()) {
-            GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createCompositorCreateEvent(mWidth, mHeight));
+        if (mView.getLayerClient().isGeckoReady()) {
+            createCompositor(mWidth, mHeight);
         }
     }
 
@@ -157,16 +169,16 @@ public class GLController {
         return mServerSurfaceValid;
     }
 
-    private void initEGL() {
-        if (mEGL != null) {
+    private static void initEGL() {
+        if (sEGL != null) {
             return;
         }
 
-        mEGL = (EGL10)EGLContext.getEGL();
+        sEGL = (EGL10)EGLContext.getEGL();
 
-        mEGLDisplay = mEGL.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY);
-        if (mEGLDisplay == EGL10.EGL_NO_DISPLAY) {
-            Log.w(LOGTAG, "Can't get EGL display!");
+        sEGLDisplay = sEGL.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY);
+        if (sEGLDisplay == EGL10.EGL_NO_DISPLAY) {
+            Log.w(LOGTAG, "can't get EGL display!");
             return;
         }
 
@@ -179,15 +191,15 @@ public class GLController {
         // (at least Android's HardwareRenderer does it for us already), it is necessary
         // on Android 2.x.
         int[] returnedVersion = new int[2];
-        if (!mEGL.eglInitialize(mEGLDisplay, returnedVersion)) {
+        if (!sEGL.eglInitialize(sEGLDisplay, returnedVersion)) {
             Log.w(LOGTAG, "eglInitialize failed");
             return;
         }
 
-        mEGLConfig = chooseConfig();
+        sEGLConfig = chooseConfig();
     }
 
-    private EGLConfig chooseConfig() {
+    private static EGLConfig chooseConfig() {
         int[] desiredConfig;
         int rSize, gSize, bSize;
         int[] numConfigs = new int[1];
@@ -204,14 +216,14 @@ public class GLController {
             break;
         }
 
-        if (!mEGL.eglChooseConfig(mEGLDisplay, desiredConfig, null, 0, numConfigs) ||
+        if (!sEGL.eglChooseConfig(sEGLDisplay, desiredConfig, null, 0, numConfigs) ||
                 numConfigs[0] <= 0) {
             throw new GLControllerException("No available EGL configurations " +
                                             getEGLError());
         }
 
         EGLConfig[] configs = new EGLConfig[numConfigs[0]];
-        if (!mEGL.eglChooseConfig(mEGLDisplay, desiredConfig, configs, numConfigs[0], numConfigs)) {
+        if (!sEGL.eglChooseConfig(sEGLDisplay, desiredConfig, configs, numConfigs[0], numConfigs)) {
             throw new GLControllerException("No EGL configuration for that specification " +
                                             getEGLError());
         }
@@ -219,9 +231,9 @@ public class GLController {
         // Select the first configuration that matches the screen depth.
         int[] red = new int[1], green = new int[1], blue = new int[1];
         for (EGLConfig config : configs) {
-            mEGL.eglGetConfigAttrib(mEGLDisplay, config, EGL10.EGL_RED_SIZE, red);
-            mEGL.eglGetConfigAttrib(mEGLDisplay, config, EGL10.EGL_GREEN_SIZE, green);
-            mEGL.eglGetConfigAttrib(mEGLDisplay, config, EGL10.EGL_BLUE_SIZE, blue);
+            sEGL.eglGetConfigAttrib(sEGLDisplay, config, EGL10.EGL_RED_SIZE, red);
+            sEGL.eglGetConfigAttrib(sEGLDisplay, config, EGL10.EGL_GREEN_SIZE, green);
+            sEGL.eglGetConfigAttrib(sEGLDisplay, config, EGL10.EGL_BLUE_SIZE, blue);
             if (red[0] == rSize && green[0] == gSize && blue[0] == bSize) {
                 return config;
             }
@@ -234,7 +246,7 @@ public class GLController {
         if (mEGLSurfaceForCompositor == null) {
             initEGL();
             try {
-                mEGLSurfaceForCompositor = mEGL.eglCreateWindowSurface(mEGLDisplay, mEGLConfig, mView.getNativeWindow(), null);
+                mEGLSurfaceForCompositor = sEGL.eglCreateWindowSurface(sEGLDisplay, sEGLConfig, mView.getNativeWindow(), null);
                 // In failure cases, eglCreateWindowSurface should return EGL_NO_SURFACE.
                 // We currently normalize this to null, and compare to null in all our checks.
                 if (mEGLSurfaceForCompositor == EGL10.EGL_NO_SURFACE) {
@@ -250,16 +262,17 @@ public class GLController {
         return mEGLSurfaceForCompositor != null;
     }
 
-    @WrapForJNI(allowMultithread = true, stubName = "CreateEGLSurfaceForCompositorWrapper")
-    private synchronized EGLSurface createEGLSurfaceForCompositor() {
+    @WrapForJNI(allowMultithread = true)
+    private synchronized EGLSurface createEGLSurface() {
+        compositorCreated();
         AttemptPreallocateEGLSurfaceForCompositor();
         EGLSurface result = mEGLSurfaceForCompositor;
         mEGLSurfaceForCompositor = null;
         return result;
     }
 
-    private String getEGLError() {
-        return "Error " + (mEGL == null ? "(no mEGL)" : mEGL.eglGetError());
+    private static String getEGLError() {
+        return "Error " + (sEGL == null ? "(no sEGL)" : sEGL.eglGetError());
     }
 
     void resumeCompositor(int width, int height) {
@@ -270,10 +283,29 @@ public class GLController {
         // It is important to not notify Gecko until after the compositor has
         // been resumed, otherwise Gecko may send updates that get dropped.
         if (mCompositorCreated) {
-            GeckoAppShell.scheduleResumeComposition(width, height);
-            GeckoAppShell.sendEventToGecko(GeckoEvent.createCompositorResumeEvent());
+            syncResumeResizeCompositor(width, height);
             mView.requestRender();
         }
+    }
+
+    /* package */ void invalidateAndScheduleComposite() {
+        if (mCompositorCreated) {
+            syncInvalidateAndScheduleComposite();
+        }
+    }
+
+    @WrapForJNI
+    private void destroy() {
+        // The nsWindow has been closed. First mark our compositor as destroyed.
+        mCompositorCreated = false;
+
+        // Then clear out any pending calls on the UI thread by disposing on the UI thread.
+        ThreadUtils.postToUiThread(new Runnable() {
+            @Override
+            public void run() {
+                GLController.this.disposeNative();
+            }
+        });
     }
 
     public static class GLControllerException extends RuntimeException {

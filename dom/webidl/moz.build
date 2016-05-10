@@ -16,7 +16,6 @@ PREPROCESSED_WEBIDL_FILES = [
 ]
 
 WEBIDL_FILES = [
-    'AbortablePromise.webidl',
     'AbstractWorker.webidl',
     'ActivityRequestHandler.webidl',
     'AlarmsManager.webidl',
@@ -24,6 +23,7 @@ WEBIDL_FILES = [
     'Animatable.webidl',
     'Animation.webidl',
     'AnimationEffectReadOnly.webidl',
+    'AnimationEffectTimingReadOnly.webidl',
     'AnimationEvent.webidl',
     'AnimationTimeline.webidl',
     'AnonymousContent.webidl',
@@ -74,6 +74,7 @@ WEBIDL_FILES = [
     'ChannelMergerNode.webidl',
     'ChannelSplitterNode.webidl',
     'CharacterData.webidl',
+    'CheckerboardReportService.webidl',
     'ChildNode.webidl',
     'ChromeNodeList.webidl',
     'ChromeNotifications.webidl',
@@ -265,6 +266,7 @@ WEBIDL_FILES = [
     'IDBTransaction.webidl',
     'IDBVersionChangeEvent.webidl',
     'ImageBitmap.webidl',
+    'ImageBitmapRenderingContext.webidl',
     'ImageCapture.webidl',
     'ImageData.webidl',
     'ImageDocument.webidl',
@@ -588,6 +590,7 @@ WEBIDL_FILES = [
     'WebComponents.webidl',
     'WebGL2RenderingContext.webidl',
     'WebGLRenderingContext.webidl',
+    'WebKitCSSMatrix.webidl',
     'WebSocket.webidl',
     'WheelEvent.webidl',
     'WifiOptions.webidl',
@@ -814,7 +817,6 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'ProgressEvent.webidl',
     'RecordErrorEvent.webidl',
     'ScrollViewChangeEvent.webidl',
-    'SelectionStateChangedEvent.webidl',
     'StyleRuleChangeEvent.webidl',
     'StyleSheetApplicableStateChangeEvent.webidl',
     'StyleSheetChangeEvent.webidl',
@@ -836,6 +838,7 @@ if CONFIG['MOZ_WEBRTC']:
         'MediaStreamTrackEvent.webidl',
         'RTCDataChannelEvent.webidl',
         'RTCPeerConnectionIceEvent.webidl',
+        'RTCTrackEvent.webidl',
     ]
 
 if CONFIG['MOZ_WEBSPEECH']:

@@ -73,20 +73,13 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS
 
-  // Touch caret preference
-  static bool TouchCaretPrefEnabled();
-
-  // Selection caret preference
-  static bool SelectionCaretPrefEnabled();
-
   static bool AccessibleCaretEnabled();
 
   // BeforeAfterKeyboardEvent preference
   static bool BeforeAfterKeyboardEventEnabled();
 
   void Init(nsIDocument* aDocument, nsPresContext* aPresContext,
-            nsViewManager* aViewManager, nsStyleSet* aStyleSet,
-            nsCompatibility aCompatMode);
+            nsViewManager* aViewManager, nsStyleSet* aStyleSet);
   virtual void Destroy() override;
   virtual void MakeZombie() override;
 
@@ -245,14 +238,6 @@ public:
                                       bool aFlushOnHoverChange) override;
   virtual void ClearMouseCaptureOnView(nsView* aView) override;
   virtual bool IsVisible() override;
-
-  // touch caret
-  virtual already_AddRefed<mozilla::TouchCaret> GetTouchCaret() const override;
-  virtual mozilla::dom::Element* GetTouchCaretElement() const override;
-  // selection caret
-  virtual already_AddRefed<mozilla::SelectionCarets> GetSelectionCarets() const override;
-  virtual mozilla::dom::Element* GetSelectionCaretsStartElement() const override;
-  virtual mozilla::dom::Element* GetSelectionCaretsEndElement() const override;
 
   virtual already_AddRefed<mozilla::AccessibleCaretEventHub> GetAccessibleCaretEventHub() const override;
 
@@ -660,9 +645,6 @@ protected:
   void QueryIsActive();
   nsresult UpdateImageLockingState();
 
-#ifdef ANDROID
-  nsIDocument* GetTouchEventTargetDocument();
-#endif
   bool InZombieDocument(nsIContent *aContent);
   already_AddRefed<nsIPresShell> GetParentPresShellForEventHandling();
   nsIContent* GetCurrentEventContent();
@@ -737,6 +719,12 @@ protected:
   virtual void SysColorChanged() override { mPresContext->SysColorChanged(); }
   virtual void ThemeChanged() override { mPresContext->ThemeChanged(); }
   virtual void BackingScaleFactorChanged() override { mPresContext->UIResolutionChanged(); }
+#ifdef ANDROID
+  virtual nsIDocument* GetTouchEventTargetDocument();
+#endif
+
+  virtual void PausePainting() override;
+  virtual void ResumePainting() override;
 
   void UpdateImageVisibility();
   void UpdateActivePointerState(mozilla::WidgetGUIEvent* aEvent);
@@ -818,15 +806,11 @@ protected:
   nsCallbackEventRequest*   mFirstCallbackEventRequest;
   nsCallbackEventRequest*   mLastCallbackEventRequest;
 
-  // TouchManager
-  TouchManager              mTouchManager;
+  mozilla::TouchManager     mTouchManager;
 
   RefPtr<ZoomConstraintsClient> mZoomConstraintsClient;
   RefPtr<MobileViewportManager> mMobileViewportManager;
 
-  // TouchCaret
-  RefPtr<mozilla::TouchCaret> mTouchCaret;
-  RefPtr<mozilla::SelectionCarets> mSelectionCarets;
   RefPtr<mozilla::AccessibleCaretEventHub> mAccessibleCaretEventHub;
 
   // This timer controls painting suppression.  Until it fires

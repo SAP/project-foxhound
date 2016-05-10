@@ -22,6 +22,7 @@
 #include "nsThreadUtils.h"
 #include "FakeMediaStreams.h"
 #include "FakeMediaStreamsImpl.h"
+#include "FakeLogging.h"
 #include "PeerConnectionImpl.h"
 #include "PeerConnectionCtx.h"
 
@@ -1140,6 +1141,7 @@ const std::string kBasicAudioVideoOffer =
 "c=IN IP4 0.0.0.0" CRLF
 "a=mid:first" CRLF
 "a=rtpmap:109 opus/48000/2" CRLF
+"a=fmtp:109 maxplaybackrate=32000;stereo=1" CRLF
 "a=ptime:20" CRLF
 "a=maxptime:20" CRLF
 "a=rtpmap:9 G722/8000" CRLF
@@ -1501,7 +1503,7 @@ const std::string kH264AudioVideoOffer =
 "a=rtpmap:0 PCMU/8000" CRLF
 "a=rtpmap:8 PCMA/8000" CRLF
 "a=rtpmap:101 telephone-event/8000" CRLF
-"a=fmtp:101 0-15" CRLF
+"a=fmtp:109 maxplaybackrate=32000;stereo=1" CRLF
 "a=ice-ufrag:00000000" CRLF
 "a=ice-pwd:0000000000000000000000000000000" CRLF
 "a=sendonly" CRLF
@@ -1556,8 +1558,13 @@ TEST_P(NewSdpTest, CheckFormatParameters) {
   auto audio_format_params =
       mSdp->GetMediaSection(0).GetAttributeList().GetFmtp().mFmtps;
   ASSERT_EQ(1U, audio_format_params.size());
-  ASSERT_EQ("101", audio_format_params[0].format);
-  ASSERT_EQ("0-15", audio_format_params[0].parameters_string);
+  ASSERT_EQ("109", audio_format_params[0].format);
+  ASSERT_TRUE(!!audio_format_params[0].parameters);
+  const SdpFmtpAttributeList::OpusParameters* opus_parameters =
+    static_cast<SdpFmtpAttributeList::OpusParameters*>(
+        audio_format_params[0].parameters.get());
+  ASSERT_EQ(32000U, opus_parameters->maxplaybackrate);
+  ASSERT_EQ(1U, opus_parameters->stereo);
 
   ASSERT_TRUE(mSdp->GetMediaSection(1).GetAttributeList().HasAttribute(
       SdpAttribute::kFmtpAttribute));

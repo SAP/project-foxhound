@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const SOURCE_SYNTAX_HIGHLIGHT_MAX_FILE_SIZE = 1048576; // 1 MB in bytes
 const SOURCE_URL_DEFAULT_MAX_LENGTH = 64; // chars
 const STACK_FRAMES_SOURCE_URL_MAX_LENGTH = 15; // chars
 const STACK_FRAMES_SOURCE_URL_TRIM_SECTION = "center";
@@ -47,6 +46,13 @@ var constants = require('./content/constants');
  * Object defining the debugger view components.
  */
 var DebuggerView = {
+
+  /**
+   * This is attached so tests can change it without needing to load an
+   * actual large file in automation
+   */
+  LARGE_FILE_SIZE: 1048576, // 1 MB in bytes
+
   /**
    * Initializes the debugger view.
    *
@@ -54,10 +60,11 @@ var DebuggerView = {
    *         A promise that is resolved when the view finishes initializing.
    */
   initialize: function() {
-    if (this._hasStartup) {
-      return;
+    if (this._startup) {
+      return this._startup;
     }
-    this._hasStartup = true;
+    const deferred = promise.defer();
+    this._startup = deferred.promise;
 
     this._initializePanes();
     this.Toolbar.initialize();
@@ -72,7 +79,8 @@ var DebuggerView = {
     this.EventListeners.initialize();
     this.GlobalSearch.initialize();
     this._initializeVariablesView();
-    this._initializeEditor();
+
+    this._initializeEditor(deferred.resolve);
     this._editorSource = {};
 
     document.title = L10N.getStr("DebuggerWindowTitle");
@@ -102,6 +110,8 @@ var DebuggerView = {
         }
       }
     }, this);
+
+    return deferred.promise;
   },
 
   /**
@@ -273,7 +283,7 @@ var DebuggerView = {
    * @param function aCallback
    *        Called after the editor finishes initializing.
    */
-  _initializeEditor: function() {
+  _initializeEditor: function(callback) {
     dumpn("Initializing the DebuggerView editor");
 
     let extraKeys = {};
@@ -305,6 +315,7 @@ var DebuggerView = {
     this.editor.appendTo(document.getElementById("editor")).then(() => {
       this.editor.extend(DebuggerEditor);
       this._loadingText = L10N.getStr("loadingText");
+      callback();
     });
 
     this.editor.on("gutterClick", (ev, line, button) => {
@@ -408,12 +419,6 @@ var DebuggerView = {
    *        The source text content.
    */
   _setEditorMode: function(aUrl, aContentType = "", aTextContent = "") {
-    // Avoid setting the editor mode for very large files.
-    // Is this still necessary? See bug 929225.
-    if (aTextContent.length >= SOURCE_SYNTAX_HIGHLIGHT_MAX_FILE_SIZE) {
-      return void this.editor.setMode(Editor.modes.text);
-    }
-
     // Use JS mode for files with .js and .jsm extensions.
     if (SourceUtils.isJavaScript(aUrl, aContentType)) {
       return void this.editor.setMode(Editor.modes.js);
@@ -477,8 +482,7 @@ var DebuggerView = {
       return;
     }
     else if (textInfo.error) {
-      let url = textInfo.error;
-      let msg = L10N.getFormatStr("errorLoadingText2", url);
+      let msg = L10N.getFormatStr("errorLoadingText2", textInfo.error);
       this._setEditorText(msg);
       Cu.reportError(msg);
       dumpn(msg);

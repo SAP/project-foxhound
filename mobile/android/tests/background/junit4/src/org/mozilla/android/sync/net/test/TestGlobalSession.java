@@ -108,13 +108,13 @@ public class TestGlobalSession {
   @Test
   public void testBackoffCalledByHandleHTTPError() {
     try {
-      final MockGlobalSessionCallback callback = new MockGlobalSessionCallback(TEST_CLUSTER_URL);
+      final MockGlobalSessionCallback callback = new MockGlobalSessionCallback();
       SyncConfiguration config = new SyncConfiguration(TEST_USERNAME, new BasicAuthHeaderProvider(TEST_USERNAME, TEST_PASSWORD), new MockSharedPreferences(), new KeyBundle(TEST_USERNAME, TEST_SYNC_KEY));
       final GlobalSession session = new MockGlobalSession(config, callback);
 
       final HttpResponse response = new BasicHttpResponse(
         new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 503, "Illegal method/protocol"));
-      response.addHeader("X-Weave-Backoff", Long.toString(TEST_BACKOFF_IN_SECONDS)); // Backoff given in seconds.
+      response.setHeader("X-Weave-Backoff", Long.toString(TEST_BACKOFF_IN_SECONDS)); // Backoff given in seconds.
 
       getTestWaiter().performWait(WaitHelper.onThreadRunnable(new Runnable() {
         @Override
@@ -140,7 +140,7 @@ public class TestGlobalSession {
   @Test
   public void testSuccessCalledAfterStages() {
     try {
-      final MockGlobalSessionCallback callback = new MockGlobalSessionCallback(TEST_CLUSTER_URL);
+      final MockGlobalSessionCallback callback = new MockGlobalSessionCallback();
       SyncConfiguration config = new SyncConfiguration(TEST_USERNAME, new BasicAuthHeaderProvider(TEST_USERNAME, TEST_PASSWORD), new MockSharedPreferences(), new KeyBundle(TEST_USERNAME, TEST_SYNC_KEY));
       final GlobalSession session = new MockGlobalSession(config, callback);
 
@@ -173,7 +173,7 @@ public class TestGlobalSession {
   @Test
   public void testBackoffCalledInStages() {
     try {
-      final MockGlobalSessionCallback callback = new MockGlobalSessionCallback(TEST_CLUSTER_URL);
+      final MockGlobalSessionCallback callback = new MockGlobalSessionCallback();
 
       // Stage fakes a 503 and sets X-Weave-Backoff header to the given seconds.
       final GlobalSyncStage stage = new MockAbstractNonRepositorySyncStage() {
@@ -245,7 +245,7 @@ public class TestGlobalSession {
       @Override
       public void handle(Request request, Response response) {
         if (stageShouldBackoff) {
-          response.set("X-Weave-Backoff", Long.toString(TEST_BACKOFF_IN_SECONDS));
+          response.addValue("X-Weave-Backoff", Long.toString(TEST_BACKOFF_IN_SECONDS));
         }
         super.handle(request, response);
       }
@@ -266,7 +266,7 @@ public class TestGlobalSession {
       }
     };
 
-    final MockGlobalSessionCallback callback = new MockGlobalSessionCallback(TEST_CLUSTER_URL);
+    final MockGlobalSessionCallback callback = new MockGlobalSessionCallback();
     SyncConfiguration config = new SyncConfiguration(TEST_USERNAME, new BasicAuthHeaderProvider(TEST_USERNAME, TEST_PASSWORD), new MockSharedPreferences(), new KeyBundle(TEST_USERNAME, TEST_SYNC_KEY));
     final GlobalSession session = new MockGlobalSession(config, callback)
                                       .withStage(Stage.syncBookmarks, stage);

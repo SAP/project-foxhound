@@ -1198,7 +1198,7 @@ MarkBailoutFrame(JSTracer* trc, const JitFrameIterator& frame)
         if (!snapIter.moreInstructions())
             break;
         snapIter.nextInstruction();
-    };
+    }
 
 }
 
@@ -1630,7 +1630,7 @@ GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes)
             MOZ_ASSERT(it.isBaselineStub() || it.isBaselineJS() || it.isIonJS());
         }
 
-        // Skip Baseline or Ion stub frames.
+        // Skip Baseline/Ion stub and accessor IC frames.
         if (it.isBaselineStubMaybeUnwound()) {
             ++it;
             MOZ_ASSERT(it.isBaselineJS());
@@ -2196,11 +2196,8 @@ SnapshotIterator::initInstructionResults(MaybeReadFallback& fallback)
         // same reason, we need to recompile without optimizing away the
         // observable stack slots.  The script would later be recompiled to have
         // support for Argument objects.
-        if (fallback.consequence == MaybeReadFallback::Fallback_Invalidate &&
-            !ionScript_->invalidate(cx, /* resetUses = */ false, "Observe recovered instruction."))
-        {
-            return false;
-        }
+        if (fallback.consequence == MaybeReadFallback::Fallback_Invalidate)
+            ionScript_->invalidate(cx, /* resetUses = */ false, "Observe recovered instruction.");
 
         // Register the list of result on the activation.  We need to do that
         // before we initialize the list such as if any recover instruction
@@ -2970,15 +2967,7 @@ JitProfilingFrameIterator::JitProfilingFrameIterator(
             return;
     }
 
-    // In some rare cases (e.g. baseline eval frame), the callee script may
-    // not have a baselineScript.  Treat this is an empty frame-sequence and
-    // move on.
-    if (!frameScript()->hasBaselineScript()) {
-        type_ = JitFrame_Entry;
-        fp_ = nullptr;
-        returnAddressToFp_ = nullptr;
-        return;
-    }
+    MOZ_ASSERT(frameScript()->hasBaselineScript());
 
     // If nothing matches, for now just assume we are at the start of the last frame's
     // baseline jit code.

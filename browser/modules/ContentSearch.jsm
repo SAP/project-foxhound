@@ -212,7 +212,7 @@ this.ContentSearch = {
 
     let event = this._eventQueue.shift();
 
-    return this._currentEventPromise = Task.spawn(function* () {
+    this._currentEventPromise = Task.spawn(function* () {
       try {
         yield this["_on" + event.type](event.data);
       } catch (err) {
@@ -303,8 +303,8 @@ this.ContentSearch = {
       };
       win.openUILinkIn(submission.uri.spec, where, params);
     }
-    win.BrowserSearch.recordSearchInHealthReport(engine, data.healthReportKey,
-                                                 data.selection || null);
+    win.BrowserSearch.recordSearchInTelemetry(engine, data.healthReportKey,
+                                              data.selection || null);
     return Promise.resolve();
   },
 
@@ -375,16 +375,18 @@ this.ContentSearch = {
       return Promise.resolve();
     }
     let browserData = this._suggestionDataForBrowser(msg.target, true);
-    FormHistory.update({
-      op: "bump",
-      fieldname: browserData.controller.formHistoryParam,
-      value: entry,
-    }, {
-      handleCompletion: () => {},
-      handleError: err => {
-        Cu.reportError("Error adding form history entry: " + err);
-      },
-    });
+    if (FormHistory.enabled) {
+      FormHistory.update({
+        op: "bump",
+        fieldname: browserData.controller.formHistoryParam,
+        value: entry,
+      }, {
+        handleCompletion: () => {},
+        handleError: err => {
+          Cu.reportError("Error adding form history entry: " + err);
+        },
+      });
+    }
     return Promise.resolve();
   },
 

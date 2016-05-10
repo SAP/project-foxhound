@@ -1809,8 +1809,25 @@
      *   Stack: => val
      */ \
     macro(JSOP_GETIMPORT,     176,"getimport",  NULL,     5,  0,  1,  JOF_ATOM|JOF_NAME|JOF_TYPESET) \
-    macro(JSOP_UNUSED177,     177,"unused177",  NULL,     1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED178,     178,"unused178",  NULL,     1,  0,  0,  JOF_BYTE) \
+    /*
+     * Examines the top stack value, asserting that it's either a self-hosted
+     * function or a self-hosted intrinsic. This opcode does nothing in a
+     * non-debug build.
+     *   Category: Other
+     *   Operands:
+     *   Stack: checkVal => checkVal
+     */ \
+    macro(JSOP_DEBUGCHECKSELFHOSTED, 177,"debug-checkselfhosted",  NULL, 1,  1,  1,  JOF_BYTE) \
+    /*
+     * Pops the top stack value, pushes the value and a boolean value that
+     * indicates whether the spread operation for the value can be optimized
+     * in spread call.
+     *   Category: Statements
+     *   Type: Function
+     *   Operands:
+     *   Stack: arr => arr optimized
+     */ \
+    macro(JSOP_OPTIMIZE_SPREADCALL,178,"optimize-spreadcall", NULL, 1,  1,  2,  JOF_BYTE) \
     macro(JSOP_UNUSED179,     179,"unused179",  NULL,     1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED180,     180,"unused180",  NULL,     1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED181,     181,"unused181",  NULL,     1,  0,  0,  JOF_BYTE) \
@@ -2052,7 +2069,15 @@
     macro(JSOP_UNUSED210,     210, "unused210",    NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED211,     211, "unused211",    NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED212,     212, "unused212",    NULL,  1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED213,     213, "unused213",    NULL,  1,  0,  0,  JOF_BYTE) \
+    /*
+     * Pushes the nearest 'var' environment.
+     *
+     *   Category: Variables and Scopes
+     *   Type: Free Variables
+     *   Operands:
+     *   Stack: => scope
+     */ \
+    macro(JSOP_BINDVAR,       213, "bindvar",      NULL,  1,  0,  1,  JOF_BYTE) \
     /*
      * Pushes the global scope onto the stack if the script doesn't have a
      * non-syntactic global scope.  Otherwise will act like JSOP_BINDNAME.

@@ -22,11 +22,13 @@
 # include <valgrind/memcheck.h>
 #endif
 
-#include "asmjs/AsmJSValidate.h"
+#include "asmjs/AsmJS.h"
 #include "vm/SharedMem.h"
 #include "vm/TypedArrayCommon.h"
 
 #include "jsobjinlines.h"
+
+#include "vm/NativeObject-inl.h"
 
 using namespace js;
 
@@ -228,19 +230,8 @@ SharedArrayBufferObject::class_constructor(JSContext* cx, unsigned argc, Value* 
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    if (!args.isConstructing()) {
-        if (args.hasDefined(0)) {
-            ESClassValue cls;
-            if (!GetClassOfValue(cx, args[0], &cls))
-                return false;
-            if (cls == ESClass_SharedArrayBuffer) {
-                args.rval().set(args[0]);
-                return true;
-            }
-        }
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_SHARED_ARRAY_BAD_OBJECT);
+    if (!ThrowIfNotConstructing(cx, args, "SharedArrayBuffer"))
         return false;
-    }
 
     // Bugs 1068458, 1161298: Limit length to 2^31-1.
     uint32_t length;
@@ -250,7 +241,12 @@ SharedArrayBufferObject::class_constructor(JSContext* cx, unsigned argc, Value* 
         return false;
     }
 
-    JSObject* bufobj = New(cx, length);
+    RootedObject proto(cx);
+    RootedObject newTarget(cx, &args.newTarget().toObject());
+    if (!GetPrototypeFromConstructor(cx, newTarget, &proto))
+        return false;
+
+    JSObject* bufobj = New(cx, length, proto);
     if (!bufobj)
         return false;
     args.rval().setObject(*bufobj);
@@ -258,20 +254,23 @@ SharedArrayBufferObject::class_constructor(JSContext* cx, unsigned argc, Value* 
 }
 
 SharedArrayBufferObject*
-SharedArrayBufferObject::New(JSContext* cx, uint32_t length)
+SharedArrayBufferObject::New(JSContext* cx, uint32_t length, HandleObject proto)
 {
     SharedArrayRawBuffer* buffer = SharedArrayRawBuffer::New(cx, length);
     if (!buffer)
         return nullptr;
 
-    return New(cx, buffer);
+    return New(cx, buffer, proto);
 }
 
 SharedArrayBufferObject*
-SharedArrayBufferObject::New(JSContext* cx, SharedArrayRawBuffer* buffer)
+SharedArrayBufferObject::New(JSContext* cx, SharedArrayRawBuffer* buffer, HandleObject proto)
 {
+    MOZ_ASSERT(cx->compartment()->creationOptions().getSharedMemoryAndAtomicsEnabled());
+
     AutoSetNewObjectMetadata metadata(cx);
-    Rooted<SharedArrayBufferObject*> obj(cx, NewBuiltinClassInstance<SharedArrayBufferObject>(cx));
+    Rooted<SharedArrayBufferObject*> obj(cx,
+        NewObjectWithClassProto<SharedArrayBufferObject>(cx, proto));
     if (!obj)
         return nullptr;
 
@@ -433,8 +432,10 @@ js::GetSharedArrayBufferLengthAndData(JSObject* obj, uint32_t* length, bool* isS
 JS_FRIEND_API(JSObject*)
 JS_NewSharedArrayBuffer(JSContext* cx, uint32_t nbytes)
 {
+    MOZ_ASSERT(cx->compartment()->creationOptions().getSharedMemoryAndAtomicsEnabled());
+
     MOZ_ASSERT(nbytes <= INT32_MAX);
-    return SharedArrayBufferObject::New(cx, nbytes);
+    return SharedArrayBufferObject::New(cx, nbytes, /* proto = */ nullptr);
 }
 
 JS_FRIEND_API(bool)

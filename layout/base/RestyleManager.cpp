@@ -44,6 +44,7 @@
 #include "nsSMILAnimationController.h"
 #include "nsCSSRuleProcessor.h"
 #include "ChildIterator.h"
+#include "Layers.h"
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -52,6 +53,7 @@
 namespace mozilla {
 
 using namespace layers;
+using namespace dom;
 
 #define LOG_RESTYLE_CONTINUE(reason_, ...) \
   LOG_RESTYLE("continuing restyle since " reason_, ##__VA_ARGS__)
@@ -87,17 +89,13 @@ RestyleManager::RestyleManager(nsPresContext* aPresContext)
   , mHoverGeneration(0)
   , mRebuildAllExtraHint(nsChangeHint(0))
   , mRebuildAllRestyleHint(nsRestyleHint(0))
-  , mLastUpdateForThrottledAnimations(aPresContext->RefreshDriver()->
-                                        MostRecentRefresh())
   , mAnimationGeneration(0)
   , mReframingStyleContexts(nullptr)
   , mAnimationsWithDestroyedFrame(nullptr)
   , mPendingRestyles(ELEMENT_HAS_PENDING_RESTYLE |
                      ELEMENT_IS_POTENTIAL_RESTYLE_ROOT |
                      ELEMENT_IS_CONDITIONAL_RESTYLE_ANCESTOR)
-#ifdef DEBUG
   , mIsProcessingRestyles(false)
-#endif
 #ifdef RESTYLE_LOGGING
   , mLoggingDepth(0)
 #endif
@@ -1335,15 +1333,10 @@ RestyleManager::AttributeChanged(Element* aElement,
 }
 
 /* static */ uint64_t
-RestyleManager::GetMaxAnimationGenerationForFrame(nsIFrame* aFrame)
+RestyleManager::GetAnimationGenerationForFrame(nsIFrame* aFrame)
 {
-  AnimationCollection* transitions =
-    aFrame->PresContext()->TransitionManager()->GetAnimationCollection(aFrame);
-  AnimationCollection* animations =
-    aFrame->PresContext()->AnimationManager()->GetAnimationCollection(aFrame);
-
-  return std::max(transitions ? transitions->mAnimationGeneration : 0,
-                  animations ? animations->mAnimationGeneration : 0);
+  EffectSet* effectSet = EffectSet::GetEffectSet(aFrame);
+  return effectSet ? effectSet->GetAnimationGeneration() : 0;
 }
 
 void
@@ -1736,9 +1729,7 @@ RestyleManager::ProcessPendingRestyles()
   // Process non-animation restyles...
   MOZ_ASSERT(!mIsProcessingRestyles,
              "Nesting calls to ProcessPendingRestyles?");
-#ifdef DEBUG
   mIsProcessingRestyles = true;
-#endif
 
   // Before we process any restyles, we need to ensure that style
   // resulting from any animations is up-to-date, so that if any style
@@ -1747,7 +1738,7 @@ RestyleManager::ProcessPendingRestyles()
   bool haveNonAnimation =
     mHavePendingNonAnimationRestyles || mDoRebuildAllStyleData;
   if (haveNonAnimation) {
-    IncrementAnimationGeneration();
+    ++mAnimationGeneration;
     UpdateOnlyAnimationStyles();
   } else {
     // If we don't have non-animation style updates, then we have queued
@@ -1780,9 +1771,7 @@ RestyleManager::ProcessPendingRestyles()
     mPresContext->TransitionManager()->SetInAnimationOnlyStyleUpdate(false);
   }
 
-#ifdef DEBUG
   mIsProcessingRestyles = false;
-#endif
 
   NS_ASSERTION(haveNonAnimation || !mHavePendingNonAnimationRestyles,
                "should not have added restyles");
@@ -1844,9 +1833,7 @@ RestyleManager::EndProcessingRestyles()
 void
 RestyleManager::UpdateOnlyAnimationStyles()
 {
-  TimeStamp now = mPresContext->RefreshDriver()->MostRecentRefresh();
-  bool doCSS = mLastUpdateForThrottledAnimations != now;
-  mLastUpdateForThrottledAnimations = now;
+  bool doCSS = mPresContext->EffectCompositor()->HasPendingStyleUpdates();
 
   nsIDocument* document = mPresContext->Document();
   nsSMILAnimationController* animationController =
@@ -1861,7 +1848,6 @@ RestyleManager::UpdateOnlyAnimationStyles()
   }
 
   nsTransitionManager* transitionManager = mPresContext->TransitionManager();
-  nsAnimationManager* animationManager = mPresContext->AnimationManager();
 
   transitionManager->SetInAnimationOnlyStyleUpdate(true);
 
@@ -1874,8 +1860,7 @@ RestyleManager::UpdateOnlyAnimationStyles()
     // add only the elements for which animations are currently throttled
     // (i.e., animating on the compositor with main-thread style updates
     // suppressed).
-    transitionManager->AddStyleUpdatesTo(tracker);
-    animationManager->AddStyleUpdatesTo(tracker);
+    mPresContext->EffectCompositor()->AddStyleUpdatesTo(tracker);
   }
 
   if (doSMIL) {
@@ -2064,7 +2049,7 @@ VerifyContextParent(nsIFrame* aFrame, nsStyleContext* aContext,
 }
 
 static void
-VerifyStyleTree(nsIFrame* aFrame, nsStyleContext* aParentContext)
+VerifyStyleTree(nsIFrame* aFrame)
 {
   nsStyleContext*  context = aFrame->StyleContext();
   VerifyContextParent(aFrame, context, nullptr);
@@ -2082,7 +2067,7 @@ VerifyStyleTree(nsIFrame* aFrame, nsStyleContext* aParentContext)
 
           // recurse to out of flow frame, letting the parent context get resolved
           do {
-            VerifyStyleTree(outOfFlowFrame, nullptr);
+            VerifyStyleTree(outOfFlowFrame);
           } while ((outOfFlowFrame = outOfFlowFrame->GetNextContinuation()));
 
           // verify placeholder using the parent frame's context as
@@ -2090,7 +2075,7 @@ VerifyStyleTree(nsIFrame* aFrame, nsStyleContext* aParentContext)
           VerifyContextParent(child, nullptr, nullptr);
         }
         else { // regular frame
-          VerifyStyleTree(child, nullptr);
+          VerifyStyleTree(child);
         }
       }
     }
@@ -2109,9 +2094,7 @@ void
 RestyleManager::DebugVerifyStyleTree(nsIFrame* aFrame)
 {
   if (aFrame) {
-    nsStyleContext* context = aFrame->StyleContext();
-    nsStyleContext* parentContext = context->GetParent();
-    VerifyStyleTree(aFrame, parentContext);
+    VerifyStyleTree(aFrame);
   }
 }
 
@@ -2529,7 +2512,7 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
         }
       }
 #ifdef DEBUG
-      VerifyStyleTree(aFrame, newParentContext);
+      VerifyStyleTree(aFrame);
 #endif
     }
   }
@@ -2706,7 +2689,7 @@ ElementRestyler::AddLayerChangesForAnimation()
   // on layers for transitions and animations and use != comparison below
   // rather than a > comparison.
   uint64_t frameGeneration =
-    RestyleManager::GetMaxAnimationGenerationForFrame(mFrame);
+    RestyleManager::GetAnimationGenerationForFrame(mFrame);
 
   nsChangeHint hint = nsChangeHint(0);
   for (const LayerAnimationInfo::Record& layerInfo :

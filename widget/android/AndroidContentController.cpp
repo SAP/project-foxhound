@@ -16,37 +16,23 @@ using mozilla::layers::APZCTreeManager;
 
 namespace mozilla {
 namespace widget {
-namespace android {
-
-NativePanZoomController::GlobalRef AndroidContentController::sNativePanZoomController = nullptr;
-
-NativePanZoomController::LocalRef
-AndroidContentController::SetNativePanZoomController(NativePanZoomController::Param obj)
-{
-    NativePanZoomController::LocalRef old = sNativePanZoomController;
-    sNativePanZoomController = obj;
-    return old;
-}
 
 void
-AndroidContentController::NotifyDefaultPrevented(uint64_t aInputBlockId,
+AndroidContentController::NotifyDefaultPrevented(APZCTreeManager* aManager,
+                                                 uint64_t aInputBlockId,
                                                  bool aDefaultPrevented)
 {
     if (!AndroidBridge::IsJavaUiThread()) {
         // The notification must reach the APZ on the Java UI thread (aka the
         // APZ "controller" thread) but we get it from the Gecko thread, so we
         // have to throw it onto the other thread.
-        AndroidBridge::Bridge()->PostTaskToUiThread(NewRunnableFunction(
-            &AndroidContentController::NotifyDefaultPrevented,
+        AndroidBridge::Bridge()->PostTaskToUiThread(NewRunnableMethod(
+            aManager, &APZCTreeManager::ContentReceivedInputBlock,
             aInputBlockId, aDefaultPrevented), 0);
         return;
     }
 
-    MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-    APZCTreeManager* controller = nsWindow::GetAPZCTreeManager();
-    if (controller) {
-        controller->ContentReceivedInputBlock(aInputBlockId, aDefaultPrevented);
-    }
+    aManager->ContentReceivedInputBlock(aInputBlockId, aDefaultPrevented);
 }
 
 void
@@ -77,7 +63,7 @@ AndroidContentController::HandleSingleTap(const CSSPoint& aPoint,
 
         CSSIntPoint rounded = RoundedToInt(point);
         nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", rounded.x, rounded.y);
-        nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
+        nsAppShell::PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
                 NS_LITERAL_CSTRING("Gesture:SingleTap"), data));
     }
 
@@ -90,6 +76,5 @@ AndroidContentController::PostDelayedTask(Task* aTask, int aDelayMs)
     AndroidBridge::Bridge()->PostTaskToUiThread(aTask, aDelayMs);
 }
 
-} // namespace android
 } // namespace widget
 } // namespace mozilla

@@ -5,7 +5,6 @@
 package org.mozilla.gecko.fxa;
 
 import org.mozilla.gecko.fxa.authenticator.AndroidFxAccount;
-import org.mozilla.gecko.sync.setup.SyncAccounts;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -40,18 +39,10 @@ public class AccountLoader extends AsyncTaskLoader<Account> {
     super(context);
   }
 
-  // Task that performs the asynchronous load **/
+  // Task that performs the asynchronous load.
   @Override
   public Account loadInBackground() {
-    final Context context = getContext();
-    Account foundAccount = FirefoxAccounts.getFirefoxAccount(context);
-    if (foundAccount == null) {
-      final Account[] syncAccounts = SyncAccounts.syncAccounts(context);
-      if (syncAccounts != null && syncAccounts.length > 0) {
-        foundAccount = syncAccounts[0];
-      }
-    }
-    return foundAccount;
+    return FirefoxAccounts.getFirefoxAccount(getContext());
   }
 
   // Deliver the results to the registered listener.
@@ -171,6 +162,8 @@ public class AccountLoader extends AsyncTaskLoader<Account> {
     intentFilter.addAction(AccountManager.LOGIN_ACCOUNTS_CHANGED_ACTION);
     // Firefox Account internal state changed.
     intentFilter.addAction(FxAccountConstants.ACCOUNT_STATE_CHANGED_ACTION);
+    // Firefox Account profile state changed.
+    intentFilter.addAction(FxAccountConstants.ACCOUNT_PROFILE_JSON_UPDATED_ACTION);
 
     // null means: "the main thread of the process will be used." We must call
     // onContentChanged on the main thread of the process; this ensures we do.

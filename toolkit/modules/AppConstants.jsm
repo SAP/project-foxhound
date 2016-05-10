@@ -52,6 +52,13 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_DEV_EDITION:
+#ifdef MOZ_DEV_EDITION
+  true,
+#else
+  false,
+#endif
+
   MOZ_SERVICES_HEALTHREPORT:
 #ifdef MOZ_SERVICES_HEALTHREPORT
   true,
@@ -132,6 +139,13 @@ this.AppConstants = Object.freeze({
 # MOZ_B2G covers both device and desktop b2g
   MOZ_B2G:
 #ifdef MOZ_B2G
+  true,
+#else
+  false,
+#endif
+
+  XP_UNIX:
+#ifdef XP_UNIX
   true,
 #else
   false,
@@ -233,6 +247,27 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_REQUIRE_SIGNING:
+#ifdef MOZ_REQUIRE_SIGNING
+  true,
+#else
+  false,
+#endif
+
+  MENUBAR_CAN_AUTOHIDE:
+#ifdef MENUBAR_CAN_AUTOHIDE
+  true,
+#else
+  false,
+#endif
+
+  CAN_DRAW_IN_TITLEBAR:
+#ifdef CAN_DRAW_IN_TITLEBAR
+  true,
+#else
+  false,
+#endif
+
   MOZ_ANDROID_HISTORY:
 #ifdef MOZ_ANDROID_HISTORY
   true,
@@ -266,5 +301,12 @@ this.AppConstants = Object.freeze({
   // URL to the hg revision this was built from (e.g.
   // "https://hg.mozilla.org/mozilla-central/rev/6256ec9113c1")
   // On unofficial builds, this is an empty string.
-  SOURCE_REVISION_URL: "@SOURCE_REV_URL@"
+  SOURCE_REVISION_URL: "@SOURCE_REV_URL@",
+
+  MOZ_NUWA_PROCESS:
+#ifdef MOZ_NUWA_PROCESS
+    true
+#else
+    false
+#endif
 });

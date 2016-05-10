@@ -33,6 +33,24 @@ workerHelper.createTask(self, "readHeapSnapshot", ({ snapshotFilePath }) => {
 });
 
 /**
+ * @see HeapAnalysesClient.prototype.deleteHeapSnapshot
+ */
+workerHelper.createTask(self, "deleteHeapSnapshot", ({ snapshotFilePath }) => {
+  let snapshot = snapshots[snapshotFilePath];
+  if (!snapshot) {
+    throw new Error(`No known heap snapshot for '${snapshotFilePath}'`);
+  }
+
+  snapshots[snapshotFilePath] = undefined;
+
+  let dominatorTreeId = dominatorTreeSnapshots.indexOf(snapshot);
+  if (dominatorTreeId != -1) {
+    dominatorTreeSnapshots[dominatorTreeId] = undefined;
+    dominatorTrees[dominatorTreeId] = undefined;
+  }
+});
+
+/**
  * @see HeapAnalysesClient.prototype.takeCensus
  */
 workerHelper.createTask(self, "takeCensus", ({ snapshotFilePath, censusOptions, requestOptions }) => {
@@ -91,8 +109,10 @@ workerHelper.createTask(self, "takeCensusDiff", request => {
  * @see HeapAnalysesClient.prototype.getCreationTime
  */
 workerHelper.createTask(self, "getCreationTime", snapshotFilePath => {
-  let snapshot = snapshots[snapshotFilePath];
-  return snapshot ? snapshot.creationTime : null;
+  if (!snapshots[snapshotFilePath]) {
+    throw new Error(`No known heap snapshot for '${snapshotFilePath}'`);
+  }
+  return snapshots[snapshotFilePath].creationTime;
 });
 
 /**
@@ -102,6 +122,13 @@ workerHelper.createTask(self, "getCreationTime", snapshotFilePath => {
  * @see /dom/webidl/DominatorTree.webidl
  */
 const dominatorTrees = [];
+
+/**
+ * The i^th HeapSnapshot in this array is the snapshot used to generate the i^th
+ * dominator tree in `dominatorTrees` above. This lets us map from a dominator
+ * tree id to the snapshot it came from.
+ */
+const dominatorTreeSnapshots = [];
 
 /**
  * @see HeapAnalysesClient.prototype.computeDominatorTree
@@ -114,6 +141,7 @@ workerHelper.createTask(self, "computeDominatorTree", snapshotFilePath => {
 
   const id = dominatorTrees.length;
   dominatorTrees.push(snapshot.computeDominatorTree());
+  dominatorTreeSnapshots.push(snapshot);
   return id;
 });
 
@@ -123,6 +151,7 @@ workerHelper.createTask(self, "computeDominatorTree", snapshotFilePath => {
 workerHelper.createTask(self, "getDominatorTree", request => {
   const {
     dominatorTreeId,
+    breakdown,
     maxDepth,
     maxSiblings
   } = request;
@@ -132,7 +161,12 @@ workerHelper.createTask(self, "getDominatorTree", request => {
       `There does not exist a DominatorTree with the id ${dominatorTreeId}`);
   }
 
-  return DominatorTreeNode.partialTraversal(dominatorTrees[dominatorTreeId],
+  const dominatorTree = dominatorTrees[dominatorTreeId];
+  const snapshot = dominatorTreeSnapshots[dominatorTreeId];
+
+  return DominatorTreeNode.partialTraversal(dominatorTree,
+                                            snapshot,
+                                            breakdown,
                                             maxDepth,
                                             maxSiblings);
 });
@@ -144,6 +178,7 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
   const {
     dominatorTreeId,
     nodeId,
+    breakdown,
     startIndex,
     maxCount
   } = request;
@@ -154,6 +189,8 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
   }
 
   const dominatorTree = dominatorTrees[dominatorTreeId];
+  const snapshot = dominatorTreeSnapshots[dominatorTreeId];
+
   const childIds = dominatorTree.getImmediatelyDominated(nodeId);
   if (!childIds) {
     throw new Error(`${nodeId} is not a node id in the dominator tree`);
@@ -166,8 +203,10 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
   const nodes = childIds
     .slice(start, end)
     .map(id => {
-      const size = dominatorTree.getRetainedSize(id);
-      const node = new DominatorTreeNode(id, size);
+      const { label, shallowSize } =
+        DominatorTreeNode.getLabelAndShallowSize(id, snapshot, breakdown);
+      const retainedSize = dominatorTree.getRetainedSize(id);
+      const node = new DominatorTreeNode(id, label, shallowSize, retainedSize);
       node.parentId = nodeId;
       // DominatorTree.getImmediatelyDominated will always return non-null here
       // because we got the id directly from the dominator tree.
@@ -175,7 +214,15 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
       return node;
     });
 
+  const path = [];
+  let id = nodeId;
+  do {
+    path.push(id);
+    id = dominatorTree.getImmediateDominator(id);
+  } while (id !== null);
+  path.reverse();
+
   const moreChildrenAvailable = childIds.length > end;
 
-  return { nodes, moreChildrenAvailable };
+  return { nodes, moreChildrenAvailable, path };
 });

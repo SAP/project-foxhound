@@ -9,6 +9,7 @@
 #include "BluetoothService.h"
 #include "jsapi.h"
 #include "mozilla/dom/BluetoothGattCharacteristicBinding.h"
+#include "mozilla/dom/BluetoothGattServerBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 #include "nsContentUtils.h"
@@ -150,12 +151,12 @@ NamedValueToProperty(const BluetoothNamedValue& aValue,
 
   switch (aProperty.mType) {
     case PROPERTY_BDNAME:
-      if (aValue.value().type() != BluetoothValue::TnsString) {
-        BT_LOGR("Bluetooth property value is not a string");
+      if (aValue.value().type() != BluetoothValue::TBluetoothRemoteName) {
+        BT_LOGR("Bluetooth property value is not a remote name");
         return NS_ERROR_ILLEGAL_VALUE;
       }
       // Set name
-      aProperty.mString = aValue.value().get_nsString();
+      aProperty.mRemoteName = aValue.value().get_BluetoothRemoteName();
       break;
 
     case PROPERTY_ADAPTER_SCAN_MODE:
@@ -191,13 +192,14 @@ NamedValueToProperty(const BluetoothNamedValue& aValue,
 void
 RemoteNameToString(const BluetoothRemoteName& aRemoteName, nsAString& aString)
 {
+  MOZ_ASSERT(aRemoteName.mLength <= sizeof(aRemoteName.mName));
+
   auto name = reinterpret_cast<const char*>(aRemoteName.mName);
 
   /* The content in |BluetoothRemoteName| is not a C string and not
-   * terminated by \0. We use |strnlen| to limit its length.
+   * terminated by \0. We use |mLength| to limit its length.
    */
-  aString =
-    NS_ConvertUTF8toUTF16(name, strnlen(name, sizeof(aRemoteName.mName)));
+  aString = NS_ConvertUTF8toUTF16(name, aRemoteName.mLength);
 }
 
 nsresult
@@ -412,7 +414,55 @@ GattPropertiesToBits(const GattCharacteristicProperties& aProperties,
   }
 }
 
+nsresult
+AdvertisingDataToGattAdvertisingData(
+  const BluetoothAdvertisingData& aAdvData,
+  BluetoothGattAdvertisingData& aGattAdvData)
+{
+  aGattAdvData.mAppearance = aAdvData.mAppearance;
+  aGattAdvData.mIncludeDevName = aAdvData.mIncludeDevName;
+  aGattAdvData.mIncludeTxPower = aAdvData.mIncludeTxPower;
 
+  for (size_t i = 0; i < aAdvData.mServiceUuids.Length(); i++) {
+    BluetoothUuid uuid;
+    if (NS_WARN_IF(NS_FAILED(StringToUuid(aAdvData.mServiceUuids[i], uuid)))) {
+      return NS_ERROR_ILLEGAL_VALUE;
+    }
+    aGattAdvData.mServiceUuids.AppendElement(uuid);
+  }
+
+  if (!aAdvData.mManufacturerData.IsNull()) {
+    // First two bytes are manufacturer ID in little-endian.
+    LittleEndian::writeUint16(aGattAdvData.mManufacturerData.Elements(),
+                              aAdvData.mManufacturerId);
+
+    // Concatenate custom manufacturer data.
+    const ArrayBuffer& manufacturerData = aAdvData.mManufacturerData.Value();
+    manufacturerData.ComputeLengthAndData();
+    aGattAdvData.mManufacturerData.AppendElements(manufacturerData.Data(),
+                                                  manufacturerData.Length());
+  }
+
+  if (!aAdvData.mServiceData.IsNull()) {
+    BluetoothUuid uuid;
+    if (NS_WARN_IF(NS_FAILED(StringToUuid(aAdvData.mServiceUuid, uuid)))) {
+      return NS_ERROR_ILLEGAL_VALUE;
+    }
+
+    // First 16 bytes are service UUID in little-endian.
+    for (size_t i = 0; i < sizeof(uuid.mUuid); i++) {
+      aGattAdvData.mServiceData[i] = uuid.mUuid[sizeof(uuid.mUuid) - i - 1];
+    }
+
+    // Concatenate custom service data.
+    const ArrayBuffer& serviceData = aAdvData.mServiceData.Value();
+    serviceData.ComputeLengthAndData();
+    aGattAdvData.mServiceData.AppendElements(serviceData.Data(),
+                                             serviceData.Length());
+  }
+
+  return NS_OK;
+}
 
 void
 GeneratePathFromGattId(const BluetoothGattId& aId,
@@ -517,7 +567,18 @@ SetJsObject(JSContext* aContext,
     const BluetoothValue& v = arr[i].value();
 
     switch(v.type()) {
-       case BluetoothValue::TnsString: {
+       case BluetoothValue::TBluetoothAddress: {
+        nsAutoString addressStr;
+        AddressToString(v.get_BluetoothAddress(), addressStr);
+
+        JSString* jsData = JS_NewUCStringCopyN(aContext,
+                                               addressStr.BeginReading(),
+                                               addressStr.Length());
+        NS_ENSURE_TRUE(jsData, false);
+        val.setString(jsData);
+        break;
+      }
+      case BluetoothValue::TnsString: {
         JSString* jsData = JS_NewUCStringCopyN(aContext,
                                      v.get_nsString().BeginReading(),
                                      v.get_nsString().Length());
@@ -673,13 +734,13 @@ DispatchReplyError(BluetoothReplyRunnable* aRunnable,
 
 void
 DispatchStatusChangedEvent(const nsAString& aType,
-                           const nsAString& aAddress,
+                           const BluetoothAddress& aAddress,
                            bool aStatus)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
   InfallibleTArray<BluetoothNamedValue> data;
-  AppendNamedValue(data, "address", nsString(aAddress));
+  AppendNamedValue(data, "address", aAddress);
   AppendNamedValue(data, "status", aStatus);
 
   BluetoothService* bs = BluetoothService::Get();

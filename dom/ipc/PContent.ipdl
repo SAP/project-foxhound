@@ -54,6 +54,7 @@ include protocol PRemoteSpellcheckEngine;
 include protocol PWebBrowserPersistDocument;
 include protocol PWebrtcGlobal;
 include protocol PPresentation;
+include protocol PVRManager;
 include DOMTypes;
 include JavaScriptTypes;
 include InputStreamParams;
@@ -73,6 +74,7 @@ include ProfilerTypes;
 include "mozilla/dom/PContentBridgeParent.h";
 
 using GeoPosition from "nsGeoPositionIPCSerialiser.h";
+using AlertNotificationType from "mozilla/AlertNotificationIPCSerializer.h";
 
 using struct ChromePackage from "mozilla/chrome/RegistryMessageUtils.h";
 using struct SubstitutionMapping from "mozilla/chrome/RegistryMessageUtils.h";
@@ -216,6 +218,15 @@ union DeviceStorageParams
   DeviceStorageFormatParams;
   DeviceStorageMountParams;
   DeviceStorageUnmountParams;
+};
+
+struct DeviceStorageLocationInfo {
+  nsString music;
+  nsString pictures;
+  nsString videos;
+  nsString sdcard;
+  nsString apps;
+  nsString crashes;
 };
 
 struct FMRadioRequestEnableParams
@@ -451,6 +462,7 @@ prio(normal upto urgent) sync protocol PContent
     parent opens PSharedBufferManager;
     parent opens PImageBridge;
     parent opens PGMPService;
+    parent opens PVRManager;
     child opens PBackground;
 
     manages PBlob;
@@ -716,6 +728,21 @@ child:
      */
     async NotifyGMPsChanged();
 
+    /**
+     * Send a `push` event without data to a service worker in the child.
+     */
+    Push(nsCString scope, Principal principal);
+
+    /**
+     * Send a `push` event with data to a service worker in the child.
+     */
+    PushWithData(nsCString scope, Principal principal, uint8_t[] data);
+
+    /**
+     * Send a `pushsubscriptionchange` event to a service worker in the child.
+     */
+    PushSubscriptionChange(nsCString scope, Principal principal);
+
 parent:
     /**
      * Tell the content process some attributes of itself.  This is
@@ -870,17 +897,7 @@ parent:
                                CpowEntry[] aCpows, Principal aPrincipal)
       returns (StructuredCloneData[] retval);
 
-    ShowAlertNotification(nsString imageUrl,
-                          nsString title,
-                          nsString text,
-                          bool textClickable,
-                          nsString cookie,
-                          nsString name,
-                          nsString bidi,
-                          nsString lang,
-                          nsString data,
-                          Principal principal,
-                          bool inPrivateBrowsing);
+    ShowAlert(AlertNotificationType alert);
 
     CloseAlert(nsString name, Principal principal);
 
@@ -1083,8 +1100,7 @@ parent:
      *   To identify which tab owns the app.
      */
     POfflineCacheUpdate(URIParams manifestURI, URIParams documentURI,
-                        PrincipalInfo loadingPrincipal, bool stickDocument,
-                        TabId tabId);
+                        PrincipalInfo loadingPrincipal, bool stickDocument);
 
     /**
      * Sets "offline-app" permission for the principal.  Called when we hit
@@ -1160,6 +1176,9 @@ parent:
 
     sync GetDeviceStorageLocation(nsString type)
         returns (nsString path);
+
+    sync GetDeviceStorageLocations()
+	returns (DeviceStorageLocationInfo info);
 
     sync GetAndroidSystemInfo()
         returns (AndroidSystemInfo info);

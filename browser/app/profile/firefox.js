@@ -212,6 +212,8 @@ pref("browser.uitour.themeOrigin", "https://addons.mozilla.org/%LOCALE%/firefox/
 pref("browser.uitour.url", "https://www.mozilla.org/%LOCALE%/firefox/%VERSION%/tour/");
 // This is used as a regexp match against the page's URL.
 pref("browser.uitour.readerViewTrigger", "^https:\\/\\/www\\.mozilla\\.org\\/[^\\/]+\\/firefox\\/reading\\/start");
+// How long to show a Hearbeat survey (two hours, in seconds)
+pref("browser.uitour.surveyDuration", 7200);
 
 pref("browser.customizemode.tip0.shown", false);
 pref("browser.customizemode.tip0.learnMoreUrl", "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/customize");
@@ -952,6 +954,7 @@ pref("browser.safebrowsing.malware.enabled", true);
 pref("browser.safebrowsing.downloads.enabled", true);
 pref("browser.safebrowsing.downloads.remote.enabled", true);
 pref("browser.safebrowsing.downloads.remote.timeout_ms", 10000);
+pref("browser.safebrowsing.downloads.remote.url", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 pref("browser.safebrowsing.debug", false);
 
 pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-downloadwhite-digest256,goog-phish-shavar,goog-malware-shavar,goog-unwanted-shavar");
@@ -962,7 +965,6 @@ pref("browser.safebrowsing.provider.google.reportURL", "https://safebrowsing.goo
 pref("browser.safebrowsing.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportMalwareMistakeURL", "https://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%&url=");
-pref("browser.safebrowsing.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
 #ifdef MOZILLA_OFFICIAL
 // Normally the "client ID" sent in updates is appinfo.name, but for
@@ -1118,6 +1120,9 @@ pref("toolkit.crashreporter.infoURL",
 
 // base URL for web-based support pages
 pref("app.support.baseURL", "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/");
+
+// a11y conflicts with e10s support page
+pref("app.support.e10sAccessibilityUrl", "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/accessibility-ppt");
 
 // base url for web-based feedback pages
 #ifdef MOZ_DEV_EDITION
@@ -1328,13 +1333,13 @@ pref("browser.menu.showCharacterEncoding", "chrome://browser/locale/browser.prop
 
 // Allow using tab-modal prompts when possible.
 pref("prompts.tab_modal.enabled", true);
-// Whether the Panorama should animate going in/out of tabs
-pref("browser.panorama.animate_zoom", true);
 
 // Activates preloading of the new tab url.
 pref("browser.newtab.preload", true);
 
 // Remembers if the about:newtab intro has been shown
+// NOTE: This preference is unused but was not removed in case
+//       this information will be valuable in the future.
 pref("browser.newtabpage.introShown", false);
 
 // Toggles the content of 'about:newtab'. Shows the grid when enabled.
@@ -1355,10 +1360,8 @@ pref("browser.newtabpage.directory.source", "https://tiles.services.mozilla.com/
 // endpoint to send newtab click and view pings
 pref("browser.newtabpage.directory.ping", "https://tiles.services.mozilla.com/v3/links/");
 
-#ifndef RELEASE_BUILD
-// if true, it activates the remote-hosted newtab page
+// activates the remote-hosted newtab page
 pref("browser.newtabpage.remote", false);
-#endif
 
 // Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);
@@ -1402,8 +1405,9 @@ pref("dom.identity.enabled", false);
 // Block insecure active content on https pages
 pref("security.mixed_content.block_active_content", true);
 
-// Show degraded UI for http pages with password fields
-#ifdef NIGHTLY_BUILD
+// Show degraded UI for http pages with password fields.
+// Only for Nightly and Dev Edition for not, not for beta or release.
+#ifndef RELEASE_BUILD
 pref("security.insecure_password.ui.enabled", true);
 #else
 pref("security.insecure_password.ui.enabled", false);
@@ -1412,6 +1416,8 @@ pref("security.insecure_password.ui.enabled", false);
 // 1 = allow MITM for certificate pinning checks.
 pref("security.cert_pinning.enforcement_level", 1);
 
+// NB: Changes to this pref affect CERT_CHAIN_SHA1_POLICY_STATUS telemetry.
+// See the comment in CertVerifier.cpp.
 // 0 = allow SHA-1
 pref("security.pki.sha1_enforcement_level", 0);
 
@@ -1456,14 +1462,14 @@ pref("browser.uiCustomization.debug", false);
 pref("browser.uiCustomization.state", "");
 
 // The remote content URL shown for FxA signup. Must use HTTPS.
-pref("identity.fxaccounts.remote.signup.uri", "https://accounts.firefox.com/signup?service=sync&context=fx_desktop_v2");
+pref("identity.fxaccounts.remote.signup.uri", "https://accounts.firefox.com/signup?service=sync&context=fx_desktop_v3");
 
 // The URL where remote content that forces re-authentication for Firefox Accounts
 // should be fetched.  Must use HTTPS.
-pref("identity.fxaccounts.remote.force_auth.uri", "https://accounts.firefox.com/force_auth?service=sync&context=fx_desktop_v2");
+pref("identity.fxaccounts.remote.force_auth.uri", "https://accounts.firefox.com/force_auth?service=sync&context=fx_desktop_v3");
 
 // The remote content URL shown for signin in. Must use HTTPS.
-pref("identity.fxaccounts.remote.signin.uri", "https://accounts.firefox.com/signin?service=sync&context=fx_desktop_v2");
+pref("identity.fxaccounts.remote.signin.uri", "https://accounts.firefox.com/signin?service=sync&context=fx_desktop_v3");
 
 // The remote content URL where FxAccountsWebChannel messages originate.
 pref("identity.fxaccounts.remote.webchannel.uri", "https://accounts.firefox.com/");
@@ -1509,7 +1515,6 @@ pref("media.eme.apiVisible", true);
 
 // Decode using Gecko Media Plugins in <video>, if a system decoder is not
 // availble and the preferred GMP is available.
-// NOTE: Disabled until Bug 1236756 is fixed by Adobe.
 pref("media.gmp.decoder.enabled", false);
 
 // If decoding-via-GMP is turned on for <video>, use Adobe's GMP for decoding,
@@ -1555,10 +1560,9 @@ pref("experiments.supported", true);
 // Enable GMP support in the addon manager.
 pref("media.gmp-provider.enabled", true);
 
-pref("browser.apps.URL", "https://marketplace.firefox.com/discovery/");
-
 #ifdef NIGHTLY_BUILD
-pref("browser.polaris.enabled", false);
+pref("privacy.trackingprotection.ui.enabled", true);
+#else
 pref("privacy.trackingprotection.ui.enabled", false);
 #endif
 pref("privacy.trackingprotection.introCount", 0);
@@ -1581,15 +1585,18 @@ pref("browser.tabs.crashReporting.includeURL", false);
 pref("browser.tabs.crashReporting.emailMe", false);
 pref("browser.tabs.crashReporting.email", "");
 
-#ifdef NIGHTLY_BUILD
 #ifndef MOZ_MULET
 pref("layers.async-pan-zoom.enabled", true);
-#endif
 #endif
 
 // Enable e10s add-on interposition by default.
 pref("extensions.interposition.enabled", true);
 pref("extensions.interposition.prefetching", true);
+
+// Enable blocking of e10s for add-on users on beta/release.
+#ifdef RELEASE_BUILD
+pref("extensions.e10sBlocksEnabling", true);
+#endif
 
 pref("browser.defaultbrowser.notificationbar", false);
 
@@ -1617,13 +1624,6 @@ pref("reader.parse-node-limit", 0);
 // and because (normally) these errors are not persisted anywhere.
 pref("reader.errors.includeURLs", true);
 
-pref("browser.pocket.enabled", true);
-pref("browser.pocket.api", "api.getpocket.com");
-pref("browser.pocket.site", "getpocket.com");
-pref("browser.pocket.oAuthConsumerKey", "40249-e88c401e1b1f2242d9e441c4");
-pref("browser.pocket.useLocaleList", true);
-pref("browser.pocket.enabledLocales", "cs de en-GB en-US en-ZA es-ES es-MX fr hu it ja ja-JP-mac ko nl pl pt-BR pt-PT ru zh-CN zh-TW");
-
 pref("view_source.tab", true);
 
 pref("dom.serviceWorkers.enabled", true);
@@ -1646,3 +1646,7 @@ pref("media.webspeech.synth.enabled", true);
 #endif
 
 pref("browser.esedbreader.loglevel", "Error");
+
+pref("browser.laterrun.enabled", false);
+
+pref("extensions.pocket.enabled", true);

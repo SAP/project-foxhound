@@ -239,10 +239,15 @@ dom::Element*
 nsIContent::GetEditingHost()
 {
   // If this isn't editable, return nullptr.
-  NS_ENSURE_TRUE(IsEditableInternal(), nullptr);
+  if (!IsEditableInternal()) {
+    return nullptr;
+  }
 
   nsIDocument* doc = GetComposedDoc();
-  NS_ENSURE_TRUE(doc, nullptr);
+  if (!doc) {
+    return nullptr;
+  }
+
   // If this is in designMode, we should return <body>
   if (doc->HasFlag(NODE_IS_EDITABLE) && !IsInShadowTree()) {
     return doc->GetBodyElement();
@@ -1352,10 +1357,11 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
       for (uint32_t i = 0; props[i]; ++i) {
         tmp->DeleteProperty(*props[i]);
       }
-      // Bug 1226091: Call MayHaveAnimations() first
-      nsIAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-      for (uint32_t i = 0; effectProps[i]; ++i) {
-        tmp->DeleteProperty(effectProps[i]);
+      if (tmp->MayHaveAnimations()) {
+        nsIAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
+        for (uint32_t i = 0; effectProps[i]; ++i) {
+          tmp->DeleteProperty(effectProps[i]);
+        }
       }
     }
   }
@@ -1899,6 +1905,14 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
 
   tmp->OwnerDoc()->BindingManager()->Traverse(tmp, cb);
 
+  // Check that whenever we have effect properties, MayHaveAnimations is set.
+#ifdef DEBUG
+  nsIAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
+  for (uint32_t i = 0; effectProps[i]; ++i) {
+    MOZ_ASSERT_IF(tmp->GetProperty(effectProps[i]), tmp->MayHaveAnimations());
+  }
+#endif
+
   if (tmp->HasProperties()) {
     if (tmp->IsHTMLElement() || tmp->IsSVGElement()) {
       nsIAtom*** props = Element::HTMLSVGPropertiesToTraverseAndUnlink();
@@ -1907,13 +1921,14 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
           static_cast<nsISupports*>(tmp->GetProperty(*props[i]));
         cb.NoteXPCOMChild(property);
       }
-      // Bug 1226091: Check MayHaveAnimations() first
-      nsIAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-      for (uint32_t i = 0; effectProps[i]; ++i) {
-        EffectSet* effectSet =
-          static_cast<EffectSet*>(tmp->GetProperty(effectProps[i]));
-        if (effectSet) {
-          effectSet->Traverse(cb);
+      if (tmp->MayHaveAnimations()) {
+        nsIAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
+        for (uint32_t i = 0; effectProps[i]; ++i) {
+          EffectSet* effectSet =
+            static_cast<EffectSet*>(tmp->GetProperty(effectProps[i]));
+          if (effectSet) {
+            effectSet->Traverse(cb);
+          }
         }
       }
     }

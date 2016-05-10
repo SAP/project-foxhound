@@ -533,9 +533,9 @@ CacheFileHandles::SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const
 
 class ShutdownEvent : public nsRunnable {
 public:
-  ShutdownEvent(mozilla::Mutex *aLock, mozilla::CondVar *aCondVar)
-    : mLock(aLock)
-    , mCondVar(aCondVar)
+  ShutdownEvent()
+    : mMonitor("ShutdownEvent.mMonitor")
+    , mNotified(false)
     , mPrepare(true)
   {
     MOZ_COUNT_CTOR(ShutdownEvent);
@@ -565,18 +565,35 @@ public:
       return NS_OK;
     }
 
-    MutexAutoLock lock(*mLock);
+    MonitorAutoLock mon(mMonitor);
 
     CacheFileIOManager::gInstance->ShutdownInternal();
 
-    mCondVar->Notify();
+    mNotified = true;
+    mon.Notify();
+
     return NS_OK;
   }
 
+  void PostAndWait()
+  {
+    MonitorAutoLock mon(mMonitor);
+
+    DebugOnly<nsresult> rv;
+    nsCOMPtr<nsIEventTarget> ioTarget =
+      CacheFileIOManager::gInstance->mIOThread->Target();
+    MOZ_ASSERT(ioTarget);
+    rv = ioTarget->Dispatch(this, nsIEventTarget::DISPATCH_NORMAL);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    while (!mNotified) {
+      mon.Wait();
+    }
+  }
+
 protected:
-  mozilla::Mutex   *mLock;
-  mozilla::CondVar *mCondVar;
-  bool              mPrepare;
+  mozilla::Monitor mMonitor;
+  bool             mNotified;
+  bool             mPrepare;
 };
 
 class OpenFileEvent : public nsRunnable {
@@ -1158,25 +1175,16 @@ CacheFileIOManager::Shutdown()
     return NS_ERROR_NOT_INITIALIZED;
   }
 
+  gInstance->mShutdownDemanded = true;
+
   Telemetry::AutoTimer<Telemetry::NETWORK_DISK_CACHE_SHUTDOWN_V2> shutdownTimer;
 
   CacheIndex::PreShutdown();
 
   ShutdownMetadataWriteScheduling();
 
-  {
-    mozilla::Mutex lock("CacheFileIOManager::Shutdown() lock");
-    mozilla::CondVar condVar(lock, "CacheFileIOManager::Shutdown() condVar");
-
-    MutexAutoLock autoLock(lock);
-    RefPtr<ShutdownEvent> ev = new ShutdownEvent(&lock, &condVar);
-    DebugOnly<nsresult> rv;
-    nsCOMPtr<nsIEventTarget> ioTarget = gInstance->mIOThread->Target();
-    MOZ_ASSERT(ioTarget);
-    rv = ioTarget->Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    condVar.Wait();
-  }
+  RefPtr<ShutdownEvent> ev = new ShutdownEvent();
+  ev->PostAndWait();
 
   MOZ_ASSERT(gInstance->mHandles.HandleCount() == 0);
   MOZ_ASSERT(gInstance->mHandlesByLastUsed.Length() == 0);
@@ -2293,15 +2301,21 @@ CacheFileIOManager::ReleaseNSPRHandleInternal(CacheFileHandle *aHandle,
   found = mHandlesByLastUsed.RemoveElement(aHandle);
   MOZ_ASSERT(found);
 
-  if (aIgnoreShutdownLag || !IsPastShutdownIOLag()) {
-    PR_Close(aHandle->mFD);
-  } else {
+  // Leak invalid (w/o metadata) and doomed handles immediately after shutdown.
+  // Leak other handles when past the shutdown time maximum lag.
+  if (
+#ifndef DEBUG
+      ((aHandle->mInvalid || aHandle->mIsDoomed) && MOZ_UNLIKELY(mShutdownDemanded)) ||
+#endif
+      MOZ_UNLIKELY(!aIgnoreShutdownLag && IsPastShutdownIOLag())) {
     // Pretend this file has been validated (the metadata has been written)
     // to prevent removal I/O on this apparently used file.  The entry will
     // never be used, since it doesn't have correct metadata, thus we don't
     // need to worry about removing it.
     aHandle->mInvalid = false;
     LOG(("  past the shutdown I/O lag, leaking file handle"));
+  } else {
+    PR_Close(aHandle->mFD);
   }
 
   aHandle->mFD = nullptr;
@@ -3139,8 +3153,9 @@ CacheFileIOManager::TrashDirectory(nsIFile *aFile)
   rv = aFile->Clone(getter_AddRefs(trash));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  const int32_t kMaxTries = 16;
   srand(static_cast<unsigned>(PR_Now()));
-  while (true) {
+  for (int32_t triesCount = 0; ; ++triesCount) {
     leaf = TRASH_DIR;
     leaf.AppendInt(rand());
     rv = trash->SetNativeLeafName(leaf);
@@ -3149,6 +3164,15 @@ CacheFileIOManager::TrashDirectory(nsIFile *aFile)
     bool exists;
     if (NS_SUCCEEDED(trash->Exists(&exists)) && !exists) {
       break;
+    }
+
+    LOG(("CacheFileIOManager::TrashDirectory() - Trash directory already "
+         "exists [leaf=%s]", leaf.get()));
+
+    if (triesCount == kMaxTries) {
+      LOG(("CacheFileIOManager::TrashDirectory() - Could not find unused trash "
+           "directory in %d tries.", kMaxTries));
+      return NS_ERROR_FAILURE;
     }
   }
 
@@ -3673,10 +3697,10 @@ CacheFileIOManager::CheckAndCreateDir(nsIFile *aFile, const char *aDir,
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (!isEmpty) {
-      rv = TrashDirectory(file);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      exists = false;
+      // Don't check the result, if this fails, it's OK.  We do this
+      // only for the doomed directory that doesn't need to be deleted
+      // for the cost of completely disabling the whole browser.
+      TrashDirectory(file);
     }
   }
 
@@ -4074,13 +4098,16 @@ public:
     }
 
     mozilla::MonitorAutoLock mon(mMonitor);
+    mMonitorNotified = false;
     nsresult rv = target->Dispatch(this, nsIEventTarget::DISPATCH_NORMAL);
     if (NS_FAILED(rv)) {
       NS_ERROR("Dispatch failed, cannot do memory report of CacheFileHandles");
       return 0;
     }
 
-    mon.Wait();
+    while (!mMonitorNotified) {
+      mon.Wait();
+    }
     return mSize;
   }
 
@@ -4094,12 +4121,14 @@ public:
       mSize += mSpecialHandles[i]->SizeOfIncludingThis(mMallocSizeOf);
     }
 
+    mMonitorNotified = true;
     mon.Notify();
     return NS_OK;
   }
 
 private:
   mozilla::Monitor mMonitor;
+  bool mMonitorNotified;
   mozilla::MallocSizeOf mMallocSizeOf;
   CacheFileHandles const &mHandles;
   nsTArray<CacheFileHandle *> const &mSpecialHandles;

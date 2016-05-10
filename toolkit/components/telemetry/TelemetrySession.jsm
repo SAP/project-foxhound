@@ -219,6 +219,20 @@ function toLocalTimeISOString(date) {
 }
 
 /**
+ * Annotate the current session ID with the crash reporter to map potential
+ * crash pings with the related main ping.
+ */
+function annotateCrashReport(sessionId) {
+  try {
+    const cr = Cc["@mozilla.org/toolkit/crash-reporter;1"]
+            .getService(Ci.nsICrashReporter);
+    cr.setTelemetrySessionId(sessionId);
+  } catch (e) {
+    // Ignore errors when crash reporting is disabled
+  }
+}
+
+/**
  * Read current process I/O counters.
  */
 var processInfo = {
@@ -818,7 +832,6 @@ var Impl = {
    * with the following properties:
    *
    * - min, max, histogram_type, sum, sum_squares_{lo,hi}: simple integers;
-   * - log_sum, log_sum_squares: doubles;
    * - counts: array of counts for histogram buckets;
    * - ranges: array of calculated bucket sizes.
    *
@@ -831,7 +844,6 @@ var Impl = {
    *   histogram_type: <histogram_type>, sum: <sum>,
    *   sum_squares_lo: <sum_squares_lo>,
    *   sum_squares_hi: <sum_squares_hi>,
-   *   log_sum: <log_sum>, log_sum_squares: <log_sum_squares>,
    *   values: { bucket1: count1, bucket2: count2, ... } }
    */
   packHistogram: function packHistogram(hgram) {
@@ -845,10 +857,7 @@ var Impl = {
       sum: hgram.sum
     };
 
-    if (hgram.histogram_type == Telemetry.HISTOGRAM_EXPONENTIAL) {
-      retgram.log_sum = hgram.log_sum;
-      retgram.log_sum_squares = hgram.log_sum_squares;
-    } else {
+    if (hgram.histogram_type != Telemetry.HISTOGRAM_EXPONENTIAL) {
       retgram.sum_squares_lo = hgram.sum_squares_lo;
       retgram.sum_squares_hi = hgram.sum_squares_hi;
     }
@@ -1372,6 +1381,8 @@ var Impl = {
     // the very same value for |_sessionStartDate|.
     this._sessionStartDate = this._subsessionStartDate;
 
+    annotateCrashReport(this._sessionId);
+
     // Initialize some probes that are kept in their own modules
     this._thirdPartyCookies = new ThirdPartyCookieProbe();
     this._thirdPartyCookies.init();
@@ -1797,9 +1808,7 @@ var Impl = {
       Services.obs.removeObserver(this, "content-child-shutdown");
       this.uninstall();
 
-      if (Telemetry.isOfficialTelemetry) {
-        this.sendContentProcessPing(REASON_SAVED_SESSION);
-      }
+      this.sendContentProcessPing(REASON_SAVED_SESSION);
       break;
     case TOPIC_CYCLE_COLLECTOR_BEGIN:
       let now = new Date();
@@ -1856,15 +1865,13 @@ var Impl = {
       //    send the live data while in the foreground, or create the file again on the next
       //    backgrounding), or not (in which case we will delete it on submit, or overwrite
       //    it on the next backgrounding). Not deleting it is faster, so that's what we do.
-      if (Telemetry.isOfficialTelemetry) {
-        let payload = this.getSessionPayload(REASON_SAVED_SESSION, false);
-        let options = {
-          addClientId: true,
-          addEnvironment: true,
-          overwrite: true,
-        };
-        TelemetryController.addPendingPing(getPingType(payload), payload, options);
-      }
+      let payload = this.getSessionPayload(REASON_SAVED_SESSION, false);
+      let options = {
+        addClientId: true,
+        addEnvironment: true,
+        overwrite: true,
+      };
+      TelemetryController.addPendingPing(getPingType(payload), payload, options);
       break;
     }
   },
@@ -1889,20 +1896,15 @@ var Impl = {
         this._initialized = false;
       };
 
-      if (Telemetry.isOfficialTelemetry || testing) {
-        return Task.spawn(function*() {
-          yield this.saveShutdownPings();
+      return Task.spawn(function*() {
+        yield this.saveShutdownPings();
 
-          if (IS_UNIFIED_TELEMETRY) {
-            yield TelemetryController.removeAbortedSessionPing();
-          }
+        if (IS_UNIFIED_TELEMETRY) {
+          yield TelemetryController.removeAbortedSessionPing();
+        }
 
-          reset();
-        }.bind(this));
-      }
-
-      reset();
-      return Promise.resolve();
+        reset();
+      }.bind(this));
     };
 
     // We can be in one the following states here:

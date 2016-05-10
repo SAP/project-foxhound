@@ -92,6 +92,10 @@ EXPORTS.gfxipc += [
     'ipc/ShadowLayerUtils.h',
 ]
 
+EXPORTS.mozilla.dom += [
+    'apz/util/CheckerboardReportService.h',
+]
+
 EXPORTS.mozilla.layers += [
     'apz/public/GeckoContentController.h',
     # exporting things from apz/src is temporary until we extract a
@@ -109,6 +113,7 @@ EXPORTS.mozilla.layers += [
     'apz/util/ChromeProcessController.h',
     'apz/util/DoubleTapToZoom.h',
     'apz/util/InputAPZContext.h',
+    'apz/util/ScrollLinkedEffectDetector.h',
     'AsyncCanvasRenderer.h',
     'AtomicRefCountedWithFinalize.h',
     'AxisPhysicsModel.h',
@@ -152,6 +157,8 @@ EXPORTS.mozilla.layers += [
     'ipc/CompositorLRU.h',
     'ipc/CompositorParent.h',
     'ipc/FenceUtils.h',
+    'ipc/GonkNativeHandle.h',
+    'ipc/GonkNativeHandleUtils.h',
     'ipc/ImageBridgeChild.h',
     'ipc/ImageBridgeParent.h',
     'ipc/ImageContainerParent.h',
@@ -179,7 +186,6 @@ EXPORTS.mozilla.layers += [
     'RenderTrace.h',
     'TextureWrapperImage.h',
     'TransactionIdAllocator.h',
-    'YCbCrImageDataSerializer.h',
 ]
 
 if CONFIG['MOZ_X11']:
@@ -239,6 +245,8 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
              ]
         ]
     SOURCES += [
+        'ipc/GonkNativeHandle.cpp',
+        'ipc/GonkNativeHandleUtils.cpp',
         'ipc/ShadowLayerUtilsGralloc.cpp',
     ]
 
@@ -246,12 +254,13 @@ UNIFIED_SOURCES += [
     'apz/src/APZCTreeManager.cpp',
     'apz/src/AsyncPanZoomController.cpp',
     'apz/src/Axis.cpp',
+    'apz/src/CheckerboardEvent.cpp',
     'apz/src/GestureEventListener.cpp',
     'apz/src/HitTestingTreeNode.cpp',
     'apz/src/InputBlockState.cpp',
     'apz/src/InputQueue.cpp',
     'apz/src/OverscrollHandoffState.cpp',
-    'apz/src/TaskThrottler.cpp',
+    'apz/src/PotentialCheckerboardDurationTracker.cpp',
     'apz/src/TouchCounter.cpp',
     'apz/src/WheelScrollAnimation.cpp',
     'apz/testutil/APZTestData.cpp',
@@ -259,9 +268,11 @@ UNIFIED_SOURCES += [
     'apz/util/APZCCallbackHelper.cpp',
     'apz/util/APZEventState.cpp',
     'apz/util/APZThreadUtils.cpp',
+    'apz/util/CheckerboardReportService.cpp',
     'apz/util/ChromeProcessController.cpp',
     'apz/util/DoubleTapToZoom.cpp',
     'apz/util/InputAPZContext.cpp',
+    'apz/util/ScrollLinkedEffectDetector.cpp',
     'AsyncCanvasRenderer.cpp',
     'AxisPhysicsModel.cpp',
     'AxisPhysicsMSDModel.cpp',
@@ -352,7 +363,6 @@ UNIFIED_SOURCES += [
     'RenderTrace.cpp',
     'RotatedBuffer.cpp',
     'TextureWrapperImage.cpp',
-    'YCbCrImageDataSerializer.cpp',
 ]
 
 SOURCES += [

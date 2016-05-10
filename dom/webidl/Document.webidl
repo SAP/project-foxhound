@@ -278,7 +278,7 @@ partial interface Document {
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-document-interface
 partial interface Document {
     Element? elementFromPoint (float x, float y);
-
+    sequence<Element> elementsFromPoint (float x, float y);
     CaretPosition? caretPositionFromPoint (float x, float y);
 };
 
@@ -303,6 +303,8 @@ partial interface Document {
 partial interface Document {
   [Func="nsDocument::IsWebAnimationsEnabled"]
   readonly attribute DocumentTimeline timeline;
+  [Func="nsDocument::IsWebAnimationsEnabled"]
+  sequence<Animation> getAnimations();
 };
 
 //  Mozilla extensions of various sorts

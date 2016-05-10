@@ -21,12 +21,16 @@ import com.nineoldandroids.view.ViewHelper;
 import org.mozilla.gecko.Restrictions;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
-import org.mozilla.gecko.animation.TransitionsTracker;
 import org.mozilla.gecko.home.HomePager.Decor;
 import org.mozilla.gecko.home.TabMenuStrip;
 
 import java.util.List;
 
+/**
+ * ViewPager containing for our first run pages.
+ *
+ * @see FirstrunPanel for the first run pages that are used in this pager.
+ */
 public class FirstrunPager extends ViewPager {
 
     private Context context;
@@ -61,13 +65,16 @@ public class FirstrunPager extends ViewPager {
         super.addView(child, index, params);
     }
 
-    public void load(Context appContext, FragmentManager fm, final FirstrunPane.OnFinishListener onFinishListener) {
+    public void load(Context appContext, FragmentManager fm, final FirstrunAnimationContainer.OnFinishListener onFinishListener) {
         final List<FirstrunPagerConfig.FirstrunPanelConfig> panels;
 
         if (Restrictions.isUserRestricted(context)) {
             panels = FirstrunPagerConfig.getRestricted();
         } else {
             panels = FirstrunPagerConfig.getDefault(appContext);
+            if (panels.size() == 1) {
+                mTabStrip.setVisibility(GONE);
+            }
         }
 
         setAdapter(new ViewPagerAdapter(fm, panels));
@@ -75,7 +82,7 @@ public class FirstrunPager extends ViewPager {
             @Override
             public void next() {
                 final int currentPage = FirstrunPager.this.getCurrentItem();
-                if (currentPage < FirstrunPager.this.getChildCount() - 1) {
+                if (currentPage < FirstrunPager.this.getAdapter().getCount() - 1) {
                     FirstrunPager.this.setCurrentItem(currentPage + 1);
                 }
             }
@@ -104,6 +111,9 @@ public class FirstrunPager extends ViewPager {
         });
 
         animateLoad();
+
+        // Record telemetry for first onboarding panel, for baseline.
+        Telemetry.sendUIEvent(TelemetryContract.Event.SHOW, TelemetryContract.Method.PANEL, "onboarding.0");
     }
 
     public void cleanup() {
@@ -124,7 +134,6 @@ public class FirstrunPager extends ViewPager {
         final AnimatorSet set = new AnimatorSet();
         set.playTogether(alphaAnimator, translateAnimator);
         set.setStartDelay(400);
-        TransitionsTracker.track(set);
 
         set.start();
     }
@@ -150,7 +159,8 @@ public class FirstrunPager extends ViewPager {
         public Fragment getItem(int i) {
             Fragment fragment = this.fragments[i];
             if (fragment == null) {
-                fragment = Fragment.instantiate(context, panels.get(i).getClassname());
+                FirstrunPagerConfig.FirstrunPanelConfig panelConfig = panels.get(i);
+                fragment = Fragment.instantiate(context, panelConfig.getClassname(), panelConfig.getArgs());
                 ((FirstrunPanel) fragment).setPagerNavigation(pagerNavigation);
                 fragments[i] = fragment;
             }

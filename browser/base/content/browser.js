@@ -10,6 +10,8 @@ var Cc = Components.classes;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/NotificationDB.jsm");
 Cu.import("resource:///modules/RecentWindow.jsm");
+Cu.import("resource:///modules/UserContextUI.jsm");
+
 
 XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
                                   "resource://gre/modules/Preferences.jsm");
@@ -53,38 +55,9 @@ XPCOMUtils.defineLazyServiceGetter(this, "WindowsUIUtils",
                                    "@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils");
 XPCOMUtils.defineLazyModuleGetter(this, "LightweightThemeManager",
                                   "resource://gre/modules/LightweightThemeManager.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Pocket",
-                                  "resource:///modules/Pocket.jsm");
-
-// Can't use XPCOMUtils for these because the scripts try to define the variables
-// on window, and so the defineProperty inside defineLazyGetter fails.
-Object.defineProperty(window, "pktApi", {
-  get: function() {
-    // Avoid this getter running again:
-    delete window.pktApi;
-    Services.scriptloader.loadSubScript("chrome://browser/content/pocket/pktApi.js", window);
-    return window.pktApi;
-  },
-  configurable: true,
-  enumerable: true
-});
-
-function pktUIGetter(prop) {
-  return {
-    get: function() {
-      // Avoid either of these getters running again:
-      delete window.pktUI;
-      delete window.pktUIMessaging;
-      Services.scriptloader.loadSubScript("chrome://browser/content/pocket/main.js", window);
-      return window[prop];
-    },
-    configurable: true,
-    enumerable: true
-  };
-}
-Object.defineProperty(window, "pktUI", pktUIGetter("pktUI"));
-Object.defineProperty(window, "pktUIMessaging", pktUIGetter("pktUIMessaging"));
-
+XPCOMUtils.defineLazyServiceGetter(this, "gAboutNewTabService",
+                                   "@mozilla.org/browser/aboutnewtab-service;1",
+                                   "nsIAboutNewTabService");
 XPCOMUtils.defineLazyGetter(this, "gBrowserBundle", function() {
   return Services.strings.createBundle('chrome://browser/locale/browser.properties');
 });
@@ -268,10 +241,6 @@ var gInitialPages = [
 
 XPCOMUtils.defineLazyGetter(this, "Win7Features", function () {
   if (AppConstants.platform != "win")
-    return null;
-
-  // Bug 666808 - AeroPeek support for e10s
-  if (gMultiProcessBrowser)
     return null;
 
   const WINTASKBAR_CONTRACTID = "@mozilla.org/windows-taskbar;1";
@@ -949,6 +918,7 @@ var gBrowserInit = {
     DevEdition.init();
     AboutPrivateBrowsingListener.init();
     TrackingProtection.init();
+    RefreshBlocker.init();
 
     let mm = window.getGroupMessageManager("browsers");
     mm.loadFrameScript("chrome://browser/content/tab-content.js", true);
@@ -997,35 +967,17 @@ var gBrowserInit = {
 
     // Set a sane starting width/height for all resolutions on new profiles.
     if (!document.documentElement.hasAttribute("width")) {
-      let defaultWidth;
-      let defaultHeight;
+      const TARGET_WIDTH = 1280;
+      const TARGET_HEIGHT = 1040;
+      let width = Math.min(screen.availWidth * .9, TARGET_WIDTH);
+      let height = Math.min(screen.availHeight * .9, TARGET_HEIGHT);
 
-      // Very small: maximize the window
-      // Portrait  : use about full width and 3/4 height, to view entire pages
-      //             at once (without being obnoxiously tall)
-      // Widescreen: use about half width, to suggest side-by-side page view
-      // Otherwise : use 3/4 height and width
-      if (screen.availHeight <= 600) {
+      document.documentElement.setAttribute("width", width);
+      document.documentElement.setAttribute("height", height);
+
+      if (width < TARGET_WIDTH && height < TARGET_HEIGHT) {
         document.documentElement.setAttribute("sizemode", "maximized");
-        defaultWidth = 610;
-        defaultHeight = 450;
       }
-      else {
-        if (screen.availWidth <= screen.availHeight) {
-          defaultWidth = screen.availWidth * .9;
-          defaultHeight = screen.availHeight * .75;
-        }
-        else if (screen.availWidth >= 2048) {
-          defaultWidth = (screen.availWidth / 2) - 20;
-          defaultHeight = screen.availHeight - 10;
-        }
-        else {
-          defaultWidth = screen.availWidth * .75;
-          defaultHeight = screen.availHeight * .75;
-        }
-      }
-      document.documentElement.setAttribute("width", defaultWidth);
-      document.documentElement.setAttribute("height", defaultHeight);
     }
 
     if (!window.toolbar.visible) {
@@ -1232,9 +1184,6 @@ var gBrowserInit = {
         !focusAndSelectUrlBar()) {
       gBrowser.selectedBrowser.focus();
     }
-
-    // Set up Sanitize Item
-    this._initializeSanitizer();
 
     // Enable/Disable auto-hide tabbar
     gBrowser.tabContainer.updateVisibility();
@@ -1492,6 +1441,8 @@ var gBrowserInit = {
 
     TrackingProtection.uninit();
 
+    RefreshBlocker.uninit();
+
     gMenuButtonUpdateBadge.uninit();
 
     gMenuButtonBadgeManager.uninit();
@@ -1549,52 +1500,6 @@ var gBrowserInit = {
           .getInterface(Ci.nsIXULWindow)
           .XULBrowserWindow = null;
     window.QueryInterface(Ci.nsIDOMChromeWindow).browserDOMWindow = null;
-  },
-
-  _initializeSanitizer: function() {
-    const kDidSanitizeDomain = "privacy.sanitize.didShutdownSanitize";
-    if (gPrefService.prefHasUserValue(kDidSanitizeDomain)) {
-      gPrefService.clearUserPref(kDidSanitizeDomain);
-      // We need to persist this preference change, since we want to
-      // check it at next app start even if the browser exits abruptly
-      gPrefService.savePrefFile(null);
-    }
-
-    /**
-     * Migrate Firefox 3.0 privacy.item prefs under one of these conditions:
-     *
-     * a) User has customized any privacy.item prefs
-     * b) privacy.sanitize.sanitizeOnShutdown is set
-     */
-    if (!gPrefService.getBoolPref("privacy.sanitize.migrateFx3Prefs")) {
-      let itemBranch = gPrefService.getBranch("privacy.item.");
-      let itemArray = itemBranch.getChildList("");
-
-      // See if any privacy.item prefs are set
-      let doMigrate = itemArray.some(name => itemBranch.prefHasUserValue(name));
-      // Or if sanitizeOnShutdown is set
-      if (!doMigrate)
-        doMigrate = gPrefService.getBoolPref("privacy.sanitize.sanitizeOnShutdown");
-
-      if (doMigrate) {
-        let cpdBranch = gPrefService.getBranch("privacy.cpd.");
-        let clearOnShutdownBranch = gPrefService.getBranch("privacy.clearOnShutdown.");
-        for (let name of itemArray) {
-          try {
-            // don't migrate password or offlineApps clearing in the CRH dialog since
-            // there's no UI for those anymore. They default to false. bug 497656
-            if (name != "passwords" && name != "offlineApps")
-              cpdBranch.setBoolPref(name, itemBranch.getBoolPref(name));
-            clearOnShutdownBranch.setBoolPref(name, itemBranch.getBoolPref(name));
-          }
-          catch(e) {
-            Cu.reportError("Exception thrown during privacy pref migration: " + e);
-          }
-        }
-      }
-
-      gPrefService.setBoolPref("privacy.sanitize.migrateFx3Prefs", true);
-    }
   },
 };
 
@@ -1662,9 +1567,6 @@ if (AppConstants.platform == "macosx") {
 
     // initialise the offline listener
     BrowserOffline.init();
-
-    // Set up Sanitize Item
-    this._initializeSanitizer();
 
     // initialize the private browsing UI
     gPrivateBrowsingUI.init();
@@ -2421,8 +2323,11 @@ function URLBarSetURI(aURI) {
     } catch (e) {}
 
     // Replace initial page URIs with an empty string
-    // only if there's no opener (bug 370555).
-    if (gInitialPages.indexOf(uri.spec) != -1 &&
+    // 1. only if there's no opener (bug 370555).
+    // 2. if remote newtab is enabled and it's the default remote newtab page
+    let defaultRemoteURL = gAboutNewTabService.remoteEnabled &&
+                           uri.spec === gAboutNewTabService.newTabURL;
+    if ((gInitialPages.includes(uri.spec) || defaultRemoteURL) &&
         checkEmptyPageOrigin(gBrowser.selectedBrowser, uri)) {
       value = "";
     } else {
@@ -2777,7 +2682,7 @@ var BrowserOnClick = {
         }
       break;
       case "Browser:SendSSLErrorReport":
-        this.onSSLErrorReport(msg.target, msg.data.elementId,
+        this.onSSLErrorReport(msg.target,
                               msg.data.documentURI,
                               msg.data.location,
                               msg.data.securityInfo);
@@ -2808,7 +2713,7 @@ var BrowserOnClick = {
     }
   },
 
-  onSSLErrorReport: function(browser, elementId, documentURI, location, securityInfo) {
+  onSSLErrorReport: function(browser, documentURI, location, securityInfo) {
     function showReportStatus(reportStatus) {
       gBrowser.selectedBrowser
           .messageManager
@@ -3016,6 +2921,12 @@ var BrowserOnClick = {
           }
           this.ignoreWarningButton(reason);
         }
+        break;
+
+      case "whyForbiddenButton":
+        // This is the "Why is this site blocked" button for family friendly browsing
+        // for Fennec. There's no desktop focused support page yet.
+        gBrowser.loadURI("https://support.mozilla.org/kb/controlledaccess");
         break;
     }
   },
@@ -3228,8 +3139,7 @@ function getDetailedCertErrorInfo(location, securityInfoAsString) {
   if (!securityInfoAsString)
     return "";
 
-  let details = [];
-  details.push(location);
+  let certErrorDetails = location;
 
   const serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
                        .getService(Ci.nsISerializationHelper);
@@ -3239,7 +3149,7 @@ function getDetailedCertErrorInfo(location, securityInfoAsString) {
   let errors = Cc["@mozilla.org/nss_errors_service;1"]
                   .getService(Ci.nsINSSErrorsService);
   let code = securityInfo.errorCode;
-  details.push(errors.getErrorMessage(errors.getXPCOMFromNSSError(code)));
+  certErrorDetails += "\r\n\r\n" + errors.getErrorMessage(errors.getXPCOMFromNSSError(code));
 
   const sss = Cc["@mozilla.org/ssservice;1"]
                  .getService(Ci.nsISiteSecurityService);
@@ -3250,8 +3160,15 @@ function getDetailedCertErrorInfo(location, securityInfoAsString) {
               Ci.nsISocketProvider.NO_PERMANENT_STORAGE : 0;
 
   let uri = Services.io.newURI(location, null, null);
-  details.push(sss.isSecureHost(sss.HEADER_HSTS, uri.host, flags));
-  details.push(sss.isSecureHost(sss.HEADER_HPKP, uri.host, flags));
+
+  let hasHSTS = sss.isSecureHost(sss.HEADER_HSTS, uri.host, flags);
+  let hasHPKP = sss.isSecureHost(sss.HEADER_HPKP, uri.host, flags);
+  certErrorDetails += "\r\n\r\n" +
+                      gNavigatorBundle.getFormattedString("certErrorDetailsHSTS.label",
+                                                          [hasHSTS]);
+  certErrorDetails += "\r\n" +
+                      gNavigatorBundle.getFormattedString("certErrorDetailsKeyPinning.label",
+                                                          [hasHPKP]);
 
   let certChain = "";
   if (securityInfo.failedCertChain) {
@@ -3262,8 +3179,12 @@ function getDetailedCertErrorInfo(location, securityInfoAsString) {
       certChain += getPEMString(cert);
     }
   }
-  details.push(certChain);
-  return gNavigatorBundle.getFormattedString("certErrorDetails.label", details, 5);
+
+  certErrorDetails += "\r\n\r\n" +
+                      gNavigatorBundle.getString("certErrorDetailsCertChain.label") +
+                      "\r\n\r\n" + certChain;
+
+  return certErrorDetails;
 }
 
 // TODO: can we pull getDERString and getPEMString in from pippki.js instead of
@@ -3621,8 +3542,9 @@ const BrowserSearch = {
       if (!aSearchBar || document.activeElement != aSearchBar.textbox.inputField) {
         let url = gBrowser.currentURI.spec.toLowerCase();
         let mm = gBrowser.selectedBrowser.messageManager;
-        if (url === "about:home" ||
-            (url === "about:newtab" && NewTabUtils.allPages.enabled)) {
+        let newTabRemoted = Services.prefs.getBoolPref("browser.newtabpage.remote");
+        let localNewTabEnabled = url === "about:newtab" && !newTabRemoted && NewTabUtils.allPages.enabled;
+        if (url === "about:home" || localNewTabEnabled) {
           ContentSearch.focusInput(mm);
         } else {
           openUILinkIn("about:home", "current");
@@ -3730,7 +3652,7 @@ const BrowserSearch = {
   loadSearchFromContext: function (terms) {
     let engine = BrowserSearch._loadSearch(terms, true, "contextmenu");
     if (engine) {
-      BrowserSearch.recordSearchInHealthReport(engine, "contextmenu");
+      BrowserSearch.recordSearchInTelemetry(engine, "contextmenu");
     }
   },
 
@@ -3754,10 +3676,26 @@ const BrowserSearch = {
     openUILinkIn(searchEnginesURL, where);
   },
 
+  _getSearchEngineId: function (engine) {
+    if (!engine) {
+      return "other";
+    }
+
+    if (engine.identifier) {
+      return engine.identifier;
+    }
+
+    if (!("name" in engine) || engine.name === undefined) {
+      return "other";
+    }
+
+    return "other-" + engine.name;
+  },
+
   /**
-   * Helper to record a search with Firefox Health Report.
+   * Helper to record a search with Telemetry.
    *
-   * FHR records only search counts and nothing pertaining to the search itself.
+   * Telemetry records only search counts and nothing pertaining to the search itself.
    *
    * @param engine
    *        (nsISearchEngine) The engine handling the search.
@@ -3769,45 +3707,7 @@ const BrowserSearch = {
    *        the search was a suggested search, this indicates where the
    *        item was in the suggestion list and how the user selected it.
    */
-  recordSearchInHealthReport: function (engine, source, selection) {
-    BrowserUITelemetry.countSearchEvent(source, null, selection);
-    this.recordSearchInTelemetry(engine, source);
-
-    let reporter = AppConstants.MOZ_SERVICES_HEALTHREPORT
-                   ? Cc["@mozilla.org/datareporting/service;1"]
-                     .getService()
-                     .wrappedJSObject
-                     .healthReporter
-                   : null;
-
-    // This can happen if the FHR component of the data reporting service is
-    // disabled. This is controlled by a pref that most will never use.
-    if (!reporter) {
-      return;
-    }
-
-    reporter.onInit().then(function record() {
-      try {
-        reporter.getProvider("org.mozilla.searches").recordSearch(engine, source);
-      } catch (ex) {
-        Cu.reportError(ex);
-      }
-    });
-  },
-
-  _getSearchEngineId: function (engine) {
-    if (!engine) {
-      return "other";
-    }
-
-    if (engine.identifier) {
-      return engine.identifier;
-    }
-
-    return "other-" + engine.name;
-  },
-
-  recordSearchInTelemetry: function (engine, source) {
+  recordSearchInTelemetry: function (engine, source, selection) {
     const SOURCES = [
       "abouthome",
       "contextmenu",
@@ -3815,6 +3715,8 @@ const BrowserSearch = {
       "searchbar",
       "urlbar",
     ];
+
+    BrowserUITelemetry.countSearchEvent(source, null, selection);
 
     if (SOURCES.indexOf(source) == -1) {
       Cu.reportError("Unknown source for search: " + source);
@@ -4173,24 +4075,7 @@ function updateUserContextUIIndicator(browser)
   let label = document.getElementById("userContext-label");
   let userContextId = browser.getAttribute("usercontextid");
   hbox.setAttribute("usercontextid", userContextId);
-  switch (userContextId) {
-    case "1":
-      label.value = gBrowserBundle.GetStringFromName("usercontext.personal.label");
-      break;
-    case "2":
-      label.value = gBrowserBundle.GetStringFromName("usercontext.work.label");
-      break;
-    case "3":
-      label.value = gBrowserBundle.GetStringFromName("usercontext.banking.label");
-      break;
-    case "4":
-      label.value = gBrowserBundle.GetStringFromName("usercontext.shopping.label");
-      break;
-    // Display the context IDs for values outside the pre-defined range.
-    // Used for debugging, no localization necessary.
-    default:
-      label.value = "Context " + userContextId;
-  }
+  label.value = UserContextUI.getUserContextLabel(userContextId);
 }
 
 /**
@@ -4814,7 +4699,7 @@ var CombinedStopReload = {
 var TabsProgressListener = {
   onStateChange: function (aBrowser, aWebProgress, aRequest, aStateFlags, aStatus) {
     // Collect telemetry data about tab load times.
-    if (aWebProgress.isTopLevel) {
+    if (aWebProgress.isTopLevel && (!aRequest.originalURI || aRequest.originalURI.spec.scheme != "about")) {
       if (aStateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW) {
         if (aStateFlags & Ci.nsIWebProgressListener.STATE_START) {
           TelemetryStopwatch.start("FX_PAGE_LOAD_MS", aBrowser);
@@ -4886,54 +4771,6 @@ var TabsProgressListener = {
 
     FullZoom.onLocationChange(aLocationURI, false, aBrowser);
   },
-
-  onRefreshAttempted: function (aBrowser, aWebProgress, aURI, aDelay, aSameURI) {
-    if (gPrefService.getBoolPref("accessibility.blockautorefresh")) {
-      let brandBundle = document.getElementById("bundle_brand");
-      let brandShortName = brandBundle.getString("brandShortName");
-      let refreshButtonText =
-        gNavigatorBundle.getString("refreshBlocked.goButton");
-      let refreshButtonAccesskey =
-        gNavigatorBundle.getString("refreshBlocked.goButton.accesskey");
-      let message =
-        gNavigatorBundle.getFormattedString(aSameURI ? "refreshBlocked.refreshLabel"
-                                                     : "refreshBlocked.redirectLabel",
-                                            [brandShortName]);
-      let docShell = aWebProgress.DOMWindow
-                                 .QueryInterface(Ci.nsIInterfaceRequestor)
-                                 .getInterface(Ci.nsIWebNavigation)
-                                 .QueryInterface(Ci.nsIDocShell);
-      let notificationBox = gBrowser.getNotificationBox(aBrowser);
-      let notification = notificationBox.getNotificationWithValue("refresh-blocked");
-      if (notification) {
-        notification.label = message;
-        notification.refreshURI = aURI;
-        notification.delay = aDelay;
-        notification.docShell = docShell;
-      } else {
-        let buttons = [{
-          label: refreshButtonText,
-          accessKey: refreshButtonAccesskey,
-          callback: function (aNotification, aButton) {
-            var refreshURI = aNotification.docShell
-                                          .QueryInterface(Ci.nsIRefreshURI);
-            refreshURI.forceRefreshURI(aNotification.refreshURI,
-                                       aNotification.delay, true);
-          }
-        }];
-        notification =
-          notificationBox.appendNotification(message, "refresh-blocked",
-                                             "chrome://browser/skin/Info.png",
-                                             notificationBox.PRIORITY_INFO_MEDIUM,
-                                             buttons);
-        notification.refreshURI = aURI;
-        notification.delay = aDelay;
-        notification.docShell = docShell;
-      }
-      return false;
-    }
-    return true;
-  }
 }
 
 function nsBrowserAccess() { }
@@ -5710,9 +5547,9 @@ function BrowserCharsetReload()
 }
 
 function UpdateCurrentCharset(target) {
+  let selectedCharset = CharsetMenu.foldCharset(gBrowser.selectedBrowser.characterSet);
   for (let menuItem of target.getElementsByTagName("menuitem")) {
-    let isSelected = menuItem.getAttribute("charset") ===
-                     CharsetMenu.foldCharset(gBrowser.selectedBrowser.characterSet);
+    let isSelected = menuItem.getAttribute("charset") === selectedCharset;
     menuItem.setAttribute("checked", isSelected);
   }
 }
@@ -6342,7 +6179,7 @@ function CanCloseWindow()
 {
   // Avoid redundant calls to canClose from showing multiple
   // PermitUnload dialogs.
-  if (window.skipNextCanClose) {
+  if (Services.startup.shuttingDown || window.skipNextCanClose) {
     return true;
   }
 
@@ -6513,11 +6350,6 @@ function BrowserOpenAddonsMgr(aView) {
       aSubject.loadView(aView);
     }, "EM-loaded", false);
   }
-}
-
-function BrowserOpenApps() {
-  let appsURL = Services.urlFormatter.formatURLPref("browser.apps.URL");
-  switchToTabHavingURI(appsURL, true)
 }
 
 function AddKeywordForSearchField() {
@@ -7232,6 +7064,9 @@ var gIdentityHandler = {
     // Fallback for special protocols.
     if (!host) {
       host = this._uri.specIgnoringRef;
+      // Special URIs without a host (eg, about:) should crop the end so
+      // the protocol can be seen.
+      crop = "end";
     }
 
     // Fill in the CA name if we have a valid TLS certificate.

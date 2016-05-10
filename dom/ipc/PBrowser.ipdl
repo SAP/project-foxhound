@@ -52,6 +52,7 @@ using class mozilla::WidgetDragEvent from "ipc/nsGUIEventIPC.h";
 using struct nsRect from "nsRect.h";
 using class mozilla::WidgetSelectionEvent from "ipc/nsGUIEventIPC.h";
 using class mozilla::WidgetTouchEvent from "ipc/nsGUIEventIPC.h";
+using class mozilla::WidgetPluginEvent from "ipc/nsGUIEventIPC.h";
 using struct mozilla::dom::RemoteDOMEvent from "mozilla/dom/TabMessageUtils.h";
 using mozilla::dom::ScreenOrientationInternal from "mozilla/dom/ScreenOrientation.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
@@ -281,6 +282,16 @@ parent:
     prio(urgent) async SetPluginFocused(bool aFocused);
 
     /**
+     * Set IME candidate window by windowless plugin if plugin has focus.
+     */
+    async SetCandidateWindowForPlugin(int32_t aX, int32_t aY);
+
+    /**
+     *  When plugin event isn't consumed, call this
+     */
+    async DefaultProcOfPluginEvent(WidgetPluginEvent aEvent);
+
+    /**
      * Request that the parent process move focus to the browser's frame. If
      * canRaise is true, the window can be raised if it is inactive.
      */
@@ -409,7 +420,7 @@ parent:
      * Instructs the TabParent to forward a request to zoom to a rect given in
      * CSS pixels. This rect is relative to the document.
      */
-    ZoomToRect(uint32_t aPresShellId, ViewID aViewId, CSSRect aRect);
+    ZoomToRect(uint32_t aPresShellId, ViewID aViewId, CSSRect aRect, uint32_t aFlags);
 
     /**
      * We know for sure that content has either preventDefaulted or not
@@ -561,6 +572,7 @@ child:
 
     UpdateDimensions(CSSRect rect, CSSSize size, nsSizeMode sizeMode,
                      ScreenOrientationInternal orientation,
+                     LayoutDeviceIntPoint clientOffset,
                      LayoutDeviceIntPoint chromeDisp) compressall;
 
     UpdateFrame(FrameMetrics frame);
@@ -634,6 +646,7 @@ child:
                        uint64_t aInputBlockId,
                        nsEventStatus aApzResponse);
     RealDragEvent(WidgetDragEvent aEvent, uint32_t aDragAction, uint32_t aDropEffect);
+    PluginEvent(WidgetPluginEvent aEvent);
 
     /**
      * @see nsIDOMWindowUtils sendKeyEvent.
@@ -759,6 +772,13 @@ child:
      * @param modifierMask indicates which accesskey modifiers are pressed
      */
     HandleAccessKey(uint32_t[] charCodes, bool isTrusted, int32_t modifierMask);
+
+    /**
+     * Propagate a refresh to the child process
+     */
+    AudioChannelChangeNotification(uint32_t aAudioChannel,
+                                   float aVolume,
+                                   bool aMuted);
 
 /*
  * FIXME: write protocol!

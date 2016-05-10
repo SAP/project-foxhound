@@ -10,23 +10,7 @@
 var PREF_UA_STYLES = "devtools.inspector.showUserAgentStyles";
 const { PrefObserver } = require("devtools/client/styleeditor/utils");
 
-const TEST_URI = `
-  <style type='text/css'>
-  pre a {
-    color: orange;
-  }
-  </style>
-  <input type=text placeholder=test></input>
-  <input type=color></input>
-  <input type=range></input>
-  <input type=number></input>
-  <progress></progress>
-  <blockquote type=cite>
-    <pre _moz_quote=true>
-      inspect <a href="foo">user agent</a> styles
-    </pre>
-  </blockquote>
-`;
+const TEST_URI = URL_ROOT + "doc_author-sheet.html";
 
 const TEST_DATA = [
   {
@@ -64,9 +48,11 @@ const TEST_DATA = [
     numUserRules: 1,
     numUARules: 0
   },
+  // Note that some tests below assume that the "a" selector is the
+  // last test in TEST_DATA.
   {
     selector: "a",
-    numUserRules: 2,
+    numUserRules: 3,
     numUARules: 0
   }
 ];
@@ -77,7 +63,7 @@ add_task(function*() {
   info("Starting the test with the pref set to true before toolbox is opened");
   yield setUserAgentStylesPref(true);
 
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  yield addTab(TEST_URI);
   let {inspector, view} = yield openRuleView();
 
   info("Making sure that UA styles are visible on initial load");
@@ -127,9 +113,11 @@ function* userAgentStylesVisible(inspector, view) {
   ok(userRules.some(rule=> rule.matchedSelectors.length === 1),
     "There is an inline style for element in user styles");
 
-  ok(uaRules.some(rule=> rule.matchedSelectors.indexOf(":-moz-any-link")),
+  // These tests rely on the "a" selector being the last test in
+  // TEST_DATA.
+  ok(uaRules.some(rule=> rule.matchedSelectors.indexOf(":-moz-any-link") !== -1),
     "There is a rule for :-moz-any-link");
-  ok(uaRules.some(rule=> rule.matchedSelectors.indexOf("*|*:link")),
+  ok(uaRules.some(rule=> rule.matchedSelectors.indexOf("*|*:link") !== -1),
     "There is a rule for *|*:link");
   ok(uaRules.some(rule=> rule.matchedSelectors.length === 1),
     "Inline styles for ua styles");

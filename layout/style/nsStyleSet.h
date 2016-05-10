@@ -261,6 +261,11 @@ class nsStyleSet final
   // Free all of the data associated with this style set.
   void Shutdown();
 
+  // Notification that a style context with a null parent has been created.
+  // The argument is a style context that has not been fully initialized,
+  // but its parent and rule node are correct.
+  void AddStyleContextRoot(nsStyleContext* aStyleContext);
+
   // Notification that a style context is being destroyed.
   void NotifyStyleContextDestroyed(nsStyleContext* aStyleContext);
 
@@ -326,7 +331,7 @@ class nsStyleSet final
                                   mozilla::CSSStyleSheet* aReferenceSheet);
 
   // Enable/Disable entire author style level (Doc, ScopedDoc & PresHint levels)
-  bool GetAuthorStyleDisabled();
+  bool GetAuthorStyleDisabled() const;
   nsresult SetAuthorStyleDisabled(bool aStyleDisabled);
 
   int32_t SheetCount(mozilla::SheetType aType) const {

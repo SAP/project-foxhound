@@ -96,8 +96,7 @@ MediaFormatReader::Shutdown()
       mAudio.RejectPromise(CANCELED, __func__);
     }
     mAudio.mInitPromise.DisconnectIfExists();
-    mAudio.mDecoder->Shutdown();
-    mAudio.mDecoder = nullptr;
+    mAudio.ShutdownDecoder();
   }
   if (mAudio.mTrackDemuxer) {
     mAudio.ResetDemuxer();
@@ -117,8 +116,7 @@ MediaFormatReader::Shutdown()
       mVideo.RejectPromise(CANCELED, __func__);
     }
     mVideo.mInitPromise.DisconnectIfExists();
-    mVideo.mDecoder->Shutdown();
-    mVideo.mDecoder = nullptr;
+    mVideo.ShutdownDecoder();
   }
   if (mVideo.mTrackDemuxer) {
     mVideo.ResetDemuxer();
@@ -270,6 +268,8 @@ MediaFormatReader::OnDemuxerInitDone(nsresult)
 
   mDemuxerInitDone = true;
 
+  UniquePtr<MetadataTags> tags(MakeUnique<MetadataTags>());
+
   // To decode, we need valid video and a place to put it.
   bool videoActive = !!mDemuxer->GetNumberTracks(TrackInfo::kVideoTrack) &&
     GetImageContainer();
@@ -282,6 +282,10 @@ MediaFormatReader::OnDemuxerInitDone(nsresult)
       return;
     }
     mInfo.mVideo = *mVideo.mTrackDemuxer->GetInfo()->GetAsVideoInfo();
+    UniquePtr<TrackInfo> info(mVideo.mTrackDemuxer->GetInfo());
+    for (const MetadataTag& tag : info->mTags) {
+      tags->Put(tag.mKey, tag.mValue);
+    }
     mVideo.mCallback = new DecoderCallback(this, TrackInfo::kVideoTrack);
     mVideo.mTimeRanges = mVideo.mTrackDemuxer->GetBuffered();
     mTrackDemuxersMayBlock |= mVideo.mTrackDemuxer->GetSamplesMayBlock();
@@ -295,6 +299,10 @@ MediaFormatReader::OnDemuxerInitDone(nsresult)
       return;
     }
     mInfo.mAudio = *mAudio.mTrackDemuxer->GetInfo()->GetAsAudioInfo();
+    UniquePtr<TrackInfo> info(mAudio.mTrackDemuxer->GetInfo());
+    for (const MetadataTag& tag : info->mTags) {
+      tags->Put(tag.mKey, tag.mValue);
+    }
     mAudio.mCallback = new DecoderCallback(this, TrackInfo::kAudioTrack);
     mAudio.mTimeRanges = mAudio.mTrackDemuxer->GetBuffered();
     mTrackDemuxersMayBlock |= mAudio.mTrackDemuxer->GetSamplesMayBlock();
@@ -371,6 +379,8 @@ MediaFormatReader::EnsureDecoderCreated(TrackType aTrack)
 
   decoder.mDecoderInitialized = false;
 
+  MonitorAutoLock mon(decoder.mMonitor);
+
   switch (aTrack) {
     case TrackType::kAudioTrack:
       decoder.mDecoder =
@@ -396,6 +406,11 @@ MediaFormatReader::EnsureDecoderCreated(TrackType aTrack)
     default:
       break;
   }
+  if (decoder.mDecoder ) {
+    decoder.mDescription = decoder.mDecoder->GetDescriptionName();
+  } else {
+    decoder.mDescription = "error creating decoder";
+  }
   return decoder.mDecoder != nullptr;
 }
 
@@ -419,13 +434,14 @@ MediaFormatReader::EnsureDecoderInitialized(TrackType aTrack)
                 auto& decoder = self->GetDecoderData(aTrack);
                 decoder.mInitPromise.Complete();
                 decoder.mDecoderInitialized = true;
+                MonitorAutoLock mon(decoder.mMonitor);
+                decoder.mDescription = decoder.mDecoder->GetDescriptionName();
                 self->ScheduleUpdate(aTrack);
               },
               [self, aTrack] (MediaDataDecoder::DecoderFailureReason aResult) {
                 auto& decoder = self->GetDecoderData(aTrack);
                 decoder.mInitPromise.Complete();
-                decoder.mDecoder->Shutdown();
-                decoder.mDecoder = nullptr;
+                decoder.ShutdownDecoder();
                 self->NotifyError(aTrack);
               }));
   return false;
@@ -455,8 +471,7 @@ MediaFormatReader::DisableHardwareAcceleration()
   if (HasVideo() && !mHardwareAccelerationDisabled) {
     mHardwareAccelerationDisabled = true;
     Flush(TrackInfo::kVideoTrack);
-    mVideo.mDecoder->Shutdown();
-    mVideo.mDecoder = nullptr;
+    mVideo.ShutdownDecoder();
     if (!EnsureDecoderCreated(TrackType::kVideoTrack)) {
       LOG("Unable to re-create decoder, aborting");
       NotifyError(TrackInfo::kVideoTrack);
@@ -909,8 +924,7 @@ MediaFormatReader::HandleDemuxedSamples(TrackType aTrack,
       // Flush will clear our array of queued samples. So make a copy now.
       nsTArray<RefPtr<MediaRawData>> samples{decoder.mQueuedSamples};
       Flush(aTrack);
-      decoder.mDecoder->Shutdown();
-      decoder.mDecoder = nullptr;
+      decoder.ShutdownDecoder();
       if (sample->mKeyframe) {
         decoder.mQueuedSamples.AppendElements(Move(samples));
         NotifyDecodingRequested(aTrack);
@@ -1355,6 +1369,7 @@ MediaFormatReader::OnVideoSkipCompleted(uint32_t aSkipped)
   if (mDecoder) {
     mDecoder->NotifyDecodedFrames(aSkipped, 0, aSkipped);
   }
+  mVideo.mNumSamplesSkippedTotal += aSkipped;
   MOZ_ASSERT(!mVideo.mError); // We have flushed the decoder, no frame could
                               // have been decoded (and as such errored)
   NotifyDecodingRequested(TrackInfo::kVideoTrack);
@@ -1595,11 +1610,8 @@ void MediaFormatReader::ReleaseMediaResources()
   if (mVideoFrameContainer) {
     mVideoFrameContainer->ClearCurrentFrame();
   }
-  if (mVideo.mDecoder) {
-    mVideo.mInitPromise.DisconnectIfExists();
-    mVideo.mDecoder->Shutdown();
-    mVideo.mDecoder = nullptr;
-  }
+  mVideo.mInitPromise.DisconnectIfExists();
+  mVideo.ShutdownDecoder();
 }
 
 bool
@@ -1651,6 +1663,34 @@ MediaFormatReader::GetImageContainer()
 {
   return mVideoFrameContainer
     ? mVideoFrameContainer->GetImageContainer() : nullptr;
+}
+
+void
+MediaFormatReader::GetMozDebugReaderData(nsAString& aString)
+{
+  nsAutoCString result;
+  const char* audioName = "unavailable";
+  const char* videoName = audioName;
+
+  if (HasAudio()) {
+    MonitorAutoLock mon(mAudio.mMonitor);
+    audioName = mAudio.mDescription;
+  }
+  if (HasVideo()) {
+    MonitorAutoLock mon(mVideo.mMonitor);
+    videoName = mVideo.mDescription;
+  }
+
+  result += nsPrintfCString("audio decoder: %s\n", audioName);
+  result += nsPrintfCString("audio frames decoded: %lld\n",
+                            mAudio.mNumSamplesOutputTotal);
+  result += nsPrintfCString("video decoder: %s\n", videoName);
+  result += nsPrintfCString("hardware video decoding: %s\n",
+                            VideoIsHardwareAccelerated() ? "enabled" : "disabled");
+  result += nsPrintfCString("video frames decoded: %lld (skipped:%lld)\n",
+                            mVideo.mNumSamplesOutputTotal,
+                            mVideo.mNumSamplesSkippedTotal);
+  aString += NS_ConvertUTF8toUTF16(result);
 }
 
 } // namespace mozilla

@@ -231,11 +231,11 @@ Request::Constructor(const GlobalObject& aGlobal,
     RefPtr<Request> inputReq = &aInput.GetAsRequest();
     nsCOMPtr<nsIInputStream> body;
     inputReq->GetBody(getter_AddRefs(body));
+    if (inputReq->BodyUsed()) {
+      aRv.ThrowTypeError<MSG_FETCH_BODY_CONSUMED_ERROR>();
+      return nullptr;
+    }
     if (body) {
-      if (inputReq->BodyUsed()) {
-        aRv.ThrowTypeError<MSG_FETCH_BODY_CONSUMED_ERROR>();
-        return nullptr;
-      }
       temporaryBody = body;
     }
 
@@ -283,6 +283,11 @@ Request::Constructor(const GlobalObject& aGlobal,
   RequestCredentials credentials =
     aInit.mCredentials.WasPassed() ? aInit.mCredentials.Value()
                                    : fallbackCredentials;
+
+  if (mode == RequestMode::Navigate) {
+    aRv.ThrowTypeError<MSG_INVALID_REQUEST_MODE>(NS_LITERAL_STRING("navigate"));
+    return nullptr;
+  }
 
   if (mode != RequestMode::EndGuard_) {
     request->ClearCreatedByFetchEvent();

@@ -323,7 +323,7 @@ CompositorChild::RecvUpdatePluginConfigurations(const LayoutDeviceIntPoint& aCon
   // Any plugins we didn't update need to be hidden, as they are
   // not associated with visible content.
   nsIWidget::UpdateRegisteredPluginWindowVisibility((uintptr_t)parent, visiblePluginIds);
-#if defined(XP_WIN)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   SendRemotePluginsReady();
 #endif
   return true;
@@ -341,7 +341,7 @@ CompositorChild::RecvHideAllPlugins(const uintptr_t& aParentWidget)
   MOZ_ASSERT(NS_IsMainThread());
   nsTArray<uintptr_t> list;
   nsIWidget::UpdateRegisteredPluginWindowVisibility(aParentWidget, list);
-#if defined(XP_WIN)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   SendRemotePluginsReady();
 #endif
   return true;
@@ -355,9 +355,10 @@ CompositorChild::RecvDidComposite(const uint64_t& aId, const uint64_t& aTransact
 {
   if (mLayerManager) {
     MOZ_ASSERT(aId == 0);
-    mLayerManager->DidComposite(aTransactionId, aCompositeStart, aCompositeEnd);
+    RefPtr<ClientLayerManager> m = mLayerManager;
+    m->DidComposite(aTransactionId, aCompositeStart, aCompositeEnd);
   } else if (aId != 0) {
-    dom::TabChild *child = dom::TabChild::GetFrom(aId);
+    RefPtr<dom::TabChild> child = dom::TabChild::GetFrom(aId);
     if (child) {
       child->DidComposite(aTransactionId, aCompositeStart, aCompositeEnd);
     }

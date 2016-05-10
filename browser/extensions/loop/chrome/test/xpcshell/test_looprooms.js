@@ -413,8 +413,8 @@ add_task(function* test_createRoom() {
 // Test if opening a new room window works correctly.
 add_task(function* test_openRoom() {
   let openedUrl;
-  Chat.open = function(contentWindow, origin, title, url) {
-    openedUrl = url;
+  Chat.open = function(contentWindow, options) {
+    openedUrl = options.url;
   };
 
   LoopRooms.open("fakeToken");
@@ -522,23 +522,8 @@ add_task(function* test_joinRoomGuest() {
   MozLoopServiceInternal.fxAOAuthProfile = null;
 
   let roomToken = "_nxD4V4FflQ";
-  let joinedData = yield LoopRooms.promise("join", roomToken);
+  let joinedData = yield LoopRooms.promise("join", roomToken, "guest");
   Assert.equal(joinedData.action, "join");
-});
-
-// Test if joining a room as FxA user works as expected.
-add_task(function* test_joinRoom() {
-  // We need these set up for getting the email address.
-  MozLoopServiceInternal.fxAOAuthTokenData = { token_type: "bearer" };
-  MozLoopServiceInternal.fxAOAuthProfile = { email: "fake@invalid.com" };
-
-  let roomToken = "_nxD4V4FflQ";
-  let joinedData = yield LoopRooms.promise("join", roomToken);
-  Assert.equal(joinedData.action, "join");
-  Assert.equal(joinedData.displayName, "fake@invalid.com");
-
-  MozLoopServiceInternal.fxAOAuthTokenData = null;
-  MozLoopServiceInternal.fxAOAuthProfile = null;
 });
 
 // Test if refreshing a room works as expected.
@@ -606,6 +591,80 @@ add_task(function* test_updateRoom_nameOnly() {
     roomName: "fakeEncrypted"
   });
   Assert.equal(updateData.roomName, "fakeEncrypted", "should have set the new name");
+});
+
+add_task(function* test_updateRoom_domains() {
+  Services.prefs.setBoolPref("loop.logDomains", true);
+
+  let roomToken = "_nxD4V4FflQ";
+  let addContext = url => {
+    return LoopRooms.promise("update", roomToken, {
+      urls: [{ location: url }]
+    });
+  };
+
+  // Make sure one domain context is counted.
+  yield addContext("https://www.mozilla.org");
+  Assert.deepEqual((yield LoopRooms.promise("logDomains", roomToken)), {
+    action: "logDomain",
+    domains: [{ count: 1, domain: "mozilla.org" }]
+  });
+
+  // Make sure multiple pages on a domain are counted.
+  yield addContext("https://www.mozilla.org/foo");
+  yield addContext("https://www.mozilla.org/bar");
+  yield addContext("https://www.mozilla.org/baz");
+  Assert.deepEqual((yield LoopRooms.promise("logDomains", roomToken)), {
+    action: "logDomain",
+    domains: [{ count: 3, domain: "mozilla.org" }]
+  });
+
+  // Make sure multiple subdomains combine to one domain are counted.
+  yield addContext("https://foo.mozilla.org");
+  yield addContext("https://bar.baz.mozilla.org");
+  Assert.deepEqual((yield LoopRooms.promise("logDomains", roomToken)), {
+    action: "logDomain",
+    domains: [{ count: 2, domain: "mozilla.org" }]
+  });
+
+  // Make sure multiple domains are counted, e.g., switching tabs.
+  yield addContext("https://www.yahoo.com");
+  yield addContext("https://www.mozilla.org");
+  yield addContext("https://www.yahoo.com");
+  Assert.deepEqual((yield LoopRooms.promise("logDomains", roomToken)), {
+    action: "logDomain",
+    domains: [{ count: 2, domain: "yahoo.com" },
+              { count: 1, domain: "mozilla.org" }]
+  });
+
+  // Make sure only whitelisted domains are counted.
+  yield addContext("https://www.mozilla.org");
+  yield addContext("https://some.obscure.fakedomain.net");
+  yield addContext("http://localhost");
+  yield addContext("http://127.0.0.1");
+  yield addContext("http://blogspot.com");
+  yield addContext("http://com");
+  Assert.deepEqual((yield LoopRooms.promise("logDomains", roomToken)), {
+    action: "logDomain",
+    domains: [{ count: 1, domain: "mozilla.org" }]
+  });
+
+  // Make sure switching room tokens only keeps the latest.
+  roomToken = "QzBbvGmIZWU";
+  yield addContext("https://www.mozilla.org");
+  roomToken = "_nxD4V4FflQ";
+  yield addContext("https://www.yahoo.com");
+  Assert.deepEqual((yield LoopRooms.promise("logDomains", roomToken)), {
+    action: "logDomain",
+    domains: [{ count: 1, domain: "yahoo.com" }]
+  });
+
+  // Make sure nothing is logged if disabled.
+  Services.prefs.setBoolPref("loop.logDomains", false);
+  yield addContext("https://www.mozilla.org");
+  Assert.equal((yield LoopRooms.promise("logDomains", roomToken)), null);
+
+  Services.prefs.clearUserPref("loop.logDomains");
 });
 
 add_task(function* test_roomDeleteNotifications() {

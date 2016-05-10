@@ -79,8 +79,13 @@ static LayerSortOrder CompareDepth(Layer* aOne, Layer* aTwo) {
   gfxRect ourRect = ThebesRect(aOne->GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds());
   gfxRect otherRect = ThebesRect(aTwo->GetEffectiveVisibleRegion().ToUnknownRegion().GetBounds());
 
-  Matrix4x4 ourTransform = aOne->GetTransform();
-  Matrix4x4 otherTransform = aTwo->GetTransform();
+  MOZ_ASSERT(aOne->GetParent() && aOne->GetParent()->Extend3DContext() &&
+             aTwo->GetParent() && aTwo->GetParent()->Extend3DContext());
+  // Effective transform of leaves may had been projected to 2D.
+  Matrix4x4 ourTransform =
+    aOne->GetLocalTransform() * aOne->GetParent()->GetEffectiveTransform();
+  Matrix4x4 otherTransform =
+    aTwo->GetLocalTransform() * aTwo->GetParent()->GetEffectiveTransform();
 
   // Transform both rectangles and project into 2d space.
   gfxQuad ourTransformedRect = ourRect.TransformToQuad(ourTransform);

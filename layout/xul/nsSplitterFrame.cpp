@@ -35,6 +35,7 @@
 #include "nsDisplayList.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/UniquePtr.h"
 
@@ -675,7 +676,7 @@ nsSplitterFrameInner::MouseDown(nsIDOMEvent* aMouseEvent)
         mOuter->AddMargin(childBox, prefSize);
         mOuter->AddMargin(childBox, maxSize);
 
-        nscoord flex = childBox->GetFlex(state);
+        nscoord flex = childBox->GetFlex();
 
         nsMargin margin(0,0,0,0);
         childBox->GetMargin(margin);
@@ -741,7 +742,7 @@ nsSplitterFrameInner::MouseDown(nsIDOMEvent* aMouseEvent)
      mChildInfosAfterCount = 0;
 
   int32_t c;
-  nsPoint pt = nsLayoutUtils::GetDOMEventCoordinatesRelativeTo(mouseEvent,
+  nsPoint pt = nsLayoutUtils::GetDOMEventCoordinatesRelativeTo(mouseEvent->AsEvent(),
                                                                mParentBox);
   if (isHorizontal) {
      c = pt.x;

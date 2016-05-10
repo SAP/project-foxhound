@@ -5,9 +5,15 @@
 
 #include "MobileViewportManager.h"
 
+#include "gfxPrefs.h"
 #include "LayersLogging.h"
+#include "nsIDOMEvent.h"
+#include "nsIFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsPresShell.h"
 #include "nsViewManager.h"
 #include "nsViewportInfo.h"
+#include "UnitTransforms.h"
 
 #define MVM_LOG(...)
 // #define MVM_LOG(...) printf_stderr("MVM: " __VA_ARGS__)
@@ -17,6 +23,7 @@ NS_IMPL_ISUPPORTS(MobileViewportManager, nsIDOMEventListener, nsIObserver)
 static const nsLiteralString DOM_META_ADDED = NS_LITERAL_STRING("DOMMetaAdded");
 static const nsLiteralString DOM_META_CHANGED = NS_LITERAL_STRING("DOMMetaChanged");
 static const nsLiteralString FULL_ZOOM_CHANGE = NS_LITERAL_STRING("FullZoomChange");
+static const nsLiteralString LOAD = NS_LITERAL_STRING("load");
 static const nsLiteralCString BEFORE_FIRST_PAINT = NS_LITERAL_CSTRING("before-first-paint");
 
 using namespace mozilla;
@@ -41,6 +48,7 @@ MobileViewportManager::MobileViewportManager(nsIPresShell* aPresShell,
     mEventTarget->AddEventListener(DOM_META_ADDED, this, false);
     mEventTarget->AddEventListener(DOM_META_CHANGED, this, false);
     mEventTarget->AddEventListener(FULL_ZOOM_CHANGE, this, false);
+    mEventTarget->AddEventListener(LOAD, this, true);
   }
 
   nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
@@ -62,6 +70,7 @@ MobileViewportManager::Destroy()
     mEventTarget->RemoveEventListener(DOM_META_ADDED, this, false);
     mEventTarget->RemoveEventListener(DOM_META_CHANGED, this, false);
     mEventTarget->RemoveEventListener(FULL_ZOOM_CHANGE, this, false);
+    mEventTarget->RemoveEventListener(LOAD, this, true);
     mEventTarget = nullptr;
   }
 
@@ -103,6 +112,12 @@ MobileViewportManager::HandleEvent(nsIDOMEvent* event)
   } else if (type.Equals(FULL_ZOOM_CHANGE)) {
     MVM_LOG("%p: got a full-zoom-change event\n", this);
     RefreshViewportSize(false);
+  } else if (type.Equals(LOAD)) {
+    MVM_LOG("%p: got a load event\n", this);
+    if (!mPainted) {
+      // Load event got fired before the before-first-paint message
+      SetInitialViewport();
+    }
   }
   return NS_OK;
 }
@@ -112,11 +127,21 @@ MobileViewportManager::Observe(nsISupports* aSubject, const char* aTopic, const 
 {
   if (SameCOMIdentity(aSubject, mDocument) && BEFORE_FIRST_PAINT.EqualsASCII(aTopic)) {
     MVM_LOG("%p: got a before-first-paint event\n", this);
-    mIsFirstPaint = true;
-    mPainted = true;
-    RefreshViewportSize(false);
+    if (!mPainted) {
+      // before-first-paint message arrived before load event
+      SetInitialViewport();
+    }
   }
   return NS_OK;
+}
+
+void
+MobileViewportManager::SetInitialViewport()
+{
+  MVM_LOG("%p: setting initial viewport\n", this);
+  mIsFirstPaint = true;
+  mPainted = true;
+  RefreshViewportSize(false);
 }
 
 CSSToScreenScale
@@ -222,7 +247,7 @@ void
 MobileViewportManager::UpdateDisplayPortMargins()
 {
   if (nsIFrame* root = mPresShell->GetRootScrollFrame()) {
-    bool hasDisplayPort = nsLayoutUtils::GetDisplayPort(root->GetContent(), nullptr);
+    bool hasDisplayPort = nsLayoutUtils::HasDisplayPort(root->GetContent());
     bool hasResolution = mPresShell->ScaleToResolution() &&
         mPresShell->GetResolution() != 1.0f;
     if (!hasDisplayPort && !hasResolution) {

@@ -213,6 +213,16 @@ SessionStore.prototype = {
         this.onTabRemove(window, browser);
         break;
       }
+      case "TabPreZombify": {
+        let browser = aEvent.target;
+        this.onTabRemove(window, browser, true);
+        break;
+      }
+      case "TabPostZombify": {
+        let browser = aEvent.target;
+        this.onTabAdd(window, browser, true);
+        break;
+      }
       case "TabSelect": {
         let browser = aEvent.target;
         this.onTabSelect(window, browser);
@@ -277,11 +287,13 @@ SessionStore.prototype = {
     for (let i = 0; i < tabs.length; i++)
       this.onTabAdd(aWindow, tabs[i].browser, true);
 
-    // Notification of tab add/remove/selection
+    // Notification of tab add/remove/selection/zombification
     let browsers = aWindow.document.getElementById("browsers");
     browsers.addEventListener("TabOpen", this, true);
     browsers.addEventListener("TabClose", this, true);
     browsers.addEventListener("TabSelect", this, true);
+    browsers.addEventListener("TabPreZombify", this, true);
+    browsers.addEventListener("TabPostZombify", this, true);
   },
 
   onWindowClose: function ss_onWindowClose(aWindow) {
@@ -293,6 +305,8 @@ SessionStore.prototype = {
     browsers.removeEventListener("TabOpen", this, true);
     browsers.removeEventListener("TabClose", this, true);
     browsers.removeEventListener("TabSelect", this, true);
+    browsers.removeEventListener("TabPreZombify", this, true);
+    browsers.removeEventListener("TabPostZombify", this, true);
 
     if (this._loadState == STATE_RUNNING) {
       // Update all window data for a last time
@@ -764,10 +778,14 @@ SessionStore.prototype = {
       entry.contentType = aEntry.contentType;
     }
 
-    let x = {}, y = {};
-    aEntry.getScrollPosition(x, y);
-    if (x.value != 0 || y.value != 0) {
-      entry.scroll = x.value + "," + y.value;
+    if (aEntry.scrollRestorationIsManual) {
+      entry.scrollRestorationIsManual = true;
+    } else {
+      let x = {}, y = {};
+      aEntry.getScrollPosition(x, y);
+      if (x.value != 0 || y.value != 0) {
+        entry.scroll = x.value + "," + y.value;
+      }
     }
 
     if (aEntry.owner) {
@@ -878,7 +896,9 @@ SessionStore.prototype = {
       shEntry.stateData.initFromBase64(aEntry.structuredCloneState, aEntry.structuredCloneVersion);
     }
 
-    if (aEntry.scroll) {
+    if (aEntry.scrollRestorationIsManual) {
+      shEntry.scrollRestorationIsManual = true;
+    } else if (aEntry.scroll) {
       let scrollPos = aEntry.scroll.split(",");
       scrollPos = [parseInt(scrollPos[0]) || 0, parseInt(scrollPos[1]) || 0];
       shEntry.setScrollPosition(scrollPos[0], scrollPos[1]);
@@ -1019,7 +1039,12 @@ SessionStore.prototype = {
     // we stop the load above
     let activeIndex = (aTabData.index || aTabData.entries.length) - 1;
     aHistory.getEntryAtIndex(activeIndex, true);
-    aHistory.QueryInterface(Ci.nsISHistory).reloadCurrentEntry();
+
+    try {
+      aHistory.QueryInterface(Ci.nsISHistory).reloadCurrentEntry();
+    } catch (e) {
+      // This will throw if the current entry is an error page.
+    }
   },
 
   /**

@@ -2149,9 +2149,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
 
     case kOpenGLInterfaceV0_ANPGetValue: {
       LOG("get openGL interface");
-      ANPOpenGLInterfaceV0 *i = (ANPOpenGLInterfaceV0*) result;
-      InitOpenGLInterface(i);
-      return NPERR_NO_ERROR;
+      return NPERR_GENERIC_ERROR;
     }
 
     case kWindowInterfaceV1_ANPGetValue: {
@@ -2299,8 +2297,7 @@ _setvalue(NPP npp, NPPVariable variable, void *result)
       } else {
         float volume = 0.0;
         bool muted = true;
-        rv = agent->NotifyStartedPlaying(nsIAudioChannelAgent::AUDIO_AGENT_NOTIFY,
-                                         &volume, &muted);
+        rv = agent->NotifyStartedPlaying(&volume, &muted);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return NPERR_NO_ERROR;
         }

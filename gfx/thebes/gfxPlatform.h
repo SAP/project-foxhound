@@ -536,7 +536,7 @@ public:
     virtual gfxImageFormat OptimalFormatForContent(gfxContentType aContent);
 
     virtual gfxImageFormat GetOffscreenFormat()
-    { return gfxImageFormat::RGB24; }
+    { return mozilla::gfx::SurfaceFormat::X8R8G8B8_UINT32; }
 
     /**
      * Returns a logger if one is available and logging is enabled
@@ -610,6 +610,12 @@ public:
     bool SupportsApzDragInput() const;
 
     virtual void FlushContentDrawing() {}
+
+    // If a device reset has occurred, update the necessary platform backend
+    // bits.
+    virtual bool UpdateForDeviceReset() {
+      return false;
+    }
 
     /**
      * Helper method, creates a draw target for a specific Azure backend.

@@ -102,11 +102,8 @@ class ImageLoader;
 class Rule;
 } // namespace css
 
-namespace gfx {
-class VRHMDInfo;
-} // namespace gfx
-
 namespace dom {
+class Animation;
 class AnonymousContent;
 class Attr;
 class BoxObject;
@@ -155,8 +152,8 @@ typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0x13011a82, 0x46cd, 0x4c33, \
-  { 0x9d, 0x4e, 0x31, 0x41, 0xbb, 0x3f, 0x18, 0xe9 } }
+{ 0xce1f7627, 0x7109, 0x4977, \
+  { 0xba, 0x77, 0x49, 0x0f, 0xfd, 0xe0, 0x7a, 0xaa } }
 
 // Enum for requesting a particular type of document when creating a doc
 enum DocumentFlavor {
@@ -347,17 +344,32 @@ public:
   }
 
   /**
-   * Return the base URI for relative URIs in the document (the document uri
-   * unless it's overridden by SetBaseURI, HTML <base> tags, etc.).  The
-   * returned URI could be null if there is no document URI.  If the document
-   * is a srcdoc document, return the parent document's base URL.
+   * Return the fallback base URL for this document, as defined in the HTML
+   * specification.  Note that this can return null if there is no document URI.
+   *
+   * XXXbz: This doesn't implement the bits for about:blank yet.
    */
-  nsIURI* GetDocBaseURI() const
+  nsIURI* GetFallbackBaseURI() const
   {
     if (mIsSrcdocDocument && mParentDocument) {
       return mParentDocument->GetDocBaseURI();
     }
-    return mDocumentBaseURI ? mDocumentBaseURI : mDocumentURI;
+    return mDocumentURI;
+  }
+
+  /**
+   * Return the base URI for relative URIs in the document (the document uri
+   * unless it's overridden by SetBaseURI, HTML <base> tags, etc.).  The
+   * returned URI could be null if there is no document URI.  If the document is
+   * a srcdoc document and has no explicit base URL, return the parent
+   * document's base URL.
+   */
+  nsIURI* GetDocBaseURI() const
+  {
+    if (mDocumentBaseURI) {
+      return mDocumentBaseURI;
+    }
+    return GetFallbackBaseURI();
   }
   virtual already_AddRefed<nsIURI> GetBaseURI(bool aTryUseXHRDocBaseURI = false) const override;
 
@@ -1657,6 +1669,16 @@ public:
                                           bool aIgnoreRootScrollFrame,
                                           bool aFlushLayout) = 0;
 
+  enum ElementsFromPointFlags {
+    IGNORE_ROOT_SCROLL_FRAME = 1,
+    FLUSH_LAYOUT = 2,
+    IS_ELEMENT_FROM_POINT = 4
+  };
+
+  virtual void ElementsFromPointHelper(float aX, float aY,
+                                       uint32_t aFlags,
+                                       nsTArray<RefPtr<mozilla::dom::Element>>& aElements) = 0;
+
   virtual nsresult NodesFromRectHelper(float aX, float aY,
                                        float aTopSize, float aRightSize,
                                        float aBottomSize, float aLeftSize,
@@ -2155,6 +2177,9 @@ public:
 
   virtual mozilla::dom::DocumentTimeline* Timeline() = 0;
 
+  virtual void GetAnimations(
+      nsTArray<RefPtr<mozilla::dom::Animation>>& aAnimations) = 0;
+
   nsresult ScheduleFrameRequestCallback(mozilla::dom::FrameRequestCallback& aCallback,
                                         int32_t *aHandle);
   void CancelFrameRequestCallback(int32_t aHandle);
@@ -2516,6 +2541,9 @@ public:
   virtual mozilla::dom::DOMStringList* StyleSheetSets() = 0;
   virtual void EnableStyleSheetsForSet(const nsAString& aSheetSet) = 0;
   Element* ElementFromPoint(float aX, float aY);
+  void ElementsFromPoint(float aX,
+                         float aY,
+                         nsTArray<RefPtr<mozilla::dom::Element>>& aElements);
 
   /**
    * Retrieve the location of the caret position (DOM node and character
@@ -2646,6 +2674,8 @@ public:
   {
     return mUserHasInteracted;
   }
+
+  void ReportHasScrollLinkedEffect();
 
 protected:
   bool GetUseCounter(mozilla::UseCounter aUseCounter)
@@ -3046,6 +3076,8 @@ protected:
 
   uint32_t mBlockDOMContentLoaded;
   bool mDidFireDOMContentLoaded:1;
+
+  bool mHasScrollLinkedEffect:1;
 
   // Our live MediaQueryLists
   PRCList mDOMMediaQueryLists;

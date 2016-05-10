@@ -37,23 +37,28 @@
   <string name="no_space_to_start_error">&no_space_to_start_error;</string>
   <string name="error_loading_file">&error_loading_file;</string>
 
-
   <string name="firstrun_panel_title_welcome">&firstrun_panel_title_welcome;</string>
   <string name="firstrun_welcome_message">&onboard_start_message3;</string>
   <string name="firstrun_welcome_subtext">&onboard_start_subtext3;</string>
-  <string name="firstrun_welcome_button_account">&onboard_start_button_account;</string>
+
+  <string name="firstrun_urlbar_message">&firstrun_urlbar_message;</string>
+  <string name="firstrun_urlbar_subtext">&firstrun_urlbar_subtext;</string>
+  <string name="firstrun_bookmarks_title">&firstrun_bookmarks_title;</string>
+  <string name="firstrun_bookmarks_message">&firstrun_bookmarks_message;</string>
+  <string name="firstrun_bookmarks_subtext">&firstrun_bookmarks_subtext;</string>
+  <string name="firstrun_data_title">&firstrun_data_title;</string>
+  <string name="firstrun_data_message">&firstrun_data_message;</string>
+  <string name="firstrun_data_subtext">&firstrun_data_subtext;</string>
+  <string name="firstrun_sync_title">&firstrun_sync_title;</string>
+  <string name="firstrun_sync_message">&firstrun_sync_message;</string>
+  <string name="firstrun_sync_subtext">&firstrun_sync_subtext;</string>
+  <string name="firstrun_signin_message">&firstrun_signin_message;</string>
+  <string name="firstrun_signin_button">&firstrun_signin_button;</string>
   <string name="firstrun_welcome_button_browser">&onboard_start_button_browser;</string>
   <string name="firstrun_button_next">&firstrun_button_next;</string>
   <string name="firstrun_empty_contentDescription"></string>
 
   <string name="firstrun_welcome_restricted">&onboard_start_restricted1;</string>
-
-  <string name="firstrun_import_title">&firstrun_import_title;</string>
-  <string name="firstrun_import_message">&firstrun_import_message;</string>
-  <string name="firstrun_import_subtext">&firstrun_import_subtext;</string>
-  <string name="firstrun_import_action">&firstrun_import_action;</string>
-  <string name="firstrun_import_dialog_button">&firstrun_import_dialog_button;</string>
-  <string name="firstrun_import_progress_title">&firstrun_import_progress_title;</string>
 
   <string name="bookmarks_title">&bookmarks_title;</string>
   <string name="history_title">&history_title;</string>
@@ -199,9 +204,6 @@
 
   <string name="pref_remember_signons">&pref_remember_signons2;</string>
 
-  <string name="pref_open_external_urls_privately_title">&pref_open_external_urls_privately_title;</string>
-  <string name="pref_open_external_urls_privately_summary">&pref_open_external_urls_privately_summary;</string>
-
   <string name="pref_manage_logins">&pref_manage_logins;</string>
 
   <string name="pref_cookies_menu">&pref_cookies_menu;</string>
@@ -288,11 +290,14 @@
   <string name="tab_queue_prompt_tip_text">&tab_queue_prompt_tip_text2;</string>
   <string name="tab_queue_prompt_positive_action_button">&tab_queue_prompt_positive_action_button;</string>
   <string name="tab_queue_prompt_negative_action_button">&tab_queue_prompt_negative_action_button;</string>
+  <string name="tab_queue_prompt_permit_drawing_over_apps">&tab_queue_prompt_permit_drawing_over_apps;</string>
+  <string name="tab_queue_prompt_settings_button">&tab_queue_prompt_settings_button;</string>
   <string name="tab_queue_toast_message">&tab_queue_toast_message3;</string>
   <string name="tab_queue_toast_action">&tab_queue_toast_action;</string>
   <string name="tab_queue_notification_text_singular">&tab_queue_notification_text_singular2;</string>
   <string name="tab_queue_notification_text_plural">&tab_queue_notification_text_plural2;</string>
   <string name="tab_queue_notification_title">&tab_queue_notification_title;</string>
+  <string name="tab_queue_notification_settings">&tab_queue_notification_settings;</string>
 
   <string name="pref_about_firefox">&pref_about_firefox;</string>
   <string name="pref_vendor_faqs">&pref_vendor_faqs;</string>
@@ -438,10 +443,9 @@
   <string name="home_last_tabs_empty">&home_last_tabs_empty;</string>
   <string name="home_open_all">&home_open_all;</string>
   <string name="home_most_recent_empty">&home_most_recent_empty;</string>
+  <string name="home_selected_empty">&home_selected_empty;</string>
   <string name="home_most_recent_emptyhint">&home_most_recent_emptyhint2;</string>
   <string name="home_reading_list_empty">&home_reading_list_empty;</string>
-  <string name="home_reading_list_hint">&home_reading_list_hint3;</string>
-  <string name="home_reading_list_hint_accessible">&home_reading_list_hint_accessible2;</string>
   <string name="home_default_empty">&home_default_empty;</string>
   <string name="home_move_up_to_filter">&home_move_up_to_filter;</string>
   <string name="home_remote_tabs_title">&home_remote_tabs_title;</string>
@@ -474,22 +478,23 @@
 
   <!-- Icon is automatically generated from R.drawable.bookmarkdefaults_favicon_addons -->
   <string name="bookmarkdefaults_title_addons">&bookmarks_addons;</string>
-  <string name="bookmarkdefaults_url_addons">https://addons.mozilla.org/android/</string>
+  <string name="bookmarkdefaults_url_addons">https://addons.mozilla.org/android?utm_source=inproduct&amp;utm_medium=default-bookmarks&amp;utm_campaign=mobileandroid</string>
 
   <!-- Icon is automatically generated from R.drawable.bookmarkdefaults_favicon_support -->
   <string name="bookmarkdefaults_title_support">&bookmarks_support;</string>
-  <string name="bookmarkdefaults_url_support">https://support.mozilla.org/products/mobile</string>
+  <string name="bookmarkdefaults_url_support">https://support.mozilla.org/products/mobile?utm_source=inproduct&amp;utm_medium=default-bookmarks&amp;utm_campaign=mobileandroid</string>
 
   <string name="bookmarkdefaults_title_restricted_webmaker">&bookmarks_restricted_webmaker;</string>
   <string name="bookmarkdefaults_url_restricted_webmaker">https://webmaker.org/</string>
 
   <string name="bookmarkdefaults_title_restricted_support">&bookmarks_restricted_support2;</string>
-  <string name="bookmarkdefaults_url_restricted_support">https://support.mozilla.org/kb/controlledaccess</string>
+  <string name="bookmarkdefaults_url_restricted_support">https://support.mozilla.org/kb/controlledaccess?utm_source=inproduct&amp;utm_medium=default-bookmarks&amp;utm_campaign=mobileandroid</string>
 
   <!-- Site identity popup -->
   <string name="identity_connection_secure">&identity_connection_secure;</string>
   <string name="identity_connection_insecure">&identity_connection_insecure;</string>
   <string name="identity_login_insecure">&identity_login_insecure;</string>
+  <string name="identity_connection_chromeui">&identity_connection_chromeui;</string>
 
   <string name="mixed_content_blocked_all">&mixed_content_blocked_all1;</string>
   <string name="mixed_content_blocked_some">&mixed_content_blocked_some1;</string>
@@ -533,6 +538,10 @@
 
   <string name="updater_apply_title">&updater_apply_title2;</string>
   <string name="updater_apply_select">&updater_apply_select2;</string>
+
+  <string name="updater_permission_title">&brandShortName;</string>
+  <string name="updater_permission_text">&updater_permission_text;</string>
+  <string name="updater_permission_allow">&updater_permission_allow;</string>
 
   <!-- Awesomescreen screen -->
   <string name="suggestions_prompt">&suggestions_prompt3;</string>
@@ -579,8 +588,8 @@
   <string name="restrictable_feature_advanced_settings_description">&restrictable_feature_advanced_settings_description;</string>
   <string name="restrictable_feature_camera_microphone">&restrictable_feature_camera_microphone;</string>
   <string name="restrictable_feature_camera_microphone_description">&restrictable_feature_camera_microphone_description;</string>
-  <string name="restrictable_feature_data_choices">&restrictable_feature_data_choices;</string>
-  <string name="restrictable_feature_data_choices_description">&restrictable_feature_data_choices_description;</string>
+  <string name="restrictable_feature_block_list">&restrictable_feature_block_list;</string>
+  <string name="restrictable_feature_block_list_description">&restrictable_feature_block_list_description;</string>
 
   <!-- Miscellaneous -->
   <string name="ellipsis">&ellipsis;</string>

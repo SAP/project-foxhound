@@ -114,31 +114,18 @@ using mozilla::net::nsMediaFragmentURIParser;
 class MOZ_STACK_CLASS AutoNotifyAudioChannelAgent
 {
   RefPtr<mozilla::dom::HTMLMediaElement> mElement;
-  bool mShouldNotify;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
 public:
-  AutoNotifyAudioChannelAgent(mozilla::dom::HTMLMediaElement* aElement,
-                              bool aNotify
-                              MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoNotifyAudioChannelAgent(mozilla::dom::HTMLMediaElement* aElement
+                                       MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     : mElement(aElement)
-    , mShouldNotify(aNotify)
   {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    if (mShouldNotify) {
-      // The audio channel agent may not exist now.
-      if (mElement->MaybeCreateAudioChannelAgent()) {
-        mElement->NotifyAudioChannelAgent(false);
-      }
-    }
   }
+
   ~AutoNotifyAudioChannelAgent()
   {
-    if (mShouldNotify) {
-      // The audio channel agent is destroyed at this point.
-      if (mElement->MaybeCreateAudioChannelAgent()) {
-        mElement->NotifyAudioChannelAgent(true);
-      }
-    }
+    mElement->UpdateAudioChannelPlayingState();
   }
 };
 
@@ -370,8 +357,18 @@ NS_IMETHODIMP HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aR
   nsresult rv = aRequest->GetStatus(&status);
   NS_ENSURE_SUCCESS(rv, rv);
   if (NS_FAILED(status)) {
-    if (element)
+    if (element) {
+      // Handle media not loading error because source was a tracking URL.
+      // We make a note of this media node by including it in a dedicated
+      // array of blocked tracking nodes under its parent document.
+      if (status == NS_ERROR_TRACKING_URI) {
+        nsIDocument* ownerDoc = element->OwnerDoc();
+        if (ownerDoc) {
+          ownerDoc->AddBlockedTrackingNode(element);
+        }
+      }
       element->NotifyLoadError();
+    }
     return status;
   }
 
@@ -554,6 +551,14 @@ HTMLMediaElement::GetMozMediaSourceObject() const
   return source.forget();
 }
 
+void
+HTMLMediaElement::GetMozDebugReaderData(nsAString& aString)
+{
+  if (mDecoder && !mSrcStream) {
+    mDecoder->GetMozDebugReaderData(aString);
+  }
+}
+
 already_AddRefed<DOMMediaStream>
 HTMLMediaElement::GetSrcObject() const
 {
@@ -732,6 +737,7 @@ void HTMLMediaElement::AbortExistingLoads()
   }
 
   mError = nullptr;
+  mCurrentPlayRangeStart = -1.0;
   mLoadedDataFired = false;
   mAutoplaying = true;
   mIsLoadingFromSourceChildren = false;
@@ -1307,6 +1313,7 @@ nsresult HTMLMediaElement::LoadResource()
                               nullptr,   // aCallbacks
                               nsICachingChannel::LOAD_BYPASS_LOCAL_CACHE_IF_BUSY |
                               nsIChannel::LOAD_MEDIA_SNIFFER_OVERRIDES_CONTENT_TYPE |
+                              nsIChannel::LOAD_CLASSIFY_URI |
                               nsIChannel::LOAD_CALL_CONTENT_SNIFFERS);
 
   NS_ENSURE_SUCCESS(rv,rv);
@@ -1892,11 +1899,11 @@ HTMLMediaElement::CaptureStreamInternal(bool aFinishWhenEnded,
       // Expose the tracks to JS directly.
       if (HasAudio()) {
         TrackID audioTrackId = mMediaInfo.mAudio.mTrackId;
-        out->mStream->CreateOwnDOMTrack(audioTrackId, MediaSegment::AUDIO);
+        out->mStream->CreateOwnDOMTrack(audioTrackId, MediaSegment::AUDIO, nsString());
       }
       if (HasVideo()) {
         TrackID videoTrackId = mMediaInfo.mVideo.mTrackId;
-        out->mStream->CreateOwnDOMTrack(videoTrackId, MediaSegment::VIDEO);
+        out->mStream->CreateOwnDOMTrack(videoTrackId, MediaSegment::VIDEO, nsString());
       }
     }
   }
@@ -2115,7 +2122,8 @@ HTMLMediaElement::HTMLMediaElement(already_AddRefed<mozilla::dom::NodeInfo>& aNo
     mElementInTreeState(ELEMENT_NOT_INTREE),
     mHasUserInteraction(false),
     mFirstFrameLoaded(false),
-    mDefaultPlaybackStartPosition(0.0)
+    mDefaultPlaybackStartPosition(0.0),
+    mIsAudioTrackAudible(false)
 {
   mAudioChannel = AudioChannelService::GetDefaultAudioChannel();
 
@@ -2186,7 +2194,7 @@ void HTMLMediaElement::StopSuspendingAfterFirstFrame()
     return;
   mSuspendedAfterFirstFrame = false;
   if (mDecoder) {
-    mDecoder->Resume(true);
+    mDecoder->Resume();
   }
 }
 
@@ -3173,17 +3181,7 @@ void HTMLMediaElement::UpdateSrcMediaStreamPlaying(uint32_t aFlags)
     stream->AddAudioOutput(this);
     SetVolumeInternal();
 
-  #ifdef MOZ_WIDGET_GONK
-    bool bUseOverlayImage = mSrcStream->AsDOMHwMediaStream() != nullptr;
-  #else
-    bool bUseOverlayImage = false;
-  #endif
-    VideoFrameContainer* container;
-    if (bUseOverlayImage) {
-      container = GetOverlayImageVideoFrameContainer();
-    } else {
-      container = GetVideoFrameContainer();
-    }
+    VideoFrameContainer* container = GetVideoFrameContainer();
     if (container) {
       stream->AddVideoOutput(container);
     }
@@ -3395,10 +3393,7 @@ void HTMLMediaElement::MetadataLoaded(const MediaInfo* aInfo,
   // If the element is gaining or losing an audio track, we need to notify
   // the audio channel agent so that the correct audio-playback events will
   // get dispatched.
-  bool audioTrackChanging = mMediaInfo.HasAudio() != aInfo->HasAudio();
-  AutoNotifyAudioChannelAgent autoNotify(this,
-                                         audioTrackChanging &&
-                                         mPlayingThroughTheAudioChannel);
+  AutoNotifyAudioChannelAgent autoNotify(this);
 
   mMediaInfo = *aInfo;
   mIsEncrypted = aInfo->IsEncrypted()
@@ -4047,22 +4042,6 @@ VideoFrameContainer* HTMLMediaElement::GetVideoFrameContainer()
   return mVideoFrameContainer;
 }
 
-VideoFrameContainer* HTMLMediaElement::GetOverlayImageVideoFrameContainer()
-{
-  if (mVideoFrameContainer)
-    return mVideoFrameContainer;
-
-  // Only video frames need an image container.
-  if (!IsVideo()) {
-    return nullptr;
-  }
-
-  mVideoFrameContainer =
-    new VideoFrameContainer(this, LayerManager::CreateImageContainer(ImageContainer::ASYNCHRONOUS_OVERLAY));
-
-  return mVideoFrameContainer;
-}
-
 nsresult HTMLMediaElement::DispatchEvent(const nsAString& aName)
 {
   LOG_EVENT(LogLevel::Debug, ("%p Dispatching event %s", this,
@@ -4244,7 +4223,7 @@ void HTMLMediaElement::SuspendOrResumeElement(bool aPauseElement, bool aSuspendE
       MOZ_ASSERT(!mMediaKeys);
 #endif
       if (mDecoder) {
-        mDecoder->Resume(false);
+        mDecoder->Resume();
         if (!mPaused && !mDecoder->IsEndedOrShutdown()) {
           mDecoder->Play();
         }
@@ -4773,6 +4752,11 @@ HTMLMediaElement::IsPlayingThroughTheAudioChannel() const
     return false;
   }
 
+  // If this element doesn't have any audio tracks.
+  if (!HasAudio()) {
+    return false;
+  }
+
   // The volume should not be ~0
   if (std::fabs(Volume()) <= 1e-7) {
     return false;
@@ -4828,23 +4812,15 @@ HTMLMediaElement::UpdateAudioChannelPlayingState()
 void
 HTMLMediaElement::NotifyAudioChannelAgent(bool aPlaying)
 {
-  // Immediately check if this should go to the MSG instead of the normal
-  // media playback route.
-  WindowAudioCaptureChanged();
-
   // This is needed to pass nsContentUtils::IsCallerChrome().
   // AudioChannel API should not called from content but it can happen that
   // this method has some content JS in its stack.
   AutoNoJSAPI nojsapi;
 
   if (aPlaying) {
-    // Don't notify playback if this element doesn't have any audio tracks.
-    uint32_t notify = HasAudio() ? nsIAudioChannelAgent::AUDIO_AGENT_NOTIFY :
-                                   nsIAudioChannelAgent::AUDIO_AGENT_DONT_NOTIFY;
-
     float volume = 0.0;
     bool muted = true;
-    mAudioChannelAgent->NotifyStartedPlaying(notify, &volume, &muted);
+    mAudioChannelAgent->NotifyStartedPlaying(&volume, &muted);
     WindowVolumeChanged(volume, muted);
   } else {
     mAudioChannelAgent->NotifyStoppedPlaying();
@@ -4898,20 +4874,8 @@ HTMLMediaElement::SetMediaKeys(mozilla::dom::MediaKeys* aMediaKeys,
   if (aRv.Failed()) {
     return nullptr;
   }
-  if (mMediaKeys == aMediaKeys) {
-    promise->MaybeResolve(JS::UndefinedHandleValue);
-    return promise.forget();
-  }
-  if (aMediaKeys && aMediaKeys->IsBoundToMediaElement()) {
-    promise->MaybeReject(NS_ERROR_DOM_QUOTA_EXCEEDED_ERR,
-                         NS_LITERAL_CSTRING("MediaKeys object is already bound to another HTMLMediaElement"));
-    return promise.forget();
-  }
-  if (mMediaKeys) {
-    // Existing MediaKeys object. Shut it down.
-    mMediaKeys->Shutdown();
-    mMediaKeys = nullptr;
-  }
+
+  // We only support EME for MSE content by default.
   if (mDecoder &&
       !mMediaSource &&
       Preferences::GetBool("media.eme.mse-only", true)) {
@@ -4921,19 +4885,92 @@ HTMLMediaElement::SetMediaKeys(mozilla::dom::MediaKeys* aMediaKeys,
     return promise.forget();
   }
 
-  mMediaKeys = aMediaKeys;
+  // 1. If mediaKeys and the mediaKeys attribute are the same object,
+  // return a resolved promise.
+  if (mMediaKeys == aMediaKeys) {
+    promise->MaybeResolve(JS::UndefinedHandleValue);
+    return promise.forget();
+  }
+
+  // Note: Our attaching code is synchronous, so we can skip the following steps.
+
+  // 2. If this object's attaching media keys value is true, return a
+  // promise rejected with a new DOMException whose name is InvalidStateError.
+  // 3. Let this object's attaching media keys value be true.
+  // 4. Let promise be a new promise.
+  // 5. Run the following steps in parallel:
+
+  // 5.1 If mediaKeys is not null, CDM instance represented by mediaKeys is
+  // already in use by another media element, and the user agent is unable
+  // to use it with this element, let this object's attaching media keys
+  // value be false and reject promise with a new DOMException whose name
+  // is QuotaExceededError.
+  if (aMediaKeys && aMediaKeys->IsBoundToMediaElement()) {
+    promise->MaybeReject(NS_ERROR_DOM_QUOTA_EXCEEDED_ERR,
+      NS_LITERAL_CSTRING("MediaKeys object is already bound to another HTMLMediaElement"));
+    return promise.forget();
+  }
+
+  // 5.2 If the mediaKeys attribute is not null, run the following steps:
   if (mMediaKeys) {
-    if (NS_FAILED(mMediaKeys->Bind(this))) {
+    // 5.2.1 If the user agent or CDM do not support removing the association,
+    // let this object's attaching media keys value be false and reject promise
+    // with a new DOMException whose name is NotSupportedError.
+
+    // 5.2.2 If the association cannot currently be removed, let this object's
+    // attaching media keys value be false and reject promise with a new
+    // DOMException whose name is InvalidStateError.
+    if (mDecoder) {
+      // We don't support swapping out the MediaKeys once we've started to
+      // setup the playback pipeline. Note this also means we don't need to worry
+      // about handling disassociating the MediaKeys from the MediaDecoder.
       promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR,
-                           NS_LITERAL_CSTRING("Failed to bind MediaKeys object to HTMLMediaElement"));
-      mMediaKeys = nullptr;
+        NS_LITERAL_CSTRING("Can't change MediaKeys on HTMLMediaElement after load has started"));
       return promise.forget();
     }
+
+    // 5.2.3 Stop using the CDM instance represented by the mediaKeys attribute
+    // to decrypt media data and remove the association with the media element.
+    mMediaKeys->Unbind();
+    mMediaKeys = nullptr;
+
+    // 5.2.4 If the preceding step failed, let this object's attaching media
+    // keys value be false and reject promise with a new DOMException whose
+    // name is the appropriate error name.
+  }
+
+  // 5.3. If mediaKeys is not null, run the following steps:
+  if (aMediaKeys) {
+    // 5.3.1 Associate the CDM instance represented by mediaKeys with the
+    // media element for decrypting media data.
+    if (NS_FAILED(aMediaKeys->Bind(this))) {
+      // 5.3.2 If the preceding step failed, run the following steps:
+      // 5.3.2.1 Set the mediaKeys attribute to null.
+      mMediaKeys = nullptr;
+      // 5.3.2.2 Let this object's attaching media keys value be false.
+      // 5.3.2.3 Reject promise with a new DOMException whose name is
+      // the appropriate error name.
+      promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR,
+                           NS_LITERAL_CSTRING("Failed to bind MediaKeys object to HTMLMediaElement"));
+      return promise.forget();
+    }
+    // 5.3.3 Queue a task to run the "Attempt to Resume Playback If Necessary"
+    // algorithm on the media element.
+    // Note: Setting the CDMProxy on the MediaDecoder will unblock playback.
     if (mDecoder) {
-      mDecoder->SetCDMProxy(mMediaKeys->GetCDMProxy());
+      mDecoder->SetCDMProxy(aMediaKeys->GetCDMProxy());
     }
   }
+
+  // 5.4 Set the mediaKeys attribute to mediaKeys.
+  mMediaKeys = aMediaKeys;
+
+  // 5.5 Let this object's attaching media keys value be false.
+
+  // 5.6 Resolve promise.
   promise->MaybeResolve(JS::UndefinedHandleValue);
+
+  // 6. Return promise.
   return promise.forget();
 }
 
@@ -5006,17 +5043,17 @@ HTMLMediaElement::GetTopLevelPrincipal()
 }
 #endif // MOZ_EME
 
-NS_IMETHODIMP HTMLMediaElement::WindowAudioCaptureChanged()
+NS_IMETHODIMP HTMLMediaElement::WindowAudioCaptureChanged(bool aCapture)
 {
   MOZ_ASSERT(mAudioChannelAgent);
+  MOZ_ASSERT(HasAudio());
 
   if (!OwnerDoc()->GetInnerWindow()) {
     return NS_OK;
   }
-  bool captured = OwnerDoc()->GetInnerWindow()->GetAudioCaptured();
 
-  if (captured != mAudioCapturedByWindow) {
-    if (captured) {
+  if (aCapture != mAudioCapturedByWindow) {
+    if (aCapture) {
       mAudioCapturedByWindow = true;
       nsCOMPtr<nsPIDOMWindow> window =
         do_QueryInterface(OwnerDoc()->GetParentObject());
@@ -5052,7 +5089,7 @@ NS_IMETHODIMP HTMLMediaElement::WindowAudioCaptureChanged()
     }
   }
 
-   return NS_OK;
+  return NS_OK;
 }
 
 AudioTrackList*
@@ -5162,6 +5199,15 @@ HTMLMediaElement::IsCurrentlyPlaying() const
     return true;
   }
   return false;
+}
+
+void
+HTMLMediaElement::NotifyAudibleStateChanged(bool aAudible)
+{
+  if (mIsAudioTrackAudible != aAudible) {
+    mIsAudioTrackAudible = aAudible;
+    // To do ...
+  }
 }
 
 } // namespace dom

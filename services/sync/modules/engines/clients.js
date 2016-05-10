@@ -9,12 +9,16 @@ this.EXPORTED_SYMBOLS = [
 
 var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
+Cu.import("resource://services-common/async.js");
 Cu.import("resource://services-common/stringbundle.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://gre/modules/Services.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "fxAccounts",
+  "resource://gre/modules/FxAccounts.jsm");
 
 const CLIENTS_TTL = 1814400; // 21 days
 const CLIENTS_TTL_REFRESH = 604800; // 7 days
@@ -64,14 +68,14 @@ ClientEngine.prototype = {
   // Aggregate some stats on the composition of clients on this account
   get stats() {
     let stats = {
-      hasMobile: this.localType == "mobile",
+      hasMobile: this.localType == DEVICE_TYPE_MOBILE,
       names: [this.localName],
       numClients: 1,
     };
 
     for (let id in this._store._remoteClients) {
       let {name, type} = this._store._remoteClients[id];
-      stats.hasMobile = stats.hasMobile || type == "mobile";
+      stats.hasMobile = stats.hasMobile || type == DEVICE_TYPE_MOBILE;
       stats.names.push(name);
       stats.numClients++;
     }
@@ -117,18 +121,23 @@ ClientEngine.prototype = {
   },
 
   get localName() {
-    let localName = Svc.Prefs.get("client.name", "");
-    if (localName != "")
-      return localName;
-
-    return this.localName = Utils.getDefaultDeviceName();
+    let name = Utils.getDeviceName();
+    // If `getDeviceName` returns the default name, set the pref. FxA registers
+    // the device before syncing, so we don't need to update the registration
+    // in this case.
+    Svc.Prefs.set("client.name", name);
+    return name;
   },
   set localName(value) {
     Svc.Prefs.set("client.name", value);
+    // Update the registration in the background.
+    fxAccounts.updateDeviceRegistration().catch(error => {
+      this._log.warn("failed to update fxa device registration", error);
+    });
   },
 
   get localType() {
-    return Svc.Prefs.get("client.type", "desktop");
+    return Utils.getDeviceType();
   },
   set localType(value) {
     Svc.Prefs.set("client.type", value);
@@ -136,7 +145,7 @@ ClientEngine.prototype = {
 
   isMobile: function isMobile(id) {
     if (this._store._remoteClients[id])
-      return this._store._remoteClients[id].type == "mobile";
+      return this._store._remoteClients[id].type == DEVICE_TYPE_MOBILE;
     return false;
   },
 
@@ -434,6 +443,13 @@ ClientStore.prototype = {
 
     // Package the individual components into a record for the local client
     if (id == this.engine.localID) {
+      let cb = Async.makeSpinningCallback();
+      fxAccounts.getDeviceId().then(id => cb(null, id), cb);
+      try {
+        record.fxaDeviceId = cb.wait();
+      } catch(error) {
+        this._log.warn("failed to get fxa device id", error);
+      }
       record.name = this.engine.localName;
       record.type = this.engine.localType;
       record.commands = this.engine.localCommands;

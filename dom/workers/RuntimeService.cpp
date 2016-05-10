@@ -67,12 +67,6 @@
 #include "WorkerRunnable.h"
 #include "WorkerThread.h"
 
-#ifdef ENABLE_TESTS
-#include "BackgroundChildImpl.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "prrng.h"
-#endif
-
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
@@ -162,10 +156,6 @@ RuntimeService* gRuntimeService = nullptr;
 
 // Only true during the call to Init.
 bool gRuntimeServiceDuringInit = false;
-
-#ifdef ENABLE_TESTS
-bool gTestPBackground = false;
-#endif // ENABLE_TESTS
 
 class LiteralRebindingCString : public nsDependentCString
 {
@@ -643,7 +633,7 @@ ContentSecurityPolicyAllows(JSContext* aCx)
     nsString fileName;
     uint32_t lineNum = 0;
 
-    JS::AutoFilename file;
+    JS::UniqueChars file;
     if (JS::DescribeScriptedCaller(aCx, &file, &lineNum) && file.get()) {
       fileName = NS_ConvertUTF8toUTF16(file.get());
     } else {
@@ -900,6 +890,9 @@ public:
     js::SetPreserveWrapperCallback(rt, PreserveWrapper);
     JS_InitDestroyPrincipalsCallback(rt, DestroyWorkerPrincipals);
     JS_SetWrapObjectCallbacks(rt, &WrapObjectCallbacks);
+    if (aWorkerPrivate->IsDedicatedWorker()) {
+      JS_SetFutexCanWait(rt);
+    }
   }
 
   ~WorkerJSRuntime()
@@ -971,58 +964,6 @@ public:
 private:
   WorkerPrivate* mWorkerPrivate;
 };
-
-#ifdef ENABLE_TESTS
-
-class TestPBackgroundCreateCallback final :
-  public nsIIPCBackgroundChildCreateCallback
-{
-public:
-  NS_DECL_ISUPPORTS
-
-  virtual void
-  ActorCreated(PBackgroundChild* aActor) override
-  {
-    MOZ_RELEASE_ASSERT(aActor);
-  }
-
-  virtual void
-  ActorFailed() override
-  {
-    MOZ_CRASH("TestPBackground() should not fail "
-              "GetOrCreateForCurrentThread()");
-  }
-
-private:
-  ~TestPBackgroundCreateCallback()
-  { }
-};
-
-NS_IMPL_ISUPPORTS(TestPBackgroundCreateCallback,
-                  nsIIPCBackgroundChildCreateCallback);
-
-void
-TestPBackground()
-{
-  using namespace mozilla::ipc;
-
-  if (gTestPBackground) {
-    // Randomize value to validate workers are not cross-posting messages.
-    uint32_t testValue;
-    size_t randomSize = PR_GetRandomNoise(&testValue, sizeof(testValue));
-    MOZ_RELEASE_ASSERT(randomSize == sizeof(testValue));
-    nsCString testStr;
-    testStr.AppendInt(testValue);
-    testStr.AppendInt(reinterpret_cast<int64_t>(PR_GetCurrentThread()));
-    PBackgroundChild* existingBackgroundChild =
-      BackgroundChild::GetForCurrentThread();
-    MOZ_RELEASE_ASSERT(existingBackgroundChild);
-    bool ok = existingBackgroundChild->SendPBackgroundTestConstructor(testStr);
-    MOZ_RELEASE_ASSERT(ok);
-  }
-}
-
-#endif // ENABLE_TESTS
 
 class WorkerBackgroundChildCallback final :
   public nsIIPCBackgroundChildCreateCallback
@@ -1401,10 +1342,6 @@ RuntimeService::GetOrCreateService()
       gRuntimeService = nullptr;
       return nullptr;
     }
-
-#ifdef ENABLE_TESTS
-    gTestPBackground = mozilla::Preferences::GetBool("pbackground.testing", false);
-#endif // ENABLE_TESTS
   }
 
   return gRuntimeService;
@@ -1845,7 +1782,7 @@ RuntimeService::Init()
   if (!sDefaultJSSettings.gcSettings[0].IsSet()) {
     sDefaultJSSettings.runtimeOptions = JS::RuntimeOptions();
     sDefaultJSSettings.chrome.maxScriptRuntime = -1;
-    sDefaultJSSettings.chrome.compartmentOptions.setVersion(JSVERSION_LATEST);
+    sDefaultJSSettings.chrome.compartmentOptions.behaviors().setVersion(JSVERSION_LATEST);
     sDefaultJSSettings.content.maxScriptRuntime = MAX_SCRIPT_RUN_TIME_SEC;
 #ifdef JS_GC_ZEAL
     sDefaultJSSettings.gcZealFrequency = JS_DEFAULT_ZEAL_FREQ;
@@ -2622,7 +2559,7 @@ RuntimeService::JSVersionChanged(const char* /* aPrefName */, void* /* aClosure 
 
   bool useLatest = Preferences::GetBool("dom.workers.latestJSVersion", false);
   JS::CompartmentOptions& options = sDefaultJSSettings.content.compartmentOptions;
-  options.setVersion(useLatest ? JSVERSION_LATEST : JSVERSION_DEFAULT);
+  options.behaviors().setVersion(useLatest ? JSVERSION_LATEST : JSVERSION_DEFAULT);
 }
 
 NS_IMPL_ISUPPORTS_INHERITED0(LogViolationDetailsRunnable, nsRunnable)
@@ -2689,10 +2626,6 @@ WorkerThreadPrimaryRunnable::Run()
 
   mWorkerPrivate->SetThread(mThread);
 
-#ifdef ENABLE_TESTS
-  TestPBackground();
-#endif
-
   mWorkerPrivate->AssertIsOnWorkerThread();
 
   {
@@ -2724,10 +2657,6 @@ WorkerThreadPrimaryRunnable::Run()
         JS_ReportPendingException(cx);
       }
 
-#ifdef ENABLE_TESTS
-      TestPBackground();
-#endif
-
       BackgroundChild::CloseForCurrentThread();
 
 #ifdef MOZ_ENABLE_PROFILER_SPS
@@ -2736,6 +2665,13 @@ WorkerThreadPrimaryRunnable::Run()
       }
 #endif
     }
+
+    // There may still be runnables on the debugger event queue that hold a
+    // strong reference to the debugger global scope. These runnables are not
+    // visible to the cycle collector, so we need to make sure to clear the
+    // debugger event queue before we try to destroy the context. If we don't,
+    // the garbage collector will crash.
+    mWorkerPrivate->ClearDebuggerEventQueue();
 
     // Destroy the main context. This will unroot the main worker global and GC,
     // which should break all cycles that touch JS.

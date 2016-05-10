@@ -188,6 +188,9 @@ public interface TelemetryContract {
         // Action triggered from a suggestion provided to the user.
         SUGGESTION("suggestion"),
 
+        // Action triggered from an OS system action.
+        SYSTEM("system"),
+
         // Action triggered from a SuperToast.
         // Note: Only used in JavaScript for now, but here for completeness.
         TOAST("toast"),

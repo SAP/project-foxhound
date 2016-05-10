@@ -269,18 +269,11 @@ loop.store = loop.store || {};
         }
 
         this.dispatchAction(new sharedActions.CreatedRoom({
-          roomToken: result.roomToken
+          decryptedContext: result.decryptedContext,
+          roomToken: result.roomToken,
+          roomUrl: result.roomUrl
         }));
         loop.request("TelemetryAddValue", "LOOP_ROOM_CREATE", buckets.CREATE_SUCCESS);
-
-        // Since creating a room with context is only possible from the panel,
-        // we can record that as the action here.
-        var URLs = roomCreationData.decryptedContext.urls;
-        if (URLs && URLs.length) {
-          buckets = this._constants.ROOM_CONTEXT_ADD;
-          loop.request("TelemetryAddValue", "LOOP_ROOM_CONTEXT_ADD",
-            buckets.ADD_FROM_PANEL);
-        }
       }.bind(this));
     },
 
@@ -288,12 +281,14 @@ loop.store = loop.store || {};
      * Executed when a room has been created
      */
     createdRoom: function(actionData) {
-      this.setStoreState({ pendingCreation: false });
-
-      // Opens the newly created room
-      this.dispatchAction(new sharedActions.OpenRoom({
-        roomToken: actionData.roomToken
-      }));
+      this.setStoreState({
+        activeRoom: {
+          decryptedContext: actionData.decryptedContext,
+          roomToken: actionData.roomToken,
+          roomUrl: actionData.roomUrl
+        },
+        pendingCreation: false
+      });
     },
 
     /**
@@ -331,7 +326,10 @@ loop.store = loop.store || {};
         console.error("No URL sharing type bucket found for '" + from + "'");
         return;
       }
-      loop.request("TelemetryAddValue", "LOOP_SHARING_ROOM_URL", bucket);
+      loop.requestMulti(
+        ["TelemetryAddValue", "LOOP_SHARING_ROOM_URL", bucket],
+        ["TelemetryAddValue", "LOOP_ACTIVITY_COUNTER", this._constants.LOOP_MAU_TYPE.ROOM_SHARE]
+      );
     },
 
     /**
@@ -344,14 +342,18 @@ loop.store = loop.store || {};
       loop.shared.utils.composeCallUrlEmail(actionData.roomUrl, null,
         actionData.roomDescription);
 
-      var bucket = this._constants.SHARING_ROOM_URL["EMAIL_FROM_" + (from || "").toUpperCase()];
+      var bucket = this._constants.SHARING_ROOM_URL[
+        "EMAIL_FROM_" + (from || "").toUpperCase()
+      ];
       if (typeof bucket === "undefined") {
         console.error("No URL sharing type bucket found for '" + from + "'");
         return;
       }
       loop.requestMulti(
         ["NotifyUITour", "Loop:RoomURLEmailed"],
-        ["TelemetryAddValue", "LOOP_SHARING_ROOM_URL", bucket]);
+        ["TelemetryAddValue", "LOOP_SHARING_ROOM_URL", bucket],
+        ["TelemetryAddValue", "LOOP_ACTIVITY_COUNTER", this._constants.LOOP_MAU_TYPE.ROOM_SHARE]
+      );
     },
 
     /**
@@ -361,12 +363,25 @@ loop.store = loop.store || {};
      */
     facebookShareRoomUrl: function(actionData) {
       var encodedRoom = encodeURIComponent(actionData.roomUrl);
-      loop.request("GetLoopPref", "facebook.shareUrl")
-        .then(shareUrl => {
-          loop.request("OpenURL", shareUrl.replace("%ROOM_URL%", encodedRoom));
-        }).then(() => {
-          loop.request("NotifyUITour", "Loop:RoomURLShared");
-        });
+
+      loop.requestMulti(
+        ["GetLoopPref", "facebook.appId"],
+        ["GetLoopPref", "facebook.fallbackUrl"],
+        ["GetLoopPref", "facebook.shareUrl"]
+      ).then(results => {
+        var app_id = results[0];
+        var fallback_url = results[1];
+        var redirect_url = encodeURIComponent(actionData.originUrl ||
+                                              fallback_url);
+
+        var finalURL = results[2].replace("%ROOM_URL%", encodedRoom)
+                                 .replace("%APP_ID%", app_id)
+                                 .replace("%REDIRECT_URI%", redirect_url);
+
+        return loop.request("OpenURL", finalURL);
+      }).then(() => {
+        loop.request("NotifyUITour", "Loop:RoomURLShared");
+      });
 
       var from = actionData.from;
       var bucket = this._constants.SHARING_ROOM_URL["FACEBOOK_FROM_" + from.toUpperCase()];
@@ -374,7 +389,10 @@ loop.store = loop.store || {};
         console.error("No URL sharing type bucket found for '" + from + "'");
         return;
       }
-      loop.request("TelemetryAddValue", "LOOP_SHARING_ROOM_URL", bucket);
+      loop.requestMulti(
+        ["TelemetryAddValue", "LOOP_SHARING_ROOM_URL", bucket],
+        ["TelemetryAddValue", "LOOP_ACTIVITY_COUNTER", this._constants.LOOP_MAU_TYPE.ROOM_SHARE]
+      );
     },
 
     /**
@@ -428,8 +446,11 @@ loop.store = loop.store || {};
           this.dispatchAction(new sharedActions.DeleteRoomError({ error: result }));
         }
         var buckets = this._constants.ROOM_DELETE;
-        loop.request("TelemetryAddValue", "LOOP_ROOM_DELETE", buckets[isError ?
-          "DELETE_FAIL" : "DELETE_SUCCESS"]);
+        loop.requestMulti(
+          ["TelemetryAddValue", "LOOP_ROOM_DELETE", buckets[isError ?
+            "DELETE_FAIL" : "DELETE_SUCCESS"]],
+          ["TelemetryAddValue", "LOOP_ACTIVITY_COUNTER", this._constants.LOOP_MAU_TYPE.ROOM_DELETE]
+        );
       }.bind(this));
     },
 
@@ -492,7 +513,10 @@ loop.store = loop.store || {};
      * @param {sharedActions.OpenRoom} actionData The action data.
      */
     openRoom: function(actionData) {
-      loop.request("Rooms:Open", actionData.roomToken);
+      loop.requestMulti(
+        ["Rooms:Open", actionData.roomToken],
+        ["TelemetryAddValue", "LOOP_ACTIVITY_COUNTER", this._constants.LOOP_MAU_TYPE.ROOM_OPEN]
+      );
     },
 
     /**
@@ -558,8 +582,6 @@ loop.store = loop.store || {};
           return;
         }
 
-        var hadContextBefore = !!oldRoomURL;
-
         this.setStoreState({ error: null });
         loop.request("Rooms:Update", actionData.roomToken, roomData).then(function(result2) {
           var isError = (result2 && result2.isError);
@@ -567,15 +589,6 @@ loop.store = loop.store || {};
             new sharedActions.UpdateRoomContextError({ error: result2 }) :
             new sharedActions.UpdateRoomContextDone();
           this.dispatchAction(action);
-
-          if (!isError && !hadContextBefore) {
-            // Since updating the room context data is only possible from the
-            // conversation window, we can assume that any newly added URL was
-            // done from there.
-            var buckets = this._constants.ROOM_CONTEXT_ADD;
-            loop.request("TelemetryAddValue", "LOOP_ROOM_CONTEXT_ADD",
-              buckets.ADD_FROM_CONVERSATION);
-          }
         }.bind(this));
       }.bind(this));
     },

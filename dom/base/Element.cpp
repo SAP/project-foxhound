@@ -1780,8 +1780,7 @@ Element::UnbindFromTree(bool aDeep, bool aNullParent)
   // We need to delete the properties while we're still in document
   // (if we were in document).
   // FIXME (Bug 522599): Need a test for this.
-  //XXXsmaug this looks slow.
-  if (HasFlag(NODE_HAS_PROPERTIES)) {
+  if (MayHaveAnimations()) {
     DeleteProperty(nsGkAtoms::transitionsOfBeforeProperty);
     DeleteProperty(nsGkAtoms::transitionsOfAfterProperty);
     DeleteProperty(nsGkAtoms::transitionsProperty);
@@ -2923,7 +2922,7 @@ Element::PreHandleEventForLinks(EventChainPreVisitor& aVisitor)
   // Set the status bar similarly for mouseover and focus
   case eMouseOver:
     aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
-    // FALL THROUGH
+    MOZ_FALLTHROUGH;
   case eFocus: {
     InternalFocusEvent* focusEvent = aVisitor.mEvent->AsFocusEvent();
     if (!focusEvent || !focusEvent->isRefocus) {
@@ -2938,7 +2937,7 @@ Element::PreHandleEventForLinks(EventChainPreVisitor& aVisitor)
   }
   case eMouseOut:
     aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
-    // FALL THROUGH
+    MOZ_FALLTHROUGH;
   case eBlur:
     rv = LeaveLink(aVisitor.mPresContext);
     if (NS_SUCCEEDED(rv)) {
@@ -3325,6 +3324,13 @@ Element::GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations)
     doc->FlushPendingNotifications(Flush_Style);
   }
 
+  GetAnimationsUnsorted(aAnimations);
+  aAnimations.Sort(AnimationPtrComparator<RefPtr<Animation>>());
+}
+
+void
+Element::GetAnimationsUnsorted(nsTArray<RefPtr<Animation>>& aAnimations)
+{
   EffectSet* effects = EffectSet::GetEffectSet(this,
                          nsCSSPseudoElements::ePseudo_NotPseudoElement);
   if (!effects) {
@@ -3342,8 +3348,6 @@ Element::GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations)
                "effect set");
     aAnimations.AppendElement(animation);
   }
-
-  aAnimations.Sort(AnimationPtrComparator<RefPtr<Animation>>());
 }
 
 NS_IMETHODIMP

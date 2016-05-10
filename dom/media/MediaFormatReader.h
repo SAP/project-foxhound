@@ -10,6 +10,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/Monitor.h"
 
 #include "MediaDataDemuxer.h"
 #include "MediaDecoderReader.h"
@@ -55,7 +56,7 @@ protected:
 public:
   media::TimeIntervals GetBuffered() override;
 
-  virtual bool ForceZeroStartTime() const override;
+  bool ForceZeroStartTime() const override;
 
   // For Media Resource Management
   void ReleaseMediaResources() override;
@@ -95,6 +96,10 @@ public:
 #ifdef MOZ_EME
   void SetCDMProxy(CDMProxy* aProxy) override;
 #endif
+
+  // Returns a string describing the state of the decoder data.
+  // Used for debugging purposes.
+  void GetMozDebugReaderData(nsAString& aString);
 
 private:
   bool HasVideo() { return mVideo.mTrackDemuxer; }
@@ -209,6 +214,8 @@ private:
                 uint32_t aDecodeAhead)
       : mOwner(aOwner)
       , mType(aType)
+      , mMonitor("DecoderData")
+      , mDescription("shutdown")
       , mDecodeAhead(aDecodeAhead)
       , mUpdateScheduled(false)
       , mDemuxEOS(false)
@@ -226,6 +233,7 @@ private:
       , mNumSamplesInput(0)
       , mNumSamplesOutput(0)
       , mNumSamplesOutputTotal(0)
+      , mNumSamplesSkippedTotal(0)
       , mSizeOfQueue(0)
       , mIsHardwareAccelerated(false)
       , mLastStreamSourceID(UINT32_MAX)
@@ -235,13 +243,26 @@ private:
     // Disambiguate Audio vs Video.
     MediaData::Type mType;
     RefPtr<MediaTrackDemuxer> mTrackDemuxer;
-    // The platform decoder.
-    RefPtr<MediaDataDecoder> mDecoder;
     // TaskQueue on which decoder can choose to decode.
     // Only non-null up until the decoder is created.
     RefPtr<FlushableTaskQueue> mTaskQueue;
     // Callback that receives output and error notifications from the decoder.
     nsAutoPtr<DecoderCallback> mCallback;
+
+    // Monitor protecting mDescription and mDecoder.
+    Monitor mMonitor;
+    // The platform decoder.
+    RefPtr<MediaDataDecoder> mDecoder;
+    const char* mDescription;
+    void ShutdownDecoder()
+    {
+      MonitorAutoLock mon(mMonitor);
+      if (mDecoder) {
+        mDecoder->Shutdown();
+      }
+      mDescription = "shutdown";
+      mDecoder = nullptr;
+    }
 
     // Only accessed from reader's task queue.
     uint32_t mDecodeAhead;
@@ -289,6 +310,7 @@ private:
     uint64_t mNumSamplesInput;
     uint64_t mNumSamplesOutput;
     uint64_t mNumSamplesOutputTotal;
+    uint64_t mNumSamplesSkippedTotal;
 
     // These get overriden in the templated concrete class.
     // Indicate if we have a pending promise for decoded frame.

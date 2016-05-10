@@ -30,6 +30,7 @@ UNIFIED_SOURCES += [
     'testException.cpp',
     'testExternalStrings.cpp',
     'testFindSCCs.cpp',
+    'testForceLexicalInitialization.cpp',
     'testForOfIterator.cpp',
     'testForwardSetProperty.cpp',
     'testFreshGlobalEvalRedefinition.cpp',
@@ -86,6 +87,7 @@ UNIFIED_SOURCES += [
     'testUbiNode.cpp',
     'testUncaughtError.cpp',
     'testUTF8.cpp',
+    'testWasmLEB128.cpp',
     'testWeakMap.cpp',
     'testXDR.cpp',
 ]

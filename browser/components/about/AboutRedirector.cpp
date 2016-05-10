@@ -86,13 +86,9 @@ static RedirEntry kRedirMap[] = {
     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::ENABLE_INDEXED_DB },
-  { "newtab", "chrome://browser/content/newtab/newTab.xhtml",
+  // the newtab's actual URL will be determined when the channel is created
+  { "newtab", "about:blank",
     nsIAboutModule::ALLOW_SCRIPT },
-#ifndef RELEASE_BUILD
-  { "remote-newtab", "chrome://browser/content/remote-newtab/newTab.xhtml",
-    nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-    nsIAboutModule::ALLOW_SCRIPT },
-#endif
   { "preferences", "chrome://browser/content/preferences/in-content/preferences.xul",
     nsIAboutModule::ALLOW_SCRIPT },
   { "downloads", "chrome://browser/content/downloads/contentAreaDownloadsView.xul",
@@ -104,9 +100,6 @@ static RedirEntry kRedirMap[] = {
   { "accounts", "chrome://browser/content/aboutaccounts/aboutaccounts.xhtml",
     nsIAboutModule::ALLOW_SCRIPT },
   { "customizing", "chrome://browser/content/customizableui/aboutCustomizing.xul",
-    nsIAboutModule::ALLOW_SCRIPT },
-  {
-    "debugging", "chrome://devtools/content/aboutdebugging/aboutdebugging.xhtml",
     nsIAboutModule::ALLOW_SCRIPT },
   { "loopconversation", "chrome://loop/content/panels/conversation.html",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
@@ -126,18 +119,6 @@ static RedirEntry kRedirMap[] = {
     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
     nsIAboutModule::MAKE_UNLINKABLE |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
-  {
-    "pocket-saved", "chrome://browser/content/pocket/panels/saved.html",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT |
-    nsIAboutModule::MAKE_UNLINKABLE },
-  {
-    "pocket-signup", "chrome://browser/content/pocket/panels/signup.html",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT |
-    nsIAboutModule::MAKE_UNLINKABLE },
 };
 static const int kRedirTotal = ArrayLength(kRedirMap);
 
@@ -177,18 +158,13 @@ AboutRedirector::NewChannel(nsIURI* aURI,
     if (!strcmp(path.get(), kRedirMap[i].id)) {
       nsAutoCString url;
 
-      // check if about:newtab got overridden
       if (path.EqualsLiteral("newtab")) {
+        // let the aboutNewTabService decide where to redirect
         nsCOMPtr<nsIAboutNewTabService> aboutNewTabService =
           do_GetService("@mozilla.org/browser/aboutnewtab-service;1", &rv);
         NS_ENSURE_SUCCESS(rv, rv);
-        bool overridden = false;
-        rv = aboutNewTabService->GetOverridden(&overridden);
+        rv = aboutNewTabService->GetDefaultURL(url);
         NS_ENSURE_SUCCESS(rv, rv);
-        if (overridden) {
-          rv = aboutNewTabService->GetNewTabURL(url);
-          NS_ENSURE_SUCCESS(rv, rv);
-        }
       }
       // fall back to the specified url in the map
       if (url.IsEmpty()) {

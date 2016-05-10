@@ -16,6 +16,7 @@
 #include "android/log.h"
 #include "GLContext.h"
 #include "gfxPrefs.h"
+#include "gfxUtils.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/Hal.h"
@@ -129,6 +130,8 @@ nsScreenGonk::nsScreenGonk(uint32_t aId,
     , mEGLDisplay(EGL_NO_DISPLAY)
     , mEGLSurface(EGL_NO_SURFACE)
     , mGLContext(nullptr)
+    , mFramebuffer(nullptr)
+    , mMappedBuffer(nullptr)
 {
     if (mNativeWindow->query(mNativeWindow.get(), NATIVE_WINDOW_WIDTH, &mVirtualBounds.width) ||
         mNativeWindow->query(mNativeWindow.get(), NATIVE_WINDOW_HEIGHT, &mVirtualBounds.height) ||
@@ -368,6 +371,126 @@ nsScreenGonk::BringToTop(nsWindow* aWindow)
     mTopWindows.InsertElementAt(0, aWindow);
 }
 
+static gralloc_module_t const*
+gralloc_module()
+{
+    hw_module_t const *module;
+    if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &module)) {
+        return nullptr;
+    }
+    return reinterpret_cast<gralloc_module_t const*>(module);
+}
+
+static SurfaceFormat
+HalFormatToSurfaceFormat(int aHalFormat)
+{
+    switch (aHalFormat) {
+    case HAL_PIXEL_FORMAT_RGBA_8888:
+        // Needs RB swap
+        return SurfaceFormat::B8G8R8A8;
+    case HAL_PIXEL_FORMAT_RGBX_8888:
+        // Needs RB swap
+        return SurfaceFormat::B8G8R8X8;
+    case HAL_PIXEL_FORMAT_BGRA_8888:
+        return SurfaceFormat::B8G8R8A8;
+    case HAL_PIXEL_FORMAT_RGB_565:
+        return SurfaceFormat::R5G6B5_UINT16;
+    default:
+        MOZ_CRASH("Unhandled HAL pixel format");
+        return SurfaceFormat::UNKNOWN; // not reached
+    }
+}
+
+static bool
+NeedsRBSwap(int aHalFormat)
+{
+    switch (aHalFormat) {
+    case HAL_PIXEL_FORMAT_RGBA_8888:
+        return true;
+    case HAL_PIXEL_FORMAT_RGBX_8888:
+        return true;
+    case HAL_PIXEL_FORMAT_BGRA_8888:
+        return false;
+    case HAL_PIXEL_FORMAT_RGB_565:
+        return false;
+    default:
+        MOZ_CRASH("Unhandled HAL pixel format");
+        return false; // not reached
+    }
+}
+
+already_AddRefed<DrawTarget>
+nsScreenGonk::StartRemoteDrawing()
+{
+    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(!mFramebuffer);
+    MOZ_ASSERT(!mMappedBuffer);
+
+    mFramebuffer = DequeueBuffer();
+    int width = mFramebuffer->width, height = mFramebuffer->height;
+    if (gralloc_module()->lock(gralloc_module(), mFramebuffer->handle,
+                               GRALLOC_USAGE_SW_READ_NEVER |
+                               GRALLOC_USAGE_SW_WRITE_OFTEN |
+                               GRALLOC_USAGE_HW_FB,
+                               0, 0, width, height,
+                               reinterpret_cast<void**>(&mMappedBuffer))) {
+        EndRemoteDrawing();
+        return nullptr;
+    }
+    SurfaceFormat format = HalFormatToSurfaceFormat(GetSurfaceFormat());
+    mFramebufferTarget = Factory::CreateDrawTargetForData(
+        BackendType::CAIRO,
+        mMappedBuffer,
+        IntSize(width, height),
+        mFramebuffer->stride * gfx::BytesPerPixel(format),
+        format);
+    if (!mFramebufferTarget) {
+        MOZ_CRASH("nsWindow::StartRemoteDrawing failed in CreateDrawTargetForData");
+    }
+    if (!mBackBuffer ||
+        mBackBuffer->GetSize() != mFramebufferTarget->GetSize() ||
+        mBackBuffer->GetFormat() != mFramebufferTarget->GetFormat()) {
+        mBackBuffer = mFramebufferTarget->CreateSimilarDrawTarget(
+            mFramebufferTarget->GetSize(), mFramebufferTarget->GetFormat());
+    }
+    RefPtr<DrawTarget> buffer(mBackBuffer);
+    return buffer.forget();
+}
+
+void
+nsScreenGonk::EndRemoteDrawing()
+{
+    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+
+    if (mFramebufferTarget && mFramebuffer) {
+        IntSize size = mFramebufferTarget->GetSize();
+        Rect rect(0, 0, size.width, size.height);
+        RefPtr<SourceSurface> source = mBackBuffer->Snapshot();
+        mFramebufferTarget->DrawSurface(source, rect, rect);
+
+        // Convert from BGR to RGB
+        // XXX this is a temporary solution. It consumes extra cpu cycles,
+        // it should not be used on product device.
+        if (NeedsRBSwap(GetSurfaceFormat())) {
+            LOGE("Very slow composition path, it should not be used on product!!!");
+            SurfaceFormat format = HalFormatToSurfaceFormat(GetSurfaceFormat());
+            gfxUtils::ConvertBGRAtoRGBA(
+                mMappedBuffer,
+                mFramebuffer->stride * mFramebuffer->height * gfx::BytesPerPixel(format));
+        }
+    }
+    if (mMappedBuffer) {
+        MOZ_ASSERT(mFramebuffer);
+        gralloc_module()->unlock(gralloc_module(), mFramebuffer->handle);
+        mMappedBuffer = nullptr;
+    }
+    if (mFramebuffer) {
+        QueueBuffer(mFramebuffer);
+    }
+    mFramebuffer = nullptr;
+    mFramebufferTarget = nullptr;
+}
+
 ANativeWindowBuffer*
 nsScreenGonk::DequeueBuffer()
 {
@@ -399,6 +522,63 @@ nsScreenGonk::QueueBuffer(ANativeWindowBuffer* buf)
   int ret = mNativeWindow->queueBuffer(mNativeWindow.get(), buf);
   return ret == 0;
 #endif
+}
+
+nsresult
+nsScreenGonk::MakeSnapshot(ANativeWindowBuffer* aBuffer)
+{
+    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(aBuffer);
+
+    layers::CompositorParent* compositorParent = mCompositorParent;
+    if (!compositorParent) {
+        return NS_ERROR_FAILURE;
+    }
+
+    int width = aBuffer->width, height = aBuffer->height;
+    uint8_t* mappedBuffer = nullptr;
+    if (gralloc_module()->lock(gralloc_module(), aBuffer->handle,
+                               GRALLOC_USAGE_SW_READ_OFTEN |
+                               GRALLOC_USAGE_SW_WRITE_OFTEN,
+                               0, 0, width, height,
+                               reinterpret_cast<void**>(&mappedBuffer))) {
+        return NS_ERROR_FAILURE;
+    }
+
+    SurfaceFormat format = HalFormatToSurfaceFormat(GetSurfaceFormat());
+    RefPtr<DrawTarget> mTarget =
+        Factory::CreateDrawTargetForData(
+            BackendType::CAIRO,
+            mappedBuffer,
+            IntSize(width, height),
+            aBuffer->stride * gfx::BytesPerPixel(format),
+            format);
+    if (!mTarget) {
+        return NS_ERROR_FAILURE;
+    }
+
+    gfx::IntRect rect = GetRect().ToUnknownRect();
+    compositorParent->ForceComposeToTarget(mTarget, &rect);
+
+    // Convert from BGR to RGB
+    // XXX this is a temporary solution. It consumes extra cpu cycles,
+    if (NeedsRBSwap(GetSurfaceFormat())) {
+        LOGE("Slow path of making Snapshot!!!");
+        SurfaceFormat format = HalFormatToSurfaceFormat(GetSurfaceFormat());
+        gfxUtils::ConvertBGRAtoRGBA(
+            mappedBuffer,
+            aBuffer->stride * aBuffer->height * gfx::BytesPerPixel(format));
+        mappedBuffer = nullptr;
+    }
+    gralloc_module()->unlock(gralloc_module(), aBuffer->handle);
+    return NS_OK;
+}
+
+void
+nsScreenGonk::SetCompositorParent(layers::CompositorParent* aCompositorParent)
+{
+    MOZ_ASSERT(NS_IsMainThread());
+    mCompositorParent = aCompositorParent;
 }
 
 #if ANDROID_VERSION >= 17
@@ -621,6 +801,12 @@ nsScreenManagerGonk::Initialize()
 void
 nsScreenManagerGonk::DisplayEnabled(bool aEnabled)
 {
+#if ANDROID_VERSION >= 19
+    if (mCompositorVsyncScheduler) {
+        mCompositorVsyncScheduler->SetDisplay(aEnabled);
+    }
+#endif
+
     VsyncControl(aEnabled);
     NS_DispatchToMainThread(aEnabled ? mScreenOnEvent : mScreenOffEvent);
 }
@@ -853,3 +1039,15 @@ nsScreenManagerGonk::RemoveScreen(GonkDisplay::DisplayType aDisplayType)
     }
     return NS_OK;
 }
+
+#if ANDROID_VERSION >= 19
+void
+nsScreenManagerGonk::SetCompositorVsyncScheduler(mozilla::layers::CompositorVsyncScheduler *aObserver)
+{
+    MOZ_ASSERT(NS_IsMainThread());
+
+    // We assume on b2g that there is only 1 CompositorParent
+    MOZ_ASSERT(mCompositorVsyncScheduler == nullptr);
+    mCompositorVsyncScheduler = aObserver;
+}
+#endif

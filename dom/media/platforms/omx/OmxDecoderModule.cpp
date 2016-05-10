@@ -16,7 +16,8 @@ OmxDecoderModule::CreateVideoDecoder(const VideoInfo& aConfig,
                                      FlushableTaskQueue* aVideoTaskQueue,
                                      MediaDataDecoderCallback* aCallback)
 {
-  return nullptr;
+  RefPtr<OmxDataDecoder> decoder = new OmxDataDecoder(aConfig, aCallback, aImageContainer);
+  return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder>
@@ -24,7 +25,7 @@ OmxDecoderModule::CreateAudioDecoder(const AudioInfo& aConfig,
                                      FlushableTaskQueue* aAudioTaskQueue,
                                      MediaDataDecoderCallback* aCallback)
 {
-  RefPtr<OmxDataDecoder> decoder = new OmxDataDecoder(aConfig, aCallback);
+  RefPtr<OmxDataDecoder> decoder = new OmxDataDecoder(aConfig, aCallback, nullptr);
   return decoder.forget();
 }
 
@@ -43,7 +44,13 @@ OmxDecoderModule::DecoderNeedsConversion(const TrackInfo& aConfig) const
 bool
 OmxDecoderModule::SupportsMimeType(const nsACString& aMimeType) const
 {
-  return aMimeType.EqualsLiteral("audio/mp4a-latm");
+  // TODO: it could be better to query the support mine types from OMX instead
+  // of hard coding.
+  return aMimeType.EqualsLiteral("audio/mp4a-latm") ||
+         aMimeType.EqualsLiteral("video/mp4v-es") ||
+         aMimeType.EqualsLiteral("video/mp4") ||
+         aMimeType.EqualsLiteral("video/3gp") ||
+         aMimeType.EqualsLiteral("video/avc");
 }
 
 }

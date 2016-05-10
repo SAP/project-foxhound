@@ -33,7 +33,6 @@ public:
             MediaSink* aAudioSink,
             MediaQueue<MediaData>& aVideoQueue,
             VideoFrameContainer* aContainer,
-            bool aRealTime,
             FrameStatistics& aFrameStats,
             uint32_t aVQueueSentToCompositerSize);
 
@@ -73,7 +72,8 @@ private:
   virtual ~VideoSink();
 
   // VideoQueue listener related.
-  void OnVideoQueueEvent(RefPtr<MediaData>&& aSample);
+  void OnVideoQueuePushed(RefPtr<MediaData>&& aSample);
+  void OnVideoQueueFinished();
   void ConnectListener();
   void DisconnectListener();
 
@@ -115,9 +115,6 @@ private:
   // FrameIDs. A unique and immutable value per VideoSink.
   const ProducerID mProducerID;
 
-  // True if we are decoding a real-time stream.
-  const bool mRealTime;
-
   // Used to notify MediaDecoder's frame statistics
   FrameStatistics& mFrameStats;
 
@@ -131,6 +128,7 @@ private:
 
   // Event listeners for VideoQueue
   MediaEventListener mPushListener;
+  MediaEventListener mFinishListener;
 
   // True if this sink is going to handle video track.
   bool mHasVideo;

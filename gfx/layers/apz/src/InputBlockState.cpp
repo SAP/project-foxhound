@@ -87,6 +87,21 @@ InputBlockState::IsTargetConfirmed() const
   return mTargetConfirmed;
 }
 
+void
+InputBlockState::SetScrolledApzc(AsyncPanZoomController* aApzc)
+{
+  // An input block should only have one scrolled APZC.
+  MOZ_ASSERT(!mScrolledApzc || mScrolledApzc == aApzc);
+
+  mScrolledApzc = aApzc;
+}
+
+AsyncPanZoomController*
+InputBlockState::GetScrolledApzc() const
+{
+  return mScrolledApzc;
+}
+
 CancelableBlockState::CancelableBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                                            bool aTargetConfirmed)
   : InputBlockState(aTargetApzc, aTargetConfirmed)
@@ -599,6 +614,7 @@ bool
 PanGestureBlockState::SetContentResponse(bool aPreventDefault)
 {
   if (aPreventDefault) {
+    TBS_LOG("%p setting interrupted flag\n", this);
     mInterrupted = true;
   }
   bool stateChanged = CancelableBlockState::SetContentResponse(aPreventDefault);

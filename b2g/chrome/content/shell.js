@@ -430,7 +430,6 @@ var shell = {
     window.addEventListener('sizemodechange', this);
     window.addEventListener('unload', this);
     this.contentBrowser.addEventListener('mozbrowserloadstart', this, true);
-    this.contentBrowser.addEventListener('mozbrowserselectionstatechanged', this, true);
     this.contentBrowser.addEventListener('mozbrowserscrollviewchange', this, true);
     this.contentBrowser.addEventListener('mozbrowsercaretstatechanged', this);
 
@@ -464,7 +463,6 @@ var shell = {
     window.removeEventListener('MozApplicationManifest', this);
     window.removeEventListener('sizemodechange', this);
     this.contentBrowser.removeEventListener('mozbrowserloadstart', this, true);
-    this.contentBrowser.removeEventListener('mozbrowserselectionstatechanged', this, true);
     this.contentBrowser.removeEventListener('mozbrowserscrollviewchange', this, true);
     this.contentBrowser.removeEventListener('mozbrowsercaretstatechanged', this);
     ppmm.removeMessageListener("content-handler", this);
@@ -582,29 +580,6 @@ var shell = {
         this.sendChromeEvent({
           type: 'scrollviewchange',
           detail: evt.detail,
-        });
-        break;
-      case 'mozbrowserselectionstatechanged':
-        // The mozbrowserselectionstatechanged event, may have crossed the chrome-content boundary.
-        // This event always dispatch to shell.js. But the offset we got from this event is
-        // based on tab's coordinate. So get the actual offsets between shell and evt.target.
-        let elt = evt.target;
-        let win = elt.ownerDocument.defaultView;
-        let offsetX = win.mozInnerScreenX - window.mozInnerScreenX;
-        let offsetY = win.mozInnerScreenY - window.mozInnerScreenY;
-
-        let rect = elt.getBoundingClientRect();
-        offsetX += rect.left;
-        offsetY += rect.top;
-
-        let data = evt.detail;
-        data.offsetX = offsetX;
-        data.offsetY = offsetY;
-
-        DoCommandHelper.setEvent(evt);
-        shell.sendChromeEvent({
-          type: 'selectionstatechanged',
-          detail: data,
         });
         break;
       case 'mozbrowsercaretstatechanged':
@@ -869,9 +844,6 @@ var CustomEventManager = {
       case 'webapps-uninstall-denied':
         WebappsHelper.handleEvent(detail);
         break;
-      case 'select-choicechange':
-        FormsHelper.handleEvent(detail);
-        break;
       case 'system-message-listener-ready':
         Services.obs.notifyObservers(null, 'system-message-listener-ready', null);
         break;
@@ -882,9 +854,6 @@ var CustomEventManager = {
       case 'inputregistry-add':
       case 'inputregistry-remove':
         KeyboardHelper.handleEvent(detail);
-        break;
-      case 'do-command':
-        DoCommandHelper.handleEvent(detail.cmd);
         break;
       case 'copypaste-do-command':
         Services.obs.notifyObservers({ wrappedJSObject: shell.contentBrowser },
@@ -929,21 +898,6 @@ var CustomEventManager = {
       case 'restart':
         restart();
         break;
-    }
-  }
-}
-
-var DoCommandHelper = {
-  _event: null,
-  setEvent: function docommand_setEvent(evt) {
-    this._event = evt;
-  },
-
-  handleEvent: function docommand_handleEvent(cmd) {
-    if (this._event) {
-      Services.obs.notifyObservers({ wrappedJSObject: this._event.target },
-                                   'copypaste-docommand', cmd);
-      this._event = null;
     }
   }
 }
@@ -1134,22 +1088,50 @@ window.addEventListener('ContentStart', function update_onContentStart() {
 
   updatePrompt.wrappedJSObject.handleContentStart(shell);
 });
+/* The "GPSChipOn" is to indicate that GPS engine is turned ON by the modem.
+   During this GPS engine is turned ON by the modem, we make the location tracking icon visible to user.
+   Once GPS engine is turned OFF, the location icon will disappear.
+   If GPS engine is not turned ON by the modem or GPS location service is triggered,
+   we let GPS service take over the control of showing the location tracking icon.
+   The regular sequence of the geolocation-device-events is: starting-> GPSStarting-> shutdown-> GPSShutdown
+*/
+
 
 (function geolocationStatusTracker() {
   let gGeolocationActive = false;
+  let GPSChipOn = false;
 
   Services.obs.addObserver(function(aSubject, aTopic, aData) {
     let oldState = gGeolocationActive;
-    if (aData == "starting") {
-      gGeolocationActive = true;
-    } else if (aData == "shutdown") {
-      gGeolocationActive = false;
+    let promptWarning = false;
+    switch (aData) {
+      case "GPSStarting":
+        if (!gGeolocationActive) {
+          gGeolocationActive = true;
+          GPSChipOn = true;
+          promptWarning = true;
+        }
+        break;
+      case "GPSShutdown":
+        if (GPSChipOn) {
+          gGeolocationActive = false;
+          GPSChipOn = false;
+        }
+        break;
+      case "starting":
+        gGeolocationActive = true;
+        GPSChipOn = false;
+        break;
+      case "shutdown":
+        gGeolocationActive = false;
+        break;
     }
 
     if (gGeolocationActive != oldState) {
       shell.sendChromeEvent({
         type: 'geolocation-status',
-        active: gGeolocationActive
+        active: gGeolocationActive,
+        prompt: promptWarning
       });
     }
 }, "geolocation-device-events", false);
@@ -1391,6 +1373,8 @@ Services.obs.addObserver(function resetProfile(subject, topic, data) {
   appStartup.quit(Ci.nsIAppStartup.eForceQuit);
 }, 'b2g-reset-profile', false);
 
+var showInstallScreen;
+
 if (AppConstants.MOZ_GRAPHENE) {
   const restoreWindowGeometry = () => {
     let screenX = Services.prefs.getIntPref("b2g.nativeWindowGeometry.screenX");
@@ -1428,7 +1412,7 @@ if (AppConstants.MOZ_GRAPHENE) {
   const showNativeWindow = () => baseWindow.visibility = true;
   const hideNativeWindow = () => baseWindow.visibility = false;
 
-  const showInstallScreen = () => {
+  showInstallScreen = () => {
     const grapheneStrings =
       Services.strings.createBundle('chrome://b2g-l10n/locale/graphene.properties');
     document.querySelector('#installing > .message').textContent =

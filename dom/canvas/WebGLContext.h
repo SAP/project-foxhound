@@ -190,6 +190,7 @@ class WebGLContext
     friend class WebGL2Context;
     friend class WebGLContextUserData;
     friend class WebGLExtensionCompressedTextureATC;
+    friend class WebGLExtensionCompressedTextureES3;
     friend class WebGLExtensionCompressedTextureETC1;
     friend class WebGLExtensionCompressedTexturePVRTC;
     friend class WebGLExtensionCompressedTextureS3TC;
@@ -331,8 +332,10 @@ public:
         return ActiveBoundTextureForTarget(texTarget);
     }
 
-    already_AddRefed<CanvasLayer>
-    GetCanvasLayer(nsDisplayListBuilder* builder, CanvasLayer* oldLayer,
+    void InvalidateResolveCacheForTextureWithTexUnit(const GLuint);
+
+    already_AddRefed<Layer>
+    GetCanvasLayer(nsDisplayListBuilder* builder, Layer* oldLayer,
                    LayerManager* manager) override;
 
     // Note that 'clean' here refers to its invalidation state, not the
@@ -1303,7 +1306,8 @@ public:
     nsLayoutUtils::SurfaceFromElementResult
     SurfaceFromElement(dom::Element* elem)
     {
-        uint32_t flags = nsLayoutUtils::SFE_WANT_IMAGE_SURFACE;
+        uint32_t flags = nsLayoutUtils::SFE_WANT_IMAGE_SURFACE |
+                         nsLayoutUtils::SFE_USE_ELEMENT_SIZE_IF_VECTOR;
 
         if (mPixelStore_ColorspaceConversion == LOCAL_GL_NONE)
             flags |= nsLayoutUtils::SFE_NO_COLORSPACE_CONVERSION;

@@ -885,7 +885,7 @@ nsXULPopupManager::ShowPopupCallback(nsIContent* aPopup,
 
   // use a weak frame as the popup will set an open attribute if it is a menu
   nsWeakFrame weakFrame(aPopupFrame);
-  aPopupFrame->ShowPopup(aIsContextMenu, aSelectFirstItem);
+  aPopupFrame->ShowPopup(aIsContextMenu);
   ENSURE_TRUE(weakFrame.IsAlive());
 
   // popups normally hide when an outside click occurs. Panels may use
@@ -1196,8 +1196,7 @@ nsXULPopupManager::HidePopupAfterDelay(nsMenuPopupFrame* aPopup)
 }
 
 void
-nsXULPopupManager::HidePopupsInList(const nsTArray<nsMenuPopupFrame *> &aFrames,
-                                    bool aDeselectMenu)
+nsXULPopupManager::HidePopupsInList(const nsTArray<nsMenuPopupFrame *> &aFrames)
 {
   // Create a weak frame list. This is done in a separate array with the
   // right capacity predetermined, otherwise the array would get resized and
@@ -1271,7 +1270,7 @@ nsXULPopupManager::HidePopupsInDocShell(nsIDocShellTreeItem* aDocShellToHide)
     item = parent;
   }
 
-  HidePopupsInList(popupsToHide, true);
+  HidePopupsInList(popupsToHide);
 }
 
 void
@@ -1315,7 +1314,7 @@ nsXULPopupManager::ExecuteMenu(nsIContent* aMenu, nsXULMenuCommandEvent* aEvent)
 
     // Now hide the popups. If the closemenu mode is auto, deselect the menu,
     // otherwise only one popup is closing, so keep the parent menu selected.
-    HidePopupsInList(popupsToHide, cmm == CloseMenuMode_Auto);
+    HidePopupsInList(popupsToHide);
   }
 
   aEvent->SetCloseMenuMode(cmm);
@@ -1792,7 +1791,7 @@ nsXULPopupManager::PopupDestroyed(nsMenuPopupFrame* aPopup)
     item = item->GetParent();
   }
 
-  HidePopupsInList(popupsToHide, false);
+  HidePopupsInList(popupsToHide);
 }
 
 bool
@@ -2009,7 +2008,7 @@ nsXULPopupManager::HandleShortcutNavigation(nsIDOMKeyEvent* aKeyEvent,
 {
   // On Windows, don't check shortcuts when the accelerator key is down.
 #ifdef XP_WIN
-  WidgetInputEvent* evt = aKeyEvent->GetInternalNSEvent()->AsInputEvent();
+  WidgetInputEvent* evt = aKeyEvent->AsEvent()->GetInternalNSEvent()->AsInputEvent();
   if (evt && evt->IsAccel()) {
     return false;
   }
@@ -2025,7 +2024,7 @@ nsXULPopupManager::HandleShortcutNavigation(nsIDOMKeyEvent* aKeyEvent,
     if (result) {
       aFrame->ChangeMenuItem(result, false, true);
       if (action) {
-        WidgetGUIEvent* evt = aKeyEvent->GetInternalNSEvent()->AsGUIEvent();
+        WidgetGUIEvent* evt = aKeyEvent->AsEvent()->GetInternalNSEvent()->AsGUIEvent();
         nsMenuFrame* menuToOpen = result->Enter(evt);
         if (menuToOpen) {
           nsCOMPtr<nsIContent> content = menuToOpen->GetContent();
@@ -2212,9 +2211,9 @@ nsXULPopupManager::HandleKeyboardEventWithKeyCode(
       aTopVisibleMenuItem->PopupType() != ePopupTypeMenu) {
     if (keyCode == nsIDOMKeyEvent::DOM_VK_ESCAPE) {
       HidePopup(aTopVisibleMenuItem->Content(), false, false, false, true);
-      aKeyEvent->StopPropagation();
-      aKeyEvent->StopCrossProcessForwarding();
-      aKeyEvent->PreventDefault();
+      aKeyEvent->AsEvent()->StopPropagation();
+      aKeyEvent->AsEvent()->StopCrossProcessForwarding();
+      aKeyEvent->AsEvent()->PreventDefault();
     }
     return true;
   }
@@ -2264,13 +2263,16 @@ nsXULPopupManager::HandleKeyboardEventWithKeyCode(
         break;
       }
       // Intentional fall-through to RETURN case
+      MOZ_FALLTHROUGH;
 
     case nsIDOMKeyEvent::DOM_VK_RETURN: {
       // If there is a popup open, check if the current item needs to be opened.
       // Otherwise, tell the active menubar, if any, to activate the menu. The
       // Enter method will return a menu if one needs to be opened as a result.
       nsMenuFrame* menuToOpen = nullptr;
-      WidgetGUIEvent* GUIEvent = aKeyEvent->GetInternalNSEvent()->AsGUIEvent();
+      WidgetGUIEvent* GUIEvent = aKeyEvent->AsEvent()->
+        GetInternalNSEvent()->AsGUIEvent();
+
       if (aTopVisibleMenuItem) {
         menuToOpen = aTopVisibleMenuItem->Frame()->Enter(GUIEvent);
       } else if (mActiveMenuBar) {
@@ -2288,9 +2290,9 @@ nsXULPopupManager::HandleKeyboardEventWithKeyCode(
   }
 
   if (consume) {
-    aKeyEvent->StopPropagation();
-    aKeyEvent->StopCrossProcessForwarding();
-    aKeyEvent->PreventDefault();
+    aKeyEvent->AsEvent()->StopPropagation();
+    aKeyEvent->AsEvent()->StopCrossProcessForwarding();
+    aKeyEvent->AsEvent()->PreventDefault();
   }
   return true;
 }
@@ -2461,7 +2463,7 @@ nsXULPopupManager::HandleEvent(nsIDOMEvent* aEvent)
   }
 
   nsAutoString eventType;
-  keyEvent->GetType(eventType);
+  aEvent->GetType(eventType);
   if (eventType.EqualsLiteral("keyup")) {
     return KeyUp(keyEvent);
   }
@@ -2487,14 +2489,14 @@ nsXULPopupManager::KeyUp(nsIDOMKeyEvent* aKeyEvent)
       return NS_OK;
 
     if (item->IgnoreKeys() == eIgnoreKeys_Handled) {
-      aKeyEvent->StopCrossProcessForwarding();
+      aKeyEvent->AsEvent()->StopCrossProcessForwarding();
       return NS_OK;
     }
   }
 
-  aKeyEvent->StopPropagation();
-  aKeyEvent->StopCrossProcessForwarding();
-  aKeyEvent->PreventDefault();
+  aKeyEvent->AsEvent()->StopPropagation();
+  aKeyEvent->AsEvent()->StopCrossProcessForwarding();
+  aKeyEvent->AsEvent()->PreventDefault();
 
   return NS_OK; // I am consuming event
 }
@@ -2545,8 +2547,8 @@ nsXULPopupManager::KeyDown(nsIDOMKeyEvent* aKeyEvent)
         else if (mActiveMenuBar)
           mActiveMenuBar->MenuClosed();
       }
-      aKeyEvent->StopPropagation();
-      aKeyEvent->PreventDefault();
+      aKeyEvent->AsEvent()->StopPropagation();
+      aKeyEvent->AsEvent()->PreventDefault();
     }
   }
 
@@ -2554,10 +2556,10 @@ nsXULPopupManager::KeyDown(nsIDOMKeyEvent* aKeyEvent)
   // listeners from becoming confused.
 
   if (!item || item->IgnoreKeys() != eIgnoreKeys_Handled) {
-    aKeyEvent->StopPropagation();
+    aKeyEvent->AsEvent()->StopPropagation();
   }
 
-  aKeyEvent->StopCrossProcessForwarding();
+  aKeyEvent->AsEvent()->StopCrossProcessForwarding();
   return NS_OK;
 }
 
@@ -2584,10 +2586,10 @@ nsXULPopupManager::KeyPress(nsIDOMKeyEvent* aKeyEvent)
   bool onlyHandled = item && item->IgnoreKeys() == eIgnoreKeys_Handled;
   bool handled = HandleShortcutNavigation(keyEvent, nullptr);
 
-  aKeyEvent->StopCrossProcessForwarding();
+  aKeyEvent->AsEvent()->StopCrossProcessForwarding();
   if (handled || (consume && !onlyHandled)) {
-    aKeyEvent->StopPropagation();
-    aKeyEvent->PreventDefault();
+    aKeyEvent->AsEvent()->StopPropagation();
+    aKeyEvent->AsEvent()->PreventDefault();
   }
 
   return NS_OK; // I am consuming event

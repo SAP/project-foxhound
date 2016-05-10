@@ -270,11 +270,10 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
 
         requirements = os.path.join(dirs['abs_test_install_dir'],
                                     'config',
-                                    'mozbase_requirements.txt')
+                                    'marionette_requirements.txt')
         if os.path.isfile(requirements):
             self.register_virtualenv_module(requirements=[requirements],
                                             two_pass=True)
-            return
 
     def _query_symbols_url(self):
         """query the full symbols URL based upon binary URL"""
@@ -383,6 +382,10 @@ class DesktopUnittest(TestingMixin, MercurialScript, BlobUploadMixin, MozbaseMix
 
             if suite_category not in c["suite_definitions"]:
                 self.fatal("'%s' not defined in the config!")
+
+            if suite == 'browser-chrome-coverage':
+                base_cmd.append('--jscov-dir-prefix=%s' %
+                                dirs['abs_blob_upload_dir'])
 
             options = c["suite_definitions"][suite_category]["options"]
             if options:

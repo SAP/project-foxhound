@@ -12,7 +12,6 @@
 
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/UniquePtr.h"
 
 #include <iostream>
 
@@ -45,16 +44,18 @@
 #include "jsweakmap.h"
 #include "jswrapper.h"
 
-#include "asmjs/AsmJSLink.h"
+#include "asmjs/AsmJS.h"
 #include "builtin/AtomicsObject.h"
 #include "builtin/Eval.h"
 #include "builtin/Intl.h"
 #include "builtin/MapObject.h"
 #include "builtin/RegExp.h"
 #include "builtin/SymbolObject.h"
+#ifdef ENABLE_SIMD
+# include "builtin/SIMD.h"
+#endif
 #ifdef ENABLE_BINARYDATA
-#include "builtin/SIMD.h"
-#include "builtin/TypedObject.h"
+# include "builtin/TypedObject.h"
 #endif
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/FullParseHandler.h"  // for JS_BufferIsCompileableUnit
@@ -68,6 +69,7 @@
 #include "js/Proxy.h"
 #include "js/SliceBudget.h"
 #include "js/StructuredClone.h"
+#include "js/UniquePtr.h"
 #include "vm/DateObject.h"
 #include "vm/Debugger.h"
 #include "vm/ErrorObject.h"
@@ -100,7 +102,6 @@ using namespace js::gc;
 using mozilla::Maybe;
 using mozilla::PodCopy;
 using mozilla::PodZero;
-using mozilla::UniquePtr;
 
 using JS::AutoGCRooter;
 using JS::ToInt32;
@@ -510,6 +511,12 @@ JS_SetRuntimePrivate(JSRuntime* rt, void* data)
     rt->data = data;
 }
 
+JS_PUBLIC_API(void)
+JS_SetFutexCanWait(JSRuntime* rt)
+{
+    rt->fx.setCanWait(true);
+}
+
 static void
 StartRequest(JSContext* cx)
 {
@@ -637,7 +644,7 @@ JS_GetVersion(JSContext* cx)
 JS_PUBLIC_API(void)
 JS_SetVersionForCompartment(JSCompartment* compartment, JSVersion version)
 {
-    compartment->options().setVersion(version);
+    compartment->behaviors().setVersion(version);
 }
 
 static const struct v2smap {
@@ -827,7 +834,7 @@ JS::StringOfAddonId(JSAddonId* id)
 JS_PUBLIC_API(JSAddonId*)
 JS::AddonIdOfObject(JSObject* obj)
 {
-    return obj->compartment()->addonId;
+    return obj->compartment()->creationOptions().addonIdOrNull();
 }
 
 JS_PUBLIC_API(void)
@@ -1042,13 +1049,6 @@ static const JSStdName builtin_property_names[] = {
 #if JS_HAS_UNEVAL
     { EAGER_ATOM(uneval), JSProto_String },
 #endif
-#ifdef ENABLE_BINARYDATA
-    { EAGER_ATOM(SIMD), JSProto_SIMD },
-    { EAGER_ATOM(TypedObject), JSProto_TypedObject },
-#endif
-#ifdef ENABLE_SHARED_ARRAY_BUFFER
-    { EAGER_ATOM(Atomics), JSProto_Atomics },
-#endif
 
     { 0, JSProto_LIMIT }
 };
@@ -1087,6 +1087,9 @@ JS_ResolveStandardClass(JSContext* cx, HandleObject obj, HandleId id, bool* reso
     /* Try less frequently used top-level functions and constants. */
     if (!stdnm)
         stdnm = LookupStdName(cx->names(), idAtom, builtin_property_names);
+
+    if (stdnm && GlobalObject::skipDeselectedConstructor(cx, stdnm->key))
+        stdnm = nullptr;
 
     // If this class is anonymous, then it doesn't exist as a global
     // property, so we won't resolve anything.
@@ -1128,6 +1131,9 @@ JS_MayResolveStandardClass(const JSAtomState& names, jsid id, JSObject* maybeObj
         return false;
 
     JSAtom* atom = JSID_TO_ATOM(id);
+
+    // This will return true even for deselected constructors.  (To do
+    // better, we need a JSContext here; it's fine as it is.)
 
     return atom == names.undefined ||
            LookupStdName(names, atom, standard_class_names) ||
@@ -1183,6 +1189,9 @@ JS_IdToProtoKey(JSContext* cx, HandleId id)
     JSAtom* atom = JSID_TO_ATOM(id);
     const JSStdName* stdnm = LookupStdName(cx->names(), atom, standard_class_names);
     if (!stdnm)
+        return JSProto_Null;
+
+    if (GlobalObject::skipDeselectedConstructor(cx, stdnm->key))
         return JSProto_Null;
 
     MOZ_ASSERT(MOZ_ARRAY_LENGTH(standard_class_names) == JSProto_LIMIT + 1);
@@ -1393,6 +1402,14 @@ JS_SetGCCallback(JSRuntime* rt, JSGCCallback cb, void* data)
     rt->gc.setGCCallback(cb, data);
 }
 
+JS_PUBLIC_API(void)
+JS_SetObjectsTenuredCallback(JSRuntime* rt, JSObjectsTenuredCallback cb,
+                             void* data)
+{
+    AssertHeapIsIdle(rt);
+    rt->gc.setObjectsTenuredCallback(cb, data);
+}
+
 JS_PUBLIC_API(bool)
 JS_AddFinalizeCallback(JSRuntime* rt, JSFinalizeCallback cb, void* data)
 {
@@ -1451,7 +1468,7 @@ JS_PUBLIC_API(void)
 JS_SetGCParameter(JSRuntime* rt, JSGCParamKey key, uint32_t value)
 {
     AutoLockGC lock(rt);
-    rt->gc.setParameter(key, value, lock);
+    MOZ_ALWAYS_TRUE(rt->gc.setParameter(key, value, lock));
 }
 
 JS_PUBLIC_API(uint32_t)
@@ -1459,19 +1476,6 @@ JS_GetGCParameter(JSRuntime* rt, JSGCParamKey key)
 {
     AutoLockGC lock(rt);
     return rt->gc.getParameter(key, lock);
-}
-
-JS_PUBLIC_API(void)
-JS_SetGCParameterForThread(JSContext* cx, JSGCParamKey key, uint32_t value)
-{
-    MOZ_ASSERT(key == JSGC_MAX_CODE_CACHE_BYTES);
-}
-
-JS_PUBLIC_API(uint32_t)
-JS_GetGCParameterForThread(JSContext* cx, JSGCParamKey key)
-{
-    MOZ_ASSERT(key == JSGC_MAX_CODE_CACHE_BYTES);
-    return 0;
 }
 
 static const size_t NumGCConfigs = 14;
@@ -1785,53 +1789,90 @@ JS_GetConstructor(JSContext* cx, HandleObject proto)
 }
 
 bool
-JS::CompartmentOptions::extraWarnings(JSRuntime* rt) const
+JS::CompartmentBehaviors::extraWarnings(JSRuntime* rt) const
 {
     return extraWarningsOverride_.get(rt->options().extraWarnings());
 }
 
 bool
-JS::CompartmentOptions::extraWarnings(JSContext* cx) const
+JS::CompartmentBehaviors::extraWarnings(JSContext* cx) const
 {
     return extraWarnings(cx->runtime());
 }
 
-JS::CompartmentOptions&
-JS::CompartmentOptions::setZone(ZoneSpecifier spec)
+JS::CompartmentCreationOptions&
+JS::CompartmentCreationOptions::setZone(ZoneSpecifier spec)
 {
     zone_.spec = spec;
     return *this;
 }
 
-JS::CompartmentOptions&
-JS::CompartmentOptions::setSameZoneAs(JSObject* obj)
+JS::CompartmentCreationOptions&
+JS::CompartmentCreationOptions::setSameZoneAs(JSObject* obj)
 {
     zone_.pointer = static_cast<void*>(obj->zone());
     return *this;
 }
 
-JS::CompartmentOptions&
-JS::CompartmentOptionsRef(JSCompartment* compartment)
+const JS::CompartmentCreationOptions&
+JS::CompartmentCreationOptionsRef(JSCompartment* compartment)
 {
-    return compartment->options();
+    return compartment->creationOptions();
 }
 
-JS::CompartmentOptions&
-JS::CompartmentOptionsRef(JSObject* obj)
+const JS::CompartmentCreationOptions&
+JS::CompartmentCreationOptionsRef(JSObject* obj)
 {
-    return obj->compartment()->options();
+    return obj->compartment()->creationOptions();
 }
 
-JS::CompartmentOptions&
-JS::CompartmentOptionsRef(JSContext* cx)
+const JS::CompartmentCreationOptions&
+JS::CompartmentCreationOptionsRef(JSContext* cx)
 {
-    return cx->compartment()->options();
+    return cx->compartment()->creationOptions();
+}
+
+bool
+JS::CompartmentCreationOptions::getSharedMemoryAndAtomicsEnabled() const
+{
+#if defined(ENABLE_SHARED_ARRAY_BUFFER)
+    return sharedMemoryAndAtomics_;
+#else
+    return false;
+#endif
+}
+
+JS::CompartmentCreationOptions&
+JS::CompartmentCreationOptions::setSharedMemoryAndAtomicsEnabled(bool flag)
+{
+#if defined(ENABLE_SHARED_ARRAY_BUFFER)
+    sharedMemoryAndAtomics_ = flag;
+#endif
+    return *this;
+}
+
+JS::CompartmentBehaviors&
+JS::CompartmentBehaviorsRef(JSCompartment* compartment)
+{
+    return compartment->behaviors();
+}
+
+JS::CompartmentBehaviors&
+JS::CompartmentBehaviorsRef(JSObject* obj)
+{
+    return obj->compartment()->behaviors();
+}
+
+JS::CompartmentBehaviors&
+JS::CompartmentBehaviorsRef(JSContext* cx)
+{
+    return cx->compartment()->behaviors();
 }
 
 JS_PUBLIC_API(JSObject*)
 JS_NewGlobalObject(JSContext* cx, const JSClass* clasp, JSPrincipals* principals,
                    JS::OnNewGlobalHookOption hookOption,
-                   const JS::CompartmentOptions& options /* = JS::CompartmentOptions() */)
+                   const JS::CompartmentOptions& options)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
@@ -1855,8 +1896,7 @@ JS_GlobalObjectTraceHook(JSTracer* trc, JSObject* global)
     // compartment is live.
     global->compartment()->trace(trc);
 
-    JSTraceOp trace = global->compartment()->options().getTrace();
-    if (trace)
+    if (JSTraceOp trace = global->compartment()->creationOptions().getTrace())
         trace(trc, global);
 }
 
@@ -2090,8 +2130,10 @@ DefinePropertyById(JSContext* cx, HandleObject obj, HandleId id, HandleValue val
     if (!(attrs & JSPROP_PROPOP_ACCESSORS) &&
         getter != JS_PropertyStub && setter != JS_StrictPropertyStub)
     {
-        RootedAtom atom(cx, JSID_IS_ATOM(id) ? JSID_TO_ATOM(id) : nullptr);
         if (getter && !(attrs & JSPROP_GETTER)) {
+            RootedAtom atom(cx, IdToFunctionName(cx, id, "get"));
+            if (!atom)
+                return false;
             JSFunction* getobj = NewNativeFunction(cx, (Native) getter, 0, atom);
             if (!getobj)
                 return false;
@@ -2105,6 +2147,9 @@ DefinePropertyById(JSContext* cx, HandleObject obj, HandleId id, HandleValue val
         if (setter && !(attrs & JSPROP_SETTER)) {
             // Root just the getter, since the setter is not yet a JSObject.
             AutoRooterGetterSetter getRoot(cx, JSPROP_GETTER, &getter, nullptr);
+            RootedAtom atom(cx, IdToFunctionName(cx, id, "set"));
+            if (!atom)
+                return false;
             JSFunction* setobj = NewNativeFunction(cx, (Native) setter, 1, atom);
             if (!setobj)
                 return false;
@@ -3099,7 +3144,7 @@ PropertySpecNameToSymbolCode(const char* name)
     return JS::SymbolCode(u - 1);
 }
 
-static bool
+bool
 PropertySpecNameToId(JSContext* cx, const char* name, MutableHandleId id,
                      js::PinningBehavior pin = js::DoNotPinAtom)
 {
@@ -3376,7 +3421,10 @@ JS::NewFunctionFromSpec(JSContext* cx, const JSFunctionSpec* fs, HandleId id)
         {
             return nullptr;
         }
-        return &funVal.toObject().as<JSFunction>();
+        JSFunction* fun = &funVal.toObject().as<JSFunction>();
+        if (fs->flags & JSFUN_HAS_REST)
+            fun->setHasRest();
+        return fun;
     }
 
     RootedAtom atom(cx, IdToFunctionName(cx, id));
@@ -3401,7 +3449,7 @@ JS::NewFunctionFromSpec(JSContext* cx, const JSFunctionSpec* fs, HandleId id)
 static bool
 CreateNonSyntacticScopeChain(JSContext* cx, AutoObjectVector& scopeChain,
                              MutableHandleObject dynamicScopeObj,
-                             MutableHandle<ScopeObject*> staticScopeObj)
+                             MutableHandle<StaticScope*> staticScopeObj)
 {
     Rooted<ClonedBlockObject*> globalLexical(cx, &cx->global()->lexicalScope());
     if (!js::CreateScopeObjectsForScopeChain(cx, scopeChain, globalLexical, dynamicScopeObj))
@@ -3409,7 +3457,7 @@ CreateNonSyntacticScopeChain(JSContext* cx, AutoObjectVector& scopeChain,
 
     staticScopeObj.set(&globalLexical->staticBlock());
     if (!scopeChain.empty()) {
-        staticScopeObj.set(StaticNonSyntacticScopeObjects::create(cx, staticScopeObj));
+        staticScopeObj.set(StaticNonSyntacticScope::create(cx, staticScopeObj));
         if (!staticScopeObj)
             return false;
 
@@ -3455,13 +3503,13 @@ IsFunctionCloneable(HandleFunction fun)
 
         // If the script already deals with non-syntactic scopes, we can clone
         // it.
-        if (scope->is<StaticNonSyntacticScopeObjects>())
+        if (scope->is<StaticNonSyntacticScope>())
             return true;
 
         // 'eval' scopes are always scoped immediately under a non-extensible
         // lexical scope.
-        if (scope->is<StaticBlockObject>()) {
-            StaticBlockObject& block = scope->as<StaticBlockObject>();
+        if (scope->is<StaticBlockScope>()) {
+            StaticBlockScope& block = scope->as<StaticBlockScope>();
             if (block.needsClone())
                 return false;
 
@@ -3469,8 +3517,8 @@ IsFunctionCloneable(HandleFunction fun)
 
             // If the script is an indirect eval that is immediately scoped
             // under the global, we can clone it.
-            if (enclosing->is<StaticEvalObject>())
-                return !enclosing->as<StaticEvalObject>().isNonGlobal();
+            if (enclosing->is<StaticEvalScope>())
+                return !enclosing->as<StaticEvalScope>().isNonGlobal();
         }
 
         // Any other enclosing static scope (e.g., function, block) cannot be
@@ -3483,7 +3531,7 @@ IsFunctionCloneable(HandleFunction fun)
 
 static JSObject*
 CloneFunctionObject(JSContext* cx, HandleObject funobj, HandleObject dynamicScope,
-                    Handle<ScopeObject*> staticScope)
+                    Handle<StaticScope*> staticScope)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
@@ -3515,7 +3563,7 @@ CloneFunctionObject(JSContext* cx, HandleObject funobj, HandleObject dynamicScop
         return nullptr;
     }
 
-    if (fun->isNative() && IsAsmJSModuleNative(fun->native())) {
+    if (IsAsmJSModule(fun)) {
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_CANT_CLONE_OBJECT);
         return nullptr;
     }
@@ -3548,28 +3596,24 @@ CloneFunctionObject(JSContext* cx, HandleObject funobj, HandleObject dynamicScop
     return clone;
 }
 
-namespace JS {
-
 JS_PUBLIC_API(JSObject*)
-CloneFunctionObject(JSContext* cx, JS::Handle<JSObject*> funobj)
+JS::CloneFunctionObject(JSContext* cx, HandleObject funobj)
 {
     Rooted<ClonedBlockObject*> globalLexical(cx, &cx->global()->lexicalScope());
-    Rooted<ScopeObject*> staticLexical(cx, &globalLexical->staticBlock());
+    Rooted<StaticScope*> staticLexical(cx, &globalLexical->staticBlock());
     return CloneFunctionObject(cx, funobj, globalLexical, staticLexical);
 }
 
 extern JS_PUBLIC_API(JSObject*)
-CloneFunctionObject(JSContext* cx, HandleObject funobj, AutoObjectVector& scopeChain)
+JS::CloneFunctionObject(JSContext* cx, HandleObject funobj, AutoObjectVector& scopeChain)
 {
     RootedObject dynamicScope(cx);
-    Rooted<ScopeObject*> staticScope(cx);
+    Rooted<StaticScope*> staticScope(cx);
     if (!CreateNonSyntacticScopeChain(cx, scopeChain, &dynamicScope, &staticScope))
         return nullptr;
 
     return CloneFunctionObject(cx, funobj, dynamicScope, staticScope);
 }
-
-} // namespace JS
 
 JS_PUBLIC_API(JSObject*)
 JS_GetFunctionObject(JSFunction* fun)
@@ -3616,87 +3660,6 @@ JS_IsConstructor(JSFunction* fun)
     return fun->isConstructor();
 }
 
-static bool
-GenericNativeMethodDispatcher(JSContext* cx, unsigned argc, Value* vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-
-    const JSFunctionSpec* fs = (JSFunctionSpec*)
-        args.callee().as<JSFunction>().getExtendedSlot(0).toPrivate();
-    MOZ_ASSERT((fs->flags & JSFUN_GENERIC_NATIVE) != 0);
-
-    if (argc < 1) {
-        ReportMissingArg(cx, args.calleev(), 0);
-        return false;
-    }
-
-    /*
-     * Copy all actual (argc) arguments down over our |this| parameter, vp[1],
-     * which is almost always the class constructor object, e.g. Array.  Then
-     * call the corresponding prototype native method with our first argument
-     * passed as |this|.
-     */
-    memmove(vp + 1, vp + 2, argc * sizeof(Value));
-
-    /* Clear the last parameter in case too few arguments were passed. */
-    vp[2 + --argc].setUndefined();
-
-    return fs->call.op(cx, argc, vp);
-}
-
-static bool
-DefineFunctionFromSpec(JSContext* cx, HandleObject obj, const JSFunctionSpec* fs, unsigned flags)
-{
-    GetterOp gop;
-    SetterOp sop;
-    if (flags & JSFUN_STUB_GSOPS) {
-        // JSFUN_STUB_GSOPS is a request flag only, not stored in fun->flags or
-        // the defined property's attributes.
-        flags &= ~JSFUN_STUB_GSOPS;
-        gop = nullptr;
-        sop = nullptr;
-    } else {
-        gop = obj->getClass()->getProperty;
-        sop = obj->getClass()->setProperty;
-        MOZ_ASSERT(gop != JS_PropertyStub);
-        MOZ_ASSERT(sop != JS_StrictPropertyStub);
-    }
-
-    RootedId id(cx);
-    if (!PropertySpecNameToId(cx, fs->name, &id))
-        return false;
-
-    // Define a generic arity N+1 static method for the arity N prototype
-    // method if flags contains JSFUN_GENERIC_NATIVE.
-    if (flags & JSFUN_GENERIC_NATIVE) {
-        // We require that any consumers using JSFUN_GENERIC_NATIVE stash
-        // the prototype and constructor in the global slots before invoking
-        // JS_DefineFunctions on the proto.
-        JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(obj->getClass());
-        MOZ_ASSERT(obj == &obj->global().getPrototype(key).toObject());
-        RootedObject ctor(cx, &obj->global().getConstructor(key).toObject());
-
-        flags &= ~JSFUN_GENERIC_NATIVE;
-        JSFunction* fun = DefineFunction(cx, ctor, id,
-                                         GenericNativeMethodDispatcher,
-                                         fs->nargs + 1, flags,
-                                         gc::AllocKind::FUNCTION_EXTENDED);
-        if (!fun)
-            return false;
-
-        // As jsapi.h notes, fs must point to storage that lives as long
-        // as fun->object lives.
-        fun->setExtendedSlot(0, PrivateValue(const_cast<JSFunctionSpec*>(fs)));
-    }
-
-    JSFunction* fun = NewFunctionFromSpec(cx, fs, id);
-    if (!fun)
-        return false;
-
-    RootedValue funVal(cx, ObjectValue(*fun));
-    return DefineProperty(cx, obj, id, funVal, gop, sop, flags & ~JSFUN_FLAGS_MASK);
-}
-
 JS_PUBLIC_API(bool)
 JS_DefineFunctions(JSContext* cx, HandleObject obj, const JSFunctionSpec* fs,
                    PropertyDefinitionBehavior behavior)
@@ -3706,25 +3669,7 @@ JS_DefineFunctions(JSContext* cx, HandleObject obj, const JSFunctionSpec* fs,
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
 
-    for (; fs->name; fs++) {
-        unsigned flags = fs->flags;
-        switch (behavior) {
-          case DefineAllProperties:
-            break;
-          case OnlyDefineLateProperties:
-            if (!(flags & JSPROP_DEFINE_LATE))
-                continue;
-            break;
-          default:
-            MOZ_ASSERT(behavior == DontDefineLateProperties);
-            if (flags & JSPROP_DEFINE_LATE)
-                continue;
-        }
-
-        if (!DefineFunctionFromSpec(cx, obj, fs, flags & ~JSPROP_DEFINE_LATE))
-            return false;
-    }
-    return true;
+    return DefineFunctions(cx, obj, fs, NotIntrinsic, behavior);
 }
 
 JS_PUBLIC_API(JSFunction*)
@@ -3948,7 +3893,7 @@ JS::OwningCompileOptions::setFileAndLine(JSContext* cx, const char* f, unsigned 
 bool
 JS::OwningCompileOptions::setSourceMapURL(JSContext* cx, const char16_t* s)
 {
-    UniquePtr<char16_t[], JS::FreePolicy> copy;
+    UniqueTwoByteChars copy;
     if (s) {
         copy = DuplicateString(cx, s);
         if (!copy)
@@ -3986,7 +3931,7 @@ JS::CompileOptions::CompileOptions(JSContext* cx, JSVersion version)
     this->version = (version != JSVERSION_UNKNOWN) ? version : cx->findVersion();
 
     strictOption = cx->runtime()->options().strictMode();
-    extraWarningsOption = cx->compartment()->options().extraWarnings(cx);
+    extraWarningsOption = cx->compartment()->behaviors().extraWarnings(cx);
     werrorOption = cx->runtime()->options().werror();
     if (!cx->runtime()->options().asmJS())
         asmJSOption = AsmJSOption::Disabled;
@@ -4008,9 +3953,9 @@ Compile(JSContext* cx, const ReadOnlyCompileOptions& options, SyntacticScopeOpti
     CHECK_REQUEST(cx);
     AutoLastFrameCheck lfc(cx);
 
-    Rooted<ScopeObject*> staticScope(cx, &cx->global()->lexicalScope().staticBlock());
+    Rooted<StaticScope*> staticScope(cx, &cx->global()->lexicalScope().staticBlock());
     if (scopeOption == HasNonSyntacticScope) {
-        staticScope = StaticNonSyntacticScopeObjects::create(cx, staticScope);
+        staticScope = StaticNonSyntacticScope::create(cx, staticScope);
         if (!staticScope)
             return false;
     }
@@ -4033,7 +3978,7 @@ static bool
 Compile(JSContext* cx, const ReadOnlyCompileOptions& options, SyntacticScopeOption scopeOption,
         const char* bytes, size_t length, MutableHandleScript script)
 {
-    mozilla::UniquePtr<char16_t, JS::FreePolicy> chars;
+    UniqueTwoByteChars chars;
     if (options.utf8)
         chars.reset(UTF8CharsToNewTwoByteCharsZ(cx, UTF8Chars(bytes, length), &length).get());
     else
@@ -4278,7 +4223,7 @@ JS_GetFunctionScript(JSContext* cx, HandleFunction fun)
 
 /*
  * enclosingStaticScope is a static enclosing scope, if any (e.g. a
- * StaticWithObject).  If the enclosing scope is the global scope, this must be
+ * StaticWithScope).  If the enclosing scope is the global scope, this must be
  * null.
  *
  * enclosingDynamicScope is a dynamic scope to use, if it's not the global.
@@ -4288,7 +4233,7 @@ CompileFunction(JSContext* cx, const ReadOnlyCompileOptions& optionsArg,
                 const char* name, unsigned nargs, const char* const* argnames,
                 SourceBufferHolder& srcBuf,
                 HandleObject enclosingDynamicScope,
-                Handle<ScopeObject*> enclosingStaticScope,
+                Handle<StaticScope*> enclosingStaticScope,
                 MutableHandleFunction fun)
 {
     MOZ_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
@@ -4313,6 +4258,7 @@ CompileFunction(JSContext* cx, const ReadOnlyCompileOptions& optionsArg,
     }
 
     fun.set(NewScriptedFunction(cx, 0, JSFunction::INTERPRETED_NORMAL, funAtom,
+                                /* proto = */ nullptr,
                                 gc::AllocKind::FUNCTION, TenuredObject,
                                 enclosingDynamicScope));
     if (!fun)
@@ -4336,7 +4282,7 @@ JS::CompileFunction(JSContext* cx, AutoObjectVector& scopeChain,
                     SourceBufferHolder& srcBuf, MutableHandleFunction fun)
 {
     RootedObject dynamicScopeObj(cx);
-    Rooted<ScopeObject*> staticScopeObj(cx);
+    Rooted<StaticScope*> staticScopeObj(cx);
     if (!CreateNonSyntacticScopeChain(cx, scopeChain, &dynamicScopeObj, &staticScopeObj))
         return false;
 
@@ -4361,7 +4307,7 @@ JS::CompileFunction(JSContext* cx, AutoObjectVector& scopeChain,
                     const char* name, unsigned nargs, const char* const* argnames,
                     const char* bytes, size_t length, MutableHandleFunction fun)
 {
-    mozilla::UniquePtr<char16_t, JS::FreePolicy> chars;
+    UniqueTwoByteChars chars;
     if (options.utf8)
         chars.reset(UTF8CharsToNewTwoByteCharsZ(cx, UTF8Chars(bytes, length), &length).get());
     else
@@ -4416,7 +4362,7 @@ static bool
 ExecuteScript(JSContext* cx, AutoObjectVector& scopeChain, HandleScript scriptArg, Value* rval)
 {
     RootedObject dynamicScope(cx);
-    Rooted<ScopeObject*> staticScope(cx);
+    Rooted<StaticScope*> staticScope(cx);
     if (!CreateNonSyntacticScopeChain(cx, scopeChain, &dynamicScope, &staticScope))
         return false;
 
@@ -4465,7 +4411,7 @@ JS::CloneAndExecuteScript(JSContext* cx, HandleScript scriptArg)
     RootedScript script(cx, scriptArg);
     Rooted<ClonedBlockObject*> globalLexical(cx, &cx->global()->lexicalScope());
     if (script->compartment() != cx->compartment()) {
-        Rooted<ScopeObject*> staticLexical(cx, &globalLexical->staticBlock());
+        Rooted<StaticScope*> staticLexical(cx, &globalLexical->staticBlock());
         script = CloneGlobalScript(cx, staticLexical, script);
         if (!script)
             return false;
@@ -4478,7 +4424,7 @@ JS::CloneAndExecuteScript(JSContext* cx, HandleScript scriptArg)
 static const unsigned LARGE_SCRIPT_LENGTH = 500*1024;
 
 static bool
-Evaluate(JSContext* cx, HandleObject scope, Handle<ScopeObject*> staticScope,
+Evaluate(JSContext* cx, HandleObject scope, Handle<StaticScope*> staticScope,
          const ReadOnlyCompileOptions& optionsArg,
          SourceBufferHolder& srcBuf, MutableHandleValue rval)
 {
@@ -4527,7 +4473,7 @@ Evaluate(JSContext* cx, AutoObjectVector& scopeChain, const ReadOnlyCompileOptio
          SourceBufferHolder& srcBuf, MutableHandleValue rval)
 {
     RootedObject dynamicScope(cx);
-    Rooted<ScopeObject*> staticScope(cx);
+    Rooted<StaticScope*> staticScope(cx);
     if (!CreateNonSyntacticScopeChain(cx, scopeChain, &dynamicScope, &staticScope))
         return false;
     return ::Evaluate(cx, dynamicScope, staticScope, optionsArg, srcBuf, rval);
@@ -4539,7 +4485,7 @@ Evaluate(JSContext* cx, const ReadOnlyCompileOptions& optionsArg,
 {
   SourceBufferHolder srcBuf(chars, length, SourceBufferHolder::NoOwnership);
   Rooted<ClonedBlockObject*> globalLexical(cx, &cx->global()->lexicalScope());
-  Rooted<ScopeObject*> staticLexical(cx, &globalLexical->staticBlock());
+  Rooted<StaticScope*> staticLexical(cx, &globalLexical->staticBlock());
   return ::Evaluate(cx, globalLexical, staticLexical, optionsArg, srcBuf, rval);
 }
 
@@ -4557,7 +4503,7 @@ JS::Evaluate(JSContext* cx, const ReadOnlyCompileOptions& options,
 
     SourceBufferHolder srcBuf(chars, length, SourceBufferHolder::GiveOwnership);
     Rooted<ClonedBlockObject*> globalLexical(cx, &cx->global()->lexicalScope());
-    Rooted<ScopeObject*> staticLexical(cx, &globalLexical->staticBlock());
+    Rooted<StaticScope*> staticLexical(cx, &globalLexical->staticBlock());
     bool ok = ::Evaluate(cx, globalLexical, staticLexical, options, srcBuf, rval);
     return ok;
 }
@@ -4583,7 +4529,7 @@ JS::Evaluate(JSContext* cx, const ReadOnlyCompileOptions& optionsArg,
              SourceBufferHolder& srcBuf, MutableHandleValue rval)
 {
     Rooted<ClonedBlockObject*> globalLexical(cx, &cx->global()->lexicalScope());
-    Rooted<ScopeObject*> staticLexical(cx, &globalLexical->staticBlock());
+    Rooted<StaticScope*> staticLexical(cx, &globalLexical->staticBlock());
     return ::Evaluate(cx, globalLexical, staticLexical, optionsArg, srcBuf, rval);
 }
 
@@ -5109,14 +5055,7 @@ JS_EncodeStringToUTF8(JSContext* cx, HandleString str)
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
-    JSLinearString* linear = str->ensureLinear(cx);
-    if (!linear)
-        return nullptr;
-
-    JS::AutoCheckCannotGC nogc;
-    return linear->hasLatin1Chars()
-           ? JS::CharsToNewUTF8CharsZ(cx, linear->latin1Range(nogc)).c_str()
-           : JS::CharsToNewUTF8CharsZ(cx, linear->twoByteRange(nogc)).c_str();
+    return StringToNewUTF8CharsZ(cx, *str).release();
 }
 
 JS_PUBLIC_API(size_t)
@@ -5783,6 +5722,18 @@ JS_ErrorFromException(JSContext* cx, HandleObject obj)
     return ErrorFromException(cx, obj);
 }
 
+void
+JSErrorReport::initLinebuf(const char16_t* linebuf, size_t linebufLength, size_t tokenOffset)
+{
+    MOZ_ASSERT(linebuf);
+    MOZ_ASSERT(tokenOffset <= linebufLength);
+    MOZ_ASSERT(linebuf[linebufLength] == '\0');
+
+    linebuf_ = linebuf;
+    linebufLength_ = linebufLength;
+    tokenOffset_ = tokenOffset;
+}
+
 JS_PUBLIC_API(bool)
 JS_ThrowStopIteration(JSContext* cx)
 {
@@ -6009,26 +5960,12 @@ JS_IsIdentifier(const char16_t* chars, size_t length)
 
 namespace JS {
 
-void
-AutoFilename::reset(void* newScriptSource)
-{
-    if (newScriptSource)
-        reinterpret_cast<ScriptSource*>(newScriptSource)->incref();
-    if (scriptSource_)
-        reinterpret_cast<ScriptSource*>(scriptSource_)->decref();
-    scriptSource_ = newScriptSource;
-}
-
-const char*
-AutoFilename::get() const
-{
-    return scriptSource_ ? reinterpret_cast<ScriptSource*>(scriptSource_)->filename() : nullptr;
-}
-
 JS_PUBLIC_API(bool)
-DescribeScriptedCaller(JSContext* cx, AutoFilename* filename, unsigned* lineno,
+DescribeScriptedCaller(JSContext* cx, UniqueChars* filename, unsigned* lineno,
                        unsigned* column)
 {
+    if (filename)
+        filename->reset();
     if (lineno)
         *lineno = 0;
     if (column)
@@ -6043,8 +5980,12 @@ DescribeScriptedCaller(JSContext* cx, AutoFilename* filename, unsigned* lineno,
     if (i.activation()->scriptedCallerIsHidden())
         return false;
 
-    if (filename)
-        filename->reset(i.scriptSource());
+    if (filename && i.filename()) {
+        UniqueChars copy = DuplicateString(i.filename());
+        if (!copy)
+            return false;
+        *filename = Move(copy);
+    }
 
     if (lineno)
         *lineno = i.computeLine(column);

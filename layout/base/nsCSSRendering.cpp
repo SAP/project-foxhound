@@ -17,6 +17,7 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 
+#include "BorderConsts.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
@@ -736,8 +737,7 @@ nsCSSRendering::PaintBorderWithStyleBorder(nsPresContext* aPresContext,
      joinedBorderArea.width, joinedBorderArea.height);
 
   // start drawing
-  gfxContext* ctx = aRenderingContext.ThebesContext();
-  ctx->Save();
+  bool needToPopClip = false;
 
   if (::IsBoxDecorationSlice(aStyleBorder)) {
     if (joinedBorderArea.IsEqualEdges(aBorderArea)) {
@@ -746,10 +746,11 @@ nsCSSRendering::PaintBorderWithStyleBorder(nsPresContext* aPresContext,
     } else {
       // We're drawing borders around the joined continuation boxes so we need
       // to clip that to the slice that we want for this frame.
-      aRenderingContext.ThebesContext()->
-        Clip(NSRectToSnappedRect(aBorderArea,
-                                 aForFrame->PresContext()->AppUnitsPerDevPixel(),
-                                 aDrawTarget));
+      aDrawTarget.PushClipRect(
+        NSRectToSnappedRect(aBorderArea,
+                            aForFrame->PresContext()->AppUnitsPerDevPixel(),
+                            aDrawTarget));
+      needToPopClip = true;
     }
   } else {
     MOZ_ASSERT(joinedBorderArea.IsEqualEdges(aBorderArea),
@@ -803,7 +804,9 @@ nsCSSRendering::PaintBorderWithStyleBorder(nsPresContext* aPresContext,
                          bgColor);
   br.DrawBorders();
 
-  ctx->Restore();
+  if (needToPopClip) {
+    aDrawTarget.PopClip();
+  }
 
   PrintAsStringNewline();
 
@@ -929,10 +932,9 @@ nsCSSRendering::PaintOutline(nsPresContext* aPresContext,
                              Float(width / twipsPerPixel) };
 
   // start drawing
-  gfxContext *ctx = aRenderingContext.ThebesContext();
 
   nsCSSBorderRenderer br(aPresContext->Type(),
-                         ctx->GetDrawTarget(),
+                         aRenderingContext.GetDrawTarget(),
                          oRect,
                          outlineStyles,
                          outlineWidths,
@@ -1477,8 +1479,7 @@ void
 nsCSSRendering::PaintBoxShadowInner(nsPresContext* aPresContext,
                                     nsRenderingContext& aRenderingContext,
                                     nsIFrame* aForFrame,
-                                    const nsRect& aFrameArea,
-                                    const nsRect& aDirtyRect)
+                                    const nsRect& aFrameArea)
 {
   const nsStyleBorder* styleBorder = aForFrame->StyleBorder();
   nsCSSShadowArray* shadows = styleBorder->mBoxShadow;
@@ -3867,7 +3868,7 @@ GetDashInfo(nscoord  aBorderLength,
 }
 
 void
-nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
+nsCSSRendering::DrawTableBorderSegment(DrawTarget&              aDrawTarget,
                                        uint8_t                  aBorderStyle,
                                        nscolor                  aBorderColor,
                                        const nsStyleBackground* aBGColor,
@@ -3889,14 +3890,6 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
     aStartBevelOffset = 0;
     aEndBevelOffset = 0;
   }
-
-  gfxContext *ctx = aContext.ThebesContext();
-  AntialiasMode oldMode = ctx->CurrentAntialiasMode();
-  ctx->SetAntialiasMode(AntialiasMode::NONE);
-
-  ctx->SetColor(Color::FromABGR(aBorderColor));
-
-  DrawTarget& drawTarget = *aContext.GetDrawTarget();
 
   switch (aBorderStyle) {
   case NS_STYLE_BORDER_STYLE_NONE:
@@ -3920,47 +3913,48 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         GetDashInfo(aBorder.width, dashLength, twipsPerPixel, numDashSpaces,
                     startDashLength, endDashLength);
         nsRect rect(aBorder.x, aBorder.y, startDashLength, aBorder.height);
-        DrawSolidBorderSegment(drawTarget, rect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel);
 
         rect.x += startDashLength + dashLength;
         rect.width = aBorder.width
                      - (startDashLength + endDashLength + dashLength);
-        DrawDashedSegment(drawTarget, rect, dashLength, aBorderColor,
+        DrawDashedSegment(aDrawTarget, rect, dashLength, aBorderColor,
                           aAppUnitsPerDevPixel, twipsPerPixel, horizontal);
 
         rect.x += rect.width;
         rect.width = endDashLength;
-        DrawSolidBorderSegment(drawTarget, rect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel);
       }
       else {
         GetDashInfo(aBorder.height, dashLength, twipsPerPixel, numDashSpaces,
                     startDashLength, endDashLength);
         nsRect rect(aBorder.x, aBorder.y, aBorder.width, startDashLength);
-        DrawSolidBorderSegment(drawTarget, rect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel);
 
         rect.y += rect.height + dashLength;
         rect.height = aBorder.height
                       - (startDashLength + endDashLength + dashLength);
-        DrawDashedSegment(drawTarget, rect, dashLength, aBorderColor,
+        DrawDashedSegment(aDrawTarget, rect, dashLength, aBorderColor,
                           aAppUnitsPerDevPixel, twipsPerPixel, horizontal);
 
         rect.y += rect.height;
         rect.height = endDashLength;
-        DrawSolidBorderSegment(drawTarget, rect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel);
       }
     }
     break;
   case NS_STYLE_BORDER_STYLE_GROOVE:
     ridgeGroove = NS_STYLE_BORDER_STYLE_GROOVE; // and fall through to ridge
+    MOZ_FALLTHROUGH;
   case NS_STYLE_BORDER_STYLE_RIDGE:
     if ((horizontal && (twipsPerPixel >= aBorder.height)) ||
         (!horizontal && (twipsPerPixel >= aBorder.width))) {
       // a one pixel border
-      DrawSolidBorderSegment(drawTarget, aBorder, aBorderColor,
+      DrawSolidBorderSegment(aDrawTarget, aBorder, aBorderColor,
                              aAppUnitsPerDevPixel, twipsPerPixel,
                              aStartBevelSide, aStartBevelOffset,
                              aEndBevelSide, aEndBevelOffset);
@@ -3976,8 +3970,6 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
       nscolor bevelColor = MakeBevelColor(ridgeGrooveSide, ridgeGroove,
                                           aBGColor->mBackgroundColor,
                                           aBorderColor);
-      // XXXbz is this SetColor call still needed?
-      ctx->SetColor(Color::FromABGR(bevelColor));
       nsRect rect(aBorder);
       nscoord half;
       if (horizontal) { // top, bottom
@@ -3990,7 +3982,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_TOP == aEndBevelSide) {
           rect.width -= endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, rect, bevelColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, bevelColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4005,7 +3997,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_LEFT == aEndBevelSide) {
           rect.height -= endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, rect, bevelColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, bevelColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4017,8 +4009,6 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
       // background color, but I don't care.
       bevelColor = MakeBevelColor(ridgeGrooveSide, ridgeGroove,
                                   aBGColor->mBackgroundColor, aBorderColor);
-      // XXXbz is this SetColor call still needed?
-      ctx->SetColor(Color::FromABGR(bevelColor));
       if (horizontal) {
         rect.y = rect.y + half;
         rect.height = aBorder.height - half;
@@ -4029,7 +4019,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_BOTTOM == aEndBevelSide) {
           rect.width -= endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, rect, bevelColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, bevelColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4044,7 +4034,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_RIGHT == aEndBevelSide) {
           rect.height -= endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, rect, bevelColor,
+        DrawSolidBorderSegment(aDrawTarget, rect, bevelColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4073,7 +4063,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_TOP == aEndBevelSide) {
           topRect.width -= aEndBevelOffset - endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, topRect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, topRect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4088,7 +4078,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_BOTTOM == aEndBevelSide) {
           bottomRect.width -= aEndBevelOffset - endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, bottomRect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, bottomRect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4104,7 +4094,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_LEFT == aEndBevelSide) {
           leftRect.height -= aEndBevelOffset - endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, leftRect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, leftRect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4118,7 +4108,7 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
         if (NS_SIDE_RIGHT == aEndBevelSide) {
           rightRect.height -= aEndBevelOffset - endBevel;
         }
-        DrawSolidBorderSegment(drawTarget, rightRect, aBorderColor,
+        DrawSolidBorderSegment(aDrawTarget, rightRect, aBorderColor,
                                aAppUnitsPerDevPixel, twipsPerPixel,
                                aStartBevelSide, startBevel, aEndBevelSide,
                                endBevel);
@@ -4126,8 +4116,9 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
       break;
     }
     // else fall through to solid
+    MOZ_FALLTHROUGH;
   case NS_STYLE_BORDER_STYLE_SOLID:
-    DrawSolidBorderSegment(drawTarget, aBorder, aBorderColor,
+    DrawSolidBorderSegment(aDrawTarget, aBorder, aBorderColor,
                            aAppUnitsPerDevPixel, twipsPerPixel, aStartBevelSide,
                            aStartBevelOffset, aEndBevelSide, aEndBevelOffset);
     break;
@@ -4139,8 +4130,6 @@ nsCSSRendering::DrawTableBorderSegment(nsRenderingContext&     aContext,
     NS_ASSERTION(false, "Unexpected 'auto' table border");
     break;
   }
-
-  ctx->SetAntialiasMode(oldMode);
 }
 
 // End table border-collapsing section
@@ -5407,7 +5396,7 @@ nsContextBoxBlur::Init(const nsRect& aRect, nscoord aSpreadRadius,
 
   IntSize blurRadius;
   IntSize spreadRadius;
-  GetBlurAndSpreadRadius(aDestinationCtx, aAppUnitsPerDevPixel,
+  GetBlurAndSpreadRadius(aDestinationCtx->GetDrawTarget(), aAppUnitsPerDevPixel,
                          aBlurRadius, aSpreadRadius,
                          blurRadius, spreadRadius);
 
@@ -5557,7 +5546,7 @@ nsContextBoxBlur::BlurRectangle(gfxContext* aDestinationCtx,
 }
 
 /* static */ void
-nsContextBoxBlur::GetBlurAndSpreadRadius(gfxContext* aDestinationCtx,
+nsContextBoxBlur::GetBlurAndSpreadRadius(DrawTarget* aDestDrawTarget,
                                          int32_t aAppUnitsPerDevPixel,
                                          nscoord aBlurRadius,
                                          nscoord aSpreadRadius,
@@ -5565,16 +5554,15 @@ nsContextBoxBlur::GetBlurAndSpreadRadius(gfxContext* aDestinationCtx,
                                          IntSize& aOutSpreadRadius,
                                          bool aConstrainSpreadRadius)
 {
-  gfxFloat scaleX = 1;
-  gfxFloat scaleY = 1;
-
   // Do blurs in device space when possible.
   // Chrome/Skia always does the blurs in device space
   // and will sometimes get incorrect results (e.g. rotated blurs)
-  gfxMatrix transform = aDestinationCtx->CurrentMatrix();
+  Matrix transform = aDestDrawTarget->GetTransform();
   // XXX: we could probably handle negative scales but for now it's easier just to fallback
+  gfxFloat scaleX, scaleY;
   if (transform.HasNonAxisAlignedTransform() || transform._11 <= 0.0 || transform._22 <= 0.0) {
-    transform = gfxMatrix();
+    scaleX = 1;
+    scaleY = 1;
   } else {
     scaleX = transform._11;
     scaleY = transform._22;
@@ -5616,7 +5604,7 @@ nsContextBoxBlur::InsetBoxBlur(gfxContext* aDestinationCtx,
   IntSize spreadRadius;
   // Convert the blur and spread radius to device pixels
   bool constrainSpreadRadius = false;
-  GetBlurAndSpreadRadius(aDestinationCtx, aAppUnitsPerDevPixel,
+  GetBlurAndSpreadRadius(aDestinationCtx->GetDrawTarget(), aAppUnitsPerDevPixel,
                          aBlurRadiusAppUnits, aSpreadDistanceAppUnits,
                          blurRadius, spreadRadius, constrainSpreadRadius);
 

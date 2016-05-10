@@ -117,7 +117,7 @@ class ReleaseFirefoxUIUpdateTests(FirefoxUIUpdateTests):
             'abs_tools_dir': os.path.join(abs_dirs['abs_work_dir'], 'tools'),
         }
 
-        for key in dirs.keys():
+        for key in dirs:
             if key not in abs_dirs:
                 abs_dirs[key] = dirs[key]
         self.abs_dirs = abs_dirs

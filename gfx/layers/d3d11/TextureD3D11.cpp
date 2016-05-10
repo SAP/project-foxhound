@@ -7,7 +7,6 @@
 #include "CompositorD3D11.h"
 #include "gfxContext.h"
 #include "Effects.h"
-#include "mozilla/layers/YCbCrImageDataSerializer.h"
 #include "gfxWindowsPlatform.h"
 #include "gfx2DGlue.h"
 #include "gfxPrefs.h"
@@ -121,7 +120,12 @@ TextureSourceD3D11::GetShaderResourceView()
   if (!mSRV && mTexture) {
     RefPtr<ID3D11Device> device;
     mTexture->GetDevice(getter_AddRefs(device));
-    HRESULT hr = device->CreateShaderResourceView(mTexture, nullptr, getter_AddRefs(mSRV));
+
+    // see comment in CompositingRenderTargetD3D11 constructor
+    CD3D11_SHADER_RESOURCE_VIEW_DESC srvDesc(D3D11_SRV_DIMENSION_TEXTURE2D, mFormatOverride);
+    D3D11_SHADER_RESOURCE_VIEW_DESC *desc = mFormatOverride == DXGI_FORMAT_UNKNOWN ? nullptr : &srvDesc;
+
+    HRESULT hr = device->CreateShaderResourceView(mTexture, desc, getter_AddRefs(mSRV));
     if (FAILED(hr)) {
       gfxCriticalNote << "[D3D11] TextureSourceD3D11:GetShaderResourceView CreateSRV failure " << gfx::hexa(hr);
       return nullptr;
@@ -665,8 +669,7 @@ CreateTextureHostD3D11(const SurfaceDescriptor& aDesc,
 {
   RefPtr<TextureHost> result;
   switch (aDesc.type()) {
-    case SurfaceDescriptor::TSurfaceDescriptorShmem:
-    case SurfaceDescriptor::TSurfaceDescriptorMemory: {
+    case SurfaceDescriptor::TSurfaceDescriptorBuffer: {
       result = CreateBackendIndependentTextureHost(aDesc, aDeallocator, aFlags);
       break;
     }
@@ -728,13 +731,13 @@ D3D11TextureData::UpdateFromSurface(gfx::SourceSurface* aSurface)
   RefPtr<DataSourceSurface> srcSurf = aSurface->GetDataSurface();
 
   if (!srcSurf) {
-    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface.";
+    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface (D3D11).";
     return false;
   }
 
   DataSourceSurface::MappedSurface sourceMap;
   if (!srcSurf->Map(DataSourceSurface::READ, &sourceMap)) {
-    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface.";
+    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface (D3D11).";
     return false;
   }
 
@@ -761,13 +764,13 @@ D3D10TextureData::UpdateFromSurface(gfx::SourceSurface* aSurface)
   RefPtr<DataSourceSurface> srcSurf = aSurface->GetDataSurface();
 
   if (!srcSurf) {
-    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface.";
+    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface (D3D10).";
     return false;
   }
 
   DataSourceSurface::MappedSurface sourceMap;
   if (!srcSurf->Map(DataSourceSurface::READ, &sourceMap)) {
-    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface.";
+    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface (D3D10).";
     return false;
   }
 
@@ -1168,7 +1171,8 @@ DataTextureSourceD3D11::SetCompositor(Compositor* aCompositor)
 }
 
 CompositingRenderTargetD3D11::CompositingRenderTargetD3D11(ID3D11Texture2D* aTexture,
-                                                           const gfx::IntPoint& aOrigin)
+                                                           const gfx::IntPoint& aOrigin,
+                                                           DXGI_FORMAT aFormatOverride)
   : CompositingRenderTarget(aOrigin)
 {
   MOZ_ASSERT(aTexture);
@@ -1178,7 +1182,15 @@ CompositingRenderTargetD3D11::CompositingRenderTargetD3D11(ID3D11Texture2D* aTex
   RefPtr<ID3D11Device> device;
   mTexture->GetDevice(getter_AddRefs(device));
 
-  HRESULT hr = device->CreateRenderTargetView(mTexture, nullptr, getter_AddRefs(mRTView));
+  mFormatOverride = aFormatOverride;
+
+  // If we happen to have a typeless underlying DXGI surface, we need to be explicit
+  // about the format here. (Such a surface could come from an external source, such
+  // as the Oculus compositor)
+  CD3D11_RENDER_TARGET_VIEW_DESC rtvDesc(D3D11_RTV_DIMENSION_TEXTURE2D, mFormatOverride);
+  D3D11_RENDER_TARGET_VIEW_DESC *desc = aFormatOverride == DXGI_FORMAT_UNKNOWN ? nullptr : &rtvDesc;
+
+  HRESULT hr = device->CreateRenderTargetView(mTexture, desc, getter_AddRefs(mRTView));
 
   if (FAILED(hr)) {
     LOGD3D11("Failed to create RenderTargetView.");
@@ -1252,7 +1264,7 @@ SyncObjectD3D11::FinalizeFrame()
     if (FAILED(hr) || !mutex) {
       // Leave both the critical error and MOZ_CRASH for now; the critical error lets
       // us "save" the hr value.  We will probably eventuall replace this with gfxDevCrash.
-      gfxCriticalError() << "Failed to get KeyedMutex: " << hexa(hr);
+      gfxCriticalError() << "Failed to get KeyedMutex (1): " << hexa(hr);
       MOZ_CRASH("GFX: Cannot get D3D10 KeyedMutex");
     }
   }
@@ -1279,7 +1291,7 @@ SyncObjectD3D11::FinalizeFrame()
     if (FAILED(hr) || !mutex) {
       // Leave both the critical error and MOZ_CRASH for now; the critical error lets
       // us "save" the hr value.  We will probably eventuall replace this with gfxDevCrash.
-      gfxCriticalError() << "Failed to get KeyedMutex: " << hexa(hr);
+      gfxCriticalError() << "Failed to get KeyedMutex (2): " << hexa(hr);
       MOZ_CRASH("GFX: Cannot get D3D11 KeyedMutex");
     }
   }

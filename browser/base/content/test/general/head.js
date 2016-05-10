@@ -95,10 +95,11 @@ function closeToolbarCustomizationUI(aCallback, aBrowserWin) {
   aBrowserWin.gCustomizeMode.exit();
 }
 
-function waitForCondition(condition, nextTest, errorMsg) {
+function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
+  retryTimes = typeof retryTimes !== 'undefined' ?  retryTimes : 30;
   var tries = 0;
   var interval = setInterval(function() {
-    if (tries >= 30) {
+    if (tries >= retryTimes) {
       ok(false, errorMsg);
       moveOn();
     }
@@ -1145,19 +1146,24 @@ function getPropertyBagValue(bag, key) {
  * been submitted. This function will also test the crash
  * reports extra data to see if it matches expectedExtra.
  *
- * @param expectedExtra
+ * @param expectedExtra (object)
  *        An Object whose key-value pairs will be compared
  *        against the key-value pairs in the extra data of the
  *        crash report. A test failure will occur if there is
  *        a mismatch.
  *
- *        Note that this will only check the values that exist
+ *        If the value of the key-value pair is "null", this will
+ *        be interpreted as "this key should not be included in the
+ *        extra data", and will cause a test failure if it is detected
+ *        in the crash report.
+ *
+ *        Note that this will ignore any keys that are not included
  *        in expectedExtra. It's possible that the crash report
  *        will contain other extra information that is not
  *        compared against.
  * @returns Promise
  */
-function promiseCrashReport(expectedExtra) {
+function promiseCrashReport(expectedExtra={}) {
   return Task.spawn(function*() {
     info("Starting wait on crash-report-status");
     let [subject, data] =
@@ -1196,67 +1202,13 @@ function promiseCrashReport(expectedExtra) {
       let key = enumerator.getNext().QueryInterface(Ci.nsIProperty).name;
       let value = extra.getPropertyAsAString(key);
       if (key in expectedExtra) {
-        is(value, expectedExtra[key],
-           `Crash report had the right extra value for ${key}`);
+        if (expectedExtra[key] == null) {
+          ok(false, `Got unexpected key ${key} with value ${value}`);
+        } else {
+          is(value, expectedExtra[key],
+             `Crash report had the right extra value for ${key}`);
+        }
       }
     }
   });
-}
-
-/**
- * Retrieves the number of searches recorded in FHR for the current day.
- *
- * @param aEngineName
- *        name of the setup search engine.
- * @param aSource
- *        The FHR "source" name for the search, like "abouthome" or "urlbar".
- *
- * @return {Promise} Returns a promise resolving to the number of searches.
- */
-function getNumberOfSearchesInFHR(aEngineName, aSource) {
-  let reporter = Components.classes["@mozilla.org/datareporting/service;1"]
-                                   .getService()
-                                   .wrappedJSObject
-                                   .healthReporter;
-  ok(reporter, "Health Reporter instance available.");
-
-  return reporter.onInit().then(function onInit() {
-    let provider = reporter.getProvider("org.mozilla.searches");
-    ok(provider, "Searches provider is available.");
-
-    let m = provider.getMeasurement("counts", 3);
-    return m.getValues().then(data => {
-      let now = new Date();
-      let yday = new Date(now);
-      yday.setDate(yday.getDate() - 1);
-
-      // Add the number of searches recorded yesterday to the number of searches
-      // recorded today. This makes the test not fail intermittently when it is
-      // run at midnight and we accidentally compare the number of searches from
-      // different days. Tests are always run with an empty profile so there
-      // are no searches from yesterday, normally. Should the test happen to run
-      // past midnight we make sure to count them in as well.
-      return getNumberOfSearchesInFHRByDate(aEngineName, aSource, data, now) +
-             getNumberOfSearchesInFHRByDate(aEngineName, aSource, data, yday);
-    });
-  });
-}
-
-/**
- * Helper for getNumberOfSearchesInFHR.  You probably don't want to call this
- * directly.
- */
-function getNumberOfSearchesInFHRByDate(aEngineName, aSource, aData, aDate) {
-  if (aData.days.hasDay(aDate)) {
-    let id = Services.search.getEngineByName(aEngineName).identifier;
-
-    let day = aData.days.getDay(aDate);
-    let field = id + "." + aSource;
-
-    if (day.has(field)) {
-      return day.get(field) || 0;
-    }
-  }
-
-  return 0; // No records found.
 }

@@ -7,6 +7,7 @@
 
 from __future__ import absolute_import, unicode_literals
 
+import argparse
 import collections
 import difflib
 import errno
@@ -110,6 +111,23 @@ def ensureParentDir(path):
                 raise
 
 
+def simple_diff(filename, old_lines, new_lines):
+    """Returns the diff between old_lines and new_lines, in unified diff form,
+    as a list of lines.
+
+    old_lines and new_lines are lists of non-newline terminated lines to
+    compare.
+    old_lines can be None, indicating a file creation.
+    new_lines can be None, indicating a file deletion.
+    """
+
+    old_name = '/dev/null' if old_lines is None else filename
+    new_name = '/dev/null' if new_lines is None else filename
+
+    return difflib.unified_diff(old_lines or [], new_lines or [],
+                                old_name, new_name, n=4, lineterm='')
+
+
 class FileAvoidWrite(BytesIO):
     """File-like object that buffers output and only writes if content changed.
 
@@ -121,11 +139,16 @@ class FileAvoidWrite(BytesIO):
     Instances can optionally capture diffs of file changes. This feature is not
     enabled by default because it a) doesn't make sense for binary files b)
     could add unwanted overhead to calls.
+
+    Additionally, there is dry run mode where the file is not actually written
+    out, but reports whether the file was existing and would have been updated
+    still occur, as well as diff capture if requested.
     """
-    def __init__(self, filename, capture_diff=False, mode='rU'):
+    def __init__(self, filename, capture_diff=False, dry_run=False, mode='rU'):
         BytesIO.__init__(self)
         self.name = filename
         self._capture_diff = capture_diff
+        self._dry_run = dry_run
         self.diff = None
         self.mode = mode
 
@@ -165,17 +188,22 @@ class FileAvoidWrite(BytesIO):
             finally:
                 existing.close()
 
-        ensureParentDir(self.name)
-        with open(self.name, 'w') as file:
-            file.write(buf)
+        if not self._dry_run:
+            ensureParentDir(self.name)
+            # Maintain 'b' if specified.  'U' only applies to modes starting with
+            # 'r', so it is dropped.
+            writemode = 'w'
+            if 'b' in self.mode:
+                writemode += 'b'
+            with open(self.name, writemode) as file:
+                file.write(buf)
 
         if self._capture_diff:
             try:
-                old_lines = old_content.splitlines() if old_content else []
+                old_lines = old_content.splitlines() if existed else None
                 new_lines = buf.splitlines()
 
-                self.diff = difflib.unified_diff(old_lines, new_lines,
-                    self.name, self.name, n=4, lineterm='')
+                self.diff = simple_diff(self.name, old_lines, new_lines)
             # FileAvoidWrite isn't unicode/bytes safe. So, files with non-ascii
             # content or opened and written in different modes may involve
             # implicit conversion and this will make Python unhappy. Since
@@ -183,7 +211,8 @@ class FileAvoidWrite(BytesIO):
             # This can go away once FileAvoidWrite uses io.BytesIO and
             # io.StringIO. But that will require a lot of work.
             except (UnicodeDecodeError, UnicodeEncodeError):
-                self.diff = 'Binary or non-ascii file changed: %s' % self.name
+                self.diff = ['Binary or non-ascii file changed: %s' %
+                             self.name]
 
         return existed, True
 
@@ -426,6 +455,14 @@ def FlagsFactory(flags):
     return Flags
 
 
+class StrictOrderingOnAppendListWithFlags(StrictOrderingOnAppendList):
+    """A list with flags specialized for moz.build environments.
+
+    Each subclass has a set of typed flags; this class lets us use `isinstance`
+    for natural testing.
+    """
+
+
 def StrictOrderingOnAppendListWithFlagsFactory(flags):
     """Returns a StrictOrderingOnAppendList-like object, with optional
     flags on each item.
@@ -441,9 +478,9 @@ def StrictOrderingOnAppendListWithFlagsFactory(flags):
         foo['a'].foo = True
         foo['b'].bar = 'bar'
     """
-    class StrictOrderingOnAppendListWithFlags(StrictOrderingOnAppendList):
+    class StrictOrderingOnAppendListWithFlagsSpecialization(StrictOrderingOnAppendListWithFlags):
         def __init__(self, iterable=[]):
-            StrictOrderingOnAppendList.__init__(self, iterable)
+            StrictOrderingOnAppendListWithFlags.__init__(self, iterable)
             self._flags_type = FlagsFactory(flags)
             self._flags = dict()
 
@@ -458,7 +495,50 @@ def StrictOrderingOnAppendListWithFlagsFactory(flags):
             raise TypeError("'%s' object does not support item assignment" %
                             self.__class__.__name__)
 
-    return StrictOrderingOnAppendListWithFlags
+        def _update_flags(self, other):
+            if self._flags_type._flags != other._flags_type._flags:
+                raise ValueError('Expected a list of strings with flags like %s, not like %s' %
+                                 (self._flags_type._flags, other._flags_type._flags))
+            intersection = set(self._flags.keys()) & set(other._flags.keys())
+            if intersection:
+                raise ValueError('Cannot update flags: both lists of strings with flags configure %s' %
+                                 intersection)
+            self._flags.update(other._flags)
+
+        def extend(self, l):
+            result = super(StrictOrderingOnAppendList, self).extend(l)
+            if isinstance(l, StrictOrderingOnAppendListWithFlags):
+                self._update_flags(l)
+            return result
+
+        def __setslice__(self, i, j, sequence):
+            result = super(StrictOrderingOnAppendList, self).__setslice__(i, j, sequence)
+            # We may have removed items.
+            for name in set(self._flags.keys()) - set(self):
+                del self._flags[name]
+            if isinstance(sequence, StrictOrderingOnAppendListWithFlags):
+                self._update_flags(sequence)
+            return result
+
+        def __add__(self, other):
+            result = super(StrictOrderingOnAppendList, self).__add__(other)
+            if isinstance(other, StrictOrderingOnAppendListWithFlags):
+                # Result has flags from other but not from self, since
+                # internally we duplicate self and then extend with other, and
+                # only extend knows about flags.  Since we don't allow updating
+                # when the set of flag keys intersect, which we instance we pass
+                # to _update_flags here matters.  This needs to be correct but
+                # is an implementation detail.
+                result._update_flags(self)
+            return result
+
+        def __iadd__(self, other):
+            result = super(StrictOrderingOnAppendList, self).__iadd__(other)
+            if isinstance(other, StrictOrderingOnAppendListWithFlags):
+                self._update_flags(other)
+            return result
+
+    return StrictOrderingOnAppendListWithFlagsSpecialization
 
 
 class HierarchicalStringList(object):
@@ -918,3 +998,20 @@ def expand_variables(s, variables):
             value = ' '.join(value)
         result += value
     return result
+
+
+class DefinesAction(argparse.Action):
+    '''An ArgumentParser action to handle -Dvar[=value] type of arguments.'''
+    def __call__(self, parser, namespace, values, option_string):
+        defines = getattr(namespace, self.dest)
+        if defines is None:
+            defines = {}
+        values = values.split('=', 1)
+        if len(values) == 1:
+            name, value = values[0], 1
+        else:
+            name, value = values
+            if value.isdigit():
+                value = int(value)
+        defines[name] = value
+        setattr(namespace, self.dest, defines)

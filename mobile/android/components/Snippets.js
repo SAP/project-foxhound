@@ -203,8 +203,7 @@ function updateBanner(messages) {
       icon: message.icon,
       weight: message.weight,
       onclick: function() {
-        let parentId = gChromeWin.BrowserApp.selectedTab.id;
-        gChromeWin.BrowserApp.addTab(message.url, { parentId: parentId });
+        gChromeWin.BrowserApp.loadURI(message.url);
         removeSnippet(id, message.id);
         UITelemetry.addEvent("action.1", "banner", null, message.id);
       },
@@ -229,6 +228,7 @@ function updateBanner(messages) {
  * snippet id in a pref so we'll never show it again.
  *
  * @param messageId unique id for home banner message, returned from Home.banner API
+ * @param snippetId unique id for snippet, sent from snippets server
  */
 function removeSnippet(messageId, snippetId) {
   // Remove the message from the home banner rotation.

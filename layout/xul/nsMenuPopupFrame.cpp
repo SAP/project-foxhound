@@ -836,7 +836,7 @@ nsMenuPopupFrame::InitializePopupWithAnchorAlign(nsIContent* aAnchorContent,
 }
 
 void
-nsMenuPopupFrame::ShowPopup(bool aIsContextMenu, bool aSelectFirstItem)
+nsMenuPopupFrame::ShowPopup(bool aIsContextMenu)
 {
   mIsContextMenu = aIsContextMenu;
 
@@ -1906,7 +1906,7 @@ nsMenuPopupFrame::FindMenuWithShortcut(nsIDOMKeyEvent* aKeyEvent, bool& doAction
 
   static DOMTimeStamp lastKeyTime = 0;
   DOMTimeStamp keyTime;
-  aKeyEvent->GetTimeStamp(&keyTime);
+  aKeyEvent->AsEvent()->GetTimeStamp(&keyTime);
 
   if (charCode == 0) {
     if (keyCode == nsIDOMKeyEvent::DOM_VK_BACK_SPACE) {

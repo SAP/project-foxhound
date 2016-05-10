@@ -80,10 +80,7 @@ public:
   NS_DECL_NSIREQUEST
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIEVENTTARGET
-  // missing from NS_DECL_NSIEVENTTARGET because MSVC
-  nsresult Dispatch(nsIRunnable* aEvent, uint32_t aFlags) {
-    return Dispatch(nsCOMPtr<nsIRunnable>(aEvent).forget(), aFlags);
-  }
+  using nsIEventTarget::Dispatch;
 
   explicit WebSocketImpl(WebSocket* aWebSocket)
   : mWebSocket(aWebSocket)
@@ -151,13 +148,9 @@ public:
                                 bool isBinary);
 
   // ConnectionCloseEvents: 'error' event if needed, then 'close' event.
-  // - These must not be dispatched while we are still within an incoming call
-  //   from JS (ex: close()).  Set 'sync' to false in that case to dispatch in a
-  //   separate new event.
   nsresult ScheduleConnectionCloseEvents(nsISupports* aContext,
-                                         nsresult aStatusCode,
-                                         bool sync);
-  // 2nd half of ScheduleConnectionCloseEvents, sometimes run in its own event.
+                                         nsresult aStatusCode);
+  // 2nd half of ScheduleConnectionCloseEvents, run in its own event.
   void DispatchConnectionCloseEvents();
 
   // Dispatch a runnable to the right thread.
@@ -521,14 +514,11 @@ WebSocketImpl::CloseConnection(uint16_t aReasonCode,
 
   mWebSocket->SetReadyState(WebSocket::CLOSING);
 
-  // Can be called from Cancel() or Init() codepaths, so need to dispatch
-  // onerror/onclose asynchronously
   ScheduleConnectionCloseEvents(
                     nullptr,
                     (aReasonCode == nsIWebSocketChannel::CLOSE_NORMAL ||
                      aReasonCode == nsIWebSocketChannel::CLOSE_GOING_AWAY) ?
-                     NS_OK : NS_ERROR_FAILURE,
-                    false);
+                     NS_OK : NS_ERROR_FAILURE);
 
   return NS_OK;
 }
@@ -802,14 +792,12 @@ WebSocketImpl::OnStop(nsISupports* aContext, nsresult aStatusCode)
   MOZ_ASSERT(mWebSocket->ReadyState() != WebSocket::CLOSED,
              "Shouldn't already be CLOSED when OnStop called");
 
-  // called by network stack, not JS, so can dispatch JS events synchronously
-  return ScheduleConnectionCloseEvents(aContext, aStatusCode, true);
+  return ScheduleConnectionCloseEvents(aContext, aStatusCode);
 }
 
 nsresult
 WebSocketImpl::ScheduleConnectionCloseEvents(nsISupports* aContext,
-                                             nsresult aStatusCode,
-                                             bool sync)
+                                             nsresult aStatusCode)
 {
   AssertIsOnTargetThread();
 
@@ -829,11 +817,7 @@ WebSocketImpl::ScheduleConnectionCloseEvents(nsISupports* aContext,
 
     mOnCloseScheduled = true;
 
-    if (sync) {
-      DispatchConnectionCloseEvents();
-    } else {
-      NS_DispatchToCurrentThread(new CallDispatchConnectionCloseEvents(this));
-    }
+    NS_DispatchToCurrentThread(new CallDispatchConnectionCloseEvents(this));
   }
 
   return NS_OK;
@@ -1259,7 +1243,7 @@ WebSocket::Constructor(const GlobalObject& aGlobal,
     }
 
     unsigned lineno, column;
-    JS::AutoFilename file;
+    JS::UniqueChars file;
     if (!JS::DescribeScriptedCaller(aGlobal.Context(), &file, &lineno,
                                     &column)) {
       NS_WARNING("Failed to get line number and filename in workers.");
@@ -1494,7 +1478,7 @@ WebSocketImpl::Init(JSContext* aCx,
     MOZ_ASSERT(aCx);
 
     unsigned lineno, column;
-    JS::AutoFilename file;
+    JS::UniqueChars file;
     if (JS::DescribeScriptedCaller(aCx, &file, &lineno, &column)) {
       mScriptFile = file.get();
       mScriptLine = lineno;
@@ -2119,17 +2103,6 @@ public:
                                       EmptyCString());
     }
 
-    return true;
-  }
-
-  bool Suspend(JSContext* aCx) override
-  {
-    {
-      MutexAutoLock lock(mWebSocketImpl->mMutex);
-      mWebSocketImpl->mWorkerShuttingDown = true;
-    }
-
-    mWebSocketImpl->CloseConnection(nsIWebSocketChannel::CLOSE_GOING_AWAY);
     return true;
   }
 

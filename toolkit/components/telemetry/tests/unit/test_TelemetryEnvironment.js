@@ -337,6 +337,7 @@ function checkSettingsSection(data) {
   const EXPECTED_FIELDS_TYPES = {
     blocklistEnabled: "boolean",
     e10sEnabled: "boolean",
+    e10sCohort: "string",
     telemetryEnabled: "boolean",
     isInOptoutSample: "boolean",
     locale: "string",
@@ -749,6 +750,7 @@ function isRejected(promise) {
 
 add_task(function* asyncSetup() {
   yield spoofProfileReset();
+  TelemetryEnvironment.delayedInit();
 });
 
 add_task(function* test_checkEnvironment() {
@@ -1015,7 +1017,7 @@ add_task(function* test_addonsAndPlugins() {
     hasBinaryComponents: false,
     installDay: ADDON_INSTALL_DATE,
     updateDay: ADDON_INSTALL_DATE,
-    signedState: mozinfo.addon_signing ? AddonManager.SIGNEDSTATE_MISSING : AddonManager.SIGNEDSTATE_NOT_REQUIRED,
+    signedState: mozinfo.addon_signing ? AddonManager.SIGNEDSTATE_SIGNED : AddonManager.SIGNEDSTATE_NOT_REQUIRED,
   };
 
   const EXPECTED_PLUGIN_DATA = {
@@ -1301,10 +1303,10 @@ add_task(function* test_defaultSearchEngine() {
   for (let engine of Services.search.getEngines()) {
     Services.search.removeEngine(engine);
   }
-  // The search service does not notify "engine-default" when removing a default engine.
+  // The search service does not notify "engine-current" when removing a default engine.
   // Manually force the notification.
   // TODO: remove this when bug 1165341 is resolved.
-  Services.obs.notifyObservers(null, "browser-search-engine-modified", "engine-default");
+  Services.obs.notifyObservers(null, "browser-search-engine-modified", "engine-current");
 
   // Then check that no default engine is reported if none is available.
   data = TelemetryEnvironment.currentEnvironment;

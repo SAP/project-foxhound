@@ -181,43 +181,6 @@ html[dir="rtl"] .conversation-toolbar-media-btn-group-box > button:first-child:h
   width: 100%;
 }
 
-.call-action-group > .invite-button {
-  cursor: pointer;
-  margin: 0 4px;
-  position: relative;
-}
-
-.call-action-group > .invite-button > img {
-  background-color: #00a9dc;
-  border-radius: 100%;
-  height: 28px;
-  width: 28px;
-}
-
-.call-action-group > .invite-button:hover > img {
-  background-color: #5cccee;
-}
-
-.call-action-group > .invite-button.triggered > img {
-  background-color: #56b397;
-}
-
-.call-action-group > .invite-button > p {
-  display: none;
-  /* Position the text under the button while centering it without impacting the
-   * rest of the layout */
-  left: -10rem;
-  margin: .5rem 0 0;
-  position: absolute;
-  right: -10rem;
-  font-size: 0.8rem;
-}
-
-.call-action-group > .invite-button.triggered > p,
-.call-action-group > .invite-button:hover > p {
-  display: block;
-}
-
 .room-failure {
   /* This flex allows us to not calculate the height of the logo area
      versus the buttons */
@@ -413,6 +376,44 @@ html[dir="rtl"] .settings-menu.dropdown-menu {
   }
 }
 
+/* Stream paused */
+.focus-stream > .room-inner-info-area > .remote-stream-paused {
+  background-color: #fff;
+  border: solid 1px #a6a6a6;
+  box-shadow: 0 2px 4px rgba(0,0,0,.25);
+  display: inline-block;
+  margin: auto;
+  padding: 10px 15px;
+}
+
+.focus-stream > .room-inner-info-area > .remote-stream-paused > h1 {
+  font-size: 1.6rem;
+  line-height: 3rem;
+  padding-left: 42px;
+  position: relative;
+  text-align: left;
+}
+
+.focus-stream > .room-inner-info-area > .remote-stream-paused > h1:before {
+  background: url("../img/paused-hello.svg") center center no-repeat;
+  content: "";
+  display: block;
+  height: 30px;
+  left: 0;
+  position: absolute;
+  width: 32px;
+}
+
+html[dir="rtl"] .focus-stream > .room-inner-info-area > .remote-stream-paused > h1 {
+  padding-left: 0;
+  padding-right: 42px;
+}
+
+html[dir="rtl"] .focus-stream > .room-inner-info-area > .remote-stream-paused > h1:before {
+  right: 0;
+  transform: scaleX(-1);
+}
+
 .remote > .avatar {
   /* make visually distinct from local avatar */
   opacity: 0.25;
@@ -436,79 +437,8 @@ html, .fx-embedded, #main,
   height: 100%;
 }
 
-.room-invitation-overlay {
-  position: absolute;
-  background: rgba(255, 255, 255, 0.85);
-  top: 0;
-  height: 100%;
-  right: 0;
-  left: 0;
-  text-align: center;
-  color: #000;
-  z-index: 1010;
-  display: flex;
-  flex-flow: column nowrap;
-  justify-content: center;
-  align-items: stretch;
-}
-
-.room-invitation-content {
-  display: flex;
-  flex-flow: column nowrap;
-  justify-content: center;
-  align-items: center;
-}
-
-.share-service-dropdown {
-  color: #000;
-  text-align: start;
-  bottom: auto;
-  top: 0;
-  overflow: hidden;
-  overflow-y: auto;
-}
-
-/* When the dropdown is showing a vertical scrollbar, compensate for its width. */
-body[platform="other"] .share-service-dropdown.overflow > .dropdown-menu-item,
-body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
-  -moz-padding-end: 20px;
-}
-
-.share-service-dropdown > .dropdown-menu-item > .icon {
-  width: 14px;
-  height: 14px;
-  margin-right: 4px;
-}
-
-.dropdown-menu-item > .icon-add-share-service {
-  background-image: url("../img/icons-16x16.svg#add");
-  background-repeat: no-repeat;
-  background-size: 12px 12px;
-  width: 12px;
-  height: 12px;
-}
-
-.dropdown-menu-item:hover > .icon-add-share-service {
-  background-image: url("../img/icons-16x16.svg#add-hover");
-}
-
-.dropdown-menu-item:hover:active > .icon-add-share-service {
-  background-image: url("../img/icons-16x16.svg#add-active");
-}
-
 .context-url-view-wrapper > .context-content {
   margin: 0 1rem 1.5rem 1rem;
-}
-
-.room-invitation-content {
-  color: #333;
-  font-size: 1rem;
-  margin: 1rem auto;
-}
-
-.room-invitation-content > p {
-  margin-left: 10px;
-  margin-right: 10px;
 }
 
 .media-layout {
@@ -523,23 +453,27 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
 
 .media-wrapper > .focus-stream {
   display: flex;
-  /* We want this to be the width, minus 200px which is for the right-side text
-     chat and video displays. */
-  width: calc(100% - 200px);
-  /* 100% height to fill up media-layout, thus forcing other elements into the
-     second column that's 200px wide */
-  height: 100%;
   background-color: #d8d8d8;
+  /* 100% height to fill up media-layout, thus forcing other elements into the
+     second column that's 272px wide */
+  height: 100%;
+  /* We want this to be the width, minus 272px which is for the right-side text
+     chat and video displays. */
+  width: calc(100% - 272px);
+}
+
+.media-wrapper > .focus-stream.screen-sharing-paused > .remote-video-box {
+  display: none;
 }
 
 .media-wrapper > .local {
   flex: 0 1 auto;
-  width: 200px;
-  height: 150px;
+  height: 204px;
+  width: 272px;
 }
 
-.media-wrapper > .local > .local-video,
-.media-wrapper > .focus-stream > .local > .local-video {
+.media-wrapper > .local .local-video,
+.media-wrapper > .focus-stream > .local .local-video {
   width: 100%;
   height: 100%;
   /* Transform is to make the local video act like a mirror, as is the
@@ -555,13 +489,13 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
   overflow: hidden;
 }
 
-.media-wrapper > .remote > .remote-video {
+.media-wrapper > .remote .remote-video {
   object-fit: cover;
   width: 100%;
   height: 100%;
 }
 
-.media-wrapper > .screen > .screen-share-video {
+.media-wrapper > .screen .screen-share-video {
   width: 100%;
   height: 100%;
 }
@@ -571,15 +505,32 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
    fix its height. */
 .media-wrapper > .text-chat-view {
   flex: 0 0 auto;
-  /* Text chat is a fixed 200px width for normal displays. */
-  width: 200px;
   height: 100%;
+  /* Text chat is a fixed 272px width for normal displays. */
+  width: 272px;
 }
 
-.media-wrapper.showing-local-streams > .text-chat-view {
+.media-wrapper > .text-chat-view > .text-chat-entries > .text-chat-scroller > .welcome-message {
+  font-size: 1.2rem;
+  margin: 0 0 15px;
+  color: #5e5f64;
+  line-height: 20px;
+}
+
+.media-wrapper.showing-local-streams > .text-chat-view,
+.media-wrapper.showing-media-wait > .text-chat-view {
   /* When we're displaying the local streams, then we need to make the text
      chat view a bit shorter to give room. */
-  height: calc(100% - 150px);
+  height: calc(100% - 204px);
+}
+
+.media-wrapper.showing-media-wait > .text-chat-view {
+  order: 2;
+}
+
+.media-wrapper.showing-media-wait > .local {
+  /* Hides the local stream video box while we're asking the user for permissions */
+  display: none;
 }
 
 .media-wrapper.showing-local-streams.receiving-screen-share {
@@ -588,27 +539,45 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
 
 .media-wrapper.showing-local-streams.receiving-screen-share > .text-chat-view {
   /* When we're displaying the local streams, then we need to make the text
-     chat view a bit shorter to give room. */
-  height: calc(100% - 300px);
+     chat view a bit shorter to give room. 1 streams x 204px */
+  height: calc(100% - 204px);
 }
 
 .media-wrapper.receiving-screen-share > .screen {
   order: 1;
 }
 
-.media-wrapper.receiving-screen-share > .text-chat-view {
-  order: 2;
+.media-wrapper.receiving-screen-share > .text-chat-view,
+.media-wrapper.showing-local-streams > .text-chat-view  {
+  order: 4;
 }
 
 .media-wrapper.receiving-screen-share > .remote {
-  order: 3;
   flex: 0 1 auto;
-  width: 200px;
-  height: 150px;
+  order: 2;
+  /* to keep the 4:3 ratio set both height and width */
+  height: 204px;
+  width: 272px;
 }
 
 .media-wrapper.receiving-screen-share > .local {
-  order: 4;
+  order: 3;
+}
+
+.media-wrapper.receiving-screen-share.showing-remote-streams > .local {
+  position: absolute;
+  z-index: 2;
+  padding: 8px;
+  right: 0;
+  left: auto;
+  top: 124px;
+  /* to keep the 4:3 ratio 80x60px + 16px padding + 4px border */
+  width: calc(80px + 16px + 4px);
+  height: calc(60px + 16px + 4px);
+}
+
+.media-wrapper.receiving-screen-share.showing-remote-streams > .local > .remote-video-box {
+  border: solid 2px #fff;
 }
 
 @media screen and (max-width:640px) {
@@ -690,12 +659,12 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
     max-width: 50%;
   }
 
-  .media-wrapper.receiving-screen-share > .remote > .remote-video {
+  .media-wrapper.receiving-screen-share > .remote .remote-video {
       /* Reset the object-fit for this. */
     object-fit: contain;
   }
 
-  .media-wrapper.receiving-screen-share > .local {
+  .media-wrapper.receiving-screen-share.showing-remote-streams > .local {
     /* Screen shares have remote & local video side-by-side on narrow screens */
     order: 3;
     flex: 1 1 auto;
@@ -706,13 +675,15 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
     max-width: 50%;
     /* This cancels out the absolute positioning when it's just remote video. */
     position: relative;
+    top: auto;
     bottom: auto;
     right: auto;
     margin: 0;
+    padding: 0;
   }
 
-  .media-wrapper.receiving-screen-share > .text-chat-view {
-    order: 4;
+  .media-wrapper.receiving-screen-share.showing-remote-streams > .local > .remote-video-box {
+    border: 0;
   }
 }
 
@@ -796,14 +767,14 @@ body[platform="win"] .share-service-dropdown.overflow > .dropdown-menu-item {
 .text-chat-view > .text-chat-entries {
   width: 100%;
   overflow: auto;
-  padding-top: .6rem;
+  padding-top: 15px;
   /* 40px is the height of .text-chat-box. */
   height: calc(100% - 40px);
 }
 
 .text-chat-disabled > .text-chat-entries {
-  /* When text chat is disabled, the entries box should be 100% height. */
-  height: 100%;
+  /* When text chat is disabled, we want to show a tile ad with 220px height */
+  height: calc(100% - 220px);
 }
 
 .text-chat-entry,
@@ -855,7 +826,7 @@ html[dir="rtl"] .text-chat-entry.received {
   /* leave some room for the chat bubble arrow */
   max-width: 70%;
   border-radius: 15px;
-  border: 1px solid #5cccee;
+  border: 1px solid #d8d8d8;
   background: #fff;
   word-wrap: break-word;
   flex: 0 1 auto;
@@ -873,7 +844,7 @@ html[dir="rtl"] .text-chat-entry.received {
 
 .text-chat-entry.received > p {
   border-top-left-radius: 0;
-  border-color: #d8d8d8;
+  border-color: #5cccee;
 }
 
 html[dir="rtl"] .text-chat-entry.sent > p {
@@ -965,6 +936,43 @@ html[dir="rtl"] .text-chat-entry.received > p:after {
   height: 10px;
   background-image: url("../img/chatbubble-arrow-left.svg");
   align-self: auto;
+}
+
+.text-chat-notif {
+  display: flex;
+  margin-bottom: .5em;
+}
+
+.text-chat-notif > .content-wrapper {
+  margin-left: 10px;
+  display: flex;
+  border: 1px solid #B1B1B1;
+}
+
+.content-wrapper > .notification-icon {
+  margin: 8px 5px 8px 10px;
+}
+
+.content-wrapper > p {
+  margin-top: 8px;
+  margin-right: 10px;
+  margin-bottom: 8px;
+  color: #757575;
+  font-size: 12px;
+}
+
+html[dir="rtl"] .text-chat-notif > .content-wrapper {
+  margin-right: 10px;
+  margin-left: 0px;
+}
+
+html[dir="rtl"] .content-wrapper > .notification-icon {
+  margin: 8px 10px 8px 5px;
+}
+
+html[dir="rtl"] .content-wrapper > p {
+  margin-left: 10px;
+  margin-right: 0px;
 }
 
 html[dir="rtl"] .text-chat-arrow {

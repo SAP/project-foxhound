@@ -40,12 +40,13 @@ GfxFormatToSkiaColorType(SurfaceFormat format)
 }
 
 static inline SurfaceFormat
-SkiaColorTypeToGfxFormat(SkColorType type)
+SkiaColorTypeToGfxFormat(SkColorType aColorType, SkAlphaType aAlphaType = kPremul_SkAlphaType)
 {
-  switch (type)
+  switch (aColorType)
   {
     case kBGRA_8888_SkColorType:
-      return SurfaceFormat::B8G8R8A8;
+      return aAlphaType == kOpaque_SkAlphaType ?
+               SurfaceFormat::B8G8R8X8 : SurfaceFormat::B8G8R8A8;
     case kRGB_565_SkColorType:
       return SurfaceFormat::R5G6B5_UINT16;
     case kAlpha_8_SkColorType:
@@ -53,6 +54,27 @@ SkiaColorTypeToGfxFormat(SkColorType type)
     default:
       return SurfaceFormat::B8G8R8A8;
   }
+}
+
+static inline SkAlphaType
+GfxFormatToSkiaAlphaType(SurfaceFormat format)
+{
+  switch (format)
+  {
+    case SurfaceFormat::B8G8R8X8:
+    case SurfaceFormat::R5G6B5_UINT16:
+      return kOpaque_SkAlphaType;
+    default:
+      return kPremul_SkAlphaType;
+  }
+}
+
+static inline SkImageInfo
+MakeSkiaImageInfo(const IntSize& aSize, SurfaceFormat aFormat)
+{
+  return SkImageInfo::Make(aSize.width, aSize.height,
+                           GfxFormatToSkiaColorType(aFormat),
+                           GfxFormatToSkiaAlphaType(aFormat));
 }
 
 #ifdef USE_SKIA_GPU
@@ -143,17 +165,6 @@ StrokeOptionsToPaint(SkPaint& aPaint, const StrokeOptions &aOptions)
 
     for (uint32_t i = 0; i < dashCount; i++) {
       pattern[i] = SkFloatToScalar(aOptions.mDashPattern[i % aOptions.mDashLength]);
-      // bugs 1002466 & 1214309 - Dash intervals that are (close to) zero
-      // are skipped, ignoring other stroke settings. Nudge the dash interval
-      // to be just large enough that it is not interpreted as degenerate.
-      // Ideally this value would just be SK_ScalarNearlyZero, the smallest
-      // reasonable value that is not zero. But error in FP operations may
-      // cause dash intervals to result in a value less than this and still
-      // be skipped. To give some headroom to allow the value to still come
-      // out greater-than-but-still-close-to SK_ScalarNearlyZero, fudge it
-      // upward by *33/32.
-      if (pattern[i] == 0)
-          pattern[i] = SkScalarMulDiv(SK_ScalarNearlyZero, 33, 32);
     }
 
     SkDashPathEffect* dash = SkDashPathEffect::Create(&pattern.front(),

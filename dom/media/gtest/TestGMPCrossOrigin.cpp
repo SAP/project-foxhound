@@ -13,11 +13,6 @@
 #include "GMPVideoEncoderProxy.h"
 #include "GMPDecryptorProxy.h"
 #include "GMPServiceParent.h"
-#ifdef XP_WIN
-#include "GMPVideoDecoderTrialCreator.h"
-#include "mozilla/dom/MediaKeySystemAccess.h"
-#include "mozilla/Monitor.h"
-#endif
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsISimpleEnumerator.h"
@@ -58,7 +53,7 @@ template<class T, class Base,
 class RunTestGMPVideoCodec : public Base
 {
 public:
-  virtual void Done(T* aGMP, GMPVideoHost* aHost)
+  void Done(T* aGMP, GMPVideoHost* aHost) override
   {
     EXPECT_TRUE(aGMP);
     EXPECT_TRUE(aHost);
@@ -129,7 +124,7 @@ template<class Base>
 class RunTestGMPCrossOrigin : public Base
 {
 public:
-  virtual void Done(typename Base::GMPCodecType* aGMP, GMPVideoHost* aHost)
+  void Done(typename Base::GMPCodecType* aGMP, GMPVideoHost* aHost) override
   {
     EXPECT_TRUE(aGMP);
 
@@ -175,7 +170,7 @@ private:
         mShouldBeEqual(aShouldBeEqual)
     {
     }
-    virtual void Done(typename Base::GMPCodecType* aGMP, GMPVideoHost* aHost)
+    void Done(typename Base::GMPCodecType* aGMP, GMPVideoHost* aHost) override
     {
       EXPECT_TRUE(aGMP);
       if (aGMP) {
@@ -600,7 +595,7 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     {
     }
 
-    virtual void Done(GMPDecryptorProxy* aDecryptor) override
+    void Done(GMPDecryptorProxy* aDecryptor) override
     {
       mRunner->mDecryptor = aDecryptor;
       EXPECT_TRUE(!!mRunner->mDecryptor);
@@ -1317,9 +1312,9 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     NS_DispatchToMainThread(NS_NewRunnableMethod(this, &GMPStorageTest::Dummy));
   }
 
-  virtual void SessionMessage(const nsCString& aSessionId,
-                              GMPSessionMessageType aMessageType,
-                              const nsTArray<uint8_t>& aMessage) override
+  void SessionMessage(const nsCString& aSessionId,
+                      GMPSessionMessageType aMessageType,
+                      const nsTArray<uint8_t>& aMessage) override
   {
     MonitorAutoLock mon(mMonitor);
 
@@ -1336,29 +1331,29 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     }
   }
 
-  virtual void SetSessionId(uint32_t aCreateSessionToken,
-                            const nsCString& aSessionId) override { }
-  virtual void ResolveLoadSessionPromise(uint32_t aPromiseId,
-                                         bool aSuccess) override {}
-  virtual void ResolvePromise(uint32_t aPromiseId) override {}
-  virtual void RejectPromise(uint32_t aPromiseId,
-                             nsresult aException,
-                             const nsCString& aSessionId) override { }
-  virtual void ExpirationChange(const nsCString& aSessionId,
-                                GMPTimestamp aExpiryTime) override {}
-  virtual void SessionClosed(const nsCString& aSessionId) override {}
-  virtual void SessionError(const nsCString& aSessionId,
-                            nsresult aException,
-                            uint32_t aSystemCode,
-                            const nsCString& aMessage) override {}
-  virtual void KeyStatusChanged(const nsCString& aSessionId,
-                                const nsTArray<uint8_t>& aKeyId,
-                                GMPMediaKeyStatus aStatus) override { }
-  virtual void SetCaps(uint64_t aCaps) override {}
-  virtual void Decrypted(uint32_t aId,
-                         GMPErr aResult,
-                         const nsTArray<uint8_t>& aDecryptedData) override { }
-  virtual void Terminated() override {
+  void SetSessionId(uint32_t aCreateSessionToken,
+                    const nsCString& aSessionId) override { }
+  void ResolveLoadSessionPromise(uint32_t aPromiseId,
+                                 bool aSuccess) override {}
+  void ResolvePromise(uint32_t aPromiseId) override {}
+  void RejectPromise(uint32_t aPromiseId,
+                     nsresult aException,
+                     const nsCString& aSessionId) override { }
+  void ExpirationChange(const nsCString& aSessionId,
+                        GMPTimestamp aExpiryTime) override {}
+  void SessionClosed(const nsCString& aSessionId) override {}
+  void SessionError(const nsCString& aSessionId,
+                    nsresult aException,
+                    uint32_t aSystemCode,
+                    const nsCString& aMessage) override {}
+  void KeyStatusChanged(const nsCString& aSessionId,
+                        const nsTArray<uint8_t>& aKeyId,
+                        GMPMediaKeyStatus aStatus) override { }
+  void SetCaps(uint64_t aCaps) override {}
+  void Decrypted(uint32_t aId,
+                 GMPErr aResult,
+                 const nsTArray<uint8_t>& aDecryptedData) override { }
+  void Terminated() override {
     if (mDecryptor) {
       mDecryptor->Close();
       mDecryptor = nullptr;
@@ -1494,65 +1489,3 @@ TEST(GeckoMediaPlugins, GMPStorageLongRecordNames) {
   RefPtr<GMPStorageTest> runner = new GMPStorageTest();
   runner->DoTest(&GMPStorageTest::TestLongRecordNames);
 }
-
-#ifdef XP_WIN
-class GMPTrialCreateTest
-{
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPStorageTest)
-
-  void DoTest() {
-    EnsureNSSInitializedChromeOrContent();
-    mCreator = new mozilla::dom::GMPVideoDecoderTrialCreator();
-    mCreator->MaybeAwaitTrialCreate(NS_LITERAL_STRING("broken"), nullptr, this, nullptr);
-    AwaitFinished();
-  }
-
-  GMPTrialCreateTest()
-    : mMonitor("GMPTrialCreateTest")
-    , mFinished(false)
-    , mPassed(false)
-  {
-  }
-
-  void MaybeResolve(mozilla::dom::MediaKeySystemAccess* aAccess) {
-    mPassed = false;
-    SetFinished();
-  }
-
-  void MaybeReject(nsresult aResult, const nsACString& aUnusedMessage) {
-    mPassed = true;
-    SetFinished();
-  }
-
-private:
-  ~GMPTrialCreateTest() { }
-
-  void Dummy() {
-    // Intentionally left blank.
-  }
-
-  void SetFinished() {
-    mFinished = true;
-    NS_DispatchToMainThread(NS_NewRunnableMethod(this, &GMPTrialCreateTest::Dummy));
-  }
-
-  void AwaitFinished() {
-    while (!mFinished) {
-      NS_ProcessNextEvent(nullptr, true);
-    }
-    mFinished = false;
-  }
-
-  RefPtr<mozilla::dom::GMPVideoDecoderTrialCreator> mCreator;
-
-  Monitor mMonitor;
-  Atomic<bool> mFinished;
-  bool mPassed;
-};
-
-TEST(GeckoMediaPlugins, GMPTrialCreateFail) {
-  RefPtr<GMPTrialCreateTest> runner = new GMPTrialCreateTest();
-  runner->DoTest();
-}
-
-#endif // XP_WIN

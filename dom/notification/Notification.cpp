@@ -23,6 +23,7 @@
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
 
 #include "nsAlertsUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
 #include "nsCRTGlue.h"
@@ -57,7 +58,7 @@
 #endif
 
 #ifndef MOZ_SIMPLEPUSH
-#include "nsIPushNotificationService.h"
+#include "nsIPushService.h"
 #endif
 
 namespace mozilla {
@@ -243,23 +244,27 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(NotificationPermissionRequest,
                                            nsIContentPermissionRequest)
 
-  NotificationPermissionRequest(nsIPrincipal* aPrincipal, nsPIDOMWindow* aWindow,
+  NotificationPermissionRequest(nsIPrincipal* aPrincipal,
+                                nsPIDOMWindow* aWindow, Promise* aPromise,
                                 NotificationPermissionCallback* aCallback)
     : mPrincipal(aPrincipal), mWindow(aWindow),
       mPermission(NotificationPermission::Default),
+      mPromise(aPromise),
       mCallback(aCallback)
   {
+    MOZ_ASSERT(aPromise);
     mRequester = new nsContentPermissionRequester(mWindow);
   }
 
 protected:
   virtual ~NotificationPermissionRequest() {}
 
-  nsresult CallCallback();
-  nsresult DispatchCallback();
+  nsresult ResolvePromise();
+  nsresult DispatchResolvePromise();
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsPIDOMWindow> mWindow;
   NotificationPermission mPermission;
+  RefPtr<Promise> mPromise;
   RefPtr<NotificationPermissionCallback> mCallback;
   nsCOMPtr<nsIContentPermissionRequester> mRequester;
 };
@@ -540,7 +545,7 @@ protected:
 
 uint32_t Notification::sCount = 0;
 
-NS_IMPL_CYCLE_COLLECTION(NotificationPermissionRequest, mWindow)
+NS_IMPL_CYCLE_COLLECTION(NotificationPermissionRequest, mWindow, mPromise)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(NotificationPermissionRequest)
   NS_INTERFACE_MAP_ENTRY(nsIContentPermissionRequest)
@@ -580,7 +585,7 @@ NotificationPermissionRequest::Run()
   }
 
   if (mPermission != NotificationPermission::Default) {
-    return DispatchCallback();
+    return DispatchResolvePromise();
   }
 
   return nsContentPermissionUtils::AskPermission(this, mWindow);
@@ -612,7 +617,7 @@ NS_IMETHODIMP
 NotificationPermissionRequest::Cancel()
 {
   mPermission = NotificationPermission::Denied;
-  return DispatchCallback();
+  return DispatchResolvePromise();
 }
 
 NS_IMETHODIMP
@@ -621,7 +626,7 @@ NotificationPermissionRequest::Allow(JS::HandleValue aChoices)
   MOZ_ASSERT(aChoices.isUndefined());
 
   mPermission = NotificationPermission::Granted;
-  return DispatchCallback();
+  return DispatchResolvePromise();
 }
 
 NS_IMETHODIMP
@@ -635,23 +640,24 @@ NotificationPermissionRequest::GetRequester(nsIContentPermissionRequester** aReq
 }
 
 inline nsresult
-NotificationPermissionRequest::DispatchCallback()
+NotificationPermissionRequest::DispatchResolvePromise()
 {
-  if (!mCallback) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIRunnable> callbackRunnable = NS_NewRunnableMethod(this,
-    &NotificationPermissionRequest::CallCallback);
-  return NS_DispatchToMainThread(callbackRunnable);
+  nsCOMPtr<nsIRunnable> resolveRunnable = NS_NewRunnableMethod(this,
+    &NotificationPermissionRequest::ResolvePromise);
+  return NS_DispatchToMainThread(resolveRunnable);
 }
 
 nsresult
-NotificationPermissionRequest::CallCallback()
+NotificationPermissionRequest::ResolvePromise()
 {
-  ErrorResult rv;
-  mCallback->Call(mPermission, rv);
-  return rv.StealNSResult();
+  nsresult rv = NS_OK;
+  if (mCallback) {
+    ErrorResult error;
+    mCallback->Call(mPermission, error);
+    rv = error.StealNSResult();
+  }
+  mPromise->MaybeResolve(mPermission);
+  return rv;
 }
 
 NS_IMETHODIMP
@@ -980,6 +986,23 @@ Notification::Notification(nsIGlobalObject* aGlobal, const nsAString& aID,
   }
 }
 
+nsresult
+Notification::Init()
+{
+  if (!mWorkerPrivate) {
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
+
+    nsresult rv = obs->AddObserver(this, DOM_WINDOW_DESTROYED_TOPIC, true);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = obs->AddObserver(this, DOM_WINDOW_FROZEN_TOPIC, true);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  return NS_OK;
+}
+
 void
 Notification::SetAlertName()
 {
@@ -1026,7 +1049,8 @@ Notification::Constructor(const GlobalObject& aGlobal,
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<Notification> notification =
-    CreateAndShow(global, aTitle, aOptions, EmptyString(), aRv);
+    CreateAndShow(aGlobal.Context(), global, aTitle, aOptions,
+                  EmptyString(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1149,6 +1173,7 @@ Notification::CreateInternal(nsIGlobalObject* aGlobal,
                              const nsAString& aTitle,
                              const NotificationOptions& aOptions)
 {
+  nsresult rv;
   nsString id;
   if (!aID.IsEmpty()) {
     id = aID;
@@ -1157,7 +1182,7 @@ Notification::CreateInternal(nsIGlobalObject* aGlobal,
       do_GetService("@mozilla.org/uuid-generator;1");
     NS_ENSURE_TRUE(uuidgen, nullptr);
     nsID uuid;
-    nsresult rv = uuidgen->GenerateUUIDInPlace(&uuid);
+    rv = uuidgen->GenerateUUIDInPlace(&uuid);
     NS_ENSURE_SUCCESS(rv, nullptr);
 
     char buffer[NSID_LENGTH];
@@ -1173,6 +1198,8 @@ Notification::CreateInternal(nsIGlobalObject* aGlobal,
                                                          aOptions.mTag,
                                                          aOptions.mIcon,
                                                          aOptions.mMozbehavior);
+  rv = notification->Init();
+  NS_ENSURE_SUCCESS(rv, nullptr);
   return notification.forget();
 }
 
@@ -1201,6 +1228,8 @@ NS_IMPL_ADDREF_INHERITED(Notification, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(Notification, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(Notification)
+  NS_INTERFACE_MAP_ENTRY(nsIObserver)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 nsIPrincipal*
@@ -1411,7 +1440,7 @@ NotificationObserver::AdjustPushQuota(const char* aTopic)
   return NS_ERROR_NOT_IMPLEMENTED;
 #else
   nsCOMPtr<nsIPushQuotaManager> pushQuotaManager =
-    do_GetService("@mozilla.org/push/NotificationService;1");
+    do_GetService("@mozilla.org/push/Service;1");
   if (!pushQuotaManager) {
     return NS_ERROR_FAILURE;
   }
@@ -1787,11 +1816,19 @@ Notification::ShowInternal()
 
   nsAutoString alertName;
   GetAlertName(alertName);
-  alertService->ShowAlertNotification(iconUrl, mTitle, mBody, true,
-                                      uniqueCookie, alertObserver, alertName,
-                                      DirectionToString(mDir), mLang,
-                                      mDataAsBase64, GetPrincipal(),
-                                      inPrivateBrowsing);
+  nsCOMPtr<nsIAlertNotification> alert =
+    do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
+  NS_ENSURE_TRUE_VOID(alert);
+  rv = alert->Init(alertName, iconUrl, mTitle, mBody,
+                   true,
+                   uniqueCookie,
+                   DirectionToString(mDir),
+                   mLang,
+                   mDataAsBase64,
+                   GetPrincipal(),
+                   inPrivateBrowsing);
+  NS_ENSURE_SUCCESS_VOID(rv);
+  alertService->ShowAlert(alert, alertObserver);
 }
 
 /* static */ bool
@@ -1804,7 +1841,7 @@ Notification::RequestPermissionEnabledForScope(JSContext* aCx, JSObject* /* unus
   return NS_IsMainThread();
 }
 
-void
+already_AddRefed<Promise>
 Notification::RequestPermission(const GlobalObject& aGlobal,
                                 const Optional<OwningNonNull<NotificationPermissionCallback> >& aCallback,
                                 ErrorResult& aRv)
@@ -1814,18 +1851,24 @@ Notification::RequestPermission(const GlobalObject& aGlobal,
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aGlobal.GetAsSupports());
   if (!sop) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
-    return;
+    return nullptr;
   }
   nsCOMPtr<nsIPrincipal> principal = sop->GetPrincipal();
 
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(window);
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
   NotificationPermissionCallback* permissionCallback = nullptr;
   if (aCallback.WasPassed()) {
     permissionCallback = &aCallback.Value();
   }
   nsCOMPtr<nsIRunnable> request =
-    new NotificationPermissionRequest(principal, window, permissionCallback);
+    new NotificationPermissionRequest(principal, window, promise, permissionCallback);
 
   NS_DispatchToMainThread(request);
+  return promise.forget();
 }
 
 // static
@@ -2555,7 +2598,8 @@ public:
 
 /* static */
 already_AddRefed<Promise>
-Notification::ShowPersistentNotification(nsIGlobalObject *aGlobal,
+Notification::ShowPersistentNotification(JSContext* aCx,
+                                         nsIGlobalObject *aGlobal,
                                          const nsAString& aScope,
                                          const nsAString& aTitle,
                                          const NotificationOptions& aOptions,
@@ -2632,7 +2676,7 @@ Notification::ShowPersistentNotification(nsIGlobalObject *aGlobal,
   p->MaybeResolve(JS::UndefinedHandleValue);
 
   RefPtr<Notification> notification =
-    CreateAndShow(aGlobal, aTitle, aOptions, aScope, aRv);
+    CreateAndShow(aCx, aGlobal, aTitle, aOptions, aScope, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -2641,7 +2685,8 @@ Notification::ShowPersistentNotification(nsIGlobalObject *aGlobal,
 }
 
 /* static */ already_AddRefed<Notification>
-Notification::CreateAndShow(nsIGlobalObject* aGlobal,
+Notification::CreateAndShow(JSContext* aCx,
+                            nsIGlobalObject* aGlobal,
                             const nsAString& aTitle,
                             const NotificationOptions& aOptions,
                             const nsAString& aScope,
@@ -2649,16 +2694,12 @@ Notification::CreateAndShow(nsIGlobalObject* aGlobal,
 {
   MOZ_ASSERT(aGlobal);
 
-  AutoJSAPI jsapi;
-  jsapi.Init(aGlobal);
-  JSContext* cx = jsapi.cx();
-
   RefPtr<Notification> notification = CreateInternal(aGlobal, EmptyString(),
-                                                       aTitle, aOptions);
+                                                     aTitle, aOptions);
 
   // Make a structured clone of the aOptions.mData object
-  JS::Rooted<JS::Value> data(cx, aOptions.mData);
-  notification->InitFromJSVal(cx, data, aRv);
+  JS::Rooted<JS::Value> data(aCx, aOptions.mData);
+  notification->InitFromJSVal(aCx, data, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -2705,6 +2746,46 @@ Notification::OpenSettings(nsIPrincipal* aPrincipal)
   }
   // Notify other observers so they can show settings UI.
   obs->NotifyObservers(aPrincipal, "notifications-open-settings", nullptr);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Notification::Observe(nsISupports* aSubject, const char* aTopic,
+                      const char16_t* aData)
+{
+  AssertIsOnMainThread();
+
+  if (!strcmp(aTopic, DOM_WINDOW_DESTROYED_TOPIC) ||
+      !strcmp(aTopic, DOM_WINDOW_FROZEN_TOPIC)) {
+
+    nsCOMPtr<nsPIDOMWindow> window = GetOwner();
+    if (SameCOMIdentity(aSubject, window)) {
+      nsCOMPtr<nsIObserverService> obs =
+        mozilla::services::GetObserverService();
+      if (obs) {
+        obs->RemoveObserver(this, DOM_WINDOW_DESTROYED_TOPIC);
+        obs->RemoveObserver(this, DOM_WINDOW_FROZEN_TOPIC);
+      }
+
+      uint16_t appStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
+      uint32_t appId = nsIScriptSecurityManager::UNKNOWN_APP_ID;
+
+      nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
+      nsCOMPtr<nsIPrincipal> nodePrincipal = doc ? doc->NodePrincipal() :
+                                             nullptr;
+      if (nodePrincipal) {
+        appStatus = nodePrincipal->GetAppStatus();
+        appId = nodePrincipal->GetAppId();
+      }
+
+      if (appStatus == nsIPrincipal::APP_STATUS_NOT_INSTALLED ||
+          appId == nsIScriptSecurityManager::NO_APP_ID ||
+          appId == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
+        CloseInternal();
+      }
+    }
+  }
+
   return NS_OK;
 }
 

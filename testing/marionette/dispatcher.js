@@ -7,6 +7,7 @@
 const {interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://gre/modules/Log.jsm");
+Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 
 Cu.import("chrome://marionette/content/driver.js");
@@ -236,9 +237,7 @@ Dispatcher.prototype.sendRaw = function(payload) {
 };
 
 Dispatcher.prototype.log_ = function(msg) {
-  if (logger.level > Log.Level.Debug) {
-    return;
-  }
   let a = (msg.origin == MessageOrigin.Client ? " -> " : " <- ");
-  logger.debug(this.connId + a + msg);
+  let s = JSON.stringify(msg.toMsg());
+  logger.trace(this.connId + a + s);
 };

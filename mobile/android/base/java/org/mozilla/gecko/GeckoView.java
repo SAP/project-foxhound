@@ -12,7 +12,9 @@ import java.util.Set;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.mozilla.gecko.annotation.ReflectionTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
+import org.mozilla.gecko.gfx.GLController;
 import org.mozilla.gecko.gfx.LayerView;
 import org.mozilla.gecko.mozglue.GeckoLoader;
 import org.mozilla.gecko.mozglue.JNIObject;
@@ -29,8 +31,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
+import android.os.Parcel;
+import android.os.Parcelable;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -115,13 +121,62 @@ public class GeckoView extends LayerView
 
     @WrapForJNI
     private static final class Window extends JNIObject {
-        static native void open(Window instance, GeckoView view, int width, int height);
-        static native void setLayerClient(Object client);
+        /* package */ final GLController glController = new GLController();
+
+        static native void open(Window instance, GeckoView view, GLController glController,
+                                int width, int height);
+
         @Override protected native void disposeNative();
         native void close();
+        native void reattach(GeckoView view);
     }
 
-    private final Window window = new Window();
+    // Object to hold onto our nsWindow connection when GeckoView gets destroyed.
+    private static class StateBinder extends Binder implements Parcelable {
+        public final Parcelable superState;
+        public final Window window;
+
+        public StateBinder(Parcelable superState, Window window) {
+            this.superState = superState;
+            this.window = window;
+        }
+
+        @Override
+        public int describeContents() {
+            return 0;
+        }
+
+        @Override
+        public void writeToParcel(Parcel out, int flags) {
+            // Always write out the super-state, so that even if we lose this binder, we
+            // will still have something to pass into super.onRestoreInstanceState.
+            out.writeParcelable(superState, flags);
+            out.writeStrongBinder(this);
+        }
+
+        @ReflectionTarget
+        public static final Parcelable.Creator<StateBinder> CREATOR
+            = new Parcelable.Creator<StateBinder>() {
+                @Override
+                public StateBinder createFromParcel(Parcel in) {
+                    final Parcelable superState = in.readParcelable(null);
+                    final IBinder binder = in.readStrongBinder();
+                    if (binder instanceof StateBinder) {
+                        return (StateBinder) binder;
+                    }
+                    // Not the original object we saved; return null state.
+                    return new StateBinder(superState, null);
+                }
+
+                @Override
+                public StateBinder[] newArray(int size) {
+                    return new StateBinder[size];
+                }
+            };
+    }
+
+    private Window window;
+    private boolean stateSaved;
 
     public GeckoView(Context context) {
         super(context);
@@ -154,14 +209,6 @@ public class GeckoView extends LayerView
         GeckoAppShell.setLayerView(this);
 
         initializeView(EventDispatcher.getInstance());
-
-        if (GeckoThread.isStateAtLeast(GeckoThread.State.JNI_READY)) {
-            Window.setLayerClient(getLayerClientObject());
-        } else {
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.JNI_READY,
-                    Window.class, "setLayerClient",
-                    Object.class, getLayerClientObject());
-        }
 
         // TODO: Fennec currently takes care of its own initialization, so this
         // flag is a hack used in Fennec to prevent GeckoView initialization.
@@ -223,36 +270,74 @@ public class GeckoView extends LayerView
     }
 
     @Override
+    protected Parcelable onSaveInstanceState()
+    {
+        final Parcelable superState = super.onSaveInstanceState();
+        stateSaved = true;
+        return new StateBinder(superState, this.window);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(final Parcelable state)
+    {
+        final StateBinder stateBinder = (StateBinder) state;
+        // We have to always call super.onRestoreInstanceState because View keeps
+        // track of these calls and throws an exception when we don't call it.
+        super.onRestoreInstanceState(stateBinder.superState);
+
+        if (stateBinder.window != null) {
+            this.window = stateBinder.window;
+        }
+        stateSaved = false;
+    }
+
+    @Override
     public void onAttachedToWindow()
     {
-        super.onAttachedToWindow();
-
         final DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
 
-        if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-            Window.open(window, this, metrics.widthPixels, metrics.heightPixels);
+        if (window == null) {
+            // Open a new nsWindow if we didn't have one from before.
+            window = new Window();
+
+            if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
+                Window.open(window, this, window.glController,
+                            metrics.widthPixels, metrics.heightPixels);
+            } else {
+                GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY, Window.class,
+                        "open", window, GeckoView.class, this, window.glController,
+                        metrics.widthPixels, metrics.heightPixels);
+            }
         } else {
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY, Window.class,
-                    "open", window, GeckoView.class, this,
-                    metrics.widthPixels, metrics.heightPixels);
+            if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
+                window.reattach(this);
+            } else {
+                GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
+                        window, "reattach", GeckoView.class, this);
+            }
         }
+
+        setGLController(window.glController);
+        super.onAttachedToWindow();
     }
 
     @Override
     public void onDetachedFromWindow()
     {
         super.onDetachedFromWindow();
+        super.destroy();
 
-        // FIXME: because we don't support separate nsWindow for each GeckoView
-        // yet, we have to keep this window around in case another GeckoView
-        // wants to attach. So don't call window.close() for now.
+        if (stateSaved) {
+            // If we saved state earlier, we don't want to close the nsWindow.
+            return;
+        }
 
         if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-            // window.close();
+            window.close();
             window.disposeNative();
         } else {
-            // GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
-            //        window, "close");
+            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
+                    window, "close");
             GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
                     window, "disposeNative");
         }
@@ -402,7 +487,6 @@ public class GeckoView extends LayerView
             Tabs.getInstance().notifyListeners(selectedTab, Tabs.TabEvents.SELECTED);
         }
 
-        geckoConnected();
         GeckoAppShell.sendEventToGecko(
                 GeckoEvent.createBroadcastEvent("Viewport:Flush", null));
     }

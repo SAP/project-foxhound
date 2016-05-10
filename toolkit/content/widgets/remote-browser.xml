@@ -37,11 +37,21 @@
         ]]></getter>
       </property>
 
+      <!-- increases or decreases the browser's network priority -->
       <method name="adjustPriority">
         <parameter name="adjustment"/>
         <body><![CDATA[
           this.messageManager.sendAsyncMessage("NetworkPrioritizer:AdjustPriority",
-                                               {adjustment: adjustment});
+                                               {adjustment});
+        ]]></body>
+      </method>
+
+      <!-- sets the browser's network priority to a discrete value -->
+      <method name="setPriority">
+        <parameter name="priority"/>
+        <body><![CDATA[
+          this.messageManager.sendAsyncMessage("NetworkPrioritizer:SetPriority",
+                                               {priority});
         ]]></body>
       </method>
 
@@ -390,7 +400,12 @@
             return;
           this.mDestroyed = true;
 
-          this.controllers.removeController(this._controller);
+          try {
+            this.controllers.removeController(this._controller);
+          } catch (ex) {
+            // This can fail when this browser element is not attached to a
+            // BrowserDOMWindow.
+          }
 
           if (!this.hasAttribute("disablehistory")) {
             try {
@@ -510,8 +525,11 @@
           <![CDATA[
             try {
               this.messageManager.sendAsyncMessage("Browser:PurgeSessionHistory");
-            } catch (ex if ex.result == Components.results.NS_ERROR_NOT_INITIALIZED) {
+            } catch (ex) {
               // This can throw if the browser has started to go away.
+              if (ex.result != Components.results.NS_ERROR_NOT_INITIALIZED) {
+                throw ex;
+              }
             }
             this._remoteWebNavigationImpl.canGoBack = false;
             this._remoteWebNavigationImpl.canGoForward = false;

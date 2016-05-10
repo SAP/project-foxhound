@@ -85,6 +85,11 @@ public:
 
   }
 
+  const char* GetDescriptionName() const override
+  {
+    return "android video decoder";
+  }
+
   RefPtr<InitPromise> Init() override
   {
     mSurfaceTexture = AndroidSurfaceTexture::Create();
@@ -187,6 +192,11 @@ public:
       NS_ENSURE_SUCCESS_VOID(aFormat->SetByteBuffer(NS_LITERAL_STRING("csd-0"),
                                                     buffer));
     }
+  }
+
+  const char* GetDescriptionName() const override
+  {
+    return "android audio decoder";
   }
 
   nsresult Output(BufferInfo::Param aInfo, void* aBuffer,
@@ -412,7 +422,7 @@ MediaCodecDataDecoder::WaitForInput()
 }
 
 
-MediaRawData*
+already_AddRefed<MediaRawData>
 MediaCodecDataDecoder::PeekNextSample()
 {
   MonitorAutoLock lock(mMonitor);
@@ -433,7 +443,7 @@ MediaCodecDataDecoder::PeekNextSample()
   }
 
   // We're not stopping or flushing, so try to get a sample.
-  return mQueue.front();
+  return RefPtr<MediaRawData>(mQueue.front()).forget();
 }
 
 nsresult
@@ -551,12 +561,11 @@ MediaCodecDataDecoder::DecoderLoop()
 {
   bool isOutputDone = false;
   AutoLocalJNIFrame frame(jni::GetEnvForThread(), 1);
-  RefPtr<MediaRawData> sample;
   MediaFormat::LocalRef outputFormat(frame.GetEnv());
   nsresult res = NS_OK;
 
   while (WaitForInput()) {
-    sample = PeekNextSample();
+    RefPtr<MediaRawData> sample = PeekNextSample();
 
     {
       MonitorAutoLock lock(mMonitor);
@@ -572,6 +581,7 @@ MediaCodecDataDecoder::DecoderLoop()
       if (NS_SUCCEEDED(res)) {
         // We've fed this into the decoder, so remove it from the queue.
         MonitorAutoLock lock(mMonitor);
+        MOZ_RELEASE_ASSERT(mQueue.size(), "Queue may not be empty");
         mQueue.pop();
         isOutputDone = false;
       }
@@ -661,17 +671,21 @@ MediaCodecDataDecoder::State(ModuleState aState)
   mState = aState;
 }
 
+template<typename T>
+void
+Clear(T& aCont)
+{
+  T aEmpty = T();
+  swap(aCont, aEmpty);
+}
+
 void
 MediaCodecDataDecoder::ClearQueue()
 {
   mMonitor.AssertCurrentThreadOwns();
 
-  while (!mQueue.empty()) {
-    mQueue.pop();
-  }
-  while (!mDurations.empty()) {
-    mDurations.pop();
-  }
+  Clear(mQueue);
+  Clear(mDurations);
 }
 
 nsresult

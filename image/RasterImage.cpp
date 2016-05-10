@@ -288,9 +288,10 @@ RasterImage::LookupFrameInternal(uint32_t aFrameNum,
 
   SurfaceFlags surfaceFlags = ToSurfaceFlags(aFlags);
 
-  // We don't want any substitution for sync decodes, so we use
+  // We don't want any substitution for sync decodes, and substitution would be
+  // illegal when high quality downscaling is disabled, so we use
   // SurfaceCache::Lookup in this case.
-  if (aFlags & FLAG_SYNC_DECODE) {
+  if ((aFlags & FLAG_SYNC_DECODE) || !(aFlags & FLAG_HIGH_QUALITY_SCALING)) {
     return SurfaceCache::Lookup(ImageKey(this),
                                 RasterSurfaceKey(aSize,
                                                  surfaceFlags,
@@ -632,7 +633,7 @@ RasterImage::GetCurrentImage(ImageContainer* aContainer, uint32_t aFlags)
   GetWidth(&size.width);
   GetHeight(&size.height);
 
-  RefPtr<layers::Image> image = new layers::CairoImage(size, surface);
+  RefPtr<layers::Image> image = new layers::SourceSurfaceImage(size, surface);
   return MakePair(drawResult, Move(image));
 }
 

@@ -108,7 +108,6 @@ const PREF_INSTALL_REQUIREBUILTINCERTS = "extensions.install.requireBuiltInCerts
 const PREF_INSTALL_REQUIRESECUREORIGIN = "extensions.install.requireSecureOrigin";
 const PREF_INSTALL_DISTRO_ADDONS      = "extensions.installDistroAddons";
 const PREF_BRANCH_INSTALLED_ADDON     = "extensions.installedDistroAddon.";
-const PREF_SHOWN_SELECTION_UI         = "extensions.shownSelectionUI";
 const PREF_INTERPOSITION_ENABLED      = "extensions.interposition.enabled";
 const PREF_SYSTEM_ADDON_SET           = "extensions.systemAddonSet";
 const PREF_SYSTEM_ADDON_UPDATE_URL    = "extensions.systemAddon.update.url";
@@ -123,7 +122,6 @@ const PREF_EM_HOTFIX_ID               = "extensions.hotfix.id";
 const PREF_EM_CERT_CHECKATTRIBUTES    = "extensions.hotfix.cert.checkAttributes";
 const PREF_EM_HOTFIX_CERTS            = "extensions.hotfix.certs.";
 
-const URI_EXTENSION_SELECT_DIALOG     = "chrome://mozapps/content/extensions/selectAddons.xul";
 const URI_EXTENSION_UPDATE_DIALOG     = "chrome://mozapps/content/extensions/update.xul";
 const URI_EXTENSION_STRINGS           = "chrome://mozapps/locale/extensions/extensions.properties";
 
@@ -686,8 +684,6 @@ function isUsableAddon(aAddon) {
        aAddon._installLocation.name != KEY_APP_TEMPORARY) &&
        mustSign(aAddon.type)) {
     if (aAddon.signedState <= AddonManager.SIGNEDSTATE_MISSING)
-      return false;
-    if (aAddon.foreignInstall && aAddon.signedState < AddonManager.SIGNEDSTATE_SIGNED)
       return false;
   }
 
@@ -1702,11 +1698,18 @@ function verifyZipSignedState(aFile, aAddon) {
     root = Ci.nsIX509CertDB.AddonsStageRoot;
 
   return new Promise(resolve => {
-    gCertDB.openSignedAppFileAsync(root, aFile, (aRv, aZipReader, aCert) => {
-      if (aZipReader)
-        aZipReader.close();
-      resolve(getSignedStatus(aRv, aCert, aAddon.id));
-    });
+    let callback = {
+      openSignedAppFileFinished: function(aRv, aZipReader, aCert) {
+        if (aZipReader)
+          aZipReader.close();
+        resolve(getSignedStatus(aRv, aCert, aAddon.id));
+      }
+    };
+    // This allows the certificate DB to get the raw JS callback object so the
+    // test code can pass through objects that XPConnect would reject.
+    callback.wrappedJSObject = callback;
+
+    gCertDB.openSignedAppFileAsync(root, aFile, callback);
   });
 }
 
@@ -1729,9 +1732,16 @@ function verifyDirSignedState(aDir, aAddon) {
     root = Ci.nsIX509CertDB.AddonsStageRoot;
 
   return new Promise(resolve => {
-    gCertDB.verifySignedDirectoryAsync(root, aDir, (aRv, aCert) => {
-      resolve(getSignedStatus(aRv, aCert, aAddon.id));
-    });
+    let callback = {
+      verifySignedDirectoryFinished: function(aRv, aCert) {
+        resolve(getSignedStatus(aRv, aCert, aAddon.id));
+      }
+    };
+    // This allows the certificate DB to get the raw JS callback object so the
+    // test code can pass through objects that XPConnect would reject.
+    callback.wrappedJSObject = callback;
+
+    gCertDB.verifySignedDirectoryAsync(root, aDir, callback);
   });
 }
 
@@ -2662,29 +2672,12 @@ this.XPIProvider = {
 
       AddonManagerPrivate.markProviderSafe(this);
 
-      if (aAppChanged === undefined) {
-        // For new profiles we will never need to show the add-on selection UI
-        Services.prefs.setBoolPref(PREF_SHOWN_SELECTION_UI, true);
-      }
-      else if (aAppChanged && !this.allAppGlobal &&
-               Preferences.get(PREF_EM_SHOW_MISMATCH_UI, true)) {
-        if (!Preferences.get(PREF_SHOWN_SELECTION_UI, false)) {
-          // Flip a flag to indicate that we interrupted startup with an interactive prompt
-          Services.startup.interrupted = true;
-          // This *must* be modal as it has to block startup.
-          var features = "chrome,centerscreen,dialog,titlebar,modal";
-          Services.ww.openWindow(null, URI_EXTENSION_SELECT_DIALOG, "", features, null);
-          Services.prefs.setBoolPref(PREF_SHOWN_SELECTION_UI, true);
-          // Ensure any changes to the add-ons list are flushed to disk
-          Services.prefs.setBoolPref(PREF_PENDING_OPERATIONS,
-                                     !XPIDatabase.writeAddonsList());
-        }
-        else {
-          let addonsToUpdate = this.shouldForceUpdateCheck(aAppChanged);
-          if (addonsToUpdate) {
-            this.showUpgradeUI(addonsToUpdate);
-            flushCaches = true;
-          }
+      if (aAppChanged && !this.allAppGlobal &&
+          Preferences.get(PREF_EM_SHOW_MISMATCH_UI, true)) {
+        let addonsToUpdate = this.shouldForceUpdateCheck(aAppChanged);
+        if (addonsToUpdate) {
+          this.showUpgradeUI(addonsToUpdate);
+          flushCaches = true;
         }
       }
 
@@ -3287,8 +3280,7 @@ this.XPIProvider = {
         }
 
         if (mustSign(addon.type) &&
-            (addon.signedState <= AddonManager.SIGNEDSTATE_MISSING ||
-            (foreignInstall && addon.signedState < AddonManager.SIGNEDSTATE_SIGNED))) {
+            addon.signedState <= AddonManager.SIGNEDSTATE_MISSING) {
           logger.warn("Refusing to install staged add-on " + id + " with signed state " + addon.signedState);
           seenFiles.push(stageDirEntry.leafName);
           seenFiles.push(jsonfile.leafName);
@@ -3835,18 +3827,18 @@ this.XPIProvider = {
   },
 
   /**
-   * Temporarily installs add-on from local directory.
+   * Temporarily installs add-on from a local XPI file or directory.
    * As this is intended for development, the signature is not checked and
    * the add-on does not persist on application restart.
    *
-   * @param aDirectory
-   *        The directory containing the unpacked add-on directory or XPI file
+   * @param aFile
+   *        An nsIFile for the unpacked add-on directory or XPI file.
    *
-   * @return a Promise that rejects if the add-on is not restartless
-   *         or an add-on with the same ID is already temporarily installed
+   * @return a Promise that rejects if the add-on is not a valid restartless
+   *         add-on or if the same ID is already temporarily installed
    */
-  installTemporaryAddon: Task.async(function*(aDirectory) {
-    let addon = yield loadManifestFromFile(aDirectory, TemporaryInstallLocation);
+  installTemporaryAddon: Task.async(function*(aFile) {
+    let addon = yield loadManifestFromFile(aFile, TemporaryInstallLocation);
 
     if (!addon.bootstrap) {
       throw new Error("Only restartless (bootstrap) add-ons"
@@ -3894,10 +3886,11 @@ this.XPIProvider = {
 
     let file = addon._sourceBundle;
 
+    XPIProvider._addURIMapping(addon.id, file);
     XPIProvider.callBootstrapMethod(addon, file, "install",
                                     BOOTSTRAP_REASONS.ADDON_INSTALL);
     addon.state = AddonManager.STATE_INSTALLED;
-    logger.debug("Install of temporary addon in " + aDirectory.path + " completed.");
+    logger.debug("Install of temporary addon in " + aFile.path + " completed.");
     addon.visible = true;
     addon.enabled = true;
     addon.active = true;
@@ -4247,13 +4240,19 @@ this.XPIProvider = {
    * @return true if enabling the add-on should block e10s
    */
   isBlockingE10s: function(aAddon) {
-    // Only extensions change behaviour
-    if (aAddon.type != "extension")
+    if (aAddon.type != "extension" &&
+        aAddon.type != "webextension" &&
+        aAddon.type != "theme")
       return false;
 
     // The hotfix is exempt
     let hotfixID = Preferences.get(PREF_EM_HOTFIX_ID, undefined);
     if (hotfixID && hotfixID == aAddon.id)
+      return false;
+
+    // The default theme is exempt
+    if (aAddon.type == "theme" &&
+        aAddon.internalName == XPIProvider.defaultSkin)
       return false;
 
     // System add-ons are exempt
@@ -6441,13 +6440,14 @@ UpdateChecker.prototype = {
                             this.addon.compatibilityOverrides;
 
     let update = AUC.getNewestCompatibleUpdate(aUpdates,
-                                               this.appVersion,
-                                               this.platformVersion,
-                                               ignoreMaxVersion,
-                                               ignoreStrictCompat,
-                                               compatOverrides);
+                                           this.appVersion,
+                                           this.platformVersion,
+                                           ignoreMaxVersion,
+                                           ignoreStrictCompat,
+                                           compatOverrides);
 
-    if (update && Services.vc.compare(this.addon.version, update.version) < 0) {
+    if (update && Services.vc.compare(this.addon.version, update.version) < 0
+        && !this.addon._installLocation.locked) {
       for (let currentInstall of XPIProvider.installs) {
         // Skip installs that don't match the available update
         if (currentInstall.existingAddon != this.addon ||
@@ -8068,8 +8068,7 @@ Object.assign(SystemAddonInstallLocation.prototype, {
 });
 
 /**
- * An object which identifies a directory install location for temporary
- * add-ons.
+ * An object which identifies an install location for temporary add-ons.
  */
 const TemporaryInstallLocation = {
   locked: false,

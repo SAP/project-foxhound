@@ -239,16 +239,6 @@ void
 CodeGeneratorX64::visitAsmJSCall(LAsmJSCall* ins)
 {
     emitAsmJSCall(ins);
-
-#ifdef DEBUG
-    Register scratch = ABIArgGenerator::NonReturn_VolatileReg0;
-    masm.movePtr(HeapReg, scratch);
-    masm.loadAsmJSHeapRegisterFromGlobalData();
-    Label ok;
-    masm.branchPtr(Assembler::Equal, HeapReg, scratch, &ok);
-    masm.breakpoint();
-    masm.bind(&ok);
-#endif
 }
 
 void
@@ -751,6 +741,7 @@ CodeGeneratorX64::visitAsmJSLoadGlobalVar(LAsmJSLoadGlobalVar* ins)
       // Aligned access: code is aligned on PageSize + there is padding
       // before the global data section.
       case MIRType_Int32x4:
+      case MIRType_Bool32x4:
         label = masm.loadRipRelativeInt32x4(ToFloatRegister(ins->output()));
         break;
       case MIRType_Float32x4:
@@ -785,6 +776,7 @@ CodeGeneratorX64::visitAsmJSStoreGlobalVar(LAsmJSStoreGlobalVar* ins)
       // Aligned access: code is aligned on PageSize + there is padding
       // before the global data section.
       case MIRType_Int32x4:
+      case MIRType_Bool32x4:
         label = masm.storeRipRelativeInt32x4(ToFloatRegister(ins->value()));
         break;
       case MIRType_Float32x4:

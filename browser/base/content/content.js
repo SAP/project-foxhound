@@ -207,6 +207,143 @@ const TLS_ERROR_REPORT_TELEMETRY_EXPANDED = 1;
 const TLS_ERROR_REPORT_TELEMETRY_SUCCESS  = 6;
 const TLS_ERROR_REPORT_TELEMETRY_FAILURE  = 7;
 
+var AboutCertErrorListener = {
+  init(chromeGlobal) {
+    addMessageListener("AboutCertErrorDetails", this);
+    addMessageListener("Browser:SSLErrorReportStatus", this);
+    chromeGlobal.addEventListener("AboutCertErrorLoad", this, false, true);
+    chromeGlobal.addEventListener("AboutCertErrorSetAutomatic", this, false, true);
+    chromeGlobal.addEventListener("AboutCertErrorSendReport", this, false, true);
+  },
+
+  get isAboutCertError() {
+    return content.document.documentURI.startsWith("about:certerror");
+  },
+
+  handleEvent(event) {
+    if (!this.isAboutCertError) {
+      return;
+    }
+
+    switch (event.type) {
+      case "AboutCertErrorLoad":
+        this.onLoad(event);
+        break;
+      case "AboutCertErrorSetAutomatic":
+        this.onSetAutomatic(event);
+        break;
+      case "AboutCertErrorSendReport":
+        this.onSendReport();
+        break;
+    }
+  },
+
+  receiveMessage(msg) {
+    if (!this.isAboutCertError) {
+      return;
+    }
+
+    switch (msg.name) {
+      case "AboutCertErrorDetails":
+        this.onDetails(msg);
+        break;
+      case "Browser:SSLErrorReportStatus":
+        this.onReportStatus(msg);
+        break;
+    }
+  },
+
+  onLoad(event) {
+    let originalTarget = event.originalTarget;
+    let ownerDoc = originalTarget.ownerDocument;
+    ClickEventHandler.onAboutCertError(originalTarget, ownerDoc);
+
+    let automatic = Services.prefs.getBoolPref("security.ssl.errorReporting.automatic");
+    content.dispatchEvent(new content.CustomEvent("AboutCertErrorOptions", {
+      detail: JSON.stringify({
+        enabled: Services.prefs.getBoolPref("security.ssl.errorReporting.enabled"),
+        automatic,
+      })
+    }));
+
+    if (automatic) {
+      this.onSendReport();
+    }
+  },
+
+  onDetails(msg) {
+    let div = content.document.getElementById("certificateErrorText");
+    div.textContent = msg.data.info;
+  },
+
+  onSetAutomatic(event) {
+    if (event.detail) {
+      this.onSendReport();
+    }
+
+    sendAsyncMessage("Browser:SetSSLErrorReportAuto", {
+      automatic: event.detail
+    });
+  },
+
+  onSendReport() {
+    let doc = content.document;
+    let location = doc.location.href;
+
+    let serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
+                     .getService(Ci.nsISerializationHelper);
+
+    let serializable =  docShell.failedChannel.securityInfo
+                                .QueryInterface(Ci.nsITransportSecurityInfo)
+                                .QueryInterface(Ci.nsISerializable);
+
+    let serializedSecurityInfo = serhelper.serializeToString(serializable);
+
+    sendAsyncMessage("Browser:SendSSLErrorReport", {
+      documentURI: doc.documentURI,
+      location: {hostname: doc.location.hostname, port: doc.location.port},
+      securityInfo: serializedSecurityInfo
+    });
+  },
+
+  onReportStatus(msg) {
+    let doc = content.document;
+    if (doc.documentURI != msg.data.documentURI) {
+      return;
+    }
+
+    let reportSendingMsg = doc.getElementById("reportSendingMessage");
+    let reportSentMsg = doc.getElementById("reportSentMessage");
+    let retryBtn = doc.getElementById("reportCertificateErrorRetry");
+
+    switch (msg.data.reportStatus) {
+      case "activity":
+        // Hide the button that was just clicked
+        retryBtn.style.removeProperty("display");
+        reportSentMsg.style.removeProperty("display");
+        reportSendingMsg.style.display = "block";
+        break;
+      case "error":
+        // show the retry button
+        retryBtn.style.display = "block";
+        reportSendingMsg.style.removeProperty("display");
+        sendAsyncMessage("Browser:SSLErrorReportTelemetry",
+                         {reportStatus: TLS_ERROR_REPORT_TELEMETRY_FAILURE});
+        break;
+      case "complete":
+        // Show a success indicator
+        reportSentMsg.style.display = "block";
+        reportSendingMsg.style.removeProperty("display");
+        sendAsyncMessage("Browser:SSLErrorReportTelemetry",
+                         {reportStatus: TLS_ERROR_REPORT_TELEMETRY_SUCCESS});
+        break;
+    }
+  }
+};
+
+AboutCertErrorListener.init(this);
+
+
 var AboutNetErrorListener = {
   init: function(chromeGlobal) {
     chromeGlobal.addEventListener('AboutNetErrorLoad', this, false, true);
@@ -283,7 +420,6 @@ var AboutNetErrorListener = {
 
     let reportSendingMsg = contentDoc.getElementById("reportSendingMessage");
     let reportSentMsg = contentDoc.getElementById("reportSentMessage");
-    let reportBtn = contentDoc.getElementById("reportCertificateError");
     let retryBtn = contentDoc.getElementById("reportCertificateErrorRetry");
 
     addMessageListener("Browser:SSLErrorReportStatus", function(message) {
@@ -293,7 +429,6 @@ var AboutNetErrorListener = {
         switch(message.data.reportStatus) {
         case "activity":
           // Hide the button that was just clicked
-          reportBtn.style.display = "none";
           retryBtn.style.display = "none";
           reportSentMsg.style.display = "none";
           reportSendingMsg.style.removeProperty("display");
@@ -319,20 +454,22 @@ var AboutNetErrorListener = {
     let location = contentDoc.location.href;
 
     let serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
-                     .getService(Ci.nsISerializationHelper);
+                      .getService(Ci.nsISerializationHelper);
 
-    let serializable =  docShell.failedChannel.securityInfo
-                                .QueryInterface(Ci.nsITransportSecurityInfo)
-                                .QueryInterface(Ci.nsISerializable);
+    let serializable = docShell.failedChannel.securityInfo
+                               .QueryInterface(Ci.nsITransportSecurityInfo)
+                               .QueryInterface(Ci.nsISerializable);
 
     let serializedSecurityInfo = serhelper.serializeToString(serializable);
 
     sendAsyncMessage("Browser:SendSSLErrorReport", {
-        elementId: evt.target.id,
-        documentURI: contentDoc.documentURI,
-        location: {hostname: contentDoc.location.hostname, port: contentDoc.location.port},
-        securityInfo: serializedSecurityInfo
-      });
+      documentURI: contentDoc.documentURI,
+      location: {
+        hostname: contentDoc.location.hostname,
+        port: contentDoc.location.port
+      },
+      securityInfo: serializedSecurityInfo
+    });
   },
 
   onOverride: function(evt) {
@@ -552,17 +689,6 @@ addEventListener("DOMWebNotificationClicked", function(event) {
 addEventListener("DOMServiceWorkerFocusClient", function(event) {
   sendAsyncMessage("DOMServiceWorkerFocusClient", {});
 }, false);
-
-addEventListener("AboutCertErrorLoad", function(event) {
-  let originalTarget = event.originalTarget;
-  let ownerDoc = originalTarget.ownerDocument;
-  ClickEventHandler.onAboutCertError(originalTarget, ownerDoc);
-}, false, true);
-
-addMessageListener("AboutCertErrorDetails", function(message) {
-  let div = content.document.getElementById("certificateErrorText");
-  div.textContent = message.data.info;
-});
 
 ContentWebRTC.init();
 addMessageListener("rtcpeer:Allow", ContentWebRTC);
@@ -1054,11 +1180,11 @@ var PageInfoListener = {
 
       // Goes through all the elements on the doc. imageViewRows takes only the media elements.
       while (iterator.nextNode()) {
-        let mediaNode = this.getMediaNode(document, strings, iterator.currentNode);
+        let mediaItems = this.getMediaItems(document, strings, iterator.currentNode);
 
-        if (mediaNode) {
+        if (mediaItems.length) {
           sendAsyncMessage("PageInfo:mediaData",
-                           {imageViewRow: mediaNode, isComplete: false});
+                           {mediaItems, isComplete: false});
         }
 
         if (++nodeCount % 500 == 0) {
@@ -1071,15 +1197,17 @@ var PageInfoListener = {
     sendAsyncMessage("PageInfo:mediaData", {isComplete: true});
   },
 
-  getMediaNode: function(document, strings, elem)
+  getMediaItems: function(document, strings, elem)
   {
-    // Check for images defined in CSS (e.g. background, borders), any node may have multiple.
+    // Check for images defined in CSS (e.g. background, borders)
     let computedStyle = elem.ownerDocument.defaultView.getComputedStyle(elem, "");
-    let mediaElement = null;
+    // A node can have multiple media items associated with it - for example,
+    // multiple background images.
+    let mediaItems = [];
 
     let addImage = (url, type, alt, elem, isBg) => {
       let element = this.serializeElementInfo(document, url, type, alt, elem, isBg);
-      mediaElement = [url, type, alt, element, isBg];
+      mediaItems.push([url, type, alt, element, isBg]);
     };
 
     if (computedStyle) {
@@ -1147,7 +1275,7 @@ var PageInfoListener = {
       addImage(elem.src, strings.mediaEmbed, "", elem, false);
     }
 
-    return mediaElement;
+    return mediaItems;
   },
 
   /**

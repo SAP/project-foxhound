@@ -10,7 +10,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SizePrintfMacros.h"
-#include "mozilla/UniquePtr.h"
 
 #include "jsprf.h"
 
@@ -311,16 +310,10 @@ JitcodeGlobalEntry::createScriptString(JSContext* cx, JSScript* script, size_t* 
     // If the script has a function, try calculating its name.
     bool hasName = false;
     size_t nameLength = 0;
-    mozilla::UniquePtr<char, JS::FreePolicy> nameStr = nullptr;
+    UniqueChars nameStr;
     JSFunction* func = script->functionDelazifying();
     if (func && func->displayAtom()) {
-        JSAtom* atom = func->displayAtom();
-
-        JS::AutoCheckCannotGC nogc;
-        nameStr = mozilla::UniquePtr<char, JS::FreePolicy>(
-            atom->hasLatin1Chars() ?
-                JS::CharsToNewUTF8CharsZ(cx, atom->latin1Range(nogc)).c_str()
-              : JS::CharsToNewUTF8CharsZ(cx, atom->twoByteRange(nogc)).c_str());
+        nameStr = StringToNewUTF8CharsZ(cx, *func->displayAtom());
         if (!nameStr)
             return nullptr;
 
@@ -1283,6 +1276,9 @@ struct JitcodeMapBufferWriteSpewer
     {}
 
     void spewAndAdvance(const char* name) {
+        if (writer->oom())
+            return;
+
         uint32_t curPos = writer->length();
         const uint8_t* start = writer->buffer() + startPos;
         const uint8_t* end = writer->buffer() + curPos;

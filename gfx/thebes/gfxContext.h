@@ -75,21 +75,10 @@ public:
     static already_AddRefed<gfxContext> ContextForDrawTarget(mozilla::gfx::DrawTarget* aTarget);
 
     /**
-     * Return the current transparency group target, if any, along
-     * with its device offsets from the top.  If no group is
-     * active, returns the surface the gfxContext was created with,
-     * and 0,0 in dx,dy.
+     * Return the current transparency group target, if any. If no group is
+     * active, returns the surface the gfxContext was created with.
      */
-    already_AddRefed<gfxASurface> CurrentSurface(gfxFloat *dx, gfxFloat *dy);
-    already_AddRefed<gfxASurface> CurrentSurface() {
-        return CurrentSurface(nullptr, nullptr);
-    }
-
-    /**
-     * Return the raw cairo_t object.
-     * XXX this should go away at some point.
-     */
-    cairo_t *GetCairo();
+    already_AddRefed<gfxASurface> CurrentSurface();
 
     mozilla::gfx::DrawTarget *GetDrawTarget() { return mDT; }
 
@@ -445,9 +434,6 @@ public:
 
     mozilla::gfx::Point GetDeviceOffset() const;
 
-    // Work out whether cairo will snap inter-glyph spacing to pixels.
-    void GetRoundOffsetsToPixels(bool *aRoundX, bool *aRoundY);
-
 #ifdef MOZ_DUMP_PAINTING
     /**
      * Debug functions to encode the current surface as a PNG and export it.
@@ -491,6 +477,7 @@ private:
       , color(0, 0, 0, 1.0f)
       , aaMode(mozilla::gfx::AntialiasMode::SUBPIXEL)
       , patternTransformChanged(false)
+      , mBlendOpacity(0.0f)
     {}
 
     mozilla::gfx::CompositionOp op;
@@ -548,10 +535,7 @@ private:
   AzureState &CurrentState() { return mStateStack[mStateStack.Length() - 1]; }
   const AzureState &CurrentState() const { return mStateStack[mStateStack.Length() - 1]; }
 
-  cairo_t *mRefCairo;
-
   RefPtr<DrawTarget> mDT;
-  RefPtr<DrawTarget> mOriginalDT;
 };
 
 /**

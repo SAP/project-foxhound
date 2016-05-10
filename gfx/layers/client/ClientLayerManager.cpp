@@ -190,7 +190,6 @@ ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
   mPhase = PHASE_CONSTRUCTION;
 
   MOZ_ASSERT(mKeepAlive.IsEmpty(), "uncommitted txn?");
-  RefPtr<gfxContext> targetContext = aTarget;
 
   // If the last transaction was incomplete (a failed DoEmptyTransaction),
   // don't signal a new transaction to ShadowLayerForwarder. Carry on adding
@@ -515,26 +514,27 @@ ClientLayerManager::MakeSnapshotIfRequired()
       if (!bounds.IsEmpty() &&
           mForwarder->AllocSurfaceDescriptor(bounds.Size(),
                                              gfxContentType::COLOR_ALPHA,
-                                             &inSnapshot) &&
-          remoteRenderer->SendMakeSnapshot(inSnapshot, bounds)) {
-        RefPtr<DataSourceSurface> surf = GetSurfaceForDescriptor(inSnapshot);
-        DrawTarget* dt = mShadowTarget->GetDrawTarget();
+                                             &inSnapshot)) {
+        if (remoteRenderer->SendMakeSnapshot(inSnapshot, bounds)) {
+          RefPtr<DataSourceSurface> surf = GetSurfaceForDescriptor(inSnapshot);
+          DrawTarget* dt = mShadowTarget->GetDrawTarget();
 
-        Rect dstRect(bounds.x, bounds.y, bounds.width, bounds.height);
-        Rect srcRect(0, 0, bounds.width, bounds.height);
+          Rect dstRect(bounds.x, bounds.y, bounds.width, bounds.height);
+          Rect srcRect(0, 0, bounds.width, bounds.height);
 
-        gfx::Matrix rotate =
-          ComputeTransformForUnRotation(outerBounds.ToUnknownRect(),
-                                        mTargetRotation);
+          gfx::Matrix rotate =
+            ComputeTransformForUnRotation(outerBounds.ToUnknownRect(),
+                                          mTargetRotation);
 
-        gfx::Matrix oldMatrix = dt->GetTransform();
-        dt->SetTransform(rotate * oldMatrix);
-        dt->DrawSurface(surf, dstRect, srcRect,
-                        DrawSurfaceOptions(),
-                        DrawOptions(1.0f, CompositionOp::OP_OVER));
-        dt->SetTransform(oldMatrix);
+          gfx::Matrix oldMatrix = dt->GetTransform();
+          dt->SetTransform(rotate * oldMatrix);
+          dt->DrawSurface(surf, dstRect, srcRect,
+                          DrawSurfaceOptions(),
+                          DrawOptions(1.0f, CompositionOp::OP_OVER));
+          dt->SetTransform(oldMatrix);
+        }
+        mForwarder->DestroySharedSurface(&inSnapshot);
       }
-      mForwarder->DestroySharedSurface(&inSnapshot);
     }
   }
   mShadowTarget = nullptr;
@@ -645,8 +645,6 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
     mTransactionIdAllocator->RevokeTransactionId(mLatestTransactionId);
   }
 
-  mForwarder->RemoveTexturesIfNecessary();
-  mForwarder->RemoveCompositablesIfNecessary();
   mForwarder->SendPendingAsyncMessges();
   mPhase = PHASE_NONE;
 
@@ -654,7 +652,7 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
   // PLayer::Send__delete__() and DeallocShmem()
   mKeepAlive.Clear();
 
-  TabChild* window = mWidget->GetOwningTabChild();
+  TabChild* window = mWidget ? mWidget->GetOwningTabChild() : nullptr;
   if (window) {
     TimeStamp end = TimeStamp::Now();
     window->DidRequestComposite(start, end);
