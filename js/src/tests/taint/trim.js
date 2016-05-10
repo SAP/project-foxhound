@@ -1,10 +1,10 @@
 // Test taint propagation with str.trim()
 
-var orig = randomMultiTaintString();
-var toTrim = "      " + orig + taint("           ");
+var orig = randomString(30).trim();
+orig = multitaint(orig);
+var toTrim = "      " + orig + "  " + taint("           ") + " ";
 
-var n = toTrim.trim();
-assertDeepEq(n.taint, orig.trim().taint);
+assertDeepEq(toTrim.trim().taint, orig.taint);
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);

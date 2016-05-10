@@ -171,13 +171,11 @@ if (typeof assertDeepEq === 'undefined') {
     })();
 }
 
-// TODO throw an error here instead of using assert().
-
 if (typeof assertTainted === 'undefined') {
     // Assert that at least part of the given string is tainted.
     var assertTainted = function (str) {
         if (str.taint.length == 0) {
-            throw Error("String is not tainted");
+            throw Error("String ('" + str + "') is not tainted");
         }
     }
 }
@@ -185,8 +183,8 @@ if (typeof assertTainted === 'undefined') {
 if (typeof assertRangeTainted === 'undefined') {
     // Assert that the given range is fully tainted in the provided string.
     var assertRangeTainted = function(str, range) {
-        function rangeToString(range) {
-            return "[" + range[0] + ", " + (range[1] === STR_END ? "STR_END" : range[1]) + "]";
+        function stringifyRange(range) {
+            return "[" + range[0] + ", " + (range[1] === STR_END ? "str.length" : range[1]) + "]";
         }
 
         var begin = range[0];
@@ -196,24 +194,29 @@ if (typeof assertRangeTainted === 'undefined') {
             return;
 
         if (begin > end)
-            throw Error("Invalid range: " + rangeToString(range));
+            throw Error("Invalid range: " + stringifyRange(range));
 
-        var end_of_last_range = 0;
+        var curBegin = 0;
+        var curEnd = 0;
         for (var i = 0; i < str.taint.length; i++) {
-            var cur_range = str.taint[i];
-            if (begin >= cur_range.begin) {
-                if (end_of_last_range !== 0 && end_of_last_range != cur_range.begin) {
-                    // There's a gap
+            var curRange = str.taint[i];
+            if (curRange.begin == curEnd) {
+                // Extend current range
+                curEnd = curRange.end;
+            } else {
+                if (begin < curRange.begin)
+                    // If the target range is tainted then it must lie inside the current range
                     break;
-                }
-                end_of_last_range = cur_range.end;
-                if (end_of_last_range >= end) {
-                    return;
-                }
+
+                // Start a new range
+                curBegin = curRange.begin;
+                curEnd = curRange.end;
             }
         }
 
-        throw Error("Range " + rangeToString(range) + " not tainted");
+        if (!(begin >= curBegin && begin < curEnd && end <= curEnd))
+            // Target range not included in current range
+            throw Error("Range " + stringifyRange(range) + " not tainted in string '" + str + "'");
     }
 }
 
@@ -223,6 +226,7 @@ if (typeof assertRangesTainted === 'undefined') {
     var assertRangesTainted = function(str) {
         var ranges = arguments;
         for (var i = 1; i < ranges.length; i++) {
+            // This maybe isn't super effecient...
             assertRangeTainted(str, ranges[i]);
         }
     }
@@ -237,32 +241,81 @@ if (typeof assertFullTainted === 'undefined') {
 
 if (typeof assertNotTainted === 'undefined') {
     // Assert that the given string is not tainted.
-    var assertNotTainted = function(a) {
-        if (a.taint.length != 0) {
-            throw Error("String is tainted");
+    var assertNotTainted = function(str) {
+        if (str.taint.length != 0) {
+            throw Error("String ('" + str + "') is tainted");
         }
     }
 }
 
+if (typeof rand === 'undefined') {
+    // Return a random integer in the range [start, end)
+    var rand = function(start, end) {
+        return Math.floor(Math.random() * (end - start)) + start;       // Minimum length of 4, for multiTaint to be usable
+    }
+}
+
 if (typeof randomString === 'undefined') {
-    var randomString = function() {
-        var len = Math.floor(Math.random() * 10) + 1;
+    // Generate a random string
+    var randomString = function(len) {
+        if (len === undefined)
+            len = rand(4, 25);       // Minimum length of 4, for multiTaint to be usable
 
-        var text = "";
-        var charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";
+        var str = "";
+        var charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";   // TODO extend
 
-        for(var i = 0; i < len; i++)
-            text += charset.charAt(Math.floor(Math.random() * possible.length));
+        for (var i = 0; i < len; i++)
+            str += charset.charAt(Math.floor(Math.random() * charset.length));
 
-        return text;
+        return str;
     }
 }
 
 if (typeof randomTaintedString === 'undefined') {
+    // Generate a random tainted string
     var randomTaintedString = function() {
         return taint(randomString());
     }
 }
 
+if (typeof multiTaint === 'undefined') {
+    // Taint a random number of substrings of the given string
+    var multiTaint = function(str) {
+        var last_index = 0;
+        var parts = [];
+        while (last_index < str.length - 3) {
+            var start_index = rand(last_index, Math.min(last_index + 5, str.length - 1));
+            var end_index = rand(start_index + 1, Math.min(start_index + 5, str.length));
+            parts.push(str.substr(last_index, start_index));
+            parts.push(taint(str.substr(start_index, end_index)));
+            last_index = end_index;
+        }
+        parts.push(str.substr(last_index, str.length));
+        print(parts);
+        return parts.join('');
+    }
+}
+
 if (typeof randomMultiTaintedString === 'undefined') {
-    var randomMultiTaintedString = function() {
+    // Generates a random string with randomly tainted substrings
+    var randomMultiTaintedString = function(len) {
+        var str = randomString(len);
+        return multiTaint(str);
+    }
+}
+
+if (typeof runTaintTest === 'undefined') {
+    // Run the given tests in interpreter and JIT mode.
+    var runTaintTest = function(doTest) {
+        // Separate function so it's visible in the backtrace
+        var runJITTest = function(doTest) {
+            // Force JIT compilation
+            for (var i = 0; i < 1000; i++) {
+                doTest();
+            }
+        }
+
+        doTest();         // Will be interpreted
+        runJITTest(doTest);
+    }
+}

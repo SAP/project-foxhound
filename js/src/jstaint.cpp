@@ -61,9 +61,13 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function,
         }
     }
 
+    // Disabled for now as it is mostly redundant information
+    // Also this would add operations for the taint getter and setter (str.taint)
+    /*
     if (args.thisv().isString()) {
         RootedString thisv(cx, args.thisv().toString());
         if (thisv->isTainted())
             thisv->taint().extend(TaintOperation("function call this value", { taintarg(cx, name) }));
     }
+    */
 }

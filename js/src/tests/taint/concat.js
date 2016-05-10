@@ -1,22 +1,17 @@
-// Test taint propagation with string concatenation
+function stringConcatTest() {
+    var s1 = randomString();
+    var s2 = randomString();
+    var ts1 = randomTaintedString();
+    var ts2 = randomTaintedString();
 
-var s1 = randomString();
-var s2 = randomString();
-var t1 = randomTaintedString();
-var t2 = randomTaintedString();
+    assertNotTainted(s1 + s2);
+    assertTainted(s1 + ts1);
+    assertRangeTainted(s1 + ts2, [s1.length, STR_END]);
+    assertFullTainted(ts1 + ts2);
+    assertEq(ts1.concat(ts2).taint.length, 2);
+}
 
-assertNotTainted(s1 + s2);
-assertTainted(s1 + t1);
-assertRangeTainted(s1 + t2, [s1.length, STR_END]);
-assertFullTainted(t1 + t2);
-assertEq(t1.concat(t2).taint.length, 2);
-
-//check JIT operation
-/*var add = tainted;*/
-//for(var i = 0; i < 10000; i++) {
-	//add = i + add;
-//}
-//assertEq(add.taint.length, 1);
+runTaintTest(stringConcatTest);
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);
