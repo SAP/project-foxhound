@@ -171,6 +171,19 @@ if (typeof assertDeepEq === 'undefined') {
     })();
 }
 
+if (typeof stringifyTaint === 'undefined') {
+    // Produce a string representation of the provided taint information.
+    var stringifyTaint = function(taint) {
+        function replacer(key, value) {
+            if (key == 'flow') {
+                return undefined;
+            }
+            return value;
+        }
+        return JSON.stringify(taint, replacer);
+    }
+}
+
 if (typeof assertTainted === 'undefined') {
     // Assert that at least part of the given string is tainted.
     var assertTainted = function (str) {
@@ -248,6 +261,24 @@ if (typeof assertNotTainted === 'undefined') {
     }
 }
 
+if (typeof assertEqualTaint === 'undefined') {
+    // Assert that the given strings are equally tainted. This only compares the ranges, not the operations.
+    var assertEqualTaint = function(s1, s2) {
+        var t1 = s1.taint;
+        var t2 = s2.taint;
+
+        if (s1.length != s2.length || t1.length != t2.length) {
+            throw Error("The argument strings are not equally tainted (length mismatch): " + stringifyTaint(t1) + " vs " + stringifyTaint(t2));
+        }
+
+        for (var i = 0; i < t1.length; i++) {
+            if (t1[i].begin != t2[i].begin || t1[i].end != t2[i].end) {
+                throw Error("The argument strings are not equally tainted: " + stringifyTaint(t1) + " vs " + stringifyTaint(t2));
+            }
+        }
+    }
+}
+
 if (typeof rand === 'undefined') {
     // Return a random integer in the range [start, end)
     var rand = function(start, end) {
@@ -304,13 +335,28 @@ if (typeof randomMultiTaintedString === 'undefined') {
     }
 }
 
+if (typeof assertHasTaintOperation === 'undefined') {
+    var assertHasTaintOperation = function(str, opName) {
+        for (var i = 0; i < str.taint.length; i++) {
+            var range = str.taint[i];
+            for (var j = 0; j < range.flow.length; j++) {
+                var node = range.flow[j];
+                if (node.operation === opName) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
 if (typeof runTaintTest === 'undefined') {
     // Run the given tests in interpreter and JIT mode.
     var runTaintTest = function(doTest) {
         // Separate function so it's visible in the backtrace
         var runJITTest = function(doTest) {
             // Force JIT compilation
-            for (var i = 0; i < 1000; i++) {
+            for (var i = 0; i < 500; i++) {
                 doTest();
             }
         }

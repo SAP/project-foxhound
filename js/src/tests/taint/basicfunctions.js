@@ -27,13 +27,12 @@ function basicTaintTest() {
     var string2 = String.newAllTainted(string1);
     string1.taint = string2.taint;
     assertFullTainted(string1);
-    assertDeepEq(string1.taint, string2.taint);
+    assertEqualTaint(string1, string2);
 
     return true;
 }
 
 runTaintTest(basicTaintTest);
 
-if (typeof reportCompare === "function")
+if (typeof reportCompare === 'function')
   reportCompare(true, true);
-

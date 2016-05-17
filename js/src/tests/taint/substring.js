@@ -1,51 +1,45 @@
-load("taint/taint-setup.js");
-startTest();
+function substringTaintTest() {
+    var a = randomString(10);
+    var b = randomString(10);
+    var c = randomString(10);
+    var str = taint(a) + b + taint(c);
 
-var tainted = _MultiTaint();
-assertTainted(tainted);
+    // Verify that inner substring is not tainted
+    assertNotTainted(str.substring(a.length, a.length + b.length));
 
-// Verify that inner substring is not tainted
-assertNotTainted(tainted.substring(b.length,b.length+m.length));
+    // Verify that the first and last part of the string is fully tainted
+    assertFullTainted(str.substring(0, a.length));
+    assertFullTainted(str.substring(a.length + b.length, str.length));
 
-// Verify that first and last part of the string is fully tainted
-var endtaint = tainted.substring(b.length+m.length, tainted.length);
-assertFullTainted(tainted.substring(0, b.length));
-assertFullTainted(endtaint);
+    var tail = str.substring(a.length + b.length, str.length);
+    assertEq(tail.taint.length, 1);
+    assertEq(tail.taint[0].begin, 0);
+    assertEq(tail.taint[0].end, tail.length);
+    assertHasTaintOperation(tail, 'substring');
 
-assertEq(endtaint.taint.length, 1);
-assertEq(endtaint.taint[0].begin, 0); //after substring indices are relative to the new string not the old
-assertEq(endtaint.taint[0].end, e.length);
+    // Verify that multi-tainted substrings are handled correctly
+    var substring = str.substring(2, str.length - 2);
+    print(": " + str);
+    print("[]: " + substring);
+    print(stringifyTaint(substring.taint));
+    assertEq(substring.taint.length, 2);
+    assertEq(substring.taint[0].begin, 0);
+    assertEq(substring.taint[0].end, a.length - 2);
+    assertEq(substring.taint[1].begin, a.length + b.length - 2);
+    assertEq(substring.taint[1].end, str.length - 4);
 
-// multi taint
-var multitaint = tainted.substring(2, tainted.length-2);
-assertEq(multitaint.taint.length, 2);
-assertEq(multitaint.taint[0].begin, 0);
-assertEq(multitaint.taint[0].end, b.length-2); //as we started on idx 2, taint is 2 chars shorter now
-assertEq(multitaint.taint[0].operators[0].op, "substring");
-assertEq(multitaint.taint[0].operators[0].param1, "2"); //this should be the absolute start of this part
-assertEq(multitaint.taint[0].operators[0].param2, "" + b.length); // and end
-assertEq(multitaint.taint[1].begin, b.length+m.length-2)
-assertEq(multitaint.taint[1].end, tainted.length-4) //we chopped of 2 chars from both ends
+    // Test substr()
+    var substr = str.substr(2, str.length - 4);
+    assertHasTaintOperation(tail, 'substr');
+    assertEqualTaint(substring, substr);
 
-//substr
-// substr's second parameter is relative, calculate absolute for taint
-var substrtaint = tainted.substr(2,tainted.length-4).taint;
-assertEq(multitaint.taint.length, substrtaint.length);
-for(var i = 0; i < multitaint.taint.length; i++) {
-	assertEq(multitaint.taint[i].begin, substrtaint[i].begin);
-	assertEq(multitaint.taint[i].end, substrtaint[i].end);
-	assertEq(substrtaint[i].operators.length >= 1, true);
-	assertEq(substrtaint[i].operators[0].op, "substring");
+    // Test slice()
+    var slice = str.slice(2, str.length - 2);
+    assertHasTaintOperation(tail, 'slice');
+    assertEqualTaint(substring, slice);
 }
 
-//slice behaves like substring
-var slicetaint = tainted.slice(2,tainted.length-2).taint;
-assertEq(multitaint.taint.length, slicetaint.length);
-for(var i = 0; i < multitaint.taint.length; i++) {
-	assertEq(multitaint.taint[i].begin, slicetaint[i].begin);
-	assertEq(multitaint.taint[i].end, slicetaint[i].end);
-	assertEq(slicetaint[i].operators.length >= 1, true);
-	assertEq(slicetaint[i].operators[0].op, "substring");
-}
+runTaintTest(substringTaintTest);
 
-reportCompare(true, true);
+if (typeof reportCompare === "function")
+  reportCompare(true, true);

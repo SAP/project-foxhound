@@ -1,28 +1,18 @@
-load("taint/taint-setup.js");
+function strEscapeTest() {
+    var str = randomMultiTaintedString();
 
-//match
+    var encodedStr = escape(str);
+    assertTainted(encodedStr);
+    assertHasTaintOperation(encodedStr, 'escape');
 
-var taint = _MultiTaint();
+    var decodedStr = unescape(encodedStr);
+    assertEq(decodedStr, str);
+    assertEqualTaint(decodedStr, str);
+    assertHasTaintOperation(encodedStr, 'escape');
+    assertHasTaintOperation(encodedStr, 'unescape');
+}
 
-//escape
-var escaped = escape(taint).taint;
-assertEq(escaped.length, 2);
-assertEq(escaped[0].begin, 0);
-assertEq(escaped[0].end, 11);
-assertEq(escaped[0].operators[0].op, "escape");
-assertEq(escaped[1].begin, 35);
-assertEq(escaped[1].end, 49);
-assertEq(escaped[1].operators[0].op, "escape");
+runTaintTest(strEscapeTest);
 
-//unescape
-var unescaped = unescape(escape(taint)).taint;
-//everything but operators should match original taint
-assertEq(unescaped.length, 2);
-assertEq(unescaped[0].begin, 0);
-assertEq(unescaped[0].end,   6);
-assertEq(unescaped[0].operators[0].op, "unescape");
-assertEq(unescaped[1].begin,20);
-assertEq(unescaped[1].end,  32);
-assertEq(unescaped[1].operators[0].op, "unescape");
-
-reportCompare(true, true);
+if (typeof reportCompare === "function")
+  reportCompare(true, true);
