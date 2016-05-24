@@ -118,7 +118,7 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation operation);
     // Constructs a root node.
-    TaintNode(TaintOperation operation);
+    TaintNode(TaintSource operation);
 
     // Increments the reference count of this object by one.
     void addref();
@@ -225,6 +225,9 @@ class TaintFlow
     //    TaintFlow flow(new TaintNode(...));
     explicit TaintFlow(TaintNode* head);
 
+    // Construct a new taint flow from the provided taint source.
+    TaintFlow(TaintSource source);
+
     // Copying taint flows is an O(1) operation since it only requires
     // incrementing the reference count on the head node of the flow.
     TaintFlow(const TaintFlow& other);
@@ -262,6 +265,9 @@ class TaintFlow
     // Two TaintFlows are equal if they point to the same taint node.
     bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
     bool operator!=(const TaintFlow& other) const { return head_ != other.head_; }
+
+    // Boolean operator, indicates whether this taint flow is empty or now.
+    operator bool() const { return !!head_; }
 
   private:
     // Last (newest) node of this flow.

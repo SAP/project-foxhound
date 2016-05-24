@@ -79,6 +79,8 @@ TaintFlow::TaintFlow() : head_(nullptr) { }
 
 TaintFlow::TaintFlow(TaintNode* head) : head_(head) { }
 
+TaintFlow::TaintFlow(TaintSource source) : head_(new TaintNode(source)) { }
+
 TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
 {
     head_->addref();
