@@ -32,6 +32,34 @@ std::u16string taintarg(JSContext* cx, int32_t num);
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function, const CallArgs& args);
 
+// Check if the argument value is a tainted number object.
+bool isTaintedNumber(const JS::Value& val);
+
+}
+
+#define HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, OP)                                             \
+{                                                                                               \
+    decltype(lhs) __lhs = (lhs);                                                                \
+    decltype(rhs) __rhs = (rhs);                                                                \
+    if (isTaintedNumber(__lhs) || isTaintedNumber(__rhs)) {                                     \
+        double lhsValue, rhsValue;                                                              \
+        TaintFlow taint;                                                                        \
+        if (isTaintedNumber(__lhs)) {                                                           \
+            taint = __lhs.toObject().as<NumberObject>().taint();                                \
+        } else {                                                                                \
+            taint = __rhs.toObject().as<NumberObject>().taint();                                \
+        }                                                                                       \
+                                                                                                \
+        ToNumber(cx, __lhs, &lhsValue);                                                         \
+        ToNumber(cx, __rhs, &rhsValue);                                                         \
+                                                                                                \
+        if (taint) {                                                                            \
+            TaintFlow newTaint = taint.extend(TaintOperation(#OP,                               \
+                        {taintarg(cx, lhsValue), taintarg(cx, rhsValue)}));                     \
+            res.setObject(*NumberObject::createTainted(cx, lhsValue OP rhsValue, newTaint));    \
+            return true;                                                                        \
+        }                                                                                       \
+    }                                                                                           \
 }
 
 #endif

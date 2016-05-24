@@ -7,10 +7,13 @@
 #ifndef vm_NumberObject_h
 #define vm_NumberObject_h
 
+#include "Taint.h"
+
 #include "jsnum.h"
 
 namespace js {
 
+// TaintFox: Number objects can be tainted.
 class NumberObject : public NativeObject
 {
     /* Stores this Number object's [[PrimitiveValue]]. */
@@ -28,8 +31,44 @@ class NumberObject : public NativeObject
     static inline NumberObject* create(JSContext* cx, double d,
                                        HandleObject proto = nullptr);
 
+    static inline NumberObject* createTainted(JSContext* cx, double d,
+                                              const TaintFlow& taint,
+                                              HandleObject proto = nullptr);
+
+    // TaintFox: A finalizer is required for correct memory handling.
+    static void Finalize(FreeOp* fop, JSObject* obj) {
+        NumberObject& number = obj->as<NumberObject>();
+        TaintNode* head = (TaintNode*)number.getPrivate();
+        if (head)
+            head->release();
+    }
+
     double unbox() const {
         return getFixedSlot(PRIMITIVE_VALUE_SLOT).toNumber();
+    }
+
+
+    TaintFlow taint() const {
+        TaintNode* head = (TaintNode*)getPrivate();
+        if (head)
+            head->addref();
+        return TaintFlow(head);
+    }
+
+    void setTaint(const TaintFlow& taint) {
+        TaintNode* current = (TaintNode*)getPrivate();
+        if (current)
+            current->release();
+
+        TaintNode* head = taint.head();
+        if (head)
+            head->addref();
+
+        setPrivate(head);
+    }
+
+    bool isTainted() const {
+        return !!getPrivate();
     }
 
   private:

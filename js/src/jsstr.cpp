@@ -1309,7 +1309,15 @@ js::str_charCodeAt_impl(JSContext* cx, HandleString string, HandleValue index, M
     char16_t c;
     if (!string->getChar(cx, i , &c))
         return false;
-    res.setInt32(c);
+
+    // TaintFox: Propagate taint into the char codes.
+    const TaintFlow* taint;
+    if (string->isTainted() && (taint = string->taint().at(i))) {
+        res.setObject(*NumberObject::createTainted(cx, c, *taint));
+    } else {
+        res.setInt32(c);
+    }
+
     return true;
 
 out_of_range:

@@ -1,6 +1,8 @@
 #include "jsapi.h"
 #include "jstaint.h"
 
+#include "vm/NumberObject.h"
+
 #include <iostream>
 #include <string>
 
@@ -70,4 +72,13 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function,
             thisv->taint().extend(TaintOperation("function call this value", { taintarg(cx, name) }));
     }
     */
+}
+
+bool js::isTaintedNumber(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.isTainted();
+    }
+    return false;
 }
