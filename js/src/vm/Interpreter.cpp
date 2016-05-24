@@ -908,7 +908,8 @@ js::TypeOfObject(JSObject* obj)
 JSType
 js::TypeOfValue(const Value& v)
 {
-    if (v.isNumber())
+    // TaintFox: Hide the fact that tainted numbers are number objects.
+    if (v.isNumber() || isTaintedNumber(v))
         return JSTYPE_NUMBER;
     if (v.isString())
         return JSTYPE_STRING;
@@ -1311,6 +1312,9 @@ AddOperation(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, Muta
         }
     }
 
+    // TaintFox: Taint propagation when adding tainted numbers.
+    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, +);
+
     if (!ToPrimitive(cx, lhs))
         return false;
     if (!ToPrimitive(cx, rhs))
@@ -1359,6 +1363,9 @@ AddOperation(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, Muta
 static MOZ_ALWAYS_INLINE bool
 SubOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
+    // TaintFox: Taint propagation when subtracting tainted numbers.
+    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, -);
+
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
@@ -1369,6 +1376,9 @@ SubOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue
 static MOZ_ALWAYS_INLINE bool
 MulOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
+    // TaintFox: Taint propagation when multiplying tainted numbers.
+    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, *);
+
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
@@ -1379,6 +1389,9 @@ MulOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue
 static MOZ_ALWAYS_INLINE bool
 DivOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
+    // TaintFox: Taint propagation when dividing tainted numbers.
+    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, /);
+
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
