@@ -4778,9 +4778,8 @@ js::InitStringClass(JSContext* cx, HandleObject obj)
         return nullptr;
 
     /* TaintFox: Add taint related properties to all string instances. */
-    if(!DefinePropertiesAndFunctions(cx, proto, string_taint_properties, nullptr)) {
+    if (!DefinePropertiesAndFunctions(cx, proto, string_taint_properties, nullptr))
         return nullptr;
-    }
 
     if (!DefinePropertiesAndFunctions(cx, proto, nullptr, string_methods) ||
         !DefinePropertiesAndFunctions(cx, ctor, nullptr, string_static_methods))
