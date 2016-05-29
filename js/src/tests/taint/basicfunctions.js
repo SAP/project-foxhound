@@ -6,7 +6,7 @@ function basicTaintTest() {
     assertNotTainted(untaintedString);
 
     // Test basic (manual) string tainting
-    var taintedString = String.newAllTainted(untaintedString);
+    var taintedString = String.tainted(untaintedString);
     var taint = taintedString.taint;
     var flow = taint[0].flow;
     assertFullTainted(taintedString);
@@ -24,7 +24,7 @@ function basicTaintTest() {
     // Test taint assignment
     // TODO expand these once the taint setter is feature complete
     var string1 = randomString();
-    var string2 = String.newAllTainted(string1);
+    var string2 = String.tainted(string1);
     string1.taint = string2.taint;
     assertFullTainted(string1);
     assertEqualTaint(string1, string2);
