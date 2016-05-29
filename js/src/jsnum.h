@@ -13,6 +13,7 @@
 #include "NamespaceImports.h"
 
 #include "js/Conversions.h"
+#include "jstaint.h"
 
 
 // This macro is should be `one' if current compiler supports builtin functions
@@ -173,7 +174,7 @@ StringToNumber(ExclusiveContext* cx, JSString* str, double* result);
 MOZ_ALWAYS_INLINE bool
 ToNumber(JSContext* cx, JS::MutableHandleValue vp)
 {
-    if (vp.isNumber())
+    if (vp.isNumber() || isTaintedNumber(vp))
         return true;
     double d;
     extern JS_PUBLIC_API(bool) ToNumberSlow(JSContext* cx, Value v, double* dp);

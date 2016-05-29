@@ -15,6 +15,15 @@ function numberTaintingTest() {
     assertNumberTainted(a * b);
     assertNumberTainted(a / b);
 
+    assertNumberTainted(a++);
+    assertNumberTainted(a);
+    assertNumberTainted(a--);
+    assertNumberTainted(a);
+    assertNumberTainted(++a);
+    assertNumberTainted(a);
+    assertNumberTainted(--a);
+    assertNumberTainted(a);
+
     // Bitwise operations
     assertNumberTainted(a << 1);
     assertNumberTainted(a >> 1);
