@@ -4881,7 +4881,7 @@ EntryPoints(JSContext* cx, unsigned argc, Value* vp)
 static bool
 Taint(JSContext* cx, unsigned argc, Value* vp)
 {
-    return str_newAllTainted(cx, argc, vp);
+    return str_tainted(cx, argc, vp);
 }
 
 static bool

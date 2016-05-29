@@ -183,6 +183,12 @@ StringTaint::StringTaint(uint32_t begin, uint32_t end, TaintOperation operation)
     ranges_->push_back(range);
 }
 
+StringTaint::StringTaint(TaintFlow taint, uint32_t length)
+{
+    ranges_ = new std::vector<TaintRange>;
+    ranges_->push_back(TaintRange(0, length, taint));
+}
+
 StringTaint& StringTaint::operator=(const StringTaint& other)
 {
     if (this == &other)

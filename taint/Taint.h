@@ -356,6 +356,9 @@ class StringTaint
     // TODO make StringTaint(operaton, length) instead.
     StringTaint(uint32_t begin, uint32_t end, TaintOperation operation);
 
+    // Construct taint information for a uniformly tainted string.
+    explicit StringTaint(TaintFlow taint, uint32_t length);
+
     ~StringTaint();
 
     StringTaint(const StringTaint& other);

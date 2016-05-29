@@ -25,7 +25,7 @@ class JSLinearString;
 namespace js {
 
 // TaintFox: Exported for the js shell: taint(str).
-bool str_newAllTainted(JSContext* cx, unsigned argc, Value* vp);
+bool str_tainted(JSContext* cx, unsigned argc, Value* vp);
 
 class StringBuffer;
 
