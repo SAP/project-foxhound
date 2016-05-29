@@ -121,10 +121,10 @@ str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp);
 
 
 /*
- * TaintFox: String.newAllTainted() implementation.
+ * TaintFox: String.tainted() implementation.
  */
 bool
-js::str_newAllTainted(JSContext* cx, unsigned argc, Value* vp)
+js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -4738,7 +4738,7 @@ static const JSFunctionSpec string_static_methods[] = {
 #endif
 
     // TaintFox: Helper function for manual taint sources.
-    JS_FN("newAllTainted",              str_newAllTainted,          1,0),
+    JS_FN("tainted",              str_tainted,          1,0),
 
     JS_FS_END
 };
