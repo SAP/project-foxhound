@@ -82,3 +82,12 @@ bool js::isTaintedNumber(const Value& val)
     }
     return false;
 }
+
+TaintFlow js::getNumberTaint(const Value& val)
+{
+    if (val.isObject() && val.toObject().is<NumberObject>()) {
+        NumberObject& number = val.toObject().as<NumberObject>();
+        return number.taint();
+    }
+    return TaintFlow(nullptr);
+}

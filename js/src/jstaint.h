@@ -35,6 +35,9 @@ void MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function, con
 // Check if the argument value is a tainted number object.
 bool isTaintedNumber(const JS::Value& val);
 
+// Extract the taint information from a number.
+TaintFlow getNumberTaint(const JS::Value& val);
+
 }
 
 #define HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, OP)                                             \

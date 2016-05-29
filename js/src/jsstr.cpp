@@ -4654,15 +4654,21 @@ str_fromCharCode_few_args(JSContext* cx, const CallArgs& args)
     MOZ_ASSERT(args.length() <= JSFatInlineString::MAX_LENGTH_TWO_BYTE);
 
     char16_t chars[JSFatInlineString::MAX_LENGTH_TWO_BYTE];
+    StringTaint taint;
     for (unsigned i = 0; i < args.length(); i++) {
         uint16_t code;
         if (!ToUint16(cx, args[i], &code))
             return false;
         chars[i] = char16_t(code);
+
+        // TaintFox: propagate taint into newly constructed string.
+        if (isTaintedNumber(args[i]))
+            taint.set(i, getNumberTaint(args[i]));
     }
     JSString* str = NewStringCopyN<CanGC>(cx, chars, args.length());
     if (!str)
         return false;
+    str->setTaint(taint);
     args.rval().setString(str);
     return true;
 }
@@ -4687,6 +4693,7 @@ js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp)
         return str_fromCharCode_few_args(cx, args);
 
     char16_t* chars = cx->pod_malloc<char16_t>(args.length() + 1);
+    StringTaint taint;
     if (!chars)
         return false;
     for (unsigned i = 0; i < args.length(); i++) {
@@ -4696,6 +4703,9 @@ js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp)
             return false;
         }
         chars[i] = char16_t(code);
+        // TaintFox: propagate taint into newly constructed string.
+        if (isTaintedNumber(args[i]))
+            taint.set(i, getNumberTaint(args[i]));
     }
     chars[args.length()] = 0;
     JSString* str = NewString<CanGC>(cx, chars, args.length());
@@ -4704,6 +4714,7 @@ js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp)
         return false;
     }
 
+    str->setTaint(taint);
     args.rval().setString(str);
     return true;
 }
@@ -4716,7 +4727,7 @@ js::str_fromCharCode_one_arg(JSContext* cx, HandleValue code, MutableHandleValue
     if (!ToUint16(cx, code, &ucode))
         return false;
 
-    if (StaticStrings::hasUnit(ucode)) {
+    if (StaticStrings::hasUnit(ucode) && !isTaintedNumber(code)) {
         rval.setString(cx->staticStrings().getUnit(ucode));
         return true;
     }
@@ -4725,6 +4736,10 @@ js::str_fromCharCode_one_arg(JSContext* cx, HandleValue code, MutableHandleValue
     JSString* str = NewStringCopyN<CanGC>(cx, &c, 1);
     if (!str)
         return false;
+
+    // TaintFox: propagate taint into newly constructed string.
+    if (isTaintedNumber(code))
+        str->setTaint(StringTaint(getNumberTaint(code), 1));
 
     rval.setString(str);
     return true;
