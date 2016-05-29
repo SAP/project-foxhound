@@ -4881,7 +4881,17 @@ EntryPoints(JSContext* cx, unsigned argc, Value* vp)
 static bool
 Taint(JSContext* cx, unsigned argc, Value* vp)
 {
-    return str_tainted(cx, argc, vp);
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() != 1) {
+        JS_ReportError(cx, "Wrong number of arguments");
+        return false;
+    }
+
+    if (args[0].isNumber())
+        return Number_tainted(cx, argc, vp);
+    else
+        return str_tainted(cx, argc, vp);
 }
 
 static bool
