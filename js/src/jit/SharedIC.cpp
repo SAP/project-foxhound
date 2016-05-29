@@ -986,38 +986,28 @@ DoBinaryArithFallback(JSContext* cx, void* payload, ICBinaryArith_Fallback* stub
             return false;
         break;
       case JSOP_BITOR: {
-        int32_t result;
-        if (!BitOr(cx, lhs, rhs, &result))
+        if (!BitOr(cx, lhs, rhs, ret))
             return false;
-        ret.setInt32(result);
         break;
       }
       case JSOP_BITXOR: {
-        int32_t result;
-        if (!BitXor(cx, lhs, rhs, &result))
+        if (!BitXor(cx, lhs, rhs, ret))
             return false;
-        ret.setInt32(result);
         break;
       }
       case JSOP_BITAND: {
-        int32_t result;
-        if (!BitAnd(cx, lhs, rhs, &result))
+        if (!BitAnd(cx, lhs, rhs, ret))
             return false;
-        ret.setInt32(result);
         break;
       }
       case JSOP_LSH: {
-        int32_t result;
-        if (!BitLsh(cx, lhs, rhs, &result))
+        if (!BitLsh(cx, lhs, rhs, ret))
             return false;
-        ret.setInt32(result);
         break;
       }
       case JSOP_RSH: {
-        int32_t result;
-        if (!BitRsh(cx, lhs, rhs, &result))
+        if (!BitRsh(cx, lhs, rhs, ret))
             return false;
-        ret.setInt32(result);
         break;
       }
       case JSOP_URSH: {
@@ -1512,10 +1502,8 @@ DoUnaryArithFallback(JSContext* cx, void* payload, ICUnaryArith_Fallback* stub_,
 
     switch (op) {
       case JSOP_BITNOT: {
-        int32_t result;
-        if (!BitNot(cx, val, &result))
+        if (!BitNot(cx, val, res))
             return false;
-        res.setInt32(result);
         break;
       }
       case JSOP_NEG:

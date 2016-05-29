@@ -9044,7 +9044,8 @@ CodeGenerator::visitThrow(LThrow* lir)
     callVM(ThrowInfoCodeGen, lir);
 }
 
-typedef bool (*BitNotFn)(JSContext*, HandleValue, int* p);
+// TaintFox: Signature changed to return a Javascript value. Required to support tainted numbers.
+typedef bool (*BitNotFn)(JSContext*, HandleValue, MutableHandleValue p);
 static const VMFunction BitNotInfo = FunctionInfo<BitNotFn>(BitNot);
 
 void
@@ -9054,7 +9055,8 @@ CodeGenerator::visitBitNotV(LBitNotV* lir)
     callVM(BitNotInfo, lir);
 }
 
-typedef bool (*BitopFn)(JSContext*, HandleValue, HandleValue, int* p);
+// TaintFox: Signature changed to return a Javascript value. Required to support tainted numbers.
+typedef bool (*BitopFn)(JSContext*, HandleValue, HandleValue, MutableHandleValue p);
 static const VMFunction BitAndInfo = FunctionInfo<BitopFn>(BitAnd);
 static const VMFunction BitOrInfo = FunctionInfo<BitopFn>(BitOr);
 static const VMFunction BitXorInfo = FunctionInfo<BitopFn>(BitXor);

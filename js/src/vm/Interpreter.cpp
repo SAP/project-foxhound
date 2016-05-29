@@ -2136,16 +2136,24 @@ CASE(JSOP_BINDVAR)
 }
 END_CASE(JSOP_BINDVAR)
 
+// TaintFox: handle taint propagation here
+// TODO do we care about tainted right hand side values?
 #define BITWISE_OP(OP)                                                        \
     JS_BEGIN_MACRO                                                            \
         int32_t i, j;                                                         \
+        HandleValue val = REGS.stackHandleAt(-2);                             \
         if (!ToInt32(cx, REGS.stackHandleAt(-2), &i))                         \
             goto error;                                                       \
         if (!ToInt32(cx, REGS.stackHandleAt(-1), &j))                         \
             goto error;                                                       \
         i = i OP j;                                                           \
         REGS.sp--;                                                            \
-        REGS.sp[-1].setInt32(i);                                              \
+        if (isTaintedNumber(val)) {                                           \
+            REGS.sp[-1].setObject(*NumberObject::createTainted(cx, i,         \
+                        getNumberTaint(val)));                                \
+        } else {                                                              \
+            REGS.sp[-1].setInt32(i);                                          \
+        }                                                                     \
     JS_END_MACRO
 
 CASE(JSOP_BITOR)
@@ -2264,16 +2272,24 @@ CASE(JSOP_GE)
 }
 END_CASE(JSOP_GE)
 
+// TaintFox: handle taint propagation here
+// TODO do we care about tainted shift amount values?
 #define SIGNED_SHIFT_OP(OP)                                                   \
     JS_BEGIN_MACRO                                                            \
         int32_t i, j;                                                         \
+        HandleValue val = REGS.stackHandleAt(-2);                             \
         if (!ToInt32(cx, REGS.stackHandleAt(-2), &i))                         \
             goto error;                                                       \
         if (!ToInt32(cx, REGS.stackHandleAt(-1), &j))                         \
             goto error;                                                       \
         i = i OP (j & 31);                                                    \
         REGS.sp--;                                                            \
-        REGS.sp[-1].setInt32(i);                                              \
+        if (isTaintedNumber(val)) {                                           \
+            REGS.sp[-1].setObject(*NumberObject::createTainted(cx, i,         \
+                        getNumberTaint(val)));                                \
+        } else {                                                              \
+            REGS.sp[-1].setInt32(i);                                          \
+        }                                                                     \
     JS_END_MACRO
 
 CASE(JSOP_LSH)
@@ -2373,11 +2389,11 @@ END_CASE(JSOP_NOT)
 
 CASE(JSOP_BITNOT)
 {
-    int32_t i;
+    // TaintFox: modified due to changed signature of BitNot.
     HandleValue value = REGS.stackHandleAt(-1);
-    if (!BitNot(cx, value, &i))
+    MutableHandleValue res = REGS.stackHandleAt(-1);
+    if (!BitNot(cx, value, res))
         goto error;
-    REGS.sp[-1].setInt32(i);
 }
 END_CASE(JSOP_BITNOT)
 
