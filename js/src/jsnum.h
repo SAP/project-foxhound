@@ -32,6 +32,9 @@
 
 namespace js {
 
+// TaintFox: Exported for the js shell: taint(number).
+bool Number_tainted(JSContext* cx, unsigned argc, Value* vp);
+
 class StringBuffer;
 
 extern bool

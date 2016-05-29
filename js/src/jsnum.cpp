@@ -1104,8 +1104,8 @@ Number_isInteger(JSContext* cx, unsigned argc, Value* vp)
 }
 
 // TaintFox: taint numbers manually using this method.
-static bool
-Number_tainted(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::Number_tainted(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
