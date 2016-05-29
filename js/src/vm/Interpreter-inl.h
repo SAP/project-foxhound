@@ -381,6 +381,14 @@ NegOperation(JSContext* cx, HandleScript script, jsbytecode* pc, HandleValue val
      * INT32_FITS_IN_JSVAL(-i) unless i is 0 or INT32_MIN when the
      * results, -0.0 or INT32_MAX + 1, are double values.
      */
+    // TaintFox: handle tainted numbers
+    if (isTaintedNumber(val)) {
+        double d;
+        if (!ToNumber(cx, val, &d))
+            return false;
+        res.setObject(*NumberObject::createTainted(cx, d, getNumberTaint(val)));
+    }
+
     int32_t i;
     if (val.isInt32() && (i = val.toInt32()) != 0 && i != INT32_MIN) {
         res.setInt32(-i);
@@ -688,62 +696,87 @@ GreaterThanOrEqualOperation(JSContext* cx, MutableHandleValue lhs, MutableHandle
 }
 
 static MOZ_ALWAYS_INLINE bool
-BitNot(JSContext* cx, HandleValue in, int* out)
+BitNot(JSContext* cx, HandleValue in, MutableHandleValue out)
 {
     int i;
     if (!ToInt32(cx, in, &i))
         return false;
-    *out = ~i;
+    int res = ~i;
+    if (isTaintedNumber(in))
+        out.setObject(*NumberObject::createTainted(cx, res, getNumberTaint(in)));
+    else
+        out.setInt32(res);
     return true;
 }
 
 static MOZ_ALWAYS_INLINE bool
-BitXor(JSContext* cx, HandleValue lhs, HandleValue rhs, int* out)
+BitXor(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue out)
 {
     int left, right;
     if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right))
         return false;
-    *out = left ^ right;
+    int res = left ^ right;
+    if (isTaintedNumber(lhs))
+        out.setObject(*NumberObject::createTainted(cx, res, getNumberTaint(lhs)));
+    else
+        out.setInt32(res);
     return true;
 }
 
 static MOZ_ALWAYS_INLINE bool
-BitOr(JSContext* cx, HandleValue lhs, HandleValue rhs, int* out)
+BitOr(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue out)
 {
     int left, right;
     if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right))
         return false;
-    *out = left | right;
+    int res = left | right;
+    if (isTaintedNumber(lhs))
+        out.setObject(*NumberObject::createTainted(cx, res, getNumberTaint(lhs)));
+    else
+        out.setInt32(res);
     return true;
 }
 
+// TaintFox: handle tainted arguments in all bitwise operations
 static MOZ_ALWAYS_INLINE bool
-BitAnd(JSContext* cx, HandleValue lhs, HandleValue rhs, int* out)
+BitAnd(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue out)
 {
     int left, right;
     if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right))
         return false;
-    *out = left & right;
+    int res = left & right;
+    if (isTaintedNumber(lhs))
+        out.setObject(*NumberObject::createTainted(cx, res, getNumberTaint(lhs)));
+    else
+        out.setInt32(res);
     return true;
 }
 
 static MOZ_ALWAYS_INLINE bool
-BitLsh(JSContext* cx, HandleValue lhs, HandleValue rhs, int* out)
+BitLsh(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue out)
 {
     int32_t left, right;
     if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right))
         return false;
-    *out = uint32_t(left) << (right & 31);
+    int32_t res = uint32_t(left) << (right & 31);
+    if (isTaintedNumber(lhs))
+        out.setObject(*NumberObject::createTainted(cx, res, getNumberTaint(lhs)));
+    else
+        out.setInt32(res);
     return true;
 }
 
 static MOZ_ALWAYS_INLINE bool
-BitRsh(JSContext* cx, HandleValue lhs, HandleValue rhs, int* out)
+BitRsh(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue out)
 {
     int32_t left, right;
     if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right))
         return false;
-    *out = left >> (right & 31);
+    int32_t res = left >> (right & 31);
+    if (isTaintedNumber(lhs))
+        out.setObject(*NumberObject::createTainted(cx, res, getNumberTaint(lhs)));
+    else
+        out.setInt32(res);
     return true;
 }
 
@@ -755,7 +788,10 @@ UrshOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValu
     if (!ToUint32(cx, lhs, &left) || !ToInt32(cx, rhs, &right))
         return false;
     left >>= right & 31;
-    out.setNumber(uint32_t(left));
+    if (isTaintedNumber(lhs))
+        out.setObject(*NumberObject::createTainted(cx, left, getNumberTaint(lhs)));
+    else
+        out.setNumber(uint32_t(left));
     return true;
 }
 

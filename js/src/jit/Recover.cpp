@@ -163,11 +163,11 @@ RBitNot::recover(JSContext* cx, SnapshotIterator& iter) const
 {
     RootedValue operand(cx, iter.read());
 
-    int32_t result;
-    if (!js::BitNot(cx, operand, &result))
+    // TaintFox: modified due to changed signature of BitNot.
+    RootedValue rootedResult(cx);
+    if (!js::BitNot(cx, operand, &rootedResult))
         return false;
 
-    RootedValue rootedResult(cx, js::Int32Value(result));
     iter.storeInstructionResult(rootedResult);
     return true;
 }
@@ -188,13 +188,13 @@ RBitAnd::recover(JSContext* cx, SnapshotIterator& iter) const
 {
     RootedValue lhs(cx, iter.read());
     RootedValue rhs(cx, iter.read());
-    int32_t result;
     MOZ_ASSERT(!lhs.isObject() && !rhs.isObject());
 
-    if (!js::BitAnd(cx, lhs, rhs, &result))
+    // TaintFox: modified due to changed signature of BitAnd.
+    RootedValue rootedResult(cx);
+    if (!js::BitAnd(cx, lhs, rhs, &rootedResult))
         return false;
 
-    RootedValue rootedResult(cx, js::Int32Value(result));
     iter.storeInstructionResult(rootedResult);
     return true;
 }
@@ -215,13 +215,13 @@ RBitOr::recover(JSContext* cx, SnapshotIterator& iter) const
 {
     RootedValue lhs(cx, iter.read());
     RootedValue rhs(cx, iter.read());
-    int32_t result;
     MOZ_ASSERT(!lhs.isObject() && !rhs.isObject());
 
-    if (!js::BitOr(cx, lhs, rhs, &result))
+    // TaintFox: modified due to changed signature of BitOr.
+    RootedValue asValue(cx);
+    if (!js::BitOr(cx, lhs, rhs, &asValue))
         return false;
 
-    RootedValue asValue(cx, js::Int32Value(result));
     iter.storeInstructionResult(asValue);
     return true;
 }
@@ -243,11 +243,11 @@ RBitXor::recover(JSContext* cx, SnapshotIterator& iter) const
     RootedValue lhs(cx, iter.read());
     RootedValue rhs(cx, iter.read());
 
-    int32_t result;
-    if (!js::BitXor(cx, lhs, rhs, &result))
+    // TaintFox: modified due to changed signature of BitXor.
+    RootedValue rootedResult(cx);
+    if (!js::BitXor(cx, lhs, rhs, &rootedResult))
         return false;
 
-    RootedValue rootedResult(cx, js::Int32Value(result));
     iter.storeInstructionResult(rootedResult);
     return true;
 }
@@ -268,13 +268,13 @@ RLsh::recover(JSContext* cx, SnapshotIterator& iter) const
 {
     RootedValue lhs(cx, iter.read());
     RootedValue rhs(cx, iter.read());
-    int32_t result;
     MOZ_ASSERT(!lhs.isObject() && !rhs.isObject());
 
-    if (!js::BitLsh(cx, lhs, rhs, &result))
+    // TaintFox: modified due to changed signature of BitLsh.
+    RootedValue asValue(cx);
+    if (!js::BitLsh(cx, lhs, rhs, &asValue))
         return false;
 
-    RootedValue asValue(cx, js::Int32Value(result));
     iter.storeInstructionResult(asValue);
     return true;
 }
@@ -297,11 +297,11 @@ RRsh::recover(JSContext* cx, SnapshotIterator& iter) const
     RootedValue rhs(cx, iter.read());
     MOZ_ASSERT(!lhs.isObject() && !rhs.isObject());
 
-    int32_t result;
-    if (!js::BitRsh(cx, lhs, rhs, &result))
+    // TaintFox: modified due to changed signature of BitRsh.
+    RootedValue rootedResult(cx);
+    if (!js::BitRsh(cx, lhs, rhs, &rootedResult))
         return false;
 
-    RootedValue rootedResult(cx, js::Int32Value(result));
     iter.storeInstructionResult(rootedResult);
     return true;
 }
