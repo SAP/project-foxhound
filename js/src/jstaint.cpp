@@ -91,3 +91,16 @@ TaintFlow js::getNumberTaint(const Value& val)
     }
     return TaintFlow(nullptr);
 }
+
+bool js::isAnyTaintedNumber(const Value& val1, const Value& val2)
+{
+    return isTaintedNumber(val1) || isTaintedNumber(val2);
+}
+
+TaintFlow js::getAnyNumberTaint(const Value& val1, const Value& val2)
+{
+    if (isTaintedNumber(val1))
+        return getNumberTaint(val1);
+    else
+        return getNumberTaint(val2);
+}
