@@ -38,31 +38,14 @@ bool isTaintedNumber(const JS::Value& val);
 // Extract the taint information from a number.
 TaintFlow getNumberTaint(const JS::Value& val);
 
-}
+// Check if any of the argument values is a tainted number object.
+// TODO make this accept a variable amount of arguments using variadic templates
+bool isAnyTaintedNumber(const JS::Value& val1, const JS::Value& val2);
 
-#define HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, OP)                                             \
-{                                                                                               \
-    decltype(lhs) __lhs = (lhs);                                                                \
-    decltype(rhs) __rhs = (rhs);                                                                \
-    if (isTaintedNumber(__lhs) || isTaintedNumber(__rhs)) {                                     \
-        double lhsValue, rhsValue;                                                              \
-        TaintFlow taint;                                                                        \
-        if (isTaintedNumber(__lhs)) {                                                           \
-            taint = __lhs.toObject().as<NumberObject>().taint();                                \
-        } else {                                                                                \
-            taint = __rhs.toObject().as<NumberObject>().taint();                                \
-        }                                                                                       \
-                                                                                                \
-        ToNumber(cx, __lhs, &lhsValue);                                                         \
-        ToNumber(cx, __rhs, &rhsValue);                                                         \
-                                                                                                \
-        if (taint) {                                                                            \
-            TaintFlow newTaint = taint.extend(TaintOperation(#OP,                               \
-                        {taintarg(cx, lhsValue), taintarg(cx, rhsValue)}));                     \
-            res.setObject(*NumberObject::createTainted(cx, lhsValue OP rhsValue, newTaint));    \
-            return true;                                                                        \
-        }                                                                                       \
-    }                                                                                           \
+// Extract the taint information from the first tainted number argument.
+// TODO make this accept a variable amount of arguments using variadic templates
+TaintFlow getAnyNumberTaint(const JS::Value& val1, const JS::Value& val2);
+
 }
 
 #endif

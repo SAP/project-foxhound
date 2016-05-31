@@ -861,6 +861,18 @@ js::StrictlyEqual(JSContext* cx, HandleValue lval, HandleValue rval, bool* equal
         return true;
     }
 
+    // TaintFox: special case to handle strict equality of tainted numbers.
+    if (isAnyTaintedNumber(lval, rval) &&
+        (lval.isNumber() || isTaintedNumber(lval)) &&
+        (rval.isNumber() || isTaintedNumber(rval))) {
+        double l, r;
+        if (!ToNumber(cx, lval, &l) || !ToNumber(cx, rval, &r))
+            return false;
+
+        *equal = (l == r);
+        return true;
+    }
+
     *equal = false;
     return true;
 }
@@ -1303,6 +1315,10 @@ ComputeImplicitThis(JSObject* obj)
 static MOZ_ALWAYS_INLINE bool
 AddOperation(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, MutableHandleValue res)
 {
+    // TaintFox: copy lhs and rhs since they are mutable.
+    RootedValue origLhs(cx, lhs);
+    RootedValue origRhs(cx, rhs);
+
     if (lhs.isInt32() && rhs.isInt32()) {
         int32_t l = lhs.toInt32(), r = rhs.toInt32();
         int32_t t;
@@ -1311,9 +1327,6 @@ AddOperation(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, Muta
             return true;
         }
     }
-
-    // TaintFox: Taint propagation when adding tainted numbers.
-    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, +);
 
     if (!ToPrimitive(cx, lhs))
         return false;
@@ -1355,6 +1368,10 @@ AddOperation(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, Muta
         if (!ToNumber(cx, lhs, &l) || !ToNumber(cx, rhs, &r))
             return false;
         res.setNumber(l + r);
+
+        // TaintFox: Taint propagation when adding tainted numbers.
+        if (isAnyTaintedNumber(origLhs, origRhs))
+            res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(origLhs, origRhs)));
     }
 
     return true;
@@ -1363,39 +1380,45 @@ AddOperation(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, Muta
 static MOZ_ALWAYS_INLINE bool
 SubOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
-    // TaintFox: Taint propagation when subtracting tainted numbers.
-    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, -);
-
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
     res.setNumber(d1 - d2);
+
+    // TaintFox: Taint propagation when subtracting tainted numbers.
+    if (isAnyTaintedNumber(lhs, rhs))
+        res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+
     return true;
 }
 
 static MOZ_ALWAYS_INLINE bool
 MulOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
-    // TaintFox: Taint propagation when multiplying tainted numbers.
-    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, *);
-
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
     res.setNumber(d1 * d2);
+
+    // TaintFox: Taint propagation when multiplying tainted numbers.
+    if (isAnyTaintedNumber(lhs, rhs))
+        res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+
     return true;
 }
 
 static MOZ_ALWAYS_INLINE bool
 DivOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
-    // TaintFox: Taint propagation when dividing tainted numbers.
-    HANDLE_NUMBER_TAINT_BINARY_OP(lhs, rhs, /);
-
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
     res.setNumber(NumberDiv(d1, d2));
+
+    // TaintFox: Taint propagation when dividing tainted numbers.
+    if (isAnyTaintedNumber(lhs, rhs))
+        res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getAnyNumberTaint(lhs, rhs)));
+
     return true;
 }
 
@@ -1415,6 +1438,11 @@ ModOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue
         return false;
 
     res.setNumber(NumberMod(d1, d2));
+
+    // TaintFox: Taint propagation when performing modulo operations on tainted numbers.
+    if (isTaintedNumber(lhs))
+        res.setObject(*NumberObject::createTainted(cx, res.toNumber(), getNumberTaint(lhs)));
+
     return true;
 }
 
