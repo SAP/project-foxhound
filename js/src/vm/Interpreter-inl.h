@@ -426,6 +426,10 @@ GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::Hand
     MOZ_ASSERT(op == JSOP_GETELEM || op == JSOP_CALLELEM || op == JSOP_GETELEM_SUPER);
     MOZ_ASSERT_IF(op == JSOP_GETELEM || op == JSOP_CALLELEM, obj == receiver);
 
+    // TaintFox: tainted numbers or strings might be used for element access. In that case, also
+    // try to taint the resulting value.
+    TaintFlow taint;
+
     do {
         uint32_t index;
         if (IsDefinitelyIndex(key, &index)) {
@@ -439,6 +443,11 @@ GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::Hand
 
         if (key.isString()) {
             JSString* str = key.toString();
+
+            // TaintFox: if tainted, just pick the first taintflow.
+            if (str->isTainted())
+                taint = str->taint().begin()->flow();
+
             JSAtom* name = str->isAtom() ? &str->asAtom() : AtomizeString(cx, str);
             if (!name)
                 return false;
@@ -451,12 +460,26 @@ GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::Hand
             }
         }
 
+        if (isTaintedNumber(key))
+            taint = getNumberTaint(key);
+
         RootedId id(cx);
         if (!ToPropertyKey(cx, key, &id))
             return false;
         if (!GetProperty(cx, obj, receiver, id, res))
             return false;
     } while (false);
+
+    // TaintFox: add taint information to looked up element.
+    if (taint) {
+        // TODO(samuel) need a taint() method?
+        if (res.isString()) {
+            JSString* str = res.toString();
+            str->setTaint(StringTaint(taint, str->length()));
+        } else if (res.isNumber()) {
+            res.setObject(*NumberObject::createTainted(cx, res.toNumber(), taint));
+        }
+    }
 
     assertSameCompartmentDebugOnly(cx, res);
     return true;

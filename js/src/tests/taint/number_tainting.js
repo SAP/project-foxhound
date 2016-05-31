@@ -31,6 +31,10 @@ function numberTaintingTest() {
     assertNumberTainted(a | 1);
     assertNumberTainted(a ^ 1);
     assertNumberTainted(~a);
+
+    // Element access
+    var table = [0,1,2,3,4,5,6,7];
+    assertNumberTainted(table[a & 7]);
 }
 
 runTaintTest(numberTaintingTest);
