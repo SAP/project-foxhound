@@ -7,11 +7,11 @@ function strReplaceTest() {
 
     // Test replacing with non-tainted characters
     str = taint('asdf');
-    assertRangesTainted(taintStr.replace('s', 'x'), [0, 1], [2, STR_END]);
+    assertRangesTainted(str.replace('s', 'x'), [0, 1], [2, STR_END]);
 
     // Test replacing with tainted characters
     str = taint('asdf');
-    assertFullTainted(taintStr.replace('s', taint('x')));
+    assertFullTainted(str.replace('s', taint('x')));
 
     // Test "untainting"
     str = 'foo' + taint('bar') + 'baz';
@@ -24,8 +24,9 @@ function strReplaceTest() {
 
     // Test regex removal
     str = '000' + taint('asdf') + '111';
-    assertFullTainted(str.replace(/\d+/, ''));
-    assertNotTainted(str.replace(/\[a-z]+/, ''));
+    assertRangeTainted(str.replace(/\d+/, ''), [0, 4]);
+    assertFullTainted(str.replace(/\d+/g, ''));
+    assertNotTainted(str.replace(/[a-z]+/, ''));
 }
 
 runTaintTest(strReplaceTest);

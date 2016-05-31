@@ -1277,7 +1277,12 @@ js::str_charAt(JSContext* cx, unsigned argc, Value* vp)
         i = size_t(d);
     }
 
-    str = cx->staticStrings().getUnitStringForElement(cx, str, i);
+    // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
+    if (str->isTainted())
+        str = NewDependentString(cx, str, i, 1);
+    else
+        str = cx->staticStrings().getUnitStringForElement(cx, str, i);
+
     if (!str)
         return false;
     args.rval().setString(str);
