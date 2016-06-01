@@ -23,6 +23,7 @@
 #include "vm/Stack-inl.h"
 #include "vm/String-inl.h"
 #include "vm/UnboxedObject-inl.h"
+#include "vm/NumberObject-inl.h"
 
 namespace js {
 
