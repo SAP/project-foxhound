@@ -8,7 +8,7 @@ function atomTaintTest() {
     // Test functions that could produce (tainted) atoms.
     var untaintedStr = randomString();
     var taintedStr = taint(untaintedStr);
-    var index = rand() % untaintedStr.length;
+    var i = rand(0, untaintedStr.length);
 
     assertTainted(taintedStr[i]);
     assertNotTainted(untaintedStr[i]);

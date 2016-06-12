@@ -32,6 +32,9 @@ std::u16string taintarg(JSContext* cx, int32_t num);
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function, const CallArgs& args);
 
+// Print a message to stdout.
+void TaintFoxReport(const char* msg);
+
 }
 
 #endif

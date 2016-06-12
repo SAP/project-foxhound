@@ -4,8 +4,9 @@ function regexMatchTest() {
     var c = ' World!';
     var str = a + b + c;
 
-    // Test basic string matching
-    var match = str.match('tainted')[0];
+    // For a flat match, the result is only required to be
+    // tainted if the pattern string itself was tainted.
+    var match = str.match(b)[0];
     assertEqualTaint(b, match);
 
     // Test basic regex matching

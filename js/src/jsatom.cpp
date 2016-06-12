@@ -359,19 +359,10 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const char16_t* tbchars, size_t length
 template JSAtom*
 AtomizeAndCopyChars(ExclusiveContext* cx, const Latin1Char* tbchars, size_t length, PinningBehavior pin);
 
-// TODO(samuel) remove
-#include <iostream>
-
 JSAtom*
 js::AtomizeString(ExclusiveContext* cx, JSString* str,
                   js::PinningBehavior pin /* = js::DoNotPinAtom */)
 {
-    // TaintFox: Warn when atomizing a tainted string since we loose taint at that point.
-    if (str->isTainted()) {
-        // TODO(samuel) move this warning code somewhere else
-        std::cerr << "WARNING: Loosing taint due to atomization" << std::endl;
-    }
-
     if (str->isAtom()) {
         JSAtom& atom = str->asAtom();
         /* N.B. static atoms are effectively always interned. */
