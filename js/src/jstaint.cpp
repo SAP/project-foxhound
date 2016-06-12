@@ -104,3 +104,9 @@ TaintFlow js::getAnyNumberTaint(const Value& val1, const Value& val2)
     else
         return getNumberTaint(val2);
 }
+
+// Print a message to stdout.
+void js::TaintFoxReport(const char* msg)
+{
+    std::cerr << msg << std::endl;
+}
