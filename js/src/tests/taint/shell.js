@@ -108,7 +108,7 @@ if (typeof assertEqualTaint === 'undefined') {
 if (typeof rand === 'undefined') {
     // Return a random integer in the range [start, end)
     var rand = function(start, end) {
-        return Math.floor(Math.random() * (end - start)) + start;       // Minimum length of 4, for multiTaint to be usable
+        return Math.floor(Math.random() * (end - start)) + start;
     }
 }
 

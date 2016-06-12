@@ -132,7 +132,12 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
     if (!str || str->length() == 0)
         return false;
 
-    RootedString tainted_str(cx, NewDependentString(cx, str, 0, str->length()));
+    JSLinearString* base = str->ensureLinear(cx);
+    if (!str)
+        return false;
+
+    // Cannot use NewDependentString here since that could give us an atomized string back.
+    JSString* tainted_str = JSDependentString::new_(cx, base, 0, str->length());
     if (!tainted_str)
         return false;
 
@@ -693,7 +698,8 @@ str_resolve(JSContext* cx, HandleObject obj, HandleId id, bool* resolvedp)
 
     int32_t slot = JSID_TO_INT(id);
     if ((size_t)slot < str->length()) {
-        JSString* str1 = cx->staticStrings().getUnitStringForElement(cx, str, size_t(slot));
+        // TaintFox: code modified to avoid atoms.
+        JSString* str1 = NewDependentString(cx, str, slot, 1);
         if (!str1)
             return false;
         RootedValue value(cx, StringValue(str1));
@@ -2277,7 +2283,8 @@ namespace {
 /* Result of a successfully performed flat match. */
 class FlatMatch
 {
-    RootedAtom pat_;
+    // TaintFox: modified since the pattern string could be tainted.
+    Rooted<JSLinearString*> pat_;
     int32_t match_;
 
     friend class StringRegExpGuard;
@@ -2375,7 +2382,7 @@ class MOZ_STACK_CLASS StringRegExpGuard
     }
 
     static JSAtom*
-    flattenPattern(JSContext* cx, JSAtom* pat)
+    flattenPattern(JSContext* cx, JSLinearString* pat)
     {
         StringBuffer sb(cx);
         if (!sb.reserve(pat->length()))
@@ -2420,7 +2427,11 @@ class MOZ_STACK_CLASS StringRegExpGuard
         if (!arg)
             return false;
 
-        fm.pat_ = AtomizeString(cx, arg);
+        // TaintFox: need to preserve taint information.
+        if (!arg->isTainted())
+            fm.pat_ = AtomizeString(cx, arg);
+        else
+            fm.pat_ = arg->ensureLinear(cx);
         if (!fm.pat_)
             return false;
 
@@ -2433,7 +2444,11 @@ class MOZ_STACK_CLASS StringRegExpGuard
     }
 
     bool init(JSContext* cx, HandleString pattern) {
-        fm.pat_ = AtomizeString(cx, pattern);
+        // TaintFox: need to preserve taint information.
+        if (!pattern->isTainted())
+            fm.pat_ = AtomizeString(cx, pattern);
+        else
+            fm.pat_ = pattern->ensureLinear(cx);
         if (!fm.pat_)
             return false;
         return true;
@@ -2506,14 +2521,8 @@ class MOZ_STACK_CLASS StringRegExpGuard
             opt = nullptr;
         }
 
-        Rooted<JSAtom*> pat(cx);
-        if (flat) {
-            pat = flattenPattern(cx, fm.pat_);
-            if (!pat)
-                return false;
-        } else {
-            pat = fm.pat_;
-        }
+        // TaintFox: need to atomize here now.
+        RootedAtom pat(cx, AtomizeString(cx, fm.pat_));
         MOZ_ASSERT(pat);
 
         return cx->compartment()->regExps.get(cx, pat, opt, &re_);
@@ -2745,8 +2754,6 @@ BuildFlatMatchArray(JSContext* cx, HandleString textstr, const FlatMatch& fm, Ca
         args->rval().setNull();
         return true;
     }
-
-    // TaintFox: TODO(samuel) propagate taint here.
 
     /* Get the templateObject that defines the shape and type of the output object */
     JSObject* templateObject = cx->compartment()->regExps.getOrCreateMatchResultTemplateObject(cx);
@@ -4288,7 +4295,6 @@ CharSplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleObj
     if (strLength == 0)
         return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
 
-    js::StaticStrings& staticStrings = cx->staticStrings();
     uint32_t resultlen = (limit < strLength ? limit : strLength);
 
     AutoValueVector splits(cx);
@@ -4296,7 +4302,8 @@ CharSplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleObj
         return nullptr;
 
     for (size_t i = 0; i < resultlen; ++i) {
-        JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
+        // TaintFox: code modified to avoid atoms.
+        JSString* sub = NewDependentString(cx, str, i, 1);
         if (!sub)
             return nullptr;
         splits.infallibleAppend(StringValue(sub));

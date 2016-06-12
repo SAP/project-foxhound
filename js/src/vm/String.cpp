@@ -973,18 +973,20 @@ js::NewDependentString(JSContext* cx, JSString* baseArg, size_t start, size_t le
     if (start == 0 && length == base->length())
         return base;
 
-    /* TaintFox: TODO(samuel)
-    if (base->hasTwoByteChars()) {
-        AutoCheckCannotGC nogc;
-        const char16_t* chars = base->twoByteChars(nogc) + start;
-        if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
-            return staticStr;
-    } else {
-        AutoCheckCannotGC nogc;
-        const Latin1Char* chars = base->latin1Chars(nogc) + start;
-        if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
-            return staticStr;
-    }*/
+    // TaintFox: Avoid atomization here if the base string is tainted.
+    if (!baseArg->isTainted()) {
+        if (base->hasTwoByteChars()) {
+            AutoCheckCannotGC nogc;
+            const char16_t* chars = base->twoByteChars(nogc) + start;
+            if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
+                return staticStr;
+        } else {
+            AutoCheckCannotGC nogc;
+            const Latin1Char* chars = base->latin1Chars(nogc) + start;
+            if (JSLinearString* staticStr = cx->staticStrings().lookup(chars, length))
+                return staticStr;
+        }
+    }
 
     return JSDependentString::new_(cx, base, start, length);
 }

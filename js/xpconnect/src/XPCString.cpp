@@ -96,6 +96,7 @@ XPCStringConvert::ReadableToJSVal(JSContext* cx,
     nsStringBuffer* buf = nsStringBuffer::FromString(readable);
     if (buf) {
         bool shared;
+        // TaintFox: StringBufferToJSVal takes care of propagating taint.
         if (!StringBufferToJSVal(cx, buf, length, vp, &shared))
             return false;
         if (shared)

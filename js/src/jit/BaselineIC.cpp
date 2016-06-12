@@ -2128,9 +2128,6 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler& masm)
 {
     MOZ_ASSERT(engine_ == Engine::Baseline);
 
-    // TaintFox: If we want to taint the characters of a string (accessed by index) then we need to
-    // patch this code.
-
     Label failure;
     masm.branchTestString(Assembler::NotEqual, R0, &failure);
     masm.branchTestInt32(Assembler::NotEqual, R1, &failure);
@@ -2143,6 +2140,12 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler& masm)
 
     // Check for non-linear strings.
     masm.branchIfRope(str, &failure);
+
+    // TaintFox: bail out if thisv is tainted.
+    masm.branchPtr(Assembler::NotEqual,
+                   Address(str, JSString::offsetOfTaint()),
+                   ImmPtr(nullptr),
+                   &failure);
 
     // Unbox key.
     Register key = masm.extractInt32(R1, ExtractTemp1);

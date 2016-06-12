@@ -46,6 +46,9 @@ bool isAnyTaintedNumber(const JS::Value& val1, const JS::Value& val2);
 // TODO make this accept a variable amount of arguments using variadic templates
 TaintFlow getAnyNumberTaint(const JS::Value& val1, const JS::Value& val2);
 
+// Print a message to stdout.
+void TaintFoxReport(const char* msg);
+
 }
 
 #endif
