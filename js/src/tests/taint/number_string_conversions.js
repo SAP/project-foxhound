@@ -12,6 +12,8 @@ function numberStringConversionTests() {
 
     var copiedString = String.fromCharCode.apply(null, chars);
     assertEqualTaint(copiedString, taintedStr);
+
+    // TODO do we care about number.toString()?
 }
 
 runTaintTest(numberStringConversionTests);

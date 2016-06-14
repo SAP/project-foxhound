@@ -420,6 +420,7 @@ ToIdOperation(JSContext* cx, HandleScript script, jsbytecode* pc, HandleValue id
     return true;
 }
 
+#include <stdio.h>
 static MOZ_ALWAYS_INLINE bool
 GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::HandleObject receiver,
                           HandleValue key, MutableHandleValue res)
@@ -473,10 +474,31 @@ GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::Hand
 
     // TaintFox: add taint information to looked up element.
     if (taint) {
-        // TODO(samuel) need a taint() method?
         if (res.isString()) {
-            JSString* str = res.toString();
-            str->setTaint(StringTaint(taint, str->length()));
+            // Simple heuristic. In essence we want to apply taint in case of a
+            // lookup table or similar, since there the resulting string is completely controlled
+            // if the index is controlled.
+            // On the other hand, here is an example where we probably don't want to apply taint:
+            //
+            //   var fortunes = [ //.. array of strings ];
+            //   function fortune(i) {
+            //     return fortunes[i];
+            //   }
+            //
+            // In this case we aren't able to control the content of the string but only which
+            // string is choosen, which probably isn't relevant security wise.
+            //
+            // Our heuristic here tries to differentiate both cases simply by looking at the length
+            // of the returned string.
+            if (res.toString()->length() < 3) {
+                // In case of a string/char lookup, the result may very well be an atom.
+                // In that case "deatomize" and apply taint.
+                JSLinearString* str = res.toString()->ensureLinear(cx);
+                if (str->isAtom())
+                    // Cannot use NewDependentString here, so need to use this function directly.
+                    str = JSDependentString::new_(cx, str, 0, str->length());
+                str->setTaint(StringTaint(taint, str->length()));
+            }
         } else if (res.isNumber()) {
             res.setObject(*NumberObject::createTainted(cx, res.toNumber(), taint));
         }
