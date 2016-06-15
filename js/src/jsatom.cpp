@@ -397,6 +397,17 @@ js::AtomizeString(ExclusiveContext* cx, JSString* str,
            : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc), linear->length(), pin);
 }
 
+JSLinearString*
+AtomizeIfUntainted(ExclusiveContext* cx, JSString* str,
+                   js::PinningBehavior pin = js::DoNotPinAtom)
+{
+    JSLinearString* linear = str->ensureLinear(cx);
+    if (linear->isTainted())
+        return linear;
+    else
+        return AtomizeString(cx, linear, pin);
+}
+
 JSAtom*
 js::Atomize(ExclusiveContext* cx, const char* bytes, size_t length, PinningBehavior pin)
 {
