@@ -991,6 +991,19 @@ js::NewDependentString(JSContext* cx, JSString* baseArg, size_t start, size_t le
     return JSDependentString::new_(cx, base, start, length);
 }
 
+JSLinearString*
+js::NewTaintedDependentString(JSContext* cx, JSString* baseArg, const StringTaint& taint, size_t start, size_t length)
+{
+    JSLinearString* base = baseArg->ensureLinear(cx);
+    if (!base)
+        return nullptr;
+
+    if (length > base->length())
+        length = base->length();
+
+    return JSDependentString::new_(cx, base, start, length);
+}
+
 static bool
 CanStoreCharsAsLatin1(const char16_t* s, size_t length)
 {
