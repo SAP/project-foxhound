@@ -236,6 +236,13 @@ AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars, size_t utf8ByteLength);
 extern JSAtom*
 AtomizeString(ExclusiveContext* cx, JSString* str, js::PinningBehavior pin = js::DoNotPinAtom);
 
+// TaintFox: Convenience function which atomizes the given string
+// only if it is not tainted (since that would loose the taint information).
+// This is meant as a replacement for AtomizeString.
+extern JSLinearString*
+AtomizeIfUntainted(ExclusiveContext* cx, JSString* str,
+                   js::PinningBehavior pin = js::DoNotPinAtom);
+
 template <AllowGC allowGC>
 extern JSAtom*
 ToAtom(ExclusiveContext* cx, typename MaybeRooted<Value, allowGC>::HandleType v);

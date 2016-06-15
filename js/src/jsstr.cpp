@@ -132,18 +132,13 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
     if (!str || str->length() == 0)
         return false;
 
-    JSLinearString* base = str->ensureLinear(cx);
-    if (!str)
-        return false;
-
-    // Cannot use NewDependentString here since that could give us an atomized string back.
-    JSString* tainted_str = JSDependentString::new_(cx, base, 0, str->length());
-    if (!tainted_str)
-        return false;
-
     // We store the string as argument for a manual taint operation. This way it's easy to see what
     // the original value of a manually tainted string was for debugging/testing.
-    tainted_str->setTaint(StringTaint(0, str->length(), TaintSource("manual taint source", { taintarg(cx, str) })));
+    StringTaint taint(0, str->length(), TaintSource("manual taint source", { taintarg(cx, str) }));
+
+    JSString* tainted_str = NewTaintedDependentString(cx, str, taint);
+    if (!tainted_str)
+        return false;
     MOZ_ASSERT(tainted_str->isTainted());
 
     args.rval().setString(tainted_str);
@@ -2420,10 +2415,7 @@ class MOZ_STACK_CLASS StringRegExpGuard
             return false;
 
         // TaintFox: need to preserve taint information.
-        if (!arg->isTainted())
-            fm.pat_ = AtomizeString(cx, arg);
-        else
-            fm.pat_ = arg->ensureLinear(cx);
+        fm.pat_ = AtomizeIfUntainted(cx, arg);
         if (!fm.pat_)
             return false;
 
@@ -2437,10 +2429,7 @@ class MOZ_STACK_CLASS StringRegExpGuard
 
     bool init(JSContext* cx, HandleString pattern) {
         // TaintFox: need to preserve taint information.
-        if (!pattern->isTainted())
-            fm.pat_ = AtomizeString(cx, pattern);
-        else
-            fm.pat_ = pattern->ensureLinear(cx);
+        fm.pat_ = AtomizeIfUntainted(cx, pattern);
         if (!fm.pat_)
             return false;
         return true;
