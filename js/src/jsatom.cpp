@@ -398,8 +398,8 @@ js::AtomizeString(ExclusiveContext* cx, JSString* str,
 }
 
 JSLinearString*
-AtomizeIfUntainted(ExclusiveContext* cx, JSString* str,
-                   js::PinningBehavior pin = js::DoNotPinAtom)
+js::AtomizeIfUntainted(ExclusiveContext* cx, JSString* str,
+                   js::PinningBehavior pin)
 {
     JSLinearString* linear = str->ensureLinear(cx);
     if (linear->isTainted())
