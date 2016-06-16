@@ -693,8 +693,12 @@ str_resolve(JSContext* cx, HandleObject obj, HandleId id, bool* resolvedp)
 
     int32_t slot = JSID_TO_INT(id);
     if ((size_t)slot < str->length()) {
-        // TaintFox: code modified to avoid atoms.
-        JSString* str1 = NewDependentString(cx, str, slot, 1);
+        // TaintFox: must not create atoms here if the base string is tainted.
+        JSString* str1;
+        if (str->isTainted())
+            str1 = NewDependentString(cx, str, slot, 1);
+        else
+            str1 = cx->staticStrings().getUnitStringForElement(cx, str, slot);
         if (!str1)
             return false;
         RootedValue value(cx, StringValue(str1));
