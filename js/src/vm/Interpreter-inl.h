@@ -420,7 +420,6 @@ ToIdOperation(JSContext* cx, HandleScript script, jsbytecode* pc, HandleValue id
     return true;
 }
 
-#include <stdio.h>
 static MOZ_ALWAYS_INLINE bool
 GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::HandleObject receiver,
                           HandleValue key, MutableHandleValue res)
@@ -491,13 +490,9 @@ GetObjectElementOperation(JSContext* cx, JSOp op, JS::HandleObject obj, JS::Hand
             // Our heuristic here tries to differentiate both cases simply by looking at the length
             // of the returned string.
             if (res.toString()->length() < 3) {
-                // In case of a string/char lookup, the result may very well be an atom.
-                // In that case "deatomize" and apply taint.
-                JSLinearString* str = res.toString()->ensureLinear(cx);
-                if (str->isAtom())
-                    // Cannot use NewDependentString here, so need to use this function directly.
-                    str = JSDependentString::new_(cx, str, 0, str->length());
-                str->setTaint(StringTaint(taint, str->length()));
+                // We only want to taint the returned string, not the element of the object.
+                RootedString str(cx, res.toString());
+                res.setString(NewTaintedDependentString(cx, str, StringTaint(taint, str->length())));
             }
         } else if (res.isNumber()) {
             res.setObject(*NumberObject::createTainted(cx, res.toNumber(), taint));
@@ -544,11 +539,20 @@ GetPrimitiveElementOperation(JSContext* cx, JSOp op, JS::HandleValue receiver,
             }
         }
 
+
         RootedId id(cx);
         if (!ToPropertyKey(cx, key, &id))
             return false;
         if (!GetProperty(cx, boxed, receiver, id, res))
             return false;
+
+        // TaintFox:Like with arrays, taint should be propagated here
+        // if the index is a tainted number and the receiver a string.
+        if (isTaintedNumber(key) && res.isString()) {
+            RootedString str(cx, res.toString());
+            StringTaint taint(getNumberTaint(key), str->length());
+            res.setString(NewTaintedDependentString(cx, str, taint));
+        }
     } while (false);
 
     assertSameCompartmentDebugOnly(cx, res);
