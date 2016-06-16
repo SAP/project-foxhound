@@ -1001,7 +1001,9 @@ js::NewTaintedDependentString(JSContext* cx, JSString* baseArg, const StringTain
     if (length > base->length())
         length = base->length();
 
-    return JSDependentString::new_(cx, base, start, length);
+    JSLinearString* res = JSDependentString::new_(cx, base, start, length);
+    res->setTaint(taint);
+    return res;
 }
 
 static bool
