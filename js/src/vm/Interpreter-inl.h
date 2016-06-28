@@ -840,7 +840,7 @@ UrshOperation(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValu
         return false;
     left >>= right & 31;
     if (isTaintedNumber(lhs))
-        out.setObject(*NumberObject::createTainted(cx, left, getNumberTaint(lhs)));
+        out.setObject(*NumberObject::createTainted(cx, uint32_t(left), getNumberTaint(lhs)));
     else
         out.setNumber(uint32_t(left));
     return true;

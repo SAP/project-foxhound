@@ -1583,7 +1583,13 @@ TryAttachGetElemStub(JSContext* cx, JSScript* script, jsbytecode* pc, ICGetElem_
     // Check for NativeObject[id] and UnboxedPlainObject[id] shape-optimizable accesses.
     if (obj->isNative() || obj->is<UnboxedPlainObject>()) {
         RootedScript rootedScript(cx, script);
-        if (rhs.isString()) {
+        // TaintFox: don't optimize if the key is tainted. This would
+        // lead to key atomization and possibly lookup caching, both resulting
+        // in loss of taint information.
+        // This is more of a heuristic as optimization/lookup caching can
+        // still happen if the same property is first looked up with an untainted
+        // key.
+        if (rhs.isString() && !rhs.toString()->isTainted()) {
             if (!TryAttachNativeOrUnboxedGetValueElemStub<PropertyName*>(cx, rootedScript, pc, stub,
                                                                          obj, rhs, attached))
             {
