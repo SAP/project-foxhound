@@ -2,21 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# NSIS branding defines for Aurora builds.
+# NSIS branding defines for nightly builds.
 # The official release build branding.nsi is located in other-license/branding/firefox/
 # The unofficial build branding.nsi is located in browser/branding/unofficial/
 
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
 !define BrandFullNameInternal "Taintfox"
-!define BrandShortName        "Taintfox"
 !define CompanyName           "SAP SE"
 !define URLInfoAbout          "https://github.wdf.sap.corp/WebSecResearch/taintfox"
-!define HelpLink              "https://github.wdf.sap.corp/WebSecResearch/taintfox"
+!define HelpLink              "https://github.wdf.sap.corp/WebSecResearch/taintfox/issues"
 
-!define URLStubDownload "http://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-aurora-latest"
-!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=aurora&installer_lang=${AB_CD}"
-!define Channel "release"
+!define URLStubDownload "http://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-nightly-latest"
+!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=nightly&installer_lang=${AB_CD}"
+!define Channel "nightly"
 
 # The installer's certificate name and issuer expected by the stub installer
 !define CertNameDownload   "Mozilla Corporation"
@@ -26,10 +25,10 @@
 # settings.
 # The dialog units for the bitmap's dimensions should match exactly with the
 # bitmap's width and height in pixels.
-!define APPNAME_BMP_WIDTH_DU 108u
-!define APPNAME_BMP_HEIGHT_DU 48u
-!define INTRO_BLURB_WIDTH_DU "232u"
-!define INTRO_BLURB_EDGE_DU "196u"
+!define APPNAME_BMP_WIDTH_DU 159u
+!define APPNAME_BMP_HEIGHT_DU 28u
+!define INTRO_BLURB_WIDTH_DU "230u"
+!define INTRO_BLURB_EDGE_DU "198u"
 !define INTRO_BLURB_LTR_TOP_DU "16u"
 !define INTRO_BLURB_RTL_TOP_DU "11u"
 
@@ -43,6 +42,3 @@
 !define COMMON_TEXT_COLOR_NORMAL 0xFFFFFF
 !define COMMON_TEXT_COLOR_FADED 0xA1AAB3
 !define COMMON_BKGRD_COLOR 0x0F1B26
-
-# Enable DeveloperEdition-specific behavior
-!define DEV_EDITION
