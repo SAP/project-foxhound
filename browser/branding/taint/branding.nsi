@@ -8,15 +8,15 @@
 
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
-!define BrandFullNameInternal "Firefox Developer Edition"
-!define BrandShortName        "Firefox Developer Edition"
-!define CompanyName           "mozilla.org"
-!define URLInfoAbout          "https://www.mozilla.org"
-!define HelpLink              "https://support.mozilla.org"
+!define BrandFullNameInternal "Taintfox"
+!define BrandShortName        "Taintfox"
+!define CompanyName           "SAP SE"
+!define URLInfoAbout          "https://github.wdf.sap.corp/WebSecResearch/taintfox"
+!define HelpLink              "https://github.wdf.sap.corp/WebSecResearch/taintfox"
 
 !define URLStubDownload "http://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-aurora-latest"
 !define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=aurora&installer_lang=${AB_CD}"
-!define Channel "aurora"
+!define Channel "release"
 
 # The installer's certificate name and issuer expected by the stub installer
 !define CertNameDownload   "Mozilla Corporation"
