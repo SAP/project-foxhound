@@ -71,3 +71,9 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function,
     }
     */
 }
+
+// Print a message to stdout.
+void js::TaintFoxReport(const char* msg)
+{
+    std::cerr << msg << std::endl;
+}

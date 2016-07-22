@@ -331,16 +331,27 @@ class JSString : public js::gc::TenuredCell, public TaintableString
   public:
 
     // TaintFox: (statically) overwrite setTaint to avoid tainting the empty string.
-    // We should avoid tainting atoms here, but that causes some trouble since all string literals
-    // are atomized. FIXME(samuel)
+    // Currently, we disallow tainting empty strings. This might change in the future.
     void setTaint(const StringTaint& taint) {
-        if (length() != 0)
+        if (length() > 0 && taint.hasTaint()) {
+            if (isAtom()) {
+                js::TaintFoxReport("Warning: cannot taint atomized string!");
+                return;
+            }
+
             TaintableString::setTaint(taint);
+        }
     }
 
     void setTaint(StringTaint&& taint) {
-        if (length() != 0)
+        if (length() > 0 && taint.hasTaint()) {
+            if (isAtom()) {
+                js::TaintFoxReport("Warning: cannot taint atomized string!");
+                return;
+            }
+
             TaintableString::setTaint(taint);
+        }
     }
 
     /* All strings have length. */
@@ -1199,6 +1210,10 @@ NewStringDontDeflate(js::ExclusiveContext* cx, CharT* chars, size_t length);
 
 extern JSLinearString*
 NewDependentString(JSContext* cx, JSString* base, size_t start, size_t length);
+
+/* TaintFox: Like NewDependentString but also applies the provided taint information to it. */
+extern JSLinearString*
+NewTaintedDependentString(JSContext* cx, JSString* base, const StringTaint& taint, size_t start = 0, size_t length = -1);
 
 /* Copy a counted string and GC-allocate a descriptor for it. */
 template <js::AllowGC allowGC, typename CharT>
