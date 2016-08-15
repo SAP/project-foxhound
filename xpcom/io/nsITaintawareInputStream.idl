@@ -1,0 +1,108 @@
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsITaintawareInputStream;
+
+%{C++
+    #include "Taint.h"
+%}
+
+native StringTaint(StringTaint);
+
+%{C++
+/**
+ * The signature of the writer function passed to TaintedReadSegments. This
+ * is the "consumer" of data that gets read from the stream's buffer.
+ *
+ * @param aInStream stream being read
+ * @param aClosure opaque parameter passed to ReadSegments
+ * @param aFromSegment pointer to memory owned by the input stream.  This is
+ *                     where the writer function should start consuming data.
+ * @param aToOffset amount of data already consumed by this writer during this
+ *                  ReadSegments call.  This is also the sum of the aWriteCount
+ *                  returns from this writer over the previous invocations of
+ *                  the writer by this ReadSegments call.
+ * @param aCount Number of bytes available to be read starting at aFromSegment
+ * @param aTaint a StringTaint instance holding the taint information for the
+                 current segment
+ * @param [out] aWriteCount number of bytes read by this writer function call
+ *
+ * Implementers should return the following:
+ *
+ * @return NS_OK and (*aWriteCount > 0) if consumed some data
+ * @return <any-error> if not interested in consuming any data
+ *
+ * Errors are never passed to the caller of ReadSegments.
+ *
+ * NOTE: returning NS_OK and (*aWriteCount = 0) has undefined behavior.
+ */
+typedef NS_CALLBACK(nsWriteTaintedSegmentFun)(nsITaintawareInputStream* aInStream,
+                                              void* aClosure,
+                                              const char* aFromSegment,
+                                              uint32_t aToOffset,
+                                              uint32_t aCount,
+                                              const StringTaint& aTaint,
+                                              uint32_t* aWriteCount);
+%}
+
+native nsWriteTaintedSegmentFun(nsWriteTaintedSegmentFun);
+
+/**
+ * TaintFox: nsITaintawareInputStream
+ *
+ * A taint-aware input stream.
+ */
+[scriptable, uuid(f2b59693-8054-4497-837d-27982874c48a)]
+interface nsITaintawareInputStream : nsISupports
+{
+    /**
+     * Read data and taint information from the stream.
+     *
+     * @param aBuf the buffer into which the data is to be read
+     * @param aCount the maximum number of bytes to be read
+     * @param [out] aTaint a pointer to a StringTaint instance into which the taint information will be copied
+     *
+     * @return number of bytes read (may be less than aCount).
+     * @return 0 if reached end-of-file
+     *
+     * @throws NS_BASE_STREAM_WOULD_BLOCK if reading from the input stream would
+     *   block the calling thread (non-blocking mode only)
+     * @throws <other-error> on failure
+     *
+     * NOTE: this method should not throw NS_BASE_STREAM_CLOSED.
+     */
+    [noscript] unsigned long taintedRead(in charPtr aBuf, in unsigned long aCount, out StringTaint aTaint);
+
+    /**
+     * Low-level read method that provides access to the stream's underlying
+     * buffer and taint information.  The writer function may be called
+     * multiple times for segmented buffers.  ReadSegments is expected to keep
+     * calling the writer until either there is nothing left to read or the
+     * writer returns an error.  ReadSegments should not call the writer with
+     * zero bytes to consume.
+     *
+     * @param aWriter the "consumer" of the data to be read
+     * @param aClosure opaque parameter passed to writer
+     * @param aCount the maximum number of bytes to be read
+     *
+     * @return number of bytes read (may be less than aCount)
+     * @return 0 if reached end-of-file (or if aWriter refused to consume data)
+     *
+     * @throws NS_BASE_STREAM_WOULD_BLOCK if reading from the input stream would
+     *   block the calling thread (non-blocking mode only)
+     * @throws NS_ERROR_NOT_IMPLEMENTED if the stream has no underlying buffer
+     * @throws <other-error> on failure
+     *
+     * NOTE: this function may be unimplemented if a stream has no underlying
+     * buffer (e.g., socket input stream).
+     *
+     * NOTE: this method should not throw NS_BASE_STREAM_CLOSED.
+     */
+    [noscript] unsigned long taintedReadSegments(in nsWriteTaintedSegmentFun aWriter,
+                                                 in voidPtr aClosure,
+                                                 in unsigned long aCount);
+};

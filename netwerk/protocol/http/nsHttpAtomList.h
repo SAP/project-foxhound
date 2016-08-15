@@ -91,5 +91,7 @@ HTTP_ATOM(WWW_Authenticate,          "WWW-Authenticate")
 HTTP_ATOM(Warning,                   "Warning")
 HTTP_ATOM(X_Firefox_Spdy,            "X-Firefox-Spdy")
 HTTP_ATOM(X_Firefox_Spdy_Proxy,      "X-Firefox-Spdy-Proxy")
+// TaintFox: end2end taint information header
+HTTP_ATOM(X_Taint,                   "X-Taint")
 
 // methods are case sensitive and do not use atom table

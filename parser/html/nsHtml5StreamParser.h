@@ -14,12 +14,15 @@
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsHtml5OwningUTF16Buffer.h"
 #include "nsIInputStream.h"
+#include "nsITaintawareInputStream.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
 #include "nsHtml5AtomTable.h"
 #include "nsHtml5Speculation.h"
 #include "nsITimer.h"
 #include "nsICharsetDetector.h"
+
+// TaintFox: parser modified to support taint propagation.
 
 class nsHtml5Parser;
 
@@ -163,7 +166,7 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
       mCharset = aCharset;
       mCharsetSource = aSource;
     }
-    
+
     inline void SetObserver(nsIRequestObserver* aObserver) {
       NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
       mObserver = aObserver;
@@ -173,10 +176,10 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
 
     /**
      * The owner parser must call this after script execution
-     * when no scripts are executing and the document.written 
+     * when no scripts are executing and the document.written
      * buffer has been exhausted.
      */
-    void ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer, 
+    void ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer,
                               nsHtml5TreeBuilder* aTreeBuilder,
                               bool aLastWasCR);
 
@@ -190,7 +193,7 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
       mozilla::MutexAutoLock autoLock(mTerminatedMutex);
       mTerminated = true;
     }
-    
+
     void DropTimer();
 
     /**
@@ -238,7 +241,7 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
       mTokenizerMutex.AssertCurrentThreadOwns();
       // Not acquiring mTerminatedMutex because mTokenizerMutex is already
       // held at this point and is already stronger.
-      mInterrupted = false;      
+      mInterrupted = false;
     }
 
     /**
@@ -248,16 +251,24 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
     void FlushTreeOpsAndDisarmTimer();
 
     void ParseAvailableData();
-    
-    void DoStopRequest();
-    
-    void DoDataAvailable(const uint8_t* aBuffer, uint32_t aLength);
 
-    static NS_METHOD CopySegmentsToParser(nsIInputStream *aInStream,
+    void DoStopRequest();
+
+    void DoDataAvailable(const uint8_t* aBuffer, uint32_t aLength, const StringTaint& aTaint);
+
+    static NS_METHOD CopySegmentsToParserNoTaint(nsIInputStream *aInStream,
+                                                 void *aClosure,
+                                                 const char *aFromSegment,
+                                                 uint32_t aToOffset,
+                                                 uint32_t aCount,
+                                                 uint32_t *aWriteCount);
+
+    static NS_METHOD CopySegmentsToParser(nsITaintawareInputStream *aInStream,
                                           void *aClosure,
                                           const char *aFromSegment,
                                           uint32_t aToOffset,
                                           uint32_t aCount,
+                                          const StringTaint& aTaint,
                                           uint32_t *aWriteCount);
 
     bool IsTerminatedOrInterrupted()
@@ -285,14 +296,16 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
      */
     nsresult SniffStreamBytes(const uint8_t* aFromSegment,
                               uint32_t aCount,
-                              uint32_t* aWriteCount);
+                              uint32_t* aWriteCount,
+                              const StringTaint& aTaint);
 
     /**
      * Push bytes from network when there is a Unicode decoder already
      */
     nsresult WriteStreamBytes(const uint8_t* aFromSegment,
                               uint32_t aCount,
-                              uint32_t* aWriteCount);
+                              uint32_t* aWriteCount,
+                              const StringTaint& aTaint);
 
     /**
      * Check whether every other byte in the sniffing buffer is zero.
@@ -316,7 +329,8 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
     nsresult FinalizeSniffing(const uint8_t* aFromSegment,
                               uint32_t aCount,
                               uint32_t* aWriteCount,
-                              uint32_t aCountToSniffingLimit);
+                              uint32_t aCountToSniffingLimit,
+                              const StringTaint& aTaint);
 
     /**
      * Set up the Unicode decoder and write the sniffing buffer into it
@@ -331,7 +345,8 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
      */
     nsresult SetupDecodingAndWriteSniffingBufferAndCurrentSegment(const uint8_t* aFromSegment,
                                                                   uint32_t aCount,
-                                                                  uint32_t* aWriteCount);
+                                                                  uint32_t* aWriteCount,
+                                                                  const StringTaint& aTaint);
 
     /**
      * Initialize the Unicode decoder, mark the BOM as the source and
@@ -484,7 +499,7 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
      * For tracking stream life cycle
      */
     eHtml5StreamState             mStreamState;
-    
+
     /**
      * Whether we are speculating.
      */
@@ -497,7 +512,7 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
 
     /**
      * The speculations. The mutex protects the nsTArray itself.
-     * To access the queue of current speculation, mTokenizerMutex must be 
+     * To access the queue of current speculation, mTokenizerMutex must be
      * obtained.
      * The current speculation is the last element
      */
@@ -515,14 +530,14 @@ class nsHtml5StreamParser : public nsICharsetDetectionObserver {
     bool                          mTerminated;
     bool                          mInterrupted;
     mozilla::Mutex                mTerminatedMutex;
-    
+
     /**
      * The thread this stream parser runs on.
      */
     nsCOMPtr<nsIThread>           mThread;
-    
+
     nsCOMPtr<nsIRunnable>         mExecutorFlusher;
-    
+
     nsCOMPtr<nsIRunnable>         mLoadFlusher;
 
     /**

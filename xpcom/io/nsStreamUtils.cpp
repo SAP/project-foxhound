@@ -823,6 +823,23 @@ NS_CopySegmentToBuffer(nsIInputStream* aInStr,
 }
 
 NS_METHOD
+NS_TaintedCopySegmentToBuffer(nsITaintawareInputStream* aInputStream,
+                              void* aClosure,
+                              const char* aBuffer,
+                              uint32_t aOffset,
+                              uint32_t aCount,
+                              const StringTaint& aTaint,
+                              uint32_t* aCountWritten)
+{
+  TaintedBuffer* toBuf = static_cast<TaintedBuffer*>(aClosure);
+  toBuf->taint->concat(aTaint, aOffset);
+  memcpy(&toBuf->buffer[aOffset], aBuffer, aCount);
+  *aCountWritten = aCount;
+  return NS_OK;
+}
+
+
+NS_METHOD
 NS_CopySegmentToBuffer(nsIOutputStream* aOutStr,
                        void* aClosure,
                        char* aBuffer,

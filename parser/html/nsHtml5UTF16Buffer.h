@@ -75,6 +75,7 @@ class nsHtml5UTF16Buffer
     void adjust(bool lastWasCR);
     void setEnd(int32_t end);
     const StringTaint& getTaint();
+    void setTaint(const StringTaint& taint);
     static void initializeStatics();
     static void releaseStatics();
 

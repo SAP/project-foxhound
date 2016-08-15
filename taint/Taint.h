@@ -578,4 +578,15 @@ class TaintableString {
 // Make sure the TaintableString class is no larger than its StringTaint member.
 static_assert(sizeof(TaintableString) == sizeof(StringTaint), "Class TaintableString must be binary compatible with a StringTaint instance.");
 
+/*
+ * Deserialize taint information from its string representation. Required for
+ * incoming taint information in an end2end tainting scenario.
+ */
+StringTaint ParseTaint(const std::string& str);
+
+/*
+ * Print a string representation of the given StringTaint instance to stdout.
+ */
+void PrintTaint(const StringTaint& taint);
+
 #endif

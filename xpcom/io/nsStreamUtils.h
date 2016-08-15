@@ -10,7 +10,9 @@
 #include "nsCOMPtr.h"
 #include "nsStringFwd.h"
 #include "nsIInputStream.h"
+#include "nsITaintawareInputStream.h"
 #include "nsTArray.h"
+#include "Taint.h"
 
 class nsIOutputStream;
 class nsIInputStreamCallback;
@@ -199,6 +201,32 @@ extern NS_METHOD
 NS_CopySegmentToBuffer(nsIInputStream* aInputStream, void* aClosure,
                        const char* aFromSegment, uint32_t aToOffset,
                        uint32_t aCount, uint32_t* aWriteCount);
+
+/**
+ * TaintFox:
+ * Helper structure for NS_TaintedCopySegmentToBuffer
+ */
+struct TaintedBuffer {
+  TaintedBuffer(char* aBuffer, StringTaint* aTaint) : buffer(aBuffer), taint(aTaint) { }
+  char* buffer;
+  StringTaint* taint;
+};
+
+/**
+ * TaintFox:
+ * This function is intended to be passed to nsITaintawareInputStream::TaintedReadSegments
+ * to copy data from the nsITaintawareInputStream into a character buffer passed as part of the
+ * aClosure parameter to the TaintedReadSegments function.  The character buffer
+ * must be at least as large as the aCount parameter passed to TaintedReadSegments.
+ * aClosure must point to a TaintedBuffer instance.
+ *
+ * @see nsITaintawareInputStream.idl for a description of this function's parameters.
+ */
+extern NS_METHOD
+NS_TaintedCopySegmentToBuffer(nsITaintawareInputStream* aInputStream, void* aClosure,
+                              const char* aFromSegment, uint32_t aToOffset,
+                              uint32_t aCount, const StringTaint& aTaint,
+                              uint32_t* aWriteCount);
 
 /**
  * This function is intended to be passed to nsIOutputStream::WriteSegments to

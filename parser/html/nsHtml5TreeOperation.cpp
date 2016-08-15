@@ -713,8 +713,7 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* parent = *mOne.node;
       char16_t* buffer = mTwo.unicharPtr;
       uint32_t length = mFour.integer;
-      // TODO(samuel)
-      return AppendText(buffer, EmptyTaint, length, parent, aBuilder);
+      return AppendText(buffer, mTaint, length, parent, aBuilder);
     }
     case eTreeOpAppendIsindexPrompt: {
       nsIContent* parent = *mOne.node;

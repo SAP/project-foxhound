@@ -17,6 +17,7 @@
 #include "Http2Push.h"
 #include "mozilla/net/DNS.h"
 #include "ARefBase.h"
+#include "nsIPipe.h"
 
 #ifdef MOZ_WIDGET_GONK
 #include "nsINetworkInterface.h"
@@ -221,6 +222,8 @@ private:
     nsCOMPtr<nsITransportEventSink> mTransportSink;
     nsCOMPtr<nsIEventTarget>        mConsumerTarget;
     nsCOMPtr<nsISupports>           mSecurityInfo;
+    // TaintFox: reference to pipe added for SetTaint()
+    nsCOMPtr<nsIPipe>   mPipe;
     nsCOMPtr<nsIAsyncInputStream>   mPipeIn;
     nsCOMPtr<nsIAsyncOutputStream>  mPipeOut;
     nsCOMPtr<nsISchedulingContext>  mSchedulingContext;

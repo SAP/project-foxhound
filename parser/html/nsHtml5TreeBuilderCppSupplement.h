@@ -584,7 +584,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
 
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
-  treeOp->Init(eTreeOpAppendText, bufferCopy, aLength,
+  treeOp->Init(eTreeOpAppendText, bufferCopy, aLength, aTaint,
       deepTreeSurrogateParent ? deepTreeSurrogateParent : aParent);
 }
 

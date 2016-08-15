@@ -388,7 +388,8 @@ nsHttpTransaction::Init(uint32_t caps,
                      getter_AddRefs(mPipeOut),
                      true, true,
                      nsIOService::gDefaultSegmentSize,
-                     nsIOService::gDefaultSegmentCount);
+                     nsIOService::gDefaultSegmentCount,
+                     getter_AddRefs(mPipe));
     if (NS_FAILED(rv)) return rv;
 
 #ifdef WIN32 // bug 1153929
@@ -1649,6 +1650,14 @@ nsHttpTransaction::HandleContentStart()
             !mRestartInProgressVerifier.Verify(mContentLength, mResponseHead)) {
             LOG(("Restart in progress subsequent transaction failed to match"));
             return NS_ERROR_ABORT;
+        }
+
+        // TaintFox: parse any taint information from the header and
+        // add it to the content pipe.
+        nsAutoCString serializedTaint;
+        if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {
+            std::string taint(serializedTaint.BeginReading());
+            mPipe->SetTaint(ParseTaint(taint));
         }
     }
 

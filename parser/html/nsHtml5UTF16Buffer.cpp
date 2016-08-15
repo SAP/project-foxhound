@@ -111,6 +111,12 @@ nsHtml5UTF16Buffer::getTaint()
 }
 
 void
+nsHtml5UTF16Buffer::setTaint(const StringTaint& taint)
+{
+    this->taint = taint;
+}
+
+void
 nsHtml5UTF16Buffer::initializeStatics()
 {
 }

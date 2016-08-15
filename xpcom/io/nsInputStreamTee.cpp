@@ -16,6 +16,7 @@
 #include "nsAutoPtr.h"
 #include "nsIEventTarget.h"
 #include "nsThreadUtils.h"
+#include "nsITaintawareInputStream.h"
 
 using namespace mozilla;
 
@@ -26,12 +27,16 @@ using namespace mozilla;
 static LazyLogModule sTeeLog("nsInputStreamTee");
 #define LOG(args) MOZ_LOG(sTeeLog, mozilla::LogLevel::Debug, args)
 
+// TaintFox: Tee input streams need to be taint aware since the underlying input
+// stream might contain taint information.
 class nsInputStreamTee final : public nsIInputStreamTee
+                             , public nsITaintawareInputStream
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
   NS_DECL_NSIINPUTSTREAMTEE
+  NS_DECL_NSITAINTAWAREINPUTSTREAM
 
   nsInputStreamTee();
   bool SinkIsValid();
@@ -46,6 +51,8 @@ private:
 
   static NS_METHOD WriteSegmentFun(nsIInputStream*, void*, const char*,
                                    uint32_t, uint32_t, uint32_t*);
+
+  bool SourceIsTaintAware() const;
 
 private:
   nsCOMPtr<nsIInputStream>  mSource;
@@ -207,9 +214,23 @@ nsInputStreamTee::WriteSegmentFun(nsIInputStream* aIn, void* aClosure,
   return tee->TeeSegment(aFromSegment, *aWriteCount);
 }
 
-NS_IMPL_ISUPPORTS(nsInputStreamTee,
-                  nsIInputStreamTee,
-                  nsIInputStream)
+bool nsInputStreamTee::SourceIsTaintAware() const
+{
+  nsCOMPtr<nsITaintawareInputStream> source(do_QueryInterface(mSource));
+  return !!source;
+}
+
+// TaintFox: Changed nsISupports implementation to support conditional QI to
+// nsITaintawareInputStream only if the source stream is taint aware.
+NS_IMPL_ADDREF(nsInputStreamTee)
+NS_IMPL_RELEASE(nsInputStreamTee)
+NS_INTERFACE_MAP_BEGIN(nsInputStreamTee)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInputStreamTee)
+  NS_INTERFACE_MAP_ENTRY(nsIInputStreamTee)
+  NS_INTERFACE_MAP_ENTRY(nsIInputStream)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsITaintawareInputStream, SourceIsTaintAware())
+NS_INTERFACE_MAP_END
+
 NS_IMETHODIMP
 nsInputStreamTee::Close()
 {
@@ -326,6 +347,27 @@ nsInputStreamTee::GetEventTarget(nsIEventTarget** aEventTarget)
   return NS_OK;
 }
 
+// TaintFox TODO implement these. Probably want to extend WriteSegmentFun to
+// support taint.
+NS_IMETHODIMP
+nsInputStreamTee::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
+                                      void* aClosure,
+                                      uint32_t aCount,
+                                      uint32_t* aReadCount)
+{
+  nsCOMPtr<nsITaintawareInputStream> source(do_QueryInterface(mSource));
+  MOZ_ASSERT(source, "must have a valid taint-aware source here");
+  MOZ_CRASH("nsInputStreamTee::TaintedReadSegments is not yet implemented");
+}
+
+// TaintFox
+NS_IMETHODIMP
+nsInputStreamTee::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
+{
+  nsCOMPtr<nsITaintawareInputStream> source(do_QueryInterface(mSource));
+  MOZ_ASSERT(source, "must have a valid taint-aware source here");
+  MOZ_CRASH("nsInputStreamTee::TaintedRead is not yet implemented");
+}
 
 nsresult
 NS_NewInputStreamTeeAsync(nsIInputStream** aResult,

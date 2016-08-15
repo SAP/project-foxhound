@@ -343,6 +343,23 @@ class nsHtml5TreeOperation {
       mFour.integer = aLength;
     }
 
+    // TaintFox: Constructor with taint information
+    inline void Init(eHtml5TreeOperation aOpCode,
+                     char16_t* aBuffer,
+                     int32_t aLength,
+                     const StringTaint& aTaint,
+                     nsIContentHandle* aParent)
+    {
+      NS_PRECONDITION(mOpCode == eTreeOpUninitialized,
+        "Op code must be uninitialized when initializing.");
+      NS_PRECONDITION(aBuffer, "Initialized tree op with null buffer.");
+      mOpCode = aOpCode;
+      mOne.node = static_cast<nsIContent**>(aParent);
+      mTwo.unicharPtr = aBuffer;
+      mFour.integer = aLength;
+      mTaint = aTaint;
+    }
+
     inline void Init(eHtml5TreeOperation aOpCode,
                      char16_t* aBuffer,
                      int32_t aLength)
@@ -511,6 +528,9 @@ class nsHtml5TreeOperation {
       int32_t                         integer;
       nsresult                        result;
     } mOne, mTwo, mThree, mFour, mFive;
+
+    // TaintFox: taint information.
+    StringTaint mTaint;
 };
 
 #endif // nsHtml5TreeOperation_h
