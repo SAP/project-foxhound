@@ -81,6 +81,7 @@
 #include "nsZipArchive.h"
 #include "mozilla/Preferences.h"
 #include "private/pprio.h"
+#include "nsITaintawareInputStream.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -602,7 +603,8 @@ nsXMLHttpRequest::DetectCharset()
 
 nsresult
 nsXMLHttpRequest::AppendToResponseText(const char * aSrcBuffer,
-                                       uint32_t aSrcBufferLen)
+                                       uint32_t aSrcBufferLen,
+                                       const StringTaint& aTaint)
 {
   NS_ENSURE_STATE(mDecoder);
 
@@ -622,7 +624,8 @@ nsXMLHttpRequest::AppendToResponseText(const char * aSrcBuffer,
 
   char16_t* destBuffer = mResponseText.BeginWriting() + mResponseText.Length();
 
-  CheckedInt32 totalChars = mResponseText.Length();
+  int32_t prevLength = mResponseText.Length();
+  CheckedInt32 totalChars = prevLength;
 
   // This code here is basically a copy of a similar thing in
   // nsScanner::Append(const char* aBuffer, uint32_t aLen).
@@ -640,6 +643,8 @@ nsXMLHttpRequest::AppendToResponseText(const char * aSrcBuffer,
   }
 
   mResponseText.SetLength(totalChars.value());
+  // TaintFox: propagate taint. TODO(samuel) deal with encoding
+  mResponseText.AppendTaintAt(prevLength, aTaint);
   return NS_OK;
 }
 
@@ -694,13 +699,14 @@ nsXMLHttpRequest::GetResponseText(nsString& aResponseText, ErrorResult& aRv)
   NS_ASSERTION(mResponseBodyDecodedPos < mResponseBody.Length(),
                "Unexpected mResponseBodyDecodedPos");
   aRv = AppendToResponseText(mResponseBody.get() + mResponseBodyDecodedPos,
-                             mResponseBody.Length() - mResponseBodyDecodedPos);
+                             mResponseBody.Length() - mResponseBodyDecodedPos,
+                             mResponseBody.Taint().subtaint(mResponseBodyDecodedPos, mResponseBody.Length()));
   if (aRv.Failed()) {
     return;
   }
 
   mResponseBodyDecodedPos = mResponseBody.Length();
-  
+
   if (mState & XML_HTTP_REQUEST_DONE) {
     // Free memory buffer which we no longer need
     mResponseBody.Truncate();
@@ -1225,7 +1231,7 @@ nsXMLHttpRequest::IsSafeHeader(const nsACString& header, nsIHttpChannel* httpCha
     if (NS_FAILED(status)) {
       return false;
     }
-  }  
+  }
   const char* kCrossOriginSafeHeaders[] = {
     "cache-control", "content-language", "content-type", "expires",
     "last-modified", "pragma"
@@ -1381,7 +1387,7 @@ nsXMLHttpRequest::GetResponseHeader(const nsACString& header,
 already_AddRefed<nsILoadGroup>
 nsXMLHttpRequest::GetLoadGroup() const
 {
-  if (mState & XML_HTTP_REQUEST_BACKGROUND) {                 
+  if (mState & XML_HTTP_REQUEST_BACKGROUND) {
     return nullptr;
   }
 
@@ -1454,7 +1460,7 @@ nsXMLHttpRequest::DispatchProgressEvent(DOMEventTargetHelper* aTarget,
                           aLengthComputable, aLoaded, aTotal);
   }
 }
-                                          
+
 already_AddRefed<nsIHttpChannel>
 nsXMLHttpRequest::GetCurrentHttpChannel()
 {
@@ -1565,7 +1571,7 @@ nsXMLHttpRequest::Open(const nsACString& inMethod, const nsACString& url,
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIDocument> doc =
     nsContentUtils::GetDocumentFromScriptContext(sc);
-  
+
   nsCOMPtr<nsIURI> baseURI;
   if (mBaseURI) {
     baseURI = mBaseURI;
@@ -1691,18 +1697,21 @@ nsXMLHttpRequest::PopulateNetworkInterfaceId()
  * "Copy" from a stream.
  */
 NS_METHOD
-nsXMLHttpRequest::StreamReaderFunc(nsIInputStream* in,
-                                   void* closure,
-                                   const char* fromRawSegment,
-                                   uint32_t toOffset,
-                                   uint32_t count,
-                                   uint32_t *writeCount)
+nsXMLHttpRequest::HandleStreamInput(void* closure,
+                                    const char* fromRawSegment,
+                                    uint32_t toOffset,
+                                    uint32_t count,
+                                    const StringTaint& aTaint,
+                                    uint32_t *writeCount)
 {
   nsXMLHttpRequest* xmlHttpRequest = static_cast<nsXMLHttpRequest*>(closure);
   if (!xmlHttpRequest || !writeCount) {
     NS_WARNING("XMLHttpRequest cannot read from stream: no closure or writeCount");
     return NS_ERROR_FAILURE;
   }
+
+  // TODO(remove);
+  PrintTaint(aTaint);
 
   nsresult rv = NS_OK;
 
@@ -1731,6 +1740,8 @@ nsXMLHttpRequest::StreamReaderFunc(nsIInputStream* in,
   } else if (xmlHttpRequest->mResponseType == XML_HTTP_RESPONSE_TYPE_DEFAULT &&
              xmlHttpRequest->mResponseXML) {
     // Copy for our own use
+    // TaintFox: propagate taint into response body.
+    xmlHttpRequest->mResponseBody.AppendTaint(aTaint);
     if (!xmlHttpRequest->mResponseBody.Append(fromRawSegment, count, fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -1740,7 +1751,7 @@ nsXMLHttpRequest::StreamReaderFunc(nsIInputStream* in,
              xmlHttpRequest->mResponseType == XML_HTTP_RESPONSE_TYPE_CHUNKED_TEXT) {
     NS_ASSERTION(!xmlHttpRequest->mResponseXML,
                  "We shouldn't be parsing a doc here");
-    xmlHttpRequest->AppendToResponseText(fromRawSegment, count);
+    xmlHttpRequest->AppendToResponseText(fromRawSegment, count, aTaint);
   }
 
   if (xmlHttpRequest->mState & XML_HTTP_REQUEST_PARSEBODY) {
@@ -1774,6 +1785,29 @@ nsXMLHttpRequest::StreamReaderFunc(nsIInputStream* in,
   }
 
   return rv;
+}
+
+NS_METHOD
+nsXMLHttpRequest::StreamReaderFunc(nsITaintawareInputStream* in,
+                                   void* closure,
+                                   const char* fromRawSegment,
+                                   uint32_t toOffset,
+                                   uint32_t count,
+                                   const StringTaint& aTaint,
+                                   uint32_t *writeCount)
+{
+  return HandleStreamInput(closure, fromRawSegment, toOffset, count, aTaint, writeCount);
+}
+
+NS_METHOD
+nsXMLHttpRequest::StreamReaderFuncNoTaint(nsIInputStream* in,
+                                          void* closure,
+                                          const char* fromRawSegment,
+                                          uint32_t toOffset,
+                                          uint32_t count,
+                                          uint32_t *writeCount)
+{
+  return HandleStreamInput(closure, fromRawSegment, toOffset, count, EmptyTaint, writeCount);
 }
 
 bool nsXMLHttpRequest::CreateDOMBlob(nsIRequest *request)
@@ -1820,8 +1854,18 @@ nsXMLHttpRequest::OnDataAvailable(nsIRequest *request,
   }
 
   uint32_t totalRead;
-  nsresult rv = inStr->ReadSegments(nsXMLHttpRequest::StreamReaderFunc,
-                                    (void*)this, count, &totalRead);
+  nsresult rv;
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
+  if (!taintInputStream) {
+    puts(":::: No taint information in input stream in nsXMLHttpRequestUpload::OnDataAvailable");
+    rv = inStr->ReadSegments(nsXMLHttpRequest::StreamReaderFuncNoTaint,
+                                      (void*)this, count, &totalRead);
+  } else {
+    puts(":::: Taint information available in nxXMLHttpRequest::OnDataAvailable");
+    rv = taintInputStream->TaintedReadSegments(nsXMLHttpRequest::StreamReaderFunc,
+                                      (void*)this, count, &totalRead);
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (cancelable) {
@@ -1839,7 +1883,7 @@ nsXMLHttpRequest::OnDataAvailable(nsIRequest *request,
   mDataAvailable += totalRead;
 
   ChangeState(XML_HTTP_REQUEST_LOADING);
-  
+
   MaybeDispatchProgressEvents(false);
 
   return NS_OK;
@@ -2697,7 +2741,7 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
       if (!NS_InputStreamIsBuffered(postDataStream)) {
         nsCOMPtr<nsIInputStream> bufferedStream;
         rv = NS_NewBufferedInputStream(getter_AddRefs(bufferedStream),
-                                       postDataStream, 
+                                       postDataStream,
                                        4096);
         NS_ENSURE_SUCCESS(rv, rv);
 

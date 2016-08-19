@@ -34,6 +34,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
+#include "nsITaintawareInputStream.h"
 
 #ifdef Status
 /* Xlib headers insist on this for some reason... Nuke it because
@@ -141,7 +142,7 @@ public:
   IMPL_EVENT_HANDLER(load)
   IMPL_EVENT_HANDLER(timeout)
   IMPL_EVENT_HANDLER(loadend)
-  
+
   virtual void DisconnectFromOwner() override;
 };
 
@@ -598,8 +599,23 @@ public:
   }
 protected:
   nsresult DetectCharset();
-  nsresult AppendToResponseText(const char * aBuffer, uint32_t aBufferLen);
-  static NS_METHOD StreamReaderFunc(nsIInputStream* in,
+  nsresult AppendToResponseText(const char * aBuffer, uint32_t aBufferLen, const StringTaint& aTaint);
+  // Taintfox: added taint aware stream reader and moved common code into new
+  // function.
+  static NS_METHOD HandleStreamInput(void* closure,
+                const char* fromRawSegment,
+                uint32_t toOffset,
+                uint32_t count,
+                const StringTaint& aTaint,
+                uint32_t *writeCount);
+  static NS_METHOD StreamReaderFunc(nsITaintawareInputStream* in,
+                void* closure,
+                const char* fromRawSegment,
+                uint32_t toOffset,
+                uint32_t count,
+                const StringTaint& aTaint,
+                uint32_t *writeCount);
+  static NS_METHOD StreamReaderFuncNoTaint(nsIInputStream* in,
                 void* closure,
                 const char* fromRawSegment,
                 uint32_t toOffset,
