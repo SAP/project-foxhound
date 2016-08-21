@@ -3735,7 +3735,7 @@ reflect_parse(JSContext* cx, uint32_t argc, Value* vp)
     options.setCanLazilyParse(false);
     mozilla::Range<const char16_t> chars = linearChars.twoByteRange();
     Parser<FullParseHandler> parser(cx, &cx->tempLifoAlloc(), options, chars.start().get(),
-                                    chars.length(), /* foldConstants = */ false, nullptr, nullptr);
+                                    chars.length(), EmptyTaint, /* foldConstants = */ false, nullptr, nullptr);
     if (!parser.checkOptions())
         return false;
 

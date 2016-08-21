@@ -463,8 +463,8 @@ class Parser : private JS::AutoGCRooter, public StrictModeGetter
                           ...);
 
     Parser(ExclusiveContext* cx, LifoAlloc* alloc, const ReadOnlyCompileOptions& options,
-           const char16_t* chars, size_t length, bool foldConstants,
-           Parser<SyntaxParseHandler>* syntaxParser,
+           const char16_t* chars, size_t length, const StringTaint& taint,
+           bool foldConstants, Parser<SyntaxParseHandler>* syntaxParser,
            LazyScript* lazyOuterFunction);
     ~Parser();
 
@@ -560,7 +560,7 @@ class Parser : private JS::AutoGCRooter, public StrictModeGetter
   private:
     Parser* thisForCtor() { return this; }
 
-    JSAtom * stopStringCompression();
+    JSLinearString * stopStringCompression();
 
     Node stringLiteral();
     Node noSubstitutionTemplate();

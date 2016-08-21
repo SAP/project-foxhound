@@ -4787,7 +4787,7 @@ ParseNode::getConstantValue(ExclusiveContext* cx, AllowConstantObjects allowObje
         return true;
       case PNK_TEMPLATE_STRING:
       case PNK_STRING:
-        vp.setString(pn_atom);
+        vp.setString(pn_str);
         return true;
       case PNK_TRUE:
         vp.setBoolean(true);

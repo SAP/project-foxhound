@@ -438,6 +438,31 @@ js::AtomizeChars(ExclusiveContext* cx, const Latin1Char* chars, size_t length, P
 template JSAtom*
 js::AtomizeChars(ExclusiveContext* cx, const char16_t* chars, size_t length, PinningBehavior pin);
 
+template <typename CharT>
+JSLinearString*
+js::AtomizeCharsIfUntainted(ExclusiveContext* cx, const CharT* chars, size_t length,
+                            const StringTaint& taint, js::PinningBehavior pin)
+{
+    if (!taint.hasTaint())
+        return AtomizeChars(cx, chars, length, pin);
+
+    JSFlatString* flat = NewStringCopyN<NoGC>(cx, chars, length);
+    if (!flat) {
+        ReportOutOfMemory(cx);
+        return nullptr;
+    }
+
+    flat->setTaint(taint);
+
+    return flat;
+}
+
+template JSLinearString*
+js::AtomizeCharsIfUntainted(ExclusiveContext* cx, const Latin1Char* chars, size_t length, const StringTaint& taint, js::PinningBehavior pin);
+
+template JSLinearString*
+js::AtomizeCharsIfUntainted(ExclusiveContext* cx, const char16_t* chars, size_t length, const StringTaint& taint, js::PinningBehavior pin);
+
 JSAtom*
 js::AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars, size_t utf8ByteLength)
 {

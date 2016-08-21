@@ -32,6 +32,7 @@ class SyntaxParseHandler
 {
     // Remember the last encountered name or string literal during syntax parses.
     JSAtom* lastAtom;
+    JSLinearString* lastStr;
     TokenPos lastStringPos;
     TokenStream& tokenStream;
 
@@ -172,7 +173,7 @@ class SyntaxParseHandler
     SyntaxParseHandler(ExclusiveContext* cx, LifoAlloc& alloc,
                        TokenStream& tokenStream, Parser<SyntaxParseHandler>* syntaxParser,
                        LazyScript* lazyOuterFunction)
-      : lastAtom(nullptr),
+      : lastAtom(nullptr), lastStr(nullptr),
         tokenStream(tokenStream)
     {}
 
@@ -207,13 +208,13 @@ class SyntaxParseHandler
     Node newNumber(double value, DecimalPoint decimalPoint, const TokenPos& pos) { return NodeGeneric; }
     Node newBooleanLiteral(bool cond, const TokenPos& pos) { return NodeGeneric; }
 
-    Node newStringLiteral(JSAtom* atom, const TokenPos& pos) {
-        lastAtom = atom;
+    Node newStringLiteral(JSLinearString* str, const TokenPos& pos) {
+        lastStr = str;
         lastStringPos = pos;
         return NodeUnparenthesizedString;
     }
 
-    Node newTemplateStringLiteral(JSAtom* atom, const TokenPos& pos) {
+    Node newTemplateStringLiteral(JSLinearString* str, const TokenPos& pos) {
         return NodeGeneric;
     }
 
@@ -593,10 +594,10 @@ class SyntaxParseHandler
         return lastAtom->asPropertyName();
     }
 
-    JSAtom* isStringExprStatement(Node pn, TokenPos* pos) {
+    JSLinearString* isStringExprStatement(Node pn, TokenPos* pos) {
         if (pn == NodeStringExprStatement) {
             *pos = lastStringPos;
-            return lastAtom;
+            return lastStr;
         }
         return nullptr;
     }

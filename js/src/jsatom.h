@@ -19,6 +19,7 @@
 #include "vm/CommonPropertyNames.h"
 
 class JSAtom;
+class JSLinearString;
 class JSAutoByteString;
 
 namespace js {
@@ -229,6 +230,14 @@ template <typename CharT>
 extern JSAtom*
 AtomizeChars(ExclusiveContext* cx, const CharT* chars, size_t length,
              js::PinningBehavior pin = js::DoNotPinAtom);
+
+// TaintFox: convenience function to convert a character buffer to either a JSAtom or a
+// JSLinearString depening on whether taint information is available or not.
+template <typename CharT>
+extern JSLinearString*
+AtomizeCharsIfUntainted(ExclusiveContext* cx, const CharT* chars, size_t length,
+                        const StringTaint& taint, js::PinningBehavior pin = js::DoNotPinAtom);
+
 
 extern JSAtom*
 AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars, size_t utf8ByteLength);

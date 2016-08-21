@@ -658,13 +658,13 @@ template <typename ParseHandler>
 Parser<ParseHandler>::Parser(ExclusiveContext* cx, LifoAlloc* alloc,
                              const ReadOnlyCompileOptions& options,
                              const char16_t* chars, size_t length,
-                             bool foldConstants,
+                             const StringTaint& taint, bool foldConstants,
                              Parser<SyntaxParseHandler>* syntaxParser,
                              LazyScript* lazyOuterFunction)
   : AutoGCRooter(cx, PARSER),
     context(cx),
     alloc(*alloc),
-    tokenStream(cx, options, chars, length, thisForCtor()),
+    tokenStream(cx, options, chars, length, taint, thisForCtor()),
     traceListHead(nullptr),
     pc(nullptr),
     blockScopes(cx),
@@ -3423,13 +3423,16 @@ bool
 Parser<ParseHandler>::maybeParseDirective(Node list, Node pn, bool* cont)
 {
     TokenPos directivePos;
-    JSAtom* directive = handler.isStringExprStatement(pn, &directivePos);
+    JSLinearString* directive = handler.isStringExprStatement(pn, &directivePos);
 
     *cont = !!directive;
     if (!*cont)
         return true;
 
-    if (IsEscapeFreeStringLiteral(directivePos, directive)) {
+    // TaintFox: need to atomize here so comparisons below work correct
+    directive = AtomizeString(context, directive);
+
+    if (IsEscapeFreeStringLiteral(directivePos, static_cast<JSAtom*>(directive))) {
         // Mark this statement as being a possibly legitimate part of a
         // directive prologue, so the bytecode emitter won't warn about it being
         // useless code. (We mustn't just omit the statement entirely yet, as it
@@ -7195,7 +7198,8 @@ Parser<ParseHandler>::statement(YieldHandling yieldHandling, bool canHaveDirecti
       // These should probably be handled by a single ExpressionStatement
       // function in a default, not split up this way.
       case TOK_STRING:
-        if (!canHaveDirectives && tokenStream.currentToken().atom() == context->names().useAsm) {
+        // TaintFox: TODO this string comparison could fail if "use asm" was tainted...
+        if (!canHaveDirectives && tokenStream.currentToken().str() == context->names().useAsm) {
             if (!abortIfSyntaxParser())
                 return null();
             if (!report(ParseWarning, false, null(), JSMSG_USE_ASM_DIRECTIVE_FAIL))
@@ -8648,16 +8652,16 @@ Parser<ParseHandler>::noSubstitutionTemplate()
 }
 
 template <typename ParseHandler>
-JSAtom * Parser<ParseHandler>::stopStringCompression() {
-    JSAtom* atom = tokenStream.currentToken().atom();
+JSLinearString * Parser<ParseHandler>::stopStringCompression() {
+    JSLinearString* str = tokenStream.currentToken().str();
 
     // Large strings are fast to parse but slow to compress. Stop compression on
     // them, so we don't wait for a long time for compression to finish at the
     // end of compilation.
     const size_t HUGE_STRING = 50000;
-    if (sct && sct->active() && atom->length() >= HUGE_STRING)
+    if (sct && sct->active() && str->length() >= HUGE_STRING)
         sct->abort();
-    return atom;
+    return str;
 }
 
 template <typename ParseHandler>
@@ -8843,7 +8847,8 @@ Parser<ParseHandler>::propertyName(YieldHandling yieldHandling, Node propList,
 
             tokenStream.consumeKnownToken(TOK_STRING, TokenStream::KeywordIsName);
 
-            propAtom.set(tokenStream.currentToken().atom());
+            // TaintFox: it's ok to atomize here
+            propAtom.set(AtomizeString(context, tokenStream.currentToken().str()));
 
             uint32_t index;
             if (propAtom->isIndex(&index)) {
@@ -8883,7 +8888,8 @@ Parser<ParseHandler>::propertyName(YieldHandling yieldHandling, Node propList,
       }
 
       case TOK_STRING: {
-        propAtom.set(tokenStream.currentToken().atom());
+        // TaintFox: it's ok to atomize here
+        propAtom.set(AtomizeString(context, tokenStream.currentToken().str()));
         uint32_t index;
         if (propAtom->isIndex(&index)) {
             propName = handler.newNumber(index, NoDecimal, pos());
