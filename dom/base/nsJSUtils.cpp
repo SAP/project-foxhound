@@ -146,7 +146,7 @@ nsJSUtils::EvaluateString(JSContext* aCx,
                           JS::MutableHandle<JS::Value> aRetValue)
 {
   const nsPromiseFlatString& flatScript = PromiseFlatString(aScript);
-  JS::SourceBufferHolder srcBuf(flatScript.get(), aScript.Length(),
+  JS::SourceBufferHolder srcBuf(flatScript.get(), aScript.Length(), aScript.Taint(),
                                 JS::SourceBufferHolder::NoOwnership);
   return EvaluateString(aCx, srcBuf, aEvaluationGlobal, aCompileOptions,
                         aEvaluateOptions, aRetValue, nullptr);
