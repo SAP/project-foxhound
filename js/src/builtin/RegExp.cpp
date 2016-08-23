@@ -187,7 +187,7 @@ RegExpInitializeIgnoringLastIndex(JSContext* cx, Handle<RegExpObject*> obj,
 
     /* Steps 8-10. */
     CompileOptions options(cx);
-    frontend::TokenStream dummyTokenStream(cx, options, nullptr, 0, nullptr);
+    frontend::TokenStream dummyTokenStream(cx, options, nullptr, 0, EmptyTaint, nullptr);
     if (!irregexp::ParsePatternSyntax(dummyTokenStream, cx->tempLifoAlloc(), pattern,
                                       flags & UnicodeFlag))
     {

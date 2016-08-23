@@ -215,7 +215,7 @@ RegExpObject::createNoStatics(ExclusiveContext* cx, HandleAtom source, RegExpFla
     if (!tokenStream) {
         dummyOptions.emplace(cx->asJSContext());
         dummyTokenStream.emplace(cx, *dummyOptions,
-                                   (const char16_t*) nullptr, 0,
+                                   (const char16_t*) nullptr, 0, EmptyTaint,
                                    (frontend::StrictModeGetter*) nullptr);
         tokenStream = dummyTokenStream.ptr();
     }
@@ -512,7 +512,7 @@ RegExpShared::compile(JSContext* cx, HandleAtom pattern, HandleLinearString inpu
         canStringMatch = true;
 
     CompileOptions options(cx);
-    TokenStream dummyTokenStream(cx, options, nullptr, 0, nullptr);
+    TokenStream dummyTokenStream(cx, options, nullptr, 0, EmptyTaint, nullptr);
 
     LifoAllocScope scope(&cx->tempLifoAlloc());
 

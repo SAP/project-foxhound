@@ -640,10 +640,11 @@ class ParseNode
         } unary;
         struct {                        /* name, labeled statement, etc. */
             union {
-                JSAtom*      atom;      /* lexical name or label atom */
-                ObjectBox*   objbox;    /* block or regexp object */
-                FunctionBox* funbox;    /* function object */
-                ModuleBox*   modulebox; /* module object */
+                JSAtom*         atom;      /* lexical name or label atom */
+                JSLinearString* str;       /* TaintFox: possibley tainted string literal */
+                ObjectBox*      objbox;    /* block or regexp object */
+                FunctionBox*    funbox;    /* function object */
+                ModuleBox*      modulebox; /* module object */
             };
             union {
                 ParseNode*  expr;      /* module or function body, var
@@ -688,6 +689,7 @@ class ParseNode
 #define pn_kid          pn_u.unary.kid
 #define pn_prologue     pn_u.unary.prologue
 #define pn_atom         pn_u.name.atom
+#define pn_str          pn_u.name.str
 #define pn_objbox       pn_u.name.objbox
 #define pn_expr         pn_u.name.expr
 #define pn_lexdef       pn_u.name.lexdef
@@ -958,10 +960,11 @@ struct NullaryNode : public ParseNode
     // This constructor is for a few mad uses in the emitter. It populates
     // the pn_atom field even though that field belongs to a branch in pn_u
     // that nullary nodes shouldn't use -- bogus.
-    NullaryNode(ParseNodeKind kind, JSOp op, const TokenPos& pos, JSAtom* atom)
+    // TaintFox: changed to populate pn_str instead
+    NullaryNode(ParseNodeKind kind, JSOp op, const TokenPos& pos, JSLinearString* str)
       : ParseNode(kind, op, PN_NULLARY, pos)
     {
-        pn_atom = atom;
+        pn_str = str;
     }
 
 #ifdef DEBUG

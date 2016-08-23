@@ -227,7 +227,7 @@ bool
 BytecodeCompiler::createParser()
 {
     if (canLazilyParse()) {
-        syntaxParser.emplace(cx, alloc, options, sourceBuffer.get(), sourceBuffer.length(),
+        syntaxParser.emplace(cx, alloc, options, sourceBuffer.get(), sourceBuffer.length(), sourceBuffer.taint(),
                              /* foldConstants = */ false, (Parser<SyntaxParseHandler>*) nullptr,
                              (LazyScript*) nullptr);
 
@@ -235,9 +235,11 @@ BytecodeCompiler::createParser()
             return false;
     }
 
-    parser.emplace(cx, alloc, options, sourceBuffer.get(), sourceBuffer.length(),
+    parser.emplace(cx, alloc, options, sourceBuffer.get(), sourceBuffer.length(), sourceBuffer.taint(),
                    /* foldConstants = */ true, syntaxParser.ptrOr(nullptr), nullptr);
-    parser->sct = sourceCompressor;
+
+    // TaintFox: TODO disabled for now
+    //parser->sct = sourceCompressor;
     parser->ss = scriptSource;
     if (!parser->checkOptions())
         return false;
@@ -789,7 +791,8 @@ frontend::CompileLazyFunction(JSContext* cx, Handle<LazyScript*> lazy, const cha
 
     AutoCompilationTraceLogger traceLogger(cx, TraceLogger_ParserCompileLazy, options);
 
-    Parser<FullParseHandler> parser(cx, &cx->tempLifoAlloc(), options, chars, length,
+    // TaintFox: TODO obtain taint?
+    Parser<FullParseHandler> parser(cx, &cx->tempLifoAlloc(), options, chars, length, EmptyTaint,
                                     /* foldConstants = */ true, nullptr, lazy);
     if (!parser.checkOptions())
         return false;

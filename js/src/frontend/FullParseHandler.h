@@ -151,12 +151,12 @@ class FullParseHandler
         return new_<BooleanLiteral>(cond, pos);
     }
 
-    ParseNode* newStringLiteral(JSAtom* atom, const TokenPos& pos) {
-        return new_<NullaryNode>(PNK_STRING, JSOP_NOP, pos, atom);
+    ParseNode* newStringLiteral(JSLinearString* str, const TokenPos& pos) {
+        return new_<NullaryNode>(PNK_STRING, JSOP_NOP, pos, str);
     }
 
-    ParseNode* newTemplateStringLiteral(JSAtom* atom, const TokenPos& pos) {
-        return new_<NullaryNode>(PNK_TEMPLATE_STRING, JSOP_NOP, pos, atom);
+    ParseNode* newTemplateStringLiteral(JSLinearString* str, const TokenPos& pos) {
+        return new_<NullaryNode>(PNK_TEMPLATE_STRING, JSOP_NOP, pos, str);
     }
 
     ParseNode* newCallSiteObject(uint32_t begin) {

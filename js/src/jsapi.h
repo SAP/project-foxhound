@@ -739,6 +739,24 @@ class MOZ_STACK_CLASS SourceBufferHolder final
     SourceBufferHolder(const char16_t* data, size_t dataLength, Ownership ownership)
       : data_(data),
         length_(dataLength),
+        taint_(),
+        ownsChars_(ownership == GiveOwnership)
+    {
+        // Ensure that null buffers properly return an unowned, empty,
+        // null-terminated string.
+        static const char16_t NullChar_ = 0;
+        if (!get()) {
+            data_ = &NullChar_;
+            length_ = 0;
+            ownsChars_ = false;
+        }
+    }
+
+    // TaintFox: constructor to propagate taint information
+    SourceBufferHolder(const char16_t* data, size_t dataLength, StringTaint taint, Ownership ownership)
+      : data_(data),
+        length_(dataLength),
+        taint_(taint),
         ownsChars_(ownership == GiveOwnership)
     {
         // Ensure that null buffers properly return an unowned, empty,
@@ -761,6 +779,9 @@ class MOZ_STACK_CLASS SourceBufferHolder final
 
     // Length of the source buffer in char16_t code units (not bytes)
     size_t length() const { return length_; }
+
+    // Access to the associated taint information
+    const StringTaint& taint() const { return taint_; }
 
     // Returns true if the SourceBufferHolder owns the buffer and will free
     // it upon destruction.  If true, it is legal to call take().
@@ -790,6 +811,7 @@ class MOZ_STACK_CLASS SourceBufferHolder final
 
     const char16_t* data_;
     size_t length_;
+    StringTaint taint_;
     bool ownsChars_;
 };
 

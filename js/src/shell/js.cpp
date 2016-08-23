@@ -3517,7 +3517,7 @@ Parse(JSContext* cx, unsigned argc, Value* vp)
     CompileOptions options(cx);
     options.setIntroductionType("js shell parse")
            .setFileAndLine("<string>", 1);
-    Parser<FullParseHandler> parser(cx, &cx->tempLifoAlloc(), options, chars, length,
+    Parser<FullParseHandler> parser(cx, &cx->tempLifoAlloc(), options, chars, length, EmptyTaint,
                                     /* foldConstants = */ true, nullptr, nullptr);
     if (!parser.checkOptions())
         return false;
@@ -3565,7 +3565,7 @@ SyntaxParse(JSContext* cx, unsigned argc, Value* vp)
     const char16_t* chars = stableChars.twoByteRange().start().get();
     size_t length = scriptContents->length();
     Parser<frontend::SyntaxParseHandler> parser(cx, &cx->tempLifoAlloc(),
-                                                options, chars, length, false, nullptr, nullptr);
+                                                options, chars, length, EmptyTaint, false, nullptr, nullptr);
     if (!parser.checkOptions())
         return false;
 

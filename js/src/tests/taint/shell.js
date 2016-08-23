@@ -112,14 +112,17 @@ if (typeof rand === 'undefined') {
     }
 }
 
+defaultCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";   // TODO extend
 if (typeof randomString === 'undefined') {
     // Generate a random string
-    var randomString = function(len) {
-        if (len === undefined)
+    var randomString = function(len, charset) {
+        if (len === undefined || len === 0)
             len = rand(4, 25);       // Minimum length of 4, for multiTaint to be usable
 
+        if (charset === undefined)
+            charset = defaultCharset;
+
         var str = "";
-        var charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";   // TODO extend
 
         for (var i = 0; i < len; i++)
             str += charset.charAt(Math.floor(Math.random() * charset.length));
@@ -148,7 +151,6 @@ if (typeof multiTaint === 'undefined') {
             last_index = end_index;
         }
         parts.push(str.substr(last_index, str.length));
-        print(parts);
         return parts.join('');
     }
 }
