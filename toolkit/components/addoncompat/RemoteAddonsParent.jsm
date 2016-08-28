@@ -22,6 +22,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Prefetcher",
 XPCOMUtils.defineLazyModuleGetter(this, "CompatWarning",
                                   "resource://gre/modules/CompatWarning.jsm");
 
+Cu.permitCPOWsInScope(this);
+
 // Similar to Python. Returns dict[key] if it exists. Otherwise,
 // sets dict[key] to default_ and returns default_.
 function setDefault(dict, key, default_)
@@ -84,6 +86,7 @@ var NotificationTracker = {
     if (msg.name == "Addons:GetNotifications") {
       return this._paths;
     }
+    return undefined;
   }
 };
 NotificationTracker.init();
@@ -134,6 +137,7 @@ var ContentPolicyParent = {
         return this.shouldLoad(aMessage.data, aMessage.objects);
         break;
     }
+    return undefined;
   },
 
   shouldLoad: function(aData, aObjects) {
@@ -231,6 +235,7 @@ var AboutProtocolParent = {
         return this.openChannel(msg);
         break;
     }
+    return undefined;
   },
 
   getURIFlags: function(msg) {
@@ -241,6 +246,7 @@ var AboutProtocolParent = {
       return module.getURIFlags(uri);
     } catch (e) {
       Cu.reportError(e);
+      return undefined;
     }
   },
 
@@ -271,7 +277,7 @@ var AboutProtocolParent = {
       } else {
         channel.loadGroup = null;
       }
-      let stream = channel.open();
+      let stream = channel.open2();
       let data = NetUtil.readInputStreamToString(stream, stream.available(), {});
       return {
         data: data,
@@ -279,6 +285,7 @@ var AboutProtocolParent = {
       };
     } catch (e) {
       Cu.reportError(e);
+      return undefined;
     }
   },
 };
@@ -580,15 +587,15 @@ EventTargetParent.init();
 var filteringListeners = new WeakMap();
 function makeFilteringListener(eventType, listener)
 {
-  if (filteringListeners.has(listener)) {
-    return filteringListeners.get(listener);
-  }
-
   // Some events are actually targeted at the <browser> element
   // itself, so we only handle the ones where know that won't happen.
   let eventTypes = ["mousedown", "mouseup", "click"];
   if (eventTypes.indexOf(eventType) == -1) {
     return listener;
+  }
+
+  if (filteringListeners.has(listener)) {
+    return filteringListeners.get(listener);
   }
 
   function filter(event) {
@@ -851,7 +858,7 @@ function getContentDocument(addon, browser)
     return doc;
   }
 
-  return browser.contentDocumentAsCPOW;
+  return browser.contentWindowAsCPOW.document;
 }
 
 function getSessionHistory(browser) {

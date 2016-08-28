@@ -103,7 +103,12 @@ BufferRecycleBin::GetBuffer(uint32_t aSize)
 class ImageContainerChild : public PImageContainerChild {
 public:
   explicit ImageContainerChild(ImageContainer* aImageContainer)
-    : mLock("ImageContainerChild"), mImageContainer(aImageContainer) {}
+    : mLock("ImageContainerChild")
+    , mImageContainer(aImageContainer)
+    , mImageContainerReleased(false)
+    , mIPCOpen(true)
+  {}
+
   void ForgetImageContainer()
   {
     MutexAutoLock lock(mLock);
@@ -114,7 +119,55 @@ public:
   // mImageContainer's monitor (when both need to be held).
   Mutex mLock;
   ImageContainer* mImageContainer;
+  // If mImageContainerReleased is false when we try to deallocate this actor,
+  // it means the ImageContainer is still holding a pointer to this.
+  // mImageContainerReleased must not be accessed off the ImageBridgeChild thread.
+  bool mImageContainerReleased;
+  // If mIPCOpen is false, it means the IPDL code tried to deallocate the actor
+  // before the ImageContainer released it. When this happens we don't actually
+  // delete the actor right away because the ImageContainer has a reference to
+  // it. In this case the actor will be deleted when the ImageContainer lets go
+  // of it.
+  // mIPCOpen must not be accessed off the ImageBridgeChild thread.
+  bool mIPCOpen;
 };
+
+// static
+void
+ImageContainer::DeallocActor(PImageContainerChild* aActor)
+{
+  MOZ_ASSERT(aActor);
+  MOZ_ASSERT(InImageBridgeChildThread());
+
+  auto actor = static_cast<ImageContainerChild*>(aActor);
+  if (actor->mImageContainerReleased) {
+    delete actor;
+  } else {
+    actor->mIPCOpen = false;
+  }
+}
+
+// static
+void
+ImageContainer::AsyncDestroyActor(PImageContainerChild* aActor)
+{
+  MOZ_ASSERT(aActor);
+  MOZ_ASSERT(InImageBridgeChildThread());
+
+  auto actor = static_cast<ImageContainerChild*>(aActor);
+
+  // Setting mImageContainerReleased to true means next time DeallocActor is
+  // called, the actor will be deleted.
+  actor->mImageContainerReleased = true;
+
+  if (actor->mIPCOpen && ImageBridgeChild::IsCreated() && !ImageBridgeChild::IsShutDown()) {
+    actor->SendAsyncDelete();
+  } else {
+    // The actor is already dead as far as IPDL is concerned, probably because
+    // of a channel error. We can deallocate it now.
+    DeallocActor(actor);
+  }
+}
 
 ImageContainer::ImageContainer(Mode flag)
 : mReentrantMonitor("ImageContainer.mReentrantMonitor"),
@@ -290,12 +343,18 @@ ImageContainer::ClearAllImages()
 void
 ImageContainer::SetCurrentImageInTransaction(Image *aImage)
 {
+  AutoTArray<NonOwningImage,1> images;
+  images.AppendElement(NonOwningImage(aImage));
+  SetCurrentImagesInTransaction(images);
+}
+
+void
+ImageContainer::SetCurrentImagesInTransaction(const nsTArray<NonOwningImage>& aImages)
+{
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
   NS_ASSERTION(!mImageClient, "Should use async image transfer with ImageBridge.");
 
-  nsAutoTArray<NonOwningImage,1> images;
-  images.AppendElement(NonOwningImage(aImage));
-  SetCurrentImageInternal(images);
+  SetCurrentImageInternal(aImages);
 }
 
 bool ImageContainer::IsAsync() const
@@ -475,12 +534,6 @@ RecyclingPlanarYCbCrImage::CopyData(const Data& aData)
   return true;
 }
 
-bool
-RecyclingPlanarYCbCrImage::SetData(const Data &aData)
-{
-  return CopyData(aData);
-}
-
 gfxImageFormat
 PlanarYCbCrImage::GetOffscreenFormat()
 {
@@ -490,7 +543,7 @@ PlanarYCbCrImage::GetOffscreenFormat()
 }
 
 bool
-PlanarYCbCrImage::SetDataNoCopy(const Data &aData)
+PlanarYCbCrImage::AdoptData(const Data &aData)
 {
   mData = aData;
   mSize = aData.mPicSize;
@@ -549,6 +602,12 @@ SourceSurfaceImage::SourceSurfaceImage(const gfx::IntSize& aSize, gfx::SourceSur
     mSourceSurface(aSourceSurface)
 {}
 
+SourceSurfaceImage::SourceSurfaceImage(gfx::SourceSurface* aSourceSurface)
+  : Image(nullptr, ImageFormat::CAIRO_SURFACE),
+    mSize(aSourceSurface->GetSize()),
+    mSourceSurface(aSourceSurface)
+{}
+
 SourceSurfaceImage::~SourceSurfaceImage()
 {
 }
@@ -572,13 +631,6 @@ SourceSurfaceImage::GetTextureClient(CompositableClient *aClient)
     return nullptr;
   }
 
-
-// XXX windows' TextureClients do not hold ISurfaceAllocator,
-// recycler does not work on windows.
-#ifndef XP_WIN
-
-// XXX only gonk ensure when TextureClient is recycled,
-// TextureHost is not used by CompositableHost.
 #ifdef MOZ_WIDGET_GONK
   RefPtr<TextureClientRecycleAllocator> recycler =
     aClient->GetTextureClientRecycler();
@@ -589,8 +641,6 @@ SourceSurfaceImage::GetTextureClient(CompositableClient *aClient)
                                 BackendSelector::Content,
                                 aClient->GetTextureFlags());
   }
-#endif
-
 #endif
   if (!textureClient) {
     // gfx::BackendType::NONE means default to content backend

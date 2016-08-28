@@ -151,6 +151,7 @@ SpeechTaskCallback::OnDidFinishSpeaking()
 {
   mTask->DispatchEnd(GetTimeDurationFromStart(), mCurrentIndex);
   // no longer needed
+  [mSpeechSynthesizer setDelegate:nil];
   mTask = nullptr;
 }
 
@@ -249,6 +250,9 @@ RegisterVoicesRunnable::Run()
       registry->SetDefaultVoice(voice.mUri, true);
     }
   }
+
+  registry->NotifyVoicesChanged();
+
   return NS_OK;
 }
 
@@ -275,7 +279,7 @@ EnumVoicesRunnable::Run()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  nsAutoTArray<OSXVoice, 64> list;
+  AutoTArray<OSXVoice, 64> list;
 
   NSArray* voices = [NSSpeechSynthesizer availableVoices];
   NSString* defaultVoice = [NSSpeechSynthesizer defaultVoice];
@@ -417,9 +421,6 @@ NS_IMETHODIMP
 OSXSpeechSynthesizerService::Observe(nsISupports* aSubject, const char* aTopic,
                                      const char16_t* aData)
 {
-  if (!strcmp(aTopic, "profile-after-change")) {
-    Init();
-  }
   return NS_OK;
 }
 
@@ -432,7 +433,11 @@ OSXSpeechSynthesizerService::GetInstance()
   }
 
   if (!sSingleton) {
-    sSingleton = new OSXSpeechSynthesizerService();
+    RefPtr<OSXSpeechSynthesizerService> speechService =
+      new OSXSpeechSynthesizerService();
+    if (speechService->Init()) {
+      sSingleton = speechService;
+    }
   }
   return sSingleton;
 }

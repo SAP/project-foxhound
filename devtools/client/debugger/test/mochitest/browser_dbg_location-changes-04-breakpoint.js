@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Make sure that reloading a page with a breakpoint set does not cause it to
@@ -150,10 +152,7 @@ function test() {
       is(gEditor.getBreakpoints().length, 1,
          "One breakpoint should be shown for the first source.");
 
-      //yield waitForTime(2000);
-      yield ensureCaretAt(gPanel, 1, 1, true);
-
-      //yield waitForTime(50000);
+      yield ensureCaretAt(gPanel, 6, 1, true);
       resumeDebuggerThenCloseAndFinish(gPanel);
     });
 

@@ -17,6 +17,7 @@
 #define nsWindow_h
 
 #include "InputData.h"
+#include "mozilla/UniquePtr.h"
 #include "nsBaseWidget.h"
 #include "nsRegion.h"
 #include "nsIIdleServiceInternal.h"
@@ -46,10 +47,11 @@ public:
     static nsEventStatus DispatchKeyInput(mozilla::WidgetKeyboardEvent& aEvent);
     static void DispatchTouchInput(mozilla::MultiTouchInput& aInput);
 
+    using nsBaseWidget::Create; // for Create signature not overridden here
     NS_IMETHOD Create(nsIWidget* aParent,
                       void* aNativeParent,
                       const LayoutDeviceIntRect& aRect,
-                      nsWidgetInitData* aInitData);
+                      nsWidgetInitData* aInitData) override;
     NS_IMETHOD Destroy(void);
 
     NS_IMETHOD Show(bool aState);
@@ -88,7 +90,7 @@ public:
                              nsEventStatus& aStatus);
     virtual nsresult SynthesizeNativeTouchPoint(uint32_t aPointerId,
                                                 TouchPointerState aPointerState,
-                                                ScreenIntPoint aPointerScreenPoint,
+                                                LayoutDeviceIntPoint aPoint,
                                                 double aPointerPressure,
                                                 uint32_t aPointerOrientation,
                                                 nsIObserver* aObserver) override;
@@ -115,7 +117,7 @@ public:
                         bool* aAllowRetaining = nullptr);
     virtual void DestroyCompositor();
 
-    virtual CompositorParent* NewCompositorParent(int aSurfaceWidth, int aSurfaceHeight);
+    virtual CompositorBridgeParent* NewCompositorBridgeParent(int aSurfaceWidth, int aSurfaceHeight);
 
     NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
                                       const InputContextAction& aAction);
@@ -149,7 +151,7 @@ protected:
 private:
     // This is used by SynthesizeNativeTouchPoint to maintain state between
     // multiple synthesized points
-    nsAutoPtr<mozilla::MultiTouchInput> mSynthesizedTouchInput;
+    mozilla::UniquePtr<mozilla::MultiTouchInput> mSynthesizedTouchInput;
 
     RefPtr<nsScreenGonk> mScreen;
 

@@ -552,7 +552,7 @@ nsCopySupport::GetSelectionForCopy(nsIDocument* aDocument, nsISelection** aSelec
     return nullptr;
 
   // check if the focused node in the window has a selection
-  nsCOMPtr<nsPIDOMWindow> focusedWindow;
+  nsCOMPtr<nsPIDOMWindowOuter> focusedWindow;
   nsIContent* content =
     nsFocusManager::GetFocusedDescendant(aDocument->GetWindow(), false,
                                          getter_AddRefs(focusedWindow));
@@ -643,7 +643,7 @@ nsCopySupport::FireClipboardEvent(EventMessage aEventMessage,
   if (!doc)
     return false;
 
-  nsCOMPtr<nsPIDOMWindow> piWindow = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> piWindow = doc->GetWindow();
   if (!piWindow)
     return false;
 
@@ -693,7 +693,7 @@ nsCopySupport::FireClipboardEvent(EventMessage aEventMessage,
 
     nsEventStatus status = nsEventStatus_eIgnore;
     InternalClipboardEvent evt(true, aEventMessage);
-    evt.clipboardData = clipboardData;
+    evt.mClipboardData = clipboardData;
     EventDispatcher::Dispatch(content, presShell->GetPresContext(), &evt,
                               nullptr, &status);
     // If the event was cancelled, don't do the clipboard operation

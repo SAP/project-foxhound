@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MERGED_COMPARTMENT
-
 var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 this.EXPORTED_SYMBOLS = [
@@ -11,8 +9,6 @@ this.EXPORTED_SYMBOLS = [
   "RESTResponse",
   "TokenAuthenticatedRESTRequest",
 ];
-
-#endif
 
 Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
@@ -24,7 +20,7 @@ Cu.import("resource://services-common/utils.js");
 XPCOMUtils.defineLazyModuleGetter(this, "CryptoUtils",
                                   "resource://services-crypto/utils.js");
 
-const Prefs = new Preferences("services.common.rest.");
+const Prefs = new Preferences("services.common.");
 
 /**
  * Single use HTTP requests to RESTish resources.
@@ -320,6 +316,7 @@ RESTRequest.prototype = {
     channel.loadFlags |= this.loadFlags;
     channel.notificationCallbacks = this;
 
+    this._log.debug(`${method} request to ${this.uri.spec}`);
     // Set request headers.
     let headers = this._headers;
     for (let key in headers) {
@@ -646,7 +643,7 @@ this.RESTResponse = function RESTResponse() {
 }
 RESTResponse.prototype = {
 
-  _logName: "Sync.RESTResponse",
+  _logName: "Services.Common.RESTResponse",
 
   /**
    * Corresponding REST request

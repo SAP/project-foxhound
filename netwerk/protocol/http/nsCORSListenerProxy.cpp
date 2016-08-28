@@ -183,10 +183,6 @@ public:
   void Clear();
 
 private:
-  static PLDHashOperator
-    RemoveExpiredEntries(const nsACString& aKey, nsAutoPtr<CacheEntry>& aValue,
-                         void* aUserData);
-
   static bool GetCacheKey(nsIURI* aURI, nsIPrincipal* aPrincipal,
                             bool aWithCredentials, nsACString& _retval);
 
@@ -304,7 +300,17 @@ nsPreflightCache::GetEntry(nsIURI* aURI,
   if (mTable.Count() == PREFLIGHT_CACHE_SIZE) {
     // Try to kick out all the expired entries.
     TimeStamp now = TimeStamp::NowLoRes();
-    mTable.Enumerate(RemoveExpiredEntries, &now);
+    for (auto iter = mTable.Iter(); !iter.Done(); iter.Next()) {
+      nsAutoPtr<CacheEntry>& entry = iter.Data();
+      entry->PurgeExpired(now);
+
+      if (entry->mHeaders.IsEmpty() &&
+          entry->mMethods.IsEmpty()) {
+        // Expired, remove from the list as well as the hash table.
+        entry->removeFrom(sPreflightCache->mList);
+        iter.Remove();
+      }
+    }
 
     // If that didn't remove anything then kick out the least recently used
     // entry.
@@ -349,25 +355,6 @@ nsPreflightCache::Clear()
 {
   mList.clear();
   mTable.Clear();
-}
-
-/* static */ PLDHashOperator
-nsPreflightCache::RemoveExpiredEntries(const nsACString& aKey,
-                                           nsAutoPtr<CacheEntry>& aValue,
-                                           void* aUserData)
-{
-  TimeStamp* now = static_cast<TimeStamp*>(aUserData);
-  
-  aValue->PurgeExpired(*now);
-  
-  if (aValue->mHeaders.IsEmpty() &&
-      aValue->mMethods.IsEmpty()) {
-    // Expired, remove from the list as well as the hash table.
-    aValue->removeFrom(sPreflightCache->mList);
-    return PL_DHASH_REMOVE;
-  }
-  
-  return PL_DHASH_NEXT;
 }
 
 /* static */ bool
@@ -1358,6 +1345,10 @@ nsCORSListenerProxy::StartCORSPreflight(nsIChannel* aRequestChannel,
              "how did we end up here?");
 
   nsCOMPtr<nsIPrincipal> principal = originalLoadInfo->LoadingPrincipal();
+  MOZ_ASSERT(principal &&
+             originalLoadInfo->GetExternalContentPolicyType() !=
+               nsIContentPolicy::TYPE_DOCUMENT,
+             "Should not do CORS loads for top-level loads, so a loadingPrincipal should always exist.");
   bool withCredentials = originalLoadInfo->GetCookiePolicy() ==
     nsILoadInfo::SEC_COOKIES_INCLUDE;
 

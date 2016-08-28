@@ -489,8 +489,7 @@ nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     if (StyleVisibility()->IsVisible() &&
         (NS_STYLE_TABLE_EMPTY_CELLS_HIDE != emptyCellStyle)) {
       // display outset box-shadows if we need to.
-      const nsStyleBorder* borderStyle = StyleBorder();
-      bool hasBoxShadow = !!borderStyle->mBoxShadow;
+      bool hasBoxShadow = !!StyleEffects()->mBoxShadow;
       if (hasBoxShadow) {
         aLists.BorderBackground()->AppendNewToTop(
           new (aBuilder) nsDisplayBoxShadowOuter(aBuilder, this));
@@ -677,7 +676,7 @@ nsTableCellFrame::UpdateOverflow()
 uint8_t
 nsTableCellFrame::GetVerticalAlign() const
 {
-  const nsStyleCoord& verticalAlign = StyleTextReset()->mVerticalAlign;
+  const nsStyleCoord& verticalAlign = StyleDisplay()->mVerticalAlign;
   if (verticalAlign.GetUnit() == eStyleUnit_Enumerated) {
     uint8_t value = verticalAlign.GetIntValue();
     if (value == NS_STYLE_VERTICAL_ALIGN_TOP ||
@@ -699,8 +698,7 @@ nsTableCellFrame::CellHasVisibleContent(nscoord       height,
     return true;
   if (tableFrame->IsBorderCollapse())
     return true;
-  nsIFrame* innerFrame = kidFrame->GetFirstPrincipalChild();
-  while(innerFrame) {
+  for (nsIFrame* innerFrame : kidFrame->PrincipalChildList()) {
     nsIAtom* frameType = innerFrame->GetType();
     if (nsGkAtoms::textFrame == frameType) {
        nsTextFrame* textFrame = static_cast<nsTextFrame*>(innerFrame);
@@ -715,8 +713,7 @@ nsTableCellFrame::CellHasVisibleContent(nscoord       height,
       if (floatFrame)
         return true;
     }
-    innerFrame = innerFrame->GetNextSibling();
-  }	
+  }
   return false;
 }
 

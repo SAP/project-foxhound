@@ -83,8 +83,10 @@ private:
   RefPtr<FetchDriverObserver> mObserver;
   nsCOMPtr<nsIDocument> mDocument;
 
-  DebugOnly<bool> mResponseAvailableCalled;
-  DebugOnly<bool> mFetchCalled;
+#ifdef DEBUG
+  bool mResponseAvailableCalled;
+  bool mFetchCalled;
+#endif
 
   FetchDriver() = delete;
   FetchDriver(const FetchDriver&) = delete;
@@ -100,7 +102,7 @@ private:
                               bool aFoundOpaqueRedirect);
   // Utility since not all cases need to do any post processing of the filtered
   // response.
-  nsresult FailWithNetworkError();
+  void FailWithNetworkError();
 
   void SetRequestHeaders(nsIHttpChannel* aChannel) const;
 };

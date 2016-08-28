@@ -701,7 +701,7 @@ nsresult
 FileReader::IncreaseBusyCounter()
 {
   if (mWorkerPrivate && mBusyCount++ == 0 &&
-      !mWorkerPrivate->AddFeature(mWorkerPrivate->GetJSContext(), this)) {
+      !mWorkerPrivate->AddFeature(this)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -713,12 +713,12 @@ FileReader::DecreaseBusyCounter()
 {
   MOZ_ASSERT_IF(mWorkerPrivate, mBusyCount);
   if (mWorkerPrivate && --mBusyCount == 0) {
-    mWorkerPrivate->RemoveFeature(mWorkerPrivate->GetJSContext(), this);
+    mWorkerPrivate->RemoveFeature(this);
   }
 }
 
 bool
-FileReader::Notify(JSContext* aCx, Status aStatus)
+FileReader::Notify(Status aStatus)
 {
   MOZ_ASSERT(mWorkerPrivate);
   mWorkerPrivate->AssertIsOnWorkerThread();
@@ -742,7 +742,7 @@ FileReader::Shutdown()
   }
 
   if (mWorkerPrivate && mBusyCount != 0) {
-    mWorkerPrivate->RemoveFeature(mWorkerPrivate->GetJSContext(), this);
+    mWorkerPrivate->RemoveFeature(this);
     mWorkerPrivate = nullptr;
     mBusyCount = 0;
   }

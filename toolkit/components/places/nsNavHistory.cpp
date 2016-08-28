@@ -895,27 +895,12 @@ nsNavHistory::EvaluateQueryForNode(const nsCOMArray<nsNavHistoryQuery>& aQueries
         if (NS_FAILED(NS_NewURI(getter_AddRefs(nodeUri), aNode->mURI)))
           continue;
       }
-      if (! query->UriIsPrefix()) {
-        // easy case: the URI is an exact match
-        bool equals;
-        nsresult rv = query->Uri()->Equals(nodeUri, &equals);
-        NS_ENSURE_SUCCESS(rv, false);
-        if (! equals)
-          continue;
-      } else {
-        // harder case: match prefix, note that we need to get the ASCII string
-        // from the node's parsed URI instead of using the node's mUrl string,
-        // because that might not be normalized
-        nsAutoCString nodeUriString;
-        nodeUri->GetAsciiSpec(nodeUriString);
-        nsAutoCString queryUriString;
-        query->Uri()->GetAsciiSpec(queryUriString);
-        if (queryUriString.Length() > nodeUriString.Length())
-          continue; // not long enough to match as prefix
-        nodeUriString.SetLength(queryUriString.Length());
-        if (! nodeUriString.Equals(queryUriString))
-          continue; // prefixes don't match
-      }
+
+      bool equals;
+      nsresult rv = query->Uri()->Equals(nodeUri, &equals);
+      NS_ENSURE_SUCCESS(rv, false);
+      if (! equals)
+        continue;
     }
 
     // Transitions matching.
@@ -1322,9 +1307,6 @@ bool IsOptimizableHistoryQuery(const nsCOMArray<nsNavHistoryQuery>& aQueries,
     return false;
 
   if (aQuery->AnnotationIsNot() || !aQuery->Annotation().IsEmpty())
-    return false;
-
-  if (aQuery->UriIsPrefix() || aQuery->Uri())
     return false;
 
   if (aQuery->Folders().Length() > 0)
@@ -2728,6 +2710,8 @@ nsNavHistory::RemovePagesByTimeframe(PRTime aBeginTime, PRTime aEndTime)
 NS_IMETHODIMP
 nsNavHistory::RemoveVisitsByTimeframe(PRTime aBeginTime, PRTime aEndTime)
 {
+  PLACES_WARN_DEPRECATED();
+
   NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
 
   nsresult rv;
@@ -2800,41 +2784,6 @@ nsNavHistory::RemoveVisitsByTimeframe(PRTime aBeginTime, PRTime aEndTime)
 
   // Invalidate the cached value for whether there's history or not.
   mDaysOfHistory = -1;
-
-  return NS_OK;
-}
-
-
-// nsNavHistory::RemoveAllPages
-//
-//    This function is used to clear history.
-
-NS_IMETHODIMP
-nsNavHistory::RemoveAllPages()
-{
-  PLACES_WARN_DEPRECATED();
-
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-
-  nsresult rv = mDB->MainConn()->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
-    "DELETE FROM moz_historyvisits"
-  ));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Clear the registered embed visits.
-  clearEmbedVisits();
-
-  // Update the cached value for whether there's history or not.
-  mDaysOfHistory = 0;
-
-  // Expiration will take care of orphans.
-  NOTIFY_OBSERVERS(mCanNotify, mCacheObservers, mObservers,
-                   nsINavHistoryObserver, OnClearHistory());
-
-  // Invalidate frecencies for the remaining places.  This must happen
-  // after the notification to ensure it runs enqueued to expiration.
-  rv = invalidateFrecencies(EmptyCString());
-  NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "failed to fix invalid frecencies");
 
   return NS_OK;
 }
@@ -3375,12 +3324,7 @@ nsNavHistory::QueryToSelectClause(nsNavHistoryQuery* aQuery, // const
 
   // URI
   if (NS_SUCCEEDED(aQuery->GetHasUri(&hasIt)) && hasIt) {
-    if (aQuery->UriIsPrefix()) {
-      clause.Condition("h.url >= ").Param(":uri")
-            .Condition("h.url <= ").Param(":uri_upper");
-    }
-    else
-      clause.Condition("h.url =").Param(":uri");
+    clause.Condition("h.url =").Param(":uri");
   }
 
   // annotation
@@ -3574,15 +3518,6 @@ nsNavHistory::BindQueryClauseParameters(mozIStorageBaseStatement* statement,
       statement, NS_LITERAL_CSTRING("uri") + qIndex, aQuery->Uri()
     );
     NS_ENSURE_SUCCESS(rv, rv);
-    if (aQuery->UriIsPrefix()) {
-      nsAutoCString uriString;
-      aQuery->Uri()->GetSpec(uriString);
-      uriString.Append(char(0x7F)); // MAX_UTF8
-      rv = URIBinder::Bind(
-        statement, NS_LITERAL_CSTRING("uri_upper") + qIndex, uriString
-      );
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
   }
 
   // annotation

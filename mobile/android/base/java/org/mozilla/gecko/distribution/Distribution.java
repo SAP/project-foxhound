@@ -51,6 +51,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.SystemClock;
+import android.support.annotation.WorkerThread;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
@@ -126,6 +127,7 @@ public class Distribution {
      * {@link org.mozilla.gecko.distribution.Distribution#exists()} will return
      * false. In the other two callbacks, it will return true.
      */
+    @WorkerThread
     public interface ReadyCallback {
         void distributionNotFound();
         void distributionFound(Distribution distribution);
@@ -218,7 +220,7 @@ public class Distribution {
             public void run() {
                 boolean distributionSet = distribution.doInit();
                 if (distributionSet) {
-                    GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Distribution:Set", ""));
+                    GeckoAppShell.notifyObservers("Distribution:Set", "");
                 }
             }
         });
@@ -318,7 +320,7 @@ public class Distribution {
         runLateReadyQueue();
 
         // Make sure that changes to search defaults are applied immediately.
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Distribution:Changed", ""));
+        GeckoAppShell.notifyObservers("Distribution:Changed", "");
     }
 
     /**
@@ -593,7 +595,7 @@ public class Distribution {
         } else {
             value = status / 100;
         }
-        
+
         Telemetry.addToHistogram(HISTOGRAM_CODE_CATEGORY, value);
 
         if (status != 200) {
@@ -923,7 +925,10 @@ public class Distribution {
             }
         }
 
-        return new String[] { baseDirectory };
+        return new String[] {
+                baseDirectory + "/default",
+                baseDirectory
+        };
     }
 
     /**
@@ -979,6 +984,7 @@ public class Distribution {
 
     private void invokeCallbackDelayed(final ReadyCallback callback) {
         ThreadUtils.postToBackgroundThread(new Runnable() {
+            @WorkerThread
             @Override
             public void run() {
                 switch (state) {

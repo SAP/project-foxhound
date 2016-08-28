@@ -48,7 +48,7 @@ class MediaOmxReader : public MediaOmxCommonReader
   MozPromiseRequestHolder<MediaResourcePromise> mMediaResourceRequest;
 
   MozPromiseHolder<MediaDecoderReader::SeekPromise> mSeekPromise;
-  MozPromiseRequestHolder<MediaDecoderReader::VideoDataPromise> mSeekRequest;
+  MozPromiseRequestHolder<MediaDecoderReader::MediaDataPromise> mSeekRequest;
 protected:
   android::sp<android::OmxDecoder> mOmxDecoder;
   android::sp<android::MediaExtractor> mExtractor;
@@ -89,7 +89,7 @@ public:
   RefPtr<MediaDecoderReader::MetadataPromise> AsyncReadMetadata() override;
 
   RefPtr<SeekPromise>
-  Seek(int64_t aTime, int64_t aEndTime) override;
+  Seek(SeekTarget aTarget, int64_t aEndTime) override;
 
   void SetIdle() override;
 

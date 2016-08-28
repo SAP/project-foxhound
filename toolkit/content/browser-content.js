@@ -207,6 +207,9 @@ var ClickEventHandler = {
       this._scrollErrorX = (desiredScrollX - actualScrollX);
     }
 
+    const kAutoscroll = 15;  // defined in mozilla/layers/ScrollInputMethods.h
+    Services.telemetry.getHistogramById("SCROLL_INPUT_METHODS").add(kAutoscroll);
+
     if (this._scrollable instanceof content.Window) {
       this._scrollable.scrollBy(actualScrollX, actualScrollY);
     } else { // an element with overflow
@@ -291,6 +294,7 @@ var PopupBlocking = {
       case "pagehide":
         return this.onPageHide(ev);
     }
+    return undefined;
   },
 
   onPopupBlocked: function(ev) {
@@ -300,7 +304,7 @@ var PopupBlocking = {
     }
 
     let obj = {
-      popupWindowURI: ev.popupWindowURI.spec,
+      popupWindowURI: ev.popupWindowURI ? ev.popupWindowURI.spec : "about:blank",
       popupWindowFeatures: ev.popupWindowFeatures,
       popupWindowName: ev.popupWindowName
     };
@@ -629,7 +633,7 @@ var FindBar = {
   _onKeypress(event) {
     // Useless keys:
     if (event.ctrlKey || event.altKey || event.metaKey || event.defaultPrevented) {
-      return;
+      return undefined;
     }
 
     // Check the focused element etc.
@@ -637,7 +641,7 @@ var FindBar = {
 
     // Can we even use find in this page at all?
     if (!fastFind.can) {
-      return;
+      return undefined;
     }
 
     let fakeEvent = {};
@@ -656,6 +660,7 @@ var FindBar = {
       event.preventDefault();
       return false;
     }
+    return undefined;
   },
 
   _onMouseup(event) {
@@ -714,6 +719,8 @@ var AudioPlaybackListener = {
 
   init() {
     Services.obs.addObserver(this, "audio-playback", false);
+    Services.obs.addObserver(this, "AudioFocusChanged", false);
+
     addMessageListener("AudioPlaybackMute", this);
     addEventListener("unload", () => {
       AudioPlaybackListener.uninit();
@@ -722,6 +729,8 @@ var AudioPlaybackListener = {
 
   uninit() {
     Services.obs.removeObserver(this, "audio-playback");
+    Services.obs.removeObserver(this, "AudioFocusChanged");
+
     removeMessageListener("AudioPlaybackMute", this);
   },
 
@@ -731,6 +740,21 @@ var AudioPlaybackListener = {
         let name = "AudioPlayback:";
         name += (data === "active") ? "Start" : "Stop";
         sendAsyncMessage(name);
+      }
+    } else if (topic == "AudioFocusChanged") {
+      let utils = global.content.QueryInterface(Ci.nsIInterfaceRequestor)
+                                .getInterface(Ci.nsIDOMWindowUtils);
+      switch (data) {
+        // The AudioFocus:LossTransient means the media would be resumed after
+        // the interruption ended, but AudioFocus:Loss doesn't.
+        // TODO : distinguish these types, it would be done in bug1242874.
+        case "Loss":
+        case "LossTransient":
+          utils.mediaSuspended = true;
+          break;
+        case "Gain":
+          utils.mediaSuspended = false;
+          break;
       }
     }
   },
@@ -966,7 +990,7 @@ var ViewSelectionSource = {
       topNode = topNode.parentNode;
     }
     if (!topNode)
-      return;
+      return undefined;
 
     // serialize
     const VIEW_SOURCE_CSS = "resource://gre-resources/viewsource.css";
@@ -1127,3 +1151,15 @@ var ViewSelectionSource = {
 };
 
 ViewSelectionSource.init();
+
+addEventListener("MozApplicationManifest", function(e) {
+  let doc = e.target;
+  let info = {
+    uri: doc.documentURI,
+    characterSet: doc.characterSet,
+    manifest: doc.documentElement.getAttribute("manifest"),
+    principal: doc.nodePrincipal,
+  };
+  sendAsyncMessage("MozApplicationManifest", info);
+}, false);
+

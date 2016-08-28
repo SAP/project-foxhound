@@ -26,9 +26,6 @@
 #include "nsServiceManagerUtils.h"
 #include <algorithm>
 
-// DateTime Includes
-#include "nsDateTimeFormatCID.h"
-
 #define OFFSET_NOT_SET -1
 
 // Print Options
@@ -314,7 +311,7 @@ nsSimplePageSequenceFrame::Reflow(nsPresContext*          aPresContext,
 
   // Create current Date/Time String
   if (!mDateFormatter) {
-    mDateFormatter = do_CreateInstance(NS_DATETIMEFORMAT_CONTRACTID);
+    mDateFormatter = nsIDateTimeFormat::Create();
   }
   if (!mDateFormatter) {
     return;
@@ -520,7 +517,7 @@ GetPrintCanvasElementsInFrame(nsIFrame* aFrame, nsTArray<RefPtr<HTMLCanvasElemen
         }
       }
 
-      if (!child->GetFirstPrincipalChild()) {
+      if (!child->PrincipalChildList().FirstChild()) {
         nsSubDocumentFrame* subdocumentFrame = do_QueryFrame(child);
         if (subdocumentFrame) {
           // Descend into the subdocument
@@ -742,7 +739,7 @@ nsSimplePageSequenceFrame::PrintNextPage()
     height -= mMargin.top + mMargin.bottom;
     width  -= mMargin.left + mMargin.right;
     nscoord selectionY = height;
-    nsIFrame* conFrame = currentPage->GetFirstPrincipalChild();
+    nsIFrame* conFrame = currentPage->PrincipalChildList().FirstChild();
     if (mSelectionHeight >= 0) {
       conFrame->SetPosition(conFrame->GetPosition() + nsPoint(0, -mYSelOffset));
       nsContainerFrame::PositionChildViews(conFrame);
@@ -778,6 +775,7 @@ nsSimplePageSequenceFrame::PrintNextPage()
       nsRegion drawingRegion(drawingRect);
       nsLayoutUtils::PaintFrame(&renderingContext, currentPage,
                                 drawingRegion, NS_RGBA(0,0,0,0),
+                                nsDisplayListBuilderMode::PAINTING,
                                 nsLayoutUtils::PAINT_SYNC_DECODE_IMAGES);
 
       if (mSelectionHeight >= 0 && selectionY < mSelectionHeight) {
@@ -837,7 +835,7 @@ nsSimplePageSequenceFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     DisplayListClipState::AutoSaveRestore clipState(aBuilder);
     clipState.Clear();
 
-    nsIFrame* child = GetFirstPrincipalChild();
+    nsIFrame* child = PrincipalChildList().FirstChild();
     nsRect dirty = aDirtyRect;
     dirty.ScaleInverseRoundOut(PresContext()->GetPrintPreviewScale());
 

@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* globals NetUtil, FileUtils, OS */
 
 "use strict";
 
@@ -14,15 +13,11 @@ var { Constructor: CC, classes: Cc, interfaces: Ci, utils: Cu } = Components;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil", "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils", "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-
 var { Loader } = Cu.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
 var promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
 
 this.EXPORTED_SYMBOLS = ["DevToolsLoader", "devtools", "BuiltinProvider",
-                         "SrcdirProvider", "require", "loader"];
+                         "require", "loader"];
 
 /**
  * Providers are different strategies for loading the devtools.
@@ -32,6 +27,7 @@ var loaderModules = {
   "Services": Object.create(Services),
   "toolkit/loader": Loader,
   PromiseDebugging,
+  ChromeUtils,
   ThreadSafeChromeUtils,
   HeapSnapshot,
 };
@@ -61,17 +57,49 @@ XPCOMUtils.defineLazyGetter(loaderModules, "xpcInspector", () => {
 XPCOMUtils.defineLazyGetter(loaderModules, "indexedDB", () => {
   // On xpcshell, we can't instantiate indexedDB without crashing
   try {
-    return Cu.Sandbox(this, {wantGlobalProperties:["indexedDB"]}).indexedDB;
+    let sandbox
+      = Cu.Sandbox(CC('@mozilla.org/systemprincipal;1', 'nsIPrincipal')(),
+                   {wantGlobalProperties: ["indexedDB"]});
+    return sandbox.indexedDB;
+
   } catch(e) {
     return {};
   }
 });
 
 XPCOMUtils.defineLazyGetter(loaderModules, "CSS", () => {
-  return Cu.Sandbox(this, {wantGlobalProperties: ["CSS"]}).CSS;
+  let sandbox
+    = Cu.Sandbox(CC('@mozilla.org/systemprincipal;1', 'nsIPrincipal')(),
+                 {wantGlobalProperties: ["CSS"]});
+  return sandbox.CSS;
 });
 
-var sharedGlobalBlacklist = ["sdk/indexed-db"];
+XPCOMUtils.defineLazyGetter(loaderModules, "URL", () => {
+  let sandbox
+    = Cu.Sandbox(CC('@mozilla.org/systemprincipal;1', 'nsIPrincipal')(),
+                 {wantGlobalProperties: ["URL"]});
+  return sandbox.URL;
+});
+
+const loaderPaths = {
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  "": "resource://gre/modules/commonjs/",
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  "devtools": "resource://devtools",
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  "gcli": "resource://devtools/shared/gcli/source/lib/gcli",
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  "acorn": "resource://devtools/acorn",
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  "acorn/util/walk": "resource://devtools/acorn/walk.js",
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  "source-map": "resource://devtools/shared/sourcemap/source-map.js",
+  // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+  // Allow access to xpcshell test items from the loader.
+  "xpcshell-test": "resource://test",
+};
+
+var sharedGlobalBlocklist = ["sdk/indexed-db"];
 
 /**
  * Used when the tools should be loaded from the Firefox package itself.
@@ -80,35 +108,35 @@ var sharedGlobalBlacklist = ["sdk/indexed-db"];
 function BuiltinProvider() {}
 BuiltinProvider.prototype = {
   load: function() {
+    // Copy generic paths and modules for this loader instance
+    let paths = {};
+    for (let path in loaderPaths) {
+      paths[path] = loaderPaths[path];
+    }
+    let modules = {};
+    for (let name in loaderModules) {
+      XPCOMUtils.defineLazyGetter(modules, name, (function (name) {
+        return loaderModules[name];
+      }).bind(null, name));
+    }
+    // When creating a Loader invisible to the Debugger, we have to ensure
+    // using only modules and not depend on any JSM. As everything that is
+    // not loaded with Loader isn't going to respect `invisibleToDebugger`.
+    // But we have to keep using Promise.jsm for other loader to prevent
+    // breaking unhandled promise rejection in tests.
+    if (this.invisibleToDebugger) {
+      paths["promise"] = "resource://gre/modules/Promise-backend.js";
+    } else {
+      modules["promise"] = promise;
+    }
     this.loader = new Loader.Loader({
       id: "fx-devtools",
-      modules: loaderModules,
-      paths: {
-        // When you add a line to this mapping, don't forget to make a
-        // corresponding addition to the SrcdirProvider mapping below as well.
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "": "resource://gre/modules/commonjs/",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "devtools": "resource://devtools",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "gcli": "resource://devtools/shared/gcli/source/lib/gcli",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "promise": "resource://gre/modules/Promise-backend.js",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "acorn": "resource://devtools/acorn",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "acorn/util/walk": "resource://devtools/acorn/walk.js",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "source-map": "resource://devtools/shared/sourcemap/source-map.js",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        // Allow access to xpcshell test items from the loader.
-        "xpcshell-test": "resource://test"
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-      },
+      modules,
+      paths,
       globals: this.globals,
       invisibleToDebugger: this.invisibleToDebugger,
       sharedGlobal: true,
-      sharedGlobalBlacklist: sharedGlobalBlacklist
+      sharedGlobalBlocklist,
     });
 
     return promise.resolve(undefined);
@@ -120,133 +148,12 @@ BuiltinProvider.prototype = {
   },
 };
 
-/**
- * Used when the tools should be loaded from a mozilla-central checkout.  In
- * addition to different paths, it needs to write chrome.manifest files to
- * override chrome urls from the builtin tools.
- */
-function SrcdirProvider() {}
-SrcdirProvider.prototype = {
-  fileURI: function(path) {
-    let file = new FileUtils.File(path);
-    return Services.io.newFileURI(file).spec;
-  },
-
-  load: function() {
-    let srcDir = Services.prefs.getComplexValue("devtools.loader.srcdir",
-                                                Ci.nsISupportsString);
-    srcDir = OS.Path.normalize(srcDir.data.trim());
-    let devtoolsDir = OS.Path.join(srcDir, "devtools");
-    let sharedDir = OS.Path.join(devtoolsDir, "shared");
-    let modulesDir = OS.Path.join(srcDir, "toolkit", "modules");
-    let devtoolsURI = this.fileURI(devtoolsDir);
-    let gcliURI = this.fileURI(OS.Path.join(sharedDir,
-                                            "gcli", "source", "lib", "gcli"));
-    let promiseURI = this.fileURI(OS.Path.join(modulesDir,
-                                               "Promise-backend.js"));
-    let acornURI = this.fileURI(OS.Path.join(sharedDir, "acorn"));
-    let acornWalkURI = OS.Path.join(acornURI, "walk.js");
-    let sourceMapURI = this.fileURI(OS.Path.join(sharedDir,
-                                                 "sourcemap", "source-map.js"));
-    this.loader = new Loader.Loader({
-      id: "fx-devtools",
-      modules: loaderModules,
-      paths: {
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "": "resource://gre/modules/commonjs/",
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "devtools": devtoolsURI,
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "gcli": gcliURI,
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "promise": promiseURI,
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "acorn": acornURI,
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "acorn/util/walk": acornWalkURI,
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-        "source-map": sourceMapURI,
-        // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-      },
-      globals: this.globals,
-      invisibleToDebugger: this.invisibleToDebugger,
-      sharedGlobal: true,
-      sharedGlobalBlacklist: sharedGlobalBlacklist
-    });
-
-    return this._writeManifest(srcDir).then(null, Cu.reportError);
-  },
-
-  unload: function(reason) {
-    Loader.unload(this.loader, reason);
-    delete this.loader;
-  },
-
-  _readFile: function(filename) {
-    let deferred = promise.defer();
-    let file = new FileUtils.File(filename);
-    NetUtil.asyncFetch({
-      uri: NetUtil.newURI(file),
-      loadUsingSystemPrincipal: true
-    }, (inputStream, status) => {
-        if (!Components.isSuccessCode(status)) {
-          deferred.reject(new Error("Couldn't load manifest: " + filename + "\n"));
-          return;
-        }
-        var data = NetUtil.readInputStreamToString(inputStream, inputStream.available());
-        deferred.resolve(data);
-      });
-
-    return deferred.promise;
-  },
-
-  _writeFile: function(filename, data) {
-    let promise = OS.File.writeAtomic(filename, data, {encoding: "utf-8"});
-    return promise.then(null, (ex) => new Error("Couldn't write manifest: " + ex + "\n"));
-  },
-
-  _writeManifest: function(srcDir) {
-    let clientDir = OS.Path.join(srcDir, "devtools", "client");
-    return this._readFile(OS.Path.join(clientDir, "jar.mn")).then((data) => {
-      // The file data is contained within inputStream.
-      // You can read it into a string with
-      let entries = [];
-      let lines = data.split(/\n/);
-      let preprocessed = /^\s*\*/;
-      let contentEntry = /^\s+content\/(\S+)\s+\((\S+)\)/;
-      for (let line of lines) {
-        if (preprocessed.test(line)) {
-          dump("Unable to override preprocessed file: " + line + "\n");
-          continue;
-        }
-        let match = contentEntry.exec(line);
-        if (match) {
-          let pathComponents = match[2].split("/");
-          pathComponents.unshift(clientDir);
-          let path = OS.Path.join.apply(OS.Path, pathComponents);
-          let uri = this.fileURI(path);
-          let chromeURI = "chrome://devtools/content/" + match[1];
-          let entry = "override " + chromeURI + "\t" + uri;
-          entries.push(entry);
-        }
-      }
-      return this._writeFile(OS.Path.join(clientDir, "chrome.manifest"),
-                             entries.join("\n"));
-    }).then(() => {
-      let clientDirFile = new FileUtils.File(clientDir);
-      Components.manager.addBootstrappedManifestLocation(clientDirFile);
-    });
-  }
-};
-
 var gNextLoaderID = 0;
 
 /**
- * The main devtools API.
- * In addition to a few loader-related details, this object will also include all
- * exports from the main module.  The standard instance of this loader is
- * exported as |devtools| below, but if a fresh copy of the loader is needed,
- * then a new one can also be created.
+ * The main devtools API. The standard instance of this loader is exported as
+ * |devtools| below, but if a fresh copy of the loader is needed, then a new
+ * one can also be created.
  */
 this.DevToolsLoader = function DevToolsLoader() {
   this.require = this.require.bind(this);
@@ -254,12 +161,14 @@ this.DevToolsLoader = function DevToolsLoader() {
   this.lazyImporter = XPCOMUtils.defineLazyModuleGetter.bind(XPCOMUtils);
   this.lazyServiceGetter = XPCOMUtils.defineLazyServiceGetter.bind(XPCOMUtils);
   this.lazyRequireGetter = this.lazyRequireGetter.bind(this);
+
+  Services.obs.addObserver(this, "devtools-unload", false);
 };
 
 DevToolsLoader.prototype = {
   get provider() {
     if (!this._provider) {
-      this._chooseProvider();
+      this._loadProvider();
     }
     return this._provider;
   },
@@ -281,7 +190,7 @@ DevToolsLoader.prototype = {
    */
   require: function() {
     if (!this._provider) {
-      this._chooseProvider();
+      this._loadProvider();
     }
     return this.require.apply(this, arguments);
   },
@@ -325,43 +234,6 @@ DevToolsLoader.prototype = {
   },
 
   /**
-   * Add a URI to the loader.
-   * @param string id
-   *    The module id that can be used within the loader to refer to this module.
-   * @param string uri
-   *    The URI to load as a module.
-   * @returns The module's exports.
-   */
-  loadURI: function(id, uri) {
-    let module = Loader.Module(id, uri);
-    return Loader.load(this.provider.loader, module).exports;
-  },
-
-  /**
-   * Let the loader know the ID of the main module to load.
-   *
-   * The loader doesn't need a main module, but it's nice to have.  This
-   * will be called by the browser devtools to load the devtools/main module.
-   *
-   * When only using the server, there's no main module, and this method
-   * can be ignored.
-   */
-  main: function(id) {
-    // Ensure the main module isn't loaded twice, because it may have observable
-    // side-effects.
-    if (this._mainid) {
-      return;
-    }
-    this._mainid = id;
-    this._main = Loader.main(this.provider.loader, id);
-
-    // Mirror the main module's exports on this object.
-    Object.getOwnPropertyNames(this._main).forEach(key => {
-      XPCOMUtils.defineLazyGetter(this, key, () => this._main[key]);
-    });
-  },
-
-  /**
    * Override the provider used to load the tools.
    */
   setProvider: function(provider) {
@@ -370,8 +242,6 @@ DevToolsLoader.prototype = {
     }
 
     if (this._provider) {
-      var events = this.require("sdk/system/events");
-      events.emit("devtools-unloaded", {});
       delete this.require;
       this._provider.unload("newprovider");
     }
@@ -379,6 +249,7 @@ DevToolsLoader.prototype = {
 
     // Pass through internal loader settings specific to this loader instance
     this._provider.invisibleToDebugger = this.invisibleToDebugger;
+    // Changes here should be mirrored to devtools/.eslintrc.
     this._provider.globals = {
       isWorker: false,
       reportError: Cu.reportError,
@@ -392,6 +263,22 @@ DevToolsLoader.prototype = {
         lazyRequireGetter: this.lazyRequireGetter,
         id: this.id
       },
+      // Make sure `define` function exists.  This allows defining some modules
+      // in AMD format while retaining CommonJS compatibility through this hook.
+      // JSON Viewer needs modules in AMD format, as it currently uses RequireJS
+      // from a content document and can't access our usual loaders.  So, any
+      // modules shared with the JSON Viewer should include a define wrapper:
+      //
+      //   // Make this available to both AMD and CJS environments
+      //   define(function(require, exports, module) {
+      //     ... code ...
+      //   });
+      //
+      // Bug 1248830 will work out a better plan here for our content module
+      // loading needs, especially as we head towards devtools.html.
+      define(factory) {
+        factory(this.require, this.exports, this.module);
+      },
     };
     // Lazy define console in order to load Console.jsm only when it is used
     XPCOMUtils.defineLazyGetter(this._provider.globals, "console", () => {
@@ -400,53 +287,30 @@ DevToolsLoader.prototype = {
 
     this._provider.load();
     this.require = Loader.Require(this._provider.loader, { id: "devtools" });
-
-    if (this._mainid) {
-      this.main(this._mainid);
-    }
   },
 
   /**
    * Choose a default tools provider based on the preferences.
    */
-  _chooseProvider: function() {
-    if (Services.prefs.prefHasUserValue("devtools.loader.srcdir")) {
-      this.setProvider(new SrcdirProvider());
-    } else {
-      this.setProvider(new BuiltinProvider());
-    }
+  _loadProvider: function() {
+    this.setProvider(new BuiltinProvider());
   },
 
   /**
-   * Reload the current provider.
+   * Handles "devtools-unload" event
+   *
+   * @param String data
+   *    reason passed to modules when unloaded
    */
-  reload: function(showToolbox) {
-    var events = this.require("sdk/system/events");
-    events.emit("startupcache-invalidate", {});
-    events.emit("devtools-unloaded", {});
+  observe: function(subject, topic, data) {
+    if (topic != "devtools-unload") {
+      return;
+    }
+    Services.obs.removeObserver(this, "devtools-unload");
 
-    this._provider.unload("reload");
-    delete this._provider;
-    delete this._mainid;
-    this._chooseProvider();
-    this.main("devtools/client/main");
-
-    let window = Services.wm.getMostRecentWindow(null);
-    let location = window.location.href;
-    if (location.includes("/browser.xul") && showToolbox) {
-      // Reopen the toolbox automatically if we are reloading from toolbox shortcut
-      // and are on a browser window.
-      // Wait for a second before opening the toolbox to avoid races
-      // between the old and the new one.
-      let {setTimeout} = Cu.import("resource://gre/modules/Timer.jsm", {});
-      setTimeout(() => {
-        let { gBrowser } = window;
-        let target = this.TargetFactory.forTab(gBrowser.selectedTab);
-        const { gDevTools } = this.require("resource://devtools/client/framework/gDevTools.jsm");
-        gDevTools.showToolbox(target);
-      }, 1000);
-    } else if (location.includes("/webide.xul")) {
-      window.location.reload();
+    if (this._provider) {
+      this._provider.unload(data);
+      delete this._provider;
     }
   },
 
@@ -466,3 +330,11 @@ DevToolsLoader.prototype = {
 this.devtools = this.loader = new DevToolsLoader();
 
 this.require = this.devtools.require.bind(this.devtools);
+
+// For compatibility reasons, expose these symbols on "devtools":
+Object.defineProperty(this.devtools, "Toolbox", {
+  get: () => this.require("devtools/client/framework/toolbox").Toolbox
+});
+Object.defineProperty(this.devtools, "TargetFactory", {
+  get: () => this.require("devtools/client/framework/target").TargetFactory
+});

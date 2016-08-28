@@ -8,10 +8,11 @@
 #include "GrConvexPolyEffect.h"
 #include "GrInvariantOutput.h"
 #include "SkPathPriv.h"
+#include "effects/GrConstColorProcessor.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
-#include "glsl/GrGLSLProgramBuilder.h"
 #include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
 
 //////////////////////////////////////////////////////////////////////////////
 class AARectEffect : public GrFragmentProcessor {
@@ -105,11 +106,11 @@ void GLAARectEffect::emitCode(EmitArgs& args) {
     const char *rectName;
     // The rect uniform's xyzw refer to (left + 0.5, top + 0.5, right - 0.5, bottom - 0.5),
     // respectively.
-    fRectUniform = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
-                                       kVec4f_GrSLType,
-                                       kDefault_GrSLPrecision,
-                                       "rect",
-                                       &rectName);
+    fRectUniform = args.fUniformHandler->addUniform(GrGLSLUniformHandler::kFragment_Visibility,
+                                                    kVec4f_GrSLType,
+                                                    kDefault_GrSLPrecision,
+                                                    "rect",
+                                                    &rectName);
 
     GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     const char* fragmentPos = fragBuilder->fragmentPosition();
@@ -191,12 +192,12 @@ void GrGLConvexPolyEffect::emitCode(EmitArgs& args) {
     const GrConvexPolyEffect& cpe = args.fFp.cast<GrConvexPolyEffect>();
 
     const char *edgeArrayName;
-    fEdgeUniform = args.fBuilder->addUniformArray(GrGLSLProgramBuilder::kFragment_Visibility,
-                                            kVec3f_GrSLType,
-                                             kDefault_GrSLPrecision,
-                                             "edges",
-                                            cpe.getEdgeCount(),
-                                            &edgeArrayName);
+    fEdgeUniform = args.fUniformHandler->addUniformArray(GrGLSLUniformHandler::kFragment_Visibility,
+                                                         kVec3f_GrSLType,
+                                                         kDefault_GrSLPrecision,
+                                                         "edges",
+                                                         cpe.getEdgeCount(),
+                                                         &edgeArrayName);
     GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     fragBuilder->codeAppend("\t\tfloat alpha = 1.0;\n");
     fragBuilder->codeAppend("\t\tfloat edge;\n");
@@ -249,15 +250,17 @@ GrFragmentProcessor* GrConvexPolyEffect::Create(GrPrimitiveEdgeType type, const 
         return nullptr;
     }
 
-    if (path.countPoints() > kMaxEdges) {
-        return nullptr;
-    }
-
-    SkPoint pts[kMaxEdges];
-    SkScalar edges[3 * kMaxEdges];
-
     SkPathPriv::FirstDirection dir;
-    SkAssertResult(SkPathPriv::CheapComputeFirstDirection(path, &dir));
+    // The only way this should fail is if the clip is effectively a infinitely thin line. In that
+    // case nothing is inside the clip. It'd be nice to detect this at a higher level and either
+    // skip the draw or omit the clip element.
+    if (!SkPathPriv::CheapComputeFirstDirection(path, &dir)) {
+        if (GrProcessorEdgeTypeIsInverseFill(type)) {
+            return GrConstColorProcessor::Create(0xFFFFFFFF,
+                                                 GrConstColorProcessor::kModulateRGBA_InputMode);
+        }
+        return GrConstColorProcessor::Create(0, GrConstColorProcessor::kIgnore_InputMode);
+    }
 
     SkVector t;
     if (nullptr == offset) {
@@ -266,24 +269,39 @@ GrFragmentProcessor* GrConvexPolyEffect::Create(GrPrimitiveEdgeType type, const 
         t = *offset;
     }
 
-    int count = path.getPoints(pts, kMaxEdges);
+    SkScalar        edges[3 * kMaxEdges];
+    SkPoint         pts[4];
+    SkPath::Verb    verb;
+    SkPath::Iter    iter(path, true);
+
     int n = 0;
-    for (int lastPt = count - 1, i = 0; i < count; lastPt = i++) {
-        if (pts[lastPt] != pts[i]) {
-            SkVector v = pts[i] - pts[lastPt];
-            v.normalize();
-            if (SkPathPriv::kCCW_FirstDirection == dir) {
-                edges[3 * n] = v.fY;
-                edges[3 * n + 1] = -v.fX;
-            } else {
-                edges[3 * n] = -v.fY;
-                edges[3 * n + 1] = v.fX;
-            }
-            SkPoint p = pts[i] + t;
-            edges[3 * n + 2] = -(edges[3 * n] * p.fX + edges[3 * n + 1] * p.fY);
-            ++n;
+    while ((verb = iter.next(pts, true, true)) != SkPath::kDone_Verb) {
+        switch (verb) {
+            case SkPath::kMove_Verb:
+            case SkPath::kClose_Verb:
+                continue;
+            case SkPath::kLine_Verb:
+                break;
+            default:
+                return nullptr;
         }
+        if (n >= kMaxEdges) {
+            return nullptr;
+        }
+        SkVector v = pts[1] - pts[0];
+        v.normalize();
+        if (SkPathPriv::kCCW_FirstDirection == dir) {
+            edges[3 * n] = v.fY;
+            edges[3 * n + 1] = -v.fX;
+        } else {
+            edges[3 * n] = -v.fY;
+            edges[3 * n + 1] = v.fX;
+        }
+        SkPoint p = pts[1] + t;
+        edges[3 * n + 2] = -(edges[3 * n] * p.fX + edges[3 * n + 1] * p.fY);
+        ++n;
     }
+
     if (path.isInverseFillType()) {
         type = GrInvertProcessorEdgeType(type);
     }

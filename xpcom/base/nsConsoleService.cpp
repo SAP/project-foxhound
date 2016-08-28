@@ -317,7 +317,7 @@ nsConsoleService::LogMessageWithMode(nsIConsoleMessage* aMessage,
     // Release |retiredMessage| on the main thread in case it is an instance of
     // a mainthread-only class like nsScriptErrorWithStack and we're off the
     // main thread.
-    NS_ReleaseOnMainThread(retiredMessage);
+    NS_ReleaseOnMainThread(retiredMessage.forget());
   }
 
   if (r) {
@@ -463,7 +463,7 @@ nsConsoleService::Observe(nsISupports* aSubject, const char* aTopic,
     MOZ_ASSERT(supportsInt);
 
     uint64_t windowId;
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(supportsInt->GetData(&windowId)));
+    MOZ_ALWAYS_SUCCEEDS(supportsInt->GetData(&windowId));
 
     ClearMessagesForWindowID(windowId);
   } else {

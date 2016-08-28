@@ -36,8 +36,6 @@ typedef _cairo_surface cairo_surface_t;
 struct _cairo_scaled_font;
 typedef _cairo_scaled_font cairo_scaled_font_t;
 
-struct ID3D10Device1;
-struct ID3D10Texture2D;
 struct ID3D11Texture2D;
 struct ID3D11Device;
 struct ID2D1Device;
@@ -541,9 +539,18 @@ public:
   /** This returns a PathBuilder object that contains a copy of the contents of
    * this path and is still writable.
    */
-  virtual already_AddRefed<PathBuilder> CopyToBuilder(FillRule aFillRule = FillRule::FILL_WINDING) const = 0;
+  inline already_AddRefed<PathBuilder> CopyToBuilder() const {
+    return CopyToBuilder(GetFillRule());
+  }
+  inline already_AddRefed<PathBuilder> TransformedCopyToBuilder(const Matrix &aTransform) const {
+    return TransformedCopyToBuilder(aTransform, GetFillRule());
+  }
+  /** This returns a PathBuilder object that contains a copy of the contents of
+   * this path, converted to use the specified FillRule, and still writable.
+   */
+  virtual already_AddRefed<PathBuilder> CopyToBuilder(FillRule aFillRule) const = 0;
   virtual already_AddRefed<PathBuilder> TransformedCopyToBuilder(const Matrix &aTransform,
-                                                             FillRule aFillRule = FillRule::FILL_WINDING) const = 0;
+                                                             FillRule aFillRule) const = 0;
 
   /** This function checks if a point lies within a path. It allows passing a
    * transform that will transform the path to the coordinate space in which
@@ -638,6 +645,7 @@ public:
   virtual ~ScaledFont() {}
 
   typedef void (*FontFileDataOutput)(const uint8_t *aData, uint32_t aLength, uint32_t aIndex, Float aGlyphSize, void *aBaton);
+  typedef void (*FontDescriptorOutput)(const uint8_t *aData, uint32_t aLength, Float aFontSize, void *aBaton);
 
   virtual FontType GetType() const = 0;
 
@@ -656,6 +664,8 @@ public:
   virtual void CopyGlyphsToBuilder(const GlyphBuffer &aBuffer, PathBuilder *aBuilder, BackendType aBackendType, const Matrix *aTransformHint = nullptr) = 0;
 
   virtual bool GetFontFileData(FontFileDataOutput, void *) { return false; }
+
+  virtual bool GetFontDescriptor(FontDescriptorOutput, void *) { return false; }
 
   void AddUserData(UserDataKey *key, void *userData, void (*destroy)(void*)) {
     mUserData.Add(key, userData, destroy);
@@ -947,6 +957,15 @@ public:
                            SourceSurface *aMask,
                            Point aOffset,
                            const DrawOptions &aOptions = DrawOptions()) = 0;
+
+  /**
+   * Draw aSurface using the 3D transform aMatrix. The DrawTarget's transform
+   * and clip are applied after the 3D transform.
+   *
+   * If the transform fails (i.e. because aMatrix is singular), false is returned and nothing is drawn.
+   */
+  virtual bool Draw3DTransformedSurface(SourceSurface* aSurface,
+                                        const Matrix4x4& aMatrix);
 
   /**
    * Push a clip to the DrawTarget.
@@ -1248,7 +1267,7 @@ public:
     CreateRecordingDrawTarget(DrawEventRecorder *aRecorder, DrawTarget *aDT);
 
   static already_AddRefed<DrawTarget>
-    CreateDrawTargetForData(BackendType aBackend, unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat);
+    CreateDrawTargetForData(BackendType aBackend, unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat, bool aUninitialized = false);
 
   static already_AddRefed<ScaledFont>
     CreateScaledFontForNativeFont(const NativeFont &aNativeFont, Float aSize);
@@ -1355,14 +1374,6 @@ public:
 #endif
 
 #ifdef WIN32
-  static already_AddRefed<DrawTarget> CreateDrawTargetForD3D10Texture(ID3D10Texture2D *aTexture, SurfaceFormat aFormat);
-  static already_AddRefed<DrawTarget>
-    CreateDualDrawTargetForD3D10Textures(ID3D10Texture2D *aTextureA,
-                                         ID3D10Texture2D *aTextureB,
-                                         SurfaceFormat aFormat);
-
-  static void SetDirect3D10Device(ID3D10Device1 *aDevice);
-  static ID3D10Device1 *GetDirect3D10Device();
   static already_AddRefed<DrawTarget> CreateDrawTargetForD3D11Texture(ID3D11Texture2D *aTexture, SurfaceFormat aFormat);
 
   /*
@@ -1389,7 +1400,6 @@ public:
 
 private:
   static ID2D1Device *mD2D1Device;
-  static ID3D10Device1 *mD3D10Device;
   static ID3D11Device *mD3D11Device;
 #endif
 

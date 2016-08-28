@@ -15,6 +15,7 @@
 #include "jsprototypes.h"
 #include "jsweakmap.h"
 
+#include "asmjs/Wasm.h"
 #include "builtin/AtomicsObject.h"
 #include "builtin/Eval.h"
 #if EXPOSE_INTL_API
@@ -24,11 +25,17 @@
 #include "builtin/ModuleObject.h"
 #include "builtin/Object.h"
 #include "builtin/RegExp.h"
+
+#ifdef NIGHTLY_BUILD
+#include "builtin/Promise.h"
+#endif
+
 #include "builtin/SelfHostingDefines.h"
 #include "builtin/SymbolObject.h"
 #include "builtin/TypedObject.h"
 #include "builtin/WeakMapObject.h"
 #include "builtin/WeakSetObject.h"
+#include "vm/Debugger.h"
 #include "vm/HelperThreads.h"
 #include "vm/PIC.h"
 #include "vm/RegExpStatics.h"
@@ -93,6 +100,9 @@ js::GlobalObject::getTypedObjectModule() const {
 /* static */ bool
 GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key)
 {
+    if (key == JSProto_Wasm)
+        return !cx->runtime()->options().wasm();
+
 #ifdef ENABLE_SHARED_ARRAY_BUFFER
     // Return true if the given constructor has been disabled at run-time.
     switch (key) {
@@ -120,6 +130,17 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
 {
     MOZ_ASSERT(!global->isStandardClassResolved(key));
 
+    // Prohibit collection of allocation metadata. Metadata builders shouldn't
+    // need to observe lazily-constructed prototype objects coming into
+    // existence. And assertions start to fail when the builder itself attempts
+    // an allocation that re-entrantly tries to create the same prototype.
+    AutoSuppressAllocationMetadataBuilder suppressMetadata(cx);
+
+    // Constructor resolution may execute self-hosted scripts. These
+    // self-hosted scripts do not call out to user code by construction. Allow
+    // all scripts to execute, even in debuggee compartments that are paused.
+    AutoSuppressDebuggeeNoExecuteChecks suppressNX(cx);
+
     // There are two different kinds of initialization hooks. One of them is
     // the class js::InitFoo hook, defined in a JSProtoKey-keyed table at the
     // top of this file. The other lives in the ClassSpec for classes that
@@ -141,7 +162,7 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
     // GlobalObject::initStandardClasses that want to just carpet-bomb-call
     // ensureConstructor with every JSProtoKey. So it's easier to just handle
     // it here.
-    bool haveSpec = clasp && clasp->spec.defined();
+    bool haveSpec = clasp && clasp->specDefined();
     if (!init && !haveSpec)
         return true;
 
@@ -174,21 +195,28 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
     // |createPrototype|, |prototypeFunctions|, and |prototypeProperties|
     // should all be null.
     RootedObject proto(cx);
-    if (clasp->spec.createPrototypeHook()) {
-        proto = clasp->spec.createPrototypeHook()(cx, key);
+    if (ClassObjectCreationOp createPrototype = clasp->specCreatePrototypeHook()) {
+        proto = createPrototype(cx, key);
         if (!proto)
             return false;
+
+        // Make sure that creating the prototype didn't recursively resolve our
+        // own constructor. We can't just assert that there's no prototype; OOMs
+        // can result in incomplete resolutions in which the prototype is saved
+        // but not the constructor. So use the same criteria that protects entry
+        // into this function.
+        MOZ_ASSERT(!global->isStandardClassResolved(key));
 
         global->setPrototype(key, ObjectValue(*proto));
     }
 
     // Create the constructor.
-    RootedObject ctor(cx, clasp->spec.createConstructorHook()(cx, key));
+    RootedObject ctor(cx, clasp->specCreateConstructorHook()(cx, key));
     if (!ctor)
         return false;
 
     RootedId id(cx, NameToId(ClassName(key, cx)));
-    if (clasp->spec.shouldDefineConstructor()) {
+    if (clasp->specShouldDefineConstructor()) {
         if (!global->addDataProperty(cx, id, constructorPropertySlot(key), 0))
             return false;
     }
@@ -197,21 +225,23 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
     global->setConstructorPropertySlot(key, ObjectValue(*ctor));
 
     // Define any specified functions and properties, unless we're a dependent
-    // standard class (in which case they live on the prototype).
-    if (!StandardClassIsDependent(key)) {
-        if (const JSFunctionSpec* funs = clasp->spec.prototypeFunctions()) {
-            if (!JS_DefineFunctions(cx, proto, funs, DontDefineLateProperties))
+    // standard class (in which case they live on the prototype), or we're
+    // operating on the self-hosting global, in which case we don't want any
+    // functions and properties on the builtins and their prototypes.
+    if (!StandardClassIsDependent(key) && !cx->runtime()->isSelfHostingGlobal(global)) {
+        if (const JSFunctionSpec* funs = clasp->specPrototypeFunctions()) {
+            if (!JS_DefineFunctions(cx, proto, funs))
                 return false;
         }
-        if (const JSPropertySpec* props = clasp->spec.prototypeProperties()) {
+        if (const JSPropertySpec* props = clasp->specPrototypeProperties()) {
             if (!JS_DefineProperties(cx, proto, props))
                 return false;
         }
-        if (const JSFunctionSpec* funs = clasp->spec.constructorFunctions()) {
-            if (!JS_DefineFunctions(cx, ctor, funs, DontDefineLateProperties))
+        if (const JSFunctionSpec* funs = clasp->specConstructorFunctions()) {
+            if (!JS_DefineFunctions(cx, ctor, funs))
                 return false;
         }
-        if (const JSPropertySpec* props = clasp->spec.constructorProperties()) {
+        if (const JSPropertySpec* props = clasp->specConstructorProperties()) {
             if (!JS_DefineProperties(cx, ctor, props))
                 return false;
         }
@@ -222,10 +252,12 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
         return false;
 
     // Call the post-initialization hook, if provided.
-    if (clasp->spec.finishInitHook() && !clasp->spec.finishInitHook()(cx, ctor, proto))
-        return false;
+    if (FinishClassInitOp finishInit = clasp->specFinishInitHook()) {
+        if (!finishInit(cx, ctor, proto))
+            return false;
+    }
 
-    if (clasp->spec.shouldDefineConstructor()) {
+    if (clasp->specShouldDefineConstructor()) {
         // Stash type information, so that what we do here is equivalent to
         // initBuiltinConstructor.
         AddTypePropertyId(cx, global, id, ObjectValue(*ctor));
@@ -261,7 +293,7 @@ GlobalObject*
 GlobalObject::createInternal(JSContext* cx, const Class* clasp)
 {
     MOZ_ASSERT(clasp->flags & JSCLASS_IS_GLOBAL);
-    MOZ_ASSERT(clasp->trace == JS_GlobalObjectTraceHook);
+    MOZ_ASSERT(clasp->isTrace(JS_GlobalObjectTraceHook));
 
     JSObject* obj = NewObjectWithGivenProto(cx, clasp, nullptr, SingletonObject);
     if (!obj)
@@ -387,11 +419,11 @@ InitBareBuiltinCtor(JSContext* cx, Handle<GlobalObject*> global, JSProtoKey prot
     MOZ_ASSERT(cx->runtime()->isSelfHostingGlobal(global));
     const Class* clasp = ProtoKeyToClass(protoKey);
     RootedObject proto(cx);
-    proto = clasp->spec.createPrototypeHook()(cx, protoKey);
+    proto = clasp->specCreatePrototypeHook()(cx, protoKey);
     if (!proto)
         return false;
 
-    RootedObject ctor(cx, clasp->spec.createConstructorHook()(cx, protoKey));
+    RootedObject ctor(cx, clasp->specCreateConstructorHook()(cx, protoKey));
     if (!ctor)
         return false;
 
@@ -410,6 +442,14 @@ GlobalObject::initSelfHostingBuiltins(JSContext* cx, Handle<GlobalObject*> globa
     // Define a top-level property 'undefined' with the undefined value.
     if (!DefineProperty(cx, global, cx->names().undefined, UndefinedHandleValue,
                         nullptr, nullptr, JSPROP_PERMANENT | JSPROP_READONLY))
+    {
+        return false;
+    }
+
+    RootedValue std_isConcatSpreadable(cx);
+    std_isConcatSpreadable.setSymbol(cx->wellKnownSymbols().get(JS::SymbolCode::isConcatSpreadable));
+    if (!JS_DefineProperty(cx, global, "std_isConcatSpreadable", std_isConcatSpreadable,
+                           JSPROP_PERMANENT | JSPROP_READONLY))
     {
         return false;
     }
@@ -435,6 +475,7 @@ GlobalObject::initSelfHostingBuiltins(JSContext* cx, Handle<GlobalObject*> globa
     return InitBareBuiltinCtor(cx, global, JSProto_Array) &&
            InitBareBuiltinCtor(cx, global, JSProto_TypedArray) &&
            InitBareBuiltinCtor(cx, global, JSProto_Uint8Array) &&
+           InitBareBuiltinCtor(cx, global, JSProto_Int32Array) &&
            InitBareWeakMapCtor(cx, global) &&
            InitStopIterationClass(cx, global) &&
            InitSelfHostingCollectionIteratorFunctions(cx, global) &&
@@ -556,11 +597,22 @@ GlobalDebuggees_finalize(FreeOp* fop, JSObject* obj)
     fop->delete_((GlobalObject::DebuggerVector*) obj->as<NativeObject>().getPrivate());
 }
 
+static const ClassOps
+GlobalDebuggees_classOps = {
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    GlobalDebuggees_finalize
+};
+
 static const Class
 GlobalDebuggees_class = {
     "GlobalDebuggee", JSCLASS_HAS_PRIVATE,
-    nullptr, nullptr, nullptr, nullptr,
-    nullptr, nullptr, nullptr, GlobalDebuggees_finalize
+    &GlobalDebuggees_classOps
 };
 
 GlobalObject::DebuggerVector*
@@ -679,7 +731,10 @@ GlobalObject::getSelfHostedFunction(JSContext* cx, Handle<GlobalObject*> global,
                                     HandlePropertyName selfHostedName, HandleAtom name,
                                     unsigned nargs, MutableHandleValue funVal)
 {
-    if (GlobalObject::maybeGetIntrinsicValue(cx, global, selfHostedName, funVal)) {
+    bool exists = false;
+    if (!GlobalObject::maybeGetIntrinsicValue(cx, global, selfHostedName, funVal, &exists))
+        return false;
+    if (exists) {
         RootedFunction fun(cx, &funVal.toObject().as<JSFunction>());
         if (fun->atom() == name)
             return true;
@@ -741,5 +796,20 @@ GlobalObject::addIntrinsicValue(JSContext* cx, Handle<GlobalObject*> global,
         return false;
 
     holder->setSlot(shape->slot(), value);
+    return true;
+}
+
+/* static */ bool
+GlobalObject::ensureModulePrototypesCreated(JSContext *cx, Handle<GlobalObject*> global)
+{
+    if (global->getSlot(MODULE_PROTO).isUndefined()) {
+        MOZ_ASSERT(global->getSlot(IMPORT_ENTRY_PROTO).isUndefined() &&
+                   global->getSlot(EXPORT_ENTRY_PROTO).isUndefined());
+        if (!js::InitModuleClasses(cx, global))
+            return false;
+    }
+    MOZ_ASSERT(global->getSlot(MODULE_PROTO).isObject() &&
+               global->getSlot(IMPORT_ENTRY_PROTO).isObject() &&
+               global->getSlot(EXPORT_ENTRY_PROTO).isObject());
     return true;
 }

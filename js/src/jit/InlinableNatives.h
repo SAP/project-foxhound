@@ -14,7 +14,6 @@
     _(ArrayPop)                     \
     _(ArrayShift)                   \
     _(ArrayPush)                    \
-    _(ArrayConcat)                  \
     _(ArraySlice)                   \
     _(ArraySplice)                  \
                                     \
@@ -22,7 +21,6 @@
     _(AtomicsExchange)              \
     _(AtomicsLoad)                  \
     _(AtomicsStore)                 \
-    _(AtomicsFence)                 \
     _(AtomicsAdd)                   \
     _(AtomicsSub)                   \
     _(AtomicsAnd)                   \
@@ -80,6 +78,7 @@
     _(ObjectCreate)                 \
                                     \
     _(SimdInt32x4)                  \
+    _(SimdUint32x4)                 \
     _(SimdFloat32x4)                \
     _(SimdBool32x4)                 \
                                     \
@@ -95,8 +94,10 @@
     _(IntrinsicUnsafeGetBooleanFromReservedSlot) \
                                     \
     _(IntrinsicIsCallable)          \
+    _(IntrinsicIsConstructor)       \
     _(IntrinsicToObject)            \
     _(IntrinsicIsObject)            \
+    _(IntrinsicIsWrappedArrayConstructor) \
     _(IntrinsicToInteger)           \
     _(IntrinsicToString)            \
     _(IntrinsicIsConstructing)      \
@@ -107,6 +108,11 @@
     _(IntrinsicIsMapIterator)       \
     _(IntrinsicIsStringIterator)    \
     _(IntrinsicIsListIterator)      \
+                                    \
+    _(IntrinsicGetNextMapEntryForIterator) \
+                                    \
+    _(IntrinsicArrayBufferByteLength) \
+    _(IntrinsicPossiblyWrappedArrayBufferByteLength) \
                                     \
     _(IntrinsicIsTypedArray)        \
     _(IntrinsicIsPossiblyWrappedTypedArray) \

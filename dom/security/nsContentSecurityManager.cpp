@@ -47,31 +47,18 @@ DoCheckLoadURIChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
     return NS_OK;
   }
 
-  nsresult rv = NS_OK;
-
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = aLoadInfo->LoadingPrincipal();
   uint32_t flags = nsIScriptSecurityManager::STANDARD;
   if (aLoadInfo->GetAllowChrome()) {
     flags |= nsIScriptSecurityManager::ALLOW_CHROME;
   }
 
-  rv = nsContentUtils::GetSecurityManager()->
-    CheckLoadURIWithPrincipal(loadingPrincipal,
-                              aURI,
-                              flags);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // If the loadingPrincipal and the triggeringPrincipal are different, then make
-  // sure the triggeringPrincipal is allowed to access that URI.
-  nsCOMPtr<nsIPrincipal> triggeringPrincipal = aLoadInfo->TriggeringPrincipal();
-  if (loadingPrincipal != triggeringPrincipal) {
-    rv = nsContentUtils::GetSecurityManager()->
-           CheckLoadURIWithPrincipal(triggeringPrincipal,
+  // Only call CheckLoadURIWithPrincipal() using the TriggeringPrincipal and not
+  // the LoadingPrincipal when SEC_ALLOW_CROSS_ORIGIN_* security flags are set,
+  // to allow, e.g. user stylesheets to load chrome:// URIs.
+  return nsContentUtils::GetSecurityManager()->
+           CheckLoadURIWithPrincipal(aLoadInfo->TriggeringPrincipal(),
                                      aURI,
                                      flags);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-  return NS_OK;
 }
 
 static bool
@@ -105,6 +92,14 @@ DoCORSChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo,
              nsCOMPtr<nsIStreamListener>& aInAndOutListener)
 {
   MOZ_RELEASE_ASSERT(aInAndOutListener, "can not perform CORS checks without a listener");
+
+  // No need to set up CORS if TriggeringPrincipal is the SystemPrincipal.
+  // For example, allow user stylesheets to load XBL from external files
+  // without requiring CORS.
+  if (nsContentUtils::IsSystemPrincipal(aLoadInfo->TriggeringPrincipal())) {
+    return NS_OK;
+  }
+
   nsIPrincipal* loadingPrincipal = aLoadInfo->LoadingPrincipal();
   RefPtr<nsCORSListenerProxy> corsListener =
     new nsCORSListenerProxy(aInAndOutListener,
@@ -143,8 +138,17 @@ DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
       break;
     }
 
-    case nsIContentPolicy::TYPE_IMAGE:
-    case nsIContentPolicy::TYPE_STYLESHEET:
+    case nsIContentPolicy::TYPE_IMAGE: {
+      MOZ_ASSERT(false, "contentPolicyType not supported yet");
+      break;
+    }
+
+    case nsIContentPolicy::TYPE_STYLESHEET: {
+      mimeTypeGuess = NS_LITERAL_CSTRING("text/css");
+      requestingContext = aLoadInfo->LoadingNode();
+      break;
+    }
+
     case nsIContentPolicy::TYPE_OBJECT:
     case nsIContentPolicy::TYPE_DOCUMENT: {
       MOZ_ASSERT(false, "contentPolicyType not supported yet");
@@ -220,7 +224,8 @@ DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
     }
 
     case nsIContentPolicy::TYPE_FONT: {
-      MOZ_ASSERT(false, "contentPolicyType not supported yet");
+      mimeTypeGuess = EmptyCString();
+      requestingContext = aLoadInfo->LoadingNode();
       break;
     }
 
@@ -275,6 +280,12 @@ DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
 
     case nsIContentPolicy::TYPE_IMAGESET: {
       MOZ_ASSERT(false, "contentPolicyType not supported yet");
+      break;
+    }
+
+    case nsIContentPolicy::TYPE_WEB_MANIFEST: {
+      mimeTypeGuess = NS_LITERAL_CSTRING("application/manifest+json");
+      requestingContext = aLoadInfo->LoadingNode();
       break;
     }
 
@@ -443,6 +454,10 @@ nsContentSecurityManager::CheckChannel(nsIChannel* aChannel)
   // Handle cookie policies
   uint32_t cookiePolicy = loadInfo->GetCookiePolicy();
   if (cookiePolicy == nsILoadInfo::SEC_COOKIES_SAME_ORIGIN) {
+
+    // We shouldn't have the SEC_COOKIES_SAME_ORIGIN flag for top level loads
+    MOZ_ASSERT(loadInfo->GetExternalContentPolicyType() !=
+               nsIContentPolicy::TYPE_DOCUMENT);
     nsIPrincipal* loadingPrincipal = loadInfo->LoadingPrincipal();
 
     // It doesn't matter what we pass for the third, data-inherits, argument.
@@ -466,10 +481,11 @@ nsContentSecurityManager::CheckChannel(nsIChannel* aChannel)
     return NS_OK;
   }
 
-  // Allow the load if TriggeringPrincipal is the SystemPrincipal which
-  // is e.g. necessary to allow user user stylesheets to load XBL from
-  // external files.
-  if (nsContentUtils::IsSystemPrincipal(loadInfo->TriggeringPrincipal())) {
+  // Allow subresource loads if TriggeringPrincipal is the SystemPrincipal.
+  // For example, allow user stylesheets to load XBL from external files.
+  if (nsContentUtils::IsSystemPrincipal(loadInfo->TriggeringPrincipal()) &&
+      loadInfo->GetExternalContentPolicyType() != nsIContentPolicy::TYPE_DOCUMENT &&
+      loadInfo->GetExternalContentPolicyType() != nsIContentPolicy::TYPE_SUBDOCUMENT) {
     return NS_OK;
   }
 

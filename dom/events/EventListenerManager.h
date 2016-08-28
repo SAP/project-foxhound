@@ -20,7 +20,7 @@
 class nsIDocShell;
 class nsIDOMEvent;
 class nsIEventListenerInfo;
-class nsPIDOMWindow;
+class nsPIDOMWindowInner;
 class JSTracer;
 
 struct EventTypeData;
@@ -195,6 +195,7 @@ public:
     bool mListenerIsHandler : 1;
     bool mHandlerIsString : 1;
     bool mAllEvents : 1;
+    bool mIsChrome : 1;
 
     EventListenerFlags mFlags;
 
@@ -328,7 +329,7 @@ public:
                    dom::EventTarget* aCurrentTarget,
                    nsEventStatus* aEventStatus)
   {
-    if (mListeners.IsEmpty() || aEvent->mFlags.mPropagationStopped) {
+    if (mListeners.IsEmpty() || aEvent->PropagationStopped()) {
       return;
     }
 
@@ -343,7 +344,7 @@ public:
     // Check if we already know that there is no event listener for the event.
     if (mNoListenerForEvent == aEvent->mMessage &&
         (mNoListenerForEvent != eUnidentifiedEvent ||
-         mNoListenerForEventAtom == aEvent->userType)) {
+         mNoListenerForEventAtom == aEvent->mSpecifiedEventType)) {
       return;
     }
     HandleEventInternal(aPresContext, aEvent, aDOMEvent, aCurrentTarget,
@@ -577,8 +578,8 @@ protected:
   void RemoveAllListeners();
   const EventTypeData* GetTypeDataForIID(const nsIID& aIID);
   const EventTypeData* GetTypeDataForEventName(nsIAtom* aName);
-  nsPIDOMWindow* GetInnerWindowForTarget();
-  already_AddRefed<nsPIDOMWindow> GetTargetAsInnerWindow() const;
+  nsPIDOMWindowInner* GetInnerWindowForTarget();
+  already_AddRefed<nsPIDOMWindowInner> GetTargetAsInnerWindow() const;
 
   bool ListenerCanHandle(const Listener* aListener,
                          const WidgetEvent* aEvent,

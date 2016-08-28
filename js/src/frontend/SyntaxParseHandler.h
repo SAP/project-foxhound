@@ -32,6 +32,7 @@ class SyntaxParseHandler
 {
     // Remember the last encountered name or string literal during syntax parses.
     JSAtom* lastAtom;
+    JSLinearString* lastStr;
     TokenPos lastStringPos;
     TokenStream& tokenStream;
 
@@ -117,14 +118,6 @@ class SyntaxParseHandler
         // yields |b| each time it's resumed.
         NodeUnparenthesizedCommaExpr,
 
-        // Yield expressions currently (but not in ES6 -- a SpiderMonkey bug to
-        // fix) must generally be parenthesized.  (See the uses of
-        // isUnparenthesizedYieldExpression in Parser.cpp for the rare
-        // exceptions.)  Thus we need this to treat |yield 1, 2;| as a syntax
-        // error and |(yield 1), 2;| as a comma expression that will yield 1,
-        // then evaluate to 2.
-        NodeUnparenthesizedYieldExpr,
-
         // Assignment expressions in condition contexts could be typos for
         // equality checks.  (Think |if (x = y)| versus |if (x == y)|.)  Thus
         // we need this to treat |if (x = y)| as a possible typo and
@@ -172,7 +165,7 @@ class SyntaxParseHandler
     SyntaxParseHandler(ExclusiveContext* cx, LifoAlloc& alloc,
                        TokenStream& tokenStream, Parser<SyntaxParseHandler>* syntaxParser,
                        LazyScript* lazyOuterFunction)
-      : lastAtom(nullptr),
+      : lastAtom(nullptr), lastStr(nullptr),
         tokenStream(tokenStream)
     {}
 
@@ -207,13 +200,13 @@ class SyntaxParseHandler
     Node newNumber(double value, DecimalPoint decimalPoint, const TokenPos& pos) { return NodeGeneric; }
     Node newBooleanLiteral(bool cond, const TokenPos& pos) { return NodeGeneric; }
 
-    Node newStringLiteral(JSAtom* atom, const TokenPos& pos) {
-        lastAtom = atom;
+    Node newStringLiteral(JSLinearString* str, const TokenPos& pos) {
+        lastStr = str;
         lastStringPos = pos;
         return NodeUnparenthesizedString;
     }
 
-    Node newTemplateStringLiteral(JSAtom* atom, const TokenPos& pos) {
+    Node newTemplateStringLiteral(JSLinearString* str, const TokenPos& pos) {
         return NodeGeneric;
     }
 
@@ -288,7 +281,7 @@ class SyntaxParseHandler
     bool addShorthand(Node literal, Node name, Node expr) { return true; }
     bool addObjectMethodDefinition(Node literal, Node name, Node fn, JSOp op) { return true; }
     bool addClassMethodDefinition(Node literal, Node name, Node fn, JSOp op, bool isStatic) { return true; }
-    Node newYieldExpression(uint32_t begin, Node value, Node gen) { return NodeUnparenthesizedYieldExpr; }
+    Node newYieldExpression(uint32_t begin, Node value, Node gen) { return NodeGeneric; }
     Node newYieldStarExpression(uint32_t begin, Node value, Node gen) { return NodeGeneric; }
 
     // Statements
@@ -483,10 +476,6 @@ class SyntaxParseHandler
         return newBinary(kind, lhs, rhs, op);
     }
 
-    bool isUnparenthesizedYieldExpression(Node node) {
-        return node == NodeUnparenthesizedYieldExpr;
-    }
-
     bool isUnparenthesizedCommaExpression(Node node) {
         return node == NodeUnparenthesizedCommaExpr;
     }
@@ -534,7 +523,6 @@ class SyntaxParseHandler
         // them to a generic node.
         if (node == NodeUnparenthesizedString ||
             node == NodeUnparenthesizedCommaExpr ||
-            node == NodeUnparenthesizedYieldExpr ||
             node == NodeUnparenthesizedAssignment)
         {
             return NodeGeneric;
@@ -593,10 +581,10 @@ class SyntaxParseHandler
         return lastAtom->asPropertyName();
     }
 
-    JSAtom* isStringExprStatement(Node pn, TokenPos* pos) {
+    JSLinearString* isStringExprStatement(Node pn, TokenPos* pos) {
         if (pn == NodeStringExprStatement) {
             *pos = lastStringPos;
-            return lastAtom;
+            return lastStr;
         }
         return nullptr;
     }

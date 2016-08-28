@@ -22,6 +22,8 @@
 
 using namespace mozilla;
 
+#define MAX_NOTIFICATION_NAME_LEN 5000
+
 #if !defined(MAC_OS_X_VERSION_10_8) || (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_8)
 @protocol NSUserNotificationCenterDelegate
 @end
@@ -218,7 +220,8 @@ OSXNotificationCenter::~OSXNotificationCenter()
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-NS_IMPL_ISUPPORTS(OSXNotificationCenter, nsIAlertsService, imgINotificationObserver, nsITimerCallback)
+NS_IMPL_ISUPPORTS(OSXNotificationCenter, nsIAlertsService, nsITimerCallback,
+                  imgINotificationObserver, nsIAlertsIconData)
 
 nsresult OSXNotificationCenter::Init()
 {
@@ -255,6 +258,15 @@ OSXNotificationCenter::ShowAlertNotification(const nsAString & aImageUrl, const 
 NS_IMETHODIMP
 OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
                                  nsIObserver* aAlertListener)
+{
+  return ShowAlertWithIconData(aAlert, aAlertListener, 0, nullptr);
+}
+
+NS_IMETHODIMP
+OSXNotificationCenter::ShowAlertWithIconData(nsIAlertNotification* aAlert,
+                                             nsIObserver* aAlertListener,
+                                             uint32_t aIconSize,
+                                             const uint8_t* aIconData)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -334,6 +346,13 @@ OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
   }
   nsAutoString name;
   rv = aAlert->GetName(name);
+  // Don't let an alert name be more than MAX_NOTIFICATION_NAME_LEN characters.
+  // More than that shouldn't be necessary and userInfo (assigned to below) has
+  // a length limit of 16k on OS X 10.11. Exception thrown if limit exceeded.
+  if (name.Length() > MAX_NOTIFICATION_NAME_LEN) {
+    return NS_ERROR_FAILURE;
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
   NSString *alertName = nsCocoaUtils::ToNSString(name);
   if (!alertName) {
@@ -347,6 +366,18 @@ OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
   NS_ENSURE_SUCCESS(rv, rv);
 
   OSXNotificationInfo *osxni = new OSXNotificationInfo(alertName, aAlertListener, cookie);
+
+  // Show the favicon if supported on this version of OS X.
+  if (aIconSize > 0 &&
+      [notification respondsToSelector:@selector(set_identityImage:)] &&
+      [notification respondsToSelector:@selector(set_identityImageHasBorder:)]) {
+
+    NSData *iconData = [NSData dataWithBytes:aIconData length:aIconSize];
+    NSImage *icon = [[[NSImage alloc] initWithData:iconData] autorelease];
+
+    [(NSObject*)notification setValue:icon forKey:@"_identityImage"];
+    [(NSObject*)notification setValue:@(NO) forKey:@"_identityImageHasBorder"];
+  }
 
   nsAutoString imageUrl;
   rv = aAlert->GetImageURL(imageUrl);
@@ -380,7 +411,7 @@ OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
           rv = il->LoadImage(imageUri, nullptr, nullptr,
                              mozilla::net::RP_Default,
                              principal, nullptr,
-                             this, nullptr,
+                             this, nullptr, nullptr,
                              inPrivateBrowsing ? nsIRequest::LOAD_ANONYMOUS :
                                                  nsIRequest::LOAD_NORMAL,
                              nullptr, nsIContentPolicy::TYPE_INTERNAL_IMAGE,

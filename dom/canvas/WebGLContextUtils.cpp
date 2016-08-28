@@ -89,8 +89,6 @@ WebGLContext::GenerateWarning(const char* fmt, va_list ap)
         return;
     }
 
-    api.TakeOwnershipOfErrorReporting();
-
     JSContext* cx = api.cx();
     JS_ReportWarning(cx, "WebGL: %s", buf);
     if (!ShouldGenerateWarnings()) {
@@ -727,6 +725,8 @@ WebGLContext::AssertCachedBindings()
 
     MOZ_ASSERT(!GetAndFlushUnderlyingGLErrors());
 #endif
+
+    // We do not check the renderbuffer binding, because we never rely on it matching.
 }
 
 void

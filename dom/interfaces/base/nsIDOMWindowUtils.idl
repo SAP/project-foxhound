@@ -49,7 +49,7 @@ interface nsIJSRAIIHelper;
 interface nsIContentPermissionRequest;
 interface nsIObserver;
 
-[scriptable, uuid(ca6a458c-82e7-4979-886e-6d214eac6f0b)]
+[scriptable, uuid(46b44e33-13c2-4eb3-bf80-76a4e0857ccc)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -105,6 +105,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * Force a synchronous layer transaction for this window if necessary.
    */
   void updateLayerTree();
+
+  /**
+   * Get the last used layer transaction id for this window's refresh driver.
+   */
+  readonly attribute unsigned long long lastTransactionId;
 
   /**
    * Information retrieved from the <meta name="viewport"> tag.
@@ -1334,11 +1339,12 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute boolean layerManagerRemote;
 
   /**
-   * True if we can initialize a hardware-backed h264 decoder for a simple
-   * test video, does not mean that all h264 video decoding will be done
+   * Returns a Promise that will be resolved with a string once the capabilities
+   * of the h264 decoder have been determined.
+   * Success does not mean that all h264 video decoding will be done
    * in hardware.
    */
-  readonly attribute AString supportsHardwareH264Decoding;
+  readonly attribute jsval supportsHardwareH264Decoding;
 
   /**
    * Record (and return) frame-intervals for frames which were presented
@@ -1485,13 +1491,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * Get the type of the currently focused html input, if any.
    */
   readonly attribute string focusedInputType;
-
-  /**
-   * Given a view ID from the compositor process, retrieve the element
-   * associated with a view. For scrollpanes for documents, the root
-   * element of the document is returned.
-   */
-  nsIDOMElement findElementWithViewId(in nsViewID aId);
 
   /**
    * Find the view ID for a given element. This is the reverse of
@@ -1752,6 +1751,12 @@ interface nsIDOMWindowUtils : nsISupports {
   void postRestyleSelfEvent(in nsIDOMElement aElement);
 
   /**
+   * Used to pause or resume all MediaElements in this window. Use-cases are
+   * audio competing and remote media control.
+   */
+  attribute boolean mediaSuspended;
+
+  /**
    * With this it's possible to mute all the MediaElements in this window.
    * We have audioMuted and audioVolume to preserve the volume across
    * mute/umute.
@@ -1848,6 +1853,14 @@ interface nsIDOMWindowUtils : nsISupports {
   void forceUseCounterFlush(in nsIDOMNode aNode);
 
   void setNextPaintSyncId(in long aSyncId);
+
+  /**
+   * Enable or disable displayport suppression. This is intended to be used by
+   * testing code, to provide more deterministic behaviour over the displayport
+   * suppression during tests. Note that this updates a flag, so whatever value
+   * was last provided is what will be used.
+   */
+  void respectDisplayPortSuppression(in boolean aEnabled);
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

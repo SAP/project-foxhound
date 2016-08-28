@@ -38,7 +38,9 @@
 #include "nsPrintfCString.h"
 
 #if defined(XP_WIN)
+#include "mozilla/WindowsVersion.h"
 #include "nsNativeConnectionHelper.h"
+#include "ShutdownLayer.h"
 #endif
 
 /* Following inclusions required for keepalive config not supported by NSPR. */
@@ -1196,7 +1198,8 @@ nsSocketTransport::BuildSocket(PRFileDesc *&fd, bool &proxyTransparent, bool &us
         if (NS_FAILED(rv)) {
             SOCKET_LOG(("  error pushing io layer [%u:%s rv=%x]\n", i, mTypes[i], rv));
             if (fd) {
-                PR_Close(fd);
+                CloseSocket(fd,
+                    mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
             }
         }
     }
@@ -1357,10 +1360,25 @@ nsSocketTransport::InitiateSocket()
         PR_SetSocketOption(fd, &opt);
     }
 
+#if defined(XP_WIN)
+    // The linger is turned off by default. This is not a hard close, but
+    // closesocket should return immediately and operating system tries to send
+    // remaining data for certain, implementation specific, amount of time.
+    // https://msdn.microsoft.com/en-us/library/ms739165.aspx
+    //
+    // Turn the linger option on an set the interval to 0. This will cause hard
+    // close of the socket.
+    opt.option =  PR_SockOpt_Linger;
+    opt.value.linger.polarity = 1;
+    opt.value.linger.linger = 0;
+    PR_SetSocketOption(fd, &opt);
+#endif
+
     // inform socket transport about this newly created socket...
     rv = mSocketTransportService->AttachSocket(fd, this);
     if (NS_FAILED(rv)) {
-        PR_Close(fd);
+        CloseSocket(fd,
+            mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
         return rv;
     }
     mAttached = true;
@@ -1421,13 +1439,14 @@ nsSocketTransport::InitiateSocket()
     // nsIOService::LastOfflineStateChange time and
     // nsIOService::LastConectivityChange time to be atomic.
     PRIntervalTime connectStarted = 0;
-    if (gSocketTransportService->IsTelemetryEnabled()) {
+    if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
         connectStarted = PR_IntervalNow();
     }
 
     status = PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT);
 
-    if (gSocketTransportService->IsTelemetryEnabled() && connectStarted) {
+    if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
+        connectStarted) {
         SendPRBlockingTelemetry(connectStarted,
             Telemetry::PRCONNECT_BLOCKING_TIME_NORMAL,
             Telemetry::PRCONNECT_BLOCKING_TIME_SHUTDOWN,
@@ -1494,6 +1513,16 @@ nsSocketTransport::InitiateSocket()
         // The connection was refused...
         //
         else {
+            if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
+                connectStarted) {
+                SendPRBlockingTelemetry(connectStarted,
+                    Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_NORMAL,
+                    Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_SHUTDOWN,
+                    Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_CONNECTIVITY_CHANGE,
+                    Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_LINK_CHANGE,
+                    Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_OFFLINE);
+            }
+
             rv = ErrorAccordingToNSPR(code);
             if ((rv == NS_ERROR_CONNECTION_REFUSED) && !mProxyHost.IsEmpty())
                 rv = NS_ERROR_PROXY_CONNECTION_REFUSED;
@@ -1542,7 +1571,8 @@ nsSocketTransport::RecoverFromError()
 
     bool tryAgain = false;
 
-    if (mSocketTransportService->IsTelemetryEnabled()) {
+    if ((mState == STATE_CONNECTING) && mDNSRecord &&
+        mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
         if (mNetAddr.raw.family == AF_INET) {
             Telemetry::Accumulate(Telemetry::IPV4_AND_IPV6_ADDRESS_CONNECTIVITY,
                                   UNSUCCESSFUL_CONNECTING_TO_IPV4_ADDRESS);
@@ -1681,6 +1711,21 @@ nsSocketTransport::OnSocketConnected()
         NS_ASSERTION(mFDref == 1, "wrong socket ref count");
         SetSocketName(mFD);
         mFDconnected = true;
+
+#ifdef XP_WIN
+        if (!mozilla::IsWin2003OrLater()) { // windows xp
+            PRSocketOptionData opt;
+            opt.option = PR_SockOpt_RecvBufferSize;
+            if (PR_GetSocketOption(mFD, &opt) == PR_SUCCESS) {
+                SOCKET_LOG(("%p checking rwin on xp originally=%u\n",
+                            this, opt.value.recv_buffer_size));
+                if (opt.value.recv_buffer_size < 65535) {
+                    opt.value.recv_buffer_size = 65535;
+                    PR_SetSocketOption(mFD, &opt);
+                }
+            }
+        }
+#endif
     }
 
     // Ensure keepalive is configured correctly if previously enabled.
@@ -1732,7 +1777,8 @@ public:
 
   NS_IMETHOD Run()
   {
-    PR_Close(mFD);
+    nsSocketTransport::CloseSocket(mFD,
+      gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
     return NS_OK;
   }
 private:
@@ -1769,7 +1815,8 @@ nsSocketTransport::ReleaseFD_Locked(PRFileDesc *fd)
           SOCKET_LOG(("Intentional leak"));
         } else if (PR_GetCurrentThread() == gSocketThread) {
             SOCKET_LOG(("nsSocketTransport: calling PR_Close [this=%p]\n", this));
-            PR_Close(mFD);
+            CloseSocket(mFD,
+                mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
         } else {
             // Can't PR_Close() a socket off STS thread. Thunk it to STS to die
             STS_PRCloseOnSocketTransport(mFD);
@@ -1930,13 +1977,14 @@ nsSocketTransport::OnSocketReady(PRFileDesc *fd, int16_t outFlags)
         // nsIOService::LastOfflineStateChange time and
         // nsIOService::LastConectivityChange time to be atomic.
         PRIntervalTime connectStarted = 0;
-        if (gSocketTransportService->IsTelemetryEnabled()) {
+        if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
             connectStarted = PR_IntervalNow();
         }
 
         PRStatus status = PR_ConnectContinue(fd, outFlags);
 
-        if (gSocketTransportService->IsTelemetryEnabled() && connectStarted) {
+        if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
+            connectStarted) {
             SendPRBlockingTelemetry(connectStarted,
                 Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_NORMAL,
                 Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_SHUTDOWN,
@@ -1951,7 +1999,7 @@ nsSocketTransport::OnSocketReady(PRFileDesc *fd, int16_t outFlags)
             //
             OnSocketConnected();
 
-            if (mSocketTransportService->IsTelemetryEnabled()) {
+            if (mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
                 if (mNetAddr.raw.family == AF_INET) {
                     Telemetry::Accumulate(
                         Telemetry::IPV4_AND_IPV6_ADDRESS_CONNECTIVITY,
@@ -3003,10 +3051,10 @@ nsSocketTransport::PRFileDescAutoLock::SetKeepaliveVals(bool aEnabled,
 #if defined(XP_WIN)
     // Windows allows idle time and retry interval to be set; NOT ping count.
     struct tcp_keepalive keepalive_vals = {
-        (int)aEnabled,
+        (u_long)aEnabled,
         // Windows uses msec.
-        aIdleTime * 1000,
-        aRetryInterval * 1000
+        (u_long)(aIdleTime * 1000UL),
+        (u_long)(aRetryInterval * 1000UL)
     };
     DWORD bytes_returned;
     int err = WSAIoctl(sock, SIO_KEEPALIVE_VALS, &keepalive_vals,
@@ -3072,6 +3120,33 @@ nsSocketTransport::PRFileDescAutoLock::SetKeepaliveVals(bool aEnabled,
                "called on unsupported platform!");
     return NS_ERROR_UNEXPECTED;
 #endif
+}
+
+void
+nsSocketTransport::CloseSocket(PRFileDesc *aFd, bool aTelemetryEnabled)
+{
+#if defined(XP_WIN)
+    mozilla::net::AttachShutdownLayer(aFd);
+#endif
+
+    // We use PRIntervalTime here because we need
+    // nsIOService::LastOfflineStateChange time and
+    // nsIOService::LastConectivityChange time to be atomic.
+    PRIntervalTime closeStarted;
+    if (aTelemetryEnabled) {
+        closeStarted = PR_IntervalNow();
+    }
+
+    PR_Close(aFd);
+
+    if (aTelemetryEnabled) {
+        SendPRBlockingTelemetry(closeStarted,
+            Telemetry::PRCLOSE_TCP_BLOCKING_TIME_NORMAL,
+            Telemetry::PRCLOSE_TCP_BLOCKING_TIME_SHUTDOWN,
+            Telemetry::PRCLOSE_TCP_BLOCKING_TIME_CONNECTIVITY_CHANGE,
+            Telemetry::PRCLOSE_TCP_BLOCKING_TIME_LINK_CHANGE,
+            Telemetry::PRCLOSE_TCP_BLOCKING_TIME_OFFLINE);
+    }
 }
 
 void

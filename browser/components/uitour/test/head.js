@@ -27,6 +27,7 @@ function waitForConditionPromise(condition, timeoutMsg, tryCount=NUMBER_OF_TRIES
     }
     tries++;
     setTimeout(checkCondition, SINGLE_TRY_TIMEOUT);
+    return undefined;
   }
   setTimeout(checkCondition, SINGLE_TRY_TIMEOUT);
   return defer.promise;
@@ -147,13 +148,14 @@ function hideInfoPromise(...args) {
  */
 function showInfoPromise(target, title, text, icon, buttonsFunctionName, optionsFunctionName) {
   let popup = document.getElementById("UITourTooltip");
+  let shownPromise = promisePanelElementShown(window, popup);
   return ContentTask.spawn(gTestTab.linkedBrowser, [...arguments], args => {
     let contentWin = Components.utils.waiveXrays(content);
     let [target, title, text, icon, buttonsFunctionName, optionsFunctionName] = args;
     let buttons = buttonsFunctionName ? contentWin[buttonsFunctionName]() : null;
     let options = optionsFunctionName ? contentWin[optionsFunctionName]() : null;
     contentWin.Mozilla.UITour.showInfo(target, title, text, icon, buttons, options);
-  }).then(() => promisePanelElementShown(window, popup));
+  }).then(() => shownPromise);
 }
 
 function showHighlightPromise(...args) {
@@ -193,7 +195,7 @@ function promisePanelElementEvent(win, aPanel, aEvent) {
   return new Promise((resolve, reject) => {
     let timeoutId = win.setTimeout(() => {
       aPanel.removeEventListener(aEvent, onPanelEvent);
-      reject("Event did not happen within 5 seconds.");
+      reject(aEvent + " event did not happen within 5 seconds.");
     }, 5000);
 
     function onPanelEvent(e) {
@@ -271,14 +273,60 @@ function loadUITourTestPage(callback, host = "https://example.org/") {
       let UITourHandler = {
         get(target, prop, receiver) {
           return (...args) => {
+            let browser = gTestTab.linkedBrowser;
+            const proxyFunctionName = "UITourHandler:proxiedfunction-";
+            // We need to proxy any callback functions using messages:
+            let callbackMap = new Map();
+            let fnIndices = [];
+            args = args.map((arg, index) => {
+              // Replace function arguments with "", and add them to the list of
+              // forwarded functions. We'll construct a function on the content-side
+              // that forwards all its arguments to a message, and we'll listen for
+              // those messages on our side and call the corresponding function with
+              // the arguments we got from the content side.
+              if (typeof arg == "function") {
+                callbackMap.set(index, arg);
+                fnIndices.push(index);
+                let handler = function(msg) {
+                  // Please note that this handler assumes that the callback is used only once.
+                  // That means that a single gContentAPI.observer() call can't be used to observe
+                  // multiple events.
+                  browser.messageManager.removeMessageListener(proxyFunctionName + index, handler);
+                  callbackMap.get(index).apply(null, msg.data);
+                };
+                browser.messageManager.addMessageListener(proxyFunctionName + index, handler);
+                return "";
+              }
+              return arg;
+            });
             let taskArgs = {
               methodName: prop,
               args,
+              fnIndices,
             };
-            return ContentTask.spawn(gTestTab.linkedBrowser, taskArgs, args => {
+            return ContentTask.spawn(browser, taskArgs, function*(args) {
               let contentWin = Components.utils.waiveXrays(content);
-              return contentWin.Mozilla.UITour[args.methodName].apply(contentWin.Mozilla.UITour,
-                                                                      args.args);
+              let callbacksCalled = 0;
+              let resolveCallbackPromise;
+              let allCallbacksCalledPromise = new Promise(resolve => resolveCallbackPromise = resolve);
+              let argumentsWithFunctions = args.args.map((arg, index) => {
+                if (arg === "" && args.fnIndices.includes(index)) {
+                  return function() {
+                    callbacksCalled++;
+                    sendAsyncMessage("UITourHandler:proxiedfunction-" + index, Array.from(arguments));
+                    if (callbacksCalled >= args.fnIndices.length) {
+                      resolveCallbackPromise();
+                    }
+                  };
+                }
+                return arg;
+              });
+              let rv = contentWin.Mozilla.UITour[args.methodName].apply(contentWin.Mozilla.UITour,
+                                                                        argumentsWithFunctions);
+              if (args.fnIndices.length) {
+                yield allCallbacksCalledPromise;
+              }
+              return rv;
             });
           };
         },

@@ -240,7 +240,7 @@ nsresult nsNPAPIPluginInstance::Stop()
 
   // Make sure the plugin didn't leave popups enabled.
   if (mPopupStates.Length() > 0) {
-    nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
 
     if (window) {
       window->PopPopupControlState(openAbused);
@@ -311,7 +311,7 @@ nsresult nsNPAPIPluginInstance::Stop()
     return NS_OK;
 }
 
-already_AddRefed<nsPIDOMWindow>
+already_AddRefed<nsPIDOMWindowOuter>
 nsNPAPIPluginInstance::GetDOMWindow()
 {
   if (!mOwner)
@@ -324,7 +324,7 @@ nsNPAPIPluginInstance::GetDOMWindow()
   if (!doc)
     return nullptr;
 
-  RefPtr<nsPIDOMWindow> window = doc->GetWindow();
+  RefPtr<nsPIDOMWindowOuter> window = doc->GetWindow();
 
   return window.forget();
 }
@@ -1001,7 +1001,8 @@ nsresult nsNPAPIPluginInstance::IsRemoteDrawingCoreAnimation(bool* aDrawing)
 #endif
 }
 
-nsresult nsNPAPIPluginInstance::ContentsScaleFactorChanged(double aContentsScaleFactor)
+nsresult
+nsNPAPIPluginInstance::ContentsScaleFactorChanged(double aContentsScaleFactor)
 {
 #ifdef XP_MACOSX
   if (!mPlugin)
@@ -1019,6 +1020,31 @@ nsresult nsNPAPIPluginInstance::ContentsScaleFactorChanged(double aContentsScale
 #else
   return NS_ERROR_FAILURE;
 #endif
+}
+
+nsresult
+nsNPAPIPluginInstance::CSSZoomFactorChanged(float aCSSZoomFactor)
+{
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  PLUGIN_LOG(PLUGIN_LOG_NORMAL, ("nsNPAPIPluginInstance informing plugin of CSS Zoom Factor change this=%p\n",this));
+
+  if (!mPlugin || !mPlugin->GetLibrary())
+    return NS_ERROR_FAILURE;
+
+  NPPluginFuncs* pluginFunctions = mPlugin->PluginFuncs();
+
+  if (!pluginFunctions->setvalue)
+    return NS_ERROR_FAILURE;
+
+  PluginDestructionGuard guard(this);
+
+  NPError error;
+  double value = static_cast<double>(aCSSZoomFactor);
+  NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->setvalue)(&mNPP, NPNVCSSZoomFactor, &value), this,
+                          NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
+  return (error == NPERR_NO_ERROR) ? NS_OK : NS_ERROR_FAILURE;
 }
 
 nsresult
@@ -1121,6 +1147,46 @@ nsNPAPIPluginInstance::GetImageSize(nsIntSize* aSize)
   return !library ? NS_ERROR_FAILURE : library->GetImageSize(&mNPP, aSize);
 }
 
+#if defined(XP_WIN)
+nsresult
+nsNPAPIPluginInstance::GetScrollCaptureContainer(ImageContainer**aContainer)
+{
+  *aContainer = nullptr;
+
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  return !library ? NS_ERROR_FAILURE : library->GetScrollCaptureContainer(&mNPP, aContainer);
+}
+nsresult
+nsNPAPIPluginInstance::UpdateScrollState(bool aIsScrolling)
+{
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  return !library ? NS_ERROR_FAILURE : library->UpdateScrollState(&mNPP, aIsScrolling);
+}
+#endif
+
+nsresult
+nsNPAPIPluginInstance::HandledWindowedPluginKeyEvent(
+                         const NativeEventData& aKeyEventData,
+                         bool aIsConsumed)
+{
+  if (NS_WARN_IF(!mPlugin)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  PluginLibrary* library = mPlugin->GetLibrary();
+  if (NS_WARN_IF(!library)) {
+    return NS_ERROR_FAILURE;
+  }
+  return library->HandledWindowedPluginKeyEvent(&mNPP, aKeyEventData,
+                                                aIsConsumed);
+}
+
 void
 nsNPAPIPluginInstance::DidComposite()
 {
@@ -1218,7 +1284,7 @@ nsNPAPIPluginInstance::GetFormValue(nsAString& aValue)
 nsresult
 nsNPAPIPluginInstance::PushPopupsEnabledState(bool aEnabled)
 {
-  nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
   if (!window)
     return NS_ERROR_FAILURE;
 
@@ -1245,7 +1311,7 @@ nsNPAPIPluginInstance::PopPopupsEnabledState()
     return NS_OK;
   }
 
-  nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
   if (!window)
     return NS_ERROR_FAILURE;
 
@@ -1311,7 +1377,7 @@ nsNPAPIPluginInstance::IsPrivateBrowsing(bool* aEnabled)
   mOwner->GetDocument(getter_AddRefs(doc));
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsPIDOMWindow> domwindow = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> domwindow = doc->GetWindow();
   NS_ENSURE_TRUE(domwindow, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsIDocShell> docShell = domwindow->GetDocShell();
@@ -1716,6 +1782,16 @@ nsNPAPIPluginInstance::GetContentsScaleFactor()
   return scaleFactor;
 }
 
+float
+nsNPAPIPluginInstance::GetCSSZoomFactor()
+{
+  float zoomFactor = 1.0;
+  if (mOwner) {
+    mOwner->GetCSSZoomFactor(&zoomFactor);
+  }
+  return zoomFactor;
+}
+
 nsresult
 nsNPAPIPluginInstance::GetRunID(uint32_t* aRunID)
 {
@@ -1745,7 +1821,7 @@ nsNPAPIPluginInstance::GetOrCreateAudioChannelAgent(nsIAudioChannelAgent** aAgen
       return NS_ERROR_FAILURE;
     }
 
-    nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
     if (NS_WARN_IF(!window)) {
       return NS_ERROR_FAILURE;
     }

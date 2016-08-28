@@ -27,8 +27,6 @@ fi
 # Enable building ./signmar and running libmar signature tests
 MOZ_ENABLE_SIGNMAR=1
 
-MOZ_CHROME_FILE_FORMAT=omni
-MOZ_DISABLE_EXPORT_JS=1
 MOZ_SAFE_BROWSING=1
 MOZ_SERVICES_COMMON=1
 MOZ_SERVICES_CRYPTO=1
@@ -55,15 +53,12 @@ ACCEPTED_MAR_CHANNEL_IDS=firefox-mozilla-release
 MAR_CHANNEL_ID=firefox-mozilla-release
 MOZ_PROFILE_MIGRATOR=1
 MOZ_APP_STATIC_INI=1
-MOZ_WEBAPP_RUNTIME=1
-MOZ_MEDIA_NAVIGATOR=1
 MOZ_WEBGL_CONFORMANT=1
 # Enable navigator.mozPay
 MOZ_PAY=1
 # Enable activities. These are used for FxOS developers currently.
 MOZ_ACTIVITIES=1
 MOZ_JSDOWNLOADS=1
-MOZ_WEBM_ENCODER=1
 MOZ_RUST_MP4PARSE=1
 
 # Enable checking that add-ons are signed by the trusted root

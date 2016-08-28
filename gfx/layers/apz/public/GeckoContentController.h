@@ -12,6 +12,7 @@
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
 #include "mozilla/EventForwards.h"      // for Modifiers
 #include "nsISupportsImpl.h"
+#include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 
 class Task;
 
@@ -21,7 +22,12 @@ namespace layers {
 class GeckoContentController
 {
 public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GeckoContentController)
+  /**
+   * At least one class deriving from GeckoContentController needs to do
+   * synchronous cleanup on the main thread, so we use
+   * NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION.
+   */
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION(GeckoContentController)
 
   /**
    * Requests a paint of the given FrameMetrics |aFrameMetrics| from Gecko.
@@ -29,22 +35,6 @@ public:
    * This method will always be called on the Gecko main thread.
    */
   virtual void RequestContentRepaint(const FrameMetrics& aFrameMetrics) = 0;
-
-  /**
-   * Requests handling of a scroll snapping at the end of a fling gesture for
-   * the scrollable frame with the given scroll id. aDestination specifies the
-   * expected landing position of the fling if no snapping were to be performed.
-   */
-  virtual void RequestFlingSnap(const FrameMetrics::ViewID& aScrollId,
-                                const mozilla::CSSPoint& aDestination) = 0;
-
-  /**
-   * Acknowledges the recipt of a scroll offset update for the scrollable
-   * frame with the given scroll id. This is used to maintain consistency
-   * between APZ and other sources of scroll changes.
-   */
-  virtual void AcknowledgeScrollUpdate(const FrameMetrics::ViewID& aScrollId,
-                                       const uint32_t& aScrollGeneration) = 0;
 
   /**
    * Requests handling of a double tap. |aPoint| is in CSS pixels, relative to
@@ -88,6 +78,7 @@ public:
    * controller. This method allows APZ to query the controller for such a
    * region. A return value of true indicates that the controller has such a
    * region, and it is returned in |aOutRegion|.
+   * This method needs to be called on the main thread.
    * TODO: once bug 928833 is implemented, this should be removed, as
    * APZ can then get the correct touch-sensitive region for each frame
    * directly from the layer.
@@ -144,7 +135,15 @@ public:
    */
   virtual void NotifyFlushComplete() = 0;
 
+  virtual void UpdateOverscrollVelocity(const float aX, const float aY) {}
+  virtual void UpdateOverscrollOffset(const float aX, const float aY) {}
+  virtual void SetScrollingRootContent(const bool isRootContent) {}
+
   GeckoContentController() {}
+  virtual void ChildAdopted() {}
+  /**
+   * Needs to be called on the main thread.
+   */
   virtual void Destroy() {}
 
 protected:

@@ -8,7 +8,7 @@
 #include "MainThreadUtils.h"    // for NS_IsMainThread()
 #include "base/message_loop.h"  // for MessageLoop
 #include "mozilla/dom/Element.h"
-#include "mozilla/layers/CompositorParent.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZEventState.h"
 #include "mozilla/layers/APZCTreeManager.h"
@@ -69,20 +69,6 @@ ChromeProcessController::PostDelayedTask(Task* aTask, int aDelayMs)
 }
 
 void
-ChromeProcessController::RequestFlingSnap(const FrameMetrics::ViewID& aScrollId,
-                                          const mozilla::CSSPoint& aDestination)
-{
-  APZCCallbackHelper::RequestFlingSnap(aScrollId, aDestination);
-}
-
-void
-ChromeProcessController::AcknowledgeScrollUpdate(const FrameMetrics::ViewID& aScrollId,
-                                                 const uint32_t& aScrollGeneration)
-{
-  APZCCallbackHelper::AcknowledgeScrollUpdate(aScrollId, aScrollGeneration);
-}
-
-void
 ChromeProcessController::Destroy()
 {
   if (MessageLoop::current() != mUILoop) {
@@ -99,6 +85,9 @@ ChromeProcessController::Destroy()
 nsIPresShell*
 ChromeProcessController::GetPresShell() const
 {
+  if (!mWidget) {
+    return nullptr;
+  }
   if (nsView* view = nsView::GetViewFor(mWidget)) {
     return view->GetPresShell();
   }
@@ -232,5 +221,5 @@ void
 ChromeProcessController::NotifyFlushComplete()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  APZCCallbackHelper::NotifyFlushComplete();
+  APZCCallbackHelper::NotifyFlushComplete(GetPresShell());
 }

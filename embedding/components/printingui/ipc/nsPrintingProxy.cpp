@@ -65,7 +65,7 @@ nsPrintingProxy::Init()
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowPrintDialog(nsIDOMWindow *parent,
+nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy *parent,
                                  nsIWebBrowserPrint *webBrowserPrint,
                                  nsIPrintSettings *printSettings)
 {
@@ -73,23 +73,20 @@ nsPrintingProxy::ShowPrintDialog(nsIDOMWindow *parent,
   NS_ENSURE_ARG(webBrowserPrint);
   NS_ENSURE_ARG(printSettings);
 
-  // Get the root docshell owner of this nsIDOMWindow, which
-  // should map to a TabChild, which we can then pass up to
+  // Get the TabChild for this nsIDOMWindow, which we can then pass up to
   // the parent.
-  nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(parent);
+  nsCOMPtr<nsPIDOMWindowOuter> pwin = nsPIDOMWindowOuter::From(parent);
   NS_ENSURE_STATE(pwin);
   nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
   NS_ENSURE_STATE(docShell);
-  nsCOMPtr<nsIDocShellTreeOwner> owner;
-  nsresult rv = docShell->GetTreeOwner(getter_AddRefs(owner));
-  NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsITabChild> tabchild = do_GetInterface(owner);
+  nsCOMPtr<nsITabChild> tabchild = docShell->GetTabChild();
   NS_ENSURE_STATE(tabchild);
 
   TabChild* pBrowser = static_cast<TabChild*>(tabchild.get());
 
   // Next, serialize the nsIWebBrowserPrint and nsIPrintSettings we were given.
+  nsresult rv = NS_OK;
   nsCOMPtr<nsIPrintOptions> po =
     do_GetService("@mozilla.org/gfx/printsettings-service;1", &rv);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -120,7 +117,7 @@ nsPrintingProxy::ShowPrintDialog(nsIDOMWindow *parent,
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
+nsPrintingProxy::ShowProgress(mozIDOMWindowProxy*      parent,
                               nsIWebBrowserPrint*      webBrowserPrint,    // ok to be null
                               nsIPrintSettings*        printSettings,      // ok to be null
                               nsIObserver*             openDialogObserver, // ok to be null
@@ -134,17 +131,13 @@ nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
   NS_ENSURE_ARG(printProgressParams);
   NS_ENSURE_ARG(notifyOnOpen);
 
-  // Get the root docshell owner of this nsIDOMWindow, which
-  // should map to a TabChild, which we can then pass up to
+  // Get the TabChild for this nsIDOMWindow, which we can then pass up to
   // the parent.
-  nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(parent);
+  nsCOMPtr<nsPIDOMWindowOuter> pwin = nsPIDOMWindowOuter::From(parent);
   NS_ENSURE_STATE(pwin);
   nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
   NS_ENSURE_STATE(docShell);
-  nsCOMPtr<nsIDocShellTreeOwner> owner;
-  nsresult rv = docShell->GetTreeOwner(getter_AddRefs(owner));
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsITabChild> tabchild = do_GetInterface(owner);
+  nsCOMPtr<nsITabChild> tabchild = docShell->GetTabChild();
   TabChild* pBrowser = static_cast<TabChild*>(tabchild.get());
 
   RefPtr<PrintProgressDialogChild> dialogChild =
@@ -152,6 +145,7 @@ nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
 
   SendPPrintProgressDialogConstructor(dialogChild);
 
+  nsresult rv = NS_OK;
   mozilla::Unused << SendShowProgress(pBrowser, dialogChild,
                                       isForPrinting, notifyOnOpen, &rv);
   if (NS_FAILED(rv)) {
@@ -165,7 +159,7 @@ nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowPageSetup(nsIDOMWindow *parent,
+nsPrintingProxy::ShowPageSetup(mozIDOMWindowProxy *parent,
                                nsIPrintSettings *printSettings,
                                nsIObserver *aObs)
 {
@@ -173,7 +167,7 @@ nsPrintingProxy::ShowPageSetup(nsIDOMWindow *parent,
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowPrinterProperties(nsIDOMWindow *parent,
+nsPrintingProxy::ShowPrinterProperties(mozIDOMWindowProxy *parent,
                                        const char16_t *printerName,
                                        nsIPrintSettings *printSettings)
 {

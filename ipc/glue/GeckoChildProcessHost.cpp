@@ -26,6 +26,7 @@
 
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
+#include "nsPrintfCString.h"
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ipc/BrowserProcessSubThread.h"
@@ -40,6 +41,7 @@
 #if defined(MOZ_SANDBOX)
 #include "mozilla/Preferences.h"
 #include "mozilla/sandboxing/sandboxLogging.h"
+#include "nsDirectoryServiceUtils.h"
 #endif
 #endif
 
@@ -110,6 +112,7 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
 #if defined(MOZ_WIDGET_COCOA)
   , mChildTask(MACH_PORT_NULL)
 #endif
+  , mAssociatedActors(1)
 {
     MOZ_COUNT_CTOR(GeckoChildProcessHost);
 }
@@ -471,46 +474,91 @@ GeckoChildProcessHost::SetAlreadyDead()
   mChildProcessHandle = 0;
 }
 
+namespace {
+
+void
+DelayedDeleteSubprocess(GeckoChildProcessHost* aSubprocess)
+{
+  XRE_GetIOMessageLoop()
+    ->PostTask(FROM_HERE,
+       new DeleteTask<GeckoChildProcessHost>(aSubprocess));
+}
+
+}
+
+void
+GeckoChildProcessHost::DissociateActor()
+{
+  if (!--mAssociatedActors) {
+    MessageLoop::current()->
+      PostTask(FROM_HERE,
+        NewRunnableFunction(DelayedDeleteSubprocess, this));
+  }
+}
+
 int32_t GeckoChildProcessHost::mChildCounter = 0;
 
-//
-// Wrapper function for handling GECKO_SEPARATE_NSPR_LOGS
-//
-bool
-GeckoChildProcessHost::PerformAsyncLaunch(std::vector<std::string> aExtraOpts, base::ProcessArchitecture arch)
+void
+GeckoChildProcessHost::SetChildLogName(const char* varName, const char* origLogName)
 {
-  // If NSPR log files are not requested, we're done.
-  const char* origLogName = PR_GetEnv("NSPR_LOG_FILE");
-  if (!origLogName) {
-    return PerformAsyncLaunchInternal(aExtraOpts, arch);
-  }
-
   // We currently have no portable way to launch child with environment
   // different than parent.  So temporarily change NSPR_LOG_FILE so child
   // inherits value we want it to have. (NSPR only looks at NSPR_LOG_FILE at
   // startup, so it's 'safe' to play with the parent's environment this way.)
-  nsAutoCString setChildLogName("NSPR_LOG_FILE=");
+  nsAutoCString setChildLogName(varName);
   setChildLogName.Append(origLogName);
-
-  // remember original value so we can restore it.
-  // - buffer needs to be permanently allocated for PR_SetEnv()
-  // - Note: this code is not called re-entrantly, nor are restoreOrigLogName
-  //   or mChildCounter touched by any other thread, so this is safe.
-  static char* restoreOrigLogName = 0;
-  if (!restoreOrigLogName)
-    restoreOrigLogName = strdup(setChildLogName.get());
 
   // Append child-specific postfix to name
   setChildLogName.AppendLiteral(".child-");
-  setChildLogName.AppendInt(++mChildCounter);
+  setChildLogName.AppendInt(mChildCounter);
 
   // Passing temporary to PR_SetEnv is ok here because env gets copied
   // by exec, etc., to permanent storage in child when process launched.
   PR_SetEnv(setChildLogName.get());
+}
+
+bool
+GeckoChildProcessHost::PerformAsyncLaunch(std::vector<std::string> aExtraOpts, base::ProcessArchitecture arch)
+{
+  // If NSPR log files are not requested, we're done.
+  const char* origNSPRLogName = PR_GetEnv("NSPR_LOG_FILE");
+  const char* origMozLogName = PR_GetEnv("MOZ_LOG_FILE");
+  if (!origNSPRLogName && !origMozLogName) {
+    return PerformAsyncLaunchInternal(aExtraOpts, arch);
+  }
+
+  ++mChildCounter;
+
+  // remember original value so we can restore it.
+  // - Note: this code is not called re-entrantly, nor are restoreOrig*LogName
+  //   or mChildCounter touched by any other thread, so this is safe.
+  static nsAutoCString restoreOrigNSPRLogName;
+  static nsAutoCString restoreOrigMozLogName;
+
+  if (origNSPRLogName) {
+    if (restoreOrigNSPRLogName.IsEmpty()) {
+      restoreOrigNSPRLogName.AssignLiteral("NSPR_LOG_FILE=");
+      restoreOrigNSPRLogName.Append(origNSPRLogName);
+    }
+    SetChildLogName("NSPR_LOG_FILE=", origNSPRLogName);
+  }
+  if (origMozLogName) {
+    if (restoreOrigMozLogName.IsEmpty()) {
+      restoreOrigMozLogName.AssignLiteral("MOZ_LOG_FILE=");
+      restoreOrigMozLogName.Append(origMozLogName);
+    }
+    SetChildLogName("MOZ_LOG_FILE=", origMozLogName);
+  }
+
   bool retval = PerformAsyncLaunchInternal(aExtraOpts, arch);
 
   // Revert to original value
-  PR_SetEnv(restoreOrigLogName);
+  if (origNSPRLogName) {
+    PR_SetEnv(restoreOrigNSPRLogName.get());
+  }
+  if (origMozLogName) {
+    PR_SetEnv(restoreOrigMozLogName.get());
+  }
 
   return retval;
 }
@@ -545,13 +593,13 @@ AddAppDirToCommandLine(std::vector<std::string>& aCmdLine)
       if (NS_SUCCEEDED(rv)) {
 #if defined(XP_WIN)
         nsString path;
-        MOZ_ALWAYS_TRUE(NS_SUCCEEDED(appDir->GetPath(path)));
+        MOZ_ALWAYS_SUCCEEDS(appDir->GetPath(path));
         aCmdLine.AppendLooseValue(UTF8ToWide("-appdir"));
         std::wstring wpath(path.get());
         aCmdLine.AppendLooseValue(wpath);
 #else
         nsAutoCString path;
-        MOZ_ALWAYS_TRUE(NS_SUCCEEDED(appDir->GetNativePath(path)));
+        MOZ_ALWAYS_SUCCEEDS(appDir->GetNativePath(path));
         aCmdLine.push_back("-appdir");
         aCmdLine.push_back(path.get());
 #endif
@@ -602,6 +650,46 @@ MaybeAddNsprLogFileAccess(std::vector<std::wstring>& aAllowedFilesReadWrite)
   nsAutoCString resolvedEnvVar("NSPR_LOG_FILE=");
   AppendUTF16toUTF8(resolvedFilePath, resolvedEnvVar);
   PR_SetEnv(resolvedEnvVar.get());
+}
+
+static void
+AddContentSandboxAllowedFiles(int32_t aSandboxLevel,
+                              std::vector<std::wstring>& aAllowedFilesRead)
+{
+  if (aSandboxLevel < 1) {
+    return;
+  }
+
+  nsCOMPtr<nsIFile> binDir;
+  nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(binDir));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  nsAutoString binDirPath;
+  rv = binDir->GetPath(binDirPath);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  // If bin directory is on a remote drive add read access.
+  wchar_t volPath[MAX_PATH];
+  if (!::GetVolumePathNameW(binDirPath.get(), volPath, MAX_PATH)) {
+    return;
+  }
+
+  if (::GetDriveTypeW(volPath) != DRIVE_REMOTE) {
+    return;
+  }
+
+  // Convert network share path to format for sandbox policy.
+  if (Substring(binDirPath, 0, 2).Equals(L"\\\\")) {
+    binDirPath.InsertLiteral(MOZ_UTF16("??\\UNC"), 1);
+  }
+
+  binDirPath.AppendLiteral(MOZ_UTF16("\\*"));
+
+  aAllowedFilesRead.push_back(std::wstring(binDirPath.get()));
 }
 #endif
 
@@ -910,6 +998,7 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
         mSandboxBroker.SetSecurityLevelForContentProcess(mSandboxLevel);
         cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
         shouldSandboxCurrentProcess = true;
+        AddContentSandboxAllowedFiles(mSandboxLevel, mAllowedFilesRead);
       }
 #endif // MOZ_CONTENT_SANDBOX
       break;
@@ -929,7 +1018,14 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
       break;
     case GeckoProcessType_GMPlugin:
       if (!PR_GetEnv("MOZ_DISABLE_GMP_SANDBOX")) {
-        mSandboxBroker.SetSecurityLevelForGMPlugin();
+        // The Widevine CDM on Windows can only load at USER_RESTRICTED,
+        // not at USER_LOCKDOWN. So look in the command line arguments
+        // to see if we're loading the path to the Widevine CDM, and if
+        // so use sandbox level USER_RESTRICTED instead of USER_LOCKDOWN.
+        bool isWidevine = std::any_of(aExtraOpts.begin(), aExtraOpts.end(),
+          [](const std::string arg) { return arg.find("gmp-widevinecdm") != std::string::npos; });
+        auto level = isWidevine ? SandboxBroker::Restricted : SandboxBroker::LockDown;
+        mSandboxBroker.SetSecurityLevelForGMPlugin(level);
         cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
         shouldSandboxCurrentProcess = true;
       }
@@ -985,10 +1081,15 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   if (shouldSandboxCurrentProcess) {
-    mSandboxBroker.LaunchApp(cmdLine.program().c_str(),
-                             cmdLine.command_line_string().c_str(),
-                             mEnableSandboxLogging,
-                             &process);
+    if (mSandboxBroker.LaunchApp(cmdLine.program().c_str(),
+                                 cmdLine.command_line_string().c_str(),
+                                 mEnableSandboxLogging,
+                                 &process)) {
+      EnvironmentLog("MOZ_PROCESS_LOG").print(
+        "==> process %d launched child process %d (%S)\n",
+        base::GetCurrentProcId(), base::GetProcId(process),
+        cmdLine.command_line_string().c_str());
+    }
   } else
 #endif
   {
@@ -1040,7 +1141,13 @@ GeckoChildProcessHost::OpenPrivilegedHandle(base::ProcessId aPid)
     MOZ_ASSERT(aPid == base::GetProcId(mChildProcessHandle));
     return;
   }
-  if (!base::OpenPrivilegedProcessHandle(aPid, &mChildProcessHandle)) {
+  int64_t error = 0;
+  if (!base::OpenPrivilegedProcessHandle(aPid, &mChildProcessHandle, &error)) {
+#ifdef MOZ_CRASHREPORTER
+    CrashReporter::
+      AnnotateCrashReport(NS_LITERAL_CSTRING("LastError"),
+                          nsPrintfCString ("%lld", error));
+#endif
     NS_RUNTIMEABORT("can't open handle to child process");
   }
 }
@@ -1057,11 +1164,11 @@ GeckoChildProcessHost::OnChannelConnected(int32_t peer_pid)
 }
 
 void
-GeckoChildProcessHost::OnMessageReceived(const IPC::Message& aMsg)
+GeckoChildProcessHost::OnMessageReceived(IPC::Message&& aMsg)
 {
   // We never process messages ourself, just save them up for the next
   // listener.
-  mQueue.push(aMsg);
+  mQueue.push(Move(aMsg));
 }
 
 void

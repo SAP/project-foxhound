@@ -11,7 +11,7 @@ CONTENT_SERVER_URL = environ.get("CONTENT_SERVER_URL") or \
 
 LOOP_SERVER_URLS = {
     "local": "http://localhost:" + str(LOOP_SERVER_PORT),
-    "dev": "https://loop-dev.stage.mozaws.net",
+    "dev": "https://loop.dev.mozaws.net",
     "stage": "https://loop.stage.mozaws.net",
     "prod": "https://loop.services.mozilla.com"
 }
@@ -50,3 +50,7 @@ FIREFOX_PREFERENCES = {
     "extensions.update.notifyUser": False,
     "xpinstall.signatures.required": False,
 }
+
+if environ.get("TEST_E10S") != "1":
+    FIREFOX_PREFERENCES["browser.tabs.remote.autostart.1"] = False
+    FIREFOX_PREFERENCES["browser.tabs.remote.autostart.2"] = False

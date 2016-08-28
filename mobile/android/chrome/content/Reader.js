@@ -76,17 +76,21 @@ var Reader = {
         break;
       }
 
-      case "Reader:Added": {
-        let mm = window.getGroupMessageManager("browsers");
-        mm.broadcastAsyncMessage("Reader:Added", { url: aData });
+      case "Reader:RemoveFromCache": {
+        ReaderMode.removeArticleFromCache(aData).catch(e => Cu.reportError("Error removing article from cache: " + e));
         break;
       }
 
-      case "Reader:Removed": {
-        ReaderMode.removeArticleFromCache(aData).catch(e => Cu.reportError("Error removing article from cache: " + e));
+      case "Reader:AddToCache": {
+        let tab = BrowserApp.getTabForId(aData);
+        if (!tab) {
+          throw new Error("No tab for tabID = " + aData + " when trying to save reader view article");
+        }
 
-        let mm = window.getGroupMessageManager("browsers");
-        mm.broadcastAsyncMessage("Reader:Removed", { url: aData });
+        // If the article is coming from reader mode, we must have fetched it already.
+        this._getArticleData(tab.browser).then((article) => {
+          ReaderMode.storeArticleInCache(article);
+        }).catch(e => Cu.reportError("Error storing article in cache: " + e));
         break;
       }
     }
@@ -94,13 +98,6 @@ var Reader = {
 
   receiveMessage: function(message) {
     switch (message.name) {
-      case "Reader:AddToList": {
-        // If the article is coming from reader mode, we must have fetched it already.
-        let article = message.data.article;
-        article.status = this.STATUS_FETCHED_ARTICLE;
-        this._addArticleToReadingList(article);
-        break;
-      }
       case "Reader:ArticleGet":
         this._getArticle(message.data.url).then((article) => {
           // Make sure the target browser is still alive before trying to send data back.
@@ -147,30 +144,6 @@ var Reader = {
         break;
       }
 
-      case "Reader:ListStatusRequest":
-        Messaging.sendRequestForResult({
-          type: "Reader:ListStatusRequest",
-          url: message.data.url
-        }).then((data) => {
-          message.target.messageManager.sendAsyncMessage("Reader:ListStatusData", JSON.parse(data));
-        });
-        break;
-
-      case "Reader:RemoveFromList":
-        Messaging.sendRequest({
-          type: "Reader:RemoveFromList",
-          url: message.data.url
-        });
-        break;
-
-      case "Reader:Share":
-        Messaging.sendRequest({
-          type: "Reader:Share",
-          url: message.data.url,
-          title: message.data.title
-        });
-        break;
-
       case "Reader:SystemUIVisibility":
         Messaging.sendRequest({
           type: "SystemUI:Visibility",
@@ -192,18 +165,6 @@ var Reader = {
         this.updatePageAction(tab);
         break;
       }
-      case "Reader:SetIntPref": {
-        if (message.data && message.data.name !== undefined) {
-          Services.prefs.setIntPref(message.data.name, message.data.value);
-        }
-        break;
-      }
-      case "Reader:SetCharPref": {
-        if (message.data && message.data.name !== undefined) {
-          Services.prefs.setCharPref(message.data.name, message.data.value);
-        }
-        break;
-      }
     }
   },
 
@@ -211,17 +172,11 @@ var Reader = {
     readerModeCallback: function(browser) {
       let url = browser.currentURI.spec;
       if (url.startsWith("about:reader")) {
-        let originalURL = ReaderMode.getOriginalUrl(url);
-        if (!originalURL) {
-          Cu.reportError("Error finding original URL for about:reader URL: " + url);
-        } else {
-          browser.loadURI(originalURL);
-        }
         Reader._buttonHistogram.add(Reader._buttonHistogramValues.TAP_EXIT);
       } else {
-        browser.messageManager.sendAsyncMessage("Reader:ParseDocument", { url: url });
         Reader._buttonHistogram.add(Reader._buttonHistogramValues.TAP_ENTER);
       }
+      browser.messageManager.sendAsyncMessage("Reader:ToggleReaderMode");
     },
   },
 
@@ -304,19 +259,6 @@ var Reader = {
     return article;
   }),
 
-  _addArticleToReadingList: function(article) {
-    Messaging.sendRequestForResult({
-      type: "Reader:AddToList",
-      url: truncate(article.url, MAX_URI_LENGTH),
-      title: truncate(article.title, MAX_TITLE_LENGTH),
-      length: article.length,
-      excerpt: article.excerpt,
-      status: article.status,
-    }).then((url) => {
-      ReaderMode.storeArticleInCache(article).catch(e => Cu.reportError("Error storing article in cache: " + e));
-    }).catch(Cu.reportError);
-  },
-
   /**
    * Gets an article for a given URL. This method will download and parse a document
    * if it does not find the article in the cache.
@@ -343,6 +285,23 @@ var Reader = {
       return null;
     });
   }),
+
+  _getArticleData: function(browser) {
+    return new Promise((resolve, reject) => {
+      if (browser == null) {
+        reject("_getArticleData needs valid browser");
+      }
+
+      let mm = browser.messageManager;
+      let listener = (message) => {
+        mm.removeMessageListener("Reader:StoredArticleData", listener);
+        resolve(message.data.article);
+      };
+      mm.addMessageListener("Reader:StoredArticleData", listener);
+      mm.sendAsyncMessage("Reader:GetStoredArticleData");
+    });
+  },
+
 
   /**
    * Migrates old indexedDB reader mode cache to new JSON cache.

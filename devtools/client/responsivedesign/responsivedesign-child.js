@@ -5,7 +5,7 @@
 "use strict";
 
 /* global content, docShell, addEventListener, addMessageListener,
-   removeEventListener, removeMessageListener, sendAsyncMessage */
+   removeEventListener, removeMessageListener, sendAsyncMessage, Services */
 
 var global = this;
 
@@ -17,7 +17,7 @@ var global = this;
 
   var Ci = Components.interfaces;
   const gDeviceSizeWasPageSize = docShell.deviceSizeIsPageSize;
-  const gFloatingScrollbarsStylesheet = Services.io.newURI("chrome://devtools/skin/floating-scrollbars.css", null, null);
+  const gFloatingScrollbarsStylesheet = Services.io.newURI("chrome://devtools/skin/floating-scrollbars-responsive-design.css", null, null);
   var gRequiresFloatingScrollbars;
 
   var active = false;
@@ -150,12 +150,14 @@ var global = this;
 
   function screenshot() {
     let canvas = content.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
-    let width = content.innerWidth;
-    let height = content.innerHeight;
+    let ratio = content.devicePixelRatio;
+    let width = content.innerWidth * ratio;
+    let height = content.innerHeight * ratio;
     canvas.mozOpaque = true;
     canvas.width = width;
     canvas.height = height;
     let ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
     ctx.drawWindow(content, content.scrollX, content.scrollY, width, height, "#fff");
     sendAsyncMessage("ResponsiveMode:RequestScreenshot:Done", canvas.toDataURL());
   }

@@ -9,6 +9,7 @@ EXPORTS += [
     'agnostic/OpusDecoder.h',
     'agnostic/VorbisDecoder.h',
     'agnostic/VPXDecoder.h',
+    'MediaTelemetryConstants.h',
     'PDMFactory.h',
     'PlatformDecoderModule.h',
     'wrappers/FuzzingWrapper.h',
@@ -21,8 +22,8 @@ UNIFIED_SOURCES += [
     'agnostic/OpusDecoder.cpp',
     'agnostic/VorbisDecoder.cpp',
     'agnostic/VPXDecoder.cpp',
+    'agnostic/WAVDecoder.cpp',
     'PDMFactory.cpp',
-    'PlatformDecoderModule.cpp',
     'wrappers/FuzzingWrapper.cpp',
     'wrappers/H264Converter.cpp'
 ]

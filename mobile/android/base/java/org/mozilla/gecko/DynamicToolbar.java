@@ -1,8 +1,7 @@
 package org.mozilla.gecko;
 
-import java.util.EnumSet;
-
 import org.mozilla.gecko.PrefsHelper.PrefHandlerBase;
+import org.mozilla.gecko.gfx.DynamicToolbarAnimator.PinReason;
 import org.mozilla.gecko.gfx.LayerView;
 import org.mozilla.gecko.util.ThreadUtils;
 
@@ -25,17 +24,10 @@ public class DynamicToolbar {
     // bugs in the Android code. See bug 1231554.
     private final boolean forceDisabled;
 
-    private final int prefObserverId;
-    private final EnumSet<PinReason> pinFlags = EnumSet.noneOf(PinReason.class);
+    private final PrefsHelper.PrefHandler prefObserver;
     private LayerView layerView;
     private OnEnabledChangedListener enabledChangedListener;
     private boolean temporarilyVisible;
-
-    public enum PinReason {
-        RELAYOUT,
-        ACTION_MODE,
-        FULL_SCREEN
-    }
 
     public enum VisibilityTransition {
         IMMEDIATE,
@@ -54,7 +46,8 @@ public class DynamicToolbar {
 
     public DynamicToolbar() {
         // Listen to the dynamic toolbar pref
-        prefObserverId = PrefsHelper.getPref(CHROME_PREF, new PrefHandler());
+        prefObserver = new PrefHandler();
+        PrefsHelper.addObserver(new String[] { CHROME_PREF }, prefObserver);
         forceDisabled = isForceDisabled();
         if (forceDisabled) {
             Log.i(LOGTAG, "Force-disabling dynamic toolbar for " + Build.MODEL + " (" + Build.DEVICE + "/" + Build.PRODUCT + ")");
@@ -73,7 +66,7 @@ public class DynamicToolbar {
     }
 
     public void destroy() {
-        PrefsHelper.removeObserver(prefObserverId);
+        PrefsHelper.removeObserver(prefObserver);
     }
 
     public void setLayerView(LayerView layerView) {
@@ -135,7 +128,8 @@ public class DynamicToolbar {
         }
 
         // Don't hide the ActionBar/Toolbar, if it's pinned open by TextSelection.
-        if (visible == false && pinFlags.contains(PinReason.ACTION_MODE)) {
+        if (visible == false &&
+            layerView.getDynamicToolbarAnimator().isPinnedBy(PinReason.ACTION_MODE)) {
             return;
         }
 
@@ -179,18 +173,11 @@ public class DynamicToolbar {
 
     public void setPinned(boolean pinned, PinReason reason) {
         ThreadUtils.assertOnUiThread();
-
         if (layerView == null) {
             return;
         }
 
-        if (pinned) {
-            pinFlags.add(reason);
-        } else {
-            pinFlags.remove(reason);
-        }
-
-        layerView.getDynamicToolbarAnimator().setPinned(!pinFlags.isEmpty());
+        layerView.getDynamicToolbarAnimator().setPinned(pinned, reason);
     }
 
     private void triggerEnabledListener() {
@@ -218,13 +205,6 @@ public class DynamicToolbar {
                     }
                 }
             });
-        }
-
-        @Override
-        public boolean isObserver() {
-            // We want to be notified of changes to be able to switch mode
-            // without restarting.
-            return true;
         }
     }
 }

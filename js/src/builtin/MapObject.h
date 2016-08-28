@@ -22,7 +22,7 @@ namespace js {
  *
  * All values except ropes are hashable as-is.
  */
-class HashableValue : public JS::Traceable
+class HashableValue
 {
     PreBarrieredValue value;
 
@@ -43,8 +43,8 @@ class HashableValue : public JS::Traceable
     HashableValue mark(JSTracer* trc) const;
     Value get() const { return value.get(); }
 
-    static void trace(HashableValue* value, JSTracer* trc) {
-        TraceEdge(trc, &value->value, "HashableValue");
+    void trace(JSTracer* trc) {
+        TraceEdge(trc, &value, "HashableValue");
     }
 };
 
@@ -109,6 +109,8 @@ class MapObject : public NativeObject {
     static bool iterator(JSContext *cx, IteratorKind kind, HandleObject obj, MutableHandleValue iter);
 
   private:
+    static const ClassOps classOps_;
+
     static const JSPropertySpec properties[];
     static const JSFunctionSpec methods[];
     static const JSPropertySpec staticProperties[];
@@ -164,6 +166,8 @@ class MapIteratorObject : public NativeObject
     static bool next(JSContext* cx, Handle<MapIteratorObject*> mapIterator,
                      HandleArrayObject resultPairObj);
 
+    static JSObject* createResultPair(JSContext* cx);
+
   private:
     inline MapObject::IteratorKind kind() const;
 };
@@ -189,9 +193,12 @@ class SetObject : public NativeObject {
     static bool delete_(JSContext *cx, HandleObject obj, HandleValue key, bool *rval);
 
   private:
+    static const ClassOps classOps_;
+
     static const JSPropertySpec properties[];
     static const JSFunctionSpec methods[];
     static const JSPropertySpec staticProperties[];
+
     ValueSet* getData() { return static_cast<ValueSet*>(getPrivate()); }
     static ValueSet & extract(HandleObject o);
     static ValueSet & extract(CallReceiver call);

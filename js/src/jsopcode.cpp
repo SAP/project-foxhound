@@ -147,12 +147,16 @@ js::StackDefs(JSScript* script, jsbytecode* pc)
 const char * PCCounts::numExecName = "interp";
 
 void
-js::DumpIonScriptCounts(Sprinter* sp, jit::IonScriptCounts* ionCounts)
+js::DumpIonScriptCounts(Sprinter* sp, HandleScript script,
+        jit::IonScriptCounts* ionCounts)
 {
     Sprint(sp, "IonScript [%lu blocks]:\n", ionCounts->numBlocks());
     for (size_t i = 0; i < ionCounts->numBlocks(); i++) {
         const jit::IonBlockCounts& block = ionCounts->block(i);
-        Sprint(sp, "BB #%lu [%05u]", block.id(), block.offset());
+        unsigned lineNumber = 0, columnNumber = 0;
+        lineNumber = PCToLineNumber(script, script->offsetToPC(block.offset()), &columnNumber);
+        Sprint(sp, "BB #%lu [%05u,%u,%u]", block.id(), block.offset(),
+               lineNumber, columnNumber);
         if (block.description())
             Sprint(sp, " [inlined %s]", block.description());
         for (size_t j = 0; j < block.numSuccessors(); j++)
@@ -189,7 +193,7 @@ js::DumpPCCounts(JSContext* cx, HandleScript script, Sprinter* sp)
     jit::IonScriptCounts* ionCounts = script->getIonCounts();
 
     while (ionCounts) {
-        DumpIonScriptCounts(sp, ionCounts);
+        DumpIonScriptCounts(sp, script, ionCounts);
         ionCounts = ionCounts->previous();
     }
 }
@@ -821,11 +825,14 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
     }
     const JSCodeSpec* cs = &CodeSpec[op];
     ptrdiff_t len = (ptrdiff_t) cs->length;
-    Sprint(sp, "%05u:", loc);
-    if (lines)
-        Sprint(sp, "%4u", PCToLineNumber(script, pc));
-    Sprint(sp, "  %s", CodeName[op]);
+    if (Sprint(sp, "%05u:", loc) == -1)
+        return 0;
+    if (lines && Sprint(sp, "%4u", PCToLineNumber(script, pc)) == -1)
+        return 0;
+    if (Sprint(sp, "  %s", CodeName[op]) == -1)
+        return 0;
 
+    int i;
     switch (JOF_TYPE(cs->format)) {
       case JOF_BYTE:
           // Scan the trynotes to find the associated catch block
@@ -838,9 +845,12 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
               for(i = 0; i < trynotes->length; i++) {
                   JSTryNote note = trynotes->vector[i];
                   if (note.kind == JSTRY_CATCH && note.start == loc + 1) {
-                      Sprint(sp, " %u (%+d)",
-                             (unsigned int) (loc+note.length+1),
-                             (int) (note.length+1));
+                      if (Sprint(sp, " %u (%+d)",
+                                 (unsigned int) (loc+note.length+1),
+                                 (int) (note.length+1)) == -1)
+                      {
+                          return 0;
+                      }
                       break;
                   }
               }
@@ -849,7 +859,8 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
 
       case JOF_JUMP: {
         ptrdiff_t off = GET_JUMP_OFFSET(pc);
-        Sprint(sp, " %u (%+d)", loc + (int) off, (int) off);
+        if (Sprint(sp, " %u (%+d)", loc + (int) off, (int) off) == -1)
+            return 0;
         break;
       }
 
@@ -860,7 +871,8 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         if (!ToDisassemblySource(cx, v, &bytes))
             return 0;
         ScopeCoordinate sc(pc);
-        Sprint(sp, " %s (hops = %u, slot = %u)", bytes.ptr(), sc.hops(), sc.slot());
+        if (Sprint(sp, " %s (hops = %u, slot = %u)", bytes.ptr(), sc.hops(), sc.slot()) == -1)
+            return 0;
         break;
       }
 
@@ -869,7 +881,8 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         JSAutoByteString bytes;
         if (!ToDisassemblySource(cx, v, &bytes))
             return 0;
-        Sprint(sp, " %s", bytes.ptr());
+        if (Sprint(sp, " %s", bytes.ptr()) == -1)
+            return 0;
         break;
       }
 
@@ -878,14 +891,16 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         JSAutoByteString bytes;
         if (!ToDisassemblySource(cx, v, &bytes))
             return 0;
-        Sprint(sp, " %s", bytes.ptr());
+        if (Sprint(sp, " %s", bytes.ptr()) == -1)
+            return 0;
         break;
       }
 
       case JOF_OBJECT: {
         /* Don't call obj.toSource if analysis/inference is active. */
         if (script->zone()->types.activeAnalysis) {
-            Sprint(sp, " object");
+            if (Sprint(sp, " object") == -1)
+                return 0;
             break;
         }
 
@@ -895,18 +910,20 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
             RootedValue v(cx, ObjectValue(*obj));
             if (!ToDisassemblySource(cx, v, &bytes))
                 return 0;
-            Sprint(sp, " %s", bytes.ptr());
+            if (Sprint(sp, " %s", bytes.ptr()) == -1)
+                return 0;
         }
         break;
       }
 
       case JOF_REGEXP: {
-        JSObject* obj = script->getRegExp(GET_UINT32_INDEX(pc));
+        js::RegExpObject* obj = script->getRegExp(pc);
         JSAutoByteString bytes;
         RootedValue v(cx, ObjectValue(*obj));
         if (!ToDisassemblySource(cx, v, &bytes))
             return 0;
-        Sprint(sp, " %s", bytes.ptr());
+        if (Sprint(sp, " %s", bytes.ptr()) == -1)
+            return 0;
         break;
       }
 
@@ -920,10 +937,12 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         pc2 += JUMP_OFFSET_LEN;
         high = GET_JUMP_OFFSET(pc2);
         pc2 += JUMP_OFFSET_LEN;
-        Sprint(sp, " defaultOffset %d low %d high %d", int(off), low, high);
+        if (Sprint(sp, " defaultOffset %d low %d high %d", int(off), low, high) == -1)
+            return 0;
         for (i = low; i <= high; i++) {
             off = GET_JUMP_OFFSET(pc2);
-            Sprint(sp, "\n\t%d: %d", i, int(off));
+            if (Sprint(sp, "\n\t%d: %d", i, int(off)) == -1)
+                return 0;
             pc2 += JUMP_OFFSET_LEN;
         }
         len = 1 + pc2 - pc;
@@ -931,19 +950,19 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       }
 
       case JOF_QARG:
-        Sprint(sp, " %u", GET_ARGNO(pc));
+        if (Sprint(sp, " %u", GET_ARGNO(pc)) == -1)
+            return 0;
         break;
 
       case JOF_LOCAL:
-        Sprint(sp, " %u", GET_LOCALNO(pc));
+        if (Sprint(sp, " %u", GET_LOCALNO(pc)) == -1)
+            return 0;
         break;
 
       case JOF_UINT32:
-        Sprint(sp, " %u", GET_UINT32(pc));
+        if (Sprint(sp, " %u", GET_UINT32(pc)) == -1)
+            return 0;
         break;
-
-      {
-        int i;
 
       case JOF_UINT16:
         i = (int)GET_UINT16(pc);
@@ -966,9 +985,9 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         MOZ_ASSERT(op == JSOP_INT32);
         i = GET_INT32(pc);
       print_int:
-        Sprint(sp, " %d", i);
+        if (Sprint(sp, " %d", i) == -1)
+            return 0;
         break;
-      }
 
       default: {
         char numBuf[12];
@@ -1176,9 +1195,7 @@ ExpressionDecompiler::decompilePC(jsbytecode* pc)
       case JSOP_REGEXP:
       case JSOP_OBJECT:
       case JSOP_NEWARRAY_COPYONWRITE: {
-        JSObject* obj = (op == JSOP_REGEXP)
-                        ? script->getRegExp(GET_UINT32_INDEX(pc))
-                        : script->getObject(GET_UINT32_INDEX(pc));
+        JSObject* obj = script->getObject(GET_UINT32_INDEX(pc));
         RootedValue objv(cx, ObjectValue(*obj));
         JSString* str = ValueToSource(cx, objv);
         if (!str)

@@ -1,38 +1,38 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict"; /* This Source Code Form is subject to the terms of the Mozilla Public
+               * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+               * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- * The dispatcher for actions. This dispatches actions to stores registered
- * for those actions.
- *
- * If stores need to perform async operations for actions, they should return
- * straight away, and set up a new action for the changes if necessary.
- *
- * It is an error if a returned promise rejects - they should always pass.
- */
+                                                                        * The dispatcher for actions. This dispatches actions to stores registered
+                                                                        * for those actions.
+                                                                        *
+                                                                        * If stores need to perform async operations for actions, they should return
+                                                                        * straight away, and set up a new action for the changes if necessary.
+                                                                        *
+                                                                        * It is an error if a returned promise rejects - they should always pass.
+                                                                        */
 var loop = loop || {};
-loop.Dispatcher = (function() {
+loop.Dispatcher = function () {
   "use strict";
 
   function Dispatcher() {
     this._eventData = {};
     this._actionQueue = [];
     this._debug = false;
-    loop.shared.utils.getBoolPreference("debug.dispatcher", function(enabled) {
+    loop.shared.utils.getBoolPreference("debug.dispatcher", function (enabled) {
       this._debug = enabled;
     }.bind(this));
   }
 
   Dispatcher.prototype = {
     /**
-     * Register a store to receive notifications of specific actions.
-     *
-     * @param {Object} store The store object to register
-     * @param {Array} eventTypes An array of action names
-     */
-    register: function(store, eventTypes) {
-      eventTypes.forEach(function(type) {
+                            * Register a store to receive notifications of specific actions.
+                            *
+                            * @param {Object} store The store object to register
+                            * @param {Array} eventTypes An array of action names
+                            */
+    register: function register(store, eventTypes) {
+      eventTypes.forEach(function (type) {
         if (this._eventData.hasOwnProperty(type)) {
           this._eventData[type].push(store);
         } else {
@@ -42,13 +42,13 @@ loop.Dispatcher = (function() {
     },
 
     /**
-     * Unregister a store from receiving notifications of specific actions.
-     *
-     * @param {Object} store The store object to unregister
-     * @param {Array} eventTypes An array of action names
-     */
-    unregister: function(store, eventTypes) {
-      eventTypes.forEach(function(type) {
+        * Unregister a store from receiving notifications of specific actions.
+        *
+        * @param {Object} store The store object to unregister
+        * @param {Array} eventTypes An array of action names
+        */
+    unregister: function unregister(store, eventTypes) {
+      eventTypes.forEach(function (type) {
         if (!this._eventData.hasOwnProperty(type)) {
           return;
         }
@@ -64,18 +64,18 @@ loop.Dispatcher = (function() {
     },
 
     /**
-     * Dispatches an action to all registered stores.
-     */
-    dispatch: function(action) {
+        * Dispatches an action to all registered stores.
+        */
+    dispatch: function dispatch(action) {
       // Always put it on the queue, to make it simpler.
       this._actionQueue.push(action);
       this._dispatchNextAction();
     },
 
     /**
-     * Dispatches the next action in the queue if one is not already active.
-     */
-    _dispatchNextAction: function() {
+        * Dispatches the next action in the queue if one is not already active.
+        */
+    _dispatchNextAction: function _dispatchNextAction() {
       if (!this._actionQueue.length || this._active) {
         return;
       }
@@ -95,7 +95,7 @@ loop.Dispatcher = (function() {
         console.log("[Dispatcher] Dispatching action", action);
       }
 
-      registeredStores.forEach(function(store) {
+      registeredStores.forEach(function (store) {
         try {
           store[type](action);
         } catch (x) {
@@ -105,8 +105,8 @@ loop.Dispatcher = (function() {
 
       this._active = false;
       this._dispatchNextAction();
-    }
-  };
+    } };
+
 
   return Dispatcher;
-})();
+}();

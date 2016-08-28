@@ -120,6 +120,12 @@ FlagPhiInputsAsHavingRemovedUses(MBasicBlock* block, MBasicBlock* succ, MPhiVect
         bool isUsed = false;
         for (size_t idx = 0; !isUsed && idx < worklist.length(); idx++) {
             phi = worklist[idx];
+            if (phi->isUseRemoved() || phi->isImplicitlyUsed()) {
+                // The phi is implicitly used.
+                isUsed = true;
+                break;
+            }
+
             MUseIterator usesEnd(phi->usesEnd());
             for (MUseIterator use(phi->usesBegin()); use != usesEnd; use++) {
                 MNode* consumer = (*use)->consumer();
@@ -143,12 +149,6 @@ FlagPhiInputsAsHavingRemovedUses(MBasicBlock* block, MBasicBlock* succ, MPhiVect
                 phi = cdef->toPhi();
                 if (phi->isInWorklist())
                     continue;
-
-                if (phi->isUseRemoved() || phi->isImplicitlyUsed()) {
-                    // The phi is implicitly used.
-                    isUsed = true;
-                    break;
-                }
 
                 phi->setInWorklist();
                 if (!worklist.append(phi))
@@ -421,27 +421,11 @@ SplitCriticalEdgesForBlock(MIRGraph& graph, MBasicBlock* block)
         if (target->numPredecessors() < 2)
             continue;
 
-        // Create a new block inheriting from the predecessor.
-        MBasicBlock* split = MBasicBlock::NewSplitEdge(graph, block->info(), block);
+        // Create a simple new block which contains a goto and which split the
+        // edge between block and target.
+        MBasicBlock* split = MBasicBlock::NewSplitEdge(graph, block->info(), block, i, target);
         if (!split)
             return false;
-        split->setLoopDepth(block->loopDepth());
-        graph.insertBlockAfter(block, split);
-        split->end(MGoto::New(graph.alloc(), target));
-
-        // The entry resume point won't properly reflect state at the start of
-        // the split edge, so remove it.  Split edges start out empty, but might
-        // have fallible code moved into them later.  Rather than immediately
-        // figure out a valid resume point and pc we can use for the split edge,
-        // we wait until lowering (see LIRGenerator::visitBlock), where this
-        // will be easier.
-        if (MResumePoint* rp = split->entryResumePoint()) {
-            rp->releaseUses();
-            split->clearEntryResumePoint();
-        }
-
-        block->replaceSuccessor(i, split);
-        target->replacePredecessor(block, split);
     }
     return true;
 }
@@ -462,7 +446,7 @@ jit::SplitCriticalEdges(MIRGraph& graph)
 
 // Return whether a block simply computes the specified constant value.
 static bool
-BlockComputesConstant(MBasicBlock* block, MDefinition* value)
+BlockComputesConstant(MBasicBlock* block, MDefinition* value, bool* constBool)
 {
     // Look for values with no uses. This is used to eliminate constant
     // computing blocks in condition statements, and the phi which used to
@@ -478,7 +462,7 @@ BlockComputesConstant(MBasicBlock* block, MDefinition* value)
         if (*iter != value || !iter->isGoto())
             return false;
     }
-    return true;
+    return value->toConstant()->valueToBoolean(constBool);
 }
 
 // Find phis that are redudant:
@@ -745,10 +729,9 @@ MaybeFoldConditionBlock(MIRGraph& graph, MBasicBlock* initialBlock)
     // directly to successors of testBlock, rather than to testBlock itself.
 
     MBasicBlock* trueTarget = trueBranch;
-    if (BlockComputesConstant(trueBranch, trueResult)) {
-        trueTarget = trueResult->constantToBoolean()
-                     ? finalTest->ifTrue()
-                     : finalTest->ifFalse();
+    bool constBool;
+    if (BlockComputesConstant(trueBranch, trueResult, &constBool)) {
+        trueTarget = constBool ? finalTest->ifTrue() : finalTest->ifFalse();
         phiBlock->removePredecessor(trueBranch);
         graph.removeBlock(trueBranch);
     } else if (initialTest->input() == trueResult) {
@@ -759,10 +742,8 @@ MaybeFoldConditionBlock(MIRGraph& graph, MBasicBlock* initialBlock)
     }
 
     MBasicBlock* falseTarget = falseBranch;
-    if (BlockComputesConstant(falseBranch, falseResult)) {
-        falseTarget = falseResult->constantToBoolean()
-                      ? finalTest->ifTrue()
-                      : finalTest->ifFalse();
+    if (BlockComputesConstant(falseBranch, falseResult, &constBool)) {
+        falseTarget = constBool ? finalTest->ifTrue() : finalTest->ifFalse();
         phiBlock->removePredecessor(falseBranch);
         graph.removeBlock(falseBranch);
     } else if (initialTest->input() == falseResult) {
@@ -928,6 +909,9 @@ jit::EliminateDeadResumePointOperands(MIRGenerator* mir, MIRGraph& graph)
                     continue;
                 }
 
+                if (!graph.alloc().ensureBallast())
+                    return false;
+
                 // Store an optimized out magic value in place of all dead
                 // resume point operands. Making any such substitution can in
                 // general alter the interpreter's behavior, even though the
@@ -950,7 +934,9 @@ jit::EliminateDeadResumePointOperands(MIRGenerator* mir, MIRGraph& graph)
 bool
 js::jit::DeadIfUnused(const MDefinition* def)
 {
-    return !def->isEffectful() && !def->isGuard() && !def->isGuardRangeBailouts() &&
+    return !def->isEffectful() &&
+           (!def->isGuard() || def->block() == def->block()->graph().osrBlock()) &&
+           !def->isGuardRangeBailouts() &&
            !def->isControlInstruction() &&
            (!def->isInstruction() || !def->toInstruction()->resumePoint());
 }
@@ -1193,7 +1179,7 @@ class TypeAnalyzer
     bool propagateSpecialization(MPhi* phi);
     bool specializePhis();
     void replaceRedundantPhi(MPhi* phi);
-    void adjustPhiInputs(MPhi* phi);
+    bool adjustPhiInputs(MPhi* phi);
     bool adjustInputs(MDefinition* def);
     bool insertConversions();
 
@@ -1272,7 +1258,9 @@ GuessPhiType(MPhi* phi, bool* hasInputsWithEmptyTypes)
                 // If we only saw definitions that can be converted into Float32 before and
                 // encounter a Float32 value, promote previous values to Float32
                 type = MIRType_Float32;
-            } else if (IsNumberType(type) && IsNumberType(in->type())) {
+            } else if (IsTypeRepresentableAsDouble(type) &&
+                       IsTypeRepresentableAsDouble(in->type()))
+            {
                 // Specialize phis with int32 and double operands as double.
                 type = MIRType_Double;
                 convertibleToFloat32 &= in->canProduceFloat32();
@@ -1332,7 +1320,9 @@ TypeAnalyzer::propagateSpecialization(MPhi* phi)
             }
 
             // Specialize phis with int32 and double operands as double.
-            if (IsNumberType(use->type()) && IsNumberType(phi->type())) {
+            if (IsTypeRepresentableAsDouble(use->type()) &&
+                IsTypeRepresentableAsDouble(phi->type()))
+            {
                 if (!respecialize(use, MIRType_Double))
                     return false;
                 continue;
@@ -1408,7 +1398,7 @@ TypeAnalyzer::specializePhis()
     return true;
 }
 
-void
+bool
 TypeAnalyzer::adjustPhiInputs(MPhi* phi)
 {
     MIRType phiType = phi->type();
@@ -1423,6 +1413,9 @@ TypeAnalyzer::adjustPhiInputs(MPhi* phi)
             MDefinition* in = phi->getOperand(i);
             if (in->type() == phiType)
                 continue;
+
+            if (!alloc().ensureBallast())
+                return false;
 
             if (in->isBox() && in->toBox()->input()->type() == phiType) {
                 phi->replaceOperand(i, in->toBox()->input());
@@ -1467,7 +1460,7 @@ TypeAnalyzer::adjustPhiInputs(MPhi* phi)
             }
         }
 
-        return;
+        return true;
     }
 
     // Box every typed input.
@@ -1476,15 +1469,23 @@ TypeAnalyzer::adjustPhiInputs(MPhi* phi)
         if (in->type() == MIRType_Value)
             continue;
 
-        if (in->isUnbox() && phi->typeIncludes(in->toUnbox()->input())) {
-            // The input is being explicitly unboxed, so sneak past and grab
-            // the original box.
-            phi->replaceOperand(i, in->toUnbox()->input());
-        } else {
-            MDefinition* box = AlwaysBoxAt(alloc(), in->block()->lastIns(), in);
-            phi->replaceOperand(i, box);
+        // The input is being explicitly unboxed, so sneak past and grab
+        // the original box.
+        if (in->isUnbox() && phi->typeIncludes(in->toUnbox()->input()))
+            in = in->toUnbox()->input();
+
+        if (in->type() != MIRType_Value) {
+            if (!alloc().ensureBallast())
+                return false;
+
+            MBasicBlock* pred = phi->block()->getPredecessor(i);
+            in = AlwaysBoxAt(alloc(), pred->lastIns(), in);
         }
+
+        phi->replaceOperand(i, in);
     }
+
+    return true;
 }
 
 bool
@@ -1552,13 +1553,17 @@ TypeAnalyzer::insertConversions()
                 replaceRedundantPhi(phi);
                 block->discardPhi(phi);
             } else {
-                adjustPhiInputs(phi);
+                if (!adjustPhiInputs(phi))
+                    return false;
             }
         }
 
         // AdjustInputs can add/remove/mutate instructions before and after the
         // current instruction. Only increment the iterator after it is finished.
         for (MInstructionIterator iter(block->begin()); iter != block->end(); iter++) {
+            if (!alloc().ensureBallast())
+                return false;
+
             if (!adjustInputs(*iter))
                 return false;
         }
@@ -1826,6 +1831,9 @@ jit::MakeMRegExpHoistable(MIRGraph& graph)
 {
     for (ReversePostorderIterator block(graph.rpoBegin()); block != graph.rpoEnd(); block++) {
         for (MDefinitionIterator iter(*block); iter; iter++) {
+            if (!*iter)
+                MOZ_CRASH("confirm bug 1263794.");
+
             if (!iter->isRegExp())
                 continue;
 
@@ -1874,20 +1882,19 @@ jit::MakeMRegExpHoistable(MIRGraph& graph)
     return true;
 }
 
-bool
+void
 jit::RenumberBlocks(MIRGraph& graph)
 {
     size_t id = 0;
     for (ReversePostorderIterator block(graph.rpoBegin()); block != graph.rpoEnd(); block++)
         block->setId(id++);
-
-    return true;
 }
 
 // A utility for code which deletes blocks. Renumber the remaining blocks,
 // recompute dominators, and optionally recompute AliasAnalysis dependencies.
 bool
-jit::AccountForCFGChanges(MIRGenerator* mir, MIRGraph& graph, bool updateAliasAnalysis)
+jit::AccountForCFGChanges(MIRGenerator* mir, MIRGraph& graph, bool updateAliasAnalysis,
+                          bool underValueNumberer)
 {
     // Renumber the blocks and clear out the old dominator info.
     size_t id = 0;
@@ -1906,7 +1913,7 @@ jit::AccountForCFGChanges(MIRGenerator* mir, MIRGraph& graph, bool updateAliasAn
              return false;
     }
 
-    AssertExtendedGraphCoherency(graph);
+    AssertExtendedGraphCoherency(graph, underValueNumberer);
     return true;
 }
 
@@ -2262,6 +2269,32 @@ CheckUse(const MDefinition* producer, const MUse* use, int32_t* usesBalance)
 #endif
     ++*usesBalance;
 }
+
+// To properly encode entry resume points, we have to ensure that all the
+// operands of the entry resume point are located before the safeInsertTop
+// location.
+static void
+AssertOperandsBeforeSafeInsertTop(MResumePoint* resume)
+{
+    MBasicBlock* block = resume->block();
+    if (block == block->graph().osrBlock())
+        return;
+    MInstruction* stop = block->safeInsertTop();
+    for (size_t i = 0, e = resume->numOperands(); i < e; ++i) {
+        MDefinition* def = resume->getOperand(i);
+        if (def->block() != block)
+            continue;
+        if (def->isPhi())
+            continue;
+
+        for (MInstructionIterator ins = block->begin(); true; ins++) {
+            if (*ins == def)
+                break;
+            MOZ_ASSERT(*ins != stop,
+                       "Resume point operand located after the safeInsertTop location");
+        }
+    }
+}
 #endif // DEBUG
 
 void
@@ -2299,13 +2332,14 @@ jit::AssertBasicGraphCoherency(MIRGraph& graph)
         for (size_t i = 0; i < block->numPredecessors(); i++)
             MOZ_ASSERT(CheckPredecessorImpliesSuccessor(*block, block->getPredecessor(i)));
 
-        if (block->entryResumePoint()) {
-            MOZ_ASSERT(!block->entryResumePoint()->instruction());
-            MOZ_ASSERT(block->entryResumePoint()->block() == *block);
+        if (MResumePoint* resume = block->entryResumePoint()) {
+            MOZ_ASSERT(!resume->instruction());
+            MOZ_ASSERT(resume->block() == *block);
+            AssertOperandsBeforeSafeInsertTop(resume);
         }
-        if (block->outerResumePoint()) {
-            MOZ_ASSERT(!block->outerResumePoint()->instruction());
-            MOZ_ASSERT(block->outerResumePoint()->block() == *block);
+        if (MResumePoint* resume = block->outerResumePoint()) {
+            MOZ_ASSERT(!resume->instruction());
+            MOZ_ASSERT(resume->block() == *block);
         }
         for (MResumePointIterator iter(block->resumePointsBegin()); iter != block->resumePointsEnd(); iter++) {
             // We cannot yet assert that is there is no instruction then this is
@@ -2360,6 +2394,8 @@ jit::AssertBasicGraphCoherency(MIRGraph& graph)
         MOZ_ASSERT(control->resumePoint() == nullptr);
         for (uint32_t i = 0, end = control->numOperands(); i < end; i++)
             CheckOperand(control, control->getUseFor(i), &usesBalance);
+        for (size_t i = 0; i < control->numSuccessors(); i++)
+            MOZ_ASSERT(control->getSuccessor(i));
     }
 
     // In case issues, see the _DEBUG_CHECK_OPERANDS_USES_BALANCE macro above.
@@ -2492,6 +2528,7 @@ IsResumableMIRType(MIRType type)
       case MIRType_ObjectGroup:
       case MIRType_Doublex2: // NYI, see also RSimdBox::recover
       case MIRType_SinCosDouble:
+      case MIRType_Int64:
         return false;
     }
     MOZ_CRASH("Unknown MIRType.");
@@ -2531,7 +2568,7 @@ AssertResumePointDominatedByOperands(MResumePoint* resume)
 #endif // DEBUG
 
 void
-jit::AssertExtendedGraphCoherency(MIRGraph& graph)
+jit::AssertExtendedGraphCoherency(MIRGraph& graph, bool underValueNumberer)
 {
     // Checks the basic GraphCoherency but also other conditions that
     // do not hold immediately (such as the fact that critical edges
@@ -2555,8 +2592,15 @@ jit::AssertExtendedGraphCoherency(MIRGraph& graph)
                 MOZ_ASSERT(block->getSuccessor(i)->numPredecessors() == 1);
 
         if (block->isLoopHeader()) {
-            MOZ_ASSERT(block->numPredecessors() == 2);
-            MBasicBlock* backedge = block->getPredecessor(1);
+            if (underValueNumberer && block->numPredecessors() == 3) {
+                // Fixup block.
+                MOZ_ASSERT(block->getPredecessor(1)->numPredecessors() == 0);
+                MOZ_ASSERT(graph.osrBlock(),
+                           "Fixup blocks should only exists if we have an osr block.");
+            } else {
+                MOZ_ASSERT(block->numPredecessors() == 2);
+            }
+            MBasicBlock* backedge = block->backedge();
             MOZ_ASSERT(backedge->id() >= block->id());
             MOZ_ASSERT(backedge->numSuccessors() == 1);
             MOZ_ASSERT(backedge->getSuccessor(0) == *block);
@@ -2693,11 +2737,10 @@ jit::ExtractLinearSum(MDefinition* ins)
     if (ins->type() != MIRType_Int32)
         return SimpleLinearSum(ins, 0);
 
-    if (ins->isConstantValue()) {
-        const Value& v = ins->constantValue();
-        MOZ_ASSERT(v.isInt32());
-        return SimpleLinearSum(nullptr, v.toInt32());
-    } else if (ins->isAdd() || ins->isSub()) {
+    if (ins->isConstant())
+        return SimpleLinearSum(nullptr, ins->toConstant()->toInt32());
+
+    if (ins->isAdd() || ins->isSub()) {
         MDefinition* lhs = ins->getOperand(0);
         MDefinition* rhs = ins->getOperand(1);
         if (lhs->type() == MIRType_Int32 && rhs->type() == MIRType_Int32) {
@@ -2713,7 +2756,8 @@ jit::ExtractLinearSum(MDefinition* ins)
                 if (!SafeAdd(lsum.constant, rsum.constant, &constant))
                     return SimpleLinearSum(ins, 0);
                 return SimpleLinearSum(lsum.term ? lsum.term : rsum.term, constant);
-            } else if (lsum.term) {
+            }
+            if (lsum.term) {
                 int32_t constant;
                 if (!SafeSub(lsum.constant, rsum.constant, &constant))
                     return SimpleLinearSum(ins, 0);
@@ -3178,7 +3222,7 @@ NeedsKeepAlive(MInstruction* slotsOrElements, MInstruction* use)
     MOZ_CRASH("Unreachable");
 }
 
-void
+bool
 jit::AddKeepAliveInstructions(MIRGraph& graph)
 {
     for (MBasicBlockIterator i(graph.begin()); i != graph.end(); i++) {
@@ -3240,11 +3284,15 @@ jit::AddKeepAliveInstructions(MIRGraph& graph)
                 if (!NeedsKeepAlive(ins, use))
                     continue;
 
+                if (!graph.alloc().ensureBallast())
+                    return false;
                 MKeepAliveObject* keepAlive = MKeepAliveObject::New(graph.alloc(), ownerObject);
                 use->block()->insertAfter(use, keepAlive);
             }
         }
     }
+
+    return true;
 }
 
 bool
@@ -3313,8 +3361,8 @@ LinearSum::add(MDefinition* term, int32_t scale)
     if (scale == 0)
         return true;
 
-    if (term->isConstantValue()) {
-        int32_t constant = term->constantValue().toInt32();
+    if (MConstant* termConst = term->maybeConstantValue()) {
+        int32_t constant = termConst->toInt32();
         if (!SafeMul(constant, scale, &constant))
             return false;
         return add(constant);
@@ -3386,7 +3434,7 @@ jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block, const LinearSum&
 
     for (size_t i = 0; i < sum.numTerms(); i++) {
         LinearTerm term = sum.term(i);
-        MOZ_ASSERT(!term.term->isConstantValue());
+        MOZ_ASSERT(!term.term->isConstant());
         if (term.scale == 1) {
             if (def) {
                 def = MAdd::New(alloc, def, term.term);
@@ -3709,25 +3757,34 @@ jit::AnalyzeNewScriptDefiniteProperties(JSContext* cx, JSFunction* fun,
                        &inspector, &info, optimizationInfo, /* baselineFrame = */ nullptr);
 
     if (!builder.build()) {
-        if (cx->isThrowingOverRecursed() || builder.abortReason() == AbortReason_Alloc)
+        if (cx->isThrowingOverRecursed() ||
+            cx->isThrowingOutOfMemory() ||
+            builder.abortReason() == AbortReason_Alloc)
+        {
             return false;
+        }
         MOZ_ASSERT(!cx->isExceptionPending());
         return true;
     }
 
     FinishDefinitePropertiesAnalysis(cx, constraints);
 
-    if (!SplitCriticalEdges(graph))
+    if (!SplitCriticalEdges(graph)) {
+        ReportOutOfMemory(cx);
         return false;
+    }
 
-    if (!RenumberBlocks(graph))
-        return false;
+    RenumberBlocks(graph);
 
-    if (!BuildDominatorTree(graph))
+    if (!BuildDominatorTree(graph)) {
+        ReportOutOfMemory(cx);
         return false;
+    }
 
-    if (!EliminatePhis(&builder, graph, AggressiveObservability))
+    if (!EliminatePhis(&builder, graph, AggressiveObservability)) {
+        ReportOutOfMemory(cx);
         return false;
+    }
 
     MDefinition* thisValue = graph.entryBlock()->getSlot(info.thisSlot());
 
@@ -3936,17 +3993,22 @@ jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg)
         return true;
     }
 
-    if (!SplitCriticalEdges(graph))
+    if (!SplitCriticalEdges(graph)) {
+        ReportOutOfMemory(cx);
         return false;
+    }
 
-    if (!RenumberBlocks(graph))
-        return false;
+    RenumberBlocks(graph);
 
-    if (!BuildDominatorTree(graph))
+    if (!BuildDominatorTree(graph)) {
+        ReportOutOfMemory(cx);
         return false;
+    }
 
-    if (!EliminatePhis(&builder, graph, AggressiveObservability))
+    if (!EliminatePhis(&builder, graph, AggressiveObservability)) {
+        ReportOutOfMemory(cx);
         return false;
+    }
 
     MDefinition* argumentsValue = graph.entryBlock()->getSlot(info.argsObjSlot());
 

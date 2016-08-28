@@ -97,7 +97,7 @@ final class GeckoEditable extends JNIObject
     private native void onKeyEvent(int action, int keyCode, int scanCode, int metaState,
                                    long time, int unicodeChar, int baseUnicodeChar,
                                    int domPrintableKeyValue, int repeatCount, int flags,
-                                   boolean isSynthesizedImeKey);
+                                   boolean isSynthesizedImeKey, KeyEvent event);
 
     private void onKeyEvent(KeyEvent event, int action, int savedMetaState,
                             boolean isSynthesizedImeKey) {
@@ -122,7 +122,7 @@ final class GeckoEditable extends JNIObject
                    // e.g. for Ctrl+A, Android returns 0 for unicodeChar,
                    // but Gecko expects 'a', so we return that in baseUnicodeChar.
                    event.getUnicodeChar(0), domPrintableKeyValue, event.getRepeatCount(),
-                   event.getFlags(), isSynthesizedImeKey);
+                   event.getFlags(), isSynthesizedImeKey, event);
     }
 
     @WrapForJNI
@@ -253,7 +253,7 @@ final class GeckoEditable extends JNIObject
             if (mActions.isEmpty()) {
                 mActionsActive.acquireUninterruptibly();
                 mActions.offer(action);
-            } else synchronized(this) {
+            } else synchronized (this) {
                 // tryAcquire here in case Gecko thread has just released it
                 mActionsActive.tryAcquire();
                 mActions.offer(action);
@@ -296,9 +296,7 @@ final class GeckoEditable extends JNIObject
         private KeyEvent [] synthesizeKeyEvents(CharSequence cs) {
             try {
                 if (mKeyMap == null) {
-                    mKeyMap = KeyCharacterMap.load(
-                        Versions.preHC ? KeyCharacterMap.ALPHA :
-                                         KeyCharacterMap.VIRTUAL_KEYBOARD);
+                    mKeyMap = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD);
                 }
             } catch (Exception e) {
                 // KeyCharacterMap.UnavailableException is not found on Gingerbread;
@@ -352,7 +350,7 @@ final class GeckoEditable extends JNIObject
                 throw new IllegalStateException("empty actions queue");
             }
 
-            synchronized(this) {
+            synchronized (this) {
                 if (mActions.isEmpty()) {
                     mActionsActive.release();
                 }
@@ -744,8 +742,7 @@ final class GeckoEditable extends JNIObject
     @Override
     public void setSuppressKeyUp(boolean suppress) {
         if (DEBUG) {
-            // only used by key event handler
-            ThreadUtils.assertOnUiThread();
+            assertOnIcThread();
         }
         // Suppress key up event generated as a result of
         // translating characters to key events
@@ -753,19 +750,9 @@ final class GeckoEditable extends JNIObject
     }
 
     @Override
-    public Handler getInputConnectionHandler() {
-        // Can be called from either UI thread or IC thread;
-        // care must be taken to avoid race conditions
-        return mIcRunHandler;
-    }
-
-    @Override
-    public boolean setInputConnectionHandler(Handler handler) {
-        if (handler == mIcPostHandler) {
-            return true;
-        }
-        if (!mFocused) {
-            return false;
+    public Handler setInputConnectionHandler(Handler handler) {
+        if (handler == mIcPostHandler || !mFocused) {
+            return mIcPostHandler;
         }
         if (DEBUG) {
             assertOnIcThread();
@@ -784,7 +771,12 @@ final class GeckoEditable extends JNIObject
         // InputConnection calls until after the switch.
         mActionQueue.offer(Action.newSetHandler(handler));
         mActionQueue.syncWithGecko();
-        return true;
+        return handler;
+    }
+
+    @Override // GeckoEditableClient
+    public void postToInputConnection(final Runnable runnable) {
+        mIcPostHandler.post(runnable);
     }
 
     private void geckoSetIcHandler(final Handler newHandler) {
@@ -1009,14 +1001,7 @@ final class GeckoEditable extends JNIObject
     }
 
     private void geckoReplaceText(int start, int oldEnd, CharSequence newText) {
-        if (AppConstants.Versions.preHC) {
-            // Don't use replace() because Gingerbread has a bug where if the replaced text
-            // has the same spans as the original text, the spans will end up being deleted
-            mText.delete(start, oldEnd);
-            mText.insert(start, newText);
-        } else {
-            mText.replace(start, oldEnd, newText);
-        }
+        mText.replace(start, oldEnd, newText);
     }
 
     private boolean geckoIsSameText(int start, int oldEnd, CharSequence newText) {
@@ -1110,8 +1095,8 @@ final class GeckoEditable extends JNIObject
             // Nothing to do because the text is the same. This could happen when
             // the composition is updated for example, in which case we want to keep the
             // Java selection.
-            mIgnoreSelectionChange |= (action != null &&
-                    action.mType == Action.TYPE_UPDATE_COMPOSITION);
+            mIgnoreSelectionChange = mIgnoreSelectionChange ||
+                    (action != null && action.mType == Action.TYPE_UPDATE_COMPOSITION);
             return;
 
         } else {
@@ -1126,6 +1111,31 @@ final class GeckoEditable extends JNIObject
                     return;
                 }
                 mListener.onTextChange(text, start, oldEnd, newEnd);
+            }
+        });
+    }
+
+    @WrapForJNI @Override
+    public void onDefaultKeyEvent(final KeyEvent event) {
+        if (DEBUG) {
+            // GeckoEditableListener methods should all be called from the Gecko thread
+            ThreadUtils.assertOnGeckoThread();
+            StringBuilder sb = new StringBuilder("onDefaultKeyEvent(");
+            sb.append("action=").append(event.getAction()).append(", ")
+                .append("keyCode=").append(event.getKeyCode()).append(", ")
+                .append("metaState=").append(event.getMetaState()).append(", ")
+                .append("time=").append(event.getEventTime()).append(", ")
+                .append("repeatCount=").append(event.getRepeatCount()).append(")");
+            Log.d(LOGTAG, sb.toString());
+        }
+
+        geckoPostToIc(new Runnable() {
+            @Override
+            public void run() {
+                if (mListener == null) {
+                    return;
+                }
+                mListener.onDefaultKeyEvent(event);
             }
         });
     }

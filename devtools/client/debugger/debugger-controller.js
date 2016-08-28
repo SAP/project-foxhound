@@ -82,7 +82,10 @@ const EVENTS = {
   OPTIONS_POPUP_HIDDEN: "Debugger:OptionsPopupHidden",
 
   // When the widgets layout has been changed.
-  LAYOUT_CHANGED: "Debugger:LayoutChanged"
+  LAYOUT_CHANGED: "Debugger:LayoutChanged",
+
+  // When a worker has been selected.
+  WORKER_SELECTED: "Debugger::WorkerSelected"
 };
 
 // Descriptions for what a stack frame represents after the debugger pauses.
@@ -93,7 +96,6 @@ const FRAME_TYPE = {
   PUBLIC_CLIENT_EVAL: 3
 };
 
-Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://devtools/shared/event-emitter.js");
 Cu.import("resource://devtools/client/shared/widgets/SimpleListWidget.jsm");
@@ -103,14 +105,13 @@ Cu.import("resource://devtools/client/shared/widgets/VariablesView.jsm");
 Cu.import("resource://devtools/client/shared/widgets/VariablesViewController.jsm");
 Cu.import("resource://devtools/client/shared/widgets/ViewHelpers.jsm");
 
-/**
- * Localization convenience methods.
- */
-var L10N = new ViewHelpers.L10N(DBG_STRINGS_URI);
-
 Cu.import("resource://devtools/client/shared/browser-loader.js");
-const require = BrowserLoader("resource://devtools/client/debugger/", this).require;
+const { require } = BrowserLoader({
+  baseURI: "resource://devtools/client/debugger/",
+  window,
+});
 XPCOMUtils.defineConstant(this, "require", require);
+const { gDevTools } = require("devtools/client/framework/devtools");
 
 // React
 const React = require("devtools/client/shared/vendor/react");
@@ -136,6 +137,7 @@ var services = {
   WAIT_UNTIL: waitUntilService.NAME
 };
 
+var Services = require("Services");
 var {TargetFactory} = require("devtools/client/framework/target");
 var {Toolbox} = require("devtools/client/framework/toolbox");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
@@ -144,6 +146,8 @@ var Editor = require("devtools/client/sourceeditor/editor");
 var DebuggerEditor = require("devtools/client/sourceeditor/debugger");
 var {Tooltip} = require("devtools/client/shared/widgets/Tooltip");
 var FastListWidget = require("devtools/client/shared/widgets/FastListWidget");
+var {LocalizationHelper} = require("devtools/client/shared/l10n");
+var {PrefsHelper} = require("devtools/client/shared/prefs");
 
 XPCOMUtils.defineConstant(this, "EVENTS", EVENTS);
 
@@ -166,6 +170,11 @@ Object.defineProperty(this, "NetworkHelper", {
   configurable: true,
   enumerable: true
 });
+
+/**
+ * Localization convenience methods.
+ */
+var L10N = new LocalizationHelper(DBG_STRINGS_URI);
 
 /**
  * Object defining the debugger controller components.
@@ -296,7 +305,9 @@ var DebuggerController = {
       }
     });
 
-    this.Workers.connect();
+    if (this._target.isTabActor) {
+      this.Workers.connect();
+    }
     this.ThreadState.connect();
     this.StackFrames.connect();
 
@@ -488,8 +499,8 @@ Workers.prototype = {
 
       for (let workerActor in this._workerForms) {
         if (!(workerActor in workerForms)) {
+          DebuggerView.Workers.removeWorker(this._workerForms[workerActor]);
           delete this._workerForms[workerActor];
-          DebuggerView.Workers.removeWorker(workerActor);
         }
       }
 
@@ -497,7 +508,7 @@ Workers.prototype = {
         if (!(workerActor in this._workerForms)) {
           let workerForm = workerForms[workerActor];
           this._workerForms[workerActor] = workerForm;
-          DebuggerView.Workers.addWorker(workerActor, workerForm.url);
+          DebuggerView.Workers.addWorker(workerForm);
         }
       }
     });
@@ -507,10 +518,11 @@ Workers.prototype = {
     this._updateWorkerList();
   },
 
-  _onWorkerSelect: function (workerActor) {
-    DebuggerController.client.attachWorker(workerActor, (response, workerClient) => {
-      gDevTools.showToolbox(TargetFactory.forWorker(workerClient),
-                            "jsdebugger", Toolbox.HostType.WINDOW);
+  _onWorkerSelect: function (workerForm) {
+    DebuggerController.client.attachWorker(workerForm.actor, (response, workerClient) => {
+      let toolbox = gDevTools.showToolbox(TargetFactory.forWorker(workerClient),
+                                          "jsdebugger", Toolbox.HostType.WINDOW);
+      window.emit(EVENTS.WORKER_SELECTED, toolbox);
     });
   }
 };
@@ -1185,7 +1197,7 @@ StackFrames.prototype = {
 /**
  * Shortcuts for accessing various debugger preferences.
  */
-var Prefs = new ViewHelpers.Prefs("devtools", {
+var Prefs = new PrefsHelper("devtools", {
   workersAndSourcesWidth: ["Int", "debugger.ui.panes-workers-and-sources-width"],
   instrumentsWidth: ["Int", "debugger.ui.panes-instruments-width"],
   panesVisibleOnStartup: ["Bool", "debugger.ui.panes-visible-on-startup"],

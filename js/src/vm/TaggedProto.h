@@ -14,7 +14,7 @@ namespace js {
 // Information about an object prototype, which can be either a particular
 // object, null, or a lazily generated object. The latter is only used by
 // certain kinds of proxies.
-class TaggedProto : public JS::Traceable
+class TaggedProto
 {
   public:
     static JSObject * const LazyProto;
@@ -44,24 +44,29 @@ class TaggedProto : public JS::Traceable
     bool operator ==(const TaggedProto& other) const { return proto == other.proto; }
     bool operator !=(const TaggedProto& other) const { return proto != other.proto; }
 
-    static void trace(TaggedProto* protop, JSTracer* trc) {
-        TraceManuallyBarrieredEdge(trc, protop, "TaggedProto");
+    HashNumber hashCode() const;
+
+    bool hasUniqueId() const;
+    bool ensureUniqueId() const;
+    uint64_t uniqueId() const;
+
+    void trace(JSTracer* trc) {
+        if (isObject())
+            TraceManuallyBarrieredEdge(trc, &proto, "TaggedProto");
     }
 
   private:
     JSObject* proto;
 };
 
-template <> struct GCMethods<TaggedProto>
-{
-    static TaggedProto initial() { return TaggedProto(); }
-};
-
-template <> struct InternalGCMethods<TaggedProto>
+template <>
+struct InternalBarrierMethods<TaggedProto>
 {
     static void preBarrier(TaggedProto& proto);
 
     static void postBarrier(TaggedProto* vp, TaggedProto prev, TaggedProto next);
+
+    static void readBarrier(const TaggedProto& proto);
 
     static bool isMarkableTaggedPointer(TaggedProto proto) {
         return proto.isObject();
@@ -86,6 +91,8 @@ class TaggedProtoOperations
     inline JSObject* toObject() const { return value().toObject(); }
     inline JSObject* toObjectOrNull() const { return value().toObjectOrNull(); }
     JSObject* raw() const { return value().raw(); }
+    HashNumber hashCode() const { return value().hashCode(); }
+    uint64_t uniqueId() const { return value().uniqueId(); }
 };
 
 template <>

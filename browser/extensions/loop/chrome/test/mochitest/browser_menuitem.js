@@ -10,7 +10,7 @@
 Components.utils.import("resource://gre/modules/Promise.jsm", this);
 Services.prefs.setIntPref("loop.gettingStarted.latestFTUVersion", 2);
 
-registerCleanupFunction(function*() {
+registerCleanupFunction(function* () {
   Services.prefs.clearUserPref("loop.gettingStarted.latestFTUVersion");
 });
 
@@ -29,16 +29,9 @@ add_task(function* test_panelToggle_on_menuitem_click() {
 });
 
 add_task(function* test_private_browsing_window() {
-  let win = OpenBrowserWindow({ private: true });
-  yield new Promise(resolve => {
-    win.addEventListener("load", function listener() {
-      win.removeEventListener("load", listener);
-      resolve();
-    });
-  });
-
+  let win = yield BrowserTestUtils.openNewBrowserWindow({ private: true });
   let menuItem = win.document.getElementById("menu_openLoop");
   Assert.ok(!menuItem, "Loop menuitem should not be present");
 
-  win.close();
+  yield BrowserTestUtils.closeWindow(win);
 });

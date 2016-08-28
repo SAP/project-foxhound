@@ -5,7 +5,7 @@
 */
 
 /* globals XPCOMUtils, NewTabPrefsProvider, Services,
-  Locale, UpdateUtils
+  Locale, UpdateUtils, NewTabRemoteResources
 */
 "use strict";
 
@@ -20,16 +20,20 @@ XPCOMUtils.defineLazyModuleGetter(this, "NewTabPrefsProvider",
                                   "resource:///modules/NewTabPrefsProvider.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Locale",
                                   "resource://gre/modules/Locale.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "NewTabRemoteResources",
+                                  "resource:///modules/NewTabRemoteResources.jsm");
 
 const LOCAL_NEWTAB_URL = "chrome://browser/content/newtab/newTab.xhtml";
 
-const REMOTE_NEWTAB_URL = "https://newtab.cdn.mozilla.net/" +
-                              "v%VERSION%/%CHANNEL%/%LOCALE%/index.html";
+const REMOTE_NEWTAB_PATH = "/newtab/v%VERSION%/%CHANNEL%/%LOCALE%/index.html";
 
 const ABOUT_URL = "about:newtab";
 
 // Pref that tells if remote newtab is enabled
 const PREF_REMOTE_ENABLED = "browser.newtabpage.remote";
+
+// Pref branch necesssary for testing
+const PREF_REMOTE_CS_TEST = "browser.newtabpage.remote.content-signing-test";
 
 // The preference that tells whether to match the OS locale
 const PREF_MATCH_OS_LOCALE = "intl.locale.matchOS";
@@ -37,12 +41,18 @@ const PREF_MATCH_OS_LOCALE = "intl.locale.matchOS";
 // The preference that tells what locale the user selected
 const PREF_SELECTED_LOCALE = "general.useragent.locale";
 
-const VALID_CHANNELS = new Set(["esr", "release", "beta", "aurora", "nightly"]);
+// The preference that tells what remote mode is enabled.
+const PREF_REMOTE_MODE = "browser.newtabpage.remote.mode";
 
-const REMOTE_NEWTAB_VERSION = "0";
+// The preference that tells which remote version is expected.
+const PREF_REMOTE_VERSION = "browser.newtabpage.remote.version";
+
+const VALID_CHANNELS = new Set(["esr", "release", "beta", "aurora", "nightly"]);
 
 function AboutNewTabService() {
   NewTabPrefsProvider.prefs.on(PREF_REMOTE_ENABLED, this._handleToggleEvent.bind(this));
+
+  this._updateRemoteMaybe = this._updateRemoteMaybe.bind(this);
 
   // trigger remote change if needed, according to pref
   this.toggleRemote(Services.prefs.getBoolPref(PREF_REMOTE_ENABLED));
@@ -120,34 +130,53 @@ AboutNewTabService.prototype = {
       return false;
     }
 
+    let csTest = Services.prefs.getBoolPref(PREF_REMOTE_CS_TEST);
     if (stateEnabled) {
-      this._remoteURL = this.generateRemoteURL();
+      if (!csTest) {
+        this._remoteURL = this.generateRemoteURL();
+      } else {
+        this._remoteURL = this._newTabURL;
+      }
       NewTabPrefsProvider.prefs.on(
         PREF_SELECTED_LOCALE,
-        this._updateRemoteMaybe.bind(this));
+        this._updateRemoteMaybe);
       NewTabPrefsProvider.prefs.on(
         PREF_MATCH_OS_LOCALE,
-        this._updateRemoteMaybe.bind(this));
+        this._updateRemoteMaybe);
+      NewTabPrefsProvider.prefs.on(
+        PREF_REMOTE_MODE,
+        this._updateRemoteMaybe);
+      NewTabPrefsProvider.prefs.on(
+        PREF_REMOTE_VERSION,
+        this._updateRemoteMaybe);
       this._remoteEnabled = true;
     } else {
       NewTabPrefsProvider.prefs.off(PREF_SELECTED_LOCALE, this._updateRemoteMaybe);
       NewTabPrefsProvider.prefs.off(PREF_MATCH_OS_LOCALE, this._updateRemoteMaybe);
+      NewTabPrefsProvider.prefs.off(PREF_REMOTE_MODE, this._updateRemoteMaybe);
+      NewTabPrefsProvider.prefs.off(PREF_REMOTE_VERSION, this._updateRemoteMaybe);
       this._remoteEnabled = false;
     }
-    this._newTabURL = ABOUT_URL;
+    if (!csTest) {
+      this._newTabURL = ABOUT_URL;
+    }
     return true;
   },
 
   /*
-   * Generate a default url based on locale and update channel
+   * Generate a default url based on remote mode, version, locale and update channel
    */
   generateRemoteURL() {
     let releaseName = this.releaseFromUpdateChannel(UpdateUtils.UpdateChannel);
-    let url = REMOTE_NEWTAB_URL
-      .replace("%VERSION%", REMOTE_NEWTAB_VERSION)
+    let path = REMOTE_NEWTAB_PATH
+      .replace("%VERSION%", this.remoteVersion)
       .replace("%LOCALE%", Locale.getLocale())
       .replace("%CHANNEL%", releaseName);
-    return url;
+    let mode = Services.prefs.getCharPref(PREF_REMOTE_MODE, "production");
+    if (!(mode in NewTabRemoteResources.MODE_CHANNEL_MAP)) {
+      mode = "production";
+    }
+    return NewTabRemoteResources.MODE_CHANNEL_MAP[mode].origin + path;
   },
 
   /*
@@ -156,10 +185,13 @@ AboutNewTabService.prototype = {
    * This URL only depends on the browser.newtabpage.remote pref. Overriding
    * the newtab page has no effect on the result of this function.
    *
+   * The result is also the remote URL if this is in a test (PREF_REMOTE_CS_TEST)
+   *
    * @returns {String} the default newtab URL, remote or local depending on browser.newtabpage.remote
    */
   get defaultURL() {
-    if (this._remoteEnabled) {
+    let csTest = Services.prefs.getBoolPref(PREF_REMOTE_CS_TEST);
+    if (this._remoteEnabled || csTest)  {
       return this._remoteURL;
     }
     return LOCAL_NEWTAB_URL;
@@ -197,7 +229,7 @@ AboutNewTabService.prototype = {
   },
 
   get remoteVersion() {
-    return REMOTE_NEWTAB_VERSION;
+    return Services.prefs.getCharPref(PREF_REMOTE_VERSION, "1");
   },
 
   get remoteReleaseName() {
@@ -205,6 +237,7 @@ AboutNewTabService.prototype = {
   },
 
   set newTabURL(aNewTabURL) {
+    let csTest = Services.prefs.getBoolPref(PREF_REMOTE_CS_TEST);
     aNewTabURL = aNewTabURL.trim();
     if (aNewTabURL === ABOUT_URL) {
       // avoid infinite redirects in case one sets the URL to about:newtab
@@ -219,14 +252,19 @@ AboutNewTabService.prototype = {
     let isResetRemote = prefRemoteEnabled && aNewTabURL === remoteURL;
 
     if (isResetLocal || isResetRemote) {
-      if (this._overriden) {
-        // only trigger a reset if previously overridden
+      if (this._overriden && !csTest) {
+        // only trigger a reset if previously overridden and this is no test
         this.resetNewTabURL();
       }
       return;
     }
     // turn off remote state if needed
-    this.toggleRemote(false);
+    if (!csTest) {
+      this.toggleRemote(false);
+    } else {
+      // if this is a test, we want the remoteURL to be set
+      this._remoteURL = aNewTabURL;
+    }
     this._newTabURL = aNewTabURL;
     this._overridden = true;
     Services.obs.notifyObservers(null, "newtab-url-changed", this._newTabURL);

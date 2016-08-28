@@ -41,7 +41,7 @@
 #include "gfxPrefs.h"
 #include "MainThreadUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/layers/CompositorParent.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
@@ -482,17 +482,18 @@ FakeSurfaceComposer::captureScreenImp(const sp<IGraphicBufferProducer>& producer
     reqWidth  = (!reqWidth)  ? hw_w : reqWidth;
     reqHeight = (!reqHeight) ? hw_h : reqHeight;
 
-    nsScreenGonk* screenPtr = screen.forget().take();
     nsCOMPtr<nsIRunnable> runnable =
-        NS_NewRunnableFunction([screenPtr, reqWidth, reqHeight, producer, wrapper]() {
+        NS_NewRunnableFunction([screen, reqWidth, reqHeight, producer, wrapper]() {
             // create a surface (because we're a producer, and we need to
             // dequeue/queue a buffer)
             sp<Surface> sur = new Surface(producer);
             ANativeWindow* window = sur.get();
+            // The closure makes screen const and we can't call forget() on it.
+            RefPtr<nsScreenGonk> screenAlias = screen;
 
             if (native_window_api_connect(window, NATIVE_WINDOW_API_EGL) != NO_ERROR) {
                 static_cast<GraphicProducerWrapper*>(producer->asBinder().get())->exit(BAD_VALUE);
-                NS_ReleaseOnMainThread(screenPtr);
+                NS_ReleaseOnMainThread(screenAlias.forget());
                 return;
             }
             uint32_t usage = GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN |
@@ -509,7 +510,7 @@ FakeSurfaceComposer::captureScreenImp(const sp<IGraphicBufferProducer>& producer
                 ANativeWindowBuffer* buffer;
                 result = native_window_dequeue_buffer_and_wait(window,  &buffer);
                 if (result == NO_ERROR) {
-                    nsresult rv = screenPtr->MakeSnapshot(buffer);
+                    nsresult rv = screen->MakeSnapshot(buffer);
                     if (rv != NS_OK) {
                         result = INVALID_OPERATION;
                     }
@@ -520,10 +521,10 @@ FakeSurfaceComposer::captureScreenImp(const sp<IGraphicBufferProducer>& producer
             }
             native_window_api_disconnect(window, NATIVE_WINDOW_API_EGL);
             static_cast<GraphicProducerWrapper*>(producer->asBinder().get())->exit(result);
-            NS_ReleaseOnMainThread(screenPtr);
+            NS_ReleaseOnMainThread(screenAlias.forget());
         });
 
-    mozilla::layers::CompositorParent::CompositorLoop()->PostTask(
+    mozilla::layers::CompositorBridgeParent::CompositorLoop()->PostTask(
         FROM_HERE, new RunnableCallTask(runnable));
 }
 

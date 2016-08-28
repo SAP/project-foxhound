@@ -37,14 +37,14 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(PresentationReceiver)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 /* static */ already_AddRefed<PresentationReceiver>
-PresentationReceiver::Create(nsPIDOMWindow* aWindow,
+PresentationReceiver::Create(nsPIDOMWindowInner* aWindow,
                              const nsAString& aSessionId)
 {
   RefPtr<PresentationReceiver> receiver = new PresentationReceiver(aWindow);
   return NS_WARN_IF(!receiver->Init(aSessionId)) ? nullptr : receiver.forget();
 }
 
-PresentationReceiver::PresentationReceiver(nsPIDOMWindow* aWindow)
+PresentationReceiver::PresentationReceiver(nsPIDOMWindowInner* aWindow)
   : DOMEventTargetHelper(aWindow)
 {
 }
@@ -162,6 +162,10 @@ NS_IMETHODIMP
 PresentationReceiver::NotifySessionConnect(uint64_t aWindowId,
                                            const nsAString& aSessionId)
 {
+  if (NS_WARN_IF(!GetOwner())) {
+    return NS_ERROR_FAILURE;
+  }
+
   if (NS_WARN_IF(aWindowId != GetOwner()->WindowID())) {
     return NS_ERROR_INVALID_ARG;
   }

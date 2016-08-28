@@ -29,9 +29,10 @@ NS_DEFINE_STATIC_IID_ACCESSOR(PIBlobImplSnapshot, FILEIMPLSNAPSHOT_IID)
 
 namespace mozilla {
 namespace dom {
-namespace indexedDB {
 
 class IDBFileHandle;
+
+namespace indexedDB {
 
 class BlobImplSnapshot final
   : public BlobImpl
@@ -54,7 +55,7 @@ private:
 
   // BlobImpl
   virtual void
-  GetName(nsAString& aName) override
+  GetName(nsAString& aName) const override
   {
     mBlobImpl->GetName(aName);
   }
@@ -184,30 +185,6 @@ private:
   IsFile() const override
   {
     return mBlobImpl->IsFile();
-  }
-
-  virtual void
-  LookupAndCacheIsDirectory() override
-  {
-    mBlobImpl->LookupAndCacheIsDirectory();
-  }
-
-  virtual void
-  SetIsDirectory(bool aIsDir) override
-  {
-    return mBlobImpl->SetIsDirectory(aIsDir);
-  }
-
-  virtual bool
-  IsDirectory() const override
-  {
-    return mBlobImpl->IsDirectory();
-  }
-
-  virtual BlobDirState
-  GetDirState() const override
-  {
-    return mBlobImpl->GetDirState();
   }
 
   virtual bool

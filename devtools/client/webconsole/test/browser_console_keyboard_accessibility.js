@@ -1,7 +1,7 @@
-/*
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Check that basic keyboard shortcuts work in the web console.
 
@@ -53,7 +53,8 @@ add_task(function*() {
 
   info("try ctrl-l to clear output");
   executeSoon(() => {
-    let clearKey = hud.ui.window.document.querySelector("key[command=consoleCmd_clearOutput]:not([disabled])");
+    let selector = "key[command=consoleCmd_clearOutput]:not([disabled])";
+    let clearKey = hud.ui.window.document.querySelector(selector);
     synthesizeKeyFromKeyTag(clearKey);
   });
   yield hud.jsterm.once("messages-cleared");

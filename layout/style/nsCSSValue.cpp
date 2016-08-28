@@ -621,6 +621,20 @@ void nsCSSValue::SetDependentListValue(nsCSSValueList* aList)
   }
 }
 
+void
+nsCSSValue::AdoptListValue(UniquePtr<nsCSSValueList> aValue)
+{
+  // We have to copy the first element since for owned lists the first
+  // element should be an nsCSSValueList_heap object.
+  SetListValue();
+  // FIXME: If nsCSSValue gets a swap method or move assignment operator,
+  // we should use that here to avoid allocating an extra value.
+  mValue.mList->mValue = aValue->mValue;
+  mValue.mList->mNext  = aValue->mNext;
+  aValue->mNext = nullptr;
+  aValue.reset();
+}
+
 nsCSSValuePairList* nsCSSValue::SetPairListValue()
 {
   Reset();
@@ -637,6 +651,21 @@ void nsCSSValue::SetDependentPairListValue(nsCSSValuePairList* aList)
     mUnit = eCSSUnit_PairListDep;
     mValue.mPairListDependent = aList;
   }
+}
+
+void
+nsCSSValue::AdoptPairListValue(UniquePtr<nsCSSValuePairList> aValue)
+{
+  // We have to copy the first element, since for owned pair lists, the first
+  // element should be an nsCSSValuePairList_heap object.
+  SetPairListValue();
+  // FIXME: If nsCSSValue gets a swap method or move assignment operator,
+  // we should use that here to avoid allocating extra values.
+  mValue.mPairList->mXValue = aValue->mXValue;
+  mValue.mPairList->mYValue = aValue->mYValue;
+  mValue.mPairList->mNext   = aValue->mNext;
+  aValue->mNext = nullptr;
+  aValue.reset();
 }
 
 void nsCSSValue::SetAutoValue()
@@ -812,7 +841,9 @@ struct CSSValueSerializeCalcOps {
 
   void AppendLeafValue(const input_type& aValue)
   {
-    MOZ_ASSERT(aValue.GetUnit() == eCSSUnit_Percent || aValue.IsLengthUnit(),
+    MOZ_ASSERT(aValue.GetUnit() == eCSSUnit_Percent ||
+               aValue.IsLengthUnit() ||
+               aValue.GetUnit() == eCSSUnit_Number,
                "unexpected unit");
     aValue.AppendToString(mProperty, mResult, mValueSerialization);
   }
@@ -1516,12 +1547,12 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
                    gradient->mBgPos.mYValue.GetUnit() == eCSSUnit_Enumerated,
                    "unexpected unit");
         aResult.AppendLiteral("to");
-        if (!(gradient->mBgPos.mXValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
+        if (!(gradient->mBgPos.mXValue.GetIntValue() & NS_STYLE_IMAGELAYER_POSITION_CENTER)) {
           aResult.Append(' ');
           gradient->mBgPos.mXValue.AppendToString(eCSSProperty_background_position,
                                                   aResult, aSerialization);
         }
-        if (!(gradient->mBgPos.mYValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
+        if (!(gradient->mBgPos.mYValue.GetIntValue() & NS_STYLE_IMAGELAYER_POSITION_CENTER)) {
           aResult.Append(' ');
           gradient->mBgPos.mYValue.AppendToString(eCSSProperty_background_position,
                                                   aResult, aSerialization);
@@ -1640,7 +1671,7 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
 
       // functional values
       const nsCSSValueList *list = GetPairValue().mYValue.GetListValue();
-      nsAutoTArray<gfxAlternateValue,8> altValues;
+      AutoTArray<gfxAlternateValue,8> altValues;
 
       nsStyleUtil::ComputeFunctionalAlternates(list, altValues);
       nsStyleUtil::SerializeFunctionalAlternates(altValues, out);
@@ -2136,9 +2167,13 @@ nsCSSValueList::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 size_t
 nsCSSValueList_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  }
   return n;
 }
 
@@ -2171,9 +2206,12 @@ nsCSSValueSharedList::operator==(const nsCSSValueSharedList& aOther) const
 size_t
 nsCSSValueSharedList::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
+  // Only measure it if it's unshared, to avoid double-counting.
   size_t n = 0;
-  n += aMallocSizeOf(this);
-  n += mHead->SizeOfIncludingThis(aMallocSizeOf);
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mHead->SizeOfIncludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2246,11 +2284,15 @@ void nsCSSRect::SetAllSidesTo(const nsCSSValue& aValue)
 size_t
 nsCSSRect_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mTop   .SizeOfExcludingThis(aMallocSizeOf);
-  n += mRight .SizeOfExcludingThis(aMallocSizeOf);
-  n += mBottom.SizeOfExcludingThis(aMallocSizeOf);
-  n += mLeft  .SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mTop   .SizeOfExcludingThis(aMallocSizeOf);
+    n += mRight .SizeOfExcludingThis(aMallocSizeOf);
+    n += mBottom.SizeOfExcludingThis(aMallocSizeOf);
+    n += mLeft  .SizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2291,9 +2333,13 @@ nsCSSValuePair::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 size_t
 nsCSSValuePair_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2318,10 +2364,14 @@ nsCSSValueTriplet::AppendToString(nsCSSProperty aProperty,
 size_t
 nsCSSValueTriplet_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mZValue.SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mZValue.SizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2412,10 +2462,14 @@ nsCSSValuePairList::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) con
 size_t
 nsCSSValuePairList_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  }
   return n;
 }
 
@@ -2502,16 +2556,18 @@ css::URLValue::GetURI() const
 size_t
 css::URLValue::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mString->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
 
-  n += mString->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
-
-  // Measurement of the following members may be added later if DMD finds it is
-  // worthwhile:
-  // - mURI
-  // - mReferrer
-  // - mOriginPrincipal
-
+    // Measurement of the following members may be added later if DMD finds it
+    // is worthwhile:
+    // - mURI
+    // - mReferrer
+    // - mOriginPrincipal
+  }
   return n;
 }
 
@@ -2604,14 +2660,18 @@ nsCSSValueGradient::nsCSSValueGradient(bool aIsRadial,
 size_t
 nsCSSValueGradient::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mBgPos.SizeOfExcludingThis(aMallocSizeOf);
-  n += mAngle.SizeOfExcludingThis(aMallocSizeOf);
-  n += mRadialValues[0].SizeOfExcludingThis(aMallocSizeOf);
-  n += mRadialValues[1].SizeOfExcludingThis(aMallocSizeOf);
-  n += mStops.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  for (uint32_t i = 0; i < mStops.Length(); i++) {
-    n += mStops[i].SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mBgPos.SizeOfExcludingThis(aMallocSizeOf);
+    n += mAngle.SizeOfExcludingThis(aMallocSizeOf);
+    n += mRadialValues[0].SizeOfExcludingThis(aMallocSizeOf);
+    n += mRadialValues[1].SizeOfExcludingThis(aMallocSizeOf);
+    n += mStops.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (uint32_t i = 0; i < mStops.Length(); i++) {
+      n += mStops[i].SizeOfExcludingThis(aMallocSizeOf);
+    }
   }
   return n;
 }
@@ -2634,8 +2694,12 @@ nsCSSValueTokenStream::~nsCSSValueTokenStream()
 size_t
 nsCSSValueTokenStream::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mTokenStream.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mTokenStream.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2722,7 +2786,11 @@ size_t
 nsCSSValueFloatColor::SizeOfIncludingThis(
                                       mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+  }
   return n;
 }
 
@@ -2770,7 +2838,12 @@ nsCSSCornerSizes::corners[4] = {
 size_t
 mozilla::css::GridTemplateAreasValue::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = mNamedAreas.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  n += mTemplates.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mNamedAreas.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    n += mTemplates.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }

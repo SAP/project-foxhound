@@ -44,6 +44,10 @@
 NSS_STRICT_SHUTDOWN=1
 export NSS_STRICT_SHUTDOWN
 
+# If using ASan, disable LSan; see bug 1246801.
+ASAN_OPTIONS="detect_leaks=0${ASAN_OPTIONS:+:$ASAN_OPTIONS}"
+export ASAN_OPTIONS
+
 # Init directories based on HOSTDIR variable
 if [ -z "${INIT_SOURCED}" -o "${INIT_SOURCED}" != "TRUE" ]; then
     init_directories()
@@ -78,6 +82,8 @@ if [ -z "${INIT_SOURCED}" -o "${INIT_SOURCED}" != "TRUE" ]; then
         STAPLINGDIR=${HOSTDIR}/stapling
         SSLGTESTDIR=${HOSTDIR}/ssl_gtests
         PK11GTESTDIR=${HOSTDIR}/pk11_gtests
+        DERGTESTDIR=${HOSTDIR}/der_gtests
+        UTILGTESTDIR=${HOSTDIR}/util_gtests
 
         PWFILE=${HOSTDIR}/tests.pw
         NOISE_FILE=${HOSTDIR}/tests_noise
@@ -542,6 +548,8 @@ if [ -z "${INIT_SOURCED}" -o "${INIT_SOURCED}" != "TRUE" ]; then
     R_STAPLINGDIR=../stapling
     R_SSLGTESTDIR=../ssl_gtests
     R_PK11GTESTDIR=../pk11_gtests
+    R_DERGTESTDIR=../der_gtests
+    R_UTILGTESTDIR=../util_gtests
 
     #
     # profiles are either paths or domains depending on the setting of

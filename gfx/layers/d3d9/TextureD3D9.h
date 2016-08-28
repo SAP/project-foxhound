@@ -83,7 +83,7 @@ protected:
   TextureSourceD3D9* mPreviousHost;
   TextureSourceD3D9* mNextHost;
   // The device manager that created our textures.
-  DeviceManagerD3D9* mCreatingDeviceManager;
+  RefPtr<DeviceManagerD3D9> mCreatingDeviceManager;
 
   StereoMode mStereoMode;
   RefPtr<IDirect3DTexture9> mTexture;
@@ -111,6 +111,8 @@ public:
                         TextureFlags aFlags = TextureFlags::DEFAULT);
 
   virtual ~DataTextureSourceD3D9();
+
+  virtual const char* Name() const override { return "DataTextureSourceD3D9"; }
 
   // DataTextureSource
 
@@ -182,7 +184,7 @@ public:
 
   virtual bool SupportsMoz2D() const override { return true; }
 
-  virtual bool HasInternalBuffer() const override { return true; }
+  virtual bool HasIntermediateBuffer() const override { return true; }
 
   virtual bool Serialize(SurfaceDescriptor& aOutDescrptor) override;
 
@@ -199,14 +201,14 @@ public:
   virtual bool UpdateFromSurface(gfx::SourceSurface* aSurface) override;
 
   virtual TextureData*
-  CreateSimilar(ISurfaceAllocator* aAllocator,
+  CreateSimilar(ClientIPCAllocator* aAllocator,
                 TextureFlags aFlags,
                 TextureAllocationFlags aAllocFlags) const override;
 
   static D3D9TextureData*
   Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat, TextureAllocationFlags aFlags);
 
-  virtual void Deallocate(ISurfaceAllocator* aAllocator) override {}
+  virtual void Deallocate(ClientIPCAllocator* aAllocator) override {}
 
 protected:
   D3D9TextureData(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
@@ -244,9 +246,9 @@ public:
 
   virtual bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
 
-  virtual bool HasInternalBuffer() const override { return false; }
+  virtual bool HasIntermediateBuffer() const override { return false; }
 
-  virtual void Deallocate(ISurfaceAllocator* aAllocator) override {}
+  virtual void Deallocate(ClientIPCAllocator* aAllocator) override {}
 
   IDirect3DDevice9* GetD3D9Device() { return mDevice; }
   IDirect3DTexture9* GetD3D9Texture() { return mTexture; }
@@ -295,7 +297,7 @@ public:
     return nullptr;
   }
 
-  virtual bool HasInternalBuffer() const override { return true; }
+  virtual bool HasIntermediateBuffer() const override { return true; }
 
 protected:
   TextureHostD3D9(TextureFlags aFlags);
@@ -397,6 +399,8 @@ public:
                               SurfaceInitMode aInit,
                               const gfx::IntRect& aRect);
   virtual ~CompositingRenderTargetD3D9();
+
+  virtual const char* Name() const override { return "CompositingRenderTargetD3D9"; }
 
   virtual TextureSourceD3D9* AsSourceD3D9() override
   {

@@ -56,6 +56,7 @@ T overrideDefault(const char* param, T dflt) {
     }
     return dflt;
 }
+
 #define SET_DEFAULT(var, dflt) var = overrideDefault("JIT_OPTION_" #var, dflt)
 DefaultJitOptions::DefaultJitOptions()
 {
@@ -111,7 +112,7 @@ DefaultJitOptions::DefaultJitOptions()
     SET_DEFAULT(disableScalarReplacement, false);
 
     // Toggles whether shared stubs are used in Ionmonkey.
-    SET_DEFAULT(disableSharedStubs, true);
+    SET_DEFAULT(disableSharedStubs, false);
 
     // Toggles whether sincos optimization is globally disabled.
     // See bug984018: The MacOS is the only one that has the sincos fast.
@@ -161,6 +162,10 @@ DefaultJitOptions::DefaultJitOptions()
     // The bytecode length limit for small function.
     SET_DEFAULT(smallFunctionMaxBytecodeLength_, 120);
 
+    // An artificial testing limit for the maximum supported offset of
+    // pc-relative jump and call instructions.
+    SET_DEFAULT(jumpThreshold, UINT32_MAX);
+
     // Force how many invocation or loop iterations are needed before compiling
     // a function with the highest ionmonkey optimization level.
     // (i.e. OptimizationLevel_Normal)
@@ -184,6 +189,9 @@ DefaultJitOptions::DefaultJitOptions()
 
     // Toggles whether unboxed plain objects can be created by the VM.
     SET_DEFAULT(disableUnboxedObjects, false);
+
+    // Test whether wasm int64 / double NaN bits testing is enabled.
+    SET_DEFAULT(wasmTestMode, false);
 }
 
 bool

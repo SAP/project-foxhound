@@ -623,14 +623,14 @@ public:
 
 /**
  * A structure designed to be used like a linked list of PtrInfo, except
- * that allocates the PtrInfo 32K-at-a-time.
+ * it allocates many PtrInfos at a time.
  */
 class NodePool
 {
 private:
   // The -2 allows us to use |BlockSize + 1| for |mEntries|, and fit |mNext|,
   // all without causing slop.
-  enum { BlockSize = 8 * 1024 - 2 };
+  enum { BlockSize = 4 * 1024 - 2 };
 
   struct Block
   {
@@ -643,8 +643,8 @@ private:
 
       // Ensure Block is the right size (see the comment on BlockSize above).
       static_assert(
-        sizeof(Block) == 163824 ||      // 32-bit; equals 39.997 pages
-        sizeof(Block) == 262120,        // 64-bit; equals 63.994 pages
+        sizeof(Block) ==  81904 ||      // 32-bit; equals 19.996 x 4 KiB pages
+        sizeof(Block) == 131048,        // 64-bit; equals 31.994 x 4 KiB pages
         "ill-sized NodePool::Block"
       );
     }
@@ -794,9 +794,7 @@ struct PtrToNodeEntry : public PLDHashEntryHdr
 };
 
 static bool
-PtrToNodeMatchEntry(PLDHashTable* aTable,
-                    const PLDHashEntryHdr* aEntry,
-                    const void* aKey)
+PtrToNodeMatchEntry(const PLDHashEntryHdr* aEntry, const void* aKey)
 {
   const PtrToNodeEntry* n = static_cast<const PtrToNodeEntry*>(aEntry);
   return n->mNode->mPointer == aKey;
@@ -1275,7 +1273,9 @@ private:
   nsAutoPtr<CCGraphBuilder> mBuilder;
   RefPtr<nsCycleCollectorLogger> mLogger;
 
-  DebugOnly<void*> mThread;
+#ifdef DEBUG
+  void* mThread;
+#endif
 
   nsCycleCollectorParams mParams;
 
@@ -1492,6 +1492,26 @@ struct CCGraphDescriber : public LinkedListElement<CCGraphDescriber>
   Type mType;
 };
 
+class LogStringMessageAsync : public CancelableRunnable
+{
+public:
+  explicit LogStringMessageAsync(const nsAString& aMsg) : mMsg(aMsg)
+  {}
+
+  NS_IMETHOD Run() override
+  {
+    nsCOMPtr<nsIConsoleService> cs =
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID);
+    if (cs) {
+       cs->LogStringMessage(mMsg.get());
+    }
+    return NS_OK;
+  }
+
+private:
+  nsString mMsg;
+};
+
 class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink
 {
 public:
@@ -1690,17 +1710,16 @@ private:
     aLog->mFile = logFileFinalDestination;
 
     // Log to the error console.
-    nsCOMPtr<nsIConsoleService> cs =
-      do_GetService(NS_CONSOLESERVICE_CONTRACTID);
-    if (cs) {
-      // Copy out the path.
-      nsAutoString logPath;
-      logFileFinalDestination->GetPath(logPath);
+    nsAutoString logPath;
+    logFileFinalDestination->GetPath(logPath);
+    nsAutoString msg = aCollectorKind +
+      NS_LITERAL_STRING(" Collector log dumped to ") + logPath;
 
-      nsString msg = aCollectorKind +
-        NS_LITERAL_STRING(" Collector log dumped to ") + logPath;
-      cs->LogStringMessage(msg.get());
-    }
+    // We don't want any JS to run between ScanRoots and CollectWhite calls,
+    // and since ScanRoots calls this method, better to log the message
+    // asynchronously.
+    RefPtr<LogStringMessageAsync> log = new LogStringMessageAsync(msg);
+    NS_DispatchToCurrentThread(log);
     return NS_OK;
   }
 
@@ -2451,8 +2470,9 @@ CCGraphBuilder::NoteWeakMapping(JSObject* aMap, JS::GCCellPtr aKey,
   mapping->mVal = aVal ? AddWeakMapNode(aVal) : nullptr;
 
   if (mLogger) {
-    mLogger->NoteWeakMapEntry((uint64_t)aMap, aKey.unsafeAsInteger(),
-                              (uint64_t)aKdelegate, aVal.unsafeAsInteger());
+    mLogger->NoteWeakMapEntry((uint64_t)aMap, aKey ? aKey.unsafeAsInteger() : 0,
+                              (uint64_t)aKdelegate,
+                              aVal ? aVal.unsafeAsInteger() : 0);
   }
 }
 
@@ -3264,10 +3284,17 @@ nsCycleCollector::CollectWhite()
     PtrInfo* pinfo = etor.GetNext();
     if (pinfo->mColor == white && pinfo->mParticipant) {
       if (pinfo->IsGrayJS()) {
+        MOZ_ASSERT(mJSRuntime);
         ++numWhiteGCed;
+        JS::Zone* zone;
         if (MOZ_UNLIKELY(pinfo->mParticipant == zoneParticipant)) {
           ++numWhiteJSZones;
+          zone = static_cast<JS::Zone*>(pinfo->mPointer);
+        } else {
+          JS::GCCellPtr ptr(pinfo->mPointer, js::GCThingTraceKind(pinfo->mPointer));
+          zone = JS::GetTenuredGCThingZone(ptr);
         }
+        mJSRuntime->AddZoneWaitingForGC(zone);
       } else {
         whiteNodes.InfallibleAppend(pinfo);
         pinfo->mParticipant->Root(pinfo->mPointer);
@@ -3376,7 +3403,9 @@ nsCycleCollector::nsCycleCollector() :
   mScanInProgress(false),
   mJSRuntime(nullptr),
   mIncrementalPhase(IdlePhase),
+#ifdef DEBUG
   mThread(NS_GetCurrentThread()),
+#endif
   mWhiteNodeCount(0),
   mBeforeUnlinkCB(nullptr),
   mForgetSkippableCB(nullptr),
@@ -3999,11 +4028,13 @@ nsCycleCollector_suspectedCount()
 bool
 nsCycleCollector_init()
 {
-  static DebugOnly<bool> sInitialized;
+#ifdef DEBUG
+  static bool sInitialized;
 
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
   MOZ_ASSERT(!sInitialized, "Called twice!?");
   sInitialized = true;
+#endif
 
   return sCollectorData.init();
 }
@@ -4166,6 +4197,11 @@ nsCycleCollector_shutdown()
 
     data->mCollector->Shutdown();
     data->mCollector = nullptr;
+    if (data->mRuntime) {
+      // Run any remaining tasks that may have been enqueued via
+      // RunInStableState during the final cycle collection.
+      data->mRuntime->ProcessStableStateQueue();
+    }
     if (!data->mRuntime) {
       delete data;
       sCollectorData.set(nullptr);

@@ -11,7 +11,7 @@ const PHONE_REGEX = /^\+?[0-9\s,-.\(\)*#pw]{1,30}$/; // Are we a phone #?
 
 /**
  * ActionBarHandler Object and methods. Interface between Gecko Text Selection code
- * (TouchCaret, SelectionCarets, etc) and the Mobile ActionBar UI.
+ * (AccessibleCaret, etc) and the Mobile ActionBar UI.
  */
 var ActionBarHandler = {
   // Error codes returned from _init().
@@ -35,23 +35,47 @@ var ActionBarHandler = {
       return;
     }
 
+    if (!this._selectionID && e.collapsed) {
+      switch (e.reason) {
+        case 'longpressonemptycontent':
+        case 'taponcaret':
+          // Show ActionBar when long pressing on an empty input or single
+          // tapping on the caret.
+          this._init(e.boundingClientRect);
+          break;
+
+        case 'updateposition':
+          // Do not show ActionBar when single tapping on an non-empty editable
+          // input.
+          break;
+
+        default:
+          break;
+      }
+      return;
+    }
+
     // Open a closed ActionBar if carets actually visible.
     if (!this._selectionID && e.caretVisuallyVisible) {
-      this._init();
+      this._init(e.boundingClientRect);
       return;
     }
 
     // Else, update an open ActionBar.
     if (this._selectionID) {
-      if ([this._targetElement, this._contentWindow] ===
-          [Services.focus.focusedElement, Services.focus.focusedWindow]) {
-        // We have the same focused window/element as before. Trigger "TextSelection:ActionbarStatus"
-        // message only if available actions differ from when last we checked.
-        this._sendActionBarActions();
+      let [element, win] = this._getSelectionTargets();
+      if (this._targetElement === element && this._contentWindow === win) {
+        if (e.reason == 'visibilitychange' || e.reason == 'presscaret' ||
+            e.reason == 'scroll' ) {
+          this._updateVisibility();
+        } else {
+          let forceUpdate = e.reason == 'updateposition' || e.reason == 'releasecaret';
+          this._sendActionBarActions(forceUpdate, e.boundingClientRect);
+        }
       } else {
         // We have a new focused window/element pair.
         this._uninit(false);
-        this._init();
+        this._init(e.boundingClientRect);
       }
     }
   },
@@ -100,9 +124,9 @@ var ActionBarHandler = {
   },
 
   /**
-   * Called when Gecko TouchCaret or SelectionCarets become visible.
+   * Called when Gecko AccessibleCaret becomes visible.
    */
-  _init: function() {
+  _init: function(boundingClientRect) {
     let [element, win] = this._getSelectionTargets();
     if (!win) {
       return this.START_TOUCH_ERROR.NO_CONTENT_WINDOW;
@@ -117,9 +141,19 @@ var ActionBarHandler = {
       type: "TextSelection:ActionbarInit",
       selectionID: this._selectionID,
     });
-    this._sendActionBarActions(true);
+    this._sendActionBarActions(true, boundingClientRect);
 
     return this.START_TOUCH_ERROR.NONE;
+  },
+
+  /**
+   * Called when content is scrolled and handles are hidden.
+   */
+  _updateVisibility: function() {
+    Messaging.sendRequest({
+      type: "TextSelection:Visibility",
+      selectionID: this._selectionID,
+    });
   },
 
   /**
@@ -145,7 +179,7 @@ var ActionBarHandler = {
   },
 
   /**
-   * Called when Gecko TouchCaret or SelectionCarets become hidden,
+   * Called when Gecko AccessibleCaret becomes hidden,
    * ActionBar is closed by user "close" request, or as a result of object
    * methods such as SELECT_ALL, PASTE, etc.
    */
@@ -166,7 +200,7 @@ var ActionBarHandler = {
     this._selectionID = null;
 
     // Clear selection required if triggered by self, or TextSelection icon
-    // actions. If called by Gecko TouchCaret/SelectionCarets state change,
+    // actions. If called by Gecko CaretStateChangedEvent,
     // visibility state is already correct.
     if (clearSelection) {
       this._clearSelection();
@@ -203,14 +237,24 @@ var ActionBarHandler = {
    *        set by init() for example, where we want to always send the
    *        current state.
    */
-  _sendActionBarActions: function(sendAlways) {
+  _sendActionBarActions: function(sendAlways, boundingClientRect) {
     let actions = this._getActionBarActions();
+    let actionCountUnchanged = this._actionBarActions &&
+      actions.length === this._actionBarActions.length;
+    let actionsMatch = actionCountUnchanged &&
+      this._actionBarActions.every((e,i) => {
+        return e.id === actions[i].id;
+      });
 
-    if (sendAlways || actions !== this._actionBarActions) {
+    if (sendAlways || !actionsMatch) {
       Messaging.sendRequest({
         type: "TextSelection:ActionbarStatus",
         actions: actions,
-      });
+        x: boundingClientRect.x,
+        y: boundingClientRect.y,
+        width: boundingClientRect.width,
+        height: boundingClientRect.height
+      });;
     }
 
     this._actionBarActions = actions;
@@ -230,6 +274,7 @@ var ActionBarHandler = {
           label: this._getActionValue(action, "label", "", element),
           icon: this._getActionValue(action, "icon", "drawable://ic_status_logo", element),
           order: this._getActionValue(action, "order", 0, element),
+          floatingOrder: this._getActionValue(action, "floatingOrder", 9, element),
           showAsAction: this._getActionValue(action, "showAsAction", true, element),
         };
         actions.push(a);
@@ -265,6 +310,7 @@ var ActionBarHandler = {
       label: Strings.browser.GetStringFromName("contextmenu.selectAll"),
       icon: "drawable://ab_select_all",
       order: 5,
+      floatingOrder: 5,
 
       selector: {
         matches: function(element, win) {
@@ -299,6 +345,7 @@ var ActionBarHandler = {
       label: Strings.browser.GetStringFromName("contextmenu.cut"),
       icon: "drawable://ab_cut",
       order: 4,
+      floatingOrder: 1,
 
       selector: {
         matches: function(element, win) {
@@ -343,6 +390,7 @@ var ActionBarHandler = {
       label: Strings.browser.GetStringFromName("contextmenu.copy"),
       icon: "drawable://ab_copy",
       order: 3,
+      floatingOrder: 2,
 
       selector: {
         matches: function(element, win) {
@@ -375,6 +423,7 @@ var ActionBarHandler = {
       label: Strings.browser.GetStringFromName("contextmenu.paste"),
       icon: "drawable://ab_paste",
       order: 2,
+      floatingOrder: 3,
 
       selector: {
         matches: function(element, win) {
@@ -407,6 +456,7 @@ var ActionBarHandler = {
       label: Strings.browser.GetStringFromName("contextmenu.call"),
       icon: "drawable://phone",
       order: 1,
+      floatingOrder: 0,
 
       selector: {
         matches: function(element, win) {
@@ -425,16 +475,17 @@ var ActionBarHandler = {
 
     SEARCH: {
       id: "search_action",
-      label: Strings.browser.formatStringFromName("contextmenu.search",
+      label: () => Strings.browser.formatStringFromName("contextmenu.search",
         [Services.search.defaultEngine.name], 1),
       icon: "drawable://ab_search",
       order: 1,
+      floatingOrder: 6,
 
       selector: {
         matches: function(element, win) {
           // Allow if selected text exists.
           return (ActionBarHandler._getSelectedText().length > 0);
-        },  
+        },
       },
 
       action: function(element, win) {
@@ -459,9 +510,10 @@ var ActionBarHandler = {
 
     SEARCH_ADD: {
       id: "search_add_action",
-      label: Strings.browser.GetStringFromName("contextmenu.addSearchEngine2"),
+      label: Strings.browser.GetStringFromName("contextmenu.addSearchEngine3"),
       icon: "drawable://ab_add_search_engine",
       order: 0,
+      floatingOrder: 8,
 
       selector: {
         matches: function(element, win) {
@@ -489,6 +541,7 @@ var ActionBarHandler = {
       label: Strings.browser.GetStringFromName("contextmenu.share"),
       icon: "drawable://ic_menu_share",
       order: 0,
+      floatingOrder: 4,
 
       selector: {
         matches: function(element, win) {
@@ -570,8 +623,8 @@ var ActionBarHandler = {
         toStringWithFormat("text/plain", flags, 0);
     }
 
-    // Selection text gets trimmed up.
-    return selection.toString().trim();
+    // Return explicitly selected text.
+    return selection.toString();
   },
 
   /**

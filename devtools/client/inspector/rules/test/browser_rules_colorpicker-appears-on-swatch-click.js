@@ -18,7 +18,7 @@ const TEST_URI = `
   Testing the color picker tooltip!
 `;
 
-add_task(function*() {
+add_task(function* () {
   yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   let {view} = yield openRuleView();
 
@@ -50,5 +50,5 @@ function* testColorPickerAppearsOnColorSwatchClick(view, swatch) {
   ok(!inplaceEditor(swatch.parentNode),
     "The inplace editor wasn't shown as a result of the color swatch click");
 
-  yield hideTooltipAndWaitForRuleviewChanged(cPicker, view);
+  yield hideTooltipAndWaitForRuleViewChanged(cPicker, view);
 }

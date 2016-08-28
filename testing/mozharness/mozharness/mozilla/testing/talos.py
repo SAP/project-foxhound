@@ -16,10 +16,10 @@ import json
 
 from mozharness.base.config import parse_config_file
 from mozharness.base.errors import PythonErrorList
-from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL, FATAL
+from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL
 from mozharness.base.log import INFO, WARNING
 from mozharness.mozilla.blob_upload import BlobUploadMixin, blobupload_config_options
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options, INSTALLER_SUFFIXES
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.testing.errors import TinderBoxPrintRe
 from mozharness.mozilla.buildbot import TBPL_SUCCESS, TBPL_WORST_LEVEL_TUPLE
@@ -170,7 +170,12 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         if self.buildbot_config:
             # this is inside automation
             # now let's see if we added spsProfile specs in the commit message
-            junk, junk, opts = self.buildbot_config['sourcestamp']['changes'][-1]['comments'].partition('mozharness:')
+            try:
+                junk, junk, opts = self.buildbot_config['sourcestamp']['changes'][-1]['comments'].partition('mozharness:')
+            except IndexError:
+                # when we don't have comments on changes (bug 1255187)
+                opts = None
+
             if opts:
               opts = re.sub(r'\w+:.*', '', opts).strip().split(' ')
               if "--spsProfile" in opts:
@@ -192,7 +197,6 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         return sps_results
 
     def query_abs_dirs(self):
-        c = self.config
         if self.abs_dirs:
             return self.abs_dirs
         abs_dirs = super(Talos, self).query_abs_dirs()
@@ -238,6 +242,8 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
             kw_options['suite'] = self.config['suite']
         if self.config.get('title'):
             kw_options['title'] = self.config['title']
+            if kw_options['title'].startswith('tst-linux64-spot'):
+                kw_options['framework'] = 'talos-aws'
         if self.config.get('branch'):
             kw_options['branchName'] = self.config['branch']
         if self.symbols_path:

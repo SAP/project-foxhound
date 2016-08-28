@@ -6,10 +6,15 @@
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
+DIRS += [
+    'net'
+]
+
 DevToolsModules(
     'console-commands.js',
     'console-output.js',
     'hudservice.js',
+    'jsterm.js',
     'panel.js',
     'webconsole.js',
 )

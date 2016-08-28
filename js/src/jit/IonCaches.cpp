@@ -383,6 +383,12 @@ IonCache::updateBaseAddress(JitCode* code, MacroAssembler& masm)
     rejoinLabel_.repoint(code, &masm);
 }
 
+void IonCache::trace(JSTracer* trc)
+{
+    if (script_)
+        TraceManuallyBarrieredEdge(trc, &script_, "IonCache::script_");
+}
+
 static void*
 GetReturnAddressToIonCode(JSContext* cx)
 {
@@ -444,8 +450,8 @@ GeneratePrototypeGuards(JSContext* cx, IonScript* ion, MacroAssembler& masm, JSO
 // Note: This differs from IsCacheableProtoChain in BaselineIC.cpp in that
 // Ion caches can deal with objects on the proto chain that have uncacheable
 // prototypes.
-static bool
-IsCacheableProtoChainForIon(JSObject* obj, JSObject* holder)
+bool
+jit::IsCacheableProtoChainForIonOrCacheIR(JSObject* obj, JSObject* holder)
 {
     while (obj != holder) {
         /*
@@ -461,10 +467,10 @@ IsCacheableProtoChainForIon(JSObject* obj, JSObject* holder)
     return true;
 }
 
-static bool
-IsCacheableGetPropReadSlotForIon(JSObject* obj, JSObject* holder, Shape* shape)
+bool
+jit::IsCacheableGetPropReadSlotForIonOrCacheIR(JSObject* obj, JSObject* holder, Shape* shape)
 {
-    if (!shape || !IsCacheableProtoChainForIon(obj, holder))
+    if (!shape || !IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     if (!shape->hasSlot() || !shape->hasDefaultGetter())
@@ -483,12 +489,12 @@ IsCacheableNoProperty(JSObject* obj, JSObject* holder, Shape* shape, jsbytecode*
     MOZ_ASSERT(!holder);
 
     // Just because we didn't find the property on the object doesn't mean it
-    // won't magically appear through various engine hacks:
-    if (obj->getClass()->getProperty)
+    // won't magically appear through various engine hacks.
+    if (obj->getClass()->getGetProperty())
         return false;
 
     // Don't generate missing property ICs if we skipped a non-native object, as
-    // lookups may extend beyond the prototype chain (e.g.  for DOMProxy
+    // lookups may extend beyond the prototype chain (e.g. for DOMProxy
     // proxies).
     JSObject* obj2 = obj;
     while (obj2) {
@@ -549,7 +555,7 @@ IsOptimizableArgumentsObjectForGetElem(JSObject* obj, Value idval)
 static bool
 IsCacheableGetPropCallNative(JSObject* obj, JSObject* holder, Shape* shape)
 {
-    if (!shape || !IsCacheableProtoChainForIon(obj, holder))
+    if (!shape || !IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     if (!shape->hasGetterValue() || !shape->getterValue().isObject())
@@ -576,7 +582,7 @@ IsCacheableGetPropCallNative(JSObject* obj, JSObject* holder, Shape* shape)
 static bool
 IsCacheableGetPropCallScripted(JSObject* obj, JSObject* holder, Shape* shape)
 {
-    if (!shape || !IsCacheableProtoChainForIon(obj, holder))
+    if (!shape || !IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     if (!shape->hasGetterValue() || !shape->getterValue().isObject())
@@ -596,7 +602,7 @@ IsCacheableGetPropCallScripted(JSObject* obj, JSObject* holder, Shape* shape)
 static bool
 IsCacheableGetPropCallPropertyOp(JSObject* obj, JSObject* holder, Shape* shape)
 {
-    if (!shape || !IsCacheableProtoChainForIon(obj, holder))
+    if (!shape || !IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     if (shape->hasSlot() || shape->hasGetterValue() || shape->hasDefaultGetter())
@@ -1023,7 +1029,8 @@ EmitGetterCall(JSContext* cx, MacroAssembler& masm,
         uint32_t framePushedBefore = masm.framePushed();
 
         // Construct IonAccessorICFrameLayout.
-        uint32_t descriptor = MakeFrameDescriptor(masm.framePushed(), JitFrame_IonJS);
+        uint32_t descriptor = MakeFrameDescriptor(masm.framePushed(), JitFrame_IonJS,
+                                                  IonAccessorICFrameLayout::Size());
         attacher.pushStubCodePointer(masm);
         masm.Push(Imm32(descriptor));
         masm.Push(ImmPtr(returnAddr));
@@ -1043,7 +1050,8 @@ EmitGetterCall(JSContext* cx, MacroAssembler& masm,
 
         masm.movePtr(ImmGCPtr(target), scratchReg);
 
-        descriptor = MakeFrameDescriptor(argSize + padding, JitFrame_IonAccessorIC);
+        descriptor = MakeFrameDescriptor(argSize + padding, JitFrame_IonAccessorIC,
+                                         JitFrameLayout::Size());
         masm.Push(Imm32(0)); // argc
         masm.Push(scratchReg);
         masm.Push(Imm32(descriptor));
@@ -1293,7 +1301,7 @@ CanAttachNativeGetProp(JSContext* cx, const GetPropCache& cache,
     RootedScript script(cx);
     jsbytecode* pc;
     cache.getScriptedLocation(&script, &pc);
-    if (IsCacheableGetPropReadSlotForIon(obj, holder, shape) ||
+    if (IsCacheableGetPropReadSlotForIonOrCacheIR(obj, holder, shape) ||
         IsCacheableNoProperty(obj, holder, shape, pc, cache.output()))
     {
         return GetPropertyIC::CanAttachReadSlot;
@@ -2253,10 +2261,10 @@ GetPropertyIC::update(JSContext* cx, HandleScript outerScript, size_t cacheIndex
         outerScript->setInvalidatedIdempotentCache();
 
         // Do not re-invalidate if the lookup already caused invalidation.
-        if (!outerScript->hasIonScript())
-            return true;
+        if (outerScript->hasIonScript())
+            Invalidate(cx, outerScript);
 
-        return Invalidate(cx, outerScript);
+        return true;
     }
 
     jsbytecode* pc = cache.idempotent() ? nullptr : cache.pc();
@@ -2419,7 +2427,7 @@ SetPropertyIC::attachSetSlot(JSContext* cx, HandleScript outerScript, IonScript*
 static bool
 IsCacheableSetPropCallNative(HandleObject obj, HandleObject holder, HandleShape shape)
 {
-    if (!shape || !IsCacheableProtoChainForIon(obj, holder))
+    if (!shape || !IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     return shape->hasSetterValue() && shape->setterObject() &&
@@ -2430,7 +2438,7 @@ IsCacheableSetPropCallNative(HandleObject obj, HandleObject holder, HandleShape 
 static bool
 IsCacheableSetPropCallScripted(HandleObject obj, HandleObject holder, HandleShape shape)
 {
-    if (!shape || !IsCacheableProtoChainForIon(obj, holder))
+    if (!shape || !IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     return shape->hasSetterValue() && shape->setterObject() &&
@@ -2444,7 +2452,7 @@ IsCacheableSetPropCallPropertyOp(HandleObject obj, HandleObject holder, HandleSh
     if (!shape)
         return false;
 
-    if (!IsCacheableProtoChainForIon(obj, holder))
+    if (!IsCacheableProtoChainForIonOrCacheIR(obj, holder))
         return false;
 
     if (shape->hasSlot())
@@ -2842,7 +2850,8 @@ GenerateCallSetter(JSContext* cx, IonScript* ion, MacroAssembler& masm,
         uint32_t framePushedBefore = masm.framePushed();
 
         // Construct IonAccessorICFrameLayout.
-        uint32_t descriptor = MakeFrameDescriptor(masm.framePushed(), JitFrame_IonJS);
+        uint32_t descriptor = MakeFrameDescriptor(masm.framePushed(), JitFrame_IonJS,
+                                                  IonAccessorICFrameLayout::Size());
         attacher.pushStubCodePointer(masm);
         masm.Push(Imm32(descriptor));
         masm.Push(ImmPtr(returnAddr));
@@ -2864,7 +2873,8 @@ GenerateCallSetter(JSContext* cx, IonScript* ion, MacroAssembler& masm,
 
         masm.movePtr(ImmGCPtr(target), tempReg);
 
-        descriptor = MakeFrameDescriptor(argSize + padding, JitFrame_IonAccessorIC);
+        descriptor = MakeFrameDescriptor(argSize + padding, JitFrame_IonAccessorIC,
+                                         JitFrameLayout::Size());
         masm.Push(Imm32(1)); // argc
         masm.Push(tempReg);
         masm.Push(Imm32(descriptor));
@@ -3276,7 +3286,7 @@ IsPropertyAddInlineable(JSContext* cx, NativeObject* obj, HandleId id, ConstantO
         return false;
 
     // Likewise for an addProperty hook, since we'll need to invoke it.
-    if (obj->getClass()->addProperty)
+    if (obj->getClass()->getAddProperty())
         return false;
 
     if (!obj->nonProxyIsExtensible() || !shape->writable())
@@ -4450,19 +4460,19 @@ GenerateSetDenseElement(JSContext* cx, MacroAssembler& masm, IonCache::StubAttac
             masm.branch32(Assembler::NotEqual, initLength, indexReg, &inBounds);
             {
                 // Increase initialize length.
-                Int32Key newLength(indexReg);
-                masm.bumpKey(&newLength, 1);
-                masm.storeKey(newLength, initLength);
+                Register newLength = indexReg;
+                masm.add32(Imm32(1), newLength);
+                masm.store32(newLength, initLength);
 
                 // Increase length if needed.
                 Label bumpedLength;
                 Address length(elements, ObjectElements::offsetOfLength());
                 masm.branch32(Assembler::AboveOrEqual, length, indexReg, &bumpedLength);
-                masm.storeKey(newLength, length);
+                masm.store32(newLength, length);
                 masm.bind(&bumpedLength);
 
                 // Restore the index.
-                masm.bumpKey(&newLength, -1);
+                masm.add32(Imm32(-1), newLength);
                 masm.jump(&storeElement);
             }
             // else
@@ -4857,7 +4867,7 @@ IsCacheableNameReadSlot(HandleObject scopeChain, HandleObject obj,
 
     if (obj->is<GlobalObject>()) {
         // Support only simple property lookups.
-        if (!IsCacheableGetPropReadSlotForIon(obj, holder, shape) &&
+        if (!IsCacheableGetPropReadSlotForIonOrCacheIR(obj, holder, shape) &&
             !IsCacheableNoProperty(obj, holder, shape, pc, output))
             return false;
     } else if (obj->is<ModuleEnvironmentObject>()) {

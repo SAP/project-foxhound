@@ -845,7 +845,7 @@ public:
   {
     MOZ_ASSERT(GetState() == State_Initial);
 
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(this->Run()));
+    MOZ_ALWAYS_SUCCEEDS(this->Run());
   }
 
 protected:
@@ -918,7 +918,9 @@ private:
 class Quota final
   : public PQuotaParent
 {
-  DebugOnly<bool> mActorDestroyed;
+#ifdef DEBUG
+  bool mActorDestroyed;
+#endif
 
 public:
   Quota();
@@ -1355,7 +1357,7 @@ class MOZ_STACK_CLASS OriginParser final
 
   SchemaType mSchemaType;
   State mState;
-  bool mInMozBrowser;
+  bool mInIsolatedMozBrowser;
   bool mMaybeDriveLetter;
   bool mError;
 
@@ -1367,7 +1369,7 @@ public:
     , mPort()
     , mSchemaType(eNone)
     , mState(eExpectingAppIdOrSchema)
-    , mInMozBrowser(false)
+    , mInIsolatedMozBrowser(false)
     , mMaybeDriveLetter(false)
     , mError(false)
   { }
@@ -2279,7 +2281,7 @@ CreateRunnable::Run()
   }
 
   if (thread) {
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(thread->Dispatch(this, NS_DISPATCH_NORMAL)));
+    MOZ_ALWAYS_SUCCEEDS(thread->Dispatch(this, NS_DISPATCH_NORMAL));
   }
 
   return NS_OK;
@@ -2309,7 +2311,7 @@ ShutdownRunnable::Run()
     gInstance = nullptr;
   }
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(this)));
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
 
   return NS_OK;
 }
@@ -2328,8 +2330,8 @@ ShutdownObserver::Observe(nsISupports* aSubject,
   bool done = false;
 
   RefPtr<ShutdownRunnable> shutdownRunnable = new ShutdownRunnable(done);
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(
-    mBackgroundThread->Dispatch(shutdownRunnable, NS_DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(
+    mBackgroundThread->Dispatch(shutdownRunnable, NS_DISPATCH_NORMAL));
 
   nsIThread* currentThread = NS_GetCurrentThread();
   MOZ_ASSERT(currentThread);
@@ -2403,6 +2405,10 @@ QuotaObject::MaybeUpdateSize(int64_t aSize, bool aTruncate)
 
   MutexAutoLock lock(quotaManager->mQuotaMutex);
 
+  if (mQuotaCheckDisabled) {
+    return true;
+  }
+
   if (mSize == aSize) {
     return true;
   }
@@ -2470,7 +2476,7 @@ QuotaObject::MaybeUpdateSize(int64_t aSize, bool aTruncate)
   if (newTemporaryStorageUsage > quotaManager->mTemporaryStorageLimit) {
     // This will block the thread without holding the lock while waitting.
 
-    nsAutoTArray<RefPtr<DirectoryLockImpl>, 10> locks;
+    AutoTArray<RefPtr<DirectoryLockImpl>, 10> locks;
 
     uint64_t sizeToBeFreed =
       quotaManager->LockedCollectOriginsForEviction(delta, locks);
@@ -2578,6 +2584,28 @@ QuotaObject::MaybeUpdateSize(int64_t aSize, bool aTruncate)
   return true;
 }
 
+void
+QuotaObject::DisableQuotaCheck()
+{
+  QuotaManager* quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
+
+  MutexAutoLock lock(quotaManager->mQuotaMutex);
+
+  mQuotaCheckDisabled = true;
+}
+
+void
+QuotaObject::EnableQuotaCheck()
+{
+  QuotaManager* quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
+
+  MutexAutoLock lock(quotaManager->mQuotaMutex);
+
+  mQuotaCheckDisabled = false;
+}
+
 /*******************************************************************************
  * Quota manager
  ******************************************************************************/
@@ -2613,11 +2641,11 @@ QuotaManager::GetOrCreate(nsIRunnable* aCallback)
     MOZ_ASSERT(!gCreateRunnable);
     MOZ_ASSERT_IF(gCreateFailed, !gInstance);
 
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToCurrentThread(aCallback)));
+    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(aCallback));
   } else {
     if (!gCreateRunnable) {
       gCreateRunnable = new CreateRunnable();
-      MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(gCreateRunnable)));
+      MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(gCreateRunnable));
     }
 
     gCreateRunnable->AddCallback(aCallback);
@@ -3039,11 +3067,11 @@ QuotaManager::Shutdown()
   StopIdleMaintenance();
 
   // Kick off the shutdown timer.
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(
+  MOZ_ALWAYS_SUCCEEDS(
     mShutdownTimer->InitWithFuncCallback(&ShutdownTimerCallback,
                                          this,
                                          DEFAULT_SHUTDOWN_TIMER_MS,
-                                         nsITimer::TYPE_ONE_SHOT)));
+                                         nsITimer::TYPE_ONE_SHOT));
 
   // Each client will spin the event loop while we wait on all the threads
   // to close. Our timer may fire during that loop.
@@ -3773,6 +3801,7 @@ QuotaManager::OpenDirectory(PersistenceType aPersistenceType,
 void
 QuotaManager::OpenDirectoryInternal(Nullable<PersistenceType> aPersistenceType,
                                     const OriginScope& aOriginScope,
+                                    Nullable<Client::Type> aClientType,
                                     bool aExclusive,
                                     OpenDirectoryListener* aOpenListener)
 {
@@ -3783,7 +3812,7 @@ QuotaManager::OpenDirectoryInternal(Nullable<PersistenceType> aPersistenceType,
                         EmptyCString(),
                         aOriginScope,
                         Nullable<bool>(),
-                        Nullable<Client::Type>(),
+                        Nullable<Client::Type>(aClientType),
                         aExclusive,
                         true,
                         aOpenListener);
@@ -3795,7 +3824,7 @@ QuotaManager::OpenDirectoryInternal(Nullable<PersistenceType> aPersistenceType,
 
   // All the locks that block this new exclusive lock need to be invalidated.
   // We also need to notify clients to abort operations for them.
-  nsAutoTArray<nsAutoPtr<nsTHashtable<nsCStringHashKey>>,
+  AutoTArray<nsAutoPtr<nsTHashtable<nsCStringHashKey>>,
                Client::TYPE_MAX> origins;
   origins.SetLength(Client::TYPE_MAX);
 
@@ -4160,7 +4189,7 @@ QuotaManager::GetInfoFromPrincipal(nsIPrincipal* aPrincipal,
 
 // static
 nsresult
-QuotaManager::GetInfoFromWindow(nsPIDOMWindow* aWindow,
+QuotaManager::GetInfoFromWindow(nsPIDOMWindowOuter* aWindow,
                                 nsACString* aGroup,
                                 nsACString* aOrigin,
                                 bool* aIsApp)
@@ -4307,8 +4336,7 @@ QuotaManager::LockedCollectOriginsForEviction(
   {
     MutexAutoUnlock autoUnlock(mQuotaMutex);
 
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mOwningThread->Dispatch(helper,
-                                                         NS_DISPATCH_NORMAL)));
+    MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(helper, NS_DISPATCH_NORMAL));
   }
 
   return helper->BlockAndReturnOriginsForEviction(aLocks);
@@ -4852,8 +4880,7 @@ OriginOperationBase::Finish(nsresult aResult)
   // thread.
   mState = State_UnblockingOpen;
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mOwningThread->Dispatch(this,
-                                                       NS_DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(this, NS_DISPATCH_NORMAL));
 }
 
 nsresult
@@ -4865,10 +4892,10 @@ OriginOperationBase::Init()
   AdvanceState();
 
   if (mNeedsMainThreadInit) {
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(this)));
+    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
   } else {
     AdvanceState();
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(Run()));
+    MOZ_ALWAYS_SUCCEEDS(Run());
   }
 
   return NS_OK;
@@ -4887,8 +4914,7 @@ OriginOperationBase::InitOnMainThread()
 
   AdvanceState();
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mOwningThread->Dispatch(this,
-                                                       NS_DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(this, NS_DISPATCH_NORMAL));
 
   return NS_OK;
 }
@@ -4949,8 +4975,7 @@ OriginOperationBase::DirectoryWork()
   // thread.
   AdvanceState();
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mOwningThread->Dispatch(this,
-                                                       NS_DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(this, NS_DISPATCH_NORMAL));
 
   return NS_OK;
 }
@@ -4963,8 +4988,7 @@ FinalizeOriginEvictionOp::Dispatch()
 
   SetState(State_DirectoryOpenPending);
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mOwningThread->Dispatch(this,
-                                                       NS_DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(this, NS_DISPATCH_NORMAL));
 }
 
 void
@@ -4975,7 +4999,7 @@ FinalizeOriginEvictionOp::RunOnIOThreadImmediately()
 
   SetState(State_DirectoryWorkOpen);
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(this->Run()));
+  MOZ_ALWAYS_SUCCEEDS(this->Run());
 }
 
 void
@@ -5029,6 +5053,7 @@ NormalOriginOperationBase::Open()
 
   QuotaManager::Get()->OpenDirectoryInternal(mPersistenceType,
                                              mOriginScope,
+                                             Nullable<Client::Type>(),
                                              mExclusive,
                                              this);
 }
@@ -5123,7 +5148,9 @@ SaveOriginAccessTimeOp::SendResults()
  ******************************************************************************/
 
 Quota::Quota()
+#ifdef DEBUG
   : mActorDestroyed(false)
+#endif
 {
 }
 
@@ -5150,9 +5177,10 @@ void
 Quota::ActorDestroy(ActorDestroyReason aWhy)
 {
   AssertIsOnBackgroundThread();
+#ifdef DEBUG
   MOZ_ASSERT(!mActorDestroyed);
-
   mActorDestroyed = true;
+#endif
 }
 
 PQuotaUsageRequestParent*
@@ -5711,7 +5739,7 @@ OriginClearOp::DoInitOnMainThread()
     mozilla::BasePrincipal::Cast(principal)->OriginAttributesRef();
 
   nsAutoCString pattern;
-  QuotaManager::GetOriginPatternString(attrs.mAppId, attrs.mInBrowser, origin,
+  QuotaManager::GetOriginPatternString(attrs.mAppId, attrs.mInIsolatedMozBrowser, origin,
                                        pattern);
 
   mOriginScope.SetFromPattern(pattern);
@@ -6013,7 +6041,7 @@ StorageDirectoryHelper::ProcessOriginDirectories(bool aMove)
   AssertIsOnIOThread();
   MOZ_ASSERT(!mOriginProps.IsEmpty());
 
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(this)));
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
 
   {
     mozilla::MutexAutoLock autolock(mMutex);
@@ -6264,7 +6292,7 @@ OriginParser::Parse(nsACString& aSpec, PrincipalOriginAttributes* aAttrs)
 
   MOZ_ASSERT(mState == eComplete || mState == eHandledTrailingSeparator);
 
-  *aAttrs = PrincipalOriginAttributes(mAppId, mInMozBrowser);
+  *aAttrs = PrincipalOriginAttributes(mAppId, mInIsolatedMozBrowser);
 
   nsAutoCString spec(mSchema);
 
@@ -6389,9 +6417,9 @@ OriginParser::HandleToken(const nsDependentCSubstring& aToken)
       }
 
       if (aToken.First() == 't') {
-        mInMozBrowser = true;
+        mInIsolatedMozBrowser = true;
       } else if (aToken.First() == 'f') {
-        mInMozBrowser = false;
+        mInIsolatedMozBrowser = false;
       } else {
         QM_WARNING("'%s' is not a valid value for the inMozBrowser flag!",
                    nsCString(aToken).get());

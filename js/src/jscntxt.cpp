@@ -62,8 +62,10 @@ js::AutoCycleDetector::init()
     AutoCycleDetector::Set& set = cx->cycleDetectorSet;
     hashsetAddPointer = set.lookupForAdd(obj);
     if (!hashsetAddPointer) {
-        if (!set.add(hashsetAddPointer, obj))
+        if (!set.add(hashsetAddPointer, obj)) {
+            ReportOutOfMemory(cx);
             return false;
+        }
         cyclic = false;
         hashsetGenerationAtInit = set.generation();
     }
@@ -152,7 +154,7 @@ js::DestroyContext(JSContext* cx, DestroyContextMode mode)
         MOZ_CRASH("Attempted to destroy a context while it is in a request.");
 
     cx->roots.checkNoGCRooters();
-    FinishPersistentRootedChains(cx->roots);
+    cx->roots.finishPersistentRoots();
 
     if (mode != DCM_NEW_FAILED) {
         if (JSContextCallback cxCallback = rt->cxCallback) {
@@ -186,8 +188,9 @@ js::DestroyContext(JSContext* cx, DestroyContextMode mode)
 void
 RootLists::checkNoGCRooters() {
 #ifdef DEBUG
-    for (int i = 0; i < THING_ROOT_LIMIT; ++i)
-        MOZ_ASSERT(stackRoots_[i] == nullptr);
+    for (auto const& stackRootPtr : stackRoots_) {
+        MOZ_ASSERT(stackRootPtr == nullptr);
+    }
 #endif
 }
 
@@ -300,7 +303,7 @@ js::ReportOutOfMemory(ExclusiveContext* cxArg)
     if (JS::OutOfMemoryCallback oomCallback = cx->runtime()->oomCallback)
         oomCallback(cx, cx->runtime()->oomCallbackData);
 
-    if (JS_IsRunning(cx)) {
+    if (cx->options().autoJSAPIOwnsErrorReporting() || JS_IsRunning(cx)) {
         cx->setPendingException(StringValue(cx->names().outOfMemory));
         return;
     }
@@ -913,7 +916,7 @@ js::ReportValueErrorFlags(JSContext* cx, unsigned flags, const unsigned errorNum
 
 const JSErrorFormatString js_ErrorFormatString[JSErr_Limit] = {
 #define MSG_DEF(name, count, exception, format) \
-    { format, count, exception } ,
+    { #name, format, count, exception } ,
 #include "js.msg"
 #undef MSG_DEF
 };
@@ -963,7 +966,6 @@ JSContext::JSContext(JSRuntime* rt)
     resolvingList(nullptr),
     generatingError(false),
     savedFrameChains_(),
-    cycleDetectorSet(this),
     data(nullptr),
     data2(nullptr),
     outstandingRequests(0),
@@ -1006,6 +1008,15 @@ bool
 JSContext::isClosingGenerator()
 {
     return throwing && unwrappedException_.isMagic(JS_GENERATOR_CLOSING);
+}
+
+bool
+JSContext::isThrowingDebuggeeWouldRun()
+{
+    return throwing &&
+           unwrappedException_.isObject() &&
+           unwrappedException_.toObject().is<ErrorObject>() &&
+           unwrappedException_.toObject().as<ErrorObject>().type() == JSEXN_DEBUGGEEWOULDRUN;
 }
 
 bool

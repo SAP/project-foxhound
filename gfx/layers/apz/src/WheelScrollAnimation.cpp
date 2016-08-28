@@ -16,8 +16,7 @@ namespace layers {
 WheelScrollAnimation::WheelScrollAnimation(AsyncPanZoomController& aApzc,
                                            const nsPoint& aInitialPosition,
                                            ScrollWheelInput::ScrollDeltaType aDeltaType)
-  : AsyncPanZoomAnimation(TimeDuration::FromMilliseconds(gfxPrefs::APZSmoothScrollRepaintInterval()))
-  , AsyncScrollBase(aInitialPosition)
+  : AsyncScrollBase(aInitialPosition)
   , mApzc(aApzc)
   , mFinalDestination(aInitialPosition)
   , mDeltaType(aDeltaType)
@@ -56,7 +55,10 @@ WheelScrollAnimation::DoSample(FrameMetrics& aFrameMetrics, const TimeDuration& 
   ParentLayerPoint displacement =
     (CSSPoint::FromAppUnits(sampledDest) - aFrameMetrics.GetScrollOffset()) * zoom;
 
-  if (!IsZero(displacement)) {
+  if (finished) {
+    mApzc.mX.SetVelocity(0);
+    mApzc.mY.SetVelocity(0);
+  } else if (!IsZero(displacement)) {
     // Velocity is measured in ParentLayerCoords / Milliseconds
     float xVelocity = displacement.x / aDelta.ToMilliseconds();
     float yVelocity = displacement.y / aDelta.ToMilliseconds();

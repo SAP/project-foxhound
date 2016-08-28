@@ -10,6 +10,7 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIOutputStream.h"
+#include "nsIScriptError.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -19,6 +20,8 @@
 #include "nsNetUtil.h"
 #include "nsSerializationHelper.h"
 #include "nsQueryObject.h"
+#include "ServiceWorkerClient.h"
+#include "ServiceWorkerManager.h"
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
@@ -34,11 +37,14 @@
 #include "mozilla/dom/workers/bindings/ServiceWorker.h"
 
 #ifndef MOZ_SIMPLEPUSH
+#include "mozilla/dom/PushEventBinding.h"
+#include "mozilla/dom/PushMessageDataBinding.h"
+
 #include "nsIUnicodeDecoder.h"
 #include "nsIUnicodeEncoder.h"
 
+#include "mozilla/dom/BodyUtil.h"
 #include "mozilla/dom/EncodingUtils.h"
-#include "mozilla/dom/FetchUtil.h"
 #include "mozilla/dom/TypedArray.h"
 #endif
 
@@ -48,6 +54,48 @@
 #include "xpcpublic.h"
 
 using namespace mozilla::dom;
+using namespace mozilla::dom::workers;
+
+namespace {
+
+void
+AsyncLog(nsIInterceptedChannel *aInterceptedChannel,
+         const nsACString& aRespondWithScriptSpec,
+         uint32_t aRespondWithLineNumber, uint32_t aRespondWithColumnNumber,
+         const nsACString& aMessageName, const nsTArray<nsString>& aParams)
+{
+  MOZ_ASSERT(aInterceptedChannel);
+  nsCOMPtr<nsIConsoleReportCollector> reporter =
+    aInterceptedChannel->GetConsoleReportCollector();
+  if (reporter) {
+    reporter->AddConsoleReport(nsIScriptError::errorFlag,
+                               NS_LITERAL_CSTRING("Service Worker Interception"),
+                               nsContentUtils::eDOM_PROPERTIES,
+                               aRespondWithScriptSpec,
+                               aRespondWithLineNumber,
+                               aRespondWithColumnNumber,
+                               aMessageName, aParams);
+  }
+}
+
+template<typename... Params>
+void
+AsyncLog(nsIInterceptedChannel* aInterceptedChannel,
+         const nsACString& aRespondWithScriptSpec,
+         uint32_t aRespondWithLineNumber, uint32_t aRespondWithColumnNumber,
+         // We have to list one explicit string so that calls with an
+         // nsTArray of params won't end up in here.
+         const nsACString& aMessageName, const nsAString& aFirstParam,
+         Params&&... aParams)
+{
+  nsTArray<nsString> paramsList(sizeof...(Params) + 1);
+  StringArrayAppender::Append(paramsList, sizeof...(Params) + 1,
+                              aFirstParam, Forward<Params>(aParams)...);
+  AsyncLog(aInterceptedChannel, aRespondWithScriptSpec, aRespondWithLineNumber,
+           aRespondWithColumnNumber, aMessageName, paramsList);
+}
+
+} // anonymous namespace
 
 BEGIN_WORKERS_NAMESPACE
 
@@ -112,43 +160,6 @@ FetchEvent::Constructor(const GlobalObject& aGlobal,
 
 namespace {
 
-void
-AsyncLog(nsIInterceptedChannel *aInterceptedChannel,
-         const nsACString& aRespondWithScriptSpec,
-         uint32_t aRespondWithLineNumber, uint32_t aRespondWithColumnNumber,
-         const nsACString& aMessageName, const nsTArray<nsString>& aParams)
-{
-  MOZ_ASSERT(aInterceptedChannel);
-  nsCOMPtr<nsIConsoleReportCollector> reporter =
-    aInterceptedChannel->GetConsoleReportCollector();
-  if (reporter) {
-    reporter->AddConsoleReport(nsIScriptError::errorFlag,
-                               NS_LITERAL_CSTRING("Service Worker Interception"),
-                               nsContentUtils::eDOM_PROPERTIES,
-                               aRespondWithScriptSpec,
-                               aRespondWithLineNumber,
-                               aRespondWithColumnNumber,
-                               aMessageName, aParams);
-  }
-}
-
-template<typename... Params>
-void
-AsyncLog(nsIInterceptedChannel* aInterceptedChannel,
-         const nsACString& aRespondWithScriptSpec,
-         uint32_t aRespondWithLineNumber, uint32_t aRespondWithColumnNumber,
-         // We have to list one explicit string so that calls with an
-         // nsTArray of params won't end up in here.
-         const nsACString& aMessageName, const nsAString& aFirstParam,
-         Params&&... aParams)
-{
-  nsTArray<nsString> paramsList(sizeof...(Params) + 1);
-  StringArrayAppender::Append(paramsList, sizeof...(Params) + 1,
-                              aFirstParam, Forward<Params>(aParams)...);
-  AsyncLog(aInterceptedChannel, aRespondWithScriptSpec, aRespondWithLineNumber,
-           aRespondWithColumnNumber, aMessageName, paramsList);
-}
-
 class FinishResponse final : public nsRunnable
 {
   nsMainThreadPtrHandle<nsIInterceptedChannel> mChannel;
@@ -197,13 +208,18 @@ public:
     }
     rv = mChannel->SetChannelInfo(&channelInfo);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      mChannel->Cancel(NS_ERROR_INTERCEPTION_FAILED);
+      return NS_OK;
     }
 
-    mChannel->SynthesizeStatus(mInternalResponse->GetUnfilteredStatus(),
-                               mInternalResponse->GetUnfilteredStatusText());
+    rv = mChannel->SynthesizeStatus(mInternalResponse->GetUnfilteredStatus(),
+                                    mInternalResponse->GetUnfilteredStatusText());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      mChannel->Cancel(NS_ERROR_INTERCEPTION_FAILED);
+      return NS_OK;
+    }
 
-    nsAutoTArray<InternalHeaders::Entry, 5> entries;
+    AutoTArray<InternalHeaders::Entry, 5> entries;
     mInternalResponse->UnfilteredHeaders()->GetEntries(entries);
     for (uint32_t i = 0; i < entries.Length(); ++i) {
        mChannel->SynthesizeHeader(entries[i].mName, entries[i].mValue);
@@ -212,7 +228,10 @@ public:
     loadInfo->MaybeIncreaseTainting(mInternalResponse->GetTainting());
 
     rv = mChannel->FinishSynthesizedResponse(mResponseURLSpec);
-    NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Failed to finish synthesized response");
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      mChannel->Cancel(NS_ERROR_INTERCEPTION_FAILED);
+      return NS_OK;
+    }
 
     nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
     if (obsService) {
@@ -253,8 +272,10 @@ class RespondWithHandler final : public PromiseNativeHandler
   nsMainThreadPtrHandle<nsIInterceptedChannel> mInterceptedChannel;
   nsMainThreadPtrHandle<ServiceWorkerRegistrationInfo> mRegistration;
   const RequestMode mRequestMode;
-  const DebugOnly<bool> mIsClientRequest;
-  const bool mIsNavigationRequest;
+  const RequestRedirect mRequestRedirectMode;
+#ifdef DEBUG
+  const bool mIsClientRequest;
+#endif
   const nsCString mScriptSpec;
   const nsString mRequestURL;
   const nsCString mRespondWithScriptSpec;
@@ -267,7 +288,7 @@ public:
   RespondWithHandler(nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
                      nsMainThreadPtrHandle<ServiceWorkerRegistrationInfo>& aRegistration,
                      RequestMode aRequestMode, bool aIsClientRequest,
-                     bool aIsNavigationRequest,
+                     RequestRedirect aRedirectMode,
                      const nsACString& aScriptSpec,
                      const nsAString& aRequestURL,
                      const nsACString& aRespondWithScriptSpec,
@@ -276,8 +297,10 @@ public:
     : mInterceptedChannel(aChannel)
     , mRegistration(aRegistration)
     , mRequestMode(aRequestMode)
+    , mRequestRedirectMode(aRedirectMode)
+#ifdef DEBUG
     , mIsClientRequest(aIsClientRequest)
-    , mIsNavigationRequest(aIsNavigationRequest)
+#endif
     , mScriptSpec(aScriptSpec)
     , mRequestURL(aRequestURL)
     , mRespondWithScriptSpec(aRespondWithScriptSpec)
@@ -374,7 +397,7 @@ void RespondWithCopyComplete(void* aClosure, nsresult aStatus)
                                data->mScriptSpec,
                                data->mResponseURLSpec);
   }
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(event)));
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(event));
 }
 
 namespace {
@@ -416,10 +439,10 @@ ExtractErrorValues(JSContext* aCx, JS::Handle<JS::Value> aValue,
     else if(NS_SUCCEEDED(UNWRAP_OBJECT(DOMException, obj, domException))) {
 
       nsAutoString filename;
-      domException->GetFilename(filename);
+      domException->GetFilename(aCx, filename);
       if (!filename.IsEmpty()) {
         CopyUTF16toUTF8(filename, aSourceSpecOut);
-        *aLineOut = domException->LineNumber();
+        *aLineOut = domException->LineNumber(aCx);
         *aColumnOut = domException->ColumnNumber();
       }
 
@@ -557,20 +580,11 @@ RespondWithHandler::ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValu
   MOZ_ASSERT(worker);
   worker->AssertIsOnWorkerThread();
 
-  // Allow opaque response interception to be disabled until we can ensure the
-  // security implications are not a complete disaster.
-  if (response->Type() == ResponseType::Opaque &&
-      !worker->OpaqueInterceptionEnabled()) {
-    autoCancel.SetCancelMessage(
-      NS_LITERAL_CSTRING("OpaqueInterceptionDisabledWithURL"), mRequestURL);
-    return;
-  }
-
-  // Section "HTTP Fetch", step 2.2:
+  // Section "HTTP Fetch", step 3.3:
   //  If one of the following conditions is true, return a network error:
   //    * response's type is "error".
   //    * request's mode is not "no-cors" and response's type is "opaque".
-  //    * request is not a navigation request and response's type is
+  //    * request's redirect mode is not "manual" and response's type is
   //      "opaqueredirect".
 
   if (response->Type() == ResponseType::Error) {
@@ -593,7 +607,8 @@ RespondWithHandler::ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValu
     return;
   }
 
-  if (!mIsNavigationRequest && response->Type() == ResponseType::Opaqueredirect) {
+  if (mRequestRedirectMode != RequestRedirect::Manual &&
+      response->Type() == ResponseType::Opaqueredirect) {
     autoCancel.SetCancelMessage(
       NS_LITERAL_CSTRING("BadOpaqueRedirectInterceptionWithURL"), mRequestURL);
     return;
@@ -736,7 +751,7 @@ FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv)
   mWaitToRespond = true;
   RefPtr<RespondWithHandler> handler =
     new RespondWithHandler(mChannel, mRegistration, mRequest->Mode(),
-                           ir->IsClientRequest(), ir->IsNavigationRequest(),
+                           ir->IsClientRequest(), mRequest->Redirect(),
                            mScriptSpec, NS_ConvertUTF8toUTF16(requestURL),
                            spec, line, column);
   aArg.AppendNativeHandler(handler);
@@ -839,8 +854,7 @@ public:
 
     nsCOMPtr<nsIRunnable> runnable =
       NS_NewRunnableMethod(this, &WaitUntilHandler::ReportOnMainThread);
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(
-      NS_DispatchToMainThread(runnable.forget())));
+    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable.forget()));
   }
 
   void
@@ -918,7 +932,6 @@ ExtendableEvent::GetPromise()
   if (!jsapi.Init(globalObj)) {
     return nullptr;
   }
-  jsapi.TakeOwnershipOfErrorReporting();
   JSContext* cx = jsapi.cx();
 
   GlobalObject global(cx, globalObj->GetGlobalJSObject());
@@ -1027,6 +1040,12 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PushMessageData)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+JSObject*
+PushMessageData::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
+{
+  return mozilla::dom::PushMessageDataBinding::Wrap(aCx, this, aGivenProto);
+}
+
 void
 PushMessageData::Json(JSContext* cx, JS::MutableHandle<JS::Value> aRetval,
                       ErrorResult& aRv)
@@ -1035,7 +1054,7 @@ PushMessageData::Json(JSContext* cx, JS::MutableHandle<JS::Value> aRetval,
     aRv.Throw(NS_ERROR_DOM_UNKNOWN_ERR);
     return;
   }
-  FetchUtil::ConsumeJson(cx, aRetval, mDecodedText, aRv);
+  BodyUtil::ConsumeJson(cx, aRetval, mDecodedText, aRv);
 }
 
 void
@@ -1053,7 +1072,7 @@ PushMessageData::ArrayBuffer(JSContext* cx,
 {
   uint8_t* data = GetContentsCopy();
   if (data) {
-    FetchUtil::ConsumeArrayBuffer(cx, aRetval, mBytes.Length(), data, aRv);
+    BodyUtil::ConsumeArrayBuffer(cx, aRetval, mBytes.Length(), data, aRv);
   }
 }
 
@@ -1062,7 +1081,7 @@ PushMessageData::Blob(ErrorResult& aRv)
 {
   uint8_t* data = GetContentsCopy();
   if (data) {
-    RefPtr<mozilla::dom::Blob> blob = FetchUtil::ConsumeBlob(
+    RefPtr<mozilla::dom::Blob> blob = BodyUtil::ConsumeBlob(
       mOwner, EmptyString(), mBytes.Length(), data, aRv);
     if (blob) {
       return blob.forget();
@@ -1077,7 +1096,7 @@ PushMessageData::EnsureDecodedText()
   if (mBytes.IsEmpty() || !mDecodedText.IsEmpty()) {
     return NS_OK;
   }
-  nsresult rv = FetchUtil::ConsumeText(
+  nsresult rv = BodyUtil::ConsumeText(
     mBytes.Length(),
     reinterpret_cast<uint8_t*>(mBytes.Elements()),
     mDecodedText
@@ -1135,6 +1154,12 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(PushEvent)
 NS_INTERFACE_MAP_END_INHERITING(ExtendableEvent)
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(PushEvent, ExtendableEvent, mData)
+
+JSObject*
+PushEvent::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
+{
+  return mozilla::dom::PushEventBinding::Wrap(aCx, this, aGivenProto);
+}
 
 #endif /* ! MOZ_SIMPLEPUSH */
 
@@ -1270,7 +1295,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ExtendableMessageEvent, Event)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ExtendableMessageEvent, Event)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mData)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mData)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(ExtendableMessageEvent)

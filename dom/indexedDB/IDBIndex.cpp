@@ -25,12 +25,11 @@
 
 namespace mozilla {
 namespace dom {
-namespace indexedDB {
 
 namespace {
 
 already_AddRefed<IDBRequest>
-GenerateRequest(IDBIndex* aIndex)
+GenerateRequest(JSContext* aCx, IDBIndex* aIndex)
 {
   MOZ_ASSERT(aIndex);
   aIndex->AssertIsOnOwningThread();
@@ -38,7 +37,7 @@ GenerateRequest(IDBIndex* aIndex)
   IDBTransaction* transaction = aIndex->ObjectStore()->Transaction();
 
   RefPtr<IDBRequest> request =
-    IDBRequest::Create(aIndex, transaction->Database(), transaction);
+    IDBRequest::Create(aCx, aIndex, transaction->Database(), transaction);
   MOZ_ASSERT(request);
 
   return request.forget();
@@ -177,7 +176,7 @@ IDBIndex::LocaleAware() const
   return mMetadata->locale().IsEmpty();
 }
 
-const KeyPath&
+const indexedDB::KeyPath&
 IDBIndex::GetKeyPath() const
 {
   AssertIsOnOwningThread();
@@ -217,7 +216,7 @@ IDBIndex::IsAutoLocale() const
   return mMetadata->autoLocale();
 }
 
-nsPIDOMWindow*
+nsPIDOMWindowInner*
 IDBIndex::GetParentObject() const
 {
   AssertIsOnOwningThread();
@@ -300,7 +299,7 @@ IDBIndex::GetInternal(bool aKeyOnly,
     params = IndexGetParams(objectStoreId, indexId, serializedKeyRange);
   }
 
-  RefPtr<IDBRequest> request = GenerateRequest(this);
+  RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
   if (aKeyOnly) {
@@ -384,7 +383,7 @@ IDBIndex::GetAllInternal(bool aKeysOnly,
     params = IndexGetAllParams(objectStoreId, indexId, optionalKeyRange, limit);
   }
 
-  RefPtr<IDBRequest> request = GenerateRequest(this);
+  RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
   if (aKeysOnly) {
@@ -483,7 +482,7 @@ IDBIndex::OpenCursorInternal(bool aKeysOnly,
     params = Move(openParams);
   }
 
-  RefPtr<IDBRequest> request = GenerateRequest(this);
+  RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
   if (aKeysOnly) {
@@ -561,7 +560,7 @@ IDBIndex::Count(JSContext* aCx,
     params.optionalKeyRange() = void_t();
   }
 
-  RefPtr<IDBRequest> request = GenerateRequest(this);
+  RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
   IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
@@ -594,7 +593,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBIndex)
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(IDBIndex)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedKeyPath)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mCachedKeyPath)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBIndex)
@@ -621,6 +620,5 @@ IDBIndex::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
   return IDBIndexBinding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace indexedDB
 } // namespace dom
 } // namespace mozilla

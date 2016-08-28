@@ -17,6 +17,8 @@
 namespace mozilla {
 namespace a11y {
 
+class xpcAccessibleGeneric;
+
 /*
  * These objects live in the main process and comunicate with and represent
  * an accessible document in a content process.
@@ -46,8 +48,10 @@ public:
   virtual bool RecvEvent(const uint64_t& aID, const uint32_t& aType)
     override;
 
-  virtual bool RecvShowEvent(const ShowEventData& aData) override;
-  virtual bool RecvHideEvent(const uint64_t& aRootID) override;
+  virtual bool RecvShowEvent(const ShowEventData& aData, const bool& aFromUser)
+    override;
+  virtual bool RecvHideEvent(const uint64_t& aRootID, const bool& aFromUser)
+    override;
   virtual bool RecvStateChangeEvent(const uint64_t& aID,
                                     const uint64_t& aState,
                                     const bool& aEnabled) override final;
@@ -159,6 +163,7 @@ private:
                       const nsTArray<AccessibleData>& aNewTree, uint32_t aIdx,
                       uint32_t aIdxInParent);
   MOZ_WARN_UNUSED_RESULT bool CheckDocTree() const;
+  xpcAccessibleGeneric* GetXPCAccessible(ProxyAccessible* aProxy);
 
   nsTArray<DocAccessibleParent*> mChildDocs;
   DocAccessibleParent* mParentDoc;

@@ -42,6 +42,9 @@ public:
 
   AbstractThread(bool aSupportsTailDispatch) : mSupportsTailDispatch(aSupportsTailDispatch) {}
 
+  static already_AddRefed<AbstractThread>
+  CreateXPCOMThreadWrapper(nsIThread* aThread, bool aRequireTailDispatch);
+
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AbstractThread);
 
   enum DispatchFailureHandling { AssertDispatchSuccess, DontAssertDispatchSuccess };
@@ -69,6 +72,7 @@ public:
   // Returns true if this thread requires all dispatches originating from
   // aThread go through the tail dispatcher.
   bool RequiresTailDispatch(AbstractThread* aThread) const;
+  bool RequiresTailDispatchFromCurrentThread() const;
 
   virtual TaskQueue* AsTaskQueue() { MOZ_CRASH("Not a task queue!"); }
   virtual nsIThread* AsXPCOMThread() { MOZ_CRASH("Not an XPCOM thread!"); }
@@ -91,9 +95,6 @@ protected:
   // this queue go through our queue's tail dispatcher.
   const bool mSupportsTailDispatch;
 };
-
-already_AddRefed<AbstractThread> CreateXPCOMAbstractThreadWrapper(nsIThread* aThread,
-                                 bool aRequireTailDispatch);
 
 } // namespace mozilla
 

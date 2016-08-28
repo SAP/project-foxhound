@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 [ChromeOnly,
- Exposed=(Window,Worker)]
+ Exposed=(Window,Worker,WorkerDebugger)]
 interface Console {
   void log(any... data);
   void info(any... data);
@@ -23,6 +23,7 @@ interface Console {
   void time(optional any time);
   void timeEnd(optional any time);
   void timeStamp(optional any data);
+  void clear(any... data);
 
   void profile(any... data);
   void profileEnd(any... data);
@@ -31,8 +32,6 @@ interface Console {
   void count(any... data);
 
   // No-op methods for compatibility with other browsers.
-  [BinaryName="noopMethod"]
-  void clear();
   [BinaryName="noopMethod"]
   void markTimeline();
   [BinaryName="noopMethod"]
@@ -45,6 +44,7 @@ interface Console {
 dictionary ConsoleEvent {
   (unsigned long long or DOMString) ID;
   (unsigned long long or DOMString) innerID;
+  any originAttributes = null;
   DOMString level = "";
   DOMString filename = "";
   unsigned long lineNumber = 0;
@@ -52,10 +52,7 @@ dictionary ConsoleEvent {
   DOMString functionName = "";
   double timeStamp = 0;
   sequence<any> arguments;
-
-  // This array will only hold strings or null elements.
-  sequence<any> styles;
-
+  sequence<DOMString?> styles;
   boolean private = false;
   // stacktrace is handled via a getter in some cases so we can construct it
   // lazily.  Note that we're not making this whole thing an interface because

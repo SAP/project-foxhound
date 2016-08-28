@@ -27,7 +27,8 @@
 #include "HwcComposer2D.h"
 #include "VsyncSource.h"
 #include "nsWindow.h"
-#include "mozilla/layers/CompositorParent.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/Services.h"
 #include "mozilla/ProcessPriorityManager.h"
 #include "nsIdleService.h"
@@ -152,7 +153,7 @@ nsScreenGonk::nsScreenGonk(uint32_t aId,
 
 static void
 ReleaseGLContextSync(mozilla::gl::GLContext* aGLContext) {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     aGLContext->Release();
 }
 
@@ -160,7 +161,7 @@ nsScreenGonk::~nsScreenGonk()
 {
     // Release GLContext on compositor thread
     if (mGLContext) {
-        CompositorParent::CompositorLoop()->PostTask(
+        CompositorBridgeParent::CompositorLoop()->PostTask(
             FROM_HERE,
             NewRunnableFunction(&ReleaseGLContextSync,
                                 mGLContext.forget().take()));
@@ -422,7 +423,7 @@ NeedsRBSwap(int aHalFormat)
 already_AddRefed<DrawTarget>
 nsScreenGonk::StartRemoteDrawing()
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     MOZ_ASSERT(!mFramebuffer);
     MOZ_ASSERT(!mMappedBuffer);
 
@@ -460,7 +461,7 @@ nsScreenGonk::StartRemoteDrawing()
 void
 nsScreenGonk::EndRemoteDrawing()
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
 
     if (mFramebufferTarget && mFramebuffer) {
         IntSize size = mFramebufferTarget->GetSize();
@@ -527,10 +528,10 @@ nsScreenGonk::QueueBuffer(ANativeWindowBuffer* buf)
 nsresult
 nsScreenGonk::MakeSnapshot(ANativeWindowBuffer* aBuffer)
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     MOZ_ASSERT(aBuffer);
 
-    layers::CompositorParent* compositorParent = mCompositorParent;
+    layers::CompositorBridgeParent* compositorParent = mCompositorBridgeParent;
     if (!compositorParent) {
         return NS_ERROR_FAILURE;
     }
@@ -575,10 +576,10 @@ nsScreenGonk::MakeSnapshot(ANativeWindowBuffer* aBuffer)
 }
 
 void
-nsScreenGonk::SetCompositorParent(layers::CompositorParent* aCompositorParent)
+nsScreenGonk::SetCompositorBridgeParent(layers::CompositorBridgeParent* aCompositorBridgeParent)
 {
     MOZ_ASSERT(NS_IsMainThread());
-    mCompositorParent = aCompositorParent;
+    mCompositorBridgeParent = aCompositorBridgeParent;
 }
 
 #if ANDROID_VERSION >= 17
@@ -609,7 +610,7 @@ nsScreenGonk::SetEGLInfo(hwc_display_t aDisplay,
                          hwc_surface_t aSurface,
                          gl::GLContext* aGLContext)
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     mEGLDisplay = aDisplay;
     mEGLSurface = aSurface;
     mGLContext = aGLContext;
@@ -618,21 +619,21 @@ nsScreenGonk::SetEGLInfo(hwc_display_t aDisplay,
 hwc_display_t
 nsScreenGonk::GetEGLDisplay()
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     return mEGLDisplay;
 }
 
 hwc_surface_t
 nsScreenGonk::GetEGLSurface()
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     return mEGLSurface;
 }
 
 already_AddRefed<mozilla::gl::GLContext>
 nsScreenGonk::GetGLContext()
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     RefPtr<mozilla::gl::GLContext>glContext = mGLContext;
     return glContext.forget();
 }
@@ -640,7 +641,7 @@ nsScreenGonk::GetGLContext()
 static void
 UpdateMirroringWidgetSync(nsMainThreadPtrHandle<nsScreenGonk>&& aScreen, nsWindow* aWindow)
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     already_AddRefed<nsWindow> window(aWindow);
     aScreen->UpdateMirroringWidget(window);
 }
@@ -667,7 +668,7 @@ nsScreenGonk::EnableMirroring()
     // Update mMirroringWidget on compositor thread
     nsMainThreadPtrHandle<nsScreenGonk> primary =
       nsMainThreadPtrHandle<nsScreenGonk>(new nsMainThreadPtrHolder<nsScreenGonk>(primaryScreen, false));
-    CompositorParent::CompositorLoop()->PostTask(
+    CompositorBridgeParent::CompositorLoop()->PostTask(
         FROM_HERE,
         NewRunnableFunction(&UpdateMirroringWidgetSync,
                             primary,
@@ -693,7 +694,7 @@ nsScreenGonk::DisableMirroring()
     // Update mMirroringWidget on compositor thread
     nsMainThreadPtrHandle<nsScreenGonk> primary =
       nsMainThreadPtrHandle<nsScreenGonk>(new nsMainThreadPtrHolder<nsScreenGonk>(primaryScreen, false));
-    CompositorParent::CompositorLoop()->PostTask(
+    CompositorBridgeParent::CompositorLoop()->PostTask(
         FROM_HERE,
         NewRunnableFunction(&UpdateMirroringWidgetSync,
                             primary,
@@ -730,12 +731,12 @@ nsScreenGonk::ClearMirroringScreen(nsScreenGonk* aScreen)
 void
 nsScreenGonk::UpdateMirroringWidget(already_AddRefed<nsWindow>& aWindow)
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     MOZ_ASSERT(IsPrimaryScreen());
 
     if (mMirroringWidget) {
         nsCOMPtr<nsIWidget> widget = mMirroringWidget.forget();
-        NS_ReleaseOnMainThread(widget);
+        NS_ReleaseOnMainThread(widget.forget());
     }
     mMirroringWidget = aWindow;
 }
@@ -743,7 +744,7 @@ nsScreenGonk::UpdateMirroringWidget(already_AddRefed<nsWindow>& aWindow)
 nsWindow*
 nsScreenGonk::GetMirroringWidget()
 {
-    MOZ_ASSERT(CompositorParent::IsInCompositorThread());
+    MOZ_ASSERT(CompositorBridgeParent::IsInCompositorThread());
     MOZ_ASSERT(IsPrimaryScreen());
 
     return mMirroringWidget;
@@ -753,6 +754,9 @@ NS_IMPL_ISUPPORTS(nsScreenManagerGonk, nsIScreenManager)
 
 nsScreenManagerGonk::nsScreenManagerGonk()
     : mInitialized(false)
+#if ANDROID_VERSION >= 19
+    , mDisplayEnabled(false)
+#endif
 {
 }
 
@@ -760,19 +764,33 @@ nsScreenManagerGonk::~nsScreenManagerGonk()
 {
 }
 
+static StaticRefPtr<nsScreenManagerGonk> sScreenManagerGonk;
+
 /* static */ already_AddRefed<nsScreenManagerGonk>
 nsScreenManagerGonk::GetInstance()
 {
-    nsCOMPtr<nsIScreenManager> manager;
-    manager = do_GetService("@mozilla.org/gfx/screenmanager;1");
-    MOZ_ASSERT(manager);
-    return already_AddRefed<nsScreenManagerGonk>(
-        static_cast<nsScreenManagerGonk*>(manager.forget().take()));
+    MOZ_ASSERT(NS_IsMainThread());
+
+    // Avoid creating nsScreenManagerGonk from content process.
+    if (!XRE_IsParentProcess()) {
+        MOZ_CRASH("Non-chrome processes should not get here.");
+    }
+
+    // Avoid creating multiple nsScreenManagerGonk instance inside main process.
+    if (!sScreenManagerGonk) {
+      sScreenManagerGonk = new nsScreenManagerGonk();
+      ClearOnShutdown(&sScreenManagerGonk);
+    }
+
+    RefPtr<nsScreenManagerGonk> screenMgr = sScreenManagerGonk.get();
+    return screenMgr.forget();
 }
 
 /* static */ already_AddRefed< nsScreenGonk>
 nsScreenManagerGonk::GetPrimaryScreen()
 {
+    MOZ_ASSERT(NS_IsMainThread());
+
     RefPtr<nsScreenManagerGonk> manager = nsScreenManagerGonk::GetInstance();
     nsCOMPtr<nsIScreen> screen;
     manager->GetPrimaryScreen(getter_AddRefs(screen));
@@ -801,9 +819,16 @@ nsScreenManagerGonk::Initialize()
 void
 nsScreenManagerGonk::DisplayEnabled(bool aEnabled)
 {
+    MOZ_ASSERT(NS_IsMainThread());
+
 #if ANDROID_VERSION >= 19
+    /* Bug 1244044
+     * This function could be called before |mCompositorVsyncScheduler| is set.
+     * To avoid this issue, keep the value stored in |mDisplayEnabled|.
+     */
+    mDisplayEnabled = aEnabled;
     if (mCompositorVsyncScheduler) {
-        mCompositorVsyncScheduler->SetDisplay(aEnabled);
+        mCompositorVsyncScheduler->SetDisplay(mDisplayEnabled);
     }
 #endif
 
@@ -1046,8 +1071,10 @@ nsScreenManagerGonk::SetCompositorVsyncScheduler(mozilla::layers::CompositorVsyn
 {
     MOZ_ASSERT(NS_IsMainThread());
 
-    // We assume on b2g that there is only 1 CompositorParent
+    // We assume on b2g that there is only 1 CompositorBridgeParent
     MOZ_ASSERT(mCompositorVsyncScheduler == nullptr);
+    MOZ_ASSERT(aObserver);
     mCompositorVsyncScheduler = aObserver;
+    mCompositorVsyncScheduler->SetDisplay(mDisplayEnabled);
 }
 #endif

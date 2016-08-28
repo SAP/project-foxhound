@@ -7,7 +7,7 @@
 
 const TEST_URL = URL_ROOT + "doc_filter.html";
 
-add_task(function*() {
+add_task(function* () {
   yield addTab(TEST_URL);
 
   let {view} = yield openRuleView();
@@ -29,5 +29,5 @@ add_task(function*() {
   "The inplace editor wasn't shown as a result of the filter swatch click");
 
   yield filterTooltip.widget;
-  yield hideTooltipAndWaitForRuleviewChanged(filterTooltip, view);
+  yield hideTooltipAndWaitForRuleViewChanged(filterTooltip, view);
 });

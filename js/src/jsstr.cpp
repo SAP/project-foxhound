@@ -13,6 +13,7 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
 #include "mozilla/TypeTraits.h"
+#include "mozilla/unused.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -712,10 +713,7 @@ str_resolve(JSContext* cx, HandleObject obj, HandleId id, bool* resolvedp)
     return true;
 }
 
-const Class StringObject::class_ = {
-    js_String_str,
-    JSCLASS_HAS_RESERVED_SLOTS(StringObject::RESERVED_SLOTS) |
-    JSCLASS_HAS_CACHED_PROTO(JSProto_String),
+static const ClassOps StringObjectClassOps = {
     nullptr, /* addProperty */
     nullptr, /* delProperty */
     nullptr, /* getProperty */
@@ -723,6 +721,13 @@ const Class StringObject::class_ = {
     str_enumerate,
     str_resolve,
     str_mayResolve
+};
+
+const Class StringObject::class_ = {
+    js_String_str,
+    JSCLASS_HAS_RESERVED_SLOTS(StringObject::RESERVED_SLOTS) |
+    JSCLASS_HAS_CACHED_PROTO(JSProto_String),
+    &StringObjectClassOps
 };
 
 /*
@@ -931,7 +936,7 @@ ToLowerCase(JSContext* cx, JSLinearString* str)
     // TaintFox: Add taint operation to all taint ranges of the input string.
     res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
 
-    newChars.release();
+    mozilla::Unused << newChars.release();
     return res;
 }
 
@@ -963,8 +968,8 @@ js::str_toLowerCase(JSContext* cx, unsigned argc, Value* vp)
     return ToLowerCaseHelper(cx, CallArgsFromVp(argc, vp));
 }
 
-static bool
-str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1074,13 +1079,13 @@ ToUpperCase(JSContext* cx, JSLinearString* str)
         if (!res)
             return nullptr;
 
-        newChars.ref<Latin1CharPtr>().release();
+        mozilla::Unused << newChars.ref<Latin1CharPtr>().release();
     } else {
         res = NewStringDontDeflate<CanGC>(cx, newChars.ref<TwoByteCharPtr>().get(), length);
         if (!res)
             return nullptr;
 
-        newChars.ref<TwoByteCharPtr>().release();
+        mozilla::Unused << newChars.ref<TwoByteCharPtr>().release();
     }
 
     // TaintFox: Add taint operation to all taint ranges of the input string.
@@ -1117,8 +1122,8 @@ js::str_toUpperCase(JSContext* cx, unsigned argc, Value* vp)
     return ToUpperCaseHelper(cx, CallArgsFromVp(argc, vp));
 }
 
-static bool
-str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1143,8 +1148,8 @@ str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp)
 }
 
 #if !EXPOSE_INTL_API
-static bool
-str_localeCompare(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_localeCompare(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     RootedString str(cx, ThisToStringForStringProto(cx, args));
@@ -1175,8 +1180,8 @@ str_localeCompare(JSContext* cx, unsigned argc, Value* vp)
 
 #if EXPOSE_INTL_API
 /* ES6 20140210 draft 21.1.3.12. */
-static bool
-str_normalize(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_normalize(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1830,8 +1835,8 @@ RopeMatch(JSContext* cx, JSRope* text, JSLinearString* pat, int* match)
 }
 
 /* ES6 draft rc4 21.1.3.7. */
-static bool
-str_includes(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_includes(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1884,19 +1889,6 @@ str_includes(JSContext* cx, unsigned argc, Value* vp)
 
     args.rval().setBoolean(StringMatch(text, searchStr, start) != -1);
     return true;
-}
-
-/* TODO: remove String.prototype.contains (bug 1103588) */
-static bool
-str_contains(JSContext *cx, unsigned argc, Value *vp)
-{
-#ifndef RELEASE_BUILD
-    CallArgs args = CallArgsFromVp(argc, vp);
-    RootedObject callee(cx, &args.callee());
-    if (!GlobalObject::warnOnceAboutStringContains(cx, callee))
-        return false;
-#endif
-    return str_includes(cx, argc, vp);
 }
 
 /* ES6 20120927 draft 15.5.4.7. */
@@ -2133,8 +2125,8 @@ js::str_startsWith(JSContext* cx, unsigned argc, Value* vp)
 }
 
 /* ES6 draft rc3 21.1.3.6. */
-static bool
-str_endsWith(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_endsWith(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -2255,20 +2247,20 @@ TrimString(JSContext* cx, Value* vp, bool trimLeft, bool trimRight)
     return true;
 }
 
-static bool
-str_trim(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_trim(JSContext* cx, unsigned argc, Value* vp)
 {
     return TrimString(cx, vp, true, true);
 }
 
-static bool
-str_trimLeft(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_trimLeft(JSContext* cx, unsigned argc, Value* vp)
 {
     return TrimString(cx, vp, true, false);
 }
 
-static bool
-str_trimRight(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_trimRight(JSContext* cx, unsigned argc, Value* vp)
 {
     return TrimString(cx, vp, false, true);
 }
@@ -2495,23 +2487,32 @@ class MOZ_STACK_CLASS StringRegExpGuard
         /* Build RegExp from pattern string. */
         RootedString opt(cx);
         if (optarg < args.length()) {
+            // flag argument is enabled only in release build by default.
+            // In non-release build, both telemetry and warning are still
+            // enabled, but the value of flag argument is ignored.
+
             if (JSScript* script = cx->currentScript()) {
                 const char* filename = script->filename();
                 cx->compartment()->addTelemetry(filename, JSCompartment::DeprecatedFlagsArgument);
             }
 
+            bool flagArgumentEnabled = cx->runtime()->options().matchFlagArgument();
             if (!cx->compartment()->warnedAboutFlagsArgument) {
                 if (!JS_ReportErrorFlagsAndNumber(cx, JSREPORT_WARNING, GetErrorMessage, nullptr,
-                                                  JSMSG_DEPRECATED_FLAGS_ARG))
+                                                  flagArgumentEnabled
+                                                  ? JSMSG_DEPRECATED_FLAGS_ARG
+                                                  : JSMSG_OBSOLETE_FLAGS_ARG))
+                {
                     return false;
+                }
                 cx->compartment()->warnedAboutFlagsArgument = true;
             }
 
-            opt = ToString<CanGC>(cx, args[optarg]);
-            if (!opt)
-                return false;
-        } else {
-            opt = nullptr;
+            if (flagArgumentEnabled) {
+                opt = ToString<CanGC>(cx, args[optarg]);
+                if (!opt)
+                    return false;
+            }
         }
 
         // TaintFox: need to atomize here now.
@@ -2943,7 +2944,7 @@ struct ReplaceData
     uint32_t           dollarIndex;    /* index of first $ in repstr, or UINT32_MAX */
     int                leftIndex;      /* left context index in str->chars */
     bool               calledBack;     /* record whether callback has been called */
-    FastInvokeGuard    fig;            /* used for lambda calls, also holds arguments */
+    FastCallGuard      fig;            /* used for lambda calls, also holds arguments */
     StringBuffer       sb;             /* buffer built during DoMatch */
 };
 
@@ -3122,8 +3123,8 @@ FindReplaceLength(JSContext* cx, RegExpStatics* res, ReplaceData& rdata, size_t*
          * to accessing a scripted getter or a value with a scripted toString.
          */
         MOZ_ASSERT(rdata.lambda);
-        MOZ_ASSERT(!rdata.elembase->getOps()->lookupProperty);
-        MOZ_ASSERT(!rdata.elembase->getOps()->getProperty);
+        MOZ_ASSERT(!rdata.elembase->getOpsLookupProperty());
+        MOZ_ASSERT(!rdata.elembase->getOpsGetProperty());
 
         RootedValue match(cx);
         if (!res->createLastMatch(cx, &match))
@@ -3149,7 +3150,9 @@ FindReplaceLength(JSContext* cx, RegExpStatics* res, ReplaceData& rdata, size_t*
     }
 
     if (rdata.lambda) {
-        RootedObject lambda(cx, rdata.lambda);
+        RootedValue lambda(cx, ObjectValue(*rdata.lambda));
+        RootedValue thisv(cx, UndefinedValue());
+        RootedValue rval(cx);
 
         /*
          * In the lambda case, not only do we find the replacement string's
@@ -3166,9 +3169,6 @@ FindReplaceLength(JSContext* cx, RegExpStatics* res, ReplaceData& rdata, size_t*
         if (!args.init(argc))
             return false;
 
-        args.setCallee(ObjectValue(*lambda));
-        args.setThis(UndefinedValue());
-
         /* Push $&, $1, $2, ... */
         unsigned argi = 0;
         if (!res->createLastMatch(cx, args[argi++]))
@@ -3183,11 +3183,11 @@ FindReplaceLength(JSContext* cx, RegExpStatics* res, ReplaceData& rdata, size_t*
         args[argi++].setInt32(res->getMatches()[0].start);
         args[argi].setString(rdata.str);
 
-        if (!rdata.fig.invoke(cx))
+        if (!rdata.fig.call(cx, lambda, thisv, &rval))
             return false;
 
         /* root repstr: rdata is on the stack, so scanned by conservative gc. */
-        JSString* repstr = ToString<CanGC>(cx, args.rval());
+        JSString* repstr = ToString<CanGC>(cx, rval);
         if (!repstr)
             return false;
         rdata.repstr = repstr->ensureLinear(cx);
@@ -3946,19 +3946,20 @@ str_replace_flat_lambda(JSContext* cx, const CallArgs& outerArgs, ReplaceData& r
     if (!rdata.fig.args().init(lambdaArgc))
         return false;
 
-    CallArgs& args = rdata.fig.args();
-    args.setCallee(ObjectValue(*rdata.lambda));
-    args.setThis(UndefinedValue());
+    RootedValue lambda(cx, ObjectValue(*rdata.lambda));
+    RootedValue thisv(cx, UndefinedValue());
+    RootedValue rval(cx);
 
+    CallArgs& args = rdata.fig.args();
     Value* sp = args.array();
     sp[0].setString(matchStr);
     sp[1].setInt32(fm.match());
     sp[2].setString(rdata.str);
 
-    if (!rdata.fig.invoke(cx))
+    if (!rdata.fig.call(cx, lambda, thisv, &rval))
         return false;
 
-    RootedString repstr(cx, ToString<CanGC>(cx, args.rval()));
+    RootedString repstr(cx, ToString<CanGC>(cx, rval));
     if (!repstr)
         return false;
 
@@ -4046,7 +4047,7 @@ LambdaIsGetElem(JSContext* cx, JSObject& lambda, MutableHandleNativeObject pobj)
 
     JSObject& bobj = b.toObject();
     const Class* clasp = bobj.getClass();
-    if (!clasp->isNative() || clasp->ops.lookupProperty || clasp->ops.getProperty)
+    if (!clasp->isNative() || clasp->getOpsLookupProperty() || clasp->getOpsGetProperty())
         return true;
 
     pobj.set(&bobj.as<NativeObject>());
@@ -4231,6 +4232,7 @@ SplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, const Matcher
         /* Steps 13(c)(iii)(1-3). */
         size_t subLength = size_t(endIndex - sepLength - lastEndIndex);
         JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength);
+
         if (!sub || !splits.append(StringValue(sub)))
             return nullptr;
 
@@ -4273,6 +4275,7 @@ SplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, const Matcher
 
     /* Steps 14-15. */
     JSString* sub = NewDependentString(cx, str, lastEndIndex, strLength - lastEndIndex);
+
     if (!sub || !splits.append(StringValue(sub)))
         return nullptr;
 
@@ -4500,8 +4503,8 @@ js::str_split_string(JSContext* cx, HandleObjectGroup group, HandleString str, H
 /*
  * Python-esque sequence operations.
  */
-static bool
-str_concat(JSContext* cx, unsigned argc, Value* vp)
+bool
+js::str_concat(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     JSString* str = ThisToStringForStringProto(cx, args);
@@ -4549,42 +4552,43 @@ static const JSFunctionSpec string_methods[] = {
     /* Java-like methods. */
     JS_FN(js_toString_str,     str_toString,          0,0),
     JS_FN(js_valueOf_str,      str_toString,          0,0),
-    JS_FN("toLowerCase",       str_toLowerCase,       0,JSFUN_GENERIC_NATIVE),
-    JS_FN("toUpperCase",       str_toUpperCase,       0,JSFUN_GENERIC_NATIVE),
-    JS_INLINABLE_FN("charAt",  str_charAt,            1,JSFUN_GENERIC_NATIVE, StringCharAt),
-    JS_INLINABLE_FN("charCodeAt", str_charCodeAt,     1,JSFUN_GENERIC_NATIVE, StringCharCodeAt),
+    JS_FN("toLowerCase",       str_toLowerCase,       0,0),
+    JS_FN("toUpperCase",       str_toUpperCase,       0,0),
+    JS_INLINABLE_FN("charAt",  str_charAt,            1,0, StringCharAt),
+    JS_INLINABLE_FN("charCodeAt", str_charCodeAt,     1,0, StringCharCodeAt),
     JS_SELF_HOSTED_FN("substring", "String_substring", 2,0),
+    JS_SELF_HOSTED_FN("padStart", "String_pad_start", 2,0),
+    JS_SELF_HOSTED_FN("padEnd", "String_pad_end", 2,0),
     JS_SELF_HOSTED_FN("codePointAt", "String_codePointAt", 1,0),
-    JS_FN("includes",          str_includes,          1,JSFUN_GENERIC_NATIVE),
-    JS_FN("contains",          str_contains,          1,JSFUN_GENERIC_NATIVE),
-    JS_FN("indexOf",           str_indexOf,           1,JSFUN_GENERIC_NATIVE),
-    JS_FN("lastIndexOf",       str_lastIndexOf,       1,JSFUN_GENERIC_NATIVE),
-    JS_FN("startsWith",        str_startsWith,        1,JSFUN_GENERIC_NATIVE),
-    JS_FN("endsWith",          str_endsWith,          1,JSFUN_GENERIC_NATIVE),
-    JS_FN("trim",              str_trim,              0,JSFUN_GENERIC_NATIVE),
-    JS_FN("trimLeft",          str_trimLeft,          0,JSFUN_GENERIC_NATIVE),
-    JS_FN("trimRight",         str_trimRight,         0,JSFUN_GENERIC_NATIVE),
-    JS_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0,JSFUN_GENERIC_NATIVE),
-    JS_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0,JSFUN_GENERIC_NATIVE),
+    JS_FN("includes",          str_includes,          1,0),
+    JS_FN("indexOf",           str_indexOf,           1,0),
+    JS_FN("lastIndexOf",       str_lastIndexOf,       1,0),
+    JS_FN("startsWith",        str_startsWith,        1,0),
+    JS_FN("endsWith",          str_endsWith,          1,0),
+    JS_FN("trim",              str_trim,              0,0),
+    JS_FN("trimLeft",          str_trimLeft,          0,0),
+    JS_FN("trimRight",         str_trimRight,         0,0),
+    JS_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0,0),
+    JS_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0,0),
 #if EXPOSE_INTL_API
     JS_SELF_HOSTED_FN("localeCompare", "String_localeCompare", 1,0),
 #else
-    JS_FN("localeCompare",     str_localeCompare,     1,JSFUN_GENERIC_NATIVE),
+    JS_FN("localeCompare",     str_localeCompare,     1,0),
 #endif
     JS_SELF_HOSTED_FN("repeat", "String_repeat",      1,0),
 #if EXPOSE_INTL_API
-    JS_FN("normalize",         str_normalize,         0,JSFUN_GENERIC_NATIVE),
+    JS_FN("normalize",         str_normalize,         0,0),
 #endif
 
     /* Perl-ish methods (search is actually Python-esque). */
-    JS_FN("match",             str_match,             1,JSFUN_GENERIC_NATIVE),
-    JS_FN("search",            str_search,            1,JSFUN_GENERIC_NATIVE),
-    JS_INLINABLE_FN("replace", str_replace,           2,JSFUN_GENERIC_NATIVE, StringReplace),
-    JS_INLINABLE_FN("split",   str_split,             2,JSFUN_GENERIC_NATIVE, StringSplit),
+    JS_FN("match",             str_match,             1,0),
+    JS_FN("search",            str_search,            1,0),
+    JS_INLINABLE_FN("replace", str_replace,           2,0, StringReplace),
+    JS_INLINABLE_FN("split",   str_split,             2,0, StringSplit),
     JS_SELF_HOSTED_FN("substr", "String_substr",      2,0),
 
     /* Python-esque sequence methods. */
-    JS_FN("concat",            str_concat,            1,JSFUN_GENERIC_NATIVE),
+    JS_FN("concat",            str_concat,            1,0),
     JS_SELF_HOSTED_FN("slice", "String_slice",        2,0),
 
     /* HTML string methods. */
@@ -4605,7 +4609,7 @@ static const JSFunctionSpec string_methods[] = {
     JS_SELF_HOSTED_SYM_FN(iterator, "String_iterator", 0,0),
 
     /* TaintFox: add untaint method to strings. */
-    JS_FN("untaint", str_untaint, 0, JSFUN_GENERIC_NATIVE),
+    JS_FN("untaint",           str_untaint,            0,0),
 
     JS_FS_END
 };
@@ -4759,15 +4763,34 @@ static const JSFunctionSpec string_static_methods[] = {
     JS_SELF_HOSTED_FN("substr",          "String_static_substr",        3,0),
     JS_SELF_HOSTED_FN("slice",           "String_static_slice",         3,0),
 
-    // This must be at the end because of bug 853075: functions listed after
-    // self-hosted methods aren't available in self-hosted code.
+    JS_SELF_HOSTED_FN("match",           "String_static_match",        2,0),
+    JS_SELF_HOSTED_FN("replace",         "String_static_replace",      3,0),
+    JS_SELF_HOSTED_FN("search",          "String_static_search",       2,0),
+    JS_SELF_HOSTED_FN("split",           "String_static_split",        1,0),
+
+    JS_SELF_HOSTED_FN("toLowerCase",     "String_static_toLowerCase",   1,0),
+    JS_SELF_HOSTED_FN("toUpperCase",     "String_static_toUpperCase",   1,0),
+    JS_SELF_HOSTED_FN("charAt",          "String_static_charAt",        2,0),
+    JS_SELF_HOSTED_FN("charCodeAt",      "String_static_charCodeAt",    2,0),
+    JS_SELF_HOSTED_FN("includes",        "String_static_includes",      2,0),
+    JS_SELF_HOSTED_FN("indexOf",         "String_static_indexOf",       2,0),
+    JS_SELF_HOSTED_FN("lastIndexOf",     "String_static_lastIndexOf",   2,0),
+    JS_SELF_HOSTED_FN("startsWith",      "String_static_startsWith",    2,0),
+    JS_SELF_HOSTED_FN("endsWith",        "String_static_endsWith",      2,0),
+    JS_SELF_HOSTED_FN("trim",            "String_static_trim",          1,0),
+    JS_SELF_HOSTED_FN("trimLeft",        "String_static_trimLeft",      1,0),
+    JS_SELF_HOSTED_FN("trimRight",       "String_static_trimRight",     1,0),
+    JS_SELF_HOSTED_FN("toLocaleLowerCase","String_static_toLocaleLowerCase",1,0),
+    JS_SELF_HOSTED_FN("toLocaleUpperCase","String_static_toLocaleUpperCase",1,0),
 #if EXPOSE_INTL_API
-    JS_SELF_HOSTED_FN("localeCompare",   "String_static_localeCompare", 2,0),
+    JS_SELF_HOSTED_FN("normalize",       "String_static_normalize",     1,0),
 #endif
+    JS_SELF_HOSTED_FN("concat",          "String_static_concat",        2,0),
+
+    JS_SELF_HOSTED_FN("localeCompare",   "String_static_localeCompare", 2,0),
 
     // TaintFox: Helper function for manual taint sources.
     JS_FN("tainted",              str_tainted,          1,0),
-
     JS_FS_END
 };
 
@@ -4799,9 +4822,6 @@ js::InitStringClass(JSContext* cx, HandleObject obj)
     if (!ctor)
         return nullptr;
 
-    if (!GlobalObject::initBuiltinConstructor(cx, global, JSProto_String, ctor, proto))
-        return nullptr;
-
     if (!LinkConstructorAndPrototype(cx, ctor, proto))
         return nullptr;
 
@@ -4820,6 +4840,9 @@ js::InitStringClass(JSContext* cx, HandleObject obj)
      * uneval on the global object.
      */
     if (!JS_DefineFunctions(cx, global, string_functions))
+        return nullptr;
+
+    if (!GlobalObject::initBuiltinConstructor(cx, global, JSProto_String, ctor, proto))
         return nullptr;
 
     return proto;
@@ -4947,10 +4970,11 @@ js::ValueToSource(JSContext* cx, HandleValue v)
     if (!GetProperty(cx, obj, obj, cx->names().toSource, &fval))
         return nullptr;
     if (IsCallable(fval)) {
-        RootedValue rval(cx);
-        if (!Invoke(cx, ObjectValue(*obj), fval, 0, nullptr, &rval))
+        RootedValue v(cx);
+        if (!js::Call(cx, fval, obj, &v))
             return nullptr;
-        return ToString<CanGC>(cx, rval);
+
+        return ToString<CanGC>(cx, v);
     }
 
     return ObjectToSource(cx, obj);
@@ -5118,6 +5142,16 @@ js_strcmp(const char16_t* lhs, const char16_t* rhs)
             return 0;
         ++lhs, ++rhs;
     }
+}
+
+int32_t
+js_fputs(const char16_t* s, FILE* f)
+{
+    while (*s != 0) {
+        if (fputwc(wchar_t(*s), f) == WEOF)
+            return WEOF;
+    }
+    return 1;
 }
 
 UniqueChars

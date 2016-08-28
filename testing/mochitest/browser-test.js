@@ -8,9 +8,6 @@ Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "CustomizationTabPreloader",
-  "resource:///modules/CustomizationTabPreloader.jsm");
-
 XPCOMUtils.defineLazyModuleGetter(this, "ContentSearch",
   "resource:///modules/ContentSearch.jsm");
 
@@ -80,8 +77,7 @@ var TabDestroyObserver = {
 
 function testInit() {
   gConfig = readConfig();
-  if (gConfig.testRoot == "browser" ||
-      gConfig.testRoot == "webapprtChrome") {
+  if (gConfig.testRoot == "browser") {
     // Make sure to launch the test harness for the first opened window only
     var prefs = Services.prefs;
     if (prefs.prefHasUserValue("testing.browserTestHarness.running"))
@@ -148,7 +144,11 @@ function Tester(aTests, structuredLogger, aCallback) {
   this._scriptLoader.loadSubScript("chrome://mochikit/content/chrome-harness.js", simpleTestScope);
   this.SimpleTest = simpleTestScope.SimpleTest;
 
-  var extensionUtilsScope = {};
+  var extensionUtilsScope = {
+    registerCleanupFunction: (fn) => {
+      this.currentTest.scope.registerCleanupFunction(fn);
+    },
+  };
   extensionUtilsScope.SimpleTest = this.SimpleTest;
   this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js", extensionUtilsScope);
   this.ExtensionTestUtils = extensionUtilsScope.ExtensionTestUtils;
@@ -382,10 +382,12 @@ Tester.prototype = {
       this.structuredLogger.info("TEST-START | Shutdown");
 
       if (this.tests.length) {
+        let e10sMode = gMultiProcessBrowser ? "e10s" : "non-e10s";
         this.structuredLogger.info("Browser Chrome Test Summary");
         this.structuredLogger.info("Passed:  " + passCount);
         this.structuredLogger.info("Failed:  " + failCount);
         this.structuredLogger.info("Todo:    " + todoCount);
+        this.structuredLogger.info("Mode:    " + e10sMode);
       } else {
         this.structuredLogger.testEnd("browser-test.js",
                                       "FAIL",
@@ -619,7 +621,6 @@ Tester.prototype = {
             socialSidebar.setAttribute("src", "about:blank");
 
             SelfSupportBackend.uninit();
-            CustomizationTabPreloader.uninit();
             SocialFlyout.unload();
             SocialShare.uninit();
           }

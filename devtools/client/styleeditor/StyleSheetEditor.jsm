@@ -12,17 +12,18 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
-const Editor  = require("devtools/client/sourceeditor/editor");
+const Editor = require("devtools/client/sourceeditor/editor");
 const promise = require("promise");
 const {CssLogic} = require("devtools/shared/inspector/css-logic");
 const {console} = require("resource://gre/modules/Console.jsm");
+const Services = require("Services");
 
-Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
+const { TextDecoder, OS } = Cu.import("resource://gre/modules/osfile.jsm", {});
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://devtools/shared/event-emitter.js");
+/* import-globals-from StyleEditorUtil.jsm */
 Cu.import("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
 
 const LOAD_ERROR = "error-load";
@@ -40,10 +41,10 @@ const TRANSITION_PREF = "devtools.styleeditor.transitions";
 
 // How long to wait to update linked CSS file after original source was saved
 // to disk. Time in ms.
-const CHECK_LINKED_SHEET_DELAY=500;
+const CHECK_LINKED_SHEET_DELAY = 500;
 
 // How many times to check for linked file changes
-const MAX_CHECK_COUNT=10;
+const MAX_CHECK_COUNT = 10;
 
 // The classname used to show a line that is not used
 const UNUSED_CLASS = "cm-unused-line";
@@ -92,7 +93,8 @@ function StyleSheetEditor(styleSheet, win, file, isNew, walker, highlighter) {
   // event from the StyleSheetActor.
   this._justSetText = false;
 
-  this._state = {   // state to use when inputElement attaches
+  // state to use when inputElement attaches
+  this._state = {
     text: "",
     selection: {
       start: {line: 0, ch: 0},
@@ -123,7 +125,8 @@ function StyleSheetEditor(styleSheet, win, file, isNew, walker, highlighter) {
   this.styleSheet.on("error", this._onError);
   this.mediaRules = [];
   if (this.cssSheet.getMediaRules) {
-    this.cssSheet.getMediaRules().then(this._onMediaRulesChanged, Cu.reportError);
+    this.cssSheet.getMediaRules().then(this._onMediaRulesChanged,
+                                       Cu.reportError);
   }
   this.cssSheet.on("media-rules-changed", this._onMediaRulesChanged);
   this.cssSheet.on("style-applied", this._onStyleApplied);
@@ -181,12 +184,12 @@ StyleSheetEditor.prototype = {
 
     if (this._isNew) {
       let index = this.styleSheet.styleSheetIndex + 1;
-      return _("newStyleSheet", index);
+      return getString("newStyleSheet", index);
     }
 
     if (!this.styleSheet.href) {
       let index = this.styleSheet.styleSheetIndex + 1;
-      return _("inlineStyleSheet", index);
+      return getString("inlineStyleSheet", index);
     }
 
     if (!this._friendlyName) {
@@ -195,6 +198,7 @@ StyleSheetEditor.prototype = {
       try {
         this._friendlyName = decodeURI(this._friendlyName);
       } catch (ex) {
+        // Ignore.
       }
     }
     return this._friendlyName;
@@ -218,6 +222,9 @@ StyleSheetEditor.prototype = {
     }
 
     let relatedSheet = this.styleSheet.relatedStyleSheet;
+    if (!relatedSheet || !relatedSheet.href) {
+      return;
+    }
 
     let path;
     let href = removeQuery(relatedSheet.href);
@@ -226,13 +233,11 @@ StyleSheetEditor.prototype = {
     if (uri.scheme == "file") {
       let file = uri.QueryInterface(Ci.nsIFileURL).file;
       path = file.path;
-    }
-    else if (this.savedFile) {
+    } else if (this.savedFile) {
       let origHref = removeQuery(this.styleSheet.href);
       let origUri = NetUtil.newURI(origHref);
       path = findLinkedFilePath(uri, origUri, this.savedFile);
-    }
-    else {
+    } else {
       // we can't determine path to generated file on disk
       return;
     }
@@ -529,7 +534,8 @@ StyleSheetEditor.prototype = {
    */
   _updateStyleSheet: function() {
     if (this.styleSheet.disabled) {
-      return;  // TODO: do we want to do this?
+      // TODO: do we want to do this?
+      return;
     }
 
     if (this._justSetText) {
@@ -537,10 +543,11 @@ StyleSheetEditor.prototype = {
       return;
     }
 
-    this._updateTask = null; // reset only if we actually perform an update
-                             // (stylesheet is enabled) so that 'missed' updates
-                             // while the stylesheet is disabled can be performed
-                             // when it is enabled back. @see enableStylesheet
+    // reset only if we actually perform an update
+    // (stylesheet is enabled) so that 'missed' updates
+    // while the stylesheet is disabled can be performed
+    // when it is enabled back. @see enableStylesheet
+    this._updateTask = null;
 
     if (this.sourceEditor) {
       this._state.text = this.sourceEditor.getText();
@@ -575,14 +582,15 @@ StyleSheetEditor.prototype = {
    * @param {Number} x
    * @param {Number} y
    */
-  _highlightSelectorAt: Task.async(function*(x, y) {
+  _highlightSelectorAt: Task.async(function* (x, y) {
     let pos = this.sourceEditor.getPositionFromCoords({left: x, top: y});
     let info = this.sourceEditor.getInfoAt(pos);
     if (!info || info.state !== "selector") {
       return;
     }
 
-    let node = yield this.walker.getStyleSheetOwnerNode(this.styleSheet.actorID);
+    let node =
+        yield this.walker.getStyleSheetOwnerNode(this.styleSheet.actorID);
     yield this.highlighter.show(node, {
       selector: info.selector,
       hideInfoBar: true,
@@ -601,7 +609,8 @@ StyleSheetEditor.prototype = {
    *        Optional nsIFile or string representing the filename to save in the
    *        background, no UI will be displayed.
    *        If not specified, the original style sheet URI is used.
-   *        To implement 'Save' instead of 'Save as', you can pass savedFile here.
+   *        To implement 'Save' instead of 'Save as', you can pass
+   *        savedFile here.
    * @param function(nsIFile aFile) callback
    *        Optional callback called when the operation has finished.
    *        aFile has the nsIFile object for saved file or null if the operation
@@ -715,7 +724,7 @@ StyleSheetEditor.prototype = {
     this.emit("linked-css-file-error");
 
     error += " querying " + this.linkedCSSFile +
-             " original source location: " + this.savedFile.path
+             " original source location: " + this.savedFile.path;
     Cu.reportError(error);
   },
 
@@ -741,16 +750,17 @@ StyleSheetEditor.prototype = {
     */
   _getKeyBindings: function() {
     let bindings = {};
+    let keybind = Editor.accel(getString("saveStyleSheet.commandkey"));
 
-    bindings[Editor.accel(_("saveStyleSheet.commandkey"))] = () => {
+    bindings[keybind] = () => {
       this.saveToFile(this.savedFile);
     };
 
-    bindings["Shift-" + Editor.accel(_("saveStyleSheet.commandkey"))] = () => {
+    bindings["Shift-" + keybind] = () => {
       this.saveToFile();
     };
 
-    bindings["Esc"] = false;
+    bindings.Esc = false;
 
     return bindings;
   },

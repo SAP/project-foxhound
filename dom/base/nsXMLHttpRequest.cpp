@@ -44,7 +44,6 @@
 #include "nsXPCOM.h"
 #include "nsIDOMEventListener.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIDOMWindow.h"
 #include "nsIVariant.h"
 #include "nsVariant.h"
 #include "nsIScriptError.h"
@@ -155,7 +154,7 @@ NS_IMPL_ISUPPORTS(nsXHRParseEndListener, nsIDOMEventListener)
 class nsResumeTimeoutsEvent : public nsRunnable
 {
 public:
-  explicit nsResumeTimeoutsEvent(nsPIDOMWindow* aWindow) : mWindow(aWindow) {}
+  explicit nsResumeTimeoutsEvent(nsPIDOMWindowInner* aWindow) : mWindow(aWindow) {}
 
   NS_IMETHOD Run()
   {
@@ -164,7 +163,7 @@ public:
   }
 
 private:
-  nsCOMPtr<nsPIDOMWindow> mWindow;
+  nsCOMPtr<nsPIDOMWindowInner> mWindow;
 };
 
 
@@ -307,16 +306,6 @@ nsXMLHttpRequest::Init(nsIPrincipal* aPrincipal,
                        nsILoadGroup* aLoadGroup)
 {
   NS_ENSURE_ARG_POINTER(aPrincipal);
-
-  if (nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(aGlobalObject)) {
-    if (win->IsOuterWindow()) {
-      // Must be bound to inner window, innerize if necessary.
-      nsCOMPtr<nsIGlobalObject> inner = do_QueryInterface(
-        win->GetCurrentInnerWindow());
-      aGlobalObject = inner.get();
-    }
-  }
-
   Construct(aPrincipal, aGlobalObject, aBaseURI, aLoadGroup);
   return NS_OK;
 }
@@ -453,7 +442,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(nsXMLHttpRequest,
                                                nsXHREventTarget)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mResultArrayBuffer)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mResultJSON)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mResultJSON)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 // QueryInterface implementation for nsXMLHttpRequest
@@ -518,7 +507,7 @@ nsXMLHttpRequest::GetChannel(nsIChannel **aChannel)
   return NS_OK;
 }
 
-static void LogMessage(const char* aWarning, nsPIDOMWindow* aWindow)
+static void LogMessage(const char* aWarning, nsPIDOMWindowInner* aWindow)
 {
   nsCOMPtr<nsIDocument> doc;
   if (aWindow) {
@@ -700,7 +689,7 @@ nsXMLHttpRequest::GetResponseText(nsString& aResponseText, ErrorResult& aRv)
   }
 
   mResponseBodyDecodedPos = mResponseBody.Length();
-  
+
   if (mState & XML_HTTP_REQUEST_DONE) {
     // Free memory buffer which we no longer need
     mResponseBody.Truncate();
@@ -1225,7 +1214,7 @@ nsXMLHttpRequest::IsSafeHeader(const nsACString& header, nsIHttpChannel* httpCha
     if (NS_FAILED(status)) {
       return false;
     }
-  }  
+  }
   const char* kCrossOriginSafeHeaders[] = {
     "cache-control", "content-language", "content-type", "expires",
     "last-modified", "pragma"
@@ -1381,7 +1370,7 @@ nsXMLHttpRequest::GetResponseHeader(const nsACString& header,
 already_AddRefed<nsILoadGroup>
 nsXMLHttpRequest::GetLoadGroup() const
 {
-  if (mState & XML_HTTP_REQUEST_BACKGROUND) {                 
+  if (mState & XML_HTTP_REQUEST_BACKGROUND) {
     return nullptr;
   }
 
@@ -1390,11 +1379,7 @@ nsXMLHttpRequest::GetLoadGroup() const
     return ref.forget();
   }
 
-  nsresult rv = NS_ERROR_FAILURE;
-  nsIScriptContext* sc =
-    const_cast<nsXMLHttpRequest*>(this)->GetContextForEventHandlers(&rv);
-  nsCOMPtr<nsIDocument> doc =
-    nsContentUtils::GetDocumentFromScriptContext(sc);
+  nsIDocument* doc = GetDocumentIfCurrent();
   if (doc) {
     return doc->GetDocumentLoadGroup();
   }
@@ -1454,7 +1439,7 @@ nsXMLHttpRequest::DispatchProgressEvent(DOMEventTargetHelper* aTarget,
                           aLengthComputable, aLoaded, aTotal);
   }
 }
-                                          
+
 already_AddRefed<nsIHttpChannel>
 nsXMLHttpRequest::GetCurrentHttpChannel()
 {
@@ -1500,7 +1485,9 @@ nsXMLHttpRequest::Open(const nsACString& inMethod, const nsACString& url,
                        bool async, const Optional<nsAString>& user,
                        const Optional<nsAString>& password)
 {
-  NS_ENSURE_ARG(!inMethod.IsEmpty());
+  if (inMethod.IsEmpty()) {
+    return NS_ERROR_DOM_SYNTAX_ERR;
+  }
 
   if (!async && !DontWarnAboutSyncXHR() && GetOwner() &&
       GetOwner()->GetExtantDoc()) {
@@ -1561,11 +1548,16 @@ nsXMLHttpRequest::Open(const nsACString& inMethod, const nsACString& url,
     mState &= ~XML_HTTP_REQUEST_ASYNC;
   }
 
-  nsIScriptContext* sc = GetContextForEventHandlers(&rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsIDocument> doc =
-    nsContentUtils::GetDocumentFromScriptContext(sc);
-  
+  nsCOMPtr<nsIDocument> doc = GetDocumentIfCurrent();
+  if (!doc) {
+    // This could be because we're no longer current or because we're in some
+    // non-window context...
+    nsresult rv = CheckInnerWindowCorrectness();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return NS_ERROR_DOM_INVALID_STATE_ERR;
+    }
+  }
+
   nsCOMPtr<nsIURI> baseURI;
   if (mBaseURI) {
     baseURI = mBaseURI;
@@ -1575,8 +1567,13 @@ nsXMLHttpRequest::Open(const nsACString& inMethod, const nsACString& url,
   }
 
   rv = NS_NewURI(getter_AddRefs(uri), url, nullptr, baseURI);
-  if (NS_FAILED(rv)) return rv;
 
+  if (NS_FAILED(rv)) {
+    if (rv ==  NS_ERROR_MALFORMED_URI) {
+      return NS_ERROR_DOM_SYNTAX_ERR;
+    }
+    return rv;
+  }
   rv = CheckInnerWindowCorrectness();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1839,7 +1836,7 @@ nsXMLHttpRequest::OnDataAvailable(nsIRequest *request,
   mDataAvailable += totalRead;
 
   ChangeState(XML_HTTP_REQUEST_LOADING);
-  
+
   MaybeDispatchProgressEvents(false);
 
   return NS_OK;
@@ -1999,7 +1996,12 @@ nsXMLHttpRequest::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
       } else {
         mIsHtml = true;
       }
-    } else if (type.Find("xml") == kNotFound) {
+    } else if (!(type.EqualsLiteral("text/xml") ||
+                 type.EqualsLiteral("application/xml") ||
+                 type.RFind("+xml", true, -1, 4) != kNotFound)) {
+      // Follow https://xhr.spec.whatwg.org/
+      // If final MIME type is not null, text/html, text/xml, application/xml,
+      // or does not end in +xml, return null.
       mState &= ~XML_HTTP_REQUEST_PARSEBODY;
     }
   } else {
@@ -2013,14 +2015,16 @@ nsXMLHttpRequest::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
     NS_ENSURE_SUCCESS(rv, rv);
     baseURI = docURI;
 
-    nsIScriptContext* sc = GetContextForEventHandlers(&rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-    nsCOMPtr<nsIDocument> doc =
-      nsContentUtils::GetDocumentFromScriptContext(sc);
+    nsCOMPtr<nsIDocument> doc = GetDocumentIfCurrent();
     nsCOMPtr<nsIURI> chromeXHRDocURI, chromeXHRDocBaseURI;
     if (doc) {
       chromeXHRDocURI = doc->GetDocumentURI();
       chromeXHRDocBaseURI = doc->GetBaseURI();
+    } else {
+      // If we're no longer current, just kill the load, though it really should
+      // have been killed already.
+      nsresult rv = CheckInnerWindowCorrectness();
+      NS_ENSURE_SUCCESS(rv, rv);
     }
 
     // Create an empty document from it.
@@ -2416,13 +2420,13 @@ GetRequestBody(nsIVariant* aBody, nsIInputStream** aResult, uint64_t* aContentLe
     }
 
     // ArrayBuffer?
-    AutoSafeJSContext cx;
-    JS::Rooted<JS::Value> realVal(cx);
+    JSContext* rootingCx = nsContentUtils::RootingCx();
+    JS::Rooted<JS::Value> realVal(rootingCx);
 
     nsresult rv = aBody->GetAsJSVal(&realVal);
     if (NS_SUCCEEDED(rv) && !realVal.isPrimitive()) {
-      JS::Rooted<JSObject*> obj(cx, realVal.toObjectOrNull());
-      ArrayBuffer buf;
+      JS::Rooted<JSObject*> obj(rootingCx, realVal.toObjectOrNull());
+      RootedTypedArray<ArrayBuffer> buf(rootingCx);
       if (buf.Init(obj)) {
           buf.ComputeLengthAndData();
           return GetRequestBody(buf.Data(), buf.Length(), aResult,
@@ -2538,14 +2542,13 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
 
   // Return error if we're already processing a request
   if (XML_HTTP_REQUEST_SENT & mState) {
-    return NS_ERROR_FAILURE;
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
   // Make sure we've been opened
   if (!mChannel || !(XML_HTTP_REQUEST_OPENED & mState)) {
-    return NS_ERROR_NOT_INITIALIZED;
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
-
 
   // nsIRequest::LOAD_BACKGROUND prevents throbber from becoming active, which
   // in turn keeps STOP button from becoming active.  If the consumer passed in
@@ -2573,10 +2576,10 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
     httpChannel->GetRequestMethod(method); // If GET, method name will be uppercase
 
     if (!IsSystemXHR()) {
-      nsCOMPtr<nsPIDOMWindow> owner = GetOwner();
+      nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner();
       nsCOMPtr<nsIDocument> doc = owner ? owner->GetExtantDoc() : nullptr;
       nsContentUtils::SetFetchReferrerURIWithPolicy(mPrincipal, doc,
-                                                    httpChannel);
+                                                    httpChannel, mozilla::net::RP_Default);
     }
 
     // Some extensions override the http protocol handler and provide their own
@@ -2697,7 +2700,7 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
       if (!NS_InputStreamIsBuffered(postDataStream)) {
         nsCOMPtr<nsIInputStream> bufferedStream;
         rv = NS_NewBufferedInputStream(getter_AddRefs(bufferedStream),
-                                       postDataStream, 
+                                       postDataStream,
                                        4096);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2870,15 +2873,14 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
     nsCOMPtr<nsIDocument> suspendedDoc;
     nsCOMPtr<nsIRunnable> resumeTimeoutRunnable;
     if (GetOwner()) {
-      if (nsCOMPtr<nsPIDOMWindow> topWindow = GetOwner()->GetOuterWindow()->GetTop()) {
-        if (topWindow &&
-            (topWindow = topWindow->GetCurrentInnerWindow())) {
+      if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = GetOwner()->GetOuterWindow()->GetTop()) {
+        if (nsCOMPtr<nsPIDOMWindowInner> topInner = topWindow->GetCurrentInnerWindow()) {
           suspendedDoc = topWindow->GetExtantDoc();
           if (suspendedDoc) {
             suspendedDoc->SuppressEventHandling(nsIDocument::eEvents);
           }
           topWindow->SuspendTimeouts(1, false);
-          resumeTimeoutRunnable = new nsResumeTimeoutsEvent(topWindow);
+          resumeTimeoutRunnable = new nsResumeTimeoutsEvent(topInner);
         }
       }
     }
@@ -3471,7 +3473,7 @@ nsXMLHttpRequest::GetInterface(const nsIID & aIID, void **aResult)
     // Get the an auth prompter for our window so that the parenting
     // of the dialogs works as it should when using tabs.
 
-    nsCOMPtr<nsIDOMWindow> window;
+    nsCOMPtr<nsPIDOMWindowOuter> window;
     if (GetOwner()) {
       window = GetOwner()->GetOuterWindow();
     }
@@ -3820,8 +3822,8 @@ ArrayBufferBuilder::getArrayBuffer(JSContext* aCx)
     }
     mMapPtr = nullptr;
 
-    // The memory-mapped contents will be released when obj been finalized(GCed
-    // or neutered).
+    // The memory-mapped contents will be released when the ArrayBuffer becomes
+    // detached or is GC'd.
     return obj;
   }
 

@@ -1,8 +1,10 @@
 "use strict";
 
-var { interfaces: Ci, utils: Cu } = Components;
+var {interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
+                                  "resource://gre/modules/AddonManager.jsm");
 
 // WeakMap[Extension -> BackgroundPage]
 var backgroundPagesMap = new WeakMap();
@@ -53,7 +55,7 @@ BackgroundPage.prototype = {
     let frameLoader = browser.QueryInterface(Ci.nsIFrameLoaderOwner).frameLoader;
     let docShell = frameLoader.docShell;
 
-    this.context = new ExtensionPage(this.extension, {type: "background", docShell, uri});
+    this.context = new ExtensionContext(this.extension, {type: "background", docShell, uri});
     GlobalManager.injectInDocShell(docShell, this.extension, this.context);
 
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
@@ -64,6 +66,11 @@ BackgroundPage.prototype = {
     let window = webNav.document.defaultView;
     this.contentWindow = window;
     this.context.contentWindow = window;
+
+    if (this.extension.addonData.instanceID) {
+      AddonManager.getAddonByInstanceID(this.extension.addonData.instanceID)
+                  .then(addon => addon.setDebugGlobal(window));
+    }
 
     // TODO: Right now we run onStartup after the background page
     // finishes. See if this is what Chrome does.
@@ -76,15 +83,8 @@ BackgroundPage.prototype = {
       if (this.scripts) {
         let doc = window.document;
         for (let script of this.scripts) {
-          let url = this.extension.baseURI.resolve(script);
-
-          if (!this.extension.isExtensionURL(url)) {
-            this.extension.manifestError("Background scripts must be files within the extension");
-            continue;
-          }
-
           let tag = doc.createElement("script");
-          tag.setAttribute("src", url);
+          tag.setAttribute("src", script);
           tag.async = false;
           doc.body.appendChild(tag);
         }
@@ -106,6 +106,11 @@ BackgroundPage.prototype = {
     this.chromeWebNav.loadURI("about:blank", 0, null, null, null);
     this.chromeWebNav.close();
     this.chromeWebNav = null;
+
+    if (this.extension.addonData.instanceID) {
+      AddonManager.getAddonByInstanceID(this.extension.addonData.instanceID)
+                  .then(addon => addon.setDebugGlobal(null));
+    }
   },
 };
 
@@ -133,8 +138,8 @@ extensions.registerSchemaAPI("extension", null, (extension, context) => {
     },
 
     runtime: {
-      getBackgroundPage: function(callback) {
-        runSafe(context, callback, backgroundPagesMap.get(extension).contentWindow);
+      getBackgroundPage() {
+        return context.cloneScope.Promise.resolve(backgroundPagesMap.get(extension).contentWindow);
       },
     },
   };

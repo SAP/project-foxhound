@@ -234,17 +234,17 @@ public class CrashReporter extends AppCompatActivity
 
     private void savePrefs() {
         SharedPreferences.Editor editor = GeckoSharedPrefs.forApp(this).edit();
-                  
+
         final boolean allowContact = ((CheckBox) findViewById(R.id.allow_contact)).isChecked();
         final boolean includeUrl   = ((CheckBox) findViewById(R.id.include_url)).isChecked();
         final boolean sendReport   = ((CheckBox) findViewById(R.id.send_report)).isChecked();
         final String contactEmail  = ((EditText) findViewById(R.id.email)).getText().toString();
-                   
+
         editor.putBoolean(PREFS_ALLOW_CONTACT, allowContact);
         editor.putBoolean(PREFS_INCLUDE_URL, includeUrl);
         editor.putBoolean(PREFS_SEND_REPORT, sendReport);
         editor.putString(PREFS_CONTACT_EMAIL, contactEmail);
-                    
+
         // A slight performance improvement via async apply() vs. blocking on commit().
         editor.apply();
     }
@@ -314,15 +314,20 @@ public class CrashReporter extends AppCompatActivity
     }
 
     private String readLogcat() {
+        final String crashReporterProc = " " + android.os.Process.myPid() + ' ';
         BufferedReader br = null;
         try {
-            // get the last 200 lines of logcat
+            // get at most the last 400 lines of logcat
             Process proc = Runtime.getRuntime().exec(new String[] {
-                "logcat", "-v", "threadtime", "-t", "200", "-d", "*:D"
+                "logcat", "-v", "threadtime", "-t", "400", "-d", "*:D"
             });
             StringBuilder sb = new StringBuilder();
             br = new BufferedReader(new InputStreamReader(proc.getInputStream()));
             for (String s = br.readLine(); s != null; s = br.readLine()) {
+                if (s.contains(crashReporterProc)) {
+                    // Don't include logs from the crash reporter's process.
+                    break;
+                }
                 sb.append(s).append('\n');
             }
             return sb.toString();

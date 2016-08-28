@@ -5,7 +5,7 @@
 "use strict";
 
 const {Cc, Ci, Cu} = require("chrome");
-const {Services} = Cu.import("resource://gre/modules/Services.jsm", {});
+const Services = require("Services");
 
 const COLOR_UNIT_PREF = "devtools.defaultColorUnit";
 
@@ -289,8 +289,9 @@ CssColor.prototype = {
   nextColorUnit: function() {
     // Reorder the formats array to have the current format at the
     // front so we can cycle through.
-    let formats = ["authored", "hex", "hsl", "rgb", "name"];
-    let putOnEnd = formats.splice(0, formats.indexOf(this.colorUnit));
+    let formats = ["hex", "hsl", "rgb", "name"];
+    let currentFormat = classifyColor(this.toString());
+    let putOnEnd = formats.splice(0, formats.indexOf(currentFormat));
     formats = formats.concat(putOnEnd);
     let currentDisplayedColor = this[formats[0]];
 

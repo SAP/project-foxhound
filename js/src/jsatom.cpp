@@ -134,6 +134,12 @@ JSRuntime::initializeAtoms(JSContext* cx)
 #define COMMON_NAME_INFO(name, code, init, clasp) { js_##name##_str, sizeof(#name) - 1 },
         JS_FOR_EACH_PROTOTYPE(COMMON_NAME_INFO)
 #undef COMMON_NAME_INFO
+#define COMMON_NAME_INFO(name) { #name, sizeof(#name) - 1 },
+        JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
+#undef COMMON_NAME_INFO
+#define COMMON_NAME_INFO(name) { "Symbol." #name, sizeof("Symbol." #name) - 1 },
+        JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
+#undef COMMON_NAME_INFO
     };
 
     commonNames = cx->new_<JSAtomState>();
@@ -438,6 +444,31 @@ js::AtomizeChars(ExclusiveContext* cx, const Latin1Char* chars, size_t length, P
 template JSAtom*
 js::AtomizeChars(ExclusiveContext* cx, const char16_t* chars, size_t length, PinningBehavior pin);
 
+template <typename CharT>
+JSLinearString*
+js::AtomizeCharsIfUntainted(ExclusiveContext* cx, const CharT* chars, size_t length,
+                            const StringTaint& taint, js::PinningBehavior pin)
+{
+    if (!taint.hasTaint())
+        return AtomizeChars(cx, chars, length, pin);
+
+    JSFlatString* flat = NewStringCopyN<NoGC>(cx, chars, length);
+    if (!flat) {
+        ReportOutOfMemory(cx);
+        return nullptr;
+    }
+
+    flat->setTaint(taint);
+
+    return flat;
+}
+
+template JSLinearString*
+js::AtomizeCharsIfUntainted(ExclusiveContext* cx, const Latin1Char* chars, size_t length, const StringTaint& taint, js::PinningBehavior pin);
+
+template JSLinearString*
+js::AtomizeCharsIfUntainted(ExclusiveContext* cx, const char16_t* chars, size_t length, const StringTaint& taint, js::PinningBehavior pin);
+
 JSAtom*
 js::AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars, size_t utf8ByteLength)
 {
@@ -448,7 +479,7 @@ js::AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars, size_t utf8ByteLength
     UTF8Chars utf8(utf8Chars, utf8ByteLength);
 
     size_t length;
-    UniquePtr<char16_t> chars(JS::UTF8CharsToNewTwoByteCharsZ(cx, utf8, &length).get());
+    UniqueTwoByteChars chars(JS::UTF8CharsToNewTwoByteCharsZ(cx, utf8, &length).get());
     if (!chars)
         return nullptr;
 

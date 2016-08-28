@@ -5,6 +5,7 @@
 
 #include "ChromeUtils.h"
 
+#include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
 
 namespace mozilla {
@@ -50,7 +51,62 @@ ThreadSafeChromeUtils::NondeterministicGetWeakSetKeys(GlobalObject& aGlobal,
   }
 }
 
-  /* static */ void
+/* static */ void
+ThreadSafeChromeUtils::Base64URLEncode(GlobalObject& aGlobal,
+                                       const ArrayBufferViewOrArrayBuffer& aSource,
+                                       const Base64URLEncodeOptions& aOptions,
+                                       nsACString& aResult,
+                                       ErrorResult& aRv)
+{
+  size_t length = 0;
+  uint8_t* data = nullptr;
+  if (aSource.IsArrayBuffer()) {
+    const ArrayBuffer& buffer = aSource.GetAsArrayBuffer();
+    buffer.ComputeLengthAndData();
+    length = buffer.Length();
+    data = buffer.Data();
+  } else if (aSource.IsArrayBufferView()) {
+    const ArrayBufferView& view = aSource.GetAsArrayBufferView();
+    view.ComputeLengthAndData();
+    length = view.Length();
+    data = view.Data();
+  } else {
+    MOZ_CRASH("Uninitialized union: expected buffer or view");
+  }
+
+  nsresult rv = mozilla::Base64URLEncode(length, data, aOptions, aResult);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aResult.Truncate();
+    aRv.Throw(rv);
+  }
+}
+
+/* static */ void
+ThreadSafeChromeUtils::Base64URLDecode(GlobalObject& aGlobal,
+                                       const nsACString& aString,
+                                       const Base64URLDecodeOptions& aOptions,
+                                       JS::MutableHandle<JSObject*> aRetval,
+                                       ErrorResult& aRv)
+{
+  FallibleTArray<uint8_t> data;
+  nsresult rv = mozilla::Base64URLDecode(aString, aOptions, data);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return;
+  }
+
+  JS::Rooted<JSObject*> buffer(aGlobal.Context(),
+                               ArrayBuffer::Create(aGlobal.Context(),
+                                                   data.Length(),
+                                                   data.Elements()));
+  if (NS_WARN_IF(!buffer)) {
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    return;
+  }
+  aRetval.set(buffer);
+}
+
+/* static */ void
 ChromeUtils::OriginAttributesToSuffix(dom::GlobalObject& aGlobal,
                                       const dom::OriginAttributesDictionary& aAttrs,
                                       nsCString& aSuffix)
@@ -71,11 +127,10 @@ ChromeUtils::OriginAttributesMatchPattern(dom::GlobalObject& aGlobal,
 }
 
 /* static */ void
-ChromeUtils::CreateOriginAttributesWithUserContextId(dom::GlobalObject& aGlobal,
-                                                     const nsAString& aOrigin,
-                                                     uint32_t aUserContextId,
-                                                     dom::OriginAttributesDictionary& aAttrs,
-                                                     ErrorResult& aRv)
+ChromeUtils::CreateOriginAttributesFromOrigin(dom::GlobalObject& aGlobal,
+                                       const nsAString& aOrigin,
+                                       dom::OriginAttributesDictionary& aAttrs,
+                                       ErrorResult& aRv)
 {
   GenericOriginAttributes attrs;
   nsAutoCString suffix;
@@ -83,9 +138,28 @@ ChromeUtils::CreateOriginAttributesWithUserContextId(dom::GlobalObject& aGlobal,
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
-
-  attrs.mUserContextId = aUserContextId;
   aAttrs = attrs;
+}
+
+/* static */ void
+ChromeUtils::FillNonDefaultOriginAttributes(dom::GlobalObject& aGlobal,
+                                 const dom::OriginAttributesDictionary& aAttrs,
+                                 dom::OriginAttributesDictionary& aNewAttrs)
+{
+  aNewAttrs = aAttrs;
+}
+
+
+/* static */ bool
+ChromeUtils::IsOriginAttributesEqual(dom::GlobalObject& aGlobal,
+                                     const dom::OriginAttributesDictionary& aA,
+                                     const dom::OriginAttributesDictionary& aB)
+{
+  return aA.mAddonId == aB.mAddonId &&
+         aA.mAppId == aB.mAppId &&
+         aA.mInIsolatedMozBrowser == aB.mInIsolatedMozBrowser &&
+         aA.mSignedPkg == aB.mSignedPkg &&
+         aA.mUserContextId == aB.mUserContextId;
 }
 
 } // namespace dom

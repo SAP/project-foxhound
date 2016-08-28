@@ -8,10 +8,10 @@
 "use strict";
 
 const {PREF_ORIG_SOURCES} = require("devtools/client/styleeditor/utils");
+const Services = require("Services");
 
 loader.lazyRequireGetter(this, "overlays",
   "devtools/client/inspector/shared/style-inspector-overlays");
-loader.lazyImporter(this, "Services", "resource://gre/modules/Services.jsm");
 loader.lazyServiceGetter(this, "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1", "nsIClipboardHelper");
 loader.lazyGetter(this, "_strings", () => {
@@ -276,8 +276,7 @@ StyleInspectorMenu.prototype = {
     let selection = this.styleWindow.getSelection();
 
     let node = this._getClickedNode();
-    if (node.nodeName == "input") {
-       // input type="text"
+    if (node.nodeName == "input" || node.nodeName == "textarea") {
       let { selectionStart, selectionEnd } = node;
       hasTextSelected = isFinite(selectionStart) && isFinite(selectionEnd)
         && selectionStart !== selectionEnd;
@@ -369,7 +368,7 @@ StyleInspectorMenu.prototype = {
    */
   _onSelectAll: function() {
     let selection = this.styleWindow.getSelection();
-    selection.selectAllChildren(this.styleDocument.documentElement);
+    selection.selectAllChildren(this.view.element);
   },
 
   /**
@@ -401,7 +400,7 @@ StyleInspectorMenu.prototype = {
    * Retrieve the image data for the selected image url and copy it to the
    * clipboard
    */
-  _onCopyImageDataUrl: Task.async(function*() {
+  _onCopyImageDataUrl: Task.async(function* () {
     if (!this._clickedNodeInfo) {
       return;
     }

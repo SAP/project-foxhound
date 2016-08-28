@@ -144,39 +144,36 @@ def remove_caches_from_task(task):
     except KeyError:
         pass
 
-def query_pushinfo(repository, revision):
+def query_vcs_info(repository, revision):
     """Query the pushdate and pushid of a repository/revision.
     This is intended to be used on hg.mozilla.org/mozilla-central and
     similar. It may or may not work for other hg repositories.
     """
-    PushInfo = namedtuple('PushInfo', ['pushid', 'pushdate'])
+    if not repository or not revision:
+        sys.stderr.write('cannot query vcs info because vcs info not provided\n')
+        return None
+
+    VCSInfo = namedtuple('VCSInfo', ['pushid', 'pushdate', 'changesets'])
 
     try:
-        import urllib2
-        url = '%s/json-pushes?changeset=%s' % (repository, revision)
-        sys.stderr.write("Querying URL for pushdate: %s\n" % url)
-        contents = json.load(urllib2.urlopen(url))
+        import requests
+        url = '%s/json-automationrelevance/%s' % (repository.rstrip('/'),
+                                                  revision)
+        sys.stderr.write("Querying version control for metadata: %s\n" % url)
+        contents = requests.get(url).json()
 
-        # The contents should be something like:
-        # {
-        #   "28537": {
-        #    "changesets": [
-        #     "1d0a914ae676cc5ed203cdc05c16d8e0c22af7e5",
-        #    ],
-        #    "date": 1428072488,
-        #    "user": "user@mozilla.com"
-        #   }
-        # }
-        #
-        # So we grab the first element ("28537" in this case) and then pull
-        # out the 'date' field.
-        pushid = contents.iterkeys().next()
-        pushdate = contents[pushid]['date']
-        return PushInfo(pushid, pushdate)
+        changesets = []
+        for c in contents['changesets']:
+            changesets.append({k: c[k] for k in ('desc', 'files', 'node')})
+
+        pushid = contents['changesets'][-1]['pushid']
+        pushdate = contents['changesets'][-1]['pushdate'][0]
+
+        return VCSInfo(pushid, pushdate, changesets)
 
     except Exception:
         sys.stderr.write(
-            "Error querying pushinfo for repository '%s' revision '%s'\n" % (
+            "Error querying VCS info for '%s' revision '%s'\n" % (
                 repository, revision,
             )
         )
@@ -230,6 +227,40 @@ class DecisionTask(object):
         print(json.dumps(task, indent=4))
 
 @CommandProvider
+class LoadImage(object):
+    @Command('taskcluster-load-image', category="ci",
+        description="Load a pre-built Docker image")
+    @CommandArgument('--task-id',
+        help="Load the image at public/image.tar in this task, rather than "
+             "searching the index")
+    @CommandArgument('image_name', nargs='?',
+        help="Load the image of this name based on the current contents of the tree "
+             "(as built for mozilla-central or mozilla-inbound)")
+    def load_image(self, image_name, task_id):
+        from taskcluster_graph.image_builder import (
+            task_id_for_image,
+            docker_load_from_url
+        )
+
+        if not image_name and not task_id:
+            print("Specify either IMAGE-NAME or TASK-ID")
+            sys.exit(1)
+
+        if not task_id:
+            task_id = task_id_for_image({}, 'mozilla-inbound', image_name, create=False)
+            if not task_id:
+                print("No task found in the TaskCluster index for {}".format(image_name))
+                sys.exit(1)
+
+        print("Task ID: {}".format(task_id))
+
+        ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{}/artifacts/{}'
+        image_name = docker_load_from_url(ARTIFACT_URL.format(task_id, 'public/image.tar'))
+
+        print("Loaded image is named {}".format(image_name))
+
+
+@CommandProvider
 class Graph(object):
     @Command('taskcluster-graph', category="ci",
         description="Create taskcluster task graph")
@@ -277,12 +308,18 @@ class Graph(object):
     @CommandArgument('--dry-run',
         action='store_true', default=False,
         help="Stub out taskIds and date fields from the task definitions.")
+    @CommandArgument('--ignore-conditions',
+        action='store_true',
+        help='Run tasks even if their conditions are not met')
     def create_graph(self, **params):
         from functools import partial
+
+        from mozpack.path import match as mozpackmatch
 
         from slugid import nice as slugid
 
         import taskcluster_graph.transform.routes as routes_transform
+        import taskcluster_graph.transform.treeherder as treeherder_transform
         from taskcluster_graph.commit_parser import parse_commit
         from taskcluster_graph.image_builder import (
             docker_image,
@@ -306,29 +343,31 @@ class Graph(object):
         project = params['project']
         message = params.get('message', '') if project == 'try' else DEFAULT_TRY
 
-        # Message would only be blank when not created from decision task
-        if project == 'try' and not message:
-            sys.stderr.write(
-                    "Must supply commit message when creating try graph. " \
-                    "Example: --message='try: -b do -p all -u all'"
-            )
-            sys.exit(1)
-
         templates = Templates(ROOT)
+
         job_path = os.path.join(ROOT, 'tasks', 'branches', project, 'job_flags.yml')
         job_path = job_path if os.path.exists(job_path) else DEFAULT_JOB_PATH
 
         jobs = templates.load(job_path, {})
 
-        job_graph = parse_commit(message, jobs)
+        job_graph, trigger_tests = parse_commit(message, jobs)
 
         cmdline_interactive = params.get('interactive', False)
 
         # Default to current time if querying the head rev fails
         pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime())
-        pushinfo = query_pushinfo(params['head_repository'], params['head_rev'])
-        if pushinfo:
-            pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime(pushinfo.pushdate))
+        vcs_info = query_vcs_info(params['head_repository'], params['head_rev'])
+        changed_files = set()
+        if vcs_info:
+            pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime(vcs_info.pushdate))
+
+            sys.stderr.write('%d commits influencing task scheduling:\n' %
+                             len(vcs_info.changesets))
+            for c in vcs_info.changesets:
+                sys.stderr.write('%s %s\n' % (
+                    c['node'][0:12], c['desc'].splitlines()[0].encode('ascii', 'ignore')))
+
+                changed_files |= set(c['files'])
 
         # Template parameters used when expanding the graph
         seen_images = {}
@@ -387,6 +426,41 @@ class Graph(object):
             'name': 'task graph local'
         }
 
+        # Filter the job graph according to conditions met by this invocation run.
+        def should_run(task):
+            # Old style build or test task that doesn't define conditions. Always runs.
+            if 'when' not in task:
+                return True
+
+            # Command line override to not filter.
+            if params['ignore_conditions']:
+                return True
+
+            when = task['when']
+
+            # If the task defines file patterns and we have a set of changed
+            # files to compare against, only run if a file pattern matches one
+            # of the changed files.
+            file_patterns = when.get('file_patterns', None)
+            if file_patterns and changed_files:
+                for pattern in file_patterns:
+                    for path in changed_files:
+                        if mozpackmatch(path, pattern):
+                            sys.stderr.write('scheduling %s because pattern %s '
+                                             'matches %s\n' % (task['task'],
+                                                               pattern,
+                                                               path))
+                            return True
+
+                # No file patterns matched. Discard task.
+                sys.stderr.write('discarding %s because no relevant files changed\n' %
+                                 task['task'])
+                return False
+
+            return True
+
+        job_graph = filter(should_run, job_graph)
+
         all_routes = {}
 
         for build in job_graph:
@@ -415,6 +489,9 @@ class Graph(object):
                 remove_caches_from_task(build_task)
 
             if params['revision_hash']:
+                treeherder_transform.add_treeherder_revision_info(build_task['task'],
+                                                                  params['head_rev'],
+                                                                  params['revision_hash'])
                 routes_transform.decorate_task_treeherder_routes(build_task['task'],
                                                                  treeherder_route)
                 routes_transform.decorate_task_json_routes(build_task['task'],
@@ -487,6 +564,9 @@ class Graph(object):
                                         build_parameters,
                                         os.environ.get('TASK_ID', None))
                 set_interactive_task(post_task, interactive)
+                treeherder_transform.add_treeherder_revision_info(post_task['task'],
+                                                                  params['head_rev'],
+                                                                  params['revision_hash'])
                 graph['tasks'].append(post_task)
 
             for test in build['dependents']:
@@ -533,12 +613,20 @@ class Graph(object):
                     set_interactive_task(test_task, interactive)
 
                     if params['revision_hash']:
+                        treeherder_transform.add_treeherder_revision_info(test_task['task'],
+                                                                          params['head_rev'],
+                                                                          params['revision_hash'])
                         routes_transform.decorate_task_treeherder_routes(
                             test_task['task'],
                             treeherder_route
                         )
 
-                    graph['tasks'].append(test_task)
+                    # This will schedule test jobs N times
+                    for i in range(0, trigger_tests):
+                        graph['tasks'].append(test_task)
+                        # If we're scheduling more tasks each have to be unique
+                        test_task = copy.deepcopy(test_task)
+                        test_task['taskId'] = slugid()
 
                     define_task = DEFINE_TASK.format(
                         test_task['task']['workerType']
@@ -624,9 +712,9 @@ class CIBuild(object):
 
         # Default to current time if querying the head rev fails
         pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime())
-        pushinfo = query_pushinfo(params['head_repository'], params['head_rev'])
-        if pushinfo:
-            pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime(pushinfo.pushdate))
+        vcs_info = query_vcs_info(params['head_repository'], params['head_rev'])
+        if vcs_info:
+            pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime(vcs_info.pushdate))
 
         from taskcluster_graph.from_now import (
             json_time_from_now,

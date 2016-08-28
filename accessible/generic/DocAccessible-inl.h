@@ -13,6 +13,7 @@
 #include "NotificationController.h"
 #include "States.h"
 #include "nsIScrollableFrame.h"
+#include "nsIDocumentInlines.h"
 
 #ifdef A11Y_LOG
 #include "Logging.h"
@@ -20,6 +21,18 @@
 
 namespace mozilla {
 namespace a11y {
+
+inline Accessible*
+DocAccessible::AccessibleOrTrueContainer(nsINode* aNode) const
+{
+  // HTML comboboxes have no-content list accessible as an intermediate
+  // containing all options.
+  Accessible* container = GetAccessibleOrContainer(aNode);
+  if (container && container->IsHTMLCombobox()) {
+    return container->FirstChild();
+  }
+  return container;
+}
 
 inline nsIAccessiblePivot*
 DocAccessible::VirtualCursor()
@@ -75,6 +88,19 @@ DocAccessible::UpdateText(nsIContent* aTextNode)
   // Ignore the notification if initial tree construction hasn't been done yet.
   if (mNotificationController && HasLoadState(eTreeConstructed))
     mNotificationController->ScheduleTextUpdate(aTextNode);
+}
+
+inline void
+DocAccessible::UpdateRootElIfNeeded()
+{
+  dom::Element* rootEl = mDocumentNode->GetBodyElement();
+  if (!rootEl) {
+    rootEl = mDocumentNode->GetRootElement();
+  }
+  if (rootEl != mContent) {
+    mContent = rootEl;
+    SetRoleMapEntry(aria::GetRoleMap(rootEl));
+  }
 }
 
 inline void

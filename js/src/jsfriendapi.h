@@ -20,6 +20,7 @@
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
+#include "js/Utility.h"
 
 
 #if JS_STACK_GROWTH_DIRECTION > 0
@@ -117,6 +118,7 @@ enum {
     JS_TELEMETRY_GC_MAX_PAUSE_MS,
     JS_TELEMETRY_GC_MARK_MS,
     JS_TELEMETRY_GC_SWEEP_MS,
+    JS_TELEMETRY_GC_COMPACT_MS,
     JS_TELEMETRY_GC_MARK_ROOTS_MS,
     JS_TELEMETRY_GC_MARK_GRAY_MS,
     JS_TELEMETRY_GC_SLICE_MS,
@@ -132,8 +134,13 @@ enum {
     JS_TELEMETRY_GC_MINOR_US,
     JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_CONTENT,
     JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_ADDONS,
-    JS_TELEMETRY_ADDON_EXCEPTIONS
+    JS_TELEMETRY_ADDON_EXCEPTIONS,
+    JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED,
+    JS_TELEMETRY_END
 };
+
+static_assert(JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED == 25,
+              "This value needs to be kept in sync with SelfHostingDefines.h");
 
 typedef void
 (*JSAccumulateTelemetryDataCallback)(int id, uint32_t sample, const char* key);
@@ -284,7 +291,7 @@ JS_CopyPropertyFrom(JSContext* cx, JS::HandleId id, JS::HandleObject target,
                     PropertyCopyBehavior copyBehavior = CopyNonConfigurableAsIs);
 
 extern JS_FRIEND_API(bool)
-JS_WrapPropertyDescriptor(JSContext* cx, JS::MutableHandle<JSPropertyDescriptor> desc);
+JS_WrapPropertyDescriptor(JSContext* cx, JS::MutableHandle<JS::PropertyDescriptor> desc);
 
 struct JSFunctionSpecWithHelp {
     const char*     name;
@@ -309,61 +316,37 @@ JS_DefineFunctionsWithHelp(JSContext* cx, JS::HandleObject obj, const JSFunction
 
 namespace js {
 
+extern JS_FRIEND_DATA(const js::ClassOps) ProxyClassOps;
+extern JS_FRIEND_DATA(const js::ClassExtension) ProxyClassExtension;
+extern JS_FRIEND_DATA(const js::ObjectOps) ProxyObjectOps;
+
 /*
  * Helper Macros for creating JSClasses that function as proxies.
  *
  * NB: The macro invocation must be surrounded by braces, so as to
  *     allow for potential JSClass extensions.
  */
-#define PROXY_MAKE_EXT(isWrappedNative, objectMoved)                    \
+#define PROXY_MAKE_EXT(objectMoved)                                     \
     {                                                                   \
-        isWrappedNative,                                                \
         js::proxy_WeakmapKeyDelegate,                                   \
         objectMoved                                                     \
     }
 
-#define PROXY_CLASS_WITH_EXT(name, flags, ext)                                          \
+#define PROXY_CLASS_WITH_EXT(name, flags, extPtr)                                       \
     {                                                                                   \
         name,                                                                           \
         js::Class::NON_NATIVE |                                                         \
             JSCLASS_IS_PROXY |                                                          \
-            JSCLASS_DELAY_METADATA_CALLBACK |                                           \
+            JSCLASS_DELAY_METADATA_BUILDER |                                            \
             flags,                                                                      \
-        nullptr,                 /* addProperty */                                      \
-        nullptr,                 /* delProperty */                                      \
-        nullptr,                 /* getProperty */                                      \
-        nullptr,                 /* setProperty */                                      \
-        nullptr,                 /* enumerate */                                        \
-        nullptr,                 /* resolve */                                          \
-        nullptr,                 /* mayResolve */                                       \
-        js::proxy_Finalize,      /* finalize    */                                      \
-        nullptr,                 /* call        */                                      \
-        js::proxy_HasInstance,   /* hasInstance */                                      \
-        nullptr,                 /* construct   */                                      \
-        js::proxy_Trace,         /* trace       */                                      \
+        &js::ProxyClassOps,                                                             \
         JS_NULL_CLASS_SPEC,                                                             \
-        ext,                                                                            \
-        {                                                                               \
-            js::proxy_LookupProperty,                                                   \
-            js::proxy_DefineProperty,                                                   \
-            js::proxy_HasProperty,                                                      \
-            js::proxy_GetProperty,                                                      \
-            js::proxy_SetProperty,                                                      \
-            js::proxy_GetOwnPropertyDescriptor,                                         \
-            js::proxy_DeleteProperty,                                                   \
-            js::proxy_Watch, js::proxy_Unwatch,                                         \
-            js::proxy_GetElements,                                                      \
-            nullptr,             /* enumerate       */                                  \
-            js::proxy_FunToString,                                                      \
-        }                                                                               \
+        extPtr,                                                                         \
+        &js::ProxyObjectOps                                                             \
     }
 
-#define PROXY_CLASS_DEF(name, flags)                                    \
-  PROXY_CLASS_WITH_EXT(name, flags,                                     \
-                       PROXY_MAKE_EXT(                                  \
-                         false,   /* isWrappedNative */                 \
-                         js::proxy_ObjectMoved                          \
-                       ))
+#define PROXY_CLASS_DEF(name, flags) \
+  PROXY_CLASS_WITH_EXT(name, flags, &js::ProxyClassExtension)
 
 /*
  * Proxy stubs, similar to JS_*Stub, for embedder proxy class definitions.
@@ -376,7 +359,7 @@ proxy_LookupProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::M
                     JS::MutableHandle<Shape*> propp);
 extern JS_FRIEND_API(bool)
 proxy_DefineProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-                     JS::Handle<JSPropertyDescriptor> desc,
+                     JS::Handle<JS::PropertyDescriptor> desc,
                      JS::ObjectOpResult& result);
 extern JS_FRIEND_API(bool)
 proxy_HasProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, bool* foundp);
@@ -388,7 +371,7 @@ proxy_SetProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::Hand
                   JS::HandleValue receiver, JS::ObjectOpResult& result);
 extern JS_FRIEND_API(bool)
 proxy_GetOwnPropertyDescriptor(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-                               JS::MutableHandle<JSPropertyDescriptor> desc);
+                               JS::MutableHandle<JS::PropertyDescriptor> desc);
 extern JS_FRIEND_API(bool)
 proxy_DeleteProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
                      JS::ObjectOpResult& result);
@@ -656,7 +639,7 @@ inline bool
 StandardClassIsDependent(JSProtoKey key)
 {
     const Class* clasp = ProtoKeyToClass(key);
-    return clasp && clasp->spec.defined() && clasp->spec.dependent();
+    return clasp && clasp->specDefined() && clasp->specDependent();
 }
 
 // Returns the key for the class inherited by a given standard class (that
@@ -675,7 +658,7 @@ ParentKeyForStandardClass(JSProtoKey key)
 
     // If we're dependent, return the key of the class we depend on.
     if (StandardClassIsDependent(key))
-        return ProtoKeyToClass(key)->spec.parentKey();
+        return ProtoKeyToClass(key)->specParentKey();
 
     // Otherwise, we inherit [Object].
     return JSProto_Object;
@@ -968,9 +951,6 @@ JS_FRIEND_API(bool)
 IsObjectInContextCompartment(JSObject* obj, const JSContext* cx);
 
 /*
- * NB: these flag bits are encoded into the bytecode stream in the immediate
- * operand of JSOP_ITER, so don't change them without advancing vm/Xdr.h's
- * XDR_BYTECODE_VERSION.
  * NB: keep these in sync with the copy in builtin/SelfHostingDefines.h.
  * The first three are omitted because they shouldn't be used in new code.
  */
@@ -1380,21 +1360,53 @@ class MOZ_STACK_CLASS AutoStableStringChars
   private:
     AutoStableStringChars(const AutoStableStringChars& other) = delete;
     void operator=(const AutoStableStringChars& other) = delete;
-};
 
-/**
- * Creates a string of the form |ErrorType: ErrorMessage| for a JSErrorReport,
- * which generally matches the toString() behavior of an ErrorObject.
- */
-extern JS_FRIEND_API(JSString*)
-ErrorReportToString(JSContext* cx, JSErrorReport* reportp);
+    bool baseIsInline(JS::Handle<JSLinearString*> linearString);
+    bool copyLatin1Chars(JSContext*, JS::Handle<JSLinearString*> linearString);
+    bool copyTwoByteChars(JSContext*, JS::Handle<JSLinearString*> linearString);
+    bool copyAndInflateLatin1Chars(JSContext*, JS::Handle<JSLinearString*> linearString);
+};
 
 struct MOZ_STACK_CLASS JS_FRIEND_API(ErrorReport)
 {
     explicit ErrorReport(JSContext* cx);
     ~ErrorReport();
 
-    bool init(JSContext* cx, JS::HandleValue exn);
+    enum SniffingBehavior {
+        WithSideEffects,
+        NoSideEffects
+    };
+
+    /**
+     * Generate a JSErrorReport from the provided thrown value.
+     *
+     * If the value is a (possibly wrapped) Error object, the JSErrorReport will
+     * be exactly initialized from the Error object's information, without
+     * observable side effects. (The Error object's JSErrorReport is reused, if
+     * it has one.)
+     *
+     * Otherwise various attempts are made to derive JSErrorReport information
+     * from |exn| and from the current execution state.  This process is
+     * *definitely* inconsistent with any standard, and particulars of the
+     * behavior implemented here generally shouldn't be relied upon.
+     *
+     * If the value of |sniffingBehavior| is |WithSideEffects|, some of these
+     * attempts *may* invoke user-configurable behavior when |exn| is an object:
+     * converting |exn| to a string, detecting and getting properties on |exn|,
+     * accessing |exn|'s prototype chain, and others are possible.  Users *must*
+     * tolerate |ErrorReport::init| potentially having arbitrary effects.  Any
+     * exceptions thrown by these operations will be caught and silently
+     * ignored, and "default" values will be substituted into the JSErrorReport.
+     *
+     * But if the value of |sniffingBehavior| is |NoSideEffects|, these attempts
+     * *will not* invoke any observable side effects.  The JSErrorReport will
+     * simply contain fewer, less precise details.
+     *
+     * Unlike some functions involved in error handling, this function adheres
+     * to the usual JSAPI return value error behavior.
+     */
+    bool init(JSContext* cx, JS::HandleValue exn,
+              SniffingBehavior sniffingBehavior);
 
     JSErrorReport* report()
     {
@@ -1908,7 +1920,7 @@ JS_GetSharedArrayBufferByteLength(JSObject* obj);
 
 /**
  * Return true if the arrayBuffer contains any data. This will return false for
- * ArrayBuffer.prototype and neutered ArrayBuffers.
+ * ArrayBuffer.prototype and detached ArrayBuffers.
  *
  * |obj| must have passed a JS_IsArrayBufferObject test, or somehow be known
  * that it would pass such a test: it is an ArrayBuffer or a wrapper of an
@@ -2029,39 +2041,40 @@ extern JS_FRIEND_API(void*)
 JS_GetArrayBufferViewData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 
 /**
- * Return the ArrayBuffer or SharedArrayBuffer underlying an
- * ArrayBufferView. If the buffer has been neutered, this will still
- * return the neutered buffer. |obj| must be an object that would
+ * Return the ArrayBuffer or SharedArrayBuffer underlying an ArrayBufferView.
+ * This may return a detached buffer.  |obj| must be an object that would
  * return true for JS_IsArrayBufferViewObject().
  */
 extern JS_FRIEND_API(JSObject*)
 JS_GetArrayBufferViewBuffer(JSContext* cx, JS::HandleObject obj, bool* isSharedMemory);
 
-typedef enum {
+enum DetachDataDisposition {
     ChangeData,
     KeepData
-} NeuterDataDisposition;
+};
 
 /**
- * Set an ArrayBuffer's length to 0 and neuter all of its views.
+ * Detach an ArrayBuffer, causing all associated views to no longer refer to
+ * the ArrayBuffer's original attached memory.
  *
  * The |changeData| argument is a hint to inform internal behavior with respect
- * to the internal pointer to the ArrayBuffer's data after being neutered.
- * There is no guarantee it will be respected.  But if it is respected, the
- * ArrayBuffer's internal data pointer will, or will not, have changed
- * accordingly.
+ * to the ArrayBuffer's internal pointer to associated data.  |ChangeData|
+ * attempts to set the internal pointer to fresh memory of the same size as the
+ * original memory; |KeepData| attempts to preserve the original pointer, even
+ * while the ArrayBuffer appears observably detached.  There is no guarantee
+ * this parameter is respected -- it's only a hint.
  */
 extern JS_FRIEND_API(bool)
-JS_NeuterArrayBuffer(JSContext* cx, JS::HandleObject obj,
-                     NeuterDataDisposition changeData);
+JS_DetachArrayBuffer(JSContext* cx, JS::HandleObject obj,
+                     DetachDataDisposition changeData);
 
 /**
- * Check whether the obj is ArrayBufferObject and neutered. Note that this
- * may return false if a security wrapper is encountered that denies the
+ * Check whether the obj is a detached ArrayBufferObject. Note that this may
+ * return false if a security wrapper is encountered that denies the
  * unwrapping.
  */
 extern JS_FRIEND_API(bool)
-JS_IsNeuteredArrayBufferObject(JSObject* obj);
+JS_IsDetachedArrayBufferObject(JSObject* obj);
 
 /**
  * Check whether obj supports JS_GetDataView* APIs.
@@ -2682,8 +2695,23 @@ class MOZ_RAII JS_FRIEND_API(AutoCTypesActivityCallback) {
     }
 };
 
-typedef JSObject*
-(* ObjectMetadataCallback)(JSContext* cx, JSObject* obj);
+// Abstract base class for objects that build allocation metadata for JavaScript
+// values.
+struct AllocationMetadataBuilder {
+    AllocationMetadataBuilder() { }
+
+    // Return a metadata object for the newly constructed object |obj|, or
+    // nullptr if there's no metadata to attach.
+    //
+    // Implementations should treat all errors as fatal; there is no way to
+    // report errors from this callback. In particular, the caller provides an
+    // oomUnsafe for overriding implementations to use.
+    virtual JSObject* build(JSContext* cx, JS::HandleObject obj,
+                            AutoEnterOOMUnsafeRegion& oomUnsafe) const
+    {
+        return nullptr;
+    }
+};
 
 /**
  * Specify a callback to invoke when creating each JS object in the current
@@ -2691,11 +2719,11 @@ typedef JSObject*
  * object.
  */
 JS_FRIEND_API(void)
-SetObjectMetadataCallback(JSContext* cx, ObjectMetadataCallback callback);
+SetAllocationMetadataBuilder(JSContext* cx, const AllocationMetadataBuilder *callback);
 
 /** Get the metadata associated with an object. */
 JS_FRIEND_API(JSObject*)
-GetObjectMetadata(JSObject* obj);
+GetAllocationMetadata(JSObject* obj);
 
 JS_FRIEND_API(bool)
 GetElementsWithAdder(JSContext* cx, JS::HandleObject obj, JS::HandleObject receiver,
@@ -2727,7 +2755,7 @@ ForwardToNative(JSContext* cx, JSNative native, const JS::CallArgs& args);
 JS_FRIEND_API(bool)
 SetPropertyIgnoringNamedGetter(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
                                JS::HandleValue v, JS::HandleValue receiver,
-                               JS::Handle<JSPropertyDescriptor> ownDesc,
+                               JS::Handle<JS::PropertyDescriptor> ownDesc,
                                JS::ObjectOpResult& result);
 
 JS_FRIEND_API(void)

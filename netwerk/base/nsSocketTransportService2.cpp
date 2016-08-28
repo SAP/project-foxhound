@@ -4,12 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsSocketTransportService2.h"
-#if !defined(MOZILLA_XPCOMRT_API)
 #include "nsSocketTransport2.h"
 #include "NetworkActivityMonitor.h"
 #include "mozilla/Preferences.h"
 #include "nsIOService.h"
-#endif // !defined(MOZILLA_XPCOMRT_API)
 #include "nsASocketHandler.h"
 #include "nsError.h"
 #include "prnetdb.h"
@@ -27,12 +25,14 @@
 #include "mozilla/Telemetry.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
+#include "nsIWidget.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
 
 LazyLogModule gSocketTransportLog("nsSocketTransport");
 LazyLogModule gUDPSocketLog("UDPSocket");
+LazyLogModule gTCPSocketLog("TCPSocket");
 
 nsSocketTransportService *gSocketTransportService = nullptr;
 Atomic<PRThread*, Relaxed> gSocketThread;
@@ -42,8 +42,8 @@ Atomic<PRThread*, Relaxed> gSocketThread;
 #define KEEPALIVE_IDLE_TIME_PREF "network.tcp.keepalive.idle_time"
 #define KEEPALIVE_RETRY_INTERVAL_PREF "network.tcp.keepalive.retry_interval"
 #define KEEPALIVE_PROBE_COUNT_PREF "network.tcp.keepalive.probe_count"
-#define SOCKET_LIMIT_TARGET 550U
-#define SOCKET_LIMIT_MIN     50U
+#define SOCKET_LIMIT_TARGET 1000U
+#define SOCKET_LIMIT_MIN      50U
 #define BLIP_INTERVAL_PREF "network.activity.blipIntervalMilliseconds"
 #define MAX_TIME_BETWEEN_TWO_POLLS "network.sts.max_time_for_events_between_two_polls"
 #define TELEMETRY_PREF "toolkit.telemetry.enabled"
@@ -113,6 +113,7 @@ nsSocketTransportService::nsSocketTransportService()
     , mMaxTimePerPollIter(100)
     , mTelemetryEnabledPref(false)
     , mMaxTimeForPrClosePref(PR_SecondsToInterval(5))
+    , mSleepPhase(false)
     , mProbedMaxCount(false)
 {
     NS_ASSERTION(NS_IsMainThread(), "wrong thread");
@@ -226,6 +227,35 @@ nsSocketTransportService::AttachSocket(PRFileDesc *fd, nsASocketHandler *handler
     nsresult rv = AddToIdleList(&sock);
     if (NS_SUCCEEDED(rv))
         NS_ADDREF(handler);
+    return rv;
+}
+
+// the number of sockets that can be attached at any given time is
+// limited.  this is done because some operating systems (e.g., Win9x)
+// limit the number of sockets that can be created by an application.
+// AttachSocket will fail if the limit is exceeded.  consumers should
+// call CanAttachSocket and check the result before creating a socket.
+
+bool
+nsSocketTransportService::CanAttachSocket()
+{
+    static bool reported900FDLimit = false;
+    static bool reported256FDLimit = false;
+
+    uint32_t total = mActiveCount + mIdleCount;
+    bool rv = total < gMaxCount;
+
+    if (mTelemetryEnabledPref) {
+        if (((total >= 900) || !rv) && !reported900FDLimit) {
+            reported900FDLimit = true;
+            Telemetry::Accumulate(Telemetry::NETWORK_SESSION_AT_900FD, true);
+        }
+        if ((total >= 256) && !reported256FDLimit) {
+            reported256FDLimit = true;
+            Telemetry::Accumulate(Telemetry::NETWORK_SESSION_AT_256FD, true);
+        }
+    }
+
     return rv;
 }
 
@@ -381,11 +411,13 @@ bool
 nsSocketTransportService::GrowActiveList()
 {
     int32_t toAdd = gMaxCount - mActiveListSize;
-    if (toAdd > 100)
+    if (toAdd > 100) {
         toAdd = 100;
-    if (toAdd < 1)
+    } else if (toAdd < 1) {
+        MOZ_ASSERT(false, "CanAttachSocket() should prevent this");
         return false;
-    
+    }
+
     mActiveListSize += toAdd;
     mActiveList = (SocketContext *)
         moz_xrealloc(mActiveList, sizeof(SocketContext) * mActiveListSize);
@@ -398,10 +430,12 @@ bool
 nsSocketTransportService::GrowIdleList()
 {
     int32_t toAdd = gMaxCount - mIdleListSize;
-    if (toAdd > 100)
+    if (toAdd > 100) {
         toAdd = 100;
-    if (toAdd < 1)
+    } else if (toAdd < 1) {
+        MOZ_ASSERT(false, "CanAttachSocket() should prevent this");
         return false;
+    }
 
     mIdleListSize += toAdd;
     mIdleList = (SocketContext *)
@@ -560,6 +594,8 @@ nsSocketTransportService::Init()
     if (obsSvc) {
         obsSvc->AddObserver(this, "profile-initial-state", false);
         obsSvc->AddObserver(this, "last-pb-context-exited", false);
+        obsSvc->AddObserver(this, NS_WIDGET_SLEEP_OBSERVER_TOPIC, true);
+        obsSvc->AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true);
     }
 
     mInitialized = true;
@@ -608,11 +644,16 @@ nsSocketTransportService::Shutdown()
     if (obsSvc) {
         obsSvc->RemoveObserver(this, "profile-initial-state");
         obsSvc->RemoveObserver(this, "last-pb-context-exited");
+        obsSvc->RemoveObserver(this, NS_WIDGET_SLEEP_OBSERVER_TOPIC);
+        obsSvc->RemoveObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC);
     }
 
-#if !defined(MOZILLA_XPCOMRT_API)
+    if (mAfterWakeUpTimer) {
+        mAfterWakeUpTimer->Cancel();
+        mAfterWakeUpTimer = nullptr;
+    }
+
     mozilla::net::NetworkActivityMonitor::Shutdown();
-#endif // !defined(MOZILLA_XPCOMRT_API)
 
     mInitialized = false;
     mShuttingDown = false;
@@ -700,10 +741,6 @@ nsSocketTransportService::CreateRoutedTransport(const char **types,
                                                 nsIProxyInfo *proxyInfo,
                                                 nsISocketTransport **result)
 {
-#if defined(MOZILLA_XPCOMRT_API)
-    NS_WARNING("nsSocketTransportService::CreateTransport not implemented");
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
     NS_ENSURE_TRUE(mInitialized, NS_ERROR_NOT_INITIALIZED);
     NS_ENSURE_TRUE(port >= 0 && port <= 0xFFFF, NS_ERROR_ILLEGAL_VALUE);
 
@@ -715,17 +752,12 @@ nsSocketTransportService::CreateRoutedTransport(const char **types,
 
     trans.forget(result);
     return NS_OK;
-#endif // defined(MOZILLA_XPCOMRT_API)
 }
 
 NS_IMETHODIMP
 nsSocketTransportService::CreateUnixDomainTransport(nsIFile *aPath,
                                                     nsISocketTransport **result)
 {
-#if defined(MOZILLA_XPCOMRT_API)
-    NS_WARNING("nsSocketTransportService::CreateUnixDomainTransport not implemented");
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
     nsresult rv;
 
     NS_ENSURE_TRUE(mInitialized, NS_ERROR_NOT_INITIALIZED);
@@ -743,7 +775,6 @@ nsSocketTransportService::CreateUnixDomainTransport(nsIFile *aPath,
 
     trans.forget(result);
     return NS_OK;
-#endif // defined(MOZILLA_XPCOMRT_API)
 }
 
 NS_IMETHODIMP
@@ -804,11 +835,9 @@ nsSocketTransportService::Run()
     }
 #endif
 
-    SOCKET_LOG(("STS thread init\n"));
+    SOCKET_LOG(("STS thread init %d sockets\n", gMaxCount));
 
-#if !defined(MOZILLA_XPCOMRT_API)
     psm::InitializeSSLServerCertVerificationThreads();
-#endif // !defined(MOZILLA_XPCOMRT_API)
 
     gSocketThread = PR_GetCurrentThread();
 
@@ -971,9 +1000,7 @@ nsSocketTransportService::Run()
 
     gSocketThread = nullptr;
 
-#if !defined(MOZILLA_XPCOMRT_API)
     psm::StopSSLServerCertVerificationThreads();
-#endif // !defined(MOZILLA_XPCOMRT_API)
 
     SOCKET_LOG(("STS thread exit\n"));
     return NS_OK;
@@ -1067,17 +1094,13 @@ nsSocketTransportService::DoPollIteration(bool wait, TimeDuration *pollDuration)
 #endif
 
     // Measures seconds spent while blocked on PR_Poll
-    uint32_t pollInterval;
-
+    uint32_t pollInterval = 0;
     int32_t n = 0;
-#if !defined(MOZILLA_XPCOMRT_API)
+    *pollDuration = 0;
     if (!gIOService->IsNetTearingDown()) {
         // Let's not do polling during shutdown.
         n = Poll(wait, &pollInterval, pollDuration);
     }
-#else
-    n = Poll(wait, &pollInterval, pollDuration);
-#endif // defined(MOZILLA_XPCOMRT_API)
 
     if (n < 0) {
         SOCKET_LOG(("  PR_Poll error [%d] os error [%d]\n", PR_GetError(),
@@ -1166,12 +1189,8 @@ nsSocketTransportService::DoPollIteration(bool wait, TimeDuration *pollDuration)
 nsresult
 nsSocketTransportService::UpdatePrefs()
 {
-#if defined(MOZILLA_XPCOMRT_API)
-    NS_WARNING("nsSocketTransportService::UpdatePrefs not implemented");
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
     mSendBufferSize = 0;
-    
+
     nsCOMPtr<nsIPrefBranch> tmpPrefService = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (tmpPrefService) {
         int32_t bufferSize;
@@ -1229,9 +1248,8 @@ nsSocketTransportService::UpdatePrefs()
             mMaxTimeForPrClosePref = PR_MillisecondsToInterval(maxTimeForPrClosePref);
         }
     }
-    
+
     return NS_OK;
-#endif // defined(MOZILLA_XPCOMRT_API)
 }
 
 void
@@ -1276,7 +1294,6 @@ nsSocketTransportService::Observe(nsISupports *subject,
                                   const char *topic,
                                   const char16_t *data)
 {
-#if !defined(MOZILLA_XPCOMRT_API)
     if (!strcmp(topic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
         UpdatePrefs();
         return NS_OK;
@@ -1290,7 +1307,6 @@ nsSocketTransportService::Observe(nsISupports *subject,
 
         return net::NetworkActivityMonitor::Init(blipInterval);
     }
-#endif // !defined(MOZILLA_XPCOMRT_API)
 
     if (!strcmp(topic, "last-pb-context-exited")) {
         nsCOMPtr<nsIRunnable> ev =
@@ -1298,6 +1314,27 @@ nsSocketTransportService::Observe(nsISupports *subject,
                                &nsSocketTransportService::ClosePrivateConnections);
         nsresult rv = Dispatch(ev, nsIEventTarget::DISPATCH_NORMAL);
         NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    if (!strcmp(topic, NS_TIMER_CALLBACK_TOPIC)) {
+        nsCOMPtr<nsITimer> timer = do_QueryInterface(subject);
+        if (timer == mAfterWakeUpTimer) {
+            mAfterWakeUpTimer = nullptr;
+            mSleepPhase = false;
+        }
+    } else if (!strcmp(topic, NS_WIDGET_SLEEP_OBSERVER_TOPIC)) {
+        mSleepPhase = true;
+        if (mAfterWakeUpTimer) {
+            mAfterWakeUpTimer->Cancel();
+            mAfterWakeUpTimer = nullptr;
+        }
+    } else if (!strcmp(topic, NS_WIDGET_WAKE_OBSERVER_TOPIC)) {
+        if (mSleepPhase && !mAfterWakeUpTimer) {
+            mAfterWakeUpTimer = do_CreateInstance("@mozilla.org/timer;1");
+            if (mAfterWakeUpTimer) {
+                mAfterWakeUpTimer->Init(this, 2000, nsITimer::TYPE_ONE_SHOT);
+            }
+        }
     }
 
     return NS_OK;
@@ -1324,9 +1361,7 @@ nsSocketTransportService::ClosePrivateConnections()
         }
     }
 
-#if !defined(MOZILLA_XPCOMRT_API)
     mozilla::ClearPrivateSSLState();
-#endif // !defined(MOZILLA_XPCOMRT_API)
 }
 
 NS_IMETHODIMP
@@ -1406,6 +1441,7 @@ nsSocketTransportService::ProbeMaxCount()
         if (pfd[index].fd)
             PR_Close(pfd[index].fd);
 
+    Telemetry::Accumulate(Telemetry::NETWORK_PROBE_MAXCOUNT, gMaxCount);
     SOCKET_LOG(("Socket Limit Test max was confirmed at %d\n", gMaxCount));
 }
 #endif // windows
@@ -1419,35 +1455,37 @@ nsSocketTransportService::DiscoverMaxCount()
     // On unix and os x network sockets and file
     // descriptors are the same. OS X comes defaulted at 256,
     // most linux at 1000. We can reliably use [sg]rlimit to
-    // query that and raise it. We will try to raise it 250 past
-    // our target number of SOCKET_LIMIT_TARGET so that some descriptors
-    // are still available for other things.
+    // query that and raise it if needed.
 
     struct rlimit rlimitData;
-    if (getrlimit(RLIMIT_NOFILE, &rlimitData) == -1)
+    if (getrlimit(RLIMIT_NOFILE, &rlimitData) == -1) // rlimit broken - use min
         return PR_SUCCESS;
-    if (rlimitData.rlim_cur >=  SOCKET_LIMIT_TARGET + 250) {
+
+    if (rlimitData.rlim_cur >= SOCKET_LIMIT_TARGET) { // larger than target!
         gMaxCount = SOCKET_LIMIT_TARGET;
         return PR_SUCCESS;
     }
 
     int32_t maxallowed = rlimitData.rlim_max;
-    if (maxallowed == -1) {                       /* no limit */
-        maxallowed = SOCKET_LIMIT_TARGET + 250;
-    } else if ((uint32_t)maxallowed < SOCKET_LIMIT_MIN + 250) {
-        return PR_SUCCESS;
-    } else if ((uint32_t)maxallowed > SOCKET_LIMIT_TARGET + 250) {
-        maxallowed = SOCKET_LIMIT_TARGET + 250;
+    if ((uint32_t)maxallowed <= SOCKET_LIMIT_MIN) {
+        return PR_SUCCESS; // so small treat as if rlimit is broken
+    }
+
+    if ((maxallowed == -1) || // no hard cap - ok to set target
+        ((uint32_t)maxallowed >= SOCKET_LIMIT_TARGET)) {
+        maxallowed = SOCKET_LIMIT_TARGET;
     }
 
     rlimitData.rlim_cur = maxallowed;
     setrlimit(RLIMIT_NOFILE, &rlimitData);
-    if (getrlimit(RLIMIT_NOFILE, &rlimitData) != -1)
-        if (rlimitData.rlim_cur > SOCKET_LIMIT_MIN + 250)
-            gMaxCount = rlimitData.rlim_cur - 250;
+    if ((getrlimit(RLIMIT_NOFILE, &rlimitData) != -1) &&
+        (rlimitData.rlim_cur > SOCKET_LIMIT_MIN)) {
+        gMaxCount = rlimitData.rlim_cur;
+    }
 
 #elif defined(XP_WIN) && !defined(WIN_CE)
     // >= XP is confirmed to have at least 1000
+    PR_STATIC_ASSERT(SOCKET_LIMIT_TARGET <= 1000);
     gMaxCount = SOCKET_LIMIT_TARGET;
 #else
     // other platforms are harder to test - so leave at safe legacy value
@@ -1465,8 +1503,12 @@ nsSocketTransportService::AnalyzeConnection(nsTArray<SocketInfo> *data,
     if (context->mHandler->mIsPrivate)
         return;
     PRFileDesc *aFD = context->mFD;
-    bool tcp = (PR_GetDescType(PR_GetIdentitiesLayer(aFD, PR_NSPR_IO_LAYER)) ==
-                PR_DESC_SOCKET_TCP);
+
+    PRFileDesc *idLayer = PR_GetIdentitiesLayer(aFD, PR_NSPR_IO_LAYER);
+
+    NS_ENSURE_TRUE_VOID(idLayer);
+
+    bool tcp = PR_GetDescType(idLayer) == PR_DESC_SOCKET_TCP;
 
     PRNetAddr peer_addr;
     PR_GetPeerName(aFD, &peer_addr);

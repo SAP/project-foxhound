@@ -216,6 +216,8 @@ class AbstractFramePtr
 
     inline Value newTarget() const;
 
+    inline bool debuggerNeedsCheckPrimitiveReturn() const;
+
     inline bool isFunctionFrame() const;
     inline bool isNonStrictDirectEvalFrame() const;
     inline bool isStrictEvalFrame() const;
@@ -923,46 +925,100 @@ void MarkInterpreterActivations(JSRuntime* rt, JSTracer* trc);
 
 /*****************************************************************************/
 
+/** Base class for all function call args. */
+class AnyInvokeArgs : public JS::CallArgs
+{
+};
+
+/** Base class for all function construction args. */
+class AnyConstructArgs : public JS::CallArgs
+{
+    // Only js::Construct (or internal methods that call the qualified CallArgs
+    // versions) should do these things!
+    void setCallee(Value v) = delete;
+    void setThis(Value v) = delete;
+    MutableHandleValue newTarget() const = delete;
+    MutableHandleValue rval() const = delete;
+};
+
 namespace detail {
 
-class GenericInvokeArgs : public JS::CallArgs
+/** Function call/construct args of statically-unknown count. */
+template <MaybeConstruct Construct>
+class GenericArgsBase
+  : public mozilla::Conditional<Construct, AnyConstructArgs, AnyInvokeArgs>::Type
 {
   protected:
     AutoValueVector v_;
 
-    explicit GenericInvokeArgs(JSContext* cx) : v_(cx) {}
+    explicit GenericArgsBase(JSContext* cx) : v_(cx) {}
 
-    bool init(unsigned argc, bool construct) {
-        MOZ_ASSERT(2 + argc + construct > argc);  // no overflow
-        if (!v_.resize(2 + argc + construct))
+  public:
+    bool init(unsigned argc) {
+        // callee, this, arguments[, new.target iff constructing]
+        size_t len = 2 + argc + uint32_t(Construct);
+        MOZ_ASSERT(len > argc);  // no overflow
+        if (!v_.resize(len))
             return false;
 
         *static_cast<JS::CallArgs*>(this) = CallArgsFromVp(argc, v_.begin());
-        constructing_ = construct;
+        this->constructing_ = Construct;
         return true;
+    }
+};
+
+/** Function call/construct args of statically-known count. */
+template <MaybeConstruct Construct, size_t N>
+class FixedArgsBase
+  : public mozilla::Conditional<Construct, AnyConstructArgs, AnyInvokeArgs>::Type
+{
+  protected:
+    JS::AutoValueArray<2 + N + uint32_t(Construct)> v_;
+
+    explicit FixedArgsBase(JSContext* cx) : v_(cx) {
+        *static_cast<JS::CallArgs*>(this) = CallArgsFromVp(N, v_.begin());
+        this->constructing_ = Construct;
     }
 };
 
 } // namespace detail
 
-class InvokeArgs : public detail::GenericInvokeArgs
+/** Function call args of statically-unknown count. */
+class InvokeArgs : public detail::GenericArgsBase<NO_CONSTRUCT>
 {
-  public:
-    explicit InvokeArgs(JSContext* cx) : detail::GenericInvokeArgs(cx) {}
+    using Base = detail::GenericArgsBase<NO_CONSTRUCT>;
 
-    bool init(unsigned argc) {
-        return detail::GenericInvokeArgs::init(argc, false);
-    }
+  public:
+    explicit InvokeArgs(JSContext* cx) : Base(cx) {}
 };
 
-class ConstructArgs : public detail::GenericInvokeArgs
+/** Function call args of statically-known count. */
+template <size_t N>
+class FixedInvokeArgs : public detail::FixedArgsBase<NO_CONSTRUCT, N>
 {
-  public:
-    explicit ConstructArgs(JSContext* cx) : detail::GenericInvokeArgs(cx) {}
+    using Base = detail::FixedArgsBase<NO_CONSTRUCT, N>;
 
-    bool init(unsigned argc) {
-        return detail::GenericInvokeArgs::init(argc, true);
-    }
+  public:
+    explicit FixedInvokeArgs(JSContext* cx) : Base(cx) {}
+};
+
+/** Function construct args of statically-unknown count. */
+class ConstructArgs : public detail::GenericArgsBase<CONSTRUCT>
+{
+    using Base = detail::GenericArgsBase<CONSTRUCT>;
+
+  public:
+    explicit ConstructArgs(JSContext* cx) : Base(cx) {}
+};
+
+/** Function call args of statically-known count. */
+template <size_t N>
+class FixedConstructArgs : public detail::FixedArgsBase<CONSTRUCT, N>
+{
+    using Base = detail::FixedArgsBase<CONSTRUCT, N>;
+
+  public:
+    explicit FixedConstructArgs(JSContext* cx) : Base(cx) {}
 };
 
 template <class Args, class Arraylike>
@@ -1049,7 +1105,7 @@ struct DefaultHasher<AbstractFramePtr> {
 // entries that must be scanned through, and to avoid the headaches of
 // maintaining a cache for each compartment and invalidating stale cache entries
 // in the presence of cross-compartment calls.
-class LiveSavedFrameCache : public JS::Traceable
+class LiveSavedFrameCache
 {
   public:
     using FramePtr = mozilla::Variant<AbstractFramePtr, jit::CommonFrameLayout*>;
@@ -1102,7 +1158,7 @@ class LiveSavedFrameCache : public JS::Traceable
     }
 
     static mozilla::Maybe<FramePtr> getFramePtr(FrameIter& iter);
-    static void trace(LiveSavedFrameCache* cache, JSTracer* trc);
+    void trace(JSTracer* trc);
 
     void find(JSContext* cx, FrameIter& frameIter, MutableHandleSavedFrame frame) const;
     bool insert(JSContext* cx, FramePtr& framePtr, jsbytecode* pc, HandleSavedFrame savedFrame);
@@ -1181,7 +1237,7 @@ class Activation
     Rooted<SavedFrame*> asyncStack_;
 
     // Value of asyncCause to be attached to asyncStack_.
-    RootedString asyncCause_;
+    const char* asyncCause_;
 
     // True if the async call was explicitly requested, e.g. via
     // callFunctionWithAsyncStack.
@@ -1263,7 +1319,7 @@ class Activation
         return asyncStack_;
     }
 
-    JSString* asyncCause() {
+    const char* asyncCause() const {
         return asyncCause_;
     }
 
@@ -1387,15 +1443,6 @@ class JitActivation : public Activation
     JitActivation* prevJitActivation_;
     JSContext* prevJitJSContext_;
     bool active_;
-
-    // The lazy link stub reuse the frame pushed for calling a function as an
-    // exit frame. In a few cases, such as after calls from asm.js, we might
-    // have an entry frame followed by an exit frame. This pattern can be
-    // assimilated as a fake exit frame (unwound frame), in which case we skip
-    // marking during a GC. To ensure that we do mark the stack as expected we
-    // have to keep a flag set by the LazyLink VM function to safely mark the
-    // stack if a GC happens during the link phase.
-    bool isLazyLinkExitFrame_;
 
     // Rematerialized Ion frames which has info copied out of snapshots. Maps
     // frame pointers (i.e. jitTop) to a vector of rematerializations of all
@@ -1532,14 +1579,6 @@ class JitActivation : public Activation
     // Unregister the bailout data when the frame is reconstructed.
     void cleanBailoutData();
 
-    // Return the bailout information if it is registered.
-    bool isLazyLinkExitFrame() const { return isLazyLinkExitFrame_; }
-
-    // Register the bailout data when it is constructed.
-    void setLazyLinkExitFrame(bool isExitFrame) {
-        isLazyLinkExitFrame_ = isExitFrame;
-    }
-
     static size_t offsetOfLastProfilingFrame() {
         return offsetof(JitActivation, lastProfilingFrame_);
     }
@@ -1581,9 +1620,6 @@ class JitActivationIterator : public ActivationIterator
         settle();
         return *this;
     }
-
-    // Returns the bottom and top addresses of the current JitActivation.
-    void jitStackRange(uintptr_t*& min, uintptr_t*& end);
 };
 
 } // namespace jit
@@ -1772,6 +1808,7 @@ class FrameIter
     inline bool hasCachedSavedFrame() const;
     inline void setHasCachedSavedFrame();
 
+    ScriptSource* scriptSource() const;
     const char* filename() const;
     const char16_t* displayURL() const;
     unsigned computeLine(uint32_t* column = nullptr) const;

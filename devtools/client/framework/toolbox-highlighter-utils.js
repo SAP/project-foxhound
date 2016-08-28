@@ -1,3 +1,5 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -266,7 +268,11 @@ exports.getHighlighterUtils = function(toolbox) {
       yield toolbox.highlighter.hideBoxModel();
     }
 
-    toolbox.emit("node-unhighlight");
+    // unhighlight is called when destroying the toolbox, which means that by
+    // now, the toolbox reference might have been nullified already.
+    if (toolbox) {
+      toolbox.emit("node-unhighlight");
+    }
   });
 
   /**

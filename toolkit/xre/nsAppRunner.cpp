@@ -68,6 +68,7 @@
 #include "nsIIOService2.h"
 #include "nsIObserverService.h"
 #include "nsINativeAppSupport.h"
+#include "nsIPlatformInfo.h"
 #include "nsIProcess.h"
 #include "nsIProfileUnlocker.h"
 #include "nsIPromptService.h"
@@ -90,7 +91,6 @@
 #include "nsIDocShell.h"
 #include "nsAppShellCID.h"
 #include "mozilla/scache/StartupCache.h"
-#include "nsIGfxInfo.h"
 #include "gfxPrefs.h"
 
 #include "base/histogram.h"
@@ -104,14 +104,15 @@
 #include <math.h>
 #include "cairo/cairo-features.h"
 #include "mozilla/WindowsVersion.h"
+#include "mozilla/widget/AudioSession.h"
 
 #ifndef PROCESS_DEP_ENABLE
 #define PROCESS_DEP_ENABLE 0x1
 #endif
-
-#if defined(MOZ_CONTENT_SANDBOX)
-#include "nsIUUIDGenerator.h"
 #endif
+
+#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
+#include "nsIUUIDGenerator.h"
 #endif
 
 #ifdef ACCESSIBILITY
@@ -159,6 +160,7 @@
 #include "nsThreadUtils.h"
 #include <comdef.h>
 #include <wbemidl.h>
+#include "WinUtils.h"
 #endif
 
 #ifdef XP_MACOSX
@@ -226,7 +228,7 @@ int    gArgc;
 char **gArgv;
 
 static const char gToolkitVersion[] = NS_STRINGIFY(GRE_MILESTONE);
-static const char gToolkitBuildID[] = NS_STRINGIFY(GRE_BUILDID);
+static const char gToolkitBuildID[] = NS_STRINGIFY(MOZ_BUILDID);
 
 static nsIProfileLock* gProfileLock;
 
@@ -234,6 +236,8 @@ int    gRestartArgc;
 char **gRestartArgv;
 
 bool gIsGtest = false;
+
+nsString gAbsoluteArgv0Path;
 
 #ifdef MOZ_WIDGET_QT
 static int    gQtOnlyArgc;
@@ -255,6 +259,12 @@ static char **gQtOnlyArgv;
 #include <fontconfig/fontconfig.h>
 #endif
 #include "BinaryPath.h"
+#ifndef MOZ_BUILDID
+// See comment in Makefile.in why we want to avoid including buildid.h.
+// Still include it when MOZ_BUILDID is not set, which can happen with some
+// build backends.
+#include "buildid.h"
+#endif
 
 #ifdef MOZ_LINKER
 extern "C" MFBT_API bool IsSignalHandlingBroken();
@@ -613,8 +623,12 @@ GetAndCleanTempDir()
     return nullptr;
   }
 
+  // Don't return an error if the directory doesn't exist.
+  // Windows Remove() returns NS_ERROR_FILE_NOT_FOUND while
+  // OS X returns NS_ERROR_FILE_TARGET_DOES_NOT_EXIST.
   rv = tempDir->Remove(/* aRecursive */ true);
-  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
+  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND &&
+      rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
     NS_WARNING("Failed to delete temp directory.");
     return nullptr;
   }
@@ -701,66 +715,17 @@ SetUpSandboxEnvironment()
   }
 }
 
-#if defined(NIGHTLY_BUILD)
-static void
-CleanUpOldSandboxEnvironment()
-{
-  // Temporary code to clean up the old low integrity temp directories.
-  // The removal of this is tracked by bug 1165818.
-  nsCOMPtr<nsIFile> lowIntegrityMozilla;
-  nsresult rv = NS_GetSpecialDirectory(NS_WIN_LOW_INTEGRITY_TEMP_BASE,
-                              getter_AddRefs(lowIntegrityMozilla));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  nsCOMPtr<nsISimpleEnumerator> iter;
-  rv = lowIntegrityMozilla->GetDirectoryEntries(getter_AddRefs(iter));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  bool more;
-  nsCOMPtr<nsISupports> elem;
-  while (NS_SUCCEEDED(iter->HasMoreElements(&more)) && more) {
-    rv = iter->GetNext(getter_AddRefs(elem));
-    if (NS_FAILED(rv)) {
-      break;
-    }
-
-    nsCOMPtr<nsIFile> file = do_QueryInterface(elem);
-    if (!file) {
-      continue;
-    }
-
-    nsAutoString leafName;
-    rv = file->GetLeafName(leafName);
-    if (NS_FAILED(rv)) {
-      continue;
-    }
-
-    if (leafName.Find(NS_LITERAL_STRING("MozTemp-{")) == 0) {
-      file->Remove(/* aRecursive */ true);
-    }
-  }
-}
-#endif
-
 static void
 CleanUpSandboxEnvironment()
 {
 #if defined(XP_WIN)
-  // We can't have created a low integrity temp before Vista.
+  // We can't have created the temp directory before Vista.
   if (!IsVistaOrLater()) {
     return;
   }
 #endif
 
-#if defined(NIGHTLY_BUILD)
-  CleanUpOldSandboxEnvironment();
-#endif
-
-  // Get and remove the low integrity Mozilla temp directory.
+  // Get and remove the sandbox-writable temp directory.
   // This function already warns if the deletion fails.
   nsCOMPtr<nsIFile> tempDir = GetAndCleanTempDir();
 }
@@ -787,6 +752,7 @@ class nsXULAppInfo : public nsIXULAppInfo,
 public:
   MOZ_CONSTEXPR nsXULAppInfo() {}
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIPLATFORMINFO
   NS_DECL_NSIXULAPPINFO
   NS_DECL_NSIXULRUNTIME
   NS_DECL_NSIOBSERVER
@@ -810,7 +776,8 @@ NS_INTERFACE_MAP_BEGIN(nsXULAppInfo)
   NS_INTERFACE_MAP_ENTRY(nsICrashReporter)
   NS_INTERFACE_MAP_ENTRY(nsIFinishDumpingCallback)
 #endif
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIXULAppInfo, gAppData || 
+  NS_INTERFACE_MAP_ENTRY(nsIPlatformInfo)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIXULAppInfo, gAppData ||
                                      XRE_IsContentProcess())
 NS_INTERFACE_MAP_END
 
@@ -2193,7 +2160,7 @@ ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
         (do_GetService(NS_APPSTARTUP_CONTRACTID));
       NS_ENSURE_TRUE(appStartup, NS_ERROR_FAILURE);
 
-      nsCOMPtr<nsIDOMWindow> newWindow;
+      nsCOMPtr<mozIDOMWindowProxy> newWindow;
       rv = windowWatcher->OpenWindow(nullptr,
                                      kProfileManagerURL,
                                      "_blank",
@@ -3365,6 +3332,15 @@ XREMain::XRE_mainInit(bool* aExitFlag)
                                        IsSignalHandlingBroken() ? NS_LITERAL_CSTRING("1")
                                                                 : NS_LITERAL_CSTRING("0"));
 #endif
+
+#ifdef XP_WIN
+    nsAutoString appInitDLLs;
+    if (widget::WinUtils::GetAppInitDLLs(appInitDLLs)) {
+      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AppInitDLLs"),
+                                         NS_ConvertUTF16toUTF8(appInitDLLs));
+    }
+#endif
+
     CrashReporter::SetRestartArgs(gArgc, gArgv);
 
     // annotate other data (user id etc)
@@ -3415,6 +3391,11 @@ XREMain::XRE_mainInit(bool* aExitFlag)
 #endif
 
 #ifdef XP_MACOSX
+  // Set up ability to respond to system (Apple) events. This must occur before
+  // ProcessUpdates to ensure that links clicked in external applications aren't
+  // lost when updates are pending.
+  SetupMacApplicationDelegate();
+
   if (EnvHasValue("MOZ_LAUNCHED_CHILD")) {
     // This is needed, on relaunch, to force the OS to use the "Cocoa Dock
     // API".  Otherwise the call to ReceiveNextEvent() below will make it
@@ -4310,10 +4291,6 @@ XREMain::XRE_mainRun()
 #endif
 
 #ifdef XP_MACOSX
-    // Set up ability to respond to system (Apple) events. This must be
-    // done before setting up the command line service.
-    SetupMacApplicationDelegate();
-
     // we re-initialize the command-line service and do appleevents munging
     // after we are sure that we're not restarting
     cmdLine = do_CreateInstance("@mozilla.org/toolkit/command-line;1");
@@ -4362,7 +4339,7 @@ XREMain::XRE_mainRun()
   }
 #endif /* MOZ_INSTRUMENT_EVENT_LOOP */
 
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
+#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
   SetUpSandboxEnvironment();
 #endif
 
@@ -4374,7 +4351,7 @@ XREMain::XRE_mainRun()
     }
   }
 
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
+#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
   CleanUpSandboxEnvironment();
 #endif
 
@@ -4436,6 +4413,13 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   // used throughout this file
   gAppData = mAppData;
 
+  nsCOMPtr<nsIFile> binFile;
+  rv = XRE_GetBinaryPath(argv[0], getter_AddRefs(binFile));
+  NS_ENSURE_SUCCESS(rv, 1);
+
+  rv = binFile->GetPath(gAbsoluteArgv0Path);
+  NS_ENSURE_SUCCESS(rv, 1);
+
   mozilla::IOInterposerInit ioInterposerGuard;
 
 #if MOZ_WIDGET_GTK == 2
@@ -4470,6 +4454,8 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   mozilla::ShutdownEventTracing();
 #endif
 
+  gAbsoluteArgv0Path.Truncate();
+
   // Check for an application initiated restart.  This is one that
   // corresponds to nsIAppStartup.quit(eRestart)
   if (rv == NS_SUCCESS_RESTART_APP
@@ -4491,6 +4477,10 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   }
 
   mScopedXPCOM = nullptr;
+
+#if defined(XP_WIN)
+  mozilla::widget::StopAudioSession();
+#endif
 
   // unlock the profile after ScopedXPCOMStartup object (xpcom) 
   // has gone out of scope.  see bug #386739 for more details
@@ -4681,27 +4671,27 @@ enum {
   kE10sDisabledByUser = 2,
   // kE10sDisabledInSafeMode = 3, was removed in bug 1172491.
   kE10sDisabledForAccessibility = 4,
-  kE10sDisabledForMacGfx = 5,
+  // kE10sDisabledForMacGfx = 5, was removed in bug 1068674.
   kE10sDisabledForBidi = 6,
   kE10sDisabledForAddons = 7,
   kE10sForceDisabled = 8,
+  kE10sDisabledForXPAcceleration = 9,
+  kE10sDisabledForOperatingSystem = 10,
 };
 
-#ifdef XP_WIN
 const char* kAccessibilityLastRunDatePref = "accessibility.lastLoadDate";
 const char* kAccessibilityLoadedLastSessionPref = "accessibility.loadedInLastSession";
-#endif // XP_WIN
-const char* kForceEnableE10sPref = "browser.tabs.remote.force-enable";
-const char* kForceDisableE10sPref = "browser.tabs.remote.force-disable";
 
-#ifdef XP_WIN
 static inline uint32_t
 PRTimeToSeconds(PRTime t_usec)
 {
   PRTime usec_per_sec = PR_USEC_PER_SEC;
   return uint32_t(t_usec /= usec_per_sec);
 }
-#endif // XP_WIN
+
+const char* kForceEnableE10sPref = "browser.tabs.remote.force-enable";
+const char* kForceDisableE10sPref = "browser.tabs.remote.force-disable";
+
 
 uint32_t
 MultiprocessBlockPolicy() {
@@ -4728,7 +4718,7 @@ MultiprocessBlockPolicy() {
   }
 
   bool disabledForA11y = false;
-#ifdef XP_WIN
+
   /**
    * Avoids enabling e10s if accessibility has recently loaded. Performs the
    * following checks:
@@ -4755,12 +4745,47 @@ MultiprocessBlockPolicy() {
       disabledForA11y = true;
     }
   }
-#endif // XP_WIN
 
   if (disabledForA11y) {
     gMultiprocessBlockPolicy = kE10sDisabledForAccessibility;
     return gMultiprocessBlockPolicy;
   }
+
+  /**
+   * Avoids enabling e10s for Windows XP users on the release channel.
+   */
+#if defined(XP_WIN)
+  if (Preferences::GetDefaultCString("app.update.channel").EqualsLiteral("release") &&
+      !IsVistaOrLater()) {
+    gMultiprocessBlockPolicy = kE10sDisabledForOperatingSystem;
+    return gMultiprocessBlockPolicy;
+  }
+#endif
+
+  /**
+   * Avoids enabling e10s for OS X 10.6 - 10.8 users (<= Mountain Lion) as these
+   * versions will be unsupported soon.
+   */
+#if defined(XP_MACOSX)
+  if (!nsCocoaFeatures::OnMavericksOrLater()) {
+    gMultiprocessBlockPolicy = kE10sDisabledForOperatingSystem;
+    return gMultiprocessBlockPolicy;
+  }
+#endif
+
+#if defined(XP_WIN)
+  /**
+   * We block on Windows XP if layers acceleration is requested. This is due to
+   * bug 1237769 where D3D9 and e10s behave badly together on XP.
+   */
+  bool layersAccelerationRequested = !Preferences::GetBool("layers.acceleration.disabled") ||
+                                      Preferences::GetBool("layers.acceleration.force-enabled");
+
+  if (layersAccelerationRequested && !IsVistaOrLater()) {
+    gMultiprocessBlockPolicy = kE10sDisabledForXPAcceleration;
+    return gMultiprocessBlockPolicy;
+  }
+#endif // XP_WIN
 
   /**
    * Avoids enabling e10s for certain locales that require bidi selection,
@@ -4779,43 +4804,6 @@ MultiprocessBlockPolicy() {
     return gMultiprocessBlockPolicy;
   }
 
-
-#if defined(XP_MACOSX)
-  // If for any reason we suspect acceleration will be disabled, disable
-  // e10s auto start on mac.
-
-  // Check prefs
-  bool accelDisabled = gfxPrefs::GetSingleton().LayersAccelerationDisabled() &&
-                       !gfxPrefs::LayersAccelerationForceEnabled();
-
-  accelDisabled = accelDisabled || !nsCocoaFeatures::AccelerateByDefault();
-
-  // Check for blocked drivers
-  if (!accelDisabled) {
-    nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
-    if (gfxInfo) {
-      int32_t status;
-      if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_OPENGL_LAYERS, &status)) &&
-          status != nsIGfxInfo::FEATURE_STATUS_OK) {
-        accelDisabled = true;
-      }
-    }
-  }
-
-  // Check env flags
-  if (accelDisabled) {
-    const char *acceleratedEnv = PR_GetEnv("MOZ_ACCELERATED");
-    if (acceleratedEnv && (*acceleratedEnv != '0')) {
-      accelDisabled = false;
-    }
-  }
-
-  if (accelDisabled) {
-    gMultiprocessBlockPolicy = kE10sDisabledForMacGfx;
-    return gMultiprocessBlockPolicy;
-  }
-#endif // defined(XP_MACOSX)
-
   /*
    * None of the blocking policies matched, so e10s is allowed to run.
    * Cache the information and return 0, indicating success.
@@ -4832,6 +4820,12 @@ mozilla::BrowserTabsRemoteAutostart()
   }
   gBrowserTabsRemoteAutostartInitialized = true;
 
+  // If we're in the content process, we are running E10S.
+  if (XRE_IsContentProcess()) {
+    gBrowserTabsRemoteAutostart = true;
+    return gBrowserTabsRemoteAutostart;
+  }
+
   bool optInPref = Preferences::GetBool("browser.tabs.remote.autostart", false);
   bool trialPref = Preferences::GetBool("browser.tabs.remote.autostart.2", false);
   bool prefEnabled = optInPref || trialPref;
@@ -4844,17 +4838,7 @@ mozilla::BrowserTabsRemoteAutostart()
     status = kE10sDisabledByUser;
   }
 
-#ifdef E10S_TESTING_ONLY
-  bool e10sAllowed = true;
-#else
-  // When running tests with 'layers.offmainthreadcomposition.testing.enabled', e10s must be
-  // allowed because these tests must be allowed to run remotely.
-  // We are also allowing e10s to be enabled on Beta (which doesn't have E10S_TESTING_ONLY defined.
-  bool e10sAllowed = !Preferences::GetDefaultCString("app.update.channel").EqualsLiteral("release") ||
-                     gfxPrefs::GetSingleton().LayersOffMainThreadCompositionTestingEnabled();
-#endif
-
-  if (e10sAllowed && prefEnabled) {
+  if (prefEnabled) {
     uint32_t blockPolicy = MultiprocessBlockPolicy();
     if (blockPolicy != 0) {
       status = blockPolicy;

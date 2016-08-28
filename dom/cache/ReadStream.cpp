@@ -35,10 +35,10 @@ public:
         nsIInputStream* aStream);
 
   void
-  Serialize(CacheReadStreamOrVoid* aReadStreamOut);
+  Serialize(CacheReadStreamOrVoid* aReadStreamOut, ErrorResult& aRv);
 
   void
-  Serialize(CacheReadStream* aReadStreamOut);
+  Serialize(CacheReadStream* aReadStreamOut, ErrorResult& aRv);
 
   // ReadStream::Controllable methods
   virtual void
@@ -117,7 +117,7 @@ private:
 // be done on the thread associated with the PBackground actor.  Must be
 // cancelable to execute on Worker threads (which can occur when the
 // ReadStream is constructed on a child process Worker thread).
-class ReadStream::Inner::NoteClosedRunnable final : public nsCancelableRunnable
+class ReadStream::Inner::NoteClosedRunnable final : public CancelableRunnable
 {
 public:
   explicit NoteClosedRunnable(ReadStream::Inner* aStream)
@@ -133,7 +133,7 @@ public:
 
   // Note, we must proceed with the Run() method since our actor will not
   // clean itself up until we note that the stream is closed.
-  NS_IMETHOD Cancel()
+  nsresult Cancel()
   {
     Run();
     return NS_OK;
@@ -152,7 +152,7 @@ private:
 // it on the thread associated with the PBackground actor.  Must be
 // cancelable to execute on Worker threads (which can occur when the
 // ReadStream is constructed on a child process Worker thread).
-class ReadStream::Inner::ForgetRunnable final : public nsCancelableRunnable
+class ReadStream::Inner::ForgetRunnable final : public CancelableRunnable
 {
 public:
   explicit ForgetRunnable(ReadStream::Inner* aStream)
@@ -168,7 +168,7 @@ public:
 
   // Note, we must proceed with the Run() method so that we properly
   // call RemoveListener on the actor.
-  NS_IMETHOD Cancel()
+  nsresult Cancel()
   {
     Run();
     return NS_OK;
@@ -197,21 +197,27 @@ ReadStream::Inner::Inner(StreamControl* aControl, const nsID& aId,
 }
 
 void
-ReadStream::Inner::Serialize(CacheReadStreamOrVoid* aReadStreamOut)
+ReadStream::Inner::Serialize(CacheReadStreamOrVoid* aReadStreamOut,
+                             ErrorResult& aRv)
 {
   MOZ_ASSERT(NS_GetCurrentThread() == mOwningThread);
   MOZ_ASSERT(aReadStreamOut);
   CacheReadStream stream;
-  Serialize(&stream);
+  Serialize(&stream, aRv);
   *aReadStreamOut = stream;
 }
 
 void
-ReadStream::Inner::Serialize(CacheReadStream* aReadStreamOut)
+ReadStream::Inner::Serialize(CacheReadStream* aReadStreamOut, ErrorResult& aRv)
 {
   MOZ_ASSERT(NS_GetCurrentThread() == mOwningThread);
   MOZ_ASSERT(aReadStreamOut);
-  MOZ_ASSERT(mState == Open);
+
+  if (mState != Open) {
+    aRv.ThrowTypeError<MSG_CACHE_STREAM_CLOSED>();
+    return;
+  }
+
   MOZ_ASSERT(mControl);
 
   // If we are sending a ReadStream, then we never want to set the
@@ -222,7 +228,7 @@ ReadStream::Inner::Serialize(CacheReadStream* aReadStreamOut)
   aReadStreamOut->id() = mId;
   mControl->SerializeControl(aReadStreamOut);
 
-  nsAutoTArray<FileDescriptor, 4> fds;
+  AutoTArray<FileDescriptor, 4> fds;
   SerializeInputStream(mStream, aReadStreamOut->params(), fds);
 
   mControl->SerializeFds(aReadStreamOut, fds);
@@ -358,8 +364,8 @@ ReadStream::Inner::NoteClosed()
   }
 
   nsCOMPtr<nsIRunnable> runnable = new NoteClosedRunnable(this);
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(
-    mOwningThread->Dispatch(runnable, nsIThread::DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(
+    mOwningThread->Dispatch(runnable, nsIThread::DISPATCH_NORMAL));
 }
 
 void
@@ -376,8 +382,8 @@ ReadStream::Inner::Forget()
   }
 
   nsCOMPtr<nsIRunnable> runnable = new ForgetRunnable(this);
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(
-    mOwningThread->Dispatch(runnable, nsIThread::DISPATCH_NORMAL)));
+  MOZ_ALWAYS_SUCCEEDS(
+    mOwningThread->Dispatch(runnable, nsIThread::DISPATCH_NORMAL));
 }
 
 void
@@ -451,7 +457,7 @@ ReadStream::Create(const CacheReadStream& aReadStream)
   }
   MOZ_ASSERT(control);
 
-  nsAutoTArray<FileDescriptor, 4> fds;
+  AutoTArray<FileDescriptor, 4> fds;
   control->DeserializeFds(aReadStream, fds);
 
   nsCOMPtr<nsIInputStream> stream =
@@ -482,15 +488,15 @@ ReadStream::Create(PCacheStreamControlParent* aControl, const nsID& aId,
 }
 
 void
-ReadStream::Serialize(CacheReadStreamOrVoid* aReadStreamOut)
+ReadStream::Serialize(CacheReadStreamOrVoid* aReadStreamOut, ErrorResult& aRv)
 {
-  mInner->Serialize(aReadStreamOut);
+  mInner->Serialize(aReadStreamOut, aRv);
 }
 
 void
-ReadStream::Serialize(CacheReadStream* aReadStreamOut)
+ReadStream::Serialize(CacheReadStream* aReadStreamOut, ErrorResult& aRv)
 {
-  mInner->Serialize(aReadStreamOut);
+  mInner->Serialize(aReadStreamOut, aRv);
 }
 
 ReadStream::ReadStream(ReadStream::Inner* aInner)

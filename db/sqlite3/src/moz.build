@@ -60,6 +60,10 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'uikit':
     DEFINES['SQLITE_ENABLE_LOCKING_STYLE'] = 0
 
+# Thunderbird needs the 2-argument version of fts3_tokenizer()
+if CONFIG['MOZ_THUNDERBIRD'] or CONFIG['MOZ_SUITE']:
+    DEFINES['SQLITE_ENABLE_FTS3_TOKENIZER'] = 1
+
 # Turn on SQLite's assertions in debug builds.
 if CONFIG['MOZ_DEBUG']:
     DEFINES['SQLITE_DEBUG'] = 1
@@ -73,10 +77,6 @@ if CONFIG['OS_TARGET'] == 'Android':
 if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['MOZ_MEMORY']:
     DEFINES['HAVE_MALLOC_USABLE_SIZE'] = True
     DEFINES['SQLITE_WITHOUT_MSIZE'] = True
-
-# disable PGO for Sun Studio
-if CONFIG['SOLARIS_SUNPRO_CC']:
-    NO_PGO = True
 
 # Suppress warnings in third-party code.
 if CONFIG['GNU_CC']:

@@ -9,15 +9,15 @@
 #include "DataStoreCallbacks.h"
 #include "jsapi.h"
 #include "mozilla/dom/IDBDatabaseBinding.h"
+#include "mozilla/dom/IDBDatabase.h"
+#include "mozilla/dom/IDBEvents.h"
+#include "mozilla/dom/IDBFactory.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
+#include "mozilla/dom/IDBIndex.h"
+#include "mozilla/dom/IDBObjectStore.h"
 #include "mozilla/dom/IDBObjectStoreBinding.h"
-#include "mozilla/dom/indexedDB/IDBDatabase.h"
-#include "mozilla/dom/indexedDB/IDBEvents.h"
-#include "mozilla/dom/indexedDB/IDBFactory.h"
-#include "mozilla/dom/indexedDB/IDBIndex.h"
-#include "mozilla/dom/indexedDB/IDBObjectStore.h"
-#include "mozilla/dom/indexedDB/IDBRequest.h"
-#include "mozilla/dom/indexedDB/IDBTransaction.h"
+#include "mozilla/dom/IDBRequest.h"
+#include "mozilla/dom/IDBTransaction.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIDOMEvent.h"
@@ -112,7 +112,9 @@ DataStoreDB::CreateFactoryIfNeeded()
     nsIXPConnect* xpc = nsContentUtils::XPConnect();
     MOZ_ASSERT(xpc);
 
-    AutoSafeJSContext cx;
+    AutoJSAPI jsapi;
+    jsapi.Init();
+    JSContext* cx = jsapi.cx();
     JS::Rooted<JSObject*> global(cx);
     rv = xpc->CreateSandbox(cx, principal, global.address());
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -145,8 +147,13 @@ DataStoreDB::Open(IDBTransactionMode aMode, const Sequence<nsString>& aDbs,
     return rv;
   }
 
+  // We only need a JSContext here to get a stack from, so just init our
+  // AutoJSAPI without a global.
+  AutoJSAPI jsapi;
+  jsapi.Init();
   ErrorResult error;
-  mRequest = mFactory->Open(mDatabaseName, DATASTOREDB_VERSION, error);
+  mRequest = mFactory->Open(jsapi.cx(), mDatabaseName, DATASTOREDB_VERSION,
+                            error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
   }
@@ -222,10 +229,8 @@ DataStoreDB::UpgradeSchema(nsIDOMEvent* aEvent)
   MOZ_ASSERT(version.Value() == DATASTOREDB_VERSION);
 #endif
 
-  AutoSafeJSContext cx;
-
   ErrorResult error;
-  JS::Rooted<JS::Value> result(cx);
+  JS::Rooted<JS::Value> result(nsContentUtils::RootingCx());
   mRequest->GetResult(&result, error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
@@ -284,10 +289,8 @@ DataStoreDB::DatabaseOpened()
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  AutoSafeJSContext cx;
-
   ErrorResult error;
-  JS::Rooted<JS::Value> result(cx);
+  JS::Rooted<JS::Value> result(nsContentUtils::RootingCx());
   mRequest->GetResult(&result, error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
@@ -315,8 +318,14 @@ DataStoreDB::DatabaseOpened()
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+  // We init with the global of our result, just for consistency.
+  AutoJSAPI jsapi;
+  if (!jsapi.Init(&result.toObject())) {
+    return NS_ERROR_UNEXPECTED;
+  }
   RefPtr<IDBTransaction> txn;
-  error = mDatabase->Transaction(objectStores,
+  error = mDatabase->Transaction(jsapi.cx(),
+                                 objectStores,
                                  mTransactionMode,
                                  getter_AddRefs(txn));
   if (NS_WARN_IF(error.Failed())) {
@@ -344,9 +353,14 @@ DataStoreDB::Delete()
     mDatabase = nullptr;
   }
 
+  // We only need a JSContext here to get a stack from, so just init our
+  // AutoJSAPI without a global.
+  AutoJSAPI jsapi;
+  jsapi.Init();
   ErrorResult error;
   RefPtr<IDBOpenDBRequest> request =
-    mFactory->DeleteDatabase(mDatabaseName, IDBOpenDBOptions(), error);
+    mFactory->DeleteDatabase(jsapi.cx(), mDatabaseName, IDBOpenDBOptions(),
+                             error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
   }
@@ -354,7 +368,7 @@ DataStoreDB::Delete()
   return NS_OK;
 }
 
-indexedDB::IDBTransaction*
+IDBTransaction*
 DataStoreDB::Transaction() const
 {
   MOZ_ASSERT(mTransaction);

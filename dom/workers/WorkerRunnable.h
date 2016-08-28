@@ -29,7 +29,8 @@ class WorkerPrivate;
 // Use this runnable to communicate from the worker to its parent or vice-versa.
 // The busy count must be taken into consideration and declared at construction
 // time.
-class WorkerRunnable : public nsICancelableRunnable
+class WorkerRunnable : public nsIRunnable,
+                       public nsICancelableRunnable
 {
 public:
   enum TargetAndBusyBehavior {
@@ -71,14 +72,13 @@ public:
   // If you override Cancel() then you'll need to either call the base class
   // Cancel() method or override IsCanceled() so that the Run() method bails out
   // appropriately.
-  NS_DECL_NSICANCELABLERUNNABLE
+  nsresult
+  Cancel() override;
 
-  // Passing a JSContext here is required for the WorkerThreadModifyBusyCount
-  // behavior. It also guarantees that any failure (false return) will throw an
-  // exception on the given context. If a context is not passed then failures
-  // must be dealt with by the caller.
+  // The return value is true if and only if both PreDispatch and
+  // DispatchInternal return true.
   bool
-  Dispatch(JSContext* aCx);
+  Dispatch();
 
   // See above note about Cancel().
   virtual bool
@@ -117,24 +117,54 @@ protected:
   // Also increments the busy count of |mWorkerPrivate| if targeting the
   // WorkerThread.
   virtual bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+  PreDispatch(WorkerPrivate* aWorkerPrivate);
 
   // By default asserts that Dispatch() is being called on the right thread
   // (ParentThread if |mTarget| is WorkerThread, or WorkerThread otherwise).
-  // Also reports any Dispatch() failures as an exception on |aCx|, and
-  // busy count if targeting the WorkerThread and Dispatch() failed.
   virtual void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult);
+  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult);
 
-  // Must be implemented by subclasses. Called on the target thread.
+  // May be implemented by subclasses if desired if they need to do some sort of
+  // setup before we try to set up our JSContext and compartment for real.
+  // Typically the only thing that should go in here is creation of the worker's
+  // global.
+  //
+  // If false is returned, WorkerRun will not be called at all.  PostRun will
+  // still be called, with false passed for aRunResult.
+  virtual bool
+  PreRun(WorkerPrivate* aWorkerPrivate);
+
+  // Must be implemented by subclasses. Called on the target thread.  The return
+  // value will be passed to PostRun().  The JSContext passed in here comes from
+  // an AutoJSAPI (or AutoEntryScript) that we set up on the stack.  If
+  // mBehavior is ParentThreadUnchangedBusyCount, it is in the compartment of
+  // mWorkerPrivate's reflector (i.e. the worker object in the parent thread),
+  // unless that reflector is null, in which case it's in the compartment of the
+  // parent global (which is the compartment reflector would have been in), or
+  // in the null compartment if there is no parent global.  For other mBehavior
+  // values, we're running on the worker thread and aCx is in whatever
+  // compartment GetCurrentThreadJSContext() was in when nsIRunnable::Run() got
+  // called.  This is actually important for cases when a runnable spins a
+  // syncloop and wants everything that happens during the syncloop to happen in
+  // the compartment that runnable set up (which may, for example, be a debugger
+  // sandbox compartment!).  If aCx wasn't in a compartment to start with, aCx
+  // will be in either the debugger global's compartment or the worker's
+  // global's compartment depending on whether IsDebuggerRunnable() is true.
+  //
+  // Immediately after WorkerRun returns, the caller will assert that either it
+  // returns false or there is no exception pending on aCx.  Then it will report
+  // any pending exceptions on aCx.
   virtual bool
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) = 0;
 
   // By default asserts that Run() (and WorkerRun()) were called on the correct
-  // thread. Any failures (false return from WorkerRun) are reported on |aCx|.
-  // Also sends an asynchronous message to the ParentThread if the busy
-  // count was previously modified in PreDispatch().
+  // thread.  Also sends an asynchronous message to the ParentThread if the
+  // busy count was previously modified in PreDispatch().
+  //
+  // The aCx passed here is the same one as was passed to WorkerRun and is
+  // still in the same compartment.  PostRun implementations must NOT leave an
+  // exception on the JSContext and must not run script, because the incoming
+  // JSContext may be in the null compartment.
   virtual void
   PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate, bool aRunResult);
 
@@ -166,7 +196,7 @@ private:
   }
 
   virtual bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  PreDispatch(WorkerPrivate* aWorkerPrivate) override final
   {
     AssertIsOnMainThread();
 
@@ -174,8 +204,7 @@ private:
   }
 
   virtual void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult) override;
+  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult) override;
 };
 
 // This runnable is used to send a message directly to a worker's sync loop.
@@ -194,13 +223,13 @@ protected:
 
   virtual ~WorkerSyncRunnable();
 
-private:
   virtual bool
   DispatchInternal() override;
 };
 
 // This runnable is identical to WorkerSyncRunnable except it is meant to be
-// used on the main thread only.
+// created on and dispatched from the main thread only.  Its WorkerRun/PostRun
+// will run on the worker thread.
 class MainThreadWorkerSyncRunnable : public WorkerSyncRunnable
 {
 protected:
@@ -225,15 +254,14 @@ protected:
 
 private:
   virtual bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  PreDispatch(WorkerPrivate* aWorkerPrivate) override
   {
     AssertIsOnMainThread();
     return true;
   }
 
   virtual void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult) override;
+  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult) override;
 };
 
 // This runnable is used to stop a sync loop . As sync loops keep the busy count
@@ -251,16 +279,21 @@ public:
 
   // By default StopSyncLoopRunnables cannot be canceled since they could leave
   // a sync loop spinning forever.
-  NS_DECL_NSICANCELABLERUNNABLE
+  nsresult
+  Cancel() override;
 
 protected:
   virtual ~StopSyncLoopRunnable()
   { }
 
-  // Called on the worker thread to set an exception on the context if mResult
-  // is false. Override if you need an exception.
+  // Called on the worker thread, in WorkerRun, right before stopping the
+  // syncloop to set an exception (however subclasses want to handle that) if
+  // mResult is false.  Note that overrides of this method must NOT set an
+  // actual exception on the JSContext; they may only set some state that will
+  // get turned into an exception once the syncloop actually terminates and
+  // control is returned to whoever was spinning the syncloop.
   virtual void
-  MaybeSetException(JSContext* aCx)
+  MaybeSetException()
   { }
 
 private:
@@ -268,7 +301,7 @@ private:
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override;
 
   virtual bool
-  DispatchInternal() override;
+  DispatchInternal() override final;
 };
 
 // This runnable is identical to StopSyncLoopRunnable except it is meant to be
@@ -292,15 +325,14 @@ protected:
 
 private:
   virtual bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  PreDispatch(WorkerPrivate* aWorkerPrivate) override final
   {
     AssertIsOnMainThread();
     return true;
   }
 
   virtual void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult) override;
+  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult) override;
 };
 
 // This runnable is processed as soon as it is received by the worker,
@@ -325,7 +357,7 @@ protected:
   virtual ~WorkerControlRunnable()
   { }
 
-  NS_IMETHOD
+  nsresult
   Cancel() override;
 
 public:
@@ -352,15 +384,14 @@ protected:
   { }
 
   virtual bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  PreDispatch(WorkerPrivate* aWorkerPrivate) override
   {
     AssertIsOnMainThread();
     return true;
   }
 
   virtual void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult) override;
+  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult) override;
 };
 
 // A WorkerRunnable that should be dispatched from the worker to itself for
@@ -380,15 +411,13 @@ protected:
   { }
 
   virtual bool
-  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override;
+  PreDispatch(WorkerPrivate* aWorkerPrivate) override;
 
   virtual void
-  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult) override;
+  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult) override;
 
-  virtual void
-  PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-          bool aRunResult) override;
+  // We just delegate PostRun to WorkerRunnable, since it does exactly
+  // what we want.
 };
 
 // Base class for the runnable objects, which makes a synchronous call to

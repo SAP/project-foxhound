@@ -130,8 +130,7 @@ GrallocTextureHostOGL::~GrallocTextureHostOGL()
 void
 GrallocTextureHostOGL::SetCompositor(Compositor* aCompositor)
 {
-  MOZ_ASSERT(aCompositor);
-  mCompositor = static_cast<CompositorOGL*>(aCompositor);
+  mCompositor = AssertGLCompositor(aCompositor);
   if (mGLTextureSource) {
     mGLTextureSource->SetCompositor(mCompositor);
   }
@@ -429,7 +428,7 @@ GrallocTextureHostOGL::WaitAcquireFenceHandleSyncComplete()
 void
 GrallocTextureHostOGL::SetCropRect(nsIntRect aCropRect)
 {
-  MOZ_ASSERT(aCropRect.TopLeft() == IntPoint(0, 0));
+  MOZ_ASSERT(aCropRect.TopLeft() == gfx::IntPoint(0, 0));
   MOZ_ASSERT(!aCropRect.IsEmpty());
   MOZ_ASSERT(aCropRect.width <= mSize.width);
   MOZ_ASSERT(aCropRect.height <= mSize.height);
@@ -465,6 +464,16 @@ GrallocTextureHostOGL::BindTextureSource(CompositableTextureSourceRef& aTextureS
 #endif
   return true;
 }
+
+FenceHandle
+GrallocTextureHostOGL::GetCompositorReleaseFence()
+{
+  if (!mCompositor) {
+    return FenceHandle();
+  }
+  return mCompositor->GetReleaseFence();
+}
+
 
 } // namepsace layers
 } // namepsace mozilla

@@ -20,7 +20,7 @@ function test() {
       windowsToClose.push(aWin);
       executeSoon(() => aCallback(aWin));
     });
-  };
+  }
 
   // This function is called after calling finish() on the test.
   registerCleanupFunction(function() {
@@ -33,6 +33,8 @@ function test() {
     NetUtil.asyncFetch({
       uri: favIconLocation,
       loadUsingSystemPrincipal: true,
+      // XXXckerschb: remove securityFlags once imageLoader uses asyncOpen2()
+      securityFlags: Ci.nsILoadInfo.SEC_NORMAL,
       contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE
     }, function(inputStream, status) {
         if (!Components.isSuccessCode(status)) {

@@ -34,7 +34,7 @@
 #include "mozAutoDocUpdate.h"
 
 #include "PLDHashTable.h"
-#include "prprf.h"
+#include "mozilla/Snprintf.h"
 #include "nsWrapperCacheInlines.h"
 
 using namespace mozilla;
@@ -64,7 +64,7 @@ nsGenericDOMDataNode::nsGenericDOMDataNode(already_AddRefed<mozilla::dom::NodeIn
 
 nsGenericDOMDataNode::~nsGenericDOMDataNode()
 {
-  NS_PRECONDITION(!IsInDoc(),
+  NS_PRECONDITION(!IsInUncomposedDoc(),
                   "Please remove this from the document properly");
   if (GetParent()) {
     NS_RELEASE(mParent);
@@ -90,8 +90,8 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGenericDOMDataNode)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     char name[40];
-    PR_snprintf(name, sizeof(name), "nsGenericDOMDataNode (len=%d)",
-                tmp->mText.GetLength());
+    snprintf_literal(name, "nsGenericDOMDataNode (len=%d)",
+                     tmp->mText.GetLength());
     cb.DescribeRefCountedNode(tmp->mRefCnt.get(), name);
   } else {
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(nsGenericDOMDataNode, tmp->mRefCnt.get())
@@ -380,7 +380,10 @@ nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
   }
 
   if (dirAffectsAncestor) {
-    TextNodeChangedDirection(this, oldDir, aNotify);
+    // dirAffectsAncestor being true implies that we have a text node, see
+    // above.
+    MOZ_ASSERT(NodeType() == nsIDOMNode::TEXT_NODE);
+    TextNodeChangedDirection(static_cast<nsTextNode*>(this), oldDir, aNotify);
   }
 
   // Notify observers
@@ -401,7 +404,7 @@ nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
       if (aLength > 0) {
         nsAutoString val;
         mText.AppendTo(val);
-        mutation.mNewAttrValue = do_GetAtom(val);
+        mutation.mNewAttrValue = NS_Atomize(val);
       }
 
       mozAutoSubtreeModified subtree(OwnerDoc(), this);
@@ -435,7 +438,7 @@ nsGenericDOMDataNode::ToCString(nsAString& aBuf, int32_t aOffset,
         aBuf.AppendLiteral("&gt;");
       } else if ((ch < ' ') || (ch >= 127)) {
         char buf[10];
-        PR_snprintf(buf, sizeof(buf), "\\u%04x", ch);
+        snprintf_literal(buf, "\\u%04x", ch);
         AppendASCIItoUTF16(buf, aBuf);
       } else {
         aBuf.Append(ch);
@@ -455,7 +458,7 @@ nsGenericDOMDataNode::ToCString(nsAString& aBuf, int32_t aOffset,
         aBuf.AppendLiteral("&gt;");
       } else if ((ch < ' ') || (ch >= 127)) {
         char buf[10];
-        PR_snprintf(buf, sizeof(buf), "\\u%04x", ch);
+        snprintf_literal(buf, "\\u%04x", ch);
         AppendASCIItoUTF16(buf, aBuf);
       } else {
         aBuf.Append(ch);
@@ -476,7 +479,7 @@ nsGenericDOMDataNode::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                   "Must have the same owner document");
   NS_PRECONDITION(!aParent || aDocument == aParent->GetUncomposedDoc(),
                   "aDocument must be current doc of aParent");
-  NS_PRECONDITION(!GetUncomposedDoc() && !IsInDoc(),
+  NS_PRECONDITION(!GetUncomposedDoc() && !IsInUncomposedDoc(),
                   "Already have a document.  Unbind first!");
   // Note that as we recurse into the kids, they'll have a non-null parent.  So
   // only assert if our parent is _changing_ while we have a parent.
@@ -802,14 +805,6 @@ nsGenericDOMDataNode::SaveSubtreeState()
 {
 }
 
-void
-nsGenericDOMDataNode::DestroyContent()
-{
-  // XXX We really should let cycle collection do this, but that currently still
-  //     leaks (see https://bugzilla.mozilla.org/show_bug.cgi?id=406684).
-  ReleaseWrapper(this);
-}
-
 #ifdef DEBUG
 void
 nsGenericDOMDataNode::List(FILE* out, int32_t aIndent) const
@@ -1108,7 +1103,7 @@ nsGenericDOMDataNode::GetCurrentValueAtom()
 {
   nsAutoString val;
   GetData(val);
-  return NS_NewAtom(val);
+  return NS_Atomize(val);
 }
 
 NS_IMETHODIMP

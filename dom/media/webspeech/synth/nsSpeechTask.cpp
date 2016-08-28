@@ -58,9 +58,16 @@ public:
     switch (event) {
       case EVENT_FINISHED:
         {
-          nsCOMPtr<nsIRunnable> runnable =
+          if (!mStarted) {
+            mStarted = true;
+            nsCOMPtr<nsIRunnable> startRunnable =
+              NS_NewRunnableMethod(this, &SynthStreamListener::DoNotifyStarted);
+            aGraph->DispatchToMainThreadAfterStreamStateUpdate(startRunnable.forget());
+          }
+
+          nsCOMPtr<nsIRunnable> endRunnable =
             NS_NewRunnableMethod(this, &SynthStreamListener::DoNotifyFinished);
-          aGraph->DispatchToMainThreadAfterStreamStateUpdate(runnable.forget());
+          aGraph->DispatchToMainThreadAfterStreamStateUpdate(endRunnable.forget());
         }
         break;
       case EVENT_REMOVED:
@@ -323,9 +330,10 @@ nsSpeechTask::SendAudioImpl(RefPtr<mozilla::SharedBuffer>& aSamples, uint32_t aD
   }
 
   AudioSegment segment;
-  nsAutoTArray<const int16_t*, 1> channelData;
+  AutoTArray<const int16_t*, 1> channelData;
   channelData.AppendElement(static_cast<int16_t*>(aSamples->Data()));
-  segment.AppendFrames(aSamples.forget(), channelData, aDataLen);
+  segment.AppendFrames(aSamples.forget(), channelData, aDataLen,
+                       PRINCIPAL_HANDLE_NONE);
   mStream->AppendToTrack(1, &segment);
   mStream->AdvanceKnownTracksTime(STREAM_TIME_MAX);
 }
@@ -344,8 +352,6 @@ nsSpeechTask::DispatchStart()
 nsresult
 nsSpeechTask::DispatchStartInner()
 {
-  CreateAudioChannelAgent();
-
   nsSynthVoiceRegistry::GetInstance()->SetIsSpeaking(true);
   return DispatchStartImpl();
 }
@@ -365,6 +371,8 @@ nsSpeechTask::DispatchStartImpl(const nsAString& aUri)
   if(NS_WARN_IF(!(mUtterance->mState == SpeechSynthesisUtterance::STATE_PENDING))) {
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+  CreateAudioChannelAgent();
 
   mUtterance->mState = SpeechSynthesisUtterance::STATE_SPEAKING;
   mUtterance->mChosenVoiceURI = aUri;
@@ -388,8 +396,6 @@ nsSpeechTask::DispatchEnd(float aElapsedTime, uint32_t aCharIndex)
 nsresult
 nsSpeechTask::DispatchEndInner(float aElapsedTime, uint32_t aCharIndex)
 {
-  DestroyAudioChannelAgent();
-
   if (!mPreCanceled) {
     nsSynthVoiceRegistry::GetInstance()->SpeakNext();
   }
@@ -401,6 +407,8 @@ nsresult
 nsSpeechTask::DispatchEndImpl(float aElapsedTime, uint32_t aCharIndex)
 {
   LOG(LogLevel::Debug, ("nsSpeechTask::DispatchEnd\n"));
+
+  DestroyAudioChannelAgent();
 
   MOZ_ASSERT(mUtterance);
   if(NS_WARN_IF(mUtterance->mState == SpeechSynthesisUtterance::STATE_ENDED)) {

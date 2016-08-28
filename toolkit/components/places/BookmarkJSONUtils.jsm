@@ -208,14 +208,13 @@ BookmarkImporter.prototype = {
 
       let uri = NetUtil.newURI(spec);
       let channel = NetUtil.newChannel({
-        uri,
-        loadingPrincipal: Services.scriptSecurityManager.createCodebasePrincipal(uri, {}),
-        contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_XMLHTTPREQUEST
+        uri: uri,
+        loadUsingSystemPrincipal: true
       });
       let streamLoader = Cc["@mozilla.org/network/stream-loader;1"]
                            .createInstance(Ci.nsIStreamLoader);
       streamLoader.init(streamObserver);
-      channel.asyncOpen(streamLoader, channel);
+      channel.asyncOpen2(streamLoader);
     });
   },
 
@@ -256,8 +255,11 @@ BookmarkImporter.prototype = {
     } else {
       // Ensure tag folder gets processed last
       nodes[0].children.sort(function sortRoots(aNode, bNode) {
-        return (aNode.root && aNode.root == "tagsFolder") ? 1 :
-               (bNode.root && bNode.root == "tagsFolder") ? -1 : 0;
+        if (aNode.root && aNode.root == "tagsFolder")
+          return 1;
+        if (bNode.root && bNode.root == "tagsFolder")
+          return -1;
+        return 0;
       });
 
       let batch = {

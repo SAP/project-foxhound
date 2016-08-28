@@ -21,7 +21,6 @@
 #include "nsIMIMEInfo.h"
 #include "nsColor.h"
 #include "gfxRect.h"
-#include "mozilla/gfx/Point.h"
 
 #include "nsIAndroidBridge.h"
 #include "nsIMobileMessageCallback.h"
@@ -29,10 +28,11 @@
 #include "nsIDOMDOMCursor.h"
 
 #include "mozilla/Likely.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/TimeStamp.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/Types.h"
+#include "mozilla/gfx/Point.h"
 #include "mozilla/jni/Utils.h"
+#include "nsIObserver.h"
 
 // Some debug #defines
 // #define DEBUG_ANDROID_EVENTS
@@ -75,31 +75,6 @@ typedef struct AndroidSystemColors {
     nscolor panelColorForeground;
     nscolor panelColorBackground;
 } AndroidSystemColors;
-
-class DelayedTask {
-public:
-    DelayedTask(Task* aTask, int aDelayMs) {
-        mTask = aTask;
-        mRunTime = mozilla::TimeStamp::Now() + mozilla::TimeDuration::FromMilliseconds(aDelayMs);
-    }
-
-    bool IsEarlierThan(DelayedTask *aOther) {
-        return mRunTime < aOther->mRunTime;
-    }
-
-    int64_t MillisecondsToRunTime() {
-        mozilla::TimeDuration timeLeft = mRunTime - mozilla::TimeStamp::Now();
-        return (int64_t)timeLeft.ToMilliseconds();
-    }
-
-    Task* GetTask() {
-        return mTask;
-    }
-
-private:
-    Task* mTask;
-    mozilla::TimeStamp mRunTime;
-};
 
 class ThreadCursorContinueCallback : public nsICursorContinueCallback
 {
@@ -171,8 +146,8 @@ public:
     bool GetThreadNameJavaProfiling(uint32_t aThreadId, nsCString & aResult);
     bool GetFrameNameJavaProfiling(uint32_t aThreadId, uint32_t aSampleId, uint32_t aFrameId, nsCString & aResult);
 
-    nsresult CaptureZoomedView(nsIDOMWindow *window, nsIntRect zoomedViewRect, jni::Object::Param buffer, float zoomFactor);
-    nsresult CaptureThumbnail(nsIDOMWindow *window, int32_t bufW, int32_t bufH, int32_t tabId, jni::Object::Param buffer, bool &shouldStore);
+    nsresult CaptureZoomedView(mozIDOMWindowProxy *window, nsIntRect zoomedViewRect, jni::Object::Param buffer, float zoomFactor);
+    nsresult CaptureThumbnail(mozIDOMWindowProxy *window, int32_t bufW, int32_t bufH, int32_t tabId, jni::Object::Param buffer, bool &shouldStore);
     void GetDisplayPort(bool aPageSizeUpdate, bool aIsBrowserContentDisplayed, int32_t tabId, nsIAndroidViewport* metrics, nsIAndroidDisplayport** displayPort);
     void ContentDocumentChanged();
     bool IsContentDocumentDisplayed();
@@ -438,9 +413,10 @@ protected:
     void (* Region_set)(void* region, void* rect);
 
 private:
-    // This will always be accessed from one thread (the Java UI thread),
-    // so we don't need to do locking to touch it.
-    nsTArray<DelayedTask*> mDelayedTaskQueue;
+    class DelayedTask;
+    nsTArray<DelayedTask> mUiTaskQueue;
+    mozilla::Mutex mUiTaskQueueLock;
+
 public:
     void PostTaskToUiThread(Task* aTask, int aDelayMs);
     int64_t RunDelayedUiThreadTasks();
@@ -607,16 +583,21 @@ private:
 { 0x0FE2321D, 0xEBD9, 0x467D, \
     { 0xA7, 0x43, 0x03, 0xA6, 0x8D, 0x40, 0x59, 0x9E } }
 
-class nsAndroidBridge final : public nsIAndroidBridge
+class nsAndroidBridge final : public nsIAndroidBridge,
+                              public nsIObserver
 {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIANDROIDBRIDGE
+  NS_DECL_NSIOBSERVER
 
   nsAndroidBridge();
 
 private:
   ~nsAndroidBridge();
+
+  void AddObservers();
+  void RemoveObservers();
 
 protected:
 };

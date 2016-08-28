@@ -70,7 +70,7 @@ public:
     nsresult EvaluateScript(nsIChannel *aChannel,
                             PopupControlState aPopupState,
                             uint32_t aExecutionPolicy,
-                            nsPIDOMWindow *aOriginalInnerWindow);
+                            nsPIDOMWindowInner *aOriginalInnerWindow);
 
 protected:
     virtual ~nsJSThunk();
@@ -144,7 +144,7 @@ nsIScriptGlobalObject* GetGlobalObject(nsIChannel* aChannel)
 nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
                                    PopupControlState aPopupState,
                                    uint32_t aExecutionPolicy,
-                                   nsPIDOMWindow *aOriginalInnerWindow)
+                                   nsPIDOMWindowInner *aOriginalInnerWindow)
 {
     if (aExecutionPolicy == nsIScriptChannel::NO_EXECUTION) {
         // Nothing to do here.
@@ -200,7 +200,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     // Sandboxed document check: javascript: URI's are disabled
     // in a sandboxed document unless 'allow-scripts' was specified.
     nsIDocument* doc = aOriginalInnerWindow->GetExtantDoc();
-    if (doc && (doc->GetSandboxFlags() & SANDBOXED_SCRIPTS)) {
+    if (doc && doc->HasScriptsBlockedBySandbox()) {
         return NS_ERROR_DOM_RETVAL_UNDEFINED;
     }
 
@@ -208,8 +208,8 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     nsAutoPopupStatePusher popupStatePusher(aPopupState);
 
     // Make sure we still have the same inner window as we used to.
-    nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(global);
-    nsPIDOMWindow *innerWin = win->GetCurrentInnerWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> win = do_QueryInterface(global);
+    nsPIDOMWindowInner *innerWin = win->GetCurrentInnerWindow();
 
     if (innerWin != aOriginalInnerWindow) {
         return NS_ERROR_UNEXPECTED;
@@ -240,13 +240,9 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     // New script entry point required, due to the "Create a script" step of
     // http://www.whatwg.org/specs/web-apps/current-work/#javascript-protocol
     nsAutoMicroTask mt;
-    AutoEntryScript entryScript(innerGlobal, "javascript: URI", true,
-                                scriptContext->GetNativeContext());
-    // We want to make sure we report any exceptions that happen before we
-    // return, since whatever happens inside our execution shouldn't affect any
-    // other scripts that might happen to be running.
-    entryScript.TakeOwnershipOfErrorReporting();
-    JSContext* cx = entryScript.cx();
+    AutoEntryScript aes(innerGlobal, "javascript: URI", true,
+                        scriptContext->GetNativeContext());
+    JSContext* cx = aes.cx();
     JS::Rooted<JSObject*> globalJSObject(cx, innerGlobal->GetGlobalJSObject());
     NS_ENSURE_TRUE(globalJSObject, NS_ERROR_UNEXPECTED);
 
@@ -261,6 +257,11 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
 
     if (!subsumes) {
         return NS_ERROR_DOM_RETVAL_UNDEFINED;
+    }
+
+    // Fail if someone tries to execute in a global with system principal.
+    if (nsContentUtils::IsSystemPrincipal(objectPrincipal)) {
+        return NS_ERROR_DOM_SECURITY_ERR;
     }
 
     JS::Rooted<JS::Value> v (cx, JS::UndefinedValue());
@@ -352,8 +353,8 @@ protected:
     nsCOMPtr<nsIPropertyBag2> mPropertyBag;
     nsCOMPtr<nsIStreamListener> mListener;  // Our final listener
     nsCOMPtr<nsISupports> mContext; // The context passed to AsyncOpen
-    nsCOMPtr<nsPIDOMWindow> mOriginalInnerWindow;  // The inner window our load
-                                                   // started against.
+    nsCOMPtr<nsPIDOMWindowInner> mOriginalInnerWindow;  // The inner window our load
+                                                        // started against.
     // If we blocked onload on a document in AsyncOpen, this is the document we
     // did it on.
     nsCOMPtr<nsIDocument>   mDocumentOnloadBlockedOn;
@@ -421,11 +422,13 @@ nsresult nsJSChannel::Init(nsIURI *aURI)
 
     // If the resultant script evaluation actually does return a value, we
     // treat it as html.
+    // The following channel is never openend, so it does not matter what
+    // securityFlags we pass; let's follow the principle of least privilege.
     rv = NS_NewInputStreamChannel(getter_AddRefs(channel),
                                   aURI,
                                   mIOThunk,
                                   nullPrincipal,
-                                  nsILoadInfo::SEC_NORMAL,
+                                  nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
                                   nsIContentPolicy::TYPE_OTHER,
                                   NS_LITERAL_CSTRING("text/html"));
     if (NS_FAILED(rv)) return rv;
@@ -569,7 +572,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
         return NS_ERROR_NOT_AVAILABLE;
     }
 
-    nsCOMPtr<nsPIDOMWindow> win(do_QueryInterface(global));
+    nsCOMPtr<nsPIDOMWindowOuter> win(do_QueryInterface(global));
     NS_ASSERTION(win, "Our global is not a window??");
 
     // Make sure we create a new inner window if one doesn't already exist (see

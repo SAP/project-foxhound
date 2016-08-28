@@ -23,6 +23,7 @@ const Services = require("Services");
 const { censusReportToCensusTreeNode } = require("devtools/shared/heapsnapshot/census-tree-node");
 const CensusUtils = require("devtools/shared/heapsnapshot/CensusUtils");
 const DominatorTreeNode = require("devtools/shared/heapsnapshot/DominatorTreeNode");
+const { deduplicatePaths } = require("devtools/shared/heapsnapshot/shortest-paths");
 const { LabelAndShallowSizeVisitor } = DominatorTreeNode;
 
 
@@ -252,6 +253,17 @@ function assertStructurallyEquivalent(actual, expected, path="root") {
 
       equal(expectedKeys.size, 0,
             `${path}: every key in expected should also exist in actual, did not see ${[...expectedKeys]}`);
+    } else if (actualProtoString === "[object Set]") {
+      const expectedItems = new Set([...expected]);
+
+      for (let item of actual) {
+        ok(expectedItems.has(item),
+           `${path}: every set item in actual should exist in expected: ${item}`);
+        expectedItems.delete(item);
+      }
+
+      equal(expectedItems.size, 0,
+            `${path}: every set item in expected should also exist in actual, did not see ${[...expectedItems]}`);
     } else {
       const expectedKeys = new Set(Object.keys(expected));
 
@@ -374,4 +386,63 @@ function assertDominatorTreeNodeInsertion(tree, path, newChildren, moreChildrenA
   dumpn("Actual resulting tree: " + JSON.stringify(actual, null, 2));
 
   assertStructurallyEquivalent(actual, expected);
+}
+
+function assertDeduplicatedPaths({ target, paths, expectedNodes, expectedEdges }) {
+  dumpn("Deduplicating paths:");
+  dumpn("target = " + target);
+  dumpn("paths = " + JSON.stringify(paths, null, 2));
+  dumpn("expectedNodes = " + expectedNodes);
+  dumpn("expectedEdges = " + JSON.stringify(expectedEdges, null, 2));
+
+  const { nodes, edges } = deduplicatePaths(target, paths);
+
+  dumpn("Actual nodes = " + nodes);
+  dumpn("Actual edges = " + JSON.stringify(edges, null, 2));
+
+  equal(nodes.length, expectedNodes.length,
+        "actual number of nodes is equal to the expected number of nodes");
+
+  equal(edges.length, expectedEdges.length,
+        "actual number of edges is equal to the expected number of edges");
+
+  const expectedNodeSet = new Set(expectedNodes);
+  const nodeSet = new Set(nodes);
+  ok(nodeSet.size === nodes.length,
+     "each returned node should be unique");
+
+  for (let node of nodes) {
+    ok(expectedNodeSet.has(node), `the ${node} node was expected`);
+  }
+
+  for (let expectedEdge of expectedEdges) {
+    let count = 0;
+    for (let edge of edges) {
+      if (edge.from === expectedEdge.from &&
+          edge.to === expectedEdge.to &&
+          edge.name === expectedEdge.name) {
+        count++;
+      }
+    }
+    equal(count, 1,
+          "should have exactly one matching edge for the expected edge = " + JSON.stringify(edge));
+  }
+}
+
+function assertCountToBucketBreakdown(breakdown, expected) {
+  dumpn("count => bucket breakdown");
+  dumpn("Initial breakdown = ", JSON.stringify(breakdown, null, 2));
+  dumpn("Expected results = ", JSON.stringify(expected, null, 2));
+
+  const actual = CensusUtils.countToBucketBreakdown(breakdown);
+  dumpn("Actual results = ", JSON.stringify(actual, null, 2));
+
+  assertStructurallyEquivalent(actual, expected);
+}
+
+/**
+ * Create a mock path entry for the given predecessor and edge.
+ */
+function pathEntry(predecessor, edge) {
+  return { predecessor, edge };
 }

@@ -18,6 +18,8 @@
 #include "nsTArray.h"
 #include "nsTHashtable.h"
 #include "nsUnicodeProperties.h"
+#include "mozilla/StyleSetHandle.h"
+#include "mozilla/StyleSetHandleInlines.h"
 
 namespace mozilla {
 
@@ -121,7 +123,7 @@ GetAlphabeticCounterText(CounterValue aOrdinal,
   // The precise length of this array should be
   // ceil(log((double) aOrdinal / n * (n - 1) + 1) / log(n)).
   // The max length is slightly smaller than which defined below.
-  nsAutoTArray<int32_t, std::numeric_limits<CounterValue>::digits> indexes;
+  AutoTArray<int32_t, std::numeric_limits<CounterValue>::digits> indexes;
   while (aOrdinal > 0) {
     --aOrdinal;
     indexes.AppendElement(aOrdinal % n);
@@ -150,7 +152,7 @@ GetNumericCounterText(CounterValue aOrdinal,
   }
 
   auto n = aSymbols.Length();
-  nsAutoTArray<int32_t, std::numeric_limits<CounterValue>::digits> indexes;
+  AutoTArray<int32_t, std::numeric_limits<CounterValue>::digits> indexes;
   while (aOrdinal > 0) {
     indexes.AppendElement(aOrdinal % n);
     aOrdinal /= n;
@@ -1844,19 +1846,6 @@ CounterStyle::IsDependentStyle() const
   }
 }
 
-static int32_t
-CountGraphemeClusters(const nsSubstring& aText)
-{
-  using mozilla::unicode::ClusterIterator;
-  ClusterIterator iter(aText.Data(), aText.Length());
-  int32_t result = 0;
-  while (!iter.AtEnd()) {
-    ++result;
-    iter.Next();
-  }
-  return result;
-}
-
 void
 CounterStyle::GetCounterText(CounterValue aOrdinal,
                              WritingMode aWritingMode,
@@ -1887,7 +1876,9 @@ CounterStyle::GetCounterText(CounterValue aOrdinal,
       GetPad(pad);
       // We have to calculate the difference here since suffix part of negative
       // sign may be appended to initialText later.
-      int32_t diff = pad.width - CountGraphemeClusters(initialText);
+      int32_t diff = pad.width -
+        unicode::CountGraphemeClusters(initialText.Data(),
+                                       initialText.Length());
       aResult.Truncate();
       if (useNegativeSign && aOrdinal < 0) {
         NegativeType negative;
@@ -2009,8 +2000,13 @@ CounterStyleManager::BuildCounterStyle(const nsSubstring& aName)
 
   // It is intentional that the predefined names are case-insensitive
   // but the user-defined names case-sensitive.
-  nsCSSCounterStyleRule* rule =
-    mPresContext->StyleSet()->CounterStyleRuleForName(aName);
+  // XXXheycam ServoStyleSets do not support custom counter styles yet.
+  StyleSetHandle styleSet = mPresContext->StyleSet();
+  NS_ASSERTION(styleSet->IsGecko(),
+               "stylo: ServoStyleSets do not support custom counter "
+               "styles yet");
+  nsCSSCounterStyleRule* rule = styleSet->IsGecko() ?
+    styleSet->AsGecko()->CounterStyleRuleForName(aName) : nullptr;
   if (rule) {
     data = new (mPresContext) CustomCounterStyle(this, rule);
   } else {
@@ -2050,8 +2046,13 @@ CounterStyleManager::NotifyRuleChanged()
     RefPtr<CounterStyle>& style = iter.Data();
     bool toBeUpdated = false;
     bool toBeRemoved = false;
-    nsCSSCounterStyleRule* newRule =
-      mPresContext->StyleSet()->CounterStyleRuleForName(iter.Key());
+    // XXXheycam ServoStyleSets do not support custom counter styles yet.
+    StyleSetHandle styleSet = mPresContext->StyleSet();
+    NS_ASSERTION(styleSet->IsGecko(),
+                 "stylo: ServoStyleSets do not support custom counter "
+                 "styles yet");
+    nsCSSCounterStyleRule* newRule = styleSet->IsGecko() ?
+        styleSet->AsGecko()->CounterStyleRuleForName(iter.Key()) : nullptr;
     if (!newRule) {
       if (style->IsCustomStyle()) {
         toBeRemoved = true;

@@ -1,5 +1,4 @@
-setJitCompilerOption("baseline.warmup.trigger", 10);
-setJitCompilerOption("ion.warmup.trigger", 20);
+// |jit-test| --ion-eager
 
 function join_check() {
     var lengthWasCalled = false;
@@ -101,6 +100,8 @@ function split_join_pattern(i) {
 // Check that, as opposed to String.replace, we are doing a global replacement
 // as String.split does.
 function split_join_multiple(i) {
+    enableMatchFlagArgument();
+
     var s1 = i + "-\n-" + i + "-\n-" + i;
     assertEq(s1.split("-\n-").join("-")  , i + "-" + i + "-" + i);
     assertEq(s1.replace("-\n-", "-")     , i + "-" + i + "-\n-" + i);

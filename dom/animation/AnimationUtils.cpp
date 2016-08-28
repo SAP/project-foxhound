@@ -9,7 +9,10 @@
 #include "nsDebug.h"
 #include "nsIAtom.h"
 #include "nsIContent.h"
+#include "nsIDocument.h"
+#include "nsGlobalWindow.h"
 #include "nsString.h"
+#include "xpcpublic.h" // For xpc::NativeGlobal
 
 namespace mozilla {
 
@@ -31,6 +34,16 @@ AnimationUtils::LogAsyncAnimationFailure(nsCString& aMessage,
   }
   aMessage.Append('\n');
   printf_stderr("%s", aMessage.get());
+}
+
+/* static */ nsIDocument*
+AnimationUtils::GetCurrentRealmDocument(JSContext* aCx)
+{
+  nsGlobalWindow* win = xpc::CurrentWindowOrNull(aCx);
+  if (!win) {
+    return nullptr;
+  }
+  return win->GetDoc();
 }
 
 } // namespace mozilla

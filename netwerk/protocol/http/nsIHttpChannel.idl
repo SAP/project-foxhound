@@ -14,7 +14,7 @@ interface nsIHttpHeaderVisitor;
  * the inspection of the resulting HTTP response status and headers when they
  * become available.
  */
-[builtinclass, scriptable, uuid(b2596105-3d0d-4e6a-824f-0539713bb879)]
+[builtinclass, scriptable, uuid(c5a4a073-4539-49c7-a3f2-cec3f0619c6c)]
 interface nsIHttpChannel : nsIChannel
 {
     /**************************************************************************
@@ -52,6 +52,8 @@ interface nsIHttpChannel : nsIChannel
      * URI is rejected.
      *
      * @throws NS_ERROR_IN_PROGRESS if set after the channel has been opened.
+     * @throws NS_ERROR_FAILURE if used for setting referrer during
+     *         visitRequestHeaders. Getting the value will not throw.
      */
     attribute nsIURI referrer;
 
@@ -81,6 +83,7 @@ interface nsIHttpChannel : nsIChannel
 
     /**
      * Set the HTTP referrer URI with a referrer policy.
+     * @throws NS_ERROR_FAILURE if called during visitRequestHeaders.
      */
     void setReferrerWithPolicy(in nsIURI referrer, in unsigned long referrerPolicy);
 
@@ -147,6 +150,7 @@ interface nsIHttpChannel : nsIChannel
      *
      * @throws NS_ERROR_IN_PROGRESS if called after the channel has been
      *         opened.
+     * @throws NS_ERROR_FAILURE if called during visitRequestHeaders.
      */
     void setRequestHeader(in ACString aHeader,
                           in ACString aValue,
@@ -166,6 +170,7 @@ interface nsIHttpChannel : nsIChannel
      *
      * @throws NS_ERROR_IN_PROGRESS if called after the channel has been
      *         opened.
+     * @throws NS_ERROR_FAILURE if called during visitRequestHeaders.
      */
     void setEmptyRequestHeader(in ACString aHeader);
 
@@ -370,15 +375,33 @@ interface nsIHttpChannel : nsIChannel
 
     /**
      * Instructs the channel to immediately redirect to a new destination.
-     * Can only be called on channels not yet opened.
+     * Can only be called on channels that have not yet called their
+     * listener's OnStartRequest(). Generally that means the latest time
+     * this can be used is one of:
+     *    "http-on-examine-response"
+     *    "http-on-examine-merged-response"
+     *    "http-on-examine-cached-response"
+     *
+     * When non-null URL is set before AsyncOpen:
+     *  we attempt to redirect to the targetURI before we even start building
+     *  and sending the request to the cache or the origin server.
+     *  If the redirect is vetoed, we fail the channel.
+     *
+     * When set between AsyncOpen and first call to OnStartRequest being called:
+     *  we attempt to redirect before we start delivery of network or cached
+     *  response to the listener.  If vetoed, we continue with delivery of
+     *  the original content to the channel listener.
+     *
+     * When passed aTargetURI is null the channel behaves normally (can be
+     * rewritten).
      *
      * This method provides no explicit conflict resolution. The last
      * caller to call it wins.
      *
-     * @throws NS_ERROR_ALREADY_OPENED if called after the channel
-     *         has been opened.
+     * @throws NS_ERROR_NOT_AVAILABLE if called after the channel has already
+     *         started to deliver the content to its listener.
      */
-    void redirectTo(in nsIURI aNewURI);
+    void redirectTo(in nsIURI aTargetURI);
 
     /**
      * Identifies the scheduling context for this load.

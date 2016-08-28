@@ -36,6 +36,7 @@
 #include "MediaStatistics.h"
 #include "MediaStreamGraph.h"
 #include "TimeUnits.h"
+#include "SeekTarget.h"
 
 class nsIStreamListener;
 class nsIPrincipal;
@@ -52,51 +53,6 @@ enum class MediaEventType : int8_t;
 #ifdef GetCurrentTime
 #undef GetCurrentTime
 #endif
-
-// Stores the seek target; the time to seek to, and whether an Accurate,
-// or "Fast" (nearest keyframe) seek was requested.
-struct SeekTarget {
-  enum Type {
-    Invalid,
-    PrevSyncPoint,
-    Accurate
-  };
-  SeekTarget()
-    : mTime(-1.0)
-    , mType(SeekTarget::Invalid)
-    , mEventVisibility(MediaDecoderEventVisibility::Observable)
-  {
-  }
-  SeekTarget(int64_t aTimeUsecs,
-             Type aType,
-             MediaDecoderEventVisibility aEventVisibility =
-               MediaDecoderEventVisibility::Observable)
-    : mTime(aTimeUsecs)
-    , mType(aType)
-    , mEventVisibility(aEventVisibility)
-  {
-  }
-  SeekTarget(const SeekTarget& aOther)
-    : mTime(aOther.mTime)
-    , mType(aOther.mType)
-    , mEventVisibility(aOther.mEventVisibility)
-  {
-  }
-  bool IsValid() const {
-    return mType != SeekTarget::Invalid;
-  }
-  void Reset() {
-    mTime = -1;
-    mType = SeekTarget::Invalid;
-  }
-  // Seek target time in microseconds.
-  int64_t mTime;
-  // Whether we should seek "Fast", or "Accurate".
-  // "Fast" seeks to the seek point preceeding mTime, whereas
-  // "Accurate" seeks as close as possible to mTime.
-  Type mType;
-  MediaDecoderEventVisibility mEventVisibility;
-};
 
 class MediaDecoder : public AbstractMediaDecoder
 {
@@ -297,12 +253,17 @@ public:
   // Called from HTMLMediaElement when owner document activity changes
   virtual void SetElementVisibility(bool aIsVisible) {}
 
-  // Set a flag indicating whether seeking is supported
+  // Set a flag indicating whether random seeking is supported
   void SetMediaSeekable(bool aMediaSeekable);
+  // Set a flag indicating whether seeking is supported only in buffered ranges
+  void SetMediaSeekableOnlyInBufferedRanges(bool aMediaSeekableOnlyInBufferedRanges);
 
-  // Returns true if this media supports seeking. False for example for WebM
-  // files without an index and chained ogg files.
+  // Returns true if this media supports random seeking. False for example with
+  // chained ogg files.
   bool IsMediaSeekable();
+  // Returns true if this media supports seeking only in buffered ranges. True
+  // for example in WebMs with no cues
+  bool IsMediaSeekableOnlyInBufferedRanges();
   // Returns true if seeking is supported on a transport level (e.g. the server
   // supports range requests, we are playing a file, etc.).
   bool IsTransportSeekable();
@@ -537,6 +498,8 @@ private:
   // Returns a string describing the state of the media player internal
   // data. Used for debugging purposes.
   virtual void GetMozDebugReaderData(nsAString& aString) {}
+
+  virtual void DumpDebugInfo();
 
 protected:
   virtual ~MediaDecoder();
@@ -821,6 +784,10 @@ protected:
   // passed to MediaStreams when this is true.
   Canonical<bool> mSameOriginMedia;
 
+  // An identifier for the principal of the media. Used to track when
+  // main-thread induced principal changes get reflected on MSG thread.
+  Canonical<PrincipalHandle> mMediaPrincipalHandle;
+
   // Estimate of the current playback rate (bytes/second).
   Canonical<double> mPlaybackBytesPerSecond;
 
@@ -835,6 +802,9 @@ protected:
 
   // True if the media is seekable (i.e. supports random access).
   Canonical<bool> mMediaSeekable;
+
+  // True if the media is only seekable within its buffered ranges.
+  Canonical<bool> mMediaSeekableOnlyInBufferedRanges;
 
 public:
   AbstractCanonical<media::NullableTimeUnit>* CanonicalDurationOrNull() override;
@@ -865,6 +835,9 @@ public:
   AbstractCanonical<bool>* CanonicalSameOriginMedia() {
     return &mSameOriginMedia;
   }
+  AbstractCanonical<PrincipalHandle>* CanonicalMediaPrincipalHandle() {
+    return &mMediaPrincipalHandle;
+  }
   AbstractCanonical<double>* CanonicalPlaybackBytesPerSecond() {
     return &mPlaybackBytesPerSecond;
   }
@@ -876,6 +849,9 @@ public:
   }
   AbstractCanonical<bool>* CanonicalMediaSeekable() {
     return &mMediaSeekable;
+  }
+  AbstractCanonical<bool>* CanonicalMediaSeekableOnlyInBufferedRanges() {
+    return &mMediaSeekableOnlyInBufferedRanges;
   }
 
 private:

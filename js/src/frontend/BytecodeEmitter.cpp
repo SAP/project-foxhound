@@ -143,10 +143,25 @@ BytecodeEmitter::BytecodeEmitter(BytecodeEmitter* parent,
     insideEval(insideEval),
     insideNonGlobalEval(insideNonGlobalEval),
     insideModule(false),
-    emitterMode(emitterMode)
+    emitterMode(emitterMode),
+    functionBodyEndPosSet(false)
 {
     MOZ_ASSERT_IF(evalCaller, insideEval);
     MOZ_ASSERT_IF(emitterMode == LazyFunction, lazyScript);
+}
+
+BytecodeEmitter::BytecodeEmitter(BytecodeEmitter* parent,
+                                 Parser<FullParseHandler>* parser, SharedContext* sc,
+                                 HandleScript script, Handle<LazyScript*> lazyScript,
+                                 bool insideEval, HandleScript evalCaller,
+                                 bool insideNonGlobalEval, TokenPos bodyPosition,
+                                 EmitterMode emitterMode)
+    : BytecodeEmitter(parent, parser, sc, script, lazyScript, insideEval,
+                      evalCaller, insideNonGlobalEval,
+                      parser->tokenStream.srcCoords.lineNum(bodyPosition.begin),
+                      emitterMode)
+{
+    setFunctionBodyEndPos(bodyPosition);
 }
 
 bool
@@ -1900,9 +1915,18 @@ BytecodeEmitter::bindNameToSlotHelper(ParseNode* pn)
      * bloat where a single live function keeps its whole global script
      * alive.), ScopeCoordinateToTypeSet is not able to find the var/let's
      * associated TypeSet.
+     *
+     * Note the following does not prevent us from optimizing block scopes at
+     * global level, e.g.,
+     *
+     *   { let x; function f() { x = 42; } }
      */
-    if (bceOfDef != this && bceOfDef->sc->isGlobalContext())
+    if (dn->kind() == Definition::LET || dn->kind() == Definition::CONSTANT) {
+        if (IsStaticGlobalLexicalScope(blockScopeOfDef(dn)))
+            return true;
+    } else if (bceOfDef != this && bceOfDef->sc->isGlobalContext()) {
         return true;
+    }
 
     if (!pn->pn_scopecoord.set(parser->tokenStream, hops, slot))
         return false;
@@ -2811,8 +2835,13 @@ BytecodeEmitter::emitElemOperands(ParseNode* pn, EmitElemOption opts)
     if (!emitTree(pn->pn_right))
         return false;
 
-    if (opts == EmitElemOption::Set && !emit2(JSOP_PICK, 2))
-        return false;
+    if (opts == EmitElemOption::Set) {
+        if (!emit2(JSOP_PICK, 2))
+            return false;
+    } else if (opts == EmitElemOption::IncDec || opts == EmitElemOption::CompoundAssign) {
+        if (!emit1(JSOP_TOID))
+            return false;
+    }
     return true;
 }
 
@@ -2831,8 +2860,10 @@ BytecodeEmitter::emitSuperElemOperands(ParseNode* pn, EmitElemOption opts)
 
     // We need to convert the key to an object id first, so that we do not do
     // it inside both the GETELEM and the SETELEM.
-    if (opts == EmitElemOption::IncDec && !emit1(JSOP_TOID))
-        return false;
+    if (opts == EmitElemOption::IncDec || opts == EmitElemOption::CompoundAssign) {
+        if (!emit1(JSOP_TOID))
+            return false;
+    }
 
     if (!emitGetThisForSuperBase(pn->pn_left))
         return false;
@@ -2904,6 +2935,9 @@ BytecodeEmitter::emitElemIncDec(ParseNode* pn)
 
     bool isSuper = pn->pn_kid->as<PropertyByValue>().isSuper();
 
+    // We need to convert the key to an object id first, so that we do not do
+    // it inside both the GETELEM and the SETELEM. This is done by
+    // emit(Super)ElemOperands.
     if (isSuper) {
         if (!emitSuperElemOperands(pn->pn_kid, EmitElemOption::IncDec))
             return false;
@@ -2927,12 +2961,7 @@ BytecodeEmitter::emitElemIncDec(ParseNode* pn)
             return false;
         getOp = JSOP_GETELEM_SUPER;
     } else {
-        // We need to convert the key to an object id first, so that we do not do
-        // it inside both the GETELEM and the SETELEM. In the super case, this is
-        // done by emitSuperElemOperands.
-                                                        // OBJ KEY*
-        if (!emit1(JSOP_TOID))                          // OBJ KEY
-            return false;
+                                                        // OBJ KEY
         if (!emit1(JSOP_DUP2))                          // OBJ KEY OBJ KEY
             return false;
         getOp = JSOP_GETELEM;
@@ -3589,7 +3618,11 @@ BytecodeEmitter::emitFunctionScript(ParseNode* body)
         switchToMain();
     }
 
+    setFunctionBodyEndPos(body->pn_pos);
     if (!emitTree(body))
+        return false;
+
+    if (!updateSourceCoordNotes(body->pn_pos.end))
         return false;
 
     if (sc->isFunctionBox()) {
@@ -3691,6 +3724,7 @@ BytecodeEmitter::emitModuleScript(ParseNode* body)
     // may walk the scope chain of currently compiling scripts.
     JSScript::linkToModuleFromEmitter(cx, script, modulebox);
 
+    setFunctionBodyEndPos(body->pn_pos);
     if (!emitTree(body))
         return false;
 
@@ -3759,7 +3793,6 @@ BytecodeEmitter::emitDestructuringDeclsWithEmitter(JSOp prologueOp, ParseNode* p
                 continue;
             ParseNode* target = element;
             if (element->isKind(PNK_SPREAD)) {
-                MOZ_ASSERT(element->pn_kid->isKind(PNK_NAME));
                 target = element->pn_kid;
             }
             if (target->isKind(PNK_ASSIGN))
@@ -4593,20 +4626,20 @@ BytecodeEmitter::emitAssignment(ParseNode* lhs, JSOp op, ParseNode* rhs)
         if (!makeAtomIndex(lhs->pn_atom, &atomIndex))
             return false;
         break;
-      case PNK_ELEM:
+      case PNK_ELEM: {
         MOZ_ASSERT(lhs->isArity(PN_BINARY));
+        EmitElemOption opt = op == JSOP_NOP ? EmitElemOption::Get : EmitElemOption::CompoundAssign;
         if (lhs->as<PropertyByValue>().isSuper()) {
-            if (!emitSuperElemOperands(lhs))
+            if (!emitSuperElemOperands(lhs, opt))
                 return false;
             offset += 3;
         } else {
-            if (!emitTree(lhs->pn_left))
-                return false;
-            if (!emitTree(lhs->pn_right))
+            if (!emitElemOperands(lhs, opt))
                 return false;
             offset += 2;
         }
         break;
+      }
       case PNK_ARRAY:
       case PNK_OBJECT:
         break;
@@ -4787,7 +4820,7 @@ ParseNode::getConstantValue(ExclusiveContext* cx, AllowConstantObjects allowObje
         return true;
       case PNK_TEMPLATE_STRING:
       case PNK_STRING:
-        vp.setString(pn_atom);
+        vp.setString(pn_str);
         return true;
       case PNK_TRUE:
         vp.setBoolean(true);
@@ -4972,6 +5005,7 @@ BytecodeEmitter::emitCatch(ParseNode* pn)
     StmtInfoBCE* stmt = innermostStmt();
     MOZ_ASSERT(stmt->type == StmtType::BLOCK && stmt->isBlockScope);
     stmt->type = StmtType::CATCH;
+    stmt->staticBlock().setIsForCatchParameters();
 
     /* Go up one statement info record to the TRY or FINALLY record. */
     stmt = stmt->enclosing;
@@ -6381,11 +6415,16 @@ BytecodeEmitter::emitFunction(ParseNode* pn, bool needsProto)
 
         SharedContext* outersc = sc;
         if (fun->isInterpretedLazy()) {
-            if (!fun->lazyScript()->sourceObject()) {
-                JSObject* scope = innermostStaticScope();
-                JSObject* source = script->sourceObject();
-                fun->lazyScript()->setParent(scope, &source->as<ScriptSourceObject>());
-            }
+            // We need to update the static scope chain regardless of whether
+            // the LazyScript has already been initialized, due to the case
+            // where we previously successfully compiled an inner function's
+            // lazy script but failed to compile the outer script after the
+            // fact. If we attempt to compile the outer script again, the
+            // static scope chain will be newly allocated and will mismatch
+            // the previously compiled LazyScript's.
+            ScriptSourceObject* source = &script->sourceObject()->as<ScriptSourceObject>();
+            JSObject* scope = innermostStaticScope();
+            fun->lazyScript()->setEnclosingScopeAndSource(scope, source);
             if (emittingRunOnceLambda)
                 fun->lazyScript()->setTreatAsRunOnce();
         } else {
@@ -6412,10 +6451,9 @@ BytecodeEmitter::emitFunction(ParseNode* pn, bool needsProto)
 
             script->bindings = funbox->bindings;
 
-            uint32_t lineNum = parser->tokenStream.srcCoords.lineNum(pn->pn_pos.begin);
             BytecodeEmitter bce2(this, parser, funbox, script, /* lazyScript = */ nullptr,
                                  insideEval, evalCaller,
-                                 insideNonGlobalEval, lineNum, emitterMode);
+                                 insideNonGlobalEval, pn->pn_pos, emitterMode);
             if (!bce2.init())
                 return false;
 
@@ -6785,6 +6823,13 @@ BytecodeEmitter::emitReturn(ParseNode* pn)
         if (!emitFinishIteratorResult(true))
             return false;
     }
+
+    // We know functionBodyEndPos is set because "return" is only
+    // valid in a function, and so we've passed through
+    // emitFunctionScript.
+    MOZ_ASSERT(functionBodyEndPosSet);
+    if (!updateSourceCoordNotes(functionBodyEndPos))
+        return false;
 
     /*
      * EmitNonLocalJumpFixup may add fixup bytecode to close open try
@@ -8915,7 +8960,7 @@ BytecodeEmitter::emitTree(ParseNode* pn, EmitLineNumberNote emitLineNote)
         break;
 
       case PNK_REGEXP:
-        if (!emitRegExp(regexpList.add(pn->as<RegExpLiteral>().objbox())))
+        if (!emitRegExp(objectList.add(pn->as<RegExpLiteral>().objbox())))
             return false;
         break;
 
@@ -9202,43 +9247,9 @@ CGConstList::finish(ConstArray* array)
  * Find the index of the given object for code generator.
  *
  * Since the emitter refers to each parsed object only once, for the index we
- * use the number of already indexes objects. We also add the object to a list
+ * use the number of already indexed objects. We also add the object to a list
  * to convert the list to a fixed-size array when we complete code generation,
  * see js::CGObjectList::finish below.
- *
- * Most of the objects go to BytecodeEmitter::objectList but for regexp we use
- * a separated BytecodeEmitter::regexpList. In this way the emitted index can
- * be directly used to store and fetch a reference to a cloned RegExp object
- * that shares the same JSRegExp private data created for the object literal in
- * objbox. We need a cloned object to hold lastIndex and other direct
- * properties that should not be shared among threads sharing a precompiled
- * function or script.
- *
- * If the code being compiled is function code, allocate a reserved slot in
- * the cloned function object that shares its precompiled script with other
- * cloned function objects and with the compiler-created clone-parent. There
- * are nregexps = script->regexps()->length such reserved slots in each
- * function object cloned from fun->object. NB: during compilation, a funobj
- * slots element must never be allocated, because JSObject::allocSlot could
- * hand out one of the slots that should be given to a regexp clone.
- *
- * If the code being compiled is global code, the cloned regexp are stored in
- * fp->vars slot and to protect regexp slots from GC we set fp->nvars to
- * nregexps.
- *
- * The slots initially contain undefined or null. We populate them lazily when
- * JSOP_REGEXP is executed for the first time.
- *
- * Why clone regexp objects?  ECMA specifies that when a regular expression
- * literal is scanned, a RegExp object is created.  In the spec, compilation
- * and execution happen indivisibly, but in this implementation and many of
- * its embeddings, code is precompiled early and re-executed in multiple
- * threads, or using multiple global objects, or both, for efficiency.
- *
- * In such cases, naively following ECMA leads to wrongful sharing of RegExp
- * objects, which makes for collisions on the lastIndex property (especially
- * for global regexps) and on any ad-hoc properties.  Also, __proto__ refers to
- * the pre-compilation prototype, a pigeon-hole problem for instanceof tests.
  */
 unsigned
 CGObjectList::add(ObjectBox* objbox)

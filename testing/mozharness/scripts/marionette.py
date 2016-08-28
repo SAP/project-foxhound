@@ -13,8 +13,8 @@ import sys
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-from mozharness.base.errors import TarErrorList, ZipErrorList
-from mozharness.base.log import INFO, ERROR, WARNING, FATAL
+from mozharness.base.errors import TarErrorList
+from mozharness.base.log import INFO, ERROR, WARNING
 from mozharness.base.script import PreScriptAction
 from mozharness.base.transfer import TransferMixin
 from mozharness.base.vcs.vcsbase import MercurialScript
@@ -26,6 +26,8 @@ from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_opt
 from mozharness.mozilla.testing.unittest import TestSummaryOutputParserHelper
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 
+# TODO: we could remove emulator specific code after B2G ICS emulator buildbot
+#       builds is turned off, Bug 1209180.
 class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMixin, GaiaMixin):
     config_options = [[
         ["--application"],
@@ -138,6 +140,7 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         ["--e10s"],
         {"action": "store_true",
          "dest": "e10s",
+         "default": False,
          "help": "Run tests with multiple processes. (Desktop builds only)",
         }
      ]] + copy.deepcopy(testing_config_options) \
@@ -202,7 +205,7 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
             dirs['abs_test_install_dir'], 'marionette', 'marionette')
         dirs['abs_marionette_tests_dir'] = os.path.join(
             dirs['abs_test_install_dir'], 'marionette', 'tests', 'testing',
-            'marionette', 'client', 'marionette', 'tests')
+            'marionette', 'harness', 'marionette', 'tests')
         dirs['abs_gecko_dir'] = os.path.join(
             abs_dirs['abs_work_dir'], 'gecko')
         dirs['abs_emulator_dir'] = os.path.join(
@@ -416,8 +419,8 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
             if self.config.get('app_arg'):
                 config_fmt_args['app_arg'] = self.config['app_arg']
 
-            if self.config.get('e10s'):
-                cmd.append('--e10s')
+            if not self.config['e10s']:
+                cmd.append('--disable-e10s')
 
             cmd.append('--gecko-log=%s' % os.path.join(dirs["abs_blob_upload_dir"],
                                                        'gecko.log'))

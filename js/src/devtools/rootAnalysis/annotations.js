@@ -68,14 +68,15 @@ var ignoreClasses = {
 // Ignore calls through TYPE.FIELD, where TYPE is the class or struct name containing
 // a function pointer field named FIELD.
 var ignoreCallees = {
-    "js::Class.trace" : true,
-    "js::Class.finalize" : true,
+    "js::ClassOps.trace" : true,
+    "js::ClassOps.finalize" : true,
     "JSRuntime.destroyPrincipals" : true,
     "icu_50::UObject.__deleting_dtor" : true, // destructors in ICU code can't cause GC
     "mozilla::CycleCollectedJSRuntime.DescribeCustomObjects" : true, // During tracing, cannot GC.
     "mozilla::CycleCollectedJSRuntime.NoteCustomGCThingXPCOMChildren" : true, // During tracing, cannot GC.
     "PLDHashTableOps.hashKey" : true,
     "z_stream_s.zfree" : true,
+    "z_stream_s.zalloc" : true,
     "GrGLInterface.fCallback" : true,
     "std::strstreambuf._M_alloc_fun" : true,
     "std::strstreambuf._M_free_fun" : true,
@@ -91,8 +92,27 @@ function fieldCallCannotGC(csu, fullfield)
     return false;
 }
 
-function ignoreEdgeUse(edge, variable)
+function ignoreEdgeUse(edge, variable, body)
 {
+    // Horrible special case for ignoring a false positive in xptcstubs: there
+    // is a local variable 'paramBuffer' holding an array of nsXPTCMiniVariant
+    // on the stack, which appears to be live across a GC call because its
+    // constructor is called when the array is initialized, even though the
+    // constructor is a no-op. So we'll do a very narrow exclusion for the use
+    // that incorrectly started the live range, which was basically "__temp_1 =
+    // paramBuffer".
+    //
+    // By scoping it so narrowly, we can detect most hazards that would be
+    // caused by modifications in the PrepareAndDispatch code. It just barely
+    // avoids having a hazard already.
+    if (('Name' in variable) && (variable.Name[0] == 'paramBuffer')) {
+        if (body.BlockId.Kind == 'Function' && body.BlockId.Variable.Name[0] == 'PrepareAndDispatch')
+            if (edge.Kind == 'Assign' && edge.Type.Kind == 'Pointer')
+                if (edge.Exp[0].Kind == 'Var' && edge.Exp[1].Kind == 'Var')
+                    if (edge.Exp[1].Variable.Kind == 'Local' && edge.Exp[1].Variable.Name[0] == 'paramBuffer')
+                        return true;
+    }
+
     // Functions which should not be treated as using variable.
     if (edge.Kind == "Call") {
         var callee = edge.Exp[0];
@@ -191,6 +211,7 @@ var ignoreFunctions = {
 
     "uint64 js::TenuringTracer::moveObjectToTenured(JSObject*, JSObject*, int32)" : true,
     "uint32 js::TenuringTracer::moveObjectToTenured(JSObject*, JSObject*, int32)" : true,
+    "void js::Nursery::freeMallocedBuffers()" : true,
 };
 
 function isProtobuf(name)
@@ -292,13 +313,16 @@ function isUnsafeStorage(typeName)
     return typeName.startsWith('UniquePtr<');
 }
 
-function isSuppressConstructor(name)
+function isSuppressConstructor(varName)
 {
-    return name.indexOf("::AutoSuppressGC") != -1
-        || name.indexOf("::AutoAssertGCCallback") != -1
-        || name.indexOf("::AutoEnterAnalysis") != -1
-        || name.indexOf("::AutoSuppressGCAnalysis") != -1
-        || name.indexOf("::AutoIgnoreRootingHazards") != -1;
+    // varName[1] contains the unqualified name
+    return [
+        "AutoSuppressGC",
+        "AutoAssertGCCallback",
+        "AutoEnterAnalysis",
+        "AutoSuppressGCAnalysis",
+        "AutoIgnoreRootingHazards"
+    ].indexOf(varName[1]) != -1;
 }
 
 // nsISupports subclasses' methods may be scriptable (or overridden
@@ -329,57 +353,9 @@ function isOverridableField(initialCSU, csu, field)
     return true;
 }
 
-function listGCTypes() {
-    return [
-        'js::gc::Cell',
-        'JSObject',
-        'JSString',
-        'JSFatInlineString',
-        'JSExternalString',
-        'js::Shape',
-        'js::AccessorShape',
-        'js::BaseShape',
-        'JSScript',
-        'js::ObjectGroup',
-        'js::LazyScript',
-        'js::jit::JitCode',
-        'JS::Symbol',
-    ];
-}
-
-function listGCPointers() {
-    return [
-        'JS::Value',
-        'jsid',
-
-        'js::TypeSet',
-        'js::TypeSet::ObjectKey',
-        'js::TypeSet::Type',
-
-        // AutoCheckCannotGC should also not be held live across a GC function.
-        'JS::AutoCheckCannotGC',
-    ];
-}
-
-function listNonGCTypes() {
-    return [
-    ];
-}
-
 function listNonGCPointers() {
     return [
-        // Both of these are safe only because jsids are currently only made
-        // from "interned" (pinned) strings. Once that changes, both should be
-        // removed from the list.
+        // Safe only because jsids are currently only made from pinned strings.
         'NPIdentifier',
-        'XPCNativeMember',
     ];
-}
-
-// Flexible mechanism for deciding an arbitrary type is a GCPointer. Its one
-// use turned out to be unnecessary due to another change, but the mechanism
-// seems useful for something like /Vector.*Something/.
-function isGCPointer(typeName)
-{
-    return false;
 }

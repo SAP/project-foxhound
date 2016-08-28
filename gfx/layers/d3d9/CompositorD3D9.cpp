@@ -13,17 +13,17 @@
 #include "nsWindowsHelpers.h"
 #include "Nv3DVUtils.h"
 #include "gfxFailure.h"
-#include "mozilla/layers/PCompositorParent.h"
 #include "mozilla/layers/LayerManagerComposite.h"
 #include "gfxPrefs.h"
 #include "gfxCrashReporterUtils.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
 
 namespace mozilla {
 namespace layers {
 
 using namespace mozilla::gfx;
 
-CompositorD3D9::CompositorD3D9(PCompositorParent* aParent, nsIWidget *aWidget)
+CompositorD3D9::CompositorD3D9(CompositorBridgeParent* aParent, nsIWidget *aWidget)
   : Compositor(aParent)
   , mWidget(aWidget)
   , mDeviceResetCount(0)
@@ -265,7 +265,7 @@ CompositorD3D9::DrawQuad(const gfx::Rect &aRect,
   d3d9Device->SetVertexShaderConstantF(CBmLayerTransform, &aTransform._11, 4);
 
   IntPoint origin = mCurrentRT->GetOrigin();
-  float renderTargetOffset[] = { origin.x, origin.y, 0, 0 };
+  float renderTargetOffset[] = { float(origin.x), float(origin.y), 0, 0 };
   d3d9Device->SetVertexShaderConstantF(CBvRenderTargetOffset,
                                        renderTargetOffset,
                                        1);
@@ -291,11 +291,7 @@ CompositorD3D9::DrawQuad(const gfx::Rect &aRect,
   MaskType maskType = MaskType::MaskNone;
 
   if (aEffectChain.mSecondaryEffects[EffectTypes::MASK]) {
-    if (aTransform.Is2D()) {
-      maskType = MaskType::Mask2d;
-    } else {
-      maskType = MaskType::Mask3d;
-    }
+    maskType = MaskType::Mask;
   }
 
   gfx::Rect backdropDest;
@@ -576,7 +572,7 @@ CompositorD3D9::SetMask(const EffectChain &aEffectChain, uint32_t aMaskTexture)
 }
 
 /**
- * In the next few methods we call |mParent->SendInvalidateAll()| - that has
+ * In the next few methods we call |mParent->InvalidateRemoteLayers()| - that has
  * a few uses - if our device or swap chain is not ready, it causes us to try
  * to render again, that means we keep trying to get a good device and swap
  * chain and don't block the main thread (which we would if we kept trying in
@@ -609,7 +605,7 @@ CompositorD3D9::EnsureSwapChain()
       if (state == DeviceMustRecreate) {
         mDeviceManager = nullptr;
       }
-      mParent->SendInvalidateAll();
+      mParent->InvalidateRemoteLayers();
       return false;
     }
   }
@@ -625,7 +621,7 @@ CompositorD3D9::EnsureSwapChain()
     mDeviceManager = nullptr;
     mSwapChain = nullptr;
   }
-  mParent->SendInvalidateAll();
+  mParent->InvalidateRemoteLayers();
   return false;
 }
 
@@ -633,7 +629,7 @@ void
 CompositorD3D9::CheckResetCount()
 {
   if (mDeviceResetCount != mDeviceManager->GetDeviceResetCount()) {
-    mParent->SendInvalidateAll();
+    mParent->InvalidateRemoteLayers();
   }
   mDeviceResetCount = mDeviceManager->GetDeviceResetCount();
 }
@@ -658,7 +654,7 @@ CompositorD3D9::Ready()
   mDeviceManager = gfxWindowsPlatform::GetPlatform()->GetD3D9DeviceManager();
   if (!mDeviceManager) {
     FailedToResetDevice();
-    mParent->SendInvalidateAll();
+    mParent->InvalidateRemoteLayers();
     return false;
   }
   if (EnsureSwapChain()) {
@@ -674,7 +670,9 @@ CompositorD3D9::FailedToResetDevice() {
   // 10 is a totally arbitrary number that we may want to increase or decrease
   // depending on how things behave in the wild.
   if (mFailedResetAttempts > 10) {
-    MOZ_CRASH("GFX: Unable to get a working D3D9 Compositor");
+    mFailedResetAttempts = 0;
+    gfxWindowsPlatform::GetPlatform()->D3D9DeviceReset();
+    gfxCriticalNote << "[D3D9] Unable to get a working D3D9 Compositor";
   }
 }
 
@@ -682,6 +680,7 @@ void
 CompositorD3D9::BeginFrame(const nsIntRegion& aInvalidRegion,
                            const Rect *aClipRectIn,
                            const Rect& aRenderBounds,
+                           const nsIntRegion& aOpaqueRegion,
                            Rect *aClipRectOut,
                            Rect *aRenderBoundsOut)
 {

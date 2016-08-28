@@ -4,6 +4,10 @@
 
 #aboutDialog {
   width: 620px;
+  /* Set an explicit line-height to avoid discrepancies in 'auto' spacing
+     across screens with different device DPI, which may cause font metrics
+     to round differently. */
+  line-height: 1.5;
 }
 
 #rightBox {
@@ -64,7 +68,13 @@
   width: 16px;
   min-height: 16px;
   -moz-margin-end: 3px;
-  list-style-image: url("chrome://global/skin/icons/loading_16.png");
+  list-style-image: url("chrome://global/skin/icons/loading.png");
+}
+
+@media (min-resolution: 1.1dppx) {
+  .update-throbber {
+    list-style-image: url("chrome://global/skin/icons/loading@2x.png");
+  }
 }
 
 .text-link,
