@@ -700,6 +700,26 @@ ParseDigitsN(size_t n, size_t* result, const CharT* s, size_t* i, size_t limit)
     return false;
 }
 
+/*
+ * Read and convert n or less decimal digits from s[*i]
+ * to s[min(*i+n,limit)] into *result.
+ *
+ * Succeed only if greater than zero but less than or equal to n digits are
+ * converted. Advance *i only on success.
+ */
+template <typename CharT>
+static bool
+ParseDigitsNOrLess(size_t n, size_t* result, const CharT* s, size_t* i, size_t limit)
+{
+    size_t init = *i;
+
+    if (ParseDigits(result, s, i, Min(limit, init + n)))
+        return ((*i - init) > 0) && ((*i - init) <= n);
+
+    *i = init;
+    return false;
+}
+
 static int
 DaysInMonth(int year, int month)
 {
@@ -713,11 +733,6 @@ DaysInMonth(int year, int month)
  * "NOTE-datetime" specification. These formats make up a restricted
  * profile of the ISO 8601 format. Quoted here:
  *
- *   The formats are as follows. Exactly the components shown here
- *   must be present, with exactly this punctuation. Note that the "T"
- *   appears literally in the string, to indicate the beginning of the
- *   time element, as specified in ISO 8601.
- *
  *   Any combination of the date formats with the time formats is
  *   allowed, and also either the date or the time can be missing.
  *
@@ -729,6 +744,12 @@ DaysInMonth(int year, int month)
  *   be aded to a date later. If the time is missing then we assume
  *   00:00 UTC.  If the time is present but the time zone field is
  *   missing then we use local time.
+ *
+ * For the sake of cross compatibility with other implementations we
+ * make a few exceptions to the standard: months, days, hours, minutes
+ * and seconds may be either one or two digits long, and the 'T' from
+ * the time part may be replaced with a space. Given that, a date time
+ * like "1999-1-1 1:1:1" will parse successfully.
  *
  * Date part:
  *
@@ -755,17 +776,17 @@ DaysInMonth(int year, int month)
  * where:
  *
  *   YYYY = four-digit year or six digit year as +YYYYYY or -YYYYYY
- *   MM   = two-digit month (01=January, etc.)
- *   DD   = two-digit day of month (01 through 31)
- *   hh   = two digits of hour (00 through 23) (am/pm NOT allowed)
- *   mm   = two digits of minute (00 through 59)
- *   ss   = two digits of second (00 through 59)
+ *   MM   = one or two-digit month (01=January, etc.)
+ *   DD   = one or two-digit day of month (01 through 31)
+ *   hh   = one or two digits of hour (00 through 23) (am/pm NOT allowed)
+ *   mm   = one or two digits of minute (00 through 59)
+ *   ss   = one or two digits of second (00 through 59)
  *   s    = one or more digits representing a decimal fraction of a second
  *   TZD  = time zone designator (Z or +hh:mm or -hh:mm or missing for local)
  */
 template <typename CharT>
 static bool
-ParseISODate(const CharT* s, size_t length, ClippedTime* result)
+ParseISOStyleDate(const CharT* s, size_t length, ClippedTime* result)
 {
     size_t i = 0;
     int tzMul = 1;
@@ -795,6 +816,9 @@ ParseISODate(const CharT* s, size_t length, ClippedTime* result)
 #define NEED_NDIGITS(n, field)                                                 \
     if (!ParseDigitsN(n, &field, s, &i, length)) { return false; }
 
+#define NEED_NDIGITS_OR_LESS(n, field)                                         \
+    if (!ParseDigitsNOrLess(n, &field, s, &i, length)) { return false; }
+
     if (PEEK('+') || PEEK('-')) {
         if (PEEK('-'))
             dateMul = -1;
@@ -804,19 +828,23 @@ ParseISODate(const CharT* s, size_t length, ClippedTime* result)
         NEED_NDIGITS(4, year);
     }
     DONE_DATE_UNLESS('-');
-    NEED_NDIGITS(2, month);
+    NEED_NDIGITS_OR_LESS(2, month);
     DONE_DATE_UNLESS('-');
-    NEED_NDIGITS(2, day);
+    NEED_NDIGITS_OR_LESS(2, day);
 
  done_date:
-    DONE_UNLESS('T');
-    NEED_NDIGITS(2, hour);
+    if (PEEK('T') || PEEK(' '))
+        i++;
+    else
+        goto done;
+
+    NEED_NDIGITS_OR_LESS(2, hour);
     NEED(':');
-    NEED_NDIGITS(2, min);
+    NEED_NDIGITS_OR_LESS(2, min);
 
     if (PEEK(':')) {
         ++i;
-        NEED_NDIGITS(2, sec);
+        NEED_NDIGITS_OR_LESS(2, sec);
         if (PEEK('.')) {
             ++i;
             if (!ParseFractional(&frac, s, &i, length))
@@ -882,7 +910,7 @@ template <typename CharT>
 static bool
 ParseDate(const CharT* s, size_t length, ClippedTime* result)
 {
-    if (ParseISODate(s, length, result))
+    if (ParseISOStyleDate(s, length, result))
         return true;
 
     if (length == 0)
@@ -2525,17 +2553,7 @@ date_toJSON(JSContext* cx, unsigned argc, Value* vp)
     }
 
     /* Step 6. */
-    InvokeArgs args2(cx);
-    if (!args2.init(0))
-        return false;
-
-    args2.setCallee(toISO);
-    args2.setThis(ObjectValue(*obj));
-
-    if (!Invoke(cx, args2))
-        return false;
-    args.rval().set(args2.rval());
-    return true;
+    return Call(cx, toISO, obj, args.rval());
 }
 
 /* for Date.toLocaleFormat; interface to PRMJTime date struct.
@@ -3244,58 +3262,40 @@ FinishDateClassInit(JSContext* cx, HandleObject ctor, HandleObject proto)
                                 nullptr, nullptr, 0);
 }
 
+static const ClassSpec DateObjectClassSpec = {
+    GenericCreateConstructor<DateConstructor, 7, gc::AllocKind::FUNCTION>,
+    CreateDatePrototype,
+    date_static_methods,
+    nullptr,
+    date_methods,
+    nullptr,
+    FinishDateClassInit
+};
+
 const Class DateObject::class_ = {
     js_Date_str,
     JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS) |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Date),
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* getProperty */
-    nullptr, /* setProperty */
-    nullptr, /* enumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    nullptr, /* finalize */
-    nullptr, /* call */
-    nullptr, /* hasInstance */
-    nullptr, /* construct */
-    nullptr, /* trace */
-    {
-        GenericCreateConstructor<DateConstructor, 7, gc::AllocKind::FUNCTION>,
-        CreateDatePrototype,
-        date_static_methods,
-        nullptr,
-        date_methods,
-        nullptr,
-        FinishDateClassInit
-    }
+    JS_NULL_CLASS_OPS,
+    &DateObjectClassSpec
+};
+
+static const ClassSpec DateObjectProtoClassSpec = {
+    DELEGATED_CLASSSPEC(DateObject::class_.spec),
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    ClassSpec::IsDelegated
 };
 
 const Class DateObject::protoClass_ = {
     js_Object_str,
     JSCLASS_HAS_CACHED_PROTO(JSProto_Date),
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* getProperty */
-    nullptr, /* setProperty */
-    nullptr, /* enumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    nullptr, /* finalize */
-    nullptr, /* call */
-    nullptr, /* hasInstance */
-    nullptr, /* construct */
-    nullptr, /* trace  */
-    {
-        DELEGATED_CLASSSPEC(&DateObject::class_.spec),
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        ClassSpec::IsDelegated
-    }
+    JS_NULL_CLASS_OPS,
+    &DateObjectProtoClassSpec
 };
 
 JSObject*

@@ -12,6 +12,7 @@
 
 #include "ds/IdValuePair.h"
 #include "gc/Barrier.h"
+#include "js/GCHashTable.h"
 #include "vm/TaggedProto.h"
 #include "vm/TypeInference.h"
 
@@ -421,7 +422,7 @@ class ObjectGroup : public gc::TenuredCell
     void finalize(FreeOp* fop);
     void fixupAfterMovingGC() {}
 
-    static inline ThingRootKind rootKind() { return THING_ROOT_OBJECT_GROUP; }
+    static const JS::TraceKind TraceKind = JS::TraceKind::ObjectGroup;
 
     static inline uint32_t offsetOfClasp() {
         return offsetof(ObjectGroup, clasp_);
@@ -538,30 +539,28 @@ class ObjectGroupCompartment
 {
     friend class ObjectGroup;
 
-    struct NewEntry;
-    using NewTable = js::GCHashSet<NewEntry, NewEntry, SystemAllocPolicy>;
-    class NewTableRef;
+    class NewTable;
 
     // Set of default 'new' or lazy groups in the compartment.
     NewTable* defaultNewTable;
     NewTable* lazyTable;
 
     struct ArrayObjectKey;
-    using ArrayObjectTable = js::GCHashMap<ArrayObjectKey,
-                                           ReadBarrieredObjectGroup,
-                                           ArrayObjectKey,
-                                           SystemAllocPolicy>;
+    using ArrayObjectTable = js::GCRekeyableHashMap<ArrayObjectKey,
+                                                    ReadBarrieredObjectGroup,
+                                                    ArrayObjectKey,
+                                                    SystemAllocPolicy>;
 
     struct PlainObjectKey;
     struct PlainObjectEntry;
-    struct PlainObjectGCPolicy : public DefaultMapGCPolicy<PlainObjectKey, PlainObjectEntry> {
+    struct PlainObjectTableSweepPolicy {
         static bool needsSweep(PlainObjectKey* key, PlainObjectEntry* entry);
     };
     using PlainObjectTable = js::GCHashMap<PlainObjectKey,
                                            PlainObjectEntry,
                                            PlainObjectKey,
                                            SystemAllocPolicy,
-                                           PlainObjectGCPolicy>;
+                                           PlainObjectTableSweepPolicy>;
 
     // Tables for managing groups common to the contents of large script
     // singleton objects and JSON objects. These are vanilla ArrayObjects and
@@ -585,6 +584,8 @@ class ObjectGroupCompartment
     AllocationSiteTable* allocationSiteTable;
 
   public:
+    struct NewEntry;
+
     ObjectGroupCompartment();
     ~ObjectGroupCompartment();
 
@@ -627,9 +628,6 @@ class ObjectGroupCompartment
 #endif
 
     void fixupNewTableAfterMovingGC(NewTable* table);
-
-    static void newTablePostBarrier(ExclusiveContext* cx, NewTable* table,
-                                    const Class* clasp, TaggedProto proto, JSObject* associated);
 };
 
 PlainObject*

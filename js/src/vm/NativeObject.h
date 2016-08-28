@@ -160,7 +160,7 @@ ArraySetLength(JSContext* cx, Handle<ArrayObject*> obj, HandleId id,
 class ObjectElements
 {
   public:
-    enum Flags {
+    enum Flags: uint32_t {
         // Integers written to these elements must be converted to doubles.
         CONVERT_DOUBLE_ELEMENTS     = 0x1,
 
@@ -1253,6 +1253,8 @@ class NativeObject : public JSObject
     copy(ExclusiveContext* cx, gc::AllocKind kind, gc::InitialHeap heap,
          HandleNativeObject templateObject);
 
+    void updateShapeAfterMovingGC();
+
     /* JIT Accessors */
     static size_t offsetOfElements() { return offsetof(NativeObject, elements_); }
     static size_t offsetOfFixedElements() {
@@ -1278,10 +1280,8 @@ inline void
 NativeObject::privateWriteBarrierPre(void** oldval)
 {
     JS::shadow::Zone* shadowZone = this->shadowZoneFromAnyThread();
-    if (shadowZone->needsIncrementalBarrier()) {
-        if (*oldval && getClass()->trace)
-            getClass()->trace(shadowZone->barrierTracer(), this);
-    }
+    if (shadowZone->needsIncrementalBarrier() && *oldval && getClass()->hasTrace())
+        getClass()->doTrace(shadowZone->barrierTracer(), this);
 }
 
 #ifdef DEBUG
@@ -1338,6 +1338,10 @@ NativeDefineProperty(ExclusiveContext* cx, HandleNativeObject obj, PropertyName*
 
 extern bool
 NativeHasProperty(JSContext* cx, HandleNativeObject obj, HandleId id, bool* foundp);
+
+extern bool
+NativeGetOwnPropertyDescriptor(JSContext* cx, HandleNativeObject obj, HandleId id,
+                               MutableHandle<PropertyDescriptor> desc);
 
 extern bool
 NativeGetProperty(JSContext* cx, HandleNativeObject obj, HandleValue receiver, HandleId id,
@@ -1457,7 +1461,7 @@ MaybeNativeObject(JSObject* obj)
 inline bool
 js::HasProperty(JSContext* cx, HandleObject obj, HandleId id, bool* foundp)
 {
-    if (HasPropertyOp op = obj->getOps()->hasProperty)
+    if (HasPropertyOp op = obj->getOpsHasProperty())
         return op(cx, obj, id, foundp);
     return NativeHasProperty(cx, obj.as<NativeObject>(), id, foundp);
 }
@@ -1466,7 +1470,7 @@ inline bool
 js::GetProperty(JSContext* cx, HandleObject obj, HandleValue receiver, HandleId id,
                 MutableHandleValue vp)
 {
-    if (GetPropertyOp op = obj->getOps()->getProperty)
+    if (GetPropertyOp op = obj->getOpsGetProperty())
         return op(cx, obj, receiver, id, vp);
     return NativeGetProperty(cx, obj.as<NativeObject>(), receiver, id, vp);
 }
@@ -1474,7 +1478,7 @@ js::GetProperty(JSContext* cx, HandleObject obj, HandleValue receiver, HandleId 
 inline bool
 js::GetPropertyNoGC(JSContext* cx, JSObject* obj, const Value& receiver, jsid id, Value* vp)
 {
-    if (obj->getOps()->getProperty)
+    if (obj->getOpsGetProperty())
         return false;
     return NativeGetPropertyNoGC(cx, &obj->as<NativeObject>(), receiver, id, vp);
 }
@@ -1483,7 +1487,7 @@ inline bool
 js::SetProperty(JSContext* cx, HandleObject obj, HandleId id, HandleValue v,
                 HandleValue receiver, ObjectOpResult& result)
 {
-    if (obj->getOps()->setProperty)
+    if (obj->getOpsSetProperty())
         return JSObject::nonNativeSetProperty(cx, obj, id, v, receiver, result);
     return NativeSetProperty(cx, obj.as<NativeObject>(), id, v, receiver, Qualified, result);
 }
@@ -1492,7 +1496,7 @@ inline bool
 js::SetElement(JSContext* cx, HandleObject obj, uint32_t index, HandleValue v,
                HandleValue receiver, ObjectOpResult& result)
 {
-    if (obj->getOps()->setProperty)
+    if (obj->getOpsSetProperty())
         return JSObject::nonNativeSetElement(cx, obj, index, v, receiver, result);
     return NativeSetElement(cx, obj.as<NativeObject>(), index, v, receiver, result);
 }

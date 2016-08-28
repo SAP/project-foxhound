@@ -65,7 +65,7 @@ nsCocoaUtils::FlippedScreenY(float y)
   return MenuBarScreenHeight() - y;
 }
 
-NSRect nsCocoaUtils::GeckoRectToCocoaRect(const nsIntRect &geckoRect)
+NSRect nsCocoaUtils::GeckoRectToCocoaRect(const DesktopIntRect &geckoRect)
 {
   // We only need to change the Y coordinate by starting with the primary screen
   // height and subtracting the gecko Y coordinate of the bottom of the rect.
@@ -75,8 +75,9 @@ NSRect nsCocoaUtils::GeckoRectToCocoaRect(const nsIntRect &geckoRect)
                     geckoRect.height);
 }
 
-NSRect nsCocoaUtils::GeckoRectToCocoaRectDevPix(const nsIntRect &aGeckoRect,
-                                                CGFloat aBackingScale)
+NSRect
+nsCocoaUtils::GeckoRectToCocoaRectDevPix(const LayoutDeviceIntRect &aGeckoRect,
+                                         CGFloat aBackingScale)
 {
   return NSMakeRect(aGeckoRect.x / aBackingScale,
                     MenuBarScreenHeight() - aGeckoRect.YMost() / aBackingScale,
@@ -84,12 +85,12 @@ NSRect nsCocoaUtils::GeckoRectToCocoaRectDevPix(const nsIntRect &aGeckoRect,
                     aGeckoRect.height / aBackingScale);
 }
 
-nsIntRect nsCocoaUtils::CocoaRectToGeckoRect(const NSRect &cocoaRect)
+DesktopIntRect nsCocoaUtils::CocoaRectToGeckoRect(const NSRect &cocoaRect)
 {
   // We only need to change the Y coordinate by starting with the primary screen
   // height and subtracting both the cocoa y origin and the height of the
   // cocoa rect.
-  nsIntRect rect;
+  DesktopIntRect rect;
   rect.x = NSToIntRound(cocoaRect.origin.x);
   rect.y = NSToIntRound(FlippedScreenY(cocoaRect.origin.y + cocoaRect.size.height));
   rect.width = NSToIntRound(cocoaRect.origin.x + cocoaRect.size.width) - rect.x;
@@ -485,15 +486,21 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer *aImage, ui
       return NS_ERROR_FAILURE;
     }
 
-    RefPtr<gfxContext> context = new gfxContext(drawTarget);
+    RefPtr<gfxContext> context = gfxContext::ForDrawTarget(drawTarget);
     if (!context) {
       NS_ERROR("Failed to create gfxContext");
       return NS_ERROR_FAILURE;
     }
 
-    aImage->Draw(context, scaledSize, ImageRegion::Create(scaledSize),
-                 aWhichFrame, Filter::POINT, Nothing(),
-                 imgIContainer::FLAG_SYNC_DECODE);
+    mozilla::image::DrawResult res =
+      aImage->Draw(context, scaledSize, ImageRegion::Create(scaledSize),
+                   aWhichFrame, Filter::POINT,
+                   /* no SVGImageContext */ Nothing(),
+                   imgIContainer::FLAG_SYNC_DECODE);
+
+    if (res != mozilla::image::DrawResult::SUCCESS) {
+      return NS_ERROR_FAILURE;
+    }
 
     surface = drawTarget->Snapshot();
   } else {
@@ -607,8 +614,8 @@ nsCocoaUtils::InitInputEvent(WidgetInputEvent& aInputEvent,
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  aInputEvent.modifiers = ModifiersForEvent(aNativeEvent);
-  aInputEvent.time = PR_IntervalNow();
+  aInputEvent.mModifiers = ModifiersForEvent(aNativeEvent);
+  aInputEvent.mTime = PR_IntervalNow();
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }

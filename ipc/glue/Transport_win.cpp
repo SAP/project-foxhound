@@ -64,7 +64,9 @@ TransferHandleToProcess(HANDLE source, base::ProcessId pid)
   DWORD access = 0;
   DWORD options = DUPLICATE_SAME_ACCESS;
   bool ok = DuplicateHandle(source, pid, &handleDup, access, options);
-  MOZ_RELEASE_ASSERT(ok);
+  if (!ok) {
+    return nullptr;
+  }
 
   // Now close our own copy of the handle (we're supposed to be transferring,
   // not copying).
@@ -103,6 +105,9 @@ DuplicateDescriptor(const TransportDescriptor& aTd)
   DWORD options = DUPLICATE_SAME_ACCESS;
   bool ok = DuplicateHandle(aTd.mServerPipeHandle, base::GetCurrentProcId(),
                             &serverDup, access, options);
+  if (!ok) {
+    AnnotateSystemError();
+  }
   MOZ_RELEASE_ASSERT(ok);
 
   TransportDescriptor desc = aTd;

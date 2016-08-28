@@ -640,6 +640,30 @@ function run() {
     test_balanced_unparseable(":nth-child(- /**/n-2)");
     test_balanced_unparseable(":nth-child(+/**/ n-2)");
     test_balanced_unparseable(":nth-child(+ /**/n-2)");
+    test_parseable(":nth-child(+/**/N-2)");
+    test_parseable(":nth-child(+N/**/-2)");
+    test_parseable(":nth-child(+N/**/-2)");
+    test_parseable(":nth-child(+N-/**/2)");
+    test_parseable(":nth-child(+N-2/**/)");
+    test_parseable(":nth-child(+1/**/N-2)");
+    test_parseable(":nth-child(+1N/**/-2)");
+    test_parseable(":nth-child(+1N/**/-2)");
+    test_parseable(":nth-child(+1N-/**/2)");
+    test_parseable(":nth-child(+1N-2/**/)");
+    test_parseable(":nth-child(-/**/N-2)");
+    test_parseable(":nth-child(-N/**/-2)");
+    test_parseable(":nth-child(-N/**/-2)");
+    test_parseable(":nth-child(-N-/**/2)");
+    test_parseable(":nth-child(-N-2/**/)");
+    test_parseable(":nth-child(-1/**/N-2)");
+    test_parseable(":nth-child(-1N/**/-2)");
+    test_parseable(":nth-child(-1N/**/-2)");
+    test_parseable(":nth-child(-1N-/**/2)");
+    test_parseable(":nth-child(-1N-2/**/)");
+    test_balanced_unparseable(":nth-child(-/**/ N-2)");
+    test_balanced_unparseable(":nth-child(- /**/N-2)");
+    test_balanced_unparseable(":nth-child(+/**/ N-2)");
+    test_balanced_unparseable(":nth-child(+ /**/N-2)");
     test_parseable(":nth-child( +n + 1 )");
     test_parseable(":nth-child( +/**/n + 1 )");
     test_parseable(":nth-child( -/**/2/**/n/**/+/**/4 )");
@@ -1029,11 +1053,21 @@ function run() {
     test_parseable(":-moz-window-inactive");
     test_parseable("div p:-moz-window-inactive:hover span");
 
-    // Plugin pseudoclasses
-    test_parseable(":-moz-type-unsupported");
-    test_parseable(":-moz-handler-disabled");
-    test_parseable(":-moz-handler-blocked");
-    test_parseable(":-moz-handler-crashed");
+    // Chrome-only
+    test_unbalanced_unparseable(":-moz-browser-frame");
+
+    // Plugin pseudoclasses are chrome-only:
+    test_unbalanced_unparseable(":-moz-type-unsupported");
+    test_unbalanced_unparseable(":-moz-user-disabled");
+    test_unbalanced_unparseable(":-moz-suppressed");
+    test_unbalanced_unparseable(":-moz-type-unsupported");
+    test_unbalanced_unparseable(":-moz-type-unsupported-platform");
+    test_unbalanced_unparseable(":-moz-handler-clicktoplay");
+    test_unbalanced_unparseable(":-moz-handler-vulnerable-updatable");
+    test_unbalanced_unparseable(":-moz-handler-vulnerable-no-update");
+    test_unbalanced_unparseable(":-moz-handler-disabled");
+    test_unbalanced_unparseable(":-moz-handler-blocked");
+    test_unbalanced_unparseable(":-moz-handler-crashed");
 
     // We're not in a UA sheet, so this should be invalid.
     test_balanced_unparseable(":-moz-native-anonymous");

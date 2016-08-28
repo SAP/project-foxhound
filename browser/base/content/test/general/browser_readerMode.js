@@ -60,11 +60,22 @@ add_task(function* test_reader_button() {
   is(gURLBar.value, readerUrl, "gURLBar value is about:reader URL");
   is(gURLBar.textValue, url.substring("http://".length), "gURLBar is displaying original article URL");
 
+  // Check selected value for URL bar
+  yield new Promise((resolve, reject) => {
+    waitForClipboard(url, function () {
+      gURLBar.focus();
+      gURLBar.select();
+      goDoCommand("cmd_copy");
+    }, resolve, reject);
+  });
+
   // Switch page back out of reader mode.
   readerButton.click();
-  yield promiseTabLoadEvent(tab);
+  yield BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
   is(gBrowser.selectedBrowser.currentURI.spec, url,
-    "Original page loaded after clicking active reader mode button");
+    "Back to the original page after clicking active reader mode button");
+  ok(gBrowser.selectedBrowser.canGoForward,
+    "Moved one step back in the session history.");
 
   // Load a new tab that is NOT reader-able.
   let newTab = gBrowser.selectedTab = gBrowser.addTab();

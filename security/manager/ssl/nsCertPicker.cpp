@@ -15,6 +15,7 @@
 #include "nsICertPickDialogs.h"
 #include "nsNSSShutDown.h"
 #include "nsNSSCertHelper.h"
+#include "nsNSSHelper.h"
 #include "ScopedNSSTypes.h"
 
 #include "cert.h"
@@ -103,7 +104,8 @@ NS_IMETHODIMP nsCertPicker::PickByUsage(nsIInterfaceRequestor *ctx,
     }
   }
 
-  ScopedCERTCertNicknames nicknames(getNSSCertNicknamesFromCertList(certList.get()));
+  UniqueCERTCertNicknames nicknames(
+    getNSSCertNicknamesFromCertList(certList.get()));
   if (!nicknames) {
     return NS_ERROR_NOT_AVAILABLE;
   }

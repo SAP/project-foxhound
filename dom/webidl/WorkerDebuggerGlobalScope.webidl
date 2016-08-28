@@ -5,8 +5,10 @@
 
 [Global=(WorkerDebugger), Exposed=WorkerDebugger]
 interface WorkerDebuggerGlobalScope : EventTarget {
+  [Throws]
   readonly attribute object global;
 
+  [Throws]
   object createSandbox(DOMString name, object prototype);
 
   [Throws]
@@ -24,9 +26,18 @@ interface WorkerDebuggerGlobalScope : EventTarget {
   void setImmediate(Function handler);
 
   void reportError(DOMString message);
+
+  [Throws]
+  sequence<any> retrieveConsoleEvents();
+
+  [Throws]
+  void setConsoleEventHandler(AnyCallback? handler);
 };
 
 // So you can debug while you debug
 partial interface WorkerDebuggerGlobalScope {
   void dump(optional DOMString string);
+
+  [Throws, Replaceable]
+  readonly attribute Console console;
 };

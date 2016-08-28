@@ -220,8 +220,8 @@ public:
 
   // Don't use NS_DECL_NSILOADCONTEXT because some of nsILoadContext's methods
   // are shared with nsIDocShell (appID, etc.) and can't be declared twice.
-  NS_IMETHOD GetAssociatedWindow(nsIDOMWindow**) override;
-  NS_IMETHOD GetTopWindow(nsIDOMWindow**) override;
+  NS_IMETHOD GetAssociatedWindow(mozIDOMWindowProxy**) override;
+  NS_IMETHOD GetTopWindow(mozIDOMWindowProxy**) override;
   NS_IMETHOD GetTopFrameElement(nsIDOMElement**) override;
   NS_IMETHOD GetNestedFrameId(uint64_t*) override;
   NS_IMETHOD IsAppOfType(uint32_t, bool*) override;
@@ -270,7 +270,13 @@ public:
   }
   bool InFrameSwap();
 
-  mozilla::DocShellOriginAttributes GetOriginAttributes();
+  const mozilla::DocShellOriginAttributes&
+  GetOriginAttributes()
+  {
+    return mOriginAttributes;
+  }
+
+  void SetOriginAttributes(const mozilla::DocShellOriginAttributes& aAttrs);
 
   void GetInterceptedDocumentId(nsAString& aId)
   {
@@ -294,6 +300,8 @@ private:
     nsDocShell*, const char*, const TimeStamp&, MarkerTracingType);
   friend void mozilla::TimelineConsumers::AddMarkerForDocShell(
     nsDocShell*, UniquePtr<AbstractTimelineMarker>&&);
+  friend void mozilla::TimelineConsumers::PopMarkers(nsDocShell*,
+    JSContext*, nsTArray<dom::ProfileTimelineMarker>&);
 
 public:
   // Tell the favicon service that aNewURI has the same favicon as aOldURI.
@@ -373,7 +381,9 @@ protected:
                          nsIURILoader* aURILoader,
                          bool aBypassClassifier);
 
-  nsresult ScrollToAnchor(nsACString& aCurHash, nsACString& aNewHash,
+  nsresult ScrollToAnchor(bool aCurHasRef,
+                          bool aNewHasRef,
+                          nsACString& aNewHash,
                           uint32_t aLoadType);
 
   // Returns true if would have called FireOnLocationChange,
@@ -720,6 +730,9 @@ protected:
                              nsIDocShellLoadInfo* aLoadInfo,
                              bool aFirstParty);
 
+  // Check if aURI is about:newtab.
+  bool IsAboutNewtab(nsIURI* aURI);
+
 protected:
   nsresult GetCurScrollPos(int32_t aScrollOrientation, int32_t* aCurPos);
   nsresult SetCurScrollPosEx(int32_t aCurHorizontalPos,
@@ -762,21 +775,14 @@ protected:
   nsresult CreatePrincipalFromReferrer(nsIURI* aReferrer,
                                        nsIPrincipal** aResult);
 
-  enum FrameType
-  {
-    eFrameTypeRegular,
-    eFrameTypeBrowser,
-    eFrameTypeApp
-  };
-
-  static const nsCString FrameTypeToString(FrameType aFrameType)
+  static const nsCString FrameTypeToString(uint32_t aFrameType)
   {
     switch (aFrameType) {
-      case FrameType::eFrameTypeApp:
+      case FRAME_TYPE_APP:
         return NS_LITERAL_CSTRING("app");
-      case FrameType::eFrameTypeBrowser:
+      case FRAME_TYPE_BROWSER:
         return NS_LITERAL_CSTRING("browser");
-      case FrameType::eFrameTypeRegular:
+      case FRAME_TYPE_REGULAR:
         return NS_LITERAL_CSTRING("regular");
       default:
         NS_ERROR("Unknown frame type");
@@ -784,7 +790,7 @@ protected:
     }
   }
 
-  FrameType GetInheritedFrameType();
+  uint32_t GetInheritedFrameType();
 
   bool HasUnloadedParent();
 
@@ -936,6 +942,7 @@ protected:
   bool mAllowKeywordFixup;
   bool mIsOffScreenBrowser;
   bool mIsActive;
+  bool mDisableMetaRefreshWhenInactive;
   bool mIsPrerendered;
   bool mIsAppTab;
   bool mUseGlobalHistory;
@@ -996,28 +1003,11 @@ protected:
   bool mBlankTiming;
 
   // Are we a regular frame, a browser frame, or an app frame?
-  FrameType mFrameType;
-
-  // We only expect mOwnOrContainingAppId to be something other than
-  // UNKNOWN_APP_ID if mFrameType != eFrameTypeRegular. For vanilla iframes
-  // inside an app, we'll retrieve the containing app-id by walking up the
-  // docshell hierarchy.
-  //
-  // (This needs to be the docshell's own /or containing/ app id because the
-  // containing app frame might be in another process, in which case we won't
-  // find it by walking up the docshell hierarchy.)
-  uint32_t mOwnOrContainingAppId;
-
-  // userContextId signifying which container we are in
-  uint32_t mUserContextId;
+  uint32_t mFrameType;
 
   nsString mPaymentRequestId;
 
   nsString GetInheritedPaymentRequestId();
-
-  // The packageId for a signed packaged iff this docShell is created
-  // for a signed package.
-  nsString mSignedPkg;
 
   nsString mInterceptedDocumentId;
 
@@ -1031,6 +1021,7 @@ private:
   nsTObserverArray<nsWeakPtr> mScrollObservers;
   nsCString mOriginalUriString;
   nsWeakPtr mOpener;
+  mozilla::DocShellOriginAttributes mOriginAttributes;
 
   // A depth count of how many times NotifyRunToCompletionStart
   // has been called without a matching NotifyRunToCompletionStop.

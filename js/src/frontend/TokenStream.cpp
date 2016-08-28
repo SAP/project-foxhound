@@ -289,7 +289,7 @@ TokenStream::SourceCoords::lineNumAndColumnIndex(uint32_t offset, uint32_t* line
 #endif
 
 TokenStream::TokenStream(ExclusiveContext* cx, const ReadOnlyCompileOptions& options,
-                         const char16_t* base, size_t length, StrictModeGetter* smg)
+                         const char16_t* base, size_t length, const StringTaint& taint, StrictModeGetter* smg)
   : srcCoords(cx, options.lineno),
     options_(options),
     tokens(),
@@ -299,11 +299,12 @@ TokenStream::TokenStream(ExclusiveContext* cx, const ReadOnlyCompileOptions& opt
     flags(),
     linebase(0),
     prevLinebase(size_t(-1)),
-    userbuf(cx, base, length, options.column),
+    userbuf(cx, base, length, taint, options.column),
     filename(options.filename()),
     displayURL_(nullptr),
     sourceMapURL_(nullptr),
     tokenbuf(cx),
+    tokenbufTaint(),
     cx(cx),
     mutedErrors(options.mutedErrors()),
     strictModeGetter(smg)
@@ -934,10 +935,10 @@ TokenStream::newToken(ptrdiff_t adjust)
     return tp;
 }
 
-MOZ_ALWAYS_INLINE JSAtom*
-TokenStream::atomize(ExclusiveContext* cx, CharBuffer& cb)
+MOZ_ALWAYS_INLINE JSLinearString*
+TokenStream::stringify(ExclusiveContext* cx, CharBuffer& cb, const StringTaint& taint)
 {
-    return AtomizeChars(cx, cb.begin(), cb.length());
+    return AtomizeCharsIfUntainted(cx, cb.begin(), cb.length(), taint);
 }
 
 #ifdef DEBUG
@@ -1708,6 +1709,7 @@ TokenStream::getStringOrTemplateToken(int untilChar, Token** tp)
 
     *tp = newToken(-1);
     tokenbuf.clear();
+    tokenbufTaint.clear();
 
     // We need to detect any of these chars:  " or ', \n (or its
     // equivalents), \\, EOF.  Because we detect EOL sequences here and
@@ -1827,7 +1829,7 @@ TokenStream::getStringOrTemplateToken(int untilChar, Token** tp)
             if (c == '\r') {
                 c = '\n';
                 if (userbuf.peekRawChar() == '\n')
-                    skipChars(1);
+                    skipCharsIgnoreEOL(1);
             }
             updateLineInfoForEOL();
             updateFlagsForEOL();
@@ -1841,10 +1843,12 @@ TokenStream::getStringOrTemplateToken(int untilChar, Token** tp)
             ReportOutOfMemory(cx);
             return false;
         }
+        if (const TaintFlow* flow = userbuf.currentTaintFlow())
+            tokenbufTaint.set(tokenbuf.length() - 1, *flow);
     }
 
-    JSAtom* atom = atomize(cx, tokenbuf);
-    if (!atom)
+    JSLinearString* str = stringify(cx, tokenbuf, tokenbufTaint);
+    if (!str)
         return false;
 
     if (!parsingTemplate) {
@@ -1856,7 +1860,7 @@ TokenStream::getStringOrTemplateToken(int untilChar, Token** tp)
             (*tp)->type = TOK_NO_SUBS_TEMPLATE;
     }
 
-    (*tp)->setAtom(atom);
+    (*tp)->setString(str);
     return true;
 }
 

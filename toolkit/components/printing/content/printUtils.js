@@ -154,6 +154,7 @@ var PrintUtils = {
     Deprecated.warning(msg, url);
 
     this.printWindow(windowID, browser);
+    return undefined;
   },
 
   /**
@@ -377,7 +378,7 @@ var PrintUtils = {
     if (aMessage.name == "Printing:Error") {
       this.displayPrintingError(aMessage.data.nsresult,
                                 aMessage.data.isPrinting);
-      return;
+      return undefined;
     }
 
     // If we got here, then the message we've received must involve
@@ -385,7 +386,7 @@ var PrintUtils = {
     if (!this._webProgressPP.value) {
       // We somehow didn't get a nsIWebProgressListener to be updated...
       // I guess there's nothing to do.
-      return;
+      return undefined;
     }
 
     let listener = this._webProgressPP.value;
@@ -420,6 +421,7 @@ var PrintUtils = {
         break;
       }
     }
+    return undefined;
   },
 
   setPrinterDefaultsForSelectedPrinter: function (aPSSVC, aPrintSettings)
@@ -427,7 +429,7 @@ var PrintUtils = {
     if (!aPrintSettings.printerName)
       aPrintSettings.printerName = aPSSVC.defaultPrinterName;
 
-    // First get any defaults from the printer 
+    // First get any defaults from the printer
     aPSSVC.initPrintSettingsFromPrinter(aPrintSettings.printerName, aPrintSettings);
     // now augment them with any values from last time
     aPSSVC.initPrintSettingsFromPrefs(aPrintSettings, true,  aPrintSettings.kInitSaveAll);

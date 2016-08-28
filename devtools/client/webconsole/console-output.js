@@ -1,4 +1,5 @@
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +8,15 @@
 
 const {Cc, Ci, Cu} = require("chrome");
 
-const { Services } = require("resource://gre/modules/Services.jsm");
+const Services = require("Services");
 
 loader.lazyImporter(this, "VariablesView", "resource://devtools/client/shared/widgets/VariablesView.jsm");
 loader.lazyImporter(this, "escapeHTML", "resource://devtools/client/shared/widgets/VariablesView.jsm");
-loader.lazyImporter(this, "gDevTools", "resource://devtools/client/framework/gDevTools.jsm");
 loader.lazyImporter(this, "Task", "resource://gre/modules/Task.jsm");
 loader.lazyImporter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
 
 loader.lazyRequireGetter(this, "promise");
+loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
 loader.lazyRequireGetter(this, "TableWidget", "devtools/client/shared/widgets/TableWidget", true);
 loader.lazyRequireGetter(this, "ObjectClient", "devtools/shared/client/main", true);
 
@@ -26,7 +27,8 @@ const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const STRINGS_URI = "chrome://devtools/locale/webconsole.properties";
 
 const WebConsoleUtils = require("devtools/shared/webconsole/utils").Utils;
-const l10n = new WebConsoleUtils.l10n(STRINGS_URI);
+const { getSourceNames } = require("devtools/client/shared/source-utils");
+const l10n = new WebConsoleUtils.L10n(STRINGS_URI);
 
 const MAX_STRING_GRIP_LENGTH = 36;
 const ELLIPSIS = Services.prefs.getComplexValue("intl.ellipsis", Ci.nsIPrefLocalizedString).data;
@@ -91,6 +93,7 @@ const CONSOLE_API_LEVELS_TO_SEVERITIES = {
   warn: "warning",
   info: "info",
   log: "log",
+  clear: "log",
   trace: "log",
   table: "log",
   debug: "log",
@@ -1088,7 +1091,7 @@ Messages.Extended = function(messagePieces, options = {})
   }
 
   this._repeatID.quoteStrings = this._quoteStrings;
-  this._repeatID.messagePieces = messagePieces + "";
+  this._repeatID.messagePieces = JSON.stringify(messagePieces);
   this._repeatID.actors = new Set(); // using a set to avoid duplicates
 };
 
@@ -1339,8 +1342,10 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
  *        The evaluation response packet received from the server.
  * @param string [errorMessage]
  *        Optional error message to display.
+ * @param string [errorDocLink]
+ * Optional error doc URL to link to.
  */
-Messages.JavaScriptEvalOutput = function(evalResponse, errorMessage)
+Messages.JavaScriptEvalOutput = function(evalResponse, errorMessage, errorDocLink)
 {
   let severity = "log", msg, quoteStrings = true;
 
@@ -1348,7 +1353,7 @@ Messages.JavaScriptEvalOutput = function(evalResponse, errorMessage)
   // be useful to extensions customizing the console output.
   this.response = evalResponse;
 
-  if (errorMessage) {
+  if (typeof(errorMessage) !== "undefined") {
     severity = "error";
     msg = errorMessage;
     quoteStrings = false;
@@ -1363,7 +1368,13 @@ Messages.JavaScriptEvalOutput = function(evalResponse, errorMessage)
     severity: severity,
     quoteStrings: quoteStrings,
   };
-  Messages.Extended.call(this, [msg], options);
+
+  let messages = [msg];
+  if (errorDocLink) {
+    messages.push(errorDocLink);
+  }
+
+  Messages.Extended.call(this, messages, options);
 };
 
 Messages.JavaScriptEvalOutput.prototype = Messages.Extended.prototype;
@@ -2777,7 +2788,7 @@ Widgets.ObjectRenderers.add({
 
   _onClick: function () {
     let location = this.objectActor.location;
-    if (location) {
+    if (location && IGNORED_SOURCE_URLS.indexOf(location.url) === -1) {
       this.output.openLocationInDebugger(location);
     }
     else {
@@ -2947,9 +2958,7 @@ Widgets.ObjectRenderers.add({
 
     if (!VariablesView.isFalsy({ value: url })) {
       this._text(" \u2192 ", container);
-      let shortUrl = WebConsoleUtils.abbreviateSourceURL(url, {
-        onlyCropQuery: !this.options.concise
-      });
+      let shortUrl = getSourceNames(url)[this.options.concise ? "short" : "long"];
       this._anchor(shortUrl, { href: url, appendTo: container });
     }
 
@@ -3667,8 +3676,7 @@ Widgets.Stacktrace.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
     }
 
     let location = this.output.owner.createLocationNode({url: frame.filename,
-                                                        line: frame.lineNumber},
-                                                        "jsdebugger");
+                                                        line: frame.lineNumber});
 
     // .devtools-monospace sets font-size to 80%, however .body already has
     // .devtools-monospace. If we keep it here, the location would be rendered

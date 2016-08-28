@@ -102,6 +102,7 @@ COMPUTED_STYLE_PROP(caption_side,                  CaptionSide)
 COMPUTED_STYLE_PROP(clear,                         Clear)
 COMPUTED_STYLE_PROP(clip,                          Clip)
 COMPUTED_STYLE_PROP(color,                         Color)
+COMPUTED_STYLE_PROP(color_adjust,                  ColorAdjust)
 COMPUTED_STYLE_PROP(contain,                       Contain)
 COMPUTED_STYLE_PROP(content,                       Content)
 COMPUTED_STYLE_PROP(counter_increment,             CounterIncrement)
@@ -297,6 +298,15 @@ COMPUTED_STYLE_PROP(user_select,                   UserSelect)
 COMPUTED_STYLE_PROP(_moz_window_dragging,          WindowDragging)
 COMPUTED_STYLE_PROP(_moz_window_shadow,            WindowShadow)
 
+/* ********************************** *\
+ * Implementations of -webkit- styles *
+\* ********************************** */
+
+COMPUTED_STYLE_PROP(_webkit_text_fill_color,       WebkitTextFillColor)
+//// COMPUTED_STYLE_PROP(webkit-text-stroke,       WebkitTextStroke)
+COMPUTED_STYLE_PROP(_webkit_text_stroke_color,     WebkitTextStrokeColor)
+COMPUTED_STYLE_PROP(_webkit_text_stroke_width,     WebkitTextStrokeWidth)
+
 /* ***************************** *\
  * Implementations of SVG styles *
 \* ***************************** */
@@ -318,6 +328,16 @@ COMPUTED_STYLE_PROP(marker_end,                    MarkerEnd)
 COMPUTED_STYLE_PROP(marker_mid,                    MarkerMid)
 COMPUTED_STYLE_PROP(marker_start,                  MarkerStart)
 COMPUTED_STYLE_PROP(mask,                          Mask)
+#ifdef MOZ_ENABLE_MASK_AS_SHORTHAND
+COMPUTED_STYLE_PROP(mask_clip,                     MaskClip)
+COMPUTED_STYLE_PROP(mask_composite,                MaskComposite)
+COMPUTED_STYLE_PROP(mask_image,                    MaskImage)
+COMPUTED_STYLE_PROP(mask_mode,                     MaskMode)
+COMPUTED_STYLE_PROP(mask_origin,                   MaskOrigin)
+COMPUTED_STYLE_PROP(mask_position,                 MaskPosition)
+COMPUTED_STYLE_PROP(mask_repeat,                   MaskRepeat)
+COMPUTED_STYLE_PROP(mask_size,                     MaskSize)
+#endif
 COMPUTED_STYLE_PROP(mask_type,                     MaskType)
 COMPUTED_STYLE_PROP(paint_order,                   PaintOrder)
 COMPUTED_STYLE_PROP(shape_rendering,               ShapeRendering)

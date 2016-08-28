@@ -192,6 +192,35 @@ Tokenizer::ReadWord(nsDependentCSubstring& aValue)
   return true;
 }
 
+bool
+Tokenizer::ReadUntil(Token const& aToken, nsACString& aResult, ClaimInclusion aInclude)
+{
+  nsDependentCSubstring substring;
+  bool rv = ReadUntil(aToken, substring, aInclude);
+  aResult.Assign(substring);
+  return rv;
+}
+
+bool
+Tokenizer::ReadUntil(Token const& aToken, nsDependentCSubstring& aResult, ClaimInclusion aInclude)
+{
+  Record();
+  nsACString::const_char_iterator rollback = mCursor;
+
+  bool found = false;
+  Token t;
+  while (Next(t)) {
+    if (aToken.Equals(t)) {
+      found = true;
+      break;
+    }
+  }
+
+  Claim(aResult, aInclude);
+  mRollback = rollback;
+  return found;
+}
+
 void
 Tokenizer::Rollback()
 {
@@ -260,12 +289,12 @@ Tokenizer::Parse(Token& aToken) const
     state = PARSE_WORD;
   } else if (IsNumber(*next)) {
     state = PARSE_INTEGER;
+  } else if (strchr(mWhitespaces, *next)) { // not UTF-8 friendly?
+    state = PARSE_WS;
   } else if (*next == '\r') {
     state = PARSE_CRLF;
   } else if (*next == '\n') {
     state = PARSE_LF;
-  } else if (strchr(mWhitespaces, *next)) { // not UTF-8 friendly?
-    state = PARSE_WS;
   } else {
     state = PARSE_CHAR;
   }

@@ -18,12 +18,17 @@ XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
                                    "@mozilla.org/browser/aboutnewtab-service;1",
                                    "nsIAboutNewTabService");
 
+XPCOMUtils.defineLazyModuleGetter(this, "Locale",
+                                  "resource://gre/modules/Locale.jsm");
+
 const DEFAULT_HREF = aboutNewTabService.generateRemoteURL();
 const DEFAULT_CHROME_URL = "chrome://browser/content/newtab/newTab.xhtml";
 const DOWNLOADS_URL = "chrome://browser/content/downloads/contentAreaDownloadsView.xul";
+const DEFAULT_VERSION = aboutNewTabService.remoteVersion;
 
 function cleanup() {
   Services.prefs.setBoolPref("browser.newtabpage.remote", false);
+  Services.prefs.setCharPref("browser.newtabpage.remote.version", DEFAULT_VERSION);
   aboutNewTabService.resetNewTabURL();
   NewTabPrefsProvider.prefs.uninit();
 }
@@ -105,13 +110,17 @@ add_task(function* test_updates() {
   Preferences.set("browser.newtabpage.remote", true);
   aboutNewTabService.resetNewTabURL(); // need to set manually because pref notifs are off
   let notificationPromise;
-  let expectedHref = "https://newtab.cdn.mozilla.net" +
+  let productionModeBaseUrl = "https://content.cdn.mozilla.net";
+  let testModeBaseUrl = "https://example.com";
+  let expectedPath = `/newtab` +
                      `/v${aboutNewTabService.remoteVersion}` +
                      `/${aboutNewTabService.remoteReleaseName}` +
                      "/en-GB" +
                      "/index.html";
+  let expectedHref = productionModeBaseUrl + expectedPath;
   Preferences.set("intl.locale.matchOS", true);
   Preferences.set("general.useragent.locale", "en-GB");
+  Preferences.set("browser.newtabpage.remote.mode", "production");
   NewTabPrefsProvider.prefs.init();
 
   // test update checks for prefs
@@ -123,7 +132,19 @@ add_task(function* test_updates() {
   notificationPromise = nextChangeNotificationPromise(
     DEFAULT_HREF, "Remote href changes back to default");
   Preferences.set("general.useragent.locale", "en-US");
+  yield notificationPromise;
 
+  // test update fires when mode is changed
+  expectedPath = expectedPath.replace("/en-GB/", "/en-US/");
+  notificationPromise = nextChangeNotificationPromise(
+    testModeBaseUrl + expectedPath, "Remote href changes back to origin of test mode");
+  Preferences.set("browser.newtabpage.remote.mode", "test");
+  yield notificationPromise;
+
+  // test invalid mode ends up pointing to production url
+  notificationPromise = nextChangeNotificationPromise(
+    DEFAULT_HREF, "Remote href changes back to production default");
+  Preferences.set("browser.newtabpage.remote.mode", "invalid");
   yield notificationPromise;
 
   // test update fires on override and reset
@@ -176,6 +197,32 @@ add_task(function* test_release_names() {
     Assert.equal("nightly", aboutNewTabService.releaseFromUpdateChannel(channel),
           "release == nightly when invalid");
   }
+});
+
+/**
+ * Verifies that remote version updates changes the remote newtab url
+ */
+add_task(function* test_version_update() {
+  NewTabPrefsProvider.prefs.init();
+
+  Services.prefs.setBoolPref("browser.newtabpage.remote", true);
+  Assert.ok(aboutNewTabService.remoteEnabled, "remote mode enabled");
+
+  let productionModeBaseUrl = "https://content.cdn.mozilla.net";
+  let version_incr = String(parseInt(DEFAULT_VERSION) + 1);
+  let expectedPath = `/newtab` +
+                     `/v${version_incr}` +
+                     `/${aboutNewTabService.remoteReleaseName}` +
+                     `/${Locale.getLocale()}` +
+                     `/index.html`;
+  let expectedHref = productionModeBaseUrl + expectedPath;
+
+  let notificationPromise;
+  notificationPromise = nextChangeNotificationPromise(expectedHref);
+  Preferences.set("browser.newtabpage.remote.version", version_incr);
+  yield notificationPromise;
+
+  cleanup();
 });
 
 function nextChangeNotificationPromise(aNewURL, testMessage) {

@@ -6,6 +6,14 @@
 "filename": "mozmake.exe"
 },
 {
+"version": "1.9.0-beta.1 (37a2869af 2016-04-12)",
+"size": 96983375,
+"digest": "180118e83948c24c3df2e78f02468d9011c8583c1df36d25481f74c302e9085f442133884adf431b8c05567ce1d5dfb05915cdc0bd6303d599452cad350c8de4",
+"algorithm": "sha512",
+"filename": "rustc.tar.bz2",
+"unpack": true
+},
+{
 "size": 167175,
 "digest": "0b71a936edf5bd70cf274aaa5d7abc8f77fe8e7b5593a208f805cc9436fac646b9c4f0b43c2b10de63ff3da671497d35536077ecbc72dba7f8159a38b580f831",
 "algorithm": "sha512",

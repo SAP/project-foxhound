@@ -1129,13 +1129,15 @@ nsDataObj :: GetFileContentsInternetShortcut ( FORMATETC& aFE, STGMEDIUM& aSTG )
   if ( NS_FAILED(ExtractShortcutURL(url)) )
     return E_OUTOFMEMORY;
 
-  // will need to change if we ever support iDNS
-  nsAutoCString asciiUrl;
-  LossyCopyUTF16toASCII(url, asciiUrl);
-
-  nsCOMPtr<nsIFile> icoFile;
   nsCOMPtr<nsIURI> aUri;
   NS_NewURI(getter_AddRefs(aUri), url);
+
+  nsresult rv;
+  nsAutoCString asciiUrl;
+  rv = aUri->GetAsciiSpec(asciiUrl);
+  if (NS_FAILED(rv)) {
+    return E_FAIL;
+  }
 
   const char *shortcutFormatStr;
   int totalLen;
@@ -1147,14 +1149,12 @@ nsDataObj :: GetFileContentsInternetShortcut ( FORMATETC& aFE, STGMEDIUM& aSTG )
     totalLen = formatLen + asciiUrl.Length();  // don't include null character
   } else {
     nsCOMPtr<nsIFile> icoFile;
-    nsCOMPtr<nsIURI> aUri;
-    NS_NewURI(getter_AddRefs(aUri), url);
 
     nsAutoString aUriHash;
 
     mozilla::widget::FaviconHelper::ObtainCachedIconFile(aUri, aUriHash, mIOThread, true);
 
-    nsresult rv = mozilla::widget::FaviconHelper::GetOutputIconPath(aUri, icoFile, true);
+    rv = mozilla::widget::FaviconHelper::GetOutputIconPath(aUri, icoFile, true);
     NS_ENSURE_SUCCESS(rv, E_FAIL);
     rv = icoFile->GetNativePath(path);
     NS_ENSURE_SUCCESS(rv, E_FAIL);
@@ -1328,7 +1328,7 @@ HRESULT nsDataObj::GetText(const nsACString & aDataFlavor, FORMATETC& aFE, STGME
       return S_OK;
     }
   }
-  else {
+  else if ( aFE.cfFormat != nsClipboard::CF_CUSTOMTYPES ) {
     // we assume that any data that isn't caught above is unicode. This may
     // be an erroneous assumption, but is true so far.
     allocLen += sizeof(char16_t);

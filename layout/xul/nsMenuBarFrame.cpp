@@ -164,11 +164,12 @@ nsMenuBarFrame::FindMenuWithShortcut(nsIDOMKeyEvent* aKeyEvent)
   uint32_t charCode;
   aKeyEvent->GetCharCode(&charCode);
 
-  nsAutoTArray<uint32_t, 10> accessKeys;
+  AutoTArray<uint32_t, 10> accessKeys;
   WidgetKeyboardEvent* nativeKeyEvent =
-    aKeyEvent->AsEvent()->GetInternalNSEvent()->AsKeyboardEvent();
-  if (nativeKeyEvent)
-    nsContentUtils::GetAccessKeyCandidates(nativeKeyEvent, accessKeys);
+    aKeyEvent->AsEvent()->WidgetEventPtr()->AsKeyboardEvent();
+  if (nativeKeyEvent) {
+    nativeKeyEvent->GetAccessKeyCandidates(accessKeys);
+  }
   if (accessKeys.IsEmpty() && charCode)
     accessKeys.AppendElement(charCode);
 
@@ -185,7 +186,7 @@ nsMenuBarFrame::FindMenuWithShortcut(nsIDOMKeyEvent* aKeyEvent)
   // Find a most preferred accesskey which should be returned.
   nsIFrame* foundMenu = nullptr;
   size_t foundIndex = accessKeys.NoIndex;
-  nsIFrame* currFrame = immediateParent->GetFirstPrincipalChild();
+  nsIFrame* currFrame = immediateParent->PrincipalChildList().FirstChild();
 
   while (currFrame) {
     nsIContent* current = currFrame->GetContent();

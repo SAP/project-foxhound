@@ -212,7 +212,7 @@ void
 HTMLObjectElement::HandleFocusBlurPlugin(Element* aElement,
                                          WidgetEvent* aEvent)
 {
-  if (!aEvent->mFlags.mIsTrusted) {
+  if (!aEvent->IsTrusted()) {
     return;
   }
   switch (aEvent->mMessage) {
@@ -483,7 +483,7 @@ HTMLObjectElement::GetContentDocument(nsIDOMDocument **aContentDocument)
   return NS_OK;
 }
 
-nsIDOMWindow*
+nsPIDOMWindowOuter*
 HTMLObjectElement::GetContentWindow()
 {
   nsIDocument* doc = GetContentDocument();

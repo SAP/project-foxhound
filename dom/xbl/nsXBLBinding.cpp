@@ -86,15 +86,19 @@ XBLEnumerate(JSContext *cx, JS::Handle<JSObject*> obj)
   return protoBinding->ResolveAllFields(cx, obj);
 }
 
+static const JSClassOps gPrototypeJSClassOps = {
+    nullptr, nullptr, nullptr, nullptr,
+    XBLEnumerate, nullptr,
+    nullptr, XBLFinalize,
+    nullptr, nullptr, nullptr, nullptr
+};
+
 static const JSClass gPrototypeJSClass = {
     "XBL prototype JSClass",
     JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS |
     // Our one reserved slot holds the relevant nsXBLPrototypeBinding
     JSCLASS_HAS_RESERVED_SLOTS(1),
-    nullptr, nullptr, nullptr, nullptr,
-    XBLEnumerate, nullptr,
-    nullptr, XBLFinalize,
-    nullptr, nullptr, nullptr, nullptr
+    &gPrototypeJSClassOps
 };
 
 // Implementation /////////////////////////////////////////////////////////////////
@@ -198,7 +202,7 @@ nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElem
   // aElement.
   // (2) The children's parent back pointer should not be to this synthetic root
   // but should instead point to the enclosing parent element.
-  nsIDocument* doc = aElement->GetCurrentDoc();
+  nsIDocument* doc = aElement->GetUncomposedDoc();
   bool allowScripts = AllowScripts();
 
   nsAutoScriptBlocker scriptBlocker;
@@ -872,7 +876,7 @@ GetOrCreateClassObjectMap(JSContext *cx, JS::Handle<JSObject*> scope, const char
   MOZ_ASSERT(scope == xpc::GetXBLScopeOrGlobal(cx, scope));
 
   // First, see if the map is already defined.
-  JS::Rooted<JSPropertyDescriptor> desc(cx);
+  JS::Rooted<JS::PropertyDescriptor> desc(cx);
   if (!JS_GetOwnPropertyDescriptor(cx, scope, mapName, &desc)) {
     return nullptr;
   }
@@ -1001,7 +1005,7 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
   // holder should be class objects. If we don't find the class object, we need
   // to create and define it.
   JS::Rooted<JSObject*> proto(cx);
-  JS::Rooted<JSPropertyDescriptor> desc(cx);
+  JS::Rooted<JS::PropertyDescriptor> desc(cx);
   if (!JS_GetOwnUCPropertyDescriptor(cx, holder, aClassName.get(), &desc)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -1083,7 +1087,7 @@ nsXBLBinding::ResolveAllFields(JSContext *cx, JS::Handle<JSObject*> obj) const
 
 bool
 nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
-                           JS::MutableHandle<JSPropertyDescriptor> aDesc)
+                           JS::MutableHandle<JS::PropertyDescriptor> aDesc)
 {
   // We should never enter this function with a pre-filled property descriptor.
   MOZ_ASSERT(!aDesc.object());
@@ -1138,7 +1142,7 @@ nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
 bool
 nsXBLBinding::LookupMemberInternal(JSContext* aCx, nsString& aName,
                                    JS::Handle<jsid> aNameAsId,
-                                   JS::MutableHandle<JSPropertyDescriptor> aDesc,
+                                   JS::MutableHandle<JS::PropertyDescriptor> aDesc,
                                    JS::Handle<JSObject*> aXBLScope)
 {
   // First, see if we have an implementation. If we don't, it means that this

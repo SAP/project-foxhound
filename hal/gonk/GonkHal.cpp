@@ -55,8 +55,10 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "nsAlgorithm.h"
 #include "nsPrintfCString.h"
 #include "nsIObserver.h"
@@ -720,7 +722,7 @@ bool sScreenEnabled = true;
 bool sCpuSleepAllowed = true;
 
 // Some CPU wake locks may be acquired internally in HAL. We use a counter to
-// keep track of these needs. Note we have to hold |sInternalLockCpuMonitor|
+// keep track of these needs. Note we have to hold |sInternalLockCpuMutex|
 // when reading or writing this variable to ensure thread-safe.
 int32_t sInternalLockCpuCount = 0;
 
@@ -818,7 +820,7 @@ SetScreenBrightness(double brightness)
   }
 }
 
-static Monitor* sInternalLockCpuMonitor = nullptr;
+static StaticMutex sInternalLockCpuMutex;
 
 static void
 UpdateCpuSleepState()
@@ -826,21 +828,21 @@ UpdateCpuSleepState()
   const char *wakeLockFilename = "/sys/power/wake_lock";
   const char *wakeUnlockFilename = "/sys/power/wake_unlock";
 
-  sInternalLockCpuMonitor->AssertCurrentThreadOwns();
+  sInternalLockCpuMutex.AssertCurrentThreadOwns();
   bool allowed = sCpuSleepAllowed && !sInternalLockCpuCount;
   WriteSysFile(allowed ? wakeUnlockFilename : wakeLockFilename, "gecko");
 }
 
 static void
 InternalLockCpu() {
-  MonitorAutoLock monitor(*sInternalLockCpuMonitor);
+  StaticMutexAutoLock lock(sInternalLockCpuMutex);
   ++sInternalLockCpuCount;
   UpdateCpuSleepState();
 }
 
 static void
 InternalUnlockCpu() {
-  MonitorAutoLock monitor(*sInternalLockCpuMonitor);
+  StaticMutexAutoLock lock(sInternalLockCpuMutex);
   --sInternalLockCpuCount;
   UpdateCpuSleepState();
 }
@@ -854,7 +856,7 @@ GetCpuSleepAllowed()
 void
 SetCpuSleepAllowed(bool aAllowed)
 {
-  MonitorAutoLock monitor(*sInternalLockCpuMonitor);
+  StaticMutexAutoLock lock(sInternalLockCpuMutex);
   sCpuSleepAllowed = aAllowed;
   UpdateCpuSleepState();
 }
@@ -1125,7 +1127,7 @@ EnableAlarm()
     return false;
   }
 
-  nsAutoPtr<AlarmData> alarmData(new AlarmData(alarmFd));
+  UniquePtr<AlarmData> alarmData = MakeUnique<AlarmData>(alarmFd);
 
   struct sigaction actions;
   memset(&actions, 0, sizeof(actions));
@@ -1141,14 +1143,10 @@ EnableAlarm()
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
-  // Initialize the monitor for internally locking CPU to ensure thread-safe
-  // before running the alarm-watcher thread.
-  sInternalLockCpuMonitor = new Monitor("sInternalLockCpuMonitor");
   int status = pthread_create(&sAlarmFireWatcherThread, &attr, WaitForAlarm,
                               alarmData.get());
   if (status) {
-    alarmData = nullptr;
-    delete sInternalLockCpuMonitor;
+    alarmData.reset();
     HAL_LOG("Failed to create alarm-watcher thread. Status: %d.", status);
     return false;
   }
@@ -1156,7 +1154,7 @@ EnableAlarm()
   pthread_attr_destroy(&attr);
 
   // The thread owns this now.  We only hold a pointer.
-  sAlarmData = alarmData.forget();
+  sAlarmData = alarmData.release();
   return true;
 }
 
@@ -1172,8 +1170,6 @@ DisableAlarm()
   // data pointed at by sAlarmData.
   DebugOnly<int> err = pthread_kill(sAlarmFireWatcherThread, SIGUSR1);
   MOZ_ASSERT(!err);
-
-  delete sInternalLockCpuMonitor;
 }
 
 bool
@@ -1247,7 +1243,7 @@ protected:
 
 private:
   double mLastLineChecked;
-  ScopedFreePtr<regex_t> mRegexes;
+  UniqueFreePtr<regex_t> mRegexes;
 };
 NS_IMPL_ISUPPORTS(OomVictimLogger, nsIObserver);
 
@@ -1281,9 +1277,13 @@ OomVictimLogger::Observe(
 
   // Compile our regex just in time
   if (!mRegexes) {
-    mRegexes = static_cast<regex_t*>(malloc(sizeof(regex_t) * regex_count));
+    UniqueFreePtr<regex_t> regexes(
+      static_cast<regex_t*>(malloc(sizeof(regex_t) * regex_count))
+    );
+    mRegexes.swap(regexes);
     for (size_t i = 0; i < regex_count; i++) {
-      int compilation_err = regcomp(&(mRegexes[i]), regexes_raw[i], REG_NOSUB);
+      int compilation_err =
+        regcomp(&(mRegexes.get()[i]), regexes_raw[i], REG_NOSUB);
       if (compilation_err) {
         OOM_LOG(ANDROID_LOG_ERROR, "Cannot compile regex \"%s\"\n", regexes_raw[i]);
         return NS_OK;
@@ -1297,22 +1297,22 @@ OomVictimLogger::Observe(
   // deprecated the old klog defs.
   // Our current bionic does not hit this
   // change yet so handle the future change.
-  // (ICS doesn't have KLOG_SIZE_BUFFER but 
+  // (ICS doesn't have KLOG_SIZE_BUFFER but
   // JB and onwards does.)
   #define KLOG_SIZE_BUFFER KLOG_WRITE
 #endif
   // Retreive kernel log
   int msg_buf_size = klogctl(KLOG_SIZE_BUFFER, NULL, 0);
-  ScopedFreePtr<char> msg_buf(static_cast<char *>(malloc(msg_buf_size + 1)));
-  int read_size = klogctl(KLOG_READ_ALL, msg_buf.rwget(), msg_buf_size);
+  UniqueFreePtr<char> msg_buf(static_cast<char *>(malloc(msg_buf_size + 1)));
+  int read_size = klogctl(KLOG_READ_ALL, msg_buf.get(), msg_buf_size);
 
   // Turn buffer into cstring
   read_size = read_size > msg_buf_size ? msg_buf_size : read_size;
-  msg_buf.rwget()[read_size] = '\0';
+  msg_buf.get()[read_size] = '\0';
 
   // Foreach line
   char* line_end;
-  char* line_begin = msg_buf.rwget();
+  char* line_begin = msg_buf.get();
   for (; (line_end = strchr(line_begin, '\n')); line_begin = line_end + 1) {
     // make line into cstring
     *line_end = '\0';
@@ -1345,7 +1345,7 @@ OomVictimLogger::Observe(
 
     // Log interesting lines
     for (size_t i = 0; i < regex_count; i++) {
-      int matching = !regexec(&(mRegexes[i]), line_begin, 0, NULL, 0);
+      int matching = !regexec(&(mRegexes.get()[i]), line_begin, 0, NULL, 0);
       if (matching) {
         // Log content of kernel message. We try to skip the ], but if for
         // some reason (most likely due to buffer overflow/wraparound), we
@@ -1463,7 +1463,7 @@ private:
     nsCString cgroupName = mGroup;
 
     /* If mGroup is empty, our cgroup.procs file is the root procs file,
-     * located at /sys/fs/cgroup/memory/cgroup.procs.  Otherwise our procs 
+     * located at /sys/fs/cgroup/memory/cgroup.procs.  Otherwise our procs
      * file is /sys/fs/cgroup/memory/NAME/cgroup.procs. */
 
     if (!mGroup.IsEmpty()) {

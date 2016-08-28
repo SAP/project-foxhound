@@ -19,10 +19,28 @@ XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "BookmarkHTMLUtils",
                                   "resource://gre/modules/BookmarkHTMLUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PromiseUtils",
+                                  "resource://gre/modules/PromiseUtils.jsm");
 
 var gMigrators = null;
 var gProfileStartup = null;
 var gMigrationBundle = null;
+
+XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
+  if (AppConstants.platform == "win") {
+    return [
+      "firefox", "edge", "ie", "chrome", "chromium", "safari", "360se",
+      "canary"
+    ];
+  }
+  if (AppConstants.platform == "macosx") {
+    return ["firefox", "safari", "chrome", "chromium", "canary"];
+  }
+  if (AppConstants.XP_UNIX) {
+    return ["firefox", "chrome", "chromium"];
+  }
+  return [];
+});
 
 function getMigrationBundle() {
   if (!gMigrationBundle) {
@@ -30,40 +48,6 @@ function getMigrationBundle() {
      "chrome://browser/locale/migration/migration.properties");
   }
   return gMigrationBundle;
-}
-
-/**
- * Figure out what is the default browser, and if there is a migrator
- * for it, return that migrator's internal name.
- * For the time being, the "internal name" of a migrator is its contract-id
- * trailer (e.g. ie for @mozilla.org/profile/migrator;1?app=browser&type=ie),
- * but it will soon be exposed properly.
- */
-function getMigratorKeyForDefaultBrowser() {
-  // Canary uses the same description as Chrome so we can't distinguish them.
-  const APP_DESC_TO_KEY = {
-    "Internet Explorer":                 "ie",
-    "Safari":                            "safari",
-    "Firefox":                           "firefox",
-    "Google Chrome":                     "chrome",  // Windows, Linux
-    "Chrome":                            "chrome",  // OS X
-    "Chromium":                          "chromium", // Windows, OS X
-    "Chromium Web Browser":              "chromium", // Linux
-    "360\u5b89\u5168\u6d4f\u89c8\u5668": "360se",
-  };
-
-  let browserDesc = "";
-  try {
-    let browserDesc =
-      Cc["@mozilla.org/uriloader/external-protocol-service;1"].
-      getService(Ci.nsIExternalProtocolService).
-      getApplicationDescription("http");
-    return APP_DESC_TO_KEY[browserDesc] || "";
-  }
-  catch(ex) {
-    Cu.reportError("Could not detect default browser: " + ex);
-  }
-  return "";
 }
 
 /**
@@ -211,16 +195,21 @@ this.MigratorPrototype = {
     if (aItems != Ci.nsIBrowserProfileMigrator.ALL)
       resources = resources.filter(r => aItems & r.type);
 
+    // Used to periodically give back control to the main-thread loop.
+    let unblockMainThread = function () {
+      return new Promise(resolve => {
+        Services.tm.mainThread.dispatch(resolve, Ci.nsIThread.DISPATCH_NORMAL);
+      });
+    };
+
     // Called either directly or through the bookmarks import callback.
-    function doMigrate() {
-      // TODO: use Map (for the items) and Set (for the resources)
-      // once they are iterable.
+    let doMigrate = Task.async(function*() {
       let resourcesGroupedByItems = new Map();
       resources.forEach(function(resource) {
-        if (resourcesGroupedByItems.has(resource.type))
-          resourcesGroupedByItems.get(resource.type).push(resource);
-        else
-          resourcesGroupedByItems.set(resource.type, [resource]);
+        if (!resourcesGroupedByItems.has(resource.type)) {
+          resourcesGroupedByItems.set(resource.type, new Set());
+        }
+        resourcesGroupedByItems.get(resource.type).add(resource)
       });
 
       if (resourcesGroupedByItems.size == 0)
@@ -232,44 +221,52 @@ this.MigratorPrototype = {
 
       notify("Migration:Started");
       for (let [key, value] of resourcesGroupedByItems) {
-      	// TODO: (bug 449811).
-      	let migrationType = key, itemResources = value;
+        // Workaround bug 449811.
+        let migrationType = key, itemResources = value;
 
         notify("Migration:ItemBeforeMigrate", migrationType);
 
         let itemSuccess = false;
         for (let res of itemResources) {
+          // Workaround bug 449811.
           let resource = res;
+          let completeDeferred = PromiseUtils.defer();
           let resourceDone = function(aSuccess) {
-            let resourceIndex = itemResources.indexOf(resource);
-            if (resourceIndex != -1) {
-              itemResources.splice(resourceIndex, 1);
-              itemSuccess |= aSuccess;
-              if (itemResources.length == 0) {
-                resourcesGroupedByItems.delete(migrationType);
-                notify(itemSuccess ?
-                       "Migration:ItemAfterMigrate" : "Migration:ItemError",
-                       migrationType);
-                if (resourcesGroupedByItems.size == 0)
-                  notify("Migration:Ended");
+            itemResources.delete(resource);
+            itemSuccess |= aSuccess;
+            if (itemResources.size == 0) {
+              notify(itemSuccess ?
+                     "Migration:ItemAfterMigrate" : "Migration:ItemError",
+                     migrationType);
+              resourcesGroupedByItems.delete(migrationType);
+              if (resourcesGroupedByItems.size == 0) {
+                notify("Migration:Ended");
               }
             }
+            completeDeferred.resolve();
           }
 
-          Services.tm.mainThread.dispatch(function() {
-            // If migrate throws, an error occurred, and the callback
-            // (itemMayBeDone) might haven't been called.
-            try {
-              resource.migrate(resourceDone);
-            }
-            catch(ex) {
-              Cu.reportError(ex);
-              resourceDone(false);
-            }
-          }, Ci.nsIThread.DISPATCH_NORMAL);
+          // If migrate throws, an error occurred, and the callback
+          // (itemMayBeDone) might haven't been called.
+          try {
+            resource.migrate(resourceDone);
+          }
+          catch(ex) {
+            Cu.reportError(ex);
+            resourceDone(false);
+          }
+
+          // Certain resources must be ran sequentially or they could fail,
+          // for example bookmarks and history (See bug 1272652).
+          if (migrationType == MigrationUtils.resourceTypes.BOOKMARKS ||
+              migrationType == MigrationUtils.resourceTypes.HISTORY) {
+            yield completeDeferred.promise;
+          }
+
+          yield unblockMainThread();
         }
       }
-    }
+    });
 
     if (MigrationUtils.isStartupMigration && !this.startupOnlyMigrator) {
       MigrationUtils.profileStartup.doStartup();
@@ -505,30 +502,38 @@ this.MigrationUtils = Object.freeze({
     } catch (ex) { Cu.reportError(ex); return null }
   },
 
-  // Iterates the available migrators, in the most suitable
-  // order for the running platform.
-  get migrators() {
-    let migratorKeysOrdered = [
-#ifdef XP_WIN
-      "firefox", "edge", "ie", "chrome", "chromium", "safari", "360se", "canary"
-#elifdef XP_MACOSX
-      "firefox", "safari", "chrome", "chromium", "canary"
-#elifdef XP_UNIX
-      "firefox", "chrome", "chromium"
-#endif
-    ];
+  /**
+   * Figure out what is the default browser, and if there is a migrator
+   * for it, return that migrator's internal name.
+   * For the time being, the "internal name" of a migrator is its contract-id
+   * trailer (e.g. ie for @mozilla.org/profile/migrator;1?app=browser&type=ie),
+   * but it will soon be exposed properly.
+   */
+  getMigratorKeyForDefaultBrowser() {
+    // Canary uses the same description as Chrome so we can't distinguish them.
+    const APP_DESC_TO_KEY = {
+      "Internet Explorer":                 "ie",
+      "Safari":                            "safari",
+      "Firefox":                           "firefox",
+      "Google Chrome":                     "chrome",  // Windows, Linux
+      "Chrome":                            "chrome",  // OS X
+      "Chromium":                          "chromium", // Windows, OS X
+      "Chromium Web Browser":              "chromium", // Linux
+      "360\u5b89\u5168\u6d4f\u89c8\u5668": "360se",
+    };
 
-    // If a supported default browser is found check it first
-    // so that the wizard defaults to import from that browser.
-    let defaultBrowserKey = getMigratorKeyForDefaultBrowser();
-    if (defaultBrowserKey)
-      migratorKeysOrdered.sort((a, b) => b == defaultBrowserKey ? 1 : 0);
-
-    for (let migratorKey of migratorKeysOrdered) {
-      let migrator = this.getMigrator(migratorKey);
-      if (migrator)
-        yield migrator;
+    let browserDesc = "";
+    try {
+      let browserDesc =
+        Cc["@mozilla.org/uriloader/external-protocol-service;1"].
+        getService(Ci.nsIExternalProtocolService).
+        getApplicationDescription("http");
+      return APP_DESC_TO_KEY[browserDesc] || "";
     }
+    catch(ex) {
+      Cu.reportError("Could not detect default browser: " + ex);
+    }
+    return "";
   },
 
   // Whether or not we're in the process of startup migration
@@ -569,8 +574,7 @@ this.MigrationUtils = Object.freeze({
   showMigrationWizard:
   function MU_showMigrationWizard(aOpener, aParams) {
     let features = "chrome,dialog,modal,centerscreen,titlebar,resizable=no";
-#ifdef XP_MACOSX
-    if (!this.isStartupMigration) {
+    if (AppConstants.platform == "macosx" && !this.isStartupMigration) {
       let win = Services.wm.getMostRecentWindow("Browser:MigrationWizard");
       if (win) {
         win.focus();
@@ -580,7 +584,6 @@ this.MigrationUtils = Object.freeze({
       // startup-migration.
       features = "centerscreen,chrome,resizable=no";
     }
-#endif
 
     // nsIWindowWatcher doesn't deal with raw arrays, so we convert the input
     let params;
@@ -670,7 +673,7 @@ this.MigrationUtils = Object.freeze({
       skipSourcePage = true;
     }
     else {
-      let defaultBrowserKey = getMigratorKeyForDefaultBrowser();
+      let defaultBrowserKey = this.getMigratorKeyForDefaultBrowser();
       if (defaultBrowserKey) {
         migrator = this.getMigrator(defaultBrowserKey);
         if (migrator)
@@ -681,13 +684,11 @@ this.MigrationUtils = Object.freeze({
     if (!migrator) {
       // If there's no migrator set so far, ensure that there is at least one
       // migrator available before opening the wizard.
-      try {
-        this.migrators.next();
-      }
-      catch(ex) {
+      // Note that we don't need to check the default browser first, because
+      // if that one existed we would have used it in the block above this one.
+      if (!gAvailableMigratorKeys.some(key => !!this.getMigrator(key))) {
+        // None of the keys produced a usable migrator, so finish up here:
         this.finishMigration();
-        if (!(ex instanceof StopIteration))
-          throw ex;
         return;
       }
     }

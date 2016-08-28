@@ -54,6 +54,7 @@ Windows/Mac use the term "Folder" instead of "Directory" -->
 <!ENTITY aboutSupport.appBasicsEnabledPlugins "Enabled Plugins">
 <!ENTITY aboutSupport.appBasicsBuildConfig "Build Configuration">
 <!ENTITY aboutSupport.appBasicsUserAgent "User Agent">
+<!ENTITY aboutSupport.appBasicsOS "OS">
 <!ENTITY aboutSupport.appBasicsMemoryUse "Memory Use">
 
 <!-- LOCALIZATION NOTE the term "Service Workers" should not be translated. -->
@@ -107,3 +108,9 @@ variant of aboutSupport.showDir.label. -->
 
 <!ENTITY aboutSupport.safeModeTitle "Try Safe Mode">
 <!ENTITY aboutSupport.restartInSafeMode.label "Restart with Add-ons Disabled…">
+
+<!ENTITY aboutSupport.graphicsFeaturesTitle "Features">
+<!ENTITY aboutSupport.graphicsDiagnosticsTitle "Diagnostics">
+<!ENTITY aboutSupport.graphicsFailureLogTitle "Failure Log">
+<!ENTITY aboutSupport.graphicsGPU1Title "GPU #1">
+<!ENTITY aboutSupport.graphicsGPU2Title "GPU #2">

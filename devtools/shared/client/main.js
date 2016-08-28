@@ -178,6 +178,8 @@ const UnsolicitedNotifications = {
   "appInstall": "appInstall",
   "appUninstall": "appUninstall",
   "evaluationResult": "evaluationResult",
+  "newSource": "newSource",
+  "updatedSource": "updatedSource",
 };
 
 /**
@@ -247,8 +249,8 @@ const DebuggerClient = exports.DebuggerClient = function (aTransport)
  *         The `Request` object that is a Promise object and resolves once
  *         we receive the response. (See request method for more details)
  */
-DebuggerClient.requester = function (aPacketSkeleton,
-                                     { telemetry, before, after }) {
+DebuggerClient.requester = function (aPacketSkeleton, config={}) {
+  let { telemetry, before, after } = config;
   return DevToolsUtils.makeInfallible(function (...args) {
     let histogram, startTime;
     if (telemetry) {
@@ -335,8 +337,15 @@ DebuggerClient.prototype = {
    * @param aOnConnected function
    *        If specified, will be called when the greeting packet is
    *        received from the debugging server.
+   *
+   * @return Promise
+   *         Resolves once connected with an array whose first element
+   *         is the application type, by default "browser", and the second
+   *         element is the traits object (help figure out the features
+   *         and behaviors of the server we connect to. See RootActor).
    */
   connect: function (aOnConnected) {
+    let deferred = promise.defer();
     this.emit("connect");
 
     // Also emit the event on the |DebuggerClient| object (not on the instance),
@@ -348,9 +357,11 @@ DebuggerClient.prototype = {
       if (aOnConnected) {
         aOnConnected(aApplicationType, aTraits);
       }
+      deferred.resolve([aApplicationType, aTraits]);
     });
 
     this._transport.ready();
+    return deferred.promise;
   },
 
   /**
@@ -440,7 +451,7 @@ DebuggerClient.prototype = {
         traits: cachedTab.traits,
       };
       DevToolsUtils.executeSoon(() => aOnResponse(cachedResponse, cachedTab));
-      return;
+      return promise.resolve([cachedResponse, cachedTab]);
     }
 
     let packet = {
@@ -461,12 +472,13 @@ DebuggerClient.prototype = {
   attachWorker: function DC_attachWorker(aWorkerActor, aOnResponse = noop) {
     let workerClient = this._clients.get(aWorkerActor);
     if (workerClient !== undefined) {
-      DevToolsUtils.executeSoon(() => aOnResponse({
+      let response = {
         from: workerClient.actor,
         type: "attached",
         url: workerClient.url
-      }, workerClient));
-      return;
+      };
+      DevToolsUtils.executeSoon(() => aOnResponse(response, workerClient));
+      return promise.resolve([response, workerClient]);
     }
 
     return this.request({ to: aWorkerActor, type: "attach" }).then(aResponse => {
@@ -556,8 +568,9 @@ DebuggerClient.prototype = {
    */
   attachThread: function (aThreadActor, aOnResponse = noop, aOptions={}) {
     if (this._clients.has(aThreadActor)) {
-      DevToolsUtils.executeSoon(() => aOnResponse({}, this._clients.get(aThreadActor)));
-      return;
+      let client = this._clients.get(aThreadActor);
+      DevToolsUtils.executeSoon(() => aOnResponse({}, client));
+      return promise.resolve([{}, client]);
     }
 
     let packet = {
@@ -586,8 +599,9 @@ DebuggerClient.prototype = {
    */
   attachTracer: function (aTraceActor, aOnResponse = noop) {
     if (this._clients.has(aTraceActor)) {
-      DevToolsUtils.executeSoon(() => aOnResponse({}, this._clients.get(aTraceActor)));
-      return;
+      let client = this._clients.get(aTraceActor);
+      DevToolsUtils.executeSoon(() => aOnResponse({}, client));
+      return promise.resolve([{}, client]);
     }
 
     let packet = {
@@ -1097,12 +1111,14 @@ DebuggerClient.prototype = {
       request.emit("json-reply", packet);
     };
 
-    this._pendingRequests.forEach((list, actor) => {
+    let pendingRequests = new Map(this._pendingRequests);
+    this._pendingRequests.clear();
+    pendingRequests.forEach((list, actor) => {
       list.forEach(request => reject("pending", request, actor));
     });
-    this._pendingRequests.clear();
-    this._activeRequests.forEach(reject.bind(null, "active"));
+    let activeRequests = new Map(this._activeRequests);
     this._activeRequests.clear();
+    activeRequests.forEach(reject.bind(null, "active"));
 
     // The |_pools| array on the client-side currently is used only by
     // protocol.js to store active fronts, mirroring the actor pools found in
@@ -1261,7 +1277,7 @@ TabClient.prototype = {
   attachThread: function(aOptions={}, aOnResponse = noop) {
     if (this.thread) {
       DevToolsUtils.executeSoon(() => aOnResponse({}, this.thread));
-      return;
+      return promise.resolve([{}, this.thread]);
     }
 
     let packet = {
@@ -1300,6 +1316,13 @@ TabClient.prototype = {
     },
     telemetry: "TABDETACH"
   }),
+
+  /**
+   * Bring the window to the front.
+   */
+  focus: DebuggerClient.requester({
+    type: "focus"
+  }, {}),
 
   /**
    * Reload the page in this tab.
@@ -1354,7 +1377,20 @@ TabClient.prototype = {
 
   attachWorker: function (aWorkerActor, aOnResponse) {
     this.client.attachWorker(aWorkerActor, aOnResponse);
-  }
+  },
+
+  /**
+   * Resolve a location ({ url, line, column }) to its current
+   * source mapping location.
+   *
+   * @param {String} arg[0].url
+   * @param {Number} arg[0].line
+   * @param {Number?} arg[0].column
+   */
+  resolveLocation: DebuggerClient.requester({
+    type: "resolveLocation",
+    location: args(0)
+  }),
 };
 
 eventSource(TabClient.prototype);
@@ -1395,6 +1431,9 @@ WorkerClient.prototype = {
 
   detach: DebuggerClient.requester({ type: "detach" }, {
     after: function (aResponse) {
+      if (this.thread) {
+        this.client.unregisterClient(this.thread);
+      }
       this.client.unregisterClient(this);
       return aResponse;
     },
@@ -1426,7 +1465,8 @@ WorkerClient.prototype = {
 
       return this.request({
         to: connectReponse.threadActor,
-        type: "attach"
+        type: "attach",
+        options: aOptions
       }).then(attachResponse => {
         if (attachResponse.error) {
           aOnResponse(attachResponse, null);
@@ -2445,6 +2485,31 @@ ObjectClient.prototype = {
       return aResponse;
     },
     telemetry: "ENUMPROPERTIES"
+  }),
+
+  /**
+   * Request a PropertyIteratorClient instance to enumerate entries in a
+   * Map/Set-like object.
+   *
+   * @param aOnResponse function Called with the request's response.
+   */
+  enumEntries: DebuggerClient.requester({
+    type: "enumEntries"
+  }, {
+    before: function(packet) {
+      if (!["Map", "WeakMap", "Set", "WeakSet"].includes(this._grip.class)) {
+        throw new Error("enumEntries is only valid for Map/Set-like grips.");
+      }
+      return packet;
+    },
+    after: function(response) {
+      if (response.iterator) {
+        return {
+          iterator: new PropertyIteratorClient(this._client, response.iterator)
+        };
+      }
+      return response;
+    }
   }),
 
   /**

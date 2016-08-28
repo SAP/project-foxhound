@@ -119,7 +119,7 @@ nsScriptElement::MaybeProcessScript()
                "You forgot to add self as observer");
 
   if (mAlreadyStarted || !mDoneAddingChildren ||
-      !cont->GetCrossShadowCurrentDoc() || mMalformed || !HasScriptContent()) {
+      !cont->GetComposedDoc() || mMalformed || !HasScriptContent()) {
     return false;
   }
 

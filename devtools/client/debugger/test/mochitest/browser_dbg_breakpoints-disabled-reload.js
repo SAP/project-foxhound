@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Test that disabled breakpoints survive target navigation.
@@ -77,7 +79,7 @@ function test() {
         yield verifyView({ disabled: false });
 
         executeSoon(() => gDebugger.gThreadClient.resume());
-        yield waitForSourceAndCaretAndScopes(gPanel, "-02.js", 1);
+        yield waitForSourceAndCaretAndScopes(gPanel, "-02.js", 6);
         yield verifyView({ disabled: false });
       });
     }
@@ -92,7 +94,7 @@ function test() {
         yield verifyView({ disabled: false });
 
         executeSoon(() => gDebugger.gThreadClient.resume());
-        yield waitForSourceAndCaretAndScopes(gPanel, "-02.js", 1);
+        yield waitForSourceAndCaretAndScopes(gPanel, "-02.js", 6);
         yield verifyView({ disabled: false });
       });
     }

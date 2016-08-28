@@ -5,6 +5,7 @@
 "use strict";
 
 Cu.import("resource://gre/modules/Promise.jsm");
+Cu.import("resource://gre/modules/AppConstants.jsm");
 var {AddonTestUtils} = Cu.import("resource://testing-common/AddonManagerTesting.jsm", {});
 var GMPScope = Cu.import("resource://gre/modules/addons/GMPProvider.jsm");
 
@@ -21,7 +22,8 @@ for (let plugin of GMPScope.GMP_PLUGINS) {
       id: plugin.id,
       isValid: true,
       isInstalled: false,
-      isEME: plugin.id.indexOf("gmp-eme-") == 0 ? true : false,
+      isEME: (plugin.id == "gmp-widevinecdm" ||
+              plugin.id.indexOf("gmp-eme-") == 0) ? true : false,
   });
   gMockAddons.push(mockAddon);
 }
@@ -69,7 +71,7 @@ function getInstallItem() {
 }
 
 function openDetailsView(aId) {
-  let view = gManagerWindow.document.getElementById("view-port").selectedPanel
+  let view = get_current_view(gManagerWindow);
   Assert.equal(view.id, "list-view", "Should be in the list view to use this function");
 
   let item = get_addon_element(gManagerWindow, aId);
@@ -378,12 +380,19 @@ add_task(function* testEmeSupport() {
     let doc = gManagerWindow.document;
     let item = get_addon_element(gManagerWindow, addon.id);
     if (addon.id == GMPScope.EME_ADOBE_ID) {
-      if (Services.appinfo.OS == "WINNT" &&
-          Services.sysinfo.getPropertyAsInt32("version") >= 6) {
+      if (Services.appinfo.OS == "WINNT") {
         Assert.ok(item, "Adobe EME supported, found add-on element.");
       } else {
         Assert.ok(!item,
                   "Adobe EME not supported, couldn't find add-on element.");
+      }
+    } else if (addon.id == GMPScope.WIDEVINE_ID) {
+      if (AppConstants.isPlatformAndVersionAtLeast("win", "6") ||
+          AppConstants.isPlatformAndVersionAtLeast("macosx", "10.7")) {
+        Assert.ok(item, "Widevine supported, found add-on element.");
+      } else {
+        Assert.ok(!item,
+                  "Widevine not supported, couldn't find add-on element.");
       }
     } else {
       Assert.ok(item, "Found add-on element.");

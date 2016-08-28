@@ -31,6 +31,7 @@ class Test(object):
     desktop = True
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     lower_is_better = True
+    alert_threshold = 2.0
 
     @classmethod
     def name(cls):
@@ -235,7 +236,31 @@ class PageloaderTest(Test):
             'timeout', 'shutdown', 'responsiveness', 'profile_path',
             'xperf_providers', 'xperf_user_providers', 'xperf_stackwalk',
             'filters', 'preferences', 'extensions', 'setup', 'cleanup',
-            'test_name_extension', 'lower_is_better', 'unit']
+            'test_name_extension', 'lower_is_better', 'alert_threshold',
+            'unit']
+
+
+@register_test()
+class tabpaint(PageloaderTest):
+    """
+    Tests the amount of time it takes to open new tabs, triggered from
+    both the parent process and the content process.
+    """
+    extensions = '${talos}/tests/tabpaint/tabpaint-signed.xpi'
+    tpmanifest = '${talos}/tests/tabpaint/tabpaint.manifest'
+    tppagecycles = 20
+    sps_profile_entries = 1000000
+    tploadnocache = True
+    unit = 'ms'
+    preferences = {
+        # By default, Talos is configured to open links from
+        # content in new windows. We're overriding them so that
+        # they open in new tabs instead.
+        # See http://kb.mozillazine.org/Browser.link.open_newwindow
+        # and http://kb.mozillazine.org/Browser.link.open_newwindow.restriction
+        'browser.link.open_newwindow': 3,
+        'browser.link.open_newwindow.restriction': 2,
+    }
 
 
 @register_test()
@@ -541,6 +566,7 @@ class dromaeo(PageloaderTest):
     """abstract base class for dramaeo tests"""
     filters = filter.dromaeo.prepare()
     lower_is_better = False
+    alert_threshold = 5.0
 
 
 @register_test()
@@ -620,6 +646,7 @@ class tsvgr_opacity(PageloaderTest):
     tpmanifest = '${talos}/tests/svg_opacity/svg_opacity.manifest'
     tpcycles = 1
     tppagecycles = 25
+    tpmozafterpaint = True
     sps_profile_interval = 1
     sps_profile_entries = 10000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
@@ -657,3 +684,4 @@ class a11yr(PageloaderTest):
     tpmozafterpaint = True
     preferences = {'dom.send_after_paint_to_content': False}
     unit = 'ms'
+    alert_threshold = 5.0

@@ -1377,18 +1377,31 @@ private:
   MBSPatchHeader header;
   unsigned char *buf;
   NS_tchar spath[MAXPATHLEN];
+  AutoFile mPatchStream;
 };
 
 int PatchFile::sPatchIndex = 0;
 
 PatchFile::~PatchFile()
 {
-  // delete the temporary patch file
-  if (spath[0])
-    NS_tremove(spath);
+  // Make sure mPatchStream gets unlocked on Windows; the system will do that,
+  // but not until some indeterminate future time, and we want determinism.
+  // Normally this happens at the end of Execute, when we close the stream;
+  // this call is here in case Execute errors out.
+#ifdef XP_WIN
+  if (mPatchStream) {
+    UnlockFile((HANDLE)_get_osfhandle(fileno(mPatchStream)), 0, 0, -1, -1);
+  }
+#endif
 
-  if (buf)
+  // delete the temporary patch file
+  if (spath[0]) {
+    NS_tremove(spath);
+  }
+
+  if (buf) {
     free(buf);
+  }
 }
 
 int
@@ -1409,8 +1422,9 @@ PatchFile::LoadSourceFile(FILE* ofile)
   }
 
   buf = (unsigned char *) malloc(header.slen);
-  if (!buf)
+  if (!buf) {
     return UPDATER_MEM_ERROR;
+  }
 
   size_t r = header.slen;
   unsigned char *rb = buf;
@@ -1447,17 +1461,20 @@ PatchFile::Parse(NS_tchar *line)
 
   // Get the path to the patch file inside of the mar
   mPatchFile = mstrtok(kQuote, &line);
-  if (!mPatchFile)
+  if (!mPatchFile) {
     return PARSE_ERROR;
+  }
 
   // consume whitespace between args
   NS_tchar *q = mstrtok(kQuote, &line);
-  if (!q)
+  if (!q) {
     return PARSE_ERROR;
+  }
 
   mFile = get_valid_path(&line);
-  if (!mFile)
+  if (!mFile) {
     return PARSE_ERROR;
+  }
 
   return OK;
 }
@@ -1475,11 +1492,19 @@ PatchFile::Prepare()
 
   NS_tremove(spath);
 
-  FILE *fp = NS_tfopen(spath, NS_T("wb"));
-  if (!fp)
+  mPatchStream = NS_tfopen(spath, NS_T("wb+"));
+  if (!mPatchStream) {
     return WRITE_ERROR;
+  }
 
 #ifdef XP_WIN
+  // Lock the patch file, so it can't be messed with between
+  // when we're done creating it and when we go to apply it.
+  if (!LockFile((HANDLE)_get_osfhandle(fileno(mPatchStream)), 0, 0, -1, -1)) {
+    LOG(("Couldn't lock patch file: %d", GetLastError()));
+    return LOCK_ERROR_PATCH_FILE;
+  }
+
   char sourcefile[MAXPATHLEN];
   if (!WideCharToMultiByte(CP_UTF8, 0, mPatchFile, -1, sourcefile, MAXPATHLEN,
                            nullptr, nullptr)) {
@@ -1487,11 +1512,11 @@ PatchFile::Prepare()
     return STRING_CONVERSION_ERROR;
   }
 
-  int rv = gArchiveReader.ExtractFileToStream(sourcefile, fp);
+  int rv = gArchiveReader.ExtractFileToStream(sourcefile, mPatchStream);
 #else
-  int rv = gArchiveReader.ExtractFileToStream(mPatchFile, fp);
+  int rv = gArchiveReader.ExtractFileToStream(mPatchFile, mPatchStream);
 #endif
-  fclose(fp);
+
   return rv;
 }
 
@@ -1500,13 +1525,12 @@ PatchFile::Execute()
 {
   LOG(("EXECUTE PATCH " LOG_S, mFile));
 
-  AutoFile pfile(NS_tfopen(spath, NS_T("rb")));
-  if (pfile == nullptr)
-    return READ_ERROR;
+  fseek(mPatchStream, 0, SEEK_SET);
 
-  int rv = MBS_ReadHeader(pfile, &header);
-  if (rv)
+  int rv = MBS_ReadHeader(mPatchStream, &header);
+  if (rv) {
     return rv;
+  }
 
   FILE *origfile = nullptr;
 #ifdef XP_WIN
@@ -1545,8 +1569,9 @@ PatchFile::Execute()
   }
 
   rv = backup_create(mFile);
-  if (rv)
+  if (rv) {
     return rv;
+  }
 
 #if defined(HAVE_POSIX_FALLOCATE)
   AutoFile ofile(ensure_open(mFile, NS_T("wb+"), ss.st_mode));
@@ -1609,12 +1634,17 @@ PatchFile::Execute()
   }
 #endif
 
-  rv = MBS_ApplyPatch(&header, pfile, buf, ofile);
+  rv = MBS_ApplyPatch(&header, mPatchStream, buf, ofile);
 
   // Go ahead and do a bit of cleanup now to minimize runtime overhead.
-  // Set pfile to nullptr to make AutoFile close the file so it can be deleted
-  // on Windows.
-  pfile = nullptr;
+  // Make sure mPatchStream gets unlocked on Windows; the system will do that,
+  // but not until some indeterminate future time, and we want determinism.
+#ifdef XP_WIN
+  UnlockFile((HANDLE)_get_osfhandle(fileno(mPatchStream)), 0, 0, -1, -1);
+#endif
+  // Set mPatchStream to nullptr to make AutoFile close the file,
+  // so it can be deleted on Windows.
+  mPatchStream = nullptr;
   NS_tremove(spath);
   spath[0] = NS_T('\0');
   free(buf);
@@ -3219,7 +3249,24 @@ int NS_main(int argc, NS_tchar **argv)
                    sizeof(gCallbackBackupPath)/sizeof(gCallbackBackupPath[0]),
                    NS_T("%s" CALLBACK_BACKUP_EXT), argv[callbackIndex]);
       NS_tremove(gCallbackBackupPath);
-      CopyFileW(argv[callbackIndex], gCallbackBackupPath, false);
+      if(!CopyFileW(argv[callbackIndex], gCallbackBackupPath, true)) {
+        DWORD copyFileError = GetLastError();
+        LOG(("NS_main: failed to copy callback file " LOG_S
+             " into place at " LOG_S, argv[callbackIndex], gCallbackBackupPath));
+        LogFinish();
+        if (copyFileError == ERROR_ACCESS_DENIED) {
+          WriteStatusFile(WRITE_ERROR_ACCESS_DENIED);
+        } else {
+          WriteStatusFile(WRITE_ERROR_CALLBACK_APP);
+        }
+
+        EXIT_WHEN_ELEVATED(elevatedLockFilePath, updateLockFileHandle, 1);
+        LaunchCallbackApp(argv[callbackIndex],
+                          argc - callbackIndex,
+                          argv + callbackIndex,
+                          sUsingService);
+        return 1;
+      }
 
       // Since the process may be signaled as exited by WaitForSingleObject before
       // the release of the executable image try to lock the main executable file
@@ -3825,6 +3872,7 @@ GetManifestContents(const NS_tchar *manifest)
     size_t c = fread(rb, 1, count, mfile);
     if (c != count) {
       LOG(("GetManifestContents: error reading manifest file: " LOG_S, manifest));
+      free(mbuf);
       return nullptr;
     }
 
@@ -3838,8 +3886,10 @@ GetManifestContents(const NS_tchar *manifest)
   return rb;
 #else
   NS_tchar *wrb = (NS_tchar *) malloc((ms.st_size + 1) * sizeof(NS_tchar));
-  if (!wrb)
+  if (!wrb) {
+    free(mbuf);
     return nullptr;
+  }
 
   if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, rb, -1, wrb,
                            ms.st_size + 1)) {

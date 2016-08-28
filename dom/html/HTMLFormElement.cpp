@@ -151,7 +151,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(HTMLFormElement,
                                                nsGenericHTMLElement)
   if (tmp->PreservingWrapper()) {
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mExpandoAndGeneration.expando);
+    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mExpandoAndGeneration.expando)
   }
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
@@ -491,7 +491,7 @@ nsresult
 HTMLFormElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
 {
   aVisitor.mWantsWillHandleEvent = true;
-  if (aVisitor.mEvent->originalTarget == static_cast<nsIContent*>(this)) {
+  if (aVisitor.mEvent->mOriginalTarget == static_cast<nsIContent*>(this)) {
     uint32_t msg = aVisitor.mEvent->mMessage;
     if (msg == eFormSubmit) {
       if (mGeneratingSubmit) {
@@ -524,8 +524,8 @@ HTMLFormElement::WillHandleEvent(EventChainPostVisitor& aVisitor)
   if ((aVisitor.mEvent->mMessage == eFormSubmit ||
        aVisitor.mEvent->mMessage == eFormReset) &&
       aVisitor.mEvent->mFlags.mInBubblingPhase &&
-      aVisitor.mEvent->originalTarget != static_cast<nsIContent*>(this)) {
-    aVisitor.mEvent->mFlags.mPropagationStopped = true;
+      aVisitor.mEvent->mOriginalTarget != static_cast<nsIContent*>(this)) {
+    aVisitor.mEvent->StopPropagation();
   }
   return NS_OK;
 }
@@ -533,7 +533,7 @@ HTMLFormElement::WillHandleEvent(EventChainPostVisitor& aVisitor)
 nsresult
 HTMLFormElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
 {
-  if (aVisitor.mEvent->originalTarget == static_cast<nsIContent*>(this)) {
+  if (aVisitor.mEvent->mOriginalTarget == static_cast<nsIContent*>(this)) {
     EventMessage msg = aVisitor.mEvent->mMessage;
     if (msg == eFormSubmit) {
       // let the form know not to defer subsequent submissions
@@ -657,7 +657,7 @@ HTMLFormElement::DoSubmit(WidgetEvent* aEvent)
 
   // XXXbz if the script global is that for an sXBL/XBL2 doc, it won't
   // be a window...
-  nsPIDOMWindow *window = OwnerDoc()->GetWindow();
+  nsPIDOMWindowOuter *window = OwnerDoc()->GetWindow();
 
   if (window) {
     mSubmitPopupState = window->GetPopupControlState();
@@ -903,7 +903,7 @@ HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
     return NS_OK;
   }
 
-  nsCOMPtr<nsPIDOMWindow> window = OwnerDoc()->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> window = OwnerDoc()->GetWindow();
   if (!window) {
     return NS_ERROR_FAILURE;
   }
@@ -1007,7 +1007,7 @@ HTMLFormElement::NotifySubmitObservers(nsIURI* aActionURL,
     // XXXbz what do the submit observers actually want?  The window
     // of the document this is shown in?  Or something else?
     // sXBL/XBL2 issue
-    nsCOMPtr<nsPIDOMWindow> window = OwnerDoc()->GetWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> window = OwnerDoc()->GetWindow();
 
     bool loop = true;
     while (NS_SUCCEEDED(theEnum->HasMoreElements(&loop)) && loop) {
@@ -1017,7 +1017,7 @@ HTMLFormElement::NotifySubmitObservers(nsIURI* aActionURL,
                       do_QueryInterface(inst));
       if (formSubmitObserver) {
         rv = formSubmitObserver->Notify(this,
-                                        window,
+                                        window ? window->GetCurrentInnerWindow() : nullptr,
                                         aActionURL,
                                         aCancelSubmit);
         NS_ENSURE_SUCCESS(rv, rv);
@@ -1490,14 +1490,6 @@ HTMLFormElement::RemoveElementFromTableInternal(
   return NS_OK;
 }
 
-static PLDHashOperator
-RemovePastNames(const nsAString& aName,
-                nsCOMPtr<nsISupports>& aData,
-                void* aClosure)
-{
-  return aClosure == aData ? PL_DHASH_REMOVE : PL_DHASH_NEXT;
-}
-
 nsresult
 HTMLFormElement::RemoveElementFromTable(nsGenericHTMLFormElement* aElement,
                                         const nsAString& aName,
@@ -1507,7 +1499,11 @@ HTMLFormElement::RemoveElementFromTable(nsGenericHTMLFormElement* aElement,
   // the past names map.
   if (aRemoveReason == ElementRemoved) {
     uint32_t oldCount = mPastNameLookupTable.Count();
-    mPastNameLookupTable.Enumerate(RemovePastNames, aElement);
+    for (auto iter = mPastNameLookupTable.Iter(); !iter.Done(); iter.Next()) {
+      if (static_cast<void*>(aElement) == iter.Data()) {
+        iter.Remove();
+      }
+    }
     if (oldCount != mPastNameLookupTable.Count()) {
       ++mExpandoAndGeneration.generation;
     }
@@ -1673,7 +1669,7 @@ HTMLFormElement::GetActionURL(nsIURI** aActionURL,
   // Get the document to form the URL.
   // We'll also need it later to get the DOM window when notifying form submit
   // observers (bug 33203)
-  if (!IsInDoc()) {
+  if (!IsInUncomposedDoc()) {
     return NS_OK; // No doc means don't submit, see Bug 28988
   }
 
@@ -1736,7 +1732,7 @@ HTMLFormElement::GetActionURL(nsIURI** aActionURL,
                       true, &permitsFormAction);
     NS_ENSURE_SUCCESS(rv, rv);
     if (!permitsFormAction) {
-      rv = NS_ERROR_CSP_FORM_ACTION_VIOLATION;
+      return NS_ERROR_CSP_FORM_ACTION_VIOLATION;
     }
   }
 
@@ -1754,8 +1750,10 @@ HTMLFormElement::GetActionURL(nsIURI** aActionURL,
     NS_ConvertUTF8toUTF16 reportSpec(spec);
 
     // upgrade the actionURL from http:// to use https://
-    rv = actionURL->SetScheme(NS_LITERAL_CSTRING("https"));
+    nsCOMPtr<nsIURI> upgradedActionURL;
+    rv = NS_GetSecureUpgradedURI(actionURL, getter_AddRefs(upgradedActionURL));
     NS_ENSURE_SUCCESS(rv, rv);
+    actionURL = upgradedActionURL.forget();
 
     // let's log a message to the console that we are upgrading a request
     nsAutoCString scheme;
@@ -2529,7 +2527,11 @@ HTMLFormElement::RemoveImageElementFromTable(HTMLImageElement* aElement,
   // If the element is being removed from the form, we have to remove it from
   // the past names map.
   if (aRemoveReason == ElementRemoved) {
-    mPastNameLookupTable.Enumerate(RemovePastNames, aElement);
+    for (auto iter = mPastNameLookupTable.Iter(); !iter.Done(); iter.Next()) {
+      if (static_cast<void*>(aElement) == iter.Data()) {
+        iter.Remove();
+      }
+    }
   }
 
   return RemoveElementFromTableInternal(mImageNameLookupTable, aElement, aName);

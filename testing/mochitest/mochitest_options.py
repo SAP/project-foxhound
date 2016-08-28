@@ -10,7 +10,7 @@ import json
 import os
 import tempfile
 
-from droid import DroidADB, DroidSUT
+from mozdevice import DroidADB, DroidSUT
 from mozprofile import DEFAULT_PORTS
 import mozinfo
 import mozlog
@@ -33,6 +33,19 @@ except ImportError:
 def get_default_valgrind_suppression_files():
     # We are trying to locate files in the source tree.  So if we
     # don't know where the source tree is, we must give up.
+    #
+    # When this is being run by |mach mochitest --valgrind ...|, it is
+    # expected that |build_obj| is not None, and so the logic below will
+    # select the correct suppression files.
+    #
+    # When this is run from mozharness, |build_obj| is None, and we expect
+    # that testing/mozharness/configs/unittests/linux_unittests.py will
+    # select the correct suppression files (and paths to them) and
+    # will specify them using the --valgrind-supp-files= flag.  Hence this
+    # function will not get called when running from mozharness.
+    #
+    # Note: keep these Valgrind .sup file names consistent with those
+    # in testing/mozharness/configs/unittests/linux_unittest.py.
     if build_obj is None or build_obj.topsrcdir is None:
         return []
 
@@ -220,20 +233,6 @@ class MochitestArguments(ArgumentContainer):
           "default": False,
           "suppress": True,
           }],
-        [["--webapprt-content"],
-         {"action": "store_true",
-          "dest": "webapprtContent",
-          "help": "Run WebappRT content tests.",
-          "default": False,
-          "suppress": True,
-          }],
-        [["--webapprt-chrome"],
-         {"action": "store_true",
-          "dest": "webapprtChrome",
-          "help": "Run WebappRT chrome tests.",
-          "default": False,
-          "suppress": True,
-          }],
         [["--a11y"],
          {"action": "store_true",
           "help": "Run accessibility Mochitests.",
@@ -389,10 +388,11 @@ class MochitestArguments(ArgumentContainer):
           "help": "Breaks execution and enters the JS debugger on a test failure. Should "
                   "be used together with --jsdebugger."
           }],
-        [["--e10s"],
-         {"action": "store_true",
-          "default": False,
-          "help": "Run tests with electrolysis preferences and test filtering enabled.",
+        [["--disable-e10s"],
+         {"action": "store_false",
+          "default": True,
+          "dest": "e10s",
+          "help": "Run tests with electrolysis preferences and test filtering disabled.",
           }],
         [["--store-chrome-manifest"],
          {"action": "store",
@@ -517,7 +517,7 @@ class MochitestArguments(ArgumentContainer):
         [["--valgrind-args"],
          {"dest": "valgrindArgs",
           "default": None,
-          "help": "Extra arguments to pass to Valgrind.",
+          "help": "Comma-separated list of extra arguments to pass to Valgrind.",
           }],
         [["--valgrind-supp-files"],
          {"dest": "valgrindSuppFiles",
@@ -678,10 +678,6 @@ class MochitestArguments(ArgumentContainer):
         elif not options.symbolsPath and build_obj:
             options.symbolsPath = os.path.join(build_obj.distdir, 'crashreporter-symbols')
 
-        if options.webapprtContent and options.webapprtChrome:
-            parser.error(
-                "Only one of --webapprt-content and --webapprt-chrome may be given.")
-
         if options.jsdebugger:
             options.extraPrefs += [
                 "devtools.debugger.remote-enabled=true",
@@ -791,8 +787,12 @@ class MochitestArguments(ArgumentContainer):
                         '--use-test-media-devices' % f)
 
         if options.nested_oop:
-            if not options.e10s:
-                options.e10s = True
+            options.e10s = True
+
+        # a11y and chrome tests don't run with e10s enabled in CI
+        if options.a11y or options.chrome:
+            options.e10s = False
+
         mozinfo.update({"e10s": options.e10s})  # for test manifest parsing.
 
         options.leakThresholds = {
@@ -801,11 +801,6 @@ class MochitestArguments(ArgumentContainer):
             # GMP rarely gets a log, but when it does, it leaks a little.
             "geckomediaplugin": 20000,
         }
-
-        # Bug 1091917 - We exit early in tab processes on Windows, so we don't
-        # get leak logs yet.
-        if mozinfo.isWin:
-            options.ignoreMissingLeaks.append("tab")
 
         # XXX We can't normalize test_paths in the non build_obj case here,
         # because testRoot depends on the flavor, which is determined by the
@@ -1177,6 +1172,11 @@ class AndroidArguments(ArgumentContainer):
                     "Unable to find robocop APK '%s'" %
                     options.robocopApk)
             options.robocopApk = os.path.abspath(options.robocopApk)
+
+        # Disable e10s by default on Android because we don't run Android
+        # e10s jobs anywhere yet.
+        options.e10s = False
+        mozinfo.update({'e10s': options.e10s})
 
         # allow us to keep original application around for cleanup while
         # running robocop via 'am'

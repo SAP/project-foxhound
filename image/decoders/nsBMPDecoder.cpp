@@ -177,6 +177,7 @@ nsBMPDecoder::nsBMPDecoder(RasterImage* aImage, State aState, size_t aLength)
   , mColors(nullptr)
   , mBytesPerColor(0)
   , mPreGapLength(0)
+  , mPixelRowSize(0)
   , mCurrentRow(0)
   , mCurrentPos(0)
   , mAbsoluteModeNumPixels(0)
@@ -262,7 +263,7 @@ nsBMPDecoder::FinishInternal()
       MOZ_ASSERT(mMayHaveTransparency);
       PostFrameStop(Opacity::SOME_TRANSPARENCY);
     } else {
-      PostFrameStop(Opacity::OPAQUE);
+      PostFrameStop(Opacity::FULLY_OPAQUE);
     }
     PostDecodeDone();
   }
@@ -450,6 +451,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, uint32_t aCount)
         case State::BITFIELDS:        return ReadBitfields(aData, aLength);
         case State::COLOR_TABLE:      return ReadColorTable(aData, aLength);
         case State::GAP:              return SkipGap();
+        case State::AFTER_GAP:        return AfterGap();
         case State::PIXEL_ROW:        return ReadPixelRow(aData);
         case State::RLE_SEGMENT:      return ReadRLESegment(aData);
         case State::RLE_DELTA:        return ReadRLEDelta(aData);
@@ -720,12 +722,19 @@ nsBMPDecoder::ReadColorTable(const char* aData, size_t aLength)
     PostDataError();
     return Transition::TerminateFailure();
   }
+
   uint32_t gapLength = mH.mDataOffset - mPreGapLength;
-  return Transition::To(State::GAP, gapLength);
+  return Transition::ToUnbuffered(State::AFTER_GAP, State::GAP, gapLength);
 }
 
 LexerTransition<nsBMPDecoder::State>
 nsBMPDecoder::SkipGap()
+{
+  return Transition::ContinueUnbuffered(State::GAP);
+}
+
+LexerTransition<nsBMPDecoder::State>
+nsBMPDecoder::AfterGap()
 {
   // If there are no pixels we can stop.
   //
@@ -987,7 +996,7 @@ nsBMPDecoder::ReadRLEDelta(const char* aData)
   if (mDownscaler) {
     // Clear the skipped pixels. (This clears to the end of the row,
     // which is perfect if there's a Y delta and harmless if not).
-    mDownscaler->ClearRow(/* aStartingAtCol = */ mCurrentPos);
+    mDownscaler->ClearRestOfRow(/* aStartingAtCol = */ mCurrentPos);
   }
 
   // Handle the XDelta.

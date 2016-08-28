@@ -298,8 +298,8 @@ public:
   */
   bool HasNonIntegerTranslation() const {
     return HasNonTranslation() ||
-      !FuzzyEqual(_31, floor(_31 + 0.5)) ||
-      !FuzzyEqual(_32, floor(_32 + 0.5));
+      !FuzzyEqual(_31, floor(_31 + Float(0.5))) ||
+      !FuzzyEqual(_32, floor(_32 + Float(0.5)));
   }
 
   /**
@@ -548,6 +548,24 @@ public:
     _33 = 1.0f;
     _43 = 0.0f;
     _34 = 0.0f;
+    // Some matrices, such as those derived from perspective transforms,
+    // can modify _44 from 1, while leaving the rest of the fourth column
+    // (_14, _24) at 0. In this case, after resetting the third row and
+    // third column above, the value of _44 functions only to scale the
+    // coordinate transform divide by W. The matrix can be converted to
+    // a true 2D matrix by normalizing out the scaling effect of _44 on
+    // the remaining components ahead of time.
+    if (_14 == 0.0f && _24 == 0.0f &&
+        _44 != 1.0f && _44 != 0.0f) {
+      Float scale = 1.0f / _44;
+      _11 *= scale;
+      _12 *= scale;
+      _21 *= scale;
+      _22 *= scale;
+      _41 *= scale;
+      _42 *= scale;
+      _44 = 1.0f;
+    }
     return *this;
   }
 
@@ -693,6 +711,7 @@ public:
     // the input rectangle, aRect.
     Point4DTyped<UnknownUnits, F> points[2][kTransformAndClipRectMaxVerts];
     Point4DTyped<UnknownUnits, F>* dstPoint = points[0];
+
     *dstPoint++ = *this * Point4DTyped<UnknownUnits, F>(aRect.x, aRect.y, 0, 1);
     *dstPoint++ = *this * Point4DTyped<UnknownUnits, F>(aRect.XMost(), aRect.y, 0, 1);
     *dstPoint++ = *this * Point4DTyped<UnknownUnits, F>(aRect.XMost(), aRect.YMost(), 0, 1);
@@ -711,14 +730,15 @@ public:
     // points[1].
     for (int plane=0; plane < 4; plane++) {
       planeNormals[plane].Normalize();
-
       Point4DTyped<UnknownUnits, F>* srcPoint = points[plane & 1];
       Point4DTyped<UnknownUnits, F>* srcPointEnd = dstPoint;
+
       dstPoint = points[~plane & 1];
+      Point4DTyped<UnknownUnits, F>* dstPointStart = dstPoint;
 
       Point4DTyped<UnknownUnits, F>* prevPoint = srcPointEnd - 1;
       F prevDot = planeNormals[plane].DotProduct(*prevPoint);
-      while (srcPoint < srcPointEnd) {
+      while (srcPoint < srcPointEnd && ((dstPoint - dstPointStart) < kTransformAndClipRectMaxVerts)) {
         F nextDot = planeNormals[plane].DotProduct(*srcPoint);
 
         if ((nextDot >= 0.0) != (prevDot >= 0.0)) {
@@ -736,6 +756,10 @@ public:
 
         prevPoint = srcPoint++;
         prevDot = nextDot;
+      }
+
+      if (dstPoint == dstPointStart) {
+        break;
       }
     }
 
@@ -760,7 +784,7 @@ public:
     return dstPointCount;
   }
 
-  static const size_t kTransformAndClipRectMaxVerts = 32;
+  static const int kTransformAndClipRectMaxVerts = 32;
 
   static Matrix4x4Typed From2D(const Matrix &aMatrix) {
     Matrix4x4Typed matrix;
@@ -1413,6 +1437,48 @@ public:
     temp = _14;
     _14 = cosTheta * _14 + sinTheta * _24;
     _24 = -sinTheta * temp + cosTheta * _24;
+  }
+
+  // Sets this matrix to a rotation matrix about a
+  // vector [x,y,z] by angle theta. The vector is normalized
+  // to a unit vector.
+  // https://www.w3.org/TR/css3-3d-transforms/#Rotate3dDefined
+  void SetRotateAxisAngle(double aX, double aY, double aZ, double aTheta)
+  {
+    Point3D vector(aX, aY, aZ);
+    if (!vector.Length()) {
+      return;
+    }
+    vector.Normalize();
+
+    double x = vector.x;
+    double y = vector.y;
+    double z = vector.z;
+
+    double cosTheta = FlushToZero(cos(aTheta));
+    double sinTheta = FlushToZero(sin(aTheta));
+
+    // sin(aTheta / 2) * cos(aTheta / 2)
+    double sc = sinTheta / 2;
+    // pow(sin(aTheta / 2), 2)
+    double sq = (1 - cosTheta) / 2;
+
+    _11 = 1 - 2 * (y * y + z * z) * sq;
+    _12 = 2 * (x * y * sq + z * sc);
+    _13 = 2 * (x * z * sq - y * sc);
+    _14 = 0.0f;
+    _21 = 2 * (x * y * sq - z * sc);
+    _22 = 1 - 2 * (x * x + z * z) * sq;
+    _23 = 2 * (y * z * sq + x * sc);
+    _24 = 0.0f;
+    _31 = 2 * (x * z * sq + y * sc);
+    _32 = 2 * (y * z * sq - x * sc);
+    _33 = 1 - 2 * (x * x + y * y) * sq;
+    _34 = 0.0f;
+    _41 = 0.0f;
+    _42 = 0.0f;
+    _43 = 0.0f;
+    _44 = 1.0f;
   }
 
   void Perspective(float aDepth)

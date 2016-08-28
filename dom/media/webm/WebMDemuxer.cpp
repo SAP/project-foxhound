@@ -11,6 +11,7 @@
 #include "WebMDemuxer.h"
 #include "WebMBufferedParser.h"
 #include "gfx2DGlue.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Endian.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SharedThreadPool.h"
@@ -18,7 +19,8 @@
 #include "nsAutoRef.h"
 #include "NesteggPacketHolder.h"
 #include "XiphExtradata.h"
-#include "prprf.h"
+#include "prprf.h"           // leaving it for PR_vsnprintf()
+#include "mozilla/Snprintf.h"
 
 #include <algorithm>
 #include <stdint.h>
@@ -40,6 +42,8 @@ LazyLogModule gNesteggLog("Nestegg");
 // This value is based on what appears to be a reasonable value as most webm
 // files encountered appear to have keyframes located < 4s.
 #define MAX_LOOK_AHEAD 10000000
+
+static Atomic<uint32_t> sStreamSourceID(0u);
 
 // Functions for reading and seeking using WebMDemuxer required for
 // nestegg_io. The 'user data' passed to these functions is the
@@ -117,7 +121,7 @@ static void webmdemux_log(nestegg* aContext,
 
   va_start(args, aFormat);
 
-  PR_snprintf(msg, sizeof(msg), "%p [Nestegg-%s] ", aContext, sevStr);
+  snprintf_literal(msg, "%p [Nestegg-%s] ", aContext, sevStr);
   PR_vsnprintf(msg+strlen(msg), sizeof(msg)-strlen(msg), aFormat, args);
   MOZ_LOG(gNesteggLog, LogLevel::Debug, (msg));
 
@@ -336,7 +340,8 @@ WebMDemuxer::ReadMetadata()
       mHasVideo = true;
 
       mInfo.mVideo.mDisplay = displaySize;
-      mInfo.mVideo.mImage = pictureRect;
+      mInfo.mVideo.mImage = frameSize;
+      mInfo.mVideo.SetImageRect(pictureRect);
 
       switch (params.stereo_mode) {
         case NESTEGG_VIDEO_MONO:
@@ -389,8 +394,8 @@ WebMDemuxer::ReadMetadata()
         return NS_ERROR_FAILURE;
       }
 
-      nsAutoTArray<const unsigned char*,4> headers;
-      nsAutoTArray<size_t,4> headerLens;
+      AutoTArray<const unsigned char*,4> headers;
+      AutoTArray<size_t,4> headerLens;
       for (uint32_t header = 0; header < nheaders; ++header) {
         unsigned char* data = 0;
         size_t length = 0;
@@ -431,6 +436,12 @@ bool
 WebMDemuxer::IsSeekable() const
 {
   return mContext && nestegg_has_cues(mContext);
+}
+
+bool
+WebMDemuxer::IsSeekableOnlyInBufferedRanges() const
+{
+  return mContext && !nestegg_has_cues(mContext);
 }
 
 void
@@ -565,6 +576,18 @@ WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType, MediaRawDataQueue *aSampl
           break;
       }
       isKeyframe = si.is_kf;
+      if (isKeyframe) {
+        // We only look for resolution changes on keyframes for both VP8 and
+        // VP9. Other resolution changes are invalid.
+        if (mLastSeenFrameWidth.isSome() && mLastSeenFrameHeight.isSome() &&
+            (si.w != mLastSeenFrameWidth.value() ||
+             si.h != mLastSeenFrameHeight.value())) {
+          mInfo.mVideo.mDisplay = nsIntSize(si.w, si.h);
+          mSharedVideoTrackInfo = new SharedTrackInfo(mInfo.mVideo, ++sStreamSourceID);
+        }
+        mLastSeenFrameWidth = Some(si.w);
+        mLastSeenFrameHeight = Some(si.h);
+      }
     }
 
     WEBM_DEBUG("push sample tstamp: %ld next_tstamp: %ld length: %ld kf: %d",
@@ -575,11 +598,14 @@ WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType, MediaRawDataQueue *aSampl
     sample->mDuration = next_tstamp - tstamp;
     sample->mOffset = holder->Offset();
     sample->mKeyframe = isKeyframe;
-    if (discardPadding) {
+    if (discardPadding && i == count - 1) {
       uint8_t c[8];
       BigEndian::writeInt64(&c[0], discardPadding);
       sample->mExtraData = new MediaByteBuffer;
       sample->mExtraData->AppendElements(&c[0], 8);
+    }
+    if (aType == TrackInfo::kVideoTrack) {
+      sample->mTrackInfo = mSharedVideoTrackInfo;
     }
     aSamples->Push(sample);
   }

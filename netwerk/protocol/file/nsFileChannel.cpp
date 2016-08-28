@@ -129,9 +129,7 @@ nsFileCopyEvent::DoCopy()
 
     // Release the callback on the target thread to avoid destroying stuff on
     // the wrong thread.
-    nsIRunnable *doomed = nullptr;
-    mCallback.swap(doomed);
-    NS_ProxyRelease(mCallbackTarget, doomed);
+    NS_ProxyRelease(mCallbackTarget, mCallback.forget());
   }
 }
 
@@ -358,7 +356,7 @@ nsFileChannel::OpenContentStream(bool async, nsIInputStream **result,
     rv = NS_NewChannel(getter_AddRefs(newChannel),
                        newURI,
                        nsContentUtils::GetSystemPrincipal(),
-                       nsILoadInfo::SEC_NORMAL,
+                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                        nsIContentPolicy::TYPE_OTHER);
 
     if (NS_FAILED(rv))

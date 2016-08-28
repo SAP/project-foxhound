@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * When the split console is focused and the debugger is open,
@@ -8,6 +10,11 @@
 const TAB_URL = EXAMPLE_URL + "doc_step-many-statements.html";
 
 function test() {
+  // This does the same assertions over a series of sub-tests, and it
+  // can timeout in linux e10s.  No sense in breaking it up into multiple
+  // tests, so request extra time.
+  requestLongerTimeout(2);
+
   let gDebugger, gToolbox, gThreadClient, gTab, gPanel;
   initDebugger(TAB_URL).then(([aTab,debuggeeWin,aPanel]) => {
     gPanel = aPanel;
@@ -36,13 +43,13 @@ function test() {
     let stepTests = [
       {key: 'VK_F11', keyRepeat: 1, caretLine: 16},
       {key: 'VK_F11', keyRepeat: 2, caretLine: 18},
-      {key: 'VK_F11', keyRepeat: 2, caretLine: 26},
-      {key: 'VK_F10', keyRepeat: 1, caretLine: 18},
-      {key: 'VK_F11', keyRepeat: 1, caretLine: 19},
-      {key: 'VK_F11', keyRepeat: 5, caretLine: 29},
-      {key: 'VK_F11', modifier:'Shift', keyRepeat: 1, caretLine: 32},
-      {key: 'VK_F11', modifier:'Shift', keyRepeat: 2, caretLine: 32},
-      {key: 'VK_F11', modifier:'Shift', keyRepeat: 2, caretLine: 20}
+      {key: 'VK_F11', keyRepeat: 2, caretLine: 27},
+      {key: 'VK_F10', keyRepeat: 1, caretLine: 27},
+      {key: 'VK_F11', keyRepeat: 1, caretLine: 18},
+      {key: 'VK_F11', keyRepeat: 5, caretLine: 32},
+      {key: 'VK_F11', modifier:'Shift', keyRepeat: 1, caretLine: 29},
+      {key: 'VK_F11', modifier:'Shift', keyRepeat: 2, caretLine: 34},
+      {key: 'VK_F11', modifier:'Shift', keyRepeat: 2, caretLine: 34}
     ];
     // Trigger script that stops at debugger statement
     executeSoon(() => generateMouseClickInTab(gTab,
@@ -52,7 +59,7 @@ function test() {
     // Focus the console and add event listener to track whether it loses focus
     // (Must happen after generateMouseClickInTab() call)
     let consoleLostFocus = false;
-    jsterm.inputNode.focus();
+    jsterm.focus();
     jsterm.inputNode.addEventListener('blur', () => {consoleLostFocus = true;});
 
     is(gThreadClient.paused, true,

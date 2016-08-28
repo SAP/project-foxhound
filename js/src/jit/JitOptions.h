@@ -66,12 +66,14 @@ struct DefaultJitOptions
     bool forceInlineCaches;
     bool limitScriptSize;
     bool osr;
+    bool wasmTestMode;
     uint32_t baselineWarmUpThreshold;
     uint32_t exceptionBailoutThreshold;
     uint32_t frequentBailoutThreshold;
     uint32_t maxStackArgs;
     uint32_t osrPcMismatchesBeforeRecompile;
     uint32_t smallFunctionMaxBytecodeLength_;
+    uint32_t jumpThreshold;
     mozilla::Maybe<uint32_t> forcedDefaultIonWarmUpThreshold;
     mozilla::Maybe<IonRegisterAllocator> forcedRegisterAllocator;
 

@@ -13,6 +13,8 @@
 #define nsRefreshDriver_h_
 
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Vector.h"
+
 #include "mozFlushType.h"
 #include "nsTObserverArray.h"
 #include "nsTArray.h"
@@ -236,6 +238,12 @@ public:
   void CancelPendingEvents(nsIDocument* aDocument);
 
   /**
+   * Schedule a frame visibility update "soon", subject to the heuristics and
+   * throttling we apply to visibility updates.
+   */
+  void ScheduleFrameVisibilityUpdate() { mNeedToRecomputeVisibility = true; }
+
+  /**
    * Tell the refresh driver that it is done driving refreshes and
    * should stop its timer and forget about its pres context.  This may
    * be called from within a refresh.
@@ -296,8 +304,23 @@ public:
 
   bool IsInRefresh() { return mInRefresh; }
 
+  /**
+   * The latest value of process-wide jank levels.
+   *
+   * For each i, sJankLevels[i] counts the number of times delivery of
+   * vsync to the main thread has been delayed by at least 2^i
+   * ms. This data structure has been designed to make it easy to
+   * determine how much jank has taken place between two instants in
+   * time.
+   *
+   * Return `false` if `aJank` needs to be grown to accomodate the
+   * data but we didn't have enough memory.
+   */
+  static bool GetJankLevels(mozilla::Vector<uint64_t>& aJank);
+
   // mozilla::layers::TransactionIdAllocator
-  virtual uint64_t GetTransactionId() override;
+  uint64_t GetTransactionId() override;
+  uint64_t LastTransactionId() const override;
   void NotifyTransactionCompleted(uint64_t aTransactionId) override;
   void RevokeTransactionId(uint64_t aTransactionId) override;
   mozilla::TimeStamp GetTransactionStart() override;
@@ -329,8 +352,9 @@ private:
 
   enum EnsureTimerStartedFlags {
     eNone = 0,
-    eAdjustingTimer = 1 << 0,
-    eAllowTimeToGoBackwards = 1 << 1
+    eForceAdjustTimer = 1 << 0,
+    eAllowTimeToGoBackwards = 1 << 1,
+    eNeverAdjustTimer = 1 << 2,
   };
   void EnsureTimerStarted(EnsureTimerStartedFlags aFlags = eNone);
   void StopTimer();
@@ -375,10 +399,10 @@ private:
   // non-visible) documents registered with a non-throttled refresh driver.
   const mozilla::TimeDuration mThrottledFrameRequestInterval;
 
-  // How long we wait, at a minimum, before recomputing image visibility
-  // information. This is a minimum because, regardless of this interval, we
-  // only recompute visibility when we've seen a layout or style flush since the
-  // last time we did it.
+  // How long we wait, at a minimum, before recomputing approximate frame
+  // visibility information. This is a minimum because, regardless of this
+  // interval, we only recompute visibility when we've seen a layout or style
+  // flush since the last time we did it.
   const mozilla::TimeDuration mMinRecomputeVisibilityInterval;
 
   bool mThrottled;
@@ -413,9 +437,9 @@ private:
     nsCOMPtr<nsIDOMEvent> mEvent;
   };
 
-  nsAutoTArray<nsIPresShell*, 16> mStyleFlushObservers;
-  nsAutoTArray<nsIPresShell*, 16> mLayoutFlushObservers;
-  nsAutoTArray<nsIPresShell*, 16> mPresShellsToInvalidateIfHidden;
+  AutoTArray<nsIPresShell*, 16> mStyleFlushObservers;
+  AutoTArray<nsIPresShell*, 16> mLayoutFlushObservers;
+  AutoTArray<nsIPresShell*, 16> mPresShellsToInvalidateIfHidden;
   // nsTArray on purpose, because we want to be able to swap.
   nsTArray<nsIDocument*> mFrameRequestCallbackDocs;
   nsTArray<nsIDocument*> mThrottledFrameRequestCallbackDocs;

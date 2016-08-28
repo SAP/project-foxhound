@@ -19,6 +19,8 @@
 #ifndef wasm_module_h
 #define wasm_module_h
 
+#include "mozilla/LinkedList.h"
+
 #include "asmjs/WasmTypes.h"
 #include "gc/Barrier.h"
 #include "vm/MallocProvider.h"
@@ -66,21 +68,20 @@ struct StaticLinkData
     };
     typedef Vector<InternalLink, 0, SystemAllocPolicy> InternalLinkVector;
 
-    typedef Vector<uint32_t, 0, SystemAllocPolicy> OffsetVector;
-    struct SymbolicLinkArray : mozilla::EnumeratedArray<SymbolicAddress,
-                                                        SymbolicAddress::Limit,
-                                                        OffsetVector> {
+    struct SymbolicLinkArray : EnumeratedArray<SymbolicAddress, SymbolicAddress::Limit, Uint32Vector> {
         WASM_DECLARE_SERIALIZABLE(SymbolicLinkArray)
     };
 
     struct FuncPtrTable {
         uint32_t globalDataOffset;
-        OffsetVector elemOffsets;
-        explicit FuncPtrTable(uint32_t globalDataOffset) : globalDataOffset(globalDataOffset) {}
-        FuncPtrTable() = default;
+        Uint32Vector elemOffsets;
+        FuncPtrTable(uint32_t globalDataOffset, Uint32Vector&& elemOffsets)
+          : globalDataOffset(globalDataOffset), elemOffsets(Move(elemOffsets))
+        {}
         FuncPtrTable(FuncPtrTable&& rhs)
           : globalDataOffset(rhs.globalDataOffset), elemOffsets(Move(rhs.elemOffsets))
         {}
+        FuncPtrTable() = default;
         WASM_DECLARE_SERIALIZABLE(FuncPtrTable)
     };
     typedef Vector<FuncPtrTable, 0, SystemAllocPolicy> FuncPtrTableVector;
@@ -177,11 +178,9 @@ class Import
         return pod.exitGlobalDataOffset_;
     }
     uint32_t interpExitCodeOffset() const {
-        MOZ_ASSERT(pod.interpExitCodeOffset_);
         return pod.interpExitCodeOffset_;
     }
     uint32_t jitExitCodeOffset() const {
-        MOZ_ASSERT(pod.jitExitCodeOffset_);
         return pod.jitExitCodeOffset_;
     }
 
@@ -215,7 +214,7 @@ class CodeRange
     void assertValid();
 
   public:
-    enum Kind { Function, Entry, ImportJitExit, ImportInterpExit, Interrupt, Inline };
+    enum Kind { Function, Entry, ImportJitExit, ImportInterpExit, ErrorExit, Inline, CallThunk };
 
     CodeRange() = default;
     CodeRange(Kind kind, Offsets offsets);
@@ -239,7 +238,7 @@ class CodeRange
     // which is used for asynchronous profiling to determine the frame pointer.
 
     uint32_t profilingReturn() const {
-        MOZ_ASSERT(kind() != Entry && kind() != Inline);
+        MOZ_ASSERT(isFunction() || isImportExit());
         return profilingReturn_;
     }
 
@@ -248,6 +247,12 @@ class CodeRange
 
     bool isFunction() const {
         return kind() == Function;
+    }
+    bool isImportExit() const {
+        return kind() == ImportJitExit || kind() == ImportInterpExit;
+    }
+    bool isErrorExit() const {
+        return kind() == ErrorExit;
     }
     uint32_t funcProfilingEntry() const {
         MOZ_ASSERT(isFunction());
@@ -290,6 +295,25 @@ class CodeRange
 
 typedef Vector<CodeRange, 0, SystemAllocPolicy> CodeRangeVector;
 
+// A CallThunk describes the offset and target of thunks so that they may be
+// patched at runtime when profiling is toggled. Thunks are emitted to connect
+// callsites that are too far away from callees to fit in a single call
+// instruction's relative offset.
+
+struct CallThunk
+{
+    uint32_t offset;
+    union {
+        uint32_t funcIndex;
+        uint32_t codeRangeIndex;
+    } u;
+
+    CallThunk(uint32_t offset, uint32_t funcIndex) : offset(offset) { u.funcIndex = funcIndex; }
+    CallThunk() = default;
+};
+
+typedef Vector<CallThunk, 0, SystemAllocPolicy> CallThunkVector;
+
 // CacheableChars is used to cacheably store UniqueChars.
 
 struct CacheableChars : UniqueChars
@@ -306,17 +330,26 @@ typedef Vector<CacheableChars, 0, SystemAllocPolicy> CacheableCharsVector;
 
 // The ExportMap describes how Exports are mapped to the fields of the export
 // object. This allows a single Export to be used in multiple fields.
+// The 'fieldNames' vector provides the list of names of the module's exports.
+// For each field in fieldNames, 'fieldsToExports' provides either:
+//  - the sentinel value MemoryExport indicating an export of linear memory; or
+//  - the index of an export (both into the module's ExportVector and the
+//    ExportMap's exportFuncIndices vector).
+// Lastly, the 'exportFuncIndices' vector provides, for each exported function,
+// the internal index of the function.
+
+static const uint32_t MemoryExport = UINT32_MAX;
 
 struct ExportMap
 {
-    typedef Vector<uint32_t, 0, SystemAllocPolicy> FieldToExportVector;
-
-    CacheableCharsVector exportNames;
     CacheableCharsVector fieldNames;
-    FieldToExportVector fieldsToExports;
+    Uint32Vector fieldsToExports;
+    Uint32Vector exportFuncIndices;
 
     WASM_DECLARE_SERIALIZABLE(ExportMap)
 };
+
+typedef UniquePtr<ExportMap> UniqueExportMap;
 
 // A UniqueCodePtr owns allocated executable code. Code passed to the Module
 // constructor must be allocated via AllocateCode.
@@ -350,14 +383,6 @@ UsesHeap(HeapUsage heapUsage)
     return bool(heapUsage);
 }
 
-// A Module can either be asm.js or wasm.
-
-enum ModuleKind
-{
-    Wasm,
-    AsmJS
-};
-
 // ModuleCacheablePod holds the trivially-memcpy()able serializable portion of
 // ModuleData.
 
@@ -390,6 +415,7 @@ struct ModuleData : ModuleCacheablePod
     HeapAccessVector      heapAccesses;
     CodeRangeVector       codeRanges;
     CallSiteVector        callSites;
+    CallThunkVector       callThunks;
     CacheableCharsVector  prettyFuncNames;
     CacheableChars        filename;
     bool                  loadedFromCache;
@@ -419,7 +445,7 @@ typedef UniquePtr<ModuleData> UniqueModuleData;
 // Once fully dynamically linked, a Module can have its exports invoked via
 // callExport().
 
-class Module
+class Module : public mozilla::LinkedListElement<Module>
 {
     typedef UniquePtr<const ModuleData> UniqueConstModuleData;
     struct ImportExit {
@@ -444,6 +470,7 @@ class Module
     typedef Vector<FuncPtrTable, 0, SystemAllocPolicy> FuncPtrTableVector;
     typedef Vector<CacheableChars, 0, SystemAllocPolicy> FuncLabelVector;
     typedef RelocatablePtrArrayBufferObjectMaybeShared BufferPtr;
+    typedef HeapPtr<WasmModuleObject*> ModuleObjectPtr;
 
     // Initialized when constructed:
     const UniqueConstModuleData  module_;
@@ -461,6 +488,12 @@ class Module
     // Mutated after dynamicallyLink:
     bool                         profilingEnabled_;
     FuncLabelVector              funcLabels_;
+
+    // Back pointer to the JS object.
+    ModuleObjectPtr              ownerObject_;
+
+    // Possibly stored copy of the bytes from which this module was compiled.
+    Bytes                        source_;
 
     uint8_t* rawHeapPtr() const;
     uint8_t*& rawHeapPtr();
@@ -485,7 +518,13 @@ class Module
     explicit Module(UniqueModuleData module);
     virtual ~Module();
     virtual void trace(JSTracer* trc);
+    virtual void readBarrier();
     virtual void addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code, size_t* data);
+
+    void setOwner(WasmModuleObject* owner) { MOZ_ASSERT(!ownerObject_); ownerObject_ = owner; }
+    inline const HeapPtr<WasmModuleObject*>& owner() const;
+
+    void setSource(Bytes&& source) { source_ = Move(source); }
 
     uint8_t* code() const { return module_->code.get(); }
     uint32_t codeBytes() const { return module_->codeBytes; }
@@ -497,6 +536,7 @@ class Module
     CompileArgs compileArgs() const { return module_->compileArgs; }
     const ImportVector& imports() const { return module_->imports; }
     const ExportVector& exports() const { return module_->exports; }
+    const CodeRangeVector& codeRanges() const { return module_->codeRanges; }
     const char* filename() const { return module_->filename.get(); }
     bool loadedFromCache() const { return module_->loadedFromCache; }
     bool staticallyLinked() const { return staticallyLinked_; }
@@ -534,16 +574,14 @@ class Module
     // This function transitions the module from a statically-linked state to a
     // dynamically-linked state. If this module usesHeap(), a non-null heap
     // buffer must be given. The given import vector must match the module's
-    // ImportVector.
+    // ImportVector. The function returns a new export object for this module.
 
-    bool dynamicallyLink(JSContext* cx, Handle<ArrayBufferObjectMaybeShared*> heap,
-                         Handle<FunctionVector> imports);
-
-    // This function creates and returns a new export object for this module.
-    // The lengths of exports() and map.exportNames must be the same.
-
-    bool createExportObject(JSContext* cx, Handle<WasmModuleObject*> moduleObj,
-                            const ExportMap& map, MutableHandleObject exportObj);
+    bool dynamicallyLink(JSContext* cx,
+                         Handle<WasmModuleObject*> moduleObj,
+                         Handle<ArrayBufferObjectMaybeShared*> heap,
+                         Handle<FunctionVector> imports,
+                         const ExportMap& exportMap,
+                         MutableHandleObject exportObj);
 
     // The wasm heap, established by dynamicallyLink.
 
@@ -562,7 +600,7 @@ class Module
     // directly into the JIT code. If the JIT code is released, the Module must
     // be notified so it can go back to the generic callImport.
 
-    bool callImport(JSContext* cx, uint32_t importIndex, unsigned argc, const Value* argv,
+    bool callImport(JSContext* cx, uint32_t importIndex, unsigned argc, const uint64_t* argv,
                     MutableHandleValue rval);
     void deoptimizeImportExit(uint32_t importIndex);
 
@@ -579,6 +617,12 @@ class Module
 
     const char* prettyFuncName(uint32_t funcIndex) const;
     const char* getFuncName(JSContext* cx, uint32_t funcIndex, UniqueChars* owner) const;
+    JSAtom* getFuncAtom(JSContext* cx, uint32_t funcIndex) const;
+
+    // If debuggerObservesAsmJS was true when the module was compiled, render
+    // the binary to a new source string.
+
+    JSString* createText(JSContext* cx);
 
     // Each Module has a profilingEnabled state which is updated to match
     // SPSProfiler::enabled() on the next Module::callExport when there are no
@@ -613,6 +657,8 @@ ExportedFunctionToIndex(JSFunction* fun);
 class WasmModuleObject : public NativeObject
 {
     static const unsigned MODULE_SLOT = 0;
+    static const ClassOps classOps_;
+
     bool hasModule() const;
     static void finalize(FreeOp* fop, JSObject* obj);
     static void trace(JSTracer* trc, JSObject* obj);
@@ -624,6 +670,14 @@ class WasmModuleObject : public NativeObject
     void addSizeOfMisc(mozilla::MallocSizeOf mallocSizeOf, size_t* code, size_t* data);
     static const Class class_;
 };
+
+inline const HeapPtr<WasmModuleObject*>&
+wasm::Module::owner() const {
+    MOZ_ASSERT(&ownerObject_->module() == this);
+    return ownerObject_;
+}
+
+using WasmModuleObjectVector = GCVector<WasmModuleObject*>;
 
 } // namespace js
 

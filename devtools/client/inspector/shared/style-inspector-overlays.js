@@ -23,7 +23,7 @@ const {
 const EventEmitter = require("devtools/shared/event-emitter");
 const promise = require("promise");
 Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+const Services = require("Services");
 
 const PREF_IMAGE_TOOLTIP_SIZE = "devtools.inspector.imagePreviewTooltipSize";
 
@@ -406,6 +406,8 @@ TooltipsOverlay.prototype = {
       return this.previewTooltip.setFontFamilyContent(nodeInfo.value.value,
         inspector.selection.nodeFront);
     }
+
+    return undefined;
   },
 
   _onNewSelection: function() {

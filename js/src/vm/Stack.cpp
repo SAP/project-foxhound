@@ -18,6 +18,7 @@
 #include "js/GCAPI.h"
 #include "vm/Debugger.h"
 #include "vm/Opcodes.h"
+#include "vm/ScopeObject.h"
 
 #include "jit/JitFrameIterator-inl.h"
 #include "vm/Interpreter-inl.h"
@@ -61,8 +62,8 @@ InterpreterFrame::initExecuteFrame(JSContext* cx, HandleScript script, AbstractF
     prevpc_ = nullptr;
     prevsp_ = nullptr;
 
-    MOZ_ASSERT_IF(evalInFramePrev, isDebuggerEvalFrame());
     evalInFramePrev_ = evalInFramePrev;
+    MOZ_ASSERT_IF(evalInFramePrev, isDebuggerEvalFrame());
 
     if (script->isDebuggee())
         setIsDebuggee();
@@ -879,6 +880,21 @@ FrameIter::functionDisplayAtom() const
     MOZ_CRASH("Unexpected state");
 }
 
+ScriptSource*
+FrameIter::scriptSource() const
+{
+    switch (data_.state_) {
+      case DONE:
+      case WASM:
+        break;
+      case INTERP:
+      case JIT:
+        return script()->scriptSource();
+    }
+
+    MOZ_CRASH("Unexpected state");
+}
+
 const char*
 FrameIter::filename() const
 {
@@ -922,7 +938,9 @@ FrameIter::computeLine(uint32_t* column) const
       case JIT:
         return PCToLineNumber(script(), pc(), column);
       case WASM:
-        return data_.wasmFrames_.computeLine(column);
+        if (column)
+            *column = 0;
+        return data_.wasmFrames_.lineOrBytecode();
     }
 
     MOZ_CRASH("Unexpected state");
@@ -1383,7 +1401,7 @@ ActivationEntryMonitor::ActivationEntryMonitor(JSContext* cx, InterpreterFrame* 
         // be traced if we trigger GC here. Suppress GC to avoid this.
         gc::AutoSuppressGC suppressGC(cx);
         RootedValue stack(cx, asyncStack(cx));
-        RootedString asyncCause(cx, cx->runtime()->asyncCauseForNewActivations);
+        const char* asyncCause = cx->runtime()->asyncCauseForNewActivations;
         if (entryFrame->isFunctionFrame())
             entryMonitor_->Entry(cx, &entryFrame->callee(), stack, asyncCause);
         else
@@ -1399,7 +1417,7 @@ ActivationEntryMonitor::ActivationEntryMonitor(JSContext* cx, jit::CalleeToken e
         // a GC to discard the code we're about to enter, so we suppress GC.
         gc::AutoSuppressGC suppressGC(cx);
         RootedValue stack(cx, asyncStack(cx));
-        RootedString asyncCause(cx, cx->runtime()->asyncCauseForNewActivations);
+        const char* asyncCause = cx->runtime()->asyncCauseForNewActivations;
         if (jit::CalleeTokenIsFunction(entryToken))
             entryMonitor_->Entry(cx_, jit::CalleeTokenToFunction(entryToken), stack, asyncCause);
         else
@@ -1412,7 +1430,6 @@ ActivationEntryMonitor::ActivationEntryMonitor(JSContext* cx, jit::CalleeToken e
 jit::JitActivation::JitActivation(JSContext* cx, bool active)
   : Activation(cx, Jit),
     active_(active),
-    isLazyLinkExitFrame_(false),
     rematerializedFrames_(nullptr),
     ionRecovery_(cx),
     bailoutData_(nullptr),
@@ -1921,9 +1938,9 @@ JS::ProfilingFrameIterator::getPhysicalFrameAndEntry(jit::JitcodeGlobalEntry* en
     void* returnAddr = jitIter().returnAddressToFp();
     jit::JitcodeGlobalTable* table = rt_->jitRuntime()->getJitcodeGlobalTable();
     if (hasSampleBufferGen())
-        table->lookupForSampler(returnAddr, entry, rt_, sampleBufferGen_);
+        *entry = table->lookupForSamplerInfallible(returnAddr, rt_, sampleBufferGen_);
     else
-        table->lookupInfallible(returnAddr, entry, rt_);
+        *entry = table->lookupInfallible(returnAddr);
 
     MOZ_ASSERT(entry->isIon() || entry->isIonCache() || entry->isBaseline() || entry->isDummy());
 

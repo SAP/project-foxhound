@@ -14,8 +14,7 @@
 #include <algorithm>
 
 #undef LOG
-extern mozilla::LogModule* GetPDMLog();
-#define LOG(arg, ...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, ("VPXDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, ("VPXDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
 namespace mozilla {
 
@@ -151,17 +150,16 @@ VPXDecoder::DoDecodeFrame(MediaRawData* aSample)
       return -1;
     }
 
-    VideoInfo info;
-    info.mDisplay = mInfo.mDisplay;
-    RefPtr<VideoData> v = VideoData::Create(info,
-                                              mImageContainer,
-                                              aSample->mOffset,
-                                              aSample->mTime,
-                                              aSample->mDuration,
-                                              b,
-                                              aSample->mKeyframe,
-                                              aSample->mTimecode,
-                                              mInfo.mImage);
+    RefPtr<VideoData> v = VideoData::Create(mInfo,
+                                            mImageContainer,
+                                            aSample->mOffset,
+                                            aSample->mTime,
+                                            aSample->mDuration,
+                                            b,
+                                            aSample->mKeyframe,
+                                            aSample->mTimecode,
+                                            mInfo.ScaledImageRect(img->d_w,
+                                                                  img->d_h));
 
     if (!v) {
       LOG("Image allocation error source %ldx%ld display %ldx%ld picture %ldx%ld",
@@ -214,10 +212,12 @@ VPXDecoder::Drain()
 
 /* static */
 bool
-VPXDecoder::IsVPX(const nsACString& aMimeType)
+VPXDecoder::IsVPX(const nsACString& aMimeType, uint8_t aCodecMask)
 {
-  return aMimeType.EqualsLiteral("video/webm; codecs=vp8") ||
-    aMimeType.EqualsLiteral("video/webm; codecs=vp9");
+  return ((aCodecMask & VPXDecoder::VP8) &&
+          aMimeType.EqualsLiteral("video/webm; codecs=vp8")) ||
+         ((aCodecMask & VPXDecoder::VP9) &&
+          aMimeType.EqualsLiteral("video/webm; codecs=vp9"));
 }
 
 } // namespace mozilla

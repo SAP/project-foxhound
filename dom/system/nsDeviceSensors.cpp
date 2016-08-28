@@ -220,7 +220,7 @@ NS_IMETHODIMP nsDeviceSensors::RemoveWindowAsListener(nsIDOMWindow *aWindow)
 }
 
 static bool
-WindowCannotReceiveSensorEvent (nsPIDOMWindow* aWindow)
+WindowCannotReceiveSensorEvent (nsPIDOMWindowInner* aWindow)
 {
   // Check to see if this window is in the background.  If
   // it is and it does not have the "background-sensors" permission,
@@ -232,7 +232,7 @@ WindowCannotReceiveSensorEvent (nsPIDOMWindow* aWindow)
   bool disabled = aWindow->GetOuterWindow()->IsBackground() ||
                   !aWindow->IsTopLevelWindowActive();
   if (!disabled) {
-    nsCOMPtr<nsPIDOMWindow> top = aWindow->GetScriptableTop();
+    nsCOMPtr<nsPIDOMWindowOuter> top = aWindow->GetScriptableTop();
     nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
     nsCOMPtr<nsIScriptObjectPrincipal> topSop = do_QueryInterface(top);
     if (!sop || !topSop) {
@@ -332,6 +332,7 @@ nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData)
   double y = len > 1 ? values[1] : 0.0;
   double z = len > 2 ? values[2] : 0.0;
   double w = len > 3 ? values[3] : 0.0;
+  PRTime timestamp = aSensorData.timestamp();
 
   nsCOMArray<nsIDOMWindow> windowListeners;
   for (uint32_t i = 0; i < mWindowListeners[type]->Length(); i++) {
@@ -341,7 +342,7 @@ nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData)
   for (uint32_t i = windowListeners.Count(); i > 0 ; ) {
     --i;
 
-    nsCOMPtr<nsPIDOMWindow> pwindow = do_QueryInterface(windowListeners[i]);
+    nsCOMPtr<nsPIDOMWindowInner> pwindow = do_QueryInterface(windowListeners[i]);
     if (WindowCannotReceiveSensorEvent(pwindow)) {
         continue;
     }
@@ -351,7 +352,7 @@ nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData)
       if (type == nsIDeviceSensorData::TYPE_ACCELERATION ||
         type == nsIDeviceSensorData::TYPE_LINEAR_ACCELERATION ||
         type == nsIDeviceSensorData::TYPE_GYROSCOPE) {
-        FireDOMMotionEvent(domDoc, target, type, x, y, z);
+        FireDOMMotionEvent(domDoc, target, type, timestamp, x, y, z);
       } else if (type == nsIDeviceSensorData::TYPE_ORIENTATION) {
         FireDOMOrientationEvent(target, x, y, z, Orientation::kAbsolute);
       } else if (type == nsIDeviceSensorData::TYPE_ROTATION_VECTOR) {
@@ -488,6 +489,7 @@ void
 nsDeviceSensors::FireDOMMotionEvent(nsIDOMDocument *domdoc,
                                     EventTarget* target,
                                     uint32_t type,
+                                    PRTime timestamp,
                                     double x,
                                     double y,
                                     double z)
@@ -553,7 +555,8 @@ nsDeviceSensors::FireDOMMotionEvent(nsIDOMDocument *domdoc,
                             *mLastAcceleration,
                             *mLastAccelerationIncludingGravity,
                             *mLastRotationRate,
-                            Nullable<double>(DEFAULT_SENSOR_POLL));
+                            Nullable<double>(DEFAULT_SENSOR_POLL),
+                            Nullable<uint64_t>(timestamp));
 
   event->SetTrusted(true);
 
