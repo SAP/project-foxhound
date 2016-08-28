@@ -11,8 +11,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/Date.h"
 #include "mozilla/dom/Directory.h"
-#include "mozilla/dom/FileSystemUtils.h"
-#include "mozilla/dom/OSFileSystem.h"
 #include "nsAttrValueInlines.h"
 #include "nsCRTGlue.h"
 
@@ -251,16 +249,61 @@ class HTMLInputElementState final : public nsISupports
       mValue = aValue;
     }
 
-    const nsTArray<RefPtr<BlobImpl>>& GetBlobImpls()
+    void
+    GetFilesOrDirectories(nsPIDOMWindowInner* aWindow,
+                          nsTArray<OwningFileOrDirectory>& aResult) const
     {
-      return mBlobImpls;
+      for (uint32_t i = 0; i < mBlobImplsOrDirectoryPaths.Length(); ++i) {
+        if (mBlobImplsOrDirectoryPaths[i].mType == BlobImplOrDirectoryPath::eBlobImpl) {
+          RefPtr<File> file =
+            File::Create(aWindow,
+                         mBlobImplsOrDirectoryPaths[i].mBlobImpl);
+          MOZ_ASSERT(file);
+
+          OwningFileOrDirectory* element = aResult.AppendElement();
+          element->SetAsFile() = file;
+        } else {
+          MOZ_ASSERT(mBlobImplsOrDirectoryPaths[i].mType == BlobImplOrDirectoryPath::eDirectoryPath);
+
+          nsCOMPtr<nsIFile> file;
+          NS_ConvertUTF16toUTF8 path(mBlobImplsOrDirectoryPaths[i].mDirectoryPath);
+          nsresult rv = NS_NewNativeLocalFile(path, true, getter_AddRefs(file));
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            continue;
+          }
+
+          RefPtr<Directory> directory = Directory::Create(aWindow, file);
+          MOZ_ASSERT(directory);
+
+          OwningFileOrDirectory* element = aResult.AppendElement();
+          element->SetAsDirectory() = directory;
+        }
+      }
     }
 
-    void SetBlobImpls(const nsTArray<RefPtr<File>>& aFile)
+    void SetFilesOrDirectories(const nsTArray<OwningFileOrDirectory>& aArray)
     {
-      mBlobImpls.Clear();
-      for (uint32_t i = 0, len = aFile.Length(); i < len; ++i) {
-        mBlobImpls.AppendElement(aFile[i]->Impl());
+      mBlobImplsOrDirectoryPaths.Clear();
+      for (uint32_t i = 0; i < aArray.Length(); ++i) {
+        if (aArray[i].IsFile()) {
+          BlobImplOrDirectoryPath* data = mBlobImplsOrDirectoryPaths.AppendElement();
+
+          data->mBlobImpl = aArray[i].GetAsFile()->Impl();
+          data->mType = BlobImplOrDirectoryPath::eBlobImpl;
+        } else {
+          MOZ_ASSERT(aArray[i].IsDirectory());
+          nsAutoString fullPath;
+          nsresult rv = aArray[i].GetAsDirectory()->GetFullRealPath(fullPath);
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            continue;
+          }
+
+          BlobImplOrDirectoryPath* data =
+            mBlobImplsOrDirectoryPaths.AppendElement();
+
+          data->mDirectoryPath = fullPath;
+          data->mType = BlobImplOrDirectoryPath::eDirectoryPath;
+        }
       }
     }
 
@@ -274,7 +317,20 @@ class HTMLInputElementState final : public nsISupports
     ~HTMLInputElementState() {}
 
     nsString mValue;
-    nsTArray<RefPtr<BlobImpl>> mBlobImpls;
+
+    struct BlobImplOrDirectoryPath
+    {
+      RefPtr<BlobImpl> mBlobImpl;
+      nsString mDirectoryPath;
+
+      enum {
+        eBlobImpl,
+        eDirectoryPath
+      } mType;
+    };
+
+    nsTArray<BlobImplOrDirectoryPath> mBlobImplsOrDirectoryPaths;
+
     bool mChecked;
     bool mCheckedSet;
 };
@@ -340,31 +396,63 @@ UploadLastDir::ContentPrefCallback::HandleError(nsresult error)
 namespace {
 
 /**
- * This may return nullptr if aDomFile's implementation of
+ * This may return nullptr if the DOM File's implementation of
  * File::mozFullPathInternal does not successfully return a non-empty
  * string that is a valid path. This can happen on Firefox OS, for example,
  * where the file picker can create Blobs.
  */
 static already_AddRefed<nsIFile>
-DOMFileToLocalFile(File* aDomFile)
+DOMFileOrDirectoryToLocalFile(const OwningFileOrDirectory& aData)
 {
   nsString path;
-  ErrorResult rv;
-  aDomFile->GetMozFullPathInternal(path, rv);
-  if (rv.Failed() || path.IsEmpty()) {
-    rv.SuppressException();
-    return nullptr;
+
+  if (aData.IsFile()) {
+    ErrorResult rv;
+    aData.GetAsFile()->GetMozFullPathInternal(path, rv);
+    if (rv.Failed() || path.IsEmpty()) {
+      rv.SuppressException();
+      return nullptr;
+    }
+  } else {
+    MOZ_ASSERT(aData.IsDirectory());
+    aData.GetAsDirectory()->GetFullRealPath(path);
   }
 
   nsCOMPtr<nsIFile> localFile;
-  rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(path), true,
-                             getter_AddRefs(localFile));
-  if (NS_WARN_IF(rv.Failed())) {
-    rv.SuppressException();
+  nsresult rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(path), true,
+                                      getter_AddRefs(localFile));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
 
   return localFile.forget();
+}
+
+void
+GetDOMFileOrDirectoryName(const OwningFileOrDirectory& aData,
+                          nsAString& aName)
+{
+  if (aData.IsFile()) {
+    aData.GetAsFile()->GetName(aName);
+  } else {
+    MOZ_ASSERT(aData.IsDirectory());
+    ErrorResult rv;
+    aData.GetAsDirectory()->GetName(aName, rv);
+    NS_WARN_IF(rv.Failed());
+  }
+}
+
+void
+GetDOMFileOrDirectoryPath(const OwningFileOrDirectory& aData,
+                          nsAString& aPath,
+                          ErrorResult& aRv)
+{
+  if (aData.IsFile()) {
+    aData.GetAsFile()->GetMozFullPathInternal(aPath, aRv);
+  } else {
+    MOZ_ASSERT(aData.IsDirectory());
+    aData.GetAsDirectory()->GetFullRealPath(aPath);
+  }
 }
 
 } // namespace
@@ -383,7 +471,7 @@ HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
   mFilePicker->GetMode(&mode);
 
   // Collect new selected filenames
-  nsTArray<RefPtr<File>> newFiles;
+  nsTArray<OwningFileOrDirectory> newFilesOrDirectories;
   if (mode == static_cast<int16_t>(nsIFilePicker::modeOpenMultiple)) {
     nsCOMPtr<nsISimpleEnumerator> iter;
     nsresult rv =
@@ -402,9 +490,12 @@ HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
       nsCOMPtr<nsIDOMBlob> domBlob = do_QueryInterface(tmp);
       MOZ_ASSERT(domBlob,
                  "Null file object from FilePicker's file enumerator?");
-      if (domBlob) {
-        newFiles.AppendElement(static_cast<File*>(domBlob.get()));
+      if (!domBlob) {
+        continue;
       }
+
+      OwningFileOrDirectory* element = newFilesOrDirectories.AppendElement();
+      element->SetAsFile() = static_cast<File*>(domBlob.get());
     }
   } else {
     MOZ_ASSERT(mode == static_cast<int16_t>(nsIFilePicker::modeOpen) ||
@@ -416,16 +507,25 @@ HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
     nsCOMPtr<nsIDOMBlob> blob = do_QueryInterface(tmp);
     if (blob) {
       RefPtr<File> file = static_cast<Blob*>(blob.get())->ToFile();
-      newFiles.AppendElement(file);
+      MOZ_ASSERT(file);
+
+      OwningFileOrDirectory* element = newFilesOrDirectories.AppendElement();
+      element->SetAsFile() = file;
+    } else if (tmp) {
+      RefPtr<Directory> directory = static_cast<Directory*>(tmp.get());
+      OwningFileOrDirectory* element = newFilesOrDirectories.AppendElement();
+      element->SetAsDirectory() = directory;
     }
   }
 
-  if (newFiles.IsEmpty()) {
+  if (newFilesOrDirectories.IsEmpty()) {
     return NS_OK;
   }
 
   // Store the last used directory using the content pref service:
-  nsCOMPtr<nsIFile> file = DOMFileToLocalFile(newFiles[0]);
+  nsCOMPtr<nsIFile> file =
+    DOMFileOrDirectoryToLocalFile(newFilesOrDirectories[0]);
+
   if (file) {
     nsCOMPtr<nsIFile> lastUsedDir;
     file->GetParent(getter_AddRefs(lastUsedDir));
@@ -436,7 +536,7 @@ HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
   // The text control frame (if there is one) isn't going to send a change
   // event because it will think this is done by a script.
   // So, we can safely send one by ourself.
-  mInput->SetFiles(newFiles, true);
+  mInput->SetFilesOrDirectories(newFilesOrDirectories, true);
   return nsContentUtils::DispatchTrustedEvent(mInput->OwnerDoc(),
                                               static_cast<nsIDOMHTMLInputElement*>(mInput.get()),
                                               NS_LITERAL_STRING("change"), true,
@@ -550,7 +650,7 @@ NS_IMPL_ISUPPORTS(nsColorPickerShownCallback, nsIColorPickerShownCallback)
 bool
 HTMLInputElement::IsPopupBlocked() const
 {
-  nsCOMPtr<nsPIDOMWindow> win = OwnerDoc()->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> win = OwnerDoc()->GetWindow();
   MOZ_ASSERT(win, "window should not be null");
   if (!win) {
     return true;
@@ -581,7 +681,7 @@ HTMLInputElement::InitColorPicker()
 
   nsCOMPtr<nsIDocument> doc = OwnerDoc();
 
-  nsCOMPtr<nsPIDOMWindow> win = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> win = doc->GetWindow();
   if (!win) {
     return NS_ERROR_FAILURE;
   }
@@ -628,7 +728,7 @@ HTMLInputElement::InitFilePicker(FilePickerType aType)
   // Get parent nsPIDOMWindow object.
   nsCOMPtr<nsIDocument> doc = OwnerDoc();
 
-  nsCOMPtr<nsPIDOMWindow> win = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> win = doc->GetWindow();
   if (!win) {
     return NS_ERROR_FAILURE;
   }
@@ -672,7 +772,8 @@ HTMLInputElement::InitFilePicker(FilePickerType aType)
   // Set default directry and filename
   nsAutoString defaultName;
 
-  const nsTArray<RefPtr<File>>& oldFiles = GetFilesInternal();
+  const nsTArray<OwningFileOrDirectory>& oldFiles =
+    GetFilesOrDirectoriesInternal();
 
   nsCOMPtr<nsIFilePickerShownCallback> callback =
     new HTMLInputElement::nsFilePickerShownCallback(this, filePicker);
@@ -681,18 +782,10 @@ HTMLInputElement::InitFilePicker(FilePickerType aType)
       aType != FILE_PICKER_DIRECTORY) {
     nsString path;
 
-    ErrorResult error;
-    oldFiles[0]->GetMozFullPathInternal(path, error);
-    if (NS_WARN_IF(error.Failed())) {
-      return error.StealNSResult();
-    }
-
-    nsCOMPtr<nsIFile> localFile;
-    rv = NS_NewLocalFile(path, false, getter_AddRefs(localFile));
-
-    if (NS_SUCCEEDED(rv)) {
+    nsCOMPtr<nsIFile> localFile = DOMFileOrDirectoryToLocalFile(oldFiles[0]);
+    if (localFile) {
       nsCOMPtr<nsIFile> parentFile;
-      rv = localFile->GetParent(getter_AddRefs(parentFile));
+      nsresult rv = localFile->GetParent(getter_AddRefs(parentFile));
       if (NS_SUCCEEDED(rv)) {
         filePicker->SetDisplayDirectory(parentFile);
       }
@@ -703,7 +796,8 @@ HTMLInputElement::InitFilePicker(FilePickerType aType)
     // one file was selected before.
     if (oldFiles.Length() == 1) {
       nsAutoString leafName;
-      oldFiles[0]->GetName(leafName);
+      GetDOMFileOrDirectoryName(oldFiles[0], leafName);
+
       if (!leafName.IsEmpty()) {
         filePicker->SetDefaultString(leafName);
       }
@@ -756,7 +850,7 @@ UploadLastDir::FetchDirectoryAndDisplayPicker(nsIDocument* aDoc,
   NS_PRECONDITION(docURI, "docURI is null");
 
   nsCOMPtr<nsILoadContext> loadContext = aDoc->GetLoadContext();
-  nsCOMPtr<nsIContentPrefCallback2> prefCallback = 
+  nsCOMPtr<nsIContentPrefCallback2> prefCallback =
     new UploadLastDir::ContentPrefCallback(aFilePicker, aFpCallback);
 
 #ifdef MOZ_B2G
@@ -891,7 +985,7 @@ HTMLInputElement::HTMLInputElement(already_AddRefed<mozilla::dom::NodeInfo>& aNo
 HTMLInputElement::~HTMLInputElement()
 {
   if (mNumberControlSpinnerIsSpinning) {
-    StopNumberControlSpinnerSpin();
+    StopNumberControlSpinnerSpin(eDisallowDispatchingEvents);
   }
   DestroyImageLoadingContent();
   FreeData();
@@ -935,7 +1029,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLInputElement,
   if (tmp->IsSingleLineTextControl(false)) {
     tmp->mInputData.mState->Traverse(cb);
   }
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFiles)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFilesOrDirectories)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFileList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFilesAndDirectoriesPromise)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -944,7 +1038,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLInputElement,
                                                 nsGenericHTMLFormElementWithState)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mValidity)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mControllers)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFiles)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFilesOrDirectories)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFileList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFilesAndDirectoriesPromise)
   if (tmp->IsSingleLineTextControl(false)) {
@@ -1003,8 +1097,8 @@ HTMLInputElement::Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) co
         // we can just grab the pretty string and use it as wallpaper
         GetDisplayFileName(it->mStaticDocFileList);
       } else {
-        it->mFiles.Clear();
-        it->mFiles.AppendElements(mFiles);
+        it->mFilesOrDirectories.Clear();
+        it->mFilesOrDirectories.AppendElements(mFilesOrDirectories);
       }
       break;
     case VALUE_MODE_DEFAULT_ON:
@@ -1163,7 +1257,6 @@ HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
       UpdateTypeMismatchValidityState();
     } else if (aName == nsGkAtoms::max) {
       UpdateHasRange();
-      UpdateRangeOverflowValidityState();
       if (mType == NS_FORM_INPUT_RANGE) {
         // The value may need to change when @max changes since the value may
         // have been invalid and can now change to a valid value, or vice
@@ -1181,25 +1274,34 @@ HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
         nsresult rv =
           SetValueInternal(value, nsTextEditorState::eSetValue_Internal);
         NS_ENSURE_SUCCESS(rv, rv);
-        MOZ_ASSERT(!GetValidityState(VALIDITY_STATE_RANGE_UNDERFLOW),
-                   "HTML5 spec does not allow this");
       }
+      // Validity state must be updated *after* the SetValueInternal call above
+      // or else the following assert will not be valid.
+      // We don't assert the state of underflow during parsing since
+      // DoneCreatingElement sanitizes.
+      UpdateRangeOverflowValidityState();
+      MOZ_ASSERT(mParserCreating ||
+                 mType != NS_FORM_INPUT_RANGE ||
+                 !GetValidityState(VALIDITY_STATE_RANGE_UNDERFLOW),
+                 "HTML5 spec does not allow underflow for type=range");
     } else if (aName == nsGkAtoms::min) {
       UpdateHasRange();
+      if (mType == NS_FORM_INPUT_RANGE) {
+        // See @max comment
+        nsAutoString value;
+        GetValue(value);
+        nsresult rv =
+          SetValueInternal(value, nsTextEditorState::eSetValue_Internal);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+      // See corresponding @max comment
       UpdateRangeUnderflowValidityState();
       UpdateStepMismatchValidityState();
-      if (mType == NS_FORM_INPUT_RANGE) {
-        // See @max comment
-        nsAutoString value;
-        GetValue(value);
-        nsresult rv =
-          SetValueInternal(value, nsTextEditorState::eSetValue_Internal);
-        NS_ENSURE_SUCCESS(rv, rv);
-        MOZ_ASSERT(!GetValidityState(VALIDITY_STATE_RANGE_UNDERFLOW),
-                   "HTML5 spec does not allow this");
-      }
+      MOZ_ASSERT(mParserCreating ||
+                 mType != NS_FORM_INPUT_RANGE ||
+                 !GetValidityState(VALIDITY_STATE_RANGE_UNDERFLOW),
+                 "HTML5 spec does not allow underflow for type=range");
     } else if (aName == nsGkAtoms::step) {
-      UpdateStepMismatchValidityState();
       if (mType == NS_FORM_INPUT_RANGE) {
         // See @max comment
         nsAutoString value;
@@ -1207,9 +1309,13 @@ HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
         nsresult rv =
           SetValueInternal(value, nsTextEditorState::eSetValue_Internal);
         NS_ENSURE_SUCCESS(rv, rv);
-        MOZ_ASSERT(!GetValidityState(VALIDITY_STATE_RANGE_UNDERFLOW),
-                   "HTML5 spec does not allow this");
       }
+      // See corresponding @max comment
+      UpdateStepMismatchValidityState();
+      MOZ_ASSERT(mParserCreating ||
+                 mType != NS_FORM_INPUT_RANGE ||
+                 !GetValidityState(VALIDITY_STATE_RANGE_UNDERFLOW),
+                 "HTML5 spec does not allow underflow for type=range");
     } else if (aName == nsGkAtoms::dir &&
                aValue && aValue->Equals(nsGkAtoms::_auto, eIgnoreCase)) {
       SetDirectionIfAuto(true, aNotify);
@@ -1430,9 +1536,9 @@ HTMLInputElement::GetValueInternal(nsAString& aValue) const
 #else
         // XXX We'd love to assert that this can't happen, but some mochitests
         // use SpecialPowers to circumvent our more sane security model.
-        if (!mFiles.IsEmpty()) {
+        if (!mFilesOrDirectories.IsEmpty()) {
           ErrorResult rv;
-          mFiles[0]->GetMozFullPath(aValue, rv);
+          GetDOMFileOrDirectoryPath(mFilesOrDirectories[0], aValue, rv);
           if (NS_WARN_IF(rv.Failed())) {
             return rv.StealNSResult();
           }
@@ -1444,10 +1550,10 @@ HTMLInputElement::GetValueInternal(nsAString& aValue) const
 #endif
       } else {
         // Just return the leaf name
-        if (mFiles.IsEmpty()) {
+        if (mFilesOrDirectories.IsEmpty()) {
           aValue.Truncate();
         } else {
-          mFiles[0]->GetName(aValue);
+          GetDOMFileOrDirectoryName(mFilesOrDirectories[0], aValue);
         }
       }
 
@@ -1482,8 +1588,8 @@ HTMLInputElement::IsValueEmpty() const
 void
 HTMLInputElement::ClearFiles(bool aSetValueChanged)
 {
-  nsTArray<RefPtr<File>> files;
-  SetFiles(files, aSetValueChanged);
+  nsTArray<OwningFileOrDirectory> data;
+  SetFilesOrDirectories(data, aSetValueChanged);
 }
 
 /* static */ Decimal
@@ -2053,9 +2159,9 @@ void
 HTMLInputElement::MozGetFileNameArray(nsTArray<nsString>& aArray,
                                       ErrorResult& aRv)
 {
-  for (uint32_t i = 0; i < mFiles.Length(); i++) {
-    nsString str;
-    mFiles[i]->GetMozFullPathInternal(str, aRv);
+  for (uint32_t i = 0; i < mFilesOrDirectories.Length(); i++) {
+    nsAutoString str;
+    GetDOMFileOrDirectoryPath(mFilesOrDirectories[i], str, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return;
     }
@@ -2105,25 +2211,29 @@ HTMLInputElement::MozSetFileArray(const Sequence<OwningNonNull<File>>& aFiles)
   if (!global) {
     return;
   }
-  nsTArray<RefPtr<File>> files;
+
+  nsTArray<OwningFileOrDirectory> files;
   for (uint32_t i = 0; i < aFiles.Length(); ++i) {
     RefPtr<File> file = File::Create(global, aFiles[i].get()->Impl());
     MOZ_ASSERT(file);
 
-    files.AppendElement(file);
+    OwningFileOrDirectory* element = files.AppendElement();
+    element->SetAsFile() = file;
   }
-  SetFiles(files, true);
+
+  SetFilesOrDirectories(files, true);
 }
 
 void
-HTMLInputElement::MozSetFileNameArray(const Sequence< nsString >& aFileNames, ErrorResult& aRv)
+HTMLInputElement::MozSetFileNameArray(const Sequence<nsString>& aFileNames,
+                                      ErrorResult& aRv)
 {
   if (XRE_IsContentProcess()) {
     aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return;
   }
 
-  nsTArray<RefPtr<File>> files;
+  nsTArray<OwningFileOrDirectory> files;
   for (uint32_t i = 0; i < aFileNames.Length(); ++i) {
     nsCOMPtr<nsIFile> file;
 
@@ -2140,21 +2250,28 @@ HTMLInputElement::MozSetFileNameArray(const Sequence< nsString >& aFileNames, Er
       NS_NewLocalFile(aFileNames[i], false, getter_AddRefs(file));
     }
 
-    if (file) {
-      nsCOMPtr<nsIGlobalObject> global = OwnerDoc()->GetScopeObject();
-      RefPtr<File> domFile = File::CreateFromFile(global, file);
-      files.AppendElement(domFile);
-    } else {
+    if (!file) {
       continue; // Not much we can do if the file doesn't exist
     }
 
+    nsCOMPtr<nsIGlobalObject> global = OwnerDoc()->GetScopeObject();
+    if (!global) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return;
+    }
+
+    RefPtr<File> domFile = File::CreateFromFile(global, file);
+
+    OwningFileOrDirectory* element = files.AppendElement();
+    element->SetAsFile() = domFile;
   }
 
-  SetFiles(files, true);
+  SetFilesOrDirectories(files, true);
 }
 
 NS_IMETHODIMP
-HTMLInputElement::MozSetFileNameArray(const char16_t** aFileNames, uint32_t aLength)
+HTMLInputElement::MozSetFileNameArray(const char16_t** aFileNames,
+                                      uint32_t aLength)
 {
   if (!nsContentUtils::IsCallerChrome()) {
     // setting the value of a "FILE" input widget requires chrome privilege
@@ -2174,6 +2291,33 @@ HTMLInputElement::MozSetFileNameArray(const char16_t** aFileNames, uint32_t aLen
   ErrorResult rv;
   MozSetFileNameArray(list, rv);
   return rv.StealNSResult();
+}
+
+void
+HTMLInputElement::MozSetDirectory(const nsAString& aDirectoryPath,
+                                  ErrorResult& aRv)
+{
+  nsCOMPtr<nsIFile> file;
+  NS_ConvertUTF16toUTF8 path(aDirectoryPath);
+  aRv = NS_NewNativeLocalFile(path, true, getter_AddRefs(file));
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow();
+  if (NS_WARN_IF(!window)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  RefPtr<Directory> directory = Directory::Create(window, file);
+  MOZ_ASSERT(directory);
+
+  nsTArray<OwningFileOrDirectory> array;
+  OwningFileOrDirectory* element = array.AppendElement();
+  element->SetAsDirectory() = directory;
+
+  SetFilesOrDirectories(array, true);
 }
 
 bool
@@ -2367,14 +2511,14 @@ HTMLInputElement::GetDisplayFileName(nsAString& aValue) const
     return;
   }
 
-  if (mFiles.Length() == 1) {
-    mFiles[0]->GetName(aValue);
+  if (mFilesOrDirectories.Length() == 1) {
+    GetDOMFileOrDirectoryName(mFilesOrDirectories[0], aValue);
     return;
   }
 
   nsXPIDLString value;
 
-  if (mFiles.IsEmpty()) {
+  if (mFilesOrDirectories.IsEmpty()) {
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
       nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
                                          "NoFilesSelected", value);
@@ -2384,7 +2528,7 @@ HTMLInputElement::GetDisplayFileName(nsAString& aValue) const
     }
   } else {
     nsString count;
-    count.AppendInt(int(mFiles.Length()));
+    count.AppendInt(int(mFilesOrDirectories.Length()));
 
     const char16_t* params[] = { count.get() };
     nsContentUtils::FormatLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
@@ -2395,13 +2539,13 @@ HTMLInputElement::GetDisplayFileName(nsAString& aValue) const
 }
 
 void
-HTMLInputElement::SetFiles(const nsTArray<RefPtr<File>>& aFiles,
-                           bool aSetValueChanged)
+HTMLInputElement::SetFilesOrDirectories(const nsTArray<OwningFileOrDirectory>& aFilesOrDirectories,
+                                        bool aSetValueChanged)
 {
-  mFiles.Clear();
-  mFiles.AppendElements(aFiles);
+  mFilesOrDirectories.Clear();
+  mFilesOrDirectories.AppendElements(aFilesOrDirectories);
 
-  AfterSetFiles(aSetValueChanged);
+  AfterSetFilesOrDirectories(aSetValueChanged);
 }
 
 void
@@ -2409,22 +2553,22 @@ HTMLInputElement::SetFiles(nsIDOMFileList* aFiles,
                            bool aSetValueChanged)
 {
   RefPtr<FileList> files = static_cast<FileList*>(aFiles);
-  mFiles.Clear();
+  mFilesOrDirectories.Clear();
 
   if (aFiles) {
     uint32_t listLength;
     aFiles->GetLength(&listLength);
     for (uint32_t i = 0; i < listLength; i++) {
-      RefPtr<File> file = files->Item(i);
-      mFiles.AppendElement(file);
+      OwningFileOrDirectory* element = mFilesOrDirectories.AppendElement();
+      element->SetAsFile() = files->Item(i);
     }
   }
 
-  AfterSetFiles(aSetValueChanged);
+  AfterSetFilesOrDirectories(aSetValueChanged);
 }
 
 void
-HTMLInputElement::AfterSetFiles(bool aSetValueChanged)
+HTMLInputElement::AfterSetFilesOrDirectories(bool aSetValueChanged)
 {
   // No need to flush here, if there's no frame at this point we
   // don't need to force creation of one just to tell it about this
@@ -2442,11 +2586,11 @@ HTMLInputElement::AfterSetFiles(bool aSetValueChanged)
   // call under GetMozFullPath won't be rejected for not being urgent.
   // XXX Protected by the ifndef because the blob code doesn't allow us to send
   // this message in b2g.
-  if (mFiles.IsEmpty()) {
+  if (mFilesOrDirectories.IsEmpty()) {
     mFirstFilePath.Truncate();
   } else {
     ErrorResult rv;
-    mFiles[0]->GetMozFullPath(mFirstFilePath, rv);
+    GetDOMFileOrDirectoryPath(mFilesOrDirectories[0], mFirstFilePath, rv);
     if (NS_WARN_IF(rv.Failed())) {
       rv.SuppressException();
     }
@@ -2520,24 +2664,24 @@ HTMLInputElement::HandleNumberControlSpin(void* aData)
   }
 }
 
-nsresult
+void
 HTMLInputElement::UpdateFileList()
 {
   if (mFileList) {
     mFileList->Clear();
 
-    const nsTArray<RefPtr<File>>& files = GetFilesInternal();
-    for (uint32_t i = 0; i < files.Length(); ++i) {
-      if (!mFileList->Append(files[i])) {
-        return NS_ERROR_FAILURE;
+    const nsTArray<OwningFileOrDirectory>& array =
+      GetFilesOrDirectoriesInternal();
+
+    for (uint32_t i = 0; i < array.Length(); ++i) {
+      if (array[i].IsFile()) {
+        mFileList->Append(array[i].GetAsFile());
       }
     }
   }
 
   // Make sure we (lazily) create a new Promise for GetFilesAndDirectories:
   mFilesAndDirectoriesPromise = nullptr;
-
-  return NS_OK;
 }
 
 nsresult
@@ -2905,9 +3049,7 @@ HTMLInputElement::Focus(ErrorResult& aError)
   // tab to the next one.
   nsIFrame* frame = GetPrimaryFrame();
   if (frame) {
-    for (nsIFrame* childFrame = frame->GetFirstPrincipalChild();
-         childFrame;
-         childFrame = childFrame->GetNextSibling()) {
+    for (nsIFrame* childFrame : frame->PrincipalChildList()) {
       // See if the child is a button control.
       nsCOMPtr<nsIFormControl> formCtrl =
         do_QueryInterface(childFrame->GetContent());
@@ -3201,8 +3343,7 @@ HTMLInputElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
     }
   }
 
-  if (mType == NS_FORM_INPUT_NUMBER &&
-      aVisitor.mEvent->mFlags.mIsTrusted) {
+  if (mType == NS_FORM_INPUT_NUMBER && aVisitor.mEvent->IsTrusted()) {
     if (mNumberControlSpinnerIsSpinning) {
       // If the timer is running the user has depressed the mouse on one of the
       // spin buttons. If the mouse exits the button we either want to reverse
@@ -3287,8 +3428,8 @@ HTMLInputElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
   // We do this after calling the base class' PreHandleEvent so that
   // nsIContent::PreHandleEvent doesn't reset any change we make to mCanHandle.
   if (mType == NS_FORM_INPUT_NUMBER &&
-      aVisitor.mEvent->mFlags.mIsTrusted  &&
-      aVisitor.mEvent->originalTarget != this) {
+      aVisitor.mEvent->IsTrusted()  &&
+      aVisitor.mEvent->mOriginalTarget != this) {
     // <input type=number> has an anonymous <input type=text> descendant. If
     // 'input' or 'change' events are fired at that text control then we need
     // to do some special handling here.
@@ -3298,7 +3439,7 @@ HTMLInputElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
     if (numberControlFrame) {
       textControl = numberControlFrame->GetAnonTextControl();
     }
-    if (textControl && aVisitor.mEvent->originalTarget == textControl) {
+    if (textControl && aVisitor.mEvent->mOriginalTarget == textControl) {
       if (aVisitor.mEvent->mMessage == eEditorInput) {
         // Propogate the anon text control's new value to our HTMLInputElement:
         nsAutoString value;
@@ -3438,7 +3579,7 @@ HTMLInputElement::StartNumberControlSpinnerSpin()
 }
 
 void
-HTMLInputElement::StopNumberControlSpinnerSpin()
+HTMLInputElement::StopNumberControlSpinnerSpin(SpinnerStopState aState)
 {
   if (mNumberControlSpinnerIsSpinning) {
     if (nsIPresShell::GetCapturingContent() == this) {
@@ -3449,11 +3590,16 @@ HTMLInputElement::StopNumberControlSpinnerSpin()
 
     mNumberControlSpinnerIsSpinning = false;
 
-    FireChangeEventIfNeeded();
+    if (aState == eAllowDispatchingEvents) {
+      FireChangeEventIfNeeded();
+    }
 
     nsNumberControlFrame* numberControlFrame =
       do_QueryFrame(GetPrimaryFrame());
     if (numberControlFrame) {
+      MOZ_ASSERT(aState == eAllowDispatchingEvents,
+                 "Shouldn't have primary frame for the element when we're not "
+                 "allowed to dispatch events to it anymore.");
       numberControlFrame->SpinnerStateChanged();
     }
   }
@@ -3562,7 +3708,7 @@ HTMLInputElement::MaybeInitPickers(EventChainPostVisitor& aVisitor)
   // - it's the left mouse button.
   // We do not prevent non-trusted click because authors can already use
   // .click(). However, the pickers will follow the rules of popup-blocking.
-  if (aVisitor.mEvent->mFlags.mDefaultPrevented) {
+  if (aVisitor.mEvent->DefaultPrevented()) {
     return NS_OK;
   }
   WidgetMouseEvent* mouseEvent = aVisitor.mEvent->AsMouseEvent();
@@ -3574,7 +3720,7 @@ HTMLInputElement::MaybeInitPickers(EventChainPostVisitor& aVisitor)
     // directory picker, else we open the file picker.
     FilePickerType type = FILE_PICKER_FILE;
     nsCOMPtr<nsIContent> target =
-      do_QueryInterface(aVisitor.mEvent->originalTarget);
+      do_QueryInterface(aVisitor.mEvent->mOriginalTarget);
     if (target &&
         target->GetParent() == this &&
         target->IsRootOfNativeAnonymousSubtree() &&
@@ -3641,11 +3787,11 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
       mType != NS_FORM_INPUT_NUMBER) {
     WidgetMouseEvent* mouseEvent = aVisitor.mEvent->AsMouseEvent();
     if (mouseEvent && mouseEvent->IsLeftClickEvent() &&
-        !ShouldPreventDOMActivateDispatch(aVisitor.mEvent->originalTarget)) {
+        !ShouldPreventDOMActivateDispatch(aVisitor.mEvent->mOriginalTarget)) {
       // DOMActive event should be trusted since the activation is actually
       // occurred even if the cause is an untrusted click event.
       InternalUIEvent actEvent(true, eLegacyDOMActivate, mouseEvent);
-      actEvent.detail = 1;
+      actEvent.mDetail = 1;
 
       nsCOMPtr<nsIPresShell> shell = aVisitor.mPresContext->GetPresShell();
       if (shell) {
@@ -3736,7 +3882,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
     WidgetKeyboardEvent* keyEvent = aVisitor.mEvent->AsKeyboardEvent();
     if (mType ==  NS_FORM_INPUT_NUMBER &&
         keyEvent && keyEvent->mMessage == eKeyPress &&
-        aVisitor.mEvent->mFlags.mIsTrusted &&
+        aVisitor.mEvent->IsTrusted() &&
         (keyEvent->keyCode == NS_VK_UP || keyEvent->keyCode == NS_VK_DOWN) &&
         !(keyEvent->IsShift() || keyEvent->IsControl() ||
           keyEvent->IsAlt() || keyEvent->IsMeta() ||
@@ -3753,7 +3899,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
       // the editor's handling of up/down keypress events. For that reason we
       // just ignore aVisitor.mEventStatus here and go ahead and handle the
       // event to increase/decrease the value of the number control.
-      if (!aVisitor.mEvent->mFlags.mDefaultPreventedByContent && IsMutable()) {
+      if (!aVisitor.mEvent->DefaultPreventedByContent() && IsMutable()) {
         StepNumberControlForUserEvent(keyEvent->keyCode == NS_VK_UP ? 1 : -1);
         aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
       }
@@ -3766,7 +3912,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
           // just because we raised a window.
           nsIFocusManager* fm = nsFocusManager::GetFocusManager();
           if (fm && IsSingleLineTextControl(false) &&
-              !aVisitor.mEvent->AsFocusEvent()->fromRaise &&
+              !aVisitor.mEvent->AsFocusEvent()->mFromRaise &&
               SelectTextFieldOnFocus()) {
             nsIDocument* document = GetComposedDoc();
             if (document) {
@@ -3814,15 +3960,8 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
               case NS_FORM_INPUT_IMAGE: // Bug 34418
               case NS_FORM_INPUT_COLOR:
               {
-                WidgetMouseEvent event(aVisitor.mEvent->mFlags.mIsTrusted,
-                                       eMouseClick, nullptr,
-                                       WidgetMouseEvent::eReal);
-                event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
-                nsEventStatus status = nsEventStatus_eIgnore;
-
-                EventDispatcher::Dispatch(static_cast<nsIContent*>(this),
-                                          aVisitor.mPresContext, &event,
-                                          nullptr, &status);
+                DispatchSimulatedClick(this, aVisitor.mEvent->IsTrusted(),
+                                       aVisitor.mPresContext);
                 aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
               } // case
             } // switch
@@ -3849,15 +3988,9 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
                 if (selectedRadioButton) {
                   rv = selectedRadioButton->Focus();
                   if (NS_SUCCEEDED(rv)) {
-                    nsEventStatus status = nsEventStatus_eIgnore;
-                    WidgetMouseEvent event(aVisitor.mEvent->mFlags.mIsTrusted,
-                                           eMouseClick, nullptr,
-                                           WidgetMouseEvent::eReal);
-                    event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
-                    rv =
-                      EventDispatcher::Dispatch(ToSupports(selectedRadioButton),
-                                                aVisitor.mPresContext,
-                                                &event, nullptr, &status);
+                    rv = DispatchSimulatedClick(selectedRadioButton,
+                                                aVisitor.mEvent->IsTrusted(),
+                                                aVisitor.mPresContext);
                     if (NS_SUCCEEDED(rv)) {
                       aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
                     }
@@ -3968,8 +4101,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
               }
             }
           }
-          if (mType == NS_FORM_INPUT_NUMBER &&
-              aVisitor.mEvent->mFlags.mIsTrusted) {
+          if (mType == NS_FORM_INPUT_NUMBER && aVisitor.mEvent->IsTrusted()) {
             if (mouseEvent->button == WidgetMouseEvent::eLeftButton &&
                 !(mouseEvent->IsShift() || mouseEvent->IsControl() ||
                   mouseEvent->IsAlt() || mouseEvent->IsMeta() ||
@@ -3978,7 +4110,7 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
               nsNumberControlFrame* numberControlFrame =
                 do_QueryFrame(GetPrimaryFrame());
               if (numberControlFrame) {
-                if (aVisitor.mEvent->mMessage == eMouseDown && 
+                if (aVisitor.mEvent->mMessage == eMouseDown &&
                     IsMutable()) {
                   switch (numberControlFrame->GetSpinButtonForPointerEvent(
                             aVisitor.mEvent->AsMouseEvent())) {
@@ -4120,7 +4252,7 @@ HTMLInputElement::PostHandleEventForRangeThumb(EventChainPostVisitor& aVisitor)
           CancelRangeThumbDrag();
         }
       } else {
-        if (aVisitor.mEvent->AsTouchEvent()->touches.Length() == 1) {
+        if (aVisitor.mEvent->AsTouchEvent()->mTouches.Length() == 1) {
           StartRangeThumbDrag(inputEvent);
         } else if (mIsDraggingRange) {
           CancelRangeThumbDrag();
@@ -4347,8 +4479,8 @@ HTMLInputElement::HandleTypeChange(uint8_t aNewType)
   // previous type does, we should clear out mFocusedValue.
   if (MayFireChangeOnBlur(mType) && !MayFireChangeOnBlur(oldType)) {
     GetValue(mFocusedValue);
-  } else if (!IsSingleLineTextControl(mType, false) &&
-             IsSingleLineTextControl(oldType, false)) {
+  } else if (!IsSingleLineTextControl(false, mType) &&
+             IsSingleLineTextControl(false, oldType)) {
     mFocusedValue.Truncate();
   }
 
@@ -4529,7 +4661,7 @@ HTMLInputElement::GetValueAsDate(const nsAString& aValue,
   }
 
   uint32_t endOfYearOffset = aValue.Length() - 6;
-  
+
   if (aValue[endOfYearOffset]     != '-' ||
       aValue[endOfYearOffset + 3] != '-') {
     return false;
@@ -4897,45 +5029,31 @@ HTMLInputElement::GetFilesAndDirectories(ErrorResult& aRv)
     return nullptr;
   }
 
-  const nsTArray<RefPtr<File>>& filesAndDirs = GetFilesInternal();
+  const nsTArray<OwningFileOrDirectory>& filesAndDirs =
+    GetFilesOrDirectoriesInternal();
 
   Sequence<OwningFileOrDirectory> filesAndDirsSeq;
 
-  if (!filesAndDirsSeq.SetLength(filesAndDirs.Length(), mozilla::fallible_t())) {
+  if (!filesAndDirsSeq.SetLength(filesAndDirs.Length(),
+                                 mozilla::fallible_t())) {
     p->MaybeReject(NS_ERROR_OUT_OF_MEMORY);
     return p.forget();
   }
 
   for (uint32_t i = 0; i < filesAndDirs.Length(); ++i) {
-    if (filesAndDirs[i]->IsDirectory()) {
-#if defined(ANDROID) || defined(MOZ_B2G)
-      MOZ_ASSERT(false,
-                 "Directory picking should have been redirected to normal "
-                 "file picking for platforms that don't have a directory "
-                 "picker");
-#endif
-      nsAutoString path;
-      filesAndDirs[i]->GetMozFullPathInternal(path, aRv);
-      if (aRv.Failed()) {
-        return nullptr;
-      }
-      int32_t leafSeparatorIndex = path.RFind(FILE_PATH_SEPARATOR);
-      nsDependentSubstring dirname = Substring(path, 0, leafSeparatorIndex);
+    if (filesAndDirs[i].IsDirectory()) {
+      RefPtr<Directory> directory = filesAndDirs[i].GetAsDirectory();
 
-      RefPtr<OSFileSystem> fs = new OSFileSystem(dirname);
-      fs->Init(OwnerDoc()->GetInnerWindow());
-
-      nsAutoString dompath(NS_LITERAL_STRING(FILESYSTEM_DOM_PATH_SEPARATOR));
-      dompath.Append(Substring(path, leafSeparatorIndex + 1));
-      RefPtr<Directory> directory = new Directory(fs, dompath);
       // In future we could refactor SetFilePickerFiltersFromAccept to return a
       // semicolon separated list of file extensions and include that in the
       // filter string passed here.
       directory->SetContentFilters(NS_LITERAL_STRING("filter-out-sensitive"));
       filesAndDirsSeq[i].SetAsDirectory() = directory;
     } else {
+      MOZ_ASSERT(filesAndDirs[i].IsFile());
+
       // This file was directly selected by the user, so don't filter it.
-      filesAndDirsSeq[i].SetAsFile() = filesAndDirs[i];
+      filesAndDirsSeq[i].SetAsFile() = filesAndDirs[i].GetAsFile();
     }
   }
 
@@ -5569,13 +5687,18 @@ HTMLInputElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
   if (mType == NS_FORM_INPUT_FILE) {
     // Submit files
 
-    const nsTArray<RefPtr<File>>& files = GetFilesInternal();
+    const nsTArray<OwningFileOrDirectory>& files =
+      GetFilesOrDirectoriesInternal();
 
+    bool hasBlobs = false;
     for (uint32_t i = 0; i < files.Length(); ++i) {
-      aFormSubmission->AddNameBlobOrNullPair(name, files[i]);
+      if (files[i].IsFile()) {
+        hasBlobs = true;
+        aFormSubmission->AddNameBlobOrNullPair(name, files[i].GetAsFile());
+      }
     }
 
-    if (files.IsEmpty()) {
+    if (!hasBlobs) {
       aFormSubmission->AddNameBlobOrNullPair(name, nullptr);
     }
 
@@ -5609,9 +5732,9 @@ HTMLInputElement::SaveState()
       }
       break;
     case VALUE_MODE_FILENAME:
-      if (!mFiles.IsEmpty()) {
+      if (!mFilesOrDirectories.IsEmpty()) {
         inputState = new HTMLInputElementState();
-        inputState->SetBlobImpls(mFiles);
+        inputState->SetFilesOrDirectories(mFilesOrDirectories);
       }
       break;
     case VALUE_MODE_VALUE:
@@ -5780,7 +5903,7 @@ HTMLInputElement::AddStates(EventStates aStates)
       }
     }
   }
-  nsGenericHTMLFormElementWithState::AddStates(aStates);                          
+  nsGenericHTMLFormElementWithState::AddStates(aStates);
 }
 
 void
@@ -5817,20 +5940,13 @@ HTMLInputElement::RestoreState(nsPresState* aState)
         break;
       case VALUE_MODE_FILENAME:
         {
-          const nsTArray<RefPtr<BlobImpl>>& blobImpls = inputState->GetBlobImpls();
+          nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow();
+          if (window) {
+            nsTArray<OwningFileOrDirectory> array;
+            inputState->GetFilesOrDirectories(window, array);
 
-          nsCOMPtr<nsIGlobalObject> global = OwnerDoc()->GetScopeObject();
-          MOZ_ASSERT(global);
-
-          nsTArray<RefPtr<File>> files;
-          for (uint32_t i = 0, len = blobImpls.Length(); i < len; ++i) {
-            RefPtr<File> file = File::Create(global, blobImpls[i]);
-            MOZ_ASSERT(file);
-
-            files.AppendElement(file);
+            SetFilesOrDirectories(array, true);
           }
-
-          SetFiles(files, true);
         }
         break;
       case VALUE_MODE_VALUE:
@@ -5873,7 +5989,7 @@ HTMLInputElement::AddedToRadioGroup()
 {
   // If the element is neither in a form nor a document, there is no group so we
   // should just stop here.
-  if (!mForm && !IsInDoc()) {
+  if (!mForm && !IsInUncomposedDoc()) {
     return;
   }
 
@@ -6340,15 +6456,15 @@ HTMLInputElement::IsValueMissing() const
   switch (GetValueMode()) {
     case VALUE_MODE_VALUE:
       return IsValueEmpty();
+
     case VALUE_MODE_FILENAME:
-    {
-      const nsTArray<RefPtr<File>>& files = GetFilesInternal();
-      return files.IsEmpty();
-    }
+      return GetFilesOrDirectoriesInternal().IsEmpty();
+
     case VALUE_MODE_DEFAULT_ON:
       // This should not be used for type radio.
       // See the MOZ_ASSERT at the beginning of the method.
       return !mChecked;
+
     case VALUE_MODE_DEFAULT:
     default:
       return false;

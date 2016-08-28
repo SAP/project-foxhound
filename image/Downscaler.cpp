@@ -11,6 +11,7 @@
 #include "gfxPrefs.h"
 #include "image_operations.h"
 #include "mozilla/SSE.h"
+#include "mozilla/mips.h"
 #include "convolver.h"
 #include "skia/include/core/SkTypes.h"
 
@@ -71,6 +72,13 @@ Downscaler::BeginFrame(const nsIntSize& aOriginalSize,
              "Created a downscaler, but height is larger");
   MOZ_ASSERT(aOriginalSize.width > 0 && aOriginalSize.height > 0,
              "Invalid original size");
+
+  // Only downscale from reasonable sizes to avoid using too much memory/cpu
+  // downscaling and decoding. 1 << 20 == 1,048,576 seems a reasonable limit.
+  if (aOriginalSize.width > (1 << 20) || aOriginalSize.height > (1 << 20)) {
+    NS_WARNING("Trying to downscale image frame that is too large");
+    return NS_ERROR_INVALID_ARG;
+  }
 
   mFrameRect = aFrameRect.valueOr(nsIntRect(nsIntPoint(), aOriginalSize));
   MOZ_ASSERT(mFrameRect.x >= 0 && mFrameRect.y >= 0 &&
@@ -195,9 +203,9 @@ GetFilterOffsetAndLength(UniquePtr<skia::ConvolutionFilter1D>& aFilter,
 }
 
 void
-Downscaler::ClearRow(uint32_t aStartingAtCol)
+Downscaler::ClearRestOfRow(uint32_t aStartingAtCol)
 {
-  MOZ_ASSERT(int64_t(mOriginalSize.width) > int64_t(aStartingAtCol));
+  MOZ_ASSERT(int64_t(aStartingAtCol) <= int64_t(mOriginalSize.width));
   uint32_t bytesToClear = (mOriginalSize.width - aStartingAtCol)
                         * sizeof(uint32_t);
   memset(mRowBuffer.get() + (aStartingAtCol * sizeof(uint32_t)),
@@ -221,7 +229,7 @@ Downscaler::CommitRow()
     if (mCurrentInLine == inLineToRead) {
       skia::ConvolveHorizontally(mRowBuffer.get(), *mXFilter,
                                  mWindow[mLinesInBuffer++], mHasAlpha,
-                                 supports_sse2());
+                                 supports_sse2() || supports_mmi());
     }
 
     MOZ_ASSERT(mCurrentOutLine < mTargetSize.height,
@@ -309,7 +317,7 @@ Downscaler::DownscaleInputLine()
     &mOutputBuffer[currentOutLine * mTargetSize.width * sizeof(uint32_t)];
   skia::ConvolveVertically(static_cast<const FilterValue*>(filterValues),
                            filterLength, mWindow.get(), mXFilter->num_values(),
-                           outputLine, mHasAlpha, supports_sse2());
+                           outputLine, mHasAlpha, supports_sse2() || supports_mmi());
 
   mCurrentOutLine += 1;
 

@@ -228,7 +228,11 @@ public:
     Replace(aCutStart, aCutLength, nullptr, 0);
   }
 
-  NS_HIDDEN_(void) Truncate() { SetLength(0); }
+  NS_HIDDEN_(void) Truncate(size_type aNewLength = 0)
+  {
+    NS_ASSERTION(aNewLength <= Length(), "Truncate cannot make string longer");
+    SetLength(aNewLength);
+  }
 
   /**
    * Remove all occurences of characters in aSet from the string.
@@ -650,7 +654,11 @@ public:
     Replace(aCutStart, aCutLength, nullptr, 0);
   }
 
-  NS_HIDDEN_(void) Truncate() { SetLength(0); }
+  NS_HIDDEN_(void) Truncate(size_type aNewLength = 0)
+  {
+    NS_ASSERTION(aNewLength <= Length(), "Truncate cannot make string longer");
+    SetLength(aNewLength);
+  }
 
   /**
    * Remove all occurences of characters in aSet from the string.

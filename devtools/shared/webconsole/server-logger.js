@@ -1,5 +1,5 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft= javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -153,7 +153,8 @@ var ServerLoggingListener = Class({
 
     switch (method) {
       case "examineHeaders":
-        return this.onExamineHeaders(msg);
+        this.onExamineHeaders(msg);
+        break;
       default:
         trace.log("Unknown method name: ", method);
     }
@@ -219,12 +220,12 @@ var ServerLoggingListener = Class({
    * instance based on the current filters.
    *
    * @private
-   * @param nsIHttpChannel aChannel
+   * @param nsIHttpChannel channel
    *        Request to check.
    * @return boolean
    *         True if the network request should be logged, false otherwise.
    */
-  _matchRequest: function(aChannel) {
+  _matchRequest: function(channel) {
     trace.log("_matchRequest ", this.window, ", ", this.topFrame);
 
     // Log everything if the window is null (it's null in the browser context)
@@ -234,15 +235,16 @@ var ServerLoggingListener = Class({
 
     // Ignore requests from chrome or add-on code when we are monitoring
     // content.
-    if (!aChannel.loadInfo &&
-        aChannel.loadInfo.loadingDocument === null &&
-        aChannel.loadInfo.loadingPrincipal === Services.scriptSecurityManager.getSystemPrincipal()) {
+    if (!channel.loadInfo &&
+        channel.loadInfo.loadingDocument === null &&
+        channel.loadInfo.loadingPrincipal ===
+        Services.scriptSecurityManager.getSystemPrincipal()) {
       return false;
     }
 
     // Since frames support, this.window may not be the top level content
     // frame, so that we can't only compare with win.top.
-    let win = NetworkHelper.getWindowForRequest(aChannel);
+    let win = NetworkHelper.getWindowForRequest(channel);
     while (win) {
       if (win == this.window) {
         return true;

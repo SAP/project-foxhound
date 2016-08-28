@@ -48,6 +48,7 @@
 #include "mozilla/dom/Voicemail.h"
 #include "mozilla/dom/TVManager.h"
 #include "mozilla/dom/VRDevice.h"
+#include "mozilla/dom/workers/RuntimeService.h"
 #include "mozilla/Hal.h"
 #include "nsISiteSpecificUserAgent.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -79,10 +80,8 @@
 #include "WidgetUtils.h"
 #include "nsIPresentationService.h"
 
-#ifdef MOZ_MEDIA_NAVIGATOR
 #include "mozilla/dom/MediaDevices.h"
 #include "MediaManager.h"
-#endif
 #ifdef MOZ_B2G_BT
 #include "BluetoothManager.h"
 #endif
@@ -128,6 +127,11 @@
 #include <cutils/properties.h>
 #endif
 
+#ifdef MOZ_PAY
+#include "nsIPaymentContentHelperService.h"
+#include "mozilla/dom/DOMRequest.h"
+#endif
+
 namespace mozilla {
 namespace dom {
 
@@ -151,8 +155,9 @@ Navigator::Init()
                                "dom.vibrator.max_vibrate_list_len", 128);
 }
 
-Navigator::Navigator(nsPIDOMWindow* aWindow)
+Navigator::Navigator(nsPIDOMWindowInner* aWindow)
   : mWindow(aWindow)
+  , mBatteryTelemetryReported(false)
 {
   MOZ_ASSERT(aWindow->IsInnerWindow(), "Navigator must get an inner window!");
 }
@@ -177,7 +182,6 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Navigator)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Navigator)
   tmp->Invalidate();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCachedResolveResults)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -214,7 +218,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mServiceWorkerContainer)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCachedResolveResults)
 #ifdef MOZ_EME
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
 #endif
@@ -258,6 +261,7 @@ Navigator::Invalidate()
   }
 
   mBatteryPromise = nullptr;
+  mBatteryTelemetryReported = false;
 
 #ifdef MOZ_B2G_FM
   if (mFMRadio) {
@@ -373,7 +377,7 @@ NS_IMETHODIMP
 Navigator::GetUserAgent(nsAString& aUserAgent)
 {
   nsCOMPtr<nsIURI> codebaseURI;
-  nsCOMPtr<nsPIDOMWindow> window;
+  nsCOMPtr<nsPIDOMWindowInner> window;
 
   if (mWindow) {
     window = mWindow;
@@ -745,6 +749,17 @@ Navigator::JavaEnabled(ErrorResult& aRv)
   return mimeType && mimeType->GetEnabledPlugin();
 }
 
+uint64_t
+Navigator::HardwareConcurrency()
+{
+  workers::RuntimeService* rts = workers::RuntimeService::GetOrCreateService();
+  if (!rts) {
+    return 1;
+  }
+
+  return rts->ClampedHardwareConcurrency();
+}
+
 void
 Navigator::RefreshMIMEArray()
 {
@@ -758,7 +773,7 @@ namespace {
 class VibrateWindowListener : public nsIDOMEventListener
 {
 public:
-  VibrateWindowListener(nsIDOMWindow* aWindow, nsIDocument* aDocument)
+  VibrateWindowListener(nsPIDOMWindowInner* aWindow, nsIDocument* aDocument)
   {
     mWindow = do_GetWeakReference(aWindow);
     mDocument = do_GetWeakReference(aDocument);
@@ -811,7 +826,7 @@ VibrateWindowListener::HandleEvent(nsIDOMEvent* aEvent)
     // empty list, because Vibrate() will fail if we're no longer focused, but
     // CancelVibrate() will succeed, so long as nobody else has started a new
     // vibration pattern.
-    nsCOMPtr<nsIDOMWindow> window = do_QueryReferent(mWindow);
+    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(mWindow);
     hal::CancelVibrate(window);
     RemoveListener();
     gVibrateWindowListener = nullptr;
@@ -866,7 +881,7 @@ Navigator::RemoveIdleObserver(MozIdleObserver& aIdleObserver, ErrorResult& aRv)
 bool
 Navigator::Vibrate(uint32_t aDuration)
 {
-  nsAutoTArray<uint32_t, 1> pattern;
+  AutoTArray<uint32_t, 1> pattern;
   pattern.AppendElement(aDuration);
   return Vibrate(pattern);
 }
@@ -927,7 +942,7 @@ Navigator::Vibrate(const nsTArray<uint32_t>& aPattern)
 uint32_t
 Navigator::MaxTouchPoints()
 {
-  nsCOMPtr<nsIWidget> widget = widget::WidgetUtils::DOMWindowToWidget(mWindow);
+  nsCOMPtr<nsIWidget> widget = widget::WidgetUtils::DOMWindowToWidget(mWindow->GetOuterWindow());
 
   NS_ENSURE_TRUE(widget, 0);
   return widget->GetMaxTouchPoints();
@@ -1110,7 +1125,7 @@ Navigator::GetGeolocation(ErrorResult& aRv)
   }
 
   mGeolocation = new Geolocation();
-  if (NS_FAILED(mGeolocation->Init(mWindow->GetOuterWindow()))) {
+  if (NS_FAILED(mGeolocation->Init(mWindow))) {
     mGeolocation = nullptr;
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -1348,7 +1363,6 @@ Navigator::SendBeacon(const nsAString& aUrl,
   return true;
 }
 
-#ifdef MOZ_MEDIA_NAVIGATOR
 MediaDevices*
 Navigator::GetMediaDevices(ErrorResult& aRv)
 {
@@ -1416,7 +1430,6 @@ Navigator::MozGetUserMediaDevices(const MediaStreamConstraints& aConstraints,
   aRv = manager->GetUserMediaDevices(mWindow, aConstraints, onsuccess, onerror,
                                      aInnerWindowID, aCallID);
 }
-#endif
 
 DesktopNotificationCenter*
 Navigator::GetMozNotification(ErrorResult& aRv)
@@ -1481,6 +1494,10 @@ Navigator::GetBattery(ErrorResult& aRv)
   }
   mBatteryPromise = batteryPromise;
 
+  // We just initialized mBatteryPromise, so we know this is the first time
+  // this page has accessed navigator.getBattery(). 1 = navigator.getBattery()
+  Telemetry::Accumulate(Telemetry::BATTERY_STATUS_COUNT, 1);
+
   if (!mBatteryManager) {
     mBatteryManager = new battery::BatteryManager(mWindow);
     mBatteryManager->Init();
@@ -1505,11 +1522,18 @@ Navigator::GetDeprecatedBattery(ErrorResult& aRv)
     mBatteryManager->Init();
   }
 
+  // Is this the first time this page has accessed navigator.battery?
+  if (!mBatteryTelemetryReported) {
+    // sample value 0 = navigator.battery
+    Telemetry::Accumulate(Telemetry::BATTERY_STATUS_COUNT, 0);
+    mBatteryTelemetryReported = true;
+  }
+
   return mBatteryManager;
 }
 
 /* static */ already_AddRefed<Promise>
-Navigator::GetDataStores(nsPIDOMWindow* aWindow,
+Navigator::GetDataStores(nsPIDOMWindowInner* aWindow,
                          const nsAString& aName,
                          const nsAString& aOwner,
                          ErrorResult& aRv)
@@ -1648,11 +1672,6 @@ Navigator::HasFeature(const nsAString& aName, ErrorResult& aRv)
 
     if (featureName.EqualsLiteral("Navigator.mozInputMethod")) {
       p->MaybeResolve(Preferences::GetBool("dom.mozInputMethod.enabled"));
-      return p.forget();
-    }
-
-    if (featureName.EqualsLiteral("Navigator.mozContacts")) {
-      p->MaybeResolve(true);
       return p.forget();
     }
 
@@ -1923,7 +1942,7 @@ Navigator::GetGamepads(nsTArray<RefPtr<Gamepad> >& aGamepads,
     return;
   }
   NS_ENSURE_TRUE_VOID(mWindow->GetDocShell());
-  nsGlobalWindow* win = static_cast<nsGlobalWindow*>(mWindow.get());
+  nsGlobalWindow* win = nsGlobalWindow::Cast(mWindow);
   win->SetHasGamepadEventListener(true);
   win->GetGamepads(aGamepads);
 }
@@ -1959,7 +1978,7 @@ Navigator::NotifyVRDevicesUpdated()
 {
   // Synchronize the VR devices and resolve the promises in
   // mVRGetDevicesPromises
-  nsGlobalWindow* win = static_cast<nsGlobalWindow*>(mWindow.get());
+  nsGlobalWindow* win = nsGlobalWindow::Cast(mWindow);
 
   nsTArray<RefPtr<VRDevice>> vrDevs;
   if (win->UpdateVRDevices(vrDevs)) {
@@ -2173,7 +2192,7 @@ Navigator::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 }
 
 void
-Navigator::SetWindow(nsPIDOMWindow *aInnerWindow)
+Navigator::SetWindow(nsPIDOMWindowInner *aInnerWindow)
 {
   NS_ASSERTION(aInnerWindow->IsInnerWindow(),
                "Navigator must get an inner window!");
@@ -2187,13 +2206,11 @@ Navigator::OnNavigation()
     return;
   }
 
-#ifdef MOZ_MEDIA_NAVIGATOR
   // If MediaManager is open let it inform any live streams or pending callbacks
   MediaManager *manager = MediaManager::GetIfExists();
   if (manager) {
     manager->OnNavigation(mWindow->WindowID());
   }
-#endif
   if (mCameraManager) {
     mCameraManager->OnNavigation(mWindow->WindowID());
   }
@@ -2207,7 +2224,7 @@ Navigator::CheckPermission(const char* type)
 
 /* static */
 bool
-Navigator::CheckPermission(nsPIDOMWindow* aWindow, const char* aType)
+Navigator::CheckPermission(nsPIDOMWindowInner* aWindow, const char* aType)
 {
   if (!aWindow) {
     return false;
@@ -2239,206 +2256,6 @@ Navigator::GetMozAudioChannelManager(ErrorResult& aRv)
 }
 #endif
 
-bool
-Navigator::DoResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
-                     JS::Handle<jsid> aId,
-                     JS::MutableHandle<JSPropertyDescriptor> aDesc)
-{
-  // Note: Keep this in sync with MayResolve.
-  if (!JSID_IS_STRING(aId)) {
-    return true;
-  }
-
-  nsScriptNameSpaceManager* nameSpaceManager = GetNameSpaceManager();
-  if (!nameSpaceManager) {
-    return Throw(aCx, NS_ERROR_NOT_INITIALIZED);
-  }
-
-  nsAutoJSString name;
-  if (!name.init(aCx, JSID_TO_STRING(aId))) {
-    return false;
-  }
-
-  const nsGlobalNameStruct* name_struct =
-    nameSpaceManager->LookupNavigatorName(name);
-  if (!name_struct) {
-    return true;
-  }
-
-  JS::Rooted<JSObject*> naviObj(aCx,
-                                js::CheckedUnwrap(aObject,
-                                                  /* stopAtWindowProxy = */ false));
-  if (!naviObj) {
-    return Throw(aCx, NS_ERROR_DOM_SECURITY_ERR);
-  }
-
-  if (name_struct->mType == nsGlobalNameStruct::eTypeNewDOMBinding) {
-    ConstructNavigatorProperty construct = name_struct->mConstructNavigatorProperty;
-    MOZ_ASSERT(construct);
-
-    JS::Rooted<JSObject*> domObject(aCx);
-    {
-      // Make sure to do the creation of our object in the compartment
-      // of naviObj, especially since we plan to cache that object.
-      JSAutoCompartment ac(aCx, naviObj);
-
-      // Check whether our constructor is enabled after we unwrap Xrays, since
-      // we don't want to define an interface on the Xray if it's disabled in
-      // the target global, even if it's enabled in the Xray's global.
-      if (name_struct->mConstructorEnabled &&
-          !(*name_struct->mConstructorEnabled)(aCx, naviObj)) {
-        return true;
-      }
-
-      if (name.EqualsLiteral("mozSettings")) {
-        bool hasPermission = CheckPermission("settings-api-read") ||
-          CheckPermission("settings-api-write");
-        if (!hasPermission) {
-          FillPropertyDescriptor(aDesc, aObject, JS::NullValue(), false);
-          return true;
-        }
-      }
-
-      if (name.EqualsLiteral("mozDownloadManager")) {
-        if (!CheckPermission("downloads")) {
-          FillPropertyDescriptor(aDesc, aObject, JS::NullValue(), false);
-          return true;
-        }
-      }
-
-      nsISupports* existingObject = mCachedResolveResults.GetWeak(name);
-      if (existingObject) {
-        // We know all of our WebIDL objects here are wrappercached, so just go
-        // ahead and WrapObject() them.  We can't use GetOrCreateDOMReflector,
-        // because we don't have the concrete type.
-        JS::Rooted<JS::Value> wrapped(aCx);
-        if (!dom::WrapObject(aCx, existingObject, &wrapped)) {
-          return false;
-        }
-        domObject = &wrapped.toObject();
-      } else {
-        domObject = construct(aCx, naviObj);
-        if (!domObject) {
-          return Throw(aCx, NS_ERROR_FAILURE);
-        }
-
-        // Store the value in our cache
-        nsISupports* native = UnwrapDOMObjectToISupports(domObject);
-        MOZ_ASSERT(native);
-        mCachedResolveResults.Put(name, native);
-      }
-    }
-
-    if (!JS_WrapObject(aCx, &domObject)) {
-      return false;
-    }
-
-    FillPropertyDescriptor(aDesc, aObject, JS::ObjectValue(*domObject), false);
-    return true;
-  }
-
-  NS_ASSERTION(name_struct->mType == nsGlobalNameStruct::eTypeNavigatorProperty,
-               "unexpected type");
-
-  nsresult rv = NS_OK;
-
-  nsCOMPtr<nsISupports> native;
-  bool hadCachedNative = mCachedResolveResults.Get(name, getter_AddRefs(native));
-  bool okToUseNative;
-  JS::Rooted<JS::Value> prop_val(aCx);
-  if (hadCachedNative) {
-    okToUseNative = true;
-  } else {
-    native = do_CreateInstance(name_struct->mCID, &rv);
-    if (NS_FAILED(rv)) {
-      return Throw(aCx, rv);
-    }
-
-    nsCOMPtr<nsIDOMGlobalPropertyInitializer> gpi(do_QueryInterface(native));
-
-    if (gpi) {
-      if (!mWindow) {
-        return Throw(aCx, NS_ERROR_UNEXPECTED);
-      }
-
-      rv = gpi->Init(mWindow, &prop_val);
-      if (NS_FAILED(rv)) {
-        return Throw(aCx, rv);
-      }
-    }
-
-    okToUseNative = !prop_val.isObjectOrNull();
-  }
-
-  if (okToUseNative) {
-    // Make sure to do the creation of our object in the compartment
-    // of naviObj, especially since we plan to cache that object.
-    JSAutoCompartment ac(aCx, naviObj);
-
-    rv = nsContentUtils::WrapNative(aCx, native, &prop_val);
-
-    if (NS_FAILED(rv)) {
-      return Throw(aCx, rv);
-    }
-
-    // Now that we know we managed to wrap this thing properly, go ahead and
-    // cache it as needed.
-    if (!hadCachedNative) {
-      mCachedResolveResults.Put(name, native);
-    }
-  }
-
-  if (!JS_WrapValue(aCx, &prop_val)) {
-    return Throw(aCx, NS_ERROR_UNEXPECTED);
-  }
-
-  FillPropertyDescriptor(aDesc, aObject, prop_val, false);
-  return true;
-}
-
-/* static */
-bool
-Navigator::MayResolve(jsid aId)
-{
-  // Note: This function does not fail and may not have any side-effects.
-  // Note: Keep this in sync with DoResolve.
-  if (!JSID_IS_STRING(aId)) {
-    return false;
-  }
-
-  nsScriptNameSpaceManager *nameSpaceManager = PeekNameSpaceManager();
-  if (!nameSpaceManager) {
-    // Really shouldn't happen here.  Fail safe.
-    return true;
-  }
-
-  nsAutoString name;
-  AssignJSFlatString(name, JSID_TO_FLAT_STRING(aId));
-
-  return nameSpaceManager->LookupNavigatorName(name);
-}
-
-void
-Navigator::GetOwnPropertyNames(JSContext* aCx, nsTArray<nsString>& aNames,
-                               ErrorResult& aRv)
-{
-  nsScriptNameSpaceManager *nameSpaceManager = GetNameSpaceManager();
-  if (!nameSpaceManager) {
-    NS_ERROR("Can't get namespace manager.");
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  JS::Rooted<JSObject*> wrapper(aCx, GetWrapper());
-  for (auto i = nameSpaceManager->NavigatorNameIter(); !i.Done(); i.Next()) {
-    const GlobalNameMapEntry* entry = i.Get();
-    if (!entry->mGlobalName.mConstructorEnabled ||
-        entry->mGlobalName.mConstructorEnabled(aCx, wrapper)) {
-      aNames.AppendElement(entry->mKey);
-    }
-  }
-}
-
 JSObject*
 Navigator::WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto)
 {
@@ -2459,7 +2276,7 @@ Navigator::HasWakeLockSupport(JSContext* /* unused*/, JSObject* /*unused */)
 bool
 Navigator::HasCameraSupport(JSContext* /* unused */, JSObject* aGlobal)
 {
-  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(aGlobal);
+  nsCOMPtr<nsPIDOMWindowInner> win = GetWindowFromGlobal(aGlobal);
   return win && nsDOMCameraManager::CheckPermission(win);
 }
 
@@ -2488,7 +2305,7 @@ Navigator::HasWifiManagerSupport(JSContext* /* unused */,
 bool
 Navigator::HasNFCSupport(JSContext* /* unused */, JSObject* aGlobal)
 {
-  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(aGlobal);
+  nsCOMPtr<nsPIDOMWindowInner> win = GetWindowFromGlobal(aGlobal);
 
   // Do not support NFC if NFC content helper does not exist.
   nsCOMPtr<nsISupports> contentHelper = do_GetService("@mozilla.org/nfc/content-helper;1");
@@ -2496,7 +2313,6 @@ Navigator::HasNFCSupport(JSContext* /* unused */, JSObject* aGlobal)
 }
 #endif // MOZ_NFC
 
-#ifdef MOZ_MEDIA_NAVIGATOR
 /* static */
 bool
 Navigator::HasUserMediaSupport(JSContext* /* unused */,
@@ -2506,7 +2322,6 @@ Navigator::HasUserMediaSupport(JSContext* /* unused */,
   return Preferences::GetBool("media.navigator.enabled", false) ||
          Preferences::GetBool("media.peerconnection.enabled", false);
 }
-#endif // MOZ_MEDIA_NAVIGATOR
 
 /* static */
 bool
@@ -2564,7 +2379,7 @@ Navigator::HasDataStoreSupport(JSContext* aCx, JSObject* aGlobal)
 
   JS::Rooted<JSObject*> global(aCx, aGlobal);
 
-  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(global);
+  nsCOMPtr<nsPIDOMWindowInner> win = GetWindowFromGlobal(global);
   if (!win) {
     return false;
   }
@@ -2582,7 +2397,7 @@ Navigator::HasDataStoreSupport(JSContext* aCx, JSObject* aGlobal)
 bool
 Navigator::HasMobileIdSupport(JSContext* aCx, JSObject* aGlobal)
 {
-  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(aGlobal);
+  nsCOMPtr<nsPIDOMWindowInner> win = GetWindowFromGlobal(aGlobal);
   if (!win) {
     return false;
   }
@@ -2610,13 +2425,13 @@ Navigator::HasPresentationSupport(JSContext* aCx, JSObject* aGlobal)
 {
   JS::Rooted<JSObject*> global(aCx, aGlobal);
 
-  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(global);
-  if (NS_WARN_IF(!win)) {
+  nsCOMPtr<nsPIDOMWindowInner> inner = GetWindowFromGlobal(global);
+  if (NS_WARN_IF(!inner)) {
     return false;
   }
 
   // Grant access if it has the permission.
-  if (CheckPermission(win, "presentation")) {
+  if (CheckPermission(inner, "presentation")) {
     return true;
   }
 
@@ -2628,8 +2443,8 @@ Navigator::HasPresentationSupport(JSContext* aCx, JSObject* aGlobal)
     return false;
   }
 
-  win = win->GetOuterWindow();
-  nsCOMPtr<nsPIDOMWindow> top = win->GetTop();
+  nsCOMPtr<nsPIDOMWindowOuter> win = inner->GetOuterWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> top = win->GetTop();
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(win);
   nsCOMPtr<nsIScriptObjectPrincipal> topSop = do_QueryInterface(top);
   if (!sop || !topSop) {
@@ -2642,7 +2457,8 @@ Navigator::HasPresentationSupport(JSContext* aCx, JSObject* aGlobal)
     return false;
   }
 
-  if (!(top = top->GetCurrentInnerWindow())) {
+  nsCOMPtr<nsPIDOMWindowInner> topInner;
+  if (!(topInner = top->GetCurrentInnerWindow())) {
     return false;
   }
 
@@ -2653,7 +2469,7 @@ Navigator::HasPresentationSupport(JSContext* aCx, JSObject* aGlobal)
   }
 
   nsAutoString sessionId;
-  presentationService->GetExistentSessionIdAtLaunch(top->WindowID(), sessionId);
+  presentationService->GetExistentSessionIdAtLaunch(topInner->WindowID(), sessionId);
   return !sessionId.IsEmpty();
 }
 
@@ -2671,11 +2487,41 @@ Navigator::MozE10sEnabled()
   return true;
 }
 
+#ifdef MOZ_PAY
+already_AddRefed<DOMRequest>
+Navigator::MozPay(JSContext* aCx,
+                  JS::Handle<JS::Value> aJwts,
+                  ErrorResult& aRv)
+{
+  if (!mWindow || !mWindow->GetDocShell()) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
+  nsresult rv;
+  nsCOMPtr<nsIPaymentContentHelperService> service =
+    do_GetService("@mozilla.org/payment/content-helper-service;1", &rv);
+  if (!service) {
+    aRv.Throw(rv);
+    return nullptr;
+  }
+
+  RefPtr<nsIDOMDOMRequest> request;
+  rv = service->Pay(mWindow, aJwts, getter_AddRefs(request));
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+    return nullptr;
+  }
+
+  return request.forget().downcast<DOMRequest>();
+}
+#endif // MOZ_PAY
+
 /* static */
-already_AddRefed<nsPIDOMWindow>
+already_AddRefed<nsPIDOMWindowInner>
 Navigator::GetWindowFromGlobal(JSObject* aGlobal)
 {
-  nsCOMPtr<nsPIDOMWindow> win =
+  nsCOMPtr<nsPIDOMWindowInner> win =
     do_QueryInterface(nsJSUtils::GetStaticScriptGlobal(aGlobal));
   MOZ_ASSERT(!win || win->IsInnerWindow());
   return win.forget();
@@ -2788,7 +2634,7 @@ Navigator::ClearUserAgentCache()
 }
 
 nsresult
-Navigator::GetUserAgent(nsPIDOMWindow* aWindow, nsIURI* aURI,
+Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow, nsIURI* aURI,
                         bool aIsCallerChrome,
                         nsAString& aUserAgent)
 {

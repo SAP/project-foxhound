@@ -13,8 +13,8 @@
 #include "jit/JitFrames.h"
 #include "jit/JitSpewer.h"
 #include "jit/Linker.h"
+#include "jit/mips-shared/SharedICHelpers-mips-shared.h"
 #include "jit/mips64/Bailouts-mips64.h"
-#include "jit/mips64/SharedICHelpers-mips64.h"
 #ifdef JS_ION_PERF
 # include "jit/PerfSpewer.h"
 #endif
@@ -193,7 +193,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     masm.storePtr(reg_token, Address(StackPointer, 0)); // callee token
 
     masm.subPtr(StackPointer, s4);
-    masm.makeFrameDescriptor(s4, JitFrame_Entry);
+    masm.makeFrameDescriptor(s4, JitFrame_Entry, JitFrameLayout::Size());
     masm.push(s4); // descriptor
 
     CodeLabel returnLabel;
@@ -234,7 +234,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
 
         // Enter exit frame.
         masm.addPtr(Imm32(BaselineFrame::Size() + BaselineFrame::FramePointerOffset), scratch);
-        masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS);
+        masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS, ExitFrameLayout::Size());
 
         // Push frame descriptor and fake return address.
         masm.reserveStack(2 * sizeof(uintptr_t));
@@ -393,6 +393,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     // Do not erase the frame pointer in this function.
 
     MacroAssembler masm(cx);
+    masm.pushReturnAddress();
     // Caller:
     // [arg2] [arg1] [this] [[argc] [callee] [descr] [raddr]] <- sp
     // '--- s3 ---'
@@ -523,7 +524,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
 
     // Construct sizeDescriptor.
     masm.subPtr(StackPointer, t2);
-    masm.makeFrameDescriptor(t2, JitFrame_Rectifier);
+    masm.makeFrameDescriptor(t2, JitFrame_Rectifier, JitFrameLayout::Size());
 
     // Construct JitFrameLayout.
     masm.subPtr(Imm32(3 * sizeof(uintptr_t)), StackPointer);
@@ -670,6 +671,10 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
     // The context is the first argument; a0 is the first argument register.
     Register cxreg = a0;
     regs.take(cxreg);
+
+    // If it isn't a tail call, then the return address needs to be saved
+    if (f.expectTailCall == NonTailCall)
+        masm.pushReturnAddress();
 
     // We're aligned to an exit frame, so link it up.
     masm.enterExitFrame(&f);
@@ -846,6 +851,7 @@ JitRuntime::generatePreBarrier(JSContext* cx, MIRType type)
         save.set() = RegisterSet(GeneralRegisterSet(Registers::VolatileMask),
                            FloatRegisterSet());
     }
+    save.add(ra);
     masm.PushRegsInMask(save);
 
     MOZ_ASSERT(PreBarrierReg == a1);
@@ -856,6 +862,7 @@ JitRuntime::generatePreBarrier(JSContext* cx, MIRType type)
     masm.passABIArg(a1);
     masm.callWithABI(IonMarkFunction(type));
 
+    save.take(AnyRegister(ra));
     masm.PopRegsInMask(save);
     masm.ret();
 

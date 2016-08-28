@@ -78,6 +78,8 @@ RasterImage::RasterImage(ImageURL* aURI /* = nullptr */) :
   mLockCount(0),
   mDecodeCount(0),
   mRequestedSampleSize(0),
+  mImageProducerID(ImageContainer::AllocateProducerID()),
+  mLastFrameID(0),
   mLastImageContainerDrawResult(DrawResult::NOT_READY),
 #ifdef DEBUG
   mFramesNotified(0),
@@ -363,7 +365,16 @@ RasterImage::LookupFrame(uint32_t aFrameNum,
   // async decoder that's currently running, the contents of the frame may not
   // be available yet. Make sure we get everything.
   if (mHasSourceData && (aFlags & FLAG_SYNC_DECODE)) {
-    result.DrawableRef()->WaitUntilComplete();
+    result.DrawableRef()->WaitUntilFinished();
+  }
+
+  // If we could have done some decoding in this function we need to check if
+  // that decoding encountered an error and hence aborted the surface. We want
+  // to avoid calling IsAborted if we weren't passed any sync decode flag because
+  // IsAborted acquires the monitor for the imgFrame.
+  if (aFlags & (FLAG_SYNC_DECODE | FLAG_SYNC_DECODE_IF_FAST) &&
+    result.DrawableRef()->IsAborted()) {
+    return DrawableFrameRef();
   }
 
   return Move(result.DrawableRef());
@@ -493,12 +504,16 @@ RasterImage::CopyFrame(uint32_t aWhichFrame, uint32_t aFlags)
     return nullptr;
   }
 
-  // Create a 32-bit image surface of our size, but draw using the frame's
-  // rect, implicitly padding the frame out to the image's size.
-
-  IntSize size(mSize.width, mSize.height);
+  // Create a 32-bit surface at the decoded size of the image. If
+  // FLAG_SYNC_DECODE was not passed, we may have substituted a downscaled
+  // version of the image we already had available, so this is not necessarily
+  // the intrinsic size of the image. We'll take the frame rect of the image
+  // into account when we draw, implicitly adding padding so that the caller
+  // doesn't need to worry about frame rects.
+  // XXX(seth): In bug 1247520 we'll remove support for frame rects, rendering
+  // this additional padding unnecessary.
   RefPtr<DataSourceSurface> surf =
-    Factory::CreateDataSourceSurface(size,
+    Factory::CreateDataSourceSurface(frameRef->GetImageSize(),
                                      SurfaceFormat::B8G8R8A8,
                                      /* aZero = */ true);
   if (NS_WARN_IF(!surf)) {
@@ -514,7 +529,7 @@ RasterImage::CopyFrame(uint32_t aWhichFrame, uint32_t aFlags)
   RefPtr<DrawTarget> target =
     Factory::CreateDrawTargetForData(BackendType::CAIRO,
                                      mapping.mData,
-                                     size,
+                                     frameRef->GetImageSize(),
                                      mapping.mStride,
                                      SurfaceFormat::B8G8R8A8);
   if (!target) {
@@ -594,7 +609,7 @@ RasterImage::GetFrameInternal(const IntSize& aSize,
   // surface.
   RefPtr<SourceSurface> frameSurf;
   if (!frameRef->NeedsPadding() &&
-      frameRef->GetSize() == aSize) {
+      frameRef->GetSize() == frameRef->GetImageSize()) {
     frameSurf = frameRef->GetSurface();
   }
 
@@ -606,7 +621,7 @@ RasterImage::GetFrameInternal(const IntSize& aSize,
     frameSurf = CopyFrame(aWhichFrame, aFlags);
   }
 
-  if (!frameRef->IsImageComplete()) {
+  if (!frameRef->IsFinished()) {
     return MakePair(DrawResult::INCOMPLETE, Move(frameSurf));
   }
 
@@ -629,11 +644,7 @@ RasterImage::GetCurrentImage(ImageContainer* aContainer, uint32_t aFlags)
     return MakePair(drawResult, RefPtr<layers::Image>());
   }
 
-  IntSize size;
-  GetWidth(&size.width);
-  GetHeight(&size.height);
-
-  RefPtr<layers::Image> image = new layers::SourceSurfaceImage(size, surface);
+  RefPtr<layers::Image> image = new layers::SourceSurfaceImage(surface);
   return MakePair(drawResult, Move(image));
 }
 
@@ -696,7 +707,11 @@ RasterImage::GetImageContainer(LayerManager* aManager, uint32_t aFlags)
   // |image| holds a reference to a SourceSurface which in turn holds a lock on
   // the current frame's VolatileBuffer, ensuring that it doesn't get freed as
   // long as the layer system keeps this ImageContainer alive.
-  container->SetCurrentImageInTransaction(image);
+  AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
+  imageList.AppendElement(ImageContainer::NonOwningImage(image, TimeStamp(),
+                                                         mLastFrameID++,
+                                                         mImageProducerID));
+  container->SetCurrentImagesInTransaction(imageList);
 
   mLastImageContainerDrawResult = drawResult;
   mImageContainer = container;
@@ -722,8 +737,10 @@ RasterImage::UpdateImageContainer()
   }
 
   mLastImageContainerDrawResult = drawResult;
-  nsAutoTArray<ImageContainer::NonOwningImage, 1> imageList;
-  imageList.AppendElement(ImageContainer::NonOwningImage(image));
+  AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
+  imageList.AppendElement(ImageContainer::NonOwningImage(image, TimeStamp(),
+                                                         mLastFrameID++,
+                                                         mImageProducerID));
   container->SetCurrentImages(imageList);
 }
 
@@ -1442,7 +1459,7 @@ RasterImage::DrawInternal(DrawableFrameRef&& aFrameRef,
 {
   gfxContextMatrixAutoSaveRestore saveMatrix(aContext);
   ImageRegion region(aRegion);
-  bool frameIsComplete = aFrameRef->IsImageComplete();
+  bool frameIsFinished = aFrameRef->IsFinished();
 
   // By now we may have a frame with the requested size. If not, we need to
   // adjust the drawing parameters accordingly.
@@ -1461,7 +1478,7 @@ RasterImage::DrawInternal(DrawableFrameRef&& aFrameRef,
     RecoverFromInvalidFrames(aSize, aFlags);
     return DrawResult::TEMPORARY_ERROR;
   }
-  if (!frameIsComplete) {
+  if (!frameIsFinished) {
     return DrawResult::INCOMPLETE;
   }
   if (couldRedecodeForBetterFrame) {
@@ -1520,7 +1537,7 @@ RasterImage::Draw(gfxContext* aContext,
   }
 
   bool shouldRecordTelemetry = !mDrawStartTime.IsNull() &&
-                               ref->IsImageComplete();
+                               ref->IsFinished();
 
   auto result = DrawInternal(Move(ref), aContext, aSize,
                              aRegion, aFilter, flags);
@@ -1623,7 +1640,7 @@ RasterImage::DoError()
   if (mAnimating) {
     StopAnimation();
   }
-  mAnim.release();
+  mAnim = nullptr;
 
   // Release all locks.
   mLockCount = 0;

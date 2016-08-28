@@ -154,9 +154,6 @@ class SpidermonkeyBuild(MockMixin,
                         ('base_mirror_urls', 'hgtool_base_mirror_urls', None),
                         ('hgurl', 'hgurl', None),
                         ('clobberer_url', 'clobberer_url', 'https://api.pub.build.mozilla.org/clobberer/lastclobber'),
-                        ('purge_minsize', 'purge_minsize', 15),
-                        ('purge_maxage', 'purge_maxage', None),
-                        ('purge_skip', 'purge_skip', None),
                         ('force_clobber', 'force_clobber', None),
                         ('branch', 'blob_upload_branch', None),
                         ]
@@ -178,6 +175,7 @@ class SpidermonkeyBuild(MockMixin,
                                   partial_env=self.config['partial_env'],
                                   purge_env=nuisance_env_vars)
         self.env['MOZ_UPLOAD_DIR'] = dirs['abs_blob_upload_dir']
+        self.env['TOOLTOOL_DIR'] = dirs['abs_work_dir']
 
     def query_abs_dirs(self):
         if self.abs_dirs:

@@ -8,15 +8,18 @@
 #include "OpusDecoder.h"
 #include "VorbisDecoder.h"
 #include "VPXDecoder.h"
+#include "WAVDecoder.h"
 
 namespace mozilla {
 
 bool
-AgnosticDecoderModule::SupportsMimeType(const nsACString& aMimeType) const
+AgnosticDecoderModule::SupportsMimeType(const nsACString& aMimeType,
+                                        DecoderDoctorDiagnostics* aDiagnostics) const
 {
   return VPXDecoder::IsVPX(aMimeType) ||
     OpusDataDecoder::IsOpus(aMimeType) ||
-    VorbisDataDecoder::IsVorbis(aMimeType);
+    VorbisDataDecoder::IsVorbis(aMimeType) ||
+    WaveDataDecoder::IsWave(aMimeType);
 }
 
 already_AddRefed<MediaDataDecoder>
@@ -24,7 +27,8 @@ AgnosticDecoderModule::CreateVideoDecoder(const VideoInfo& aConfig,
                                           layers::LayersBackend aLayersBackend,
                                           layers::ImageContainer* aImageContainer,
                                           FlushableTaskQueue* aVideoTaskQueue,
-                                          MediaDataDecoderCallback* aCallback)
+                                          MediaDataDecoderCallback* aCallback,
+                                          DecoderDoctorDiagnostics* aDiagnostics)
 {
   RefPtr<MediaDataDecoder> m;
 
@@ -41,7 +45,8 @@ AgnosticDecoderModule::CreateVideoDecoder(const VideoInfo& aConfig,
 already_AddRefed<MediaDataDecoder>
 AgnosticDecoderModule::CreateAudioDecoder(const AudioInfo& aConfig,
                                           FlushableTaskQueue* aAudioTaskQueue,
-                                          MediaDataDecoderCallback* aCallback)
+                                          MediaDataDecoderCallback* aCallback,
+                                          DecoderDoctorDiagnostics* aDiagnostics)
 {
   RefPtr<MediaDataDecoder> m;
 
@@ -51,6 +56,10 @@ AgnosticDecoderModule::CreateAudioDecoder(const AudioInfo& aConfig,
                               aCallback);
   } else if (OpusDataDecoder::IsOpus(aConfig.mMimeType)) {
     m = new OpusDataDecoder(*aConfig.GetAsAudioInfo(),
+                            aAudioTaskQueue,
+                            aCallback);
+  } else if (WaveDataDecoder::IsWave(aConfig.mMimeType)) {
+    m = new WaveDataDecoder(*aConfig.GetAsAudioInfo(),
                             aAudioTaskQueue,
                             aCallback);
   }

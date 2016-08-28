@@ -18,6 +18,10 @@ endif
 ifndef MOZ_PKG_PLATFORM
 MOZ_PKG_PLATFORM := $(TARGET_OS)-$(TARGET_CPU)
 
+ifeq ($(MOZ_BUILD_APP),mobile/android)
+MOZ_PKG_PLATFORM := android-$(TARGET_CPU)
+endif
+
 # TARGET_OS/TARGET_CPU may be unintuitive, so we hardcode some special formats
 ifeq ($(OS_ARCH),WINNT)
 ifeq ($(TARGET_CPU),x86_64)
@@ -147,27 +151,11 @@ else
 BUILDID = $(shell $(PYTHON) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/platform.ini Build BuildID)
 endif
 
-ifndef INCLUDED_RCS_MK
-  USE_RCS_MK := 1
-  include $(MOZILLA_DIR)/config/makefiles/makeutils.mk
-endif
-
-MOZ_SOURCE_STAMP = $(firstword $(shell hg -R $(MOZILLA_DIR) parent --template="{node}\n" 2>/dev/null))
-
-###########################################################################
-# bug: 746277 - preserve existing functionality.
-# MOZILLA_DIR="": cd $(SPACE); hg # succeeds if ~/.hg exists
-###########################################################################
-ifdef MOZ_INCLUDE_SOURCE_INFO
-MOZ_SOURCE_REPO = $(call getSourceRepo,$(MOZILLA_DIR)$(NULL) $(NULL))
-endif
-
 MOZ_SOURCESTAMP_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).txt
 MOZ_BUILDINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).json
 MOZ_BUILDID_INFO_TXT_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME)_info.txt
 MOZ_MOZINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).mozinfo.json
-MOZ_TEST_PACKAGES_FILE = $(DIST)/$(PKG_PATH)/test_packages.json
-MOZ_TEST_PACKAGES_FILE_TC = $(DIST)/$(PKG_PATH)/test_packages_tc.json
+MOZ_TEST_PACKAGES_FILE = $(DIST)/$(PKG_PATH)/$(PKG_BASENAME).test_packages.json
 
 # JavaScript Shell
 ifdef MOZ_SIMPLE_PACKAGE_NAME

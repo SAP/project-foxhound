@@ -28,6 +28,7 @@
 class PluginEventRunnable;
 #endif
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/PluginLibrary.h"
 #include "mozilla/WeakPtr.h"
@@ -100,6 +101,7 @@ public:
   nsresult GetDrawingModel(int32_t* aModel);
   nsresult IsRemoteDrawingCoreAnimation(bool* aDrawing);
   nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
+  nsresult CSSZoomFactorChanged(float aCSSZoomFactor);
   nsresult GetJSObject(JSContext *cx, JSObject** outObject);
   bool ShouldCache();
   nsresult IsWindowless(bool* isWindowless);
@@ -120,6 +122,13 @@ public:
   nsresult InvalidateRegion(NPRegion invalidRegion);
   nsresult GetMIMEType(const char* *result);
   nsresult GetJSContext(JSContext* *outContext);
+#if defined(XP_WIN)
+  nsresult GetScrollCaptureContainer(mozilla::layers::ImageContainer **aContainer);
+  nsresult UpdateScrollState(bool aIsScrolling);
+#endif
+  nsresult HandledWindowedPluginKeyEvent(
+             const mozilla::NativeEventData& aKeyEventData,
+             bool aIsConsumed);
   nsPluginInstanceOwner* GetOwner();
   void SetOwner(nsPluginInstanceOwner *aOwner);
   void DidComposite();
@@ -268,7 +277,7 @@ public:
   // cache this NPAPI plugin
   void SetCached(bool aCache);
 
-  already_AddRefed<nsPIDOMWindow> GetDOMWindow();
+  already_AddRefed<nsPIDOMWindowOuter> GetDOMWindow();
 
   nsresult PrivateModeStateChanged(bool aEnabled);
 
@@ -301,6 +310,9 @@ public:
 
   // Returns the contents scale factor of the screen the plugin is drawn on.
   double GetContentsScaleFactor();
+
+  // Returns the css zoom factor of the document the plugin is drawn on.
+  float GetCSSZoomFactor();
 
   nsresult GetRunID(uint32_t *aRunID);
 

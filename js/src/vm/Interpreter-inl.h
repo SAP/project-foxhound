@@ -278,9 +278,13 @@ SetNameOperation(JSContext* cx, JSScript* script, jsbytecode* pc, HandleObject s
     RootedId id(cx, NameToId(name));
     RootedValue receiver(cx, ObjectValue(*scope));
     if (scope->isUnqualifiedVarObj()) {
-        MOZ_ASSERT(!scope->getOps()->setProperty);
-        ok = NativeSetProperty(cx, scope.as<NativeObject>(), id, val, receiver, Unqualified,
-                               result);
+        RootedNativeObject varobj(cx);
+        if (scope->is<DebugScopeObject>())
+            varobj = &scope->as<DebugScopeObject>().scope().as<NativeObject>();
+        else
+            varobj = &scope->as<NativeObject>();
+        MOZ_ASSERT(!varobj->getOpsSetProperty());
+        ok = NativeSetProperty(cx, varobj, id, val, receiver, Unqualified, result);
     } else {
         ok = SetProperty(cx, scope, id, val, receiver, result);
     }
@@ -573,8 +577,8 @@ static MOZ_ALWAYS_INLINE bool
 InitElemOperation(JSContext* cx, jsbytecode* pc, HandleObject obj, HandleValue idval, HandleValue val)
 {
     MOZ_ASSERT(!val.isMagic(JS_ELEMENTS_HOLE));
-    MOZ_ASSERT(!obj->getClass()->getProperty);
-    MOZ_ASSERT(!obj->getClass()->setProperty);
+    MOZ_ASSERT(!obj->getClass()->getGetProperty());
+    MOZ_ASSERT(!obj->getClass()->getSetProperty());
 
     RootedId id(cx);
     if (!ToPropertyKey(cx, idval, &id))
@@ -773,12 +777,12 @@ ReportIfNotFunction(JSContext* cx, HandleValue v, MaybeConstruct construct = NO_
 }
 
 /*
- * FastInvokeGuard is used to optimize calls to JS functions from natives written
- * in C++, for instance Array.map. If the callee is not Ion-compiled, this will
- * just call Invoke. If the callee has a valid IonScript, however, it will enter
- * Ion directly.
+ * FastCallGuard is used to optimize calls to JS functions from natives written
+ * in C++, e.g. Array.prototype.map.  If the callee is not Ion-compiled, this
+ * will just call js::Call.  If the callee has a valid IonScript, however, it
+ * will enter Ion directly.
  */
-class FastInvokeGuard
+class FastCallGuard
 {
     InvokeArgs args_;
     RootedFunction fun_;
@@ -789,7 +793,7 @@ class FastInvokeGuard
     bool useIon_;
 
   public:
-    FastInvokeGuard(JSContext* cx, const Value& fval)
+    FastCallGuard(JSContext* cx, const Value& fval)
       : args_(cx)
       , fun_(cx)
       , script_(cx)
@@ -810,7 +814,10 @@ class FastInvokeGuard
         return args_;
     }
 
-    bool invoke(JSContext* cx) {
+    bool call(JSContext* cx, HandleValue callee, HandleValue thisv, MutableHandleValue rval) {
+        args_.CallArgs::setCallee(callee);
+        args_.CallArgs::setThis(thisv);
+
         if (useIon_ && fun_) {
             if (!script_) {
                 script_ = fun_->getOrCreateScript(cx);
@@ -828,6 +835,7 @@ class FastInvokeGuard
                     return false;
 
                 MOZ_ASSERT(result == jit::JitExec_Ok);
+                rval.set(args_.CallArgs::rval());
                 return true;
             }
 
@@ -840,12 +848,16 @@ class FastInvokeGuard
             }
         }
 
-        return Invoke(cx, args_);
+        if (!InternalCallOrConstruct(cx, args_, NO_CONSTRUCT))
+            return false;
+
+        rval.set(args_.CallArgs::rval());
+        return true;
     }
 
   private:
-    FastInvokeGuard(const FastInvokeGuard& other) = delete;
-    const FastInvokeGuard& operator=(const FastInvokeGuard& other) = delete;
+    FastCallGuard(const FastCallGuard& other) = delete;
+    void operator=(const FastCallGuard& other) = delete;
 };
 
 }  /* namespace js */

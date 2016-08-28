@@ -8,8 +8,9 @@
 #define gc_StoreBuffer_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/ReentrancyGuard.h"
+
+#include <algorithm>
 
 #include "jsalloc.h"
 
@@ -288,6 +289,35 @@ class StoreBuffer
             return !(*this == other);
         }
 
+        // True if this SlotsEdge range overlaps with the other SlotsEdge range,
+        // false if they do not overlap.
+        bool overlaps(const SlotsEdge& other) const {
+            if (objectAndKind_ != other.objectAndKind_)
+                return false;
+
+            // Widen our range by one on each side so that we consider
+            // adjacent-but-not-actually-overlapping ranges as overlapping. This
+            // is particularly useful for coalescing a series of increasing or
+            // decreasing single index writes 0, 1, 2, ..., N into a SlotsEdge
+            // range of elements [0, N].
+            auto end = start_ + count_ + 1;
+            auto start = start_ - 1;
+
+            auto otherEnd = other.start_ + other.count_;
+            return (start <= other.start_ && other.start_ <= end) ||
+                   (start <= otherEnd && otherEnd <= end);
+        }
+
+        // Destructively make this SlotsEdge range the union of the other
+        // SlotsEdge range and this one. A precondition is that the ranges must
+        // overlap.
+        void merge(const SlotsEdge& other) {
+            MOZ_ASSERT(overlaps(other));
+            auto end = Max(start_ + count_, other.start_ + other.count_);
+            start_ = Min(start_, other.start_);
+            count_ = end - start_;
+        }
+
         bool maybeInRememberedSet(const Nursery& n) const {
             return !IsInsideNursery(reinterpret_cast<Cell*>(object()));
         }
@@ -377,13 +407,18 @@ class StoreBuffer
 
     bool aboutToOverflow_;
     bool enabled_;
-    mozilla::DebugOnly<bool> mEntered; /* For ReentrancyGuard. */
+#ifdef DEBUG
+    bool mEntered; /* For ReentrancyGuard. */
+#endif
 
   public:
     explicit StoreBuffer(JSRuntime* rt, const Nursery& nursery)
       : bufferVal(), bufferCell(), bufferSlot(), bufferWholeCell(), bufferGeneric(),
         cancelIonCompilations_(false), runtime_(rt), nursery_(nursery), aboutToOverflow_(false),
-        enabled_(false), mEntered(false)
+        enabled_(false)
+#ifdef DEBUG
+        , mEntered(false)
+#endif
     {
     }
 
@@ -404,7 +439,11 @@ class StoreBuffer
     void putCell(Cell** cellp) { put(bufferCell, CellPtrEdge(cellp)); }
     void unputCell(Cell** cellp) { unput(bufferCell, CellPtrEdge(cellp)); }
     void putSlot(NativeObject* obj, int kind, int32_t start, int32_t count) {
-        put(bufferSlot, SlotsEdge(obj, kind, start, count));
+        SlotsEdge edge(obj, kind, start, count);
+        if (bufferSlot.last_.overlaps(edge))
+            bufferSlot.last_.merge(edge);
+        else
+            put(bufferSlot, edge);
     }
     void putWholeCell(Cell* cell) {
         MOZ_ASSERT(cell->isTenured());

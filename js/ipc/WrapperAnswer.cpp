@@ -78,7 +78,6 @@ WrapperAnswer::RecvPreventExtensions(const ObjectId& objId, ReturnStatus* rs)
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -110,7 +109,6 @@ WrapperAnswer::RecvGetPropertyDescriptor(const ObjectId& objId, const JSIDVarian
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
     EmptyDesc(out);
 
@@ -124,7 +122,7 @@ WrapperAnswer::RecvGetPropertyDescriptor(const ObjectId& objId, const JSIDVarian
     if (!fromJSIDVariant(cx, idVar, &id))
         return fail(jsapi, rs);
 
-    Rooted<JSPropertyDescriptor> desc(cx);
+    Rooted<PropertyDescriptor> desc(cx);
     if (!JS_GetPropertyDescriptorById(cx, obj, id, &desc))
         return fail(jsapi, rs);
 
@@ -141,7 +139,6 @@ WrapperAnswer::RecvGetOwnPropertyDescriptor(const ObjectId& objId, const JSIDVar
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
     EmptyDesc(out);
 
@@ -155,7 +152,7 @@ WrapperAnswer::RecvGetOwnPropertyDescriptor(const ObjectId& objId, const JSIDVar
     if (!fromJSIDVariant(cx, idVar, &id))
         return fail(jsapi, rs);
 
-    Rooted<JSPropertyDescriptor> desc(cx);
+    Rooted<PropertyDescriptor> desc(cx);
     if (!JS_GetOwnPropertyDescriptorById(cx, obj, id, &desc))
         return fail(jsapi, rs);
 
@@ -172,7 +169,6 @@ WrapperAnswer::RecvDefineProperty(const ObjectId& objId, const JSIDVariant& idVa
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -185,7 +181,7 @@ WrapperAnswer::RecvDefineProperty(const ObjectId& objId, const JSIDVariant& idVa
     if (!fromJSIDVariant(cx, idVar, &id))
         return fail(jsapi, rs);
 
-    Rooted<JSPropertyDescriptor> desc(cx);
+    Rooted<PropertyDescriptor> desc(cx);
     if (!toDescriptor(cx, descriptor, &desc))
         return fail(jsapi, rs);
 
@@ -201,7 +197,6 @@ WrapperAnswer::RecvDelete(const ObjectId& objId, const JSIDVariant& idVar, Retur
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -227,7 +222,6 @@ WrapperAnswer::RecvHas(const ObjectId& objId, const JSIDVariant& idVar, ReturnSt
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
     *foundp = false;
 
@@ -253,7 +247,6 @@ WrapperAnswer::RecvHasOwn(const ObjectId& objId, const JSIDVariant& idVar, Retur
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
     *foundp = false;
 
@@ -277,9 +270,8 @@ WrapperAnswer::RecvGet(const ObjectId& objId, const JSVariant& receiverVar,
                        const JSIDVariant& idVar, ReturnStatus* rs, JSVariant* result)
 {
     // We may run scripted getters.
-    AutoEntryScript aes(xpc::NativeGlobal(scopeForTargetObjects()),
+    AutoEntryScript aes(scopeForTargetObjects(),
                         "Cross-Process Object Wrapper 'get'");
-    aes.TakeOwnershipOfErrorReporting();
     JSContext* cx = aes.cx();
 
     // The outparam will be written to the buffer, so it must be set even if
@@ -315,9 +307,8 @@ WrapperAnswer::RecvSet(const ObjectId& objId, const JSIDVariant& idVar, const JS
                        const JSVariant& receiverVar, ReturnStatus* rs)
 {
     // We may run scripted setters.
-    AutoEntryScript aes(xpc::NativeGlobal(scopeForTargetObjects()),
+    AutoEntryScript aes(scopeForTargetObjects(),
                         "Cross-Process Object Wrapper 'set'");
-    aes.TakeOwnershipOfErrorReporting();
     JSContext* cx = aes.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -351,7 +342,6 @@ WrapperAnswer::RecvIsExtensible(const ObjectId& objId, ReturnStatus* rs, bool* r
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
     *result = false;
 
@@ -377,9 +367,8 @@ WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
                                    JSVariant* result,
                                    nsTArray<JSParam>* outparams)
 {
-    AutoEntryScript aes(xpc::NativeGlobal(scopeForTargetObjects()),
+    AutoEntryScript aes(scopeForTargetObjects(),
                         "Cross-Process Object Wrapper call/construct");
-    aes.TakeOwnershipOfErrorReporting();
     JSContext* cx = aes.cx();
 
     // The outparam will be written to the buffer, so it must be set even if
@@ -425,13 +414,15 @@ WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
         ContextOptionsRef(cx).setDontReportUncaught(true);
 
         HandleValueArray args = HandleValueArray::subarray(vals, 2, vals.length() - 2);
-        bool success;
-        if (construct)
-            success = JS::Construct(cx, vals[0], args, &rval);
-        else
-            success = JS::Call(cx, vals[1], vals[0], args, &rval);
-        if (!success)
-            return fail(aes, rs);
+        if (construct) {
+            RootedObject obj(cx);
+            if (!JS::Construct(cx, vals[0], args, &obj))
+                return fail(aes, rs);
+            rval.setObject(*obj);
+        } else {
+            if(!JS::Call(cx, vals[1], vals[0], args, &rval))
+                return fail(aes, rs);
+        }
     }
 
     if (!toVariant(cx, rval, result))
@@ -480,7 +471,6 @@ WrapperAnswer::RecvHasInstance(const ObjectId& objId, const JSVariant& vVar, Ret
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -508,7 +498,6 @@ WrapperAnswer::RecvGetBuiltinClass(const ObjectId& objId, ReturnStatus* rs,
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -534,7 +523,6 @@ WrapperAnswer::RecvIsArray(const ObjectId& objId, ReturnStatus* rs,
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -557,7 +545,6 @@ WrapperAnswer::RecvClassName(const ObjectId& objId, nsCString* name)
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -580,7 +567,6 @@ WrapperAnswer::RecvGetPrototype(const ObjectId& objId, ReturnStatus* rs, ObjectO
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -606,7 +592,6 @@ WrapperAnswer::RecvRegExpToShared(const ObjectId& objId, ReturnStatus* rs,
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -633,7 +618,6 @@ WrapperAnswer::RecvGetPropertyKeys(const ObjectId& objId, const uint32_t& flags,
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     RootedObject obj(cx, findObjectById(cx, objId));
@@ -664,7 +648,6 @@ WrapperAnswer::RecvInstanceOf(const ObjectId& objId, const JSIID& iid, ReturnSta
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
 
     *instanceof = false;
@@ -692,7 +675,6 @@ WrapperAnswer::RecvDOMInstanceOf(const ObjectId& objId, const int& prototypeID,
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
-    jsapi.TakeOwnershipOfErrorReporting();
     JSContext* cx = jsapi.cx();
     *instanceof = false;
 

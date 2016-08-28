@@ -122,9 +122,9 @@ TableBackgroundPainter::TableBackgroundData::ShouldSetBCBorder() const
     return false;
   }
 
-  const nsStyleBackground *bg = mFrame->StyleBackground();
-  NS_FOR_VISIBLE_BACKGROUND_LAYERS_BACK_TO_FRONT(i, bg) {
-    if (!bg->mLayers[i].mImage.IsEmpty())
+  const nsStyleImageLayers& layers = mFrame->StyleBackground()->mImage;
+  NS_FOR_VISIBLE_IMAGE_LAYERS_BACK_TO_FRONT(i, layers) {
+    if (!layers.mLayers[i].mImage.IsEmpty())
       return true;
   }
   return false;
@@ -230,7 +230,7 @@ TableBackgroundPainter::PaintTableFrame(nsTableFrame*         aTableFrame,
   DrawResult result = DrawResult::SUCCESS;
 
   if (tableData.IsVisible()) {
-    result =
+    result &=
       nsCSSRendering::PaintBackgroundWithSC(mPresContext, mRenderingContext,
                                             tableData.mFrame, mDirtyRect,
                                             tableData.mRect + mRenderPt,
@@ -276,15 +276,16 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
 
   if (rowGroups.Length() < 1) { //degenerate case
     if (aPaintTableBackground) {
-      PaintTableFrame(aTableFrame, nullptr, nullptr, nsMargin(0,0,0,0));
+      result &= PaintTableFrame(aTableFrame, nullptr, nullptr, nsMargin(0,0,0,0));
     }
     /* No cells; nothing else to paint */
     return result;
   }
 
   if (aPaintTableBackground) {
-    PaintTableFrame(aTableFrame, rowGroups[0], rowGroups[rowGroups.Length() - 1],
-                    aDeflate);
+    result &=
+      PaintTableFrame(aTableFrame, rowGroups[0], rowGroups[rowGroups.Length() - 1],
+                      aDeflate);
   }
 
   /*Set up column background/border data*/

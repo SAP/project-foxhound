@@ -6,9 +6,10 @@
 
 // Tests that an existing attribute can be modified
 
-const TEST_URL = "data:text/html,<div id='test-div'>Test modifying my ID attribute</div>";
+const TEST_URL = `data:text/html,
+                  <div id='test-div'>Test modifying my ID attribute</div>`;
 
-add_task(function*() {
+add_task(function* () {
   info("Opening the inspector on the test page");
   let {inspector, testActor} = yield openInspectorForURL(TEST_URL);
 

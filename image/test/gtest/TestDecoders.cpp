@@ -79,7 +79,7 @@ CheckDecoderResults(const ImageTestCase& aTestCase, Decoder* aDecoder)
               surface->GetFormat() == SurfaceFormat::B8G8R8A8);
   EXPECT_EQ(aTestCase.mSize, surface->GetSize());
   EXPECT_TRUE(IsSolidColor(surface, BGRAColor::Green(),
-                           aTestCase.mFlags & TEST_CASE_IS_FUZZY));
+                           aTestCase.mFlags & TEST_CASE_IS_FUZZY ? 1 : 0));
 }
 
 static void
@@ -255,4 +255,23 @@ TEST(ImageDecoders, CorruptSingleChunk)
 TEST(ImageDecoders, CorruptMultiChunk)
 {
   CheckDecoderMultiChunk(CorruptTestCase());
+}
+TEST(ImageDecoders, CorruptICOWithBadBMPWidthSingleChunk)
+{
+  CheckDecoderSingleChunk(CorruptICOWithBadBMPWidthTestCase());
+}
+
+TEST(ImageDecoders, CorruptICOWithBadBMPWidthMultiChunk)
+{
+  CheckDecoderMultiChunk(CorruptICOWithBadBMPWidthTestCase());
+}
+
+TEST(ImageDecoders, CorruptICOWithBadBMPHeightSingleChunk)
+{
+  CheckDecoderSingleChunk(CorruptICOWithBadBMPHeightTestCase());
+}
+
+TEST(ImageDecoders, CorruptICOWithBadBMPHeightMultiChunk)
+{
+  CheckDecoderMultiChunk(CorruptICOWithBadBMPHeightTestCase());
 }

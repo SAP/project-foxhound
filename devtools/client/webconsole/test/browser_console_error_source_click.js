@@ -1,7 +1,7 @@
-/*
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Check that JS errors and CSS warnings open view source when their source link
 // is clicked in the Browser Console. See bug 877778.
@@ -29,7 +29,7 @@ function test() {
     }
 
     info("generate exception and wait for the message");
-    ContentTask.spawn(gBrowser.selectedBrowser, {}, function*() {
+    ContentTask.spawn(gBrowser.selectedBrowser, {}, function* () {
       let button = content.document.querySelector("button");
       button.click();
     });
@@ -54,14 +54,17 @@ function test() {
   function onMessageFound(results) {
     let viewSource = hud.viewSource;
     let viewSourceCalled = false;
-    hud.viewSourceInDebugger = () => viewSourceCalled = true;
+    hud.viewSourceInDebugger = () => {
+      viewSourceCalled = true;
+    };
 
     for (let result of results) {
       viewSourceCalled = false;
 
       let msg = [...results[0].matched][0];
       ok(msg, "message element found for: " + result.text);
-      let locationNode = msg.querySelector(".message > .message-location");
+      let selector = ".message > .message-location .frame-link-filename";
+      let locationNode = msg.querySelector(selector);
       ok(locationNode, "message location element found");
 
       EventUtils.synthesizeMouse(locationNode, 2, 2, {}, hud.iframeWindow);

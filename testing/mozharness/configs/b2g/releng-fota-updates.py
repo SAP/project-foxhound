@@ -14,7 +14,7 @@ config = {
         # bug 1222227 - temporarily disable for S3 migration
         # 'make-socorro-json',
         # 'upload-source-manifest',
-        'submit-to-balrog',
+        # 'submit-to-balrog',
     ],
     "upload": {
         "default": {
@@ -61,15 +61,9 @@ config = {
         "CCACHE_COMPRESS": "1",
         "CCACHE_UMASK": "002",
         "GAIA_OPTIMIZE": "1",
-        "SYMBOL_SERVER_HOST": "symbolpush.mozilla.org",
-        "SYMBOL_SERVER_USER": "b2gbld",
-        "SYMBOL_SERVER_SSH_KEY": "/home/mock_mozilla/.ssh/b2gbld_dsa",
-        "SYMBOL_SERVER_PATH": "/mnt/netapp/breakpad/symbols_b2g/",
-        "POST_SYMBOL_UPLOAD_CMD": "/usr/local/bin/post-symbol-upload.py",
         "WGET_OPTS": "-c -q",
         "PATH": "/tools/python27/bin:%(PATH)s",
     },
-    "purge_minsize": 15,
     "clobberer_url": "https://api.pub.build.mozilla.org/clobberer/lastclobber",
     "is_automation": True,
     "repo_mirror_dir": "/builds/git-shared/repo",

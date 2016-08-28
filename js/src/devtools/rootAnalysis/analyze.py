@@ -106,6 +106,10 @@ JOBS = { 'dbs':
                '.'),
               ()),
 
+         'list-dbs':
+             (('ls', '-l'),
+              ()),
+
          'callgraph':
              (('%(js)s', '%(analysis_scriptdir)s/computeCallgraph.js'),
               'callgraph.txt'),
@@ -127,7 +131,8 @@ JOBS = { 'dbs':
              (generate_hazards, 'rootingHazards.txt'),
 
          'explain':
-             (('python', '%(analysis_scriptdir)s/explain.py',
+             ((os.environ.get('PYTHON', 'python2.7'),
+               '%(analysis_scriptdir)s/explain.py',
                '%(hazards)s', '%(gcFunctions)s',
                '[explained_hazards]', '[unnecessary]', '[refs]'),
               ('hazards.txt', 'unnecessary.txt', 'refs.txt'))
@@ -199,6 +204,10 @@ parser.add_argument('step', metavar='STEP', type=str, nargs='?',
                     help='run starting from this step')
 parser.add_argument('--source', metavar='SOURCE', type=str, nargs='?',
                     help='source code to analyze')
+parser.add_argument('--objdir', metavar='DIR', type=str, nargs='?',
+                    help='object directory of compiled files')
+parser.add_argument('--js', metavar='JSSHELL', type=str, nargs='?',
+                    help='full path to ctypes-capable JS shell')
 parser.add_argument('--upto', metavar='UPTO', type=str, nargs='?',
                     help='last step to execute')
 parser.add_argument('--jobs', '-j', default=None, metavar='JOBS', type=int,

@@ -3,13 +3,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* globals JsonViewUtils*/
 
 "use strict";
 
-const {Cu, Ci, Cc} = require("chrome");
+const { Cu } = require("chrome");
+const Services = require("Services");
 
-const {XPCOMUtils} = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
-const {Services} = Cu.import("resource://gre/modules/Services.jsm", {});
+const { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
 
 XPCOMUtils.defineLazyGetter(this, "JsonViewService", function() {
   return require("devtools/client/jsonview/utils");
@@ -18,7 +19,7 @@ XPCOMUtils.defineLazyGetter(this, "JsonViewService", function() {
 /**
  * Singleton object that represents the JSON View in-content tool.
  * It has the same lifetime as the browser. Initialization done by
- * DevTools() object from gDevTools.jsm
+ * DevTools() object from devtools/client/framework/devtools.js
  */
 var JsonView = {
   initialize: function() {

@@ -31,7 +31,6 @@ EXPORTS.mozilla.ipc += [
     'ScopedXREEmbed.h',
     'SharedMemory.h',
     'SharedMemoryBasic.h',
-    'SharedMemorySysV.h',
     'Shmem.h',
     'Transport.h',
     'URIUtils.h',
@@ -62,7 +61,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     SOURCES += [
         'CrossProcessMutex_windows.cpp',
     ]
-elif CONFIG['OS_ARCH'] in ('Linux', 'Darwin'):
+elif not CONFIG['OS_ARCH'] in ('NetBSD', 'OpenBSD'):
     UNIFIED_SOURCES += [
         'CrossProcessMutex_posix.cpp',
     ]
@@ -115,6 +114,7 @@ UNIFIED_SOURCES += [
     'FileDescriptor.cpp',
     'FileDescriptorUtils.cpp',
     'InputStreamUtils.cpp',
+    'IPCMessageUtils.cpp',
     'MessageChannel.cpp',
     'MessageLink.cpp',
     'MessagePump.cpp',
@@ -136,6 +136,12 @@ SOURCES += [
     'GeckoChildProcessHost.cpp',
     'URIUtils.cpp',
 ]
+
+if CONFIG['_MSC_VER']:
+    # This is intended as a temporary hack to support building with VS2015.
+    # 'reinterpret_cast': conversion from 'DWORD' to 'HANDLE' of greater size
+    SOURCES['BackgroundChildImpl.cpp'].flags += ['-wd4312']
+    SOURCES['BackgroundParentImpl.cpp'].flags += ['-wd4312']
 
 LOCAL_INCLUDES += [
     '/caps',

@@ -83,6 +83,7 @@ struct ScratchRegisterScope : public AutoRegisterScope
 
 static MOZ_CONSTEXPR_VAR Register ReturnReg = rax;
 static MOZ_CONSTEXPR_VAR Register HeapReg = r15;
+static MOZ_CONSTEXPR_VAR Register64 ReturnReg64(rax);
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32Reg = FloatRegister(X86Encoding::xmm0, FloatRegisters::Single);
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnDoubleReg = FloatRegister(X86Encoding::xmm0, FloatRegisters::Double);
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnSimd128Reg = FloatRegister(X86Encoding::xmm0, FloatRegisters::Simd128);
@@ -438,6 +439,22 @@ class Assembler : public AssemblerX86Shared
         masm.movq_rr(src.encoding(), dest.encoding());
     }
 
+    void cmovzq(const Operand& src, Register dest) {
+        switch (src.kind()) {
+          case Operand::REG:
+            masm.cmovzq_rr(src.reg(), dest.encoding());
+            break;
+          case Operand::MEM_REG_DISP:
+            masm.cmovzq_mr(src.disp(), src.base(), dest.encoding());
+            break;
+          case Operand::MEM_SCALE:
+            masm.cmovzq_mr(src.disp(), src.base(), src.index(), src.scale(), dest.encoding());
+            break;
+          default:
+            MOZ_CRASH("unexpected operand kind");
+        }
+    }
+
     void xchgq(Register src, Register dest) {
         masm.xchgq_rr(src.encoding(), dest.encoding());
     }
@@ -447,6 +464,9 @@ class Assembler : public AssemblerX86Shared
     }
     void movslq(const Operand& src, Register dest) {
         switch (src.kind()) {
+          case Operand::REG:
+            masm.movslq_rr(src.reg(), dest.encoding());
+            break;
           case Operand::MEM_REG_DISP:
             masm.movslq_mr(src.disp(), src.base(), dest.encoding());
             break;
@@ -562,6 +582,15 @@ class Assembler : public AssemblerX86Shared
     void sarq(Imm32 imm, Register dest) {
         masm.sarq_ir(imm.value, dest.encoding());
     }
+    void shlq_cl(Register dest) {
+        masm.shlq_CLr(dest.encoding());
+    }
+    void shrq_cl(Register dest) {
+        masm.shrq_CLr(dest.encoding());
+    }
+    void sarq_cl(Register dest) {
+        masm.sarq_CLr(dest.encoding());
+    }
     void orq(Imm32 imm, Register dest) {
         masm.orq_ir(imm.value, dest.encoding());
     }
@@ -589,12 +618,57 @@ class Assembler : public AssemblerX86Shared
     void xorq(Imm32 imm, Register dest) {
         masm.xorq_ir(imm.value, dest.encoding());
     }
+    void xorq(const Operand& src, Register dest) {
+        switch (src.kind()) {
+          case Operand::REG:
+            masm.xorq_rr(src.reg(), dest.encoding());
+            break;
+          case Operand::MEM_REG_DISP:
+            masm.xorq_mr(src.disp(), src.base(), dest.encoding());
+            break;
+          case Operand::MEM_ADDRESS32:
+            masm.xorq_mr(src.address(), dest.encoding());
+            break;
+          default:
+            MOZ_CRASH("unexpected operand kind");
+        }
+    }
 
     void imulq(Register src, Register dest) {
         masm.imulq_rr(src.encoding(), dest.encoding());
     }
+    void imulq(const Operand& src, Register dest) {
+        switch (src.kind()) {
+          case Operand::REG:
+            masm.imulq_rr(src.reg(), dest.encoding());
+            break;
+          case Operand::MEM_REG_DISP:
+            masm.imulq_mr(src.disp(), src.base(), dest.encoding());
+            break;
+          case Operand::MEM_ADDRESS32:
+            MOZ_CRASH("NYI");
+            break;
+          default:
+            MOZ_CRASH("unexpected operand kind");
+        }
+    }
+
+    void cqo() {
+        masm.cqo();
+    }
+    void idivq(Register divisor) {
+        masm.idivq_r(divisor.encoding());
+    }
+    void udivq(Register divisor) {
+        masm.divq_r(divisor.encoding());
+    }
+
     void vcvtsi2sdq(Register src, FloatRegister dest) {
         masm.vcvtsi2sdq_rr(src.encoding(), dest.encoding());
+    }
+
+    void negq(Register reg) {
+        masm.negq_r(reg.encoding());
     }
 
     void mov(ImmWord word, Register dest) {

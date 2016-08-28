@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Tests the behavior of the debugger statement.
@@ -18,7 +20,7 @@ function test() {
 
   let transport = DebuggerServer.connectPipe();
   gClient = new DebuggerClient(transport);
-  gClient.connect((aType, aTraits) => {
+  gClient.connect().then(([aType, aTraits]) => {
     is(aType, "browser",
       "Root actor should identify itself as a browser.");
 
@@ -76,6 +78,8 @@ function testDebuggerStatement([aGrip, aResponse]) {
 
   // Reach around the debugging protocol and execute the debugger statement.
   callInTab(gTab, "runDebuggerStatement");
+
+  return deferred.promise;
 }
 
 function closeConnection() {

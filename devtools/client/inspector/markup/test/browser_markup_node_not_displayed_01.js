@@ -21,7 +21,7 @@ const TEST_DATA = [
   {selector: "#visibility-hidden", isDisplayed: true}
 ];
 
-add_task(function*() {
+add_task(function* () {
   let {inspector} = yield openInspectorForURL(TEST_URL);
 
   for (let {selector, isDisplayed} of TEST_DATA) {
@@ -29,6 +29,6 @@ add_task(function*() {
     let nodeFront = yield getNodeFront(selector, inspector);
     let container = getContainerForNodeFront(nodeFront, inspector);
     is(!container.elt.classList.contains("not-displayed"), isDisplayed,
-      "The container for " + selector + " is marked as displayed " + isDisplayed);
+       `The container for ${selector} is marked as displayed ${isDisplayed}`);
   }
 });

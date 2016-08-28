@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Bug 740825: Test the debugger conditional breakpoints.
@@ -118,6 +120,13 @@ function test() {
                                 gDebugger);
     }
 
+    function waitForConditionUpdate() {
+      // This will close the popup and send another request to update
+      // the condition
+      gSources._hideConditionalPopup();
+      return waitForDispatch(gPanel, constants.SET_BREAKPOINT_CONDITION);
+    }
+
     Task.spawn(function*() {
       yield waitForSourceAndCaretAndScopes(gPanel, ".html", 17);
 
@@ -140,8 +149,10 @@ function test() {
       testBreakpoint(19, false, undefined);
       yield modBreakpoint2();
       testBreakpoint(19, true, undefined);
+      yield waitForConditionUpdate();
       yield addBreakpoint3();
-      testBreakpoint(20, false, undefined);
+      testBreakpoint(20, true, "");
+      yield waitForConditionUpdate();
       yield modBreakpoint3();
       testBreakpoint(20, false, "bamboocha");
       yield addBreakpoint4();

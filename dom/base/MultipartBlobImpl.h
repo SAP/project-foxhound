@@ -16,8 +16,8 @@
 #include <algorithm>
 #include "nsPIDOMWindow.h"
 
-using namespace mozilla;
-using namespace mozilla::dom;
+namespace mozilla {
+namespace dom {
 
 class MultipartBlobImpl final : public BlobImplBase
 {
@@ -64,12 +64,12 @@ public:
                             const ChromeFilePropertyBag& aBag,
                             ErrorResult& aRv);
 
-  void InitializeChromeFile(nsPIDOMWindow* aWindow,
+  void InitializeChromeFile(nsPIDOMWindowInner* aWindow,
                             const nsAString& aData,
                             const ChromeFilePropertyBag& aBag,
                             ErrorResult& aRv);
 
-  void InitializeChromeFile(nsPIDOMWindow* aWindow,
+  void InitializeChromeFile(nsPIDOMWindowInner* aWindow,
                             nsIFile* aData,
                             const ChromeFilePropertyBag& aBag,
                             bool aIsFromNsIFile,
@@ -104,11 +104,6 @@ public:
     mName = aName;
   }
 
-  void SetFromNsIFile(bool aValue)
-  {
-    mIsFromNsIFile = aValue;
-  }
-
   virtual bool MayBeClonedToOtherThreads() const override;
 
 protected:
@@ -136,5 +131,8 @@ protected:
   nsTArray<RefPtr<BlobImpl>> mBlobImpls;
   bool mIsFromNsIFile;
 };
+
+} // dom namespace
+} // mozilla namespace
 
 #endif // mozilla_dom_MultipartBlobImpl_h

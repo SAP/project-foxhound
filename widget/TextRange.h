@@ -8,7 +8,6 @@
 
 #include <stdint.h>
 
-#include "nsAutoPtr.h"
 #include "nsColor.h"
 #include "nsITextInputProcessor.h"
 #include "nsStyleConsts.h"
@@ -189,7 +188,7 @@ struct TextRange
 /******************************************************************************
  * mozilla::TextRangeArray
  ******************************************************************************/
-class TextRangeArray final : public nsAutoTArray<TextRange, 10>
+class TextRangeArray final : public AutoTArray<TextRange, 10>
 {
   friend class WidgetCompositionEvent;
 
