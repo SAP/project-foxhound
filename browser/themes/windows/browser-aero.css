@@ -9,10 +9,6 @@
   #main-window[sizemode="normal"] > #tab-view-deck > #browser-panel > #navigator-toolbox > #toolbar-menubar {
     margin-top: 1px;
   }
-
-  .panel-promo-message {
-    font-style: italic;
-  }
 }
 
 @media (-moz-windows-default-theme) {
@@ -330,8 +326,11 @@
     color: white;
   }
 
-  #toolbar-menubar:not(:-moz-lwtheme) {
-    text-shadow: 0 0 .5em white, 0 0 .5em white, 0 1px 0 rgba(255,255,255,.4);
+  @media (-moz-os-version: windows-vista),
+         (-moz-os-version: windows-win7),{
+    #toolbar-menubar:not(:-moz-lwtheme) {
+      text-shadow: 0 0 .5em white, 0 0 .5em white, 0 1px 0 rgba(255,255,255,.4);
+    }
   }
 
   /* Show borders on vista through win8, but not on win10 and later: */
@@ -366,13 +365,6 @@
   #main-window[sizemode=normal] #TabsToolbar {
     padding-left: 1px;
     padding-right: 1px;
-  }
-
-  /* Make the window draggable by glassed toolbars (bug 555081) */
-  #toolbar-menubar:not([autohide="true"]),
-  #TabsToolbar,
-  #navigator-toolbox > toolbar:not(#toolbar-menubar):not(#addon-bar):-moz-lwtheme {
-    -moz-binding: url("chrome://browser/content/customizableui/toolbar.xml#toolbar-drag");
   }
 
   #appcontent:not(:-moz-lwtheme) {
@@ -469,11 +461,6 @@
     }
     #main-window:-moz-window-inactive {
       background-color: rgb(215,228,242);
-    }
-
-    #toolbar-menubar:not([autohide=true]):not(:-moz-lwtheme),
-    #TabsToolbar:not(:-moz-lwtheme) {
-      -moz-binding: url("chrome://browser/content/customizableui/toolbar.xml#toolbar-drag");
     }
 
     /* Render a window top border for lwthemes: */

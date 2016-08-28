@@ -7,10 +7,10 @@ var Cu = Components.utils;
 var Cr = Components.results;
 var CC = Components.Constructor;
 
-Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const Services = require("Services");
 const {DebuggerClient} = require("devtools/shared/client/main");
 const {DebuggerServer} = require("devtools/server/main");
 const {AppActorFront} = require("devtools/shared/apps/app-actor-front");
@@ -26,13 +26,13 @@ function connect(onDone) {
 
   // Setup client and actor used in all tests
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect(function onConnect() {
-    gClient.listTabs(function onListTabs(aResponse) {
+  gClient.connect()
+    .then(() => gClient.listTabs())
+    .then(aResponse => {
       gActor = aResponse.webappsActor;
       gActorFront = new AppActorFront(gClient, aResponse);
       onDone();
     });
-  });
 }
 
 function webappActorRequest(request, onResponse) {
@@ -80,16 +80,7 @@ function setup() {
   Components.utils.import("resource://testing-common/AppInfo.jsm");
   updateAppInfo();
 
-  // We have to toggle this flag in order to have apps being listed in getAll
-  // as only launchable apps are returned
   Components.utils.import('resource://gre/modules/Webapps.jsm');
-  DOMApplicationRegistry.allAppsLaunchable = true;
-
-  // Mock WebappOSUtils
-  Cu.import("resource://gre/modules/WebappOSUtils.jsm");
-  WebappOSUtils.getPackagePath = function(aApp) {
-    return aApp.basePath + "/" + aApp.id;
-  }
 
   // Enable launch/close method of the webapps actor
   let {WebappsActor} = require("devtools/server/actors/webapps");

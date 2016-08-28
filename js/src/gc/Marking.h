@@ -7,7 +7,6 @@
 #ifndef gc_Marking_h
 #define gc_Marking_h
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Move.h"
 
@@ -32,7 +31,7 @@ class NativeObject;
 class ObjectGroup;
 class WeakMapBase;
 namespace gc {
-struct ArenaHeader;
+class Arena;
 } // namespace gc
 namespace jit {
 class JitCode;
@@ -214,9 +213,9 @@ class GCMarker : public JSTracer
         linearWeakMarkingDisabled_ = true;
     }
 
-    void delayMarkingArena(gc::ArenaHeader* aheader);
+    void delayMarkingArena(gc::Arena* arena);
     void delayMarkingChildren(const void* thing);
-    void markDelayedChildren(gc::ArenaHeader* aheader);
+    void markDelayedChildren(gc::Arena* arena);
     bool markDelayedChildren(SliceBudget& budget);
     bool hasDelayedChildren() const {
         return !!unmarkedArenaStackTop;
@@ -283,7 +282,7 @@ class GCMarker : public JSTracer
     void eagerlyMarkChildren(Shape* shape);
     void lazilyMarkChildren(ObjectGroup* group);
 
-    // We may not have concrete types yet, so this has to be out of the header.
+    // We may not have concrete types yet, so this has to be outside the header.
     template <typename T>
     void dispatchToTraceChildren(T* thing);
 
@@ -331,7 +330,7 @@ class GCMarker : public JSTracer
     uint32_t color;
 
     /* Pointer to the top of the stack of arenas we are delaying marking on. */
-    js::gc::ArenaHeader* unmarkedArenaStackTop;
+    js::gc::Arena* unmarkedArenaStackTop;
 
     /*
      * If the weakKeys table OOMs, disable the linear algorithm and fall back
@@ -339,17 +338,19 @@ class GCMarker : public JSTracer
      */
     bool linearWeakMarkingDisabled_;
 
+#ifdef DEBUG
     /* Count of arenas that are currently in the stack. */
-    mozilla::DebugOnly<size_t> markLaterArenas;
+    size_t markLaterArenas;
 
     /* Assert that start and stop are called with correct ordering. */
-    mozilla::DebugOnly<bool> started;
+    bool started;
 
     /*
      * If this is true, all marked objects must belong to a compartment being
      * GCed. This is used to look for compartment bugs.
      */
-    mozilla::DebugOnly<bool> strictCompartmentChecking;
+    bool strictCompartmentChecking;
+#endif // DEBUG
 };
 
 #ifdef DEBUG
@@ -364,7 +365,7 @@ namespace gc {
 /*** Special Cases ***/
 
 void
-PushArena(GCMarker* gcmarker, ArenaHeader* aheader);
+PushArena(GCMarker* gcmarker, Arena* arena);
 
 /*** Liveness ***/
 
@@ -440,50 +441,6 @@ CheckTracedThing(JSTracer* trc, T* thing);
 template<typename T>
 void
 CheckTracedThing(JSTracer* trc, T thing);
-
-// Define a default Policy for all pointer types. This may fail to link if this
-// policy gets used on a non-GC typed pointer by accident. There is a separate
-// default policy for Value and jsid.
-template <typename T>
-struct DefaultGCPolicy<T*>
-{
-    static void trace(JSTracer* trc, T** thingp, const char* name) {
-        // If linking is failing here, it likely means that you need to define
-        // or use a non-default GC policy for your non-gc-pointer type.
-        if (*thingp)
-            TraceManuallyBarrieredEdge(trc, thingp, name);
-    }
-
-    static bool needsSweep(T** thingp) {
-        // If linking is failing here, it likely means that you need to define
-        // or use a non-default GC policy for your non-gc-pointer type.
-        return *thingp && gc::IsAboutToBeFinalizedUnbarriered(thingp);
-    }
-};
-
-// RelocatablePtr is only defined for GC pointer types, so this default policy
-// should work in all cases.
-template <typename T>
-struct DefaultGCPolicy<RelocatablePtr<T>>
-{
-    static void trace(JSTracer* trc, RelocatablePtr<T>* thingp, const char* name) {
-        TraceEdge(trc, thingp, name);
-    }
-    static bool needsSweep(RelocatablePtr<T>* thingp) {
-        return gc::IsAboutToBeFinalizedUnbarriered(thingp);
-    }
-};
-
-template <typename T>
-struct DefaultGCPolicy<ReadBarriered<T>>
-{
-    static void trace(JSTracer* trc, ReadBarriered<T>* thingp, const char* name) {
-        TraceEdge(trc, thingp, name);
-    }
-    static bool needsSweep(ReadBarriered<T>* thingp) {
-        return gc::IsAboutToBeFinalized(thingp);
-    }
-};
 
 } /* namespace js */
 

@@ -162,7 +162,8 @@ struct Token
       private:
         friend struct Token;
         PropertyName*   name;          // non-numeric atom
-        JSAtom*         atom;          // potentially-numeric atom
+        // TaintFox: cannot be an atom anymore.
+        JSLinearString* str;          // potentially-numeric linear string or atom
         struct {
             double      value;          // floating point number
             DecimalPoint decimalPoint;  // literal contains '.'
@@ -200,11 +201,11 @@ struct Token
         u.name = name;
     }
 
-    void setAtom(JSAtom* atom) {
+    void setString(JSLinearString* str) {
         MOZ_ASSERT(type == TOK_STRING ||
                    type == TOK_TEMPLATE_HEAD ||
                    type == TOK_NO_SUBS_TEMPLATE);
-        u.atom = atom;
+        u.str = str;
     }
 
     void setRegExpFlags(js::RegExpFlag flags) {
@@ -231,11 +232,11 @@ struct Token
         return pos.begin + n->length() != pos.end;
     }
 
-    JSAtom* atom() const {
+    JSLinearString* str() const {
         MOZ_ASSERT(type == TOK_STRING ||
                    type == TOK_TEMPLATE_HEAD ||
                    type == TOK_NO_SUBS_TEMPLATE);
-        return u.atom;
+        return u.str;
     }
 
     js::RegExpFlag regExpFlags() const {
@@ -339,7 +340,7 @@ class MOZ_STACK_CLASS TokenStream
     typedef Vector<char16_t, 32> CharBuffer;
 
     TokenStream(ExclusiveContext* cx, const ReadOnlyCompileOptions& options,
-                const char16_t* base, size_t length, StrictModeGetter* smg);
+                const char16_t* base, size_t length, const StringTaint& taint, StrictModeGetter* smg);
 
     ~TokenStream();
 
@@ -435,7 +436,8 @@ class MOZ_STACK_CLASS TokenStream
     bool reportStrictModeError(unsigned errorNumber, ...);
     bool strictMode() const { return strictModeGetter && strictModeGetter->strictMode(); }
 
-    static JSAtom* atomize(ExclusiveContext* cx, CharBuffer& cb);
+    // TaintFox: don't generate atoms so we can propagate taint
+    static JSLinearString* stringify(ExclusiveContext* cx, CharBuffer& cb, const StringTaint& taint);
     bool putIdentInTokenbuf(const char16_t* identStart);
 
     struct Flags
@@ -859,12 +861,15 @@ class MOZ_STACK_CLASS TokenStream
     // where we have only the substring in memory. The |startOffset| argument
     // indicates the offset within this larger string at which our string
     // begins, the offset of |buf[0]|.
+    //
+    // TaintFox: modified to be taint aware.
     class TokenBuf {
       public:
-        TokenBuf(ExclusiveContext* cx, const char16_t* buf, size_t length, size_t startOffset)
+        TokenBuf(ExclusiveContext* cx, const char16_t* buf, size_t length, const StringTaint& taint, size_t startOffset)
           : base_(buf),
             startOffset_(startOffset),
             limit_(buf + length),
+            taint_(taint),
             ptr(buf)
         { }
 
@@ -900,6 +905,12 @@ class MOZ_STACK_CLASS TokenStream
 
         char16_t peekRawChar() const {
             return *ptr;        // this will nullptr-crash if poisoned
+        }
+
+        // TaintFox: slightly hacky API: get the taintflow for the previously extracted character.
+        const TaintFlow* currentTaintFlow() const {
+            MOZ_ASSERT(ptr > base_);
+            return taint_.at(ptr - base_ - 1);
         }
 
         bool matchRawChar(char16_t c) {
@@ -954,6 +965,7 @@ class MOZ_STACK_CLASS TokenStream
         const char16_t* base_;          // base of buffer
         uint32_t startOffset_;          // offset of base_[0]
         const char16_t* limit_;         // limit for quick bounds check
+        StringTaint taint_;             // taint information for the buffer
         const char16_t* ptr;            // next char to get
     };
 
@@ -1003,6 +1015,11 @@ class MOZ_STACK_CLASS TokenStream
             getChar();
     }
 
+    void skipCharsIgnoreEOL(int n) {
+        while (--n >= 0)
+            getCharIgnoreEOL();
+    }
+
     void updateLineInfoForEOL();
     void updateFlagsForEOL();
 
@@ -1028,6 +1045,7 @@ class MOZ_STACK_CLASS TokenStream
     UniqueTwoByteChars  displayURL_;        // the user's requested source URL or null
     UniqueTwoByteChars  sourceMapURL_;      // source map's filename or null
     CharBuffer          tokenbuf;           // current token string buffer
+    StringTaint         tokenbufTaint;      // taint information for the tokenbuf
     uint8_t             isExprEnding[TOK_LIMIT];// which tokens definitely terminate exprs?
     ExclusiveContext*   const cx;
     bool                mutedErrors;

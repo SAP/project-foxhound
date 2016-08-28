@@ -111,9 +111,9 @@ nsMathMLElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
       // Enable MathML and setup the style sheet during binding, not element
       // construction, because we could move a MathML element from the document
       // that created it to another document.
+      auto cache = nsLayoutStylesheetCache::For(doc->GetStyleBackendType());
       doc->SetMathMLEnabled();
-      doc->
-        EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::MathMLSheet());
+      doc->EnsureOnDemandBuiltInUASheet(cache->MathMLSheet());
 
       // Rebuild style data for the presshell, because style system
       // optimizations may have taken place assuming MathML was disabled.
@@ -136,7 +136,7 @@ nsMathMLElement::UnbindFromTree(bool aDeep, bool aNullParent)
   // be under a different xml:base, so forget the cached state now.
   Link::ResetLinkState(false, Link::ElementHasHref());
   
-  nsIDocument* doc = GetCurrentDoc();
+  nsIDocument* doc = GetUncomposedDoc();
   if (doc) {
     doc->UnregisterPendingLinkUpdate(this);
   }

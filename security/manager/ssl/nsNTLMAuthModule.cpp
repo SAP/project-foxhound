@@ -12,6 +12,7 @@
 #include "mozilla/Endian.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Snprintf.h"
 #include "mozilla/Telemetry.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
@@ -28,18 +29,10 @@
 #include "prsystem.h"
 
 static bool sNTLMv1Forced = false;
+static mozilla::LazyLogModule sNTLMLog("NTLM");
 
-static PRLogModuleInfo *
-GetNTLMLog()
-{
-  static PRLogModuleInfo *sNTLMLog;
-  if (!sNTLMLog)
-    sNTLMLog = PR_NewLogModule("NTLM");
-  return sNTLMLog;
-}
-
-#define LOG(x) MOZ_LOG(GetNTLMLog(), mozilla::LogLevel::Debug, x)
-#define LOG_ENABLED() MOZ_LOG_TEST(GetNTLMLog(), mozilla::LogLevel::Debug)
+#define LOG(x) MOZ_LOG(sNTLMLog, mozilla::LogLevel::Debug, x)
+#define LOG_ENABLED() MOZ_LOG_TEST(sNTLMLog, mozilla::LogLevel::Debug)
 
 static void des_makekey(const uint8_t *raw, uint8_t *key);
 static void des_encrypt(const uint8_t *key, const uint8_t *src, uint8_t *hash);
@@ -188,23 +181,23 @@ LogBuf(const char *tag, const uint8_t *buf, uint32_t bufLen)
     for (i=0; i<count; ++i)
     {
       int len = strlen(line);
-      PR_snprintf(line + len, sizeof(line) - len, "0x%02x ", int(buf[i]));
+      snprintf(line + len, sizeof(line) - len, "0x%02x ", int(buf[i]));
     }
     for (; i<8; ++i)
     {
       int len = strlen(line);
-      PR_snprintf(line + len, sizeof(line) - len, "     ");
+      snprintf(line + len, sizeof(line) - len, "     ");
     }
 
     int len = strlen(line);
-    PR_snprintf(line + len, sizeof(line) - len, "   ");
+    snprintf(line + len, sizeof(line) - len, "   ");
     for (i=0; i<count; ++i)
     {
       len = strlen(line);
       if (isprint(buf[i]))
-        PR_snprintf(line + len, sizeof(line) - len, "%c", buf[i]);
+        snprintf(line + len, sizeof(line) - len, "%c", buf[i]);
       else
-        PR_snprintf(line + len, sizeof(line) - len, ".");
+        snprintf(line + len, sizeof(line) - len, ".");
     }
     PR_LogPrint("%s\n", line);
 

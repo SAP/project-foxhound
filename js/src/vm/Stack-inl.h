@@ -38,7 +38,7 @@ IsCacheableNonGlobalScope(JSObject* obj)
     bool cacheable =
         obj->is<CallObject>() || obj->is<ClonedBlockObject>() || obj->is<DeclEnvObject>();
 
-    MOZ_ASSERT_IF(cacheable, !obj->getOps()->lookupProperty);
+    MOZ_ASSERT_IF(cacheable, !obj->getOpsLookupProperty());
     return cacheable;
 }
 
@@ -850,6 +850,12 @@ AbstractFramePtr::popWith(JSContext* cx) const
     asBaselineFrame()->popWith(cx);
 }
 
+inline bool
+AbstractFramePtr::debuggerNeedsCheckPrimitiveReturn() const
+{
+    return script()->isDerivedClassConstructor();
+}
+
 ActivationEntryMonitor::~ActivationEntryMonitor()
 {
     if (entryMonitor_)
@@ -867,7 +873,7 @@ Activation::Activation(JSContext* cx, Kind kind)
     hideScriptedCallerCount_(0),
     frameCache_(cx),
     asyncStack_(cx, cx->runtime_->asyncStackForNewActivations),
-    asyncCause_(cx, cx->runtime_->asyncCauseForNewActivations),
+    asyncCause_(cx->runtime_->asyncCauseForNewActivations),
     asyncCallIsExplicit_(cx->runtime_->asyncCallIsExplicit),
     kind_(kind)
 {

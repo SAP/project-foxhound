@@ -34,18 +34,21 @@ PlacesShutdownBlocker::GetName(nsAString& aName)
 
 // nsIAsyncShutdownBlocker
 NS_IMETHODIMP
-PlacesShutdownBlocker::GetState(nsIPropertyBag** aState)
+PlacesShutdownBlocker::GetState(nsIPropertyBag** _state)
 {
-  nsresult rv;
+  NS_ENSURE_ARG_POINTER(_state);
+
   nsCOMPtr<nsIWritablePropertyBag2> bag =
-    do_CreateInstance("@mozilla.org/hash-property-bag;1", &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) return rv;
+    do_CreateInstance("@mozilla.org/hash-property-bag;1");
+  NS_ENSURE_TRUE(bag, NS_ERROR_OUT_OF_MEMORY);
+  bag.forget(_state);
 
   // Put `mState` in field `progress`
   RefPtr<nsVariant> progress = new nsVariant();
-  rv = progress->SetAsUint8(mState);
+  nsresult rv = progress->SetAsUint8(mState);
   if (NS_WARN_IF(NS_FAILED(rv))) return rv;
-  rv = bag->SetPropertyAsInterface(NS_LITERAL_STRING("progress"), progress);
+  rv = static_cast<nsIWritablePropertyBag2*>(*_state)->SetPropertyAsInterface(
+    NS_LITERAL_STRING("progress"), progress);
   if (NS_WARN_IF(NS_FAILED(rv))) return rv;
 
   // Put `mBarrier`'s state in field `barrier`, if possible
@@ -61,7 +64,8 @@ PlacesShutdownBlocker::GetState(nsIPropertyBag** aState)
   RefPtr<nsVariant> barrier = new nsVariant();
   rv = barrier->SetAsInterface(NS_GET_IID(nsIPropertyBag), barrierState);
   if (NS_WARN_IF(NS_FAILED(rv))) return rv;
-  rv = bag->SetPropertyAsInterface(NS_LITERAL_STRING("Barrier"), barrier);
+  rv = static_cast<nsIWritablePropertyBag2*>(*_state)->SetPropertyAsInterface(
+    NS_LITERAL_STRING("Barrier"), barrier);
   if (NS_WARN_IF(NS_FAILED(rv))) return rv;
 
   return NS_OK;
@@ -92,7 +96,7 @@ ClientsShutdownBlocker::ClientsShutdownBlocker()
   MOZ_ASSERT(asyncShutdown);
   if (asyncShutdown) {
     nsCOMPtr<nsIAsyncShutdownBarrier> barrier;
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(asyncShutdown->MakeBarrier(mName, getter_AddRefs(barrier))));
+    MOZ_ALWAYS_SUCCEEDS(asyncShutdown->MakeBarrier(mName, getter_AddRefs(barrier)));
     mBarrier = new nsMainThreadPtrHolder<nsIAsyncShutdownBarrier>(barrier);
   }
 }
@@ -102,7 +106,7 @@ ClientsShutdownBlocker::GetClient()
 {
   nsCOMPtr<nsIAsyncShutdownClient> client;
   if (mBarrier) {
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mBarrier->GetClient(getter_AddRefs(client))));
+    MOZ_ALWAYS_SUCCEEDS(mBarrier->GetClient(getter_AddRefs(client)));
   }
   return client.forget();
 }
@@ -120,7 +124,7 @@ ClientsShutdownBlocker::BlockShutdown(nsIAsyncShutdownClient* aParentClient)
   }
 
   // Wait until all the clients have removed their blockers.
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(mBarrier->Wait(this)));
+  MOZ_ALWAYS_SUCCEEDS(mBarrier->Wait(this));
 
   mState = CALLED_WAIT_CLIENTS;
   return NS_OK;
@@ -153,7 +157,7 @@ NS_IMPL_ISUPPORTS_INHERITED(
 ////////////////////////////////////////////////////////////////////////////////
 
 ConnectionShutdownBlocker::ConnectionShutdownBlocker(Database* aDatabase)
-  : PlacesShutdownBlocker(NS_LITERAL_STRING("Places Clients shutdown"))
+  : PlacesShutdownBlocker(NS_LITERAL_STRING("Places Connection shutdown"))
   , mDatabase(aDatabase)
 {
   // Do nothing.
@@ -204,9 +208,9 @@ ConnectionShutdownBlocker::Complete(nsresult, nsISupports*)
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   MOZ_ASSERT(os);
   if (os) {
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr,
-                                                     TOPIC_PLACES_CONNECTION_CLOSED,
-                                                     nullptr)));
+    MOZ_ALWAYS_SUCCEEDS(os->NotifyObservers(nullptr,
+					    TOPIC_PLACES_CONNECTION_CLOSED,
+					    nullptr));
   }
   mState = NOTIFIED_OBSERVERS_PLACES_CONNECTION_CLOSED;
 

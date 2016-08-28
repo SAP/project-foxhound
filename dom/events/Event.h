@@ -54,7 +54,7 @@ public:
   Event(EventTarget* aOwner,
         nsPresContext* aPresContext,
         WidgetEvent* aEvent);
-  explicit Event(nsPIDOMWindow* aWindow);
+  explicit Event(nsPIDOMWindowInner* aWindow);
 
 protected:
   virtual ~Event();
@@ -187,7 +187,17 @@ public:
 
   bool DefaultPrevented() const
   {
-    return mEvent->mFlags.mDefaultPrevented;
+    return mEvent->DefaultPrevented();
+  }
+
+  bool DefaultPreventedByChrome() const
+  {
+    return mEvent->mFlags.mDefaultPreventedByChrome;
+  }
+
+  bool DefaultPreventedByContent() const
+  {
+    return mEvent->mFlags.mDefaultPreventedByContent;
   }
 
   bool MultipleActionsPrevented() const
@@ -197,7 +207,7 @@ public:
 
   bool IsTrusted() const
   {
-    return mEvent->mFlags.mIsTrusted;
+    return mEvent->IsTrusted();
   }
 
   bool IsSynthesized() const
@@ -293,7 +303,7 @@ public:
     MOZ_ASSERT(aOverridingMessage != eUnidentifiedEvent,
                "Only use this class with a valid overriding EventMessage");
     MOZ_ASSERT(mOrigMessage != eUnidentifiedEvent &&
-               mEvent->mEvent->typeString.IsEmpty(),
+               mEvent->mEvent->mSpecifiedEventTypeString.IsEmpty(),
                "Only use this class on events whose overridden type is "
                "known (so we can restore it properly)");
 
@@ -359,7 +369,7 @@ private:
   NS_IMETHOD GetIsTrusted(bool* aIsTrusted) override { return _to GetIsTrusted(aIsTrusted); } \
   NS_IMETHOD SetTarget(nsIDOMEventTarget* aTarget) override { return _to SetTarget(aTarget); } \
   NS_IMETHOD_(bool) IsDispatchStopped(void) override { return _to IsDispatchStopped(); } \
-  NS_IMETHOD_(WidgetEvent*) GetInternalNSEvent(void) override { return _to GetInternalNSEvent(); } \
+  NS_IMETHOD_(WidgetEvent*) WidgetEventPtr(void) override { return _to WidgetEventPtr(); } \
   NS_IMETHOD_(void) SetTrusted(bool aTrusted) override { _to SetTrusted(aTrusted); } \
   NS_IMETHOD_(void) SetOwner(EventTarget* aOwner) override { _to SetOwner(aOwner); } \
   NS_IMETHOD_(Event*) InternalDOMEvent() override { return _to InternalDOMEvent(); }

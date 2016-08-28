@@ -54,6 +54,7 @@ class ABIArgGenerator
 
 static MOZ_CONSTEXPR_VAR Register JSReturnReg_Type = a3;
 static MOZ_CONSTEXPR_VAR Register JSReturnReg_Data = a2;
+static MOZ_CONSTEXPR_VAR Register64 ReturnReg64(InvalidReg, InvalidReg);
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32Reg = { FloatRegisters::f0, FloatRegister::Single };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnDoubleReg = { FloatRegisters::f0, FloatRegister::Double };
 static MOZ_CONSTEXPR_VAR FloatRegister ScratchFloat32Reg = { FloatRegisters::f18, FloatRegister::Single };
@@ -97,6 +98,12 @@ static_assert(JitStackAlignment % sizeof(Value) == 0 && JitStackValueAlignment >
 // TODO Copy the static_asserts from x64/x86 assembler files.
 static MOZ_CONSTEXPR_VAR uint32_t SimdMemoryAlignment = 8;
 static MOZ_CONSTEXPR_VAR uint32_t AsmJSStackAlignment = SimdMemoryAlignment;
+
+// Does this architecture support SIMD conversions between Uint32x4 and Float32x4?
+static MOZ_CONSTEXPR_VAR bool SupportsUint32x4FloatConversions = false;
+
+// Does this architecture support comparisons of unsigned 32x4 integer vectors?
+static MOZ_CONSTEXPR_VAR bool SupportsUint32x4Compares = false;
 
 static MOZ_CONSTEXPR_VAR Scale ScalePointer = TimesFour;
 

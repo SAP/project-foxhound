@@ -208,7 +208,8 @@ BaselineCompiler::compile()
                             pcMappingIndexEntries.length(),
                             pcEntries.length(),
                             bytecodeTypeMapEntries,
-                            yieldOffsets_.length()));
+                            yieldOffsets_.length()),
+        JS::DeletePolicy<BaselineScript>(cx->runtime()));
     if (!baselineScript) {
         ReportOutOfMemory(cx);
         return Method_Error;
@@ -1902,7 +1903,7 @@ BaselineCompiler::emit_JSOP_NEWARRAY()
     if (!group)
         return false;
 
-    ICNewArray_Fallback::Compiler stubCompiler(cx, group);
+    ICNewArray_Fallback::Compiler stubCompiler(cx, group, ICStubCompiler::Engine::Baseline);
     if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
         return false;
 
@@ -1972,7 +1973,7 @@ BaselineCompiler::emit_JSOP_NEWOBJECT()
 {
     frame.syncStack(0);
 
-    ICNewObject_Fallback::Compiler stubCompiler(cx);
+    ICNewObject_Fallback::Compiler stubCompiler(cx, ICStubCompiler::Engine::Baseline);
     if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
         return false;
 
@@ -1994,13 +1995,13 @@ BaselineCompiler::emit_JSOP_NEWINIT()
         if (!group)
             return false;
 
-        ICNewArray_Fallback::Compiler stubCompiler(cx, group);
+        ICNewArray_Fallback::Compiler stubCompiler(cx, group, ICStubCompiler::Engine::Baseline);
         if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
             return false;
     } else {
         MOZ_ASSERT(key == JSProto_Object);
 
-        ICNewObject_Fallback::Compiler stubCompiler(cx);
+        ICNewObject_Fallback::Compiler stubCompiler(cx, ICStubCompiler::Engine::Baseline);
         if (!emitOpIC(stubCompiler.getStub(&stubSpace_)))
             return false;
     }
@@ -4123,7 +4124,7 @@ BaselineCompiler::emit_JSOP_RESUME()
                                  scratch2);
     masm.subStackPtrFrom(scratch2);
     masm.store32(scratch2, Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfFrameSize()));
-    masm.makeFrameDescriptor(scratch2, JitFrame_BaselineJS);
+    masm.makeFrameDescriptor(scratch2, JitFrame_BaselineJS, JitFrameLayout::Size());
 
     masm.Push(Imm32(0)); // actual argc
 
@@ -4257,7 +4258,7 @@ BaselineCompiler::emit_JSOP_RESUME()
 
         // Create the frame descriptor.
         masm.subStackPtrFrom(scratch1);
-        masm.makeFrameDescriptor(scratch1, JitFrame_BaselineJS);
+        masm.makeFrameDescriptor(scratch1, JitFrame_BaselineJS, ExitFrameLayout::Size());
 
         // Push the frame descriptor and a dummy return address (it doesn't
         // matter what we push here, frame iterators will use the frame pc

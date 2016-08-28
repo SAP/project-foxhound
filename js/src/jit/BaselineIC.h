@@ -190,98 +190,6 @@ class ICTypeUpdate_ObjectGroup : public ICStub
     };
 };
 
-class ICNewArray_Fallback : public ICFallbackStub
-{
-    friend class ICStubSpace;
-
-    HeapPtrObject templateObject_;
-
-    // The group used for objects created here is always available, even if the
-    // template object itself is not.
-    HeapPtrObjectGroup templateGroup_;
-
-    ICNewArray_Fallback(JitCode* stubCode, ObjectGroup* templateGroup)
-      : ICFallbackStub(ICStub::NewArray_Fallback, stubCode),
-        templateObject_(nullptr), templateGroup_(templateGroup)
-    {}
-
-  public:
-    class Compiler : public ICStubCompiler {
-        RootedObjectGroup templateGroup;
-        bool generateStubCode(MacroAssembler& masm);
-
-      public:
-        Compiler(JSContext* cx, ObjectGroup* templateGroup)
-          : ICStubCompiler(cx, ICStub::NewArray_Fallback, Engine::Baseline),
-            templateGroup(cx, templateGroup)
-        {}
-
-        ICStub* getStub(ICStubSpace* space) {
-            return newStub<ICNewArray_Fallback>(space, getStubCode(), templateGroup);
-        }
-    };
-
-    HeapPtrObject& templateObject() {
-        return templateObject_;
-    }
-
-    void setTemplateObject(JSObject* obj) {
-        MOZ_ASSERT(obj->group() == templateGroup());
-        templateObject_ = obj;
-    }
-
-    HeapPtrObjectGroup& templateGroup() {
-        return templateGroup_;
-    }
-
-    void setTemplateGroup(ObjectGroup* group) {
-        templateObject_ = nullptr;
-        templateGroup_ = group;
-    }
-};
-
-class ICNewObject_Fallback : public ICFallbackStub
-{
-    friend class ICStubSpace;
-
-    HeapPtrObject templateObject_;
-
-    explicit ICNewObject_Fallback(JitCode* stubCode)
-      : ICFallbackStub(ICStub::NewObject_Fallback, stubCode), templateObject_(nullptr)
-    {}
-
-  public:
-    class Compiler : public ICStubCompiler {
-        bool generateStubCode(MacroAssembler& masm);
-
-      public:
-        explicit Compiler(JSContext* cx)
-          : ICStubCompiler(cx, ICStub::NewObject_Fallback, Engine::Baseline)
-        {}
-
-        ICStub* getStub(ICStubSpace* space) {
-            return newStub<ICNewObject_Fallback>(space, getStubCode());
-        }
-    };
-
-    HeapPtrObject& templateObject() {
-        return templateObject_;
-    }
-
-    void setTemplateObject(JSObject* obj) {
-        templateObject_ = obj;
-    }
-};
-
-class ICNewObject_WithTemplate : public ICStub
-{
-    friend class ICStubSpace;
-
-    explicit ICNewObject_WithTemplate(JitCode* stubCode)
-      : ICStub(ICStub::NewObject_WithTemplate, stubCode)
-    {}
-};
-
 // ToBool
 //      JSOP_IFNE
 
@@ -513,7 +421,7 @@ class ICGetElem_Fallback : public ICMonitoredFallbackStub
 class ICGetElemNativeStub : public ICMonitoredStub
 {
   public:
-    enum AccessType { FixedSlot = 0, DynamicSlot, UnboxedProperty, NativeGetter, ScriptedGetter };
+    enum AccessType { FixedSlot = 0, DynamicSlot, UnboxedProperty, NativeGetter, ScriptedGetter, NumAccessTypes };
 
   protected:
     HeapReceiverGuard receiverGuard_;
@@ -522,10 +430,12 @@ class ICGetElemNativeStub : public ICMonitoredStub
     static const uint16_t NEEDS_ATOMIZE_MASK = 0x1;
 
     static const unsigned ACCESSTYPE_SHIFT = 1;
-    static const uint16_t ACCESSTYPE_MASK = 0x3;
+    static const uint16_t ACCESSTYPE_MASK = 0x7;
 
-    static const unsigned ISSYMBOL_SHIFT = 3;
+    static const unsigned ISSYMBOL_SHIFT = 4;
     static const uint16_t ISSYMBOL_MASK = 0x1;
+
+    static_assert(ACCESSTYPE_MASK >= NumAccessTypes, "ACCESSTYPE_MASK must cover all possible AccessType values");
 
     ICGetElemNativeStub(ICStub::Kind kind, JitCode* stubCode, ICStub* firstMonitorStub,
                         ReceiverGuard guard, AccessType acctype, bool needsAtomize, bool isSymbol);
@@ -1282,10 +1192,8 @@ class ICSetElem_DenseOrUnboxedArrayAddImpl : public ICSetElem_DenseOrUnboxedArra
 
   public:
     void traceShapes(JSTracer* trc) {
-        for (size_t i = 0; i < NumShapes; i++) {
-            if (shapes_[i])
-                TraceEdge(trc, &shapes_[i], "baseline-setelem-denseadd-stub-shape");
-        }
+        for (size_t i = 0; i < NumShapes; i++)
+            TraceNullableEdge(trc, &shapes_[i], "baseline-setelem-denseadd-stub-shape");
     }
     Shape* shape(size_t i) const {
         MOZ_ASSERT(i < NumShapes);

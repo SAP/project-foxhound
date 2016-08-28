@@ -39,8 +39,10 @@ const events = require("sdk/event/core");
 const ANIMATION_TYPES = {
   CSS_ANIMATION: "cssanimation",
   CSS_TRANSITION: "csstransition",
+  SCRIPT_ANIMATION: "scriptanimation",
   UNKNOWN: "unknown"
 };
+exports.ANIMATION_TYPES = ANIMATION_TYPES;
 
 /**
  * The AnimationPlayerActor provides information about a given animation: its
@@ -71,17 +73,21 @@ var AnimationPlayerActor = ActorClass({
     this.onAnimationMutation = this.onAnimationMutation.bind(this);
 
     this.walker = animationsActor.walker;
-    this.tabActor = animationsActor.tabActor;
     this.player = player;
-    this.node = player.effect.target;
-
-    let win = this.node.ownerDocument.defaultView;
-    this.styles = win.getComputedStyle(this.node);
 
     // Listen to animation mutations on the node to alert the front when the
     // current animation changes.
-    this.observer = new win.MutationObserver(this.onAnimationMutation);
-    this.observer.observe(this.node, {animations: true});
+    // If the node is a pseudo-element, then we listen on its parent with
+    // subtree:true (there's no risk of getting too many notifications in
+    // onAnimationMutation since we filter out events that aren't for the
+    // current animation).
+    this.observer = new this.window.MutationObserver(this.onAnimationMutation);
+    if (this.isPseudoElement) {
+      this.observer.observe(this.node.parentElement,
+                            {animations: true, subtree: true});
+    } else {
+      this.observer.observe(this.node, {animations: true});
+    }
   },
 
   destroy: function() {
@@ -90,10 +96,45 @@ var AnimationPlayerActor = ActorClass({
     if (this.observer && !Cu.isDeadWrapper(this.observer)) {
       this.observer.disconnect();
     }
-    this.tabActor = this.player = this.node = this.styles = null;
-    this.observer = this.walker = null;
+    this.player = this.observer = this.walker = null;
 
     Actor.prototype.destroy.call(this);
+  },
+
+  get isPseudoElement() {
+    return !this.player.effect.target.ownerDocument;
+  },
+
+  get node() {
+    if (this._node) {
+      return this._node;
+    }
+
+    let node = this.player.effect.target;
+
+    if (this.isPseudoElement) {
+      // The target is a CSSPseudoElement object which just has a property that
+      // points to its parent element and a string type (::before or ::after).
+      let treeWalker = this.walker.getDocumentWalker(node.parentElement);
+      while (treeWalker.nextNode()) {
+        let currentNode = treeWalker.currentNode;
+        if ((currentNode.nodeName === "_moz_generated_content_before" &&
+             node.type === "::before") ||
+            (currentNode.nodeName === "_moz_generated_content_after" &&
+             node.type === "::after")) {
+          this._node = currentNode;
+        }
+      }
+    } else {
+      // The target is a DOM node.
+      this._node = node;
+    }
+
+    return this._node;
+  },
+
+  get window() {
+    return this.node.ownerDocument.defaultView;
   },
 
   /**
@@ -119,34 +160,45 @@ var AnimationPlayerActor = ActorClass({
     return data;
   },
 
-  isAnimation: function(player=this.player) {
-    return player instanceof this.tabActor.window.CSSAnimation;
+  isCssAnimation: function(player = this.player) {
+    return player instanceof this.window.CSSAnimation;
   },
 
-  isTransition: function(player=this.player) {
-    return player instanceof this.tabActor.window.CSSTransition;
+  isCssTransition: function(player = this.player) {
+    return player instanceof this.window.CSSTransition;
+  },
+
+  isScriptAnimation: function(player = this.player) {
+    return player instanceof this.window.Animation && !(
+      player instanceof this.window.CSSAnimation ||
+      player instanceof this.window.CSSTransition
+    );
   },
 
   getType: function() {
-    if (this.isAnimation()) {
+    if (this.isCssAnimation()) {
       return ANIMATION_TYPES.CSS_ANIMATION;
-    } else if (this.isTransition()) {
+    } else if (this.isCssTransition()) {
       return ANIMATION_TYPES.CSS_TRANSITION;
+    } else if (this.isScriptAnimation()) {
+      return ANIMATION_TYPES.SCRIPT_ANIMATION;
     }
 
     return ANIMATION_TYPES.UNKNOWN;
   },
 
   /**
-   * Get the name associated with the player. This is used to match
-   * up the player with values in the computed animation-name or
-   * transition-property property.
+   * Get the name of this animation. This can be either the animation.id
+   * property if it was set, or the keyframe rule name or the transition
+   * property.
    * @return {String}
    */
   getName: function() {
-    if (this.isAnimation()) {
+    if (this.player.id) {
+      return this.player.id;
+    } else if (this.isCssAnimation()) {
       return this.player.animationName;
-    } else if (this.isTransition()) {
+    } else if (this.isCssTransition()) {
       return this.player.transitionProperty;
     }
 
@@ -170,6 +222,14 @@ var AnimationPlayerActor = ActorClass({
   },
 
   /**
+   * Get the animation endDelay from this player, in milliseconds.
+   * @return {Number}
+   */
+  getEndDelay: function() {
+    return this.player.effect.getComputedTiming().endDelay;
+  },
+
+  /**
    * Get the animation iteration count for this player. That is, how many times
    * is the animation scheduled to run.
    * @return {Number} The number of iterations, or null if the animation repeats
@@ -178,6 +238,15 @@ var AnimationPlayerActor = ActorClass({
   getIterationCount: function() {
     let iterations = this.player.effect.getComputedTiming().iterations;
     return iterations === "Infinity" ? null : iterations;
+  },
+
+  /**
+   * Get the animation iterationStart from this player, in ratio.
+   * That is offset of starting position of the animation.
+   * @return {Number}
+   */
+  getIterationStart: function() {
+    return this.player.effect.getComputedTiming().iterationStart;
   },
 
   /**
@@ -208,7 +277,9 @@ var AnimationPlayerActor = ActorClass({
       name: this.getName(),
       duration: this.getDuration(),
       delay: this.getDelay(),
+      endDelay: this.getEndDelay(),
       iterationCount: this.getIterationCount(),
+      iterationStart: this.getIterationStart(),
       // animation is hitting the fast path or not. Returns false whenever the
       // animation is paused as it is taken off the compositor then.
       isRunningOnCompositor: this.player.isRunningOnCompositor,
@@ -274,13 +345,15 @@ var AnimationPlayerActor = ActorClass({
       }
 
       if (hasCurrentAnimation(changedAnimations)) {
-        // Only consider the state has having changed if any of delay, duration
-        // or iterationcount has changed (for now at least).
+        // Only consider the state has having changed if any of delay, duration,
+        // iterationcount or iterationStart has changed (for now at least).
         let newState = this.getState();
         let oldState = this.currentState;
         hasChanged = newState.delay !== oldState.delay ||
                      newState.iterationCount !== oldState.iterationCount ||
-                     newState.duration !== oldState.duration;
+                     newState.iterationStart !== oldState.iterationStart ||
+                     newState.duration !== oldState.duration ||
+                     newState.endDelay !== oldState.endDelay;
         break;
       }
     }
@@ -367,8 +440,26 @@ var AnimationPlayerActor = ActorClass({
     response: {
       frames: RetVal("json")
     }
+  }),
+
+  /**
+   * Get data about the animated properties of this animation player.
+   * @return {Array} Returns a list of animated properties.
+   * Each property contains a list of values and their offsets
+   */
+  getProperties: method(function() {
+    return this.player.effect.getProperties().map(property => {
+      return {name: property.property, values: property.values};
+    });
+  }, {
+    request: {},
+    response: {
+      properties: RetVal("array:json")
+    }
   })
 });
+
+exports.AnimationPlayerActor = AnimationPlayerActor;
 
 var AnimationPlayerFront = FrontClass(AnimationPlayerActor, {
   initialize: function(conn, form, detail, ctx) {
@@ -417,7 +508,9 @@ var AnimationPlayerFront = FrontClass(AnimationPlayerActor, {
       name: this._form.name,
       duration: this._form.duration,
       delay: this._form.delay,
+      endDelay: this._form.endDelay,
       iterationCount: this._form.iterationCount,
+      iterationStart: this._form.iterationStart,
       isRunningOnCompositor: this._form.isRunningOnCompositor,
       documentCurrentTime: this._form.documentCurrentTime
     };
@@ -547,18 +640,22 @@ var AnimationsActor = exports.AnimationsActor = ActorClass({
   /**
    * Retrieve the list of AnimationPlayerActor actors for currently running
    * animations on a node and its descendants.
+   * Note that calling this method a second time will destroy all previously
+   * retrieved AnimationPlayerActors. Indeed, the lifecycle of these actors
+   * is managed here on the server and tied to getAnimationPlayersForNode
+   * being called.
    * @param {NodeActor} nodeActor The NodeActor as defined in
    * /devtools/server/actors/inspector
    */
   getAnimationPlayersForNode: method(function(nodeActor) {
-    let animations = [
-      ...nodeActor.rawNode.getAnimations(),
-      ...this.getAllAnimations(nodeActor.rawNode)
-    ];
+    let animations = nodeActor.rawNode.getAnimations({subtree: true});
 
-    // No care is taken here to destroy the previously stored actors because it
-    // is assumed that the client is responsible for lifetimes of actors.
+    // Destroy previously stored actors
+    if (this.actors) {
+      this.actors.forEach(actor => actor.destroy());
+    }
     this.actors = [];
+
     for (let i = 0; i < animations.length; i++) {
       let actor = AnimationPlayerActor(this, animations[i]);
       this.actors.push(actor);
@@ -601,6 +698,7 @@ var AnimationsActor = exports.AnimationsActor = ActorClass({
         if (player.playState !== "idle") {
           continue;
         }
+
         let index = this.actors.findIndex(a => a.player === player);
         if (index !== -1) {
           eventData.push({
@@ -617,14 +715,15 @@ var AnimationsActor = exports.AnimationsActor = ActorClass({
         if (this.actors.find(a => a.player === player)) {
           continue;
         }
+
         // If the added player has the same name and target node as a player we
         // already have, it means it's a transition that's re-starting. So send
         // a "removed" event for the one we already have.
         let index = this.actors.findIndex(a => {
           let isSameType = a.player.constructor === player.constructor;
-          let isSameName = (a.isAnimation() &&
+          let isSameName = (a.isCssAnimation() &&
                             a.player.animationName === player.animationName) ||
-                           (a.isTransition() &&
+                           (a.isCssTransition() &&
                             a.player.transitionProperty === player.transitionProperty);
           let isSameNode = a.player.effect.target === player.effect.target;
 
@@ -681,25 +780,14 @@ var AnimationsActor = exports.AnimationsActor = ActorClass({
    * @return {Array} An array of AnimationPlayer objects.
    */
   getAllAnimations: function(rootNode, traverseFrames) {
-    let animations = [];
-
-    // These loops shouldn't be as bad as they look.
-    // Typically, there will be very few nested frames, and getElementsByTagName
-    // is really fast even on large DOM trees.
-    for (let element of rootNode.getElementsByTagNameNS("*", "*")) {
-      if (traverseFrames && element.contentWindow) {
-        animations = [
-          ...animations,
-          ...this.getAllAnimations(element.contentWindow.document, traverseFrames)
-        ];
-      } else {
-        animations = [
-          ...animations,
-          ...element.getAnimations()
-        ];
-      }
+    if (!traverseFrames) {
+      return rootNode.getAnimations({subtree: true});
     }
 
+    let animations = [];
+    for (let {document} of this.tabActor.windows) {
+      animations = [...animations, ...document.getAnimations({subtree: true})];
+    }
     return animations;
   },
 

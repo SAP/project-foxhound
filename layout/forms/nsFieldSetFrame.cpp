@@ -13,7 +13,7 @@
 #include <algorithm>
 #include "nsIFrame.h"
 #include "nsPresContext.h"
-#include "RestyleManager.h"
+#include "mozilla/RestyleManager.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsDisplayList.h"
@@ -166,7 +166,7 @@ nsFieldSetFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   // we need to paint the outline
   if (!(GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER) &&
       IsVisibleForPainting(aBuilder)) {
-    if (StyleBorder()->mBoxShadow) {
+    if (StyleEffects()->mBoxShadow) {
       aLists.BorderBackground()->AppendNewToTop(new (aBuilder)
         nsDisplayBoxShadowOuter(aBuilder, this));
     }
@@ -663,8 +663,9 @@ void
 nsFieldSetFrame::SetInitialChildList(ChildListID    aListID,
                                      nsFrameList&   aChildList)
 {
-  nsContainerFrame::SetInitialChildList(kPrincipalList, aChildList);
-  MOZ_ASSERT(GetInner());
+  nsContainerFrame::SetInitialChildList(aListID, aChildList);
+  MOZ_ASSERT(aListID != kPrincipalList || GetInner(),
+             "Setting principal child list should populate our inner frame");
 }
 void
 nsFieldSetFrame::AppendFrames(ChildListID    aListID,

@@ -105,6 +105,37 @@ void
 AssemblerX86Shared::executableCopy(void* buffer)
 {
     masm.executableCopy(buffer);
+
+    // Crash diagnostics for bug 1124397. Check the code buffer has not been
+    // poisoned with 0xE5 bytes.
+    static const size_t MinPoisoned = 16;
+    const uint8_t* bytes = (const uint8_t*)buffer;
+    size_t len = size();
+
+    for (size_t i = 0; i < len; i += MinPoisoned) {
+        if (bytes[i] != 0xE5)
+            continue;
+
+        size_t startOffset = i;
+        while (startOffset > 0 && bytes[startOffset - 1] == 0xE5)
+            startOffset--;
+
+        size_t endOffset = i;
+        while (endOffset + 1 < len && bytes[endOffset + 1] == 0xE5)
+            endOffset++;
+
+        if (endOffset - startOffset < MinPoisoned)
+            continue;
+
+        volatile uintptr_t dump[5];
+        blackbox = dump;
+        blackbox[0] = uintptr_t(0xABCD4321);
+        blackbox[1] = uintptr_t(len);
+        blackbox[2] = uintptr_t(startOffset);
+        blackbox[3] = uintptr_t(endOffset);
+        blackbox[4] = uintptr_t(0xFFFF8888);
+        MOZ_CRASH("Corrupt code buffer");
+    }
 }
 
 void
@@ -158,6 +189,7 @@ CPUInfo::SSEVersion CPUInfo::maxSSEVersion = UnknownSSE;
 CPUInfo::SSEVersion CPUInfo::maxEnabledSSEVersion = UnknownSSE;
 bool CPUInfo::avxPresent = false;
 bool CPUInfo::avxEnabled = false;
+bool CPUInfo::popcntPresent = false;
 
 static uintptr_t
 ReadXGETBV()
@@ -252,4 +284,10 @@ CPUInfo::SetSSEVersion()
         static const int xcr0AVXBit = 1 << 2;
         avxPresent = (xcr0EAX & xcr0SSEBit) && (xcr0EAX & xcr0AVXBit);
     }
+
+    static const int POPCNTBit = 1 << 23;
+
+    popcntPresent = (flagsECX & POPCNTBit);
 }
+
+volatile uintptr_t* blackbox = nullptr;

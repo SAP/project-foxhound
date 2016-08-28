@@ -19,8 +19,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "DeferredTask",
   "resource://gre/modules/DeferredTask.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
 XPCOMUtils.defineLazyGetter(this, "gWidgetsBundle", function() {
   const kUrl = "chrome://browser/locale/customizableui/customizableWidgets.properties";
   return Services.strings.createBundle(kUrl);
@@ -180,6 +178,15 @@ var CustomizableUIInternal = {
     this._introduceNewBuiltinWidgets();
     this._markObsoleteBuiltinButtonsSeen();
 
+    /**
+     * Please be advised that adding items to the panel by default could
+     * cause CART talos test regressions. This might happen when the
+     * number of items in the panel causes the area to become "scrollable"
+     * during the last phases of the transition. See bug 1230671 for an
+     * example of this. Be sure that what you're adding really needs to go
+     * into the panel by default, and if it does, consider swapping
+     * something out for it.
+     */
     let panelPlacements = [
       "edit-controls",
       "zoom-controls",
@@ -2125,7 +2132,8 @@ var CustomizableUIInternal = {
 
   dispatchToolboxEvent: function(aEventType, aDetails={}, aWindow=null) {
     if (aWindow) {
-      return this._dispatchToolboxEventToWindow(aEventType, aDetails, aWindow);
+      this._dispatchToolboxEventToWindow(aEventType, aDetails, aWindow);
+      return;
     }
     for (let [win, ] of gBuildWindows) {
       this._dispatchToolboxEventToWindow(aEventType, aDetails, win);
@@ -2409,6 +2417,7 @@ var CustomizableUIInternal = {
                                                         aArgs);
       } catch (e) {
         Cu.reportError(e);
+        return undefined;
       }
     };
   },
@@ -3903,7 +3912,7 @@ function XULWidgetGroupWrapper(aWidgetId) {
   });
 
   this.__defineGetter__("instances", function() {
-    return Array.from(gBuildWindows, ([win,]) => this.forWindow(win));
+    return Array.from(gBuildWindows, (wins) => this.forWindow(wins[0]));
   });
 
   Object.freeze(this);
@@ -4100,28 +4109,26 @@ OverflowableToolbar.prototype = {
   },
 
   show: function() {
-    let deferred = Promise.defer();
     if (this._panel.state == "open") {
-      deferred.resolve();
-      return deferred.promise;
+      return Promise.resolve();
     }
-    let doc = this._panel.ownerDocument;
-    this._panel.hidden = false;
-    let contextMenu = doc.getElementById(this._panel.getAttribute("context"));
-    gELS.addSystemEventListener(contextMenu, 'command', this, true);
-    let anchor = doc.getAnonymousElementByAttribute(this._chevron, "class", "toolbarbutton-icon");
-    this._panel.openPopup(anchor || this._chevron);
-    this._chevron.open = true;
+    return new Promise(resolve => {
+      let doc = this._panel.ownerDocument;
+      this._panel.hidden = false;
+      let contextMenu = doc.getElementById(this._panel.getAttribute("context"));
+      gELS.addSystemEventListener(contextMenu, 'command', this, true);
+      let anchor = doc.getAnonymousElementByAttribute(this._chevron, "class", "toolbarbutton-icon");
+      this._panel.openPopup(anchor || this._chevron);
+      this._chevron.open = true;
 
-    let overflowableToolbarInstance = this;
-    this._panel.addEventListener("popupshown", function onPopupShown(aEvent) {
-      this.removeEventListener("popupshown", onPopupShown);
-      this.addEventListener("dragover", overflowableToolbarInstance);
-      this.addEventListener("dragend", overflowableToolbarInstance);
-      deferred.resolve();
+      let overflowableToolbarInstance = this;
+      this._panel.addEventListener("popupshown", function onPopupShown(aEvent) {
+        this.removeEventListener("popupshown", onPopupShown);
+        this.addEventListener("dragover", overflowableToolbarInstance);
+        this.addEventListener("dragend", overflowableToolbarInstance);
+        resolve();
+      });
     });
-
-    return deferred.promise;
   },
 
   _onClickChevron: function(aEvent) {
@@ -4169,7 +4176,7 @@ OverflowableToolbar.prototype = {
         this._toolbar.setAttribute("overflowing", "true");
       }
       child = prevChild;
-    };
+    }
 
     let win = this._target.ownerDocument.defaultView;
     win.UpdateUrlbarSearchSplitterState();

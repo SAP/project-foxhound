@@ -10,6 +10,8 @@
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
   <script class="testbody" type="text/javascript">
+  "use strict";
+
   SimpleTest.waitForExplicitFinish();
 
   const STSPATH = "/tests/security/manager/ssl/tests/mochitest/stricttransportsecurity";
@@ -43,8 +45,9 @@
   function endRound(round) {
     // remove all the iframes in the document
     document.body.removeChild(document.getElementById('ifr_bootstrap'));
-    for (var test in testframes)
+    for (let test in testframes) {
       document.body.removeChild(document.getElementById('ifr_' + test));
+    }
 
     // clean up the STS state
     SpecialPowers.cleanUpSTSData("http://example.com");
@@ -82,7 +85,7 @@
     }
 
     // check if the result (SECURE/INSECURE) is expected for this round/test combo
-    SimpleTest.is(result[0], testframes[result[1]].expected[round], 
+    SimpleTest.is(result[0], testframes[result[1]].expected[round],
                   "in ROUND " + round + ", test " + result[1]);
     testsleft[round]--;
 
@@ -93,10 +96,11 @@
       roundsLeft--;
 
       // defer this so it doesn't muck with the stack too much.
-      if (roundsLeft == 1)
+      if (roundsLeft == 1) {
         setTimeout(function () {
-            startRound('subdom'); 
-          }, 0);
+          startRound("subdom");
+        }, 0);
+      }
     }
 
     if (roundsLeft < 1) {
@@ -107,7 +111,7 @@
   // listen for calls back from the sts-setting iframe and then
   // the verification frames.
   window.addEventListener("message", onMessageReceived, false);
-  window.addEventListener('load', function() {startRound('plain');}, false);
+  window.addEventListener("load", () => { startRound("plain"); }, false);
   </script>
 </head>
 

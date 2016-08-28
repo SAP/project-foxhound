@@ -8,6 +8,7 @@
 
 #include "jsgc.h"
 
+#include "gc/Policy.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
 #include "jit/JitCompartment.h"
@@ -25,10 +26,12 @@ Zone * const Zone::NotOnList = reinterpret_cast<Zone*>(1);
 JS::Zone::Zone(JSRuntime* rt)
   : JS::shadow::Zone(rt, &rt->gc.marker),
     debuggers(nullptr),
+    suppressAllocationMetadataBuilder(false),
     arenas(rt),
     types(this),
     compartments(),
     gcGrayRoots(),
+    typeDescrObjects(this, SystemAllocPolicy()),
     gcMallocBytes(0),
     gcMallocGCTriggered(false),
     usage(&rt->gc.usage),
@@ -55,6 +58,8 @@ JS::Zone::Zone(JSRuntime* rt)
 
 Zone::~Zone()
 {
+    MOZ_ASSERT_IF(typeDescrObjects.initialized(), typeDescrObjects.empty());
+
     JSRuntime* rt = runtimeFromMainThread();
     if (this == rt->gc.systemZone)
         rt->gc.systemZone = nullptr;
@@ -66,7 +71,10 @@ Zone::~Zone()
 bool Zone::init(bool isSystemArg)
 {
     isSystem = isSystemArg;
-    return uniqueIds_.init() && gcZoneGroupEdges.init() && gcWeakKeys.init();
+    return uniqueIds_.init() &&
+           gcZoneGroupEdges.init() &&
+           gcWeakKeys.init() &&
+           typeDescrObjects.init();
 }
 
 void
@@ -131,29 +139,6 @@ Zone::getOrCreateDebuggers(JSContext* cx)
     if (!debuggers)
         ReportOutOfMemory(cx);
     return debuggers;
-}
-
-void
-Zone::logPromotionsToTenured()
-{
-    auto* dbgs = getDebuggers();
-    if (MOZ_LIKELY(!dbgs))
-        return;
-
-    auto now = JS_GetCurrentEmbedderTime();
-    JSRuntime* rt = runtimeFromAnyThread();
-
-    for (auto** dbgp = dbgs->begin(); dbgp != dbgs->end(); dbgp++) {
-        if (!(*dbgp)->isEnabled() || !(*dbgp)->isTrackingTenurePromotions())
-            continue;
-
-        for (auto range = awaitingTenureLogging.all(); !range.empty(); range.popFront()) {
-            if ((*dbgp)->isDebuggeeUnbarriered(range.front()->compartment()))
-                (*dbgp)->logTenurePromotion(rt, *range.front(), now);
-        }
-    }
-
-    awaitingTenureLogging.clear();
 }
 
 void
@@ -222,7 +207,7 @@ Zone::discardJitCode(FreeOp* fop)
 
 #ifdef DEBUG
         /* Assert no baseline scripts are marked as active. */
-        for (ZoneCellIterUnderGC i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
+        for (ZoneCellIter i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
             JSScript* script = i.get<JSScript>();
             MOZ_ASSERT_IF(script->hasBaselineScript(), !script->baselineScript()->active());
         }
@@ -234,7 +219,7 @@ Zone::discardJitCode(FreeOp* fop)
         /* Only mark OSI points if code is being discarded. */
         jit::InvalidateAll(fop, this);
 
-        for (ZoneCellIterUnderGC i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
+        for (ZoneCellIter i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
             JSScript* script = i.get<JSScript>();
             jit::FinishInvalidation(fop, script);
 
@@ -252,7 +237,15 @@ Zone::discardJitCode(FreeOp* fop)
             script->resetWarmUpCounter();
         }
 
-        jitZone()->optimizedStubSpace()->free();
+        /*
+         * When scripts contains pointers to nursery things, the store buffer
+         * can contain entries that point into the optimized stub space. Since
+         * this method can be called outside the context of a GC, this situation
+         * could result in us trying to mark invalid store buffer entries.
+         *
+         * Defer freeing any allocated blocks until after the next minor GC.
+         */
+        jitZone()->optimizedStubSpace()->freeAllAfterMinorGC(fop->runtime());
     }
 }
 
@@ -444,4 +437,10 @@ ZoneList::clear()
 {
     while (!isEmpty())
         removeFront();
+}
+
+JS_PUBLIC_API(void)
+JS::shadow::RegisterWeakCache(JS::Zone* zone, WeakCache<void*>* cachep)
+{
+    zone->registerWeakCache(cachep);
 }

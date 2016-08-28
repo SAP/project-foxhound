@@ -183,8 +183,6 @@ struct BytecodeEmitter
     CGConstList     constList;      /* constants to be included with the script */
 
     CGObjectList    objectList;     /* list of emitted objects */
-    CGObjectList    regexpList;     /* list of emitted regexp that will be
-                                       cloned during execution */
     CGTryNoteList   tryNoteList;    /* list of emitted try notes */
     CGBlockScopeList blockScopeList;/* list of emitted block scope notes */
 
@@ -234,6 +232,11 @@ struct BytecodeEmitter
 
     const EmitterMode emitterMode;
 
+    // The end location of a function body that is being emitted.
+    uint32_t functionBodyEndPos;
+    // Whether functionBodyEndPos was set.
+    bool functionBodyEndPosSet;
+
     /*
      * Note that BytecodeEmitters are magic: they own the arena "top-of-stack"
      * space above their tempMark points. This means that you cannot alloc from
@@ -244,6 +247,14 @@ struct BytecodeEmitter
                     HandleScript script, Handle<LazyScript*> lazyScript,
                     bool insideEval, HandleScript evalCaller,
                     bool insideNonGlobalEval, uint32_t lineNum, EmitterMode emitterMode = Normal);
+
+    // An alternate constructor that uses a TokenPos for the starting
+    // line and that sets functionBodyEndPos as well.
+    BytecodeEmitter(BytecodeEmitter* parent, Parser<FullParseHandler>* parser, SharedContext* sc,
+                    HandleScript script, Handle<LazyScript*> lazyScript,
+                    bool insideEval, HandleScript evalCaller,
+                    bool insideNonGlobalEval, TokenPos bodyPosition, EmitterMode emitterMode = Normal);
+
     bool init();
     bool updateLocalsToFrameSlots();
 
@@ -303,6 +314,11 @@ struct BytecodeEmitter
     ptrdiff_t lastNoteOffset() const { return current->lastNoteOffset; }
     unsigned currentLine() const { return current->currentLine; }
     unsigned lastColumn() const { return current->lastColumn; }
+
+    void setFunctionBodyEndPos(TokenPos pos) {
+        functionBodyEndPos = pos.end;
+        functionBodyEndPosSet = true;
+    }
 
     bool reportError(ParseNode* pn, unsigned errorNumber, ...);
     bool reportStrictWarning(ParseNode* pn, unsigned errorNumber, ...);
@@ -521,7 +537,7 @@ struct BytecodeEmitter
     // Emit bytecode to put operands for a JSOP_GETELEM/CALLELEM/SETELEM/DELELEM
     // opcode onto the stack in the right order. In the case of SETELEM, the
     // value to be assigned must already be pushed.
-    enum class EmitElemOption { Get, Set, Call, IncDec };
+    enum class EmitElemOption { Get, Set, Call, IncDec, CompoundAssign };
     bool emitElemOperands(ParseNode* pn, EmitElemOption opts);
 
     bool emitElemOpBase(JSOp op);

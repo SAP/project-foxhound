@@ -6,6 +6,7 @@
 if CONFIG['MOZ_WEBSPEECH']:
     MOCHITEST_MANIFESTS += [
         'test/mochitest.ini',
+        'test/startup/mochitest.ini',
     ]
 
     XPIDL_MODULE = 'dom_webspeechsynth'
@@ -40,8 +41,6 @@ if CONFIG['MOZ_WEBSPEECH']:
             'test/FakeSynthModule.cpp',
             'test/nsFakeSynthServices.cpp'
         ]
-
-    DIRS = []
 
     if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         DIRS += ['windows']

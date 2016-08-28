@@ -121,7 +121,7 @@ public:
     }
 
     // Window doesn't exist for some kind of workers (eg: SharedWorkers)
-    nsPIDOMWindow* window = wp->GetWindow();
+    nsPIDOMWindowInner* window = wp->GetWindow();
     if (!window) {
       return true;
     }
@@ -142,7 +142,8 @@ private:
   ErrorResult& mRv;
 };
 
-class BCPostMessageRunnable final : public nsICancelableRunnable
+class BCPostMessageRunnable final : public nsIRunnable,
+                                    public nsICancelableRunnable
 {
 public:
   NS_DECL_ISUPPORTS
@@ -190,7 +191,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHODIMP Cancel() override
+  nsresult Cancel() override
   {
     mActor = nullptr;
     return NS_OK;
@@ -205,7 +206,8 @@ private:
 
 NS_IMPL_ISUPPORTS(BCPostMessageRunnable, nsICancelableRunnable, nsIRunnable)
 
-class CloseRunnable final : public nsICancelableRunnable
+class CloseRunnable final : public nsIRunnable,
+                            public nsICancelableRunnable
 {
 public:
   NS_DECL_ISUPPORTS
@@ -222,7 +224,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHODIMP Cancel() override
+  nsresult Cancel() override
   {
     mBC = nullptr;
     return NS_OK;
@@ -236,7 +238,8 @@ private:
 
 NS_IMPL_ISUPPORTS(CloseRunnable, nsICancelableRunnable, nsIRunnable)
 
-class TeardownRunnable final : public nsICancelableRunnable
+class TeardownRunnable final : public nsIRunnable,
+                               public nsICancelableRunnable
 {
 public:
   NS_DECL_ISUPPORTS
@@ -256,7 +259,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHODIMP Cancel() override
+  nsresult Cancel() override
   {
     mActor = nullptr;
     return NS_OK;
@@ -281,7 +284,7 @@ public:
     MOZ_COUNT_CTOR(BroadcastChannelFeature);
   }
 
-  virtual bool Notify(JSContext* aCx, workers::Status aStatus) override
+  virtual bool Notify(workers::Status aStatus) override
   {
     if (aStatus >= Closing) {
       mChannel->Shutdown();
@@ -299,7 +302,7 @@ private:
 
 } // namespace
 
-BroadcastChannel::BroadcastChannel(nsPIDOMWindow* aWindow,
+BroadcastChannel::BroadcastChannel(nsPIDOMWindowInner* aWindow,
                                    const PrincipalInfo& aPrincipalInfo,
                                    const nsACString& aOrigin,
                                    const nsAString& aChannel,
@@ -334,7 +337,8 @@ BroadcastChannel::Constructor(const GlobalObject& aGlobal,
                               const nsAString& aChannel,
                               ErrorResult& aRv)
 {
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
+  nsCOMPtr<nsPIDOMWindowInner> window =
+    do_QueryInterface(aGlobal.GetAsSupports());
   // Window is null in workers.
 
   nsAutoCString origin;
@@ -420,8 +424,7 @@ BroadcastChannel::Constructor(const GlobalObject& aGlobal,
     }
   } else {
     bc->mWorkerFeature = new BroadcastChannelFeature(bc);
-    JSContext* cx = workerPrivate->GetJSContext();
-    if (NS_WARN_IF(!workerPrivate->AddFeature(cx, bc->mWorkerFeature))) {
+    if (NS_WARN_IF(!workerPrivate->AddFeature(bc->mWorkerFeature))) {
       NS_WARNING("Failed to register the BroadcastChannel worker feature.");
       bc->mWorkerFeature = nullptr;
       aRv.Throw(NS_ERROR_FAILURE);
@@ -545,7 +548,7 @@ BroadcastChannel::Shutdown()
 
   if (mWorkerFeature) {
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-    workerPrivate->RemoveFeature(workerPrivate->GetJSContext(), mWorkerFeature);
+    workerPrivate->RemoveFeature(mWorkerFeature);
     mWorkerFeature = nullptr;
   }
 
@@ -671,7 +674,7 @@ BroadcastChannel::RemoveDocFromBFCache()
     return;
   }
 
-  nsPIDOMWindow* window = GetOwner();
+  nsPIDOMWindowInner* window = GetOwner();
   if (!window) {
     return;
   }

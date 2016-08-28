@@ -3,8 +3,16 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
-    'addons.js',
+    'aboutdebugging.js',
+    'addon-target.js',
+    'addons-controls.js',
+    'addons-install-error.js',
+    'addons-tab.js',
+    'service-worker-target.js',
+    'tab-header.js',
+    'tab-menu-entry.js',
+    'tab-menu.js',
     'target-list.js',
-    'target.js',
-    'workers.js',
+    'worker-target.js',
+    'workers-tab.js',
 )

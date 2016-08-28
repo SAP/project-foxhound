@@ -218,6 +218,14 @@ EVENT(ended,
       eEnded,
       EventNameType_HTML,
       eBasicEventClass)
+EVENT(fullscreenchange,
+      eFullscreenChange,
+      EventNameType_HTML,
+      eBasicEventClass)
+EVENT(fullscreenerror,
+      eFullscreenError,
+      EventNameType_HTML,
+      eBasicEventClass)
 EVENT(input,
       eEditorInput,
       EventNameType_HTMLXUL,
@@ -237,6 +245,14 @@ EVENT(keypress,
 EVENT(keyup,
       eKeyUp,
       EventNameType_HTMLXUL,
+      eKeyboardEventClass)
+EVENT(mozkeydownonplugin,
+      eKeyDownOnPlugin,
+      EventNameType_None,
+      eKeyboardEventClass)
+EVENT(mozkeyuponplugin,
+      eKeyUpOnPlugin,
+      EventNameType_None,
       eKeyboardEventClass)
 NON_IDL_EVENT(mozbrowserbeforekeydown,
               eBeforeKeyDown,
@@ -295,11 +311,11 @@ EVENT(mouseup,
       EventNameType_All,
       eMouseEventClass)
 EVENT(mozfullscreenchange,
-      eFullscreenChange,
+      eMozFullscreenChange,
       EventNameType_HTML,
       eBasicEventClass)
 EVENT(mozfullscreenerror,
-      eFullscreenError,
+      eMozFullscreenError,
       EventNameType_HTML,
       eBasicEventClass)
 EVENT(mozpointerlockchange,
@@ -411,6 +427,10 @@ EVENT(suspend,
       eBasicEventClass)
 EVENT(timeupdate,
       eTimeUpdate,
+      EventNameType_HTML,
+      eBasicEventClass)
+EVENT(toggle,
+      eToggle,
       EventNameType_HTML,
       eBasicEventClass)
 EVENT(volumechange,

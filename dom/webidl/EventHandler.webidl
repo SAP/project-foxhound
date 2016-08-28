@@ -92,6 +92,9 @@ interface GlobalEventHandlers {
            [Pref="dom.select_events.enabled"]
            attribute EventHandler onselectstart;
 
+           [Pref="dom.details_element.enabled"]
+           attribute EventHandler ontoggle;
+
            // Pointer events handlers
            [Pref="dom.w3c_pointer_events.enabled"]
            attribute EventHandler onpointercancel;
@@ -114,9 +117,15 @@ interface GlobalEventHandlers {
            [Pref="dom.w3c_pointer_events.enabled"]
            attribute EventHandler onlostpointercapture;
 
-           // Mozilla-specific handlers
+           // Fullscreen events handlers
+           [Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+           attribute EventHandler onfullscreenchange;
+           [Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+           attribute EventHandler onfullscreenerror;
            attribute EventHandler onmozfullscreenchange;
            attribute EventHandler onmozfullscreenerror;
+
+           // Mozilla-specific handlers
            attribute EventHandler onmozpointerlockchange;
            attribute EventHandler onmozpointerlockerror;
 };

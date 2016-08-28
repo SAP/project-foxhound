@@ -37,7 +37,6 @@
 #include "nsILinkHandler.h"
 #include "nsIInlineSpellChecker.h"
 
-#include "mozilla/CSSStyleSheet.h"
 #include "mozilla/css/Loader.h"
 #include "nsIDOMStyleSheet.h"
 
@@ -75,6 +74,8 @@
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "nsTextFragment.h"
 #include "nsContentList.h"
+#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheetHandleInlines.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -399,7 +400,7 @@ nsHTMLEditor::FindSelectionRoot(nsINode *aNode)
                   aNode->IsNodeOfType(nsINode::eCONTENT),
                   "aNode must be content or document node");
 
-  nsCOMPtr<nsIDocument> doc = aNode->GetCurrentDoc();
+  nsCOMPtr<nsIDocument> doc = aNode->GetUncomposedDoc();
   if (!doc) {
     return nullptr;
   }
@@ -547,7 +548,7 @@ nsHTMLEditor::BeginningOfDocument()
   // Find first editable thingy
   bool done = false;
   nsCOMPtr<nsINode> curNode = rootElement.get(), selNode;
-  int32_t curOffset = 0, selOffset;
+  int32_t curOffset = 0, selOffset = 0;
   while (!done) {
     nsWSRunObject wsObj(this, curNode, curOffset);
     int32_t visOffset = 0;
@@ -617,7 +618,7 @@ nsHTMLEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
   }
 
   WidgetKeyboardEvent* nativeKeyEvent =
-    aKeyEvent->AsEvent()->GetInternalNSEvent()->AsKeyboardEvent();
+    aKeyEvent->AsEvent()->WidgetEventPtr()->AsKeyboardEvent();
   NS_ENSURE_TRUE(nativeKeyEvent, NS_ERROR_UNEXPECTED);
   NS_ASSERTION(nativeKeyEvent->mMessage == eKeyPress,
                "HandleKeyPressEvent gets non-keypress event");
@@ -1133,7 +1134,7 @@ nsHTMLEditor::TabInTable(bool inIsShift, bool* outHandled)
   return NS_OK;
 }
 
-already_AddRefed<Element>
+Element*
 nsHTMLEditor::CreateBR(nsINode* aNode, int32_t aOffset, EDirection aSelect)
 {
   nsCOMPtr<nsIDOMNode> parent = GetAsDOMNode(aNode);
@@ -1142,7 +1143,7 @@ nsHTMLEditor::CreateBR(nsINode* aNode, int32_t aOffset, EDirection aSelect)
   // We assume everything is fine if the br is not null, irrespective of retval
   CreateBRImpl(address_of(parent), &offset, address_of(outBRNode), aSelect);
   nsCOMPtr<Element> ret = do_QueryInterface(outBRNode);
-  return ret.forget();
+  return ret;
 }
 
 NS_IMETHODIMP nsHTMLEditor::CreateBR(nsIDOMNode *aNode, int32_t aOffset, nsCOMPtr<nsIDOMNode> *outBRNode, EDirection aSelect)
@@ -1966,7 +1967,7 @@ nsHTMLEditor::MakeOrChangeList(const nsAString& aListType, bool entireList, cons
       nsCOMPtr<nsIContent> parent = node;
       nsCOMPtr<nsIContent> topChild = node;
 
-      nsCOMPtr<nsIAtom> listAtom = do_GetAtom(aListType);
+      nsCOMPtr<nsIAtom> listAtom = NS_Atomize(aListType);
       while (!CanContainTag(*parent, *listAtom)) {
         topChild = parent;
         parent = parent->GetParent();
@@ -2098,7 +2099,7 @@ nsHTMLEditor::InsertBasicBlock(const nsAString& aBlockType)
       nsCOMPtr<nsIContent> parent = node;
       nsCOMPtr<nsIContent> topChild = node;
 
-      nsCOMPtr<nsIAtom> blockAtom = do_GetAtom(aBlockType);
+      nsCOMPtr<nsIAtom> blockAtom = NS_Atomize(aBlockType);
       while (!CanContainTag(*parent, *blockAtom)) {
         NS_ENSURE_TRUE(parent->GetParent(), NS_ERROR_FAILURE);
         topChild = parent;
@@ -2553,7 +2554,7 @@ nsHTMLEditor::CreateElementWithDefaults(const nsAString& aTagName)
 
   // New call to use instead to get proper HTML element, bug 39919
   nsCOMPtr<Element> newElement =
-    CreateHTMLContent(nsCOMPtr<nsIAtom>(do_GetAtom(realTagName)));
+    CreateHTMLContent(nsCOMPtr<nsIAtom>(NS_Atomize(realTagName)));
   if (!newElement) {
     return nullptr;
   }
@@ -2825,13 +2826,11 @@ nsHTMLEditor::ReplaceStyleSheet(const nsAString& aURL)
 NS_IMETHODIMP
 nsHTMLEditor::RemoveStyleSheet(const nsAString &aURL)
 {
-  RefPtr<CSSStyleSheet> sheet;
-  nsresult rv = GetStyleSheetForURL(aURL, getter_AddRefs(sheet));
-  NS_ENSURE_SUCCESS(rv, rv);
+  StyleSheetHandle::RefPtr sheet = GetStyleSheetForURL(aURL);
   NS_ENSURE_TRUE(sheet, NS_ERROR_UNEXPECTED);
 
   RefPtr<RemoveStyleSheetTxn> txn;
-  rv = CreateTxnForRemoveStyleSheet(sheet, getter_AddRefs(txn));
+  nsresult rv = CreateTxnForRemoveStyleSheet(sheet, getter_AddRefs(txn));
   if (!txn) rv = NS_ERROR_NULL_POINTER;
   if (NS_SUCCEEDED(rv))
   {
@@ -2865,11 +2864,11 @@ nsHTMLEditor::AddOverrideStyleSheet(const nsAString& aURL)
   // We MUST ONLY load synchronous local files (no @import)
   // XXXbz Except this will actually try to load remote files
   // synchronously, of course..
-  RefPtr<CSSStyleSheet> sheet;
+  StyleSheetHandle::RefPtr sheet;
   // Editor override style sheets may want to style Gecko anonymous boxes
   rv = ps->GetDocument()->CSSLoader()->
     LoadSheetSync(uaURI, mozilla::css::eAgentSheetFeatures, true,
-                  getter_AddRefs(sheet));
+                  &sheet);
 
   // Synchronous loads should ALWAYS return completed
   NS_ENSURE_TRUE(sheet, NS_ERROR_NULL_POINTER);
@@ -2878,7 +2877,7 @@ nsHTMLEditor::AddOverrideStyleSheet(const nsAString& aURL)
   // (This checks if already exists)
   ps->AddOverrideStyleSheet(sheet);
 
-  ps->ReconstructStyleData();
+  ps->RestyleForCSSRuleChanges();
 
   // Save as the last-loaded sheet
   mLastOverrideStyleSheetURL = aURL;
@@ -2910,8 +2909,7 @@ nsHTMLEditor::ReplaceOverrideStyleSheet(const nsAString& aURL)
 NS_IMETHODIMP
 nsHTMLEditor::RemoveOverrideStyleSheet(const nsAString &aURL)
 {
-  RefPtr<CSSStyleSheet> sheet;
-  GetStyleSheetForURL(aURL, getter_AddRefs(sheet));
+  StyleSheetHandle::RefPtr sheet = GetStyleSheetForURL(aURL);
 
   // Make sure we remove the stylesheet from our internal list in all
   // cases.
@@ -2924,7 +2922,7 @@ nsHTMLEditor::RemoveOverrideStyleSheet(const nsAString &aURL)
   NS_ENSURE_TRUE(ps, NS_ERROR_NOT_INITIALIZED);
 
   ps->RemoveOverrideStyleSheet(sheet);
-  ps->ReconstructStyleData();
+  ps->RestyleForCSSRuleChanges();
 
   // Remove it from our internal list
   return rv;
@@ -2933,24 +2931,25 @@ nsHTMLEditor::RemoveOverrideStyleSheet(const nsAString &aURL)
 NS_IMETHODIMP
 nsHTMLEditor::EnableStyleSheet(const nsAString &aURL, bool aEnable)
 {
-  RefPtr<CSSStyleSheet> sheet;
-  nsresult rv = GetStyleSheetForURL(aURL, getter_AddRefs(sheet));
-  NS_ENSURE_SUCCESS(rv, rv);
+  StyleSheetHandle::RefPtr sheet = GetStyleSheetForURL(aURL);
   NS_ENSURE_TRUE(sheet, NS_OK); // Don't fail if sheet not found
 
   // Ensure the style sheet is owned by our document.
   nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocWeak);
   sheet->SetOwningDocument(doc);
 
-  return sheet->SetDisabled(!aEnable);
+  if (sheet->IsServo()) {
+    // XXXheycam ServoStyleSheets don't support being enabled/disabled yet.
+    NS_ERROR("stylo: ServoStyleSheets can't be disabled yet");
+    return NS_ERROR_FAILURE;
+  }
+  return sheet->AsGecko()->SetDisabled(!aEnable);
 }
 
 bool
 nsHTMLEditor::EnableExistingStyleSheet(const nsAString &aURL)
 {
-  RefPtr<CSSStyleSheet> sheet;
-  nsresult rv = GetStyleSheetForURL(aURL, getter_AddRefs(sheet));
-  NS_ENSURE_SUCCESS(rv, false);
+  StyleSheetHandle::RefPtr sheet = GetStyleSheetForURL(aURL);
 
   // Enable sheet if already loaded.
   if (sheet)
@@ -2959,7 +2958,12 @@ nsHTMLEditor::EnableExistingStyleSheet(const nsAString &aURL)
     nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocWeak);
     sheet->SetOwningDocument(doc);
 
-    sheet->SetDisabled(false);
+    if (sheet->IsServo()) {
+      // XXXheycam ServoStyleSheets don't support being enabled/disabled yet.
+      NS_ERROR("stylo: ServoStyleSheets can't be disabled yet");
+      return true;
+    }
+    sheet->AsGecko()->SetDisabled(false);
     return true;
   }
   return false;
@@ -2967,7 +2971,7 @@ nsHTMLEditor::EnableExistingStyleSheet(const nsAString &aURL)
 
 nsresult
 nsHTMLEditor::AddNewStyleSheetToList(const nsAString &aURL,
-                                     CSSStyleSheet* aStyleSheet)
+                                     StyleSheetHandle aStyleSheet)
 {
   uint32_t countSS = mStyleSheets.Length();
   uint32_t countU = mStyleSheetURLs.Length();
@@ -2997,41 +3001,33 @@ nsHTMLEditor::RemoveStyleSheetFromList(const nsAString &aURL)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsHTMLEditor::GetStyleSheetForURL(const nsAString &aURL,
-                                  CSSStyleSheet** aStyleSheet)
+StyleSheetHandle
+nsHTMLEditor::GetStyleSheetForURL(const nsAString& aURL)
 {
-  NS_ENSURE_ARG_POINTER(aStyleSheet);
-  *aStyleSheet = 0;
-
   // is it already in the list?
   size_t foundIndex;
   foundIndex = mStyleSheetURLs.IndexOf(aURL);
-  if (foundIndex == mStyleSheetURLs.NoIndex)
-    return NS_OK; //No sheet -- don't fail!
+  if (foundIndex == mStyleSheetURLs.NoIndex) {
+    return nullptr;
+  }
 
-  *aStyleSheet = mStyleSheets[foundIndex];
-  NS_ENSURE_TRUE(*aStyleSheet, NS_ERROR_FAILURE);
-
-  NS_ADDREF(*aStyleSheet);
-
-  return NS_OK;
+  MOZ_ASSERT(mStyleSheets[foundIndex]);
+  return mStyleSheets[foundIndex];
 }
 
-NS_IMETHODIMP
-nsHTMLEditor::GetURLForStyleSheet(CSSStyleSheet* aStyleSheet,
-                                  nsAString &aURL)
+void
+nsHTMLEditor::GetURLForStyleSheet(StyleSheetHandle aStyleSheet,
+                                  nsAString& aURL)
 {
   // is it already in the list?
   int32_t foundIndex = mStyleSheets.IndexOf(aStyleSheet);
 
   // Don't fail if we don't find it in our list
   if (foundIndex == -1)
-    return NS_OK;
+    return;
 
   // Found it in the list!
   aURL = mStyleSheetURLs[foundIndex];
-  return NS_OK;
 }
 
 /*
@@ -3395,7 +3391,7 @@ nsHTMLEditor::DebugUnitTests(int32_t *outNumTests, int32_t *outNumTestsFailed)
 
 
 NS_IMETHODIMP
-nsHTMLEditor::StyleSheetLoaded(CSSStyleSheet* aSheet, bool aWasAlternate,
+nsHTMLEditor::StyleSheetLoaded(StyleSheetHandle aSheet, bool aWasAlternate,
                                nsresult aStatus)
 {
   nsresult rv = NS_OK;
@@ -4492,7 +4488,7 @@ nsHTMLEditor::RemoveAttributeOrEquivalent(nsIDOMElement* aElement,
   nsCOMPtr<dom::Element> element = do_QueryInterface(aElement);
   NS_ENSURE_TRUE(element, NS_OK);
 
-  nsCOMPtr<nsIAtom> attribute = do_GetAtom(aAttribute);
+  nsCOMPtr<nsIAtom> attribute = NS_Atomize(aAttribute);
   MOZ_ASSERT(attribute);
 
   nsresult res = NS_OK;
@@ -4777,7 +4773,8 @@ nsHTMLEditor::CopyLastEditableChildStyles(nsIDOMNode * aPreviousBlock, nsIDOMNod
     childElement = childElement->GetParentElement();
   }
   if (deepestStyle) {
-    *aOutBrNode = GetAsDOMNode(CreateBR(deepestStyle, 0).take());
+    nsCOMPtr<nsIDOMNode> retVal = GetAsDOMNode(CreateBR(deepestStyle, 0));
+    retVal.forget(aOutBrNode);
     NS_ENSURE_STATE(*aOutBrNode);
   }
   return NS_OK;
@@ -5009,8 +5006,8 @@ nsHTMLEditor::IsActiveInDOMWindow()
     return true;
   }
 
-  nsPIDOMWindow* ourWindow = doc->GetWindow();
-  nsCOMPtr<nsPIDOMWindow> win;
+  nsPIDOMWindowOuter* ourWindow = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> win;
   nsIContent* content =
     nsFocusManager::GetFocusedDescendant(ourWindow, false,
                                          getter_AddRefs(win));
@@ -5162,13 +5159,13 @@ nsHTMLEditor::OurWindowHasFocus()
   NS_ENSURE_TRUE(mDocWeak, false);
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
   NS_ENSURE_TRUE(fm, false);
-  nsCOMPtr<nsIDOMWindow> focusedWindow;
+  nsCOMPtr<mozIDOMWindowProxy> focusedWindow;
   fm->GetFocusedWindow(getter_AddRefs(focusedWindow));
   if (!focusedWindow) {
     return false;
   }
   nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocWeak);
-  nsCOMPtr<nsIDOMWindow> ourWindow = do_QueryInterface(doc->GetWindow());
+  nsPIDOMWindowOuter* ourWindow = doc->GetWindow();
   return ourWindow == focusedWindow;
 }
 
@@ -5182,7 +5179,7 @@ nsHTMLEditor::IsAcceptableInputEvent(nsIDOMEvent* aEvent)
   // While there is composition, all composition events in its top level window
   // are always fired on the composing editor.  Therefore, if this editor has
   // composition, the composition events should be handled in this editor.
-  if (mComposition && aEvent->GetInternalNSEvent()->AsCompositionEvent()) {
+  if (mComposition && aEvent->WidgetEventPtr()->AsCompositionEvent()) {
     return true;
   }
 
@@ -5203,7 +5200,7 @@ nsHTMLEditor::IsAcceptableInputEvent(nsIDOMEvent* aEvent)
     // Otherwise, check whether the event target is in this document or not.
     nsCOMPtr<nsIContent> targetContent = do_QueryInterface(target);
     NS_ENSURE_TRUE(targetContent, false);
-    return document == targetContent->GetCurrentDoc();
+    return document == targetContent->GetUncomposedDoc();
   }
 
   // This HTML editor is for contenteditable.  We need to check the validity of

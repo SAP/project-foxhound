@@ -27,20 +27,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Utils",
  * Module that contains tab state collection methods.
  */
 this.TabState = Object.freeze({
-  setSyncHandler: function (browser, handler) {
-    TabStateInternal.setSyncHandler(browser, handler);
-  },
-
   update: function (browser, data) {
     TabStateInternal.update(browser, data);
-  },
-
-  flushAsync: function (browser) {
-    TabStateInternal.flushAsync(browser);
-  },
-
-  flushWindow: function (window) {
-    TabStateInternal.flushWindow(window);
   },
 
   collect: function (tab) {
@@ -53,62 +41,15 @@ this.TabState = Object.freeze({
 
   copyFromCache(browser, tabData, options) {
     TabStateInternal.copyFromCache(browser, tabData, options);
-  }
+  },
 });
 
 var TabStateInternal = {
-  // A map (xul:browser -> handler) that maps a tab to the
-  // synchronous collection handler object for that tab.
-  // See SyncHandler in content-sessionStore.js.
-  _syncHandlers: new WeakMap(),
-
-  // A map (xul:browser -> int) that maps a browser to the
-  // last "SessionStore:update" message ID we received for it.
-  _latestMessageID: new WeakMap(),
-
-  /**
-   * Install the sync handler object from a given tab.
-   */
-  setSyncHandler: function (browser, handler) {
-    this._syncHandlers.set(browser.permanentKey, handler);
-    this._latestMessageID.set(browser.permanentKey, 0);
-  },
-
   /**
    * Processes a data update sent by the content script.
    */
-  update: function (browser, {id, data}) {
-    // Only ever process messages that have an ID higher than the last one we
-    // saw. This ensures we don't use stale data that has already been received
-    // synchronously.
-    if (id > this._latestMessageID.get(browser.permanentKey)) {
-      this._latestMessageID.set(browser.permanentKey, id);
-      TabStateCache.update(browser, data);
-    }
-  },
-
-  /**
-   * DO NOT USE - DEBUGGING / TESTING ONLY
-   *
-   * This function is used to simulate certain situations where race conditions
-   * can occur by sending data shortly before flushing synchronously.
-   */
-  flushAsync: function(browser) {
-    if (this._syncHandlers.has(browser.permanentKey)) {
-      this._syncHandlers.get(browser.permanentKey).flushAsync();
-    }
-  },
-
-  /**
-   * Flushes queued content script data for all browsers of a given window.
-   */
-  flushWindow: function (window) {
-    for (let browser of window.gBrowser.browsers) {
-      if (this._syncHandlers.has(browser.permanentKey)) {
-        let lastID = this._latestMessageID.get(browser.permanentKey);
-        this._syncHandlers.get(browser.permanentKey).flush(lastID);
-      }
-    }
+  update: function (browser, {data}) {
+    TabStateCache.update(browser, data);
   },
 
   /**
@@ -162,6 +103,7 @@ var TabStateInternal = {
 
     if (browser.audioMuted) {
       tabData.muted = true;
+      tabData.muteReason = tab.muteReason;
     }
 
     // Save tab attributes.
@@ -187,12 +129,17 @@ var TabStateInternal = {
     }
 
     // If there is a userTypedValue set, then either the user has typed something
-    // in the URL bar, or a new tab was opened with a URI to load. userTypedClear
-    // is used to indicate whether the tab was in some sort of loading state with
-    // userTypedValue.
+    // in the URL bar, or a new tab was opened with a URI to load.
+    // If so, we also track whether we were still in the process of loading something.
     if (!("userTypedValue" in tabData) && browser.userTypedValue) {
       tabData.userTypedValue = browser.userTypedValue;
-      tabData.userTypedClear = browser.userTypedClear;
+      // We always used to keep track of the loading state as an integer, where
+      // '0' indicated the user had typed since the last load (or no load was
+      // ongoing), and any positive value indicated we had started a load since
+      // the last time the user typed in the URL bar. Mimic this to keep the
+      // session store representation in sync, even though we now represent this
+      // more explicitly:
+      tabData.userTypedClear = browser.didStartLoadSinceLastUserTyping() ? 1 : 0;
     }
 
     return tabData;

@@ -7,6 +7,7 @@
 #include "nsILocaleService.h"
 #include "nsISpeechService.h"
 #include "nsServiceManagerUtils.h"
+#include "nsCategoryManagerUtils.h"
 
 #include "SpeechSynthesisUtterance.h"
 #include "SpeechSynthesisVoice.h"
@@ -36,7 +37,7 @@ GetAllSpeechSynthActors(InfallibleTArray<mozilla::dom::SpeechSynthesisParent*>& 
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aActors.IsEmpty());
 
-  nsAutoTArray<mozilla::dom::ContentParent*, 20> contentActors;
+  AutoTArray<mozilla::dom::ContentParent*, 20> contentActors;
   mozilla::dom::ContentParent::GetAll(contentActors);
 
   for (uint32_t contentIndex = 0;
@@ -44,7 +45,7 @@ GetAllSpeechSynthActors(InfallibleTArray<mozilla::dom::SpeechSynthesisParent*>& 
        ++contentIndex) {
     MOZ_ASSERT(contentActors[contentIndex]);
 
-    AutoInfallibleTArray<mozilla::dom::PSpeechSynthesisParent*, 5> speechsynthActors;
+    AutoTArray<mozilla::dom::PSpeechSynthesisParent*, 5> speechsynthActors;
     contentActors[contentIndex]->ManagedPSpeechSynthesisParent(speechsynthActors);
 
     for (uint32_t speechsynthIndex = 0;
@@ -190,6 +191,11 @@ nsSynthVoiceRegistry::GetInstance()
     gSynthVoiceRegistry = new nsSynthVoiceRegistry();
     Preferences::AddBoolVarCache(&sForceGlobalQueue,
                                  "media.webspeech.synth.force_global_queue");
+    if (XRE_IsParentProcess()) {
+      // Start up all speech synth services.
+      NS_CreateServicesFromCategory(NS_SPEECH_SYNTH_STARTED, nullptr,
+        NS_SPEECH_SYNTH_STARTED);
+    }
   }
 
   return gSynthVoiceRegistry;
@@ -280,6 +286,17 @@ nsSynthVoiceRegistry::RecvIsSpeakingChanged(bool aIsSpeaking)
   gSynthVoiceRegistry->mIsSpeaking = aIsSpeaking;
 }
 
+void
+nsSynthVoiceRegistry::RecvNotifyVoicesChanged()
+{
+  // If we dont have a local instance of the registry yet, we don't care.
+  if(!gSynthVoiceRegistry) {
+    return;
+  }
+
+  gSynthVoiceRegistry->NotifyVoicesChanged();
+}
+
 NS_IMETHODIMP
 nsSynthVoiceRegistry::AddVoice(nsISpeechService* aService,
                                const nsAString& aUri,
@@ -346,6 +363,27 @@ nsSynthVoiceRegistry::RemoveVoice(nsISpeechService* aService,
 
   for (uint32_t i = 0; i < ssplist.Length(); ++i)
     Unused << ssplist[i]->SendVoiceRemoved(nsString(aUri));
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSynthVoiceRegistry::NotifyVoicesChanged()
+{
+  if (XRE_IsParentProcess()) {
+    nsTArray<SpeechSynthesisParent*> ssplist;
+    GetAllSpeechSynthActors(ssplist);
+
+    for (uint32_t i = 0; i < ssplist.Length(); ++i)
+      Unused << ssplist[i]->SendNotifyVoicesChanged();
+  }
+
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if(NS_WARN_IF(!(obs))) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  obs->NotifyObservers(nullptr, "synth-voices-changed", nullptr);
 
   return NS_OK;
 }
@@ -624,9 +662,7 @@ nsSynthVoiceRegistry::SpeakUtterance(SpeechSynthesisUtterance& aUtterance,
   float volume = aUtterance.Volume();
   RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
   if (service) {
-    nsCOMPtr<nsPIDOMWindow> topWindow =
-      do_QueryInterface(aUtterance.GetOwner());
-    if (topWindow) {
+    if (nsCOMPtr<nsPIDOMWindowInner> topWindow = aUtterance.GetOwner()) {
       float audioVolume = 1.0f;
       bool muted = false;
       service->GetState(topWindow->GetOuterWindow(),

@@ -8,12 +8,15 @@
 
 #include "MediaStreamGraph.h"
 
+#include "nsDataHashtable.h"
+
 #include "mozilla/Monitor.h"
 #include "mozilla/TimeStamp.h"
 #include "nsIMemoryReporter.h"
 #include "nsIThread.h"
 #include "nsIRunnable.h"
 #include "Latency.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "GraphDriver.h"
 #include "AudioMixer.h"
@@ -79,7 +82,7 @@ protected:
 class MessageBlock
 {
 public:
-  nsTArray<nsAutoPtr<ControlMessage> > mMessages;
+  nsTArray<UniquePtr<ControlMessage>> mMessages;
 };
 
 /**
@@ -138,7 +141,8 @@ public:
    * Append a ControlMessage to the message queue. This queue is drained
    * during RunInStableState; the messages will run on the graph thread.
    */
-  void AppendMessage(ControlMessage* aMessage);
+  void AppendMessage(UniquePtr<ControlMessage> aMessage);
+
   /**
    * Make this MediaStreamGraph enter forced-shutdown state. This state
    * will be noticed by the media graph thread, which will shut down all streams
@@ -146,10 +150,6 @@ public:
    * This is called during application shutdown.
    */
   void ForceShutDown();
-  /**
-   * Shutdown() this MediaStreamGraph's threads and return when they've shut down.
-   */
-  void ShutdownThreads();
 
   /**
    * Called before the thread runs.
@@ -223,6 +223,21 @@ public:
    */
   void UpdateCurrentTimeForStreams(GraphTime aPrevCurrentTime);
   /**
+   * Process chunks for all streams and raise events for properties that have
+   * changed, such as principalId.
+   */
+  void ProcessChunkMetadata(GraphTime aPrevCurrentTime);
+  /**
+   * Process chunks for the given stream and interval, and raise events for
+   * properties that have changed, such as principalId.
+   */
+  template<typename C, typename Chunk>
+  void ProcessChunkMetadataForInterval(MediaStream* aStream,
+                                       TrackID aTrackID,
+                                       C& aSegment,
+                                       StreamTime aStart,
+                                       StreamTime aEnd);
+  /**
    * Process graph messages in mFrontMessageQueue.
    */
   void RunMessagesInQueue();
@@ -257,7 +272,7 @@ public:
    * Schedules |aMessage| to run after processing, at a time when graph state
    * can be changed.  Graph thread.
    */
-  void RunMessageAfterProcessing(nsAutoPtr<ControlMessage> aMessage);
+  void RunMessageAfterProcessing(UniquePtr<ControlMessage> aMessage);
 
   /**
    * Called when a suspend/resume/close operation has been completed, on the
@@ -293,6 +308,12 @@ public:
    */
   void SuspendOrResumeStreams(dom::AudioContextOperation aAudioContextOperation,
                               const nsTArray<MediaStream*>& aStreamSet);
+
+  /**
+   * Determine if we have any audio tracks, or are about to add any audiotracks.
+   * Also checks if we'll need the AEC running (i.e. microphone input tracks)
+   */
+  bool AudioTrackPresent(bool& aNeedsAEC);
 
   /**
    * Sort mStreams so that every stream not in a cycle is after any streams
@@ -350,9 +371,9 @@ public:
    * at the current buffer end point. The StreamBuffer's tracks must be
    * explicitly set to finished by the caller.
    */
-  void OpenAudioInputImpl(CubebUtils::AudioDeviceID aID,
+  void OpenAudioInputImpl(int aID,
                           AudioDataListener *aListener);
-  virtual nsresult OpenAudioInput(CubebUtils::AudioDeviceID aID,
+  virtual nsresult OpenAudioInput(int aID,
                                   AudioDataListener *aListener) override;
   void CloseAudioInputImpl(AudioDataListener *aListener);
   virtual void CloseAudioInput(AudioDataListener *aListener) override;
@@ -589,9 +610,12 @@ public:
    * and boolean to control if we want input/output
    */
   bool mInputWanted;
-  CubebUtils::AudioDeviceID mInputDeviceID;
+  int mInputDeviceID;
   bool mOutputWanted;
-  CubebUtils::AudioDeviceID mOutputDeviceID;
+  int mOutputDeviceID;
+  // Maps AudioDataListeners to a usecount of streams using the listener
+  // so we can know when it's no longer in use.
+  nsDataHashtable<nsPtrHashKey<AudioDataListener>, uint32_t> mInputDeviceUsers;
 
   // True if the graph needs another iteration after the current iteration.
   Atomic<bool> mNeedAnotherIteration;
@@ -706,7 +730,7 @@ public:
    * immediately because we want all messages between stable states to be
    * processed as an atomic batch.
    */
-  nsTArray<nsAutoPtr<ControlMessage> > mCurrentTaskMessageQueue;
+  nsTArray<UniquePtr<ControlMessage>> mCurrentTaskMessageQueue;
   /**
    * True when RunInStableState has determined that mLifecycleState is >
    * LIFECYCLE_RUNNING. Since only the main thread can reset mLifecycleState to

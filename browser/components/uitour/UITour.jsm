@@ -29,8 +29,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "UITelemetry",
   "resource://gre/modules/UITelemetry.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "BrowserUITelemetry",
   "resource:///modules/BrowserUITelemetry.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Metrics",
-  "resource://gre/modules/Metrics.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ReaderMode",
@@ -45,7 +43,6 @@ const PREF_READERVIEW_TRIGGER = "browser.uitour.readerViewTrigger";
 const PREF_SURVEY_DURATION = "browser.uitour.surveyDuration";
 
 const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
-  "endUrlbarCapture",
   "forceShowReaderIcon",
   "getConfiguration",
   "getTreatmentTag",
@@ -92,7 +89,6 @@ this.UITour = {
   pageIDSourceBrowsers: new WeakMap(),
   /* Map from browser chrome windows to a Set of <browser>s in which a tour is open (both visible and hidden) */
   tourBrowsersByWindow: new WeakMap(),
-  urlbarCapture: new WeakMap(),
   appMenuOpenForAnnotation: new Set(),
   availableTargetsCache: new WeakMap(),
   clearAvailableTargetsCache() {
@@ -579,41 +575,6 @@ this.UITour = {
         break;
       }
 
-      case "startUrlbarCapture": {
-        if (typeof data.text != "string" || !data.text ||
-            typeof data.url != "string" || !data.url) {
-          log.warn("startUrlbarCapture: Text or URL not specified");
-          return false;
-        }
-
-        let uri = null;
-        try {
-          uri = Services.io.newURI(data.url, null, null);
-        } catch (e) {
-          log.warn("startUrlbarCapture: Malformed URL specified");
-          return false;
-        }
-
-        let secman = Services.scriptSecurityManager;
-        let contentDocument = browser.contentWindow.document;
-        let principal = contentDocument.nodePrincipal;
-        let flags = secman.DISALLOW_INHERIT_PRINCIPAL;
-        try {
-          secman.checkLoadURIWithPrincipal(principal, uri, flags);
-        } catch (e) {
-          log.warn("startUrlbarCapture: Orginating page doesn't have permission to open specified URL");
-          return false;
-        }
-
-        this.startUrlbarCapture(window, data.text, data.url);
-        break;
-      }
-
-      case "endUrlbarCapture": {
-        this.endUrlbarCapture(window);
-        break;
-      }
-
       case "getConfiguration": {
         if (typeof data.configuration != "string") {
           log.warn("getConfiguration: No configuration option specified");
@@ -647,14 +608,23 @@ this.UITour = {
       case "showFirefoxAccounts": {
         // 'signup' is the only action that makes sense currently, so we don't
         // accept arbitrary actions just to be safe...
+        let p = new URLSearchParams("action=signup&entrypoint=uitour");
+        // Call our helper to validate extraURLCampaignParams and populate URLSearchParams
+        if (!this._populateCampaignParams(p, data.extraURLCampaignParams)) {
+          log.warn("showFirefoxAccounts: invalid campaign args specified");
+          return false;
+        }
+
         // We want to replace the current tab.
-        browser.loadURI("about:accounts?action=signup&entrypoint=uitour");
+        browser.loadURI("about:accounts?" + p.toString());
         break;
       }
 
       case "resetFirefox": {
         // Open a reset profile dialog window.
-        ResetProfile.openConfirmationDialog(window);
+        if (ResetProfile.resetSupported()) {
+          ResetProfile.openConfirmationDialog(window);
+        }
         break;
       }
 
@@ -700,8 +670,8 @@ this.UITour = {
         targetPromise.then(target => {
           let searchbar = target.node;
           searchbar.value = data.term;
-          searchbar.inputChanged();
-        }).then(null, Cu.reportError);
+          searchbar.updateGoButtonVisibility();
+        });
         break;
       }
 
@@ -782,12 +752,6 @@ this.UITour = {
   handleEvent: function(aEvent) {
     log.debug("handleEvent: type =", aEvent.type, "event =", aEvent);
     switch (aEvent.type) {
-      case "pagehide": {
-        let window = this.getChromeWindow(aEvent.target);
-        this.teardownTourForWindow(window);
-        break;
-      }
-
       case "TabSelect": {
         let window = aEvent.target.ownerDocument.defaultView;
 
@@ -806,14 +770,6 @@ this.UITour = {
       case "SSWindowClosing": {
         let window = aEvent.target;
         this.teardownTourForWindow(window);
-        break;
-      }
-
-      case "input": {
-        if (aEvent.target.id == "urlbar") {
-          let window = aEvent.target.ownerDocument.defaultView;
-          this.handleUrlbarInput(window);
-        }
         break;
       }
     }
@@ -848,6 +804,52 @@ this.UITour = {
         break;
       }
     }
+  },
+
+  // Given a string that is a JSONified represenation of an object with
+  // additional utm_* URL params that should be appended, validate and append
+  // them to the passed URLSearchParams object. Returns true if the params
+  // were validated and appended, and false if the request should be ignored.
+  _populateCampaignParams: function(urlSearchParams, extraURLCampaignParams) {
+    // We are extra paranoid about what params we allow to be appended.
+    if (typeof extraURLCampaignParams == "undefined") {
+      // no params, so it's all good.
+      return true;
+    }
+    if (typeof extraURLCampaignParams != "string") {
+      log.warn("_populateCampaignParams: extraURLCampaignParams is not a string");
+      return false;
+    }
+    let campaignParams;
+    try {
+      if (extraURLCampaignParams) {
+        campaignParams = JSON.parse(extraURLCampaignParams);
+        if (typeof campaignParams != "object") {
+          log.warn("_populateCampaignParams: extraURLCampaignParams is not a stringified object");
+          return false;
+        }
+      }
+    } catch (ex) {
+      log.warn("_populateCampaignParams: extraURLCampaignParams is not a JSON object");
+      return false;
+    }
+    if (campaignParams) {
+      // The regex that the name of each param must match - there's no
+      // character restriction on the value - they will be escaped as necessary.
+      let reSimpleString = /^[-_a-zA-Z0-9]*$/;
+      for (let name in campaignParams) {
+        let value = campaignParams[name];
+        if (typeof name != "string" || typeof value != "string" ||
+            !name.startsWith("utm_") ||
+            value.length == 0 ||
+            !reSimpleString.test(name)) {
+          log.warn("_populateCampaignParams: invalid campaign param specified");
+          return false;
+        }
+        urlSearchParams.append(name, value);
+      }
+    }
+    return true;
   },
 
   setTelemetryBucket: function(aPageID) {
@@ -905,7 +907,6 @@ this.UITour = {
     controlCenterPanel.removeEventListener("popuphidden", this.onPanelHidden);
     controlCenterPanel.removeEventListener("popuphiding", this.hideControlCenterAnnotations);
 
-    this.endUrlbarCapture(aWindow);
     this.resetTheme();
 
     // If there are no more tour tabs left in the window, teardown the tour for the whole window.
@@ -933,18 +934,6 @@ this.UITour = {
     }
 
     this.tourBrowsersByWindow.delete(aWindow);
-  },
-
-  getChromeWindow: function(aContentDocument) {
-    return aContentDocument.defaultView
-                           .window
-                           .QueryInterface(Ci.nsIInterfaceRequestor)
-                           .getInterface(Ci.nsIWebNavigation)
-                           .QueryInterface(Ci.nsIDocShellTreeItem)
-                           .rootTreeItem
-                           .QueryInterface(Ci.nsIInterfaceRequestor)
-                           .getInterface(Ci.nsIDOMWindow)
-                           .wrappedJSObject;
   },
 
   // This function is copied to UITourListener.
@@ -1549,7 +1538,6 @@ this.UITour = {
       let tooltipTitle = document.getElementById("UITourTooltipTitle");
       let tooltipDesc = document.getElementById("UITourTooltipDescription");
       let tooltipIcon = document.getElementById("UITourTooltipIcon");
-      let tooltipIconContainer = document.getElementById("UITourTooltipIconContainer");
       let tooltipButtons = document.getElementById("UITourTooltipButtons");
 
       if (tooltip.state == "showing" || tooltip.state == "open") {
@@ -1559,7 +1547,7 @@ this.UITour = {
       tooltipTitle.textContent = aTitle || "";
       tooltipDesc.textContent = aDescription || "";
       tooltipIcon.src = aIconURL || "";
-      tooltipIconContainer.hidden = !aIconURL;
+      tooltipIcon.hidden = !aIconURL;
 
       while (tooltipButtons.firstChild)
         tooltipButtons.firstChild.remove();
@@ -1746,7 +1734,7 @@ this.UITour = {
 
       // An event object is expected but we don't want to toggle the panel with a click if the panel
       // is already open.
-      aWindow.LoopUI.openCallPanel({ target: toolbarButton.node, }, "rooms").then(() => {
+      aWindow.LoopUI.openPanel({ target: toolbarButton.node, }, "rooms").then(() => {
         if (aOpenCallback) {
           aOpenCallback();
         }
@@ -1878,47 +1866,22 @@ this.UITour = {
     aPanel.hidden = false;
   },
 
-  startUrlbarCapture: function(aWindow, aExpectedText, aUrl) {
-    let urlbar = aWindow.document.getElementById("urlbar");
-    this.urlbarCapture.set(aWindow, {
-      expected: aExpectedText.toLocaleLowerCase(),
-      url: aUrl
-    });
-    urlbar.addEventListener("input", this);
-  },
-
-  endUrlbarCapture: function(aWindow) {
-    let urlbar = aWindow.document.getElementById("urlbar");
-    urlbar.removeEventListener("input", this);
-    this.urlbarCapture.delete(aWindow);
-  },
-
-  handleUrlbarInput: function(aWindow) {
-    if (!this.urlbarCapture.has(aWindow))
-      return;
-
-    let urlbar = aWindow.document.getElementById("urlbar");
-
-    let {expected, url} = this.urlbarCapture.get(aWindow);
-
-    if (urlbar.value.toLocaleLowerCase().localeCompare(expected) != 0)
-      return;
-
-    urlbar.handleRevert();
-
-    let tab = aWindow.gBrowser.addTab(url, {
-      owner: aWindow.gBrowser.selectedTab,
-      relatedToCurrent: true
-    });
-    aWindow.gBrowser.selectedTab = tab;
-  },
-
   getConfiguration: function(aMessageManager, aWindow, aConfiguration, aCallbackID) {
     switch (aConfiguration) {
       case "appinfo":
         let props = ["defaultUpdateChannel", "version"];
         let appinfo = {};
         props.forEach(property => appinfo[property] = Services.appinfo[property]);
+
+        // Identifier of the partner repack, as stored in preference "distribution.id"
+        // and included in Firefox and other update pings. Note this is not the same as
+        // Services.appinfo.distributionID (value of MOZ_DISTRIBUTION_ID is set at build time).
+        let distribution = "default";
+        try {
+          distribution = Services.prefs.getDefaultBranch("distribution.").getCharPref("id");
+        } catch(e) {}
+        appinfo["distribution"] = distribution;
+
         let isDefaultBrowser = null;
         try {
           let shell = aWindow.getShellService();
@@ -1976,6 +1939,9 @@ this.UITour = {
         this.sendPageCallback(aMessageManager, aCallbackID, {
           setup: Services.prefs.prefHasUserValue("services.sync.username"),
         });
+        break;
+      case "canReset":
+        this.sendPageCallback(aMessageManager, aCallbackID, ResetProfile.resetSupported());
         break;
       default:
         log.error("getConfiguration: Unknown configuration requested: " + aConfiguration);

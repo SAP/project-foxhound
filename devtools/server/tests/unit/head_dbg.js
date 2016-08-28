@@ -130,11 +130,7 @@ function createTestGlobal(name) {
 
 function connect(client) {
   dump("Connecting client.\n");
-  return new Promise(function (resolve) {
-    client.connect(function () {
-      resolve();
-    });
-  });
+  return client.connect();
 }
 
 function close(client) {
@@ -372,10 +368,13 @@ function attachTestThread(aClient, aTitle, aCallback) {
 // thread, and then resume it. Pass |aCallback| the thread's response to
 // the 'resume' packet, a TabClient for the tab, and a ThreadClient for the
 // thread.
-function attachTestTabAndResume(aClient, aTitle, aCallback) {
-  attachTestThread(aClient, aTitle, function(aResponse, aTabClient, aThreadClient) {
-    aThreadClient.resume(function (aResponse) {
-      aCallback(aResponse, aTabClient, aThreadClient);
+function attachTestTabAndResume(aClient, aTitle, aCallback = () => {}) {
+  return new Promise((resolve, reject) => {
+    attachTestThread(aClient, aTitle, function(aResponse, aTabClient, aThreadClient) {
+      aThreadClient.resume(function (aResponse) {
+        aCallback(aResponse, aTabClient, aThreadClient);
+        resolve([aResponse, aTabClient, aThreadClient]);
+      });
     });
   });
 }
@@ -423,11 +422,11 @@ function get_chrome_actors(callback)
   DebuggerServer.allowChromeProcess = true;
 
   let client = new DebuggerClient(DebuggerServer.connectPipe());
-  client.connect(() => {
-    client.getProcess().then(response => {
+  client.connect()
+    .then(() => client.getProcess())
+    .then(response => {
       callback(client, response.form);
     });
-  });
 }
 
 function getChromeActors(client, server = DebuggerServer) {
@@ -722,6 +721,20 @@ function stepIn(client, threadClient) {
   const paused = waitForPause(client);
   return threadClient.stepIn()
     .then(() => paused);
+}
+
+/**
+ * Resume JS execution for a step over and wait for the pause after the step
+ * has been taken.
+ *
+ * @param DebuggerClient client
+ * @param ThreadClient threadClient
+ * @returns Promise
+ */
+function stepOver(client, threadClient) {
+  dumpn("Stepping over.");
+  return threadClient.stepOver()
+    .then(() => waitForPause(client));
 }
 
 /**
