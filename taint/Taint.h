@@ -578,6 +578,10 @@ class TaintableString {
 // Make sure the TaintableString class is no larger than its StringTaint member.
 static_assert(sizeof(TaintableString) == sizeof(StringTaint), "Class TaintableString must be binary compatible with a StringTaint instance.");
 
+// Set to true to enable various debug outputs regarding end2end tainting
+// throughout the engine.
+#define DEBUG_E2E_TAINTING (1)
+
 /*
  * Deserialize taint information from its string representation. Required for
  * incoming taint information in an end2end tainting scenario.

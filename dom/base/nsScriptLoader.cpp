@@ -890,6 +890,7 @@ nsScriptLoader::ProcessRequest(nsScriptLoadRequest* aRequest)
   nsAutoString textData;
   const char16_t* scriptBuf = nullptr;
   size_t scriptLength = 0;
+  StringTaint scriptTaint;
   JS::SourceBufferHolder::Ownership giveScriptOwnership =
     JS::SourceBufferHolder::NoOwnership;
 
@@ -905,6 +906,7 @@ nsScriptLoader::ProcessRequest(nsScriptLoadRequest* aRequest)
 
     scriptBuf = textData.get();
     scriptLength = textData.Length();
+    scriptTaint = textData.Taint();
     giveScriptOwnership = JS::SourceBufferHolder::NoOwnership;
   }
   else {
@@ -918,7 +920,7 @@ nsScriptLoader::ProcessRequest(nsScriptLoadRequest* aRequest)
     doc = scriptElem->OwnerDoc();
   }
 
-  JS::SourceBufferHolder srcBuf(scriptBuf, scriptLength, giveScriptOwnership);
+  JS::SourceBufferHolder srcBuf(scriptBuf, scriptLength, scriptTaint, giveScriptOwnership);
 
   nsCOMPtr<nsIScriptElement> oldParserInsertedScript;
   uint32_t parserCreated = aRequest->mElement->GetParserCreated();
@@ -1175,7 +1177,7 @@ nsScriptLoader::ProcessPendingRequests()
     ContinueParserAsync(request);
   }
 
-  while (ReadyToExecuteScripts() && 
+  while (ReadyToExecuteScripts() &&
          !mXSLTRequests.isEmpty() &&
          mXSLTRequests.getFirst()->IsReadyToRun()) {
     request = mXSLTRequests.StealFirst();

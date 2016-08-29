@@ -453,14 +453,18 @@ void StringTaint::assign(std::vector<TaintRange>* ranges)
 
 std::string ParseString(const std::string& str, size_t& i, size_t length, bool& valid)
 {
+#if (DEBUG_E2E_TAINTING)
     std::cout << "ParseKeyValuePair, i = " << i << std::endl;
+#endif
 
     char c = str[i];
 
     // TODO support \' and \"
     size_t pos = str.find(c, i+1);
     if (pos == std::string::npos) {
+#if (DEBUG_E2E_TAINTING)
         std::cout << "Errr: unterminated string literal" << std::endl;
+#endif
         valid = false;
         return "";
     }
@@ -473,7 +477,9 @@ std::string ParseString(const std::string& str, size_t& i, size_t length, bool& 
 
 std::pair<std::string, std::string> ParseKeyValuePair(const std::string& str, size_t& i, size_t length, bool& valid)
 {
+#if (DEBUG_E2E_TAINTING)
     std::cout << "ParseKeyValuePair, i = " << i << std::endl;
+#endif
 
     std::string key, value;
 
@@ -506,18 +512,24 @@ std::pair<std::string, std::string> ParseKeyValuePair(const std::string& str, si
     }
 
     if (!parsing_value) {
+#if (DEBUG_E2E_TAINTING)
         std::cout << "Error: invalid key,value pair" << std::endl;
+#endif
         valid = false;
     }
 
     valid = true;
+#if (DEBUG_E2E_TAINTING)
     std::cout << "  Key: " << key << ", value: " << value << std::endl;
+#endif
     return std::make_pair(key, value);
 }
 
 TaintRange ParseRange(const std::string& str, size_t& i, size_t length, bool& valid)
 {
+#if (DEBUG_E2E_TAINTING)
     std::cout << "ParseRange, i = " << i << std::endl;
+#endif
 
     i++;
 
@@ -541,7 +553,9 @@ TaintRange ParseRange(const std::string& str, size_t& i, size_t length, bool& va
                 have_source = true;
                 source = kv.second;
             } else {
+#if (DEBUG_E2E_TAINTING)
                 std::cout << "Warning: unknown key '" << kv.first << "'" << std::endl;
+#endif
             }
         } else if (str[i] == '}') {
             i++;
@@ -552,21 +566,29 @@ TaintRange ParseRange(const std::string& str, size_t& i, size_t length, bool& va
     }
 
     if (!valid || !have_begin || !have_end || !have_source) {
+#if (DEBUG_E2E_TAINTING)
         std::cout << "Error: invalid taint range" << std::endl;
+#endif
         valid = false;
         return TaintRange(0, 0, TaintSource(""));
     }
 
     valid = true;
+#if (DEBUG_E2E_TAINTING)
     std::cout << "  ParseTaintRange done: " << begin << " - " << end << " : " << source << std::endl;
+#endif
     return TaintRange(begin, end, TaintSource(source.c_str()));
 }
 
 StringTaint ParseTaint(const std::string& str)
 {
+#if (DEBUG_E2E_TAINTING)
     std::cout << "ParseTaint: " << str << std::endl;
+#endif
     if (str.length() <= 2 || str.front() != '[' || str.back() != ']') {
+#if (DEBUG_E2E_TAINTING)
         std::cout << "Error: malformed taint information" << std::endl;
+#endif
         return EmptyTaint;
     }
 
@@ -579,11 +601,15 @@ StringTaint ParseTaint(const std::string& str)
             bool valid = false;
             TaintRange range = ParseRange(str, i, end, valid);
             if (!valid) {
+#if (DEBUG_E2E_TAINTING)
                 std::cout << "Error: malformed taint range" << std::endl;
+#endif
                 return EmptyTaint;
             }
             if (range.begin() < last_end) {
+#if (DEBUG_E2E_TAINTING)
                 std::cout << "Error: Invalid range, doesn't start after previous region" << std::endl;
+#endif
                 return EmptyTaint;
             }
             taint.append(range);
@@ -593,8 +619,10 @@ StringTaint ParseTaint(const std::string& str)
         i++;
     }
 
+#if (DEBUG_E2E_TAINTING)
     std::cout << "Done parsing taint. Result: " << std::endl;
     PrintTaint(taint);
+#endif
 
     return taint;
 }

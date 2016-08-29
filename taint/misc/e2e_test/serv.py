@@ -15,7 +15,12 @@ class GetHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def send_my_headers(self):
         if self.path.endswith('html') or self.path.endswith('foo'):
             print("Setting taint header")
-            self.send_header("X-Taint", "[{begin: 10, end: 20, source: 'ASDF'}, {begin: 80, end: 90, source: 'foo'}]")
+            self.send_header("X-Taint", "[{begin: 10, end: 20, source: 'ASDF'}, {begin: 96, end: 128, source: 'inline_str_literal_src'}]")
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+
+        if self.path.endswith('js'):
+            print("Setting taint header for .js")
+            self.send_header("X-Taint", "[{begin: 18, end: 22, source: 'str_literal_src'}]")
             self.send_header("Content-Type", "text/html; charset=utf-8")
 
     def do_GET(self):
