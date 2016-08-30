@@ -1707,9 +1707,6 @@ nsXMLHttpRequest::HandleStreamInput(void* closure,
     return NS_ERROR_FAILURE;
   }
 
-  // TODO(remove);
-  PrintTaint(aTaint);
-
   nsresult rv = NS_OK;
 
   if (xmlHttpRequest->mResponseType == XML_HTTP_RESPONSE_TYPE_BLOB ||
@@ -1854,11 +1851,15 @@ nsXMLHttpRequest::OnDataAvailable(nsIRequest *request,
   nsresult rv;
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
   if (!taintInputStream) {
-    puts(":::: No taint information in input stream in nsXMLHttpRequestUpload::OnDataAvailable");
+#if (DEBUG_E2E_TAINTING)
+    puts("!!!!! NO taint-aware input stream available in nsXMLHttpRequest::OnDataAvailable !!!!!");
+#endif
     rv = inStr->ReadSegments(nsXMLHttpRequest::StreamReaderFuncNoTaint,
                                       (void*)this, count, &totalRead);
   } else {
-    puts(":::: Taint information available in nxXMLHttpRequest::OnDataAvailable");
+#if (DEBUG_E2E_TAINTING)
+    puts("+++++ Taint-aware input stream available in nsXMLHttpRequest::OnDataAvailable +++++");
+#endif
     rv = taintInputStream->TaintedReadSegments(nsXMLHttpRequest::StreamReaderFunc,
                                       (void*)this, count, &totalRead);
   }

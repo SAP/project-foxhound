@@ -841,7 +841,9 @@ nsHtml5StreamParser::WriteStreamBytes(const uint8_t* aFromSegment,
     // TaintFox: slight hack: propagate taint information after the conversion
     // (should be done during the conversion)
     if (aTaint.hasTaint()) {
-      printf("+++++ Writing taint of length %d, %d/%d bytes written\n", aTaint.begin()->end(), utf16Count, byteCount);
+#if (DEBUG_E2E_TAINTING)
+      printf("+++++ Writing taint of length %d, %d/%d bytes written +++++\n", aTaint.begin()->end(), utf16Count, byteCount);
+#endif
       mLastBuffer->setTaint(aTaint.subtaint(totalByteCount, totalByteCount + byteCount));
     }
 
@@ -1176,11 +1178,12 @@ nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
 
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInStream));
-  if (!taintInputStream) {
-    puts(":::: !!!!! No taint information in input stream in StreamParser::OnDataAvailable !!!!!");
-  } else {
-    puts(":::: +++++ Taint information available in StreamParser::OnDataAvailable +++++");
-  }
+#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream)
+    puts("!!!!! NO taint-aware input stream available in StreamParser::OnDataAvailable !!!!!");
+  else
+    puts("+++++ Taint-aware input stream available in StreamParser::OnDataAvailable +++++");
+#endif
 
   NS_ASSERTION(mRequest == aRequest, "Got data on wrong stream.");
   uint32_t totalRead;
@@ -1200,7 +1203,6 @@ nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ASSERTION(totalRead <= aLength, "Read more bytes than were available?");
 
-    puts(":::: StreamParser::OnDataAvailable -- Main Thread");
     PrintTaint(taint);
     nsCOMPtr<nsIRunnable> dataAvailable = new nsHtml5DataAvailable(this,
                                                                    Move(data),
@@ -1213,8 +1215,6 @@ nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
   } else {
     NS_ASSERTION(IsParserThread(), "Wrong thread!");
     mozilla::MutexAutoLock autoLock(mTokenizerMutex);
-
-    puts(":::: StreamParser::OnDataAvailable -- Parser Thread");
 
     // Read directly from response buffer.
     if (taintInputStream)
@@ -1259,7 +1259,6 @@ nsHtml5StreamParser::CopySegmentsToParser(nsITaintawareInputStream *aInStream,
                                           uint32_t *aWriteCount)
 {
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
-  PrintTaint(aTaint);     // TODO(remove)
 
   parser->DoDataAvailable((const uint8_t*)aFromSegment, aCount, aTaint);
   // Assume DoDataAvailable consumed all available bytes.
