@@ -30,5 +30,5 @@ class GetHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
         SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
 
 
-httpd = SocketServer.TCPServer(("", PORT), GetHandler)
+httpd = SocketServer.TCPServer(('127.0.0.1', PORT), GetHandler)
 httpd.serve_forever()

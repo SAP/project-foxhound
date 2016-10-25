@@ -152,7 +152,7 @@ using namespace mozilla::dom;
 
 NS_IMPL_ISUPPORTS(nsXHRParseEndListener, nsIDOMEventListener)
 
-class nsResumeTimeoutsEvent : public nsRunnable
+class nsResumeTimeoutsEvent : public Runnable
 {
 public:
   explicit nsResumeTimeoutsEvent(nsPIDOMWindowInner* aWindow) : mWindow(aWindow) {}
@@ -549,7 +549,10 @@ nsXMLHttpRequest::GetResponseXML(ErrorResult& aRv)
     mWarnAboutSyncHtml = false;
     LogMessage("HTMLSyncXHRWarning", GetOwner());
   }
-  return (XML_HTTP_REQUEST_DONE & mState) ? mResponseXML : nullptr;
+  if (!(XML_HTTP_REQUEST_DONE & mState)) {
+    return nullptr;
+  }
+  return mResponseXML;
 }
 
 /*
@@ -1511,15 +1514,11 @@ nsXMLHttpRequest::Open(const nsACString& inMethod, const nsACString& url,
     return rv;
   }
 
-  // sync request is not allowed using withCredential or responseType
+  // sync request is not allowed to use responseType or timeout
   // in window context
   if (!async && HasOrHasHadOwner() &&
-      (mState & XML_HTTP_REQUEST_AC_WITH_CREDENTIALS ||
-       mTimeoutMilliseconds ||
+      (mTimeoutMilliseconds ||
        mResponseType != XML_HTTP_RESPONSE_TYPE_DEFAULT)) {
-    if (mState & XML_HTTP_REQUEST_AC_WITH_CREDENTIALS) {
-      LogMessage("WithCredentialsSyncXHRWarning", GetOwner());
-    }
     if (mTimeoutMilliseconds) {
       LogMessage("TimeoutSyncXHRWarning", GetOwner());
     }
@@ -3244,14 +3243,6 @@ nsXMLHttpRequest::SetWithCredentials(bool aWithCredentials, ErrorResult& aRv)
        !(mState & XML_HTTP_REQUEST_OPENED)) ||
       mIsAnon) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return;
-  }
-
-  // sync request is not allowed setting withCredentials in window context
-  if (HasOrHasHadOwner() &&
-      !(mState & (XML_HTTP_REQUEST_UNSENT | XML_HTTP_REQUEST_ASYNC))) {
-    LogMessage("WithCredentialsSyncXHRWarning", GetOwner());
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
     return;
   }
 

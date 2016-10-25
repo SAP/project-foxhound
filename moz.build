@@ -22,7 +22,7 @@ DIRS += [
     'config',
     'python',
     'taint',
-    'testing',
+    'taskcluster',
 ]
 
 if not CONFIG['JS_STANDALONE']:

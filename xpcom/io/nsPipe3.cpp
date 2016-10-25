@@ -7,6 +7,7 @@
 #include <algorithm>
 #include "mozilla/Attributes.h"
 #include "mozilla/ReentrantMonitor.h"
+#include "nsIBufferedStreams.h"
 #include "nsICloneableInputStream.h"
 #include "nsIPipe.h"
 #include "nsIEventTarget.h"
@@ -149,6 +150,7 @@ class nsPipeInputStream final
   , public nsISearchableInputStream
   , public nsICloneableInputStream
   , public nsIClassInfo
+  , public nsIBufferedInputStream
   , public nsITaintawareInputStream
 {
 public:
@@ -159,6 +161,7 @@ public:
   NS_DECL_NSISEARCHABLEINPUTSTREAM
   NS_DECL_NSICLONEABLEINPUTSTREAM
   NS_DECL_NSICLASSINFO
+  NS_DECL_NSIBUFFEREDINPUTSTREAM
   NS_DECL_NSITAINTAWAREINPUTSTREAM
 
   explicit nsPipeInputStream(nsPipe* aPipe)
@@ -1032,7 +1035,8 @@ nsPipe::CloneInputStream(nsPipeInputStream* aOriginal,
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
   RefPtr<nsPipeInputStream> ref = new nsPipeInputStream(*aOriginal);
   mInputList.AppendElement(ref);
-  ref.forget(aCloneOut);
+  nsCOMPtr<nsIAsyncInputStream> downcast = ref.forget();
+  downcast.forget(aCloneOut);
   return NS_OK;
 }
 
@@ -1165,23 +1169,38 @@ nsPipeEvents::~nsPipeEvents()
 NS_IMPL_ADDREF(nsPipeInputStream);
 NS_IMPL_RELEASE(nsPipeInputStream);
 
-NS_IMPL_QUERY_INTERFACE(nsPipeInputStream,
-                        nsIInputStream,
-                        nsIAsyncInputStream,
-                        nsISeekableStream,
-                        nsISearchableInputStream,
-                        nsICloneableInputStream,
-                        nsIClassInfo,
-                        nsITaintawareInputStream)
+NS_INTERFACE_TABLE_HEAD(nsPipeInputStream)
+  NS_INTERFACE_TABLE_BEGIN
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIAsyncInputStream)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsISeekableStream)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsISearchableInputStream)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsICloneableInputStream)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIBufferedInputStream)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIClassInfo)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsITaintawareInputStream)
+    NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(nsPipeInputStream, nsIInputStream,
+                                       nsIAsyncInputStream)
+    NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(nsPipeInputStream, nsISupports,
+                                       nsIAsyncInputStream)
+  NS_INTERFACE_TABLE_END
+NS_INTERFACE_TABLE_TAIL
 
 NS_IMPL_CI_INTERFACE_GETTER(nsPipeInputStream,
                             nsIInputStream,
                             nsIAsyncInputStream,
                             nsISeekableStream,
                             nsISearchableInputStream,
-                            nsICloneableInputStream)
+                            nsICloneableInputStream,
+                            nsIBufferedInputStream)
 
 NS_IMPL_THREADSAFE_CI(nsPipeInputStream)
+
+NS_IMETHODIMP
+nsPipeInputStream::Init(nsIInputStream*, uint32_t)
+{
+  MOZ_CRASH("nsPipeInputStream should never be initialized with "
+            "nsIBufferedInputStream::Init!\n");
+}
 
 uint32_t
 nsPipeInputStream::Available()
@@ -1348,7 +1367,7 @@ nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter,
       writeCount = 0;
 
       if (aWriter)
-        rv = aWriter(this, aClosure, segment.Data(), *aReadCount,
+        rv = aWriter(static_cast<nsIAsyncInputStream*>(this), aClosure, segment.Data(), *aReadCount,
                      segment.Length(), &writeCount);
       else
         rv = aTaintedWriter(this, aClosure, segment.Data(), *aReadCount,

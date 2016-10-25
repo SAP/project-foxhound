@@ -30,7 +30,7 @@ class nsIHttpActivityObserver;
 class nsIEventTarget;
 class nsIInputStream;
 class nsIOutputStream;
-class nsISchedulingContext;
+class nsIRequestContext;
 
 namespace mozilla { namespace net {
 
@@ -106,8 +106,9 @@ public:
     // nsHttpTransaction::Connection should only be used on the socket thread
     already_AddRefed<nsAHttpConnection> GetConnectionReference();
 
-    // Called to find out if the transaction generated a complete response.
+    // Called to set/find out if the transaction generated a complete response.
     bool ResponseIsComplete() { return mResponseIsComplete; }
+    void SetResponseIsComplete() { mResponseIsComplete = true; }
 
     bool      ProxyConnectFailed() { return mProxyConnectFailed; }
 
@@ -127,9 +128,9 @@ public:
     const TimeStamp GetPendingTime() { return mPendingTime; }
     bool UsesPipelining() const { return mCaps & NS_HTTP_ALLOW_PIPELINING; }
 
-    // overload of nsAHttpTransaction::SchedulingContext()
-    nsISchedulingContext *SchedulingContext() override { return mSchedulingContext.get(); }
-    void SetSchedulingContext(nsISchedulingContext *aSchedulingContext);
+    // overload of nsAHttpTransaction::RequestContext()
+    nsIRequestContext *RequestContext() override { return mRequestContext.get(); }
+    void SetRequestContext(nsIRequestContext *aRequestContext);
     void DispatchedAsBlocking();
     void RemoveDispatchedAsBlocking();
 
@@ -199,7 +200,7 @@ private:
     void ReuseConnectionOnRestartOK(bool reuseOk) override { mReuseOnRestart = reuseOk; }
 
 private:
-    class UpdateSecurityCallbacks : public nsRunnable
+    class UpdateSecurityCallbacks : public Runnable
     {
       public:
         UpdateSecurityCallbacks(nsHttpTransaction* aTrans,
@@ -227,7 +228,7 @@ private:
     nsCOMPtr<nsIPipe>   mPipe;
     nsCOMPtr<nsIAsyncInputStream>   mPipeIn;
     nsCOMPtr<nsIAsyncOutputStream>  mPipeOut;
-    nsCOMPtr<nsISchedulingContext>  mSchedulingContext;
+    nsCOMPtr<nsIRequestContext>     mRequestContext;
 
     nsCOMPtr<nsISupports>             mChannel;
     nsCOMPtr<nsIHttpActivityObserver> mActivityDistributor;
@@ -274,6 +275,9 @@ private:
     int32_t                         mPipelinePosition;
     int64_t                         mMaxPipelineObjectSize;
 
+    nsHttpVersion                   mHttpVersion;
+    uint16_t                        mHttpResponseCode;
+
     // mCapsToClear holds flags that should be cleared in mCaps, e.g. unset
     // NS_HTTP_REFRESH_DNS when DNS refresh request has completed to avoid
     // redundant requests on the network. The member itself is atomic, but
@@ -282,9 +286,7 @@ private:
     // bitfields should be allowed: 'lost races' will thus err on the
     // conservative side, e.g. by going ahead with a 2nd DNS refresh.
     Atomic<uint32_t>                mCapsToClear;
-
-    nsHttpVersion                   mHttpVersion;
-    uint16_t                        mHttpResponseCode;
+    Atomic<bool, ReleaseAcquire>    mResponseIsComplete;
 
     // state flags, all logically boolean, but not packed together into a
     // bitfield so as to avoid bitfield-induced races.  See bug 560579.
@@ -293,7 +295,6 @@ private:
     bool                            mHaveStatusLine;
     bool                            mHaveAllHeaders;
     bool                            mTransactionDone;
-    bool                            mResponseIsComplete;
     bool                            mDidContentStart;
     bool                            mNoContent; // expecting an empty entity body
     bool                            mSentData;
