@@ -154,6 +154,10 @@ uint8_t* LazyLinkTopActivation(JSContext* cx);
 static inline bool
 IsIonEnabled(JSContext* cx)
 {
+    // TaintFox: Currently disabled since some optimizations don't work
+    // with the integer tainting. TODO
+    return false;
+
     // The ARM64 Ion engine is not yet implemented.
 #if defined(JS_CODEGEN_NONE) || defined(JS_CODEGEN_ARM64)
     return false;
