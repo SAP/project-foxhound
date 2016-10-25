@@ -514,6 +514,13 @@ nsBrowserContentHandler.prototype = {
             willRestoreSession = ss.isAutomaticRestoreEnabled();
 
             overridePage = Services.urlFormatter.formatURLPref("startup.homepage_override_url");
+            // Temporary hack for Firefox 49 to show whatsnew for zh-TW.
+            // See Bug #1292637
+            var locale = prefb.getCharPref("general.useragent.locale");
+            if (locale == "zh-TW") {
+              overridePage = "https://www.mozilla.org/zh-TW/firefox/49.0/whatsnew/";
+            }
+
             if (prefb.prefHasUserValue("app.update.postupdate"))
               overridePage = getPostUpdateOverridePage(overridePage);
 
@@ -715,12 +722,12 @@ nsDefaultCommandLineHandler.prototype = {
     // instances where users explicitly decide to "open with" the browser.
     // Note that users who launch firefox manually with the -url flag will
     // get erroneously counted.
-    if (cmdLine.findFlag("url", false) &&
-        ShellService.isDefaultBrowser(false, false)) {
-      try {
+    try {
+      if (cmdLine.findFlag("url", false) &&
+          ShellService.isDefaultBrowser(false, false)) {
         Services.telemetry.getHistogramById("FX_STARTUP_EXTERNAL_CONTENT_HANDLER").add();
-      } catch (e) {}
-    }
+      }
+    } catch (e) {}
 
     var urilist = [];
 

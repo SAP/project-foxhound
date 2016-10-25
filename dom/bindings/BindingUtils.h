@@ -1899,6 +1899,19 @@ struct FakeString : public TaintableString {
     clearTaint();
   }
 
+  // Share aString's string buffer, if it has one; otherwise, make this string
+  // depend upon aString's data.  aString should outlive this instance of
+  // FakeString.
+  void ShareOrDependUpon(const nsAString& aString) {
+    RefPtr<nsStringBuffer> sharedBuffer = nsStringBuffer::FromString(aString);
+    if (!sharedBuffer) {
+      Rebind(aString.Data(), aString.Length());
+    } else {
+      AssignFromStringBuffer(sharedBuffer.forget());
+      mLength = aString.Length();
+    }
+  }
+
   void Truncate() {
     MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
     mData = nsString::char_traits::sEmptyBuffer;
@@ -1936,13 +1949,12 @@ struct FakeString : public TaintableString {
     if (aLength < sInlineCapacity) {
       SetData(mInlineStorage);
     } else {
-      nsStringBuffer *buf = nsStringBuffer::Alloc((aLength + 1) * sizeof(nsString::char_type)).take();
+      RefPtr<nsStringBuffer> buf = nsStringBuffer::Alloc((aLength + 1) * sizeof(nsString::char_type));
       if (MOZ_UNLIKELY(!buf)) {
         return false;
       }
 
-      SetData(static_cast<nsString::char_type*>(buf->Data()));
-      mFlags = nsString::F_SHARED | nsString::F_TERMINATED;
+      AssignFromStringBuffer(buf.forget());
     }
 
     // TaintFox: this method should only be called on empty strings it seems.
@@ -1987,6 +1999,10 @@ private:
 
     // TaintFox: clear previous taint information.
     clearTaint();
+  }
+  void AssignFromStringBuffer(already_AddRefed<nsStringBuffer> aBuffer) {
+    SetData(static_cast<nsString::char_type*>(aBuffer.take()->Data()));
+    mFlags = nsString::F_SHARED | nsString::F_TERMINATED;
   }
 
   friend class NonNull<nsAString>;
@@ -2293,7 +2309,7 @@ void DoTraceSequence(JSTracer* trc, InfallibleTArray<T>& seq)
 
 // Rooter class for sequences; this is what we mostly use in the codegen
 template<typename T>
-class MOZ_RAII SequenceRooter : private JS::CustomAutoRooter
+class MOZ_RAII SequenceRooter final : private JS::CustomAutoRooter
 {
 public:
   SequenceRooter(JSContext *aCx, FallibleTArray<T>* aSequence
@@ -3280,17 +3296,26 @@ struct StrongPtrForMember
 
 inline
 JSObject*
-GetErrorPrototype(JSContext* aCx, JS::Handle<JSObject*> aForObj)
+GetErrorPrototype(JSContext* aCx, JS::Handle<JSObject*>)
 {
   return JS_GetErrorPrototype(aCx);
 }
 
 inline
 JSObject*
-GetIteratorPrototype(JSContext* aCx, JS::Handle<JSObject*> aForObj)
+GetIteratorPrototype(JSContext* aCx, JS::Handle<JSObject*>)
 {
   return JS_GetIteratorPrototype(aCx);
 }
+
+namespace binding_detail {
+inline
+JSObject*
+GetHackedNamespaceProtoObject(JSContext* aCx, JS::Handle<JSObject*>)
+{
+  return JS_NewPlainObject(aCx);
+}
+} // namespace binding_detail
 
 // Resolve an id on the given global object that wants to be included in
 // Exposed=System webidl annotations.  False return value means exception

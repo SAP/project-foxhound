@@ -24,8 +24,6 @@ ac_add_options --enable-macos-target=10.10
 # RELEASE BUILD
 #
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
-ac_add_options --enable-gczeal
-ac_add_options --enable-optimization
 ac_add_options --disable-tests
 
 
