@@ -1135,8 +1135,9 @@ template <AllowGC allowGC>
 static JSFlatString*
 NewStringDeflated(ExclusiveContext* cx, const char16_t* s, size_t n)
 {
-    if (JSFlatString* str = TryEmptyOrStaticString(cx, s, n))
-        return str;
+    // TaintFox: disabled to avoid atoms here. TODO modify callers where necessary instead?
+    //if (JSFlatString* str = TryEmptyOrStaticString(cx, s, n))
+    //    return str;
 
     if (JSInlineString::lengthFits<Latin1Char>(n))
         return NewInlineStringDeflated<allowGC>(cx, mozilla::Range<const char16_t>(s, n));
