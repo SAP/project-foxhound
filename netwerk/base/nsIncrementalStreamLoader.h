@@ -8,6 +8,7 @@
 
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsIIncrementalStreamLoader.h"
+#include "nsITaintawareInputStream.h"
 #include "nsCOMPtr.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Vector.h"
@@ -32,8 +33,15 @@ public:
 protected:
   ~nsIncrementalStreamLoader();
 
-  static NS_METHOD WriteSegmentFun(nsIInputStream *, void *, const char *,
-                                   uint32_t, uint32_t, uint32_t *);
+  static NS_METHOD WriteSegmentFun(void *, const char *, uint32_t, uint32_t,
+                                   const StringTaint&, uint32_t *);
+
+  static NS_METHOD WriteSegmentFunTaint(nsITaintawareInputStream *, void *, const char *,
+                                        uint32_t, uint32_t, const StringTaint&, uint32_t *);
+
+  static NS_METHOD WriteSegmentFunNoTaint(nsIInputStream *, void *, const char *,
+                                          uint32_t, uint32_t, uint32_t *);
+
 
   // Utility method to free mData, if present, and update other state to
   // reflect that no data has been allocated.
@@ -46,6 +54,7 @@ protected:
   // Buffer to accumulate incoming data. We preallocate if contentSize is
   // available.
   mozilla::Vector<uint8_t, 0> mData;
+  StringTaint mTaint;
 
   // Number of consumed bytes from the mData.
   size_t  mBytesConsumed;

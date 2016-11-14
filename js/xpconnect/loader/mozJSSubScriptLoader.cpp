@@ -330,6 +330,7 @@ AsyncScriptLoader::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
                                      nsISupports* aContext,
                                      uint32_t aDataLength,
                                      const uint8_t* aData,
+                                     StringTaint aTaint,
                                      uint32_t *aConsumedData)
 {
   return NS_OK;
@@ -340,7 +341,8 @@ AsyncScriptLoader::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                     nsISupports* aContext,
                                     nsresult aStatus,
                                     uint32_t aLength,
-                                    const uint8_t* aBuf)
+                                    const uint8_t* aBuf,
+                                    StringTaint aTaint)
 {
     nsCOMPtr<nsIURI> uri;
     mChannel->GetURI(getter_AddRefs(uri));
@@ -789,6 +791,7 @@ ScriptPrecompiler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
                                      nsISupports* aContext,
                                      uint32_t aDataLength,
                                      const uint8_t* aData,
+                                     StringTaint aTaint,
                                      uint32_t *aConsumedData)
 {
   return NS_OK;
@@ -799,7 +802,8 @@ ScriptPrecompiler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                     nsISupports* aContext,
                                     nsresult aStatus,
                                     uint32_t aLength,
-                                    const uint8_t* aString)
+                                    const uint8_t* aString,
+                                    StringTaint aTaint)
 {
     AutoSendObserverNotification notifier(this);
 

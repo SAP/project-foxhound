@@ -86,6 +86,7 @@ public:
       mOffThreadToken(nullptr),
       mScriptTextBuf(nullptr),
       mScriptTextLength(0),
+      mScriptTextTaint(),
       mJSVersion(aVersion),
       mLineNo(1),
       mCORSMode(aCORSMode),
@@ -170,6 +171,7 @@ public:
   nsString mSourceMapURL; // Holds source map url for loaded scripts
   char16_t* mScriptTextBuf; // Holds script text for non-inline scripts. Don't
   size_t mScriptTextLength; // use nsString so we can give ownership to jsapi.
+  StringTaint mScriptTextTaint;
   uint32_t mJSVersion;
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIPrincipal> mOriginPrincipal;
@@ -292,7 +294,7 @@ public:
   }
 
   /**
-   * Process a script element. This will include both loading the 
+   * Process a script element. This will include both loading the
    * source of the element if it is not inline and evaluating
    * the script itself.
    *
@@ -325,7 +327,7 @@ public:
 
   /**
    * Whether the loader is enabled or not.
-   * When disabled, processing of new script elements is disabled. 
+   * When disabled, processing of new script elements is disabled.
    * Any call to ProcessScriptElement() will return false. Note that
    * this DOES NOT disable currently loading or executing scripts.
    */
@@ -404,6 +406,7 @@ public:
                             nsresult aChannelStatus,
                             nsresult aSRIStatus,
                             mozilla::Vector<char16_t> &aString,
+                            const StringTaint& aTaint,
                             mozilla::dom::SRICheckDataVerifier* aSRIDataVerifier);
 
   /**
@@ -559,7 +562,8 @@ private:
   nsresult PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
                                 nsIIncrementalStreamLoader* aLoader,
                                 nsresult aStatus,
-                                mozilla::Vector<char16_t> &aString);
+                                mozilla::Vector<char16_t> &aString,
+                                const StringTaint& aTaint);
 
   void AddDeferRequest(nsScriptLoadRequest* aRequest);
   bool MaybeRemovedDeferRequests();
@@ -685,6 +689,9 @@ private:
 
   // Accumulated decoded char buffer.
   mozilla::Vector<char16_t>     mBuffer;
+
+  // Accumulated taint information.
+  StringTaint                   mTaint;
 };
 
 class nsAutoScriptLoaderDisabler

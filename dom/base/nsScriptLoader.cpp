@@ -1744,11 +1744,14 @@ nsScriptLoader::GetScriptSource(nsScriptLoadRequest* aRequest, nsAutoString& inl
     aRequest->mElement->GetScriptText(inlineData);
     return SourceBufferHolder(inlineData.get(),
                               inlineData.Length(),
+			      inlineData.Taint(),
                               SourceBufferHolder::NoOwnership);
   }
 
+  // Taintfox: TODO fetch taint
   return SourceBufferHolder(aRequest->mScriptTextBuf,
                             aRequest->mScriptTextLength,
+                            aRequest->mScriptTextTaint,
                             SourceBufferHolder::NoOwnership);
 }
 
@@ -2297,6 +2300,7 @@ nsScriptLoader::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                  nsresult aChannelStatus,
                                  nsresult aSRIStatus,
                                  mozilla::Vector<char16_t> &aString,
+                                 const StringTaint& aTaint,
                                  mozilla::dom::SRICheckDataVerifier* aSRIDataVerifier)
 {
   nsScriptLoadRequest* request = static_cast<nsScriptLoadRequest*>(aContext);
@@ -2338,7 +2342,7 @@ nsScriptLoader::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
   }
 
   if (NS_SUCCEEDED(rv)) {
-    rv = PrepareLoadedRequest(request, aLoader, aChannelStatus, aString);
+    rv = PrepareLoadedRequest(request, aLoader, aChannelStatus, aString, aTaint);
   }
 
   if (NS_FAILED(rv)) {
@@ -2445,7 +2449,8 @@ nsresult
 nsScriptLoader::PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
                                      nsIIncrementalStreamLoader* aLoader,
                                      nsresult aStatus,
-                                     mozilla::Vector<char16_t> &aString)
+                                     mozilla::Vector<char16_t> &aString,
+                                     const StringTaint& aTaint)
 {
   if (NS_FAILED(aStatus)) {
     return aStatus;
@@ -2496,6 +2501,7 @@ nsScriptLoader::PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
   if (!aString.empty()) {
     aRequest->mScriptTextLength = aString.length();
     aRequest->mScriptTextBuf = aString.extractOrCopyRawBuffer();
+    aRequest->mScriptTextTaint = aTaint;
   }
 
   // This assertion could fire errorously if we ran out of memory when
@@ -2670,7 +2676,8 @@ nsScriptLoadHandler::nsScriptLoadHandler(nsScriptLoader *aScriptLoader,
     mSRIDataVerifier(aSRIDataVerifier),
     mSRIStatus(NS_OK),
     mDecoder(),
-    mBuffer()
+    mBuffer(),
+    mTaint()
 {}
 
 nsScriptLoadHandler::~nsScriptLoadHandler()
@@ -2683,6 +2690,7 @@ nsScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
                                        nsISupports* aContext,
                                        uint32_t aDataLength,
                                        const uint8_t* aData,
+                                       StringTaint aTaint,
                                        uint32_t *aConsumedLength)
 {
   if (mRequest->IsCanceled()) {
@@ -2699,9 +2707,13 @@ nsScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
   // Below we will/shall consume entire data chunk.
   *aConsumedLength = aDataLength;
 
+  // TaintFox: append taint information.
+  mTaint.concat(aTaint, mBuffer.length());
+
   // Decoder has already been initialized. -- trying to decode all loaded bytes.
   nsresult rv = TryDecodeRawData(aData, aDataLength,
                                  /* aEndOfStream = */ false);
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   // If SRI is required for this load, appending new bytes to the hash.
@@ -2834,12 +2846,17 @@ nsScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                       nsISupports* aContext,
                                       nsresult aStatus,
                                       uint32_t aDataLength,
-                                      const uint8_t* aData)
+                                      const uint8_t* aData,
+                                      StringTaint aTaint)
 {
   if (!mRequest->IsCanceled()) {
     DebugOnly<bool> encoderSet =
       EnsureDecoder(aLoader, aData, aDataLength, /* aEndOfStream = */ true);
     MOZ_ASSERT(encoderSet);
+
+    // TaintFox: append taint information.
+    mTaint.concat(aTaint, mBuffer.length());
+
     DebugOnly<nsresult> rv = TryDecodeRawData(aData, aDataLength,
                                               /* aEndOfStream = */ true);
 
@@ -2851,5 +2868,5 @@ nsScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
 
   // we have to mediate and use mRequest.
   return mScriptLoader->OnStreamComplete(aLoader, mRequest, aStatus, mSRIStatus,
-                                         mBuffer, mSRIDataVerifier);
+                                         mBuffer, mTaint, mSRIDataVerifier);
 }
