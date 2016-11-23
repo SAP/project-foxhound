@@ -3,6 +3,13 @@ mk_add_options MOZ_MAKE_FLAGS="-s -j5"
 # Official is the new taint branding
 ac_add_options --with-branding=browser/branding/official
 
+# Export path to Windows C runtime librarys.
+# This will cause those DLLs to be packaged with the application, which is required to run taintfox on non-developer machines
+WIN32_REDIST_DIR=$VCINSTALLDIR/redist/x86/Microsoft.VC140.CRT
+
+# Find more options here: https://sourceforge.net/p/pcxfirefox/wiki/MozillaBuiltVC/
+
+
 #
 # DEBUG BUILD
 #
