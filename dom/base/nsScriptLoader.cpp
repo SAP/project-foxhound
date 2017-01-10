@@ -1741,7 +1741,11 @@ nsScriptLoader::GetScriptSource(nsScriptLoadRequest* aRequest, nsAutoString& inl
   if (aRequest->mIsInline) {
     // XXX This is inefficient - GetText makes multiple
     // copies.
+    // TaintFox: report tainted JavaScript code here
     aRequest->mElement->GetScriptText(inlineData);
+    if (inlineData.isTainted()) {
+      ReportTaintSink(nsContentUtils::GetCurrentJSContext(), inlineData, "Inline script data");
+    }
     return SourceBufferHolder(inlineData.get(),
                               inlineData.Length(),
 			      inlineData.Taint(),
@@ -1749,6 +1753,11 @@ nsScriptLoader::GetScriptSource(nsScriptLoadRequest* aRequest, nsAutoString& inl
   }
 
   // Taintfox: TODO fetch taint
+  if (aRequest->mScriptTextTaint.hasTaint()) {
+    nsAutoString str(aRequest->mScriptTextBuf, aRequest->mScriptTextLength);
+    str.setTaint(aRequest->mScriptTextTaint);
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, "External script data");
+  }
   return SourceBufferHolder(aRequest->mScriptTextBuf,
                             aRequest->mScriptTextLength,
                             aRequest->mScriptTextTaint,
