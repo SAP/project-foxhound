@@ -47,10 +47,13 @@ private:
   {
   }
 
-  nsresult TeeSegment(const char* aBuf, uint32_t aCount);
+  nsresult TeeSegment(const char* aBuf, const StringTaint& aTaint, uint32_t aCount);
 
   static NS_METHOD WriteSegmentFun(nsIInputStream*, void*, const char*,
                                    uint32_t, uint32_t, uint32_t*);
+
+  static NS_METHOD WriteTaintedSegmentFun(nsITaintawareInputStream*, void*, const char*,
+                                          uint32_t, uint32_t, const StringTaint&, uint32_t*);
 
   bool SourceIsTaintAware() const;
 
@@ -59,6 +62,7 @@ private:
   nsCOMPtr<nsIOutputStream> mSink;
   nsCOMPtr<nsIEventTarget>  mEventTarget;
   nsWriteSegmentFun         mWriter;  // for implementing ReadSegments
+  nsWriteTaintedSegmentFun  mTaintWriter;  // for implementing TaintedReadSegments
   void*                     mClosure; // for implementing ReadSegments
   nsAutoPtr<Mutex>          mLock; // synchronize access to mSinkIsValid
   bool                      mSinkIsValid; // False if TeeWriteEvent fails
@@ -158,8 +162,9 @@ nsInputStreamTee::InvalidateSink()
 }
 
 nsresult
-nsInputStreamTee::TeeSegment(const char* aBuf, uint32_t aCount)
+nsInputStreamTee::TeeSegment(const char* aBuf, const StringTaint& aTaint, uint32_t aCount)
 {
+  // TaintFox: TODO propagate taint here
   if (!mSink) {
     return NS_OK;  // nothing to do
   }
@@ -211,7 +216,24 @@ nsInputStreamTee::WriteSegmentFun(nsIInputStream* aIn, void* aClosure,
     return rv;
   }
 
-  return tee->TeeSegment(aFromSegment, *aWriteCount);
+  return tee->TeeSegment(aFromSegment, EmptyTaint, *aWriteCount);
+}
+
+NS_METHOD
+nsInputStreamTee::WriteTaintedSegmentFun(nsITaintawareInputStream* aIn, void* aClosure,
+                                         const char* aFromSegment, uint32_t aOffset,
+                                         uint32_t aCount, const StringTaint& aTaint, uint32_t* aWriteCount)
+{
+  nsInputStreamTee* tee = reinterpret_cast<nsInputStreamTee*>(aClosure);
+  nsresult rv = tee->mTaintWriter(aIn, tee->mClosure, aFromSegment, aOffset,
+                                  aCount, aTaint, aWriteCount);
+  if (NS_FAILED(rv) || (*aWriteCount == 0)) {
+    NS_ASSERTION((NS_FAILED(rv) ? (*aWriteCount == 0) : true),
+                 "writer returned an error with non-zero writeCount");
+    return rv;
+  }
+
+  return tee->TeeSegment(aFromSegment, aTaint, *aWriteCount);
 }
 
 bool nsInputStreamTee::SourceIsTaintAware() const
@@ -264,7 +286,7 @@ nsInputStreamTee::Read(char* aBuf, uint32_t aCount, uint32_t* aBytesRead)
     return rv;
   }
 
-  return TeeSegment(aBuf, *aBytesRead);
+  return TeeSegment(aBuf, EmptyTaint, *aBytesRead);
 }
 
 NS_IMETHODIMP
@@ -347,26 +369,42 @@ nsInputStreamTee::GetEventTarget(nsIEventTarget** aEventTarget)
   return NS_OK;
 }
 
-// TaintFox TODO implement these. Probably want to extend WriteSegmentFun to
-// support taint.
 NS_IMETHODIMP
 nsInputStreamTee::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
                                       void* aClosure,
                                       uint32_t aCount,
-                                      uint32_t* aReadCount)
+                                      uint32_t* aBytesRead)
 {
+  if (NS_WARN_IF(!mSource)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
   nsCOMPtr<nsITaintawareInputStream> source(do_QueryInterface(mSource));
   MOZ_ASSERT(source, "must have a valid taint-aware source here");
-  MOZ_CRASH("nsInputStreamTee::TaintedReadSegments is not yet implemented");
+
+  mTaintWriter = aWriter;
+  mClosure = aClosure;
+
+  return source->TaintedReadSegments(WriteTaintedSegmentFun, this, aCount, aBytesRead);
 }
 
 // TaintFox
 NS_IMETHODIMP
-nsInputStreamTee::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
+nsInputStreamTee::TaintedRead(char* aBuf, uint32_t aCount, StringTaint* aTaint, uint32_t* aBytesRead)
 {
+  if (NS_WARN_IF(!mSource)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
   nsCOMPtr<nsITaintawareInputStream> source(do_QueryInterface(mSource));
   MOZ_ASSERT(source, "must have a valid taint-aware source here");
-  MOZ_CRASH("nsInputStreamTee::TaintedRead is not yet implemented");
+
+  nsresult rv = source->TaintedRead(aBuf, aCount, aTaint, aBytesRead);
+  if (NS_FAILED(rv) || (*aBytesRead == 0)) {
+    return rv;
+  }
+
+  return TeeSegment(aBuf, *aTaint, *aBytesRead);
 }
 
 nsresult

@@ -134,6 +134,8 @@ Additionally, the following classes/interfaces have also been modified to suppor
 
 Currently, taint propagation into the HTML parser only works for non-compressed responses, since an additional decompression StreamListener is added for compressed streams which isn't taintaware yet. Thus, the end2end Taintfox currently does not send out compression related 'accept' headers. Also the patches for the nsHtml5StreamParser are fairly hackish. The propagation only works correctly if a content type and charset is set for the incoming data. Last, response caching has been disabled as the cache also isn't taint aware yet.
 
+Also, nsInputStreamTee does not yet propagate taint into its output. For that, nsIOutputStream would have to be made taint aware as well.
+
 ## Testing
 
 There is a small testsuite in taint/misc/. It can be run by starting the run.py script (a small webserver), then navigating to localhost:8000 in Taintfox. The code will test some basic taint propagation from the server into HTML text nodes, JavaScript string literals and XMLHttpRequest responses.
