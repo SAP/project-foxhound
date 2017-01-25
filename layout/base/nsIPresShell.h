@@ -32,6 +32,7 @@
 #include "nsHashKeys.h"
 #include "nsISupports.h"
 #include "nsIContent.h"
+#include "nsISelectionController.h"
 #include "nsQueryFrame.h"
 #include "nsCoord.h"
 #include "nsColor.h"
@@ -101,8 +102,6 @@ class DocAccessible;
 #endif
 struct nsArenaMemoryStats;
 class nsITimer;
-
-typedef short SelectionType;
 
 namespace mozilla {
 class EventStates;
@@ -833,7 +832,26 @@ public:
     */
   int16_t GetSelectionFlags() const { return mSelectionFlags; }
 
-  virtual mozilla::dom::Selection* GetCurrentSelection(SelectionType aType) = 0;
+  virtual mozilla::dom::Selection*
+    GetCurrentSelection(mozilla::SelectionType aSelectionType) = 0;
+
+  /**
+   * Gets a selection controller for the focused content in the DOM window
+   * for mDocument.
+   *
+   * @param aFocusedContent     If there is focused content in the DOM window,
+   *                            the focused content will be returned.  This may
+   *                            be nullptr if it's not necessary.
+   * @return                    A selection controller for focused content.
+   *                            E.g., if an <input> element has focus, returns
+   *                            the independent selection controller of it.
+   *                            If the DOM window does not have focused content
+   *                            (similar to Document.activeElement), returns
+   *                            nullptr.
+   */
+  virtual already_AddRefed<nsISelectionController>
+            GetSelectionControllerForFocusedContent(
+              nsIContent** aFocusedContent = nullptr) = 0;
 
   /**
     * Interface to dispatch events via the presshell
@@ -974,9 +992,8 @@ public:
 
   /**
    * See if reflow verification is enabled. To enable reflow verification add
-   * "verifyreflow:1" to your NSPR_LOG_MODULES environment variable
-   * (any non-zero debug level will work). Or, call SetVerifyReflowEnable
-   * with true.
+   * "verifyreflow:1" to your MOZ_LOG environment variable (any non-zero
+   * debug level will work). Or, call SetVerifyReflowEnable with true.
    */
   static bool GetVerifyReflowEnable();
 
@@ -1233,7 +1250,7 @@ public:
     return mObservesMutationsForPrint;
   }
 
-  virtual nsresult SetIsActive(bool aIsActive, bool aIsHidden = true) = 0;
+  virtual nsresult SetIsActive(bool aIsActive) = 0;
 
   bool IsActive()
   {
@@ -1247,11 +1264,10 @@ public:
   {
     nsCOMPtr<nsIContent> mPendingContent;
     nsCOMPtr<nsIContent> mOverrideContent;
-    bool                 mReleaseContent;
     bool                 mPrimaryState;
 
     explicit PointerCaptureInfo(nsIContent* aPendingContent, bool aPrimaryState) :
-      mPendingContent(aPendingContent), mReleaseContent(false), mPrimaryState(aPrimaryState)
+      mPendingContent(aPendingContent), mPrimaryState(aPrimaryState)
     {
       MOZ_COUNT_CTOR(PointerCaptureInfo);
     }
@@ -1293,8 +1309,8 @@ public:
   static nsIContent* GetPointerCapturingContent(uint32_t aPointerId);
 
   // CheckPointerCaptureState checks cases, when got/lostpointercapture events should be fired.
-  // Function returns true, if any of events was fired; false, if no one event was fired.
-  static bool CheckPointerCaptureState(uint32_t aPointerId);
+  static void CheckPointerCaptureState(uint32_t aPointerId,
+                                       uint16_t aPointerType, bool aIsPrimary);
 
   // GetPointerInfo returns true if pointer with aPointerId is situated in device, false otherwise.
   // aActiveState is additional information, which shows state of pointer like button state for mouse.
@@ -1563,11 +1579,6 @@ public:
     mFontSizeInflationEnabledIsDirty = true;
   }
 
-  virtual void AddInvalidateHiddenPresShellObserver(nsRefreshDriver *aDriver) = 0;
-
-  void InvalidatePresShellIfHidden();
-  void CancelInvalidatePresShellIfHidden();
-
 
   //////////////////////////////////////////////////////////////////////////////
   // Approximate frame visibility tracking public API.
@@ -1730,10 +1741,6 @@ protected:
   // GetRootFrame() can be inlined:
   nsFrameManagerBase*       mFrameManager;
   mozilla::WeakPtr<nsDocShell>                 mForwardingContainer;
-  nsRefreshDriver* MOZ_UNSAFE_REF("These two objects hold weak references "
-                                  "to each other, and the validity of this "
-                                  "member is ensured by the logic in nsIPresShell.")
-                            mHiddenInvalidationObserverRefreshDriver;
 #ifdef ACCESSIBILITY
   mozilla::a11y::DocAccessible* mDocAccessible;
 #endif

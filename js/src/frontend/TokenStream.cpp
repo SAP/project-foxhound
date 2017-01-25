@@ -568,6 +568,11 @@ TokenStream::reportStrictModeErrorNumberVA(uint32_t offset, bool strictMode, uns
 void
 CompileError::throwError(JSContext* cx)
 {
+    if (JSREPORT_IS_WARNING(report.flags)) {
+        CallWarningReporter(cx, message, &report);
+        return;
+    }
+
     // If there's a runtime exception type associated with this error
     // number, set that as the pending exception.  For errors occuring at
     // compile time, this is very likely to be a JSEXN_SYNTAXERR.
@@ -579,16 +584,7 @@ CompileError::throwError(JSContext* cx)
     // as the non-top-level "load", "eval", or "compile" native function
     // returns false, the top-level reporter will eventually receive the
     // uncaught exception report.
-    if (ErrorToException(cx, message, &report, nullptr, nullptr))
-        return;
-
-    // Like ReportError, don't call the error reporter if the embedding is
-    // responsible for handling exceptions. In this case the error reporter
-    // must only be used for warnings.
-    if (cx->options().autoJSAPIOwnsErrorReporting() && !JSREPORT_IS_WARNING(report.flags))
-        return;
-
-    CallErrorReporter(cx, message, &report);
+    ErrorToException(cx, message, &report, nullptr, nullptr);
 }
 
 CompileError::~CompileError()
@@ -597,15 +593,6 @@ CompileError::~CompileError()
     js_free((void*)report.ucmessage);
     js_free(message);
     message = nullptr;
-
-    if (report.messageArgs) {
-        if (argumentsType == ArgumentsAreASCII) {
-            unsigned i = 0;
-            while (report.messageArgs[i])
-                js_free((void*)report.messageArgs[i++]);
-        }
-        js_free(report.messageArgs);
-    }
 
     PodZero(&report);
 }
@@ -654,10 +641,8 @@ TokenStream::reportCompileErrorNumberVA(uint32_t offset, unsigned flags, unsigne
         }
     }
 
-    err.argumentsType = (flags & JSREPORT_UC) ? ArgumentsAreUnicode : ArgumentsAreASCII;
-
     if (!ExpandErrorArgumentsVA(cx, GetErrorMessage, nullptr, errorNumber, &err.message,
-                                &err.report, err.argumentsType, args))
+                                nullptr, ArgumentsAreASCII, &err.report, args))
     {
         return false;
     }
@@ -996,11 +981,6 @@ TokenStream::checkForKeyword(const KeywordInfo* kw, TokenKind* ttp)
 
     if (kw->tokentype == TOK_STRICT_RESERVED)
         return reportStrictModeError(JSMSG_RESERVED_ID, kw->chars);
-
-    // Treat 'let' as an identifier and contextually a keyword in sloppy mode.
-    // It is always a keyword in strict mode.
-    if (kw->tokentype == TOK_LET && !strictMode())
-        return true;
 
     // Working keyword.
     if (ttp) {

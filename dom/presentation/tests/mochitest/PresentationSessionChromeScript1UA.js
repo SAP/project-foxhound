@@ -8,6 +8,7 @@
 const { classes: Cc, interfaces: Ci, manager: Cm, utils: Cu, results: Cr } = Components;
 
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+Cu.import('resource://gre/modules/Services.jsm');
 
 const uuidGenerator = Cc["@mozilla.org/uuid-generator;1"]
                       .getService(Ci.nsIUUIDGenerator);
@@ -17,142 +18,8 @@ function debug(str) {
 }
 
 const originalFactoryData = [];
-const sessionId = 'test-session-id-' + uuidGenerator.generateUUID().toString();
-const address = Cc["@mozilla.org/supports-cstring;1"]
-                  .createInstance(Ci.nsISupportsCString);
-address.data = "127.0.0.1";
-const addresses = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-addresses.appendElement(address, false);
-
-function mockChannelDescription(role) {
-  this.QueryInterface = XPCOMUtils.generateQI([Ci.nsIPresentationChannelDescription]);
-  this.role = role;
-  this.type = Ci.nsIPresentationChannelDescription.TYPE_TCP;
-  this.tcpAddress = addresses;
-  this.tcpPort = (role === 'sender' ? 1234 : 4321); // either sender or receiver
-}
-
-const mockChannelDescriptionOfSender   = new mockChannelDescription('sender');
-const mockChannelDescriptionOfReceiver = new mockChannelDescription('receiver');
-
-const mockServerSocket = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIServerSocket,
-                                         Ci.nsIFactory]),
-  createInstance: function(aOuter, aIID) {
-    if (aOuter) {
-      throw Components.results.NS_ERROR_NO_AGGREGATION;
-    }
-    return this.QueryInterface(aIID);
-  },
-  get port() {
-    return this._port;
-  },
-  set listener(listener) {
-    this._listener = listener;
-  },
-  init: function(port, loopbackOnly, backLog) {
-    this._port = (port == -1 ? 5678 : port);
-  },
-  asyncListen: function(listener) {
-    this._listener = listener;
-  },
-  close: function() {
-    this._listener.onStopListening(this, Cr.NS_BINDING_ABORTED);
-  },
-  onSocketAccepted: function(serverSocket, socketTransport) {
-    this._listener.onSocketAccepted(serverSocket, socketTransport);
-  }
-};
-
-// mockSessionTransport
-var mockSessionTransportOfSender   = undefined;
-var mockSessionTransportOfReceiver = undefined;
-
-function mockSessionTransport() {}
-
-mockSessionTransport.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationSessionTransport,
-                                         Ci.nsIPresentationTCPSessionTransportBuilder]),
-  set callback(callback) {
-    this._callback = callback;
-  },
-  get callback() {
-    return this._callback;
-  },
-  get selfAddress() {
-    return this._selfAddress;
-  },
-  buildTCPSenderTransport: function(transport, listener) {
-    mockSessionTransportOfSender = this;
-    this._listener = listener;
-    this._role = Ci.nsIPresentationService.ROLE_CONTROLLER;
-
-    this._listener.onSessionTransport(this);
-    this._listener = null;
-    this.simulateTransportReady();
-  },
-  buildTCPReceiverTransport: function(description, listener) {
-    mockSessionTransportOfReceiver = this;
-    this._listener = listener;
-    this._role = Ci.nsIPresentationService.ROLE_RECEIVER;
-
-    var addresses = description.QueryInterface(Ci.nsIPresentationChannelDescription)
-                               .tcpAddress;
-    this._selfAddress = {
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsINetAddr]),
-      address: (addresses.length > 0) ?
-                addresses.queryElementAt(0, Ci.nsISupportsCString).data : '',
-      port: description.QueryInterface(Ci.nsIPresentationChannelDescription)
-                       .tcpPort,
-    };
-
-    this._listener.onSessionTransport(this);
-    this._listener = null;
-  },
-  enableDataNotification: function() {
-  },
-  send: function(data) {
-    debug('Send message: ' + data);
-    if (this._role === Ci.nsIPresentationService.ROLE_CONTROLLER) {
-      mockSessionTransportOfReceiver._callback.notifyData(data);
-    }
-    if (this._role === Ci.nsIPresentationService.ROLE_RECEIVER) {
-      mockSessionTransportOfSender._callback.notifyData(data);
-    }
-  },
-  close: function(reason) {
-    sendAsyncMessage('data-transport-closed', reason);
-    this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportClosed(reason);
-    if (this._role === Ci.nsIPresentationService.ROLE_CONTROLLER) {
-      if (mockSessionTransportOfReceiver._callback) {
-        mockSessionTransportOfReceiver._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportClosed(reason);
-      }
-    }
-    else if (this._role === Ci.nsIPresentationService.ROLE_RECEIVER) {
-      if (mockSessionTransportOfSender._callback) {
-        mockSessionTransportOfSender._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportClosed(reason);
-      }
-    }
-  },
-  simulateTransportReady: function() {
-    this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportReady();
-  },
-};
-
-const mockSessionTransportFactory = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory]),
-  createInstance: function(aOuter, aIID) {
-    if (aOuter) {
-      throw Components.results.NS_ERROR_NO_AGGREGATION;
-    }
-    var result = new mockSessionTransport();
-    return result.QueryInterface(aIID);
-  }
-}
-
-const mockSocketTransport = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsISocketTransport]),
-};
+var sessionId; // Store the uuid generated by PresentationRequest.
+var triggerControlChannelError = false; // For simulating error during control channel establishment.
 
 // control channel of sender
 const mockControlChannelOfSender = {
@@ -169,26 +36,59 @@ const mockControlChannelOfSender = {
   get listener() {
     return this._listener;
   },
-  notifyOpened: function() {
+  notifyConnected: function() {
+    // send offer after notifyConnected immediately
+    this._listener
+        .QueryInterface(Ci.nsIPresentationControlChannelListener)
+        .notifyConnected();
+  },
+  notifyReconnected: function() {
     // send offer after notifyOpened immediately
     this._listener
         .QueryInterface(Ci.nsIPresentationControlChannelListener)
-        .notifyOpened();
+        .notifyReconnected();
   },
   sendOffer: function(offer) {
-    sendAsyncMessage('offer-sent');
+    Services.tm.mainThread.dispatch(() => {
+      mockControlChannelOfReceiver.onOffer(offer);
+    }, Ci.nsIThread.DISPATCH_NORMAL);
   },
   onAnswer: function(answer) {
     this._listener
         .QueryInterface(Ci.nsIPresentationControlChannelListener)
         .onAnswer(answer);
   },
-  close: function(reason) {
+  launch: function(presentationId, url) {
+    sessionId = presentationId;
+    sendAsyncMessage('sender-launch', url);
+  },
+  disconnect: function(reason) {
+    if (!this._listener) {
+      return;
+    }
     this._listener
         .QueryInterface(Ci.nsIPresentationControlChannelListener)
-        .notifyClosed(reason);
-    mockControlChannelOfReceiver.close();
-  }
+        .notifyDisconnected(reason);
+    mockControlChannelOfReceiver.disconnect();
+  },
+  terminate: function(presentationId) {
+    sendAsyncMessage('sender-terminate');
+  },
+  reconnect: function(presentationId, url) {
+    sendAsyncMessage('start-reconnect', url);
+  },
+  sendIceCandidate: function(candidate) {
+    mockControlChannelOfReceiver.notifyIceCandidate(candidate);
+  },
+  notifyIceCandidate: function(candidate) {
+    if (!this._listener) {
+      return;
+    }
+
+    this._listener
+        .QueryInterface(Ci.nsIPresentationControlChannelListener)
+        .onIceCandidate(candidate);
+  },
 };
 
 // control channel of receiver
@@ -202,15 +102,24 @@ const mockControlChannelOfReceiver = {
       debug('set listener for mockControlChannelOfReceiver with null');
     }
     this._listener = listener;
+
+    if (this._pendingOpened) {
+      this._pendingOpened = false;
+      this.notifyConnected();
+    }
   },
   get listener() {
     return this._listener;
   },
-  notifyOpened: function() {
+  notifyConnected: function() {
     // do nothing
+    if (!this._listener) {
+      this._pendingOpened = true;
+      return;
+    }
     this._listener
         .QueryInterface(Ci.nsIPresentationControlChannelListener)
-        .notifyOpened();
+        .notifyConnected();
   },
   onOffer: function(offer) {
     this._listener
@@ -218,17 +127,34 @@ const mockControlChannelOfReceiver = {
         .onOffer(offer);
   },
   sendAnswer: function(answer) {
-    this._listener
-        .QueryInterface(Ci.nsIPresentationSessionTransportCallback)
-        .notifyTransportReady();
-    sendAsyncMessage('answer-sent');
+    Services.tm.mainThread.dispatch(() => {
+      mockControlChannelOfSender.onAnswer(answer);
+    }, Ci.nsIThread.DISPATCH_NORMAL);
   },
-  close: function(reason) {
+  disconnect: function(reason) {
+    if (!this._listener) {
+      return;
+    }
+
     this._listener
         .QueryInterface(Ci.nsIPresentationControlChannelListener)
-        .notifyClosed(reason);
+        .notifyDisconnected(reason);
     sendAsyncMessage('control-channel-receiver-closed', reason);
-  }
+  },
+  terminate: function(presentaionId) {
+  },
+  sendIceCandidate: function(candidate) {
+    mockControlChannelOfReceiver.notifyIceCandidate(candidate);
+  },
+  notifyIceCandidate: function(candidate) {
+    if (!this._listener) {
+      return;
+    }
+
+    this._listener
+        .QueryInterface(Ci.nsIPresentationControlChannelListener)
+        .onIceCandidate(candidate);
+  },
 };
 
 const mockDevice = {
@@ -237,8 +163,15 @@ const mockDevice = {
   name: 'name',
   type: 'type',
   establishControlChannel: function(url, presentationId) {
+    if (triggerControlChannelError) {
+      throw Cr.NS_ERROR_FAILURE;
+    }
     sendAsyncMessage('control-channel-established');
     return mockControlChannelOfSender;
+  },
+  disconnect: function() {},
+  isRequestedUrlSupported: function(requestedUrl) {
+    return true;
   },
 };
 
@@ -321,12 +254,6 @@ function initMockAndListener() {
   originalFactoryData.push(registerMockFactory("@mozilla.org/presentation-device/prompt;1",
                                                uuidGenerator.generateUUID(),
                                                mockDevicePrompt));
-  originalFactoryData.push(registerMockFactory("@mozilla.org/network/server-socket;1",
-                                               uuidGenerator.generateUUID(),
-                                               mockServerSocket));
-  originalFactoryData.push(registerMockFactory("@mozilla.org/presentation/presentationtcpsessiontransport;1",
-                                               uuidGenerator.generateUUID(),
-                                               mockSessionTransportFactory));
   originalFactoryData.push(registerMockFactory("@mozilla.org/presentation/requestuiglue;1",
                                                uuidGenerator.generateUUID(),
                                                mockRequestUIGlue));
@@ -355,21 +282,38 @@ function initMockAndListener() {
                                    mockControlChannelOfReceiver);
   });
 
+  addMessageListener('trigger-on-terminate-request', function() {
+    debug('Got message: trigger-on-terminate-request');
+    var deviceManager = Cc['@mozilla.org/presentation-device/manager;1']
+                          .getService(Ci.nsIPresentationDeviceManager);
+    deviceManager.QueryInterface(Ci.nsIPresentationDeviceListener)
+                 .onTerminateRequest(mockDevice,
+                                     sessionId,
+                                     mockControlChannelOfReceiver,
+                                     false);
+  });
+
   addMessageListener('trigger-control-channel-open', function(reason) {
     debug('Got message: trigger-control-channel-open');
-    mockControlChannelOfSender.notifyOpened();
-    mockControlChannelOfReceiver.notifyOpened();
+    mockControlChannelOfSender.notifyConnected();
+    mockControlChannelOfReceiver.notifyConnected();
   });
 
-  addMessageListener('trigger-on-offer', function() {
-    debug('Got message: trigger-on-offer');
-    mockControlChannelOfReceiver.onOffer(mockChannelDescriptionOfSender);
-    mockServerSocket.onSocketAccepted(mockServerSocket, mockSocketTransport);
+  addMessageListener('trigger-control-channel-error', function(reason) {
+    debug('Got message: trigger-control-channel-open');
+    triggerControlChannelError = true;
   });
 
-  addMessageListener('trigger-on-answer', function() {
-    debug('Got message: trigger-on-answer');
-    mockControlChannelOfSender.onAnswer(mockChannelDescriptionOfReceiver);
+  addMessageListener('trigger-reconnected-acked', function(url) {
+    debug('Got message: trigger-reconnected-acked');
+    mockControlChannelOfSender.notifyReconnected();
+    var deviceManager = Cc['@mozilla.org/presentation-device/manager;1']
+                          .getService(Ci.nsIPresentationDeviceManager);
+    deviceManager.QueryInterface(Ci.nsIPresentationDeviceListener)
+                 .onReconnectRequest(mockDevice,
+                                     url,
+                                     sessionId,
+                                     mockControlChannelOfReceiver);
   });
 
   // Used to call sendAsyncMessage in chrome script from receiver.
@@ -393,15 +337,13 @@ function teardown() {
 
   function registerOriginalFactory(contractId, mockedClassId, mockedFactory, originalClassId, originalFactory) {
     if (originalFactory) {
+      var registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
       registrar.unregisterFactory(mockedClassId, mockedFactory);
       registrar.registerFactory(originalClassId, "", contractId, originalFactory);
     }
   }
 
   mockRequestUIGlue.promise               = null;
-  mockServerSocket.listener               = null;
-  mockSessionTransportOfSender.callback   = null;
-  mockSessionTransportOfReceiver.callback = null;
   mockControlChannelOfSender.listener     = null;
   mockControlChannelOfReceiver.listener   = null;
   mockDevicePrompt.request                = null;
@@ -411,7 +353,7 @@ function teardown() {
   deviceManager.QueryInterface(Ci.nsIPresentationDeviceListener)
                .removeDevice(mockDevice);
   // Register original factories.
-  for (var data in originalFactoryData) {
+  for (var data of originalFactoryData) {
     registerOriginalFactory(data.contractId, data.mockClassId,
                             data.mockFactory, data.originalClassId,
                             data.originalFactory);

@@ -108,6 +108,16 @@
  */
 #define XRE_SYS_SHARE_EXTENSION_PARENT_DIR "XRESysSExtPD"
 
+#if defined(XP_UNIX) || defined(XP_MACOSX)
+/**
+ * Directory service keys for the system-wide and user-specific
+ * directories where host manifests used by the WebExtensions
+ * native messaging feature are found.
+ */
+#define XRE_SYS_NATIVE_MESSAGING_MANIFESTS "XRESysNativeMessaging"
+#define XRE_USER_NATIVE_MESSAGING_MANIFESTS "XREUserNativeMessaging"
+#endif
+
 /**
  * A directory service key which specifies the user system extension
  * parent directory.
@@ -391,6 +401,8 @@ enum GeckoProcessType
 
   GeckoProcessType_GMPlugin, // Gecko Media Plugin
 
+  GeckoProcessType_GPU,      // GPU and compositor process
+
   GeckoProcessType_End,
   GeckoProcessType_Invalid = GeckoProcessType_End
 };
@@ -400,7 +412,8 @@ static const char* const kGeckoProcessTypeString[] = {
   "plugin",
   "tab",
   "ipdlunittest",
-  "geckomediaplugin"
+  "geckomediaplugin",
+  "gpu"
 };
 
 static_assert(MOZ_ARRAY_LENGTH(kGeckoProcessTypeString) ==
@@ -495,17 +508,8 @@ XRE_API(void,
 XRE_API(void,
         XRE_StopLateWriteChecks, (void))
 
-#ifdef MOZ_B2G_LOADER
-XRE_API(int,
-        XRE_ProcLoaderServiceRun, (pid_t, int, int argc, const char* argv[],
-                                   mozilla::Vector<int>& aReservedFds));
 XRE_API(void,
-        XRE_ProcLoaderClientInit, (pid_t, int,
-                                   mozilla::Vector<int>& aReservedFds));
-XRE_API(void,
-        XRE_ProcLoaderPreload, (const char* aProgramDir,
-                                const nsXREAppData* aAppData));
-#endif // MOZ_B2G_LOADER
+        XRE_EnableSameExecutableForContentProc, ())
 
 XRE_API(int,
         XRE_XPCShellMain, (int argc, char** argv, char** envp,
@@ -515,5 +519,17 @@ XRE_API(int,
 XRE_API(void,
         XRE_GlibInit, ())
 #endif
+
+
+#ifdef LIBFUZZER
+#include "LibFuzzerRegistry.h"
+
+XRE_API(void,
+        XRE_LibFuzzerSetMain, (int, char**, LibFuzzerMain))
+
+XRE_API(void,
+        XRE_LibFuzzerGetFuncs, (const char*, LibFuzzerInitFunc*,
+                                LibFuzzerTestingFunc*))
+#endif // LIBFUZZER
 
 #endif // _nsXULAppAPI_h__

@@ -7,6 +7,7 @@
 #ifndef __NS_SVGGRADIENTELEMENT_H__
 #define __NS_SVGGRADIENTELEMENT_H__
 
+#include "nsAutoPtr.h"
 #include "nsSVGAnimatedTransformList.h"
 #include "nsSVGElement.h"
 #include "nsSVGLength2.h"
@@ -73,9 +74,9 @@ protected:
   static nsSVGEnumMapping sSpreadMethodMap[];
   static EnumInfo sEnumInfo[2];
 
-  enum { HREF };
-  nsSVGString mStringAttributes[1];
-  static StringInfo sStringInfo[1];
+  enum { HREF, XLINK_HREF };
+  nsSVGString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
 
   // SVGGradientElement values
   nsAutoPtr<nsSVGAnimatedTransformList> mGradientTransform;

@@ -396,10 +396,11 @@ bool Pickle::ReadWString(PickleIterator* iter, std::wstring* result) const {
   return true;
 }
 
-bool Pickle::FlattenBytes(PickleIterator* iter, const char** data, uint32_t length,
-                          uint32_t alignment) {
+bool Pickle::ExtractBuffers(PickleIterator* iter, size_t length, BufferList* buffers,
+                            uint32_t alignment) const
+{
   DCHECK(iter);
-  DCHECK(data);
+  DCHECK(buffers);
   DCHECK(alignment == 4 || alignment == 8);
   DCHECK(intptr_t(header_) % alignment == 0);
 
@@ -412,11 +413,11 @@ bool Pickle::FlattenBytes(PickleIterator* iter, const char** data, uint32_t leng
     return false;
   }
 
-  if (!buffers_.FlattenBytes(iter->iter_, data, length)) {
+  bool success;
+  *buffers = const_cast<BufferList*>(&buffers_)->Extract(iter->iter_, length, &success);
+  if (!success) {
     return false;
   }
-
-  header_ = reinterpret_cast<Header*>(buffers_.Start());
 
   return iter->iter_.AdvanceAcrossSegments(buffers_, AlignInt(length) - length);
 }
@@ -506,22 +507,47 @@ bool Pickle::WriteBytes(const void* data, uint32_t data_len, uint32_t alignment)
 }
 
 bool Pickle::WriteString(const std::string& value) {
+#ifdef MOZ_FAULTY
+  std::string v(value);
+  Singleton<mozilla::ipc::Faulty>::get()->FuzzString(v);
+  if (!WriteInt(static_cast<int>(v.size())))
+    return false;
+
+  return WriteBytes(v.data(), static_cast<int>(v.size()));
+#else
   if (!WriteInt(static_cast<int>(value.size())))
     return false;
 
   return WriteBytes(value.data(), static_cast<int>(value.size()));
+#endif
 }
 
 bool Pickle::WriteWString(const std::wstring& value) {
+#ifdef MOZ_FAULTY
+  std::wstring v(value);
+  Singleton<mozilla::ipc::Faulty>::get()->FuzzWString(v);
+  if (!WriteInt(static_cast<int>(v.size())))
+    return false;
+
+  return WriteBytes(v.data(),
+                    static_cast<int>(v.size() * sizeof(wchar_t)));
+#else
   if (!WriteInt(static_cast<int>(value.size())))
     return false;
 
   return WriteBytes(value.data(),
                     static_cast<int>(value.size() * sizeof(wchar_t)));
+#endif
 }
 
 bool Pickle::WriteData(const char* data, uint32_t length) {
-  return WriteInt(length) && WriteBytes(data, length);
+#ifdef MOZ_FAULTY
+  std::string v(data, length);
+  Singleton<mozilla::ipc::Faulty>::get()->FuzzData(v, v.size());
+  return WriteInt(v.size()) && WriteBytes(v.data(), v.size());
+#else
+   return WriteInt(length) && WriteBytes(data, length);
+#endif
 }
 
 void Pickle::InputBytes(const char* data, uint32_t length) {

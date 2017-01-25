@@ -16,12 +16,15 @@ import random
 import re
 import shutil
 import signal
+import subprocess
 import sys
+import tempfile
 import time
 import traceback
 
 from collections import deque, namedtuple
 from distutils import dir_util
+from distutils.version import LooseVersion
 from multiprocessing import cpu_count
 from argparse import ArgumentParser
 from subprocess import Popen, PIPE, STDOUT
@@ -131,7 +134,9 @@ class XPCShellTestThread(Thread):
         self.xpcshell = kwargs.get('xpcshell')
         self.xpcsRunArgs = kwargs.get('xpcsRunArgs')
         self.failureManifest = kwargs.get('failureManifest')
+        self.jscovdir = kwargs.get('jscovdir')
         self.stack_fixer_function = kwargs.get('stack_fixer_function')
+        self._rootTempDir = kwargs.get('tempDir')
 
         self.app_dir_key = app_dir_key
         self.interactive = interactive
@@ -281,11 +286,10 @@ class XPCShellTestThread(Thread):
             message = "%s | Process still running after test!" % self.test_object['id']
             if self.retry:
                 self.log.info(message)
-                self.log_full_output(self.output_lines)
                 return
 
             self.log.error(message)
-            self.log_full_output(self.output_lines)
+            self.log_full_output()
             self.failCount = 1
 
     def testTimeout(self, proc):
@@ -303,7 +307,7 @@ class XPCShellTestThread(Thread):
             self.log.test_end(self.test_object['id'], 'TIMEOUT',
                               expected=expected,
                               message="Test timed out")
-            self.log_full_output(self.output_lines)
+            self.log_full_output()
 
         self.done = True
         self.timedout = True
@@ -321,7 +325,7 @@ class XPCShellTestThread(Thread):
                   name.replace('\\', '/')]
 
     def setupTempDir(self):
-        tempDir = mkdtemp(prefix='xpc-other-')
+        tempDir = mkdtemp(prefix='xpc-other-', dir=self._rootTempDir)
         self.env["XPCSHELL_TEST_TEMP_DIR"] = tempDir
         if self.interactive:
             self.log.info("temp dir is %s" % tempDir)
@@ -331,7 +335,7 @@ class XPCShellTestThread(Thread):
         if not os.path.isdir(self.pluginsPath):
             return None
 
-        pluginsDir = mkdtemp(prefix='xpc-plugins-')
+        pluginsDir = mkdtemp(prefix='xpc-plugins-', dir=self._rootTempDir)
         # shutil.copytree requires dst to not exist. Deleting the tempdir
         # would make a race condition possible in a concurrent environment,
         # so we are using dir_utils.copy_tree which accepts an existing dst
@@ -357,7 +361,7 @@ class XPCShellTestThread(Thread):
                 pass
             os.makedirs(profileDir)
         else:
-            profileDir = mkdtemp(prefix='xpc-profile-')
+            profileDir = mkdtemp(prefix='xpc-profile-', dir=self._rootTempDir)
         self.env["XPCSHELL_TEST_PROFILE_DIR"] = profileDir
         if self.interactive or self.singleFile:
             self.log.info("profile dir is %s" % profileDir)
@@ -524,23 +528,22 @@ class XPCShellTestThread(Thread):
                 line['thread'] = current_thread().name
             self.log.log_raw(line)
 
-    def log_full_output(self, output):
-        """Log output any buffered output from the test process"""
-        if not output:
+    def log_full_output(self):
+        """Logs any buffered output from the test process, and clears the buffer."""
+        if not self.output_lines:
             return
         self.log.info(">>>>>>>")
-        for line in output:
+        for line in self.output_lines:
             self.log_line(line)
         self.log.info("<<<<<<<")
+        self.output_lines = []
 
     def report_message(self, message):
         """Stores or logs a json log message in mozlog format."""
         if self.verbose:
             self.log_line(message)
         else:
-            # Tests eligible to retry will never dump their buffered output.
-            if not self.retry:
-                self.output_lines.append(message)
+            self.output_lines.append(message)
 
     def process_line(self, line_string):
         """ Parses a single line of output, determining its significance and
@@ -629,7 +632,14 @@ class XPCShellTestThread(Thread):
 
         # The test name to log
         cmdI = ['-e', 'const _TEST_NAME = "%s"' % name]
-        self.complete_command = cmdH + cmdT + cmdI + args
+
+        # Directory for javascript code coverage output, null by default.
+        cmdC = ['-e', 'const _JSCOV_DIR = null']
+        if self.jscovdir:
+            cmdC = ['-e', 'const _JSCOV_DIR = "%s"' % self.jscovdir.replace('\\', '/')]
+            self.complete_command = cmdH + cmdT + cmdI + cmdC + args
+        else:
+            self.complete_command = cmdH + cmdT + cmdI + args
 
         if self.test_object.get('dmd') == 'true':
             if sys.platform.startswith('linux'):
@@ -734,7 +744,7 @@ class XPCShellTestThread(Thread):
                     return
 
                 self.log.test_end(name, status, expected=expected, message=message)
-                self.log_full_output(self.output_lines)
+                self.log_full_output()
 
                 self.failCount += 1
 
@@ -749,11 +759,11 @@ class XPCShellTestThread(Thread):
                 # diagnose what the problem was.  See comments above about
                 # the significance of TSAN_EXIT_CODE_WITH_RACES.
                 if self.usingTSan and return_code == TSAN_EXIT_CODE_WITH_RACES:
-                    self.log_full_output(self.output_lines)
+                    self.log_full_output()
 
                 self.log.test_end(name, status, expected=expected, message=message)
                 if self.verbose:
-                    self.log_full_output(self.output_lines)
+                    self.log_full_output()
 
                 self.retry = False
 
@@ -767,6 +777,9 @@ class XPCShellTestThread(Thread):
                     self.clean_temp_dirs(path)
                     return
 
+                # If we assert during shutdown there's a chance the test has passed
+                # but we haven't logged full output, so do so here.
+                self.log_full_output()
                 self.failCount = 1
 
             if self.logfiles and process_output:
@@ -974,7 +987,7 @@ class XPCShellTests(object):
 
     def trySetupNode(self):
         """
-          Run node for SPDY tests, if available, and updates mozinfo as appropriate.
+          Run node for HTTP/2 tests, if available, and updates mozinfo as appropriate.
         """
         nodeMozInfo = {'hasNode': False} # Assume the worst
         nodeBin = None
@@ -983,17 +996,27 @@ class XPCShellTests(object):
         # the MOZ_NODE_PATH environment variable
         localPath = os.getenv('MOZ_NODE_PATH', None)
         if localPath and os.path.exists(localPath) and os.path.isfile(localPath):
-            nodeBin = localPath
+            try:
+                version_str = subprocess.check_output([localPath, "--version"],
+                                                      stderr=subprocess.STDOUT)
+                # nodejs prefixes its version strings with "v"
+                version = LooseVersion(version_str.lstrip('v'))
+                # Use node only if node version is >=5.0.0 because
+                # node did not support ALPN until this version.
+                if version >= LooseVersion("5.0.0"):
+                    nodeBin = localPath
+            except (subprocess.CalledProcessError, OSError), e:
+                self.log.error('Could not retrieve node version: %s' % str(e))
 
         if nodeBin:
             self.log.info('Found node at %s' % (nodeBin,))
 
             def startServer(name, serverJs):
                 if os.path.exists(serverJs):
-                    # OK, we found our SPDY server, let's try to get it running
+                    # OK, we found our server, let's try to get it running
                     self.log.info('Found %s at %s' % (name, serverJs))
                     try:
-                        # We pipe stdin to node because the spdy server will exit when its
+                        # We pipe stdin to node because the server will exit when its
                         # stdin reaches EOF
                         process = Popen([nodeBin, serverJs], stdin=PIPE, stdout=PIPE,
                                 stderr=PIPE, env=self.env, cwd=os.getcwd())
@@ -1004,9 +1027,6 @@ class XPCShellTests(object):
                         msg = process.stdout.readline()
                         if 'server listening' in msg:
                             nodeMozInfo['hasNode'] = True
-                            searchObj = re.search( r'SPDY server listening on port (.*)', msg, 0)
-                            if searchObj:
-                              self.env["MOZSPDY_PORT"] = searchObj.group(1)
                             searchObj = re.search( r'HTTP2 server listening on port (.*)', msg, 0)
                             if searchObj:
                               self.env["MOZHTTP2_PORT"] = searchObj.group(1)
@@ -1015,7 +1035,6 @@ class XPCShellTests(object):
                         self.log.error('Could not run %s server: %s' % (name, str(e)))
 
             myDir = os.path.split(os.path.abspath(__file__))[0]
-            startServer('moz-spdy', os.path.join(myDir, 'moz-spdy', 'moz-spdy.js'))
             startServer('moz-http2', os.path.join(myDir, 'moz-http2', 'moz-http2.js'))
         elif os.getenv('MOZ_ASSUME_NODE_RUNNING', None):
             self.log.info('Assuming required node servers are already running')
@@ -1070,7 +1089,7 @@ class XPCShellTests(object):
         return path
 
     def runTests(self, xpcshell=None, xrePath=None, appPath=None, symbolsPath=None,
-                 manifest=None, testPaths=None, mobileArgs=None,
+                 manifest=None, testPaths=None, mobileArgs=None, tempDir=None,
                  interactive=False, verbose=False, keepGoing=False, logfiles=True,
                  thisChunk=1, totalChunks=1, debugger=None,
                  debuggerArgs=None, debuggerInteractive=False,
@@ -1079,7 +1098,7 @@ class XPCShellTests(object):
                  testClass=XPCShellTestThread, failureManifest=None,
                  log=None, stream=None, jsDebugger=False, jsDebuggerPort=0,
                  test_tags=None, dump_tests=None, utility_path=None,
-                 rerun_failures=False, failure_manifest=None, **otherOptions):
+                 rerun_failures=False, failure_manifest=None, jscovdir=None, **otherOptions):
         """Run xpcshell tests.
 
         |xpcshell|, is the xpcshell executable to use to run the tests.
@@ -1110,6 +1129,7 @@ class XPCShellTests(object):
         |shuffle|, if True, execute tests in random order.
         |testingModulesDir|, if provided, specifies where JS modules reside.
           xpcshell will register a resource handler mapping this path.
+        |tempDir|, if provided, specifies a temporary directory to use.
         |otherOptions| may be present for the convenience of subclasses
         """
 
@@ -1163,6 +1183,7 @@ class XPCShellTests(object):
         self.xrePath = xrePath
         self.appPath = appPath
         self.symbolsPath = symbolsPath
+        self.tempDir = os.path.normpath(tempDir or tempfile.gettempdir())
         self.manifest = manifest
         self.dump_tests = dump_tests
         self.interactive = interactive
@@ -1177,6 +1198,7 @@ class XPCShellTests(object):
         self.pluginsPath = pluginsPath
         self.sequential = sequential
         self.failure_manifest = failure_manifest
+        self.jscovdir = jscovdir
 
         self.testCount = 0
         self.passCount = 0
@@ -1224,7 +1246,7 @@ class XPCShellTests(object):
             appDirKey = self.mozInfo["appname"] + "-appdir"
 
         # We have to do this before we build the test list so we know whether or
-        # not to run tests that depend on having the node spdy server
+        # not to run tests that depend on having the node http/2 server
         self.trySetupNode()
 
         pStdout, pStderr = self.getPipes()
@@ -1249,6 +1271,7 @@ class XPCShellTests(object):
             'httpdManifest': self.httpdManifest,
             'httpdJSPath': self.httpdJSPath,
             'headJSPath': self.headJSPath,
+            'tempDir': self.tempDir,
             'testharnessdir': self.testharnessdir,
             'profileName': self.profileName,
             'singleFile': self.singleFile,
@@ -1258,6 +1281,7 @@ class XPCShellTests(object):
             'xpcshell': self.xpcshell,
             'xpcsRunArgs': self.xpcsRunArgs,
             'failureManifest': self.failure_manifest,
+            'jscovdir': self.jscovdir,
             'harness_timeout': self.harness_timeout,
             'stack_fixer_function': self.stack_fixer_function,
         }

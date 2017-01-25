@@ -5,9 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocAccessibleParent.h"
-#include "nsAutoPtr.h"
 #include "mozilla/a11y/Platform.h"
-#include "ProxyAccessible.h"
 #include "mozilla/dom/TabParent.h"
 #include "xpcAccessibleDocument.h"
 #include "xpcAccEvents.h"
@@ -104,11 +102,18 @@ DocAccessibleParent::AddSubtree(ProxyAccessible* aParent,
   }
 
   auto role = static_cast<a11y::role>(newChild.Role());
+
   ProxyAccessible* newProxy =
-    new ProxyAccessible(newChild.ID(), aParent, this, role);
+    new ProxyAccessible(newChild.ID(), aParent, this, role,
+                        newChild.Interfaces());
+
   aParent->AddChildAt(aIdxInParent, newProxy);
   mAccessibles.PutEntry(newChild.ID())->mProxy = newProxy;
   ProxyCreated(newProxy, newChild.Interfaces());
+
+#if defined(XP_WIN)
+  WrapperFor(newProxy)->SetID(newChild.MsaaID());
+#endif
 
   uint32_t accessibles = 1;
   uint32_t kids = newChild.ChildrenCount();
@@ -327,6 +332,18 @@ DocAccessibleParent::RecvSelectionEvent(const uint64_t& aID,
 }
 
 bool
+DocAccessibleParent::RecvRoleChangedEvent(const uint32_t& aRole)
+{
+ if (aRole >= roles::LAST_ROLE) {
+   NS_ERROR("child sent bad role in RoleChangedEvent");
+   return false;
+ }
+
+ mRole = static_cast<a11y::role>(aRole);
+ return true;
+}
+
+bool
 DocAccessibleParent::RecvBindChildDoc(PDocAccessibleParent* aChildDoc, const uint64_t& aID)
 {
   // One document should never directly be the child of another.
@@ -440,5 +457,31 @@ DocAccessibleParent::GetXPCAccessible(ProxyAccessible* aProxy)
 
   return doc->GetXPCAccessible(aProxy);
 }
+
+#if defined(XP_WIN)
+/**
+ * @param aCOMProxy COM Proxy to the document in the content process.
+ * @param aParentCOMProxy COM Proxy to the OuterDocAccessible that is
+ *        the parent of the document. The content process will use this
+ *        proxy when traversing up across the content/chrome boundary.
+ */
+bool
+DocAccessibleParent::RecvCOMProxy(const IAccessibleHolder& aCOMProxy,
+                                  IAccessibleHolder* aParentCOMProxy)
+{
+  RefPtr<IAccessible> ptr(aCOMProxy.Get());
+  SetCOMInterface(ptr);
+
+  Accessible* outerDoc = OuterDocOfRemoteBrowser();
+  IAccessible* rawNative = nullptr;
+  if (outerDoc) {
+    outerDoc->GetNativeInterface((void**) &rawNative);
+  }
+
+  aParentCOMProxy->Set(IAccessibleHolder::COMPtrType(rawNative));
+  return true;
+}
+#endif // defined(XP_WIN)
+
 } // a11y
 } // mozilla

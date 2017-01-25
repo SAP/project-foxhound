@@ -113,11 +113,12 @@ NS_EVENT_MESSAGE(eUnload)
 NS_EVENT_MESSAGE(eHashChange)
 NS_EVENT_MESSAGE(eImageAbort)
 NS_EVENT_MESSAGE(eLoadError)
+NS_EVENT_MESSAGE(eLoadEnd)
 NS_EVENT_MESSAGE(ePopState)
 NS_EVENT_MESSAGE(eStorage)
 NS_EVENT_MESSAGE(eBeforeUnload)
 NS_EVENT_MESSAGE(eReadyStateChange)
- 
+
 NS_EVENT_MESSAGE(eFormSubmit)
 NS_EVENT_MESSAGE(eFormReset)
 NS_EVENT_MESSAGE(eFormChange)
@@ -131,8 +132,6 @@ NS_EVENT_MESSAGE(eBlur)
 NS_EVENT_MESSAGE(eDragEnter)
 NS_EVENT_MESSAGE(eDragOver)
 NS_EVENT_MESSAGE(eDragExit)
-NS_EVENT_MESSAGE(eLegacyDragDrop)
-NS_EVENT_MESSAGE(eLegacyDragGesture)
 NS_EVENT_MESSAGE(eDrag)
 NS_EVENT_MESSAGE(eDragEnd)
 NS_EVENT_MESSAGE(eDragStart)
@@ -166,7 +165,7 @@ NS_EVENT_MESSAGE_FIRST_LAST(eLegacyMutationEvent,
   eLegacySubtreeModified, eLegacyCharacterDataModified)
 
 NS_EVENT_MESSAGE(eUnidentifiedEvent)
- 
+
 // composition events
 NS_EVENT_MESSAGE(eCompositionStart)
 // eCompositionEnd is the message for DOM compositionend event.
@@ -241,6 +240,9 @@ NS_EVENT_MESSAGE(eQueryCaretRect)
 // valid character range given offset and length. Result is relative to top
 // level widget coordinates
 NS_EVENT_MESSAGE(eQueryTextRect)
+// Query for the bounding rect array of a range of characters.
+// Thiis similar event of eQueryTextRect.
+NS_EVENT_MESSAGE(eQueryTextRectArray)
 // Query for the bounding rect of the current focused frame. Result is relative
 // to top level widget coordinates
 NS_EVENT_MESSAGE(eQueryEditorRect)
@@ -371,6 +373,11 @@ NS_EVENT_MESSAGE(eDeviceLight)
 NS_EVENT_MESSAGE(eOrientationChange)
 #endif
 
+// WebVR events
+NS_EVENT_MESSAGE(eVRDisplayConnect)
+NS_EVENT_MESSAGE(eVRDisplayDisconnect)
+NS_EVENT_MESSAGE(eVRDisplayPresentChange)
+
 NS_EVENT_MESSAGE(eShow)
 
 // Fullscreen DOM API
@@ -387,6 +394,8 @@ NS_EVENT_MESSAGE(eTouchCancel)
 // Pointerlock DOM API
 NS_EVENT_MESSAGE(ePointerLockChange)
 NS_EVENT_MESSAGE(ePointerLockError)
+NS_EVENT_MESSAGE(eMozPointerLockChange)
+NS_EVENT_MESSAGE(eMozPointerLockError)
 
 // eWheel is the event message of DOM wheel event.
 NS_EVENT_MESSAGE(eWheel)

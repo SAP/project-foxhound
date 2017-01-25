@@ -10,16 +10,27 @@
 
 #include "gfxRect.h"
 #include "nsFont.h"
+#include "mozilla/MacroArgs.h" // for MOZ_CONCAT
+#include "X11UndefineNone.h"
 
 // XXX fold this into nsStyleContext and group by nsStyleXXX struct
 
-// Indices into border/padding/margin arrays
 namespace mozilla {
 namespace css {
 typedef mozilla::Side Side;
 } // namespace css
 
-#define NS_FOR_CSS_SIDES(var_) for (mozilla::css::Side var_ = NS_SIDE_TOP; var_ <= NS_SIDE_LEFT; var_++)
+// Creates a for loop that walks over the four mozilla::css::Side values.
+// We use an int32_t helper variable (instead of a Side) for our loop counter,
+// to avoid triggering undefined behavior just before we exit the loop (at
+// which point the counter is incremented beyond the largest valid Side value).
+#define NS_FOR_CSS_SIDES(var_)                                           \
+  int32_t MOZ_CONCAT(var_,__LINE__) = NS_SIDE_TOP;                       \
+  for (mozilla::css::Side var_;                                          \
+       MOZ_CONCAT(var_,__LINE__) <= NS_SIDE_LEFT &&                      \
+         ((var_ = mozilla::css::Side(MOZ_CONCAT(var_,__LINE__))), true); \
+       MOZ_CONCAT(var_,__LINE__)++)
+
 static inline css::Side operator++(css::Side& side, int) {
     NS_PRECONDITION(side >= NS_SIDE_TOP &&
                     side <= NS_SIDE_LEFT, "Out of range side");
@@ -55,58 +66,150 @@ static inline css::Side operator++(css::Side& side, int) {
 #define NS_SIDE_TO_HALF_CORNER(side_, second_, parallel_) \
   ((((side_) + !!(second_))*2 + ((side_) + !(parallel_))%2) % 8)
 
+// Basic shapes
+enum class StyleBasicShapeType : uint8_t {
+  Polygon,
+  Circle,
+  Ellipse,
+  Inset,
+};
+
+// box-align
+enum class StyleBoxAlign : uint8_t {
+  Stretch,
+  Start,
+  Center,
+  Baseline,
+  End,
+};
+
+// box-decoration-break
+enum class StyleBoxDecorationBreak : uint8_t {
+  Slice,
+  Clone,
+};
+
+// box-direction
+enum class StyleBoxDirection : uint8_t {
+  Normal,
+  Reverse,
+};
+
+// box-orient
+enum class StyleBoxOrient : uint8_t {
+  Horizontal,
+  Vertical,
+};
+
+// box-pack
+enum class StyleBoxPack : uint8_t {
+  Start,
+  Center,
+  End,
+  Justify,
+};
+
 // box-sizing
 enum class StyleBoxSizing : uint8_t {
   Content,
-  Padding,
   Border
 };
 
-// clip-path sizing
-#define NS_STYLE_CLIP_SHAPE_SIZING_NOBOX   0
-#define NS_STYLE_CLIP_SHAPE_SIZING_CONTENT 1
-#define NS_STYLE_CLIP_SHAPE_SIZING_PADDING 2
-#define NS_STYLE_CLIP_SHAPE_SIZING_BORDER  3
-#define NS_STYLE_CLIP_SHAPE_SIZING_MARGIN  4
-#define NS_STYLE_CLIP_SHAPE_SIZING_FILL    5
-#define NS_STYLE_CLIP_SHAPE_SIZING_STROKE  6
-#define NS_STYLE_CLIP_SHAPE_SIZING_VIEW    7
-
-// Basic Shapes
-#define NS_STYLE_BASIC_SHAPE_POLYGON       0
-#define NS_STYLE_BASIC_SHAPE_CIRCLE        1
-#define NS_STYLE_BASIC_SHAPE_ELLIPSE       2
-#define NS_STYLE_BASIC_SHAPE_INSET         3
-
 // box-shadow
-#define NS_STYLE_BOX_SHADOW_INSET         0
+enum class StyleBoxShadowType : uint8_t {
+  Inset,
+};
+
+// clear
+enum class StyleClear : uint8_t {
+  None = 0,
+  Left,
+  Right,
+  InlineStart,
+  InlineEnd,
+  Both,
+  // StyleClear::Line can be added to one of the other values in layout
+  // so it needs to use a bit value that none of the other values can have.
+  Line = 8,
+  Max = 13  // Max = (Both | Line)
+};
+
+// clip-path geometry box
+enum class StyleClipPathGeometryBox : uint8_t {
+  NoBox,
+  Content,
+  Padding,
+  Border,
+  Margin,
+  Fill,
+  Stroke,
+  View,
+};
+
+// fill-rule
+enum class StyleFillRule : uint8_t {
+  Nonzero,
+  Evenodd,
+};
+
+// float
+// https://developer.mozilla.org/en-US/docs/Web/CSS/float
+enum class StyleFloat : uint8_t {
+  None,
+  Left,
+  Right,
+  InlineStart,
+  InlineEnd
+};
 
 // float-edge
-#define NS_STYLE_FLOAT_EDGE_CONTENT_BOX    0
-#define NS_STYLE_FLOAT_EDGE_MARGIN_BOX     1
+enum class StyleFloatEdge : uint8_t {
+  ContentBox,
+  MarginBox,
+};
+
+// shape-box for shape-outside
+enum class StyleShapeOutsideShapeBox : uint8_t {
+  NoBox,
+  Content,
+  Padding,
+  Border,
+  Margin
+};
+
+// Shape source type
+enum class StyleShapeSourceType : uint8_t {
+  None,
+  URL,
+  Shape,
+  Box,
+};
 
 // user-focus
-#define NS_STYLE_USER_FOCUS_NONE            0
-#define NS_STYLE_USER_FOCUS_IGNORE          1
-#define NS_STYLE_USER_FOCUS_NORMAL          2
-#define NS_STYLE_USER_FOCUS_SELECT_ALL      3
-#define NS_STYLE_USER_FOCUS_SELECT_BEFORE   4
-#define NS_STYLE_USER_FOCUS_SELECT_AFTER    5
-#define NS_STYLE_USER_FOCUS_SELECT_SAME     6
-#define NS_STYLE_USER_FOCUS_SELECT_MENU     7
+enum class StyleUserFocus : uint8_t {
+  None,
+  Ignore,
+  Normal,
+  SelectAll,
+  SelectBefore,
+  SelectAfter,
+  SelectSame,
+  SelectMenu,
+};
 
 // user-select
-#define NS_STYLE_USER_SELECT_NONE       0
-#define NS_STYLE_USER_SELECT_TEXT       1
-#define NS_STYLE_USER_SELECT_ELEMENT    2
-#define NS_STYLE_USER_SELECT_ELEMENTS   3
-#define NS_STYLE_USER_SELECT_ALL        4
-#define NS_STYLE_USER_SELECT_TOGGLE     5
-#define NS_STYLE_USER_SELECT_TRI_STATE  6
-#define NS_STYLE_USER_SELECT_AUTO       7 // internal value - please use nsFrame::IsSelectable()
-#define NS_STYLE_USER_SELECT_MOZ_ALL    8 // force selection of all children, unless an ancestor has NONE set - bug 48096
-#define NS_STYLE_USER_SELECT_MOZ_NONE   9 // Like NONE, but doesn't change selection behavior for descendants whose user-select is not AUTO.
-#define NS_STYLE_USER_SELECT_MOZ_TEXT   10 // Like TEXT, except that it won't get overridden by ancestors having ALL.
+enum class StyleUserSelect : uint8_t {
+  None,
+  Text,
+  Element,
+  Elements,
+  All,
+  Toggle,
+  TriState,
+  Auto,     // internal value - please use nsFrame::IsSelectable()
+  MozAll,   // force selection of all children, unless an ancestor has NONE set - bug 48096
+  MozText,  // Like TEXT, except that it won't get overridden by ancestors having ALL.
+};
 
 // user-input
 #define NS_STYLE_USER_INPUT_NONE      0
@@ -123,31 +226,6 @@ enum class StyleBoxSizing : uint8_t {
 #define NS_STYLE_WINDOW_DRAGGING_DEFAULT 0
 #define NS_STYLE_WINDOW_DRAGGING_DRAG    1
 #define NS_STYLE_WINDOW_DRAGGING_NO_DRAG 2
-
-// box-align
-#define NS_STYLE_BOX_ALIGN_STRETCH     0
-#define NS_STYLE_BOX_ALIGN_START       1
-#define NS_STYLE_BOX_ALIGN_CENTER      2
-#define NS_STYLE_BOX_ALIGN_BASELINE    3
-#define NS_STYLE_BOX_ALIGN_END         4
-
-// box-pack
-#define NS_STYLE_BOX_PACK_START        0
-#define NS_STYLE_BOX_PACK_CENTER       1
-#define NS_STYLE_BOX_PACK_END          2
-#define NS_STYLE_BOX_PACK_JUSTIFY      3
-
-// box-decoration-break
-#define NS_STYLE_BOX_DECORATION_BREAK_SLICE  0
-#define NS_STYLE_BOX_DECORATION_BREAK_CLONE  1
-
-// box-direction
-#define NS_STYLE_BOX_DIRECTION_NORMAL    0
-#define NS_STYLE_BOX_DIRECTION_REVERSE   1
-
-// box-orient
-#define NS_STYLE_BOX_ORIENT_HORIZONTAL 0
-#define NS_STYLE_BOX_ORIENT_VERTICAL   1
 
 // orient
 #define NS_STYLE_ORIENT_INLINE     0
@@ -344,21 +422,10 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_BORDER_IMAGE_REPEAT_STRETCH    0
 #define NS_STYLE_BORDER_IMAGE_REPEAT_REPEAT     1
 #define NS_STYLE_BORDER_IMAGE_REPEAT_ROUND      2
+#define NS_STYLE_BORDER_IMAGE_REPEAT_SPACE      3
 
 #define NS_STYLE_BORDER_IMAGE_SLICE_NOFILL      0
 #define NS_STYLE_BORDER_IMAGE_SLICE_FILL        1
-
-// See nsStyleDisplay
-#define NS_STYLE_CLEAR_NONE                     0
-#define NS_STYLE_CLEAR_LEFT                     1
-#define NS_STYLE_CLEAR_RIGHT                    2
-#define NS_STYLE_CLEAR_INLINE_START             3
-#define NS_STYLE_CLEAR_INLINE_END               4
-#define NS_STYLE_CLEAR_BOTH                     5
-#define NS_STYLE_CLEAR_LINE                     8
-// @note NS_STYLE_CLEAR_LINE can be added to one of the other values in layout
-// so it needs to use a bit value that none of the other values can have.
-#define NS_STYLE_CLEAR_MAX (NS_STYLE_CLEAR_LINE | NS_STYLE_CLEAR_BOTH)
 
 // See nsStyleContent
 #define NS_STYLE_CONTENT_OPEN_QUOTE             0
@@ -430,46 +497,52 @@ enum class FillMode : uint32_t;
            NS_STYLE_WRITING_MODE_SIDEWAYS_MASK)
 
 // See nsStyleDisplay
-#define NS_STYLE_DISPLAY_NONE                   0
-#define NS_STYLE_DISPLAY_BLOCK                  1
-#define NS_STYLE_DISPLAY_INLINE                 2
-#define NS_STYLE_DISPLAY_INLINE_BLOCK           3
-#define NS_STYLE_DISPLAY_LIST_ITEM              4
-#define NS_STYLE_DISPLAY_TABLE                  8
-#define NS_STYLE_DISPLAY_INLINE_TABLE           9
-#define NS_STYLE_DISPLAY_TABLE_ROW_GROUP        10
-#define NS_STYLE_DISPLAY_TABLE_COLUMN           11
-#define NS_STYLE_DISPLAY_TABLE_COLUMN_GROUP     12
-#define NS_STYLE_DISPLAY_TABLE_HEADER_GROUP     13
-#define NS_STYLE_DISPLAY_TABLE_FOOTER_GROUP     14
-#define NS_STYLE_DISPLAY_TABLE_ROW              15
-#define NS_STYLE_DISPLAY_TABLE_CELL             16
-#define NS_STYLE_DISPLAY_TABLE_CAPTION          17
-#define NS_STYLE_DISPLAY_BOX                    18
-#define NS_STYLE_DISPLAY_INLINE_BOX             19
+//
+// NOTE: Order is important! If you change it, make sure to take a look at
+// the FrameConstructorDataByDisplay stuff (both the XUL and non-XUL version),
+// and ensure it's still correct!
+enum class StyleDisplay : uint8_t {
+  None = 0,
+  Block,
+  Inline,
+  InlineBlock,
+  ListItem,
+  Table,
+  InlineTable,
+  TableRowGroup,
+  TableColumn,
+  TableColumnGroup,
+  TableHeaderGroup,
+  TableFooterGroup,
+  TableRow,
+  TableCell,
+  TableCaption,
+  Flex,
+  InlineFlex,
+  Grid,
+  InlineGrid,
+  Ruby,
+  RubyBase,
+  RubyBaseContainer,
+  RubyText,
+  RubyTextContainer,
+  Contents,
+  WebkitBox,
+  WebkitInlineBox,
+  Box,
+  InlineBox,
 #ifdef MOZ_XUL
-#define NS_STYLE_DISPLAY_XUL_GRID               20
-#define NS_STYLE_DISPLAY_INLINE_XUL_GRID        21
-#define NS_STYLE_DISPLAY_XUL_GRID_GROUP         22
-#define NS_STYLE_DISPLAY_XUL_GRID_LINE          23
-#define NS_STYLE_DISPLAY_STACK                  24
-#define NS_STYLE_DISPLAY_INLINE_STACK           25
-#define NS_STYLE_DISPLAY_DECK                   26
-#define NS_STYLE_DISPLAY_POPUP                  27
-#define NS_STYLE_DISPLAY_GROUPBOX               28
+  XulGrid,
+  InlineXulGrid,
+  XulGridGroup,
+  XulGridLine,
+  Stack,
+  InlineStack,
+  Deck,
+  Groupbox,
+  Popup,
 #endif
-#define NS_STYLE_DISPLAY_FLEX                   29
-#define NS_STYLE_DISPLAY_INLINE_FLEX            30
-#define NS_STYLE_DISPLAY_GRID                   31
-#define NS_STYLE_DISPLAY_INLINE_GRID            32
-#define NS_STYLE_DISPLAY_RUBY                   33
-#define NS_STYLE_DISPLAY_RUBY_BASE              34
-#define NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER    35
-#define NS_STYLE_DISPLAY_RUBY_TEXT              36
-#define NS_STYLE_DISPLAY_RUBY_TEXT_CONTAINER    37
-#define NS_STYLE_DISPLAY_CONTENTS               38
-#define NS_STYLE_DISPLAY_WEBKIT_BOX             39
-#define NS_STYLE_DISPLAY_WEBKIT_INLINE_BOX      40
+};
 
 // See nsStyleDisplay
 // If these are re-ordered, nsComputedDOMStyle::DoGetContain() and
@@ -555,19 +628,6 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_JUSTIFY_CONTENT_CENTER         NS_STYLE_JUSTIFY_CENTER
 #define NS_STYLE_JUSTIFY_CONTENT_SPACE_BETWEEN  NS_STYLE_JUSTIFY_SPACE_BETWEEN
 #define NS_STYLE_JUSTIFY_CONTENT_SPACE_AROUND   NS_STYLE_JUSTIFY_SPACE_AROUND
-
-// See nsStyleDisplay
-#define NS_STYLE_FLOAT_NONE                     0
-#define NS_STYLE_FLOAT_LEFT                     1
-#define NS_STYLE_FLOAT_RIGHT                    2
-#define NS_STYLE_FLOAT_INLINE_START             3
-#define NS_STYLE_FLOAT_INLINE_END               4
-
-// See nsStyleClipPath
-#define NS_STYLE_CLIP_PATH_NONE                 0
-#define NS_STYLE_CLIP_PATH_URL                  1
-#define NS_STYLE_CLIP_PATH_SHAPE                2
-#define NS_STYLE_CLIP_PATH_BOX                  3
 
 // See nsStyleFilter
 #define NS_STYLE_FILTER_NONE                    0
@@ -698,7 +758,7 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_POSITION_FIXED                 3
 #define NS_STYLE_POSITION_STICKY                4
 
-// See nsStyleDisplay.mClip
+// See nsStyleEffects.mClip, mClipFlags
 #define NS_STYLE_CLIP_AUTO                      0x00
 #define NS_STYLE_CLIP_RECT                      0x01
 #define NS_STYLE_CLIP_TYPE_MASK                 0x0F
@@ -1041,10 +1101,6 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_DOMINANT_BASELINE_TEXT_AFTER_EDGE  10
 #define NS_STYLE_DOMINANT_BASELINE_TEXT_BEFORE_EDGE 11
 
-// fill-rule
-#define NS_STYLE_FILL_RULE_NONZERO              0
-#define NS_STYLE_FILL_RULE_EVENODD              1
-
 // image-rendering
 #define NS_STYLE_IMAGE_RENDERING_AUTO             0
 #define NS_STYLE_IMAGE_RENDERING_OPTIMIZESPEED    1
@@ -1169,7 +1225,7 @@ enum class FillMode : uint32_t;
 
 // composite
 #define NS_STYLE_MASK_COMPOSITE_ADD                 0
-#define NS_STYLE_MASK_COMPOSITE_SUBSTRACT           1
+#define NS_STYLE_MASK_COMPOSITE_SUBTRACT            1
 #define NS_STYLE_MASK_COMPOSITE_INTERSECT           2
 #define NS_STYLE_MASK_COMPOSITE_EXCLUDE             3
 

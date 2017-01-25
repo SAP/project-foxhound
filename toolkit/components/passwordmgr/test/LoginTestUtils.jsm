@@ -111,7 +111,7 @@ this.LoginTestUtils.testData = {
                                   "form_field_username", "form_field_password");
     loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
     if (modifications) {
-      for (let [name, value] of Iterator(modifications)) {
+      for (let [name, value] of Object.entries(modifications)) {
         loginInfo[name] = value;
       }
     }
@@ -131,7 +131,7 @@ this.LoginTestUtils.testData = {
                                   "the password", "", "");
     loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
     if (modifications) {
-      for (let [name, value] of Iterator(modifications)) {
+      for (let [name, value] of Object.entries(modifications)) {
         loginInfo[name] = value;
       }
     }
@@ -247,5 +247,49 @@ this.LoginTestUtils.recipes = {
     return LoginManagerParent.recipeParentPromise.then((recipeParent) => {
       return recipeParent;
     });
+  },
+};
+
+this.LoginTestUtils.masterPassword = {
+  masterPassword: "omgsecret!",
+
+  _set(enable) {
+    let oldPW, newPW;
+    if (enable) {
+      oldPW = "";
+      newPW = this.masterPassword;
+    } else {
+      oldPW = this.masterPassword;
+      newPW = "";
+    }
+
+    let secmodDB = Cc["@mozilla.org/security/pkcs11moduledb;1"]
+                     .getService(Ci.nsIPKCS11ModuleDB);
+    let slot = secmodDB.findSlotByName("");
+    if (!slot) {
+      throw new Error("Can't find slot");
+    }
+
+    // Set master password. Note that this does not log you in, so the next
+    // invocation of pwmgr can trigger a MP prompt.
+    let pk11db = Cc["@mozilla.org/security/pk11tokendb;1"]
+                   .getService(Ci.nsIPK11TokenDB);
+    let token = pk11db.findTokenByName("");
+    if (slot.status == Ci.nsIPKCS11Slot.SLOT_UNINITIALIZED) {
+      dump("MP initialized to " + newPW + "\n");
+      token.initPassword(newPW);
+    } else {
+      token.checkPassword(oldPW);
+      dump("MP change from " + oldPW + " to " + newPW + "\n");
+      token.changePassword(oldPW, newPW);
+    }
+  },
+
+  enable() {
+    this._set(true);
+  },
+
+  disable() {
+    this._set(false);
   },
 };

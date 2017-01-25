@@ -4,8 +4,7 @@
 
 "use strict";
 
-const {Ci} = require("chrome");
-const {CssLogic} = require("devtools/shared/inspector/css-logic");
+const {l10n} = require("devtools/shared/inspector/css-logic");
 const {getCssProperties} = require("devtools/shared/fronts/css-properties");
 const {InplaceEditor, editableField} =
       require("devtools/client/shared/inplace-editor");
@@ -13,13 +12,13 @@ const {
   createChild,
   appendText,
   advanceValidate,
-  blurOnMultipleProperties,
-  throttle
+  blurOnMultipleProperties
 } = require("devtools/client/inspector/shared/utils");
 const {
   parseDeclarations,
   parseSingleValue,
-} = require("devtools/shared/css-parsing-utils");
+} = require("devtools/shared/css/parsing-utils");
+const Services = require("Services");
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -76,7 +75,7 @@ function TextPropertyEditor(ruleEditor, property) {
   this._onSwatchCommit = this._onSwatchCommit.bind(this);
   this._onSwatchPreview = this._onSwatchPreview.bind(this);
   this._onSwatchRevert = this._onSwatchRevert.bind(this);
-  this._onValidate = throttle(this._previewValue, 10, this);
+  this._onValidate = this.ruleView.throttle(this._previewValue, 10, this);
   this.update = this.update.bind(this);
   this.updatePropertyState = this.updatePropertyState.bind(this);
 
@@ -176,7 +175,7 @@ TextPropertyEditor.prototype = {
     this.warning = createChild(this.container, "div", {
       class: "ruleview-warning",
       hidden: "",
-      title: CssLogic.l10n("rule.warning.title"),
+      title: l10n("rule.warning.title"),
     });
 
     // Filter button that filters for the current property name and is
@@ -184,7 +183,7 @@ TextPropertyEditor.prototype = {
     this.filterProperty = createChild(this.container, "div", {
       class: "ruleview-overridden-rule-filter",
       hidden: "",
-      title: CssLogic.l10n("rule.filterProperty.title"),
+      title: l10n("rule.filterProperty.title"),
     });
 
     this.filterProperty.addEventListener("click", event => {
@@ -219,7 +218,8 @@ TextPropertyEditor.prototype = {
         destroy: this.updatePropertyState,
         advanceChars: ":",
         contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
-        popup: this.popup
+        popup: this.popup,
+        cssProperties: this.cssProperties
       });
 
       // Auto blur name field on multiple CSS rules get pasted in.
@@ -288,7 +288,8 @@ TextPropertyEditor.prototype = {
         property: this.prop,
         popup: this.popup,
         multiline: true,
-        maxWidth: () => this.container.getBoundingClientRect().width
+        maxWidth: () => this.container.getBoundingClientRect().width,
+        cssProperties: this.cssProperties
       });
     }
   },
@@ -371,7 +372,7 @@ TextPropertyEditor.prototype = {
           onRevert: this._onSwatchRevert
         });
         span.on("unit-change", this._onSwatchCommit);
-        let title = CssLogic.l10n("rule.colorSwatch.tooltip");
+        let title = l10n("rule.colorSwatch.tooltip");
         span.setAttribute("title", title);
       }
     }
@@ -389,7 +390,7 @@ TextPropertyEditor.prototype = {
           onCommit: this._onSwatchCommit,
           onRevert: this._onSwatchRevert
         });
-        let title = CssLogic.l10n("rule.bezierSwatch.tooltip");
+        let title = l10n("rule.bezierSwatch.tooltip");
         span.setAttribute("title", title);
       }
     }
@@ -406,7 +407,7 @@ TextPropertyEditor.prototype = {
           onCommit: this._onSwatchCommit,
           onRevert: this._onSwatchRevert
         }, outputParser, parserOptions);
-        let title = CssLogic.l10n("rule.filterSwatch.tooltip");
+        let title = l10n("rule.filterSwatch.tooltip");
         span.setAttribute("title", title);
       }
     }
@@ -416,7 +417,7 @@ TextPropertyEditor.prototype = {
     if (this.ruleEditor.isEditable) {
       for (let angleSpan of this.angleSwatchSpans) {
         angleSpan.on("unit-change", this._onSwatchCommit);
-        let title = CssLogic.l10n("rule.angleSwatch.tooltip");
+        let title = l10n("rule.angleSwatch.tooltip");
         angleSpan.setAttribute("title", title);
       }
     }
@@ -640,7 +641,7 @@ TextPropertyEditor.prototype = {
     // Remove a property if the property value is empty and the property
     // value is not about to be focused
     if (!this.prop.value &&
-        direction !== Ci.nsIFocusManager.MOVEFOCUS_FORWARD) {
+        direction !== Services.focus.MOVEFOCUS_FORWARD) {
       this.remove(direction);
       return;
     }
@@ -739,7 +740,7 @@ TextPropertyEditor.prototype = {
     // A timeout is used here to accurately check the state, since the inplace
     // editor `done` and `destroy` events fire before the next editor
     // is focused.
-    if (!value.trim() && direction !== Ci.nsIFocusManager.MOVEFOCUS_BACKWARD) {
+    if (!value.trim() && direction !== Services.focus.MOVEFOCUS_BACKWARD) {
       setTimeout(() => {
         if (!this.editing) {
           this.remove(direction);

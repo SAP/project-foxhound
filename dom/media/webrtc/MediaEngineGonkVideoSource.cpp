@@ -104,7 +104,7 @@ MediaEngineGonkVideoSource::NotifyPull(MediaStreamGraph* aGraph,
 }
 
 size_t
-MediaEngineGonkVideoSource::NumCapabilities()
+MediaEngineGonkVideoSource::NumCapabilities() const
 {
   // TODO: Stop hardcoding. Use GetRecorderProfiles+GetProfileInfo (Bug 1128550)
   //
@@ -150,13 +150,16 @@ nsresult
 MediaEngineGonkVideoSource::Allocate(const dom::MediaTrackConstraints& aConstraints,
                                      const MediaEnginePrefs& aPrefs,
                                      const nsString& aDeviceId,
-                                     const nsACString& aOrigin)
+                                     const nsACString& aOrigin,
+                                     AllocationHandle** aOutHandle,
+                                     const char** aOutBadConstraint)
 {
   LOG((__FUNCTION__));
 
   ReentrantMonitorAutoEnter sync(mCallbackMonitor);
   if (mState == kReleased && mInitDone) {
-    ChooseCapability(aConstraints, aPrefs, aDeviceId);
+    NormalizedConstraints constraints(aConstraints);
+    ChooseCapability(constraints, aPrefs, aDeviceId);
     NS_DispatchToMainThread(WrapRunnable(RefPtr<MediaEngineGonkVideoSource>(this),
                                          &MediaEngineGonkVideoSource::AllocImpl));
     mCallbackMonitor.Wait();
@@ -165,13 +168,17 @@ MediaEngineGonkVideoSource::Allocate(const dom::MediaTrackConstraints& aConstrai
     }
   }
 
+  *aOutHandle = nullptr;
   return NS_OK;
 }
 
 nsresult
-MediaEngineGonkVideoSource::Deallocate()
+MediaEngineGonkVideoSource::Deallocate(AllocationHandle* aHandle)
 {
   LOG((__FUNCTION__));
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(!aHandle);
+
   bool empty;
   {
     MonitorAutoLock lock(mMonitor);
@@ -332,9 +339,11 @@ MediaEngineGonkVideoSource::Stop(SourceMediaStream* aSource, TrackID aID)
 }
 
 nsresult
-MediaEngineGonkVideoSource::Restart(const dom::MediaTrackConstraints& aConstraints,
+MediaEngineGonkVideoSource::Restart(AllocationHandle* aHandle,
+                                    const dom::MediaTrackConstraints& aConstraints,
                                     const MediaEnginePrefs& aPrefs,
-                                    const nsString& aDeviceId)
+                                    const nsString& aDeviceId,
+                                    const char** aOutBadConstraint)
 {
   return NS_OK;
 }
@@ -384,7 +393,7 @@ MediaEngineGonkVideoSource::Shutdown()
   }
 
   if (mState == kAllocated || mState == kStopped) {
-    Deallocate();
+    Deallocate(nullptr);
   }
 
   mState = kReleased;
@@ -404,8 +413,8 @@ MediaEngineGonkVideoSource::AllocImpl() {
     // to explicitly remove this--destroying the CameraControl object
     // in DeallocImpl() will do that for us.
     mCameraControl->AddListener(this);
-    mTextureClientAllocator =
-      new layers::TextureClientRecycleAllocator(layers::ImageBridgeChild::GetSingleton());
+    RefPtr<layers::ImageBridgeChild> bridge = layers::ImageBridgeChild::GetSingleton();
+    mTextureClientAllocator = new layers::TextureClientRecycleAllocator(bridge);
     mTextureClientAllocator->SetMaxPoolSize(WEBRTC_GONK_VIDEO_SOURCE_POOL_BUFFERS);
   }
   mCallbackMonitor.Notify();
@@ -573,7 +582,7 @@ MediaEngineGonkVideoSource::OnUserError(UserContext aContext, nsresult aError)
       mCallbacks.SwapElements(aCallbacks);
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
       uint32_t callbackNumbers = mCallbacks.Length();
       for (uint8_t i = 0; i < callbackNumbers; i++) {
@@ -620,7 +629,7 @@ MediaEngineGonkVideoSource::OnTakePictureComplete(const uint8_t* aData, uint32_t
       mMimeType = aMimeType;
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
       RefPtr<dom::Blob> blob =
         dom::Blob::CreateMemoryBlob(nullptr, mPhotoData, mPhotoDataLength, mMimeType);

@@ -171,11 +171,8 @@ RangeAnalysis::addBetaNodes()
 
         MCompare* compare = test->getOperand(0)->toCompare();
 
-        if (compare->compareType() == MCompare::Compare_Unknown ||
-            compare->compareType() == MCompare::Compare_Bitwise)
-        {
+        if (!compare->isNumericComparison())
             continue;
-        }
 
         // TODO: support unsigned comparisons
         if (compare->compareType() == MCompare::Compare_UInt32)
@@ -1759,6 +1756,7 @@ GetTypedArrayRange(TempAllocator& alloc, Scalar::Type type)
       case Scalar::Int32:
         return Range::NewInt32Range(alloc, INT32_MIN, INT32_MAX);
 
+      case Scalar::Int64:
       case Scalar::Float32:
       case Scalar::Float64:
       case Scalar::Float32x4:

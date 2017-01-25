@@ -16,7 +16,6 @@
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend, TextureDumpMode
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
-#include "mozilla/layers/TextureClientRecycleAllocator.h" // for TextureClientRecycleAllocator
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 
 namespace mozilla {
@@ -28,6 +27,7 @@ class ImageContainer;
 class CompositableForwarder;
 class CompositableChild;
 class PCompositableChild;
+class TextureClientRecycleAllocator;
 
 /**
  * Handle RemoveTextureFromCompositableAsync() transaction.
@@ -148,6 +148,12 @@ public:
                                 TextureFlags aTextureFlags,
                                 TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT);
 
+  already_AddRefed<TextureClient>
+  CreateTextureClientFromSurface(gfx::SourceSurface* aSurface,
+                                 BackendSelector aSelector,
+                                 TextureFlags aTextureFlags,
+                                 TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT);
+
   /**
    * Establishes the connection with compositor side through IPDL
    */
@@ -155,14 +161,9 @@ public:
 
   void Destroy();
 
-  static bool DestroyFallback(PCompositableChild* aActor);
-
   bool IsConnected() const;
 
   PCompositableChild* GetIPDLActor() const;
-
-  // should only be called by a CompositableForwarder
-  virtual void SetIPDLActor(CompositableChild* aChild);
 
   CompositableForwarder* GetForwarder() const
   {
@@ -210,37 +211,21 @@ public:
    */
   virtual void RemoveTexture(TextureClient* aTexture);
 
-  static CompositableClient* FromIPDLActor(PCompositableChild* aActor);
-
-  /**
-   * Allocate and deallocate a CompositableChild actor.
-   *
-   * CompositableChild is an implementation detail of CompositableClient that is not
-   * exposed to the rest of the code base. CreateIPDLActor and DestroyIPDLActor
-   * are for use with the managing IPDL protocols only (so that they can
-   * implement AllocCompositableChild and DeallocPCompositableChild).
-   */
-  static PCompositableChild* CreateIPDLActor();
-
-  static bool DestroyIPDLActor(PCompositableChild* actor);
+  static RefPtr<CompositableClient> FromIPDLActor(PCompositableChild* aActor);
 
   void InitIPDLActor(PCompositableChild* aActor, uint64_t aAsyncID = 0);
-
-  static void TransactionCompleteted(PCompositableChild* aActor, uint64_t aTransactionId);
-
-  static void HoldUntilComplete(PCompositableChild* aActor, AsyncTransactionTracker* aTracker);
-
-  static uint64_t GetTrackersHolderId(PCompositableChild* aActor);
 
   TextureFlags GetTextureFlags() const { return mTextureFlags; }
 
   TextureClientRecycleAllocator* GetTextureClientRecycler();
 
+  bool HasTextureClientRecycler() { return !!mTextureClientRecycler; }
+
   static void DumpTextureClient(std::stringstream& aStream,
                                 TextureClient* aTexture,
                                 TextureDumpMode aCompress);
 protected:
-  CompositableChild* mCompositableChild;
+  RefPtr<CompositableChild> mCompositableChild;
   RefPtr<CompositableForwarder> mForwarder;
   // Some layers may want to enforce some flags to all their textures
   // (like disallowing tiling)

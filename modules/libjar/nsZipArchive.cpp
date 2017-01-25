@@ -94,7 +94,9 @@ public:
         return;
 
       // Create the log file and its parent directory (in case it doesn't exist)
-      logFile->Create(nsIFile::NORMAL_FILE_TYPE, 0644);
+      rv = logFile->Create(nsIFile::NORMAL_FILE_TYPE, 0644);
+      if (NS_FAILED(rv))
+        return;
 
       PRFileDesc* file;
 #ifdef XP_WIN
@@ -492,7 +494,7 @@ nsresult nsZipArchive::ExtractFile(nsZipItem *item, const char *outname,
 
   // Directory extraction is handled in nsJAR::Extract,
   // so the item to be extracted should never be a directory
-  PR_ASSERT(!item->IsDirectory());
+  MOZ_ASSERT(!item->IsDirectory());
 
   Bytef outbuf[ZIP_BUFLEN];
 
@@ -878,7 +880,7 @@ nsZipHandle* nsZipArchive::GetFD()
 //---------------------------------------------
 uint32_t nsZipArchive::GetDataOffset(nsZipItem* aItem)
 {
-  PR_ASSERT (aItem);
+  MOZ_ASSERT(aItem);
 MOZ_WIN_MEM_TRY_BEGIN
   //-- read local header to get variable length values and calculate
   //-- the real data offset
@@ -909,7 +911,7 @@ MOZ_WIN_MEM_TRY_CATCH(return 0)
 //---------------------------------------------
 const uint8_t* nsZipArchive::GetData(nsZipItem* aItem)
 {
-  PR_ASSERT (aItem);
+  MOZ_ASSERT(aItem);
 MOZ_WIN_MEM_TRY_BEGIN
   uint32_t offset = GetDataOffset(aItem);
 
@@ -1005,7 +1007,7 @@ nsZipFind::~nsZipFind()
  */
 static uint32_t HashName(const char* aName, uint16_t len)
 {
-  PR_ASSERT(aName != 0);
+  MOZ_ASSERT(aName != 0);
 
   const uint8_t* p = (const uint8_t*)aName;
   const uint8_t* endp = p + len;

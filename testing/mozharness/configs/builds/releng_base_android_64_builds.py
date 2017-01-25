@@ -19,9 +19,6 @@ config = {
     ],
     "buildbot_json_path": "buildprops.json",
     'exes': {
-        'hgtool.py': os.path.join(
-            os.getcwd(), 'build', 'tools', 'buildfarm', 'utils', 'hgtool.py'
-        ),
         "buildbot": "/tools/buildbot/bin/buildbot",
     },
     'app_ini_path': '%(obj_dir)s/dist/bin/application.ini',
@@ -44,6 +41,12 @@ config = {
     'secret_files': [
         {'filename': '/builds/mozilla-fennec-geoloc-api.key',
          'secret_name': 'project/releng/gecko/build/level-%(scm-level)s/mozilla-fennec-geoloc-api.key',
+         'min_scm_level': 2, 'default': 'try-build-has-no-secrets'},
+        {'filename': '/builds/adjust-sdk.token',
+         'secret_name': 'project/releng/gecko/build/level-%(scm-level)s/adjust-sdk.token',
+         'min_scm_level': 2, 'default': 'try-build-has-no-secrets'},
+        {'filename': '/builds/adjust-sdk-beta.token',
+         'secret_name': 'project/releng/gecko/build/level-%(scm-level)s/adjust-sdk-beta.token',
          'min_scm_level': 2, 'default': 'try-build-has-no-secrets'},
     ],
     'enable_ccache': True,

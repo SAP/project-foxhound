@@ -33,14 +33,8 @@ int jack_init (cubeb ** context, char const * context_name);
 #if defined(USE_ALSA)
 int alsa_init(cubeb ** context, char const * context_name);
 #endif
-#if defined(USE_AUDIOQUEUE)
-int audioqueue_init(cubeb ** context, char const * context_name);
-#endif
 #if defined(USE_AUDIOUNIT)
 int audiounit_init(cubeb ** context, char const * context_name);
-#endif
-#if defined(USE_DIRECTSOUND)
-int directsound_init(cubeb ** context, char const * context_name);
 #endif
 #if defined(USE_WINMM)
 int winmm_init(cubeb ** context, char const * context_name);
@@ -66,6 +60,7 @@ int
 validate_stream_params(cubeb_stream_params * input_stream_params,
                        cubeb_stream_params * output_stream_params)
 {
+  XASSERT(input_stream_params || output_stream_params);
   if (output_stream_params) {
     if (output_stream_params->rate < 1000 || output_stream_params->rate > 192000 ||
         output_stream_params->channels < 1 || output_stream_params->channels > 8) {
@@ -106,7 +101,7 @@ validate_stream_params(cubeb_stream_params * input_stream_params,
 int
 validate_latency(int latency)
 {
-  if (latency < 1 || latency > 2000) {
+  if (latency < 1 || latency > 96000) {
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
   return CUBEB_OK;
@@ -128,17 +123,11 @@ cubeb_init(cubeb ** context, char const * context_name)
 #if defined(USE_AUDIOUNIT)
     audiounit_init,
 #endif
-#if defined(USE_AUDIOQUEUE)
-    audioqueue_init,
-#endif
 #if defined(USE_WASAPI)
     wasapi_init,
 #endif
 #if defined(USE_WINMM)
     winmm_init,
-#endif
-#if defined(USE_DIRECTSOUND)
-    directsound_init,
 #endif
 #if defined(USE_SNDIO)
     sndio_init,
@@ -452,4 +441,11 @@ int cubeb_register_device_collection_changed(cubeb * context,
 
   return context->ops->register_device_collection_changed(context, devtype, callback, user_ptr);
 }
+
+void cubeb_crash()
+{
+  abort();
+  *((volatile int *) NULL) = 0;
+}
+
 

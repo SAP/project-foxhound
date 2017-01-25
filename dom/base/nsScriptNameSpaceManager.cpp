@@ -18,7 +18,6 @@
 #include "nsIInterfaceInfo.h"
 #include "xptinfo.h"
 #include "nsXPIDLString.h"
-#include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
 #include "nsHashKeys.h"
 #include "nsDOMClassInfo.h"
@@ -323,15 +322,6 @@ nsScriptNameSpaceManager::OperateCategoryEntryHash(nsICategoryManager* aCategory
                                           getter_Copies(contractId));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (type == nsGlobalNameStruct::eTypeExternalConstructor) {
-    nsPrintfCString prefName("dom.global-constructor.disable.%s",
-                             categoryEntry.get());
-    if (Preferences::GetType(prefName.get()) == nsIPrefBranch::PREF_BOOL &&
-        Preferences::GetBool(prefName.get(), false)) {
-        return NS_OK;
-    }
-  }
-
   nsCOMPtr<nsIComponentRegistrar> registrar;
   rv = NS_GetComponentRegistrar(getter_AddRefs(registrar));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -422,10 +412,12 @@ NS_IMETHODIMP
 nsScriptNameSpaceManager::CollectReports(
   nsIHandleReportCallback* aHandleReport, nsISupports* aData, bool aAnonymize)
 {
-  return MOZ_COLLECT_REPORT(
+  MOZ_COLLECT_REPORT(
     "explicit/script-namespace-manager", KIND_HEAP, UNITS_BYTES,
     SizeOfIncludingThis(ScriptNameSpaceManagerMallocSizeOf),
     "Memory used for the script namespace manager.");
+
+  return NS_OK;
 }
 
 size_t

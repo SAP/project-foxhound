@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WebGLContextUtils.h"
 #include "WebGLContext.h"
 
 #include "GLContext.h"
@@ -23,7 +24,6 @@
 #include "WebGLProgram.h"
 #include "WebGLTexture.h"
 #include "WebGLVertexArray.h"
-#include "WebGLContextUtils.h"
 
 namespace mozilla {
 
@@ -207,6 +207,22 @@ WebGLContext::ErrorOutOfMemory(const char* fmt, ...)
     return SynthesizeGLError(LOCAL_GL_OUT_OF_MEMORY);
 }
 
+void
+WebGLContext::ErrorImplementationBug(const char* fmt, ...)
+{
+    const nsPrintfCString warning("Implementation bug, please file at %s! %s",
+                                  "https://bugzilla.mozilla.org/", fmt);
+
+    va_list va;
+    va_start(va, fmt);
+    GenerateWarning(warning.BeginReading(), va);
+    va_end(va);
+
+    MOZ_ASSERT(false, "WebGLContext::ErrorImplementationBug");
+    NS_ERROR("WebGLContext::ErrorImplementationBug");
+    return SynthesizeGLError(LOCAL_GL_OUT_OF_MEMORY);
+}
+
 const char*
 WebGLContext::ErrorName(GLenum error)
 {
@@ -229,12 +245,13 @@ WebGLContext::ErrorName(GLenum error)
     }
 }
 
-// This version is 'fallible' and will return NULL if glenum is not recognized.
-const char*
-WebGLContext::EnumName(GLenum glenum)
+// This version is fallible and will return nullptr if unrecognized.
+static const char*
+GetEnumName(GLenum val)
 {
-    switch (glenum) {
+    switch (val) {
 #define XX(x) case LOCAL_GL_##x: return #x
+        XX(NONE);
         XX(ALPHA);
         XX(ATC_RGB);
         XX(ATC_RGBA_EXPLICIT_ALPHA);
@@ -256,6 +273,7 @@ WebGLContext::EnumName(GLenum glenum)
         XX(DRAW_FRAMEBUFFER);
         XX(ETC1_RGB8_OES);
         XX(FLOAT);
+        XX(INT);
         XX(FRAMEBUFFER);
         XX(HALF_FLOAT);
         XX(LUMINANCE);
@@ -557,16 +575,24 @@ WebGLContext::EnumName(GLenum glenum)
     return nullptr;
 }
 
-void
-WebGLContext::EnumName(GLenum glenum, nsACString* out_name)
+/*static*/ void
+WebGLContext::EnumName(GLenum val, nsCString* out_name)
 {
-    const char* name = EnumName(glenum);
+    const char* name = GetEnumName(val);
     if (name) {
-        *out_name = nsDependentCString(name);
-    } else {
-        nsPrintfCString enumAsHex("<enum 0x%04x>", glenum);
-        *out_name = enumAsHex;
+        *out_name = name;
+        return;
     }
+
+    *out_name = nsPrintfCString("<enum 0x%04x>", val);
+}
+
+void
+WebGLContext::ErrorInvalidEnumArg(const char* funcName, const char* argName, GLenum val)
+{
+    nsCString enumName;
+    EnumName(val, &enumName);
+    ErrorInvalidEnum("%s: Bad `%s`: %s", funcName, argName, enumName.BeginReading());
 }
 
 bool
@@ -831,7 +857,7 @@ InfoFrom(WebGLTexImageFunc func, WebGLTexDimensions dims)
         case WebGLTexImageFunc::CompTexImage:    return "compressedTexImage2D";
         case WebGLTexImageFunc::CompTexSubImage: return "compressedTexSubImage2D";
         default:
-            MOZ_CRASH();
+            MOZ_CRASH("GFX: invalid 2D TexDimensions");
         }
     case WebGLTexDimensions::Tex3D:
         switch (func) {
@@ -840,10 +866,10 @@ InfoFrom(WebGLTexImageFunc func, WebGLTexDimensions dims)
         case WebGLTexImageFunc::CopyTexSubImage: return "copyTexSubImage3D";
         case WebGLTexImageFunc::CompTexSubImage: return "compressedTexSubImage3D";
         default:
-            MOZ_CRASH();
+            MOZ_CRASH("GFX: invalid 3D TexDimensions");
         }
     default:
-        MOZ_CRASH();
+        MOZ_CRASH("GFX: invalid TexDimensions");
     }
 }
 

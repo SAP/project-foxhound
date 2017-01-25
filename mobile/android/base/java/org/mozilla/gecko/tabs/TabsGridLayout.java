@@ -102,9 +102,14 @@ class TabsGridLayout extends GridView
         setOnItemClickListener(new OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                TabsLayoutItemView tab = (TabsLayoutItemView) view;
-                Tabs.getInstance().selectTab(tab.getTabId());
+                final TabsLayoutItemView tabView = (TabsLayoutItemView) view;
+                final int tabId = tabView.getTabId();
+                final Tab tab = Tabs.getInstance().selectTab(tabId);
+                if (tab == null) {
+                    return;
+                }
                 autoHidePanel();
+                Tabs.getInstance().notifyListeners(tab, Tabs.TabEvents.OPENED_FROM_TABS_TRAY);
             }
         });
 
@@ -573,9 +578,13 @@ class TabsGridLayout extends GridView
                     mSwipeView.setPressed(false);
 
                     if (!mSwiping) {
-                        TabsLayoutItemView item = (TabsLayoutItemView) mSwipeView;
-                        Tabs.getInstance().selectTab(item.getTabId());
-                        autoHidePanel();
+                        final TabsLayoutItemView item = (TabsLayoutItemView) mSwipeView;
+                        final int tabId = item.getTabId();
+                        final Tab tab = Tabs.getInstance().selectTab(tabId);
+                        if (tab != null) {
+                            autoHidePanel();
+                            Tabs.getInstance().notifyListeners(tab, Tabs.TabEvents.OPENED_FROM_TABS_TRAY);
+                        }
 
                         mVelocityTracker.recycle();
                         mVelocityTracker = null;

@@ -260,7 +260,7 @@ nsDOMAttributeMap::SetNamedItemNS(Attr& aAttr, ErrorResult& aError)
 
   nsresult rv;
   if (mContent->OwnerDoc() != aAttr.OwnerDoc()) {
-    nsCOMPtr<nsINode> adoptedNode =
+    DebugOnly<void*> adoptedNode =
       mContent->OwnerDoc()->AdoptNode(aAttr, aError);
     if (aError.Failed()) {
       return nullptr;
@@ -446,7 +446,8 @@ nsDOMAttributeMap::GetAttrNodeInfo(const nsAString& aNamespaceURI,
 
   if (!aNamespaceURI.IsEmpty()) {
     nameSpaceID =
-      nsContentUtils::NameSpaceManager()->GetNameSpaceID(aNamespaceURI);
+      nsContentUtils::NameSpaceManager()->GetNameSpaceID(aNamespaceURI,
+                                                         nsContentUtils::IsChromeDoc(mContent->OwnerDoc()));
 
     if (nameSpaceID == kNameSpaceID_Unknown) {
       return nullptr;

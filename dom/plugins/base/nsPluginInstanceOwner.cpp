@@ -90,6 +90,7 @@ static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 #ifdef MOZ_WIDGET_ANDROID
 #include "ANPBase.h"
 #include "AndroidBridge.h"
+#include "ClientLayerManager.h"
 #include "nsWindow.h"
 
 static nsPluginInstanceOwner* sFullScreenInstance = nullptr;
@@ -137,7 +138,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     nsContentUtils::DispatchTrustedEvent(mContent->OwnerDoc(), mContent,
         mFinished ? NS_LITERAL_STRING("MozPaintWaitFinished") : NS_LITERAL_STRING("MozPaintWait"),
@@ -181,7 +182,7 @@ AttachToContainerAsSurfaceTexture(ImageContainer* container,
 
   RefPtr<Image> img = new SurfaceTextureImage(
     surfTex,
-    gfx::IntSize(rect.width, rect.height),
+    gfx::IntSize::Truncate(rect.width, rect.height),
     instance->OriginPos());
   *out_image = img;
 }
@@ -211,27 +212,24 @@ nsPluginInstanceOwner::GetImageContainer()
   RefPtr<ImageContainer> container;
 
 #if MOZ_WIDGET_ANDROID
-  // Right now we only draw with Gecko layers on Honeycomb and higher. See Paint()
-  // for what we do on other versions.
-  if (AndroidBridge::Bridge()->GetAPIVersion() < 11)
-    return nullptr;
-
   LayoutDeviceRect r = GetPluginRect();
 
   // NotifySize() causes Flash to do a bunch of stuff like ask for surfaces to render
   // into, set y-flip flags, etc, so we do this at the beginning.
   float resolution = mPluginFrame->PresContext()->PresShell()->GetCumulativeResolution();
   ScreenSize screenSize = (r * LayoutDeviceToScreenScale(resolution)).Size();
-  mInstance->NotifySize(nsIntSize(screenSize.width, screenSize.height));
+  mInstance->NotifySize(nsIntSize::Truncate(screenSize.width, screenSize.height));
 
   container = LayerManager::CreateImageContainer();
 
-  // Try to get it as an EGLImage first.
-  RefPtr<Image> img;
-  AttachToContainerAsSurfaceTexture(container, mInstance, r, &img);
+  if (r.width && r.height) {
+    // Try to get it as an EGLImage first.
+    RefPtr<Image> img;
+    AttachToContainerAsSurfaceTexture(container, mInstance, r, &img);
 
-  if (img) {
-    container->SetCurrentImageInTransaction(img);
+    if (img) {
+      container->SetCurrentImageInTransaction(img);
+    }
   }
 #else
   if (NeedsScrollImageLayer()) {
@@ -322,21 +320,6 @@ nsPluginInstanceOwner::GetCurrentImageSize()
   return size;
 }
 
-bool
-nsPluginInstanceOwner::UpdateScrollState(bool aIsScrolling)
-{
-#if defined(XP_WIN)
-  if (!mInstance) {
-    return false;
-  }
-  mScrollState = aIsScrolling;
-  nsresult rv = mInstance->UpdateScrollState(aIsScrolling);
-  return NS_SUCCEEDED(rv);
-#else
-  return false;
-#endif
-}
-
 nsPluginInstanceOwner::nsPluginInstanceOwner()
   : mPluginWindow(nullptr)
 {
@@ -384,7 +367,6 @@ nsPluginInstanceOwner::nsPluginInstanceOwner()
   mGotCompositionData = false;
   mSentStartComposition = false;
   mPluginDidNotHandleIMEComposition = false;
-  mScrollState = false;
 #endif
 }
 
@@ -763,7 +745,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetNetscapeWindow(void *value)
   }
 
   return NS_OK;
-#elif (defined(MOZ_WIDGET_GTK) || defined(MOZ_WIDGET_QT)) && defined(MOZ_X11)
+#elif defined(MOZ_WIDGET_GTK) && defined(MOZ_X11)
   // X11 window managers want the toplevel window for WM_TRANSIENT_FOR.
   nsIWidget* win = mPluginFrame->GetNearestWidget();
   if (!win)
@@ -1005,9 +987,9 @@ nsPluginInstanceOwner::HandledWindowedPluginKeyEvent(
   if (NS_WARN_IF(!mInstance)) {
     return;
   }
-  nsresult rv =
+  DebugOnly<nsresult> rv =
     mInstance->HandledWindowedPluginKeyEvent(aKeyEventData, aIsConsumed);
-  NS_WARN_IF(NS_FAILED(rv));
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "HandledWindowedPluginKeyEvent fail");
 }
 
 void
@@ -1095,8 +1077,7 @@ NPBool nsPluginInstanceOwner::ConvertPointPuppet(PuppetWidget *widget,
   nsPoint windowPosition = AsNsPoint(rootWidget->GetWindowPosition()) / scaleFactor;
 
   // Window size is tab size + chrome size.
-  LayoutDeviceIntRect tabContentBounds;
-  NS_ENSURE_SUCCESS(puppetWidget->GetBounds(tabContentBounds), false);
+  LayoutDeviceIntRect tabContentBounds = puppetWidget->GetBounds();
   tabContentBounds.ScaleInverseRoundOut(scaleFactor);
   int32_t windowH = tabContentBounds.height + int(chromeSize.y);
 
@@ -1202,8 +1183,7 @@ NPBool nsPluginInstanceOwner::ConvertPointNoPuppet(nsIWidget *widget,
   screen->GetRect(&screenX, &screenY, &screenWidth, &screenHeight);
   screenHeight /= scaleFactor;
 
-  LayoutDeviceIntRect windowScreenBounds;
-  NS_ENSURE_SUCCESS(widget->GetScreenBounds(windowScreenBounds), false);
+  LayoutDeviceIntRect windowScreenBounds = widget->GetScreenBounds();
   windowScreenBounds.ScaleInverseRoundOut(scaleFactor);
   int32_t windowX = windowScreenBounds.x;
   int32_t windowY = windowScreenBounds.y;
@@ -1375,14 +1355,6 @@ bool nsPluginInstanceOwner::IsRemoteDrawingCoreAnimation()
   return coreAnimation;
 }
 
-nsresult nsPluginInstanceOwner::ContentsScaleFactorChanged(double aContentsScaleFactor)
-{
-  if (!mInstance) {
-    return NS_ERROR_NULL_POINTER;
-  }
-  return mInstance->ContentsScaleFactorChanged(aContentsScaleFactor);
-}
-
 NPEventModel nsPluginInstanceOwner::GetEventModel()
 {
   return mEventModel;
@@ -1473,6 +1445,16 @@ void nsPluginInstanceOwner::SetPluginPort()
   mPluginWindow->window = pluginPort;
 }
 #endif
+#if defined(XP_MACOSX) || defined(XP_WIN)
+nsresult nsPluginInstanceOwner::ContentsScaleFactorChanged(double aContentsScaleFactor)
+{
+  if (!mInstance) {
+    return NS_ERROR_NULL_POINTER;
+  }
+  return mInstance->ContentsScaleFactorChanged(aContentsScaleFactor);
+}
+#endif
+
 
 // static
 uint32_t
@@ -1561,11 +1543,10 @@ bool nsPluginInstanceOwner::AddPluginView(const LayoutDeviceRect& aRect /* = Lay
     mJavaView = (void*)jni::GetGeckoThreadEnv()->NewGlobalRef((jobject)mJavaView);
   }
 
-  if (AndroidBridge::Bridge())
-    AndroidBridge::Bridge()->AddPluginView((jobject)mJavaView, aRect, mFullScreen);
-
-  if (mFullScreen)
+  if (mFullScreen) {
+    java::GeckoAppShell::AddFullScreenPluginView(jni::Object::Ref::From(jobject(mJavaView)));
     sFullScreenInstance = this;
+  }
 
   return true;
 }
@@ -1575,8 +1556,9 @@ void nsPluginInstanceOwner::RemovePluginView()
   if (!mInstance || !mJavaView)
     return;
 
-  widget::GeckoAppShell::RemovePluginView(
-      jni::Object::Ref::From(jobject(mJavaView)), mFullScreen);
+  if (mFullScreen) {
+    java::GeckoAppShell::RemoveFullScreenPluginView(jni::Object::Ref::From(jobject(mJavaView)));
+  }
   jni::GetGeckoThreadEnv()->DeleteGlobalRef((jobject)mJavaView);
   mJavaView = nullptr;
 
@@ -1598,11 +1580,13 @@ nsPluginInstanceOwner::GetImageContainerForVideo(nsNPAPIPluginInstance::VideoInf
 {
   RefPtr<ImageContainer> container = LayerManager::CreateImageContainer();
 
-  RefPtr<Image> img = new SurfaceTextureImage(
-    aVideoInfo->mSurfaceTexture,
-    gfx::IntSize(aVideoInfo->mDimensions.width, aVideoInfo->mDimensions.height),
-    gl::OriginPos::BottomLeft);
-  container->SetCurrentImageInTransaction(img);
+  if (aVideoInfo->mDimensions.width && aVideoInfo->mDimensions.height) {
+    RefPtr<Image> img = new SurfaceTextureImage(
+      aVideoInfo->mSurfaceTexture,
+      gfx::IntSize::Truncate(aVideoInfo->mDimensions.width, aVideoInfo->mDimensions.height),
+      gl::OriginPos::BottomLeft);
+    container->SetCurrentImageInTransaction(img);
+  }
 
   return container.forget();
 }
@@ -1613,6 +1597,21 @@ void nsPluginInstanceOwner::Invalidate() {
   rect.right = mPluginWindow->width;
   rect.bottom = mPluginWindow->height;
   InvalidateRect(&rect);
+}
+
+void nsPluginInstanceOwner::Recomposite() {
+  nsIWidget* const widget = mPluginFrame->GetNearestWidget();
+  NS_ENSURE_TRUE_VOID(widget);
+
+  LayerManager* const lm = widget->GetLayerManager();
+  NS_ENSURE_TRUE_VOID(lm);
+
+  ClientLayerManager* const clm = lm->AsClientLayerManager();
+  NS_ENSURE_TRUE_VOID(clm && clm->GetRoot());
+
+  clm->SendInvalidRegion(
+      clm->GetRoot()->GetLocalVisibleRegion().ToUnknownRegion().GetBounds());
+  clm->Composite();
 }
 
 void nsPluginInstanceOwner::RequestFullScreen() {
@@ -2616,10 +2615,8 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
         }
 #ifdef MOZ_WIDGET_GTK
         Window root = GDK_ROOT_WINDOW();
-#elif defined(MOZ_WIDGET_QT)
-        Window root = RootWindowOfScreen(DefaultScreenOfDisplay(mozilla::DefaultXDisplay()));
 #else
-        Window root = None; // Could XQueryTree, but this is not important.
+        Window root = X11None; // Could XQueryTree, but this is not important.
 #endif
 
         switch (anEvent.mMessage) {
@@ -2637,7 +2634,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
               event.y_root = rootPoint.y;
               event.state = XInputEventState(mouseEvent);
               // information lost
-              event.subwindow = None;
+              event.subwindow = X11None;
               event.mode = -1;
               event.detail = NotifyDetailNone;
               event.same_screen = True;
@@ -2656,7 +2653,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
               event.y_root = rootPoint.y;
               event.state = XInputEventState(mouseEvent);
               // information lost
-              event.subwindow = None;
+              event.subwindow = X11None;
               event.is_hint = NotifyNormal;
               event.same_screen = True;
             }
@@ -2687,7 +2684,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
                   break;
                 }
               // information lost:
-              event.subwindow = None;
+              event.subwindow = X11None;
               event.same_screen = True;
             }
             break;
@@ -2731,7 +2728,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
 
           // Information that could be obtained from pluginEvent but we may not
           // want to promise to provide:
-          event.subwindow = None;
+          event.subwindow = X11None;
           event.x = 0;
           event.y = 0;
           event.x_root = -1;
@@ -2773,7 +2770,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const WidgetGUIEvent& anEvent)
   XAnyEvent& event = pluginEvent.xany;
   event.display = widget ?
     static_cast<Display*>(widget->GetNativeData(NS_NATIVE_DISPLAY)) : nullptr;
-  event.window = None; // not a real window
+  event.window = X11None; // not a real window
   // information lost:
   event.serial = 0;
   event.send_event = False;
@@ -2906,14 +2903,12 @@ nsPluginInstanceOwner::Destroy()
   content->RemoveEventListener(NS_LITERAL_STRING("keydown"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("keyup"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("drop"), this, true);
-  content->RemoveEventListener(NS_LITERAL_STRING("dragdrop"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("drag"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragenter"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragover"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragleave"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragexit"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragstart"), this, true);
-  content->RemoveEventListener(NS_LITERAL_STRING("draggesture"), this, true);
   content->RemoveEventListener(NS_LITERAL_STRING("dragend"), this, true);
   content->RemoveSystemEventListener(NS_LITERAL_STRING("compositionstart"),
                                      this, true);
@@ -3306,14 +3301,12 @@ nsresult nsPluginInstanceOwner::Init(nsIContent* aContent)
   aContent->AddEventListener(NS_LITERAL_STRING("keydown"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("keyup"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("drop"), this, true);
-  aContent->AddEventListener(NS_LITERAL_STRING("dragdrop"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("drag"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragenter"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragover"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragleave"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragexit"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragstart"), this, true);
-  aContent->AddEventListener(NS_LITERAL_STRING("draggesture"), this, true);
   aContent->AddEventListener(NS_LITERAL_STRING("dragend"), this, true);
   aContent->AddSystemEventListener(NS_LITERAL_STRING("compositionstart"),
     this, true);
@@ -3407,7 +3400,6 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
         return rv;
       }
     }
-
 
     mWidget->EnableDragDrop(true);
     mWidget->Show(false);
@@ -3637,7 +3629,7 @@ nsPluginInstanceOwner::UpdateWindowVisibility(bool aVisible)
 void
 nsPluginInstanceOwner::ResolutionMayHaveChanged()
 {
-#ifdef XP_MACOSX
+#if defined(XP_MACOSX) || defined(XP_WIN)
   double scaleFactor = 1.0;
   GetContentsScaleFactor(&scaleFactor);
   if (scaleFactor != mLastScaleFactor) {
@@ -3723,7 +3715,7 @@ nsPluginInstanceOwner::GetContentsScaleFactor(double *result)
   // On Mac, device pixels need to be translated to (and from) "display pixels"
   // for plugins. On other platforms, plugin coordinates are always in device
   // pixels.
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
   nsCOMPtr<nsIContent> content = do_QueryReferent(mContent);
   nsIPresShell* presShell = nsContentUtils::FindPresShellForDocument(content->OwnerDoc());
   if (presShell) {

@@ -9,6 +9,7 @@
 #include "xpcprivate.h"
 #include "jswrapper.h"
 #include "jsfriendapi.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 using namespace xpc;
@@ -16,8 +17,7 @@ using namespace JS;
 
 #define IS_TEAROFF_CLASS(clazz) ((clazz) == &XPC_WN_Tearoff_JSClass)
 
-XPCCallContext::XPCCallContext(XPCContext::LangType callerLanguage,
-                               JSContext* cx,
+XPCCallContext::XPCCallContext(JSContext* cx,
                                HandleObject obj    /* = nullptr               */,
                                HandleObject funobj /* = nullptr               */,
                                HandleId name       /* = JSID_VOID             */,
@@ -27,24 +27,22 @@ XPCCallContext::XPCCallContext(XPCContext::LangType callerLanguage,
     :   mAr(cx),
         mState(INIT_FAILED),
         mXPC(nsXPConnect::XPConnect()),
-        mXPCContext(nullptr),
+        mXPCJSContext(nullptr),
         mJSContext(cx),
-        mCallerLanguage(callerLanguage),
         mWrapper(nullptr),
         mTearOff(nullptr),
         mName(cx)
 {
     MOZ_ASSERT(cx);
-    MOZ_ASSERT(cx == XPCJSRuntime::Get()->GetJSContextStack()->Peek());
+    MOZ_ASSERT(cx == nsContentUtils::GetCurrentJSContext());
 
     if (!mXPC)
         return;
 
-    mXPCContext = XPCContext::GetXPCContext(mJSContext);
-    mPrevCallerLanguage = mXPCContext->SetCallingLangType(mCallerLanguage);
+    mXPCJSContext = XPCJSContext::Get();
 
     // hook into call context chain.
-    mPrevCallContext = XPCJSRuntime::Get()->SetCallContext(this);
+    mPrevCallContext = mXPCJSContext->SetCallContext(this);
 
     mState = HAVE_CONTEXT;
 
@@ -199,18 +197,18 @@ XPCCallContext::SystemIsBeingShutDown()
     // can be making this call on one thread for call contexts on another
     // thread.
     NS_WARNING("Shutting Down XPConnect even through there is a live XPCCallContext");
-    mXPCContext = nullptr;
+    mXPCJSContext = nullptr;
     mState = SYSTEM_SHUTDOWN;
+    mInterface = nullptr;
+
     if (mPrevCallContext)
         mPrevCallContext->SystemIsBeingShutDown();
 }
 
 XPCCallContext::~XPCCallContext()
 {
-    if (mXPCContext) {
-        mXPCContext->SetCallingLangType(mPrevCallerLanguage);
-
-        DebugOnly<XPCCallContext*> old = XPCJSRuntime::Get()->SetCallContext(mPrevCallContext);
+    if (mXPCJSContext) {
+        DebugOnly<XPCCallContext*> old = mXPCJSContext->SetCallContext(mPrevCallContext);
         MOZ_ASSERT(old == this, "bad pop from per thread data");
     }
 }
@@ -249,7 +247,7 @@ XPCCallContext::GetCalleeClassInfo(nsIClassInfo * *aCalleeClassInfo)
 NS_IMETHODIMP
 XPCCallContext::GetJSContext(JSContext * *aJSContext)
 {
-    JS_AbortIfWrongThread(JS_GetRuntime(mJSContext));
+    JS_AbortIfWrongThread(mJSContext);
     *aJSContext = mJSContext;
     return NS_OK;
 }
@@ -273,13 +271,5 @@ XPCCallContext::GetPreviousCallContext(nsAXPCNativeCallContext** aResult)
 {
   NS_ENSURE_ARG_POINTER(aResult);
   *aResult = GetPrevCallContext();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-XPCCallContext::GetLanguage(uint16_t* aResult)
-{
-  NS_ENSURE_ARG_POINTER(aResult);
-  *aResult = GetCallerLanguage();
   return NS_OK;
 }

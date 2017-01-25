@@ -35,6 +35,10 @@ public:
   SourceBuffer* IndexedGetter(uint32_t aIndex, bool& aFound);
 
   uint32_t Length();
+
+  IMPL_EVENT_HANDLER(addsourcebuffer);
+  IMPL_EVENT_HANDLER(removesourcebuffer);
+
   /** End WebIDL methods. */
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -80,6 +84,9 @@ public:
   // Remove all SourceBuffers from mSourceBuffers.
   //  No event is fired and no action is performed on the sourcebuffers.
   void ClearSimple();
+
+  double HighestStartTime();
+  double HighestEndTime();
 
 private:
   ~SourceBufferList();

@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,7 +7,6 @@
 TEST_HARNESS_FILES.testing.mochitest.tests.SimpleTest += [
     '/docshell/test/chrome/docshell_helpers.js',
     '/testing/specialpowers/content/MozillaLogger.js',
-    'ChromeUtils.js',
     'EventUtils.js',
     'ExtensionTestUtils.js',
     'iframe-between-tests.html',

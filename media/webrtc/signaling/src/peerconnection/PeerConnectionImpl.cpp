@@ -46,6 +46,9 @@
 #include "signaling/src/jsep/JsepSession.h"
 #include "signaling/src/jsep/JsepSessionImpl.h"
 
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Sprintf.h"
+
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
 #ifdef XP_WIN
 // We need to undef the MS macro for nsIDocument::CreateEvent
@@ -55,9 +58,9 @@
 #endif // XP_WIN
 
 #include "nsIDocument.h"
-#include "nsPerformance.h"
 #include "nsGlobalWindow.h"
 #include "nsDOMDataChannel.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Preferences.h"
@@ -81,6 +84,7 @@
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/PeerConnectionImplBinding.h"
 #include "mozilla/dom/DataChannelBinding.h"
+#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/PluginCrashedEvent.h"
 #include "MediaStreamList.h"
 #include "MediaStreamTrack.h"
@@ -137,7 +141,15 @@ static const char* logTag = "PeerConnectionImpl";
 
 // Getting exceptions back down from PCObserver is generally not harmful.
 namespace {
-class JSErrorResult : public ErrorResult
+// This is a terrible hack.  The problem is that SuppressException is not
+// inline, and we link this file without libxul in some cases (e.g. for our test
+// setup).  So we can't use ErrorResult or IgnoredErrorResult because those call
+// SuppressException...  And we can't use FastErrorResult because we can't
+// include BindingUtils.h, because our linking is completely fucked up.  Use
+// BaseErrorResult directly.  Please do not let me see _anyone_ doing this
+// without really careful review from someone who knows what they are doing.
+class JSErrorResult :
+    public binding_danger::TErrorResult<binding_danger::JustAssertCleanupPolicy>
 {
 public:
   ~JSErrorResult()
@@ -168,6 +180,7 @@ public:
     }
   }
   operator JSErrorResult &() { return mRv; }
+  operator ErrorResult &() { return mRv; }
 private:
   JSErrorResult mRv;
   bool isCopy;
@@ -462,14 +475,15 @@ PeerConnectionConfiguration::Init(const RTCConfiguration& aSrc)
   }
 
   switch (aSrc.mIceTransportPolicy) {
-    case dom::RTCIceTransportPolicy::None:
-      setIceTransportPolicy(NrIceCtx::ICE_POLICY_NONE);
-      break;
     case dom::RTCIceTransportPolicy::Relay:
       setIceTransportPolicy(NrIceCtx::ICE_POLICY_RELAY);
       break;
     case dom::RTCIceTransportPolicy::All:
-      setIceTransportPolicy(NrIceCtx::ICE_POLICY_ALL);
+      if (Preferences::GetBool("media.peerconnection.ice.no_host", false)) {
+        setIceTransportPolicy(NrIceCtx::ICE_POLICY_NO_HOST);
+      } else {
+        setIceTransportPolicy(NrIceCtx::ICE_POLICY_ALL);
+      }
       break;
     default:
       MOZ_CRASH();
@@ -633,16 +647,14 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
                        strlen(HELLO_INITIATOR_URL_START)) == 0);
   }
 
-  PR_snprintf(
-      temp,
-      sizeof(temp),
-      "%llu (id=%llu url=%s)",
-      static_cast<unsigned long long>(timestamp),
-      static_cast<unsigned long long>(mWindow ? mWindow->WindowID() : 0),
-      locationCStr.get() ? locationCStr.get() : "NULL");
+  SprintfLiteral(temp,
+                 "%" PRIu64 " (id=%" PRIu64 " url=%s)",
+                 static_cast<uint64_t>(timestamp),
+                 static_cast<uint64_t>(mWindow ? mWindow->WindowID() : 0),
+                 locationCStr.get() ? locationCStr.get() : "NULL");
 
 #else
-  PR_snprintf(temp, sizeof(temp), "%llu", (unsigned long long)timestamp);
+  SprintfLiteral(temp, "%" PRIu64, static_cast<uint64_t>(timestamp));
 #endif // MOZILLA_INTERNAL_API
 
   mName = temp;
@@ -657,15 +669,15 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   }
 
   char hex[17];
-  PR_snprintf(hex,sizeof(hex),"%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x",
-    handle_bin[0],
-    handle_bin[1],
-    handle_bin[2],
-    handle_bin[3],
-    handle_bin[4],
-    handle_bin[5],
-    handle_bin[6],
-    handle_bin[7]);
+  SprintfLiteral(hex, "%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x",
+                 handle_bin[0],
+                 handle_bin[1],
+                 handle_bin[2],
+                 handle_bin[3],
+                 handle_bin[4],
+                 handle_bin[5],
+                 handle_bin[6],
+                 handle_bin[7]);
 
   mHandle = hex;
 
@@ -875,7 +887,9 @@ class ConfigureCodec {
       mVP8MaxFs(0),
       mVP8MaxFr(0),
       mUseTmmbr(false),
-      mUseRemb(false)
+      mUseRemb(false),
+      mUseAudioFec(false),
+      mRedUlpfecEnabled(false)
     {
 #ifdef MOZ_WEBRTC_OMX
       // Check to see if what HW codecs are available (not in use) at this moment.
@@ -944,13 +958,24 @@ class ConfigureCodec {
 
       // REMB is enabled by default, but can be disabled from about:config
       branch->GetBoolPref("media.navigator.video.use_remb", &mUseRemb);
+
+      branch->GetBoolPref("media.navigator.audio.use_fec", &mUseAudioFec);
+
+      branch->GetBoolPref("media.navigator.video.red_ulpfec_enabled",
+                          &mRedUlpfecEnabled);
     }
 
     void operator()(JsepCodecDescription* codec) const
     {
       switch (codec->mType) {
         case SdpMediaSection::kAudio:
-          // Nothing to configure here, for now.
+          {
+            JsepAudioCodecDescription& audioCodec =
+              static_cast<JsepAudioCodecDescription&>(*codec);
+            if (audioCodec.mName == "opus") {
+              audioCodec.mFECEnabled = mUseAudioFec;
+            }
+          }
           break;
         case SdpMediaSection::kVideo:
           {
@@ -978,6 +1003,10 @@ class ConfigureCodec {
               if (mHardwareH264Supported) {
                 videoCodec.mStronglyPreferred = true;
               }
+            } else if (videoCodec.mName == "red") {
+              videoCodec.mEnabled = mRedUlpfecEnabled;
+            } else if (videoCodec.mName == "ulpfec") {
+              videoCodec.mEnabled = mRedUlpfecEnabled;
             } else if (videoCodec.mName == "VP8" || videoCodec.mName == "VP9") {
               if (videoCodec.mName == "VP9" && !mVP9Enabled) {
                 videoCodec.mEnabled = false;
@@ -1015,6 +1044,42 @@ class ConfigureCodec {
     int32_t mVP8MaxFr;
     bool mUseTmmbr;
     bool mUseRemb;
+    bool mUseAudioFec;
+    bool mRedUlpfecEnabled;
+};
+
+class ConfigureRedCodec {
+  public:
+    explicit ConfigureRedCodec(nsCOMPtr<nsIPrefBranch>& branch,
+                               std::vector<uint8_t>* redundantEncodings) :
+      mRedundantEncodings(redundantEncodings)
+    {
+      // if we wanted to override or modify which encodings are considered
+      // for redundant encodings, we'd probably want to handle it here by
+      // checking prefs modifying the operator() code below
+    }
+
+    void operator()(JsepCodecDescription* codec) const
+    {
+      if (codec->mType == SdpMediaSection::kVideo &&
+          codec->mEnabled == false) {
+        uint8_t pt = (uint8_t)strtoul(codec->mDefaultPt.c_str(), nullptr, 10);
+        // don't search for the codec payload type unless we have a valid
+        // conversion (non-zero)
+        if (pt != 0) {
+          std::vector<uint8_t>::iterator it =
+            std::find(mRedundantEncodings->begin(),
+                      mRedundantEncodings->end(),
+                      pt);
+          if (it != mRedundantEncodings->end()) {
+            mRedundantEncodings->erase(it);
+          }
+        }
+      }
+    }
+
+  private:
+    std::vector<uint8_t>* mRedundantEncodings;
 };
 
 nsresult
@@ -1038,6 +1103,23 @@ PeerConnectionImpl::ConfigureJsepSessionCodecs() {
 
   ConfigureCodec configurer(branch);
   mJsepSession->ForEachCodec(configurer);
+
+  // first find the red codec description
+  std::vector<JsepCodecDescription*>& codecs = mJsepSession->Codecs();
+  JsepVideoCodecDescription* redCodec = nullptr;
+  for (auto codec : codecs) {
+    // we only really care about finding the RED codec if it is
+    // enabled
+    if (codec->mName == "red" && codec->mEnabled) {
+      redCodec = static_cast<JsepVideoCodecDescription*>(codec);
+      break;
+    }
+  }
+  // if red codec was found, configure it for the other enabled codecs
+  if (redCodec) {
+    ConfigureRedCodec configureRed(branch, &(redCodec->mRedundantEncodings));
+    mJsepSession->ForEachCodec(configureRed);
+  }
 
   // We use this to sort the list of codecs once everything is configured
   CompareCodecPriority comparator;
@@ -1912,12 +1994,14 @@ PeerConnectionImpl::CreateNewRemoteTracks(RefPtr<PeerConnectionObserver>& aPco)
             info->GetMediaStream()->CreateDOMTrack(trackID,
                                                    MediaSegment::AUDIO,
                                                    source);
+          info->GetMediaStream()->AddTrackInternal(domTrack);
           segment = new AudioSegment;
         } else {
           domTrack =
             info->GetMediaStream()->CreateDOMTrack(trackID,
                                                    MediaSegment::VIDEO,
                                                    source);
+          info->GetMediaStream()->AddTrackInternal(domTrack);
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
           segment = new VideoSegment;
 #endif
@@ -2092,7 +2176,7 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP)
 nsresult
 PeerConnectionImpl::GetTimeSinceEpoch(DOMHighResTimeStamp *result) {
   MOZ_ASSERT(NS_IsMainThread());
-  nsPerformance *perf = mWindow->GetPerformance();
+  Performance *perf = mWindow->GetPerformance();
   NS_ENSURE_TRUE(perf && perf->Timing(), NS_ERROR_UNEXPECTED);
   *result = perf->Now() + perf->Timing()->NavigationStart();
   return NS_OK;
@@ -3195,6 +3279,11 @@ void PeerConnectionImpl::IceConnectionStateChange(
   CSFLogDebug(logTag, "%s", __FUNCTION__);
 
   auto domState = toDomIceConnectionState(state);
+  if (domState == mIceConnectionState) {
+    // no work to be done since the states are the same.
+    // this can happen during ICE rollback situations.
+    return;
+  }
 
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   if (!isDone(mIceConnectionState) && isDone(domState)) {

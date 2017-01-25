@@ -21,7 +21,7 @@
 #include "nsReadLine.h"
 #include "nsIClassInfoImpl.h"
 #include "mozilla/ipc/InputStreamUtils.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/FileUtils.h"
 #include "nsNetCID.h"
 #include "nsXULAppAPI.h"
@@ -32,6 +32,9 @@ typedef mozilla::ipc::FileDescriptor::PlatformHandleType FileHandleType;
 
 using namespace mozilla::ipc;
 using mozilla::DebugOnly;
+using mozilla::Maybe;
+using mozilla::Nothing;
+using mozilla::Some;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsFileStreamBase
@@ -579,7 +582,7 @@ nsFileInputStream::Serialize(InputStreamParams& aParams,
 {
     FileInputStreamParams params;
 
-    if (mFD) {
+    if (NS_SUCCEEDED(DoPendingOpen()) && mFD) {
         FileHandleType fd = FileHandleType(PR_FileDesc2NativeHandle(mFD));
         NS_ASSERTION(fd, "This should never be null!");
 
@@ -629,13 +632,15 @@ nsFileInputStream::Deserialize(const InputStreamParams& aParams,
     FileDescriptor fd;
     if (fileDescriptorIndex < aFileDescriptors.Length()) {
         fd = aFileDescriptors[fileDescriptorIndex];
-        NS_WARN_IF_FALSE(fd.IsValid(), "Received an invalid file descriptor!");
+        NS_WARNING_ASSERTION(fd.IsValid(),
+                             "Received an invalid file descriptor!");
     } else {
         NS_WARNING("Received a bad file descriptor index!");
     }
 
     if (fd.IsValid()) {
-        PRFileDesc* fileDesc = PR_ImportFile(PROsfd(fd.PlatformHandle()));
+        auto rawFD = fd.ClonePlatformHandle();
+        PRFileDesc* fileDesc = PR_ImportFile(PROsfd(rawFD.release()));
         if (!fileDesc) {
             NS_WARNING("Failed to import file handle!");
             return false;
@@ -658,6 +663,12 @@ nsFileInputStream::Deserialize(const InputStreamParams& aParams,
     mIOFlags = params.ioFlags();
 
     return true;
+}
+
+Maybe<uint64_t>
+nsFileInputStream::ExpectedSerializedLength()
+{
+    return Nothing();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -857,6 +868,13 @@ nsPartialFileInputStream::Deserialize(
     // XXX This is so broken. Main thread IO alert.
     return NS_SUCCEEDED(nsFileInputStream::Seek(NS_SEEK_SET, mStart));
 }
+
+Maybe<uint64_t>
+nsPartialFileInputStream::ExpectedSerializedLength()
+{
+    return Some(mLength);
+}
+
 
 nsresult
 nsPartialFileInputStream::DoPendingSeek()

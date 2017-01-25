@@ -15,7 +15,6 @@
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/URL.h"
-#include "mozilla/dom/workers/bindings/URL.h"
 
 #include "nsDOMString.h"
 
@@ -88,8 +87,7 @@ Response::Redirect(const GlobalObject& aGlobal, const nsAString& aUrl,
     worker->AssertIsOnWorkerThread();
 
     NS_ConvertUTF8toUTF16 baseURL(worker->GetLocationInfo().mHref);
-    RefPtr<workers::URL> url =
-      workers::URL::Constructor(aGlobal, aUrl, baseURL, aRv);
+    RefPtr<URL> url = URL::WorkerConstructor(aGlobal, aUrl, baseURL, aRv);
     if (aRv.Failed()) {
       return nullptr;
     }
@@ -137,29 +135,23 @@ Response::Constructor(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  nsCString statusText;
-  if (aInit.mStatusText.WasPassed()) {
-    statusText = aInit.mStatusText.Value();
-    nsACString::const_iterator start, end;
-    statusText.BeginReading(start);
-    statusText.EndReading(end);
-    if (FindCharInReadable('\r', start, end)) {
-      aRv.ThrowTypeError<MSG_RESPONSE_INVALID_STATUSTEXT_ERROR>();
-      return nullptr;
-    }
-    // Reset iterator since FindCharInReadable advances it.
-    statusText.BeginReading(start);
-    if (FindCharInReadable('\n', start, end)) {
-      aRv.ThrowTypeError<MSG_RESPONSE_INVALID_STATUSTEXT_ERROR>();
-      return nullptr;
-    }
-  } else {
-    // Since we don't support default values for ByteString.
-    statusText = NS_LITERAL_CSTRING("OK");
+  // Check if the status text contains illegal characters
+  nsACString::const_iterator start, end;
+  aInit.mStatusText.BeginReading(start);
+  aInit.mStatusText.EndReading(end);
+  if (FindCharInReadable('\r', start, end)) {
+    aRv.ThrowTypeError<MSG_RESPONSE_INVALID_STATUSTEXT_ERROR>();
+    return nullptr;
+  }
+  // Reset iterator since FindCharInReadable advances it.
+  aInit.mStatusText.BeginReading(start);
+  if (FindCharInReadable('\n', start, end)) {
+    aRv.ThrowTypeError<MSG_RESPONSE_INVALID_STATUSTEXT_ERROR>();
+    return nullptr;
   }
 
   RefPtr<InternalResponse> internalResponse =
-    new InternalResponse(aInit.mStatus, statusText);
+    new InternalResponse(aInit.mStatus, aInit.mStatusText);
 
   // Grab a valid channel info from the global so this response is 'valid' for
   // interception.

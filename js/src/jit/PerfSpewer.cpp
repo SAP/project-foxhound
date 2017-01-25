@@ -20,8 +20,6 @@
 # include "jit/MIRGraph.h"
 #endif
 
-#include "jslock.h"
-
 // perf expects its data to be in a file /tmp/perf-PID.map, but for Android
 // and B2G the map files are written to /data/local/tmp/perf-PID.map
 //
@@ -52,7 +50,7 @@ static bool PerfChecked = false;
 
 static FILE* PerfFilePtr = nullptr;
 
-static PRLock* PerfMutex;
+static js::Mutex* PerfMutex;
 
 static bool
 openPerfMap(const char* dir)
@@ -96,9 +94,9 @@ js::jit::CheckPerf() {
         }
 
         if (PerfMode != PERF_MODE_NONE) {
-            PerfMutex = PR_NewLock();
+            PerfMutex = js_new<js::Mutex>();
             if (!PerfMutex)
-                MOZ_CRASH();
+                MOZ_CRASH("failed to allocate PerfMutex");
 
             if (openPerfMap(PERF_SPEW_DIR)) {
                 PerfChecked = true;
@@ -136,7 +134,7 @@ lockPerfMap(void)
     if (!PerfEnabled())
         return false;
 
-    PR_Lock(PerfMutex);
+    PerfMutex->lock();
 
     MOZ_ASSERT(PerfFilePtr);
     return true;
@@ -147,7 +145,7 @@ unlockPerfMap()
 {
     MOZ_ASSERT(PerfFilePtr);
     fflush(PerfFilePtr);
-    PR_Unlock(PerfMutex);
+    PerfMutex->unlock();
 }
 
 uint32_t PerfSpewer::nextFunctionIndex = 0;

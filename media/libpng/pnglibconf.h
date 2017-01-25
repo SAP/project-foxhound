@@ -5,9 +5,14 @@
 #ifndef PNGLCONF_H
 #define PNGLCONF_H
 
-/* limit image dimensions (bug #251381, #591822, and #967656) */
-#ifndef MOZ_PNG_MAX_DIMENSION
-# define MOZ_PNG_MAX_DIMENSION 32767
+#define MOZ_EMBEDDED_LIBPNG
+
+/* Limit image dimensions (bug #251381, #591822, #967656, and #1283961) */
+#ifndef MOZ_PNG_MAX_WIDTH
+#  define MOZ_PNG_MAX_WIDTH 0x7fffffffL /* Unlimited */
+#endif
+#ifndef MOZ_PNG_MAX_HEIGHT
+#  define MOZ_PNG_MAX_HEIGHT 0x7fffffffL /* Unlimited */
 #endif
 
 #define PNG_API_RULE 0
@@ -23,8 +28,8 @@
 #define PNG_sRGB_PROFILE_CHECKS -1
 #define PNG_USER_CHUNK_CACHE_MAX 128
 #define PNG_USER_CHUNK_MALLOC_MAX 4000000L
-#define PNG_USER_HEIGHT_MAX MOZ_PNG_MAX_DIMENSION
-#define PNG_USER_WIDTH_MAX MOZ_PNG_MAX_DIMENSION
+#define PNG_USER_HEIGHT_MAX MOZ_PNG_MAX_WIDTH
+#define PNG_USER_WIDTH_MAX MOZ_PNG_MAX_HEIGHT
 #define PNG_WEIGHT_SHIFT 8
 #define PNG_ZBUF_SIZE 8192
 #define PNG_Z_DEFAULT_COMPRESSION (-1)
@@ -38,22 +43,26 @@
 #define PNG_NO_PEDANTIC_WARNINGS
 #endif
 
-#undef PNG_ARM_NEON_OPT /* This may have been defined in pngpriv.h */
-#ifdef __ARM_NEON__
-#  ifdef MOZ_PNG_HAVE_ARM_NEON
-#    ifdef MOZ_PNG_HAVE_ARM_NEON_CHECK
-#      define PNG_ARM_NEON_CHECK_SUPPORTED
-#      define PNG_ARM_NEON_OPT 1
-#    else
-#      define PNG_ARM_NEON_OPT 2
-#    endif
-#    define PNG_ALIGNED_MEMORY_SUPPORTED
-     /* Accept the PNG_ARM_NEON_IMPLEMENTATION setting from pngpriv.h. */
-#  else
-#    define PNG_ARM_NEON_OPT 0
-#  endif
+#ifdef MOZ_PNG_USE_ARM_NEON
+#  undef PNG_ARM_NEON_OPT /* Let libpng decide */
+#  define PNG_ALIGNED_MEMORY_SUPPORTED
 #else
 #  define PNG_ARM_NEON_OPT 0
+#endif
+
+#ifdef MOZ_PNG_USE_MIPS_MSA
+#  undef PNG_MIPS_MSA_OPT
+#  define PNG_ALIGNED_MEMORY_SUPPORTED
+#else
+#  define PNG_MIPS_MSA_OPT 0
+#endif
+
+#ifdef MOZ_PNG_USE_INTEL_SSE
+#  undef PNG_INTEL_SSE_OPT
+#  define PNG_INTEL_SSE
+#  define PNG_ALIGNED_MEMORY_SUPPORTED
+#else
+#  define PNG_INTEL_SSE_OPT 0
 #endif
 
 #define PNG_READ_SUPPORTED

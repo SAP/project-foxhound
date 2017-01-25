@@ -28,10 +28,6 @@ user_pref("extensions.blocklist.enabled", false);
 user_pref("urlclassifier.updateinterval", 172800);
 // Disable downscale-during-decode, since it makes reftests more difficult.
 user_pref("image.downscale-during-decode.enabled", false);
-// Disable the single-color optimization, since it can cause intermittent
-// oranges and it causes many of our tests to test a different code path
-// than the one that normal images on the web use.
-user_pref("image.single-color-optimization.enabled", false);
 // Checking whether two files are the same is slow on Windows.
 // Setting this pref makes tests run much faster there.
 user_pref("security.fileuri.strict_origin_policy", false);
@@ -79,7 +75,7 @@ user_pref("security.view-source.reachable-from-inner-protocol", true);
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("toolkit.telemetry.unified", false);
 // Likewise for safebrowsing.
-user_pref("browser.safebrowsing.enabled", false);
+user_pref("browser.safebrowsing.phishing.enabled", false);
 user_pref("browser.safebrowsing.malware.enabled", false);
 user_pref("browser.safebrowsing.forbiddenURIs.enabled", false);
 user_pref("browser.safebrowsing.blockedURIs.enabled", false);
@@ -111,7 +107,6 @@ user_pref("browser.tabs.remote.autostart.2", false);
 user_pref("startup.homepage_welcome_url", "");
 user_pref("startup.homepage_welcome_url.additional", "");
 user_pref("startup.homepage_override_url", "");
-user_pref("browser.usedOnWindows10.introURL", "");
 
 user_pref("media.gmp-manager.url.override", "http://localhost/dummy-gmp-manager.xml");
 

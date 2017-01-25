@@ -3,18 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Ci, Cc } = require("chrome");
 const { defer, all } = require("promise");
-const { LocalizationHelper } = require("devtools/client/shared/l10n");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const Services = require("Services");
+const appInfo = Services.appinfo;
+const { CurlUtils } = require("devtools/client/shared/curl");
 
 loader.lazyRequireGetter(this, "NetworkHelper", "devtools/shared/webconsole/network-helper");
 
-loader.lazyGetter(this, "appInfo", () => {
-  return Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULAppInfo);
-});
-
 loader.lazyGetter(this, "L10N", () => {
-  return new LocalizationHelper("chrome://devtools/locale/har.properties");
+  return new LocalizationHelper("devtools/locale/har.properties");
 });
 
 const HAR_VERSION = "1.1";
@@ -168,6 +166,7 @@ HarBuilder.prototype = {
     request.httpVersion = file.httpVersion || "";
 
     request.headers = this.buildHeaders(file.requestHeaders);
+    request.headers = this.appendHeadersPostData(request.headers, file);
     request.cookies = this.buildCookies(file.requestCookies);
 
     request.queryString = NetworkHelper.parseQueryString(
@@ -200,6 +199,21 @@ HarBuilder.prototype = {
     }
 
     return this.buildNameValuePairs(input.headers);
+  },
+
+  appendHeadersPostData: function (input = [], file) {
+    if (!file.requestPostData) {
+      return input;
+    }
+
+    this.fetchData(file.requestPostData.postData.text).then(value => {
+      let multipartHeaders = CurlUtils.getHeadersFromMultipartText(value);
+      for (let header of multipartHeaders) {
+        input.push(header);
+      }
+    });
+
+    return input;
   },
 
   buildCookies: function (input) {
@@ -249,11 +263,12 @@ HarBuilder.prototype = {
     }
 
     // Load request body from the backend.
-    this.fetchData(file.requestPostData.postData.text).then(value => {
-      postData.text = value;
+    this.fetchData(file.requestPostData.postData.text).then(postDataText => {
+      postData.text = postDataText;
 
       // If we are dealing with URL encoded body, parse parameters.
-      if (isURLEncodedFile(file, value)) {
+      let { headers } = file.requestHeaders;
+      if (CurlUtils.isUrlEncodedRequest({ headers, postDataText })) {
         postData.mimeType = "application/x-www-form-urlencoded";
 
         // Extract form parameters and produce nice HAR array.
@@ -406,27 +421,6 @@ HarBuilder.prototype = {
 };
 
 // Helpers
-
-/**
- * Returns true if specified request body is URL encoded.
- */
-function isURLEncodedFile(file, text) {
-  let contentType = "content-type: application/x-www-form-urlencoded";
-  if (text && text.toLowerCase().indexOf(contentType) != -1) {
-    return true;
-  }
-
-  // The header value doesn't have to be always exactly
-  // "application/x-www-form-urlencoded",
-  // there can be even charset specified. So, use indexOf rather than just
-  // "==".
-  let value = findValue(file.requestHeaders.headers, "content-type");
-  if (value && value.indexOf("application/x-www-form-urlencoded") == 0) {
-    return true;
-  }
-
-  return false;
-}
 
 /**
  * Find specified value within an array of name-value pairs

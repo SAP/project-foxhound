@@ -272,7 +272,7 @@ public:
    
     // Calculates user's disk space available on a background thread and
     // dispatches this value back to the main thread.
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         uint32_t size;
         size = nsCacheProfilePrefObserver::GetSmartCacheSize(mCachePath,
@@ -293,7 +293,7 @@ public:
     nsBlockOnCacheThreadEvent()
     {
     }
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         nsCacheServiceAutoLock autoLock(LOCK_TELEM(NSBLOCKONCACHETHREADEVENT_RUN));
         CACHE_LOG_DEBUG(("nsBlockOnCacheThreadEvent [%p]\n", this));
@@ -412,9 +412,12 @@ nsCacheProfilePrefObserver::Observe(nsISupports *     subject,
         // profile after change
         mHaveProfile = true;
         nsCOMPtr<nsIPrefBranch> branch = do_GetService(NS_PREFSERVICE_CONTRACTID);
-        ReadPrefs(branch);
+        if (!branch) {
+            return NS_ERROR_FAILURE;
+        }
+        (void)ReadPrefs(branch);
         nsCacheService::OnProfileChanged();
-    
+
     } else if (!strcmp(NS_PREFBRANCH_PREFCHANGE_TOPIC_ID, topic)) {
 
         // ignore pref changes until we're done switch profiles
@@ -978,7 +981,7 @@ public:
         mRequest = aRequest;
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         nsresult rv;
 
@@ -1028,9 +1031,9 @@ public:
         NS_IF_ADDREF(mListener);
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
-        nsCacheServiceAutoLock lock(LOCK_TELEM(NSDOOMEVENT_RUN));
+        nsCacheServiceAutoLock lock;
 
         bool foundActive = true;
         nsresult status = NS_ERROR_NOT_AVAILABLE;
@@ -1617,9 +1620,6 @@ nsCacheService::CreateDiskDevice()
         return rv;
     }
 
-    Telemetry::Accumulate(Telemetry::DISK_CACHE_SMART_SIZE_USING_OLD_MAX,
-                          mObserver->ShouldUseOldMaxSmartSize());
-
     NS_ASSERTION(!mSmartSizeTimer, "Smartsize timer was already fired!");
 
     // Disk device is usually created during the startup. Delay smart size
@@ -1649,7 +1649,7 @@ class nsDisableOldMaxSmartSizePrefEvent: public Runnable
 public:
     nsDisableOldMaxSmartSizePrefEvent() {}
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         // Main thread may have already called nsCacheService::Shutdown
         if (!nsCacheService::IsInitialized())
@@ -1867,7 +1867,7 @@ public:
         , mStatus(status)
     {}
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         mListener->OnCacheEntryAvailable(mDescriptor, mAccessGranted, mStatus);
 
@@ -3200,21 +3200,13 @@ nsCacheService::CollectReports(nsIHandleReportCallback* aHandleReport,
 
     size_t memory = mMemoryDevice ? mMemoryDevice->TotalSize() : 0;
 
-#define REPORT(_path, _amount, _desc)                                         \
-    do {                                                                      \
-        nsresult rv;                                                          \
-        rv = aHandleReport->Callback(EmptyCString(),                          \
-                                     NS_LITERAL_CSTRING(_path),               \
-                                     KIND_HEAP, UNITS_BYTES, _amount,         \
-                                     NS_LITERAL_CSTRING(_desc), aData);       \
-        NS_ENSURE_SUCCESS(rv, rv);                                            \
-    } while (0)
+    MOZ_COLLECT_REPORT(
+        "explicit/network/disk-cache", KIND_HEAP, UNITS_BYTES, disk,
+        "Memory used by the network disk cache.");
 
-    REPORT("explicit/network/disk-cache", disk,
-           "Memory used by the network disk cache.");
-
-    REPORT("explicit/network/memory-cache", memory,
-           "Memory used by the network memory cache.");
+    MOZ_COLLECT_REPORT(
+        "explicit/network/memory-cache", KIND_HEAP, UNITS_BYTES, memory,
+        "Memory used by the network memory cache.");
 
     return NS_OK;
 }

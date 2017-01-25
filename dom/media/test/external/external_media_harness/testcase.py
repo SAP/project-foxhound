@@ -6,15 +6,19 @@ import re
 import os
 import time
 
-from marionette import BrowserMobProxyTestCaseMixin, MarionetteTestCase
+from marionette import BrowserMobProxyTestCaseMixin, MarionetteTestCase, Marionette
 from marionette_driver import Wait
 from marionette_driver.errors import TimeoutException
 from marionette.marionette_test import SkipTest
 
 from firefox_puppeteer.testcases import BaseFirefoxTestCase
 from external_media_tests.utils import (timestamp_now, verbose_until)
-from external_media_tests.media_utils.video_puppeteer import (playback_done, playback_started,
-                                         VideoException, VideoPuppeteer as VP)
+from external_media_tests.media_utils.video_puppeteer import (
+    playback_done,
+    playback_started,
+    VideoException,
+    VideoPuppeteer as VP
+)
 
 
 class MediaTestCase(BaseFirefoxTestCase, MarionetteTestCase):
@@ -43,17 +47,18 @@ class MediaTestCase(BaseFirefoxTestCase, MarionetteTestCase):
         path = os.path.join(screenshot_dir, filename)
         if not os.path.exists(screenshot_dir):
             os.makedirs(screenshot_dir)
-        with self.marionette.using_context('content'):
+        with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
             img_data = self.marionette.screenshot()
         with open(path, 'wb') as f:
             f.write(img_data.decode('base64'))
-        self.marionette.log('Screenshot saved in %s' % os.path.abspath(path))
+        self.marionette.log('Screenshot saved in {}'
+                            .format(os.path.abspath(path)))
 
     def log_video_debug_lines(self):
         """
         Log the debugging information that Firefox provides for video elements.
         """
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context(Marionette.CONTEXT_CHROME):
             debug_lines = self.marionette.execute_script(VP._debug_script)
             if debug_lines:
                 self.marionette.log('\n'.join(debug_lines))
@@ -65,7 +70,7 @@ class MediaTestCase(BaseFirefoxTestCase, MarionetteTestCase):
 
         :param video: VideoPuppeteer instance to play.
         """
-        with self.marionette.using_context('content'):
+        with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
             self.logger.info(video.test_url)
             try:
                 verbose_until(Wait(video, interval=video.interval,
@@ -82,7 +87,7 @@ class MediaTestCase(BaseFirefoxTestCase, MarionetteTestCase):
 
         :param video: VideoPuppeteer instance to play.
         """
-        with self.marionette.using_context('content'):
+        with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
             self.logger.info(video.test_url)
             try:
                 verbose_until(Wait(video, timeout=video.timeout),
@@ -128,7 +133,7 @@ class NetworkBandwidthTestCase(MediaTestCase):
         Run each of the videos in the video list. Raises if something goes
         wrong in playback.
         """
-        with self.marionette.using_context('content'):
+        with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
             for url in self.video_urls:
                 video = VP(self.marionette, url, stall_wait_time=60,
                            set_duration=60, timeout=timeout)
@@ -152,7 +157,7 @@ class VideoPlaybackTestsMixin(object):
         Test to make sure that playback of the video element starts for each
         video.
         """
-        with self.marionette.using_context('content'):
+        with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
             for url in self.video_urls:
                 try:
                     video = VP(self.marionette, url, timeout=60)
@@ -160,11 +165,6 @@ class VideoPlaybackTestsMixin(object):
                     # is not 0
                     self.check_playback_starts(video)
                     video.pause()
-                    src = video.video_src
-                    if not src.startswith('mediasource'):
-                        self.marionette.log('video is not '
-                                            'mediasource: %s' % src,
-                                            level='WARNING')
                 except TimeoutException as e:
                     raise self.failureException(e)
 
@@ -172,7 +172,7 @@ class VideoPlaybackTestsMixin(object):
         """
         Test to make sure that playback of 60 seconds works for each video.
         """
-        with self.marionette.using_context('content'):
+        with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
             for url in self.video_urls:
                 video = VP(self.marionette, url,
                            stall_wait_time=10,
@@ -246,7 +246,7 @@ class EMESetupMixin(object):
         assert(self.check_eme_prefs())
 
     def set_eme_prefs(self):
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context(Marionette.CONTEXT_CHROME):
             # https://bugzilla.mozilla.org/show_bug.cgi?id=1187471#c28
             # 2015-09-28 cpearce says this is no longer necessary, but in case
             # we are working with older firefoxes...
@@ -254,12 +254,12 @@ class EMESetupMixin(object):
 
     def reset_GMP_version(self):
         if EMESetupMixin.version_needs_reset:
-            with self.marionette.using_context('chrome'):
+            with self.marionette.using_context(Marionette.CONTEXT_CHROME):
                 if self.prefs.get_pref('media.gmp-eme-adobe.version'):
                     self.prefs.reset_pref('media.gmp-eme-adobe.version')
                 if self.prefs.get_pref('media.gmp-widevinecdm.version'):
                     self.prefs.reset_pref('media.gmp-widevinecdm.version')
-            with self.marionette.using_context('content'):
+            with self.marionette.using_context(Marionette.CONTEXT_CONTENT):
                 adobe_result = self.marionette.execute_async_script(
                     reset_adobe_gmp_script,
                     script_timeout=60000)
@@ -268,42 +268,45 @@ class EMESetupMixin(object):
                     script_timeout=60000)
                 if not adobe_result == 'success':
                     raise VideoException(
-                        'ERROR: Resetting Adobe GMP failed % s' % result)
+                        'ERROR: Resetting Adobe GMP failed {}'
+                        .format(adobe_result))
                 if not widevine_result == 'success':
                     raise VideoException(
-                        'ERROR: Resetting Widevine GMP failed % s' % result)
+                        'ERROR: Resetting Widevine GMP failed {}'
+                        .format(widevine_result))
 
             EMESetupMixin.version_needs_reset = False
 
     def check_and_log_boolean_pref(self, pref_name, expected_value):
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context(Marionette.CONTEXT_CHROME):
             pref_value = self.prefs.get_pref(pref_name)
 
             if pref_value is None:
-                self.logger.info('Pref %s has no value.' % pref_name)
+                self.logger.info('Pref {} has no value.'.format(pref_name))
                 return False
             else:
-                self.logger.info('Pref %s = %s' % (pref_name, pref_value))
+                self.logger.info('Pref {} = {}'.format(pref_name, pref_value))
                 if pref_value != expected_value:
-                    self.logger.info('Pref %s has unexpected value.'
-                                     % pref_name)
+                    self.logger.info('Pref {} has unexpected value.'
+                                     .format(pref_name))
                     return False
 
         return True
 
     def check_and_log_integer_pref(self, pref_name, minimum_value=0):
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context(Marionette.CONTEXT_CHROME):
             pref_value = self.prefs.get_pref(pref_name)
 
             if pref_value is None:
-                self.logger.info('Pref %s has no value.' % pref_name)
+                self.logger.info('Pref {} has no value.'.format(pref_name))
                 return False
             else:
-                self.logger.info('Pref %s = %s' % (pref_name, pref_value))
+                self.logger.info('Pref {} = {}'.format(pref_name, pref_value))
 
                 match = re.search('^\d+$', pref_value)
                 if not match:
-                    self.logger.info('Pref %s is not an integer' % pref_name)
+                    self.logger.info('Pref {} is not an integer'
+                                     .format(pref_name))
                     return False
 
             return pref_value >= minimum_value
@@ -311,24 +314,26 @@ class EMESetupMixin(object):
     def chceck_and_log_version_string_pref(self, pref_name, minimum_value='0'):
         """
         Compare a pref made up of integers separated by stops .s, with a
-        version string of the same format. The number of integers in each string
-        does not need to match. The comparison is done by converting each to an
-        integer array and comparing those. Both version strings must be made
-        up of only integers, or this method will raise an unhandled exception
-        of type ValueError when the conversion to int fails.
+        version string of the same format. The number of integers in each
+        string does not need to match. The comparison is done by converting
+        each to an integer array and comparing those. Both version strings
+        must be made up of only integers, or this method will raise an
+        unhandled exception of type ValueError when the conversion to int
+        fails.
         """
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context(Marionette.CONTEXT_CHROME):
             pref_value = self.prefs.get_pref(pref_name)
 
             if pref_value is None:
-                self.logger.info('Pref %s has no value.' % pref_name)
+                self.logger.info('Pref {} has no value.'.format(pref_name))
                 return False
             else:
-                self.logger.info('Pref %s = %s' % (pref_name, pref_value))
+                self.logger.info('Pref {} = {}'.format(pref_name, pref_value))
 
                 match = re.search('^\d(.\d+)*$', pref_value)
                 if not match:
-                    self.logger.info('Pref %s is not a version string' % pref_name)
+                    self.logger.info('Pref {} is not a version string'
+                                     .format(pref_name))
                     return False
 
             pref_ints = [int(n) for n in pref_value.split('.')]
@@ -336,9 +341,8 @@ class EMESetupMixin(object):
 
             return pref_ints >= minumum_ints
 
-
     def check_eme_prefs(self):
-        with self.marionette.using_context('chrome'):
+        with self.marionette.using_context(Marionette.CONTEXT_CHROME):
             return all([
                 self.check_and_log_boolean_pref(
                     'media.mediasource.enabled', True),

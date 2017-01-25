@@ -22,6 +22,8 @@ endif
 ifndef NSS_BUILD_UTIL_ONLY
 SOFTOKEN_SRCDIRS = \
  $(BLTEST_SRCDIR) \
+ $(ECPERF_SRCDIR) \
+ $(FREEBL_ECTEST_SRCDIR) \
  $(FIPSTEST_SRCDIR)  \
  $(LOWHASHTEST_SRCDIR)  \
  $(SHLIBSIGN_SRCDIR) \
@@ -42,7 +44,6 @@ NSS_SRCDIRS = \
  dbtest \
  derdump  \
  digest  \
- ecperf \
  httpserv  \
  listsuites \
  makepqg  \
@@ -55,10 +56,10 @@ NSS_SRCDIRS = \
  p7sign  \
  p7verify  \
  pk12util \
+ pk11ectest \
  pk11gcmtest \
  pk11mode \
  pk1sign  \
- pkix-errcodes \
  pp  \
  pwdecrypt \
  rsaperf \
@@ -76,6 +77,13 @@ NSS_SRCDIRS = \
  vfyserv \
  modutil \
  $(NULL)
+
+ifndef NSS_DISABLE_LIBPKIX
+NSS_SRCDIRS += \
+ pkix-errcodes \
+ $(NULL)
+endif
+
 endif
 endif
 

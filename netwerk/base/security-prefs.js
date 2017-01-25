@@ -7,6 +7,7 @@ pref("security.tls.version.max", 3);
 pref("security.tls.version.fallback-limit", 3);
 pref("security.tls.insecure_fallback_hosts", "");
 pref("security.tls.unrestricted_rc4_fallback", false);
+pref("security.tls.enable_0rtt_data", false);
 
 pref("security.ssl.treat_unsafe_negotiation_as_broken", false);
 pref("security.ssl.require_safe_negotiation",  false);
@@ -28,13 +29,9 @@ pref("security.ssl3.ecdhe_rsa_aes_256_sha", true);
 pref("security.ssl3.ecdhe_ecdsa_aes_256_sha", true);
 pref("security.ssl3.dhe_rsa_aes_128_sha", true);
 pref("security.ssl3.dhe_rsa_aes_256_sha", true);
-pref("security.ssl3.ecdhe_rsa_rc4_128_sha", true);
-pref("security.ssl3.ecdhe_ecdsa_rc4_128_sha", true);
 pref("security.ssl3.rsa_aes_128_sha", true);
 pref("security.ssl3.rsa_aes_256_sha", true);
 pref("security.ssl3.rsa_des_ede3_sha", true);
-pref("security.ssl3.rsa_rc4_128_sha", true);
-pref("security.ssl3.rsa_rc4_128_md5", true);
 
 pref("security.content.signature.root_hash",
      "97:E8:BA:9C:F1:2F:B3:DE:53:CC:42:A4:E6:57:7E:D6:4D:F4:93:C2:47:B4:14:FE:A0:36:81:8D:38:23:56:0E");
@@ -44,6 +41,13 @@ pref("security.remember_cert_checkbox_default_setting", true);
 pref("security.ask_for_password",        0);
 pref("security.password_lifetime",       30);
 
+// The supported values of this pref are:
+// 0: disable detecting Family Safety mode and importing the root
+// 1: only attempt to detect Family Safety mode (don't import the root)
+// 2: detect Family Safety mode and import the root
+// (This is only relevant to Windows 8.1)
+pref("security.family_safety.mode", 2);
+
 pref("security.OCSP.enabled", 1);
 pref("security.OCSP.require", false);
 pref("security.OCSP.GET.enabled", false);
@@ -51,8 +55,8 @@ pref("security.OCSP.GET.enabled", false);
 pref("security.pki.cert_short_lifetime_in_days", 10);
 // NB: Changes to this pref affect CERT_CHAIN_SHA1_POLICY_STATUS telemetry.
 // See the comment in CertVerifier.cpp.
-// 3 = allow SHA-1 for certificates issued before 2016 or by an imported root.
-pref("security.pki.sha1_enforcement_level", 3);
+// 4 = allow SHA-1 for certificates issued before 2016 or by an imported root.
+pref("security.pki.sha1_enforcement_level", 4);
 
 // security.pki.name_matching_mode controls how the platform matches hostnames
 // to name information in TLS certificates. The possible values are:
@@ -87,10 +91,22 @@ pref("security.webauth.u2f_enable_softtoken", false);
 pref("security.webauth.u2f_enable_usbtoken", false);
 
 pref("security.ssl.errorReporting.enabled", true);
-pref("security.ssl.errorReporting.url", "https://data.mozilla.com/submit/sslreports");
+pref("security.ssl.errorReporting.url", "https://incoming.telemetry.mozilla.org/submit/sslreports/");
 pref("security.ssl.errorReporting.automatic", false);
 
 // Impose a maximum age on HPKP headers, to avoid sites getting permanently
 // blacking themselves out by setting a bad pin.  (60 days by default)
 // https://tools.ietf.org/html/rfc7469#section-4.1
 pref("security.cert_pinning.max_max_age_seconds", 5184000);
+
+// If a request is mixed-content, send an HSTS priming request to attempt to
+// see if it is available over HTTPS.
+pref("security.mixed_content.send_hsts_priming", true);
+#ifdef RELEASE_BUILD
+// Don't change the order of evaluation of mixed-content and HSTS upgrades
+pref("security.mixed_content.use_hsts", false);
+#else
+// Change the order of evaluation so HSTS upgrades happen before
+// mixed-content blocking
+pref("security.mixed_content.use_hsts", true);
+#endif

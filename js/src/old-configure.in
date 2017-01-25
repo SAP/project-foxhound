@@ -53,8 +53,6 @@ dnl ========================================================
 WINDRES_VERSION=2.14.90
 W32API_VERSION=3.14
 
-MSMANIFEST_TOOL=
-
 dnl Set various checks
 dnl ========================================================
 MISSING_X=
@@ -82,29 +80,10 @@ else
 fi
 AC_SUBST(autoconfmk)
 
+MOZ_ANDROID_NDK
+
 if test -n "$gonkdir" ; then
-    kernel_name=`uname -s | tr "[[:upper:]]" "[[:lower:]]"`
-    dnl Default to ICS
-    ANDROID_VERSION=15
-    if test -n "${PLATFORM_SDK_VERSION}"; then
-        ANDROID_VERSION="${PLATFORM_SDK_VERSION}"
-    fi
-
-    STLPORT_CPPFLAGS="-I$_topsrcdir/build/stlport/stlport -I$gonkdir/ndk/sources/cxx-stl/system/include"
-    STLPORT_LIBS="-lstlport"
-
-    CPPFLAGS="-DANDROID $TARGET_C_INCLUDES -I$gonkdir/frameworks/base/native/include -I$gonkdir/system/core/include -isystem $gonkdir/bionic $CPPFLAGS -I$gonkdir/external/valgrind/fxos-include"
-    CFLAGS="-mandroid -fno-short-enums -fno-exceptions $CFLAGS"
-    CXXFLAGS="-mandroid -fno-short-enums -fno-exceptions $CXXFLAGS $STLPORT_CPPFLAGS"
-    LIBS="$LIBS $STLPORT_LIBS"
-
-    dnl Add -llog by default, since we use it all over the place.
-    LDFLAGS="-mandroid -L$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib -Wl,-rpath-link=$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib --sysroot=$gonkdir/out/target/product/$GONK_PRODUCT/obj/ -llog $LDFLAGS"
-
-    AC_DEFINE(ANDROID)
-    AC_DEFINE(GONK)
-else
-    MOZ_ANDROID_NDK
+    LDFLAGS="-L$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib -Wl,-rpath-link=$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib --sysroot=$gonkdir/out/target/product/$GONK_PRODUCT/obj/ -llog $LDFLAGS"
 fi
 
 case "$target" in
@@ -161,33 +140,11 @@ fi
 
 MOZ_TOOL_VARIABLES
 
-AC_PROG_CPP
-AC_PROG_CXXCPP
-MOZ_RUST_SUPPORT
-
 dnl Special win32 checks
 dnl ========================================================
 
 # Target the Windows 8.1 SDK by default
-WINSDK_TARGETVER=603
 WINVER=502
-
-MOZ_ARG_WITH_STRING(windows-version,
-[  --with-windows-version=WINSDK_TARGETVER
-                          Windows SDK version to target. Win8.1 (603) is
-                          currently the minimum supported version.],
-  WINSDK_TARGETVER=$withval)
-
-# Currently only version 603 is allowed
-case "$WINSDK_TARGETVER" in
-603)
-    MOZ_WINSDK_TARGETVER=0${WINSDK_TARGETVER}0000
-    ;;
-
-*)
-    AC_MSG_ERROR([Invalid value for --with-windows-version ($WINSDK_TARGETVER)]);
-    ;;
-esac
 
 case "$target" in
 *-mingw*)
@@ -235,12 +192,6 @@ case "$target" in
         AC_DEFINE(_USE_MATH_DEFINES) # Otherwise MSVC's math.h doesn't #define M_PI.
 
         case "$CC_VERSION" in
-        18*)
-            _CC_SUITE=12
-            MSVS_VERSION=2013
-            MSVC_C_RUNTIME_DLL=msvcr120.dll
-            MSVC_CXX_RUNTIME_DLL=msvcp120.dll
-            ;;
         19*)
             _CC_SUITE=14
             MSVS_VERSION=2015
@@ -264,24 +215,6 @@ case "$target" in
         AC_SUBST(MSVS_VERSION)
         AC_SUBST(MSVC_C_RUNTIME_DLL)
         AC_SUBST(MSVC_CXX_RUNTIME_DLL)
-
-        dnl Ensure that mt.exe is 'Microsoft (R) Manifest Tool',
-        dnl not something else like "magnetic tape manipulation utility".
-        MSMT_TOOL=`${MT-mt} 2>&1|grep 'Microsoft (R) Manifest Tool'`
-        if test -z "$MSMT_TOOL"; then
-          AC_MSG_ERROR([Microsoft (R) Manifest Tool must be in your \$PATH.])
-        fi
-
-        changequote(,)
-        _MSMT_VER_FILTER='s|.*[^!-~]\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*|\1|p'
-        changequote([,])
-        MSMANIFEST_TOOL_VERSION=`echo ${MSMT_TOOL}|sed -ne "$_MSMT_VER_FILTER"`
-        if test -z "$MSMANIFEST_TOOL_VERSION"; then
-          AC_MSG_WARN([Unknown version of the Microsoft (R) Manifest Tool.])
-        fi
-
-        MSMANIFEST_TOOL=1
-        unset MSMT_TOOL
 
         # Check linker version
         _LD_FULL_VERSION=`"${LD}" -v 2>&1 | sed -nre "$_MSVC_VER_FILTER"`
@@ -333,23 +266,11 @@ case "$target" in
         fi
     fi # !GNU_CC
 
-    MOZ_FIND_WINSDK_VERSION
     AC_DEFINE_UNQUOTED(WINVER,0x$WINVER)
     AC_DEFINE_UNQUOTED(_WIN32_WINNT,0x$WINVER)
     # Require OS features provided by IE 6.0 SP2 (XP SP2)
     AC_DEFINE_UNQUOTED(_WIN32_IE,0x0603)
 
-    # If the maximum version supported by this SDK is lower than the target
-    # version, error out
-    AC_MSG_CHECKING([for Windows SDK being recent enough])
-    if $PERL -e "exit(0x$MOZ_WINSDK_TARGETVER > $MOZ_WINSDK_MAXVER)"; then
-        AC_MSG_RESULT("yes")
-    else
-        AC_MSG_RESULT("no")
-        AC_MSG_ERROR([You are targeting Windows version 0x$MOZ_WINSDK_TARGETVER, but your SDK only supports up to version $MOZ_WINSDK_MAXVER. Install and use an updated SDK, or target a lower version using --with-windows-version. Alternatively, try running the Windows SDK Configuration Tool and selecting a newer SDK. See https://developer.mozilla.org/En/Windows_SDK_versions for more details on fixing this.])
-    fi
-
-    AC_DEFINE_UNQUOTED(MOZ_WINSDK_TARGETVER,0x$MOZ_WINSDK_TARGETVER)
     ;;
 esac
 
@@ -394,11 +315,6 @@ AC_SUBST(GNU_CXX)
 dnl ========================================================
 dnl Checks for programs.
 dnl ========================================================
-if test -z "$COMPILE_ENVIRONMENT"; then
-    NSINSTALL_BIN='$(PYTHON) $(topsrcdir)/config/nsinstall.py'
-fi
-AC_SUBST(NSINSTALL_BIN)
-
 if test "$COMPILE_ENVIRONMENT"; then
 
 dnl ========================================================
@@ -452,33 +368,6 @@ tools are selected during the Xcode/Developer Tools installation.])
     AC_MSG_ERROR([The selected compiler and Mac OS X SDK are incompatible.])
   fi
 fi
-
-fi # COMPILE_ENVIRONMENT
-
-if test -n "$MAKE"; then
-  if test `echo $MAKE | grep -c make.py` != 1; then
-     NOT_PYMAKE=$MAKE
-  fi
-fi
-
-case "$host_os" in
-mingw*)
-    MOZ_PATH_PROGS(GMAKE, $GMAKE $NOT_PYMAKE make gmake, :)
-    ;;
-*)
-    MOZ_PATH_PROGS(GMAKE, $GMAKE $NOT_PYMAKE gmake make, :)
-    ;;
-esac
-if test "$GMAKE" = ":"; then
-   AC_MSG_ERROR([GNU make not found])
-fi
-
-# MAKE will be set by client.mk, but still need this for standalone js builds
-if test -z "$MAKE"; then
-  MAKE=$GMAKE
-fi
-
-if test "$COMPILE_ENVIRONMENT"; then
 
 AC_PATH_XTRA
 
@@ -557,53 +446,12 @@ dnl Configure platform-specific CPU architecture compiler options.
 dnl ==============================================================
 MOZ_ARCH_OPTS
 
-dnl =================================================================
-dnl Set up and test static assertion macros used to avoid AC_TRY_RUN,
-dnl which is bad when cross compiling.
-dnl =================================================================
-if test "$COMPILE_ENVIRONMENT"; then
-configure_static_assert_macros='
-#define CONFIGURE_STATIC_ASSERT(condition) CONFIGURE_STATIC_ASSERT_IMPL(condition, __LINE__)
-#define CONFIGURE_STATIC_ASSERT_IMPL(condition, line) CONFIGURE_STATIC_ASSERT_IMPL2(condition, line)
-#define CONFIGURE_STATIC_ASSERT_IMPL2(condition, line) typedef int static_assert_line_##line[(condition) ? 1 : -1]
-'
-
-dnl test that the macros actually work:
-AC_MSG_CHECKING(that static assertion macros used in autoconf tests work)
-AC_CACHE_VAL(ac_cv_static_assertion_macros_work,
- [AC_LANG_SAVE
-  AC_LANG_C
-  ac_cv_static_assertion_macros_work="yes"
-  AC_TRY_COMPILE([$configure_static_assert_macros],
-                 [CONFIGURE_STATIC_ASSERT(1)],
-                 ,
-                 ac_cv_static_assertion_macros_work="no")
-  AC_TRY_COMPILE([$configure_static_assert_macros],
-                 [CONFIGURE_STATIC_ASSERT(0)],
-                 ac_cv_static_assertion_macros_work="no",
-                 )
-  AC_LANG_CPLUSPLUS
-  AC_TRY_COMPILE([$configure_static_assert_macros],
-                 [CONFIGURE_STATIC_ASSERT(1)],
-                 ,
-                 ac_cv_static_assertion_macros_work="no")
-  AC_TRY_COMPILE([$configure_static_assert_macros],
-                 [CONFIGURE_STATIC_ASSERT(0)],
-                 ac_cv_static_assertion_macros_work="no",
-                 )
-  AC_LANG_RESTORE
- ])
-AC_MSG_RESULT("$ac_cv_static_assertion_macros_work")
-if test "$ac_cv_static_assertion_macros_work" = "no"; then
-    AC_MSG_ERROR([Compiler cannot compile macros used in autoconf tests.])
-fi
-fi # COMPILE_ENVIRONMENT
-
 dnl ========================================================
 dnl Android libstdc++, placed here so it can use MOZ_ARCH
 dnl computed above.
 dnl ========================================================
 
+MOZ_ANDROID_CPU_ARCH
 MOZ_ANDROID_STLPORT
 
 dnl ========================================================
@@ -617,70 +465,7 @@ if test -n "${CLANG_CXX}${CLANG_CL}"; then
     _WARNINGS_CXXFLAGS="-Qunused-arguments ${_WARNINGS_CXXFLAGS}"
 fi
 
-dnl ========================================================
-dnl = Use Address Sanitizer
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(address-sanitizer,
-[  --enable-address-sanitizer       Enable Address Sanitizer (default=no)],
-    MOZ_ASAN=1,
-    MOZ_ASAN= )
-if test -n "$MOZ_ASAN"; then
-    MOZ_LLVM_HACKS=1
-    AC_DEFINE(MOZ_ASAN)
-    MOZ_PATH_PROG(LLVM_SYMBOLIZER, llvm-symbolizer)
-fi
-AC_SUBST(MOZ_ASAN)
-
-dnl ========================================================
-dnl = Use Memory Sanitizer
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(memory-sanitizer,
-[  --enable-memory-sanitizer       Enable Memory Sanitizer (default=no)],
-    MOZ_MSAN=1,
-    MOZ_MSAN= )
-if test -n "$MOZ_MSAN"; then
-    MOZ_LLVM_HACKS=1
-    AC_DEFINE(MOZ_MSAN)
-    MOZ_PATH_PROG(LLVM_SYMBOLIZER, llvm-symbolizer)
-fi
-AC_SUBST(MOZ_MSAN)
-
-dnl ========================================================
-dnl = Use Thread Sanitizer
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(thread-sanitizer,
-[  --enable-thread-sanitizer       Enable Thread Sanitizer (default=no)],
-   MOZ_TSAN=1,
-   MOZ_TSAN= )
-if test -n "$MOZ_TSAN"; then
-    MOZ_LLVM_HACKS=1
-    AC_DEFINE(MOZ_TSAN)
-    MOZ_PATH_PROG(LLVM_SYMBOLIZER, llvm-symbolizer)
-fi
-AC_SUBST(MOZ_TSAN)
-
-# The LLVM symbolizer is used by all sanitizers
-AC_SUBST(LLVM_SYMBOLIZER)
-
-dnl ========================================================
-dnl = Enable hacks required for LLVM instrumentations
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(llvm-hacks,
-[  --enable-llvm-hacks       Enable workarounds required for several LLVM instrumentations (default=no)],
-    MOZ_LLVM_HACKS=1,
-    MOZ_LLVM_HACKS= )
-if test -n "$MOZ_LLVM_HACKS"; then
-    MOZ_NO_WLZDEFS=1
-fi
-
-dnl ========================================================
-dnl = Enable treating compiler warnings as errors
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(warnings-as-errors,
-[  --enable-warnings-as-errors
-                          Enable treating warnings as errors],
-    MOZ_ENABLE_WARNINGS_AS_ERRORS=1,
-    MOZ_ENABLE_WARNINGS_AS_ERRORS=)
+MOZ_CONFIG_SANITIZE
 
 dnl ========================================================
 dnl GNU specific defaults
@@ -732,8 +517,6 @@ if test "$GNU_CC"; then
                   AC_MSG_RESULT([no])
                   LDFLAGS=$_SAVE_LDFLAGS)
 
-    MOZ_SET_WARNINGS_CFLAGS
-
     _DEFINES_CFLAGS='-include $(topobjdir)/js/src/js-confdefs.h -DMOZILLA_CLIENT'
     _USE_CPP_INCLUDE_FLAG=1
 
@@ -753,33 +536,12 @@ else
 fi
 
 if test "$GNU_CXX"; then
-    MOZ_SET_WARNINGS_CXXFLAGS
-
     _DEFINES_CXXFLAGS='-DMOZILLA_CLIENT -include $(topobjdir)/js/src/js-confdefs.h'
     _USE_CPP_INCLUDE_FLAG=1
 
 else
     _DEFINES_CXXFLAGS='-DMOZILLA_CLIENT -D_JS_CONFDEFS_H_ $(ACDEFINES)'
 fi
-
-dnl ========================================================
-dnl Checking for 64-bit OS
-dnl ========================================================
-if test "$COMPILE_ENVIRONMENT"; then
-AC_LANG_SAVE
-AC_LANG_C
-AC_MSG_CHECKING(for 64-bit OS)
-AC_TRY_COMPILE([$configure_static_assert_macros],
-               [CONFIGURE_STATIC_ASSERT(sizeof(void*) == 8)],
-               result="yes", result="no")
-AC_MSG_RESULT("$result")
-if test "$result" = "yes"; then
-    AC_DEFINE(HAVE_64BIT_BUILD)
-    HAVE_64BIT_BUILD=1
-fi
-AC_SUBST(HAVE_64BIT_BUILD)
-AC_LANG_RESTORE
-fi # COMPILE_ENVIRONMENT
 
 dnl ========================================================
 dnl System overrides of the defaults for host
@@ -892,8 +654,6 @@ case "$target" in
     if test -z "$CLANG_CC"; then
        MOZ_OPTIMIZE_FLAGS="-freorder-blocks -fno-reorder-functions $MOZ_OPTIMIZE_FLAGS"
     fi
-    # The Maemo builders don't know about this flag
-    MOZ_ARM_VFP_FLAGS="-mfpu=vfp"
     ;;
 
 *-*linux*)
@@ -911,10 +671,6 @@ case "$target" in
     	CXXFLAGS="$CXXFLAGS -mieee"
     ;;
     esac
-
-    if test -z "$MC"; then
-        MC=mc.exe
-    fi
     ;;
 
 *-mingw*)
@@ -922,7 +678,6 @@ case "$target" in
     DSO_PIC_CFLAGS=
     DLL_SUFFIX=.dll
     RC=rc.exe
-    MC=mc.exe
     if test -n "$GNU_CC" -o -n "$CLANG_CC"; then
         CC="$CC -mwindows"
         CXX="$CXX -mwindows"
@@ -945,11 +700,6 @@ case "$target" in
 
         WIN32_CONSOLE_EXE_LDFLAGS=-mconsole
         WIN32_GUI_EXE_LDFLAGS=-mwindows
-
-        # We use mix of both POSIX and Win32 printf format across the tree, so format
-        # warnings are useless on mingw.
-        MOZ_C_SUPPORTS_WARNING(-Wno-, format, ac_c_has_wno_format)
-        MOZ_CXX_SUPPORTS_WARNING(-Wno-, format, ac_cxx_has_wno_format)
     else
         TARGET_COMPILER_ABI=msvc
         HOST_CC='$(CC)'
@@ -983,8 +733,8 @@ case "$target" in
         _USE_CPP_INCLUDE_FLAG=1
         _DEFINES_CFLAGS='-FI $(topobjdir)/js/src/js-confdefs.h -DMOZILLA_CLIENT'
         _DEFINES_CXXFLAGS='-FI $(topobjdir)/js/src/js-confdefs.h -DMOZILLA_CLIENT'
-        CFLAGS="$CFLAGS -W3 -Gy"
-        CXXFLAGS="$CXXFLAGS -W3 -Gy"
+        CFLAGS="$CFLAGS -W3 -Gy -Zc:inline"
+        CXXFLAGS="$CXXFLAGS -W3 -Gy -Zc:inline"
         if test "$CPU_ARCH" = "x86";then
           dnl VS2012+ defaults to -arch:SSE2. We want to target nothing
           dnl more recent, so set that explicitly here unless another
@@ -1039,6 +789,10 @@ case "$target" in
             # use such pragmas, so just ignore them.
             CFLAGS="$CFLAGS -Wno-unknown-pragmas"
             CXXFLAGS="$CXXFLAGS -Wno-unknown-pragmas"
+            # We get errors about various #pragma intrinsic directives from
+            # clang-cl, and we don't need to hear about those.
+            CFLAGS="$CFLAGS -Wno-ignored-pragmas"
+            CXXFLAGS="$CXXFLAGS -Wno-ignored-pragmas"
             # clang-cl's Intrin.h marks things like _ReadWriteBarrier
             # as __attribute((__deprecated__)).  This is nice to know,
             # but since we don't get the equivalent warning from MSVC,
@@ -1115,10 +869,6 @@ case "$target" in
 
     case "$target" in
     i*86-*)
-        if test "$HAVE_64BIT_BUILD"; then
-            AC_MSG_ERROR([You are targeting i386 but using the 64-bit compiler.])
-        fi
-
         if test -n "$GNU_CC"; then
             CFLAGS="$CFLAGS -mstackrealign -fno-keep-inline-dllexport"
             CXXFLAGS="$CXXFLAGS -mstackrealign -fno-keep-inline-dllexport"
@@ -1220,8 +970,6 @@ MOZ_ARG_DISABLE_BOOL(ion,
 [  --disable-ion      Disable use of the IonMonkey JIT],
   ENABLE_ION= )
 
-AC_SUBST(ENABLE_METHODJIT_SPEW)
-
 AC_SUBST(ENABLE_ION)
 
 if test -n "$COMPILE_ENVIRONMENT"; then
@@ -1310,14 +1058,6 @@ freebsd*)
     CPPFLAGS="${CPPFLAGS} ${X_CFLAGS}"
     ;;
 esac
-MOZ_CHECK_COMMON_HEADERS
-
-dnl These are all the places some variant of statfs can be hiding.
-MOZ_CHECK_HEADERS(sys/statvfs.h sys/statfs.h sys/vfs.h sys/mount.h)
-
-dnl Quota support
-MOZ_CHECK_HEADERS(sys/quota.h)
-MOZ_CHECK_HEADERS(linux/quota.h)
 
 MOZ_ARG_ENABLE_BOOL(dtrace,
               [  --enable-dtrace         build with dtrace support if available (default=no)],
@@ -1331,10 +1071,6 @@ if test "x$enable_dtrace" = "xyes"; then
   fi
 fi
 AC_SUBST(HAVE_DTRACE)
-
-MOZ_CHECK_HEADERS(sys/cdefs.h)
-
-MOZ_LINUX_PERF_EVENT
 
 dnl Checks for libraries.
 dnl ========================================================
@@ -1479,7 +1215,7 @@ dnl Checks for library functions.
 dnl ========================================================
 AC_PROG_GCC_TRADITIONAL
 AC_FUNC_MEMCMP
-AC_CHECK_FUNCS([getc_unlocked _getc_nolock gmtime_r localtime_r])
+AC_CHECK_FUNCS([getc_unlocked _getc_nolock gmtime_r localtime_r pthread_getname_np])
 
 dnl check for clock_gettime(), the CLOCK_MONOTONIC clock
 AC_CACHE_CHECK(for clock_gettime(CLOCK_MONOTONIC),
@@ -1800,11 +1536,6 @@ fi
 AC_SUBST(ZLIB_IN_MOZGLUE)
 
 dnl ========================================================
-dnl system libffi Support
-dnl ========================================================
-MOZ_CONFIG_FFI()
-
-dnl ========================================================
 dnl =
 dnl = Application
 dnl =
@@ -1841,10 +1572,6 @@ dnl = Debugging Options
 dnl =
 dnl ========================================================
 MOZ_ARG_HEADER(Debugging and Optimizations)
-
-if test "$ENABLE_METHODJIT_SPEW"; then
-    AC_DEFINE(JS_METHODJIT_SPEW)
-fi
 
 dnl ========================================================
 dnl = Enable code optimization. ON by default.
@@ -1940,7 +1667,6 @@ if test "$MOZ_MEMORY"; then
     ;;
   esac
 fi
-AC_SUBST(MOZ_CRT)
 AC_SUBST(MOZ_GLUE_IN_PROGRAM)
 AC_SUBST_LIST(MOZ_GLUE_WRAP_LDFLAGS)
 
@@ -1955,17 +1681,6 @@ MOZ_ARG_ENABLE_BOOL(small-chunk-size,
     JS_GC_SMALL_CHUNK_SIZE= )
 if test -n "$JS_GC_SMALL_CHUNK_SIZE"; then
     AC_DEFINE(JS_GC_SMALL_CHUNK_SIZE)
-fi
-
-dnl ========================================================
-dnl = Use GC tracing
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(gc-trace,
-[  --enable-gc-trace  Enable tracing of allocation and finalization],
-    JS_GC_TRACE=1,
-    JS_GC_TRACE= )
-if test -n "$JS_GC_TRACE"; then
-    AC_DEFINE(JS_GC_TRACE)
 fi
 
 dnl ========================================================
@@ -2050,13 +1765,6 @@ elif test "$CPU_ARCH" = "x86"; then
 elif test "$CPU_ARCH" = "x86_64"; then
     AC_DEFINE(JS_CODEGEN_X64)
     JS_CODEGEN_X64=1
-
-    dnl Signal-handler OOM checking requires large mprotected guard regions, so
-    dnl currently it is only implemented on x64.
-    AC_DEFINE(ASMJS_MAY_USE_SIGNAL_HANDLERS)
-    AC_DEFINE(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB)
-    ASMJS_MAY_USE_SIGNAL_HANDLERS=1
-    ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB=1
 elif test "$CPU_ARCH" = "arm"; then
     AC_DEFINE(JS_CODEGEN_ARM)
     JS_CODEGEN_ARM=1
@@ -2065,12 +1773,8 @@ elif test "$CPU_ARCH" = "arm"; then
         JS_DISASM_ARM=1
     fi
 
-    dnl ARM platforms may trap on unalinged accesses; catch the signal and
+    dnl ARM platforms may trap on unaligned accesses; catch the signal and
     dnl recover.
-    AC_DEFINE(ASMJS_MAY_USE_SIGNAL_HANDLERS)
-    AC_DEFINE(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_UNALIGNED)
-    ASMJS_MAY_USE_SIGNAL_HANDLERS=1
-    ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_UNALIGNED=1
 elif test "$CPU_ARCH" = "mips32"; then
     AC_DEFINE(JS_CODEGEN_MIPS32)
     JS_CODEGEN_MIPS32=1
@@ -2092,9 +1796,6 @@ AC_SUBST(JS_CODEGEN_X86)
 AC_SUBST(JS_CODEGEN_X64)
 AC_SUBST(JS_CODEGEN_NONE)
 AC_SUBST(JS_DISASM_ARM)
-AC_SUBST(ASMJS_MAY_USE_SIGNAL_HANDLERS)
-AC_SUBST(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB)
-AC_SUBST(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_UNALIGNED)
 
 dnl ========================================================
 dnl instruments
@@ -2133,30 +1834,6 @@ MOZ_ARG_ENABLE_BOOL(gczeal,
     JS_GC_ZEAL= )
 if test -n "$JS_GC_ZEAL" -o -n "$MOZ_DEBUG"; then
     AC_DEFINE(JS_GC_ZEAL)
-fi
-
-dnl ========================================================
-dnl = Enable perf logging for ion.
-dnl = Perf logging is OFF by default
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(perf,
-[  --enable-perf           Enable Linux perf integration],
-  JS_ION_PERF=1,
-  JS_ION_PERF= )
-if test -n "$JS_ION_PERF"; then
-    AC_DEFINE(JS_ION_PERF)
-fi
-
-dnl ========================================================
-dnl Enable changes that make the shell more deterministic
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(more-deterministic,
-[  --enable-more-deterministic
-                          Enable changes that make the shell more deterministic],
-    JS_MORE_DETERMINISTIC=1,
-    JS_MORE_DETERMINISTIC= )
-if test -n "$JS_MORE_DETERMINISTIC"; then
-    AC_DEFINE(JS_MORE_DETERMINISTIC)
 fi
 
 dnl ========================================================
@@ -2403,22 +2080,13 @@ dnl =
 dnl ========================================================
 MOZ_ARG_HEADER(Standalone module options (Not for building Mozilla))
 
-dnl ========================================================
-dnl = Build jsctypes if it's enabled
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(ctypes,
-[  --enable-ctypes         Enable js-ctypes (default=no)],
-    BUILD_CTYPES=1,
-    BUILD_CTYPES= )
-JS_HAS_CTYPES=$BUILD_CTYPES
-AC_SUBST(JS_HAS_CTYPES)
-AC_SUBST(BUILD_CTYPES)
 if test "$JS_HAS_CTYPES"; then
+  dnl JS_HAS_CTYPES is defined by Python configure. This check remains
+  dnl as long as determining $AS remains in old-configure.
   dnl Error out if we're on MSVC and MASM is unavailable.
   if test -n "$_MSC_VER" -a \( "$AS" != "ml.exe" -a "$AS" != "ml64.exe" \); then
     AC_MSG_ERROR([\"$AS\" is not a suitable assembler to build js-ctypes. If you are building with MS Visual Studio 8 Express, you may download the MASM 8.0 package, upgrade to Visual Studio 9 Express, or install the Vista SDK. Or do not use --enable-ctypes.])
   fi
-  AC_DEFINE(JS_HAS_CTYPES)
 fi
 
 dnl ========================================================
@@ -2451,13 +2119,11 @@ AC_SUBST(AS_DASH_C_FLAG)
 AC_SUBST(LD)
 AC_SUBST(RC)
 AC_SUBST(RCFLAGS)
-AC_SUBST(MC)
 AC_SUBST(WINDRES)
 AC_SUBST(IMPLIB)
 AC_SUBST(FILTER)
 AC_SUBST(BIN_FLAGS)
 AC_SUBST(MOZ_DEBUG)
-AC_SUBST(MOZ_DEBUG_SYMBOLS)
 AC_SUBST(MOZ_DEBUG_LDFLAGS)
 AC_SUBST(WARNINGS_AS_ERRORS)
 AC_SUBST(LIBICONV)
@@ -2477,6 +2143,15 @@ AC_SUBST(MOZ_APP_VERSION)
 AC_SUBST(MOZ_PKG_SPECIAL)
 
 AC_SUBST(MOZILLA_OFFICIAL)
+
+dnl ========================================================
+dnl ECMAScript Internationalization API Support (uses ICU)
+dnl ========================================================
+
+dnl top-level configure may override this with --without-intl-api
+_INTL_API=yes
+
+MOZ_CONFIG_ICU()
 
 dnl Echo the CFLAGS to remove extra whitespace.
 CFLAGS=`echo \
@@ -2503,10 +2178,6 @@ HOST_CXXFLAGS=`echo \
 
 AC_SUBST(_DEPEND_CFLAGS)
 AC_SUBST(MOZ_SYSTEM_NSPR)
-
-if test -n "$MOZ_NUWA_PROCESS"; then
-    AC_DEFINE(MOZ_NUWA_PROCESS)
-fi
 
 OS_CFLAGS="$CFLAGS"
 OS_CXXFLAGS="$CXXFLAGS"
@@ -2554,7 +2225,6 @@ AC_SUBST(BIN_SUFFIX)
 AC_SUBST(IMPORT_LIB_SUFFIX)
 AC_SUBST(USE_N32)
 AC_SUBST(CC_VERSION)
-AC_SUBST(MSMANIFEST_TOOL)
 AC_SUBST(MOZ_LINKER)
 AC_SUBST(WIN32_CONSOLE_EXE_LDFLAGS)
 AC_SUBST(WIN32_GUI_EXE_LDFLAGS)
@@ -2580,15 +2250,6 @@ else
 fi
 
 AC_SUBST(PREPROCESS_OPTION)
-
-dnl ========================================================
-dnl ECMAScript Internationalization API Support (uses ICU)
-dnl ========================================================
-
-dnl top-level configure may override this with --without-intl-api
-_INTL_API=yes
-
-MOZ_CONFIG_ICU()
 
 dnl ========================================================
 dnl JavaScript shell

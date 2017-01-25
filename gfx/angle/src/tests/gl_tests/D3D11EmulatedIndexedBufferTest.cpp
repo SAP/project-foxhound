@@ -10,8 +10,9 @@
 
 #include "libANGLE/angletypes.h"
 #include "libANGLE/Context.h"
-#include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
+#include "libANGLE/renderer/d3d/d3d11/Context11.h"
+#include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/IndexDataManager.h"
 #include "test_utils/ANGLETest.h"
 #include "test_utils/angle_test_instantiate.h"
@@ -31,14 +32,17 @@ class D3D11EmulatedIndexedBufferTest : public ANGLETest
         ASSERT_EQ(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, GetParam().getRenderer());
 
         gl::Context *context = reinterpret_cast<gl::Context *>(getEGLWindow()->getContext());
-        mRenderer = rx::GetAs<rx::Renderer11>(context->getRenderer());
+        rx::Context11 *context11 = rx::GetImplAs<rx::Context11>(context);
+        mRenderer                = context11->getRenderer();
 
-        mSourceBuffer = new rx::Buffer11(mRenderer);
+        mSourceBuffer      = new rx::Buffer11(mBufferState, mRenderer);
         GLfloat testData[] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f };
-        gl::Error error = mSourceBuffer->setData(testData, sizeof(testData), GL_STATIC_DRAW);
+        gl::Error error =
+            mSourceBuffer->setData(GL_ARRAY_BUFFER, testData, sizeof(testData), GL_STATIC_DRAW);
         ASSERT_FALSE(error.isError());
 
-        mTranslatedAttribute.offset = 0;
+        mTranslatedAttribute.baseOffset            = 0;
+        mTranslatedAttribute.usesFirstVertexOffset = false;
         mTranslatedAttribute.stride = sizeof(GLfloat);
 
         GLubyte indices[] = {0, 0, 3, 4, 2, 1, 1};
@@ -107,9 +111,11 @@ class D3D11EmulatedIndexedBufferTest : public ANGLETest
 
     void emulateAndCompare(rx::SourceIndexData *srcData)
     {
-        ID3D11Buffer* emulatedBuffer = mSourceBuffer->getEmulatedIndexedBuffer(srcData, &mTranslatedAttribute);
+        auto bufferOrError =
+            mSourceBuffer->getEmulatedIndexedBuffer(srcData, mTranslatedAttribute, 0);
+        ASSERT_FALSE(bufferOrError.isError());
+        ID3D11Buffer *emulatedBuffer = bufferOrError.getResult();
         ASSERT_TRUE(emulatedBuffer != nullptr);
-
         compareContents(emulatedBuffer);
     }
 
@@ -121,6 +127,7 @@ class D3D11EmulatedIndexedBufferTest : public ANGLETest
     std::vector<GLubyte> mubyteIndices;
     std::vector<GLuint> muintIndices;
     std::vector<GLushort> mushortIndices;
+    gl::BufferState mBufferState;
 };
 
 // This tests that a GL_UNSIGNED_BYTE indices list can be successfully expanded
@@ -157,7 +164,8 @@ TEST_P(D3D11EmulatedIndexedBufferTest, TestNativeToExpandedUsingGLuintIndices)
 TEST_P(D3D11EmulatedIndexedBufferTest, TestSourceBufferRemainsUntouchedAfterExpandOperation)
 {
     // Copy the original source buffer before any expand calls have been made
-    rx::Buffer11 *cleanSourceBuffer = new rx::Buffer11(mRenderer);
+    gl::BufferState cleanSourceState;
+    rx::Buffer11 *cleanSourceBuffer = new rx::Buffer11(cleanSourceState, mRenderer);
     cleanSourceBuffer->copySubData(mSourceBuffer, 0, 0, mSourceBuffer->getSize());
 
     // Do a basic exanded and compare test.

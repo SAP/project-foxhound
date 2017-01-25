@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -51,10 +51,12 @@ UNIFIED_SOURCES += [
 ]
 
 # Are we targeting x86 or x86-64?  If so, compile the SSE2 functions for
-# nsUTF8Utils.cpp.
+# nsUTF8Utils.cpp and nsReadableUtils.cpp.
 if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES += ['nsUTF8UtilsSSE2.cpp']
     SOURCES['nsUTF8UtilsSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
+    SOURCES += ['nsReadableUtilsSSE2.cpp']
+    SOURCES['nsReadableUtilsSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
 
 USE_LIBS += [
     'taint'

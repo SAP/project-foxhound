@@ -259,11 +259,6 @@ void
 DMDFuncs::StatusMsg(const char* aFmt, va_list aAp)
 {
 #ifdef ANDROID
-#ifdef MOZ_B2G_LOADER
-  // Don't call __android_log_vprint() during initialization, or the magic file
-  // descriptors will be occupied by android logcat.
-  if (gIsDMDInitialized)
-#endif
     __android_log_vprint(ANDROID_LOG_INFO, "DMD", aFmt, aAp);
 #else
   // The +64 is easily enough for the "DMD[<pid>] " prefix and the NUL.
@@ -1064,9 +1059,7 @@ public:
     : mReqSize(aLb.ReqSize())
     , mSlopSize(aLb.SlopSize())
     , mAllocStackTrace(aLb.AllocStackTrace())
-  {
-    MOZ_ASSERT(AllocStackTrace());
-  }
+  {}
 
   ~DeadBlock() {}
 
@@ -1831,6 +1824,15 @@ WriteBlockContents(JSONWriter& aWriter, const LiveBlock& aBlock)
 static void
 AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
 {
+  // Some blocks may have been allocated while creating |aWriter|. Those blocks
+  // will be freed at the end of this function when |write| is destroyed. The
+  // allocations will have occurred while intercepts were not blocked, so the
+  // frees better be as well, otherwise we'll get assertion failures.
+  // Therefore, this declaration must precede the AutoBlockIntercepts
+  // declaration, to ensure that |write| is destroyed *after* intercepts are
+  // unblocked.
+  JSONWriter writer(Move(aWriter));
+
   AutoBlockIntercepts block(Thread::Fetch());
   AutoLockState lock;
 
@@ -1848,7 +1850,6 @@ AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
   static int analysisCount = 1;
   StatusMsg("Dump %d {\n", analysisCount++);
 
-  JSONWriter writer(Move(aWriter));
   writer.Start();
   {
     writer.IntProperty("version", kOutputVersionNumber);

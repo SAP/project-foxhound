@@ -67,10 +67,9 @@ const TOOLKIT_ID                      = "toolkit@mozilla.org";
 
 const VALID_TYPES_REGEXP = /^[\w\-]+$/;
 
-const WEBAPI_INSTALL_HOSTS = ["addons.mozilla.org", "addons.cdn.mozilla.net", "testpilot.firefox.com"];
+const WEBAPI_INSTALL_HOSTS = ["addons.mozilla.org", "testpilot.firefox.com"];
 const WEBAPI_TEST_INSTALL_HOSTS = [
-  "addons.allizom.org", "addons-stage-cdn.allizom.org",
-  "addons-dev.allizom.org", "addons-dev-cdn-allizom.org",
+  "addons.allizom.org", "addons-dev.allizom.org",
   "testpilot.stage.mozaws.net", "testpilot.dev.mozaws.net",
   "example.com",
 ];
@@ -335,6 +334,7 @@ function webAPIForAddon(addon) {
 
   // A few properties are computed for a nicer API
   result.isEnabled = !addon.userDisabled;
+  result.canUninstall = Boolean(addon.permissions & AddonManager.PERM_CAN_UNINSTALL);
 
   return result;
 }
@@ -688,6 +688,7 @@ var AddonManagerInternal = {
   startupChanges: {},
   // Store telemetry details per addon provider
   telemetryDetails: {},
+  upgradeListeners: new Map(),
 
   recordTimestamp: function(name, value) {
     this.TelemetryTimestamps.add(name, value);
@@ -883,7 +884,7 @@ var AddonManagerInternal = {
       try {
         let defaultBranch = Services.prefs.getDefaultBranch("");
         gCheckUpdateSecurityDefault = defaultBranch.getBoolPref(PREF_EM_CHECK_UPDATE_SECURITY);
-      } catch(e) {}
+      } catch (e) {}
 
       try {
         gCheckUpdateSecurity = Services.prefs.getBoolPref(PREF_EM_CHECK_UPDATE_SECURITY);
@@ -1198,7 +1199,7 @@ var AddonManagerInternal = {
       try {
         yield gShutdownBarrier.wait();
       }
-      catch(err) {
+      catch (err) {
         savedError = err;
         logger.error("Failure during wait for shutdown barrier", err);
         AddonManagerPrivate.recordException("AMI", "Async shutdown of AddonManager providers", err);
@@ -1211,7 +1212,7 @@ var AddonManagerInternal = {
       yield AddonRepository.shutdown();
       gRepoShutdownState = "done";
     }
-    catch(err) {
+    catch (err) {
       savedError = err;
       logger.error("Failure during AddonRepository shutdown", err);
       AddonManagerPrivate.recordException("AMI", "Async shutdown of AddonRepository", err);
@@ -1263,7 +1264,7 @@ var AddonManagerInternal = {
         let oldValue = gCheckCompatibility;
         try {
           gCheckCompatibility = Services.prefs.getBoolPref(PREF_EM_CHECK_COMPATIBILITY);
-        } catch(e) {
+        } catch (e) {
           gCheckCompatibility = true;
         }
 
@@ -1278,7 +1279,7 @@ var AddonManagerInternal = {
         let oldValue = gStrictCompatibility;
         try {
           gStrictCompatibility = Services.prefs.getBoolPref(PREF_EM_STRICT_COMPATIBILITY);
-        } catch(e) {
+        } catch (e) {
           gStrictCompatibility = true;
         }
 
@@ -1293,7 +1294,7 @@ var AddonManagerInternal = {
         let oldValue = gCheckUpdateSecurity;
         try {
           gCheckUpdateSecurity = Services.prefs.getBoolPref(PREF_EM_CHECK_UPDATE_SECURITY);
-        } catch(e) {
+        } catch (e) {
           gCheckUpdateSecurity = true;
         }
 
@@ -1308,7 +1309,7 @@ var AddonManagerInternal = {
         let oldValue = gUpdateEnabled;
         try {
           gUpdateEnabled = Services.prefs.getBoolPref(PREF_EM_UPDATE_ENABLED);
-        } catch(e) {
+        } catch (e) {
           gUpdateEnabled = true;
         }
 
@@ -1319,7 +1320,7 @@ var AddonManagerInternal = {
         let oldValue = gAutoUpdateDefault;
         try {
           gAutoUpdateDefault = Services.prefs.getBoolPref(PREF_EM_AUTOUPDATE_DEFAULT);
-        } catch(e) {
+        } catch (e) {
           gAutoUpdateDefault = true;
         }
 
@@ -1329,7 +1330,7 @@ var AddonManagerInternal = {
       case PREF_EM_HOTFIX_ID: {
         try {
           gHotfixID = Services.prefs.getCharPref(PREF_EM_HOTFIX_ID);
-        } catch(e) {
+        } catch (e) {
           gHotfixID = null;
         }
         break;
@@ -1409,7 +1410,7 @@ var AddonManagerInternal = {
         var paramHandler = Cc[contractID].getService(Ci.nsIPropertyBag2);
         return paramHandler.getPropertyAsAString(aParam);
       }
-      catch(e) {
+      catch (e) {
         return aMatch;
       }
     });
@@ -1471,7 +1472,7 @@ var AddonManagerInternal = {
                     AddonManager.shouldAutoUpdate(aAddon)) {
                   // XXX we really should resolve when this install is done,
                   // not when update-available check completes, no?
-                  logger.debug("Starting install of ${id}", aAddon);
+                  logger.debug(`Starting upgrade install of ${aAddon.id}`);
                   aInstall.install();
                 }
               },
@@ -2257,6 +2258,56 @@ var AddonManagerInternal = {
         pos++;
     }
   },
+  /*
+   * Adds new or overrides existing UpgradeListener.
+   *
+   * @param  aInstanceID
+   *         The instance ID of an addon to register a listener for.
+   * @param  aCallback
+   *         The callback to invoke when updates are available for this addon.
+   * @throws if there is no addon matching the instanceID
+   */
+  addUpgradeListener: function(aInstanceID, aCallback) {
+   if (!aInstanceID || typeof aInstanceID != "symbol")
+     throw Components.Exception("aInstanceID must be a symbol",
+                                Cr.NS_ERROR_INVALID_ARG);
+
+  if (!aCallback || typeof aCallback != "function")
+    throw Components.Exception("aCallback must be a function",
+                               Cr.NS_ERROR_INVALID_ARG);
+
+   this.getAddonByInstanceID(aInstanceID).then(wrapper => {
+     if (!wrapper) {
+       throw Error("No addon matching instanceID:", aInstanceID.toString());
+     }
+     let addonId = wrapper.addonId();
+     logger.debug(`Registering upgrade listener for ${addonId}`);
+     this.upgradeListeners.set(addonId, aCallback);
+   });
+  },
+
+  /**
+   * Removes an UpgradeListener if the listener is registered.
+   *
+   * @param  aInstanceID
+   *         The instance ID of the addon to remove
+   */
+  removeUpgradeListener: function(aInstanceID) {
+    if (!aInstanceID || typeof aInstanceID != "symbol")
+      throw Components.Exception("aInstanceID must be a symbol",
+                                 Cr.NS_ERROR_INVALID_ARG);
+
+    this.getAddonByInstanceID(aInstanceID).then(addon => {
+      if (!addon) {
+        throw Error("No addon for instanceID:", aInstanceID.toString());
+      }
+      if (this.upgradeListeners.has(addon.id)) {
+        this.upgradeListeners.delete(addon.id);
+      } else {
+        throw Error("No upgrade listener registered for addon ID:", addon.id);
+      }
+    });
+  },
 
   /**
    * Installs a temporary add-on from a local file or directory.
@@ -2888,7 +2939,7 @@ var AddonManagerInternal = {
           this.copyProps(install, result);
           resolve(result);
         };
-        AddonManager.getInstallForURL(options.url, newInstall, "application/x-xpinstall");
+        AddonManager.getInstallForURL(options.url, newInstall, "application/x-xpinstall", options.hash);
       });
     },
 
@@ -3103,6 +3154,14 @@ this.AddonManagerPrivate = {
   get webExtensionsMinPlatformVersion() {
     return gWebExtensionsMinPlatformVersion;
   },
+
+  hasUpgradeListener: function(aId) {
+    return AddonManagerInternal.upgradeListeners.has(aId);
+  },
+
+  getUpgradeListener: function(aId) {
+    return AddonManagerInternal.upgradeListeners.get(aId);
+  },
 };
 
 /**
@@ -3123,14 +3182,16 @@ this.AddonManager = {
     ["STATE_DOWNLOADED", 3],
     // The download failed.
     ["STATE_DOWNLOAD_FAILED", 4],
+    // The install has been postponed.
+    ["STATE_POSTPONED", 5],
     // The add-on is being installed.
-    ["STATE_INSTALLING", 5],
+    ["STATE_INSTALLING", 6],
     // The add-on has been installed.
-    ["STATE_INSTALLED", 6],
+    ["STATE_INSTALLED", 7],
     // The install failed.
-    ["STATE_INSTALL_FAILED", 7],
+    ["STATE_INSTALL_FAILED", 8],
     // The install has been cancelled.
-    ["STATE_CANCELLED", 8],
+    ["STATE_CANCELLED", 9],
   ]),
 
   // Constants representing different types of errors while downloading an
@@ -3149,6 +3210,8 @@ this.AddonManager = {
     ["ERROR_SIGNEDSTATE_REQUIRED", -5],
     // The downloaded add-on had a different type than expected.
     ["ERROR_UNEXPECTED_ADDON_TYPE", -6],
+    // The addon did not have the expected ID
+    ["ERROR_INCORRECT_ID", -7],
   ]),
 
   // These must be kept in sync with AddonUpdateChecker.
@@ -3461,6 +3524,18 @@ this.AddonManager = {
 
   removeInstallListener: function(aListener) {
     AddonManagerInternal.removeInstallListener(aListener);
+  },
+
+  getUpgradeListener: function(aId) {
+    return AddonManagerInternal.upgradeListeners.get(aId);
+  },
+
+  addUpgradeListener: function(aInstanceID, aCallback) {
+    AddonManagerInternal.addUpgradeListener(aInstanceID, aCallback);
+  },
+
+  removeUpgradeListener: function(aInstanceID) {
+    AddonManagerInternal.removeUpgradeListener(aInstanceID);
   },
 
   addAddonListener: function(aListener) {

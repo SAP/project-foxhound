@@ -11,6 +11,7 @@
 #include <X11/extensions/Xrender.h>     // for XRenderPictFormat, etc
 #include <X11/extensions/render.h>      // for PictFormat
 #include "cairo-xlib.h"
+#include "X11UndefineNone.h"
 #include <stdint.h>                     // for uint32_t
 #include "GLDefs.h"                     // for GLenum
 #include "gfxPlatform.h"                // for gfxPlatform
@@ -26,7 +27,6 @@
 #include "mozilla/layers/ShadowLayers.h"  // for ShadowLayerForwarder, etc
 #include "mozilla/mozalloc.h"           // for operator new
 #include "gfxEnv.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_ERROR
 
@@ -66,7 +66,7 @@ SurfaceDescriptorX11::SurfaceDescriptorX11(gfxXlibSurface* aSurf,
                                            bool aForwardGLX)
   : mId(aSurf->XDrawable())
   , mSize(aSurf->GetSize())
-  , mGLXPixmap(None)
+  , mGLXPixmap(X11None)
 {
   const XRenderPictFormat *pictFormat = aSurf->XRenderFormat();
   if (pictFormat) {
@@ -87,7 +87,7 @@ SurfaceDescriptorX11::SurfaceDescriptorX11(Drawable aDrawable, XID aFormatID,
   : mId(aDrawable)
   , mFormat(aFormatID)
   , mSize(aSize)
-  , mGLXPixmap(None)
+  , mGLXPixmap(X11None)
 { }
 
 already_AddRefed<gfxXlibSurface>

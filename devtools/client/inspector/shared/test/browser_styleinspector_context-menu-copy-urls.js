@@ -5,17 +5,13 @@
 
 /* Tests both Copy URL and Copy Data URL context menu items */
 
-const PROPERTIES_URL = "chrome://devtools-shared/locale/styleinspector.properties";
 const TEST_DATA_URI = "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=";
 
 // Invalid URL still needs to be reachable otherwise getImageDataUrl will
 // timeout.  DevTools chrome:// URLs aren't content accessible, so use some
 // random resource:// URL here.
 const INVALID_IMAGE_URI = "resource://devtools/client/definitions.js";
-
-const ERROR_MESSAGE = Services.strings
-  .createBundle(PROPERTIES_URL)
-  .GetStringFromName("styleinspector.copyImageDataUrlError");
+const ERROR_MESSAGE = STYLE_INSPECTOR_L10N.getStr("styleinspector.copyImageDataUrlError");
 
 add_task(function* () {
   const TEST_URI = `<style type="text/css">
@@ -77,42 +73,31 @@ function* testCopyUrlToClipboard({view, inspector}, type, selector, expected) {
   ok(imageLink, "Background-image link element found");
 
   info("Simulate right click on the background-image URL");
-  let popup = once(view._contextmenu._menupopup, "popupshown");
-
-  // Cannot rely on synthesizeMouseAtCenter here. The image URL can be displayed
-  // on several lines. A click simulated at the exact center may click between
-  // the lines and miss the target. Instead, using the top-left corner of first
-  // client rect, with an offset of 2 pixels.
-  let rect = imageLink.getClientRects()[0];
-  let x = rect.left + 2;
-  let y = rect.top + 2;
-
-  EventUtils.synthesizeMouseAtPoint(x, y, {
-    button: 2,
-    type: "contextmenu"
-  }, getViewWindow(view));
-  yield popup;
+  let allMenuItems = openStyleContextMenuAndGetAllItems(view, imageLink);
+  let menuitemCopyUrl = allMenuItems.find(item => item.label ===
+    STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copyUrl"));
+  let menuitemCopyImageDataUrl = allMenuItems.find(item => item.label ===
+    STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copyImageDataUrl"));
 
   info("Context menu is displayed");
-  ok(!view._contextmenu.menuitemCopyUrl.hidden,
+  ok(menuitemCopyUrl.visible,
      "\"Copy URL\" menu entry is displayed");
-  ok(!view._contextmenu.menuitemCopyImageDataUrl.hidden,
+  ok(menuitemCopyImageDataUrl.visible,
      "\"Copy Image Data-URL\" menu entry is displayed");
 
   if (type == "data-uri") {
     info("Click Copy Data URI and wait for clipboard");
-    yield waitForClipboard(() => {
-      return view._contextmenu.menuitemCopyImageDataUrl.click();
+    yield waitForClipboardPromise(() => {
+      return menuitemCopyImageDataUrl.click();
     }, expected);
   } else {
     info("Click Copy URL and wait for clipboard");
-    yield waitForClipboard(() => {
-      return view._contextmenu.menuitemCopyUrl.click();
+    yield waitForClipboardPromise(() => {
+      return menuitemCopyUrl.click();
     }, expected);
   }
 
   info("Hide context menu");
-  view._contextmenu._menupopup.hidePopup();
 }
 
 function getBackgroundImageProperty(view, selector) {
@@ -121,12 +106,4 @@ function getBackgroundImageProperty(view, selector) {
     return getRuleViewProperty(view, selector, "background-image");
   }
   return getComputedViewProperty(view, "background-image");
-}
-
-/**
- * Function that returns the window for a given view.
- */
-function getViewWindow(view) {
-  let viewDocument = view.styleDocument ? view.styleDocument : view.doc;
-  return viewDocument.defaultView;
 }

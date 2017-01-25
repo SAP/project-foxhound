@@ -9,22 +9,42 @@
 #include "jscompartment.h"
 #include "jsobj.h"
 
-#include "asmjs/WasmModule.h"
+#include "asmjs/WasmJS.h"
 #include "builtin/TypedObject.h"
 #include "gc/Policy.h"
 #include "gc/Zone.h"
 #include "js/HashTable.h"
 #include "js/Value.h"
-#include "vm/ScopeObject.h"
+#include "vm/EnvironmentObject.h"
 #include "vm/SharedArrayObject.h"
 #include "vm/Symbol.h"
 
 namespace js {
 
+bool
+RuntimeFromMainThreadIsHeapMajorCollecting(JS::shadow::Zone* shadowZone)
+{
+    return shadowZone->runtimeFromMainThread()->isHeapMajorCollecting();
+}
+
 #ifdef DEBUG
 
+static bool
+IsMarkedBlack(NativeObject* obj)
+{
+    // Note: we assume conservatively that Nursery things will be live.
+    if (!obj->isTenured())
+        return true;
+
+    gc::TenuredCell& tenured = obj->asTenured();
+    if (tenured.isMarked(gc::BLACK) || tenured.arena()->allocatedDuringIncremental)
+        return true;
+
+    return false;
+}
+
 bool
-HeapSlot::preconditionForSet(NativeObject* owner, Kind kind, uint32_t slot)
+HeapSlot::preconditionForSet(NativeObject* owner, Kind kind, uint32_t slot) const
 {
     return kind == Slot
          ? &owner->getSlotRef(slot) == this
@@ -33,17 +53,14 @@ HeapSlot::preconditionForSet(NativeObject* owner, Kind kind, uint32_t slot)
 
 bool
 HeapSlot::preconditionForWriteBarrierPost(NativeObject* obj, Kind kind, uint32_t slot,
-                                              Value target) const
+                                          const Value& target) const
 {
-    return kind == Slot
-         ? obj->getSlotAddressUnchecked(slot)->get() == target
-         : static_cast<HeapSlot*>(obj->getDenseElements() + slot)->get() == target;
-}
-
-bool
-RuntimeFromMainThreadIsHeapMajorCollecting(JS::shadow::Zone* shadowZone)
-{
-    return shadowZone->runtimeFromMainThread()->isHeapMajorCollecting();
+    bool isCorrectSlot = kind == Slot
+                         ? obj->getSlotAddressUnchecked(slot)->get() == target
+                         : static_cast<HeapSlot*>(obj->getDenseElements() + slot)->get() == target;
+    bool isBlackToGray = target.isMarkable() &&
+                         IsMarkedBlack(obj) && JS::GCThingIsMarkedGray(JS::GCCellPtr(target));
+    return isCorrectSlot && !isBlackToGray;
 }
 
 bool
@@ -62,13 +79,6 @@ bool
 CurrentThreadIsGCSweeping()
 {
     return TlsPerThreadData.get()->gcSweeping;
-}
-
-bool
-CurrentThreadCanSkipPostBarrier(bool inNursery)
-{
-    bool onMainThread = TlsPerThreadData.get()->runtimeIfOnOwnerThread() != nullptr;
-    return !onMainThread && !inNursery;
 }
 
 #endif // DEBUG
@@ -172,8 +182,8 @@ MovableCellHasher<T>::match(const Key& k, const Lookup& l)
 template struct MovableCellHasher<JSObject*>;
 template struct MovableCellHasher<GlobalObject*>;
 template struct MovableCellHasher<SavedFrame*>;
-template struct MovableCellHasher<ScopeObject*>;
-template struct MovableCellHasher<WasmModuleObject*>;
+template struct MovableCellHasher<EnvironmentObject*>;
+template struct MovableCellHasher<WasmInstanceObject*>;
 template struct MovableCellHasher<JSScript*>;
 
 } // namespace js

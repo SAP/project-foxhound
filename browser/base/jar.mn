@@ -5,7 +5,6 @@ browser.jar:
 %  content browser %content/browser/ contentaccessible=yes
 #ifdef XP_MACOSX
 %  overlay chrome://mozapps/content/downloads/downloads.xul chrome://browser/content/downloadManagerOverlay.xul
-%  overlay chrome://global/content/console.xul chrome://browser/content/jsConsoleOverlay.xul
 %  overlay chrome://mozapps/content/update/updates.xul chrome://browser/content/softwareUpdateOverlay.xul
 #endif
 #ifdef XP_WIN
@@ -80,7 +79,7 @@ browser.jar:
         content/browser/browser-data-submission-info-bar.js (content/browser-data-submission-info-bar.js)
         content/browser/browser-devedition.js         (content/browser-devedition.js)
         content/browser/browser-feeds.js              (content/browser-feeds.js)
-        content/browser/browser-fullScreen.js         (content/browser-fullScreen.js)
+        content/browser/browser-fullScreenAndPointerLock.js  (content/browser-fullScreenAndPointerLock.js)
         content/browser/browser-fullZoom.js           (content/browser-fullZoom.js)
         content/browser/browser-fxaccounts.js         (content/browser-fxaccounts.js)
         content/browser/browser-gestureSupport.js     (content/browser-gestureSupport.js)
@@ -88,9 +87,7 @@ browser.jar:
         content/browser/browser-places.js             (content/browser-places.js)
         content/browser/browser-plugins.js            (content/browser-plugins.js)
         content/browser/browser-refreshblocker.js     (content/browser-refreshblocker.js)
-#ifdef MOZ_SAFE_BROWSING
         content/browser/browser-safebrowsing.js       (content/browser-safebrowsing.js)
-#endif
         content/browser/browser-sidebar.js            (content/browser-sidebar.js)
         content/browser/browser-social.js             (content/browser-social.js)
         content/browser/browser-syncui.js             (content/browser-syncui.js)
@@ -102,7 +99,6 @@ browser.jar:
 #endif
         content/browser/browser-thumbnails.js         (content/browser-thumbnails.js)
         content/browser/browser-trackingprotection.js (content/browser-trackingprotection.js)
-*       content/browser/chatWindow.xul                (content/chatWindow.xul)
         content/browser/tab-content.js                (content/tab-content.js)
         content/browser/content.js                    (content/content.js)
         content/browser/social-content.js             (content/social-content.js)
@@ -135,6 +131,7 @@ browser.jar:
 *       content/browser/newtab/newTab.js              (content/newtab/newTab.js)
         content/browser/newtab/newTab.css             (content/newtab/newTab.css)
         content/browser/newtab/newTab.inadjacent.json         (content/newtab/newTab.inadjacent.json)
+        content/browser/newtab/alternativeDefaultSites.json   (content/newtab/alternativeDefaultSites.json)
 *       content/browser/pageinfo/pageInfo.xul         (content/pageinfo/pageInfo.xul)
         content/browser/pageinfo/pageInfo.js          (content/pageinfo/pageInfo.js)
         content/browser/pageinfo/pageInfo.css         (content/pageinfo/pageInfo.css)
@@ -180,7 +177,6 @@ browser.jar:
 #ifdef XP_MACOSX
 *       content/browser/macBrowserOverlay.xul         (content/macBrowserOverlay.xul)
 *       content/browser/downloadManagerOverlay.xul    (content/downloadManagerOverlay.xul)
-*       content/browser/jsConsoleOverlay.xul          (content/jsConsoleOverlay.xul)
 *       content/browser/softwareUpdateOverlay.xul  (content/softwareUpdateOverlay.xul)
 #endif
 *       content/browser/viewSourceOverlay.xul         (content/viewSourceOverlay.xul)
@@ -191,15 +187,11 @@ browser.jar:
 #ifdef XP_WIN
         content/browser/win6BrowserOverlay.xul        (content/win6BrowserOverlay.xul)
 #endif
-        content/browser/socialmarks.xml               (content/socialmarks.xml)
-        content/browser/socialchat.xml                (content/socialchat.xml)
 # the following files are browser-specific overrides
 *       content/browser/license.html                  (/toolkit/content/license.html)
 % override chrome://global/content/license.html chrome://browser/content/license.html
-#ifdef MOZ_SAFE_BROWSING
         content/browser/report-phishing-overlay.xul     (content/report-phishing-overlay.xul)
         content/browser/blockedSite.xhtml               (content/blockedSite.xhtml)
 % overlay chrome://browser/content/browser.xul chrome://browser/content/report-phishing-overlay.xul
-#endif
 
 % override chrome://global/content/netError.xhtml chrome://browser/content/aboutNetError.xhtml

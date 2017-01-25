@@ -29,14 +29,6 @@ class CompartmentChecker
     explicit CompartmentChecker(ExclusiveContext* cx)
       : compartment(cx->compartment())
     {
-#ifdef DEBUG
-        // In debug builds, make sure the embedder passed the cx it claimed it
-        // was going to use.
-        JSContext* activeContext = nullptr;
-        if (cx->isJSContext())
-            activeContext = cx->asJSContext()->runtime()->activeContext;
-        MOZ_ASSERT_IF(activeContext, cx == activeContext);
-#endif
     }
 
     /*
@@ -76,6 +68,7 @@ class CompartmentChecker
     }
 
     void check(JSObject* obj) {
+        MOZ_ASSERT_IF(obj, IsInsideNursery(obj) || !obj->asTenured().isMarked(gc::GRAY));
         if (obj)
             check(obj->compartment());
     }
@@ -91,6 +84,7 @@ class CompartmentChecker
     }
 
     void check(JSString* str) {
+        MOZ_ASSERT(!str->isMarked(gc::GRAY));
         if (!str->isAtom())
             checkZone(str->zone());
     }
@@ -125,6 +119,7 @@ class CompartmentChecker
     void check(jsid id) {}
 
     void check(JSScript* script) {
+        MOZ_ASSERT_IF(script, !script->isMarked(gc::GRAY));
         if (script)
             check(script->compartment());
     }
@@ -358,7 +353,7 @@ GetNativeStackLimit(ExclusiveContext* cx)
         // unlikely that we'll be mixing trusted and untrusted code together.
         kind = StackForTrustedScript;
     }
-    return cx->perThreadData->nativeStackLimit[kind];
+    return cx->nativeStackLimit[kind];
 }
 
 inline LifoAlloc&
@@ -384,15 +379,17 @@ JSContext::setPendingException(js::Value v)
 inline bool
 JSContext::runningWithTrustedPrincipals() const
 {
-    return !compartment() || compartment()->principals() == runtime()->trustedPrincipals();
+    return !compartment() || compartment()->principals() == trustedPrincipals();
 }
 
 inline void
-js::ExclusiveContext::enterCompartment(JSCompartment* c)
+js::ExclusiveContext::enterCompartment(
+    JSCompartment* c,
+    const js::AutoLockForExclusiveAccess* maybeLock /* = nullptr */)
 {
     enterCompartmentDepth_++;
     c->enter();
-    setCompartment(c);
+    setCompartment(c, maybeLock);
 }
 
 inline void
@@ -403,7 +400,9 @@ js::ExclusiveContext::enterNullCompartment()
 }
 
 inline void
-js::ExclusiveContext::leaveCompartment(JSCompartment* oldCompartment)
+js::ExclusiveContext::leaveCompartment(
+    JSCompartment* oldCompartment,
+    const js::AutoLockForExclusiveAccess* maybeLock /* = nullptr */)
 {
     MOZ_ASSERT(hasEnteredCompartment());
     enterCompartmentDepth_--;
@@ -411,13 +410,14 @@ js::ExclusiveContext::leaveCompartment(JSCompartment* oldCompartment)
     // Only call leave() after we've setCompartment()-ed away from the current
     // compartment.
     JSCompartment* startingCompartment = compartment_;
-    setCompartment(oldCompartment);
+    setCompartment(oldCompartment, maybeLock);
     if (startingCompartment)
         startingCompartment->leave();
 }
 
 inline void
-js::ExclusiveContext::setCompartment(JSCompartment* comp)
+js::ExclusiveContext::setCompartment(JSCompartment* comp,
+                                     const AutoLockForExclusiveAccess* maybeLock /* = nullptr */)
 {
     // ExclusiveContexts can only be in the atoms zone or in exclusive zones.
     MOZ_ASSERT_IF(!isJSContext() && !runtime_->isAtomsCompartment(comp),
@@ -428,8 +428,7 @@ js::ExclusiveContext::setCompartment(JSCompartment* comp)
                   !comp->zone()->usedByExclusiveThread);
 
     // Only one thread can be in the atoms compartment at a time.
-    MOZ_ASSERT_IF(runtime_->isAtomsCompartment(comp),
-                  runtime_->currentThreadHasExclusiveAccess());
+    MOZ_ASSERT_IF(runtime_->isAtomsCompartment(comp), maybeLock != nullptr);
 
     // Make sure that the atoms compartment has its own zone.
     MOZ_ASSERT_IF(comp && !runtime_->isAtomsCompartment(comp),
@@ -452,8 +451,8 @@ JSContext::currentScript(jsbytecode** ppc,
     if (ppc)
         *ppc = nullptr;
 
-    js::Activation* act = runtime()->activation();
-    while (act && (act->cx() != this || (act->isJit() && !act->asJit()->isActive())))
+    js::Activation* act = activation();
+    while (act && act->isJit() && !act->asJit()->isActive())
         act = act->prev();
 
     if (!act)

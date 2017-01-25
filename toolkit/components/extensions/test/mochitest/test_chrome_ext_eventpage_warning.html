@@ -5,6 +5,7 @@
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="chrome_head.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" href="chrome://mochikit/contents/tests/SimpleTest/test.css"/>
 </head>
@@ -24,10 +25,10 @@ function createEventPageExtension(eventPage) {
       "background": eventPage,
     },
     files: {
-      "event-page-script.js": `(${eventPageScript})()`,
+      "event-page-script.js": eventPageScript,
       "event-page.html": `<html><head>
         <meta charset="utf-8">
-        <script src="event-page-script.js"></${"script"}>
+        <script src="event-page-script.js"><\/script>
       </head></html>`,
     },
   });

@@ -3,50 +3,42 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* Experimenting with 100 char long lines */
-/* eslint max-len: [2, 100, 2, {ignoreUrls: true, "ignorePattern": "\\s*require\\s*\\(|^\\s*loader\\.lazy|-\\*-"}] */ // eslint-disable-line
 
 "use strict";
 
-const {Cc, Ci} = require("chrome");
-
 var Services = require("Services");
 var promise = require("promise");
+var defer = require("devtools/shared/defer");
 var EventEmitter = require("devtools/shared/event-emitter");
-var clipboard = require("sdk/clipboard");
 const {executeSoon} = require("devtools/shared/DevToolsUtils");
 var {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
 var {Task} = require("devtools/shared/task");
 const {initCssProperties} = require("devtools/shared/fronts/css-properties");
 const nodeConstants = require("devtools/shared/dom-node-constants");
+const Telemetry = require("devtools/client/shared/telemetry");
 
-loader.lazyRequireGetter(this, "CSS", "CSS");
+const Menu = require("devtools/client/framework/menu");
+const MenuItem = require("devtools/client/framework/menu-item");
 
-loader.lazyRequireGetter(this, "CommandUtils", "devtools/client/shared/developer-toolbar", true);
-loader.lazyRequireGetter(this, "ComputedViewTool", "devtools/client/inspector/computed/computed", true);
-loader.lazyRequireGetter(this, "FontInspector", "devtools/client/inspector/fonts/fonts", true);
-loader.lazyRequireGetter(this, "HTMLBreadcrumbs", "devtools/client/inspector/breadcrumbs", true);
-loader.lazyRequireGetter(this, "InspectorSearch", "devtools/client/inspector/inspector-search", true);
-loader.lazyRequireGetter(this, "LayoutView", "devtools/client/inspector/layout/layout", true);
-loader.lazyRequireGetter(this, "MarkupView", "devtools/client/inspector/markup/markup", true);
-loader.lazyRequireGetter(this, "RuleViewTool", "devtools/client/inspector/rules/rules", true);
-loader.lazyRequireGetter(this, "ToolSidebar", "devtools/client/framework/sidebar", true);
-loader.lazyRequireGetter(this, "ViewHelpers", "devtools/client/shared/widgets/view-helpers", true);
+const {CommandUtils} = require("devtools/client/shared/developer-toolbar");
+const {ComputedViewTool} = require("devtools/client/inspector/computed/computed");
+const {FontInspector} = require("devtools/client/inspector/fonts/fonts");
+const {HTMLBreadcrumbs} = require("devtools/client/inspector/breadcrumbs");
+const {InspectorSearch} = require("devtools/client/inspector/inspector-search");
+const {MarkupView} = require("devtools/client/inspector/markup/markup");
+const {RuleViewTool} = require("devtools/client/inspector/rules/rules");
+const {ToolSidebar} = require("devtools/client/inspector/toolsidebar");
+const {ViewHelpers} = require("devtools/client/shared/widgets/view-helpers");
+const clipboardHelper = require("devtools/shared/platform/clipboard");
 
-loader.lazyGetter(this, "strings", () => {
-  return Services.strings.createBundle("chrome://devtools/locale/inspector.properties");
-});
-loader.lazyGetter(this, "toolboxStrings", () => {
-  return Services.strings.createBundle("chrome://devtools/locale/toolbox.properties");
-});
-loader.lazyGetter(this, "clipboardHelper", () => {
-  return Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
-});
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const INSPECTOR_L10N = new LocalizationHelper("devtools/locale/inspector.properties");
+const TOOLBOX_L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
 
 /**
  * Represents an open instance of the Inspector for a tab.
  * The inspector controls the breadcrumbs, the markup view, and the sidebar
- * (computed view, rule view, font view and layout view).
+ * (computed view, rule view, font view and animation inspector).
  *
  * Events:
  * - ready
@@ -60,8 +52,8 @@ loader.lazyGetter(this, "clipboardHelper", () => {
  *      Fired when the markup-view frame has loaded
  * - breadcrumbs-updated
  *      Fired when the breadcrumb widget updates to a new node
- * - layoutview-updated
- *      Fired when the layoutview (box model) updates to a new node
+ * - boxmodel-view-updated
+ *      Fired when the box model updates to a new node
  * - markupmutation
  *      Fired after markup mutations have been processed by the markup-view
  * - computed-view-refreshed
@@ -73,6 +65,8 @@ loader.lazyGetter(this, "clipboardHelper", () => {
  * - computed-view-sourcelinks-updated
  *      Fired when the stylesheet source links have been updated (when switching
  *      to source-mapped files)
+ * - computed-view-filtered
+ *      Fired when the computed rules view is filtered
  * - rule-view-refreshed
  *      Fired when the rule view updates to a new node
  * - rule-view-sourcelinks-updated
@@ -81,17 +75,19 @@ loader.lazyGetter(this, "clipboardHelper", () => {
  */
 function InspectorPanel(iframeWindow, toolbox) {
   this._toolbox = toolbox;
-  this._target = toolbox._target;
+  this._target = toolbox.target;
   this.panelDoc = iframeWindow.document;
   this.panelWin = iframeWindow;
   this.panelWin.inspector = this;
 
+  this.telemetry = new Telemetry();
+
   this.nodeMenuTriggerInfo = null;
 
+  this._handleRejectionIfNotDestroyed = this._handleRejectionIfNotDestroyed.bind(this);
   this._onBeforeNavigate = this._onBeforeNavigate.bind(this);
   this.onNewRoot = this.onNewRoot.bind(this);
-  this._setupNodeMenu = this._setupNodeMenu.bind(this);
-  this._resetNodeMenu = this._resetNodeMenu.bind(this);
+  this._onContextMenu = this._onContextMenu.bind(this);
   this._updateSearchResultsLabel = this._updateSearchResultsLabel.bind(this);
   this.onNewSelection = this.onNewSelection.bind(this);
   this.onBeforeNewSelection = this.onBeforeNewSelection.bind(this);
@@ -99,14 +95,8 @@ function InspectorPanel(iframeWindow, toolbox) {
   this.onPaneToggleButtonClicked = this.onPaneToggleButtonClicked.bind(this);
   this._onMarkupFrameLoad = this._onMarkupFrameLoad.bind(this);
 
-  let doc = this.panelDoc;
-
-  // Handle 'Add Node' toolbar button.
-  this.addNode = this.addNode.bind(this);
-  this.addNodeButton = doc.getElementById("inspector-element-add-button");
-  this.addNodeButton.addEventListener("click", this.addNode);
-
   this._target.on("will-navigate", this._onBeforeNavigate);
+  this._detectingActorFeatures = this._detectActorFeatures();
 
   EventEmitter.decorate(this);
 }
@@ -162,15 +152,47 @@ InspectorPanel.prototype = {
     return this._target.client.traits.pasteHTML;
   },
 
+  /**
+   * Handle promise rejections for various asynchronous actions, and only log errors if
+   * the inspector panel still exists.
+   * This is useful to silence useless errors that happen when the inspector is closed
+   * while still initializing (and making protocol requests).
+   */
+  _handleRejectionIfNotDestroyed: function (e) {
+    if (!this._panelDestroyer) {
+      console.error(e);
+    }
+  },
+
+  /**
+   * Figure out what features the backend supports
+   */
+  _detectActorFeatures: function () {
+    this._supportsDuplicateNode = false;
+    this._supportsScrollIntoView = false;
+    this._supportsResolveRelativeURL = false;
+
+    // Use getActorDescription first so that all actorHasMethod calls use
+    // a cached response from the server.
+    return this._target.getActorDescription("domwalker").then(desc => {
+      return promise.all([
+        this._target.actorHasMethod("domwalker", "duplicateNode").then(value => {
+          this._supportsDuplicateNode = value;
+        }).catch(e => console.error(e)),
+        this._target.actorHasMethod("domnode", "scrollIntoView").then(value => {
+          this._supportsScrollIntoView = value;
+        }).catch(e => console.error(e)),
+        this._target.actorHasMethod("inspector", "resolveRelativeURL").then(value => {
+          this._supportsResolveRelativeURL = value;
+        }).catch(e => console.error(e)),
+      ]);
+    });
+  },
+
   _deferredOpen: function (defaultSelection) {
-    let deferred = promise.defer();
+    let deferred = defer();
 
     this.walker.on("new-root", this.onNewRoot);
-
-    this.nodemenu = this.panelDoc.getElementById("inspector-node-popup");
-    this.lastNodemenuItem = this.nodemenu.lastChild;
-    this.nodemenu.addEventListener("popupshowing", this._setupNodeMenu, true);
-    this.nodemenu.addEventListener("popuphiding", this._resetNodeMenu, true);
 
     this.selection.on("new-node-front", this.onNewSelection);
     this.selection.on("before-new-node-front", this.onBeforeNewSelection);
@@ -184,10 +206,11 @@ InspectorPanel.prototype = {
       // is selected.
       this.updateDebuggerPausedWarning = () => {
         let notificationBox = this._toolbox.getNotificationBox();
-        let notification = notificationBox.getNotificationWithValue("inspector-script-paused");
+        let notification =
+          notificationBox.getNotificationWithValue("inspector-script-paused");
         if (!notification && this._toolbox.currentToolId == "inspector" &&
             this._toolbox.threadClient.paused) {
-          let message = strings.GetStringFromName("debuggerPausedWarning.message");
+          let message = INSPECTOR_L10N.getStr("debuggerPausedWarning.message");
           notificationBox.appendNotification(message,
             "inspector-script-paused", "", notificationBox.PRIORITY_WARNING_HIGH);
         }
@@ -214,8 +237,10 @@ InspectorPanel.prototype = {
 
       // All the components are initialized. Let's select a node.
       this.selection.setNodeFront(defaultSelection, "inspector-open");
-
       this.markup.expandNode(this.selection.nodeFront);
+
+      // And setup the toolbar only now because it may depend on the document.
+      this.setupToolbar();
 
       this.emit("ready");
       deferred.resolve(this);
@@ -238,7 +263,7 @@ InspectorPanel.prototype = {
   _getPageStyle: function () {
     return this._toolbox.inspector.getPageStyle().then(pageStyle => {
       this.pageStyle = pageStyle;
-    });
+    }, this._handleRejectionIfNotDestroyed);
   },
 
   /**
@@ -323,16 +348,17 @@ InspectorPanel.prototype = {
    */
   setupSearchBox: function () {
     this.searchBox = this.panelDoc.getElementById("inspector-searchbox");
+    this.searchClearButton = this.panelDoc.getElementById("inspector-searchinput-clear");
     this.searchResultsLabel = this.panelDoc.getElementById("inspector-searchlabel");
 
-    this.search = new InspectorSearch(this, this.searchBox);
+    this.search = new InspectorSearch(this, this.searchBox, this.searchClearButton);
     this.search.on("search-cleared", this._updateSearchResultsLabel);
     this.search.on("search-result", this._updateSearchResultsLabel);
 
     let shortcuts = new KeyShortcuts({
       window: this.panelDoc.defaultView,
     });
-    let key = strings.GetStringFromName("inspector.searchHTML.key");
+    let key = INSPECTOR_L10N.getStr("inspector.searchHTML.key");
     shortcuts.on(key, (name, event) => {
       // Prevent overriding same shortcut from the computed/rule views
       if (event.target.closest("#sidebar-panel-ruleview") ||
@@ -352,15 +378,26 @@ InspectorPanel.prototype = {
     let str = "";
     if (event !== "search-cleared") {
       if (result) {
-        str = strings.formatStringFromName(
-          "inspector.searchResultsCount2",
-          [result.resultsIndex + 1, result.resultsLength], 2);
+        str = INSPECTOR_L10N.getFormatStr(
+          "inspector.searchResultsCount2", result.resultsIndex + 1, result.resultsLength);
       } else {
-        str = strings.GetStringFromName("inspector.searchResultsNone");
+        str = INSPECTOR_L10N.getStr("inspector.searchResultsNone");
       }
     }
 
     this.searchResultsLabel.textContent = str;
+  },
+
+  get React() {
+    return this._toolbox.React;
+  },
+
+  get ReactDOM() {
+    return this._toolbox.ReactDOM;
+  },
+
+  get browserRequire() {
+    return this._toolbox.browserRequire;
   },
 
   /**
@@ -379,6 +416,17 @@ InspectorPanel.prototype = {
       defaultTab = "ruleview";
     }
 
+    // Append all side panels
+    this.sidebar.addExistingTab(
+      "ruleview",
+      INSPECTOR_L10N.getStr("inspector.sidebar.ruleViewTitle"),
+      defaultTab == "ruleview");
+
+    this.sidebar.addExistingTab(
+      "computedview",
+      INSPECTOR_L10N.getStr("inspector.sidebar.computedViewTitle"),
+      defaultTab == "computedview");
+
     this._setDefaultSidebar = (event, toolId) => {
       Services.prefs.setCharPref("devtools.inspector.activeSidebar", toolId);
     };
@@ -388,34 +436,128 @@ InspectorPanel.prototype = {
     this.ruleview = new RuleViewTool(this, this.panelWin);
     this.computedview = new ComputedViewTool(this, this.panelWin);
 
+    if (this.target.form.animationsActor) {
+      this.sidebar.addFrameTab(
+        "animationinspector",
+        INSPECTOR_L10N.getStr("inspector.sidebar.animationInspectorTitle"),
+        "chrome://devtools/content/animationinspector/animation-inspector.xhtml",
+        defaultTab == "animationinspector");
+    }
+
     if (Services.prefs.getBoolPref("devtools.fontinspector.enabled") &&
         this.canGetUsedFontFaces) {
+      this.sidebar.addExistingTab(
+        "fontinspector",
+        INSPECTOR_L10N.getStr("inspector.sidebar.fontInspectorTitle"),
+        defaultTab == "fontinspector");
+
       this.fontInspector = new FontInspector(this, this.panelWin);
-      this.panelDoc.getElementById("sidebar-tab-fontinspector").hidden = false;
+      this.sidebar.toggleTab(true, "fontinspector");
     }
 
-    this.layoutview = new LayoutView(this, this.panelWin);
-
-    if (this.target.form.animationsActor) {
-      this.sidebar.addTab("animationinspector",
-                          "chrome://devtools/content/animationinspector/animation-inspector.xhtml",
-                          defaultTab == "animationinspector");
-    }
+    this.setupSidebarSize();
 
     this.sidebar.show(defaultTab);
-
-    this.setupSidebarToggle();
   },
 
   /**
-   * Add the expand/collapse behavior for the sidebar panel.
+   * Sidebar size is currently driven by vbox.inspector-sidebar-container
+   * element, which is located at the left/bottom side of the side bar splitter.
+   * Its size is changed by the splitter and stored into preferences.
+   * As soon as bug 1260552 is fixed and new HTML based splitter in place
+   * the size can be driven by div.inspector-sidebar element. This element
+   * represents the ToolSidebar and so, the entire logic related to size
+   * persistence can be done inside the ToolSidebar.
    */
-  setupSidebarToggle: function () {
-    this._paneToggleButton = this.panelDoc.getElementById("inspector-pane-toggle");
-    this._paneToggleButton.setAttribute("tooltiptext",
-      strings.GetStringFromName("inspector.collapsePane"));
-    this._paneToggleButton.addEventListener("mousedown",
-      this.onPaneToggleButtonClicked);
+  setupSidebarSize: function () {
+    let sidePaneContainer = this.panelDoc.querySelector(
+      "#inspector-sidebar-container");
+
+    this.sidebar.on("show", () => {
+      try {
+        sidePaneContainer.width = Services.prefs.getIntPref(
+          "devtools.toolsidebar-width.inspector");
+        sidePaneContainer.height = Services.prefs.getIntPref(
+          "devtools.toolsidebar-height.inspector");
+      } catch (e) {
+        // The default width is the min-width set in CSS
+        // for #inspector-sidebar-container
+        // Set width and height of the sidebar container. Only one
+        // value is really useful at a time depending on the current
+        // toolbox orientation and having both doesn't break anything.
+        sidePaneContainer.width = 450;
+        sidePaneContainer.height = 450;
+      }
+    });
+
+    this.sidebar.on("hide", () => {
+      Services.prefs.setIntPref("devtools.toolsidebar-width.inspector",
+        sidePaneContainer.width);
+      Services.prefs.setIntPref("devtools.toolsidebar-height.inspector",
+        sidePaneContainer.height);
+    });
+
+    this.sidebar.on("destroy", () => {
+      Services.prefs.setIntPref("devtools.toolsidebar-width.inspector",
+        sidePaneContainer.width);
+      Services.prefs.setIntPref("devtools.toolsidebar-height.inspector",
+        sidePaneContainer.height);
+    });
+  },
+
+  setupToolbar: function () {
+    this.teardownToolbar();
+
+    // Setup the sidebar toggle button.
+    let SidebarToggle = this.React.createFactory(this.browserRequire(
+      "devtools/client/shared/components/sidebar-toggle"));
+
+    let sidebarToggle = SidebarToggle({
+      onClick: this.onPaneToggleButtonClicked,
+      collapsed: false,
+      expandPaneTitle: INSPECTOR_L10N.getStr("inspector.expandPane"),
+      collapsePaneTitle: INSPECTOR_L10N.getStr("inspector.collapsePane"),
+    });
+
+    let parentBox = this.panelDoc.getElementById("inspector-sidebar-toggle-box");
+    this._sidebarToggle = this.ReactDOM.render(sidebarToggle, parentBox);
+
+    // Setup the add-node button.
+    this.addNode = this.addNode.bind(this);
+    this.addNodeButton = this.panelDoc.getElementById("inspector-element-add-button");
+    this.addNodeButton.addEventListener("click", this.addNode);
+
+    // Setup the eye-dropper icon if we're in an HTML document and we have actor support.
+    if (this.selection.nodeFront && this.selection.nodeFront.isInHTMLDocument) {
+      this.toolbox.target.actorHasMethod("inspector", "pickColorFromPage").then(value => {
+        if (!value) {
+          return;
+        }
+
+        this.onEyeDropperDone = this.onEyeDropperDone.bind(this);
+        this.onEyeDropperButtonClicked = this.onEyeDropperButtonClicked.bind(this);
+        this.eyeDropperButton = this.panelDoc
+                                    .getElementById("inspector-eyedropper-toggle");
+        this.eyeDropperButton.style.display = "initial";
+        this.eyeDropperButton.addEventListener("click", this.onEyeDropperButtonClicked);
+      }, e => console.error(e));
+    } else {
+      this.panelDoc.getElementById("inspector-eyedropper-toggle").style.display = "none";
+    }
+  },
+
+  teardownToolbar: function () {
+    this._sidebarToggle = null;
+
+    if (this.addNodeButton) {
+      this.addNodeButton.removeEventListener("click", this.addNode);
+      this.addNodeButton = null;
+    }
+
+    if (this.eyeDropperButton) {
+      this.eyeDropperButton.removeEventListener("click", this.onEyeDropperButtonClicked);
+      this.eyeDropperButton = null;
+    }
   },
 
   /**
@@ -444,9 +586,13 @@ InspectorPanel.prototype = {
         this.markup.expandNode(this.selection.nodeFront);
         this.emit("new-root");
       });
+
+      // Setup the toolbar again, since its content may depend on the current document.
+      this.setupToolbar();
     };
     this._pendingSelection = onNodeSelected;
-    this._getDefaultNodeForSelection().then(onNodeSelected, console.error);
+    this._getDefaultNodeForSelection()
+        .then(onNodeSelected, this._handleRejectionIfNotDestroyed);
   },
 
   _selectionCssSelector: null,
@@ -525,16 +671,7 @@ InspectorPanel.prototype = {
         this.selection.isElementNode()) {
       selection.getUniqueSelector().then(selector => {
         this.selectionCssSelector = selector;
-      }).then(null, e => {
-        // Only log this as an error if the panel hasn't been destroyed in the
-        // meantime.
-        if (!this._panelDestroyer) {
-          console.error(e);
-        } else {
-          console.warn("Could not set the unique selector for the newly " +
-            "selected node, the inspector was destroyed.");
-        }
-      });
+      }, this._handleRejectionIfNotDestroyed);
     }
 
     let selfUpdate = this.updating("inspector-panel");
@@ -653,10 +790,6 @@ InspectorPanel.prototype = {
       this.fontInspector.destroy();
     }
 
-    if (this.layoutview) {
-      this.layoutview.destroy();
-    }
-
     let cssPropertiesDestroyer = this._cssPropertiesLoaded.then(({front}) => {
       if (front) {
         front.destroy();
@@ -667,16 +800,9 @@ InspectorPanel.prototype = {
     let sidebarDestroyer = this.sidebar.destroy();
     this.sidebar = null;
 
-    this.addNodeButton.removeEventListener("click", this.addNode);
-
-    this.nodemenu.removeEventListener("popupshowing", this._setupNodeMenu, true);
-    this.nodemenu.removeEventListener("popuphiding", this._resetNodeMenu, true);
+    this.teardownToolbar();
     this.breadcrumbs.destroy();
-    this._paneToggleButton.removeEventListener("mousedown",
-      this.onPaneToggleButtonClicked);
-    this._paneToggleButton = null;
     this.selection.off("new-node-front", this.onNewSelection);
-    this.selection.off("before-new-node", this.onBeforeNewSelection);
     this.selection.off("before-new-node-front", this.onBeforeNewSelection);
     this.selection.off("detached-front", this.onDetached);
     let markupDestroyer = this._destroyMarkup();
@@ -685,8 +811,6 @@ InspectorPanel.prototype = {
     this.panelDoc = null;
     this.panelWin = null;
     this.breadcrumbs = null;
-    this.lastNodemenuItem = null;
-    this.nodemenu = null;
     this._toolbox = null;
     this.search.destroy();
     this.search = null;
@@ -702,30 +826,14 @@ InspectorPanel.prototype = {
   },
 
   /**
-   * Show the node menu.
-   */
-  showNodeMenu: function (button, position, extraItems) {
-    if (extraItems) {
-      for (let item of extraItems) {
-        this.nodemenu.appendChild(item);
-      }
-    }
-    this.nodemenu.openPopup(button, position, 0, 0, true, false);
-  },
-
-  hideNodeMenu: function () {
-    this.nodemenu.hidePopup();
-  },
-
-  /**
    * Returns the clipboard content if it is appropriate for pasting
    * into the current node's outer HTML, otherwise returns null.
    */
   _getClipboardContentForPaste: function () {
-    let flavors = clipboard.currentFlavors;
+    let flavors = clipboardHelper.getCurrentFlavors();
     if (flavors.indexOf("text") != -1 ||
         (flavors.indexOf("html") != -1 && flavors.indexOf("image") == -1)) {
-      let content = clipboard.get();
+      let content = clipboardHelper.getData();
       if (content && content.trim().length > 0) {
         return content;
       }
@@ -733,14 +841,21 @@ InspectorPanel.prototype = {
     return null;
   },
 
-  /**
-   * Update, enable, disable, hide, show any menu item depending on the current
-   * element.
-   */
-  _setupNodeMenu: function (event) {
+  _onContextMenu: function (e) {
+    e.preventDefault();
+    this._openMenu({
+      screenX: e.screenX,
+      screenY: e.screenY,
+      target: e.target,
+    });
+  },
+
+  _openMenu: function ({ target, screenX = 0, screenY = 0 } = { }) {
     let markupContainer = this.markup.getContainer(this.selection.nodeFront);
-    this.nodeMenuTriggerInfo =
-      markupContainer.editor.getInfoAtNode(event.target.triggerNode);
+
+    this.contextMenuTarget = target;
+    this.nodeMenuTriggerInfo = markupContainer &&
+      markupContainer.editor.getInfoAtNode(target);
 
     let isSelectionElement = this.selection.isElementNode() &&
                              !this.selection.isPseudoElementNode();
@@ -753,246 +868,324 @@ InspectorPanel.prototype = {
                            this.canGetUniqueSelector &&
                            this.selection.nodeFront.isTreeDisplayed;
 
+    let menu = new Menu();
+    menu.append(new MenuItem({
+      id: "node-menu-edithtml",
+      label: INSPECTOR_L10N.getStr("inspectorHTMLEdit.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorHTMLEdit.accesskey"),
+      disabled: !isEditableElement || !this.isOuterHTMLEditable,
+      click: () => this.editHTML(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-add",
+      label: INSPECTOR_L10N.getStr("inspectorAddNode.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorAddNode.accesskey"),
+      disabled: !this.canAddHTMLChild(),
+      click: () => this.addNode(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-duplicatenode",
+      label: INSPECTOR_L10N.getStr("inspectorDuplicateNode.label"),
+      hidden: !this._supportsDuplicateNode,
+      disabled: !isDuplicatableElement,
+      click: () => this.duplicateNode(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-delete",
+      label: INSPECTOR_L10N.getStr("inspectorHTMLDelete.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorHTMLDelete.accesskey"),
+      disabled: !isEditableElement,
+      click: () => this.deleteNode(),
+    }));
+
+    menu.append(new MenuItem({
+      label: INSPECTOR_L10N.getStr("inspectorAttributesSubmenu.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorAttributesSubmenu.accesskey"),
+      submenu: this._getAttributesSubmenu(isEditableElement),
+    }));
+
+    menu.append(new MenuItem({
+      type: "separator",
+    }));
+
     // Set the pseudo classes
     for (let name of ["hover", "active", "focus"]) {
-      let menu = this.panelDoc.getElementById("node-menu-pseudo-" + name);
+      let menuitem = new MenuItem({
+        id: "node-menu-pseudo-" + name,
+        label: name,
+        type: "checkbox",
+        click: this.togglePseudoClass.bind(this, ":" + name),
+      });
 
       if (isSelectionElement) {
         let checked = this.selection.nodeFront.hasPseudoClassLock(":" + name);
-        menu.setAttribute("checked", checked);
-        menu.removeAttribute("disabled");
+        menuitem.checked = checked;
       } else {
-        menu.setAttribute("disabled", "true");
+        menuitem.disabled = true;
       }
+
+      menu.append(menuitem);
     }
 
-    // Disable delete item if needed
-    let deleteNode = this.panelDoc.getElementById("node-menu-delete");
-    if (isEditableElement) {
-      deleteNode.removeAttribute("disabled");
-    } else {
-      deleteNode.setAttribute("disabled", "true");
+    menu.append(new MenuItem({
+      type: "separator",
+    }));
+
+    let copySubmenu = new Menu();
+    copySubmenu.append(new MenuItem({
+      id: "node-menu-copyinner",
+      label: INSPECTOR_L10N.getStr("inspectorCopyInnerHTML.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorCopyInnerHTML.accesskey"),
+      disabled: !isSelectionElement,
+      click: () => this.copyInnerHTML(),
+    }));
+    copySubmenu.append(new MenuItem({
+      id: "node-menu-copyouter",
+      label: INSPECTOR_L10N.getStr("inspectorCopyOuterHTML.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorCopyOuterHTML.accesskey"),
+      disabled: !isSelectionElement,
+      click: () => this.copyOuterHTML(),
+    }));
+    copySubmenu.append(new MenuItem({
+      id: "node-menu-copyuniqueselector",
+      label: INSPECTOR_L10N.getStr("inspectorCopyCSSSelector.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorCopyCSSSelector.accesskey"),
+      disabled: !isSelectionElement,
+      hidden: !this.canGetUniqueSelector,
+      click: () => this.copyUniqueSelector(),
+    }));
+    copySubmenu.append(new MenuItem({
+      id: "node-menu-copyimagedatauri",
+      label: INSPECTOR_L10N.getStr("inspectorImageDataUri.label"),
+      disabled: !isSelectionElement || !markupContainer ||
+                !markupContainer.isPreviewable(),
+      click: () => this.copyImageDataUri(),
+    }));
+
+    menu.append(new MenuItem({
+      label: INSPECTOR_L10N.getStr("inspectorCopyHTMLSubmenu.label"),
+      submenu: copySubmenu,
+    }));
+
+    menu.append(new MenuItem({
+      label: INSPECTOR_L10N.getStr("inspectorPasteHTMLSubmenu.label"),
+      submenu: this._getPasteSubmenu(isEditableElement),
+    }));
+
+    menu.append(new MenuItem({
+      type: "separator",
+    }));
+
+    let isNodeWithChildren = this.selection.isNode() &&
+                             markupContainer.hasChildren;
+    menu.append(new MenuItem({
+      id: "node-menu-expand",
+      label: INSPECTOR_L10N.getStr("inspectorExpandNode.label"),
+      disabled: !isNodeWithChildren,
+      click: () => this.expandNode(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-collapse",
+      label: INSPECTOR_L10N.getStr("inspectorCollapseNode.label"),
+      disabled: !isNodeWithChildren || !markupContainer.expanded,
+      click: () => this.collapseNode(),
+    }));
+
+    menu.append(new MenuItem({
+      type: "separator",
+    }));
+
+    menu.append(new MenuItem({
+      id: "node-menu-scrollnodeintoview",
+      label: INSPECTOR_L10N.getStr("inspectorScrollNodeIntoView.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorScrollNodeIntoView.accesskey"),
+      hidden: !this._supportsScrollIntoView,
+      disabled: !isSelectionElement,
+      click: () => this.scrollNodeIntoView(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-screenshotnode",
+      label: INSPECTOR_L10N.getStr("inspectorScreenshotNode.label"),
+      disabled: !isScreenshotable,
+      click: () => this.screenshotNode(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-useinconsole",
+      label: INSPECTOR_L10N.getStr("inspectorUseInConsole.label"),
+      click: () => this.useInConsole(),
+    }));
+    menu.append(new MenuItem({
+      id: "node-menu-showdomproperties",
+      label: INSPECTOR_L10N.getStr("inspectorShowDOMProperties.label"),
+      click: () => this.showDOMProperties(),
+    }));
+
+    let nodeLinkMenuItems = this._getNodeLinkMenuItems();
+    if (nodeLinkMenuItems.filter(item => item.visible).length > 0) {
+      menu.append(new MenuItem({
+        id: "node-menu-link-separator",
+        type: "separator",
+      }));
     }
 
-    // Disable add item if needed
-    let addNode = this.panelDoc.getElementById("node-menu-add");
-    if (this.canAddHTMLChild()) {
-      addNode.removeAttribute("disabled");
-    } else {
-      addNode.setAttribute("disabled", "true");
+    for (let menuitem of nodeLinkMenuItems) {
+      menu.append(menuitem);
     }
 
-    // Disable / enable "Copy Unique Selector", "Copy inner HTML",
-    // "Copy outer HTML", "Scroll Into View" & "Screenshot Node" as appropriate
-    let unique = this.panelDoc.getElementById("node-menu-copyuniqueselector");
-    let screenshot = this.panelDoc.getElementById("node-menu-screenshotnode");
-    let duplicateNode = this.panelDoc.getElementById("node-menu-duplicatenode");
-    let copyInnerHTML = this.panelDoc.getElementById("node-menu-copyinner");
-    let copyOuterHTML = this.panelDoc.getElementById("node-menu-copyouter");
-    let scrollIntoView = this.panelDoc.getElementById("node-menu-scrollnodeintoview");
-    let expandAll = this.panelDoc.getElementById("node-menu-expand");
-    let collapse = this.panelDoc.getElementById("node-menu-collapse");
-
-    expandAll.setAttribute("disabled", "true");
-    collapse.setAttribute("disabled", "true");
-
-    if (this.selection.isNode() && markupContainer.hasChildren) {
-      if (markupContainer.expanded) {
-        collapse.removeAttribute("disabled");
-      }
-      expandAll.removeAttribute("disabled");
-    }
-
-    this._target.actorHasMethod("domwalker", "duplicateNode").then(value => {
-      duplicateNode.hidden = !value;
-    });
-    this._target.actorHasMethod("domnode", "scrollIntoView").then(value => {
-      scrollIntoView.hidden = !value;
-    });
-
-    if (isDuplicatableElement) {
-      duplicateNode.removeAttribute("disabled");
-    } else {
-      duplicateNode.setAttribute("disabled", "true");
-    }
-
-    if (isSelectionElement) {
-      unique.removeAttribute("disabled");
-      copyInnerHTML.removeAttribute("disabled");
-      copyOuterHTML.removeAttribute("disabled");
-      scrollIntoView.removeAttribute("disabled");
-    } else {
-      unique.setAttribute("disabled", "true");
-      copyInnerHTML.setAttribute("disabled", "true");
-      copyOuterHTML.setAttribute("disabled", "true");
-      scrollIntoView.setAttribute("disabled", "true");
-    }
-    if (!this.canGetUniqueSelector) {
-      unique.hidden = true;
-    }
-
-    if (isScreenshotable) {
-      screenshot.removeAttribute("disabled");
-    } else {
-      screenshot.setAttribute("disabled", "true");
-    }
-
-    // Enable/Disable the link open/copy items.
-    this._setupNodeLinkMenu();
-
-    // Enable the "edit HTML" item if the selection is an element and the root
-    // actor has the appropriate trait (isOuterHTMLEditable)
-    let editHTML = this.panelDoc.getElementById("node-menu-edithtml");
-    if (isEditableElement && this.isOuterHTMLEditable) {
-      editHTML.removeAttribute("disabled");
-    } else {
-      editHTML.setAttribute("disabled", "true");
-    }
-
-    let pasteOuterHTML = this.panelDoc.getElementById("node-menu-pasteouterhtml");
-    let pasteInnerHTML = this.panelDoc.getElementById("node-menu-pasteinnerhtml");
-    let pasteBefore = this.panelDoc.getElementById("node-menu-pastebefore");
-    let pasteAfter = this.panelDoc.getElementById("node-menu-pasteafter");
-    let pasteFirstChild = this.panelDoc.getElementById("node-menu-pastefirstchild");
-    let pasteLastChild = this.panelDoc.getElementById("node-menu-pastelastchild");
-
-    // Is the clipboard content appropriate? Is the element editable?
-    if (isEditableElement && this._getClipboardContentForPaste()) {
-      pasteInnerHTML.disabled = !this.canPasteInnerOrAdjacentHTML;
-      // Enable the "paste outer HTML" item if the selection is an element and
-      // the root actor has the appropriate trait (isOuterHTMLEditable).
-      pasteOuterHTML.disabled = !this.isOuterHTMLEditable;
-      // Don't paste before / after a root or a BODY or a HEAD element.
-      pasteBefore.disabled = pasteAfter.disabled =
-        !this.canPasteInnerOrAdjacentHTML || this.selection.isRoot() ||
-        this.selection.isBodyNode() || this.selection.isHeadNode();
-      // Don't paste as a first / last child of a HTML document element.
-      pasteFirstChild.disabled = pasteLastChild.disabled =
-        !this.canPasteInnerOrAdjacentHTML || (this.selection.isHTMLNode() &&
-        this.selection.isRoot());
-    } else {
-      pasteOuterHTML.disabled = true;
-      pasteInnerHTML.disabled = true;
-      pasteBefore.disabled = true;
-      pasteAfter.disabled = true;
-      pasteFirstChild.disabled = true;
-      pasteLastChild.disabled = true;
-    }
-
-    // Enable the "copy image data-uri" item if the selection is previewable
-    // which essentially checks if it's an image or canvas tag
-    let copyImageData = this.panelDoc.getElementById("node-menu-copyimagedatauri");
-    if (isSelectionElement && markupContainer && markupContainer.isPreviewable()) {
-      copyImageData.removeAttribute("disabled");
-    } else {
-      copyImageData.setAttribute("disabled", "true");
-    }
-
-    // Enable / disable "Add Attribute", "Edit Attribute"
-    // and "Remove Attribute" items
-    this._setupAttributeMenu(isEditableElement);
+    menu.popup(screenX, screenY, this._toolbox);
+    return menu;
   },
 
-  _setupAttributeMenu: function (isEditableElement) {
-    let addAttribute = this.panelDoc.getElementById("node-menu-add-attribute");
-    let editAttribute = this.panelDoc.getElementById("node-menu-edit-attribute");
-    let removeAttribute = this.panelDoc.getElementById("node-menu-remove-attribute");
+  _getPasteSubmenu: function (isEditableElement) {
+    let isPasteable = isEditableElement && this._getClipboardContentForPaste();
+    let disableAdjacentPaste = !isPasteable ||
+          !this.canPasteInnerOrAdjacentHTML || this.selection.isRoot() ||
+          this.selection.isBodyNode() || this.selection.isHeadNode();
+    let disableFirstLastPaste = !isPasteable ||
+          !this.canPasteInnerOrAdjacentHTML || (this.selection.isHTMLNode() &&
+          this.selection.isRoot());
+
+    let pasteSubmenu = new Menu();
+    pasteSubmenu.append(new MenuItem({
+      id: "node-menu-pasteinnerhtml",
+      label: INSPECTOR_L10N.getStr("inspectorPasteInnerHTML.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorPasteInnerHTML.accesskey"),
+      disabled: !isPasteable || !this.canPasteInnerOrAdjacentHTML,
+      click: () => this.pasteInnerHTML(),
+    }));
+    pasteSubmenu.append(new MenuItem({
+      id: "node-menu-pasteouterhtml",
+      label: INSPECTOR_L10N.getStr("inspectorPasteOuterHTML.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorPasteOuterHTML.accesskey"),
+      disabled: !isPasteable || !this.isOuterHTMLEditable,
+      click: () => this.pasteOuterHTML(),
+    }));
+    pasteSubmenu.append(new MenuItem({
+      id: "node-menu-pastebefore",
+      label: INSPECTOR_L10N.getStr("inspectorHTMLPasteBefore.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorHTMLPasteBefore.accesskey"),
+      disabled: disableAdjacentPaste,
+      click: () => this.pasteAdjacentHTML("beforeBegin"),
+    }));
+    pasteSubmenu.append(new MenuItem({
+      id: "node-menu-pasteafter",
+      label: INSPECTOR_L10N.getStr("inspectorHTMLPasteAfter.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorHTMLPasteAfter.accesskey"),
+      disabled: disableAdjacentPaste,
+      click: () => this.pasteAdjacentHTML("afterEnd"),
+    }));
+    pasteSubmenu.append(new MenuItem({
+      id: "node-menu-pastefirstchild",
+      label: INSPECTOR_L10N.getStr("inspectorHTMLPasteFirstChild.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorHTMLPasteFirstChild.accesskey"),
+      disabled: disableFirstLastPaste,
+      click: () => this.pasteAdjacentHTML("afterBegin"),
+    }));
+    pasteSubmenu.append(new MenuItem({
+      id: "node-menu-pastelastchild",
+      label: INSPECTOR_L10N.getStr("inspectorHTMLPasteLastChild.label"),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorHTMLPasteLastChild.accesskey"),
+      disabled: disableFirstLastPaste,
+      click: () => this.pasteAdjacentHTML("beforeEnd"),
+    }));
+
+    return pasteSubmenu;
+  },
+
+  _getAttributesSubmenu: function (isEditableElement) {
+    let attributesSubmenu = new Menu();
     let nodeInfo = this.nodeMenuTriggerInfo;
+    let isAttributeClicked = isEditableElement && nodeInfo &&
+                              nodeInfo.type === "attribute";
 
-    // Enable "Add Attribute" for all editable elements
-    if (isEditableElement) {
-      addAttribute.removeAttribute("disabled");
-    } else {
-      addAttribute.setAttribute("disabled", "true");
-    }
+    attributesSubmenu.append(new MenuItem({
+      id: "node-menu-add-attribute",
+      label: INSPECTOR_L10N.getStr("inspectorAddAttribute.label"),
+      accesskey: INSPECTOR_L10N.getStr("inspectorAddAttribute.accesskey"),
+      disabled: !isEditableElement,
+      click: () => this.onAddAttribute(),
+    }));
+    attributesSubmenu.append(new MenuItem({
+      id: "node-menu-edit-attribute",
+      label: INSPECTOR_L10N.getFormatStr("inspectorEditAttribute.label",
+                                        isAttributeClicked ? `"${nodeInfo.name}"` : ""),
+      accesskey: INSPECTOR_L10N.getStr("inspectorEditAttribute.accesskey"),
+      disabled: !isAttributeClicked,
+      click: () => this.onEditAttribute(),
+    }));
 
-    // Enable "Edit Attribute" and "Remove Attribute" only on attribute click
-    if (isEditableElement && nodeInfo && nodeInfo.type === "attribute") {
-      editAttribute.removeAttribute("disabled");
-      editAttribute.setAttribute("label",
-        strings.formatStringFromName(
-          "inspector.menu.editAttribute.label", [`"${nodeInfo.name}"`], 1));
+    attributesSubmenu.append(new MenuItem({
+      id: "node-menu-remove-attribute",
+      label: INSPECTOR_L10N.getFormatStr("inspectorRemoveAttribute.label",
+                                        isAttributeClicked ? `"${nodeInfo.name}"` : ""),
+      accesskey:
+        INSPECTOR_L10N.getStr("inspectorRemoveAttribute.accesskey"),
+      disabled: !isAttributeClicked,
+      click: () => this.onRemoveAttribute(),
+    }));
 
-      removeAttribute.removeAttribute("disabled");
-      removeAttribute.setAttribute("label",
-        strings.formatStringFromName(
-          "inspector.menu.removeAttribute.label", [`"${nodeInfo.name}"`], 1));
-    } else {
-      editAttribute.setAttribute("disabled", "true");
-      editAttribute.setAttribute("label",
-        strings.formatStringFromName(
-          "inspector.menu.editAttribute.label", [""], 1));
-
-      removeAttribute.setAttribute("disabled", "true");
-      removeAttribute.setAttribute("label",
-        strings.formatStringFromName(
-          "inspector.menu.removeAttribute.label", [""], 1));
-    }
-  },
-
-  _resetNodeMenu: function () {
-    // Remove any extra items
-    while (this.lastNodemenuItem.nextSibling) {
-      let toDelete = this.lastNodemenuItem.nextSibling;
-      toDelete.parentNode.removeChild(toDelete);
-    }
+    return attributesSubmenu;
   },
 
   /**
    * Link menu items can be shown or hidden depending on the context and
    * selected node, and their labels can vary.
+   *
+   * @return {Array} list of visible menu items related to links.
    */
-  _setupNodeLinkMenu: function () {
-    let linkSeparator = this.panelDoc.getElementById("node-menu-link-separator");
-    let linkFollow = this.panelDoc.getElementById("node-menu-link-follow");
-    let linkCopy = this.panelDoc.getElementById("node-menu-link-copy");
-
-    // Hide all by default.
-    linkSeparator.setAttribute("hidden", "true");
-    linkFollow.setAttribute("hidden", "true");
-    linkCopy.setAttribute("hidden", "true");
+  _getNodeLinkMenuItems: function () {
+    let linkFollow = new MenuItem({
+      id: "node-menu-link-follow",
+      visible: false,
+      click: () => this.onFollowLink(),
+    });
+    let linkCopy = new MenuItem({
+      id: "node-menu-link-copy",
+      visible: false,
+      click: () => this.onCopyLink(),
+    });
 
     // Get information about the right-clicked node.
-    let popupNode = this.panelDoc.popupNode;
+    let popupNode = this.contextMenuTarget;
     if (!popupNode || !popupNode.classList.contains("link")) {
-      return;
+      return [linkFollow, linkCopy];
     }
 
     let type = popupNode.dataset.type;
-    if (type === "uri" || type === "cssresource" || type === "jsresource") {
-      // First make sure the target can resolve relative URLs.
-      this.target.actorHasMethod("inspector", "resolveRelativeURL").then(canResolve => {
-        if (!canResolve) {
-          return;
-        }
+    if (this._supportsResolveRelativeURL &&
+        (type === "uri" || type === "cssresource" || type === "jsresource")) {
+      // Links can't be opened in new tabs in the browser toolbox.
+      if (type === "uri" && !this.target.chrome) {
+        linkFollow.visible = true;
+        linkFollow.label = INSPECTOR_L10N.getStr(
+          "inspector.menu.openUrlInNewTab.label");
+      } else if (type === "cssresource") {
+        linkFollow.visible = true;
+        linkFollow.label = TOOLBOX_L10N.getStr(
+          "toolbox.viewCssSourceInStyleEditor.label");
+      } else if (type === "jsresource") {
+        linkFollow.visible = true;
+        linkFollow.label = TOOLBOX_L10N.getStr(
+          "toolbox.viewJsSourceInDebugger.label");
+      }
 
-        linkSeparator.removeAttribute("hidden");
-
-        // Links can't be opened in new tabs in the browser toolbox.
-        if (type === "uri" && !this.target.chrome) {
-          linkFollow.removeAttribute("hidden");
-          linkFollow.setAttribute("label", strings.GetStringFromName(
-            "inspector.menu.openUrlInNewTab.label"));
-        } else if (type === "cssresource") {
-          linkFollow.removeAttribute("hidden");
-          linkFollow.setAttribute("label", toolboxStrings.GetStringFromName(
-            "toolbox.viewCssSourceInStyleEditor.label"));
-        } else if (type === "jsresource") {
-          linkFollow.removeAttribute("hidden");
-          linkFollow.setAttribute("label", toolboxStrings.GetStringFromName(
-            "toolbox.viewJsSourceInDebugger.label"));
-        }
-
-        linkCopy.removeAttribute("hidden");
-        linkCopy.setAttribute("label", strings.GetStringFromName(
-          "inspector.menu.copyUrlToClipboard.label"));
-      }, console.error);
+      linkCopy.visible = true;
+      linkCopy.label = INSPECTOR_L10N.getStr(
+        "inspector.menu.copyUrlToClipboard.label");
     } else if (type === "idref") {
-      linkSeparator.removeAttribute("hidden");
-      linkFollow.removeAttribute("hidden");
-      linkFollow.setAttribute("label", strings.formatStringFromName(
-        "inspector.menu.selectElement.label", [popupNode.dataset.link], 1));
+      linkFollow.visible = true;
+      linkFollow.label = INSPECTOR_L10N.getFormatStr(
+        "inspector.menu.selectElement.label", popupNode.dataset.link);
     }
+
+    return [linkFollow, linkCopy];
   },
 
   _initMarkup: function () {
@@ -1004,7 +1197,7 @@ InspectorPanel.prototype = {
     this._markupFrame = doc.createElement("iframe");
     this._markupFrame.setAttribute("flex", "1");
     this._markupFrame.setAttribute("tooltip", "aHTMLTooltip");
-    this._markupFrame.setAttribute("context", "inspector-node-popup");
+    this._markupFrame.addEventListener("contextmenu", this._onContextMenu, true);
 
     // This is needed to enable tooltips inside the iframe document.
     this._markupFrame.addEventListener("load", this._onMarkupFrameLoad, true);
@@ -1013,7 +1206,7 @@ InspectorPanel.prototype = {
     this._markupBox.appendChild(this._markupFrame);
     this._markupFrame.setAttribute("src", "chrome://devtools/content/inspector/markup/markup.xhtml");
     this._markupFrame.setAttribute("aria-label",
-      strings.GetStringFromName("inspector.panelLabel.markupView"));
+      INSPECTOR_L10N.getStr("inspector.panelLabel.markupView"));
   },
 
   _onMarkupFrameLoad: function () {
@@ -1033,6 +1226,7 @@ InspectorPanel.prototype = {
 
     if (this._markupFrame) {
       this._markupFrame.removeEventListener("load", this._onMarkupFrameLoad, true);
+      this._markupFrame.removeEventListener("contextmenu", this._onContextMenu, true);
     }
 
     if (this.markup) {
@@ -1053,39 +1247,97 @@ InspectorPanel.prototype = {
   },
 
   /**
-   * When the pane toggle button is clicked, toggle the pane, change the button
+   * When the pane toggle button is clicked or pressed, toggle the pane, change the button
    * state and tooltip.
    */
   onPaneToggleButtonClicked: function (e) {
-    let sidePane = this.panelDoc.querySelector("#inspector-sidebar");
-    let button = this._paneToggleButton;
-    let isVisible = !button.hasAttribute("pane-collapsed");
+    let sidePaneContainer = this.panelDoc.querySelector("#inspector-sidebar-container");
+    let isVisible = !this._sidebarToggle.state.collapsed;
 
     // Make sure the sidebar has width and height attributes before collapsing
     // because ViewHelpers needs it.
     if (isVisible) {
-      let rect = sidePane.getBoundingClientRect();
-      if (!sidePane.hasAttribute("width")) {
-        sidePane.setAttribute("width", rect.width);
+      let rect = sidePaneContainer.getBoundingClientRect();
+      if (!sidePaneContainer.hasAttribute("width")) {
+        sidePaneContainer.setAttribute("width", rect.width);
       }
       // always refresh the height attribute before collapsing, it could have
       // been modified by resizing the container.
-      sidePane.setAttribute("height", rect.height);
+      sidePaneContainer.setAttribute("height", rect.height);
     }
+
+    let onAnimationDone = () => {
+      if (isVisible) {
+        this._sidebarToggle.setState({collapsed: true});
+      } else {
+        this._sidebarToggle.setState({collapsed: false});
+      }
+    };
 
     ViewHelpers.togglePane({
       visible: !isVisible,
       animated: true,
-      delayed: true
-    }, sidePane);
+      delayed: true,
+      callback: onAnimationDone
+    }, sidePaneContainer);
+  },
 
-    if (isVisible) {
-      button.setAttribute("pane-collapsed", "");
-      button.setAttribute("tooltiptext", strings.GetStringFromName("inspector.expandPane"));
-    } else {
-      button.removeAttribute("pane-collapsed");
-      button.setAttribute("tooltiptext", strings.GetStringFromName("inspector.collapsePane"));
+  onEyeDropperButtonClicked: function () {
+    this.eyeDropperButton.hasAttribute("checked")
+      ? this.hideEyeDropper()
+      : this.showEyeDropper();
+  },
+
+  startEyeDropperListeners: function () {
+    this.inspector.once("color-pick-canceled", this.onEyeDropperDone);
+    this.inspector.once("color-picked", this.onEyeDropperDone);
+    this.walker.once("new-root", this.onEyeDropperDone);
+  },
+
+  stopEyeDropperListeners: function () {
+    this.inspector.off("color-pick-canceled", this.onEyeDropperDone);
+    this.inspector.off("color-picked", this.onEyeDropperDone);
+    this.walker.off("new-root", this.onEyeDropperDone);
+  },
+
+  onEyeDropperDone: function () {
+    this.eyeDropperButton.removeAttribute("checked");
+    this.stopEyeDropperListeners();
+  },
+
+  /**
+   * Show the eyedropper on the page.
+   * @return {Promise} resolves when the eyedropper is visible.
+   */
+  showEyeDropper: function () {
+    // The eyedropper button doesn't exist, most probably because the actor doesn't
+    // support the pickColorFromPage, or because the page isn't HTML.
+    if (!this.eyeDropperButton) {
+      return null;
     }
+
+    this.telemetry.toolOpened("toolbareyedropper");
+    this.eyeDropperButton.setAttribute("checked", "true");
+    this.startEyeDropperListeners();
+    return this.inspector.pickColorFromPage(this.toolbox, {copyOnSelect: true})
+                         .catch(e => console.error(e));
+  },
+
+  /**
+   * Hide the eyedropper.
+   * @return {Promise} resolves when the eyedropper is hidden.
+   */
+  hideEyeDropper: function () {
+    // The eyedropper button doesn't exist, most probably because the actor doesn't
+    // support the pickColorFromPage, or because the page isn't HTML.
+    if (!this.eyeDropperButton) {
+      return null;
+    }
+
+    this.eyeDropperButton.removeAttribute("checked");
+    this.stopEyeDropperListeners();
+    return this.inspector.cancelPickColorFromPage()
+                         .catch(e => console.error(e));
   },
 
   /**
@@ -1175,7 +1427,7 @@ InspectorPanel.prototype = {
     if (!this.walker) {
       return promise.resolve();
     }
-    return this.walker.clearPseudoClassLocks().then(null, console.error);
+    return this.walker.clearPseudoClassLocks().catch(this._handleRejectionIfNotDestroyed);
   },
 
   /**
@@ -1222,7 +1474,8 @@ InspectorPanel.prototype = {
 
   /**
    * Paste the contents of the clipboard as adjacent HTML to the selected Node.
-   * @param position The position as specified for Element.insertAdjacentHTML
+   * @param position
+   *        The position as specified for Element.insertAdjacentHTML
    *        (i.e. "beforeBegin", "afterBegin", "beforeEnd", "afterEnd").
    */
   pasteAdjacentHTML: function (position) {
@@ -1280,9 +1533,12 @@ InspectorPanel.prototype = {
   },
 
   /**
-   * Copy the content of a longString (via a promise resolving a LongStringActor) to the clipboard
-   * @param  {Promise} longStringActorPromise promise expected to resolve a LongStringActor instance
-   * @return {Promise} promise resolving (with no argument) when the string is sent to the clipboard
+   * Copy the content of a longString (via a promise resolving a
+   * LongStringActor) to the clipboard
+   * @param  {Promise} longStringActorPromise
+   *         promise expected to resolve a LongStringActor instance
+   * @return {Promise} promise resolving (with no argument) when the
+   *         string is sent to the clipboard
    */
   _copyLongString: function (longStringActorPromise) {
     return this._getLongString(longStringActorPromise).then(string => {
@@ -1292,7 +1548,8 @@ InspectorPanel.prototype = {
 
   /**
    * Retrieve the content of a longString (via a promise resolving a LongStringActor)
-   * @param  {Promise} longStringActorPromise promise expected to resolve a LongStringActor instance
+   * @param  {Promise} longStringActorPromise
+   *         promise expected to resolve a LongStringActor instance
    * @return {Promise} promise resolving with the retrieved string as argument
    */
   _getLongString: function (longStringActorPromise) {
@@ -1415,8 +1672,8 @@ InspectorPanel.prototype = {
    * in the inspector contextual-menu.
    */
   onFollowLink: function () {
-    let type = this.panelDoc.popupNode.dataset.type;
-    let link = this.panelDoc.popupNode.dataset.link;
+    let type = this.contextMenuTarget.dataset.type;
+    let link = this.contextMenuTarget.dataset.link;
 
     this.followAttributeLink(type, link);
   },
@@ -1433,7 +1690,7 @@ InspectorPanel.prototype = {
 
     if (type === "uri" || type === "cssresource" || type === "jsresource") {
       // Open link in a new tab.
-      // When the inspector menu was setup on click (see _setupNodeLinkMenu), we
+      // When the inspector menu was setup on click (see _getNodeLinkMenuItems), we
       // already checked that resolveRelativeURL existed.
       this.inspector.resolveRelativeURL(
         link, this.selection.nodeFront).then(url => {
@@ -1466,7 +1723,7 @@ InspectorPanel.prototype = {
    * in the inspector contextual-menu.
    */
   onCopyLink: function () {
-    let link = this.panelDoc.popupNode.dataset.link;
+    let link = this.contextMenuTarget.dataset.link;
 
     this.copyAttributeLink(link);
   },
@@ -1475,7 +1732,7 @@ InspectorPanel.prototype = {
    * This method is here for the benefit of copying links.
    */
   copyAttributeLink: function (link) {
-    // When the inspector menu was setup on click (see _setupNodeLinkMenu), we
+    // When the inspector menu was setup on click (see _getNodeLinkMenuItems), we
     // already checked that resolveRelativeURL existed.
     this.inspector.resolveRelativeURL(link, this.selection.nodeFront).then(url => {
       clipboardHelper.copyString(url);

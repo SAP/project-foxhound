@@ -13,6 +13,7 @@
 #include "NSSCertDBTrustDomain.h"
 #include "NSSErrorsService.h"
 #include "cert.h"
+#include "mozilla/Casting.h"
 #include "nsNSSComponent.h"
 #include "nsServiceManagerUtils.h"
 #include "pk11pub.h"
@@ -57,11 +58,6 @@ CertVerifier::~CertVerifier()
 {
 }
 
-void
-InitCertVerifierLog()
-{
-}
-
 Result
 IsCertChainRootBuiltInRoot(const UniqueCERTCertList& chain, bool& result)
 {
@@ -83,13 +79,12 @@ Result
 IsCertBuiltInRoot(CERTCertificate* cert, bool& result)
 {
   result = false;
+#ifdef DEBUG
   nsCOMPtr<nsINSSComponent> component(do_GetService(PSM_COMPONENT_CONTRACTID));
   if (!component) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
-  nsresult rv;
-#ifdef DEBUG
-  rv = component->IsCertTestBuiltInRoot(cert, result);
+  nsresult rv = component->IsCertTestBuiltInRoot(cert, result);
   if (NS_FAILED(rv)) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
@@ -97,31 +92,23 @@ IsCertBuiltInRoot(CERTCertificate* cert, bool& result)
     return Success;
   }
 #endif // DEBUG
-  nsAutoString modName;
-  rv = component->GetPIPNSSBundleString("RootCertModuleName", modName);
-  if (NS_FAILED(rv)) {
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
+  AutoSECMODListReadLock lock;
+  for (SECMODModuleList* list = SECMOD_GetDefaultModuleList(); list;
+       list = list->next) {
+    for (int i = 0; i < list->module->slotCount; i++) {
+      PK11SlotInfo* slot = list->module->slots[i];
+      // PK11_HasRootCerts should return true if and only if the given slot has
+      // an object with a CKA_CLASS of CKO_NETSCAPE_BUILTIN_ROOT_LIST, which
+      // should be true only of the builtin root list.
+      // If we can find a copy of the given certificate on the slot with the
+      // builtin root list, that certificate must be a builtin.
+      if (PK11_IsPresent(slot) && PK11_HasRootCerts(slot) &&
+          PK11_FindCertInSlot(slot, cert, nullptr) != CK_INVALID_HANDLE) {
+        result = true;
+        return Success;
+      }
+    }
   }
-  NS_ConvertUTF16toUTF8 modNameUTF8(modName);
-  UniqueSECMODModule builtinRootsModule(SECMOD_FindModule(modNameUTF8.get()));
-  // If the built-in roots module isn't loaded, nothing is a built-in root.
-  if (!builtinRootsModule) {
-    return Success;
-  }
-  UniquePK11SlotInfo builtinSlot(SECMOD_FindSlot(builtinRootsModule.get(),
-                                                 "Builtin Object Token"));
-  // This could happen if the user loaded a module that is acting like the
-  // built-in roots module but doesn't actually have a slot called "Builtin
-  // Object Token". In that case, again nothing is a built-in root.
-  if (!builtinSlot) {
-    return Success;
-  }
-  // Attempt to find a copy of the given certificate in the "Builtin Object
-  // Token" slot of the built-in root module. If we get a valid handle, this
-  // certificate exists in the root module, so we consider it a built-in root.
-  CK_OBJECT_HANDLE handle = PK11_FindCertInSlot(builtinSlot.get(), cert,
-                                                nullptr);
-  result = (handle != CK_INVALID_HANDLE);
   return Success;
 }
 
@@ -165,12 +152,14 @@ CertVerifier::SHA1ModeMoreRestrictiveThanGivenMode(SHA1Mode mode)
   switch (mSHA1Mode) {
     case SHA1Mode::Forbidden:
       return mode != SHA1Mode::Forbidden;
-    case SHA1Mode::Before2016:
-      return mode != SHA1Mode::Forbidden && mode != SHA1Mode::Before2016;
     case SHA1Mode::ImportedRoot:
+      return mode != SHA1Mode::Forbidden && mode != SHA1Mode::ImportedRoot;
+    case SHA1Mode::ImportedRootOrBefore2016:
       return mode == SHA1Mode::Allowed;
     case SHA1Mode::Allowed:
       return false;
+    // MSVC warns unless we explicitly handle this now-unused option.
+    case SHA1Mode::UsedToBeBefore2016ButNowIsForbidden:
     default:
       MOZ_ASSERT(false, "unexpected SHA1Mode type");
       return true;
@@ -296,15 +285,15 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
       // results of setting the default policy to a particular configuration.
       SHA1Mode sha1ModeConfigurations[] = {
         SHA1Mode::Forbidden,
-        SHA1Mode::Before2016,
         SHA1Mode::ImportedRoot,
+        SHA1Mode::ImportedRootOrBefore2016,
         SHA1Mode::Allowed,
       };
 
       SHA1ModeResult sha1ModeResults[] = {
         SHA1ModeResult::SucceededWithoutSHA1,
-        SHA1ModeResult::SucceededWithSHA1Before2016,
         SHA1ModeResult::SucceededWithImportedRoot,
+        SHA1ModeResult::SucceededWithImportedRootOrSHA1Before2016,
         SHA1ModeResult::SucceededWithSHA1,
       };
 
@@ -359,15 +348,6 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                           KeyPurposeId::id_kp_serverAuth,
                                           evPolicy, stapledOCSPResponse,
                                           ocspStaplingStatus);
-        // If we succeeded with the SHA1Mode of only allowing imported roots to
-        // issue SHA1 certificates after 2015, if the chain we built doesn't
-        // terminate with an imported root, we must reject it. (This only works
-        // because we try SHA1 configurations in order of decreasing
-        // strictness.)
-        // Note that if there existed a certificate chain with a built-in root
-        // that had SHA1 certificates issued before 2016, it would have already
-        // been accepted. If such a chain had SHA1 certificates issued after
-        // 2015, it will only be accepted in the SHA1Mode::Allowed case.
         if (rv == Success &&
             sha1ModeConfigurations[i] == SHA1Mode::ImportedRoot) {
           bool isBuiltInRoot = false;
@@ -451,15 +431,6 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                             CertPolicyId::anyPolicy,
                                             stapledOCSPResponse,
                                             ocspStaplingStatus);
-          // If we succeeded with the SHA1Mode of only allowing imported roots
-          // to issue SHA1 certificates after 2015, if the chain we built
-          // doesn't terminate with an imported root, we must reject it. (This
-          // only works because we try SHA1 configurations in order of
-          // decreasing strictness.)
-          // Note that if there existed a certificate chain with a built-in root
-          // that had SHA1 certificates issued before 2016, it would have
-          // already been accepted. If such a chain had SHA1 certificates issued
-          // after 2015, it will only be accepted in the SHA1Mode::Allowed case.
           if (rv == Success &&
               sha1ModeConfigurations[j] == SHA1Mode::ImportedRoot) {
             bool isBuiltInRoot = false;
@@ -489,10 +460,13 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
       if (keySizeStatus) {
         *keySizeStatus = KeySizeStatus::AlreadyBad;
       }
-      // Only collect CERT_CHAIN_SHA1_POLICY_STATUS telemetry indicating a
-      // failure when mSHA1Mode is the default.
-      // NB: When we change the default, we have to change this.
-      if (sha1ModeResult && mSHA1Mode == SHA1Mode::ImportedRoot) {
+      // The telemetry probe CERT_CHAIN_SHA1_POLICY_STATUS gives us feedback on
+      // the result of setting a specific policy. However, we don't want noise
+      // from users who have manually set the policy to Allowed or Forbidden, so
+      // we only collect for ImportedRoot or ImportedRootOrBefore2016.
+      if (sha1ModeResult &&
+          (mSHA1Mode == SHA1Mode::ImportedRoot ||
+           mSHA1Mode == SHA1Mode::ImportedRootOrBefore2016)) {
         *sha1ModeResult = SHA1ModeResult::Failed;
       }
 
@@ -505,7 +479,7 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        mCertShortLifetimeInDays,
                                        pinningDisabled, MIN_RSA_BITS_WEAK,
                                        ValidityCheckingMode::CheckingOff,
-                                       mSHA1Mode, mNetscapeStepUpPolicy,
+                                       SHA1Mode::Allowed, mNetscapeStepUpPolicy,
                                        builtChain, nullptr, nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeCA, KeyUsage::keyCertSign,
@@ -725,7 +699,8 @@ CertVerifier::VerifySSLServerCert(const UniqueCERTCertificate& peerCert,
   }
 
   Input hostnameInput;
-  result = hostnameInput.Init(uint8_t_ptr_cast(hostname), strlen(hostname));
+  result = hostnameInput.Init(BitwiseCast<const uint8_t*, const char*>(hostname),
+                              strlen(hostname));
   if (result != Success) {
     PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
     return SECFailure;

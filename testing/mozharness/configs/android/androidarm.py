@@ -43,7 +43,6 @@ config = {
         'verify-emulator',
         'install',
         'run-tests',
-        'stop-emulator',
     ],
     "emulator": {
             "name": "test-1",
@@ -74,6 +73,7 @@ config = {
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--extra-profile-file=fonts",
+                "--extra-profile-file=hyphenation",
                 "--screenshot-on-fail",
             ],
         },
@@ -164,6 +164,7 @@ config = {
                 "--symbols-path=%(symbols_path)s",
                 "--total-chunks=16",
                 "--extra-profile-file=fonts",
+                "--extra-profile-file=hyphenation",
                 "--suite=reftest",
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
@@ -323,7 +324,7 @@ config = {
         },
         "mochitest-chrome": {
             "category": "mochitest",
-            "extra_args": ["--chrome"],
+            "extra_args": ["--flavor=chrome"],
         },
         "mochitest-media-1": {
             "category": "mochitest-media",

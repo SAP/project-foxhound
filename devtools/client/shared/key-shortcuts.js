@@ -7,6 +7,7 @@
 const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 const isOSX = Services.appinfo.OS === "Darwin";
+const {KeyCodes} = require("devtools/client/shared/keycodes");
 
 // List of electron keys mapped to DOM API (DOM_VK_*) key code
 const ElectronKeysMapping = {
@@ -50,6 +51,7 @@ const ElectronKeysMapping = {
   "PageDown": "DOM_VK_PAGE_DOWN",
   "Escape": "DOM_VK_ESCAPE",
   "Esc": "DOM_VK_ESCAPE",
+  "Tab": "DOM_VK_TAB",
   "VolumeUp": "DOM_VK_VOLUME_UP",
   "VolumeDown": "DOM_VK_VOLUME_DOWN",
   "VolumeMute": "DOM_VK_VOLUME_MUTE",
@@ -121,7 +123,8 @@ KeyShortcuts.parseElectronKey = function (window, str) {
     } else if (mod === "Shift") {
       shortcut.shift = true;
     } else {
-      throw new Error("Unsupported modifier: " + mod);
+      console.error("Unsupported modifier:", mod, "from key:", str);
+      return null;
     }
   }
 
@@ -137,11 +140,13 @@ KeyShortcuts.parseElectronKey = function (window, str) {
   } else if (key in ElectronKeysMapping) {
     // Maps the others manually to DOM API DOM_VK_*
     key = ElectronKeysMapping[key];
-    shortcut.keyCode = window.KeyboardEvent[key];
+    shortcut.keyCode = KeyCodes[key];
     // Used only to stringify the shortcut
     shortcut.keyCodeString = key;
+    shortcut.key = key;
   } else {
-    throw new Error("Unsupported key: " + key);
+    console.error("Unsupported key:", key);
+    return null;
   }
 
   return shortcut;
@@ -187,19 +192,30 @@ KeyShortcuts.prototype = {
     if (shortcut.alt != event.altKey) {
       return false;
     }
-    // Shift is a special modifier, it may implicitely be required if the
-    // expected key is a special character accessible via shift.
-    if (shortcut.shift != event.shiftKey && event.key &&
-        event.key.match(/[a-zA-Z]/)) {
-      return false;
+    if (shortcut.shift != event.shiftKey) {
+      // Shift is a special modifier, it may implicitely be required if the expected key
+      // is a special character accessible via shift.
+      let isAlphabetical = event.key && event.key.match(/[a-zA-Z]/);
+      // OSX: distinguish cmd+[key] from cmd+shift+[key] shortcuts (Bug 1300458)
+      let cmdShortcut = shortcut.meta && !shortcut.alt && !shortcut.ctrl;
+      if (isAlphabetical || cmdShortcut) {
+        return false;
+      }
     }
+
     if (shortcut.keyCode) {
       return event.keyCode == shortcut.keyCode;
+    } else if (event.key in ElectronKeysMapping) {
+      return ElectronKeysMapping[event.key] === shortcut.key;
     }
+
+    // get the key from the keyCode if key is not provided.
+    let key = event.key || String.fromCharCode(event.keyCode);
+
     // For character keys, we match if the final character is the expected one.
     // But for digits we also accept indirect match to please azerty keyboard,
     // which requires Shift to be pressed to get digits.
-    return event.key.toLowerCase() == shortcut.key ||
+    return key.toLowerCase() == shortcut.key ||
       (shortcut.key.match(/[0-9]/) &&
        event.keyCode == shortcut.key.charCodeAt(0));
   },
@@ -219,6 +235,10 @@ KeyShortcuts.prototype = {
     }
     if (!this.keys.has(key)) {
       let shortcut = KeyShortcuts.parseElectronKey(this.window, key);
+      // The key string is wrong and we were unable to compute the key shortcut
+      if (!shortcut) {
+        return;
+      }
       this.keys.set(key, shortcut);
     }
     this.eventEmitter.on(key, listener);

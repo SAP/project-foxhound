@@ -12,7 +12,7 @@
 #include "mozilla/Move.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/jni/Natives.h"
 #include "nsBaseAppShell.h"
 #include "nsCOMPtr.h"
@@ -21,7 +21,6 @@
 #include "nsIAndroidBridge.h"
 
 namespace mozilla {
-class AndroidGeckoEvent;
 bool ProcessNextEvent();
 void NotifyEvent();
 }
@@ -56,8 +55,6 @@ public:
             return Type::kGeneralActivity;
         }
     };
-
-    class LegacyGeckoEvent;
 
     template<typename T>
     class LambdaEvent : public Event
@@ -132,19 +129,19 @@ public:
                 mozilla::Move(lambda)));
     }
 
-    static void PostEvent(mozilla::AndroidGeckoEvent* event);
-
     // Post a event and wait for it to finish running on the Gecko thread.
     static void SyncRunEvent(Event&& event,
                              mozilla::UniquePtr<Event>(*eventFactory)(
                                     mozilla::UniquePtr<Event>&&) = nullptr);
 
+    static already_AddRefed<nsIURI> ResolveURI(const nsCString& aUriStr);
+
     void SetBrowserApp(nsIAndroidBrowserApp* aBrowserApp) {
         mBrowserApp = aBrowserApp;
     }
 
-    void GetBrowserApp(nsIAndroidBrowserApp* *aBrowserApp) {
-        *aBrowserApp = mBrowserApp;
+    nsIAndroidBrowserApp* GetBrowserApp() {
+        return mBrowserApp;
     }
 
 protected:
@@ -220,19 +217,6 @@ protected:
 
     nsCOMPtr<nsIAndroidBrowserApp> mBrowserApp;
     nsInterfaceHashtable<nsStringHashKey, nsIObserver> mObserversHash;
-};
-
-// Class that implement native JNI methods can inherit from
-// UsesGeckoThreadProxy to have the native call forwarded
-// automatically to the Gecko thread.
-class UsesGeckoThreadProxy : public mozilla::jni::UsesNativeCallProxy
-{
-public:
-    template<class Functor>
-    static void OnNativeCall(Functor&& call)
-    {
-        nsAppShell::PostEvent(mozilla::Move(call));
-    }
 };
 
 #endif // nsAppShell_h__

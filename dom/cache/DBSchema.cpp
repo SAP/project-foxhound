@@ -38,7 +38,7 @@ const int32_t kFirstShippedSchemaVersion = 15;
 namespace {
 
 // Update this whenever the DB schema is changed.
-const int32_t kLatestSchemaVersion = 21;
+const int32_t kLatestSchemaVersion = 22;
 
 // ---------
 // The following constants define the SQL schema.  These are defined in the
@@ -105,7 +105,8 @@ const char* const kTableEntries =
     "cache_id INTEGER NOT NULL REFERENCES caches(id) ON DELETE CASCADE, "
 
     "request_redirect INTEGER NOT NULL, "
-    "request_referrer_policy INTEGER NOT NULL"
+    "request_referrer_policy INTEGER NOT NULL, "
+    "request_integrity TEXT NOT NULL"
     // New columns must be added at the end of table to migrate and
     // validate properly.
   ")";
@@ -220,7 +221,8 @@ static_assert(int(RequestCache::Default) == 0 &&
               int(RequestCache::Reload) == 2 &&
               int(RequestCache::No_cache) == 3 &&
               int(RequestCache::Force_cache) == 4 &&
-              int(RequestCache::EndGuard_) == 5,
+              int(RequestCache::Only_if_cached) == 5 &&
+              int(RequestCache::EndGuard_) == 6,
               "RequestCache values are as expected");
 static_assert(int(RequestRedirect::Follow) == 0 &&
               int(RequestRedirect::Error) == 1 &&
@@ -1660,6 +1662,7 @@ InsertEntry(mozIStorageConnection* aConn, CacheId aCacheId,
       "request_contentpolicytype, "
       "request_cache, "
       "request_redirect, "
+      "request_integrity, "
       "request_body_id, "
       "response_type, "
       "response_status, "
@@ -1683,6 +1686,7 @@ InsertEntry(mozIStorageConnection* aConn, CacheId aCacheId,
       ":request_contentpolicytype, "
       ":request_cache, "
       ":request_redirect, "
+      ":request_integrity, "
       ":request_body_id, "
       ":response_type, "
       ":response_status, "
@@ -1754,6 +1758,9 @@ InsertEntry(mozIStorageConnection* aConn, CacheId aCacheId,
 
   rv = state->BindInt32ByName(NS_LITERAL_CSTRING("request_redirect"),
     static_cast<int32_t>(aRequest.requestRedirect()));
+
+  rv = state->BindStringByName(NS_LITERAL_CSTRING("request_integrity"),
+                               aRequest.integrity());
 
   rv = BindId(state, NS_LITERAL_CSTRING("request_body_id"), aRequestBodyId);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
@@ -2050,6 +2057,7 @@ ReadRequest(mozIStorageConnection* aConn, EntryId aEntryId,
       "request_contentpolicytype, "
       "request_cache, "
       "request_redirect, "
+      "request_integrity, "
       "request_body_id "
     "FROM entries "
     "WHERE id=:id;"
@@ -2116,13 +2124,16 @@ ReadRequest(mozIStorageConnection* aConn, EntryId aEntryId,
   aSavedRequestOut->mValue.requestRedirect() =
     static_cast<RequestRedirect>(requestRedirect);
 
+  rv = state->GetString(11, aSavedRequestOut->mValue.integrity());
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
   bool nullBody = false;
-  rv = state->GetIsNull(11, &nullBody);
+  rv = state->GetIsNull(12, &nullBody);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
   aSavedRequestOut->mHasBodyId = !nullBody;
 
   if (aSavedRequestOut->mHasBodyId) {
-    rv = ExtractId(state, 11, &aSavedRequestOut->mBodyId);
+    rv = ExtractId(state, 12, &aSavedRequestOut->mBodyId);
     if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
   }
 
@@ -2462,7 +2473,7 @@ Validate(mozIStorageConnection* aConn)
 typedef nsresult (*MigrationFunc)(mozIStorageConnection*, bool&);
 struct Migration
 {
-  MOZ_CONSTEXPR Migration(int32_t aFromVersion, MigrationFunc aFunc)
+  constexpr Migration(int32_t aFromVersion, MigrationFunc aFunc)
     : mFromVersion(aFromVersion)
     , mFunc(aFunc)
   { }
@@ -2478,6 +2489,7 @@ nsresult MigrateFrom17To18(mozIStorageConnection* aConn, bool& aRewriteSchema);
 nsresult MigrateFrom18To19(mozIStorageConnection* aConn, bool& aRewriteSchema);
 nsresult MigrateFrom19To20(mozIStorageConnection* aConn, bool& aRewriteSchema);
 nsresult MigrateFrom20To21(mozIStorageConnection* aConn, bool& aRewriteSchema);
+nsresult MigrateFrom21To22(mozIStorageConnection* aConn, bool& aRewriteSchema);
 
 // Configure migration functions to run for the given starting version.
 Migration sMigrationList[] = {
@@ -2487,6 +2499,7 @@ Migration sMigrationList[] = {
   Migration(18, MigrateFrom18To19),
   Migration(19, MigrateFrom19To20),
   Migration(20, MigrateFrom20To21),
+  Migration(21, MigrateFrom21To22),
 };
 
 uint32_t sMigrationListLength = sizeof(sMigrationList) / sizeof(Migration);
@@ -2951,6 +2964,26 @@ nsresult MigrateFrom20To21(mozIStorageConnection* aConn, bool& aRewriteSchema)
   if (NS_WARN_IF(hasMoreData)) { return NS_ERROR_FAILURE; }
 
   rv = aConn->SetSchemaVersion(21);
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
+  aRewriteSchema = true;
+
+  return rv;
+}
+
+nsresult MigrateFrom21To22(mozIStorageConnection* aConn, bool& aRewriteSchema)
+{
+  MOZ_ASSERT(!NS_IsMainThread());
+  MOZ_ASSERT(aConn);
+
+  // Add the request_integrity column.
+  nsresult rv = aConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "ALTER TABLE entries "
+    "ADD COLUMN request_integrity TEXT NULL"
+  ));
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
+  rv = aConn->SetSchemaVersion(22);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
   aRewriteSchema = true;

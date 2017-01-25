@@ -42,12 +42,12 @@ struct DeviceAttachmentsD3D11;
 class CompositorD3D11 : public Compositor
 {
 public:
-  CompositorD3D11(CompositorBridgeParent* aParent, widget::CompositorWidgetProxy* aWidget);
+  CompositorD3D11(CompositorBridgeParent* aParent, widget::CompositorWidget* aWidget);
   ~CompositorD3D11();
 
   virtual CompositorD3D11* AsCompositorD3D11() override { return this; }
 
-  virtual bool Initialize() override;
+  virtual bool Initialize(nsCString* const out_failureReason) override;
 
   virtual TextureFactoryIdentifier
     GetTextureFactoryIdentifier() override;
@@ -97,13 +97,6 @@ public:
                         gfx::Float aOpacity,
                         const gfx::Matrix4x4& aTransform,
                         const gfx::Rect& aVisibleRect) override;
-
-  /* Helper for when the primary effect is VR_DISTORTION */
-  void DrawVRDistortion(const gfx::Rect &aRect,
-                        const gfx::IntRect &aClipRect,
-                        const EffectChain &aEffectChain,
-                        gfx::Float aOpacity,
-                        const gfx::Matrix4x4 &aTransform);
 
   /**
    * Start a new frame. If aClipRectIn is null, sets *aClipRectOut to the
@@ -198,6 +191,7 @@ private:
   VertexShaderConstants mVSConstants;
   PixelShaderConstants mPSConstants;
   bool mDisableSequenceForNextFrame;
+  bool mAllowPartialPresents;
 
   gfx::IntRect mInvalidRect;
   // This is the clip rect applied to the default DrawTarget (i.e. the window)

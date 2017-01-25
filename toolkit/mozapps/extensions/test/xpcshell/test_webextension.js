@@ -2,6 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+Components.utils.import("resource://gre/modules/AppConstants.jsm");
+
 const ID = "webextension1@tests.mozilla.org";
 
 const PREF_SELECTED_LOCALE = "general.useragent.locale";
@@ -16,7 +18,7 @@ const { GlobalManager, Management } = Components.utils.import("resource://gre/mo
 
 function promiseAddonStartup() {
   return new Promise(resolve => {
-    let listener = (extension) => {
+    let listener = (evt, extension) => {
       Management.off("startup", listener);
       resolve(extension);
     };
@@ -31,22 +33,19 @@ function promiseInstallWebExtension(aData) {
   return promiseInstallAllFiles([addonFile]).then(() => {
     Services.obs.notifyObservers(addonFile, "flush-cache-entry", null);
     return promiseAddonStartup();
-  }).then(() => {
-    return promiseAddonByID(aData.id);
   });
 }
 
 add_task(function*() {
-  do_check_eq(GlobalManager.count, 0);
-  do_check_false(GlobalManager.extensionMap.has(ID));
+  equal(GlobalManager.extensionMap.size, 0);
 
   yield Promise.all([
     promiseInstallAllFiles([do_get_addon("webextension_1")], true),
     promiseAddonStartup()
   ]);
 
-  do_check_eq(GlobalManager.count, 1);
-  do_check_true(GlobalManager.extensionMap.has(ID));
+  equal(GlobalManager.extensionMap.size, 1);
+  ok(GlobalManager.extensionMap.has(ID));
 
   let chromeReg = AM_Cc["@mozilla.org/chrome/chrome-registry;1"].
                   getService(AM_Ci.nsIChromeRegistry);
@@ -67,6 +66,7 @@ add_task(function*() {
   do_check_true(addon.isActive);
   do_check_false(addon.isSystem);
   do_check_eq(addon.type, "extension");
+  do_check_true(addon.isWebExtension);
   do_check_eq(addon.signedState, mozinfo.addon_signing ? AddonManager.SIGNEDSTATE_SIGNED : AddonManager.SIGNEDSTATE_NOT_REQUIRED);
 
   let uri = do_get_addon_root_uri(profileDir, ID);
@@ -77,14 +77,13 @@ add_task(function*() {
   // Should persist through a restart
   yield promiseShutdownManager();
 
-  do_check_eq(GlobalManager.count, 0);
-  do_check_false(GlobalManager.extensionMap.has(ID));
+  equal(GlobalManager.extensionMap.size, 0);
 
   startupManager();
   yield promiseAddonStartup();
 
-  do_check_eq(GlobalManager.count, 1);
-  do_check_true(GlobalManager.extensionMap.has(ID));
+  equal(GlobalManager.extensionMap.size, 1);
+  ok(GlobalManager.extensionMap.has(ID));
 
   addon = yield promiseAddonByID(ID);
   do_check_neq(addon, null);
@@ -107,18 +106,17 @@ add_task(function*() {
 
   addon.userDisabled = true;
 
-  do_check_eq(GlobalManager.count, 0);
-  do_check_false(GlobalManager.extensionMap.has(ID));
+  equal(GlobalManager.extensionMap.size, 0);
 
   addon.userDisabled = false;
   yield promiseAddonStartup();
 
-  do_check_eq(GlobalManager.count, 1);
-  do_check_true(GlobalManager.extensionMap.has(ID));
+  equal(GlobalManager.extensionMap.size, 1);
+  ok(GlobalManager.extensionMap.has(ID));
 
   addon.uninstall();
 
-  do_check_eq(GlobalManager.count, 0);
+  equal(GlobalManager.extensionMap.size, 0);
   do_check_false(GlobalManager.extensionMap.has(ID));
 
   yield promiseShutdownManager();
@@ -126,7 +124,7 @@ add_task(function*() {
 
 // Writing the manifest direct to the profile should work
 add_task(function*() {
-  writeWebManifestForExtension({
+  yield promiseWriteWebManifestForExtension({
     name: "Web Extension Name",
     version: "1.0",
     manifest_version: 2,
@@ -192,7 +190,7 @@ add_task(function* test_manifest_localization() {
 
 // Missing version should cause a failure
 add_task(function*() {
-  writeWebManifestForExtension({
+  yield promiseWriteWebManifestForExtension({
     name: "Web Extension Name",
     manifest_version: 2,
     applications: {
@@ -215,7 +213,7 @@ add_task(function*() {
 
 // Incorrect manifest version should cause a failure
 add_task(function*() {
-  writeWebManifestForExtension({
+  yield promiseWriteWebManifestForExtension({
     name: "Web Extension Name",
     version: "1.0",
     manifest_version: 1,
@@ -264,14 +262,17 @@ add_task(function*() {
 add_task(function* test_options_ui() {
   let OPTIONS_RE = /^moz-extension:\/\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/options\.html$/;
 
-  let addon = yield promiseInstallWebExtension({
+  const ID = "webextension@tests.mozilla.org";
+  yield promiseInstallWebExtension({
     manifest: {
+      applications: {gecko: {id: ID}},
       "options_ui": {
         "page": "options.html",
       },
     },
   });
 
+  let addon = yield promiseAddonByID(ID);
   equal(addon.optionsType, AddonManager.OPTIONS_TYPE_INLINE_BROWSER,
         "Addon should have an INLINE_BROWSER options type");
 
@@ -280,8 +281,10 @@ add_task(function* test_options_ui() {
 
   addon.uninstall();
 
-  addon = yield promiseInstallWebExtension({
+  const ID2 = "webextension2@tests.mozilla.org";
+  yield promiseInstallWebExtension({
     manifest: {
+      applications: {gecko: {id: ID2}},
       "options_ui": {
         "page": "options.html",
         "open_in_tab": true,
@@ -289,11 +292,64 @@ add_task(function* test_options_ui() {
     },
   });
 
+  addon = yield promiseAddonByID(ID2);
   equal(addon.optionsType, AddonManager.OPTIONS_TYPE_TAB,
         "Addon should have a TAB options type");
 
   ok(OPTIONS_RE.test(addon.optionsURL),
      "Addon should have a moz-extension: options URL for /options.html");
+
+  addon.uninstall();
+});
+
+// Test that experiments permissions add the appropriate dependencies.
+add_task(function* test_experiments_dependencies() {
+  if (AppConstants.RELEASE_BUILD)
+    // Experiments are not enabled on release builds.
+    return;
+
+  let addonFile = createTempWebExtensionFile({
+    manifest: {
+      applications: {gecko: {id: "meh@experiment"}},
+      "permissions": ["experiments.meh"],
+    },
+  });
+
+  yield promiseInstallAllFiles([addonFile]);
+
+  let addon = yield new Promise(resolve => AddonManager.getAddonByID("meh@experiment", resolve));
+
+  deepEqual(addon.dependencies, ["meh@experiments.addons.mozilla.org"],
+            "Addon should have the expected dependencies");
+
+  equal(addon.appDisabled, true, "Add-on should be app disabled due to missing dependencies");
+
+  addon.uninstall();
+});
+
+// Test that experiments API extensions install correctly.
+add_task(function* test_experiments_api() {
+  if (AppConstants.RELEASE_BUILD)
+    // Experiments are not enabled on release builds.
+    return;
+
+  const ID = "meh@experiments.addons.mozilla.org";
+
+  let addonFile = createTempXPIFile({
+    id: ID,
+    type: 256,
+    version: "0.1",
+    name: "Meh API",
+  });
+
+  yield promiseInstallAllFiles([addonFile]);
+
+  let addons = yield new Promise(resolve => AddonManager.getAddonsByTypes(["apiextension"], resolve));
+  let addon = addons.pop();
+  equal(addon.id, ID, "Add-on should be installed as an API extension");
+
+  addons = yield new Promise(resolve => AddonManager.getAddonsByTypes(["extension"], resolve));
+  equal(addons.pop().id, ID, "Add-on type should be aliased to extension");
 
   addon.uninstall();
 });

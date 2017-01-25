@@ -9,12 +9,18 @@
 #include "gfxPlatform.h"
 #include "nsAutoRef.h"
 #include "nsTArray.h"
+#include "mozilla/gfx/gfxVars.h"
 
 #if (MOZ_WIDGET_GTK == 2)
 extern "C" {
     typedef struct _GdkDrawable GdkDrawable;
 }
 #endif
+
+#ifdef MOZ_X11
+struct _XDisplay;
+typedef struct _XDisplay Display;
+#endif // MOZ_X11
 
 class gfxFontconfigUtils;
 
@@ -98,18 +104,10 @@ public:
     static int32_t GetDPI();
     static double  GetDPIScale();
 
-    bool UseXRender() {
-#if defined(MOZ_X11)
-        return sUseXRender;
-#else
-        return false;
-#endif
-    }
-
 #ifdef MOZ_X11
     virtual void GetAzureBackendInfo(mozilla::widget::InfoObject &aObj) override {
       gfxPlatform::GetAzureBackendInfo(aObj);
-      aObj.DefineProperty("CairoUseXRender", UseXRender());
+      aObj.DefineProperty("CairoUseXRender", mozilla::gfx::gfxVars::UseXRender());
     }
 #endif
 
@@ -123,6 +121,8 @@ public:
       return true;
     }
 
+    bool SupportsApzTouchInput() const override;
+
     void FontsPrefsChanged(const char *aPref) override;
 
     // maximum number of fonts to substitute for a generic
@@ -131,6 +131,25 @@ public:
     bool SupportsPluginDirectBitmapDrawing() override {
       return true;
     }
+
+    bool AccelerateLayersByDefault() override {
+#ifdef NIGHTLY_BUILD
+      // Only enable the GL compositor on Nightly for now until we have
+      // sufficient data for blocklisting.
+      return true;
+#endif
+      return false;
+    }
+
+#ifdef GL_PROVIDER_GLX
+    already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource() override;
+#endif
+
+#ifdef MOZ_X11
+    Display* GetCompositorDisplay() {
+      return mCompositorDisplay;
+    }
+#endif // MOZ_X11
 
 protected:
     static gfxFontconfigUtils *sFontconfigUtils;
@@ -142,7 +161,7 @@ private:
                                              size_t &size) override;
 
 #ifdef MOZ_X11
-    static bool sUseXRender;
+    Display* mCompositorDisplay;
 #endif
 
     // xxx - this will be removed once the new fontconfig platform font list

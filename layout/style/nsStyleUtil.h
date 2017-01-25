@@ -6,7 +6,7 @@
 #define nsStyleUtil_h___
 
 #include "nsCoord.h"
-#include "nsCSSProperty.h"
+#include "nsCSSPropertyID.h"
 #include "nsString.h"
 #include "nsTArrayForwardDeclare.h"
 #include "gfxFontFamilyList.h"
@@ -31,6 +31,10 @@ public:
                                 const nsAString& aSelectorValue,
                                 const nsStringComparator& aComparator);
 
+ static bool ValueIncludes(const nsSubstring& aValueList,
+                           const nsSubstring& aValue,
+                           const nsStringComparator& aComparator);
+
   // Append a quoted (with 'quoteChar') and escaped version of aString
   // to aResult.  'quoteChar' must be ' or ".
   static void AppendEscapedCSSString(const nsAString& aString,
@@ -49,7 +53,7 @@ public:
                                  nsAString& aResult);
 
   // Append a bitmask-valued property's value(s) (space-separated) to aResult.
-  static void AppendBitmaskCSSValue(nsCSSProperty aProperty,
+  static void AppendBitmaskCSSValue(nsCSSPropertyID aProperty,
                                     int32_t aMaskedValue,
                                     int32_t aFirstMask,
                                     int32_t aLastMask,
@@ -74,7 +78,6 @@ public:
 
   static void AppendStepsTimingFunction(nsTimingFunction::Type aType,
                                         uint32_t aSteps,
-                                        nsTimingFunction::StepSyntax aSyntax,
                                         nsAString& aResult);
   static void AppendCubicBezierTimingFunction(float aX1, float aY1,
                                               float aX2, float aY2,

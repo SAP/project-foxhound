@@ -80,6 +80,8 @@ dictionary OriginAttributesDictionary {
   boolean inIsolatedMozBrowser = false;
   DOMString addonId = "";
   DOMString signedPkg = "";
+  unsigned long privateBrowsingId = 0;
+  DOMString firstPartyDomain = "";
 };
 dictionary OriginAttributesPatternDictionary {
   unsigned long appId;
@@ -87,4 +89,6 @@ dictionary OriginAttributesPatternDictionary {
   boolean inIsolatedMozBrowser;
   DOMString addonId;
   DOMString signedPkg;
+  unsigned long privateBrowsingId;
+  DOMString firstPartyDomain;
 };

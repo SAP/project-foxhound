@@ -38,7 +38,7 @@ class ReadbackResultWriterD3D11 final : public nsIRunnable
 public:
   ReadbackResultWriterD3D11(ReadbackTask *aTask) : mTask(aTask) {}
 
-  NS_IMETHODIMP Run()
+  NS_IMETHOD Run() override
   {
     D3D10_TEXTURE2D_DESC desc;
     mTask->mReadbackTexture->GetDesc(&desc);
@@ -57,7 +57,7 @@ public:
       RefPtr<DataSourceSurface> surf =
         Factory::CreateWrappingDataSourceSurface((uint8_t*)mappedTex.pData, mappedTex.RowPitch,
                                                  IntSize(desc.Width, desc.Height),
-                                                 SurfaceFormat::B8G8R8X8);
+                                                 SurfaceFormat::B8G8R8A8);
 
       mTask->mSink->ProcessReadback(surf);
 

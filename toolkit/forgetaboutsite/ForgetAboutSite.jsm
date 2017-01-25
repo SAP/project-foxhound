@@ -74,7 +74,7 @@ this.ForgetAboutSite = {
     // Cookies
     let cm = Cc["@mozilla.org/cookiemanager;1"].
              getService(Ci.nsICookieManager2);
-    let enumerator = cm.getCookiesFromHost(aDomain, {});
+    let enumerator = cm.getCookiesWithOriginAttributes(JSON.stringify({}), aDomain);
     while (enumerator.hasMoreElements()) {
       let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
       cm.remove(cookie.host, cookie.name, cookie.path, false, cookie.originAttributes);
@@ -83,7 +83,7 @@ this.ForgetAboutSite = {
     // EME
     let mps = Cc["@mozilla.org/gecko-media-plugin-service;1"].
                getService(Ci.mozIGeckoMediaPluginChromeService);
-    mps.forgetThisSite(aDomain);
+    mps.forgetThisSite(aDomain, JSON.stringify({}));
 
     // Plugin data
     const phInterface = Ci.nsIPluginHost;
@@ -131,12 +131,6 @@ this.ForgetAboutSite = {
       }
     }
 
-    // Clear any "do not save for this site" for this domain
-    let disabledHosts = lm.getAllDisabledHosts();
-    for (let i = 0; i < disabledHosts.length; i++)
-      if (hasRootDomain(disabledHosts[i], aDomain))
-        lm.setLoginSavingEnabled(disabledHosts, true);
-
     // Permissions
     let pm = Cc["@mozilla.org/permissionmanager;1"].
              getService(Ci.nsIPermissionManager);
@@ -164,10 +158,16 @@ this.ForgetAboutSite = {
                                caUtils);
     let httpURI = caUtils.makeURI("http://" + aDomain);
     let httpsURI = caUtils.makeURI("https://" + aDomain);
-    let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(httpURI, {});
-    let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(httpsURI, {});
-    qms.clearStoragesForPrincipal(httpPrincipal);
-    qms.clearStoragesForPrincipal(httpsPrincipal);
+    // Following code section has been reverted to the state before Bug 1238183,
+    // but added a new argument to clearStoragesForPrincipal() for indicating
+    // clear all storages under a given origin.
+    let httpPrincipal = Services.scriptSecurityManager
+                                .createCodebasePrincipal(httpURI, {});
+    let httpsPrincipal = Services.scriptSecurityManager
+                                 .createCodebasePrincipal(httpsURI, {});
+    qms.clearStoragesForPrincipal(httpPrincipal, null, true);
+    qms.clearStoragesForPrincipal(httpsPrincipal, null, true);
+
 
     function onContentPrefsRemovalFinished() {
       // Everybody else (including extensions)

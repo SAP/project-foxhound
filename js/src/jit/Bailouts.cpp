@@ -29,7 +29,7 @@ using mozilla::IsInRange;
 uint32_t
 jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo)
 {
-    JSContext* cx = GetJSContextFromJitCode();
+    JSContext* cx = GetJSContextFromMainThread();
     MOZ_ASSERT(bailoutInfo);
 
     // We don't have an exit frame.
@@ -105,7 +105,7 @@ jit::InvalidationBailout(InvalidationBailoutStack* sp, size_t* frameSizeOut,
 {
     sp->checkInvariants();
 
-    JSContext* cx = GetJSContextFromJitCode();
+    JSContext* cx = GetJSContextFromMainThread();
 
     // We don't have an exit frame.
     cx->runtime()->jitTop = FAKE_JIT_TOP_FOR_BAILOUT;
@@ -254,19 +254,25 @@ jit::ExceptionHandlerBailout(JSContext* cx, const InlineFrameIterator& frame,
     return retval;
 }
 
-// Initialize the decl env Object, call object, and any arguments obj of the current frame.
+// Initialize the decl env Object, call object, and any arguments obj of the
+// current frame.
 bool
-jit::EnsureHasScopeObjects(JSContext* cx, AbstractFramePtr fp)
+jit::EnsureHasEnvironmentObjects(JSContext* cx, AbstractFramePtr fp)
 {
     // Ion does not compile eval scripts.
     MOZ_ASSERT(!fp.isEvalFrame());
 
-    if (fp.isFunctionFrame() &&
-        fp.callee()->needsCallObject() &&
-        !fp.hasCallObj())
-    {
-        return fp.initFunctionScopeObjects(cx);
+    if (fp.isFunctionFrame()) {
+        // Ion does not handle extra var environments due to parameter
+        // expressions yet.
+        MOZ_ASSERT(!fp.callee()->needsExtraBodyVarEnvironment());
+
+        if (!fp.hasInitialEnvironment() && fp.callee()->needsFunctionEnvironmentObjects()) {
+            if (!fp.initFunctionEnvironmentObjects(cx))
+                return false;
+        }
     }
+
     return true;
 }
 

@@ -11,8 +11,8 @@ const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 const DBG_XUL = "chrome://devtools/content/framework/toolbox-process-window.xul";
 const CHROME_DEBUGGER_PROFILE_NAME = "chrome_debugger_profile";
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 const { require, DevToolsLoader } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "Telemetry", function () {
   return require("devtools/client/shared/telemetry");
@@ -52,18 +52,18 @@ this.BrowserToolboxProcess = function BrowserToolboxProcess(aOnClose, aOnRun, aO
   // all three arguments
   if (typeof aOnClose === "object") {
     if (aOnClose.onClose) {
-      this.on("close", aOnClose.onClose);
+      this.once("close", aOnClose.onClose);
     }
     if (aOnClose.onRun) {
-      this.on("run", aOnClose.onRun);
+      this.once("run", aOnClose.onRun);
     }
     this._options = aOnClose;
   } else {
     if (aOnClose) {
-      this.on("close", aOnClose);
+      this.once("close", aOnClose);
     }
     if (aOnRun) {
-      this.on("run", aOnRun);
+      this.once("run", aOnRun);
     }
     this._options = aOptions || {};
   }
@@ -132,7 +132,7 @@ BrowserToolboxProcess.prototype = {
     dumpn("Created a separate loader instance for the DebuggerServer.");
 
     // Forward interesting events.
-    this.debuggerServer.on("connectionchange", this.emit.bind(this));
+    this.debuggerServer.on("connectionchange", this.emit);
 
     this.debuggerServer.init();
     this.debuggerServer.addBrowserActors();
@@ -141,8 +141,11 @@ BrowserToolboxProcess.prototype = {
 
     let chromeDebuggingPort =
       Services.prefs.getIntPref("devtools.debugger.chrome-debugging-port");
+    let chromeDebuggingWebSocket =
+      Services.prefs.getBoolPref("devtools.debugger.chrome-debugging-websocket");
     let listener = this.debuggerServer.createListener();
     listener.portOrPath = chromeDebuggingPort;
+    listener.webSocket = chromeDebuggingWebSocket;
     listener.open();
 
     dumpn("Finished initializing the chrome toolbox server.");
@@ -249,6 +252,7 @@ BrowserToolboxProcess.prototype = {
 
     this._telemetry.toolClosed("jsbrowserdebugger");
     if (this.debuggerServer) {
+      this.debuggerServer.off("connectionchange", this.emit);
       this.debuggerServer.destroy();
       this.debuggerServer = null;
     }
@@ -260,6 +264,9 @@ BrowserToolboxProcess.prototype = {
 
     this._dbgProcess = null;
     this._options = null;
+    if (this.loader) {
+      this.loader.destroy();
+    }
     this.loader = null;
     this._telemetry = null;
   }

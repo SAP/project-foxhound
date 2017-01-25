@@ -106,7 +106,11 @@
     },
 
     onUnregister(request) {
-      // Do nothing.
+      this.serverSendMsg(JSON.stringify({
+        messageType: "unregister",
+        channelID: request.channelID,
+        status: 200,
+      }));
     },
 
     onAck(request) {
@@ -170,6 +174,7 @@ function setupPrefs() {
   return SpecialPowers.pushPrefEnv({"set": [
     ["dom.push.enabled", true],
     ["dom.push.connection.enabled", true],
+    ["dom.push.maxRecentMessageIDsPerSubscription", 0],
     ["dom.serviceWorkers.exemptFromPerDomainMax", true],
     ["dom.serviceWorkers.enabled", true],
     ["dom.serviceWorkers.testing.enabled", true]
@@ -219,6 +224,22 @@ function sendRequestToWorker(request) {
         (e.data.error ? reject : resolve)(e.data);
       };
       registration.active.postMessage(request, [channel.port2]);
+    });
+  });
+}
+
+function waitForActive(swr) {
+  let sw = swr.installing || swr.waiting || swr.active;
+  return new Promise(resolve => {
+    if (sw.state === 'activated') {
+      resolve(swr);
+      return;
+    }
+    sw.addEventListener('statechange', function onStateChange(evt) {
+      if (sw.state === 'activated') {
+        sw.removeEventListener('statechange', onStateChange);
+        resolve(swr);
+      }
     });
   });
 }

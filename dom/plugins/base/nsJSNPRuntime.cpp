@@ -8,6 +8,7 @@
 #include "jsfriendapi.h"
 #include "jswrapper.h"
 
+#include "nsAutoPtr.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsJSNPRuntime.h"
 #include "nsNPAPIPlugin.h"
@@ -254,7 +255,8 @@ const static js::ObjectOps sNPObjectJSWrapperObjectOps = {
 
 const static js::Class sNPObjectJSWrapperClass = {
     NPRUNTIME_JSCLASS_NAME,
-    JSCLASS_HAS_PRIVATE,
+    JSCLASS_HAS_PRIVATE |
+    JSCLASS_FOREGROUND_FINALIZE,
     &sNPObjectJSWrapperClassOps,
     JS_NULL_CLASS_SPEC,
     &sNPObjectJSWrapperClassExtension,
@@ -292,7 +294,9 @@ static const JSClassOps sNPObjectMemberClassOps = {
 };
 
 static const JSClass sNPObjectMemberClass = {
-  "NPObject Ambiguous Member class", JSCLASS_HAS_PRIVATE,
+  "NPObject Ambiguous Member class",
+  JSCLASS_HAS_PRIVATE |
+  JSCLASS_FOREGROUND_FINALIZE,
   &sNPObjectMemberClassOps
 };
 
@@ -334,11 +338,9 @@ RegisterGCCallbacks()
     return true;
   }
 
-  JSRuntime *jsRuntime = xpc::GetJSRuntime();
-  MOZ_ASSERT(jsRuntime != nullptr);
-
   // Register a callback to trace wrapped JSObjects.
-  if (!JS_AddExtraGCRootsTracer(jsRuntime, TraceJSObjWrappers, nullptr)) {
+  JSContext* cx = dom::danger::GetJSContext();
+  if (!JS_AddExtraGCRootsTracer(cx, TraceJSObjWrappers, nullptr)) {
     return false;
   }
 
@@ -356,11 +358,9 @@ UnregisterGCCallbacks()
 {
   MOZ_ASSERT(sCallbackIsRegistered);
 
-  JSRuntime *jsRuntime = xpc::GetJSRuntime();
-  MOZ_ASSERT(jsRuntime != nullptr);
-
   // Remove tracing callback.
-  JS_RemoveExtraGCRootsTracer(jsRuntime, TraceJSObjWrappers, nullptr);
+  JSContext* cx = dom::danger::GetJSContext();
+  JS_RemoveExtraGCRootsTracer(cx, TraceJSObjWrappers, nullptr);
 
   // Remove delayed destruction callback.
   if (sCallbackIsRegistered) {
@@ -1188,6 +1188,8 @@ GetNPObjectWrapper(JSContext *cx, JSObject *aObj, bool wrapResult = true)
       }
       return obj;
     }
+
+    JSAutoCompartment ac(cx, obj);
     if (!::JS_GetPrototype(cx, obj, &obj)) {
       return nullptr;
     }
@@ -1370,6 +1372,19 @@ NPObjWrapper_GetProperty(JSContext *cx, JS::Handle<JSObject*> obj, JS::Handle<js
       vp.setObject(*obj);
       return true;
     }
+
+    if (JS::GetSymbolCode(sym) == JS::SymbolCode::toStringTag) {
+      JS::RootedString tag(cx, JS_NewStringCopyZ(cx, NPRUNTIME_JSCLASS_NAME));
+      if (!tag) {
+        return false;
+      }
+
+      vp.setString(tag);
+      return true;
+    }
+
+    vp.setUndefined();
+    return true;
   }
 
   // Find out what plugin (NPP) is the owner of the object we're

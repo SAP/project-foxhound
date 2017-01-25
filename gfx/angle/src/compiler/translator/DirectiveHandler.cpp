@@ -12,6 +12,9 @@
 #include "common/debug.h"
 #include "compiler/translator/Diagnostics.h"
 
+namespace sh
+{
+
 static TBehavior getBehavior(const std::string& str)
 {
     const char kRequire[] = "require";
@@ -182,8 +185,7 @@ void TDirectiveHandler::handleExtension(const pp::SourceLocation& loc,
 void TDirectiveHandler::handleVersion(const pp::SourceLocation& loc,
                                       int version)
 {
-    if (version == 100 ||
-        version == 300)
+    if (version == 100 || version == 300 || version == 310)
     {
         mShaderVersion = version;
     }
@@ -196,3 +198,5 @@ void TDirectiveHandler::handleVersion(const pp::SourceLocation& loc,
                                "version number", str, "not supported");
     }
 }
+
+}  // namespace sh

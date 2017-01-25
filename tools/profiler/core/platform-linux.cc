@@ -92,10 +92,6 @@
 #include <string.h>
 #include <list>
 
-#ifdef MOZ_NUWA_PROCESS
-#include "ipc/Nuwa.h"
-#endif
-
 #define SIGNAL_SAVE_PROFILE SIGUSR2
 
 using namespace mozilla;
@@ -231,8 +227,12 @@ static void SetSampleContext(TickSample* sample, void* context)
 namespace {
 
 void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
+  // Avoid TSan warning about clobbering errno.
+  int savedErrno = errno;
+
   if (!Sampler::GetActiveSampler()) {
     sem_post(&sSignalHandlingDone);
+    errno = savedErrno;
     return;
   }
 
@@ -253,6 +253,7 @@ void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
 
   sCurrentThreadProfile = NULL;
   sem_post(&sSignalHandlingDone);
+  errno = savedErrno;
 }
 
 } // namespace
@@ -294,18 +295,6 @@ Sampler::FreePlatformData(PlatformData* aData)
 static void* SignalSender(void* arg) {
   // Taken from platform_thread_posix.cc
   prctl(PR_SET_NAME, "SamplerThread", 0, 0, 0);
-
-#ifdef MOZ_NUWA_PROCESS
-  // If the Nuwa process is enabled, we need to mark and freeze the sampler
-  // thread in the Nuwa process and have this thread recreated in the spawned
-  // child.
-  if(IsNuwaProcess()) {
-    NuwaMarkCurrentThread(nullptr, nullptr);
-    // Freeze the thread here so the spawned child will get the correct tgid
-    // from the getpid() call below.
-    NuwaFreezeCurrentThread();
-  }
-#endif
 
   int vm_tgid_ = getpid();
   DebugOnly<int> my_tid = gettid();
@@ -495,18 +484,6 @@ void Sampler::Stop() {
   }
 }
 
-#ifdef MOZ_NUWA_PROCESS
-static void
-UpdateThreadId(void* aThreadInfo) {
-  ThreadInfo* info = static_cast<ThreadInfo*>(aThreadInfo);
-  // Note that this function is called during thread recreation. Only the thread
-  // calling this method is running. We can't try to acquire
-  // Sampler::sRegisteredThreadsMutex because it could be held by another
-  // thread.
-  info->SetThreadId(gettid());
-}
-#endif
-
 bool Sampler::RegisterCurrentThread(const char* aName,
                                     PseudoStack* aPseudoStack,
                                     bool aIsMainThread, void* stackTop)
@@ -537,20 +514,6 @@ bool Sampler::RegisterCurrentThread(const char* aName,
   }
 
   sRegisteredThreads->push_back(info);
-
-#ifdef MOZ_NUWA_PROCESS
-  if (IsNuwaProcess()) {
-    if (info->IsMainThread()) {
-      // Main thread isn't a marked thread. Register UpdateThreadId() to
-      // NuwaAddConstructor(), which runs before all other threads are
-      // recreated.
-      NuwaAddConstructor(UpdateThreadId, info);
-    } else {
-      // Register UpdateThreadInfo() to be run when the thread is recreated.
-      NuwaAddThreadConstructor(UpdateThreadId, info);
-    }
-  }
-#endif
 
   return true;
 }
@@ -674,7 +637,7 @@ static void DoStartTask() {
 static void StartSignalHandler(int signal, siginfo_t* info, void* context) {
   class StartTask : public Runnable {
   public:
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       DoStartTask();
       return NS_OK;
     }

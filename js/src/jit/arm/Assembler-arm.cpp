@@ -57,6 +57,21 @@ ABIArgGenerator::softNext(MIRType type)
         current_ = ABIArg(Register::FromCode(intRegIndex_));
         intRegIndex_++;
         break;
+      case MIRType::Int64:
+        // Make sure to use an even register index. Increase to next even number
+        // when odd.
+        intRegIndex_ = (intRegIndex_ + 1) & ~1;
+        if (intRegIndex_ == NumIntArgRegs) {
+            // Align the stack on 8 bytes.
+            static const uint32_t align = sizeof(uint64_t) - 1;
+            stackOffset_ = (stackOffset_ + align) & ~align;
+            current_ = ABIArg(stackOffset_);
+            stackOffset_ += sizeof(uint64_t);
+            break;
+        }
+        current_ = ABIArg(Register::FromCode(intRegIndex_), Register::FromCode(intRegIndex_ + 1));
+        intRegIndex_ += 2;
+        break;
       case MIRType::Float32:
         if (intRegIndex_ == NumIntArgRegs) {
             current_ = ABIArg(stackOffset_);
@@ -72,7 +87,7 @@ ABIArgGenerator::softNext(MIRType type)
         intRegIndex_ = (intRegIndex_ + 1) & ~1;
         if (intRegIndex_ == NumIntArgRegs) {
             // Align the stack on 8 bytes.
-            static const int align = sizeof(double) - 1;
+            static const uint32_t align = sizeof(double) - 1;
             stackOffset_ = (stackOffset_ + align) & ~align;
             current_ = ABIArg(stackOffset_);
             stackOffset_ += sizeof(double);
@@ -102,9 +117,24 @@ ABIArgGenerator::hardNext(MIRType type)
         current_ = ABIArg(Register::FromCode(intRegIndex_));
         intRegIndex_++;
         break;
+      case MIRType::Int64:
+        // Make sure to use an even register index. Increase to next even number
+        // when odd.
+        intRegIndex_ = (intRegIndex_ + 1) & ~1;
+        if (intRegIndex_ == NumIntArgRegs) {
+            // Align the stack on 8 bytes.
+            static const uint32_t align = sizeof(uint64_t) - 1;
+            stackOffset_ = (stackOffset_ + align) & ~align;
+            current_ = ABIArg(stackOffset_);
+            stackOffset_ += sizeof(uint64_t);
+            break;
+        }
+        current_ = ABIArg(Register::FromCode(intRegIndex_), Register::FromCode(intRegIndex_ + 1));
+        intRegIndex_ += 2;
+        break;
       case MIRType::Float32:
         if (floatRegIndex_ == NumFloatArgRegs) {
-            static const int align = sizeof(double) - 1;
+            static const uint32_t align = sizeof(double) - 1;
             stackOffset_ = (stackOffset_ + align) & ~align;
             current_ = ABIArg(stackOffset_);
             stackOffset_ += sizeof(uint64_t);
@@ -119,7 +149,7 @@ ABIArgGenerator::hardNext(MIRType type)
         // registers in which a double value can be stored.
         floatRegIndex_ = (floatRegIndex_ + 1) & ~1;
         if (floatRegIndex_ == NumFloatArgRegs) {
-            static const int align = sizeof(double) - 1;
+            static const uint32_t align = sizeof(double) - 1;
             stackOffset_ = (stackOffset_ + align) & ~align;
             current_ = ABIArg(stackOffset_);
             stackOffset_ += sizeof(uint64_t);
@@ -948,6 +978,50 @@ Assembler::InvertCondition(Condition cond)
     return Condition(ConditionInversionBit ^ cond);
 }
 
+Assembler::Condition
+Assembler::UnsignedCondition(Condition cond)
+{
+    switch (cond) {
+      case Zero:
+      case NonZero:
+        return cond;
+      case LessThan:
+      case Below:
+        return Below;
+      case LessThanOrEqual:
+      case BelowOrEqual:
+        return BelowOrEqual;
+      case GreaterThan:
+      case Above:
+        return Above;
+      case AboveOrEqual:
+      case GreaterThanOrEqual:
+        return AboveOrEqual;
+      default:
+        MOZ_CRASH("unexpected condition");
+    }
+}
+
+Assembler::Condition
+Assembler::ConditionWithoutEqual(Condition cond)
+{
+    switch (cond) {
+      case LessThan:
+      case LessThanOrEqual:
+          return LessThan;
+      case Below:
+      case BelowOrEqual:
+        return Below;
+      case GreaterThan:
+      case GreaterThanOrEqual:
+        return GreaterThan;
+      case Above:
+      case AboveOrEqual:
+        return Above;
+      default:
+        MOZ_CRASH("unexpected condition");
+    }
+}
 Imm8::TwoImm8mData
 Imm8::EncodeTwoImms(uint32_t imm)
 {
@@ -1184,7 +1258,7 @@ jit::rol(Register r, int amt)
 }
 
 O2RegImmShift
-jit::asr (Register r, int amt)
+jit::asr(Register r, int amt)
 {
     MOZ_ASSERT(1 <= amt && amt <= 32);
     return O2RegImmShift(r, ASR, amt);
@@ -1210,7 +1284,7 @@ jit::ror(Register r, Register amt)
 }
 
 O2RegRegShift
-jit::asr (Register r, Register amt)
+jit::asr(Register r, Register amt)
 {
     return O2RegRegShift(r, ASR, amt);
 }
@@ -1421,7 +1495,7 @@ Assembler::spewBranch(Instruction* i, Label* target /* may be nullptr */)
     char labelBuf[128];
     labelBuf[0] = 0;
     if (!target)
-        JS_snprintf(labelBuf, sizeof(labelBuf), "  -> (link-time target)");
+        snprintf(labelBuf, sizeof(labelBuf), "  -> (link-time target)");
     if (InstBranchImm::IsTHIS(*i)) {
         InstBranchImm* bimm = InstBranchImm::AsTHIS(*i);
         BOffImm destOff;
@@ -1440,8 +1514,8 @@ Assembler::spewBranch(Instruction* i, Label* target /* may be nullptr */)
                 ;
             buffer[i] = 0;
             if (target) {
-                JS_snprintf(labelBuf, sizeof(labelBuf), "  -> %d%s", spewResolve(target),
-                            !target->bound() ? "f" : "");
+                snprintf(labelBuf, sizeof(labelBuf), "  -> %d%s", spewResolve(target),
+                         !target->bound() ? "f" : "");
                 target = nullptr;
             }
         }
@@ -1763,7 +1837,7 @@ Assembler::as_tst(Register src1, Operand2 op2, Condition c)
     return as_alu(InvalidReg, src1, op2, OpTst, SetCC, c);
 }
 
-static MOZ_CONSTEXPR_VAR Register NoAddend = { Registers::pc };
+static constexpr Register NoAddend = { Registers::pc };
 
 static const int SignExtend = 0x06000070;
 
@@ -1911,6 +1985,7 @@ Assembler::as_udiv(Register rd, Register rn, Register rm, Condition c)
 BufferOffset
 Assembler::as_clz(Register dest, Register src, Condition c)
 {
+    MOZ_ASSERT(src != pc && dest != pc);
     return writeInst(RD(dest) | src.code() | c | 0x016f0f10);
 }
 
@@ -2058,7 +2133,7 @@ Assembler::as_extdtr(LoadStore ls, int size, bool IsSigned, Index mode,
         extra_bits1 = 0;
         break;
       default:
-        MOZ_CRASH("SAY WHAT?");
+        MOZ_CRASH("unexpected size in as_extdtr");
     }
     return writeInst(extra_bits2 << 5 | extra_bits1 << 20 | 0x90 |
                      addr.encode() | RT(rt) | mode | c);
@@ -2122,7 +2197,12 @@ Assembler::as_BranchPool(uint32_t value, RepatchLabel* label, ARMBuffer::PoolEnt
     // with a correct branch.
     if (label->bound()) {
         BufferOffset dest(label);
-        as_b(dest.diffB<BOffImm>(ret), c, ret);
+        BOffImm offset = dest.diffB<BOffImm>(ret);
+        if (offset.isInvalid()) {
+            m_buffer.fail_bail();
+            return ret;
+        }
+        as_b(offset, c, ret);
     } else if (!oom()) {
         label->use(ret.getOffset());
     }
@@ -2308,6 +2388,8 @@ void
 Assembler::WritePoolGuard(BufferOffset branch, Instruction* dest, BufferOffset afterPool)
 {
     BOffImm off = afterPool.diffB<BOffImm>(branch);
+    if (off.isInvalid())
+        MOZ_CRASH("BOffImm invalid");
     *dest = InstBImm(off, Always);
 }
 
@@ -2410,7 +2492,13 @@ Assembler::as_bl(Label* l, Condition c)
         if (oom())
             return BufferOffset();
 
-        as_bl(BufferOffset(l).diffB<BOffImm>(ret), c, ret);
+        BOffImm offset = BufferOffset(l).diffB<BOffImm>(ret);
+        if (offset.isInvalid()) {
+            m_buffer.fail_bail();
+            return BufferOffset();
+        }
+
+        as_bl(offset, c, ret);
 #ifdef JS_DISASM_ARM
         spewBranch(m_buffer.getInstOrNull(ret), l);
 #endif
@@ -2784,10 +2872,15 @@ Assembler::bind(Label* label, BufferOffset boff)
             more = nextLink(b, &next);
             Instruction branch = *editSrc(b);
             Condition c = branch.extractCond();
+            BOffImm offset = dest.diffB<BOffImm>(b);
+            if (offset.isInvalid()) {
+                m_buffer.fail_bail();
+                return;
+            }
             if (branch.is<InstBImm>())
-                as_b(dest.diffB<BOffImm>(b), c, b);
+                as_b(offset, c, b);
             else if (branch.is<InstBLImm>())
-                as_bl(dest.diffB<BOffImm>(b), c, b);
+                as_bl(offset, c, b);
             else
                 MOZ_CRASH("crazy fixup!");
             b = next;
@@ -2830,7 +2923,13 @@ Assembler::bind(RepatchLabel* label)
             cond = p.phd.getCond();
         else
             cond = branch->extractCond();
-        as_b(dest.diffB<BOffImm>(branchOff), cond, branchOff);
+
+        BOffImm offset = dest.diffB<BOffImm>(branchOff);
+        if (offset.isInvalid()) {
+            m_buffer.fail_bail();
+            return;
+        }
+        as_b(offset, cond, branchOff);
     }
     label->bind(dest.getOffset());
 }
@@ -3304,28 +3403,6 @@ Assembler::BailoutTableStart(uint8_t* code)
     inst = inst->skipPool();
     MOZ_ASSERT(inst->is<InstBLImm>());
     return (uint8_t*) inst;
-}
-
-void Assembler::UpdateBoundsCheck(uint32_t heapSize, Instruction* inst)
-{
-    MOZ_ASSERT(inst->is<InstCMP>());
-    InstCMP* cmp = inst->as<InstCMP>();
-
-    Register index;
-    cmp->extractOp1(&index);
-
-#ifdef DEBUG
-    Operand2 op = cmp->extractOp2();
-    MOZ_ASSERT(op.isImm8());
-#endif
-
-    Imm8 imm8 = Imm8(heapSize);
-    MOZ_ASSERT(!imm8.invalid);
-
-    *inst = InstALU(InvalidReg, index, imm8, OpCmp, SetCC, Always);
-    // NOTE: we don't update the Auto Flush Cache!  this function is currently
-    // only called from within ModuleGenerator::finish, which does that
-    // for us. Don't call this!
 }
 
 InstructionIterator::InstructionIterator(Instruction* i_)

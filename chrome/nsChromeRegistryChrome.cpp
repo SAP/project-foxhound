@@ -25,7 +25,7 @@
 #include "nsXPCOMCIDInternal.h"
 
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 
 #include "nsICommandLine.h"
 #include "nsILocaleService.h"
@@ -123,15 +123,17 @@ nsChromeRegistryChrome::Init()
   nsCOMPtr<nsIPrefService> prefserv (do_GetService(NS_PREFSERVICE_CONTRACTID));
   nsCOMPtr<nsIPrefBranch> prefs;
 
-  if (safeMode)
-    prefserv->GetDefaultBranch(nullptr, getter_AddRefs(prefs));
-  else
-    prefs = do_QueryInterface(prefserv);
+  if (prefserv) {
+    if (safeMode) {
+      prefserv->GetDefaultBranch(nullptr, getter_AddRefs(prefs));
+    } else {
+      prefs = do_QueryInterface(prefserv);
+    }
+  }
 
   if (!prefs) {
     NS_WARNING("Could not get pref service!");
-  }
-  else {
+  } else {
     nsXPIDLCString provider;
     rv = prefs->GetCharPref(SELECTED_SKIN_PREF, getter_Copies(provider));
     if (NS_SUCCEEDED(rv))
@@ -424,7 +426,8 @@ nsChromeRegistryChrome::SendRegisteredChrome(
 
     nsCOMPtr<nsIResProtocolHandler> irph (do_QueryInterface(ph));
     nsResProtocolHandler* rph = static_cast<nsResProtocolHandler*>(irph.get());
-    rph->CollectSubstitutions(resources);
+    rv = rph->CollectSubstitutions(resources);
+    NS_ENSURE_SUCCESS_VOID(rv);
   }
 
   for (auto iter = mOverrideTable.Iter(); !iter.Done(); iter.Next()) {
@@ -451,7 +454,8 @@ nsChromeRegistryChrome::SendRegisteredChrome(
       DebugOnly<bool> success =
         parents[i]->SendRegisterChrome(packages, resources, overrides,
                                        mSelectedLocale, true);
-      NS_WARN_IF_FALSE(success, "couldn't reset a child's registered chrome");
+      NS_WARNING_ASSERTION(success,
+                           "couldn't reset a child's registered chrome");
     }
   }
 }

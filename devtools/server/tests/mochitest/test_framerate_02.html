@@ -31,7 +31,7 @@ window.onload = function() {
 
   SimpleTest.waitForExplicitFinish();
 
-  var {FramerateFront} = require("devtools/server/actors/framerate");
+  var {FramerateFront} = require("devtools/shared/fronts/framerate");
 
   function plotFPS(ticks, interval = 100, clamp = 60) {
     var timeline = [];
@@ -99,7 +99,7 @@ window.onload = function() {
         is(timeline[1].value, 0,
           "The last framerate value should be 0.");
 
-        client.close(() => {
+        client.close().then(() => {
           DebuggerServer.destroy();
           SimpleTest.finish()
         });

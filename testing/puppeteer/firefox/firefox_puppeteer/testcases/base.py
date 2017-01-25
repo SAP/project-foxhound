@@ -39,16 +39,16 @@ class BaseFirefoxTestCase(unittest.TestCase, Puppeteer):
         url = []
 
         try:
-            #Verify the existence of leaked tabs and print their URLs.
+            # Verify the existence of leaked tabs and print their URLs.
             if self._start_handle_count < handle_count:
                 message = ('A test must not leak window handles. This test started with '
                            '%s open top level browsing contexts, but ended with %s.'
-                           ' Remaining Tabs URLs:') % (self._start_handle_count , handle_count)
+                           ' Remaining Tabs URLs:') % (self._start_handle_count, handle_count)
                 with self.marionette.using_context('content'):
                     for tab in self.marionette.window_handles:
                         if tab not in self._init_tab_handles:
                             url.append(' %s' % self.marionette.get_url())
-                self.assertListEqual(self._init_tab_handles , self.marionette.window_handles ,
+                self.assertListEqual(self._init_tab_handles, self.marionette.window_handles,
                                      message + ','.join(url))
         finally:
             # For clean-up make sure we work on a proper browser window
@@ -66,20 +66,25 @@ class BaseFirefoxTestCase(unittest.TestCase, Puppeteer):
             self.browser.tabbar.close_all_tabs([self.browser.tabbar.tabs[0]])
             self.browser.tabbar.tabs[0].switch_to()
 
-    def restart(self, flags=None):
+    def restart(self, **kwargs):
         """Restart Firefox and re-initialize data.
 
         :param flags: Specific restart flags for Firefox
         """
+
         # TODO: Bug 1148220 Marionette's in_app restart has to send 'quit-application-requested'
         # observer notification before an in_app restart
-        self.marionette.execute_script("""
-          Components.utils.import("resource://gre/modules/Services.jsm");
-          let cancelQuit = Components.classes["@mozilla.org/supports-PRBool;1"]
-                                     .createInstance(Components.interfaces.nsISupportsPRBool);
-          Services.obs.notifyObservers(cancelQuit, "quit-application-requested", null);
-        """)
-        self.marionette.restart(in_app=True)
+        with self.marionette.using_context('chrome'):
+            self.marionette.execute_script("""
+                Components.utils.import("resource://gre/modules/Services.jsm");
+                let cancelQuit = Components.classes["@mozilla.org/supports-PRBool;1"]
+                                         .createInstance(Components.interfaces.nsISupportsPRBool);
+                Services.obs.notifyObservers(cancelQuit, "quit-application-requested", null);
+                """)
+        if kwargs.get('clean'):
+            self.marionette.restart(clean=True)
+        else:
+            self.marionette.restart(in_app=True)
 
         # Marionette doesn't keep the former context, so restore to chrome
         self.marionette.set_context('chrome')

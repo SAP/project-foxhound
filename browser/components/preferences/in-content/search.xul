@@ -28,8 +28,7 @@
           hidden="true"
           data-category="paneSearch">
       <label class="header-name" flex="1">&paneSearch.title;</label>
-      <button class="help-button"
-              aria-label="&helpButton.label;"/>
+      <html:a class="help-button" target="_blank" aria-label="&helpButton.label;"></html:a>
     </hbox>
 
     <!-- Default Search Engine -->
@@ -80,6 +79,7 @@
                 />
         <spacer flex="1"/>
         <button id="removeEngineButton"
+                class="searchEngineAction"
                 label="&removeEngine.label;"
                 accesskey="&removeEngine.accesskey;"
                 disabled="true"

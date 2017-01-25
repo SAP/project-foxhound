@@ -40,6 +40,7 @@
 #include "MobileViewportManager.h"
 #include "ZoomConstraintsClient.h"
 
+class nsIDocShell;
 class nsRange;
 
 struct RangePaintInfo;
@@ -79,6 +80,8 @@ class PresShell final : public nsIPresShell,
   template <typename T> using Maybe = mozilla::Maybe<T>;
   using Nothing = mozilla::Nothing;
   using OnNonvisible = mozilla::OnNonvisible;
+  using RawSelectionType = mozilla::RawSelectionType;
+  using SelectionType = mozilla::SelectionType;
   using VisibleFrames = mozilla::VisibleFrames;
   using VisibleRegions = mozilla::VisibleRegions;
 
@@ -90,7 +93,7 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS
 
-  static bool AccessibleCaretEnabled();
+  static bool AccessibleCaretEnabled(nsIDocShell* aDocShell);
 
   // BeforeAfterKeyboardEvent preference
   static bool BeforeAfterKeyboardEventEnabled();
@@ -104,14 +107,20 @@ public:
 
   virtual void UpdatePreferenceStyles() override;
 
-  NS_IMETHOD GetSelection(SelectionType aType, nsISelection** aSelection) override;
-  virtual mozilla::dom::Selection* GetCurrentSelection(SelectionType aType) override;
+  NS_IMETHOD GetSelection(RawSelectionType aRawSelectionType,
+                          nsISelection** aSelection) override;
+  virtual mozilla::dom::Selection*
+    GetCurrentSelection(SelectionType aSelectionType) override;
+  virtual already_AddRefed<nsISelectionController>
+            GetSelectionControllerForFocusedContent(
+              nsIContent** aFocusedContent = nullptr) override;
 
   NS_IMETHOD SetDisplaySelection(int16_t aToggle) override;
   NS_IMETHOD GetDisplaySelection(int16_t *aToggle) override;
-  NS_IMETHOD ScrollSelectionIntoView(SelectionType aType, SelectionRegion aRegion,
+  NS_IMETHOD ScrollSelectionIntoView(RawSelectionType aRawSelectionType,
+                                     SelectionRegion aRegion,
                                      int16_t aFlags) override;
-  NS_IMETHOD RepaintSelection(SelectionType aType) override;
+  NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
 
   virtual void BeginObservingDocument() override;
   virtual void EndObservingDocument() override;
@@ -360,7 +369,7 @@ public:
 
   virtual nscolor ComputeBackstopColor(nsView* aDisplayRoot) override;
 
-  virtual nsresult SetIsActive(bool aIsActive, bool aIsHidden = true) override;
+  virtual nsresult SetIsActive(bool aIsActive) override;
 
   virtual bool GetIsViewportOverridden() override {
     return (mMobileViewportManager != nullptr);
@@ -381,8 +390,6 @@ public:
                               size_t *aTextRunsSize,
                               size_t *aPresContextSize) override;
   size_t SizeOfTextRuns(mozilla::MallocSizeOf aMallocSizeOf) const;
-
-  virtual void AddInvalidateHiddenPresShellObserver(nsRefreshDriver *aDriver) override;
 
   // This data is stored as a content property (nsGkAtoms::scrolling) on
   // mContentToScrollTo when we have a pending ScrollIntoView.
@@ -525,7 +532,6 @@ protected:
 
   bool mCaretEnabled;
 
-  bool mIsHidden;
 #ifdef DEBUG
   nsStyleSet* CloneStyleSet(nsStyleSet* aSet);
   bool VerifyIncrementalReflow();

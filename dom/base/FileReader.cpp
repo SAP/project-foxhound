@@ -181,7 +181,7 @@ FileReader::GetResult(JSContext* aCx,
   }
 }
 
-static NS_IMETHODIMP
+static nsresult
 ReadFuncBinaryString(nsIInputStream* in,
                      void* closure,
                      const char* fromRawSegment,
@@ -333,6 +333,7 @@ FileReader::DoReadData(uint64_t aCount)
     }
 
     uint32_t bytesRead = 0;
+    MOZ_DIAGNOSTIC_ASSERT(mFileData);
     mAsyncStream->Read(mFileData + mDataLen, aCount, &bytesRead);
     NS_ASSERTION(bytesRead == aCount, "failed to read data");
   }
@@ -415,22 +416,24 @@ FileReader::ReadFileContent(Blob& aBlob,
     return;
   }
 
+  if (mDataFormat == FILE_AS_ARRAYBUFFER) {
+    mFileData = js_pod_malloc<char>(mTotal);
+    if (!mFileData) {
+      NS_WARNING("Preallocation failed for ReadFileData");
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return;
+    }
+  }
+
   aRv = DoAsyncWait();
   if (NS_WARN_IF(aRv.Failed())) {
+    FreeFileData();
     return;
   }
 
   //FileReader should be in loading state here
   mReadyState = LOADING;
   DispatchProgressEvent(NS_LITERAL_STRING(LOADSTART_STR));
-
-  if (mDataFormat == FILE_AS_ARRAYBUFFER) {
-    mFileData = js_pod_malloc<char>(mTotal);
-    if (!mFileData) {
-      NS_WARNING("Preallocation failed for ReadFileData");
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-    }
-  }
 }
 
 nsresult
@@ -604,7 +607,7 @@ FileReader::OnInputStreamReady(nsIAsyncInputStream* aStream)
 
   // We use this class to decrease the busy counter at the end of this method.
   // In theory we can do it immediatelly but, for debugging reasons, we want to
-  // be 100% sure we have a feature when OnLoadEnd() is called.
+  // be 100% sure we have a workerHolder when OnLoadEnd() is called.
   FileReaderDecreaseBusyCounter RAII(this);
 
   uint64_t aCount;
@@ -701,7 +704,7 @@ nsresult
 FileReader::IncreaseBusyCounter()
 {
   if (mWorkerPrivate && mBusyCount++ == 0 &&
-      !mWorkerPrivate->AddFeature(this)) {
+      !HoldWorker(mWorkerPrivate, Closing)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -713,7 +716,7 @@ FileReader::DecreaseBusyCounter()
 {
   MOZ_ASSERT_IF(mWorkerPrivate, mBusyCount);
   if (mWorkerPrivate && --mBusyCount == 0) {
-    mWorkerPrivate->RemoveFeature(this);
+    ReleaseWorker();
   }
 }
 
@@ -733,16 +736,18 @@ FileReader::Notify(Status aStatus)
 void
 FileReader::Shutdown()
 {
-  FreeFileData();
-  mResultArrayBuffer = nullptr;
+  mReadyState = DONE;
 
   if (mAsyncStream) {
     mAsyncStream->Close();
     mAsyncStream = nullptr;
   }
 
+  FreeFileData();
+  mResultArrayBuffer = nullptr;
+
   if (mWorkerPrivate && mBusyCount != 0) {
-    mWorkerPrivate->RemoveFeature(this);
+    ReleaseWorker();
     mWorkerPrivate = nullptr;
     mBusyCount = 0;
   }

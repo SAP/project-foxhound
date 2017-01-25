@@ -10,11 +10,15 @@ const textbox = searchbar._textbox;
 const searchPopup = document.getElementById("PopupSearchAutoComplete");
 const searchIcon = document.getAnonymousElementByAttribute(searchbar, "anonid",
                                                            "searchbar-search-button");
-const searchSettings =
+
+const oneOffsContainer =
   document.getAnonymousElementByAttribute(searchPopup, "anonid",
+                                          "search-one-off-buttons");
+const searchSettings =
+  document.getAnonymousElementByAttribute(oneOffsContainer, "anonid",
                                           "search-settings");
 var header =
-  document.getAnonymousElementByAttribute(searchPopup, "anonid",
+  document.getAnonymousElementByAttribute(oneOffsContainer, "anonid",
                                           "search-panel-one-offs-header");
 function getHeaderText() {
   let headerChild = header.selectedPanel;
@@ -28,28 +32,13 @@ function getHeaderText() {
   return headerStrings.join("");
 }
 
-// Get an array of the one-off buttons.
-function getOneOffs() {
-  let oneOffs = [];
-  let oneOff =
-    document.getAnonymousElementByAttribute(searchPopup, "anonid",
-                                            "search-panel-one-offs");
-  for (oneOff = oneOff.firstChild; oneOff; oneOff = oneOff.nextSibling) {
-    if (oneOff.classList.contains("dummy"))
-      break;
-    oneOffs.push(oneOff);
-  }
-
-  return oneOffs;
-}
-
 const msg = isMac ? 5 : 1;
 const utils = window.QueryInterface(Ci.nsIInterfaceRequestor)
                     .getInterface(Ci.nsIDOMWindowUtils);
 const scale = utils.screenPixelsPerCSSPixel;
 function* synthesizeNativeMouseMove(aElement) {
   let rect = aElement.getBoundingClientRect();
-  let win = aElement.ownerDocument.defaultView;
+  let win = aElement.ownerGlobal;
   let x = win.mozInnerScreenX + (rect.left + rect.right) / 2;
   let y = win.mozInnerScreenY + (rect.top + rect.bottom) / 2;
 

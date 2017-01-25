@@ -64,12 +64,14 @@ static const unsigned int NEGATIVE_RECORD_LIFETIME = 60;
 #define LongIdleTimeoutSeconds  300           // for threads 1 -> HighThreadThreshold
 #define ShortIdleTimeoutSeconds 60            // for threads HighThreadThreshold+1 -> MAX_RESOLVER_THREADS
 
-PR_STATIC_ASSERT (HighThreadThreshold <= MAX_RESOLVER_THREADS);
+static_assert(HighThreadThreshold <= MAX_RESOLVER_THREADS,
+              "High Thread Threshold should be less equal Maximum allowed thread");
 
 //----------------------------------------------------------------------------
 
 static LazyLogModule gHostResolverLog("nsHostResolver");
 #define LOG(args) MOZ_LOG(gHostResolverLog, mozilla::LogLevel::Debug, args)
+#define LOG_ENABLED() MOZ_LOG_TEST(gHostResolverLog, mozilla::LogLevel::Debug)
 
 #define LOG_HOST(host, interface) host,                                        \
                  (interface && interface[0] != '\0') ? " on interface " : "",  \
@@ -561,8 +563,8 @@ nsHostResolver::Init()
     {
         DebugOnly<nsresult> rv = Preferences::RegisterCallbackAndCall(
             &DnsPrefChanged, kPrefGetTtl, this);
-        NS_WARN_IF_FALSE(NS_SUCCEEDED(rv),
-                         "Could not register DNS TTL pref callback.");
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                             "Could not register DNS TTL pref callback.");
     }
 #endif
 
@@ -644,8 +646,8 @@ nsHostResolver::Shutdown()
     {
         DebugOnly<nsresult> rv = Preferences::UnregisterCallback(
             &DnsPrefChanged, kPrefGetTtl, this);
-        NS_WARN_IF_FALSE(NS_SUCCEEDED(rv),
-                         "Could not unregister DNS TTL pref callback.");
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                             "Could not unregister DNS TTL pref callback.");
     }
 #endif
 
@@ -704,7 +706,8 @@ nsHostResolver::Shutdown()
 
     {
         mozilla::DebugOnly<nsresult> rv = GetAddrInfoShutdown();
-        NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Failed to shutdown GetAddrInfo");
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                             "Failed to shutdown GetAddrInfo");
     }
 }
 
@@ -1212,13 +1215,60 @@ nsHostResolver::PrepareRecordExpiration(nsHostRecord* rec) const
          LOG_HOST(rec->host, rec->netInterface), lifetime, grace));
 }
 
+static bool
+different_rrset(AddrInfo *rrset1, AddrInfo *rrset2)
+{
+    if (!rrset1 || !rrset2) {
+        return true;
+    }
+
+    LOG(("different_rrset %s\n", rrset1->mHostName));
+    nsTArray<NetAddr> orderedSet1;
+    nsTArray<NetAddr> orderedSet2;
+
+    for (NetAddrElement *element = rrset1->mAddresses.getFirst();
+         element; element = element->getNext()) {
+        if (LOG_ENABLED()) {
+            char buf[128];
+            NetAddrToString(&element->mAddress, buf, 128);
+            LOG(("different_rrset add to set 1 %s\n", buf));
+        }
+        orderedSet1.InsertElementAt(orderedSet1.Length(), element->mAddress);
+    }
+
+    for (NetAddrElement *element = rrset2->mAddresses.getFirst();
+         element; element = element->getNext()) {
+        if (LOG_ENABLED()) {
+            char buf[128];
+            NetAddrToString(&element->mAddress, buf, 128);
+            LOG(("different_rrset add to set 2 %s\n", buf));
+        }
+        orderedSet2.InsertElementAt(orderedSet2.Length(), element->mAddress);
+    }
+
+    if (orderedSet1.Length() != orderedSet2.Length()) {
+        LOG(("different_rrset true due to length change\n"));
+        return true;
+    }
+    orderedSet1.Sort();
+    orderedSet2.Sort();
+
+    for (uint32_t i = 0; i < orderedSet1.Length(); ++i) {
+        if (!(orderedSet1[i] == orderedSet2[i])) {
+            LOG(("different_rrset true due to content change\n"));
+            return true;
+        }
+    }
+    LOG(("different_rrset false\n"));
+    return false;
+}
+
 //
 // OnLookupComplete() checks if the resolving should be redone and if so it
 // returns LOOKUP_RESOLVEAGAIN, but only if 'status' is not NS_ERROR_ABORT.
-//
-
+// takes ownership of AddrInfo parameter
 nsHostResolver::LookupStatus
-nsHostResolver::OnLookupComplete(nsHostRecord* rec, nsresult status, AddrInfo* result)
+nsHostResolver::OnLookupComplete(nsHostRecord* rec, nsresult status, AddrInfo* newRRSet)
 {
     // get the list of pending callbacks for this lookup, and notify
     // them that the lookup is complete.
@@ -1228,7 +1278,9 @@ nsHostResolver::OnLookupComplete(nsHostRecord* rec, nsresult status, AddrInfo* r
         MutexAutoLock lock(mLock);
 
         if (rec->mResolveAgain && (status != NS_ERROR_ABORT)) {
+            LOG(("nsHostResolver record %p resolve again due to flushcache\n", rec));
             rec->mResolveAgain = false;
+            delete newRRSet;
             return LOOKUP_RESOLVEAGAIN;
         }
 
@@ -1240,9 +1292,17 @@ nsHostResolver::OnLookupComplete(nsHostRecord* rec, nsresult status, AddrInfo* r
         AddrInfo  *old_addr_info;
         {
             MutexAutoLock lock(rec->addr_info_lock);
-            old_addr_info = rec->addr_info;
-            rec->addr_info = result;
-            rec->addr_info_gencnt++;
+            if (different_rrset(rec->addr_info, newRRSet)) {
+                LOG(("nsHostResolver record %p new gencnt\n", rec));
+                old_addr_info = rec->addr_info;
+                rec->addr_info = newRRSet;
+                rec->addr_info_gencnt++;
+            } else {
+                if (rec->addr_info && newRRSet) {
+                    rec->addr_info->ttl = newRRSet->ttl;
+                }
+                old_addr_info = newRRSet;
+            }
         }
         delete old_addr_info;
 
@@ -1285,8 +1345,9 @@ nsHostResolver::OnLookupComplete(nsHostRecord* rec, nsresult status, AddrInfo* r
                 rec->flags =
                   (rec->flags & ~RES_PRIORITY_MEDIUM) | RES_PRIORITY_LOW;
                 DebugOnly<nsresult> rv = IssueLookup(rec);
-                NS_WARN_IF_FALSE(NS_SUCCEEDED(rv),
-                                 "Could not issue second async lookup for TTL.");
+                NS_WARNING_ASSERTION(
+                    NS_SUCCEEDED(rv),
+                    "Could not issue second async lookup for TTL.");
             }
 #endif
         }

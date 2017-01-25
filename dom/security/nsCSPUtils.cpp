@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsAttrValue.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
 #include "nsCSPUtils.h"
 #include "nsDebug.h"
 #include "nsIConsoleService.h"
@@ -13,6 +16,9 @@
 #include "nsIStringBundle.h"
 #include "nsIURL.h"
 #include "nsReadableUtils.h"
+#include "nsSandboxFlags.h"
+
+#define DEFAULT_PORT -1
 
 static mozilla::LogModule*
 GetCspUtilsLog()
@@ -23,6 +29,63 @@ GetCspUtilsLog()
 
 #define CSPUTILSLOG(args) MOZ_LOG(GetCspUtilsLog(), mozilla::LogLevel::Debug, args)
 #define CSPUTILSLOGENABLED() MOZ_LOG_TEST(GetCspUtilsLog(), mozilla::LogLevel::Debug)
+
+void
+CSP_PercentDecodeStr(const nsAString& aEncStr, nsAString& outDecStr)
+{
+  outDecStr.Truncate();
+
+  // helper function that should not be visible outside this methods scope
+  struct local {
+    static inline char16_t convertHexDig(char16_t aHexDig) {
+      if (isNumberToken(aHexDig)) {
+        return aHexDig - '0';
+      }
+      if (aHexDig >= 'A' && aHexDig <= 'F') {
+        return aHexDig - 'A' + 10;
+      }
+      // must be a lower case character
+      // (aHexDig >= 'a' && aHexDig <= 'f')
+      return aHexDig - 'a' + 10;
+    }
+  };
+
+  const char16_t *cur, *end, *hexDig1, *hexDig2;
+  cur = aEncStr.BeginReading();
+  end = aEncStr.EndReading();
+
+  while (cur != end) {
+    // if it's not a percent sign then there is
+    // nothing to do for that character
+    if (*cur != PERCENT_SIGN) {
+      outDecStr.Append(*cur);
+      cur++;
+      continue;
+    }
+
+    // get the two hexDigs following the '%'-sign
+    hexDig1 = cur + 1;
+    hexDig2 = cur + 2;
+
+    // if there are no hexdigs after the '%' then
+    // there is nothing to do for us.
+    if (hexDig1 == end || hexDig2 == end ||
+        !isValidHexDig(*hexDig1) ||
+        !isValidHexDig(*hexDig2)) {
+      outDecStr.Append(PERCENT_SIGN);
+      cur++;
+      continue;
+    }
+
+    // decode "% hexDig1 hexDig2" into a character.
+    char16_t decChar = (local::convertHexDig(*hexDig1) << 4) +
+                       local::convertHexDig(*hexDig2);
+    outDecStr.Append(decChar);
+
+    // increment 'cur' to after the second hexDig
+    cur = ++hexDig2;
+  }
+}
 
 void
 CSP_GetLocalizedStr(const char16_t* aName,
@@ -163,6 +226,7 @@ CSP_ContentTypeToDirective(nsContentPolicyType aType)
     case nsIContentPolicy::TYPE_WEBSOCKET:
     case nsIContentPolicy::TYPE_XMLHTTPREQUEST:
     case nsIContentPolicy::TYPE_BEACON:
+    case nsIContentPolicy::TYPE_PING:
     case nsIContentPolicy::TYPE_FETCH:
       return nsIContentSecurityPolicy::CONNECT_SRC_DIRECTIVE;
 
@@ -171,7 +235,6 @@ CSP_ContentTypeToDirective(nsContentPolicyType aType)
       return nsIContentSecurityPolicy::OBJECT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_XBL:
-    case nsIContentPolicy::TYPE_PING:
     case nsIContentPolicy::TYPE_DTD:
     case nsIContentPolicy::TYPE_OTHER:
       return nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
@@ -313,6 +376,39 @@ permitsScheme(const nsAString& aEnforcementScheme,
            (scheme.EqualsASCII("ws") && aEnforcementScheme.EqualsASCII("wss"))));
 }
 
+/*
+ * A helper function for appending a CSP header to an existing CSP
+ * policy.
+ *
+ * @param aCsp           the CSP policy
+ * @param aHeaderValue   the header
+ * @param aReportOnly    is this a report-only header?
+ */
+
+nsresult
+CSP_AppendCSPFromHeader(nsIContentSecurityPolicy* aCsp,
+                        const nsAString& aHeaderValue,
+                        bool aReportOnly)
+{
+  NS_ENSURE_ARG(aCsp);
+
+  // Need to tokenize the header value since multiple headers could be
+  // concatenated into one comma-separated list of policies.
+  // See RFC2616 section 4.2 (last paragraph)
+  nsresult rv = NS_OK;
+  nsCharSeparatedTokenizer tokenizer(aHeaderValue, ',');
+  while (tokenizer.hasMoreTokens()) {
+    const nsSubstring& policy = tokenizer.nextToken();
+    rv = aCsp->AppendPolicy(policy, aReportOnly, false);
+    NS_ENSURE_SUCCESS(rv, rv);
+    {
+      CSPUTILSLOG(("CSP refined with policy: \"%s\"",
+                   NS_ConvertUTF16toUTF8(policy).get()));
+    }
+  }
+  return NS_OK;
+}
+
 /* ===== nsCSPSrc ============================ */
 
 nsCSPBaseSrc::nsCSPBaseSrc()
@@ -331,9 +427,8 @@ nsCSPBaseSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirected
                       bool aReportOnly, bool aUpgradeInsecure) const
 {
   if (CSPUTILSLOGENABLED()) {
-    nsAutoCString spec;
-    aUri->GetSpec(spec);
-    CSPUTILSLOG(("nsCSPBaseSrc::permits, aUri: %s", spec.get()));
+    CSPUTILSLOG(("nsCSPBaseSrc::permits, aUri: %s",
+                 aUri->GetSpecOrDefault().get()));
   }
   return false;
 }
@@ -367,9 +462,8 @@ nsCSPSchemeSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirect
                         bool aReportOnly, bool aUpgradeInsecure) const
 {
   if (CSPUTILSLOGENABLED()) {
-    nsAutoCString spec;
-    aUri->GetSpec(spec);
-    CSPUTILSLOG(("nsCSPSchemeSrc::permits, aUri: %s", spec.get()));
+    CSPUTILSLOG(("nsCSPSchemeSrc::permits, aUri: %s",
+                 aUri->GetSpecOrDefault().get()));
   }
   MOZ_ASSERT((!mScheme.EqualsASCII("")), "scheme can not be the empty string");
   return permitsScheme(mScheme, aUri, aReportOnly, aUpgradeInsecure);
@@ -400,14 +494,96 @@ nsCSPHostSrc::~nsCSPHostSrc()
 {
 }
 
+/*
+ * Checks whether the current directive permits a specific port.
+ * @param aEnforcementScheme
+ *        The scheme that this directive allows
+ *        (used to query the default port for that scheme)
+ * @param aEnforcementPort
+ *        The port that this directive allows
+ * @param aResourceURI
+ *        The uri of the subresource load
+ */
+bool
+permitsPort(const nsAString& aEnforcementScheme,
+            const nsAString& aEnforcementPort,
+            nsIURI* aResourceURI)
+{
+  // If enforcement port is the wildcard, don't block the load.
+  if (aEnforcementPort.EqualsASCII("*")) {
+    return true;
+  }
+
+  int32_t resourcePort;
+  nsresult rv = aResourceURI->GetPort(&resourcePort);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  // Avoid unnecessary string creation/manipulation and don't block the
+  // load if the resource to be loaded uses the default port for that
+  // scheme and there is no port to be enforced.
+  // Note, this optimization relies on scheme checks within permitsScheme().
+  if (resourcePort == DEFAULT_PORT && aEnforcementPort.IsEmpty()) {
+    return true;
+  }
+
+  // By now we know at that either the resourcePort does not use the default
+  // port or there is a port restriction to be enforced. A port value of -1
+  // corresponds to the protocol's default port (eg. -1 implies port 80 for
+  // http URIs), in such a case we have to query the default port of the
+  // resource to be loaded.
+  if (resourcePort == DEFAULT_PORT) {
+    nsAutoCString resourceScheme;
+    rv = aResourceURI->GetScheme(resourceScheme);
+    NS_ENSURE_SUCCESS(rv, false);
+    resourcePort = NS_GetDefaultPort(resourceScheme.get());
+  }
+
+  // If there is a port to be enforced and the ports match, then
+  // don't block the load.
+  nsString resourcePortStr;
+  resourcePortStr.AppendInt(resourcePort);
+  if (aEnforcementPort.Equals(resourcePortStr)) {
+    return true;
+  }
+
+  // If there is no port to be enforced, query the default port for the load.
+  nsString enforcementPort(aEnforcementPort);
+  if (enforcementPort.IsEmpty()) {
+    // For scheme less sources, our parser always generates a scheme
+    // which is the scheme of the protected resource.
+    MOZ_ASSERT(!aEnforcementScheme.IsEmpty(),
+               "need a scheme to query default port");
+    int32_t defaultEnforcementPort =
+      NS_GetDefaultPort(NS_ConvertUTF16toUTF8(aEnforcementScheme).get());
+    enforcementPort.Truncate();
+    enforcementPort.AppendInt(defaultEnforcementPort);
+  }
+
+  // If default ports match, don't block the load
+  if (enforcementPort.Equals(resourcePortStr)) {
+    return true;
+  }
+
+  // Additional port matching where the regular URL matching algorithm
+  // treats insecure ports as matching their secure variants.
+  // default port for http is  :80
+  // default port for https is :443
+  if (enforcementPort.EqualsLiteral("80") &&
+      resourcePortStr.EqualsLiteral("443")) {
+    return true;
+  }
+
+  // ports do not match, block the load.
+  return false;
+}
+
 bool
 nsCSPHostSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirected,
                       bool aReportOnly, bool aUpgradeInsecure) const
 {
   if (CSPUTILSLOGENABLED()) {
-    nsAutoCString spec;
-    aUri->GetSpec(spec);
-    CSPUTILSLOG(("nsCSPHostSrc::permits, aUri: %s", spec.get()));
+    CSPUTILSLOG(("nsCSPHostSrc::permits, aUri: %s",
+                 aUri->GetSpecOrDefault().get()));
   }
 
   // we are following the enforcement rules from the spec, see:
@@ -448,6 +624,9 @@ nsCSPHostSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirected
   nsresult rv = aUri->GetHost(uriHost);
   NS_ENSURE_SUCCESS(rv, false);
 
+  nsString decodedUriHost;
+  CSP_PercentDecodeStr(NS_ConvertUTF8toUTF16(uriHost), decodedUriHost);
+
   // 4.5) host matching: Check if the allowed host starts with a wilcard.
   if (mHost.First() == '*') {
     NS_ASSERTION(mHost[1] == '.', "Second character needs to be '.' whenever host starts with '*'");
@@ -456,12 +635,17 @@ nsCSPHostSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirected
     // if the remaining characters match
     nsString wildCardHost = mHost;
     wildCardHost = Substring(wildCardHost, 1, wildCardHost.Length() - 1);
-    if (!StringEndsWith(NS_ConvertUTF8toUTF16(uriHost), wildCardHost)) {
+    if (!StringEndsWith(decodedUriHost, wildCardHost)) {
       return false;
     }
   }
   // 4.6) host matching: Check if hosts match.
-  else if (!mHost.Equals(NS_ConvertUTF8toUTF16(uriHost))) {
+  else if (!mHost.Equals(decodedUriHost)) {
+    return false;
+  }
+
+  // Port matching: Check if the ports match.
+  if (!permitsPort(mScheme, mPort, aUri)) {
     return false;
   }
 
@@ -480,63 +664,28 @@ nsCSPHostSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirected
     nsAutoCString uriPath;
     rv = url->GetFilePath(uriPath);
     NS_ENSURE_SUCCESS(rv, false);
+
+    nsString decodedUriPath;
+    CSP_PercentDecodeStr(NS_ConvertUTF8toUTF16(uriPath), decodedUriPath);
+
     // check if the last character of mPath is '/'; if so
     // we just have to check loading resource is within
     // the allowed path.
     if (mPath.Last() == '/') {
-      if (!StringBeginsWith(NS_ConvertUTF8toUTF16(uriPath), mPath)) {
+      if (!StringBeginsWith(decodedUriPath, mPath)) {
         return false;
       }
     }
     // otherwise mPath whitelists a specific file, and we have to
     // check if the loading resource matches that whitelisted file.
     else {
-      if (!mPath.Equals(NS_ConvertUTF8toUTF16(uriPath))) {
+      if (!mPath.Equals(decodedUriPath)) {
         return false;
       }
     }
   }
 
-  // 4.8) Port matching: If port uses wildcard, allow the load.
-  if (mPort.EqualsASCII("*")) {
-    return true;
-  }
-
-  // Before we can check if the port matches, we have to
-  // query the port from aUri.
-  int32_t uriPort;
-  rv = aUri->GetPort(&uriPort);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  nsAutoCString scheme;
-  rv = aUri->GetScheme(scheme);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  uriPort = (uriPort > 0) ? uriPort : NS_GetDefaultPort(scheme.get());
-
-  // 4.7) Default port matching: If mPort is empty, we have to compare default ports.
-  if (mPort.IsEmpty()) {
-    int32_t port = NS_GetDefaultPort(NS_ConvertUTF16toUTF8(mScheme).get());
-    if (port != uriPort) {
-      // We should not return false for scheme-less sources where the protected resource
-      // is http and the load is https, see: http://www.w3.org/TR/CSP2/#match-source-expression
-      // BUT, we only allow scheme-less sources to be upgraded from http to https if CSP
-      // does not explicitly define a port.
-      if (!(uriPort == NS_GetDefaultPort("https"))) {
-        return false;
-      }
-    }
-  }
-  // 4.7) Port matching: Compare the ports.
-  else {
-    nsString portStr;
-    portStr.AppendInt(uriPort);
-    if (!mPort.Equals(portStr)) {
-      return false;
-    }
-  }
-
-  // At the end: scheme, host, path, and port match -> allow the load.
+  // At the end: scheme, host, port and path match -> allow the load.
   return true;
 }
 
@@ -664,10 +813,9 @@ nsCSPNonceSrc::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirecte
                        bool aReportOnly, bool aUpgradeInsecure) const
 {
   if (CSPUTILSLOGENABLED()) {
-    nsAutoCString spec;
-    aUri->GetSpec(spec);
     CSPUTILSLOG(("nsCSPNonceSrc::permits, aUri: %s, aNonce: %s",
-                spec.get(), NS_ConvertUTF16toUTF8(aNonce).get()));
+                 aUri->GetSpecOrDefault().get(),
+                 NS_ConvertUTF16toUTF8(aNonce).get()));
   }
 
   return mNonce.Equals(aNonce);
@@ -792,6 +940,30 @@ nsCSPReportURI::toString(nsAString& outStr) const
   outStr.AppendASCII(spec.get());
 }
 
+/* ===== nsCSPSandboxFlags ===================== */
+
+nsCSPSandboxFlags::nsCSPSandboxFlags(const nsAString& aFlags)
+  : mFlags(aFlags)
+{
+  ToLowerCase(mFlags);
+}
+
+nsCSPSandboxFlags::~nsCSPSandboxFlags()
+{
+}
+
+bool
+nsCSPSandboxFlags::visit(nsCSPSrcVisitor* aVisitor) const
+{
+  return false;
+}
+
+void
+nsCSPSandboxFlags::toString(nsAString& outStr) const
+{
+  outStr.Append(mFlags);
+}
+
 /* ===== nsCSPDirective ====================== */
 
 nsCSPDirective::nsCSPDirective(CSPDirective aDirective)
@@ -811,9 +983,8 @@ nsCSPDirective::permits(nsIURI* aUri, const nsAString& aNonce, bool aWasRedirect
                         bool aReportOnly, bool aUpgradeInsecure) const
 {
   if (CSPUTILSLOGENABLED()) {
-    nsAutoCString spec;
-    aUri->GetSpec(spec);
-    CSPUTILSLOG(("nsCSPDirective::permits, aUri: %s", spec.get()));
+    CSPUTILSLOG(("nsCSPDirective::permits, aUri: %s",
+                 aUri->GetSpecOrDefault().get()));
   }
 
   for (uint32_t i = 0; i < mSrcs.Length(); i++) {
@@ -951,6 +1122,11 @@ nsCSPDirective::toDomCSPStruct(mozilla::dom::CSP& outCSP) const
     case nsIContentSecurityPolicy::CHILD_SRC_DIRECTIVE:
       outCSP.mChild_src.Construct();
       outCSP.mChild_src.Value() = mozilla::Move(srcs);
+      return;
+
+    case nsIContentSecurityPolicy::SANDBOX_DIRECTIVE:
+      outCSP.mSandbox.Construct();
+      outCSP.mSandbox.Value() = mozilla::Move(srcs);
       return;
 
     // REFERRER_DIRECTIVE and REQUIRE_SRI_FOR are handled in nsCSPPolicy::toDomCSPStruct()
@@ -1161,10 +1337,9 @@ nsCSPPolicy::permits(CSPDirective aDir,
                      nsAString& outViolatedDirective) const
 {
   if (CSPUTILSLOGENABLED()) {
-    nsAutoCString spec;
-    aUri->GetSpec(spec);
     CSPUTILSLOG(("nsCSPPolicy::permits, aUri: %s, aDir: %d, aSpecific: %s",
-                 spec.get(), aDir, aSpecific ? "true" : "false"));
+                 aUri->GetSpecOrDefault().get(), aDir,
+                 aSpecific ? "true" : "false"));
   }
 
   NS_ASSERTION(aUri, "permits needs an uri to perform the check!");
@@ -1342,6 +1517,33 @@ nsCSPPolicy::getDirectiveAsString(CSPDirective aDir, nsAString& outDirective) co
       return;
     }
   }
+}
+
+/*
+ * Helper function that returns the underlying bit representation of sandbox
+ * flags. The function returns SANDBOXED_NONE if there are no sandbox
+ * directives.
+ */
+uint32_t
+nsCSPPolicy::getSandboxFlags() const
+{
+  for (uint32_t i = 0; i < mDirectives.Length(); i++) {
+    if (mDirectives[i]->equals(nsIContentSecurityPolicy::SANDBOX_DIRECTIVE)) {
+      nsAutoString flags;
+      mDirectives[i]->toString(flags);
+
+      if (flags.IsEmpty()) {
+        return SANDBOX_ALL_FLAGS;
+      }
+
+      nsAttrValue attr;
+      attr.ParseAtomArray(flags);
+
+      return nsContentUtils::ParseSandboxAttributeToFlags(&attr);
+    }
+  }
+
+  return SANDBOXED_NONE;
 }
 
 void

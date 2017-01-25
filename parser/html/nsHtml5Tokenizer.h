@@ -136,6 +136,7 @@ class nsHtml5Tokenizer
     bool confident;
   private:
     int32_t line;
+    int32_t attributeLine;
     nsHtml5AtomTable* interner;
     bool viewingXmlSource;
   public:
@@ -158,8 +159,7 @@ class nsHtml5Tokenizer
   private:
     inline void appendCharRefBuf(char16_t c, const TaintFlow* t)
     {
-      if (t)
-        charRefTaint.set(charRefBufLen, *t);
+      MOZ_RELEASE_ASSERT(charRefBufLen < charRefBuf.length, "Attempted to overrun charRefBuf!");
       charRefBuf[charRefBufLen++] = c;
     }
 
@@ -184,7 +184,17 @@ class nsHtml5Tokenizer
       strBufLen = 0;
     }
 
-    void appendStrBuf(char16_t c);
+    inline void appendStrBuf(char16_t c)
+    {
+      MOZ_ASSERT(strBufLen < strBuf.length, "Previous buffer length insufficient.");
+      if (MOZ_UNLIKELY(strBufLen == strBuf.length)) {
+        if (MOZ_UNLIKELY(!EnsureBufferSpace(1))) {
+          MOZ_CRASH("Unable to recover from buffer reallocation failure");
+        }
+      }
+      strBuf[strBufLen++] = c;
+    }
+
   protected:
     nsString* strBufToString();
   private:

@@ -39,6 +39,7 @@
 #include "nsTArray.h"
 #include "pixelflinger/format.h"
 #include "nsIDisplayInfo.h"
+#include "base/task.h"
 
 #if ANDROID_VERSION >= 17
 #include "libdisplay/DisplaySurface.h"
@@ -63,13 +64,13 @@ public:
         : mIsOn(on)
     {}
 
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
         // Notify observers that the screen state has just changed.
         nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
         if (observerService) {
           observerService->NotifyObservers(
             nullptr, "screen-state-changed",
-            mIsOn ? MOZ_UTF16("on") : MOZ_UTF16("off")
+            mIsOn ? u"on" : u"off"
           );
         }
 
@@ -663,7 +664,8 @@ nsScreenGonk::EnableMirroring()
     nsWidgetInitData initData;
     initData.mScreenId = mId;
     RefPtr<nsWindow> window = new nsWindow();
-    window->Create(nullptr, nullptr, mNaturalBounds, &initData);
+    nsresult rv = window->Create(nullptr, nullptr, mNaturalBounds, &initData);
+    NS_ENSURE_SUCCESS(rv, false);
     MOZ_ASSERT(static_cast<nsWindow*>(window)->GetScreen() == this);
 
     // Update mMirroringWidget on compositor thread
@@ -980,7 +982,7 @@ public:
     {
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
         if (os) {

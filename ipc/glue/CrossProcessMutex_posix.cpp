@@ -5,13 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CrossProcessMutex.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
-
-#ifdef OS_MACOSX
-#include "nsCocoaFeatures.h"
-#endif
 
 namespace {
 
@@ -46,15 +42,6 @@ CrossProcessMutex::CrossProcessMutex(const char*)
     : mMutex(nullptr)
     , mCount(nullptr)
 {
-#ifdef OS_MACOSX
-  if (!nsCocoaFeatures::OnLionOrLater()) {
-    // Don't allow using the cross-process mutex before OS X 10.7 because it
-    // probably doesn't work very well. See discussion in bug 1072093 for more
-    // details.
-    MOZ_CRASH();
-  }
-#endif
-
   mSharedBuffer = new ipc::SharedMemoryBasic;
   if (!mSharedBuffer->Create(sizeof(MutexData))) {
     MOZ_CRASH();

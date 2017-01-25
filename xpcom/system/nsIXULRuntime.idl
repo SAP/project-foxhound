@@ -74,6 +74,7 @@ interface nsIXULRuntime : nsISupports
   const unsigned long PROCESS_TYPE_CONTENT = 2;
   const unsigned long PROCESS_TYPE_IPDLUNITTEST = 3;
   const unsigned long PROCESS_TYPE_GMPLUGIN = 4;
+  const unsigned long PROCESS_TYPE_GPU = 5;
 
   /**
    * The type of the caller's process.  Returns one of the values above.
@@ -84,6 +85,11 @@ interface nsIXULRuntime : nsISupports
    * The system process ID of the caller's process.
    */
   readonly attribute unsigned long processID;
+
+  /**
+   * A globally unique and non-recycled ID of the caller's process.
+   */
+  readonly attribute uint64_t uniqueProcessID;
 
   /**
    * If true, browser tabs may be opened by default in a different process
@@ -161,4 +167,10 @@ interface nsIXULRuntime : nsISupports
    * True if this is an official build (MOZILLA_OFFICIAL).
    */
   readonly attribute boolean isOfficial;
+
+  /**
+   * True if Windows DLL blocklist initialized correctly. This is
+   * primarily for automated testing purposes.
+   */
+  readonly attribute boolean windowsDLLBlocklistStatus;
 };

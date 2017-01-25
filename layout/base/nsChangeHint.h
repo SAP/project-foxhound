@@ -70,8 +70,11 @@ enum nsChangeHint {
 
   /**
    * Change requires frame change (e.g., display:).
-   * This subsumes all the above. Reconstructs all frame descendants,
-   * including following placeholders to out-of-flows.
+   * Reconstructs all frame descendants, including following placeholders
+   * to out-of-flows.
+   *
+   * Note that this subsumes all the other change hints. (see
+   * RestyleManager::ProcessRestyledFrames for details).
    */
   nsChangeHint_ReconstructFrame = 1 << 10,
 
@@ -128,6 +131,11 @@ enum nsChangeHint {
    * that are absolutely or fixed position. Use this hint when a style change
    * has changed whether the frame is a container for fixed-pos or abs-pos
    * elements, but reframing is otherwise not needed.
+   *
+   * Note that nsStyleContext::CalcStyleDifference adjusts results
+   * returned by style struct CalcDifference methods to return this hint
+   * only if there was a change to whether the element's overall style
+   * indicates that it establishes a containing block.
    */
   nsChangeHint_UpdateContainingBlock = 1 << 17,
 
@@ -153,7 +161,7 @@ enum nsChangeHint {
 
   /**
    * A hint reflecting that style data changed with no change handling
-   * behavior.  We need to return this, rather than NS_STYLE_HINT_NONE,
+   * behavior.  We need to return this, rather than nsChangeHint(0),
    * so that certain optimizations that manipulate the style context tree are
    * correct.
    *
@@ -203,9 +211,21 @@ enum nsChangeHint {
    */
   nsChangeHint_UpdateBackgroundPosition = 1 << 26,
 
-  // IMPORTANT NOTE: When adding new hints, consider whether you need to
-  // add them to NS_HintsNotHandledForDescendantsIn() below.  Please also
-  // add them to RestyleManager::ChangeHintToString.
+  /**
+   * Indicates that a frame has changed to or from having the CSS
+   * transform property set.
+   */
+  nsChangeHint_AddOrRemoveTransform = 1 << 27,
+
+  // IMPORTANT NOTE: When adding new hints, consider whether you need
+  // to add them to NS_HintsNotHandledForDescendantsIn() below. Please
+  // also add them to RestyleManager::ChangeHintToString and modify
+  // nsChangeHint_AllHints below accordingly.
+
+  /**
+   * Dummy hint value for all hints. It exists for compile time check.
+   */
+  nsChangeHint_AllHints = (1 << 28) - 1,
 };
 
 // Redefine these operators to return nothing. This will catch any use
@@ -229,13 +249,13 @@ inline bool NS_IsHintSubset(nsChangeHint aSubset, nsChangeHint aSuperSet) {
 // infinite recursion.
 typedef decltype(nsChangeHint(0) + nsChangeHint(0)) nsChangeHint_size_t;
 
-inline nsChangeHint MOZ_CONSTEXPR
+inline nsChangeHint constexpr
 operator|(nsChangeHint aLeft, nsChangeHint aRight)
 {
   return nsChangeHint(nsChangeHint_size_t(aLeft) | nsChangeHint_size_t(aRight));
 }
 
-inline nsChangeHint MOZ_CONSTEXPR
+inline nsChangeHint constexpr
 operator&(nsChangeHint aLeft, nsChangeHint aRight)
 {
   return nsChangeHint(nsChangeHint_size_t(aLeft) & nsChangeHint_size_t(aRight));
@@ -251,13 +271,13 @@ inline nsChangeHint& operator&=(nsChangeHint& aLeft, nsChangeHint aRight)
   return aLeft = aLeft & aRight;
 }
 
-inline nsChangeHint MOZ_CONSTEXPR
+inline nsChangeHint constexpr
 operator~(nsChangeHint aArg)
 {
   return nsChangeHint(~nsChangeHint_size_t(aArg));
 }
 
-inline nsChangeHint MOZ_CONSTEXPR
+inline nsChangeHint constexpr
 operator^(nsChangeHint aLeft, nsChangeHint aRight)
 {
   return nsChangeHint(nsChangeHint_size_t(aLeft) ^ nsChangeHint_size_t(aRight));
@@ -288,6 +308,7 @@ inline nsChangeHint operator^=(nsChangeHint& aLeft, nsChangeHint aRight)
           nsChangeHint_ChildrenOnlyTransform | \
           nsChangeHint_RecomputePosition | \
           nsChangeHint_UpdateContainingBlock | \
+          nsChangeHint_AddOrRemoveTransform | \
           nsChangeHint_BorderStyleNoneChange | \
           nsChangeHint_NeedReflow | \
           nsChangeHint_ReflowChangesSizeOrPosition | \
@@ -308,6 +329,7 @@ inline nsChangeHint NS_HintsNotHandledForDescendantsIn(nsChangeHint aChangeHint)
     nsChangeHint_ChildrenOnlyTransform |
     nsChangeHint_RecomputePosition |
     nsChangeHint_UpdateContainingBlock |
+    nsChangeHint_AddOrRemoveTransform |
     nsChangeHint_BorderStyleNoneChange |
     nsChangeHint_UpdateComputedBSize |
     nsChangeHint_UpdateUsesOpacity | \
@@ -343,8 +365,6 @@ inline nsChangeHint NS_HintsNotHandledForDescendantsIn(nsChangeHint aChangeHint)
 }
 
 // Redefine the old NS_STYLE_HINT constants in terms of the new hint structure
-#define NS_STYLE_HINT_NONE \
-  nsChangeHint(0)
 #define NS_STYLE_HINT_VISUAL \
   nsChangeHint(nsChangeHint_RepaintFrame | nsChangeHint_SyncFrameView | \
                nsChangeHint_SchedulePaint)
@@ -356,8 +376,6 @@ inline nsChangeHint NS_HintsNotHandledForDescendantsIn(nsChangeHint aChangeHint)
                nsChangeHint_NeedDirtyReflow)
 #define NS_STYLE_HINT_REFLOW \
   nsChangeHint(NS_STYLE_HINT_VISUAL | nsChangeHint_AllReflowHints)
-#define NS_STYLE_HINT_FRAMECHANGE \
-  nsChangeHint(NS_STYLE_HINT_REFLOW | nsChangeHint_ReconstructFrame)
 
 #define nsChangeHint_Hints_CanIgnoreIfNotVisible   \
   nsChangeHint(NS_STYLE_HINT_VISUAL |              \
@@ -463,14 +481,14 @@ enum nsRestyleHint {
 // infinite recursion.
 typedef decltype(nsRestyleHint(0) + nsRestyleHint(0)) nsRestyleHint_size_t;
 
-inline MOZ_CONSTEXPR nsRestyleHint operator|(nsRestyleHint aLeft,
+inline constexpr nsRestyleHint operator|(nsRestyleHint aLeft,
                                              nsRestyleHint aRight)
 {
   return nsRestyleHint(nsRestyleHint_size_t(aLeft) |
                        nsRestyleHint_size_t(aRight));
 }
 
-inline MOZ_CONSTEXPR nsRestyleHint operator&(nsRestyleHint aLeft,
+inline constexpr nsRestyleHint operator&(nsRestyleHint aLeft,
                                              nsRestyleHint aRight)
 {
   return nsRestyleHint(nsRestyleHint_size_t(aLeft) &
@@ -487,12 +505,12 @@ inline nsRestyleHint& operator&=(nsRestyleHint& aLeft, nsRestyleHint aRight)
   return aLeft = aLeft & aRight;
 }
 
-inline MOZ_CONSTEXPR nsRestyleHint operator~(nsRestyleHint aArg)
+inline constexpr nsRestyleHint operator~(nsRestyleHint aArg)
 {
   return nsRestyleHint(~nsRestyleHint_size_t(aArg));
 }
 
-inline MOZ_CONSTEXPR nsRestyleHint operator^(nsRestyleHint aLeft,
+inline constexpr nsRestyleHint operator^(nsRestyleHint aLeft,
                                              nsRestyleHint aRight)
 {
   return nsRestyleHint(nsRestyleHint_size_t(aLeft) ^

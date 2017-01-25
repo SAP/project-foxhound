@@ -54,6 +54,8 @@ Atomic<PRThread*, Relaxed> gSocketThread;
 #define TELEMETRY_PREF "toolkit.telemetry.enabled"
 #define MAX_TIME_FOR_PR_CLOSE_DURING_SHUTDOWN "network.sts.max_time_for_pr_close_during_shutdown"
 
+#define REPAIR_POLLABLE_EVENT_TIME 10
+
 uint32_t nsSocketTransportService::gMaxCount;
 PRCallOnceType nsSocketTransportService::gMaxCountInitOnce;
 
@@ -85,6 +87,9 @@ nsSocketTransportService::nsSocketTransportService()
     , mMaxTimeForPrClosePref(PR_SecondsToInterval(5))
     , mSleepPhase(false)
     , mProbedMaxCount(false)
+#if defined(XP_WIN)
+    , mPolling(false)
+#endif
 {
     NS_ASSERTION(NS_IsMainThread(), "wrong thread");
 
@@ -548,6 +553,7 @@ nsSocketTransportService::Init()
         obsSvc->AddObserver(this, "last-pb-context-exited", false);
         obsSvc->AddObserver(this, NS_WIDGET_SLEEP_OBSERVER_TOPIC, true);
         obsSvc->AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true);
+        obsSvc->AddObserver(this, "xpcom-shutdown-threads", false);
     }
 
     mInitialized = true;
@@ -556,7 +562,7 @@ nsSocketTransportService::Init()
 
 // called from main thread only
 NS_IMETHODIMP
-nsSocketTransportService::Shutdown()
+nsSocketTransportService::Shutdown(bool aXpcomShutdown)
 {
     SOCKET_LOG(("nsSocketTransportService::Shutdown\n"));
 
@@ -579,6 +585,23 @@ nsSocketTransportService::Shutdown()
         }
     }
 
+    if (!aXpcomShutdown) {
+        return ShutdownThread();
+    }
+
+    return NS_OK;
+}
+
+nsresult
+nsSocketTransportService::ShutdownThread()
+{
+    SOCKET_LOG(("nsSocketTransportService::ShutdownThread\n"));
+
+    NS_ENSURE_STATE(NS_IsMainThread());
+
+    if (!mInitialized || !mShuttingDown)
+        return NS_OK;
+
     // join with thread
     mThread->Shutdown();
     {
@@ -598,6 +621,7 @@ nsSocketTransportService::Shutdown()
         obsSvc->RemoveObserver(this, "last-pb-context-exited");
         obsSvc->RemoveObserver(this, NS_WIDGET_SLEEP_OBSERVER_TOPIC);
         obsSvc->RemoveObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC);
+        obsSvc->RemoveObserver(this, "xpcom-shutdown-threads");
     }
 
     if (mAfterWakeUpTimer) {
@@ -761,6 +785,13 @@ nsSocketTransportService::OnDispatchedEvent(nsIThreadInternal *thread)
         SOCKET_LOG(("OnDispatchedEvent Same Thread Skip Signal\n"));
         return NS_OK;
     }
+#else
+    if (gIOService->IsNetTearingDown()) {
+        // Poll can hang sometimes. If we are in shutdown, we are going to
+        // start a watchdog. If we do not exit poll within
+        // REPAIR_POLLABLE_EVENT_TIME signal a pollable event again.
+        StartPollWatchdog();
+    }
 #endif
 
     MutexAutoLock lock(mLock);
@@ -790,19 +821,9 @@ nsSocketTransportService::MarkTheLastElementOfPendingQueue()
     mServingPendingQueue = false;
 }
 
-#ifdef MOZ_NUWA_PROCESS
-#include "ipc/Nuwa.h"
-#endif
-
 NS_IMETHODIMP
 nsSocketTransportService::Run()
 {
-#ifdef MOZ_NUWA_PROCESS
-    if (IsNuwaProcess()) {
-        NuwaMarkCurrentThread(nullptr, nullptr);
-    }
-#endif
-
     SOCKET_LOG(("STS thread init %d sockets\n", gMaxCount));
 
     psm::InitializeSSLServerCertVerificationThreads();
@@ -1078,7 +1099,13 @@ nsSocketTransportService::DoPollIteration(TimeDuration *pollDuration)
     *pollDuration = 0;
     if (!gIOService->IsNetTearingDown()) {
         // Let's not do polling during shutdown.
+#if defined(XP_WIN)
+        StartPolling();
+#endif
         n = Poll(&pollInterval, pollDuration);
+#if defined(XP_WIN)
+        EndPolling();
+#endif
     }
 
     if (n < 0) {
@@ -1153,7 +1180,7 @@ nsSocketTransportService::DoPollIteration(TimeDuration *pollDuration)
                     mPollableEvent = nullptr;
                 }
                 SOCKET_LOG(("running socket transport thread without "
-                            "a pollable event now valid=%d", mPollableEvent->Valid()));
+                            "a pollable event now valid=%d", !!mPollableEvent));
                 mPollList[0].fd = mPollableEvent ? mPollableEvent->PollableFD() : nullptr;
                 mPollList[0].in_flags = PR_POLL_READ | PR_POLL_EXCEPT;
                 mPollList[0].out_flags = 0;
@@ -1319,6 +1346,13 @@ nsSocketTransportService::Observe(nsISupports *subject,
             mAfterWakeUpTimer = nullptr;
             mSleepPhase = false;
         }
+
+#if defined(XP_WIN)
+        if (timer == mPollRepairTimer) {
+            DoPollRepair();
+        }
+#endif
+
     } else if (!strcmp(topic, NS_WIDGET_SLEEP_OBSERVER_TOPIC)) {
         mSleepPhase = true;
         if (mAfterWakeUpTimer) {
@@ -1332,6 +1366,8 @@ nsSocketTransportService::Observe(nsISupports *subject,
                 mAfterWakeUpTimer->Init(this, 2000, nsITimer::TYPE_ONE_SHOT);
             }
         }
+    } else if (!strcmp(topic, "xpcom-shutdown-threads")) {
+        ShutdownThread();
     }
 
     return NS_OK;
@@ -1413,7 +1449,7 @@ nsSocketTransportService::ProbeMaxCount()
     }
 
     // Test
-    PR_STATIC_ASSERT(SOCKET_LIMIT_MIN >= 32U);
+    static_assert(SOCKET_LIMIT_MIN >= 32U, "Minimum Socket Limit is >= 32");
     while (gMaxCount <= numAllocated) {
         int32_t rv = PR_Poll(pfd, gMaxCount, PR_MillisecondsToInterval(0));
         
@@ -1482,7 +1518,7 @@ nsSocketTransportService::DiscoverMaxCount()
 
 #elif defined(XP_WIN) && !defined(WIN_CE)
     // >= XP is confirmed to have at least 1000
-    PR_STATIC_ASSERT(SOCKET_LIMIT_TARGET <= 1000);
+    static_assert(SOCKET_LIMIT_TARGET <= 1000, "SOCKET_LIMIT_TARGET max value is 1000");
     gMaxCount = SOCKET_LIMIT_TARGET;
 #else
     // other platforms are harder to test - so leave at safe legacy value
@@ -1508,10 +1544,15 @@ nsSocketTransportService::AnalyzeConnection(nsTArray<SocketInfo> *data,
     bool tcp = PR_GetDescType(idLayer) == PR_DESC_SOCKET_TCP;
 
     PRNetAddr peer_addr;
-    PR_GetPeerName(aFD, &peer_addr);
+    PodZero(&peer_addr);
+    PRStatus rv = PR_GetPeerName(aFD, &peer_addr);
+    if (rv != PR_SUCCESS)
+       return;
 
     char host[64] = {0};
-    PR_NetAddrToString(&peer_addr, host, sizeof(host));
+    rv = PR_NetAddrToString(&peer_addr, host, sizeof(host));
+    if (rv != PR_SUCCESS)
+       return;
 
     uint16_t port;
     if (peer_addr.raw.family == PR_AF_INET)
@@ -1535,6 +1576,52 @@ nsSocketTransportService::GetSocketConnections(nsTArray<SocketInfo> *data)
     for (uint32_t i = 0; i < mIdleCount; i++)
         AnalyzeConnection(data, &mIdleList[i], false);
 }
+
+#if defined(XP_WIN)
+void
+nsSocketTransportService::StartPollWatchdog()
+{
+    MutexAutoLock lock(mLock);
+
+    // Poll can hang sometimes. If we are in shutdown, we are going to start a
+    // watchdog. If we do not exit poll within REPAIR_POLLABLE_EVENT_TIME
+    // signal a pollable event again.
+    MOZ_ASSERT(gIOService->IsNetTearingDown());
+    if (mPolling && !mPollRepairTimer) {
+        mPollRepairTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
+        mPollRepairTimer->Init(this, REPAIR_POLLABLE_EVENT_TIME,
+                               nsITimer::TYPE_REPEATING_SLACK);
+    }
+}
+
+void
+nsSocketTransportService::DoPollRepair()
+{
+    MutexAutoLock lock(mLock);
+    if (mPolling && mPollableEvent) {
+        mPollableEvent->Signal();
+    } else if (mPollRepairTimer) {
+        mPollRepairTimer->Cancel();
+    }
+}
+
+void
+nsSocketTransportService::StartPolling()
+{
+    MutexAutoLock lock(mLock);
+    mPolling = true;
+}
+
+void
+nsSocketTransportService::EndPolling()
+{
+    MutexAutoLock lock(mLock);
+    mPolling = false;
+    if (mPollRepairTimer) {
+        mPollRepairTimer->Cancel();
+    }
+}
+#endif
 
 } // namespace net
 } // namespace mozilla

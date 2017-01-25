@@ -13,12 +13,12 @@ const kLoginsKey = "Software\\Microsoft\\Internet Explorer\\IntelliForms\\Storag
 const kMainKey = "Software\\Microsoft\\Internet Explorer\\Main";
 
 Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/osfile.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource:///modules/MigrationUtils.jsm");
 Cu.import("resource:///modules/MSMigrationUtils.jsm");
-Cu.import("resource://gre/modules/LoginHelper.jsm");
 
 
 XPCOMUtils.defineLazyModuleGetter(this, "ctypes",
@@ -94,7 +94,7 @@ History.prototype = {
       return;
     }
 
-    PlacesUtils.asyncHistory.updatePlaces(places, {
+    MigrationUtils.insertVisitsWrapper(places, {
       _success: false,
       handleResult: function() {
         // Importing any entry is considered a successful import.
@@ -249,8 +249,8 @@ IE7FormPasswords.prototype = {
           password: ieLogin.password,
           hostname: ieLogin.url,
           timeCreated: ieLogin.creation,
-          };
-        LoginHelper.maybeImportLogin(login);
+        };
+        MigrationUtils.insertLoginWrapper(login);
       } catch (e) {
         Cu.reportError(e);
       }
@@ -362,7 +362,7 @@ Settings.prototype = {
     // Final string is sorted by quality (q=) param.
     function parseAcceptLanguageList(v) {
       return v.match(/([a-z]{1,8}(-[a-z]{1,8})?)\s*(;\s*q\s*=\s*(1|0\.[0-9]+))?/gi)
-              .sort(function (a , b) {
+              .sort(function (a, b) {
                 let qA = parseFloat(a.split(";q=")[1]) || 1.0;
                 let qB = parseFloat(b.split(";q=")[1]) || 1.0;
                 return qB - qA;
@@ -493,6 +493,26 @@ IEProfileMigrator.prototype.getResources = function IE_getResources() {
   windowsVaultFormPasswordsMigrator.name = "IEVaultFormPasswords";
   resources.push(windowsVaultFormPasswordsMigrator);
   return resources.filter(r => r.exists);
+};
+
+IEProfileMigrator.prototype.getLastUsedDate = function IE_getLastUsedDate() {
+  let datePromises = ["Favs", "CookD"].map(dirId => {
+    let {path} = Services.dirsvc.get(dirId, Ci.nsIFile);
+    return OS.File.stat(path).catch(_ => null).then(info => {
+      return info ? info.lastModificationDate : 0;
+    });
+  });
+  datePromises.push(new Promise(resolve => {
+    let typedURLs = new Map();
+    try {
+      typedURLs = MSMigrationUtils.getTypedURLs("Software\\Microsoft\\Internet Explorer");
+    } catch (ex) {}
+    let dates = [0, ... typedURLs.values()];
+    resolve(Math.max.apply(Math, dates));
+  }));
+  return Promise.all(datePromises).then(dates => {
+    return new Date(Math.max.apply(Math, dates));
+  });
 };
 
 Object.defineProperty(IEProfileMigrator.prototype, "sourceHomePageURL", {

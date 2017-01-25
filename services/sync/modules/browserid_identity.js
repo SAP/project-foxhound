@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["BrowserIDManager"];
+this.EXPORTED_SYMBOLS = ["BrowserIDManager", "AuthenticationError"];
 
 var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
@@ -45,6 +45,7 @@ Cu.import("resource://gre/modules/FxAccountsCommon.js", fxAccountsCommon);
 const OBSERVER_TOPICS = [
   fxAccountsCommon.ONLOGIN_NOTIFICATION,
   fxAccountsCommon.ONLOGOUT_NOTIFICATION,
+  fxAccountsCommon.ON_ACCOUNT_STATE_CHANGE_NOTIFICATION,
 ];
 
 const PREF_SYNC_SHOW_CUSTOMIZATION = "services.sync-setup.ui.showCustomizationDialog";
@@ -65,8 +66,9 @@ function deriveKeyBundle(kB) {
   some other error object (which should do the right thing when toString() is
   called on it)
 */
-function AuthenticationError(details) {
+function AuthenticationError(details, source) {
   this.details = details;
+  this.source = source;
 }
 
 AuthenticationError.prototype = {
@@ -110,6 +112,17 @@ this.BrowserIDManager.prototype = {
     } catch (e) {
       return false;
     }
+  },
+
+  hashedUID() {
+    if (!this._token) {
+      throw new Error("hashedUID: Don't have token");
+    }
+    return this._token.hashed_fxa_uid
+  },
+
+  deviceID() {
+    return this._signedInUser && this._signedInUser.deviceId;
   },
 
   initialize: function() {
@@ -297,6 +310,13 @@ this.BrowserIDManager.prototype = {
       Weave.Service.startOver();
       // startOver will cause this instance to be thrown away, so there's
       // nothing else to do.
+      break;
+
+    case fxAccountsCommon.ON_ACCOUNT_STATE_CHANGE_NOTIFICATION:
+      // throw away token and fetch a new one
+      this.resetCredentials();
+      this._ensureValidToken().catch(err =>
+        this._log.error("Error while fetching a new token", err));
       break;
     }
   },
@@ -625,13 +645,13 @@ this.BrowserIDManager.prototype = {
         // both tokenserverclient and hawkclient.
         // A tokenserver error thrown based on a bad response.
         if (err.response && err.response.status === 401) {
-          err = new AuthenticationError(err);
+          err = new AuthenticationError(err, "tokenserver");
         // A hawkclient error.
         } else if (err.code && err.code === 401) {
-          err = new AuthenticationError(err);
+          err = new AuthenticationError(err, "hawkclient");
         // An FxAccounts.jsm error.
         } else if (err.message == fxAccountsCommon.ERROR_AUTH_ERROR) {
-          err = new AuthenticationError(err);
+          err = new AuthenticationError(err, "fxaccounts");
         }
 
         // TODO: write tests to make sure that different auth error cases are handled here
@@ -664,12 +684,19 @@ this.BrowserIDManager.prototype = {
       this._log.debug("_ensureValidToken already has one");
       return Promise.resolve();
     }
+    const notifyStateChanged =
+      () => Services.obs.notifyObservers(null, "weave:service:login:change", null);
     // reset this._token as a safety net to reduce the possibility of us
     // repeatedly attempting to use an invalid token if _fetchTokenForUser throws.
     this._token = null;
     return this._fetchTokenForUser().then(
       token => {
         this._token = token;
+        notifyStateChanged();
+      },
+      error => {
+        notifyStateChanged();
+        throw error
       }
     );
   },

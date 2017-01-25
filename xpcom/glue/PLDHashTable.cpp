@@ -11,6 +11,7 @@
 #include "PLDHashTable.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/OperatorNewExtensions.h"
 #include "nsAlgorithm.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
@@ -317,7 +318,7 @@ PLDHashTable::ClearAndPrepareForLength(uint32_t aLength)
   uint32_t entrySize = mEntrySize;
 
   this->~PLDHashTable();
-  new (this) PLDHashTable(ops, entrySize, aLength);
+  new (KnownNotNull, this) PLDHashTable(ops, entrySize, aLength);
 }
 
 void
@@ -326,11 +327,11 @@ PLDHashTable::Clear()
   ClearAndPrepareForLength(kDefaultInitialLength);
 }
 
-// If |IsAdd| is true, the return value is always non-null and it may be a
-// previously-removed entry. If |IsAdd| is false, the return value is null on a
-// miss, and will never be a previously-removed entry on a hit. This
-// distinction is a bit grotty but this function is hot enough that these
-// differences are worthwhile.
+// If |Reason| is |ForAdd|, the return value is always non-null and it may be
+// a previously-removed entry. If |Reason| is |ForSearchOrRemove|, the return
+// value is null on a miss, and will never be a previously-removed entry on a
+// hit. This distinction is a bit grotty but this function is hot enough that
+// these differences are worthwhile.
 template <PLDHashTable::SearchReason Reason>
 PLDHashEntryHdr* NS_FASTCALL
 PLDHashTable::SearchTable(const void* aKey, PLDHashNumber aKeyHash)
@@ -395,7 +396,7 @@ PLDHashTable::SearchTable(const void* aKey, PLDHashNumber aKeyHash)
 }
 
 // This is a copy of SearchTable(), used by ChangeTable(), hardcoded to
-//   1. assume |aIsAdd| is true,
+//   1. assume |Reason| is |ForAdd|,
 //   2. assume that |aKey| will never match an existing entry, and
 //   3. assume that no entries have been removed from the current table
 //      structure.

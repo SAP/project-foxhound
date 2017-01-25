@@ -181,10 +181,10 @@ public:
   }
 
   static void
-  SetDefaultRuntimeOptions(const JS::RuntimeOptions& aRuntimeOptions)
+  SetDefaultContextOptions(const JS::ContextOptions& aContextOptions)
   {
     AssertIsOnMainThread();
-    sDefaultJSSettings.runtimeOptions = aRuntimeOptions;
+    sDefaultJSSettings.contextOptions = aContextOptions;
   }
 
   void
@@ -197,7 +197,7 @@ public:
   UpdatePlatformOverridePreference(const nsAString& aValue);
 
   void
-  UpdateAllWorkerRuntimeOptions();
+  UpdateAllWorkerContextOptions();
 
   void
   UpdateAllWorkerLanguages(const nsTArray<nsString>& aLanguages);
@@ -214,18 +214,6 @@ public:
 
   void
   UpdateAllWorkerMemoryParameter(JSGCParamKey aKey, uint32_t aValue);
-
-  static uint32_t
-  GetContentCloseHandlerTimeoutSeconds()
-  {
-    return sDefaultJSSettings.content.maxScriptRuntime;
-  }
-
-  static uint32_t
-  GetChromeCloseHandlerTimeoutSeconds()
-  {
-    return sDefaultJSSettings.chrome.maxScriptRuntime;
-  }
 
 #ifdef JS_GC_ZEAL
   static void

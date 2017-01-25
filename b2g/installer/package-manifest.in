@@ -170,7 +170,6 @@
 #endif
 @RESPATH@/components/dom_canvas.xpt
 @RESPATH@/components/dom_contacts.xpt
-@RESPATH@/components/dom_alarm.xpt
 @RESPATH@/components/dom_core.xpt
 @RESPATH@/components/dom_css.xpt
 @RESPATH@/components/dom_events.xpt
@@ -186,7 +185,6 @@
 @RESPATH@/components/dom_notification.xpt
 @RESPATH@/components/dom_html.xpt
 @RESPATH@/components/dom_offline.xpt
-@RESPATH@/components/dom_payment.xpt
 @RESPATH@/components/dom_json.xpt
 @RESPATH@/components/dom_messages.xpt
 @RESPATH@/components/dom_power.xpt
@@ -213,6 +211,7 @@
 @RESPATH@/components/dom_webspeechrecognition.xpt
 #endif
 @RESPATH@/components/dom_xbl.xpt
+@RESPATH@/components/dom_xhr.xpt
 @RESPATH@/components/dom_xpath.xpt
 @RESPATH@/components/dom_xul.xpt
 @RESPATH@/components/dom_time.xpt
@@ -230,6 +229,7 @@
 #endif
 @RESPATH@/components/find.xpt
 @RESPATH@/components/gfx.xpt
+@RESPATH@/components/gaia_chrome.xpt
 @RESPATH@/components/hal.xpt
 @RESPATH@/components/html5.xpt
 @RESPATH@/components/htmlparser.xpt
@@ -271,9 +271,6 @@
 @RESPATH@/components/necko_websocket.xpt
 @RESPATH@/components/necko_wifi.xpt
 @RESPATH@/components/necko_wyciwyg.xpt
-#ifdef MOZ_RTSP
-@RESPATH@/components/necko_rtsp.xpt
-#endif
 @RESPATH@/components/necko.xpt
 @RESPATH@/components/loginmgr.xpt
 @RESPATH@/components/parentalcontrols.xpt
@@ -365,8 +362,6 @@
 @RESPATH@/components/PermissionSettings.manifest
 @RESPATH@/components/PermissionPromptService.js
 @RESPATH@/components/PermissionPromptService.manifest
-@RESPATH@/components/AlarmsManager.js
-@RESPATH@/components/AlarmsManager.manifest
 @RESPATH@/components/FeedProcessor.manifest
 @RESPATH@/components/FeedProcessor.js
 @RESPATH@/components/PackagedAppUtils.manifest
@@ -401,8 +396,6 @@
 @RESPATH@/components/SiteSpecificUserAgent.manifest
 @RESPATH@/components/storage-json.js
 @RESPATH@/components/crypto-SDR.js
-@RESPATH@/components/jsconsole-clhandler.manifest
-@RESPATH@/components/jsconsole-clhandler.js
 @RESPATH@/components/Downloads.manifest
 @RESPATH@/components/DownloadLegacy.js
 @RESPATH@/components/nsSidebar.manifest
@@ -608,11 +601,7 @@
 @RESPATH@/components/AppsService.manifest
 @RESPATH@/components/Push.js
 @RESPATH@/components/Push.manifest
-#ifdef MOZ_SIMPLEPUSH
-@RESPATH@/components/PushServiceLauncher.js
-#else
 @RESPATH@/components/PushComponents.js
-#endif
 
 @RESPATH@/components/nsDOMIdentity.js
 @RESPATH@/components/nsIDService.js
@@ -625,16 +614,10 @@
 @RESPATH@/components/HCIEventTransactionSystemMessage.manifest
 @RESPATH@/components/HCIEventTransactionSystemMessageConfigurator.js
 
-@RESPATH@/components/Activities.manifest
 @RESPATH@/components/ActivityProxy.js
 @RESPATH@/components/ActivityRequestHandler.js
 @RESPATH@/components/ActivityWrapper.js
 @RESPATH@/components/ActivityMessageConfigurator.js
-
-@RESPATH@/components/Payment.js
-@RESPATH@/components/PaymentFlowInfo.js
-@RESPATH@/components/PaymentProvider.js
-@RESPATH@/components/Payment.manifest
 
 @RESPATH@/components/DownloadsAPI.js
 @RESPATH@/components/DownloadsAPI.manifest
@@ -865,8 +848,8 @@ bin/libfreebl_32int64_3.so
 #if defined(ENABLE_MARIONETTE) || !defined(MOZ_WIDGET_GONK)
 @RESPATH@/chrome/marionette@JAREXT@
 @RESPATH@/chrome/marionette.manifest
-@RESPATH@/components/MarionetteComponents.manifest
-@RESPATH@/components/marionettecomponent.js
+@RESPATH@/components/marionette.manifest
+@RESPATH@/components/marionette.js
 #endif
 @RESPATH@/components/AlertsService.js
 @RESPATH@/components/ContentPermissionPrompt.js
@@ -875,11 +858,8 @@ bin/libfreebl_32int64_3.so
 #endif
 @RESPATH@/components/WebappsUpdateTimer.js
 @RESPATH@/components/DirectoryProvider.js
-@RESPATH@/components/ActivitiesGlue.js
 @RESPATH@/components/ProcessGlobal.js
 @RESPATH@/components/OMAContentHandler.js
-@RESPATH@/components/PaymentGlue.js
-@RESPATH@/components/PaymentProviderStrategy.js
 @RESPATH@/components/RecoveryService.js
 @RESPATH@/components/MailtoProtocolHandler.js
 @RESPATH@/components/SmsProtocolHandler.js
@@ -892,7 +872,6 @@ bin/libfreebl_32int64_3.so
 @RESPATH@/components/B2GAppMigrator.js
 @RESPATH@/components/B2GPresentationDevicePrompt.js
 @RESPATH@/components/PresentationRequestUIGlue.js
-@RESPATH@/components/KillSwitch.js
 
 #ifndef MOZ_WIDGET_GONK
 @RESPATH@/components/SimulatorScreen.js
@@ -900,12 +879,6 @@ bin/libfreebl_32int64_3.so
 
 @RESPATH@/components/FxAccountsUIGlue.js
 @RESPATH@/components/services_fxaccounts.xpt
-
-@RESPATH@/components/MobileIdentity.manifest
-@RESPATH@/components/MobileIdentity.js
-@RESPATH@/components/dom_mobileidentity.xpt
-@RESPATH@/components/MobileIdentityUIGlue.js
-@RESPATH@/components/services_mobileidentity.xpt
 
 #ifdef MOZ_WEBSPEECH
 @RESPATH@/components/dom_webspeechsynth.xpt
@@ -926,10 +899,8 @@ bin/libfreebl_32int64_3.so
 #endif
 
 ; media
-#ifdef MOZ_EME
 @RESPATH@/gmp-clearkey/0.1/@DLL_PREFIX@clearkey@DLL_SUFFIX@
 @RESPATH@/gmp-clearkey/0.1/clearkey.info
-#endif
 
 #ifdef PKG_LOCALE_MANIFEST
 #include @PKG_LOCALE_MANIFEST@

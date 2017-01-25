@@ -39,7 +39,10 @@ private:
   UniquePtr<MP4MetadataStagefright> mStagefright;
 #ifdef MOZ_RUST_MP4PARSE
   UniquePtr<MP4MetadataRust> mRust;
-  mutable bool mReportedTelemetry;
+  mutable bool mPreferRust;
+  mutable bool mReportedAudioTrackTelemetry;
+  mutable bool mReportedVideoTrackTelemetry;
+  bool ShouldPreferRust() const;
 #endif
 };
 

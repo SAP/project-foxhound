@@ -43,7 +43,8 @@ WrapperAnswer::fail(AutoJSAPI& jsapi, ReturnStatus* rs)
     if (!jsapi.HasException())
         return true;
 
-    jsapi.StealException(&exn);
+    if (!jsapi.StealException(&exn))
+        return true;
 
     if (JS_IsStopIteration(exn)) {
         *rs = ReturnStatus(ReturnStopIteration());
@@ -73,6 +74,15 @@ WrapperAnswer::ok(ReturnStatus* rs, const JS::ObjectOpResult& result)
 }
 
 bool
+WrapperAnswer::deadCPOW(AutoJSAPI& jsapi, ReturnStatus* rs)
+{
+    JSContext* cx = jsapi.cx();
+    JS_ClearPendingException(cx);
+    *rs = ReturnStatus(ReturnDeadCPOW());
+    return true;
+}
+
+bool
 WrapperAnswer::RecvPreventExtensions(const ObjectId& objId, ReturnStatus* rs)
 {
     AutoJSAPI jsapi;
@@ -82,7 +92,7 @@ WrapperAnswer::RecvPreventExtensions(const ObjectId& objId, ReturnStatus* rs)
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     ObjectOpResult success;
     if (!JS_PreventExtensions(cx, obj, success))
@@ -114,7 +124,7 @@ WrapperAnswer::RecvGetPropertyDescriptor(const ObjectId& objId, const JSIDVarian
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.getPropertyDescriptor(%s)", ReceiverObj(objId), Identifier(idVar));
 
@@ -144,7 +154,7 @@ WrapperAnswer::RecvGetOwnPropertyDescriptor(const ObjectId& objId, const JSIDVar
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.getOwnPropertyDescriptor(%s)", ReceiverObj(objId), Identifier(idVar));
 
@@ -173,7 +183,7 @@ WrapperAnswer::RecvDefineProperty(const ObjectId& objId, const JSIDVariant& idVa
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("define %s[%s]", ReceiverObj(objId), Identifier(idVar));
 
@@ -201,7 +211,7 @@ WrapperAnswer::RecvDelete(const ObjectId& objId, const JSIDVariant& idVar, Retur
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("delete %s[%s]", ReceiverObj(objId), Identifier(idVar));
 
@@ -227,7 +237,7 @@ WrapperAnswer::RecvHas(const ObjectId& objId, const JSIDVariant& idVar, ReturnSt
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.has(%s)", ReceiverObj(objId), Identifier(idVar));
 
@@ -252,7 +262,7 @@ WrapperAnswer::RecvHasOwn(const ObjectId& objId, const JSIDVariant& idVar, Retur
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.hasOwn(%s)", ReceiverObj(objId), Identifier(idVar));
 
@@ -280,7 +290,7 @@ WrapperAnswer::RecvGet(const ObjectId& objId, const JSVariant& receiverVar,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(aes, rs);
+        return deadCPOW(aes, rs);
 
     RootedValue receiver(cx);
     if (!fromVariant(cx, receiverVar, &receiver))
@@ -313,7 +323,7 @@ WrapperAnswer::RecvSet(const ObjectId& objId, const JSIDVariant& idVar, const JS
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(aes, rs);
+        return deadCPOW(aes, rs);
 
     LOG("set %s[%s] = %s", ReceiverObj(objId), Identifier(idVar), InVariant(value));
 
@@ -347,7 +357,7 @@ WrapperAnswer::RecvIsExtensible(const ObjectId& objId, ReturnStatus* rs, bool* r
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.isExtensible()", ReceiverObj(objId));
 
@@ -377,7 +387,7 @@ WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(aes, rs);
+        return deadCPOW(aes, rs);
 
     MOZ_ASSERT(argv.Length() >= 2);
 
@@ -410,7 +420,6 @@ WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
 
     RootedValue rval(cx);
     {
-        MOZ_ASSERT(JS::ContextOptionsRef(cx).autoJSAPIOwnsErrorReporting());
         HandleValueArray args = HandleValueArray::subarray(vals, 2, vals.length() - 2);
         if (construct) {
             RootedObject obj(cx);
@@ -473,7 +482,7 @@ WrapperAnswer::RecvHasInstance(const ObjectId& objId, const JSVariant& vVar, Ret
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.hasInstance(%s)", ReceiverObj(objId), InVariant(vVar));
 
@@ -491,7 +500,7 @@ bool
 WrapperAnswer::RecvGetBuiltinClass(const ObjectId& objId, ReturnStatus* rs,
                                    uint32_t* classValue)
 {
-    *classValue = js::ESClass_Other;
+    *classValue = uint32_t(js::ESClass::Other);
 
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
@@ -500,15 +509,15 @@ WrapperAnswer::RecvGetBuiltinClass(const ObjectId& objId, ReturnStatus* rs,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.getBuiltinClass()", ReceiverObj(objId));
 
-    js::ESClassValue cls;
+    js::ESClass cls;
     if (!js::GetBuiltinClass(cx, obj, &cls))
         return fail(jsapi, rs);
 
-    *classValue = cls;
+    *classValue = uint32_t(cls);
     return ok(rs);
 }
 
@@ -525,7 +534,7 @@ WrapperAnswer::RecvIsArray(const ObjectId& objId, ReturnStatus* rs,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.isArray()", ReceiverObj(objId));
 
@@ -570,7 +579,7 @@ WrapperAnswer::RecvGetPrototype(const ObjectId& objId, ReturnStatus* rs, ObjectO
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     JS::RootedObject proto(cx);
     if (!JS_GetPrototype(cx, obj, &proto))
@@ -598,7 +607,7 @@ WrapperAnswer::RecvGetPrototypeIfOrdinary(const ObjectId& objId, ReturnStatus* r
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     JS::RootedObject proto(cx);
     if (!JS_GetPrototypeIfOrdinary(cx, obj, isOrdinary, &proto))
@@ -623,7 +632,7 @@ WrapperAnswer::RecvRegExpToShared(const ObjectId& objId, ReturnStatus* rs,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     RootedString sourceJSStr(cx, JS_GetRegExpSource(cx, obj));
     if (!sourceJSStr)
@@ -649,7 +658,7 @@ WrapperAnswer::RecvGetPropertyKeys(const ObjectId& objId, const uint32_t& flags,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.getPropertyKeys()", ReceiverObj(objId));
 
@@ -681,7 +690,7 @@ WrapperAnswer::RecvInstanceOf(const ObjectId& objId, const JSIID& iid, ReturnSta
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.instanceOf()", ReceiverObj(objId));
 
@@ -707,7 +716,7 @@ WrapperAnswer::RecvDOMInstanceOf(const ObjectId& objId, const int& prototypeID,
 
     RootedObject obj(cx, findObjectById(cx, objId));
     if (!obj)
-        return fail(jsapi, rs);
+        return deadCPOW(jsapi, rs);
 
     LOG("%s.domInstanceOf()", ReceiverObj(objId));
 

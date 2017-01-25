@@ -32,6 +32,10 @@
  * when we know that we are checking as a result of navigation.
  */
 
+#include "mozilla/EditorBase.h"
+#include "mozilla/EditorUtils.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/Selection.h"
 #include "mozInlineSpellChecker.h"
 #include "mozInlineSpellWordUtil.h"
 #include "mozISpellI18NManager.h"
@@ -48,7 +52,6 @@
 #include "nsIDOMEvent.h"
 #include "nsGenericHTMLElement.h"
 #include "nsRange.h"
-#include "mozilla/dom/Selection.h"
 #include "nsIPlaintextEditor.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
@@ -64,9 +67,6 @@
 #include "nsIContent.h"
 #include "nsRange.h"
 #include "nsContentUtils.h"
-#include "nsEditor.h"
-#include "nsEditorUtils.h"
-#include "mozilla/Services.h"
 #include "nsIObserverService.h"
 #include "nsITextControlElement.h"
 #include "prtime.h"
@@ -484,7 +484,7 @@ public:
     return NS_DispatchToMainThread(this);
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     // Discard the resumption if the spell checker was disabled after the
     // resumption was scheduled.
@@ -912,8 +912,9 @@ nsresult
 mozInlineSpellChecker::SpellCheckRange(nsIDOMRange* aRange)
 {
   if (!mSpellCheck) {
-    NS_WARN_IF_FALSE(mPendingSpellCheck,
-                     "Trying to spellcheck, but checking seems to be disabled");
+    NS_WARNING_ASSERTION(
+      mPendingSpellCheck,
+      "Trying to spellcheck, but checking seems to be disabled");
     return NS_ERROR_NOT_INITIALIZED;
   }
 
@@ -961,7 +962,7 @@ mozInlineSpellChecker::ReplaceWord(nsIDOMNode *aNode, int32_t aOffset,
     res = range->CloneRange(getter_AddRefs(editorRange));
     NS_ENSURE_SUCCESS(res, res);
 
-    nsAutoPlaceHolderBatch phb(editor, nullptr);
+    AutoPlaceHolderBatch phb(editor, nullptr);
   
     nsCOMPtr<nsISelection> selection;
     res = editor->GetSelection(getter_AddRefs(selection));
@@ -1804,7 +1805,6 @@ nsresult mozInlineSpellChecker::GetSpellCheckSelection(nsISelection ** aSpellChe
   nsresult rv = editor->GetSelectionController(getter_AddRefs(selcon));
   NS_ENSURE_SUCCESS(rv, rv); 
 
-  nsCOMPtr<nsISelection> spellCheckSelection;
   return selcon->GetSelection(nsISelectionController::SELECTION_SPELLCHECK, aSpellCheckSelection);
 }
 

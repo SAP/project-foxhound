@@ -21,6 +21,12 @@ class nsDisplaySVGEffects;
 class nsDisplayTableItem;
 class nsDisplayThemedBackground;
 
+namespace mozilla {
+namespace gfx {
+struct Color;
+}
+}
+
 /**
  * This stores the geometry of an nsDisplayItem, and the area
  * that will be affected when painting the item.
@@ -241,7 +247,26 @@ public:
   nscolor mColor;
 };
 
+class nsDisplaySolidColorRegionGeometry : public nsDisplayItemBoundsGeometry
+{
+public:
+  nsDisplaySolidColorRegionGeometry(nsDisplayItem* aItem,
+                                    nsDisplayListBuilder* aBuilder,
+                                    const nsRegion& aRegion,
+                                    mozilla::gfx::Color aColor)
+    : nsDisplayItemBoundsGeometry(aItem, aBuilder)
+    , mRegion(aRegion)
+    , mColor(aColor)
+  { }
+
+  virtual void MoveBy(const nsPoint& aOffset) override;
+
+  nsRegion mRegion;
+  mozilla::gfx::Color mColor;
+};
+
 class nsDisplaySVGEffectsGeometry : public nsDisplayItemGeometry
+  , public nsImageGeometryMixin<nsDisplaySVGEffectsGeometry>
 {
 public:
   nsDisplaySVGEffectsGeometry(nsDisplaySVGEffects* aItem, nsDisplayListBuilder* aBuilder);

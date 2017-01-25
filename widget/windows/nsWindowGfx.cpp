@@ -39,7 +39,7 @@ using mozilla::plugins::PluginInstanceParent;
 #include "prmem.h"
 #include "WinUtils.h"
 #include "nsIWidgetListener.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsDebug.h"
 #include "nsIXULRuntime.h"
 
@@ -170,11 +170,18 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
   if (mozilla::ipc::MessageChannel::IsSpinLoopActive() && mPainting)
     return false;
 
-  if (gfxWindowsPlatform::GetPlatform()->DidRenderingDeviceReset()) {
+  DeviceResetReason resetReason = DeviceResetReason::OK;
+  if (gfxWindowsPlatform::GetPlatform()->DidRenderingDeviceReset(&resetReason)) {
+
+    gfxCriticalNote << "(nsWindow) Detected device reset: " << (int)resetReason;
+
     gfxWindowsPlatform::GetPlatform()->UpdateRenderMode();
     EnumAllWindows([] (nsWindow* aWindow) -> void {
       aWindow->OnRenderingDeviceReset();
     });
+
+    gfxCriticalNote << "(nsWindow) Finished device reset.";
+
     return false;
   }
 
@@ -239,7 +246,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
     ::EndPaint(mWnd, &ps);
 
     // We're guaranteed to have a widget proxy since we called GetLayerManager().
-    aDC = GetCompositorWidgetProxy()->GetTransparentDC();
+    aDC = mCompositorWidgetDelegate->GetTransparentDC();
   }
 #endif
 
@@ -313,7 +320,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
 #if defined(MOZ_XUL)
           // don't support transparency for non-GDI rendering, for now
           if (eTransparencyTransparent == mTransparencyMode) {
-            targetSurface = GetCompositorWidgetProxy()->EnsureTransparentSurface();
+            targetSurface = mBasicLayersSurface->EnsureTransparentSurface();
           }
 #endif
 
@@ -363,7 +370,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
           doubleBuffering = mozilla::layers::BufferMode::BUFFERED;
 #endif
 
-          RefPtr<gfxContext> thebesContext = gfxContext::ForDrawTarget(dt);
+          RefPtr<gfxContext> thebesContext = gfxContext::CreateOrNull(dt);
           MOZ_ASSERT(thebesContext); // already checked draw target above
 
           {
@@ -378,7 +385,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
             // Data from offscreen drawing surface was copied to memory bitmap of transparent
             // bitmap. Now it can be read from memory bitmap to apply alpha channel and after
             // that displayed on the screen.
-            GetCompositorWidgetProxy()->RedrawTransparentWindow();
+            mBasicLayersSurface->RedrawTransparentWindow();
           }
 #endif
         }

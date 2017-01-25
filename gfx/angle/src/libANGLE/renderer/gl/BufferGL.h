@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_RENDERER_GL_BUFFERGL_H_
 #define LIBANGLE_RENDERER_GL_BUFFERGL_H_
 
+#include "common/MemoryBuffer.h"
 #include "libANGLE/renderer/BufferImpl.h"
 
 namespace rx
@@ -20,11 +21,13 @@ class StateManagerGL;
 class BufferGL : public BufferImpl
 {
   public:
-    BufferGL(const FunctionsGL *functions, StateManagerGL *stateManager);
+    BufferGL(const gl::BufferState &state,
+             const FunctionsGL *functions,
+             StateManagerGL *stateManager);
     ~BufferGL() override;
 
-    gl::Error setData(const void* data, size_t size, GLenum usage) override;
-    gl::Error setSubData(const void* data, size_t size, size_t offset) override;
+    gl::Error setData(GLenum target, const void *data, size_t size, GLenum usage) override;
+    gl::Error setSubData(GLenum target, const void *data, size_t size, size_t offset) override;
     gl::Error copySubData(BufferImpl* source, GLintptr sourceOffset, GLintptr destOffset, GLsizeiptr size) override;
     gl::Error map(GLenum access, GLvoid **mapPtr) override;
     gl::Error mapRange(size_t offset, size_t length, GLbitfield access, GLvoid **mapPtr) override;
@@ -40,6 +43,13 @@ class BufferGL : public BufferImpl
 
   private:
     bool mIsMapped;
+    size_t mMapOffset;
+    size_t mMapSize;
+
+    bool mShadowBufferData;
+    MemoryBuffer mShadowCopy;
+
+    size_t mBufferSize;
 
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;

@@ -73,7 +73,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   void open(ByteString method, DOMString url);
   [Throws]
   void open(ByteString method, DOMString url, boolean async,
-            optional DOMString? user, optional DOMString? password);
+            optional DOMString? user=null, optional DOMString? password=null);
   [Throws]
   void setRequestHeader(ByteString header, ByteString value);
 
@@ -83,7 +83,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   [SetterThrows]
   attribute boolean withCredentials;
 
-  [Throws=Workers]
+  [Throws]
   readonly attribute XMLHttpRequestUpload upload;
 
   [Throws]
@@ -102,31 +102,35 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   void send(FormData data);
   [Throws]
   void send(InputStream data);
+  [Throws]
+  void send(URLSearchParams data);
 
-  [Throws=Workers]
+  [Throws]
   void abort();
 
   // response
   readonly attribute DOMString responseURL;
 
-  [Throws=Workers]
+  [Throws]
   readonly attribute unsigned short status;
 
+  [Throws]
   readonly attribute ByteString statusText;
+
   [Throws]
   ByteString? getResponseHeader(ByteString header);
 
-  [Throws=Workers]
+  [Throws]
   ByteString getAllResponseHeaders();
 
-  [Throws=Workers]
+  [Throws]
   void overrideMimeType(DOMString mime);
 
   [SetterThrows]
   attribute XMLHttpRequestResponseType responseType;
   [Throws]
   readonly attribute any response;
-  [Throws]
+  [Cached, Pure, Throws]
   readonly attribute DOMString? responseText;
 
   [Throws, Exposed=Window]
@@ -134,7 +138,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
 
   // Mozilla-specific stuff
 
-  [ChromeOnly, SetterThrows=Workers]
+  [ChromeOnly, SetterThrows]
   attribute boolean mozBackgroundRequest;
 
   [ChromeOnly, Exposed=Window]
@@ -147,6 +151,9 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
 
   [Throws, ChromeOnly, Exposed=Window]
   any getInterface(IID iid);
+
+  [ChromeOnly, Exposed=Window]
+  void setOriginAttributes(optional OriginAttributesDictionary originAttributes);
 
   readonly attribute boolean mozAnon;
   readonly attribute boolean mozSystem;

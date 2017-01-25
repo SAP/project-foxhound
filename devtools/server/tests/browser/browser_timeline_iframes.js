@@ -7,7 +7,7 @@
 // Test the timeline front receives markers events for operations that occur in
 // iframes.
 
-const {TimelineFront} = require("devtools/server/actors/timeline");
+const {TimelineFront} = require("devtools/shared/fronts/timeline");
 
 add_task(function* () {
   let browser = yield addTab(MAIN_DOMAIN + "timeline-iframe-parent.html");
@@ -31,7 +31,7 @@ add_task(function* () {
 
   info("Stop timeline marker recording");
   yield front.stop();
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
 });
 

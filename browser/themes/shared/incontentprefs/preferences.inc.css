@@ -102,6 +102,15 @@ treecol {
 }
 
 /* header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header[hidden=true] {
+  display: none;
+}
 
 #header-advanced {
   border-bottom: none;
@@ -223,7 +232,8 @@ treecol {
 /* Privacy pane */
 
 #trackingProtectionPBMLearnMore,
-#trackingProtectionLearnMore {
+#trackingProtectionLearnMore,
+#browserContainersLearnMore {
   margin-inline-start: 1.5em !important;
   margin-top: 0;
   font-weight: normal;

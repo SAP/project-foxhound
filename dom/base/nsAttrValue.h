@@ -12,6 +12,8 @@
 #ifndef nsAttrValue_h___
 #define nsAttrValue_h___
 
+#include <type_traits>
+
 #include "nscore.h"
 #include "nsStringGlue.h"
 #include "nsStringBuffer.h"
@@ -24,14 +26,16 @@
 #include "nsIAtom.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/EnumTypeTraits.h"
 
 // Undefine LoadImage to prevent naming conflict with Windows.
 #undef LoadImage
 
 class nsAString;
 class nsIDocument;
-class nsStyledElementNotElementCSSInlineStyle;
+class nsStyledElement;
 struct MiscContainer;
+struct ServoDeclarationBlock;
 
 namespace mozilla {
 namespace css {
@@ -86,7 +90,7 @@ public:
   // This has to be the same as in ValueBaseType
   enum ValueType {
     eString =       0x00, //   00
-                          //   01  this value indicates an 'misc' struct
+                          //   01  this value indicates a 'misc' struct
     eAtom =         0x02, //   10
     eInteger =      0x03, // 0011
     eColor =        0x07, // 0111
@@ -94,26 +98,27 @@ public:
     ePercent =      0x0F, // 1111
     // Values below here won't matter, they'll be always stored in the 'misc'
     // struct.
-    eCSSDeclaration =          0x10
-    ,eURL =                    0x11
-    ,eImage =                  0x12
-    ,eAtomArray =              0x13
-    ,eDoubleValue  =           0x14
-    ,eIntMarginValue =         0x15
-    ,eSVGAngle =               0x16
-    ,eSVGTypesBegin =          eSVGAngle
-    ,eSVGIntegerPair =         0x17
-    ,eSVGLength =              0x18
-    ,eSVGLengthList =          0x19
-    ,eSVGNumberList =          0x1A
-    ,eSVGNumberPair =          0x1B
-    ,eSVGPathData =            0x1C
-    ,eSVGPointList =           0x1D
-    ,eSVGPreserveAspectRatio = 0x1E
-    ,eSVGStringList =          0x1F
-    ,eSVGTransformList =       0x20
-    ,eSVGViewBox =             0x21
-    ,eSVGTypesEnd =            eSVGViewBox
+    eGeckoCSSDeclaration = 0x10,
+    eServoCSSDeclaration,
+    eURL,
+    eImage,
+    eAtomArray,
+    eDoubleValue,
+    eIntMarginValue,
+    eSVGAngle,
+    eSVGTypesBegin = eSVGAngle,
+    eSVGIntegerPair,
+    eSVGLength,
+    eSVGLengthList,
+    eSVGNumberList,
+    eSVGNumberPair,
+    eSVGPathData,
+    eSVGPointList,
+    eSVGPreserveAspectRatio,
+    eSVGStringList,
+    eSVGTransformList,
+    eSVGViewBox,
+    eSVGTypesEnd = eSVGViewBox,
   };
 
   nsAttrValue();
@@ -146,6 +151,8 @@ public:
   void SetTo(int32_t aInt, const nsAString* aSerialized);
   void SetTo(double aValue, const nsAString* aSerialized);
   void SetTo(mozilla::css::Declaration* aValue, const nsAString* aSerialized);
+  void SetTo(already_AddRefed<ServoDeclarationBlock> aDeclarationBlock,
+             const nsAString* aSerialized);
   void SetTo(mozilla::css::URLValue* aValue, const nsAString* aSerialized);
   void SetTo(const nsIntMargin& aValue);
   void SetTo(const nsSVGAngle& aValue, const nsAString* aSerialized);
@@ -196,7 +203,8 @@ public:
   inline int16_t GetEnumValue() const;
   inline float GetPercentValue() const;
   inline AtomArray* GetAtomArrayValue() const;
-  inline mozilla::css::Declaration* GetCSSDeclarationValue() const;
+  inline mozilla::css::Declaration* GetGeckoCSSDeclarationValue() const;
+  inline ServoDeclarationBlock* GetServoCSSDeclarationValue() const;
   inline mozilla::css::URLValue* GetURLValue() const;
   inline mozilla::css::ImageValue* GetImageValue() const;
   inline double GetDoubleValue() const;
@@ -256,10 +264,29 @@ public:
    * EnumTable myTable[] = {
    *   { "string1", 1 },
    *   { "string2", 2 },
-   *   { 0 }
+   *   { nullptr, 0 }
    * }
    */
   struct EnumTable {
+    // EnumTable can be initialized either with an int16_t value
+    // or a value of an enumeration type that can fit within an int16_t.
+
+    constexpr EnumTable(const char* aTag, int16_t aValue)
+      : tag(aTag)
+      , value(aValue)
+    {
+    }
+
+    template<typename T,
+             typename = typename std::enable_if<std::is_enum<T>::value>::type>
+    constexpr EnumTable(const char* aTag, T aValue)
+      : tag(aTag)
+      , value(static_cast<int16_t>(aValue))
+    {
+      static_assert(mozilla::EnumTypeFitsWithin<T, int16_t>::value,
+                    "aValue must be an enum that fits within int16_t");
+    }
+
     /** The string the value maps to */
     const char* tag;
     /** The enum value that maps to this string */
@@ -314,6 +341,18 @@ public:
    * @return whether the value could be parsed
    */
   bool ParseIntWithBounds(const nsAString& aString, int32_t aMin,
+                            int32_t aMax = INT32_MAX);
+
+  /**
+   * Parse a string value into an integer with a fallback for invalid values.
+   * Also allows clamping to a maximum value to support col/colgroup.span (this
+   * is not per spec right now).
+   *
+   * @param aString the string to parse
+   * @param aDefault the default value
+   * @param aMax the maximum value (if value is greater it will be clamped)
+   */
+  void ParseIntWithFallback(const nsAString& aString, int32_t aDefault,
                             int32_t aMax = INT32_MAX);
 
   /**
@@ -387,7 +426,7 @@ public:
    * @param aElement the element the attribute is set on.
    */
   bool ParseStyleAttribute(const nsAString& aString,
-                           nsStyledElementNotElementCSSInlineStyle* aElement);
+                           nsStyledElement* aElement);
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
@@ -438,7 +477,7 @@ private:
   // Given an enum table and a particular entry in that table, return
   // the actual integer value we should store.
   int32_t EnumTableEntryToValue(const EnumTable* aEnumTable,
-                                const EnumTable* aTableEntry);  
+                                const EnumTable* aTableEntry);
 
   static nsTArray<const EnumTable*>* sEnumTableArray;
 

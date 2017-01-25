@@ -7,7 +7,10 @@
 
 const {Task} = require("devtools/shared/task");
 const EventEmitter = require("devtools/shared/event-emitter");
-const {LocalizationHelper} = require("devtools/client/shared/l10n");
+const {LocalizationHelper, ELLIPSIS} = require("devtools/shared/l10n");
+const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
+const JSOL = require("devtools/client/shared/vendor/jsol");
+const {KeyCodes} = require("devtools/client/shared/keycodes");
 
 loader.lazyRequireGetter(this, "TreeWidget",
                          "devtools/client/shared/widgets/TreeWidget", true);
@@ -21,7 +24,7 @@ loader.lazyImporter(this, "VariablesView",
 /**
  * Localization convenience methods.
  */
-const STORAGE_STRINGS = "chrome://devtools/locale/storage.properties";
+const STORAGE_STRINGS = "devtools/locale/storage.properties";
 const L10N = new LocalizationHelper(STORAGE_STRINGS);
 
 const GENERIC_VARIABLES_VIEW_SETTINGS = {
@@ -47,13 +50,24 @@ const REASON = {
   UPDATE: "update"
 };
 
+const COOKIE_KEY_MAP = {
+  path: "Path",
+  host: "Domain",
+  expires: "Expires",
+  isSecure: "Secure",
+  isHttpOnly: "HttpOnly",
+  isDomain: "HostOnly",
+  creationTime: "CreationTime",
+  lastAccessed: "LastAccessed"
+};
+
 // Maximum length of item name to show in context menu label - will be
 // trimmed with ellipsis if it's longer.
 const ITEM_NAME_MAX_LENGTH = 32;
 
 function addEllipsis(name) {
   if (name.length > ITEM_NAME_MAX_LENGTH) {
-    return name.substr(0, ITEM_NAME_MAX_LENGTH) + L10N.ellipsis;
+    return name.substr(0, ITEM_NAME_MAX_LENGTH) + ELLIPSIS;
   }
 
   return name;
@@ -110,6 +124,15 @@ function StorageUI(front, target, panelWin, toolbox) {
   this.searchBox = this._panelDoc.getElementById("storage-searchbox");
   this.filterItems = this.filterItems.bind(this);
   this.searchBox.addEventListener("command", this.filterItems);
+
+  let shortcuts = new KeyShortcuts({
+    window: this._panelDoc.defaultView,
+  });
+  let key = L10N.getStr("storage.filter.key");
+  shortcuts.on(key, (name, event) => {
+    event.preventDefault();
+    this.searchBox.focus();
+  });
 
   this.front.listStores().then(storageTypes => {
     this.populateStorageTree(storageTypes);
@@ -214,12 +237,15 @@ StorageUI.prototype = {
     return this.storageTypes[type];
   },
 
-  makeFieldsEditable: function* () {
-    let actor = this.getCurrentActor();
-
-    if (typeof actor.getEditableFields !== "undefined") {
-      let fields = yield actor.getEditableFields();
-      this.table.makeFieldsEditable(fields);
+  /**
+   *  Make column fields editable
+   *
+   *  @param {Array} editableFields
+   *         An array of keys of columns to be made editable
+   */
+  makeFieldsEditable: function* (editableFields) {
+    if (editableFields && editableFields.length > 0) {
+      this.table.makeFieldsEditable(editableFields);
     } else if (this.table._editableFieldsEngine) {
       this.table._editableFieldsEngine.destroy();
     }
@@ -253,15 +279,47 @@ StorageUI.prototype = {
   /**
    * Event handler for "stores-cleared" event coming from the storage actor.
    *
-   * @param {object} argument0
+   * @param {object} response
    *        An object containing which storage types were cleared
    */
   onCleared: function (response) {
-    let [type, host] = this.tree.selectedItem;
-    if (response.hasOwnProperty(type) && response[type].indexOf(host) > -1) {
-      this.table.clear();
-      this.hideSidebar();
-      this.emit("store-objects-cleared");
+    function* enumPaths() {
+      for (let type in response) {
+        if (Array.isArray(response[type])) {
+          // Handle the legacy response with array of hosts
+          for (let host of response[type]) {
+            yield [type, host];
+          }
+        } else {
+          // Handle the new format that supports clearing sub-stores in a host
+          for (let host in response[type]) {
+            let paths = response[type][host];
+
+            if (!paths.length) {
+              yield [type, host];
+            } else {
+              for (let path of paths) {
+                try {
+                  path = JSON.parse(path);
+                  yield [type, host, ...path];
+                } catch (ex) {
+                  // ignore
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (let path of enumPaths()) {
+      // Find if the path is selected (there is max one) and clear it
+      if (this.tree.isSelected(path)) {
+        this.table.clear();
+        this.hideSidebar();
+        this.emit("store-objects-cleared");
+        break;
+      }
     }
   },
 
@@ -443,11 +501,25 @@ StorageUI.prototype = {
     }
 
     try {
+      if (reason === REASON.POPULATE) {
+        let subType = null;
+        // The indexedDB type could have sub-type data to fetch.
+        // If having names specified, then it means
+        // we are fetching details of specific database or of object store.
+        if (type == "indexedDB" && names) {
+          let [ dbName, objectStoreName ] = JSON.parse(names[0]);
+          if (dbName) {
+            subType = "database";
+          }
+          if (objectStoreName) {
+            subType = "object store";
+          }
+        }
+        yield this.resetColumns(type, host, subType);
+      }
+
       let {data} = yield storageType.getStoreObjects(host, names, fetchOpts);
       if (data.length) {
-        if (reason === REASON.POPULATE) {
-          yield this.resetColumns(data[0], type, host);
-        }
         this.populateTable(data, reason);
       }
       this.emit("store-objects-updated");
@@ -546,7 +618,9 @@ StorageUI.prototype = {
         let otherProps = itemProps.filter(
           e => !["name", "value", "valueActor"].includes(e));
         for (let prop of otherProps) {
-          rawObject[prop] = item[prop];
+          let cookieProp = COOKIE_KEY_MAP[prop] || prop;
+          // The pseduo property of HostOnly refers to converse of isDomain property
+          rawObject[cookieProp] = (prop === "isDomain") ? !item[prop] : item[prop];
         }
         itemVar.populate(rawObject, {sorted: true});
         itemVar.twisty = true;
@@ -576,7 +650,7 @@ StorageUI.prototype = {
   parseItemValue: function (name, value) {
     let json = null;
     try {
-      json = JSON.parse(value);
+      json = JSOL.parse(value);
     } catch (ex) {
       json = null;
     }
@@ -688,36 +762,52 @@ StorageUI.prototype = {
   /**
    * Resets the column headers in the storage table with the pased object `data`
    *
-   * @param {object} data
-   *        The object from which key and values will be used for naming the
-   *        headers of the columns
    * @param {string} type
    *        The type of storage corresponding to the after-reset columns in the
    *        table.
    * @param {string} host
    *        The host name corresponding to the table after reset.
+   *
+   * @param {string} [subType]
+   *        The sub type under the given type.
    */
-  resetColumns: function* (data, type, host) {
-    let columns = {};
-    let uniqueKey = null;
-    for (let key in data) {
-      if (!uniqueKey) {
-        this.table.uniqueId = uniqueKey = key;
-      }
-      columns[key] = key;
-      try {
-        columns[key] = L10N.getStr("table.headers." + type + "." + key);
-      } catch (e) {
-        console.error("Unable to localize table header type:" + type +
-                      " key:" + key);
-      }
-    }
-    this.table.setColumns(columns, null, HIDDEN_COLUMNS);
-    this.table.datatype = type;
+  resetColumns: function* (type, host, subtype) {
     this.table.host = host;
+    this.table.datatype = type;
+
+    let uniqueKey = null;
+    let columns = {};
+    let editableFields = [];
+    let fields = yield this.getCurrentActor().getFields(subtype);
+
+    fields.forEach(f => {
+      if (!uniqueKey) {
+        this.table.uniqueId = uniqueKey = f.name;
+      }
+
+      if (f.editable) {
+        editableFields.push(f.name);
+      }
+
+      columns[f.name] = f.name;
+      let columnName;
+      try {
+        columnName = L10N.getStr("table.headers." + type + "." + f.name);
+      } catch (e) {
+        columnName = COOKIE_KEY_MAP[f.name];
+      }
+
+      if (!columnName) {
+        console.error("Unable to localize table header type:" + type + " key:" + f.name);
+      } else {
+        columns[f.name] = columnName;
+      }
+    });
+
+    this.table.setColumns(columns, null, HIDDEN_COLUMNS);
     this.hideSidebar();
 
-    yield this.makeFieldsEditable();
+    yield this.makeFieldsEditable(editableFields);
   },
 
   /**
@@ -775,7 +865,7 @@ StorageUI.prototype = {
    *        The event passed by the keypress event.
    */
   handleKeypress: function (event) {
-    if (event.keyCode == event.DOM_VK_ESCAPE && !this.sidebar.hidden) {
+    if (event.keyCode == KeyCodes.DOM_VK_ESCAPE && !this.sidebar.hidden) {
       // Stop Propagation to prevent opening up of split console
       this.hideSidebar();
       event.stopPropagation();
@@ -813,16 +903,20 @@ StorageUI.prototype = {
 
   /**
    * Fires before a cell context menu with the "Delete" action is shown.
-   * If the current storage actor doesn't support removing items, prevent
+   * If the currently selected storage object doesn't support removing items, prevent
    * showing the menu.
    */
   onTablePopupShowing: function (event) {
-    if (!this.getCurrentActor().removeItem) {
+    let selectedItem = this.tree.selectedItem;
+    let type = selectedItem[0];
+    let actor = this.getCurrentActor();
+
+    // IndexedDB only supports removing items from object stores (level 4 of the tree)
+    if (!actor.removeItem || (type === "indexedDB" && selectedItem.length !== 4)) {
       event.preventDefault();
       return;
     }
 
-    let [type] = this.tree.selectedItem;
     let rowId = this.table.contextMenuRowId;
     let data = this.table.items.get(rowId);
     let name = addEllipsis(data[this.table.uniqueId]);
@@ -846,13 +940,20 @@ StorageUI.prototype = {
     let selectedItem = this.tree.selectedItem;
 
     if (selectedItem) {
-      // this.currentActor() would return wrong value here
-      let actor = this.storageTypes[selectedItem[0]];
+      let type = selectedItem[0];
+      let actor = this.storageTypes[type];
 
-      let showDeleteAll = selectedItem.length == 2 && actor.removeAll;
+      // The delete all (aka clear) action is displayed for IndexedDB object stores
+      // (level 4 of tree) and for the whole host (level 2 of tree) of other storage
+      // types (cookies, localStorage, ...).
+      let showDeleteAll = actor.removeAll &&
+        (selectedItem.length === (type === "indexedDB" ? 4 : 2));
+
       this._treePopupDeleteAll.hidden = !showDeleteAll;
 
-      let showDeleteDb = selectedItem.length == 3 && actor.removeDatabase;
+      // The action to delete database is available for IndexedDB databases, i.e.,
+      // at level 3 of the tree.
+      let showDeleteDb = actor.removeDatabase && selectedItem.length === 3;
       this._treePopupDeleteDatabase.hidden = !showDeleteDb;
       if (showDeleteDb) {
         let dbName = addEllipsis(selectedItem[2]);
@@ -872,12 +973,15 @@ StorageUI.prototype = {
    * Handles removing an item from the storage
    */
   onRemoveItem: function () {
-    let [, host] = this.tree.selectedItem;
+    let [, host, ...path] = this.tree.selectedItem;
     let actor = this.getCurrentActor();
     let rowId = this.table.contextMenuRowId;
     let data = this.table.items.get(rowId);
-
-    actor.removeItem(host, data[this.table.uniqueId]);
+    let name = data[this.table.uniqueId];
+    if (path.length > 0) {
+      name = JSON.stringify([...path, name]);
+    }
+    actor.removeItem(host, name);
   },
 
   /**
@@ -887,10 +991,10 @@ StorageUI.prototype = {
     // Cannot use this.currentActor() if the handler is called from the
     // tree context menu: it returns correct value only after the table
     // data from server are successfully fetched (and that's async).
-    let [type, host] = this.tree.selectedItem;
+    let [type, host, ...path] = this.tree.selectedItem;
     let actor = this.storageTypes[type];
-
-    actor.removeAll(host);
+    let name = path.length > 0 ? JSON.stringify(path) : undefined;
+    actor.removeAll(host, name);
   },
 
   /**

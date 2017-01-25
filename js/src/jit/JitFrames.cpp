@@ -298,7 +298,7 @@ JitFrameIterator::machineState() const
     uintptr_t* spill = spillBase();
     MachineState machine;
 
-    for (GeneralRegisterBackwardIterator iter(reader.allGprSpills()); iter.more(); iter++)
+    for (GeneralRegisterBackwardIterator iter(reader.allGprSpills()); iter.more(); ++iter)
         machine.setRegisterLocation(*iter, --spill);
 
     uint8_t* spillAlign = alignDoubleSpillWithOffset(reinterpret_cast<uint8_t*>(spill), 0);
@@ -306,7 +306,7 @@ JitFrameIterator::machineState() const
     char* floatSpill = reinterpret_cast<char*>(spillAlign);
     FloatRegisterSet fregs = reader.allFloatSpills().set();
     fregs = fregs.reduceSetForPush();
-    for (FloatRegisterBackwardIterator iter(fregs); iter.more(); iter++) {
+    for (FloatRegisterBackwardIterator iter(fregs); iter.more(); ++iter) {
         floatSpill -= (*iter).size();
         for (uint32_t a = 0; a < (*iter).numAlignedAliased(); a++) {
             // Only say that registers that actually start here start here.
@@ -486,13 +486,13 @@ BaselineFrameAndStackPointersFromTryNote(JSTryNote* tn, const JitFrameIterator& 
 
 static void
 SettleOnTryNote(JSContext* cx, JSTryNote* tn, const JitFrameIterator& frame,
-                ScopeIter& si, ResumeFromException* rfe, jsbytecode** pc)
+                EnvironmentIter& ei, ResumeFromException* rfe, jsbytecode** pc)
 {
     RootedScript script(cx, frame.baselineFrame()->script());
 
-    // Unwind scope chain (pop block objects).
+    // Unwind environment chain (pop block objects).
     if (cx->isExceptionPending())
-        UnwindScope(cx, si, UnwindScopeToTryPc(script, tn));
+        UnwindEnvironment(cx, ei, UnwindEnvironmentToTryPc(script, tn));
 
     // Compute base pointer and stack pointer.
     BaselineFrameAndStackPointersFromTryNote(tn, frame, &rfe->framePointer, &rfe->stackPointer);
@@ -538,7 +538,7 @@ class TryNoteIterBaseline : public TryNoteIter<BaselineFrameStackDepthOp>
 };
 
 // Close all live iterators on a BaselineFrame due to exception unwinding. The
-// pc parameter is updated to where the scopes have been unwound to.
+// pc parameter is updated to where the envs have been unwound to.
 static void
 CloseLiveIteratorsBaselineForUncatchableException(JSContext* cx, const JitFrameIterator& frame,
                                                   jsbytecode* pc)
@@ -558,7 +558,7 @@ CloseLiveIteratorsBaselineForUncatchableException(JSContext* cx, const JitFrameI
 }
 
 static bool
-ProcessTryNotesBaseline(JSContext* cx, const JitFrameIterator& frame, ScopeIter& si,
+ProcessTryNotesBaseline(JSContext* cx, const JitFrameIterator& frame, EnvironmentIter& ei,
                         ResumeFromException* rfe, jsbytecode** pc)
 {
     RootedScript script(cx, frame.baselineFrame()->script());
@@ -574,7 +574,7 @@ ProcessTryNotesBaseline(JSContext* cx, const JitFrameIterator& frame, ScopeIter&
             if (cx->isClosingGenerator())
                 continue;
 
-            SettleOnTryNote(cx, tn, frame, si, rfe, pc);
+            SettleOnTryNote(cx, tn, frame, ei, rfe, pc);
 
             // Ion can compile try-catch, but bailing out to catch
             // exceptions is slow. Reset the warm-up counter so that if we
@@ -588,7 +588,7 @@ ProcessTryNotesBaseline(JSContext* cx, const JitFrameIterator& frame, ScopeIter&
           }
 
           case JSTRY_FINALLY: {
-            SettleOnTryNote(cx, tn, frame, si, rfe, pc);
+            SettleOnTryNote(cx, tn, frame, ei, rfe, pc);
             rfe->kind = ResumeFromException::RESUME_FINALLY;
             rfe->target = script->baselineScript()->nativeCodeForPC(script, *pc);
             // Drop the exception instead of leaking cross compartment data.
@@ -607,7 +607,7 @@ ProcessTryNotesBaseline(JSContext* cx, const JitFrameIterator& frame, ScopeIter&
             if (!UnwindIteratorForException(cx, iterObject)) {
                 // See comment in the JSTRY_FOR_IN case in Interpreter.cpp's
                 // ProcessTryNotes.
-                SettleOnTryNote(cx, tn, frame, si, rfe, pc);
+                SettleOnTryNote(cx, tn, frame, ei, rfe, pc);
                 MOZ_ASSERT(**pc == JSOP_ENDITER);
                 return false;
             }
@@ -676,8 +676,8 @@ HandleExceptionBaseline(JSContext* cx, const JitFrameIterator& frame, ResumeFrom
         }
 
         if (script->hasTrynotes()) {
-            ScopeIter si(cx, frame.baselineFrame(), pc);
-            if (!ProcessTryNotesBaseline(cx, frame, si, rfe, &pc))
+            EnvironmentIter ei(cx, frame.baselineFrame(), pc);
+            if (!ProcessTryNotesBaseline(cx, frame, ei, rfe, &pc))
                 goto again;
             if (rfe->kind != ResumeFromException::RESUME_ENTRY_FRAME) {
                 // No need to increment the PCCounts number of execution here,
@@ -746,7 +746,7 @@ struct AutoResetLastProfilerFrameOnReturnFromException
 void
 HandleException(ResumeFromException* rfe)
 {
-    JSContext* cx = GetJSContextFromJitCode();
+    JSContext* cx = GetJSContextFromMainThread();
     TraceLoggerThread* logger = TraceLoggerForMainThread(cx->runtime());
 
     AutoResetLastProfilerFrameOnReturnFromException profFrameReset(cx, rfe);
@@ -786,6 +786,15 @@ HandleException(ResumeFromException* rfe)
             // Invalidation state will be the same for all inlined scripts in the frame.
             IonScript* ionScript = nullptr;
             bool invalidated = iter.checkInvalidation(&ionScript);
+
+#ifdef JS_TRACE_LOGGING
+            if (logger && cx->compartment()->isDebuggee() && logger->enabled()) {
+                logger->disable(/* force = */ true,
+                                "Forcefully disabled tracelogger, due to "
+                                "throwing an exception with an active Debugger "
+                                "in IonMonkey.");
+            }
+#endif
 
             for (;;) {
                 HandleExceptionIon(cx, frames, rfe, &overrecursed);
@@ -1049,7 +1058,7 @@ MarkIonJSFrame(JSTracer* trc, const JitFrameIterator& frame)
     uintptr_t* spill = frame.spillBase();
     LiveGeneralRegisterSet gcRegs = safepoint.gcSpills();
     LiveGeneralRegisterSet valueRegs = safepoint.valueSpills();
-    for (GeneralRegisterBackwardIterator iter(safepoint.allGprSpills()); iter.more(); iter++) {
+    for (GeneralRegisterBackwardIterator iter(safepoint.allGprSpills()); iter.more(); ++iter) {
         --spill;
         if (gcRegs.has(*iter))
             TraceGenericPointerRoot(trc, reinterpret_cast<gc::Cell**>(spill), "ion-gc-spill");
@@ -1136,7 +1145,7 @@ UpdateIonJSFrameForMinorGC(JSTracer* trc, const JitFrameIterator& frame)
 
     LiveGeneralRegisterSet slotsRegs = safepoint.slotsOrElementsSpills();
     uintptr_t* spill = frame.spillBase();
-    for (GeneralRegisterBackwardIterator iter(safepoint.allGprSpills()); iter.more(); iter++) {
+    for (GeneralRegisterBackwardIterator iter(safepoint.allGprSpills()); iter.more(); ++iter) {
         --spill;
         if (slotsRegs.has(*iter))
             nursery.forwardBufferPointer(reinterpret_cast<HeapSlot**>(spill));
@@ -2253,9 +2262,9 @@ InlineFrameIterator::InlineFrameIterator(JSContext* cx, const JitFrameIterator* 
 }
 
 InlineFrameIterator::InlineFrameIterator(JSRuntime* rt, const JitFrameIterator* iter)
-  : calleeTemplate_(rt),
+  : calleeTemplate_(rt->contextFromMainThread()),
     calleeRVA_(),
-    script_(rt)
+    script_(rt->contextFromMainThread())
 {
     resetOn(iter);
 }
@@ -2365,7 +2374,7 @@ InlineFrameIterator::findNextFrame()
         // Inlined functions may be clones that still point to the lazy script
         // for the executed script, if they are clones. The actual script
         // exists though, just make sure the function points to it.
-        script_ = calleeTemplate_->existingScriptForInlinedFunction();
+        script_ = calleeTemplate_->existingScript();
         MOZ_ASSERT(script_->hasBaselineScript());
 
         pc_ = script_->offsetToPC(si_.pcOffset());
@@ -2396,35 +2405,37 @@ InlineFrameIterator::callee(MaybeReadFallback& fallback) const
 }
 
 JSObject*
-InlineFrameIterator::computeScopeChain(Value scopeChainValue, MaybeReadFallback& fallback,
-                                       bool* hasCallObj) const
+InlineFrameIterator::computeEnvironmentChain(Value envChainValue, MaybeReadFallback& fallback,
+                                             bool* hasInitialEnv) const
 {
-    if (scopeChainValue.isObject()) {
-        if (hasCallObj) {
+    if (envChainValue.isObject()) {
+        if (hasInitialEnv) {
             if (fallback.canRecoverResults()) {
-                RootedObject obj(fallback.maybeCx, &scopeChainValue.toObject());
-                *hasCallObj = isFunctionFrame() && callee(fallback)->needsCallObject();
+                RootedObject obj(fallback.maybeCx, &envChainValue.toObject());
+                *hasInitialEnv = isFunctionFrame() &&
+                                 callee(fallback)->needsFunctionEnvironmentObjects();
                 return obj;
             } else {
                 JS::AutoSuppressGCAnalysis nogc; // If we cannot recover then we cannot GC.
-                *hasCallObj = isFunctionFrame() && callee(fallback)->needsCallObject();
+                *hasInitialEnv = isFunctionFrame() &&
+                                 callee(fallback)->needsFunctionEnvironmentObjects();
             }
         }
 
-        return &scopeChainValue.toObject();
+        return &envChainValue.toObject();
     }
 
     // Note we can hit this case even for functions with a CallObject, in case
-    // we are walking the frame during the function prologue, before the scope
+    // we are walking the frame during the function prologue, before the env
     // chain has been initialized.
     if (isFunctionFrame())
         return callee(fallback)->environment();
 
     // Ion does not handle non-function scripts that have anything other than
-    // the global on their scope chain.
+    // the global on their env chain.
     MOZ_ASSERT(!script()->isForEval());
     MOZ_ASSERT(!script()->hasNonSyntacticScope());
-    return &script()->global().lexicalScope();
+    return &script()->global().lexicalEnvironment();
 }
 
 bool
@@ -2486,7 +2497,7 @@ InlineFrameIterator::isConstructing() const
 {
     // Skip the current frame and look at the caller's.
     if (more()) {
-        InlineFrameIterator parent(GetJSContextFromJitCode(), this);
+        InlineFrameIterator parent(GetJSContextFromMainThread(), this);
         ++parent;
 
         // Inlined Getters and Setters are never constructing.
@@ -2559,7 +2570,7 @@ JitFrameIterator::dumpBaseline() const
     fprintf(stderr, "  file %s line %" PRIuSIZE "\n",
             script()->filename(), script()->lineno());
 
-    JSContext* cx = GetJSContextFromJitCode();
+    JSContext* cx = GetJSContextFromMainThread();
     RootedScript script(cx);
     jsbytecode* pc;
     baselineScriptAndPc(script.address(), &pc);
@@ -2620,7 +2631,7 @@ InlineFrameIterator::dump() const
     for (unsigned i = 0; i < si.numAllocations() - 1; i++) {
         if (isFunction) {
             if (i == 0)
-                fprintf(stderr, "  scope chain: ");
+                fprintf(stderr, "  env chain: ");
             else if (i == 1)
                 fprintf(stderr, "  this: ");
             else if (i - 2 < calleeTemplate()->nargs())
@@ -2628,7 +2639,7 @@ InlineFrameIterator::dump() const
             else {
                 if (i - 2 == calleeTemplate()->nargs() && numActualArgs() > calleeTemplate()->nargs()) {
                     DumpOp d(calleeTemplate()->nargs());
-                    unaliasedForEachActual(GetJSContextFromJitCode(), d, ReadFrame_Overflown, fallback);
+                    unaliasedForEachActual(GetJSContextFromMainThread(), d, ReadFrame_Overflown, fallback);
                 }
 
                 fprintf(stderr, "  slot %d: ", int(i - 2 - calleeTemplate()->nargs()));
@@ -2663,7 +2674,7 @@ JitFrameIterator::dump() const
       case JitFrame_Bailout:
       case JitFrame_IonJS:
       {
-        InlineFrameIterator frames(GetJSContextFromJitCode(), this);
+        InlineFrameIterator frames(GetJSContextFromMainThread(), this);
         for (;;) {
             frames.dump();
             if (!frames.more())
@@ -2740,7 +2751,7 @@ JitFrameIterator::verifyReturnAddressUsingNativeToBytecodeMap()
 
     if (type_ == JitFrame_IonJS) {
         // Create an InlineFrameIterator here and verify the mapped info against the iterator info.
-        InlineFrameIterator inlineFrames(GetJSContextFromJitCode(), this);
+        InlineFrameIterator inlineFrames(GetJSContextFromMainThread(), this);
         for (size_t idx = 0; idx < location.length(); idx++) {
             MOZ_ASSERT(idx < location.length());
             MOZ_ASSERT_IF(idx < location.length() - 1, inlineFrames.more());

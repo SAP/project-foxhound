@@ -169,6 +169,9 @@ public:
 
   virtual already_AddRefed<FilterNode> CreateFilter(FilterType aType) override;
 
+  virtual void GetGlyphRasterizationMetrics(ScaledFont *aScaledFont, const uint16_t* aGlyphIndices,
+                                            uint32_t aNumGlyphs, GlyphMetrics* aGlyphMetrics) override;
+
   virtual void *GetNativeSurface(NativeSurfaceType aType) override;
 
   bool Init(cairo_surface_t* aSurface, const IntSize& aSize, SurfaceFormat* aFormat = nullptr);
@@ -176,6 +179,8 @@ public:
   bool Init(unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat);
 
   virtual void SetTransform(const Matrix& aTransform) override;
+
+  virtual void DetachAllSnapshots() override { MarkSnapshotIndependent(); }
 
   // Call to set up aContext for drawing (with the current transform, etc).
   // Pass the path you're going to be using if you have one.
@@ -218,6 +223,10 @@ private: // methods
   // draw into it, to simulate the effect of an unbounded source operator.
   void ClearSurfaceForUnboundedSource(const CompositionOp &aOperator);
 
+  // Set the Cairo context font options according to the current draw target
+  // font state.
+  void SetFontOptions();
+
 private: // data
   cairo_t* mContext;
   cairo_surface_t* mSurface;
@@ -225,6 +234,8 @@ private: // data
   bool mTransformSingular;
 
   uint8_t* mLockedBits;
+
+  cairo_font_options_t* mFontOptions;
 
   struct PushedLayer
   {

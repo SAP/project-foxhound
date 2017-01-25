@@ -552,7 +552,7 @@ class nsGIOSetContentTypeEvent : public mozilla::Runnable
       // in SetContentTypeOfchannel.
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
       mChannel->SetContentType(mContentType);
       return NS_OK;
@@ -826,17 +826,17 @@ mount_operation_ask_password (GMountOperation   *mount_op,
     if (flags & G_ASK_PASSWORD_NEED_USERNAME) {
       if (!realm.IsEmpty()) {
         const char16_t *strings[] = { realm.get(), dispHost.get() };
-        bundle->FormatStringFromName(MOZ_UTF16("EnterLoginForRealm"),
+        bundle->FormatStringFromName(u"EnterLoginForRealm3",
                                      strings, 2, getter_Copies(nsmessage));
       } else {
         const char16_t *strings[] = { dispHost.get() };
-        bundle->FormatStringFromName(MOZ_UTF16("EnterUserPasswordFor"),
+        bundle->FormatStringFromName(u"EnterUserPasswordFor2",
                                      strings, 1, getter_Copies(nsmessage));
       }
     } else {
       NS_ConvertUTF8toUTF16 userName(default_user);
       const char16_t *strings[] = { userName.get(), dispHost.get() };
-      bundle->FormatStringFromName(MOZ_UTF16("EnterPasswordFor"),
+      bundle->FormatStringFromName(u"EnterPasswordFor",
                                    strings, 2, getter_Copies(nsmessage));
     }
   } else {

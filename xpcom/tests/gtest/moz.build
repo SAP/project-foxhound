@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,12 +10,15 @@ UNIFIED_SOURCES += [
     'TestCloneInputStream.cpp',
     'TestCRT.cpp',
     'TestEncoding.cpp',
+    'TestEscapeURL.cpp',
     'TestExpirationTracker.cpp',
     'TestNSPRLogModulesParser.cpp',
     'TestPipes.cpp',
     'TestPLDHash.cpp',
     'TestPriorityQueue.cpp',
+    'TestSlicedInputStream.cpp',
     'TestSnappyStreams.cpp',
+    'TestStateWatching.cpp',
     'TestStorageStream.cpp',
     'TestStrings.cpp',
     'TestStringStream.cpp',
@@ -27,6 +30,12 @@ UNIFIED_SOURCES += [
     'TestTokenizer.cpp',
     'TestUTF.cpp',
     'TestXPIDLString.cpp',
+]
+
+# Compile TestAllocReplacement separately so Windows headers don't pollute
+# the global namespace for other files.
+SOURCES += [
+    'TestAllocReplacement.cpp',
 ]
 
 LOCAL_INCLUDES += [

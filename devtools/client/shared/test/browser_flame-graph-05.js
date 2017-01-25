@@ -78,12 +78,20 @@ function* testGraph(host, graph) {
 }
 
 function pressKeyForTime(graph, keyCode, ms) {
-  let deferred = promise.defer();
+  let deferred = defer();
 
-  graph._onKeyDown({ keyCode });
+  graph._onKeyDown({
+    keyCode,
+    preventDefault: () => { },
+    stopPropagation: () => { },
+  });
 
   setTimeout(() => {
-    graph._onKeyUp({ keyCode });
+    graph._onKeyUp({
+      keyCode,
+      preventDefault: () => { },
+      stopPropagation: () => { },
+    });
     deferred.resolve();
   }, ms);
 

@@ -6,10 +6,12 @@
 #ifndef MediaDecoderOwner_h_
 #define MediaDecoderOwner_h_
 #include "AbstractMediaDecoder.h"
+#include "nsAutoPtr.h"
 
 namespace mozilla {
 
 class VideoFrameContainer;
+class MediaResult;
 
 namespace dom {
 class HTMLMediaElement;
@@ -56,13 +58,17 @@ public:
   // when it has read the first frame of the video or audio.
   virtual void FirstFrameLoaded() = 0;
 
-  // Called by the video decoder object, on the main thread,
+  // Called by the decoder object, on the main thread,
   // when the resource has a network error during loading.
+  // The decoder owner should call Shutdown() on the decoder and drop the
+  // reference to the decoder to prevent further calls into the decoder.
   virtual void NetworkError() = 0;
 
-  // Called by the video decoder object, on the main thread, when the
+  // Called by the decoder object, on the main thread, when the
   // resource has a decode error during metadata loading or decoding.
-  virtual void DecodeError() = 0;
+  // The decoder owner should call Shutdown() on the decoder and drop the
+  // reference to the decoder to prevent further calls into the decoder.
+  virtual void DecodeError(const MediaResult& aError) = 0;
 
   // Return true if media element error attribute is not null.
   virtual bool HasError() const = 0;
@@ -129,20 +135,19 @@ public:
   // ImageContainer containing the video data.
   virtual VideoFrameContainer* GetVideoFrameContainer() = 0;
 
-  // Called by the media decoder object, on the main thread,
-  // when the connection between Rtsp server and client gets lost.
-  virtual void ResetConnectionState() = 0;
-
   // Called by media decoder when the audible state changed
   virtual void SetAudibleState(bool aAudible) = 0;
 
-#ifdef MOZ_EME
+  // Notified by the shutdown manager that XPCOM shutdown has begun.
+  // The decoder owner should call Shutdown() on the decoder and drop the
+  // reference to the decoder to prevent further calls into the decoder.
+  virtual void NotifyXPCOMShutdown() = 0;
+
   // Dispatches a "encrypted" event to the HTMLMediaElement, with the
   // provided init data. Actual dispatch may be delayed until HAVE_METADATA.
   // Main thread only.
   virtual void DispatchEncrypted(const nsTArray<uint8_t>& aInitData,
                                  const nsAString& aInitDataType) = 0;
-#endif // MOZ_EME
 };
 
 } // namespace mozilla

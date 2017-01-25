@@ -11,12 +11,14 @@
 #include "mozilla/RestyleManager.h"
 
 #include <algorithm> // For std::max
+#include "mozilla/EffectSet.h"
 #include "mozilla/EventStates.h"
 #include "nsLayoutUtils.h"
 #include "AnimationCommon.h" // For GetLayerAnimationInfo
 #include "FrameLayerBuilder.h"
 #include "GeckoProfiler.h"
 #include "LayerAnimationInfo.h" // For LayerAnimationInfo::sRecords
+#include "nsAutoPtr.h"
 #include "nsStyleChangeList.h"
 #include "nsRuleProcessorData.h"
 #include "nsStyleSet.h"
@@ -81,15 +83,11 @@ ElementTagToString(dom::Element* aElement)
 #endif
 
 RestyleManager::RestyleManager(nsPresContext* aPresContext)
-  : mPresContext(aPresContext)
+  : RestyleManagerBase(aPresContext)
   , mDoRebuildAllStyleData(false)
   , mInRebuildAllStyleData(false)
-  , mObservingRefreshDriver(false)
-  , mInStyleRefresh(false)
   , mSkipAnimationRules(false)
   , mHavePendingNonAnimationRestyles(false)
-  , mRestyleGeneration(1)
-  , mHoverGeneration(0)
   , mRebuildAllExtraHint(nsChangeHint(0))
   , mRebuildAllRestyleHint(nsRestyleHint(0))
   , mAnimationGeneration(0)
@@ -104,929 +102,6 @@ RestyleManager::RestyleManager(nsPresContext* aPresContext)
 #endif
 {
   mPendingRestyles.Init(this);
-}
-
-void
-RestyleManager::NotifyDestroyingFrame(nsIFrame* aFrame)
-{
-  mOverflowChangedTracker.RemoveFrame(aFrame);
-}
-
-#ifdef DEBUG
-  // To ensure that the functions below are only called within
-  // |ApplyRenderingChangeToTree|.
-static bool gInApplyRenderingChangeToTree = false;
-#endif
-
-static inline nsIFrame*
-GetNextBlockInInlineSibling(FramePropertyTable* aPropTable, nsIFrame* aFrame)
-{
-  NS_ASSERTION(!aFrame->GetPrevContinuation(),
-               "must start with the first continuation");
-  // Might we have ib-split siblings?
-  if (!(aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT)) {
-    // nothing more to do here
-    return nullptr;
-  }
-
-  return static_cast<nsIFrame*>
-    (aPropTable->Get(aFrame, nsIFrame::IBSplitSibling()));
-}
-
-static nsIFrame*
-GetNearestAncestorFrame(nsIContent* aContent)
-{
-  nsIFrame* ancestorFrame = nullptr;
-  for (nsIContent* ancestor = aContent->GetParent();
-       ancestor && !ancestorFrame;
-       ancestor = ancestor->GetParent()) {
-    ancestorFrame = ancestor->GetPrimaryFrame();
-  }
-  return ancestorFrame;
-}
-
-static void
-DoApplyRenderingChangeToTree(nsIFrame* aFrame,
-                             nsChangeHint aChange);
-
-/**
- * Sync views on aFrame and all of aFrame's descendants (following placeholders),
- * if aChange has nsChangeHint_SyncFrameView.
- * Calls DoApplyRenderingChangeToTree on all aFrame's out-of-flow descendants
- * (following placeholders), if aChange has nsChangeHint_RepaintFrame.
- * aFrame should be some combination of nsChangeHint_SyncFrameView,
- * nsChangeHint_RepaintFrame, nsChangeHint_UpdateOpacityLayer and
- * nsChangeHint_SchedulePaint, nothing else.
-*/
-static void
-SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
-                                  nsChangeHint aChange)
-{
-  NS_PRECONDITION(gInApplyRenderingChangeToTree,
-                  "should only be called within ApplyRenderingChangeToTree");
-  NS_ASSERTION(nsChangeHint_size_t(aChange) ==
-                          (aChange & (nsChangeHint_RepaintFrame |
-                                      nsChangeHint_SyncFrameView |
-                                      nsChangeHint_UpdateOpacityLayer |
-                                      nsChangeHint_SchedulePaint)),
-               "Invalid change flag");
-
-  nsView* view = aFrame->GetView();
-  if (view) {
-    if (aChange & nsChangeHint_SyncFrameView) {
-      nsContainerFrame::SyncFrameViewProperties(aFrame->PresContext(),
-                                                aFrame, nullptr, view);
-    }
-  }
-
-  nsIFrame::ChildListIterator lists(aFrame);
-  for (; !lists.IsDone(); lists.Next()) {
-    for (nsIFrame* child : lists.CurrentList()) {
-      if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
-        // only do frames that don't have placeholders
-        if (nsGkAtoms::placeholderFrame == child->GetType()) {
-          // do the out-of-flow frame and its continuations
-          nsIFrame* outOfFlowFrame =
-            nsPlaceholderFrame::GetRealFrameForPlaceholder(child);
-          DoApplyRenderingChangeToTree(outOfFlowFrame, aChange);
-        } else if (lists.CurrentID() == nsIFrame::kPopupList) {
-          DoApplyRenderingChangeToTree(child, aChange);
-        } else {  // regular frame
-          SyncViewsAndInvalidateDescendants(child, aChange);
-        }
-      }
-    }
-  }
-}
-
-/**
- * To handle nsChangeHint_ChildrenOnlyTransform we must iterate over the child
- * frames of the SVG frame concerned. This helper function is used to find that
- * SVG frame when we encounter nsChangeHint_ChildrenOnlyTransform to ensure
- * that we iterate over the intended children, since sometimes we end up
- * handling that hint while processing hints for one of the SVG frame's
- * ancestor frames.
- *
- * The reason that we sometimes end up trying to process the hint for an
- * ancestor of the SVG frame that the hint is intended for is due to the way we
- * process restyle events. ApplyRenderingChangeToTree adjusts the frame from
- * the restyled element's principle frame to one of its ancestor frames based
- * on what nsCSSRendering::FindBackground returns, since the background style
- * may have been propagated up to an ancestor frame. Processing hints using an
- * ancestor frame is fine in general, but nsChangeHint_ChildrenOnlyTransform is
- * a special case since it is intended to update the children of a specific
- * frame.
- */
-static nsIFrame*
-GetFrameForChildrenOnlyTransformHint(nsIFrame *aFrame)
-{
-  if (aFrame->GetType() == nsGkAtoms::viewportFrame) {
-    // This happens if the root-<svg> is fixed positioned, in which case we
-    // can't use aFrame->GetContent() to find the primary frame, since
-    // GetContent() returns nullptr for ViewportFrame.
-    aFrame = aFrame->PrincipalChildList().FirstChild();
-  }
-  // For an nsHTMLScrollFrame, this will get the SVG frame that has the
-  // children-only transforms:
-  aFrame = aFrame->GetContent()->GetPrimaryFrame();
-  if (aFrame->GetType() == nsGkAtoms::svgOuterSVGFrame) {
-    aFrame = aFrame->PrincipalChildList().FirstChild();
-    MOZ_ASSERT(aFrame->GetType() == nsGkAtoms::svgOuterSVGAnonChildFrame,
-               "Where is the nsSVGOuterSVGFrame's anon child??");
-  }
-  MOZ_ASSERT(aFrame->IsFrameOfType(nsIFrame::eSVG |
-                                   nsIFrame::eSVGContainer),
-             "Children-only transforms only expected on SVG frames");
-  return aFrame;
-}
-
-static void
-DoApplyRenderingChangeToTree(nsIFrame* aFrame,
-                             nsChangeHint aChange)
-{
-  NS_PRECONDITION(gInApplyRenderingChangeToTree,
-                  "should only be called within ApplyRenderingChangeToTree");
-
-  for ( ; aFrame; aFrame = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(aFrame)) {
-    // Invalidate and sync views on all descendant frames, following placeholders.
-    // We don't need to update transforms in SyncViewsAndInvalidateDescendants, because
-    // there can't be any out-of-flows or popups that need to be transformed;
-    // all out-of-flow descendants of the transformed element must also be
-    // descendants of the transformed frame.
-    SyncViewsAndInvalidateDescendants(aFrame,
-      nsChangeHint(aChange & (nsChangeHint_RepaintFrame |
-                              nsChangeHint_SyncFrameView |
-                              nsChangeHint_UpdateOpacityLayer |
-                              nsChangeHint_SchedulePaint)));
-    // This must be set to true if the rendering change needs to
-    // invalidate content.  If it's false, a composite-only paint
-    // (empty transaction) will be scheduled.
-    bool needInvalidatingPaint = false;
-
-    // if frame has view, will already be invalidated
-    if (aChange & nsChangeHint_RepaintFrame) {
-      // Note that this whole block will be skipped when painting is suppressed
-      // (due to our caller ApplyRendingChangeToTree() discarding the
-      // nsChangeHint_RepaintFrame hint).  If you add handling for any other
-      // hints within this block, be sure that they too should be ignored when
-      // painting is suppressed.
-      needInvalidatingPaint = true;
-      aFrame->InvalidateFrameSubtree();
-      if ((aChange & nsChangeHint_UpdateEffects) &&
-          aFrame->IsFrameOfType(nsIFrame::eSVG) &&
-          !(aFrame->GetStateBits() & NS_STATE_IS_OUTER_SVG)) {
-        // Need to update our overflow rects:
-        nsSVGUtils::ScheduleReflowSVG(aFrame);
-      }
-    }
-    if (aChange & nsChangeHint_UpdateTextPath) {
-      if (aFrame->IsSVGText()) {
-        // Invalidate and reflow the entire SVGTextFrame:
-        NS_ASSERTION(aFrame->GetContent()->IsSVGElement(nsGkAtoms::textPath),
-                     "expected frame for a <textPath> element");
-        nsIFrame* text = nsLayoutUtils::GetClosestFrameOfType(
-                                                      aFrame,
-                                                      nsGkAtoms::svgTextFrame);
-        NS_ASSERTION(text, "expected to find an ancestor SVGTextFrame");
-        static_cast<SVGTextFrame*>(text)->NotifyGlyphMetricsChange();
-      } else {
-        MOZ_ASSERT(false, "unexpected frame got nsChangeHint_UpdateTextPath");
-      }
-    }
-    if (aChange & nsChangeHint_UpdateOpacityLayer) {
-      // FIXME/bug 796697: we can get away with empty transactions for
-      // opacity updates in many cases.
-      needInvalidatingPaint = true;
-
-      ActiveLayerTracker::NotifyRestyle(aFrame, eCSSProperty_opacity);
-      if (nsSVGIntegrationUtils::UsingEffectsForFrame(aFrame)) {
-        // SVG effects paints the opacity without using
-        // nsDisplayOpacity. We need to invalidate manually.
-        aFrame->InvalidateFrameSubtree();
-      }
-    }
-    if ((aChange & nsChangeHint_UpdateTransformLayer) &&
-        aFrame->IsTransformed()) {
-      ActiveLayerTracker::NotifyRestyle(aFrame, eCSSProperty_transform);
-      // If we're not already going to do an invalidating paint, see
-      // if we can get away with only updating the transform on a
-      // layer for this frame, and not scheduling an invalidating
-      // paint.
-      if (!needInvalidatingPaint) {
-        Layer* layer;
-        needInvalidatingPaint |= !aFrame->TryUpdateTransformOnly(&layer);
-
-        if (!needInvalidatingPaint) {
-          // Since we're not going to paint, we need to resend animation
-          // data to the layer.
-          MOZ_ASSERT(layer, "this can't happen if there's no layer");
-          nsDisplayListBuilder::AddAnimationsAndTransitionsToLayer(layer,
-            nullptr, nullptr, aFrame, eCSSProperty_transform);
-        }
-      }
-    }
-    if (aChange & nsChangeHint_ChildrenOnlyTransform) {
-      needInvalidatingPaint = true;
-      nsIFrame* childFrame =
-        GetFrameForChildrenOnlyTransformHint(aFrame)->PrincipalChildList().FirstChild();
-      for ( ; childFrame; childFrame = childFrame->GetNextSibling()) {
-        ActiveLayerTracker::NotifyRestyle(childFrame, eCSSProperty_transform);
-      }
-    }
-    if (aChange & nsChangeHint_SchedulePaint) {
-      needInvalidatingPaint = true;
-    }
-    aFrame->SchedulePaint(needInvalidatingPaint ?
-                          nsIFrame::PAINT_DEFAULT :
-                          nsIFrame::PAINT_COMPOSITE_ONLY);
-  }
-}
-
-static void
-ApplyRenderingChangeToTree(nsPresContext* aPresContext,
-                           nsIFrame* aFrame,
-                           nsChangeHint aChange)
-{
-  // We check StyleDisplay()->HasTransformStyle() in addition to checking
-  // IsTransformed() since we can get here for some frames that don't support
-  // CSS transforms.
-  NS_ASSERTION(!(aChange & nsChangeHint_UpdateTransformLayer) ||
-               aFrame->IsTransformed() ||
-               aFrame->StyleDisplay()->HasTransformStyle(),
-               "Unexpected UpdateTransformLayer hint");
-
-  nsIPresShell *shell = aPresContext->PresShell();
-  if (shell->IsPaintingSuppressed()) {
-    // Don't allow synchronous rendering changes when painting is turned off.
-    aChange &= ~nsChangeHint_RepaintFrame;
-    if (!aChange) {
-      return;
-    }
-  }
-
-  // Trigger rendering updates by damaging this frame and any
-  // continuations of this frame.
-#ifdef DEBUG
-  gInApplyRenderingChangeToTree = true;
-#endif
-  if (aChange & nsChangeHint_RepaintFrame) {
-    // If the frame's background is propagated to an ancestor, walk up to
-    // that ancestor and apply the RepaintFrame change hint to it.
-    nsStyleContext *bgSC;
-    nsIFrame* propagatedFrame = aFrame;
-    while (!nsCSSRendering::FindBackground(propagatedFrame, &bgSC)) {
-      propagatedFrame = propagatedFrame->GetParent();
-      NS_ASSERTION(aFrame, "root frame must paint");
-    }
-
-    if (propagatedFrame != aFrame) {
-      DoApplyRenderingChangeToTree(propagatedFrame, nsChangeHint_RepaintFrame);
-      aChange &= ~nsChangeHint_RepaintFrame;
-      if (!aChange) {
-        return;
-      }
-    }
-  }
-  DoApplyRenderingChangeToTree(aFrame, aChange);
-#ifdef DEBUG
-  gInApplyRenderingChangeToTree = false;
-#endif
-}
-
-bool
-RestyleManager::RecomputePosition(nsIFrame* aFrame)
-{
-  // Don't process position changes on table frames, since we already handle
-  // the dynamic position change on the outer table frame, and the reflow-based
-  // fallback code path also ignores positions on inner table frames.
-  if (aFrame->GetType() == nsGkAtoms::tableFrame) {
-    return true;
-  }
-
-  const nsStyleDisplay* display = aFrame->StyleDisplay();
-  // Changes to the offsets of a non-positioned element can safely be ignored.
-  if (display->mPosition == NS_STYLE_POSITION_STATIC) {
-    return true;
-  }
-
-  // Don't process position changes on frames which have views or the ones which
-  // have a view somewhere in their descendants, because the corresponding view
-  // needs to be repositioned properly as well.
-  if (aFrame->HasView() ||
-      (aFrame->GetStateBits() & NS_FRAME_HAS_CHILD_WITH_VIEW)) {
-    StyleChangeReflow(aFrame, nsChangeHint_NeedReflow);
-    return false;
-  }
-
-  aFrame->SchedulePaint();
-
-  // For relative positioning, we can simply update the frame rect
-  if (display->IsRelativelyPositionedStyle()) {
-    // Move the frame
-    if (display->mPosition == NS_STYLE_POSITION_STICKY) {
-      if (display->IsInnerTableStyle()) {
-        // We don't currently support sticky positioning of inner table
-        // elements (bug 975644). Bail.
-        //
-        // When this is fixed, remove the null-check for the computed
-        // offsets in nsTableRowFrame::ReflowChildren.
-        return true;
-      }
-
-      // Update sticky positioning for an entire element at once, starting with
-      // the first continuation or ib-split sibling.
-      // It's rare that the frame we already have isn't already the first
-      // continuation or ib-split sibling, but it can happen when styles differ
-      // across continuations such as ::first-line or ::first-letter, and in
-      // those cases we will generally (but maybe not always) do the work twice.
-      nsIFrame *firstContinuation =
-        nsLayoutUtils::FirstContinuationOrIBSplitSibling(aFrame);
-
-      StickyScrollContainer::ComputeStickyOffsets(firstContinuation);
-      StickyScrollContainer* ssc =
-        StickyScrollContainer::GetStickyScrollContainerForFrame(firstContinuation);
-      if (ssc) {
-        ssc->PositionContinuations(firstContinuation);
-      }
-    } else {
-      MOZ_ASSERT(NS_STYLE_POSITION_RELATIVE == display->mPosition,
-                 "Unexpected type of positioning");
-      for (nsIFrame *cont = aFrame; cont;
-           cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-        nsIFrame* cb = cont->GetContainingBlock();
-        nsMargin newOffsets;
-        WritingMode wm = cb->GetWritingMode();
-        const LogicalSize size(wm, cb->GetContentRectRelativeToSelf().Size());
-
-        nsHTMLReflowState::ComputeRelativeOffsets(wm, cont, size, newOffsets);
-        NS_ASSERTION(newOffsets.left == -newOffsets.right &&
-                     newOffsets.top == -newOffsets.bottom,
-                     "ComputeRelativeOffsets should return valid results");
-
-        // nsHTMLReflowState::ApplyRelativePositioning would work here, but
-        // since we've already checked mPosition and aren't changing the frame's
-        // normal position, go ahead and add the offsets directly.
-        cont->SetPosition(cont->GetNormalPosition() +
-                          nsPoint(newOffsets.left, newOffsets.top));
-      }
-    }
-
-    return true;
-  }
-
-  // For the absolute positioning case, set up a fake HTML reflow state for
-  // the frame, and then get the offsets and size from it. If the frame's size
-  // doesn't need to change, we can simply update the frame position. Otherwise
-  // we fall back to a reflow.
-  nsRenderingContext rc(
-    aFrame->PresContext()->PresShell()->CreateReferenceRenderingContext());
-
-  // Construct a bogus parent reflow state so that there's a usable
-  // containing block reflow state.
-  nsIFrame* parentFrame = aFrame->GetParent();
-  WritingMode parentWM = parentFrame->GetWritingMode();
-  WritingMode frameWM = aFrame->GetWritingMode();
-  LogicalSize parentSize = parentFrame->GetLogicalSize();
-
-  nsFrameState savedState = parentFrame->GetStateBits();
-  nsHTMLReflowState parentReflowState(aFrame->PresContext(), parentFrame,
-                                      &rc, parentSize);
-  parentFrame->RemoveStateBits(~nsFrameState(0));
-  parentFrame->AddStateBits(savedState);
-
-  // The bogus parent state here was created with no parent state of its own,
-  // and therefore it won't have an mCBReflowState set up.
-  // But we may need one (for InitCBReflowState in a child state), so let's
-  // try to create one here for the cases where it will be needed.
-  Maybe<nsHTMLReflowState> cbReflowState;
-  nsIFrame* cbFrame = parentFrame->GetContainingBlock();
-  if (cbFrame && (aFrame->GetContainingBlock() != parentFrame ||
-                  parentFrame->GetType() == nsGkAtoms::tableFrame)) {
-    LogicalSize cbSize = cbFrame->GetLogicalSize();
-    cbReflowState.emplace(cbFrame->PresContext(), cbFrame, &rc, cbSize);
-    cbReflowState->ComputedPhysicalMargin() = cbFrame->GetUsedMargin();
-    cbReflowState->ComputedPhysicalPadding() = cbFrame->GetUsedPadding();
-    cbReflowState->ComputedPhysicalBorderPadding() =
-      cbFrame->GetUsedBorderAndPadding();
-    parentReflowState.mCBReflowState = cbReflowState.ptr();
-  }
-
-  NS_WARN_IF_FALSE(parentSize.ISize(parentWM) != NS_INTRINSICSIZE &&
-                   parentSize.BSize(parentWM) != NS_INTRINSICSIZE,
-                   "parentSize should be valid");
-  parentReflowState.SetComputedISize(std::max(parentSize.ISize(parentWM), 0));
-  parentReflowState.SetComputedBSize(std::max(parentSize.BSize(parentWM), 0));
-  parentReflowState.ComputedPhysicalMargin().SizeTo(0, 0, 0, 0);
-
-  parentReflowState.ComputedPhysicalPadding() = parentFrame->GetUsedPadding();
-  parentReflowState.ComputedPhysicalBorderPadding() =
-    parentFrame->GetUsedBorderAndPadding();
-  LogicalSize availSize = parentSize.ConvertTo(frameWM, parentWM);
-  availSize.BSize(frameWM) = NS_INTRINSICSIZE;
-
-  ViewportFrame* viewport = do_QueryFrame(parentFrame);
-  nsSize cbSize = viewport ?
-    viewport->AdjustReflowStateAsContainingBlock(&parentReflowState).Size()
-    : aFrame->GetContainingBlock()->GetSize();
-  const nsMargin& parentBorder =
-    parentReflowState.mStyleBorder->GetComputedBorder();
-  cbSize -= nsSize(parentBorder.LeftRight(), parentBorder.TopBottom());
-  LogicalSize lcbSize(frameWM, cbSize);
-  nsHTMLReflowState reflowState(aFrame->PresContext(), parentReflowState,
-                                aFrame, availSize, &lcbSize);
-  nsSize computedSize(reflowState.ComputedWidth(), reflowState.ComputedHeight());
-  computedSize.width += reflowState.ComputedPhysicalBorderPadding().LeftRight();
-  if (computedSize.height != NS_INTRINSICSIZE) {
-    computedSize.height += reflowState.ComputedPhysicalBorderPadding().TopBottom();
-  }
-  nsSize size = aFrame->GetSize();
-  // The RecomputePosition hint is not used if any offset changed between auto
-  // and non-auto. If computedSize.height == NS_INTRINSICSIZE then the new
-  // element height will be its intrinsic height, and since 'top' and 'bottom''s
-  // auto-ness hasn't changed, the old height must also be its intrinsic
-  // height, which we can assume hasn't changed (or reflow would have
-  // been triggered).
-  if (computedSize.width == size.width &&
-      (computedSize.height == NS_INTRINSICSIZE || computedSize.height == size.height)) {
-    // If we're solving for 'left' or 'top', then compute it here, in order to
-    // match the reflow code path.
-    if (NS_AUTOOFFSET == reflowState.ComputedPhysicalOffsets().left) {
-      reflowState.ComputedPhysicalOffsets().left = cbSize.width -
-                                          reflowState.ComputedPhysicalOffsets().right -
-                                          reflowState.ComputedPhysicalMargin().right -
-                                          size.width -
-                                          reflowState.ComputedPhysicalMargin().left;
-    }
-
-    if (NS_AUTOOFFSET == reflowState.ComputedPhysicalOffsets().top) {
-      reflowState.ComputedPhysicalOffsets().top = cbSize.height -
-                                         reflowState.ComputedPhysicalOffsets().bottom -
-                                         reflowState.ComputedPhysicalMargin().bottom -
-                                         size.height -
-                                         reflowState.ComputedPhysicalMargin().top;
-    }
-
-    // Move the frame
-    nsPoint pos(parentBorder.left + reflowState.ComputedPhysicalOffsets().left +
-                reflowState.ComputedPhysicalMargin().left,
-                parentBorder.top + reflowState.ComputedPhysicalOffsets().top +
-                reflowState.ComputedPhysicalMargin().top);
-    aFrame->SetPosition(pos);
-
-    return true;
-  }
-
-  // Fall back to a reflow
-  StyleChangeReflow(aFrame, nsChangeHint_NeedReflow);
-  return false;
-}
-
-static bool
-HasBoxAncestor(nsIFrame* aFrame)
-{
-  for (nsIFrame* f = aFrame; f; f = f->GetParent()) {
-    if (f->IsXULBoxFrame()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void
-RestyleManager::StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint)
-{
-  nsIPresShell::IntrinsicDirty dirtyType;
-  if (aHint & nsChangeHint_ClearDescendantIntrinsics) {
-    NS_ASSERTION(aHint & nsChangeHint_ClearAncestorIntrinsics,
-                 "Please read the comments in nsChangeHint.h");
-    NS_ASSERTION(aHint & nsChangeHint_NeedDirtyReflow,
-                 "ClearDescendantIntrinsics requires NeedDirtyReflow");
-    dirtyType = nsIPresShell::eStyleChange;
-  } else if ((aHint & nsChangeHint_UpdateComputedBSize) &&
-             aFrame->HasAnyStateBits(NS_FRAME_DESCENDANT_INTRINSIC_ISIZE_DEPENDS_ON_BSIZE)) {
-    dirtyType = nsIPresShell::eStyleChange;
-  } else if (aHint & nsChangeHint_ClearAncestorIntrinsics) {
-    dirtyType = nsIPresShell::eTreeChange;
-  } else if ((aHint & nsChangeHint_UpdateComputedBSize) &&
-             HasBoxAncestor(aFrame)) {
-    // The frame's computed BSize is changing, and we have a box ancestor
-    // whose cached intrinsic height may need to be updated.
-    dirtyType = nsIPresShell::eTreeChange;
-  } else {
-    dirtyType = nsIPresShell::eResize;
-  }
-
-  nsFrameState dirtyBits;
-  if (aFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW) {
-    dirtyBits = nsFrameState(0);
-  } else if ((aHint & nsChangeHint_NeedDirtyReflow) ||
-             dirtyType == nsIPresShell::eStyleChange) {
-    dirtyBits = NS_FRAME_IS_DIRTY;
-  } else {
-    dirtyBits = NS_FRAME_HAS_DIRTY_CHILDREN;
-  }
-
-  // If we're not going to clear any intrinsic sizes on the frames, and
-  // there are no dirty bits to set, then there's nothing to do.
-  if (dirtyType == nsIPresShell::eResize && !dirtyBits)
-    return;
-
-  nsIPresShell::ReflowRootHandling rootHandling;
-  if (aHint & nsChangeHint_ReflowChangesSizeOrPosition) {
-    rootHandling = nsIPresShell::ePositionOrSizeChange;
-  } else {
-    rootHandling = nsIPresShell::eNoPositionOrSizeChange;
-  }
-
-  do {
-    mPresContext->PresShell()->FrameNeedsReflow(aFrame, dirtyType, dirtyBits,
-                                                rootHandling);
-    aFrame = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(aFrame);
-  } while (aFrame);
-}
-
-void
-RestyleManager::AddSubtreeToOverflowTracker(nsIFrame* aFrame) 
-{
-  if (aFrame->FrameMaintainsOverflow()) {
-    mOverflowChangedTracker.AddFrame(aFrame,
-                                     OverflowChangedTracker::CHILDREN_CHANGED);
-  }
-  nsIFrame::ChildListIterator lists(aFrame);
-  for (; !lists.IsDone(); lists.Next()) {
-    for (nsIFrame* child : lists.CurrentList()) {
-      AddSubtreeToOverflowTracker(child);
-    }
-  }
-}
-
-NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(ChangeListProperty, bool)
-
-/**
- * Return true if aFrame's subtree has placeholders for out-of-flow content
- * whose 'position' style's bit in aPositionMask is set.
- */
-static bool
-FrameHasPositionedPlaceholderDescendants(nsIFrame* aFrame, uint32_t aPositionMask)
-{
-  const nsIFrame::ChildListIDs skip(nsIFrame::kAbsoluteList |
-                                    nsIFrame::kFixedList);
-  for (nsIFrame::ChildListIterator lists(aFrame); !lists.IsDone(); lists.Next()) {
-    if (!skip.Contains(lists.CurrentID())) {
-      for (nsIFrame* f : lists.CurrentList()) {
-        if (f->GetType() == nsGkAtoms::placeholderFrame) {
-          nsIFrame* outOfFlow = nsPlaceholderFrame::GetRealFrameForPlaceholder(f);
-          // If SVG text frames could appear here, they could confuse us since
-          // they ignore their position style ... but they can't.
-          NS_ASSERTION(!outOfFlow->IsSVGText(),
-                       "SVG text frames can't be out of flow");
-          if (aPositionMask & (1 << outOfFlow->StyleDisplay()->mPosition)) {
-            return true;
-          }
-        }
-        if (FrameHasPositionedPlaceholderDescendants(f, aPositionMask)) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
-static bool
-NeedToReframeForAddingOrRemovingTransform(nsIFrame* aFrame)
-{
-  static_assert(0 <= NS_STYLE_POSITION_ABSOLUTE &&
-                NS_STYLE_POSITION_ABSOLUTE < 32, "Style constant out of range");
-  static_assert(0 <= NS_STYLE_POSITION_FIXED &&
-                NS_STYLE_POSITION_FIXED < 32, "Style constant out of range");
-
-  uint32_t positionMask;
-  // Don't call aFrame->IsPositioned here, since that returns true if
-  // the frame already has a transform, and we want to ignore that here
-  if (aFrame->IsAbsolutelyPositioned() ||
-      aFrame->IsRelativelyPositioned()) {
-    // This frame is a container for abs-pos descendants whether or not it
-    // has a transform.
-    // So abs-pos descendants are no problem; we only need to reframe if
-    // we have fixed-pos descendants.
-    positionMask = 1 << NS_STYLE_POSITION_FIXED;
-  } else {
-    // This frame may not be a container for abs-pos descendants already.
-    // So reframe if we have abs-pos or fixed-pos descendants.
-    positionMask = (1 << NS_STYLE_POSITION_FIXED) |
-        (1 << NS_STYLE_POSITION_ABSOLUTE);
-  }
-  for (nsIFrame* f = aFrame; f;
-       f = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(f)) {
-    if (FrameHasPositionedPlaceholderDescendants(f, positionMask)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-nsresult
-RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
-{
-  NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
-               "Someone forgot a script blocker");
-  int32_t count = aChangeList.Count();
-  if (!count)
-    return NS_OK;
-
-  PROFILER_LABEL("RestyleManager", "ProcessRestyledFrames",
-    js::ProfileEntry::Category::CSS);
-
-  // Make sure to not rebuild quote or counter lists while we're
-  // processing restyles
-  FrameConstructor()->BeginUpdate();
-
-  FramePropertyTable* propTable = mPresContext->PropertyTable();
-
-  // Mark frames so that we skip frames that die along the way, bug 123049.
-  // A frame can be in the list multiple times with different hints. Further
-  // optmization is possible if nsStyleChangeList::AppendChange could coalesce
-  int32_t index = count;
-
-  while (0 <= --index) {
-    const nsStyleChangeData* changeData;
-    aChangeList.ChangeAt(index, &changeData);
-    if (changeData->mFrame) {
-      propTable->Set(changeData->mFrame, ChangeListProperty(), true);
-    }
-  }
-
-  index = count;
-
-  bool didUpdateCursor = false;
-
-  while (0 <= --index) {
-    nsIFrame* frame;
-    nsIContent* content;
-    bool didReflowThisFrame = false;
-    nsChangeHint hint;
-    aChangeList.ChangeAt(index, frame, content, hint);
-
-    NS_ASSERTION(!(hint & nsChangeHint_AllReflowHints) ||
-                 (hint & nsChangeHint_NeedReflow),
-                 "Reflow hint bits set without actually asking for a reflow");
-
-    // skip any frame that has been destroyed due to a ripple effect
-    if (frame && !propTable->Get(frame, ChangeListProperty())) {
-      continue;
-    }
-
-    if (frame && frame->GetContent() != content) {
-      // XXXbz this is due to image maps messing with the primary frame of
-      // <area>s.  See bug 135040.  Remove this block once that's fixed.
-      frame = nullptr;
-      if (!(hint & nsChangeHint_ReconstructFrame)) {
-        continue;
-      }
-    }
-
-    if ((hint & nsChangeHint_UpdateContainingBlock) && frame &&
-        !(hint & nsChangeHint_ReconstructFrame)) {
-      if (NeedToReframeForAddingOrRemovingTransform(frame) ||
-          frame->GetType() == nsGkAtoms::fieldSetFrame ||
-          frame->GetContentInsertionFrame() != frame) {
-        // The frame has positioned children that need to be reparented, or
-        // it can't easily be converted to/from being an abs-pos container correctly.
-        hint |= nsChangeHint_ReconstructFrame;
-      } else {
-        for (nsIFrame *cont = frame; cont;
-             cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-          // Normally frame construction would set state bits as needed,
-          // but we're not going to reconstruct the frame so we need to set them.
-          // It's because we need to set this state on each affected frame
-          // that we can't coalesce nsChangeHint_UpdateContainingBlock hints up
-          // to ancestors (i.e. it can't be an inherited change hint).
-          if (cont->IsAbsPosContaininingBlock()) {
-            if (cont->StyleDisplay()->HasTransform(cont)) {
-              cont->AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
-            }
-            if (!cont->IsAbsoluteContainer() &&
-                (cont->GetStateBits() & NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
-              cont->MarkAsAbsoluteContainingBlock();
-            }
-          } else {
-            // Don't remove NS_FRAME_MAY_BE_TRANSFORMED since it may still by
-            // transformed by other means. It's OK to have the bit even if it's
-            // not needed.
-            if (cont->IsAbsoluteContainer()) {
-              cont->MarkAsNotAbsoluteContainingBlock();
-            }
-          }
-        }
-      }
-    }
-    if (hint & nsChangeHint_ReconstructFrame) {
-      // If we ever start passing true here, be careful of restyles
-      // that involve a reframe and animations.  In particular, if the
-      // restyle we're processing here is an animation restyle, but
-      // the style resolution we will do for the frame construction
-      // happens async when we're not in an animation restyle already,
-      // problems could arise.
-      // We could also have problems with triggering of CSS transitions
-      // on elements whose frames are reconstructed, since we depend on
-      // the reconstruction happening synchronously.
-      FrameConstructor()->RecreateFramesForContent(content, false,
-        nsCSSFrameConstructor::REMOVE_FOR_RECONSTRUCTION, nullptr);
-    } else {
-      NS_ASSERTION(frame, "This shouldn't happen");
-
-      if (!frame->FrameMaintainsOverflow()) {
-        // frame does not maintain overflow rects, so avoid calling
-        // FinishAndStoreOverflow on it:
-        hint &= ~(nsChangeHint_UpdateOverflow |
-                  nsChangeHint_ChildrenOnlyTransform |
-                  nsChangeHint_UpdatePostTransformOverflow |
-                  nsChangeHint_UpdateParentOverflow);
-      }
-
-      if (!(frame->GetStateBits() & NS_FRAME_MAY_BE_TRANSFORMED)) {
-        // Frame can not be transformed, and thus a change in transform will
-        // have no effect and we should not use the
-        // nsChangeHint_UpdatePostTransformOverflow hint.
-        hint &= ~nsChangeHint_UpdatePostTransformOverflow;
-      }
-
-      if (hint & nsChangeHint_UpdateEffects) {
-        for (nsIFrame *cont = frame; cont;
-             cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-          nsSVGEffects::UpdateEffects(cont);
-        }
-      }
-      if ((hint & nsChangeHint_InvalidateRenderingObservers) ||
-          ((hint & nsChangeHint_UpdateOpacityLayer) &&
-           frame->IsFrameOfType(nsIFrame::eSVG) &&
-           !(frame->GetStateBits() & NS_STATE_IS_OUTER_SVG))) {
-        nsSVGEffects::InvalidateRenderingObservers(frame);
-      }
-      if (hint & nsChangeHint_NeedReflow) {
-        StyleChangeReflow(frame, hint);
-        didReflowThisFrame = true;
-      }
-
-      if ((hint & nsChangeHint_UpdateUsesOpacity) &&
-          frame->IsFrameOfType(nsIFrame::eTablePart)) {
-        NS_ASSERTION(hint & nsChangeHint_UpdateOpacityLayer,
-                     "should only return UpdateUsesOpacity hint "
-                     "when also returning UpdateOpacityLayer hint");
-        // When an internal table part (including cells) changes between
-        // having opacity 1 and non-1, it changes whether its
-        // backgrounds (and those of table parts inside of it) are
-        // painted as part of the table's nsDisplayTableBorderBackground
-        // display item, or part of its own display item.  That requires
-        // invalidation, so change UpdateOpacityLayer to RepaintFrame.
-        hint &= ~nsChangeHint_UpdateOpacityLayer;
-        hint |= nsChangeHint_RepaintFrame;
-      }
-
-      if (hint & nsChangeHint_UpdateBackgroundPosition) {
-        // For most frame types, DLBI can detect background position changes,
-        // so we only need to schedule a paint.
-        hint |= nsChangeHint_SchedulePaint;
-        if (frame->IsFrameOfType(nsIFrame::eTablePart) ||
-            frame->IsFrameOfType(nsIFrame::eMathML)) {
-          // Table parts and MathML frames don't build display items for their
-          // backgrounds, so DLBI can't detect background-position changes for
-          // these frames. Repaint the whole frame.
-          hint |= nsChangeHint_RepaintFrame;
-        }
-      }
-
-      if (hint & (nsChangeHint_RepaintFrame | nsChangeHint_SyncFrameView |
-                  nsChangeHint_UpdateOpacityLayer | nsChangeHint_UpdateTransformLayer |
-                  nsChangeHint_ChildrenOnlyTransform | nsChangeHint_SchedulePaint)) {
-        ApplyRenderingChangeToTree(mPresContext, frame, hint);
-      }
-      if ((hint & nsChangeHint_RecomputePosition) && !didReflowThisFrame) {
-        ActiveLayerTracker::NotifyOffsetRestyle(frame);
-        // It is possible for this to fall back to a reflow
-        if (!RecomputePosition(frame)) {
-          didReflowThisFrame = true;
-        }
-      }
-      NS_ASSERTION(!(hint & nsChangeHint_ChildrenOnlyTransform) ||
-                   (hint & nsChangeHint_UpdateOverflow),
-                   "nsChangeHint_UpdateOverflow should be passed too");
-      if (!didReflowThisFrame &&
-          (hint & (nsChangeHint_UpdateOverflow |
-                   nsChangeHint_UpdatePostTransformOverflow |
-                   nsChangeHint_UpdateParentOverflow |
-                   nsChangeHint_UpdateSubtreeOverflow))) {
-        if (hint & nsChangeHint_UpdateSubtreeOverflow) {
-          for (nsIFrame *cont = frame; cont; cont =
-                 nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-            AddSubtreeToOverflowTracker(cont);
-          }
-          // The work we just did in AddSubtreeToOverflowTracker
-          // subsumes some of the other hints:
-          hint &= ~(nsChangeHint_UpdateOverflow |
-                    nsChangeHint_UpdatePostTransformOverflow);
-        }
-        if (hint & nsChangeHint_ChildrenOnlyTransform) {
-          // The overflow areas of the child frames need to be updated:
-          nsIFrame* hintFrame = GetFrameForChildrenOnlyTransformHint(frame);
-          nsIFrame* childFrame = hintFrame->PrincipalChildList().FirstChild();
-          NS_ASSERTION(!nsLayoutUtils::GetNextContinuationOrIBSplitSibling(frame),
-                       "SVG frames should not have continuations "
-                       "or ib-split siblings");
-          NS_ASSERTION(!nsLayoutUtils::GetNextContinuationOrIBSplitSibling(hintFrame),
-                       "SVG frames should not have continuations "
-                       "or ib-split siblings");
-          for ( ; childFrame; childFrame = childFrame->GetNextSibling()) {
-            MOZ_ASSERT(childFrame->IsFrameOfType(nsIFrame::eSVG),
-                       "Not expecting non-SVG children");
-            // If |childFrame| is dirty or has dirty children, we don't bother
-            // updating overflows since that will happen when it's reflowed.
-            if (!(childFrame->GetStateBits() &
-                  (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN))) {
-              mOverflowChangedTracker.AddFrame(childFrame,
-                           OverflowChangedTracker::CHILDREN_CHANGED);
-            }
-            NS_ASSERTION(!nsLayoutUtils::GetNextContinuationOrIBSplitSibling(childFrame),
-                         "SVG frames should not have continuations "
-                         "or ib-split siblings");
-            NS_ASSERTION(childFrame->GetParent() == hintFrame,
-                         "SVG child frame not expected to have different parent");
-          }
-        }
-        // If |frame| is dirty or has dirty children, we don't bother updating
-        // overflows since that will happen when it's reflowed.
-        if (!(frame->GetStateBits() &
-              (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN))) {
-          if (hint & (nsChangeHint_UpdateOverflow |
-                      nsChangeHint_UpdatePostTransformOverflow)) {
-            OverflowChangedTracker::ChangeKind changeKind;
-            // If we have both nsChangeHint_UpdateOverflow and
-            // nsChangeHint_UpdatePostTransformOverflow,
-            // CHILDREN_CHANGED is selected as it is
-            // strictly stronger.
-            if (hint & nsChangeHint_UpdateOverflow) {
-              changeKind = OverflowChangedTracker::CHILDREN_CHANGED;
-            } else {
-              changeKind = OverflowChangedTracker::TRANSFORM_CHANGED;
-            }
-            for (nsIFrame *cont = frame; cont; cont =
-                   nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-              mOverflowChangedTracker.AddFrame(cont, changeKind);
-            }
-          }
-          // UpdateParentOverflow hints need to be processed in addition
-          // to the above, since if the processing of the above hints
-          // yields no change, the update will not propagate to the
-          // parent.
-          if (hint & nsChangeHint_UpdateParentOverflow) {
-            MOZ_ASSERT(frame->GetParent(),
-                       "shouldn't get style hints for the root frame");
-            for (nsIFrame *cont = frame; cont; cont =
-                   nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
-              mOverflowChangedTracker.AddFrame(cont->GetParent(),
-                                   OverflowChangedTracker::CHILDREN_CHANGED);
-            }
-          }
-        }
-      }
-      if ((hint & nsChangeHint_UpdateCursor) && !didUpdateCursor) {
-        mPresContext->PresShell()->SynthesizeMouseMove(false);
-        didUpdateCursor = true;
-      }
-    }
-  }
-
-  FrameConstructor()->EndUpdate();
-
-  // cleanup references and verify the style tree.  Note that the latter needs
-  // to happen once we've processed the whole list, since until then the tree
-  // is not in fact in a consistent state.
-  index = count;
-  while (0 <= --index) {
-    const nsStyleChangeData* changeData;
-    aChangeList.ChangeAt(index, &changeData);
-    if (changeData->mFrame) {
-      propTable->Delete(changeData->mFrame, ChangeListProperty());
-    }
-
-#ifdef DEBUG
-    // reget frame from content since it may have been regenerated...
-    if (changeData->mContent) {
-      nsIFrame* frame = changeData->mContent->GetPrimaryFrame();
-      if (frame) {
-        DebugVerifyStyleTree(frame);
-      }
-    } else if (!changeData->mFrame ||
-               changeData->mFrame->GetType() != nsGkAtoms::viewportFrame) {
-      NS_WARNING("Unable to test style tree integrity -- no content node "
-                 "(and not a viewport frame)");
-    }
-#endif
-  }
-
-  aChangeList.Clear();
-  return NS_OK;
 }
 
 void
@@ -1050,9 +125,9 @@ RestyleManager::RestyleElement(Element*               aElement,
 
   // If we're restyling the root element and there are 'rem' units in
   // use, handle dynamic changes to the definition of a 'rem' here.
-  if (mPresContext->UsesRootEMUnits() && aPrimaryFrame &&
+  if (PresContext()->UsesRootEMUnits() && aPrimaryFrame &&
       !mInRebuildAllStyleData) {
-    nsStyleContext *oldContext = aPrimaryFrame->StyleContext();
+    nsStyleContext* oldContext = aPrimaryFrame->StyleContext();
     if (!oldContext->GetParent()) { // check that we're the root element
       RefPtr<nsStyleContext> newContext = StyleSet()->
         ResolveStyleFor(aElement, nullptr /* == oldContext->GetParent() */);
@@ -1088,7 +163,7 @@ RestyleManager::RestyleElement(Element*               aElement,
     nsStyleContext* newContext =
       FrameConstructor()->MaybeRecreateFramesForElement(aElement);
     if (newContext &&
-        newContext->StyleDisplay()->mDisplay == NS_STYLE_DISPLAY_CONTENTS) {
+        newContext->StyleDisplay()->mDisplay == StyleDisplay::Contents) {
       // Style change for a display:contents node that did not recreate frames.
       ComputeAndProcessStyleChange(newContext, aElement, aMinHint,
                                    aRestyleTracker, aRestyleHint,
@@ -1114,7 +189,7 @@ RestyleManager::ReframingStyleContexts::~ReframingStyleContexts()
   // Note that this is a little bit evil in that we're calling into code
   // that calls our member functions from our destructor, but it's at
   // the beginning of our destructor, so it shouldn't be too bad.
-  mRestyleManager->mPresContext->FrameConstructor()->CreateNeededFrames();
+  mRestyleManager->PresContext()->FrameConstructor()->CreateNeededFrames();
 }
 
 RestyleManager::AnimationsWithDestroyedFrame::AnimationsWithDestroyedFrame(
@@ -1183,75 +258,11 @@ RestyleManager::ContentStateChanged(nsIContent* aContent,
 
   Element* aElement = aContent->AsElement();
 
-  nsStyleSet* styleSet = StyleSet();
-  NS_ASSERTION(styleSet, "couldn't get style set");
+  nsChangeHint changeHint;
+  nsRestyleHint restyleHint;
+  ContentStateChangedInternal(aElement, aStateMask, &changeHint, &restyleHint);
 
-  nsChangeHint hint = NS_STYLE_HINT_NONE;
-  // Any change to a content state that affects which frames we construct
-  // must lead to a frame reconstruct here if we already have a frame.
-  // Note that we never decide through non-CSS means to not create frames
-  // based on content states, so if we already don't have a frame we don't
-  // need to force a reframe -- if it's needed, the HasStateDependentStyle
-  // call will handle things.
-  nsIFrame* primaryFrame = aElement->GetPrimaryFrame();
-  CSSPseudoElementType pseudoType = CSSPseudoElementType::NotPseudo;
-  if (primaryFrame) {
-    // If it's generated content, ignore LOADING/etc state changes on it.
-    if (!primaryFrame->IsGeneratedContentFrame() &&
-        aStateMask.HasAtLeastOneOfStates(NS_EVENT_STATE_BROKEN |
-                                         NS_EVENT_STATE_USERDISABLED |
-                                         NS_EVENT_STATE_SUPPRESSED |
-                                         NS_EVENT_STATE_LOADING)) {
-      hint = nsChangeHint_ReconstructFrame;
-    } else {
-      uint8_t app = primaryFrame->StyleDisplay()->mAppearance;
-      if (app) {
-        nsITheme *theme = mPresContext->GetTheme();
-        if (theme && theme->ThemeSupportsWidget(mPresContext,
-                                                primaryFrame, app)) {
-          bool repaint = false;
-          theme->WidgetStateChanged(primaryFrame, app, nullptr, &repaint, nullptr);
-          if (repaint) {
-            hint |= nsChangeHint_RepaintFrame;
-          }
-        }
-      }
-    }
-
-    pseudoType = primaryFrame->StyleContext()->GetPseudoType();
-
-    primaryFrame->ContentStatesChanged(aStateMask);
-  }
-
-
-  nsRestyleHint rshint;
-
-  if (pseudoType >= CSSPseudoElementType::Count) {
-    rshint = styleSet->HasStateDependentStyle(aElement, aStateMask);
-  } else if (nsCSSPseudoElements::PseudoElementSupportsUserActionState(
-                                                                  pseudoType)) {
-    // If aElement is a pseudo-element, we want to check to see whether there
-    // are any state-dependent rules applying to that pseudo.
-    Element* ancestor = ElementForStyleContext(nullptr, primaryFrame,
-                                               pseudoType);
-    rshint = styleSet->HasStateDependentStyle(ancestor, pseudoType, aElement,
-                                              aStateMask);
-  } else {
-    rshint = nsRestyleHint(0);
-  }
-
-  if (aStateMask.HasState(NS_EVENT_STATE_HOVER) && rshint != 0) {
-    ++mHoverGeneration;
-  }
-
-  if (aStateMask.HasState(NS_EVENT_STATE_VISITED)) {
-    // Exposing information to the page about whether the link is
-    // visited or not isn't really something we can worry about here.
-    // FIXME: We could probably do this a bit better.
-    hint |= nsChangeHint_RepaintFrame;
-  }
-
-  PostRestyleEvent(aElement, rshint, hint);
+  PostRestyleEvent(aElement, restyleHint, changeHint);
   return NS_OK;
 }
 
@@ -1272,7 +283,7 @@ RestyleManager::AttributeWillChange(Element* aElement,
                                            false,
                                            aNewValue,
                                            rsdata);
-  PostRestyleEvent(aElement, rshint, NS_STYLE_HINT_NONE, &rsdata);
+  PostRestyleEvent(aElement, rshint, nsChangeHint(0), &rsdata);
 }
 
 // Forwarded nsIMutationObserver method, to handle restyling (and
@@ -1287,7 +298,8 @@ RestyleManager::AttributeChanged(Element* aElement,
   // Hold onto the PresShell to prevent ourselves from being destroyed.
   // XXXbz how, exactly, would this attribute change cause us to be
   // destroyed from inside this function?
-  nsCOMPtr<nsIPresShell> shell = mPresContext->GetPresShell();
+  nsCOMPtr<nsIPresShell> shell = PresContext()->GetPresShell();
+  mozilla::Unused << shell; // Unused within this function
 
   // Get the frame associated with the content which is the highest in the frame tree
   nsIFrame* primaryFrame = aElement->GetPrimaryFrame();
@@ -1309,7 +321,7 @@ RestyleManager::AttributeChanged(Element* aElement,
   // happen otherwise).
   if (!primaryFrame && !reframe) {
     int32_t namespaceID;
-    nsIAtom* tag = mPresContext->Document()->BindingManager()->
+    nsIAtom* tag = PresContext()->Document()->BindingManager()->
                      ResolveTag(aElement, &namespaceID);
 
     if (namespaceID == kNameSpaceID_XUL &&
@@ -1321,7 +333,7 @@ RestyleManager::AttributeChanged(Element* aElement,
   if (aAttribute == nsGkAtoms::tooltiptext ||
       aAttribute == nsGkAtoms::tooltip)
   {
-    nsIRootBox* rootBox = nsIRootBox::GetRootBox(mPresContext->GetPresShell());
+    nsIRootBox* rootBox = nsIRootBox::GetRootBox(PresContext()->GetPresShell());
     if (rootBox) {
       if (aModType == nsIDOMMutationEvent::REMOVAL)
         rootBox->RemoveTooltipSupport(aElement);
@@ -1336,8 +348,8 @@ RestyleManager::AttributeChanged(Element* aElement,
     // See if we have appearance information for a theme.
     const nsStyleDisplay* disp = primaryFrame->StyleDisplay();
     if (disp->mAppearance) {
-      nsITheme *theme = mPresContext->GetTheme();
-      if (theme && theme->ThemeSupportsWidget(mPresContext, primaryFrame, disp->mAppearance)) {
+      nsITheme* theme = PresContext()->GetTheme();
+      if (theme && theme->ThemeSupportsWidget(PresContext(), primaryFrame, disp->mAppearance)) {
         bool repaint = false;
         theme->WidgetStateChanged(primaryFrame, disp->mAppearance, aAttribute,
             &repaint, aOldValue);
@@ -1386,14 +398,19 @@ RestyleManager::RestyleForEmptyChange(Element* aContainer)
       (grandparent->GetFlags() & NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS)) {
     hint = nsRestyleHint(hint | eRestyle_LaterSiblings);
   }
-  PostRestyleEvent(aContainer, hint, NS_STYLE_HINT_NONE);
+  PostRestyleEvent(aContainer, hint, nsChangeHint(0));
 }
 
 void
-RestyleManager::RestyleForAppend(Element* aContainer,
+RestyleManager::RestyleForAppend(nsIContent* aContainer,
                                  nsIContent* aFirstNewContent)
 {
-  NS_ASSERTION(aContainer, "must have container for append");
+  // The container cannot be a document, but might be a ShadowRoot.
+  if (!aContainer->IsElement()) {
+    return;
+  }
+  Element* container = aContainer->AsElement();
+
 #ifdef DEBUG
   {
     for (nsIContent* cur = aFirstNewContent; cur; cur = cur->GetNextSibling()) {
@@ -1403,15 +420,15 @@ RestyleManager::RestyleForAppend(Element* aContainer,
   }
 #endif
   uint32_t selectorFlags =
-    aContainer->GetFlags() & (NODE_ALL_SELECTOR_FLAGS &
-                              ~NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS);
+    container->GetFlags() & (NODE_ALL_SELECTOR_FLAGS &
+                             ~NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS);
   if (selectorFlags == 0)
     return;
 
   if (selectorFlags & NODE_HAS_EMPTY_SELECTOR) {
     // see whether we need to restyle the container
     bool wasEmpty = true; // :empty or :-moz-only-whitespace
-    for (nsIContent* cur = aContainer->GetFirstChild();
+    for (nsIContent* cur = container->GetFirstChild();
          cur != aFirstNewContent;
          cur = cur->GetNextSibling()) {
       // We don't know whether we're testing :empty or :-moz-only-whitespace,
@@ -1424,13 +441,13 @@ RestyleManager::RestyleForAppend(Element* aContainer,
       }
     }
     if (wasEmpty) {
-      RestyleForEmptyChange(aContainer);
+      RestyleForEmptyChange(container);
       return;
     }
   }
 
   if (selectorFlags & NODE_HAS_SLOW_SELECTOR) {
-    PostRestyleEvent(aContainer, eRestyle_Subtree, NS_STYLE_HINT_NONE);
+    PostRestyleEvent(container, eRestyle_Subtree, nsChangeHint(0));
     // Restyling the container is the most we can do here, so we're done.
     return;
   }
@@ -1441,7 +458,7 @@ RestyleManager::RestyleForAppend(Element* aContainer,
          cur;
          cur = cur->GetPreviousSibling()) {
       if (cur->IsElement()) {
-        PostRestyleEvent(cur->AsElement(), eRestyle_Subtree, NS_STYLE_HINT_NONE);
+        PostRestyleEvent(cur->AsElement(), eRestyle_Subtree, nsChangeHint(0));
         break;
       }
     }
@@ -1455,13 +472,13 @@ static void
 RestyleSiblingsStartingWith(RestyleManager* aRestyleManager,
                             nsIContent* aStartingSibling /* may be null */)
 {
-  for (nsIContent *sibling = aStartingSibling; sibling;
+  for (nsIContent* sibling = aStartingSibling; sibling;
        sibling = sibling->GetNextSibling()) {
     if (sibling->IsElement()) {
       aRestyleManager->
         PostRestyleEvent(sibling->AsElement(),
                          nsRestyleHint(eRestyle_Subtree | eRestyle_LaterSiblings),
-                         NS_STYLE_HINT_NONE);
+                         nsChangeHint(0));
       break;
     }
   }
@@ -1474,20 +491,26 @@ RestyleSiblingsStartingWith(RestyleManager* aRestyleManager,
 // The comments are written and variables are named in terms of it being
 // a ContentInserted notification.
 void
-RestyleManager::RestyleForInsertOrChange(Element* aContainer,
+RestyleManager::RestyleForInsertOrChange(nsINode* aContainer,
                                          nsIContent* aChild)
 {
+  // The container might be a document or a ShadowRoot.
+  if (!aContainer->IsElement()) {
+    return;
+  }
+  Element* container = aContainer->AsElement();
+
   NS_ASSERTION(!aChild->IsRootOfAnonymousSubtree(),
                "anonymous nodes should not be in child lists");
   uint32_t selectorFlags =
-    aContainer ? (aContainer->GetFlags() & NODE_ALL_SELECTOR_FLAGS) : 0;
+    container ? (container->GetFlags() & NODE_ALL_SELECTOR_FLAGS) : 0;
   if (selectorFlags == 0)
     return;
 
   if (selectorFlags & NODE_HAS_EMPTY_SELECTOR) {
     // see whether we need to restyle the container
     bool wasEmpty = true; // :empty or :-moz-only-whitespace
-    for (nsIContent* child = aContainer->GetFirstChild();
+    for (nsIContent* child = container->GetFirstChild();
          child;
          child = child->GetNextSibling()) {
       if (child == aChild)
@@ -1502,13 +525,13 @@ RestyleManager::RestyleForInsertOrChange(Element* aContainer,
       }
     }
     if (wasEmpty) {
-      RestyleForEmptyChange(aContainer);
+      RestyleForEmptyChange(container);
       return;
     }
   }
 
   if (selectorFlags & NODE_HAS_SLOW_SELECTOR) {
-    PostRestyleEvent(aContainer, eRestyle_Subtree, NS_STYLE_HINT_NONE);
+    PostRestyleEvent(container, eRestyle_Subtree, nsChangeHint(0));
     // Restyling the container is the most we can do here, so we're done.
     return;
   }
@@ -1521,7 +544,7 @@ RestyleManager::RestyleForInsertOrChange(Element* aContainer,
   if (selectorFlags & NODE_HAS_EDGE_CHILD_SELECTOR) {
     // restyle the previously-first element child if it is after this node
     bool passedChild = false;
-    for (nsIContent* content = aContainer->GetFirstChild();
+    for (nsIContent* content = container->GetFirstChild();
          content;
          content = content->GetNextSibling()) {
       if (content == aChild) {
@@ -1531,14 +554,14 @@ RestyleManager::RestyleForInsertOrChange(Element* aContainer,
       if (content->IsElement()) {
         if (passedChild) {
           PostRestyleEvent(content->AsElement(), eRestyle_Subtree,
-                           NS_STYLE_HINT_NONE);
+                           nsChangeHint(0));
         }
         break;
       }
     }
     // restyle the previously-last element child if it is before this node
     passedChild = false;
-    for (nsIContent* content = aContainer->GetLastChild();
+    for (nsIContent* content = container->GetLastChild();
          content;
          content = content->GetPreviousSibling()) {
       if (content == aChild) {
@@ -1548,7 +571,7 @@ RestyleManager::RestyleForInsertOrChange(Element* aContainer,
       if (content->IsElement()) {
         if (passedChild) {
           PostRestyleEvent(content->AsElement(), eRestyle_Subtree,
-                           NS_STYLE_HINT_NONE);
+                           nsChangeHint(0));
         }
         break;
       }
@@ -1557,26 +580,32 @@ RestyleManager::RestyleForInsertOrChange(Element* aContainer,
 }
 
 void
-RestyleManager::RestyleForRemove(Element* aContainer,
-                                 nsIContent* aOldChild,
-                                 nsIContent* aFollowingSibling)
+RestyleManager::ContentRemoved(nsINode* aContainer,
+                               nsIContent* aOldChild,
+                               nsIContent* aFollowingSibling)
 {
+  // The container might be a document or a ShadowRoot.
+  if (!aContainer->IsElement()) {
+    return;
+  }
+  Element* container = aContainer->AsElement();
+
   if (aOldChild->IsRootOfAnonymousSubtree()) {
     // This should be an assert, but this is called incorrectly in
-    // nsHTMLEditor::DeleteRefToAnonymousNode and the assertions were clogging
+    // HTMLEditor::DeleteRefToAnonymousNode and the assertions were clogging
     // up the logs.  Make it an assert again when that's fixed.
     MOZ_ASSERT(aOldChild->GetProperty(nsGkAtoms::restylableAnonymousNode),
                "anonymous nodes should not be in child lists (bug 439258)");
   }
   uint32_t selectorFlags =
-    aContainer ? (aContainer->GetFlags() & NODE_ALL_SELECTOR_FLAGS) : 0;
+    container ? (container->GetFlags() & NODE_ALL_SELECTOR_FLAGS) : 0;
   if (selectorFlags == 0)
     return;
 
   if (selectorFlags & NODE_HAS_EMPTY_SELECTOR) {
     // see whether we need to restyle the container
     bool isEmpty = true; // :empty or :-moz-only-whitespace
-    for (nsIContent* child = aContainer->GetFirstChild();
+    for (nsIContent* child = container->GetFirstChild();
          child;
          child = child->GetNextSibling()) {
       // We don't know whether we're testing :empty or :-moz-only-whitespace,
@@ -1589,13 +618,13 @@ RestyleManager::RestyleForRemove(Element* aContainer,
       }
     }
     if (isEmpty) {
-      RestyleForEmptyChange(aContainer);
+      RestyleForEmptyChange(container);
       return;
     }
   }
 
   if (selectorFlags & NODE_HAS_SLOW_SELECTOR) {
-    PostRestyleEvent(aContainer, eRestyle_Subtree, NS_STYLE_HINT_NONE);
+    PostRestyleEvent(container, eRestyle_Subtree, nsChangeHint(0));
     // Restyling the container is the most we can do here, so we're done.
     return;
   }
@@ -1608,7 +637,7 @@ RestyleManager::RestyleForRemove(Element* aContainer,
   if (selectorFlags & NODE_HAS_EDGE_CHILD_SELECTOR) {
     // restyle the now-first element child if it was after aOldChild
     bool reachedFollowingSibling = false;
-    for (nsIContent* content = aContainer->GetFirstChild();
+    for (nsIContent* content = container->GetFirstChild();
          content;
          content = content->GetNextSibling()) {
       if (content == aFollowingSibling) {
@@ -1618,19 +647,19 @@ RestyleManager::RestyleForRemove(Element* aContainer,
       if (content->IsElement()) {
         if (reachedFollowingSibling) {
           PostRestyleEvent(content->AsElement(), eRestyle_Subtree,
-                           NS_STYLE_HINT_NONE);
+                           nsChangeHint(0));
         }
         break;
       }
     }
     // restyle the now-last element child if it was before aOldChild
     reachedFollowingSibling = (aFollowingSibling == nullptr);
-    for (nsIContent* content = aContainer->GetLastChild();
+    for (nsIContent* content = container->GetLastChild();
          content;
          content = content->GetPreviousSibling()) {
       if (content->IsElement()) {
         if (reachedFollowingSibling) {
-          PostRestyleEvent(content->AsElement(), eRestyle_Subtree, NS_STYLE_HINT_NONE);
+          PostRestyleEvent(content->AsElement(), eRestyle_Subtree, nsChangeHint(0));
         }
         break;
       }
@@ -1658,7 +687,7 @@ RestyleManager::RebuildAllStyleData(nsChangeHint aExtraHint,
   // Processing the style changes could cause a flush that propagates to
   // the parent frame and thus destroys the pres shell, so we must hold
   // a reference.
-  nsCOMPtr<nsIPresShell> presShell = mPresContext->GetPresShell();
+  nsCOMPtr<nsIPresShell> presShell = PresContext()->GetPresShell();
   if (!presShell || !presShell->GetRootFrame()) {
     mDoRebuildAllStyleData = false;
     return;
@@ -1666,6 +695,7 @@ RestyleManager::RebuildAllStyleData(nsChangeHint aExtraHint,
 
   // Make sure that the viewmanager will outlive the presshell
   RefPtr<nsViewManager> vm = presShell->GetViewManager();
+  mozilla::Unused << vm; // Not used within this function
 
   // We may reconstruct frames below and hence process anything that is in the
   // tree. We don't want to get notified to process those items again after.
@@ -1683,7 +713,7 @@ RestyleManager::StartRebuildAllStyleData(RestyleTracker& aRestyleTracker)
 {
   MOZ_ASSERT(mIsProcessingRestyles);
 
-  nsIFrame* rootFrame = mPresContext->PresShell()->GetRootFrame();
+  nsIFrame* rootFrame = PresContext()->PresShell()->GetRootFrame();
   if (!rootFrame) {
     // No need to do anything.
     return;
@@ -1714,7 +744,7 @@ RestyleManager::StartRebuildAllStyleData(RestyleTracker& aRestyleTracker)
     // different styles).  If we use up the hint for one of the
     // ancestors that we hit first, then we'll fail to do the restyling
     // we need to do.
-    Element* root = mPresContext->Document()->GetRootElement();
+    Element* root = PresContext()->Document()->GetRootElement();
     if (root) {
       // If the root element is gone, dropping the hint on the floor
       // should be fine.
@@ -1754,13 +784,13 @@ RestyleManager::FinishRebuildAllStyleData()
 void
 RestyleManager::ProcessPendingRestyles()
 {
-  NS_PRECONDITION(mPresContext->Document(), "No document?  Pshaw!");
+  NS_PRECONDITION(PresContext()->Document(), "No document?  Pshaw!");
   NS_PRECONDITION(!nsContentUtils::IsSafeToRunScript(),
                   "Missing a script blocker!");
 
   // First do any queued-up frame creation.  (We should really
   // merge this into the rest of the process, though; see bug 827239.)
-  mPresContext->FrameConstructor()->CreateNeededFrames();
+  PresContext()->FrameConstructor()->CreateNeededFrames();
 
   // Process non-animation restyles...
   MOZ_ASSERT(!mIsProcessingRestyles,
@@ -1798,13 +828,13 @@ RestyleManager::ProcessPendingRestyles()
     // that we can use UpdateOnlyAnimationStyles, with a different
     // boolean argument, for this update as well, instead of having them
     // post style updates in their WillRefresh methods.
-    mPresContext->TransitionManager()->SetInAnimationOnlyStyleUpdate(true);
+    PresContext()->TransitionManager()->SetInAnimationOnlyStyleUpdate(true);
   }
 
   ProcessRestyles(mPendingRestyles);
 
   if (!haveNonAnimation) {
-    mPresContext->TransitionManager()->SetInAnimationOnlyStyleUpdate(false);
+    PresContext()->TransitionManager()->SetInAnimationOnlyStyleUpdate(false);
   }
 
   mIsProcessingRestyles = false;
@@ -1832,7 +862,7 @@ RestyleManager::BeginProcessingRestyles(RestyleTracker& aRestyleTracker)
 {
   // Make sure to not rebuild quote or counter lists while we're
   // processing restyles
-  mPresContext->FrameConstructor()->BeginUpdate();
+  PresContext()->FrameConstructor()->BeginUpdate();
 
   mInStyleRefresh = true;
 
@@ -1859,19 +889,19 @@ RestyleManager::EndProcessingRestyles()
     FinishRebuildAllStyleData();
   }
 
-  mPresContext->FrameConstructor()->EndUpdate();
+  PresContext()->FrameConstructor()->EndUpdate();
 
 #ifdef DEBUG
-  mPresContext->PresShell()->VerifyStyleTree();
+  PresContext()->PresShell()->VerifyStyleTree();
 #endif
 }
 
 void
 RestyleManager::UpdateOnlyAnimationStyles()
 {
-  bool doCSS = mPresContext->EffectCompositor()->HasPendingStyleUpdates();
+  bool doCSS = PresContext()->EffectCompositor()->HasPendingStyleUpdates();
 
-  nsIDocument* document = mPresContext->Document();
+  nsIDocument* document = PresContext()->Document();
   nsSMILAnimationController* animationController =
     document->HasAnimationController() ?
     document->GetAnimationController() :
@@ -1883,7 +913,7 @@ RestyleManager::UpdateOnlyAnimationStyles()
     return;
   }
 
-  nsTransitionManager* transitionManager = mPresContext->TransitionManager();
+  nsTransitionManager* transitionManager = PresContext()->TransitionManager();
 
   transitionManager->SetInAnimationOnlyStyleUpdate(true);
 
@@ -1896,7 +926,7 @@ RestyleManager::UpdateOnlyAnimationStyles()
     // add only the elements for which animations are currently throttled
     // (i.e., animating on the compositor with main-thread style updates
     // suppressed).
-    mPresContext->EffectCompositor()->AddStyleUpdatesTo(tracker);
+    PresContext()->EffectCompositor()->AddStyleUpdatesTo(tracker);
   }
 
   if (doSMIL) {
@@ -1914,8 +944,8 @@ RestyleManager::PostRestyleEvent(Element* aElement,
                                  nsChangeHint aMinChangeHint,
                                  const RestyleHintData* aRestyleHintData)
 {
-  if (MOZ_UNLIKELY(!mPresContext) ||
-      MOZ_UNLIKELY(mPresContext->PresShell()->IsDestroying())) {
+  if (MOZ_UNLIKELY(IsDisconnected()) ||
+      MOZ_UNLIKELY(PresContext()->PresShell()->IsDestroying())) {
     return;
   }
 
@@ -1939,25 +969,6 @@ RestyleManager::PostRestyleEvent(Element* aElement,
 }
 
 void
-RestyleManager::PostRestyleEventInternal(bool aForLazyConstruction)
-{
-  // Make sure we're not in a style refresh; if we are, we still have
-  // a call to ProcessPendingRestyles coming and there's no need to
-  // add ourselves as a refresh observer until then.
-  bool inRefresh = !aForLazyConstruction && mInStyleRefresh;
-  nsIPresShell* presShell = mPresContext->PresShell();
-  if (!mObservingRefreshDriver && !inRefresh) {
-    mObservingRefreshDriver = mPresContext->RefreshDriver()->
-      AddStyleFlushObserver(presShell);
-  }
-
-  // Unconditionally flag our document as needing a flush.  The other
-  // option here would be a dedicated boolean to track whether we need
-  // to do so (set here and unset in ProcessPendingRestyles).
-  presShell->GetDocument()->SetNeedStyleFlush();
-}
-
-void
 RestyleManager::PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
                                              nsRestyleHint aRestyleHint)
 {
@@ -1975,166 +986,6 @@ RestyleManager::PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
   // Get a restyle event posted if necessary
   PostRestyleEventInternal(false);
 }
-
-#ifdef DEBUG
-static void
-DumpContext(nsIFrame* aFrame, nsStyleContext* aContext)
-{
-  if (aFrame) {
-    fputs("frame: ", stdout);
-    nsAutoString  name;
-    aFrame->GetFrameName(name);
-    fputs(NS_LossyConvertUTF16toASCII(name).get(), stdout);
-    fprintf(stdout, " (%p)", static_cast<void*>(aFrame));
-  }
-  if (aContext) {
-    fprintf(stdout, " style: %p ", static_cast<void*>(aContext));
-
-    nsIAtom* pseudoTag = aContext->GetPseudo();
-    if (pseudoTag) {
-      nsAutoString  buffer;
-      pseudoTag->ToString(buffer);
-      fputs(NS_LossyConvertUTF16toASCII(buffer).get(), stdout);
-      fputs(" ", stdout);
-    }
-    fputs("{}\n", stdout);
-  }
-}
-
-static void
-VerifySameTree(nsStyleContext* aContext1, nsStyleContext* aContext2)
-{
-  nsStyleContext* top1 = aContext1;
-  nsStyleContext* top2 = aContext2;
-  nsStyleContext* parent;
-  for (;;) {
-    parent = top1->GetParent();
-    if (!parent)
-      break;
-    top1 = parent;
-  }
-  for (;;) {
-    parent = top2->GetParent();
-    if (!parent)
-      break;
-    top2 = parent;
-  }
-  NS_ASSERTION(top1 == top2,
-               "Style contexts are not in the same style context tree");
-}
-
-static void
-VerifyContextParent(nsIFrame* aFrame, nsStyleContext* aContext,
-                    nsStyleContext* aParentContext)
-{
-  // get the contexts not provided
-  if (!aContext) {
-    aContext = aFrame->StyleContext();
-  }
-
-  if (!aParentContext) {
-    nsIFrame* providerFrame;
-    aParentContext = aFrame->GetParentStyleContext(&providerFrame);
-    // aParentContext could still be null
-  }
-
-  NS_ASSERTION(aContext, "Failure to get required contexts");
-  nsStyleContext* actualParentContext = aContext->GetParent();
-
-  if (aParentContext) {
-    if (aParentContext != actualParentContext) {
-      DumpContext(aFrame, aContext);
-      if (aContext == aParentContext) {
-        NS_ERROR("Using parent's style context");
-      }
-      else {
-        NS_ERROR("Wrong parent style context");
-        fputs("Wrong parent style context: ", stdout);
-        DumpContext(nullptr, actualParentContext);
-        fputs("should be using: ", stdout);
-        DumpContext(nullptr, aParentContext);
-        VerifySameTree(actualParentContext, aParentContext);
-        fputs("\n", stdout);
-      }
-    }
-
-  }
-  else {
-    if (actualParentContext) {
-      NS_ERROR("Have parent context and shouldn't");
-      DumpContext(aFrame, aContext);
-      fputs("Has parent context: ", stdout);
-      DumpContext(nullptr, actualParentContext);
-      fputs("Should be null\n\n", stdout);
-    }
-  }
-
-  nsStyleContext* childStyleIfVisited = aContext->GetStyleIfVisited();
-  // Either childStyleIfVisited has aContext->GetParent()->GetStyleIfVisited()
-  // as the parent or it has a different rulenode from aContext _and_ has
-  // aContext->GetParent() as the parent.
-  if (childStyleIfVisited &&
-      !((childStyleIfVisited->RuleNode() != aContext->RuleNode() &&
-         childStyleIfVisited->GetParent() == aContext->GetParent()) ||
-        childStyleIfVisited->GetParent() ==
-          aContext->GetParent()->GetStyleIfVisited())) {
-    NS_ERROR("Visited style has wrong parent");
-    DumpContext(aFrame, aContext);
-    fputs("\n", stdout);
-  }
-}
-
-static void
-VerifyStyleTree(nsIFrame* aFrame)
-{
-  nsStyleContext*  context = aFrame->StyleContext();
-  VerifyContextParent(aFrame, context, nullptr);
-
-  nsIFrame::ChildListIterator lists(aFrame);
-  for (; !lists.IsDone(); lists.Next()) {
-    for (nsIFrame* child : lists.CurrentList()) {
-      if (!(child->GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
-        // only do frames that are in flow
-        if (nsGkAtoms::placeholderFrame == child->GetType()) {
-          // placeholder: first recurse and verify the out of flow frame,
-          // then verify the placeholder's context
-          nsIFrame* outOfFlowFrame =
-            nsPlaceholderFrame::GetRealFrameForPlaceholder(child);
-
-          // recurse to out of flow frame, letting the parent context get resolved
-          do {
-            VerifyStyleTree(outOfFlowFrame);
-          } while ((outOfFlowFrame = outOfFlowFrame->GetNextContinuation()));
-
-          // verify placeholder using the parent frame's context as
-          // parent context
-          VerifyContextParent(child, nullptr, nullptr);
-        }
-        else { // regular frame
-          VerifyStyleTree(child);
-        }
-      }
-    }
-  }
-
-  // do additional contexts
-  int32_t contextIndex = 0;
-  for (nsStyleContext* extraContext;
-       (extraContext = aFrame->GetAdditionalStyleContext(contextIndex));
-       ++contextIndex) {
-    VerifyContextParent(aFrame, extraContext, context);
-  }
-}
-
-void
-RestyleManager::DebugVerifyStyleTree(nsIFrame* aFrame)
-{
-  if (aFrame) {
-    VerifyStyleTree(aFrame);
-  }
-}
-
-#endif // DEBUG
 
 // aContent must be the content for the frame in question, which may be
 // :before/:after content
@@ -2265,16 +1116,16 @@ GetPrevContinuationWithPossiblySameStyle(nsIFrame* aFrame)
   // previous ib-split sibling is an inline and the previous ib-split
   // sibling of that is either another block-in-inline wrapper block box
   // or null.
-  nsIFrame *prevContinuation = aFrame->GetPrevContinuation();
+  nsIFrame* prevContinuation = aFrame->GetPrevContinuation();
   if (!prevContinuation &&
       (aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT)) {
     // We're the first continuation, so we can just get the frame
     // property directly
-    prevContinuation = static_cast<nsIFrame*>(
-      aFrame->Properties().Get(nsIFrame::IBSplitPrevSibling()));
+    prevContinuation =
+      aFrame->Properties().Get(nsIFrame::IBSplitPrevSibling());
     if (prevContinuation) {
-      prevContinuation = static_cast<nsIFrame*>(
-        prevContinuation->Properties().Get(nsIFrame::IBSplitPrevSibling()));
+      prevContinuation =
+        prevContinuation->Properties().Get(nsIFrame::IBSplitPrevSibling());
     }
   }
 
@@ -2308,56 +1159,6 @@ GetPrevContinuationWithSameStyle(nsIFrame* aFrame)
     prevContinuation = nullptr;
   }
   return prevContinuation;
-}
-
-/**
- * Get the next continuation or similar ib-split sibling (assuming
- * block/inline alternation), conditionally on it having the same style.
- *
- * Since this is used when deciding to copy the new style context, it
- * takes as an argument the old style context to check if the style is
- * the same.  When it is used in other contexts (i.e., where the next
- * continuation would already have the new style context), the current
- * style context should be passed.
- */
-static nsIFrame*
-GetNextContinuationWithSameStyle(nsIFrame* aFrame,
-                                 nsStyleContext* aOldStyleContext,
-                                 bool* aHaveMoreContinuations = nullptr)
-{
-  // See GetPrevContinuationWithSameStyle about {ib} splits.
-
-  nsIFrame *nextContinuation = aFrame->GetNextContinuation();
-  if (!nextContinuation &&
-      (aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT)) {
-    // We're the last continuation, so we have to hop back to the first
-    // before getting the frame property
-    nextContinuation = static_cast<nsIFrame*>(aFrame->FirstContinuation()->
-      Properties().Get(nsIFrame::IBSplitSibling()));
-    if (nextContinuation) {
-      nextContinuation = static_cast<nsIFrame*>(
-        nextContinuation->Properties().Get(nsIFrame::IBSplitSibling()));
-    }
-  }
-
-  if (!nextContinuation) {
-    return nullptr;
-  }
-
-  NS_ASSERTION(nextContinuation->GetContent() == aFrame->GetContent(),
-               "unexpected content mismatch");
-
-  nsStyleContext* nextStyle = nextContinuation->StyleContext();
-  if (nextStyle != aOldStyleContext) {
-    NS_ASSERTION(aOldStyleContext->GetPseudo() != nextStyle->GetPseudo() ||
-                 aOldStyleContext->GetParent() != nextStyle->GetParent(),
-                 "continuations should have the same style context");
-    nextContinuation = nullptr;
-    if (aHaveMoreContinuations) {
-      *aHaveMoreContinuations = true;
-    }
-  }
-  return nextContinuation;
 }
 
 nsresult
@@ -2412,9 +1213,9 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
     // unstyled letter/line frames distinguished by pseudo-type, and
     // then need to distinguish their descendants based on having
     // different parents.)
-    nsIFrame *nextContinuation = aFrame->GetNextContinuation();
+    nsIFrame* nextContinuation = aFrame->GetNextContinuation();
     if (nextContinuation) {
-      nsStyleContext *nextContinuationContext =
+      nsStyleContext* nextContinuationContext =
         nextContinuation->StyleContext();
       NS_ASSERTION(oldContext == nextContinuationContext ||
                    oldContext->GetPseudo() !=
@@ -2426,9 +1227,9 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
   }
 #endif
 
-  nsIFrame *prevContinuation =
+  nsIFrame* prevContinuation =
     GetPrevContinuationWithPossiblySameStyle(aFrame);
-  nsStyleContext *prevContinuationContext;
+  nsStyleContext* prevContinuationContext;
   bool copyFromContinuation =
     prevContinuation &&
     (prevContinuationContext = prevContinuation->StyleContext())
@@ -2512,8 +1313,8 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
       // oldContext)" check will prevent us from redoing work.
       if ((aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) &&
           !aFrame->GetPrevContinuation()) {
-        nsIFrame* sib = static_cast<nsIFrame*>
-          (aFrame->Properties().Get(nsIFrame::IBSplitSibling()));
+        nsIFrame* sib =
+          aFrame->Properties().Get(nsIFrame::IBSplitSibling());
         if (sib) {
           ReparentStyleContext(sib);
         }
@@ -2553,7 +1354,7 @@ RestyleManager::ReparentStyleContext(nsIFrame* aFrame)
         }
       }
 #ifdef DEBUG
-      VerifyStyleTree(aFrame);
+      DebugVerifyStyleTree(aFrame);
 #endif
     }
   }
@@ -2602,6 +1403,7 @@ ElementRestyler::ElementRestyler(nsPresContext* aPresContext,
   , mLoggingDepth(aRestyleTracker.LoggingDepth() + 1)
 #endif
 {
+  MOZ_ASSERT_IF(mContent, !mContent->IsStyledByServo());
 }
 
 ElementRestyler::ElementRestyler(const ElementRestyler& aParentRestyler,
@@ -2636,6 +1438,7 @@ ElementRestyler::ElementRestyler(const ElementRestyler& aParentRestyler,
   , mLoggingDepth(aParentRestyler.mLoggingDepth + 1)
 #endif
 {
+  MOZ_ASSERT_IF(mContent, !mContent->IsStyledByServo());
   if (aConstructorFlags & FOR_OUT_OF_FLOW_CHILD) {
     // Note that the out-of-flow may not be a geometric descendant of
     // the frame where we started the reresolve.  Therefore, even if
@@ -2684,6 +1487,7 @@ ElementRestyler::ElementRestyler(ParentContextFromChildFrame,
   , mLoggingDepth(aParentRestyler.mLoggingDepth + 1)
 #endif
 {
+  MOZ_ASSERT_IF(mContent, !mContent->IsStyledByServo());
 }
 
 ElementRestyler::ElementRestyler(nsPresContext* aPresContext,
@@ -2749,6 +1553,24 @@ ElementRestyler::AddLayerChangesForAnimation()
           !mFrame->StyleDisplay()->HasTransformStyle()) {
         continue;
       }
+      hint |= layerInfo.mChangeHint;
+    }
+
+    // We consider it's the first paint for the frame if we have an animation
+    // for the property but have no layer.
+    // Note that in case of animations which has properties preventing running
+    // on the compositor, e.g., width or height, corresponding layer is not
+    // created at all, but even in such cases, we normally set valid change
+    // hint for such animations in each tick, i.e. restyles in each tick. As
+    // a result, we usually do restyles for such animations in every tick on
+    // the main-thread.  The only animations which will be affected by this
+    // explicit change hint are animations that have opacity/transform but did
+    // not have those properies just before. e.g,  setting transform by
+    // setKeyframes or changing target element from other target which prevents
+    // running on the compositor, etc.
+    if (!layer &&
+        nsLayoutUtils::HasRelevantAnimationOfProperty(mFrame,
+                                                      layerInfo.mProperty)) {
       hint |= layerInfo.mChangeHint;
     }
   }
@@ -2883,6 +1705,7 @@ ElementRestyler::ConditionallyRestyleChildren(nsIFrame* aFrame,
 {
   MOZ_ASSERT(aFrame->GetContent());
   MOZ_ASSERT(aFrame->GetContent()->IsElement());
+  MOZ_ASSERT(!aFrame->GetContent()->IsStyledByServo());
 
   ConditionallyRestyleUndisplayedDescendants(aFrame, aRestyleRoot);
   ConditionallyRestyleContentChildren(aFrame, aRestyleRoot);
@@ -2896,13 +1719,14 @@ ElementRestyler::ConditionallyRestyleContentChildren(nsIFrame* aFrame,
 {
   MOZ_ASSERT(aFrame->GetContent());
   MOZ_ASSERT(aFrame->GetContent()->IsElement());
+  MOZ_ASSERT(!aFrame->GetContent()->IsStyledByServo());
 
   if (aFrame->GetContent()->HasFlag(mRestyleTracker.RootBit())) {
     aRestyleRoot = aFrame->GetContent()->AsElement();
   }
 
   for (nsIFrame* f = aFrame; f;
-       f = GetNextContinuationWithSameStyle(f, f->StyleContext())) {
+       f = RestyleManager::GetNextContinuationWithSameStyle(f, f->StyleContext())) {
     nsIFrame::ChildListIterator lists(f);
     for (; !lists.IsDone(); lists.Next()) {
       for (nsIFrame* child : lists.CurrentList()) {
@@ -2963,10 +1787,10 @@ ElementRestyler::DoConditionallyRestyleUndisplayedDescendants(
   nsCSSFrameConstructor* fc = mPresContext->FrameConstructor();
   UndisplayedNode* nodes = fc->GetAllUndisplayedContentIn(aParent);
   ConditionallyRestyleUndisplayedNodes(nodes, aParent,
-                                       NS_STYLE_DISPLAY_NONE, aRestyleRoot);
+                                       StyleDisplay::None, aRestyleRoot);
   nodes = fc->GetAllDisplayContentsIn(aParent);
   ConditionallyRestyleUndisplayedNodes(nodes, aParent,
-                                       NS_STYLE_DISPLAY_CONTENTS, aRestyleRoot);
+                                       StyleDisplay::Contents, aRestyleRoot);
 }
 
 // The structure of this method parallels RestyleUndisplayedNodes.
@@ -2975,12 +1799,11 @@ void
 ElementRestyler::ConditionallyRestyleUndisplayedNodes(
     UndisplayedNode* aUndisplayed,
     nsIContent* aUndisplayedParent,
-    const uint8_t aDisplay,
+    const StyleDisplay aDisplay,
     Element* aRestyleRoot)
 {
-  MOZ_ASSERT(aDisplay == NS_STYLE_DISPLAY_NONE ||
-             aDisplay == NS_STYLE_DISPLAY_CONTENTS);
-
+  MOZ_ASSERT(aDisplay == StyleDisplay::None ||
+             aDisplay == StyleDisplay::Contents);
   if (!aUndisplayed) {
     return;
   }
@@ -2988,6 +1811,7 @@ ElementRestyler::ConditionallyRestyleUndisplayedNodes(
   if (aUndisplayedParent &&
       aUndisplayedParent->IsElement() &&
       aUndisplayedParent->HasFlag(mRestyleTracker.RootBit())) {
+    MOZ_ASSERT(!aUndisplayedParent->IsStyledByServo());
     aRestyleRoot = aUndisplayedParent->AsElement();
   }
 
@@ -3001,9 +1825,9 @@ ElementRestyler::ConditionallyRestyleUndisplayedNodes(
     Element* element = undisplayed->mContent->AsElement();
 
     if (!ConditionallyRestyle(element, aRestyleRoot)) {
-      if (aDisplay == NS_STYLE_DISPLAY_NONE) {
+      if (aDisplay == StyleDisplay::None) {
         ConditionallyRestyleContentDescendants(element, aRestyleRoot);
-      } else {  // NS_STYLE_DISPLAY_CONTENTS
+      } else {  // StyleDisplay::Contents
         DoConditionallyRestyleUndisplayedDescendants(element, aRestyleRoot);
       }
     }
@@ -3014,6 +1838,7 @@ void
 ElementRestyler::ConditionallyRestyleContentDescendants(Element* aElement,
                                                         Element* aRestyleRoot)
 {
+  MOZ_ASSERT(!aElement->IsStyledByServo());
   if (aElement->HasFlag(mRestyleTracker.RootBit())) {
     aRestyleRoot = aElement;
   }
@@ -3044,6 +1869,7 @@ ElementRestyler::ConditionallyRestyle(nsIFrame* aFrame, Element* aRestyleRoot)
 bool
 ElementRestyler::ConditionallyRestyle(Element* aElement, Element* aRestyleRoot)
 {
+  MOZ_ASSERT(!aElement->IsStyledByServo());
   LOG_RESTYLE("considering element %s for eRestyle_SomeDescendants",
               ElementTagToString(aElement).get());
   LOG_RESTYLE_INDENT();
@@ -3181,7 +2007,7 @@ ElementRestyler::MoveStyleContextsForChildren(nsStyleContext* aOldContext)
 
   DebugOnly<nsIFrame*> lastContinuation;
   for (nsIFrame* f = mFrame; f;
-       f = GetNextContinuationWithSameStyle(f, f->StyleContext())) {
+       f = RestyleManager::GetNextContinuationWithSameStyle(f, f->StyleContext())) {
     lastContinuation = f;
     if (!MoveStyleContextsForContentChildren(f, aOldContext, contextsToMove)) {
       return false;
@@ -3303,7 +2129,7 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
   // its descendants, yet RestyleSelf might return different RestyleResult
   // values for the different same-style continuations.  |result| is our
   // overall decision.
-  RestyleResult result = RestyleResult(0);
+  RestyleResult result = RestyleResult::eNone;
   uint32_t swappedStructs = 0;
 
   nsRestyleHint thisRestyleHint = aRestyleHint;
@@ -3313,15 +2139,15 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
     RestyleResult thisResult =
       RestyleSelf(f, thisRestyleHint, &swappedStructs, swaps);
 
-    if (thisResult != eRestyleResult_Stop) {
+    if (thisResult != RestyleResult::eStop) {
       // Calls to RestyleSelf for later same-style continuations must not
-      // return eRestyleResult_Stop, so pass eRestyle_Force in to them.
+      // return RestyleResult::eStop, so pass eRestyle_Force in to them.
       thisRestyleHint = nsRestyleHint(thisRestyleHint | eRestyle_Force);
 
-      if (result == eRestyleResult_Stop) {
-        // We received eRestyleResult_Stop for earlier same-style
-        // continuations, and eRestyleResult_StopWithStyleChange or
-        // eRestyleResult_Continue(AndForceDescendants) for this one; go
+      if (result == RestyleResult::eStop) {
+        // We received RestyleResult::eStop for earlier same-style
+        // continuations, and RestyleResult::eStopWithStyleChange or
+        // RestyleResult::eContinue(AndForceDescendants) for this one; go
         // back and force-restyle the earlier continuations.
         result = thisResult;
         f = mFrame;
@@ -3336,7 +2162,9 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
       result = thisResult;
     }
 
-    f = GetNextContinuationWithSameStyle(f, oldContext, &haveMoreContinuations);
+    f = RestyleManager::GetNextContinuationWithSameStyle(f,
+                                                         oldContext,
+                                                         &haveMoreContinuations);
   }
 
   // Some changes to animations don't affect the computed style and yet still
@@ -3360,14 +2188,14 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
                                              hintToRestore, nsChangeHint(0));
   }
 
-  if (result == eRestyleResult_Stop) {
+  if (result == RestyleResult::eStop) {
     MOZ_ASSERT(mFrame->StyleContext() == oldContext,
                "frame should have been left with its old style context");
 
     nsIFrame* unused;
     nsStyleContext* newParent = mFrame->GetParentStyleContext(&unused);
     if (oldContext->GetParent() != newParent) {
-      // If we received eRestyleResult_Stop, then the old style context was
+      // If we received RestyleResult::eStop, then the old style context was
       // left on mFrame.  Since we ended up restyling our parent, change
       // this old style context to point to its new parent.
       LOG_RESTYLE("moving style context %p from old parent %p to new parent %p",
@@ -3402,14 +2230,14 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
     return;
   }
 
-  if (result == eRestyleResult_StopWithStyleChange &&
+  if (result == RestyleResult::eStopWithStyleChange &&
       !(mHintsHandled & nsChangeHint_ReconstructFrame)) {
     MOZ_ASSERT(mFrame->StyleContext() != oldContext,
-               "eRestyleResult_StopWithStyleChange should only be returned "
+               "RestyleResult::eStopWithStyleChange should only be returned "
                "if we got a new style context or we will reconstruct");
     MOZ_ASSERT(swappedStructs == 0,
                "should have ensured we didn't swap structs when "
-               "returning eRestyleResult_StopWithStyleChange");
+               "returning RestyleResult::eStopWithStyleChange");
 
     // We need to ensure that all of the frames that inherit their style
     // from oldContext are able to be moved across to newContext.
@@ -3436,7 +2264,7 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
 
     // Turns out we couldn't stop restyling here.  Process the struct
     // swaps that RestyleSelf would've done had we not returned
-    // eRestyleResult_StopWithStyleChange.
+    // RestyleResult::eStopWithStyleChange.
     for (SwapInstruction& swap : swaps) {
       LOG_RESTYLE("swapping style structs between %p and %p",
                   swap.mOldContext.get(), swap.mNewContext.get());
@@ -3453,7 +2281,7 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
     oldContext = nullptr;
   }
 
-  if (result == eRestyleResult_ContinueAndForceDescendants) {
+  if (result == RestyleResult::eContinueAndForceDescendants) {
     childRestyleHint =
       nsRestyleHint(childRestyleHint | eRestyle_ForceDescendants);
   }
@@ -3498,9 +2326,9 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
  * context, we may or may not be able to stop restyling after this frame if
  * we find we had no style changes.
  *
- * This function returns eRestyleResult_Stop if it does not find any
+ * This function returns RestyleResult::eStop if it does not find any
  * conditions that would preclude stopping restyling, and
- * eRestyleResult_Continue if it does.
+ * RestyleResult::eContinue if it does.
  */
 void
 ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
@@ -3513,7 +2341,7 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
   // style contexts.
   if (aSelf->GetAdditionalStyleContext(0)) {
     LOG_RESTYLE_CONTINUE("there are additional style contexts");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3527,14 +2355,14 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
 
   if (type == nsGkAtoms::letterFrame) {
     LOG_RESTYLE_CONTINUE("frame is a letter frame");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
 
   if (type == nsGkAtoms::lineFrame) {
     LOG_RESTYLE_CONTINUE("frame is a line frame");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3549,7 +2377,7 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
   nsStyleContext* oldContext = aSelf->StyleContext();
   if (oldContext->HasChildThatUsesGrandancestorStyle()) {
     LOG_RESTYLE_CONTINUE("the old context uses grandancestor style");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3557,7 +2385,7 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
   // We ignore all situations that involve :visited style.
   if (oldContext->GetStyleIfVisited()) {
     LOG_RESTYLE_CONTINUE("the old style context has StyleIfVisited");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3565,7 +2393,7 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
   nsStyleContext* parentContext = oldContext->GetParent();
   if (parentContext && parentContext->GetStyleIfVisited()) {
     LOG_RESTYLE_CONTINUE("the old style context's parent has StyleIfVisited");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3578,7 +2406,7 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
   nsIAtom* pseudoTag = oldContext->GetPseudo();
   if (pseudoTag && !nsCSSAnonBoxes::IsNonElement(pseudoTag)) {
     LOG_RESTYLE_CONTINUE("the old style context is for a pseudo");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3595,9 +2423,9 @@ ElementRestyler::ComputeRestyleResultFromFrame(nsIFrame* aSelf,
       MOZ_ASSERT(parentPseudoTag != nsCSSAnonBoxes::mozText,
                  "Style of text node should not be parent of anything");
       LOG_RESTYLE_CONTINUE("the old style context's parent is for a pseudo");
-      aRestyleResult = eRestyleResult_Continue;
+      aRestyleResult = RestyleResult::eContinue;
       // Parent style context pseudo-ness doesn't affect whether we can
-      // return eRestyleResult_StopWithStyleChange.
+      // return RestyleResult::eStopWithStyleChange.
       //
       // If we had later conditions to check in this function, we would
       // continue to check them, in case we set aCanStopWithStyleChange to
@@ -3614,7 +2442,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
 {
   // If we've already determined that we must continue styling, we don't
   // need to check anything.
-  if (aRestyleResult == eRestyleResult_Continue && !aCanStopWithStyleChange) {
+  if (aRestyleResult == RestyleResult::eContinue && !aCanStopWithStyleChange) {
     return;
   }
 
@@ -3623,7 +2451,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
   // with visited styles.
   if (aNewContext->GetStyleIfVisited()) {
     LOG_RESTYLE_CONTINUE("the new style context has StyleIfVisited");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3638,7 +2466,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
       oldContext->GetPseudoType() != aNewContext->GetPseudoType()) {
     LOG_RESTYLE_CONTINUE("the old and new style contexts have different link/"
                          "visited/pseudo");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3646,7 +2474,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
   if (oldContext->RuleNode() != aNewContext->RuleNode()) {
     LOG_RESTYLE_CONTINUE("the old and new style contexts have different "
                          "rulenodes");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     // Continue to check other conditions if aCanStopWithStyleChange might
     // still need to be set to false.
     if (!aCanStopWithStyleChange) {
@@ -3662,7 +2490,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
         aNewContext->HasTextDecorationLines()) {
     LOG_RESTYLE_CONTINUE("NS_STYLE_HAS_TEXT_DECORATION_LINES differs between old"
                          " and new style contexts");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3671,7 +2499,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
         aNewContext->HasPseudoElementData()) {
     LOG_RESTYLE_CONTINUE("NS_STYLE_HAS_PSEUDO_ELEMENT_DATA differs between old"
                          " and new style contexts");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3680,7 +2508,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
         aNewContext->ShouldSuppressLineBreak()) {
     LOG_RESTYLE_CONTINUE("NS_STYLE_SUPPRESS_LINEBREAK differs"
                          "between old and new style contexts");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3689,7 +2517,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
         aNewContext->IsInDisplayNoneSubtree()) {
     LOG_RESTYLE_CONTINUE("NS_STYLE_IN_DISPLAY_NONE_SUBTREE differs between old"
                          " and new style contexts");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3697,7 +2525,7 @@ ElementRestyler::ComputeRestyleResultFromNewContext(nsIFrame* aSelf,
   if (oldContext->IsTextCombined() != aNewContext->IsTextCombined()) {
     LOG_RESTYLE_CONTINUE("NS_STYLE_IS_TEXT_COMBINED differs between "
                          "old and new style contexts");
-    aRestyleResult = eRestyleResult_Continue;
+    aRestyleResult = RestyleResult::eContinue;
     aCanStopWithStyleChange = false;
     return;
   }
@@ -3843,37 +2671,37 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
 
   LOG_RESTYLE("RestyleSelf %s, aRestyleHint = %s",
               FrameTagToString(aSelf).get(),
-              RestyleManager::RestyleHintToString(aRestyleHint).get());
+              RestyleManagerBase::RestyleHintToString(aRestyleHint).get());
   LOG_RESTYLE_INDENT();
 
   // Initially assume that it is safe to stop restyling.
   //
   // Throughout most of this function, we update the following two variables
-  // independently.  |result| is set to eRestyleResult_Continue when we
-  // detect a condition that would not allow us to return eRestyleResult_Stop.
+  // independently.  |result| is set to RestyleResult::eContinue when we
+  // detect a condition that would not allow us to return RestyleResult::eStop.
   // |canStopWithStyleChange| is set to false when we detect a condition
-  // that would not allow us to return eRestyleResult_StopWithStyleChange.
+  // that would not allow us to return RestyleResult::eStopWithStyleChange.
   //
   // Towards the end of this function, we reconcile these two variables --
   // if |canStopWithStyleChange| is true, we convert |result| into
-  // eRestyleResult_StopWithStyleChange.
-  RestyleResult result = eRestyleResult_Stop;
+  // RestyleResult::eStopWithStyleChange.
+  RestyleResult result = RestyleResult::eStop;
   bool canStopWithStyleChange = true;
 
   if (aRestyleHint & ~eRestyle_SomeDescendants) {
     // If we are doing any restyling of the current element, or if we're
     // forced to continue, we must.
-    result = eRestyleResult_Continue;
+    result = RestyleResult::eContinue;
 
     // If we have to restyle children, we can't return
-    // eRestyleResult_StopWithStyleChange.
+    // RestyleResult::eStopWithStyleChange.
     if (aRestyleHint & (eRestyle_Subtree | eRestyle_Force |
                         eRestyle_ForceDescendants)) {
       canStopWithStyleChange = false;
     }
   }
 
-  // We only consider returning eRestyleResult_StopWithStyleChange if this
+  // We only consider returning RestyleResult::eStopWithStyleChange if this
   // is the root of the restyle.  (Otherwise, we would need to track the
   // style changes of the ancestors we just restyled.)
   if (!mIsRootOfRestyle) {
@@ -3884,7 +2712,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
   // that would change our RestyleResult.
   ComputeRestyleResultFromFrame(aSelf, result, canStopWithStyleChange);
 
-  nsChangeHint assumeDifferenceHint = NS_STYLE_HINT_NONE;
+  nsChangeHint assumeDifferenceHint = nsChangeHint(0);
   RefPtr<nsStyleContext> oldContext = aSelf->StyleContext();
   nsStyleSet* styleSet = StyleSet();
 
@@ -3930,7 +2758,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
     mResolvedChild = providerFrame;
     LOG_RESTYLE_CONTINUE("we had a provider frame");
     // Continue restyling past the odd style context inheritance.
-    result = eRestyleResult_Continue;
+    result = RestyleResult::eContinue;
     canStopWithStyleChange = false;
   }
 
@@ -3945,9 +2773,9 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
 
   // do primary context
   RefPtr<nsStyleContext> newContext;
-  nsIFrame *prevContinuation =
+  nsIFrame* prevContinuation =
     GetPrevContinuationWithPossiblySameStyle(aSelf);
-  nsStyleContext *prevContinuationContext;
+  nsStyleContext* prevContinuationContext;
   bool copyFromContinuation =
     prevContinuation &&
     (prevContinuationContext = prevContinuation->StyleContext())
@@ -4064,11 +2892,11 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       // style contexts around.  However, we need to start from the
       // same root.
       LOG_RESTYLE("restyling root and keeping old context");
-      LOG_RESTYLE_IF(this, result != eRestyleResult_Continue,
+      LOG_RESTYLE_IF(this, result != RestyleResult::eContinue,
                      "continuing restyle since this is the root");
       newContext = oldContext;
       // Never consider stopping restyling at the root.
-      result = eRestyleResult_Continue;
+      result = RestyleResult::eContinue;
       canStopWithStyleChange = false;
     }
   }
@@ -4081,13 +2909,13 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
   if (newContext != oldContext) {
     if (oldContext->IsShared()) {
       // If the old style context was shared, then we can't return
-      // eRestyleResult_Stop and patch its parent to point to the
+      // RestyleResult::eStop and patch its parent to point to the
       // new parent style context, as that change might not be valid
       // for the other frames sharing the style context.
       LOG_RESTYLE_CONTINUE("the old style context is shared");
-      result = eRestyleResult_Continue;
+      result = RestyleResult::eContinue;
 
-      // It is not safe to return eRestyleResult_StopWithStyleChange
+      // It is not safe to return RestyleResult::eStopWithStyleChange
       // when oldContext is shared and newContext has different
       // inherited style data, regardless of whether the oldContext has
       // that inherited style data cached.  We can't simply rely on the
@@ -4098,7 +2926,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       // building its display list items).  Therefore we must compare
       // the rule nodes of oldContext and newContext to see if the
       // restyle results in new inherited style data.  If not, then
-      // we can continue assuming that eRestyleResult_StopWithStyleChange
+      // we can continue assuming that RestyleResult::eStopWithStyleChange
       // is safe.  Without this check, we could end up with style contexts
       // shared between elements which should have different styles.
       if (!CommonInheritedStyleData(oldContext->RuleNode(),
@@ -4122,7 +2950,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       // RestyleSelf, so until we perform only one restyling per chain-of-
       // same-style continuations (bug 918064), we need to check again here to
       // determine whether it is safe to stop restyling.
-      if (result == eRestyleResult_Stop) {
+      if (result == RestyleResult::eStop) {
         oldContext->CalcStyleDifference(newContext, nsChangeHint(0),
                                         &equalStructs,
                                         &samePointerStructs);
@@ -4132,7 +2960,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
           LOG_RESTYLE_CONTINUE("there is different style data: %s",
                       RestyleManager::StructNamesToString(
                         ~equalStructs & NS_STYLE_INHERIT_MASK).get());
-          result = eRestyleResult_Continue;
+          result = RestyleResult::eContinue;
         }
       }
     } else {
@@ -4141,7 +2969,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
                                               oldContext, &newContext);
       if (changedStyle) {
         LOG_RESTYLE_CONTINUE("TryStartingTransition changed the new style context");
-        result = eRestyleResult_Continue;
+        result = RestyleResult::eContinue;
         canStopWithStyleChange = false;
       }
       CaptureChange(oldContext, newContext, assumeDifferenceHint,
@@ -4152,7 +2980,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
         LOG_RESTYLE_CONTINUE("there is different style data: %s",
                     RestyleManager::StructNamesToString(
                       ~equalStructs & NS_STYLE_INHERIT_MASK).get());
-        result = eRestyleResult_Continue;
+        result = RestyleResult::eContinue;
       }
     }
 
@@ -4160,23 +2988,23 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       // If any inherited struct pointers are different, or if any
       // reset struct pointers are different and we have descendants
       // that rely on those reset struct pointers, we can't return
-      // eRestyleResult_StopWithStyleChange.
+      // RestyleResult::eStopWithStyleChange.
       if ((samePointerStructs & NS_STYLE_INHERITED_STRUCT_MASK) !=
             NS_STYLE_INHERITED_STRUCT_MASK) {
-        LOG_RESTYLE("can't return eRestyleResult_StopWithStyleChange since "
+        LOG_RESTYLE("can't return RestyleResult::eStopWithStyleChange since "
                     "there is different inherited data");
         canStopWithStyleChange = false;
       } else if ((samePointerStructs & NS_STYLE_RESET_STRUCT_MASK) !=
                    NS_STYLE_RESET_STRUCT_MASK &&
                  oldContext->HasChildThatUsesResetStyle()) {
-        LOG_RESTYLE("can't return eRestyleResult_StopWithStyleChange since "
+        LOG_RESTYLE("can't return RestyleResult::eStopWithStyleChange since "
                     "there is different reset data and descendants use it");
         canStopWithStyleChange = false;
       }
     }
 
-    if (result == eRestyleResult_Stop) {
-      // Since we currently have eRestyleResult_Stop, we know at this
+    if (result == RestyleResult::eStop) {
+      // Since we currently have RestyleResult::eStop, we know at this
       // point that all of our style structs are equal in terms of styles.
       // However, some of them might be different pointers.  Since our
       // descendants might share those pointers, we have to continue to
@@ -4203,25 +3031,25 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
         if (oldContext->HasCachedDependentStyleData(sid) &&
             !(samePointerStructs & nsCachedStyleData::GetBitForSID(sid))) {
           LOG_RESTYLE_CONTINUE("there are different struct pointers");
-          result = eRestyleResult_Continue;
+          result = RestyleResult::eContinue;
           break;
         }
       }
     }
 
     // From this point we no longer do any assignments of
-    // eRestyleResult_Continue to |result|.  If canStopWithStyleChange is true,
+    // RestyleResult::eContinue to |result|.  If canStopWithStyleChange is true,
     // it means that we can convert |result| (whether it is
-    // eRestyleResult_Continue or eRestyleResult_Stop) into
-    // eRestyleResult_StopWithStyleChange.
+    // RestyleResult::eContinue or RestyleResult::eStop) into
+    // RestyleResult::eStopWithStyleChange.
     if (canStopWithStyleChange) {
-      LOG_RESTYLE("converting %s into eRestyleResult_StopWithStyleChange",
+      LOG_RESTYLE("converting %s into RestyleResult::eStopWithStyleChange",
                   RestyleResultToString(result).get());
-      result = eRestyleResult_StopWithStyleChange;
+      result = RestyleResult::eStopWithStyleChange;
     }
 
     if (aRestyleHint & eRestyle_ForceDescendants) {
-      result = eRestyleResult_ContinueAndForceDescendants;
+      result = RestyleResult::eContinueAndForceDescendants;
     }
 
     if (!(mHintsHandled & nsChangeHint_ReconstructFrame)) {
@@ -4233,7 +3061,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
       // since we'll have copied the existing context from the
       // previous continuation, so newContext == oldContext.
 
-      if (result != eRestyleResult_Stop) {
+      if (result != RestyleResult::eStop) {
         if (copyFromContinuation) {
           LOG_RESTYLE("not swapping style structs, since we copied from a "
                       "continuation");
@@ -4247,9 +3075,9 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
           LOG_RESTYLE("not swapping style structs, since the new context is "
                       "shared");
         } else {
-          if (result == eRestyleResult_StopWithStyleChange) {
+          if (result == RestyleResult::eStopWithStyleChange) {
             LOG_RESTYLE("recording a style struct swap between %p and %p to "
-                        "do if eRestyleResult_StopWithStyleChange fails",
+                        "do if RestyleResult::eStopWithStyleChange fails",
                         oldContext.get(), newContext.get());
             SwapInstruction* swap = aSwaps.AppendElement();
             swap->mOldContext = oldContext;
@@ -4289,7 +3117,7 @@ ElementRestyler::RestyleSelf(nsIFrame* aSelf,
     }
   } else {
     if (aRestyleHint & eRestyle_ForceDescendants) {
-      result = eRestyleResult_ContinueAndForceDescendants;
+      result = RestyleResult::eContinueAndForceDescendants;
     }
   }
   oldContext = nullptr;
@@ -4412,12 +3240,12 @@ ElementRestyler::RestyleChildren(nsRestyleHint aChildRestyleHint)
   // kids would use mFrame->StyleContext(), which is out of date if
   // mHintsHandled has a ReconstructFrame hint; doing this could trigger
   // assertions about mismatched rule trees.
-  nsIFrame *lastContinuation;
+  nsIFrame* lastContinuation;
   if (!(mHintsHandled & nsChangeHint_ReconstructFrame)) {
     InitializeAccessibilityNotifications(mFrame->StyleContext());
 
     for (nsIFrame* f = mFrame; f;
-         f = GetNextContinuationWithSameStyle(f, f->StyleContext())) {
+         f = RestyleManager::GetNextContinuationWithSameStyle(f, f->StyleContext())) {
       lastContinuation = f;
       RestyleContentChildren(f, aChildRestyleHint);
     }
@@ -4537,11 +3365,11 @@ ElementRestyler::ComputeStyleChangeFor(nsIFrame*          aFrame,
   nsTArray<nsIContent*> visibleKidsOfHiddenElement;
   nsIFrame* nextIBSibling;
   for (nsIFrame* ibSibling = aFrame; ibSibling; ibSibling = nextIBSibling) {
-    nextIBSibling = GetNextBlockInInlineSibling(propTable, ibSibling);
+    nextIBSibling = RestyleManager::GetNextBlockInInlineSibling(propTable, ibSibling);
 
     if (nextIBSibling) {
       // Don't allow some ib-split siblings to be processed with
-      // eRestyleResult_StopWithStyleChange and others not.
+      // RestyleResult::eStopWithStyleChange and others not.
       aRestyleHint |= eRestyle_Force;
     }
 
@@ -4597,20 +3425,20 @@ ElementRestyler::DoRestyleUndisplayedDescendants(nsRestyleHint aChildRestyleHint
   nsCSSFrameConstructor* fc = mPresContext->FrameConstructor();
   UndisplayedNode* nodes = fc->GetAllUndisplayedContentIn(aParent);
   RestyleUndisplayedNodes(aChildRestyleHint, nodes, aParent,
-                          aParentContext, NS_STYLE_DISPLAY_NONE);
+                          aParentContext, StyleDisplay::None);
   nodes = fc->GetAllDisplayContentsIn(aParent);
   RestyleUndisplayedNodes(aChildRestyleHint, nodes, aParent,
-                          aParentContext, NS_STYLE_DISPLAY_CONTENTS);
+                          aParentContext, StyleDisplay::Contents);
 }
 
 // The structure of this method parallels ConditionallyRestyleUndisplayedNodes.
 // If you update this method, you probably want to update that one too.
 void
-ElementRestyler::RestyleUndisplayedNodes(nsRestyleHint    aChildRestyleHint,
-                                         UndisplayedNode* aUndisplayed,
-                                         nsIContent*      aUndisplayedParent,
-                                         nsStyleContext*  aParentContext,
-                                         const uint8_t    aDisplay)
+ElementRestyler::RestyleUndisplayedNodes(nsRestyleHint      aChildRestyleHint,
+                                         UndisplayedNode*   aUndisplayed,
+                                         nsIContent*        aUndisplayedParent,
+                                         nsStyleContext*    aParentContext,
+                                         const StyleDisplay aDisplay)
 {
   nsIContent* undisplayedParent = aUndisplayedParent;
   UndisplayedNode* undisplayed = aUndisplayed;
@@ -4674,14 +3502,14 @@ ElementRestyler::RestyleUndisplayedNodes(nsRestyleHint    aChildRestyleHint,
     if (display->mDisplay != aDisplay) {
       NS_ASSERTION(element, "Must have undisplayed content");
       mChangeList->AppendChange(nullptr, element,
-                                NS_STYLE_HINT_FRAMECHANGE);
+                                nsChangeHint_ReconstructFrame);
       // The node should be removed from the undisplayed map when
       // we reframe it.
     } else {
       // update the undisplayed node with the new context
       undisplayed->mStyle = undisplayedContext;
 
-      if (aDisplay == NS_STYLE_DISPLAY_CONTENTS) {
+      if (aDisplay == StyleDisplay::Contents) {
         DoRestyleUndisplayedDescendants(aChildRestyleHint, element,
                                         undisplayed->mStyle);
       }
@@ -4988,7 +3816,7 @@ RestyleManager::ComputeAndProcessStyleChange(nsStyleContext*        aNewContext,
                                              const RestyleHintData& aRestyleHintData)
 {
   MOZ_ASSERT(mReframingStyleContexts, "should have rsc");
-  MOZ_ASSERT(aNewContext->StyleDisplay()->mDisplay == NS_STYLE_DISPLAY_CONTENTS);
+  MOZ_ASSERT(aNewContext->StyleDisplay()->mDisplay == StyleDisplay::Contents);
   nsIFrame* frame = GetNearestAncestorFrame(aElement);
   MOZ_ASSERT(frame, "display:contents node in map although it's a "
                     "display:none descendant?");
@@ -5018,15 +3846,6 @@ RestyleManager::ComputeAndProcessStyleChange(nsStyleContext*        aNewContext,
                                             aRestyleHint, aRestyleHintData);
   ProcessRestyledFrames(changeList);
   ClearCachedInheritedStyleDataOnDescendants(contextsToClear);
-}
-
-nsStyleSet*
-RestyleManager::StyleSet() const
-{
-  MOZ_ASSERT(mPresContext->StyleSet()->IsGecko(),
-             "RestyleManager should only be used with a Gecko-flavored "
-             "style backend");
-  return mPresContext->StyleSet()->AsGecko();
 }
 
 nsStyleSet*
@@ -5109,106 +3928,7 @@ RestyleManager::StructsToLog()
 }
 #endif
 
-/* static */ nsCString
-RestyleManager::RestyleHintToString(nsRestyleHint aHint)
-{
-  nsCString result;
-  bool any = false;
-  const char* names[] = {
-    "Self", "SomeDescendants", "Subtree", "LaterSiblings", "CSSTransitions",
-    "CSSAnimations", "SVGAttrAnimations", "StyleAttribute",
-    "StyleAttribute_Animations", "Force", "ForceDescendants"
-  };
-  uint32_t hint = aHint & ((1 << ArrayLength(names)) - 1);
-  uint32_t rest = aHint & ~((1 << ArrayLength(names)) - 1);
-  for (uint32_t i = 0; i < ArrayLength(names); i++) {
-    if (hint & (1 << i)) {
-      if (any) {
-        result.AppendLiteral(" | ");
-      }
-      result.AppendPrintf("eRestyle_%s", names[i]);
-      any = true;
-    }
-  }
-  if (rest) {
-    if (any) {
-      result.AppendLiteral(" | ");
-    }
-    result.AppendPrintf("0x%0x", rest);
-  } else {
-    if (!any) {
-      result.AppendLiteral("0");
-    }
-  }
-  return result;
-}
-
 #ifdef DEBUG
-/* static */ nsCString
-RestyleManager::ChangeHintToString(nsChangeHint aHint)
-{
-  nsCString result;
-  bool any = false;
-  const char* names[] = {
-    "RepaintFrame", "NeedReflow", "ClearAncestorIntrinsics",
-    "ClearDescendantIntrinsics", "NeedDirtyReflow", "SyncFrameView",
-    "UpdateCursor", "UpdateEffects", "UpdateOpacityLayer",
-    "UpdateTransformLayer", "ReconstructFrame", "UpdateOverflow",
-    "UpdateSubtreeOverflow", "UpdatePostTransformOverflow",
-    "UpdateParentOverflow",
-    "ChildrenOnlyTransform", "RecomputePosition", "AddOrRemoveTransform",
-    "BorderStyleNoneChange", "UpdateTextPath", "SchedulePaint",
-    "NeutralChange", "InvalidateRenderingObservers",
-    "ReflowChangesSizeOrPosition", "UpdateComputedBSize",
-    "UpdateUsesOpacity"
-  };
-  uint32_t hint = aHint & ((1 << ArrayLength(names)) - 1);
-  uint32_t rest = aHint & ~((1 << ArrayLength(names)) - 1);
-  if (hint == nsChangeHint_Hints_NotHandledForDescendants) {
-    result.AppendLiteral("nsChangeHint_Hints_NotHandledForDescendants");
-    hint = 0;
-    any = true;
-  } else {
-    if ((hint & NS_STYLE_HINT_FRAMECHANGE) == NS_STYLE_HINT_FRAMECHANGE) {
-      result.AppendLiteral("NS_STYLE_HINT_FRAMECHANGE");
-      hint = hint & ~NS_STYLE_HINT_FRAMECHANGE;
-      any = true;
-    } else if ((hint & NS_STYLE_HINT_REFLOW) == NS_STYLE_HINT_REFLOW) {
-      result.AppendLiteral("NS_STYLE_HINT_REFLOW");
-      hint = hint & ~NS_STYLE_HINT_REFLOW;
-      any = true;
-    } else if ((hint & nsChangeHint_AllReflowHints) == nsChangeHint_AllReflowHints) {
-      result.AppendLiteral("nsChangeHint_AllReflowHints");
-      hint = hint & ~nsChangeHint_AllReflowHints;
-      any = true;
-    } else if ((hint & NS_STYLE_HINT_VISUAL) == NS_STYLE_HINT_VISUAL) {
-      result.AppendLiteral("NS_STYLE_HINT_VISUAL");
-      hint = hint & ~NS_STYLE_HINT_VISUAL;
-      any = true;
-    }
-  }
-  for (uint32_t i = 0; i < ArrayLength(names); i++) {
-    if (hint & (1 << i)) {
-      if (any) {
-        result.AppendLiteral(" | ");
-      }
-      result.AppendPrintf("nsChangeHint_%s", names[i]);
-      any = true;
-    }
-  }
-  if (rest) {
-    if (any) {
-      result.AppendLiteral(" | ");
-    }
-    result.AppendPrintf("0x%0x", rest);
-  } else {
-    if (!any) {
-      result.AppendLiteral("NS_STYLE_HINT_NONE");
-    }
-  }
-  return result;
-}
-
 /* static */ nsCString
 RestyleManager::StructNamesToString(uint32_t aSIDs)
 {
@@ -5233,20 +3953,21 @@ ElementRestyler::RestyleResultToString(RestyleResult aRestyleResult)
 {
   nsCString result;
   switch (aRestyleResult) {
-    case eRestyleResult_Stop:
-      result.AssignLiteral("eRestyleResult_Stop");
+    case RestyleResult::eStop:
+      result.AssignLiteral("RestyleResult::eStop");
       break;
-    case eRestyleResult_StopWithStyleChange:
-      result.AssignLiteral("eRestyleResult_StopWithStyleChange");
+    case RestyleResult::eStopWithStyleChange:
+      result.AssignLiteral("RestyleResult::eStopWithStyleChange");
       break;
-    case eRestyleResult_Continue:
-      result.AssignLiteral("eRestyleResult_Continue");
+    case RestyleResult::eContinue:
+      result.AssignLiteral("RestyleResult::eContinue");
       break;
-    case eRestyleResult_ContinueAndForceDescendants:
-      result.AssignLiteral("eRestyleResult_ContinueAndForceDescendants");
+    case RestyleResult::eContinueAndForceDescendants:
+      result.AssignLiteral("RestyleResult::eContinueAndForceDescendants");
       break;
     default:
-      result.AppendPrintf("RestyleResult(%d)", aRestyleResult);
+      MOZ_ASSERT(aRestyleResult == RestyleResult::eNone,
+                 "Unexpected RestyleResult");
   }
   return result;
 }

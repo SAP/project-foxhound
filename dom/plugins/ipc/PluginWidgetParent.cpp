@@ -8,7 +8,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsWidgetsCID.h"
 
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/DebugOnly.h"
 #include "nsDebug.h"
 
@@ -84,9 +84,13 @@ PluginWidgetParent::SetParent(nsIWidget* aParent)
 // makes use of some of the utility functions as well.
 
 bool
-PluginWidgetParent::RecvCreate(nsresult* aResult)
+PluginWidgetParent::RecvCreate(nsresult* aResult, uint64_t* aScrollCaptureId,
+                               uintptr_t* aPluginInstanceId)
 {
   PWLOG("PluginWidgetParent::RecvCreate()\n");
+
+  *aScrollCaptureId = 0;
+  *aPluginInstanceId = 0;
 
   mWidget = do_CreateInstance(kWidgetCID, aResult);
   NS_ASSERTION(NS_SUCCEEDED(*aResult), "widget create failure");
@@ -126,14 +130,12 @@ PluginWidgetParent::RecvCreate(nsresult* aResult)
     return false;
   }
 
-  DebugOnly<nsresult> drv;
-  drv = mWidget->EnableDragDrop(true);
-  NS_ASSERTION(NS_SUCCEEDED(drv), "widget call failure");
+  mWidget->EnableDragDrop(true);
 
 #if defined(MOZ_WIDGET_GTK)
   // For setup, initially GTK code expects 'window' to hold the parent.
   mWrapper->window = mWidget->GetNativeData(NS_NATIVE_PLUGIN_PORT);
-  drv = mWrapper->CreateXEmbedWindow(false);
+  DebugOnly<nsresult> drv = mWrapper->CreateXEmbedWindow(false);
   NS_ASSERTION(NS_SUCCEEDED(drv), "widget call failure");
   mWrapper->SetAllocation();
   PWLOG("Plugin XID=%p\n", (void*)mWrapper->window);
@@ -143,6 +145,10 @@ PluginWidgetParent::RecvCreate(nsresult* aResult)
                mozilla::dom::kPluginWidgetContentParentProperty,
                GetTabParent()->Manager()->AsContentParent());
   NS_ASSERTION(winres, "SetPropW call failure");
+
+  *aScrollCaptureId = mWidget->CreateScrollCaptureContainer();
+  *aPluginInstanceId =
+    reinterpret_cast<uintptr_t>(mWidget->GetNativeData(NS_NATIVE_PLUGIN_ID));
 #endif
 
   // This is a special call we make to nsBaseWidget to register this
@@ -160,8 +166,7 @@ PluginWidgetParent::KillWidget()
   PWLOG("PluginWidgetParent::KillWidget() widget=%p\n", (void*)mWidget.get());
   if (mWidget) {
     mWidget->UnregisterPluginWindowForRemoteUpdates();
-    DebugOnly<nsresult> rv = mWidget->Destroy();
-    NS_ASSERTION(NS_SUCCEEDED(rv), "widget destroy failure");
+    mWidget->Destroy();
 #if defined(MOZ_WIDGET_GTK)
     mWidget->SetNativeData(NS_NATIVE_PLUGIN_OBJECT_PTR, (uintptr_t)0);
     mWrapper = nullptr;

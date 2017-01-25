@@ -23,7 +23,6 @@
 #include "jsnum.h"
 #include "jsprf.h"
 
-#include "asmjs/Wasm.h"
 #include "asmjs/WasmAST.h"
 #include "asmjs/WasmBinaryToAST.h"
 #include "asmjs/WasmTypes.h"
@@ -59,22 +58,82 @@ enum PrintOperatorPrecedence
     GroupPrecedence = 16,
 };
 
+// StringBuffer wrapper to track the position (line and column) within the generated
+// source.
+class WasmPrintBuffer
+{
+    StringBuffer& stringBuffer_;
+    uint32_t lineno_;
+    uint32_t column_;
+
+  public:
+    explicit WasmPrintBuffer(StringBuffer& stringBuffer) : stringBuffer_(stringBuffer), lineno_(1), column_(1) {}
+    inline char processChar(char ch) {
+        if (ch == '\n') {
+            lineno_++; column_ = 1;
+        } else
+            column_++;
+        return ch;
+    }
+    inline char16_t processChar(char16_t ch) {
+        if (ch == '\n') {
+            lineno_++; column_ = 1;
+        } else
+            column_++;
+        return ch;
+    }
+    bool append(const char ch) {
+        return stringBuffer_.append(processChar(ch));
+    }
+    bool append(const char16_t ch) {
+        return stringBuffer_.append(processChar(ch));
+    }
+    bool append(const char* str, size_t length) {
+        for (size_t i = 0; i < length; i++)
+            processChar(str[i]);
+        return stringBuffer_.append(str, length);
+    }
+    bool append(const char16_t* begin, const char16_t* end) {
+        for (const char16_t* p = begin; p != end; p++)
+            processChar(*p);
+        return stringBuffer_.append(begin, end);
+    }
+    bool append(const char16_t* str, size_t length) {
+        return append(str, str + length);
+    }
+    template <size_t ArrayLength>
+    bool append(const char (&array)[ArrayLength]) {
+        return append(array, ArrayLength - 1);
+    }
+    char16_t getChar(size_t index) {
+        return stringBuffer_.getChar(index);
+    }
+    size_t length() {
+        return stringBuffer_.length();
+    }
+    StringBuffer& stringBuffer() { return stringBuffer_; }
+    uint32_t lineno() { return lineno_; }
+    uint32_t column() { return column_; }
+};
+
 struct WasmPrintContext
 {
     JSContext* cx;
     AstModule* module;
-    StringBuffer& buffer;
+    WasmPrintBuffer& buffer;
     const ExperimentalTextFormatting& f;
+    GeneratedSourceMap* maybeSourceMap;
     uint32_t indent;
 
     uint32_t currentFuncIndex;
     PrintOperatorPrecedence currentPrecedence;
 
-    WasmPrintContext(JSContext* cx, AstModule* module, StringBuffer& buffer, const ExperimentalTextFormatting& f)
+    WasmPrintContext(JSContext* cx, AstModule* module, WasmPrintBuffer& buffer, const ExperimentalTextFormatting& f, GeneratedSourceMap* wasmSourceMap_)
       : cx(cx),
         module(module),
         buffer(buffer),
         f(f),
+        maybeSourceMap(wasmSourceMap_),
         indent(0),
         currentFuncIndex(0),
         currentPrecedence(PrintOperatorPrecedence::ExpressionPrecedence)
@@ -97,7 +156,8 @@ IsDropValueExpr(AstExpr& expr)
         return !expr.as<AstBranchTable>().maybeValue();
       case AstExprKind::If:
         return !expr.as<AstIf>().hasElse();
-      case AstExprKind::Nop:
+      case AstExprKind::NullaryOperator:
+        return expr.as<AstNullaryOperator>().expr() == Expr::Nop;
       case AstExprKind::Unreachable:
       case AstExprKind::Return:
         return true;
@@ -124,7 +184,7 @@ PrintInt32(WasmPrintContext& c, int32_t num, bool printSign = false)
         if (!c.buffer.append("+"))
             return false;
     }
-    return NumberValueToStringBuffer(c.cx, Int32Value(num), c.buffer);
+    return NumberValueToStringBuffer(c.cx, Int32Value(num), c.buffer.stringBuffer());
 }
 
 static bool
@@ -146,7 +206,7 @@ PrintInt64(WasmPrintContext& c, int64_t num)
 
     n = abs;
     while (pow) {
-        if (!c.buffer.append((char16_t)(MOZ_UTF16('0') + n / pow)))
+        if (!c.buffer.append((char16_t)(u'0' + n / pow)))
             return false;
         n -= (n / pow) * pow;
         pow /= 10;
@@ -169,7 +229,7 @@ PrintDouble(WasmPrintContext& c, double num)
     }
 
     uint32_t startLength = c.buffer.length();
-    if (!NumberValueToStringBuffer(c.cx, DoubleValue(num), c.buffer))
+    if (!NumberValueToStringBuffer(c.cx, DoubleValue(num), c.buffer.stringBuffer()))
         return false;
     MOZ_ASSERT(startLength < c.buffer.length());
 
@@ -298,9 +358,17 @@ PrintBlockLevelExpr(WasmPrintContext& c, AstExpr& expr, bool isLast)
 // binary format parsing and rendering
 
 static bool
-PrintNop(WasmPrintContext& c, AstNop& nop)
+PrintNullaryOperator(WasmPrintContext& c, AstNullaryOperator& op)
 {
-    return c.buffer.append("nop");
+    const char* opStr;
+
+    switch (op.expr()) {
+        case Expr::Nop:             opStr = "nop"; break;
+        case Expr::CurrentMemory:   opStr = "curent_memory"; break;
+        default:  return false;
+    }
+
+    return c.buffer.append(opStr, strlen(opStr));
 }
 
 static bool
@@ -582,6 +650,7 @@ PrintUnaryOperator(WasmPrintContext& c, AstUnaryOperator& op)
       case Expr::F64Ceil:    opStr = "f64.ceil"; break;
       case Expr::F64Floor:   opStr = "f64.floor"; break;
       case Expr::F64Sqrt:    opStr = "f64.sqrt"; break;
+      case Expr::GrowMemory: opStr = "grow_memory"; break;
       default: return false;
     }
 
@@ -1270,9 +1339,16 @@ PrintReturn(WasmPrintContext& c, AstReturn& ret)
 static bool
 PrintExpr(WasmPrintContext& c, AstExpr& expr)
 {
+    if (c.maybeSourceMap) {
+        uint32_t lineno = c.buffer.lineno();
+        uint32_t column = c.buffer.column();
+        if (!c.maybeSourceMap->exprlocs().emplaceBack(lineno, column, expr.offset()))
+            return false;
+    }
+
     switch (expr.kind()) {
-      case AstExprKind::Nop:
-        return PrintNop(c, expr.as<AstNop>());
+      case AstExprKind::NullaryOperator:
+        return PrintNullaryOperator(c, expr.as<AstNullaryOperator>());
       case AstExprKind::Unreachable:
         return PrintUnreachable(c, expr.as<AstUnreachable>());
       case AstExprKind::Call:
@@ -1398,19 +1474,19 @@ PrintTypeSection(WasmPrintContext& c, const AstModule::SigVector& sigs)
 }
 
 static bool
-PrintTableSection(WasmPrintContext& c, AstTable* maybeTable, const AstModule::FuncVector& funcs)
+PrintTableSection(WasmPrintContext& c, const AstModule& module)
 {
-    if (!maybeTable)
+    if (module.elemSegments().empty())
         return true;
 
-    uint32_t numTableElems = maybeTable->elems().length();
+    const AstElemSegment& segment = *module.elemSegments()[0];
 
     if (!c.buffer.append("table ["))
         return false;
 
-    for (uint32_t i = 0; i < numTableElems; i++) {
-        AstRef& elem = maybeTable->elems()[i];
-        AstFunc* func = funcs[elem.index()];
+    for (uint32_t i = 0; i < segment.elems().length(); i++) {
+        const AstRef& elem = segment.elems()[i];
+        AstFunc* func = module.funcs()[elem.index()];
         if (func->name().empty()) {
             if (!PrintInt32(c, elem.index()))
                 return false;
@@ -1418,7 +1494,7 @@ PrintTableSection(WasmPrintContext& c, AstTable* maybeTable, const AstModule::Fu
           if (!PrintName(c, func->name()))
               return false;
         }
-        if (i + 1 == numTableElems)
+        if (i + 1 == segment.elems().length())
             break;
         if (!c.buffer.append(", "))
             return false;
@@ -1433,7 +1509,7 @@ PrintTableSection(WasmPrintContext& c, AstTable* maybeTable, const AstModule::Fu
 static bool
 PrintImport(WasmPrintContext& c, AstImport& import, const AstModule::SigVector& sigs)
 {
-    const AstSig* sig = sigs[import.sig().index()];
+    const AstSig* sig = sigs[import.funcSig().index()];
     if (!PrintIndent(c))
         return false;
     if (!c.buffer.append("import "))
@@ -1441,8 +1517,8 @@ PrintImport(WasmPrintContext& c, AstImport& import, const AstModule::SigVector& 
     if (!c.buffer.append("\""))
         return false;
 
-    const AstName& funcName = import.func();
-    if (!PrintEscapedString(c, funcName))
+    const AstName& fieldName = import.field();
+    if (!PrintEscapedString(c, fieldName))
         return false;
 
     if (!c.buffer.append("\" as "))
@@ -1495,13 +1571,13 @@ PrintExport(WasmPrintContext& c, AstExport& export_, const AstModule::FuncVector
         return false;
     if (!c.buffer.append("export "))
         return false;
-    if (export_.kind() == AstExportKind::Memory) {
+    if (export_.kind() == DefinitionKind::Memory) {
         if (!c.buffer.append("memory"))
           return false;
     } else {
-        const AstFunc* func = funcs[export_.func().index()];
+        const AstFunc* func = funcs[export_.ref().index()];
         if (func->name().empty()) {
-            if (!PrintInt32(c, export_.func().index()))
+            if (!PrintInt32(c, export_.ref().index()))
                 return false;
         } else {
             if (!PrintName(c, func->name()))
@@ -1539,6 +1615,9 @@ PrintFunctionBody(WasmPrintContext& c, AstFunc& func, const AstModule::SigVector
     const AstSig* sig = sigs[func.sig().index()];
     c.indent++;
 
+    size_t startExprIndex = c.maybeSourceMap ? c.maybeSourceMap->exprlocs().length() : 0;
+    uint32_t startLineno = c.buffer.lineno();
+
     uint32_t argsNum = sig->args().length();
     uint32_t localsNum = func.vars().length();
     if (localsNum > 0) {
@@ -1575,6 +1654,13 @@ PrintFunctionBody(WasmPrintContext& c, AstFunc& func, const AstModule::SigVector
 
     c.indent--;
 
+    size_t endExprIndex = c.maybeSourceMap ? c.maybeSourceMap->exprlocs().length() : 0;
+    uint32_t endLineno = c.buffer.lineno();
+
+    if (c.maybeSourceMap) {
+        if (!c.maybeSourceMap->functionlocs().emplaceBack(startExprIndex, endExprIndex, startLineno, endLineno))
+            return false;
+    }
     return true;
 }
 
@@ -1617,28 +1703,27 @@ PrintCodeSection(WasmPrintContext& c, const AstModule::FuncVector& funcs, const 
 
 
 static bool
-PrintDataSection(WasmPrintContext& c, AstMemory* maybeMemory)
+PrintDataSection(WasmPrintContext& c, const AstModule& module)
 {
-    if (!maybeMemory)
+    if (!module.hasMemory())
         return true;
 
     if (!PrintIndent(c))
         return false;
     if (!c.buffer.append("memory "))
         return false;
-    if (!PrintInt32(c, maybeMemory->initialSize()))
+    if (!PrintInt32(c, module.memory().initial()))
        return false;
-    Maybe<uint32_t> memMax = maybeMemory->maxSize();
-    if (memMax) {
+    if (module.memory().maximum()) {
         if (!c.buffer.append(", "))
             return false;
-        if (!PrintInt32(c, *memMax))
+        if (!PrintInt32(c, *module.memory().maximum()))
             return false;
     }
 
     c.indent++;
 
-    uint32_t numSegments = maybeMemory->segments().length();
+    uint32_t numSegments = module.dataSegments().length();
     if (!numSegments) {
       if (!c.buffer.append(" {}\n\n"))
           return false;
@@ -1648,13 +1733,13 @@ PrintDataSection(WasmPrintContext& c, AstMemory* maybeMemory)
         return false;
 
     for (uint32_t i = 0; i < numSegments; i++) {
-        const AstSegment* segment = maybeMemory->segments()[i];
+        const AstDataSegment* segment = module.dataSegments()[i];
 
         if (!PrintIndent(c))
             return false;
         if (!c.buffer.append("segment "))
            return false;
-        if (!PrintInt32(c, segment->offset()))
+        if (!PrintInt32(c, segment->offset()->as<AstConst>().val().i32()))
            return false;
         if (!c.buffer.append(" \""))
            return false;
@@ -1681,7 +1766,7 @@ PrintModule(WasmPrintContext& c, AstModule& module)
     if (!PrintImportSection(c, module.imports(), module.sigs()))
         return false;
 
-    if (!PrintTableSection(c, module.maybeTable(), module.funcs()))
+    if (!PrintTableSection(c, module))
         return false;
 
     if (!PrintExportSection(c, module.exports(), module.funcs()))
@@ -1690,7 +1775,7 @@ PrintModule(WasmPrintContext& c, AstModule& module)
     if (!PrintCodeSection(c, module.funcs(), module.sigs()))
         return false;
 
-    if (!PrintDataSection(c, module.maybeMemory()))
+    if (!PrintDataSection(c, module))
         return false;
 
     return true;
@@ -1701,7 +1786,8 @@ PrintModule(WasmPrintContext& c, AstModule& module)
 
 bool
 wasm::BinaryToExperimentalText(JSContext* cx, const uint8_t* bytes, size_t length,
-                               StringBuffer& buffer, const ExperimentalTextFormatting& formatting)
+                               StringBuffer& buffer, const ExperimentalTextFormatting& formatting,
+                               GeneratedSourceMap* sourceMap)
 {
 
     LifoAlloc lifo(AST_LIFO_DEFAULT_CHUNK_SIZE);
@@ -1710,7 +1796,8 @@ wasm::BinaryToExperimentalText(JSContext* cx, const uint8_t* bytes, size_t lengt
     if (!BinaryToAst(cx, bytes, length, lifo, &module))
         return false;
 
-    WasmPrintContext c(cx, module, buffer, formatting);
+    WasmPrintBuffer buf(buffer);
+    WasmPrintContext c(cx, module, buf, formatting, sourceMap);
 
     if (!PrintModule(c, *module)) {
         if (!cx->isExceptionPending())

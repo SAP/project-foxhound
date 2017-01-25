@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft= javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,7 @@
 
 const {Cc, Ci, Cu} = require("chrome");
 
-var WebConsoleUtils = require("devtools/shared/webconsole/utils").Utils;
+var WebConsoleUtils = require("devtools/client/webconsole/utils").Utils;
 var { extend } = require("sdk/core/heritage");
 var {TargetFactory} = require("devtools/client/framework/target");
 var {Tools} = require("devtools/client/definitions");
@@ -24,7 +22,7 @@ loader.lazyRequireGetter(this, "DebuggerClient", "devtools/shared/client/main", 
 loader.lazyRequireGetter(this, "showDoorhanger", "devtools/client/shared/doorhanger", true);
 loader.lazyRequireGetter(this, "viewSource", "devtools/client/shared/view-source");
 
-const STRINGS_URI = "chrome://devtools/locale/webconsole.properties";
+const STRINGS_URI = "devtools/locale/webconsole.properties";
 var l10n = new WebConsoleUtils.L10n(STRINGS_URI);
 
 const BROWSER_CONSOLE_WINDOW_FEATURES = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
@@ -65,12 +63,12 @@ HUD_SERVICE.prototype =
   lastFinishedRequest: null,
 
   /**
-   * Firefox-specific current tab getter
+   * Get the current context, which is the main application window.
    *
    * @returns nsIDOMWindow
    */
   currentContext: function HS_currentContext() {
-    return Services.wm.getMostRecentWindow("navigator:browser");
+    return Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
   },
 
   /**
@@ -295,7 +293,7 @@ function WebConsole(aTarget, aIframeWindow, aChromeWindow)
   this.browserWindow = this.chromeWindow.top;
 
   let element = this.browserWindow.document.documentElement;
-  if (element.getAttribute("windowtype") != "navigator:browser") {
+  if (element.getAttribute("windowtype") != gDevTools.chromeWindowType) {
     this.browserWindow = HUDService.currentContext();
   }
 
@@ -438,7 +436,7 @@ WebConsole.prototype = {
   viewSource: function WC_viewSource(aSourceURL, aSourceLine) {
     // Attempt to access view source via a browser first, which may display it in
     // a tab, if enabled.
-    let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
+    let browserWin = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
     if (browserWin && browserWin.BrowserViewSourceOfDocument) {
       return browserWin.BrowserViewSourceOfDocument({
         URL: aSourceURL,
@@ -523,18 +521,12 @@ WebConsole.prototype = {
       return null;
     }
     let panel = toolbox.getPanel("jsdebugger");
+
     if (!panel) {
       return null;
     }
-    let framesController = panel.panelWin.DebuggerController.StackFrames;
-    let thread = framesController.activeThread;
-    if (thread && thread.paused) {
-      return {
-        frames: thread.cachedFrames,
-        selected: framesController.currentFrameDepth,
-      };
-    }
-    return null;
+
+    return panel.getFrames();
   },
 
   /**
@@ -612,7 +604,6 @@ WebConsole.prototype = {
     return this._destroyer.promise;
   },
 };
-
 
 /**
  * A BrowserConsole instance is an interactive console initialized *per target*
@@ -701,7 +692,7 @@ BrowserConsole.prototype = extend(WebConsole.prototype, {
 
     let chromeWindow = this.chromeWindow;
     this.$destroy().then(() =>
-      this.target.client.close(() => {
+      this.target.client.close().then(() => {
         HUDService._browserConsoleID = null;
         chromeWindow.close();
         this._bc_destroyer.resolve(null);

@@ -19,38 +19,39 @@ function cached_handler(metadata, response) {
   handlers_called++;
 }
 
-function makeChan(url, appId, inIsolatedMozBrowser) {
+function makeChan(url, appId, inIsolatedMozBrowser, userContextId) {
   var chan = NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true})
                     .QueryInterface(Ci.nsIHttpChannel);
   chan.loadInfo.originAttributes = { appId: appId,
-                                     inIsolatedMozBrowser: inIsolatedMozBrowser
+                                     inIsolatedMozBrowser: inIsolatedMozBrowser,
+                                     userContextId: userContextId,
                                    };
-  chan.notificationCallbacks = {
-    appId: appId,
-    isInIsolatedMozBrowserElement: inIsolatedMozBrowser,
-    originAttributes: {
-      appId: appId,
-      inIsolatedMozBrowser: inIsolatedMozBrowser,
-    },
-    QueryInterface: function(iid) {
-      if (iid.equals(Ci.nsILoadContext))
-        return this;
-      throw Cr.NS_ERROR_NO_INTERFACE;
-    },
-    getInterface: function(iid) { return this.QueryInterface(iid); }
-  };
   return chan;
 }
 
-var firstTests = [[0, false, 1], [0, true, 1], [1, false, 1], [1, true, 1]];
-var secondTests = [[0, false, 0], [0, true, 0], [1, false, 0], [1, true, 1]];
-var thirdTests = [[0, false, 0], [0, true, 0], [1, false, 1], [1, true, 1]];
+// [appId, inIsolatedMozBrowser, userContextId, expected_handlers_called]
+var firstTests = [
+  [0, false, 0, 1], [0, true, 0, 1], [1, false, 0, 1], [1, true, 0, 1],
+  [0, false, 1, 1], [0, true, 1, 1], [1, false, 1, 1], [1, true, 1, 1]
+];
+var secondTests = [
+  [0, false, 0, 0], [0, true, 0, 0], [1, false, 0, 0], [1, true, 0, 1],
+  [0, false, 1, 0], [0, true, 1, 0], [1, false, 1, 0], [1, true, 1, 0]
+];
+var thirdTests = [
+  [0, false, 0, 0], [0, true, 0, 0], [1, false, 0, 1], [1, true, 0, 1],
+  [0, false, 1, 0], [0, true, 1, 0], [1, false, 1, 0], [1, true, 1, 0]
+];
+var fourthTests = [
+  [0, false, 0, 0], [0, true, 0, 0], [1, false, 0, 0], [1, true, 0, 0],
+  [0, false, 1, 1], [0, true, 1, 0], [1, false, 1, 0], [1, true, 1, 0]
+];
 
 function run_all_tests() {
   for (let test of firstTests) {
     handlers_called = 0;
-    var chan = makeChan(URL, test[0], test[1]);
-    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[2]));
+    var chan = makeChan(URL, test[0], test[1], test[2]);
+    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[3]));
     yield undefined;
   }
 
@@ -67,8 +68,8 @@ function run_all_tests() {
 
   for (let test of secondTests) {
     handlers_called = 0;
-    var chan = makeChan(URL, test[0], test[1]);
-    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[2]));
+    var chan = makeChan(URL, test[0], test[1], test[2]);
+    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[3]));
     yield undefined;
   }
 
@@ -77,8 +78,18 @@ function run_all_tests() {
 
   for (let test of thirdTests) {
     handlers_called = 0;
-    var chan = makeChan(URL, test[0], test[1]);
-    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[2]));
+    var chan = makeChan(URL, test[0], test[1], test[2]);
+    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[3]));
+    yield undefined;
+  }
+
+  let attrs_userContextId = JSON.stringify({ userContextId: 1 });
+  Services.obs.notifyObservers(null, "clear-origin-data", attrs_userContextId);
+
+  for (let test of fourthTests) {
+    handlers_called = 0;
+    var chan = makeChan(URL, test[0], test[1], test[2]);
+    chan.asyncOpen2(new ChannelListener(doneFirstLoad, test[3]));
     yield undefined;
   }
 }
@@ -100,8 +111,8 @@ function run_test() {
 
 function doneFirstLoad(req, buffer, expected) {
   // Load it again, make sure it hits the cache
-  var nc = req.notificationCallbacks.getInterface(Ci.nsILoadContext);
-  var chan = makeChan(URL, nc.appId, nc.isInIsolatedMozBrowserElement);
+  var oa = req.loadInfo.originAttributes;
+  var chan = makeChan(URL, oa.appId, oa.isInIsolatedMozBrowserElement, oa.userContextId);
   chan.asyncOpen2(new ChannelListener(doneSecondLoad, expected));
 }
 

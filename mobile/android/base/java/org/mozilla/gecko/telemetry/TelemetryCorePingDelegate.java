@@ -6,6 +6,7 @@
 
 package org.mozilla.gecko.telemetry;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.support.annotation.Nullable;
 import android.support.annotation.WorkerThread;
@@ -13,6 +14,8 @@ import android.util.Log;
 import org.mozilla.gecko.BrowserApp;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.GeckoSharedPrefs;
+import org.mozilla.gecko.adjust.AttributionHelperListener;
+import org.mozilla.gecko.telemetry.measurements.CampaignIdMeasurements;
 import org.mozilla.gecko.delegates.BrowserAppDelegateWithReference;
 import org.mozilla.gecko.distribution.DistributionStoreCallback;
 import org.mozilla.gecko.search.SearchEngineManager;
@@ -29,7 +32,7 @@ import java.io.IOException;
  * An activity-lifecycle delegate for uploading the core ping.
  */
 public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
-        implements SearchEngineManager.SearchEngineCallback {
+        implements SearchEngineManager.SearchEngineCallback, AttributionHelperListener {
     private static final String LOGTAG = StringUtils.safeSubstring(
             "Gecko" + TelemetryCorePingDelegate.class.getSimpleName(), 0, 23);
 
@@ -40,6 +43,8 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
 
     @Override
     public void onStart(final BrowserApp browserApp) {
+        TelemetryPreferences.initPreferenceObserver(browserApp, browserApp.getProfile().getName());
+
         // We don't upload in onCreate because that's only called when the Activity needs to be instantiated
         // and it's possible the system will never free the Activity from memory.
         //
@@ -93,8 +98,10 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
     @WorkerThread // via constructor
     private TelemetryDispatcher getTelemetryDispatcher(final BrowserApp browserApp) {
         if (telemetryDispatcher == null) {
-            final String profilePath = browserApp.getProfile().getDir().getAbsolutePath();
-            telemetryDispatcher = new TelemetryDispatcher(profilePath);
+            final GeckoProfile profile = browserApp.getProfile();
+            final String profilePath = profile.getDir().getAbsolutePath();
+            final String profileName = profile.getName();
+            telemetryDispatcher = new TelemetryDispatcher(profilePath, profileName);
         }
         return telemetryDispatcher;
     }
@@ -149,14 +156,15 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
                         .setSequenceNumber(TelemetryCorePingBuilder.getAndIncrementSequenceNumber(sharedPrefs))
                         .setSessionCount(sessionMeasurementsContainer.sessionCount)
                         .setSessionDuration(sessionMeasurementsContainer.elapsedSeconds);
-                maybeSetOptionalMeasurements(sharedPrefs, pingBuilder);
+                maybeSetOptionalMeasurements(activity, sharedPrefs, pingBuilder);
 
                 getTelemetryDispatcher(activity).queuePingForUpload(activity, pingBuilder);
             }
         });
     }
 
-    private void maybeSetOptionalMeasurements(final SharedPreferences sharedPrefs, final TelemetryCorePingBuilder pingBuilder) {
+    private void maybeSetOptionalMeasurements(final Context context, final SharedPreferences sharedPrefs,
+                                              final TelemetryCorePingBuilder pingBuilder) {
         final String distributionId = sharedPrefs.getString(DistributionStoreCallback.PREF_DISTRIBUTION_ID, null);
         if (distributionId != null) {
             pingBuilder.setOptDistributionID(distributionId);
@@ -166,5 +174,15 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
         if (searchCounts.size() > 0) {
             pingBuilder.setOptSearchCounts(searchCounts);
         }
+
+        final String campaignId = CampaignIdMeasurements.getCampaignIdFromPrefs(context);
+        if (campaignId != null) {
+            pingBuilder.setOptCampaignId(campaignId);
+        }
+    }
+
+    @Override
+    public void onCampaignIdChanged(String campaignId) {
+        CampaignIdMeasurements.updateCampaignIdPref(getBrowserApp(), campaignId);
     }
 }

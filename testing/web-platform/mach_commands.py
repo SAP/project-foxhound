@@ -223,6 +223,7 @@ testing/web-platform/tests for tests that may be shared
         else:
             editor = None
 
+        proc = None
         if editor:
             proc = subprocess.Popen("%s %s" % (editor, path), shell=True)
 
@@ -231,7 +232,19 @@ testing/web-platform/tests for tests that may be shared
             wpt_kwargs = vars(p.parse_args(["--manifest-update", path]))
             context.commands.dispatch("web-platform-tests", context, **wpt_kwargs)
 
-        proc.wait()
+        if proc:
+            proc.wait()
+
+
+class WPTManifestUpdater(MozbuildObject):
+    def run_update(self, check_clean=False, **kwargs):
+        import manifestupdate
+        from wptrunner import wptlogging
+
+        logger = wptlogging.setup(kwargs, {"mach": sys.stdout})
+        wpt_dir = os.path.abspath(os.path.join(self.topsrcdir, 'testing', 'web-platform'))
+        manifestupdate.update(logger, wpt_dir, check_clean)
+
 
 def create_parser_wpt():
     from wptrunner import wptcommandline
@@ -268,8 +281,16 @@ def create_parser_create():
     return p
 
 
+def create_parser_manifest_update():
+    import manifestupdate
+    return manifestupdate.create_parser()
+
+
 @CommandProvider
 class MachCommands(MachCommandBase):
+    def setup(self):
+        self._activate_virtualenv()
+
     @Command("web-platform-tests",
              category="testing",
              conditions=[conditions.is_firefox],
@@ -289,6 +310,13 @@ class MachCommands(MachCommandBase):
         else:
             return wpt_runner.run_tests(**params)
 
+    @Command("wpt",
+             category="testing",
+             conditions=[conditions.is_firefox],
+             parser=create_parser_wpt)
+    def run_wpt(self, **params):
+        return self.run_web_platform_tests(**params)
+
     @Command("web-platform-tests-update",
              category="testing",
              parser=create_parser_update)
@@ -299,8 +327,11 @@ class MachCommands(MachCommandBase):
         wpt_updater = self._spawn(WebPlatformTestsUpdater)
         return wpt_updater.run_update(**params)
 
-    def setup(self):
-        self._activate_virtualenv()
+    @Command("wpt-update",
+             category="testing",
+             parser=create_parser_update)
+    def update_wpt(self, **params):
+        return self.update_web_platform_tests(**params)
 
     @Command("web-platform-tests-reduce",
              category="testing",
@@ -311,6 +342,13 @@ class MachCommands(MachCommandBase):
         wpt_reduce = self._spawn(WebPlatformTestsReduce)
         return wpt_reduce.run_reduce(**params)
 
+    @Command("wpt-reduce",
+             category="testing",
+             conditions=[conditions.is_firefox],
+             parser=create_parser_reduce)
+    def unstable_wpt(self, **params):
+        return self.unstable_web_platform_tests(**params)
+
     @Command("web-platform-tests-create",
              category="testing",
              conditions=[conditions.is_firefox],
@@ -319,3 +357,18 @@ class MachCommands(MachCommandBase):
         self.setup()
         wpt_creator = self._spawn(WebPlatformTestsCreator)
         wpt_creator.run_create(self._mach_context, **params)
+
+    @Command("wpt-create",
+             category="testing",
+             conditions=[conditions.is_firefox],
+             parser=create_parser_create)
+    def create_wpt(self, **params):
+        return self.create_web_platform_test(**params)
+
+    @Command("wpt-manifest-update",
+             category="testing",
+             parser=create_parser_manifest_update)
+    def wpt_manifest_update(self, **params):
+        self.setup()
+        wpt_manifest_updater = self._spawn(WPTManifestUpdater)
+        return wpt_manifest_updater.run_update(**params)

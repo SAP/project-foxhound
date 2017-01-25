@@ -21,6 +21,8 @@ const { Services } = jsmScope;
 // Steal various globals only available in JSM scope (and not Sandbox one)
 const { PromiseDebugging, ChromeUtils, ThreadSafeChromeUtils, HeapSnapshot,
         atob, btoa, Iterator } = jsmScope;
+const { URL } = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
+                           {wantGlobalProperties: ["URL"]});
 
 /**
  * Defines a getter on a specified object that will be created upon first use.
@@ -202,24 +204,11 @@ defineLazyGetter(exports.modules, "xpcInspector", () => {
   return Cc["@mozilla.org/jsinspector;1"].getService(Ci.nsIJSInspector);
 });
 
-defineLazyGetter(exports.modules, "indexedDB", () => {
-  // On xpcshell, we can't instantiate indexedDB without crashing
-  try {
-    let sandbox
-      = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
-                   {wantGlobalProperties: ["indexedDB"]});
-    return sandbox.indexedDB;
-
-  } catch (e) {
-    return {};
-  }
-});
-
-defineLazyGetter(exports.modules, "CSS", () => {
+defineLazyGetter(exports.modules, "FileReader", () => {
   let sandbox
     = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
-                 {wantGlobalProperties: ["CSS"]});
-  return sandbox.CSS;
+                 {wantGlobalProperties: ["FileReader"]});
+  return sandbox.FileReader;
 });
 
 // List of all custom globals exposed to devtools modules.
@@ -229,6 +218,7 @@ const globals = exports.globals = {
   reportError: Cu.reportError,
   atob: atob,
   btoa: btoa,
+  URL,
   _Iterator: Iterator,
   loader: {
     lazyGetter: defineLazyGetter,
@@ -243,6 +233,10 @@ const globals = exports.globals = {
     return Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
            .createInstance(Ci.nsIXMLHttpRequest);
   },
+
+  Node: Ci.nsIDOMNode,
+  Element: Ci.nsIDOMElement,
+  DocumentFragment: Ci.nsIDOMDocumentFragment,
 
   // Make sure `define` function exists.  This allows defining some modules
   // in AMD format while retaining CommonJS compatibility through this hook.
@@ -267,7 +261,6 @@ const globals = exports.globals = {
 defineLazyGetter(globals, "console", () => {
   return Cu.import("resource://gre/modules/Console.jsm", {}).console;
 });
-
 defineLazyGetter(globals, "clearTimeout", () => {
   return Cu.import("resource://gre/modules/Timer.jsm", {}).clearTimeout;
 });
@@ -280,9 +273,17 @@ defineLazyGetter(globals, "clearInterval", () => {
 defineLazyGetter(globals, "setInterval", () => {
   return Cu.import("resource://gre/modules/Timer.jsm", {}).setInterval;
 });
-defineLazyGetter(globals, "URL", () => {
+defineLazyGetter(globals, "CSSRule", () => Ci.nsIDOMCSSRule);
+defineLazyGetter(globals, "DOMParser", () => {
+  return CC("@mozilla.org/xmlextras/domparser;1", "nsIDOMParser");
+});
+defineLazyGetter(globals, "CSS", () => {
   let sandbox
     = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
-                 {wantGlobalProperties: ["URL"]});
-  return sandbox.URL;
+                 {wantGlobalProperties: ["CSS"]});
+  return sandbox.CSS;
 });
+defineLazyGetter(globals, "WebSocket", () => {
+  return Services.appShell.hiddenDOMWindow.WebSocket;
+});
+lazyRequireGetter(globals, "indexedDB", "sdk/indexed-db", true);

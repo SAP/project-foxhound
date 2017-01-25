@@ -612,7 +612,7 @@ interface nsIXPCComponents_Utils : nsISupports
       * watchdog-related event occured.
       *
       * Valid categories:
-      *   "RuntimeStateChange"      - Runtime switching between active and inactive states
+      *   "ContextStateChange"      - Context switching between active and inactive states
       *   "WatchdogWakeup"          - Watchdog waking up from sleeping
       *   "WatchdogHibernateStart"  - Watchdog begins hibernating
       *   "WatchdogHibernateStop"   - Watchdog stops hibernating
@@ -679,6 +679,9 @@ interface nsIXPCComponents_Utils : nsISupports
     [implicit_jscontext]
     void setAddonCallInterposition(in jsval target);
 
+    [implicit_jscontext]
+    void allowCPOWsInAddon(in ACString addonId, in bool allow);
+
     /*
      * Return a fractional number of milliseconds from process
      * startup, measured with a monotonic clock.
@@ -719,8 +722,6 @@ interface nsIXPCComponents : nsIXPCComponentsBase
     readonly attribute nsIXPCComponents_Exception       Exception;
     readonly attribute nsIXPCComponents_Constructor     Constructor;
 
-    [implicit_jscontext]
-    readonly attribute jsval                            lastResult;
     [implicit_jscontext]
     // A javascript component can set |returnCode| to specify an nsresult to
     // be returned without throwing an exception.

@@ -8,10 +8,8 @@
 // in an attribute.
 
 const TEST_URL = URL_ROOT + "doc_markup_links.html";
-const STRINGS = Services.strings
-  .createBundle("chrome://devtools/locale/inspector.properties");
-const TOOLBOX_STRINGS = Services.strings
-  .createBundle("chrome://devtools/locale/toolbox.properties");
+
+const TOOLBOX_L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
 
 // The test case array contains objects with the following properties:
 // - selector: css selector for the node to select in the inspector
@@ -28,9 +26,9 @@ const TEST_DATA = [{
   popupNodeSelector: ".link",
   isLinkFollowItemVisible: true,
   isLinkCopyItemVisible: true,
-  linkFollowItemLabel: TOOLBOX_STRINGS.GetStringFromName(
+  linkFollowItemLabel: TOOLBOX_L10N.getStr(
     "toolbox.viewCssSourceInStyleEditor.label"),
-  linkCopyItemLabel: STRINGS.GetStringFromName(
+  linkCopyItemLabel: INSPECTOR_L10N.getStr(
     "inspector.menu.copyUrlToClipboard.label")
 }, {
   selector: "link[rel=icon]",
@@ -38,9 +36,9 @@ const TEST_DATA = [{
   popupNodeSelector: ".link",
   isLinkFollowItemVisible: true,
   isLinkCopyItemVisible: true,
-  linkFollowItemLabel: STRINGS.GetStringFromName(
+  linkFollowItemLabel: INSPECTOR_L10N.getStr(
     "inspector.menu.openUrlInNewTab.label"),
-  linkCopyItemLabel: STRINGS.GetStringFromName(
+  linkCopyItemLabel: INSPECTOR_L10N.getStr(
     "inspector.menu.copyUrlToClipboard.label")
 }, {
   selector: "link",
@@ -54,17 +52,17 @@ const TEST_DATA = [{
   popupNodeSelector: ".link",
   isLinkFollowItemVisible: true,
   isLinkCopyItemVisible: false,
-  linkFollowItemLabel: STRINGS.formatStringFromName(
-    "inspector.menu.selectElement.label", ["name"], 1)
+  linkFollowItemLabel: INSPECTOR_L10N.getFormatStr(
+    "inspector.menu.selectElement.label", "name")
 }, {
   selector: "script",
   attributeName: "src",
   popupNodeSelector: ".link",
   isLinkFollowItemVisible: true,
   isLinkCopyItemVisible: true,
-  linkFollowItemLabel: TOOLBOX_STRINGS.GetStringFromName(
+  linkFollowItemLabel: TOOLBOX_L10N.getStr(
     "toolbox.viewJsSourceInDebugger.label"),
-  linkCopyItemLabel: STRINGS.GetStringFromName(
+  linkCopyItemLabel: INSPECTOR_L10N.getStr(
     "inspector.menu.copyUrlToClipboard.label")
 }, {
   selector: "p[for]",
@@ -77,9 +75,6 @@ const TEST_DATA = [{
 add_task(function* () {
   let {inspector} = yield openInspectorForURL(TEST_URL);
 
-  let linkFollow = inspector.panelDoc.getElementById("node-menu-link-follow");
-  let linkCopy = inspector.panelDoc.getElementById("node-menu-link-copy");
-
   for (let test of TEST_DATA) {
     info("Selecting test node " + test.selector);
     yield selectNode(test.selector, inspector);
@@ -91,7 +86,12 @@ add_task(function* () {
     ok(popupNode, "Found the popupNode in attribute " + test.attributeName);
 
     info("Simulating a context click on the popupNode");
-    contextMenuClick(popupNode);
+    let allMenuItems = openContextMenuAndGetAllItems(inspector, {
+      target: popupNode,
+    });
+
+    let linkFollow = allMenuItems.find(i => i.id === "node-menu-link-follow");
+    let linkCopy = allMenuItems.find(i => i.id === "node-menu-link-copy");
 
     // The contextual menu setup is async, because it needs to know if the
     // inspector has the resolveRelativeURL method first. So call actorHasMethod
@@ -99,17 +99,17 @@ add_task(function* () {
     // properly setup.
     yield inspector.target.actorHasMethod("inspector", "resolveRelativeURL");
 
-    is(linkFollow.hasAttribute("hidden"), !test.isLinkFollowItemVisible,
+    is(linkFollow.visible, test.isLinkFollowItemVisible,
       "The follow-link item display is correct");
-    is(linkCopy.hasAttribute("hidden"), !test.isLinkCopyItemVisible,
+    is(linkCopy.visible, test.isLinkCopyItemVisible,
       "The copy-link item display is correct");
 
     if (test.isLinkFollowItemVisible) {
-      is(linkFollow.getAttribute("label"), test.linkFollowItemLabel,
+      is(linkFollow.label, test.linkFollowItemLabel,
         "the follow-link label is correct");
     }
     if (test.isLinkCopyItemVisible) {
-      is(linkCopy.getAttribute("label"), test.linkCopyItemLabel,
+      is(linkCopy.label, test.linkCopyItemLabel,
         "the copy-link label is correct");
     }
   }

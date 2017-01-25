@@ -8,7 +8,7 @@ import json
 from subprocess import check_output, CalledProcessError
 
 lintable = re.compile(r'.+\.(?:js|jsm|jsx|xml|html)$')
-ignored = "File ignored because of your .eslintignore file. Use --no-ignore to override."
+ignored = 'File ignored because of a matching ignore pattern. Use "--no-ignore" to override.'
 
 def is_lintable(filename):
     return lintable.match(filename)
@@ -21,7 +21,10 @@ def display(ui, output):
             if message["message"] == ignored:
                 continue
 
-            ui.warn("%s:%d:%d %s\n" % (path, message["line"], message["column"], message["message"]))
+            if "line" in message:
+                ui.warn("%s:%d:%d %s\n" % (path, message["line"], message["column"], message["message"]))
+            else:
+                ui.warn("%s: %s\n" % (path, message["message"]))
 
 def eslinthook(ui, repo, node=None, **opts):
     ctx = repo[node]
@@ -35,7 +38,19 @@ def eslinthook(ui, repo, node=None, **opts):
         return
 
     try:
-        output = check_output(["eslint", "--format", "json", "--plugin", "html"] + files)
+        basepath = get_project_root()
+
+        if not basepath:
+            return
+
+        dir = os.path.join(basepath, "tools", "lint", "eslint", "node_modules", ".bin")
+
+        eslint_path = os.path.join(dir, "eslint")
+        if os.path.exists(os.path.join(dir, "eslint.cmd")):
+            eslint_path = os.path.join(dir, "eslint.cmd")
+        output = check_output([eslint_path,
+                               "--format", "json", "--plugin", "html"] + files,
+                               cwd=basepath)
         display(ui, output)
     except CalledProcessError as ex:
         display(ui, ex.output)
@@ -43,3 +58,19 @@ def eslinthook(ui, repo, node=None, **opts):
 
 def reposetup(ui, repo):
     ui.setconfig('hooks', 'commit.eslint', eslinthook)
+
+def get_project_root():
+    file_found = False
+    folder = os.getcwd()
+
+    while (folder):
+        if os.path.exists(os.path.join(folder, 'mach')):
+            file_found = True
+            break
+        else:
+            folder = os.path.dirname(folder)
+
+    if file_found:
+        return os.path.abspath(folder)
+
+    return None

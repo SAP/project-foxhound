@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -130,6 +130,7 @@ EXPORTS.js += [
     '../public/ProfilingFrameIterator.h',
     '../public/ProfilingStack.h',
     '../public/Proxy.h',
+    '../public/Realm.h',
     '../public/RequiredDefines.h',
     '../public/RootingAPI.h',
     '../public/SliceBudget.h',
@@ -154,18 +155,24 @@ EXPORTS.js += [
 
 UNIFIED_SOURCES += [
     'asmjs/AsmJS.cpp',
-    'asmjs/Wasm.cpp',
+    'asmjs/WasmBaselineCompile.cpp',
     'asmjs/WasmBinary.cpp',
     'asmjs/WasmBinaryIterator.cpp',
     'asmjs/WasmBinaryToAST.cpp',
     'asmjs/WasmBinaryToExperimentalText.cpp',
     'asmjs/WasmBinaryToText.cpp',
+    'asmjs/WasmCode.cpp',
+    'asmjs/WasmCompartment.cpp',
+    'asmjs/WasmCompile.cpp',
     'asmjs/WasmFrameIterator.cpp',
     'asmjs/WasmGenerator.cpp',
+    'asmjs/WasmInstance.cpp',
     'asmjs/WasmIonCompile.cpp',
+    'asmjs/WasmJS.cpp',
     'asmjs/WasmModule.cpp',
     'asmjs/WasmSignalHandlers.cpp',
     'asmjs/WasmStubs.cpp',
+    'asmjs/WasmTable.cpp',
     'asmjs/WasmTextToBinary.cpp',
     'asmjs/WasmTypes.cpp',
     'builtin/AtomicsObject.cpp',
@@ -190,7 +197,6 @@ UNIFIED_SOURCES += [
     'frontend/BytecodeEmitter.cpp',
     'frontend/FoldConstants.cpp',
     'frontend/NameFunctions.cpp',
-    'frontend/ParseMaps.cpp',
     'frontend/ParseNode.cpp',
     'frontend/TokenStream.cpp',
     'gc/Allocator.cpp',
@@ -279,6 +285,7 @@ UNIFIED_SOURCES += [
     'jit/TypePolicy.cpp',
     'jit/ValueNumbering.cpp',
     'jit/VMFunctions.cpp',
+    'jit/WasmBCE.cpp',
     'jsalloc.cpp',
     'jsapi.cpp',
     'jsbool.cpp',
@@ -313,6 +320,7 @@ UNIFIED_SOURCES += [
     'proxy/Wrapper.cpp',
     'vm/ArgumentsObject.cpp',
     'vm/ArrayBufferObject.cpp',
+    'vm/Caches.cpp',
     'vm/CallNonGenericMethod.cpp',
     'vm/CharacterEncoding.cpp',
     'vm/CodeCoverage.cpp',
@@ -320,6 +328,7 @@ UNIFIED_SOURCES += [
     'vm/DateTime.cpp',
     'vm/Debugger.cpp',
     'vm/DebuggerMemory.cpp',
+    'vm/EnvironmentObject.cpp',
     'vm/ErrorObject.cpp',
     'vm/ForOfIterator.cpp',
     'vm/GeneratorObject.cpp',
@@ -329,19 +338,19 @@ UNIFIED_SOURCES += [
     'vm/Interpreter.cpp',
     'vm/JSONParser.cpp',
     'vm/MemoryMetrics.cpp',
-    'vm/Monitor.cpp',
     'vm/NativeObject.cpp',
     'vm/ObjectGroup.cpp',
     'vm/PIC.cpp',
     'vm/Printer.cpp',
     'vm/Probes.cpp',
     'vm/ProxyObject.cpp',
+    'vm/Realm.cpp',
     'vm/ReceiverGuard.cpp',
     'vm/RegExpObject.cpp',
     'vm/RegExpStatics.cpp',
     'vm/Runtime.cpp',
     'vm/SavedStacks.cpp',
-    'vm/ScopeObject.cpp',
+    'vm/Scope.cpp',
     'vm/SelfHosting.cpp',
     'vm/Shape.cpp',
     'vm/SharedArrayObject.cpp',
@@ -474,6 +483,9 @@ elif CONFIG['JS_CODEGEN_ARM']:
         UNIFIED_SOURCES += [
             'jit/arm/Simulator-arm.cpp'
         ]
+        # Configuration used only for testing.
+        if CONFIG['OS_ARCH'] == 'Linux':
+            CXXFLAGS += [ '-msse2', '-mfpmath=sse' ]
     elif CONFIG['OS_ARCH'] == 'Darwin':
         SOURCES += [
             'jit/arm/llvm-compiler-rt/arm/aeabi_idivmod.S',
@@ -594,21 +606,18 @@ if CONFIG['HAVE_LINUX_PERF_EVENT_H']:
     SOURCES += [
         'perf/pm_linux.cpp'
     ]
-    SOURCES['perf/pm_linux.cpp'].flags += [CONFIG['LINUX_HEADERS_INCLUDES']]
+    if CONFIG['LINUX_HEADERS_INCLUDES']:
+        SOURCES['perf/pm_linux.cpp'].flags += [CONFIG['LINUX_HEADERS_INCLUDES']]
 else:
     SOURCES += [
         'perf/pm_stub.cpp'
     ]
 
-HostSimplePrograms([
-    'host_jskwgen',
-])
-
 GENERATED_FILES += ['jsautokw.h']
 jsautokw = GENERATED_FILES['jsautokw.h']
 jsautokw.script = 'jsautokw.py'
 jsautokw.inputs += [
-    '!host_jskwgen%s' % CONFIG['HOST_BIN_SUFFIX'],
+    'vm/Keywords.h'
 ]
 
 # JavaScript must be built shared, even for static builds, as it is used by
@@ -726,7 +735,6 @@ OS_LIBS += CONFIG['REALTIME_LIBS']
 
 CFLAGS += CONFIG['MOZ_ICU_CFLAGS']
 CXXFLAGS += CONFIG['MOZ_ICU_CFLAGS']
-LOCAL_INCLUDES += CONFIG['MOZ_ICU_INCLUDES']
 
 NO_EXPAND_LIBS = True
 

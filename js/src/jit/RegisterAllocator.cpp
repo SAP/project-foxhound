@@ -166,11 +166,15 @@ AllocationIntegrityState::check(bool populateSafepoints)
                 // instruction reuses its input register for an output.
                 LInstructionReverseIterator riter = block->rbegin(ins);
                 riter++;
-                checkIntegrity(block, *riter, vreg, **alloc, populateSafepoints);
+                if (!checkIntegrity(block, *riter, vreg, **alloc, populateSafepoints))
+                    return false;
 
                 while (!worklist.empty()) {
                     IntegrityItem item = worklist.popCopy();
-                    checkIntegrity(item.block, *item.block->rbegin(), item.vreg, item.alloc, populateSafepoints);
+                    if (!checkIntegrity(item.block, *item.block->rbegin(), item.vreg, item.alloc,
+                                        populateSafepoints)) {
+                        return false;
+                    }
                 }
             }
         }
@@ -507,11 +511,24 @@ RegisterAllocator::init()
 LMoveGroup*
 RegisterAllocator::getInputMoveGroup(LInstruction* ins)
 {
+    MOZ_ASSERT(!ins->fixReuseMoves());
     if (ins->inputMoves())
         return ins->inputMoves();
 
     LMoveGroup* moves = LMoveGroup::New(alloc());
     ins->setInputMoves(moves);
+    ins->block()->insertBefore(ins, moves);
+    return moves;
+}
+
+LMoveGroup*
+RegisterAllocator::getFixReuseMoveGroup(LInstruction* ins)
+{
+    if (ins->fixReuseMoves())
+        return ins->fixReuseMoves();
+
+    LMoveGroup* moves = LMoveGroup::New(alloc());
+    ins->setFixReuseMoves(moves);
     ins->block()->insertBefore(ins, moves);
     return moves;
 }

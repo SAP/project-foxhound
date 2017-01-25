@@ -159,3 +159,131 @@ add_task(function* testTabEvents() {
   yield extension.awaitFinish("tabs-events");
   yield extension.unload();
 });
+
+add_task(function* testTabEventsSize() {
+  function background() {
+    function sendSizeMessages(tab, type) {
+      browser.test.sendMessage(`${type}-dims`, {width: tab.width, height: tab.height});
+    }
+
+    browser.tabs.onCreated.addListener(tab => {
+      sendSizeMessages(tab, "on-created");
+    });
+
+    browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (changeInfo.status == "complete") {
+        sendSizeMessages(tab, "on-updated");
+      }
+    });
+
+    browser.test.onMessage.addListener((msg, arg) => {
+      if (msg === "create-tab") {
+        browser.tabs.create({url: "http://example.com/"}).then(tab => {
+          sendSizeMessages(tab, "create");
+          browser.test.sendMessage("created-tab-id", tab.id);
+        });
+      } else if (msg === "update-tab") {
+        browser.tabs.update(arg, {url: "http://example.org/"}).then(tab => {
+          sendSizeMessages(tab, "update");
+        });
+      } else if (msg === "remove-tab") {
+        browser.tabs.remove(arg);
+        browser.test.sendMessage("tab-removed");
+      }
+    });
+
+    browser.test.sendMessage("ready");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs"],
+    },
+    background,
+  });
+
+  const RESOLUTION_PREF = "layout.css.devPixelsPerPx";
+  registerCleanupFunction(() => {
+    SpecialPowers.clearUserPref(RESOLUTION_PREF);
+  });
+
+  function checkDimensions(dims, type) {
+    is(dims.width, gBrowser.selectedBrowser.clientWidth, `tab from ${type} reports expected width`);
+    is(dims.height, gBrowser.selectedBrowser.clientHeight, `tab from ${type} reports expected height`);
+  }
+
+  yield Promise.all([extension.startup(), extension.awaitMessage("ready")]);
+
+  for (let resolution of [2, 1]) {
+    SpecialPowers.setCharPref(RESOLUTION_PREF, String(resolution));
+    is(window.devicePixelRatio, resolution, "window has the required resolution");
+
+    extension.sendMessage("create-tab");
+    let tabId = yield extension.awaitMessage("created-tab-id");
+
+    checkDimensions(yield extension.awaitMessage("create-dims"), "create");
+    checkDimensions(yield extension.awaitMessage("on-created-dims"), "onCreated");
+
+    extension.sendMessage("update-tab", tabId);
+
+    checkDimensions(yield extension.awaitMessage("update-dims"), "update");
+    checkDimensions(yield extension.awaitMessage("on-updated-dims"), "onUpdated");
+
+    extension.sendMessage("remove-tab", tabId);
+    yield extension.awaitMessage("tab-removed");
+  }
+
+  yield extension.unload();
+  SpecialPowers.clearUserPref(RESOLUTION_PREF);
+});
+
+add_task(function* testTabRemovalEvent() {
+  function background() {
+    let removalTabId;
+
+    function awaitLoad(tabId) {
+      return new Promise(resolve => {
+        browser.tabs.onUpdated.addListener(function listener(tabId_, changed, tab) {
+          if (tabId == tabId_ && changed.status == "complete") {
+            browser.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        });
+      });
+    }
+
+    chrome.tabs.onRemoved.addListener((tabId, info) => {
+      browser.test.log("Make sure the removed tab is not available in the tabs.query callback.");
+      chrome.tabs.query({}, tabs => {
+        for (let tab of tabs) {
+          browser.test.assertTrue(tab.id != tabId, "Tab query should not include removed tabId");
+        }
+        browser.test.notifyPass("tabs-events");
+      });
+    });
+
+    let url = "http://example.com/browser/browser/components/extensions/test/browser/context.html";
+    browser.tabs.create({url: url})
+    .then(tab => {
+      removalTabId = tab.id;
+      return awaitLoad(tab.id);
+    }).then(() => {
+      return browser.tabs.remove(removalTabId);
+    }).catch(e => {
+      browser.test.fail(`${e} :: ${e.stack}`);
+      browser.test.notifyFail("tabs-events");
+    });
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs"],
+    },
+
+    background,
+  });
+
+  yield extension.startup();
+  yield extension.awaitFinish("tabs-events");
+  yield extension.unload();
+});

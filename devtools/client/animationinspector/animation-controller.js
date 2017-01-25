@@ -14,17 +14,15 @@
 
 var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
-var { loader, require } = Cu.import("resource://devtools/shared/Loader.jsm");
+var { loader, require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
 var { Task } = require("devtools/shared/task");
 
 loader.lazyRequireGetter(this, "promise");
 loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 loader.lazyRequireGetter(this, "AnimationsFront", "devtools/shared/fronts/animation", true);
 
-const { LocalizationHelper } = require("devtools/client/shared/l10n");
-
-const STRINGS_URI = "chrome://devtools/locale/animationinspector.properties";
-const L10N = new LocalizationHelper(STRINGS_URI);
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/locale/animationinspector.properties");
 
 // Global toolbox/inspector, set when startup is called.
 var gToolbox, gInspector;

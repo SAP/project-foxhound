@@ -2,13 +2,26 @@
 
 var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
 Cu.import("resource://gre/modules/ExtensionUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
+                                  "resource://gre/modules/AddonManager.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ExtensionManagement",
+                                  "resource://gre/modules/ExtensionManagement.jsm");
+
 var {
   EventManager,
+  SingletonEventManager,
   ignoreEvent,
 } = ExtensionUtils;
 
-extensions.registerSchemaAPI("runtime", null, (extension, context) => {
+XPCOMUtils.defineLazyModuleGetter(this, "NativeApp",
+                                  "resource://gre/modules/NativeMessaging.jsm");
+
+extensions.registerSchemaAPI("runtime", "addon_parent", context => {
+  let {extension} = context;
   return {
     runtime: {
       onStartup: new EventManager(context, "runtime.onStartup", fire => {
@@ -20,48 +33,53 @@ extensions.registerSchemaAPI("runtime", null, (extension, context) => {
 
       onInstalled: ignoreEvent(context, "runtime.onInstalled"),
 
-      onMessage: context.messenger.onMessage("runtime.onMessage"),
+      onUpdateAvailable: new SingletonEventManager(context, "runtime.onUpdateAvailable", fire => {
+        let instanceID = extension.addonData.instanceID;
+        AddonManager.addUpgradeListener(instanceID, upgrade => {
+          extension.upgrade = upgrade;
+          let details = {
+            version: upgrade.version,
+          };
+          context.runSafe(fire, details);
+        });
+        return () => {
+          AddonManager.removeUpgradeListener(instanceID);
+        };
+      }).api(),
 
-      onConnect: context.messenger.onConnect("runtime.onConnect"),
-
-      connect: function(extensionId, connectInfo) {
-        let name = connectInfo !== null && connectInfo.name || "";
-        let recipient = extensionId !== null ? {extensionId} : {extensionId: extension.id};
-
-        return context.messenger.connect(Services.cpmm, name, recipient);
+      reload: () => {
+        if (extension.upgrade) {
+          // If there is a pending update, install it now.
+          extension.upgrade.install();
+        } else {
+          // Otherwise, reload the current extension.
+          AddonManager.getAddonByID(extension.id, addon => {
+            addon.reload();
+          });
+        }
       },
 
-      sendMessage: function(...args) {
-        let options; // eslint-disable-line no-unused-vars
-        let extensionId, message, responseCallback;
-        if (args.length == 1) {
-          message = args[0];
-        } else if (args.length == 2) {
-          [message, responseCallback] = args;
-        } else {
-          [extensionId, message, options, responseCallback] = args;
-        }
-        let recipient = {extensionId: extensionId ? extensionId : extension.id};
+      connectNative(application) {
+        let app = new NativeApp(extension, context, application);
+        return app.portAPI();
+      },
 
-        if (!GlobalManager.extensionMap.has(recipient.extensionId)) {
-          return context.wrapPromise(Promise.reject({message: "Invalid extension ID"}),
-                                     responseCallback);
-        }
-        return context.messenger.sendMessage(Services.cpmm, message, recipient, responseCallback);
+      sendNativeMessage(application, message) {
+        let app = new NativeApp(extension, context, application);
+        return app.sendMessage(message);
       },
 
       get lastError() {
+        // TODO(robwu): Figure out how to make sure that errors in the parent
+        // process are propagated to the child process.
+        // lastError should not be accessed from the parent.
         return context.lastError;
       },
 
-      getManifest() {
-        return Cu.cloneInto(extension.manifest, context.cloneScope);
-      },
-
-      id: extension.id,
-
-      getURL: function(url) {
-        return extension.baseURI.resolve(url);
+      getBrowserInfo: function() {
+        const {name, vendor, version, appBuildID} = Services.appinfo;
+        const info = {name, vendor, version, buildID: appBuildID};
+        return Promise.resolve(info);
       },
 
       getPlatformInfo: function() {

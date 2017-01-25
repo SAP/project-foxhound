@@ -192,6 +192,9 @@ ifdef WANT_MOZCONFIG_MK
 MOZCONFIG_MK_LINES := $(filter export||% UPLOAD_EXTRA_FILES% %UPLOAD_EXTRA_FILES%,$(MOZCONFIG_OUT_LINES))
 $(OBJDIR)/.mozconfig.mk: $(TOPSRCDIR)/client.mk $(FOUND_MOZCONFIG) $(call mkdir_deps,$(OBJDIR)) $(OBJDIR)/CLOBBER
 	$(if $(MOZCONFIG_MK_LINES),( $(foreach line,$(MOZCONFIG_MK_LINES), echo '$(subst ||, ,$(line))';) )) > $@
+ifdef MOZ_CURRENT_PROJECT
+	echo export MOZ_CURRENT_PROJECT=$(MOZ_CURRENT_PROJECT) >> $@
+endif
 
 # Include that makefile so that it is created. This should not actually change
 # the environment since MOZCONFIG_CONTENT, which MOZCONFIG_OUT_LINES derives
@@ -307,7 +310,7 @@ EXTRA_CONFIG_DEPS := \
 
 $(CONFIGURES): %: %.in $(EXTRA_CONFIG_DEPS)
 	@echo Generating $@
-	sed '1,/^divert/d' $< > $@
+	cp -f $< $@
 	chmod +x $@
 
 CONFIG_STATUS_DEPS := \
@@ -432,6 +435,15 @@ endif # MOZ_CURRENT_PROJECT
 ####################################
 # Postflight, after building all projects
 
+ifdef MOZ_AUTOMATION
+ifndef MOZ_CURRENT_PROJECT
+$(if $(MOZ_PGO),profiledbuild,realbuild)::
+# Only run the automation/build target for the first project.
+# (i.e. first platform of universal builds)
+	$(MAKE) -f $(TOPSRCDIR)/client.mk automation/build $(addprefix MOZ_CURRENT_PROJECT=,$(firstword $(MOZ_BUILD_PROJECTS)))
+endif
+endif
+
 realbuild postflight_all::
 ifeq (,$(MOZ_CURRENT_PROJECT)$(if $(MOZ_POSTFLIGHT_ALL),,1))
 # Don't run postflight_all for individual projects in multi-project builds
@@ -452,18 +464,6 @@ else
 endif
 endif
 
-cleansrcdir:
-	@cd $(TOPSRCDIR); \
-	if [ -f Makefile ]; then \
-	  $(MAKE) distclean ; \
-	else \
-	  echo 'Removing object files from srcdir...'; \
-	  rm -fr `find . -type d \( -name .deps -print -o -name CVS \
-	          -o -exec test ! -d {}/CVS \; \) -prune \
-	          -o \( -name '*.[ao]' -o -name '*.so' \) -type f -print`; \
-	   build/autoconf/clean-config.sh; \
-	fi;
-
 echo-variable-%:
 	@echo $($*)
 
@@ -477,7 +477,6 @@ echo-variable-%:
     realbuild \
     build \
     profiledbuild \
-    cleansrcdir \
     pull_all \
     build_all \
     clobber \

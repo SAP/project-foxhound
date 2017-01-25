@@ -47,6 +47,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/Unused.h"
 
 using namespace mozilla;
 using namespace mozilla::scache;
@@ -71,7 +72,7 @@ static const char kJSCachePrefix[] = "jsloader";
 #define XPC_SERIALIZATION_BUFFER_SIZE   (64 * 1024)
 #define XPC_DESERIALIZATION_BUFFER_SIZE (12 * 8192)
 
-// NSPR_LOG_MODULES=JSComponentLoader:5
+// MOZ_LOG=JSComponentLoader:5
 static LazyLogModule gJSCLLog("JSComponentLoader");
 
 #define LOG(args) MOZ_LOG(gJSCLLog, mozilla::LogLevel::Debug, args)
@@ -324,13 +325,13 @@ mozJSComponentLoader::ReallyInit()
 }
 
 // For terrible compatibility reasons, we need to consider both the global
-// lexical scope and the global of modules when searching for exported
+// lexical environment and the global of modules when searching for exported
 // symbols.
 static JSObject*
 ResolveModuleObjectProperty(JSContext* aCx, HandleObject aModObj, const char* name)
 {
-    if (JS_HasExtensibleLexicalScope(aModObj)) {
-        RootedObject lexical(aCx, JS_ExtensibleLexicalScope(aModObj));
+    if (JS_HasExtensibleLexicalEnvironment(aModObj)) {
+        RootedObject lexical(aCx, JS_ExtensibleLexicalEnvironment(aModObj));
         bool found;
         if (!JS_HasOwnProperty(aCx, lexical, name, &found)) {
             return nullptr;
@@ -345,6 +346,11 @@ ResolveModuleObjectProperty(JSContext* aCx, HandleObject aModObj, const char* na
 const mozilla::Module*
 mozJSComponentLoader::LoadModule(FileLocation& aFile)
 {
+    if (!NS_IsMainThread()) {
+        MOZ_ASSERT(false, "Don't use JS components off the main thread");
+        return nullptr;
+    }
+
     nsCOMPtr<nsIFile> file = aFile.GetBaseFile();
 
     nsCString spec;
@@ -367,7 +373,7 @@ mozJSComponentLoader::LoadModule(FileLocation& aFile)
     jsapi.Init();
     JSContext* cx = jsapi.cx();
 
-    nsAutoPtr<ModuleEntry> entry(new ModuleEntry(cx));
+    nsAutoPtr<ModuleEntry> entry(new ModuleEntry(RootingContext::get(cx)));
     RootedValue dummy(cx);
     rv = ObjectForLocation(info, file, &entry->obj, &entry->thisObjectKey,
                            &entry->location, false, &dummy);
@@ -443,7 +449,7 @@ mozJSComponentLoader::FindTargetObject(JSContext* aCx,
     if (mReuseLoaderGlobal) {
         JSFunction* fun = js::GetOutermostEnclosingFunctionOfScriptedCaller(aCx);
         if (fun) {
-            JSObject* funParent = js::GetNearestEnclosingWithScopeObjectForFunction(fun);
+            JSObject* funParent = js::GetNearestEnclosingWithEnvironmentObjectForFunction(fun);
             if (JS_GetClass(funParent) == &kFakeBackstagePassJSClass)
                 targetObject = funParent;
         }
@@ -770,9 +776,9 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             } else {
                 // Note: exceptions will get handled further down;
                 // don't early return for them here.
-                AutoObjectVector scopeChain(cx);
-                if (scopeChain.append(obj)) {
-                    CompileFunction(cx, scopeChain,
+                AutoObjectVector envChain(cx);
+                if (envChain.append(obj)) {
+                    CompileFunction(cx, envChain,
                                     options, nullptr, 0, nullptr,
                                     buf, fileSize32, &function);
                 }
@@ -820,9 +826,9 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             } else {
                 // Note: exceptions will get handled further down;
                 // don't early return for them here.
-                AutoObjectVector scopeChain(cx);
-                if (scopeChain.append(obj)) {
-                    CompileFunction(cx, scopeChain,
+                AutoObjectVector envChain(cx);
+                if (envChain.append(obj)) {
+                    CompileFunction(cx, envChain,
                                     options, nullptr, 0, nullptr,
                                     buf, fileSize32, &function);
                 }
@@ -835,7 +841,8 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             rv = aInfo.EnsureScriptChannel();
             NS_ENSURE_SUCCESS(rv, rv);
             nsCOMPtr<nsIInputStream> scriptStream;
-            rv = aInfo.ScriptChannel()->Open(getter_AddRefs(scriptStream));
+            rv = NS_MaybeOpenChannelUsingOpen2(aInfo.ScriptChannel(),
+                   getter_AddRefs(scriptStream));
             NS_ENSURE_SUCCESS(rv, rv);
 
             uint64_t len64;
@@ -865,9 +872,9 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             } else {
                 // Note: exceptions will get handled further down;
                 // don't early return for them here.
-                AutoObjectVector scopeChain(cx);
-                if (scopeChain.append(obj)) {
-                    CompileFunction(cx, scopeChain,
+                AutoObjectVector envChain(cx);
+                if (envChain.append(obj)) {
+                    CompileFunction(cx, envChain,
                                     options, nullptr, 0, nullptr,
                                     buf.get(), bytesRead, &function);
                 }
@@ -877,7 +884,8 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
         // exception on this context.
         if (!script && !function && aPropagateExceptions &&
             jsapi.HasException()) {
-            jsapi.StealException(aException);
+            if (!jsapi.StealException(aException))
+                return NS_ERROR_OUT_OF_MEMORY;
         }
     }
 
@@ -942,7 +950,9 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
 
         if (!ok) {
             if (aPropagateExceptions && aes.HasException()) {
-                aes.StealException(aException);
+                // Ignore return value because we're returning an error code
+                // anyway.
+                Unused << aes.StealException(aException);
             }
             aObject.set(nullptr);
             aTableScript.set(nullptr);
@@ -975,8 +985,8 @@ mozJSComponentLoader::UnloadModules()
         RootedObject global(cx, mLoaderGlobal->GetJSObject());
         if (global) {
             JSAutoCompartment ac(cx, global);
-            if (JS_HasExtensibleLexicalScope(global)) {
-                JS_SetAllNonReservedSlotsToUndefined(cx, JS_ExtensibleLexicalScope(global));
+            if (JS_HasExtensibleLexicalEnvironment(global)) {
+                JS_SetAllNonReservedSlotsToUndefined(cx, JS_ExtensibleLexicalEnvironment(global));
             }
             JS_SetAllNonReservedSlotsToUndefined(cx, global);
         } else {
@@ -1092,8 +1102,8 @@ mozJSComponentLoader::IsModuleLoaded(const nsACString& aLocation,
 static JSObject*
 ResolveModuleObjectPropertyById(JSContext* aCx, HandleObject aModObj, HandleId id)
 {
-    if (JS_HasExtensibleLexicalScope(aModObj)) {
-        RootedObject lexical(aCx, JS_ExtensibleLexicalScope(aModObj));
+    if (JS_HasExtensibleLexicalEnvironment(aModObj)) {
+        RootedObject lexical(aCx, JS_ExtensibleLexicalEnvironment(aModObj));
         bool found;
         if (!JS_HasOwnPropertyById(aCx, lexical, id, &found)) {
             return nullptr;
@@ -1154,7 +1164,7 @@ mozJSComponentLoader::ImportInto(const nsACString& aLocation,
     ModuleEntry* mod;
     nsAutoPtr<ModuleEntry> newEntry;
     if (!mImports.Get(info.Key(), &mod) && !mInProgressImports.Get(info.Key(), &mod)) {
-        newEntry = new ModuleEntry(callercx);
+        newEntry = new ModuleEntry(RootingContext::get(callercx));
         if (!newEntry)
             return NS_ERROR_OUT_OF_MEMORY;
         mInProgressImports.Put(info.Key(), newEntry);

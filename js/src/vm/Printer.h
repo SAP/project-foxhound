@@ -12,6 +12,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "jstaint.h"
 
@@ -38,7 +39,10 @@ class GenericPrinter
     // Puts |len| characters from |s| at the current position and return an offset to
     // the beginning of this new data.
     virtual int put(const char* s, size_t len) = 0;
-    virtual int put(const char* s);
+
+    inline int put(const char* s) {
+        return put(s, strlen(s));
+    }
 
     // Prints a formatted string into the buffer.
     virtual int printf(const char* fmt, ...);
@@ -107,8 +111,13 @@ class Sprinter final : public GenericPrinter
 
     // Puts |len| characters from |s| at the current position and return an offset to
     // the beginning of this new data.
-    using GenericPrinter::put;
     virtual int put(const char* s, size_t len) override;
+    using GenericPrinter::put; // pick up |inline int put(const char* s);|
+
+    // Format the given format/arguments as if by JS_vsmprintf, then put it.
+    // Return true on success, else return false and report an error (typically
+    // OOM).
+    MOZ_MUST_USE bool jsprintf(const char* fmt, ...);
 
     // Prints a formatted string into the buffer.
     virtual int vprintf(const char* fmt, va_list ap) override;
@@ -147,7 +156,7 @@ class Fprinter final : public GenericPrinter
     // Puts |len| characters from |s| at the current position and return an
     // offset to the beginning of this new data.
     virtual int put(const char* s, size_t len) override;
-    virtual int put(const char* s) override;
+    using GenericPrinter::put; // pick up |inline int put(const char* s);|
 
     // Prints a formatted string into the buffer.
     virtual int printf(const char* fmt, ...) override;
@@ -193,7 +202,7 @@ class LSprinter final : public GenericPrinter
     // Puts |len| characters from |s| at the current position and return an
     // offset to the beginning of this new data.
     virtual int put(const char* s, size_t len) override;
-    virtual int put(const char* s) override;
+    using GenericPrinter::put; // pick up |inline int put(const char* s);|
 
     // Prints a formatted string into the buffer.
     virtual int printf(const char* fmt, ...) override;
@@ -207,9 +216,6 @@ class LSprinter final : public GenericPrinter
     // Return true if this Sprinter ran out of memory.
     virtual bool hadOutOfMemory() const override;
 };
-
-extern ptrdiff_t
-Sprint(Sprinter* sp, const char* format, ...);
 
 // Map escaped code to the letter/symbol escaped with a backslash.
 extern const char       js_EscapeMap[];

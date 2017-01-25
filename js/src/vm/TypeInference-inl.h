@@ -302,7 +302,8 @@ struct AutoEnterAnalysis
     }
 
     AutoEnterAnalysis(FreeOp* fop, Zone* zone)
-      : suppressGC(zone->runtimeFromMainThread()), oom(zone), suppressMetadata(zone)
+      : suppressGC(zone->runtimeFromMainThread()->contextFromMainThread()),
+        oom(zone), suppressMetadata(zone)
     {
         init(fop, zone);
     }
@@ -844,6 +845,20 @@ inline ObjectGroup*
 TypeSet::Type::groupNoBarrier() const
 {
     return objectKey()->groupNoBarrier();
+}
+
+inline void
+TypeSet::Type::trace(JSTracer* trc)
+{
+    if (isSingletonUnchecked()) {
+        JSObject* obj = singletonNoBarrier();
+        TraceManuallyBarrieredEdge(trc, &obj, "TypeSet::Object");
+        *this = TypeSet::ObjectType(obj);
+    } else if (isGroupUnchecked()) {
+        ObjectGroup* group = groupNoBarrier();
+        TraceManuallyBarrieredEdge(trc, &group, "TypeSet::Group");
+        *this = TypeSet::ObjectType(group);
+    }
 }
 
 inline bool

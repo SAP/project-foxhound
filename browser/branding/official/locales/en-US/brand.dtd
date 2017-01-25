@@ -2,8 +2,8 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<!ENTITY  brandShorterName      "Firefox">
-<!ENTITY  brandShortName        "Firefox">
-<!ENTITY  brandFullName         "Mozilla Firefox">
-<!ENTITY  vendorShortName       "Mozilla">
+<!ENTITY  brandShorterName      "Taintfox">
+<!ENTITY  brandShortName        "Taintfox">
+<!ENTITY  brandFullName         "SAP Taintfox">
+<!ENTITY  vendorShortName       "SAP">
 <!ENTITY  trademarkInfo.part1   "Firefox and the Firefox logos are trademarks of the Mozilla Foundation.">

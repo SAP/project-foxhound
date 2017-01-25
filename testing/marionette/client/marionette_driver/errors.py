@@ -30,26 +30,30 @@ class MarionetteException(Exception):
             be displayed in the exception's string representation.
 
         """
-
-        self.msg = message
         self.cause = cause
         self.stacktrace = stacktrace
 
+        super(MarionetteException, self).__init__(message)
+
     def __str__(self):
-        msg = str(self.msg)
+        msg = str(self.message)
         tb = None
 
         if self.cause:
             if type(self.cause) is tuple:
-                msg += ", caused by %r" % self.cause[0]
+                msg += ", caused by {0!r}".format(self.cause[0])
                 tb = self.cause[2]
             else:
-                msg += ", caused by %s" % self.cause
+                msg += ", caused by {}".format(self.cause)
         if self.stacktrace:
-            st = "".join(["\t%s\n" % x for x in self.stacktrace.splitlines()])
-            msg += "\nstacktrace:\n%s" % st
+            st = "".join(["\t{}\n".format(x)
+                          for x in self.stacktrace.splitlines()])
+            msg += "\nstacktrace:\n{}".format(st)
 
-        return "".join(traceback.format_exception(self.__class__, msg, tb))
+        if tb:
+            msg += ': ' + "".join(traceback.format_tb(tb))
+
+        return msg
 
 
 class ElementNotSelectableException(MarionetteException):

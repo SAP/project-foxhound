@@ -26,15 +26,7 @@ public:
 
     virtual ~gfxGDIFont();
 
-    HFONT GetHFONT() { if (!mMetrics) Initialize(); return mFont; }
-
-    virtual gfxFloat GetAdjustedSize()
-    {
-        if (!mMetrics) {
-            Initialize();
-        }
-        return mAdjustedSize;
-    }
+    HFONT GetHFONT() { return mFont; }
 
     cairo_font_face_t   *CairoFontFace() { return mFontFace; }
     cairo_scaled_font_t *CairoScaledFont() { return mScaledFont; }
@@ -45,7 +37,7 @@ public:
     virtual bool SetupCairoFont(DrawTarget* aDrawTarget) override;
 
     /* override Measure to add padding for antialiasing */
-    virtual RunMetrics Measure(gfxTextRun *aTextRun,
+    virtual RunMetrics Measure(const gfxTextRun *aTextRun,
                                uint32_t aStart, uint32_t aEnd,
                                BoundingBoxType aBoundingBoxType,
                                DrawTarget *aDrawTargetForTightBoundingBox,

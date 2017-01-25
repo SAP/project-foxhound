@@ -6,14 +6,10 @@
 
 "use strict";
 
-const {Cu} = require("chrome");
-var {loader} = Cu.import("resource://devtools/shared/Loader.jsm");
 loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 
-const { LocalizationHelper } = require("devtools/client/shared/l10n");
-
-const STRINGS_URI = "chrome://devtools/locale/animationinspector.properties";
-const L10N = new LocalizationHelper(STRINGS_URI);
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/locale/animationinspector.properties");
 
 // How many times, maximum, can we loop before we find the optimal time
 // interval in the timeline graph.

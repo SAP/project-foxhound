@@ -40,6 +40,8 @@ typedef enum rtp_ptype_
     RTP_OPUS         = 109,
     RTP_VP8          = 120,
     RTP_VP9          = 121,
+    RTP_RED          = 122,
+    RTP_ULPFEC       = 123,
     RTP_I420         = 124,
     RTP_ISAC         = 124
 } rtp_ptype;
@@ -187,6 +189,7 @@ typedef enum {
     SDP_ATTR_IMAGEATTR,
     SDP_ATTR_SIMULCAST,
     SDP_ATTR_RID,
+    SDP_ATTR_DTLS_MESSAGE,
     SDP_MAX_ATTR_TYPES,
     SDP_ATTR_INVALID
 } sdp_attr_e;

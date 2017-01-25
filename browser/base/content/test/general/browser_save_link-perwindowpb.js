@@ -15,28 +15,16 @@ function triggerSave(aWindow, aCallback) {
   // This page sets a cookie if and only if a cookie does not exist yet
   let testURI = "http://mochi.test:8888/browser/browser/base/content/test/general/bug792517-2.html";
   testBrowser.loadURI(testURI);
-  testBrowser.addEventListener("pageshow", function pageShown(event) {
-    info("got pageshow with " + event.target.location);
-    if (event.target.location != testURI) {
-      info("try again!");
-      testBrowser.loadURI(testURI);
-      return;
-    }
-    info("found our page!");
-    testBrowser.removeEventListener("pageshow", pageShown, false);
-
+  BrowserTestUtils.browserLoaded(testBrowser, false, testURI)
+                  .then(() => {
     waitForFocus(function () {
       info("register to handle popupshown");
       aWindow.document.addEventListener("popupshown", contextMenuOpened, false);
 
-      var link = testBrowser.contentDocument.getElementById("fff");
-      info("link: " + link);
-      EventUtils.synthesizeMouseAtCenter(link,
-                                         { type: "contextmenu", button: 2 },
-                                         testBrowser.contentWindow);
+      BrowserTestUtils.synthesizeMouseAtCenter("#fff", {type: "contextmenu", button: 2}, testBrowser);
       info("right clicked!");
-    }, testBrowser);
-  }, false);
+    }, aWindow);
+  });
 
   function contextMenuOpened(event) {
     info("contextMenuOpened");
@@ -118,7 +106,7 @@ function test() {
     Services.obs.removeObserver(observer, "http-on-examine-response");
     info("Finished running the cleanup code");
   });
- 
+
   function observer(subject, topic, state) {
     info("observer called with " + topic);
     if (topic == "http-on-modify-request") {
@@ -142,10 +130,12 @@ function test() {
       is(cookies, "foopy=1", "Cookie should be foopy=1");
       gNumSet += 1;
       info("gNumSet = " + gNumSet);
-    } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) {
-      info("onExamineResponse caught NOTAVAIL" + ex);
     } catch (ex) {
-      info("ionExamineResponse caught " + ex);
+      if (ex.result == Cr.NS_ERROR_NOT_AVAILABLE) {
+        info("onExamineResponse caught NOTAVAIL" + ex);
+      } else {
+        info("ionExamineResponse caught " + ex);
+      }
     }
   }
 
@@ -162,10 +152,12 @@ function test() {
       // cookie because we are making only 2 requests: one in public mode, and
       // one in private mode.
       throw "We should never send a cookie in this test";
-    } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) {
-      info("onModifyRequest caught NOTAVAIL" + ex);
     } catch (ex) {
-      info("ionModifyRequest caught " + ex);
+      if (ex.result == Cr.NS_ERROR_NOT_AVAILABLE) {
+        info("onModifyRequest caught NOTAVAIL" + ex);
+      } else {
+        info("ionModifyRequest caught " + ex);
+      }
     }
   }
 

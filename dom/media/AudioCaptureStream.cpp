@@ -4,8 +4,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaStreamGraphImpl.h"
+#include "MediaStreamListener.h"
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 
 #include "AudioSegment.h"
 #include "mozilla/Logging.h"
@@ -29,8 +30,8 @@ namespace mozilla
 // We are mixing to mono until PeerConnection can accept stereo
 static const uint32_t MONO = 1;
 
-AudioCaptureStream::AudioCaptureStream(DOMMediaStream* aWrapper, TrackID aTrackId)
-  : ProcessedMediaStream(aWrapper), mTrackId(aTrackId), mStarted(false), mTrackCreated(false)
+AudioCaptureStream::AudioCaptureStream(TrackID aTrackId)
+  : ProcessedMediaStream(), mTrackId(aTrackId), mStarted(false), mTrackCreated(false)
 {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_COUNT_CTOR(AudioCaptureStream);
@@ -78,7 +79,7 @@ AudioCaptureStream::ProcessInput(GraphTime aFrom, GraphTime aTo,
       MediaStreamListener* l = mListeners[i];
       AudioSegment tmp;
       l->NotifyQueuedTrackChanges(
-        Graph(), mTrackId, 0, MediaStreamListener::TRACK_EVENT_CREATED, tmp);
+        Graph(), mTrackId, 0, TrackEventCommand::TRACK_EVENT_CREATED, tmp);
       l->NotifyFinishedTrackCreation(Graph());
     }
     mTrackCreated = true;
@@ -101,19 +102,28 @@ AudioCaptureStream::ProcessInput(GraphTime aFrom, GraphTime aTo,
     AudioSegment output;
     for (uint32_t i = 0; i < inputCount; i++) {
       MediaStream* s = mInputs[i]->GetSource();
-      StreamTracks::TrackIter tracks(s->GetStreamTracks(), MediaSegment::AUDIO);
-      while (!tracks.IsEnded()) {
-        AudioSegment* inputSegment = tracks->Get<AudioSegment>();
+      StreamTracks::TrackIter track(s->GetStreamTracks(), MediaSegment::AUDIO);
+      if (track.IsEnded()) {
+        // No tracks for this input. Still we append data to trigger the mixer.
+        AudioSegment toMix;
+        toMix.AppendNullData(aTo - aFrom);
+        toMix.Mix(mMixer, MONO, Graph()->GraphRate());
+      }
+      for (; !track.IsEnded(); track.Next()) {
+        AudioSegment* inputSegment = track->Get<AudioSegment>();
         StreamTime inputStart = s->GraphTimeToStreamTimeWithBlocking(aFrom);
         StreamTime inputEnd = s->GraphTimeToStreamTimeWithBlocking(aTo);
         AudioSegment toMix;
-        toMix.AppendSlice(*inputSegment, inputStart, inputEnd);
-        // Care for streams blocked in the [aTo, aFrom] range.
-        if (inputEnd - inputStart < aTo - aFrom) {
-          toMix.AppendNullData((aTo - aFrom) - (inputEnd - inputStart));
+        if (track->IsEnded() && inputSegment->GetDuration() <= inputStart) {
+          toMix.AppendNullData(aTo - aFrom);
+        } else {
+          toMix.AppendSlice(*inputSegment, inputStart, inputEnd);
+          // Care for streams blocked in the [aTo, aFrom] range.
+          if (inputEnd - inputStart < aTo - aFrom) {
+            toMix.AppendNullData((aTo - aFrom) - (inputEnd - inputStart));
+          }
         }
         toMix.Mix(mMixer, MONO, Graph()->GraphRate());
-        tracks.Next();
       }
     }
     // This calls MixerCallback below

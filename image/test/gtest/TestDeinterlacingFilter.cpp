@@ -59,7 +59,13 @@ AssertConfiguringDeinterlacingFilterFails(const IntSize& aSize)
                                                  SurfaceFormat::B8G8R8A8, false });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixels100_100)
+class ImageDeinterlacingFilter : public ::testing::Test
+{
+protected:
+  AutoInitializeImageLib mInit;
+};
+
+TEST_F(ImageDeinterlacingFilter, WritePixels100_100)
 {
   WithDeinterlacingFilter(IntSize(100, 100), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -69,7 +75,7 @@ TEST(ImageDeinterlacingFilter, WritePixels100_100)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixels99_99)
+TEST_F(ImageDeinterlacingFilter, WritePixels99_99)
 {
   WithDeinterlacingFilter(IntSize(99, 99), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -79,7 +85,7 @@ TEST(ImageDeinterlacingFilter, WritePixels99_99)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixels8_8)
+TEST_F(ImageDeinterlacingFilter, WritePixels8_8)
 {
   WithDeinterlacingFilter(IntSize(8, 8), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -89,7 +95,7 @@ TEST(ImageDeinterlacingFilter, WritePixels8_8)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixels7_7)
+TEST_F(ImageDeinterlacingFilter, WritePixels7_7)
 {
   WithDeinterlacingFilter(IntSize(7, 7), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -99,7 +105,7 @@ TEST(ImageDeinterlacingFilter, WritePixels7_7)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixels3_3)
+TEST_F(ImageDeinterlacingFilter, WritePixels3_3)
 {
   WithDeinterlacingFilter(IntSize(3, 3), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -109,7 +115,7 @@ TEST(ImageDeinterlacingFilter, WritePixels3_3)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixels1_1)
+TEST_F(ImageDeinterlacingFilter, WritePixels1_1)
 {
   WithDeinterlacingFilter(IntSize(1, 1), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -119,7 +125,7 @@ TEST(ImageDeinterlacingFilter, WritePixels1_1)
   });
 }
 
-TEST(ImageDeinterlacingFilter, PalettedWritePixels)
+TEST_F(ImageDeinterlacingFilter, PalettedWritePixels)
 {
   WithPalettedDeinterlacingFilter(IntSize(100, 100),
                                   [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -127,7 +133,7 @@ TEST(ImageDeinterlacingFilter, PalettedWritePixels)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsNonProgressiveOutput51_52)
+TEST_F(ImageDeinterlacingFilter, WritePixelsNonProgressiveOutput51_52)
 {
   WithDeinterlacingFilter(IntSize(51, 52), /* aProgressiveDisplay = */ false,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -223,7 +229,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsNonProgressiveOutput51_52)
     // Check that the generated image is correct. As mentioned above, we expect
     // even rows to be green and odd rows to be red.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     for (uint32_t row = 0; row < 52; ++row) {
       EXPECT_TRUE(RowsAreSolidColor(surface, row, 1,
@@ -233,7 +239,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsNonProgressiveOutput51_52)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsOutput20_20)
+TEST_F(ImageDeinterlacingFilter, WritePixelsOutput20_20)
 {
   WithDeinterlacingFilter(IntSize(20, 20), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -297,7 +303,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput20_20)
     // Check that the generated image is correct. As mentioned above, we expect
     // even rows to be green and odd rows to be red.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     for (uint32_t row = 0; row < 20; ++row) {
       EXPECT_TRUE(RowsAreSolidColor(surface, row, 1,
@@ -307,7 +313,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput20_20)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsOutput7_7)
+TEST_F(ImageDeinterlacingFilter, WritePixelsOutput7_7)
 {
   WithDeinterlacingFilter(IntSize(7, 7), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -358,7 +364,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput7_7)
     // Check that the generated image is correct. As mentioned above, we expect
     // two green rows, followed by two red rows, then two green rows, etc.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     for (uint32_t row = 0; row < 7; ++row) {
       BGRAColor color = row == 0 || row == 1 || row == 4 || row == 5
@@ -369,7 +375,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput7_7)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsOutput3_3)
+TEST_F(ImageDeinterlacingFilter, WritePixelsOutput3_3)
 {
   WithDeinterlacingFilter(IntSize(3, 3), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -412,7 +418,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput3_3)
     // Check that the generated image is correct. As mentioned above, we expect
     // green, red, green in that order.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     for (uint32_t row = 0; row < 3; ++row) {
       EXPECT_TRUE(RowsAreSolidColor(surface, row, 1,
@@ -422,7 +428,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput3_3)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsOutput1_1)
+TEST_F(ImageDeinterlacingFilter, WritePixelsOutput1_1)
 {
   WithDeinterlacingFilter(IntSize(1, 1), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -442,7 +448,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsOutput1_1)
     // Check that the generated image is correct. As mentioned above, we expect
     // a single red row.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     EXPECT_TRUE(RowsAreSolidColor(surface, 0, 1, BGRAColor::Red()));
   });
@@ -483,14 +489,14 @@ WriteRowAndCheckInterlacerOutput(Decoder* aDecoder,
   // may involve copying previously-written rows in the buffer to the output
   // even though they don't change in this pass.
   RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-  RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+  RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
   for (uint32_t row = aFirstHaeberliRow; row <= aLastHaeberliRow; ++row) {
     EXPECT_TRUE(RowsAreSolidColor(surface, row, 1, aColor));
   }
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsIntermediateOutput7_7)
+TEST_F(ImageDeinterlacingFilter, WritePixelsIntermediateOutput7_7)
 {
   WithDeinterlacingFilter(IntSize(7, 7), /* aProgressiveDisplay = */ true,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -560,7 +566,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsIntermediateOutput7_7)
     // Check that the generated image is correct. As mentioned above, we expect
     // two green rows, followed by two red rows, then two green rows, etc.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     for (uint32_t row = 0; row < 7; ++row) {
       BGRAColor color = row == 0 || row == 1 || row == 4 || row == 5
@@ -571,7 +577,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsIntermediateOutput7_7)
   });
 }
 
-TEST(ImageDeinterlacingFilter, WritePixelsNonProgressiveIntermediateOutput7_7)
+TEST_F(ImageDeinterlacingFilter, WritePixelsNonProgressiveIntermediateOutput7_7)
 {
   WithDeinterlacingFilter(IntSize(7, 7), /* aProgressiveDisplay = */ false,
                           [](Decoder* aDecoder, SurfaceFilter* aFilter) {
@@ -641,7 +647,7 @@ TEST(ImageDeinterlacingFilter, WritePixelsNonProgressiveIntermediateOutput7_7)
     // Check that the generated image is correct. As mentioned above, we expect
     // two green rows, followed by two red rows, then two green rows, etc.
     RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-    RefPtr<SourceSurface> surface = currentFrame->GetSurface();
+    RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
 
     for (uint32_t row = 0; row < 7; ++row) {
       BGRAColor color = row == 0 || row == 1 || row == 4 || row == 5
@@ -653,13 +659,13 @@ TEST(ImageDeinterlacingFilter, WritePixelsNonProgressiveIntermediateOutput7_7)
 }
 
 
-TEST(ImageDeinterlacingFilter, DeinterlacingFailsFor0_0)
+TEST_F(ImageDeinterlacingFilter, DeinterlacingFailsFor0_0)
 {
   // A 0x0 input size is invalid, so configuration should fail.
   AssertConfiguringDeinterlacingFilterFails(IntSize(0, 0));
 }
 
-TEST(ImageDeinterlacingFilter, DeinterlacingFailsForMinus1_Minus1)
+TEST_F(ImageDeinterlacingFilter, DeinterlacingFailsForMinus1_Minus1)
 {
   // A negative input size is invalid, so configuration should fail.
   AssertConfiguringDeinterlacingFilterFails(IntSize(-1, -1));

@@ -15,6 +15,7 @@
 #include "mozilla/layers/CompositorOGL.h"  // for CompositorOGL
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/LayerManagerComposite.h"
+#include "mozilla/widget/InProcessCompositorWidget.h"
 #include "nsBaseWidget.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
@@ -35,12 +36,11 @@ public:
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  NS_IMETHOD GetClientBounds(LayoutDeviceIntRect& aRect) override {
-    aRect = LayoutDeviceIntRect(0, 0, gCompWidth, gCompHeight);
-    return NS_OK;
+  virtual LayoutDeviceIntRect GetClientBounds() override {
+    return LayoutDeviceIntRect(0, 0, gCompWidth, gCompHeight);
   }
-  NS_IMETHOD GetBounds(LayoutDeviceIntRect& aRect) override {
-    return GetClientBounds(aRect);
+  virtual LayoutDeviceIntRect GetBounds() override {
+    return GetClientBounds();
   }
 
   void* GetNativeData(uint32_t aDataType) override {
@@ -52,24 +52,22 @@ public:
       RefPtr<GLContext> context = GLContextProvider::CreateOffscreen(
         IntSize(gCompWidth, gCompHeight), caps,
         CreateContextFlags::REQUIRE_COMPAT_PROFILE,
-        discardFailureId);
+        &discardFailureId);
       return context.forget().take();
     }
     return nullptr;
   }
 
-  NS_IMETHOD              Create(nsIWidget* aParent,
+  virtual nsresult        Create(nsIWidget* aParent,
                                  nsNativeWidget aNativeParent,
                                  const LayoutDeviceIntRect& aRect,
                                  nsWidgetInitData* aInitData = nullptr) override { return NS_OK; }
-  NS_IMETHOD              Create(nsIWidget* aParent,
+  virtual nsresult        Create(nsIWidget* aParent,
                                  nsNativeWidget aNativeParent,
                                  const DesktopIntRect& aRect,
                                  nsWidgetInitData* aInitData = nullptr) override { return NS_OK; }
   NS_IMETHOD              Show(bool aState) override { return NS_OK; }
   virtual bool            IsVisible() const override { return true; }
-  NS_IMETHOD              ConstrainPosition(bool aAllowSlop,
-                                            int32_t *aX, int32_t *aY) override { return NS_OK; }
   NS_IMETHOD              Move(double aX, double aY) override { return NS_OK; }
   NS_IMETHOD              Resize(double aWidth, double aHeight, bool aRepaint) override { return NS_OK; }
   NS_IMETHOD              Resize(double aX, double aY,
@@ -84,11 +82,9 @@ public:
   virtual LayoutDeviceIntPoint WidgetToScreenOffset() override { return LayoutDeviceIntPoint(0, 0); }
   NS_IMETHOD              DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                                         nsEventStatus& aStatus) override { return NS_OK; }
-  NS_IMETHOD              CaptureRollupEvents(nsIRollupListener * aListener, bool aDoCapture) override { return NS_OK; }
   NS_IMETHOD_(void)       SetInputContext(const InputContext& aContext,
                                           const InputContextAction& aAction) override {}
   NS_IMETHOD_(InputContext) GetInputContext() override { abort(); }
-  NS_IMETHOD              ReparentNativeWidget(nsIWidget* aNewParent) override { return NS_OK; }
 
 private:
   ~MockWidget() {}
@@ -99,21 +95,21 @@ NS_IMPL_ISUPPORTS_INHERITED0(MockWidget, nsBaseWidget)
 struct LayerManagerData {
   RefPtr<MockWidget> mWidget;
   RefPtr<Compositor> mCompositor;
-  RefPtr<widget::CompositorWidgetProxy> mCompositorWidgetProxy;
+  RefPtr<widget::CompositorWidget> mCompositorWidget;
   RefPtr<LayerManagerComposite> mLayerManager;
 
   LayerManagerData(Compositor* compositor,
                    MockWidget* widget,
-                   widget::CompositorWidgetProxy* aProxy,
+                   widget::CompositorWidget* aWidget,
                    LayerManagerComposite* layerManager)
     : mWidget(widget)
     , mCompositor(compositor)
-    , mCompositorWidgetProxy(aProxy)
+    , mCompositorWidget(aWidget)
     , mLayerManager(layerManager)
   {}
 };
 
-static already_AddRefed<Compositor> CreateTestCompositor(LayersBackend backend, widget::CompositorWidgetProxy* widget)
+static already_AddRefed<Compositor> CreateTestCompositor(LayersBackend backend, widget::CompositorWidget* widget)
 {
   gfxPrefs::GetSingleton();
 
@@ -137,8 +133,8 @@ static already_AddRefed<Compositor> CreateTestCompositor(LayersBackend backend, 
     MOZ_CRASH(); // No support yet
 #endif
   }
-
-  if (!compositor || !compositor->Initialize()) {
+  nsCString failureReason;
+  if (!compositor || !compositor->Initialize(&failureReason)) {
     printf_stderr("Failed to construct layer manager for the requested backend\n");
     abort();
   }
@@ -157,7 +153,7 @@ static std::vector<LayerManagerData> GetLayerManagers(std::vector<LayersBackend>
     auto backend = aBackends[i];
 
     RefPtr<MockWidget> widget = new MockWidget();
-    RefPtr<widget::CompositorWidgetProxy> proxy = widget->NewCompositorWidgetProxy();
+    RefPtr<widget::CompositorWidget> proxy = new widget::InProcessCompositorWidget(widget);
     RefPtr<Compositor> compositor = CreateTestCompositor(backend, proxy);
 
     RefPtr<LayerManagerComposite> layerManager = new LayerManagerComposite(compositor);

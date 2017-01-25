@@ -215,8 +215,8 @@ public:
 
   size_t output_for_input(uint32_t input_frames)
   {
-    return ceilf(input_frames * resampling_ratio) + 1
-           - resampling_in_buffer.length() / channels;
+    return (size_t)floorf((input_frames + samples_to_frames(resampling_in_buffer.length()))
+                         / resampling_ratio);
   }
 
   /** Returns a buffer containing exactly `output_frame_count` resampled frames.
@@ -263,8 +263,15 @@ public:
    * number of output frames will be exactly equal. */
   uint32_t input_needed_for_output(uint32_t output_frame_count)
   {
-    return ceilf(output_frame_count * resampling_ratio) + 1
-           - samples_to_frames(resampling_in_buffer.length());
+    int32_t unresampled_frames_left = samples_to_frames(resampling_in_buffer.length());
+    int32_t resampled_frames_left = samples_to_frames(resampling_out_buffer.length());
+    float input_frames_needed =
+      (output_frame_count - unresampled_frames_left) * resampling_ratio
+        - resampled_frames_left;
+    if (input_frames_needed < 0) {
+      return 0;
+    }
+    return (uint32_t)ceilf(input_frames_needed);
   }
 
   /** Returns a pointer to the input buffer, that contains empty space for at
@@ -331,7 +338,7 @@ private:
   /** Additional latency inserted into the pipeline for synchronisation. */
   uint32_t additional_latency;
   /** When `input_buffer` is called, this allows tracking the number of samples
-      that where in the buffer. */
+      that were in the buffer. */
   uint32_t leftover_samples;
 };
 

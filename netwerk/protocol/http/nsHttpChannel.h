@@ -27,6 +27,8 @@
 #include "nsIStreamListener.h"
 #include "nsISupportsPrimitives.h"
 #include "nsICorsPreflightCallback.h"
+#include "AlternateServices.h"
+#include "nsIHstsPrimingCallback.h"
 
 class nsDNSPrefetch;
 class nsICancelable;
@@ -74,6 +76,7 @@ class nsHttpChannel final : public HttpBaseChannel
                           , public nsSupportsWeakReference
                           , public nsICorsPreflightCallback
                           , public nsIChannelWithDivertableParentListener
+                          , public nsIHstsPrimingCallback
 {
 public:
     NS_DECL_ISUPPORTS_INHERITED
@@ -89,6 +92,7 @@ public:
     NS_DECL_NSIAPPLICATIONCACHECONTAINER
     NS_DECL_NSIAPPLICATIONCACHECHANNEL
     NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
+    NS_DECL_NSIHSTSPRIMINGCALLBACK
     NS_DECL_NSITHREADRETARGETABLEREQUEST
     NS_DECL_NSIDNSLISTENER
     NS_DECL_NSICHANNELWITHDIVERTABLEPARENTLISTENER
@@ -203,6 +207,9 @@ public: /* internal necko use only */
     nsresult OpenCacheEntry(bool usingSSL);
     nsresult ContinueConnect();
 
+    // If the load is mixed-content, build and send an HSTS priming request.
+    nsresult TryHSTSPriming();
+
     nsresult StartRedirectChannelToURI(nsIURI *, uint32_t);
 
     // This allows cache entry to be marked as foreign even after channel itself
@@ -258,6 +265,13 @@ public: /* internal necko use only */
     bool AwaitingCacheCallbacks();
     void SetCouldBeSynthesized();
 
+private: // used for alternate service validation
+    RefPtr<TransactionObserver> mTransactionObserver;
+public:
+    void SetConnectionInfo(nsHttpConnectionInfo *); // clones the argument
+    void SetTransactionObserver(TransactionObserver *arg) { mTransactionObserver = arg; }
+    TransactionObserver *GetTransactionObserver() { return mTransactionObserver; }
+
 protected:
     virtual ~nsHttpChannel();
 
@@ -279,6 +293,7 @@ private:
     nsresult ProcessNormal();
     nsresult ContinueProcessNormal(nsresult);
     void     ProcessAltService();
+    bool     ShouldBypassProcessNotModified();
     nsresult ProcessNotModified();
     nsresult AsyncProcessRedirection(uint32_t httpStatus);
     nsresult ContinueProcessRedirection(nsresult);
@@ -526,7 +541,7 @@ private:
     // when true, after we finish read from cache we must check all data
     // had been loaded from cache. If not, then an error has to be propagated
     // to the consumer.
-    uint32_t                          mConcurentCacheAccess : 1;
+    uint32_t                          mConcurrentCacheAccess : 1;
     // whether the request is setup be byte-range
     uint32_t                          mIsPartialRequest : 1;
     // true iff there is AutoRedirectVetoNotifier on the stack

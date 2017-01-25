@@ -38,10 +38,6 @@
 #include "gfxMathTable.h"
 #include "gfx2DGlue.h"
 
-#if defined(XP_MACOSX)
-#include "nsCocoaFeatures.h"
-#endif
-
 #include "cairo.h"
 
 #include "harfbuzz/hb.h"
@@ -284,7 +280,8 @@ gfxFontEntry::FindOrMakeFont(const gfxFontStyle *aStyle,
                              gfxCharacterMap* aUnicodeRangeMap)
 {
     // the font entry name is the psname, not the family name
-    RefPtr<gfxFont> font = gfxFontCache::GetCache()->Lookup(this, aStyle);
+    RefPtr<gfxFont> font =
+        gfxFontCache::GetCache()->Lookup(this, aStyle, aUnicodeRangeMap);
 
     if (!font) {
         gfxFont *newFont = CreateFontInstance(aStyle, aNeedsBold);
@@ -354,7 +351,7 @@ gfxFontEntry::GetSVGGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphId,
 
 bool
 gfxFontEntry::RenderSVGGlyph(gfxContext *aContext, uint32_t aGlyphId,
-                             gfxTextContextPaint *aContextPaint)
+                             SVGContextPaint* aContextPaint)
 {
     NS_ASSERTION(mSVGInitialized, "SVG data has not yet been loaded. TryGetSVGData() first.");
     return mSVGGlyphs->RenderGlyph(aContext, aGlyphId, aContextPaint);
@@ -387,7 +384,7 @@ gfxFontEntry::TryGetSVGData(gfxFont* aFont)
         mSVGGlyphs = MakeUnique<gfxSVGGlyphs>(svgTable, this);
     }
 
-    if (!mFontsUsingSVGGlyphs.Contains(aFont)) {
+    if (mSVGGlyphs && !mFontsUsingSVGGlyphs.Contains(aFont)) {
         mFontsUsingSVGGlyphs.AppendElement(aFont);
     }
 
@@ -678,33 +675,6 @@ gfxFontEntry::ShareFontTableAndGetBlob(uint32_t aTag,
     return entry->ShareTableAndGetBlob(Move(*aBuffer), mFontTableCache.get());
 }
 
-static int
-DirEntryCmp(const void* aKey, const void* aItem)
-{
-    int32_t tag = *static_cast<const int32_t*>(aKey);
-    const TableDirEntry* entry = static_cast<const TableDirEntry*>(aItem);
-    return tag - int32_t(entry->tag);
-}
-
-hb_blob_t*
-gfxFontEntry::GetTableFromFontData(const void* aFontData, uint32_t aTableTag)
-{
-    const SFNTHeader* header =
-        reinterpret_cast<const SFNTHeader*>(aFontData);
-    const TableDirEntry* dir =
-        reinterpret_cast<const TableDirEntry*>(header + 1);
-    dir = static_cast<const TableDirEntry*>
-        (bsearch(&aTableTag, dir, uint16_t(header->numTables),
-                 sizeof(TableDirEntry), DirEntryCmp));
-    if (dir) {
-        return hb_blob_create(reinterpret_cast<const char*>(aFontData) +
-                                  dir->offset, dir->length,
-                              HB_MEMORY_MODE_READONLY, nullptr, nullptr);
-
-    }
-    return nullptr;
-}
-
 already_AddRefed<gfxCharacterMap>
 gfxFontEntry::GetCMAPFromFontInfo(FontInfoData *aFontInfoData,
                                   uint32_t& aUVSOffset,
@@ -881,8 +851,7 @@ gfxFontEntry::HasGraphiteSpaceContextuals()
 
 #define FEATURE_SCRIPT_MASK 0x000000ff // script index replaces low byte of tag
 
-// check for too many script codes
-PR_STATIC_ASSERT(int(Script::NUM_SCRIPT_CODES) <= FEATURE_SCRIPT_MASK);
+static_assert(int(Script::NUM_SCRIPT_CODES) <= FEATURE_SCRIPT_MASK, "Too many script codes");
 
 // high-order three bytes of tag with script in low-order byte
 #define SCRIPT_FEATURE(s,tag) (((~FEATURE_SCRIPT_MASK) & (tag)) | \
@@ -1062,12 +1031,14 @@ gfxFontEntry::SupportsGraphiteFeature(uint32_t aFeatureTag)
 
 bool
 gfxFontEntry::GetColorLayersInfo(uint32_t aGlyphId,
+                            const mozilla::gfx::Color& aDefaultColor,
                             nsTArray<uint16_t>& aLayerGlyphs,
                             nsTArray<mozilla::gfx::Color>& aLayerColors)
 {
     return gfxFontUtils::GetColorGlyphLayers(mCOLR,
                                              mCPAL,
                                              aGlyphId,
+                                             aDefaultColor,
                                              aLayerGlyphs,
                                              aLayerColors);
 }
@@ -1772,13 +1743,6 @@ gfxFontFamily::ReadFaceNames(gfxPlatformFontList *aPlatformFontList,
         return;
 
     bool asyncFontLoaderDisabled = false;
-
-#if defined(XP_MACOSX)
-    // bug 975460 - async font loader crashes sometimes under 10.6, disable
-    if (!nsCocoaFeatures::OnLionOrLater()) {
-        asyncFontLoaderDisabled = true;
-    }
-#endif
 
     if (!mOtherFamilyNamesInitialized &&
         aFontInfoData &&

@@ -111,7 +111,7 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
     UpdateLocationEvent(nsGeoPosition* aPosition)
       : mPosition(aPosition)
     {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
       nsCOMPtr<nsIGeolocationUpdate> callback = provider->mLocationCallback;
@@ -178,8 +178,6 @@ private:
   const char16_t* mData;
 };
 
-
-
 void
 GonkGPSGeolocationProvider::StatusCallback(GpsStatus* status)
 {
@@ -196,11 +194,11 @@ GonkGPSGeolocationProvider::StatusCallback(GpsStatus* status)
       break;
     case GPS_STATUS_ENGINE_ON:
       msgStream = "geo: GPS_STATUS_ENGINE_ON\n";
-      NS_DispatchToMainThread(new NotifyObserversGPSTask( MOZ_UTF16("GPSStarting")));
+      NS_DispatchToMainThread(new NotifyObserversGPSTask(u"GPSStarting"));
       break;
     case GPS_STATUS_ENGINE_OFF:
       msgStream = "geo: GPS_STATUS_ENGINE_OFF\n";
-      NS_DispatchToMainThread(new NotifyObserversGPSTask( MOZ_UTF16("GPSShutdown")));
+      NS_DispatchToMainThread(new NotifyObserversGPSTask(u"GPSShutdown"));
       break;
     default:
       msgStream = "geo: Unknown GPS status\n";
@@ -277,7 +275,7 @@ GonkGPSGeolocationProvider::SetCapabilitiesCallback(uint32_t capabilities)
     UpdateCapabilitiesEvent(uint32_t aCapabilities)
       : mCapabilities(aCapabilities)
     {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
 
@@ -345,7 +343,7 @@ GonkGPSGeolocationProvider::AGPSStatusCallback(AGpsStatus* status)
     AGPSStatusEvent(AGpsStatusValue aStatus)
       : mStatus(aStatus)
     {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
 
@@ -374,7 +372,7 @@ GonkGPSGeolocationProvider::AGPSRILSetIDCallback(uint32_t flags)
     RequestSetIDEvent(uint32_t flags)
       : mFlags(flags)
     {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
       provider->RequestSetID(mFlags);
@@ -394,7 +392,7 @@ GonkGPSGeolocationProvider::AGPSRILRefLocCallback(uint32_t flags)
   public:
     RequestRefLocEvent()
     {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       RefPtr<GonkGPSGeolocationProvider> provider =
         GonkGPSGeolocationProvider::GetSingleton();
       provider->SetReferenceLocation();
@@ -1172,7 +1170,7 @@ GonkGPSGeolocationProvider::Observe(nsISupports* aSubject,
 
   if (!strcmp(aTopic, kMozSettingsChangedTopic)) {
     // Read changed setting value
-    RootedDictionary<SettingChangeNotification> setting(nsContentUtils::RootingCx());
+    RootedDictionary<SettingChangeNotification> setting(RootingCx());
     if (!WrappedJSToDictionary(aSubject, setting)) {
       return NS_OK;
     }

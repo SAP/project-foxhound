@@ -13,6 +13,7 @@
 #include "nsIServiceManager.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
+#include "nsIScriptSecurityManager.h"
 #include "nsITreeBoxObject.h"
 #include "nsITreeColumns.h"
 #include "nsIObserverService.h"
@@ -85,6 +86,26 @@ nsAutoCompleteController::GetInput(nsIAutoCompleteInput **aInput)
 {
   *aInput = mInput;
   NS_IF_ADDREF(*aInput);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAutoCompleteController::SetInitiallySelectedIndex(int32_t aSelectedIndex)
+{
+  // First forward to the popup.
+  nsCOMPtr<nsIAutoCompleteInput> input(mInput);
+  NS_ENSURE_STATE(input);
+  nsCOMPtr<nsIAutoCompletePopup> popup;
+  input->GetPopup(getter_AddRefs(popup));
+  NS_ENSURE_STATE(popup);
+  popup->SetSelectedIndex(aSelectedIndex);
+
+  // Now take care of internal stuff.
+  bool completeSelection;
+  if (NS_SUCCEEDED(input->GetCompleteSelectedIndex(&completeSelection)) &&
+      completeSelection) {
+    mCompletedSelectionIndex = aSelectedIndex;
+  }
   return NS_OK;
 }
 
@@ -179,8 +200,9 @@ nsAutoCompleteController::StartSearch(const nsAString &aSearchString)
 }
 
 NS_IMETHODIMP
-nsAutoCompleteController::HandleText()
+nsAutoCompleteController::HandleText(bool *_retval)
 {
+  *_retval = false;
   // Note: the events occur in the following order when IME is used.
   // 1. a compositionstart event(HandleStartComposition)
   // 2. some input events (HandleText), eCompositionState_Composing
@@ -283,13 +305,16 @@ nsAutoCompleteController::HandleText()
     return NS_OK;
   }
 
+  *_retval = true;
   StartSearches();
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAutoCompleteController::HandleEnter(bool aIsPopupSelection, bool *_retval)
+nsAutoCompleteController::HandleEnter(bool aIsPopupSelection,
+                                      nsIDOMEvent *aEvent,
+                                      bool *_retval)
 {
   *_retval = false;
   if (!mInput)
@@ -312,7 +337,7 @@ nsAutoCompleteController::HandleEnter(bool aIsPopupSelection, bool *_retval)
 
   // Stop the search, and handle the enter.
   StopSearch();
-  EnterMatch(aIsPopupSelection);
+  EnterMatch(aIsPopupSelection, aEvent);
 
   return NS_OK;
 }
@@ -388,7 +413,7 @@ NS_IMETHODIMP
 nsAutoCompleteController::HandleTab()
 {
   bool cancel;
-  return HandleEnter(false, &cancel);
+  return HandleEnter(false, nullptr, &cancel);
 }
 
 NS_IMETHODIMP
@@ -620,7 +645,8 @@ nsAutoCompleteController::HandleDelete(bool *_retval)
   input->GetPopupOpen(&isOpen);
   if (!isOpen || mRowCount <= 0) {
     // Nothing left to delete, proceed as normal
-    HandleText();
+    bool unused = false;
+    HandleText(&unused);
     return NS_OK;
   }
 
@@ -631,7 +657,8 @@ nsAutoCompleteController::HandleDelete(bool *_retval)
   popup->GetSelectedIndex(&index);
   if (index == -1) {
     // No row is selected in the list
-    HandleText();
+    bool unused = false;
+    HandleText(&unused);
     return NS_OK;
   }
 
@@ -1190,13 +1217,21 @@ nsAutoCompleteController::StartSearch(uint16_t aSearchType)
     nsAutoString searchParam;
     nsresult rv = input->GetSearchParam(searchParam);
     if (NS_FAILED(rv))
-        return rv;
+      return rv;
 
     // FormFill expects the searchParam to only contain the input element id,
     // other consumers may have other expectations, so this modifies it only
     // for new consumers handling autoFill by themselves.
     if (mProhibitAutoFill && mClearingAutoFillSearchesAgain) {
       searchParam.AppendLiteral(" prohibit-autofill");
+    }
+
+    uint32_t userContextId;
+    rv = input->GetUserContextId(&userContextId);
+    if (NS_SUCCEEDED(rv) &&
+        userContextId != nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
+      searchParam.AppendLiteral(" user-context-id:");
+      searchParam.AppendInt(userContextId, 10);
     }
 
     rv = search->StartSearch(mSearchString, searchParam, result, static_cast<nsIAutoCompleteObserver *>(this));
@@ -1356,7 +1391,8 @@ nsAutoCompleteController::ClearSearchTimer()
 }
 
 nsresult
-nsAutoCompleteController::EnterMatch(bool aIsPopupSelection)
+nsAutoCompleteController::EnterMatch(bool aIsPopupSelection,
+                                     nsIDOMEvent *aEvent)
 {
   nsCOMPtr<nsIAutoCompleteInput> input(mInput);
   nsCOMPtr<nsIAutoCompletePopup> popup;
@@ -1378,30 +1414,30 @@ nsAutoCompleteController::EnterMatch(bool aIsPopupSelection)
     int32_t selectedIndex;
     popup->GetSelectedIndex(&selectedIndex);
     if (selectedIndex >= 0) {
-
       nsAutoString inputValue;
       input->GetTextValue(inputValue);
-      nsAutoString finalValue;
-      if (!completeSelection || aIsPopupSelection ||
-          (mDefaultIndexCompleted &&
-           inputValue.Equals(mPlaceholderCompletionString,
-                             nsCaseInsensitiveStringComparator()))) {
+      bool defaultCompleted = mDefaultIndexCompleted &&
+                              inputValue.Equals(mPlaceholderCompletionString,
+                                                nsCaseInsensitiveStringComparator());
+      if (aIsPopupSelection || (!completeSelection && !defaultCompleted)) {
         // We need to fill-in the value if:
-        //  * completeselectedindex is false
+        //  * completeselectedindex is false and we didn't defaultComplete
         //  * A row in the popup was confirmed
-        //  * The default index completion was confirmed
-        GetResultValueAt(selectedIndex, true, finalValue);
-        value = finalValue;
+        GetResultValueAt(selectedIndex, true, value);
+      } else if (defaultCompleted) {
+        // We also need to fill-in the value if the default index completion was
+        // confirmed, though we cannot use the selectedIndex cause the selection
+        // may have been changed by the mouse in the meanwhile.
+        GetFinalDefaultCompleteValue(value);
       } else if (mCompletedSelectionIndex != -1) {
         // If completeselectedindex is true, and EnterMatch was not invoked by
         // mouse-clicking a match (for example the user pressed Enter),
         // don't fill in the value as it will have already been filled in as
         // needed, unless the selected match has a final complete value that
         // differs from the user-facing value.
+        nsAutoString finalValue;
         GetResultValueAt(mCompletedSelectionIndex, true, finalValue);
-        nsAutoString completedValue;
-        GetResultValueAt(mCompletedSelectionIndex, false, completedValue);
-        if (completedValue.Equals(inputValue) && !finalValue.Equals(inputValue)) {
+        if (!inputValue.Equals(finalValue)) {
           value = finalValue;
         }
         // Note that if the user opens the popup, mouses over entries without
@@ -1492,7 +1528,7 @@ nsAutoCompleteController::EnterMatch(bool aIsPopupSelection)
   ClosePopup();
 
   bool cancel;
-  input->OnTextEntered(&cancel);
+  input->OnTextEntered(aEvent, &cancel);
 
   return NS_OK;
 }
@@ -1613,6 +1649,10 @@ nsAutoCompleteController::ProcessResult(int32_t aSearchIndex, nsIAutoCompleteRes
       }
     }
 
+    // Try to autocomplete the default index for this search.
+    // Do this before invalidating so the binding knows about it.
+    CompleteDefaultIndex(aSearchIndex);
+
     // Refresh the popup view to display the new search results
     nsCOMPtr<nsIAutoCompletePopup> popup;
     input->GetPopup(getter_AddRefs(popup));
@@ -1630,10 +1670,8 @@ nsAutoCompleteController::ProcessResult(int32_t aSearchIndex, nsIAutoCompleteRes
     } else if (mSearchesOngoing == 0) {
       ClosePopup();
     }
-  }
-
-  if (searchResult == nsIAutoCompleteResult::RESULT_SUCCESS ||
-      searchResult == nsIAutoCompleteResult::RESULT_SUCCESS_ONGOING) {
+  } else if (searchResult == nsIAutoCompleteResult::RESULT_SUCCESS ||
+             searchResult == nsIAutoCompleteResult::RESULT_SUCCESS_ONGOING) {
     // Try to autocomplete the default index for this search.
     CompleteDefaultIndex(aSearchIndex);
   }
@@ -1722,10 +1760,11 @@ nsAutoCompleteController::CompleteDefaultIndex(int32_t aResultIndex)
     return NS_OK;
 
   nsAutoString resultValue;
-  if (NS_SUCCEEDED(GetDefaultCompleteValue(aResultIndex, true, resultValue)))
+  if (NS_SUCCEEDED(GetDefaultCompleteValue(aResultIndex, true, resultValue))) {
     CompleteValue(resultValue);
 
-  mDefaultIndexCompleted = true;
+    mDefaultIndexCompleted = true;
+  }
 
   return NS_OK;
 }

@@ -19,6 +19,7 @@
 #include "tcuRandomOrderExecutor.h"
 #include "tcuResource.hpp"
 #include "tcuTestLog.hpp"
+#include "system_utils.h"
 
 #if (DE_OS == DE_OS_WIN32)
 #include <Windows.h>
@@ -26,6 +27,8 @@
 #include <sys/unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#elif (DE_OS == DE_OS_ANDROID)
+#include <sys/stat.h>
 #endif
 
 tcu::Platform *createPlatform();
@@ -41,15 +44,15 @@ tcu::TestContext *g_testCtx = nullptr;
 tcu::TestPackageRoot *g_root = nullptr;
 tcu::RandomOrderExecutor *g_executor = nullptr;
 
-const char *g_dEQPDataSearchDirs[] =
-{
+const char *g_dEQPDataSearchDirs[] = {
     "data",
     "third_party/deqp/data",
     "../third_party/deqp/src/data",
     "deqp_support/data",
     "third_party/deqp/src/data",
     "../../third_party/deqp/src/data",
-    "../../../third_party/deqp/src/data"
+    "../../../third_party/deqp/src/data",
+    "../../sdcard/chromium_tests_root/third_party/deqp/src/data",
 };
 
 // TODO(jmadill): upstream to dEQP?
@@ -67,7 +70,7 @@ deBool deIsDir(const char *filename)
 
     return false;
 }
-#elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_OSX)
+#elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_ANDROID)
 deBool deIsDir(const char *filename)
 {
     struct stat st;
@@ -78,20 +81,45 @@ deBool deIsDir(const char *filename)
 #error TODO(jmadill): support other platforms
 #endif
 
-const char *FindDataDir()
+bool FindDataDir(std::string *dataDirOut)
 {
-    for (size_t dirIndex = 0; dirIndex < ArraySize(g_dEQPDataSearchDirs); ++dirIndex)
+    for (auto searchDir : g_dEQPDataSearchDirs)
     {
-        if (deIsDir(g_dEQPDataSearchDirs[dirIndex]))
+        if (deIsDir((std::string(searchDir) + "/gles2").c_str()))
         {
-            return g_dEQPDataSearchDirs[dirIndex];
+            *dataDirOut = searchDir;
+            return true;
+        }
+
+        std::stringstream dirStream;
+        dirStream << angle::GetExecutableDirectory() << "/" << searchDir;
+        std::string dataDir = dirStream.str();
+        dirStream << "/gles2";
+        std::string searchPath = dirStream.str();
+
+        if (deIsDir(searchPath.c_str()))
+        {
+            *dataDirOut = dataDir;
+            return true;
         }
     }
 
-    return nullptr;
+    return false;
 }
 
-bool InitPlatform(int argc, const char *argv[])
+std::string GetLogFileName(std::string deqpDataDir)
+{
+#if (DE_OS == DE_OS_ANDROID)
+    // On Android executable dir is not writable, so use data dir instead
+    return deqpDataDir + "/" + g_cmdLine->getLogFileName();
+#else
+    return g_cmdLine->getLogFileName();
+#endif
+}
+
+}  // anonymous namespace
+
+ANGLE_LIBTESTER_EXPORT bool deqp_libtester_init_platform(int argc, const char *argv[])
 {
     try
     {
@@ -107,17 +135,16 @@ bool InitPlatform(int argc, const char *argv[])
             return false;
         }
 
-        const char *deqpDataDir = FindDataDir();
-
-        if (deqpDataDir == nullptr)
+        std::string deqpDataDir;
+        if (!FindDataDir(&deqpDataDir))
         {
             std::cout << "Failed to find dEQP data directory." << std::endl;
             return false;
         }
 
         g_cmdLine = new tcu::CommandLine(argc, argv);
-        g_archive = new tcu::DirArchive(deqpDataDir);
-        g_log = new tcu::TestLog(g_cmdLine->getLogFileName(), g_cmdLine->getLogFlags());
+        g_archive = new tcu::DirArchive(deqpDataDir.c_str());
+        g_log     = new tcu::TestLog(GetLogFileName(deqpDataDir).c_str(), g_cmdLine->getLogFlags());
         g_testCtx = new tcu::TestContext(*g_platform, *g_archive, *g_log, *g_cmdLine, DE_NULL);
         g_root = new tcu::TestPackageRoot(*g_testCtx, tcu::TestPackageRegistry::getSingleton());
         g_executor = new tcu::RandomOrderExecutor(*g_root, *g_testCtx);
@@ -131,12 +158,10 @@ bool InitPlatform(int argc, const char *argv[])
     return true;
 }
 
-} // anonymous namespace
-
 // Exported to the tester app.
 ANGLE_LIBTESTER_EXPORT int deqp_libtester_main(int argc, const char *argv[])
 {
-    if (!InitPlatform(argc, argv))
+    if (!deqp_libtester_init_platform(argc, argv))
     {
         tcu::die("Could not initialize the dEQP platform");
     }
@@ -165,18 +190,25 @@ ANGLE_LIBTESTER_EXPORT int deqp_libtester_main(int argc, const char *argv[])
 ANGLE_LIBTESTER_EXPORT void deqp_libtester_shutdown_platform()
 {
     delete g_executor;
+    g_executor = nullptr;
     delete g_root;
+    g_root = nullptr;
     delete g_testCtx;
+    g_testCtx = nullptr;
     delete g_log;
+    g_log = nullptr;
     delete g_archive;
+    g_archive = nullptr;
     delete g_cmdLine;
+    g_cmdLine = nullptr;
     delete g_platform;
+    g_platform = nullptr;
 }
 
 ANGLE_LIBTESTER_EXPORT bool deqp_libtester_run(const char *caseName)
 {
     const char *emptyString = "";
-    if (g_platform == nullptr && !InitPlatform(1, &emptyString))
+    if (g_platform == nullptr && !deqp_libtester_init_platform(1, &emptyString))
     {
         tcu::die("Failed to initialize platform.");
     }

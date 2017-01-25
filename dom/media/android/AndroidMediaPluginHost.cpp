@@ -8,6 +8,7 @@
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/Services.h"
 #include "AndroidMediaPluginHost.h"
+#include "nsAutoPtr.h"
 #include "nsXPCOMStrings.h"
 #include "nsISeekableStream.h"
 #include "nsIGfxInfo.h"
@@ -46,7 +47,7 @@ class GetIntPrefEvent : public Runnable {
 public:
   GetIntPrefEvent(const char* aPref, int32_t* aResult)
     : mPref(aPref), mResult(aResult) {}
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     return Preferences::GetInt(mPref, mResult);
   }
 private:
@@ -174,10 +175,6 @@ static const char* GetOmxLibraryName()
 #if defined(ANDROID) && !defined(MOZ_WIDGET_GONK)
   if (version >= 17) {
     return "libomxpluginkk.so";
-  }
-  else if (version < 14) {
-    // Below Honeycomb not supported
-    return nullptr;
   }
 
   // Ice Cream Sandwich and Jellybean

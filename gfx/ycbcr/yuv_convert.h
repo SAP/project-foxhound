@@ -57,6 +57,19 @@ void ConvertYCbCrToRGB32(const uint8* yplane,
                          int rgbstride,
                          YUVType yuv_type);
 
+void ConvertYCbCrToRGB32_deprecated(const uint8* yplane,
+                                    const uint8* uplane,
+                                    const uint8* vplane,
+                                    uint8* rgbframe,
+                                    int pic_x,
+                                    int pic_y,
+                                    int pic_width,
+                                    int pic_height,
+                                    int ystride,
+                                    int uvstride,
+                                    int rgbstride,
+                                    YUVType yuv_type);
+
 // Scale a frame of YUV to 32 bit ARGB.
 // Supports rotation and mirroring.
 void ScaleYCbCrToRGB32(const uint8* yplane,
@@ -71,8 +84,22 @@ void ScaleYCbCrToRGB32(const uint8* yplane,
                        int uvstride,
                        int rgbstride,
                        YUVType yuv_type,
-                       Rotate view_rotate,
                        ScaleFilter filter);
+
+void ScaleYCbCrToRGB32_deprecated(const uint8* yplane,
+                                  const uint8* uplane,
+                                  const uint8* vplane,
+                                  uint8* rgbframe,
+                                  int source_width,
+                                  int source_height,
+                                  int width,
+                                  int height,
+                                  int ystride,
+                                  int uvstride,
+                                  int rgbstride,
+                                  YUVType yuv_type,
+                                  Rotate view_rotate,
+                                  ScaleFilter filter);
 
 } // namespace gfx
 } // namespace mozilla

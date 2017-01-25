@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -31,7 +31,6 @@ interfaces = [
     'svg',
     'smil',
     'apps',
-    'gamepad',
     'push',
 ]
 
@@ -42,7 +41,6 @@ DIRS += [
     'apps',
     'base',
     'bluetooth',
-    'activities',
     'archivereader',
     'bindings',
     'battery',
@@ -53,7 +51,6 @@ DIRS += [
     'contacts',
     'crypto',
     'phonenumberutils',
-    'alarm',
     'devicestorage',
     'encoding',
     'events',
@@ -62,7 +59,9 @@ DIRS += [
     'filesystem',
     'flyweb',
     'fmradio',
+    'gamepad',
     'geolocation',
+    'grid',
     'html',
     'icc',
     'inputport',
@@ -71,11 +70,11 @@ DIRS += [
     'asmjscache',
     'mathml',
     'media',
-    'messages',
     'mobileconnection',
     'notification',
     'offline',
     'power',
+    'push',
     'quota',
     'security',
     'settings',
@@ -100,6 +99,7 @@ DIRS += [
     'smil',
     'telephony',
     'tv',
+    'url',
     'voicemail',
     'inputmethod',
     'webidl',
@@ -112,6 +112,9 @@ DIRS += [
     'vr',
     'newapps',
     'u2f',
+    'console',
+    'performance',
+    'xhr',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -129,19 +132,8 @@ if CONFIG['MOZ_B2G_RIL']:
         'wappush',
     ]
 
-if CONFIG['MOZ_PAY']:
-    DIRS += ['payment']
-
-if CONFIG['MOZ_GAMEPAD']:
-    DIRS += ['gamepad']
-
 if CONFIG['MOZ_NFC']:
     DIRS += ['nfc']
-
-if CONFIG['MOZ_SIMPLEPUSH']:
-    DIRS += ['simplepush']
-else:
-    DIRS += ['push']
 
 if CONFIG['MOZ_SECUREELEMENT']:
     DIRS += ['secureelement']
@@ -149,8 +141,7 @@ if CONFIG['MOZ_SECUREELEMENT']:
 if CONFIG['MOZ_B2G']:
     DIRS += [
         'downloads',
-        'identity',
-        'mobileid'
+        'identity'
     ]
 
 DIRS += ['presentation']
@@ -160,6 +151,6 @@ TEST_DIRS += [
     'imptests',
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3', 'cocoa', 'windows', 'android', 'qt'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3', 'cocoa', 'windows', 'android'):
     TEST_DIRS += ['plugins/test']
 

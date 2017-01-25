@@ -24,10 +24,14 @@ public:
 
   WidevineDecryptor();
 
-  void SetCDM(RefPtr<CDMWrapper> aCDM);
+  void SetCDM(RefPtr<CDMWrapper> aCDM, uint32_t aDecryptorId);
+
+  static RefPtr<CDMWrapper> GetInstance(uint32_t aDecryptorId);
 
   // GMPDecryptor
-  void Init(GMPDecryptorCallback* aCallback) override;
+  void Init(GMPDecryptorCallback* aCallback,
+            bool aDistinctiveIdentifierRequired,
+            bool aPersistentStateRequired) override;
 
   void CreateSession(uint32_t aCreateSessionToken,
                      uint32_t aPromiseId,
@@ -120,6 +124,9 @@ private:
 
   GMPDecryptorCallback* mCallback;
   std::map<uint32_t, uint32_t> mPromiseIdToNewSessionTokens;
+  bool mDistinctiveIdentifierRequired = false;
+  bool mPersistentStateRequired = false;
+  uint32_t mInstanceId = 0;
 };
 
 } // namespace mozilla

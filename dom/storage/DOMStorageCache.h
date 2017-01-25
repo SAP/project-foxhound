@@ -16,7 +16,6 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Atomics.h"
-#include "nsAutoPtr.h"
 
 namespace mozilla {
 namespace dom {
@@ -102,7 +101,7 @@ public:
 
   // The set of methods that are invoked by DOM storage web API.
   // We are passing the DOMStorage object just to let the cache
-  // read properties like mPrivate and mSessionOnly.
+  // read properties like mPrincipal and mSessionOnly.
   // Get* methods return error when load from the database has failed.
   nsresult GetLength(const DOMStorage* aStorage, uint32_t* aRetval);
   nsresult GetKey(const DOMStorage* aStorage, uint32_t index, nsAString& aRetval);

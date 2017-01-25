@@ -7,6 +7,7 @@
 #include "vm/UnboxedObject-inl.h"
 
 #include "jit/BaselineIC.h"
+#include "jit/ExecutableAllocator.h"
 #include "jit/JitCommon.h"
 #include "jit/Linker.h"
 
@@ -141,7 +142,7 @@ UnboxedLayout::makeConstructorCode(JSContext* cx, HandleObjectGroup group)
             Label notObject;
             masm.branchTestObject(Assembler::NotEqual, valueAddress, &notObject);
             Register valueObject = masm.extractObject(valueAddress, scratch1);
-            masm.branchPtrInNurseryRange(Assembler::Equal, valueObject, scratch2, &postBarrier);
+            masm.branchPtrInNurseryChunk(Assembler::Equal, valueObject, scratch2, &postBarrier);
             masm.bind(&notObject);
         }
     }
@@ -498,7 +499,7 @@ UnboxedLayout::makeNativeGroup(JSContext* cx, ObjectGroup* group)
 
         Rooted<StackShape> child(cx, StackShape(shape->base()->unowned(), NameToId(property.name),
                                                 i, JSPROP_ENUMERATE, 0));
-        shape = cx->compartment()->propertyTree.getChild(cx, shape, child);
+        shape = cx->zone()->propertyTree.getChild(cx, shape, child);
         if (!shape)
             return false;
     }
@@ -706,7 +707,8 @@ UnboxedPlainObject::createWithProperties(ExclusiveContext* cx, HandleObjectGroup
     if (cx->isJSContext() &&
         !group->unknownProperties() &&
         !layout.constructorCode() &&
-        cx->asJSContext()->runtime()->jitSupportsFloatingPoint)
+        cx->asJSContext()->runtime()->jitSupportsFloatingPoint &&
+        jit::CanLikelyAllocateMoreExecutableMemory())
     {
         if (!UnboxedLayout::makeConstructorCode(cx->asJSContext(), group))
             return nullptr;
@@ -1930,7 +1932,7 @@ js::TryConvertToUnboxedLayout(ExclusiveContext* cx, AutoEnterAnalysis& enter, Sh
     if (isArray) {
 #ifdef NIGHTLY_BUILD
         if (!getenv("JS_OPTION_USE_UNBOXED_ARRAYS")) {
-            if (!group->runtimeFromAnyThread()->options().unboxedArrays())
+            if (!cx->options().unboxedArrays())
                 return true;
         }
 #else

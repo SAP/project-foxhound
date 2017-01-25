@@ -20,16 +20,23 @@ from mach.decorators import (
 
 def setup_argument_parser_functional():
     from firefox_ui_harness.arguments.base import FirefoxUIArguments
-    return FirefoxUIArguments()
+    from mozlog.structured import commandline
+    parser = FirefoxUIArguments()
+    commandline.add_logging_group(parser)
+    return parser
 
 
 def setup_argument_parser_update():
     from firefox_ui_harness.arguments.update import UpdateArguments
-    return UpdateArguments()
+    from mozlog.structured import commandline
+    parser = UpdateArguments()
+    commandline.add_logging_group(parser)
+    return parser
 
 
 def run_firefox_ui_test(testtype=None, topsrcdir=None, **kwargs):
     from mozlog.structured import commandline
+    from argparse import Namespace
     import firefox_ui_harness
 
     if testtype == 'functional':
@@ -67,8 +74,7 @@ def run_firefox_ui_test(testtype=None, topsrcdir=None, **kwargs):
     kwargs['logger'] = commandline.setup_logging('Firefox UI - {} Tests'.format(testtype),
                                                  {"mach": sys.stdout})
 
-    # pass tests to parse_args to avoid rereading sys.argv
-    args = parser.parse_args(args=kwargs['tests'])
+    args = Namespace()
 
     for k, v in kwargs.iteritems():
         setattr(args, k, v)

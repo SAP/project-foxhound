@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * https://dvcs.w3.org/hg/audio/raw-file/tip/webaudio/specification.html
+ * https://webaudio.github.io/web-audio-api/
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -24,7 +24,8 @@ dictionary PeriodicWaveConstraints {
 };
 
 [Constructor,
- Constructor(AudioChannel audioChannelType)]
+ Constructor(AudioChannel audioChannelType),
+ Pref="dom.webaudio.enabled"]
 interface AudioContext : EventTarget {
 
     readonly attribute AudioDestinationNode destination;
@@ -74,6 +75,8 @@ interface AudioContext : EventTarget {
     DelayNode createDelay(optional double maxDelayTime = 1);
     [NewObject, Throws]
     BiquadFilterNode createBiquadFilter();
+    [NewObject, Throws]
+    IIRFilterNode createIIRFilter(sequence<double> feedforward, sequence<double> feedback);
     [NewObject, Throws]
     WaveShaperNode createWaveShaper();
     [NewObject, Throws]

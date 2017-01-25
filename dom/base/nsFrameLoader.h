@@ -18,7 +18,6 @@
 #include "nsPoint.h"
 #include "nsSize.h"
 #include "nsIURI.h"
-#include "nsAutoPtr.h"
 #include "nsFrameMessageManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Attributes.h"
@@ -225,6 +224,8 @@ public:
   // Properly retrieves documentSize of any subdocument type.
   nsresult GetWindowDimensions(nsIntRect& aRect);
 
+  virtual nsIMessageSender* GetProcessMessageManager() const override;
+
   // public because a callback needs these.
   RefPtr<nsFrameMessageManager> mMessageManager;
   nsCOMPtr<nsIInProcessContentFrameMessageManager> mChildMessageManager;
@@ -332,6 +333,7 @@ private:
   void ResetPermissionManagerStatus();
 
   void InitializeBrowserAPI();
+  void DestroyBrowserFrameScripts();
 
   nsresult GetNewTabContext(mozilla::dom::MutableTabContext* aTabContext,
                             nsIURI* aURI = nullptr,
@@ -374,6 +376,9 @@ private:
   // See nsIFrameLoader.idl. EVENT_MODE_NORMAL_DISPATCH automatically
   // forwards some input events to out-of-process content.
   uint32_t mEventMode;
+
+  // Holds the last known size of the frame.
+  mozilla::ScreenIntSize mLazySize;
 
   bool mIsPrerendered : 1;
   bool mDepthTooGreat : 1;

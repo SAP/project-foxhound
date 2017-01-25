@@ -43,6 +43,22 @@ interface nsIVerifySignedManifestCallback : nsISupports
 };
 
 /**
+ * Callback type for use with asyncVerifyCertAtTime.
+ * If aPRErrorCode is PRErrorCodeSuccess (i.e. 0), aVerifiedChain represents the
+ * verified certificate chain determined by asyncVerifyCertAtTime. aHasEVPolicy
+ * represents whether or not the end-entity certificate verified as EV.
+ * If aPRErrorCode is non-zero, it represents the error encountered during
+ * verification. aVerifiedChain is null in that case and aHasEVPolicy has no
+ * meaning.
+ */
+[scriptable, function, uuid(49e16fc8-efac-4f57-8361-956ef6b960a4)]
+interface nsICertVerificationCallback : nsISupports {
+  void verifyCertFinished(in int32_t aPRErrorCode,
+                          in nsIX509CertList aVerifiedChain,
+                          in bool aHasEVPolicy);
+};
+
+/**
  * This represents a service to access and manipulate
  * X.509 certificates stored in a database.
  */
@@ -175,7 +191,7 @@ interface nsIX509CertDB : nsISupports {
    *                    characters, indicating SSL, Email, and Obj signing
    *                    trust.
    */
-  void setCertTrustFromString(in nsIX509Cert cert, in string trustString);
+  void setCertTrustFromString(in nsIX509Cert cert, in ACString trustString);
 
   /**
    *  Query whether a certificate is trusted for a particular use.
@@ -237,7 +253,7 @@ interface nsIX509CertDB : nsISupports {
    *                encoded as Base 64.
    *  @return The new certificate object.
    */
-  nsIX509Cert constructX509FromBase64(in string base64);
+  nsIX509Cert constructX509FromBase64(in ACString base64);
 
   /*
    *  Decode a raw data presentation and instantiate an object in memory.
@@ -325,8 +341,10 @@ interface nsIX509CertDB : nsISupports {
    * @param aTrust decoded by CERT_DecodeTrustString. 3 comma separated characters,
    *                indicating SSL, Email, and Obj signing trust
    * @param aName name of the cert for display purposes.
+   *              TODO(bug 857627): aName is currently ignored. It should either
+   *              not be ignored, or be removed.
    */
-  void addCert(in ACString certDER, in string aTrust, in string aName);
+  void addCert(in ACString certDER, in ACString aTrust, in AUTF8String aName);
 
   // Flags for verifyCertNow (these must match the values in CertVerifier.cpp):
   // Prevent network traffic. Doesn't work with classic verification.
@@ -371,6 +389,17 @@ interface nsIX509CertDB : nsISupports {
                   out nsIX509CertList aVerifiedChain,
                   out bool aHasEVPolicy);
 
+  /**
+   * Similar to the above, but asynchronous. As a result, use of this API is not
+   * limited to tests.
+   */
+  void asyncVerifyCertAtTime(in nsIX509Cert aCert,
+                             in int64_t /*SECCertificateUsage*/ aUsage,
+                             in uint32_t aFlags,
+                             in string aHostname,
+                             in uint64_t aTime,
+                             in nsICertVerificationCallback aCallback);
+
   // Clears the OCSP cache for the current certificate verification
   // implementation.
   void clearOCSPCache();
@@ -383,8 +412,11 @@ interface nsIX509CertDB : nsISupports {
    * @param aTrust decoded by CERT_DecodeTrustString. 3 comma separated characters,
    *                indicating SSL, Email, and Obj signing trust
    * @param aName name of the cert for display purposes.
+   *              TODO(bug 857627): aName is currently ignored. It should either
+   *              not be ignored, or be removed.
    */
-  void addCertFromBase64(in string base64, in string aTrust, in string aName);
+  void addCertFromBase64(in ACString base64, in ACString aTrust,
+                         in AUTF8String aName);
 
   /*
    * Get all the known certs in the database

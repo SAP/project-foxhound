@@ -23,7 +23,6 @@ class WebGLRenderbuffer final
     , public WebGLRefCountedObject<WebGLRenderbuffer>
     , public LinkedListElement<WebGLRenderbuffer>
     , public WebGLRectangleObject
-    , public WebGLContextBoundObject
     , public WebGLFramebufferAttachable
 {
     friend class WebGLContext;
@@ -85,7 +84,7 @@ protected:
         DeleteOnce();
     }
 
-    void DoFramebufferRenderbuffer(GLenum attachment) const;
+    void DoFramebufferRenderbuffer(FBTarget target, GLenum attachment) const;
     GLenum DoRenderbufferStorage(uint32_t samples, const webgl::FormatUsageInfo* format,
                                  uint32_t width, uint32_t height);
 };

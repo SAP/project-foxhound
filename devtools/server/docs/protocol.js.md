@@ -130,7 +130,7 @@ This will generate a request handler whose request and response packets look lik
 
 The client usage should be predictable:
 
-    echo.echo("hello").then(str => { assert(str === "hello... hello...") })
+    hello.echo("hello").then(str => { assert(str === "hello... hello...") })
 
 The library tries hard to make using fronts feel like natural javascript (or as natural as you believe promises are, I guess).  When building the response it will put the return value of the function where RetVal() is specified in the response template, and on the client side it will use the value in that position when resolving the promise.
 
@@ -649,24 +649,3 @@ This will require some matching work on the front:
     }, {
         impl: "_clearTemporaryChildren"
     })
-
-Telemetry
----------
-
-You can specify a telemetry probe id in your method spec:
-
-    // spec:
-    methods: {
-      echo: {
-        request: { str: Arg(0) },
-        response: { str: RetVal() },
-        telemetry: "ECHO"
-      }
-    }
-
-    // implementation:
-    echo: function (str) {
-      return str;
-    }
-
-... and the time to execute that request will be included as a telemetry probe.

@@ -9,6 +9,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/AudioTrack.h"
+#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/dom/VideoTrack.h"
 #include "mozilla/dom/TrackEvent.h"
 #include "nsThreadUtils.h"
@@ -71,12 +72,23 @@ MediaTrackList::AddTrack(MediaTrack* aTrack)
   aTrack->Init(GetOwner());
   aTrack->SetTrackList(this);
   CreateAndDispatchTrackEventRunner(aTrack, NS_LITERAL_STRING("addtrack"));
+
+  if ((!aTrack->AsAudioTrack() || !aTrack->AsAudioTrack()->Enabled()) &&
+      (!aTrack->AsVideoTrack() || !aTrack->AsVideoTrack()->Selected())) {
+    // Track not enabled, no need to notify media element.
+    return;
+  }
+
+  if (HTMLMediaElement* element = GetMediaElement()) {
+    element->NotifyMediaTrackEnabled(aTrack);
+  }
 }
 
 void
 MediaTrackList::RemoveTrack(const RefPtr<MediaTrack>& aTrack)
 {
   mTracks.RemoveElement(aTrack);
+  aTrack->SetEnabledInternal(false, MediaTrack::FIRE_NO_EVENTS);
   aTrack->SetTrackList(nullptr);
   CreateAndDispatchTrackEventRunner(aTrack, NS_LITERAL_STRING("removetrack"));
 }
@@ -106,9 +118,10 @@ already_AddRefed<VideoTrack>
 MediaTrackList::CreateVideoTrack(const nsAString& aId,
                                  const nsAString& aKind,
                                  const nsAString& aLabel,
-                                 const nsAString& aLanguage)
+                                 const nsAString& aLanguage,
+                                 VideoStreamTrack* aVideoTrack)
 {
-  RefPtr<VideoTrack> track = new VideoTrack(aId, aKind, aLabel, aLanguage);
+  RefPtr<VideoTrack> track = new VideoTrack(aId, aKind, aLabel, aLanguage, aVideoTrack);
   return track.forget();
 }
 
@@ -116,6 +129,7 @@ void
 MediaTrackList::EmptyTracks()
 {
   for (uint32_t i = 0; i < mTracks.Length(); ++i) {
+    mTracks[i]->SetEnabledInternal(false, MediaTrack::FIRE_NO_EVENTS);
     mTracks[i]->SetTrackList(nullptr);
   }
   mTracks.Clear();

@@ -1,5 +1,19 @@
+// |jit-test| test-also-wasm-baseline
 load(libdir + "wasm.js");
-load(scriptdir + "spec/list.js");
+
+// This is meant to be a small and dumb interpreter for wast files. Either it
+// is imported by another script, which needs to define an array of arguments
+// called importedArgs, or args need to be passed to the command line.
+//
+// Possible arguments include:
+// -d           enable debug verbose mode
+// -c           computes line numbers in wast files (disabled by default as it
+//              slows down the parser a lot)
+// -s           soft fail mode: if a test fails, don't abort but continue to
+//              the next one.
+// *            anything else is considered a relative path to the wast file to
+//              load and run. The path is relative to to the runner script,
+//              i.e. this file..
 
 if (typeof assert === 'undefined') {
     var assert = function(c, msg) {
@@ -201,7 +215,7 @@ function exec(e) {
 
     if (exprName === "module") {
         let moduleText = e.toString();
-        module = wasmEvalText(moduleText, imports);
+        module = evalText(moduleText, imports).exports;
         return;
     }
 
@@ -217,9 +231,6 @@ function exec(e) {
 
         if (typeof module[name] === "function") {
             fn = module[name];
-        } else if (name === "") {
-            fn = module;
-            assert(typeof fn === "function", "Default exported function not found: " + e);
         } else {
             assert(false, "Exported function not found: " + e);
         }
@@ -263,15 +274,14 @@ function exec(e) {
             assert(errMsg.quoted, "assert_invalid second argument must be a string");
             errMsg.quoted = false;
         }
-        let caught = false;
+        // assert_invalid tests both the decoder *and* the parser itself.
         try {
-            wasmEvalText(moduleText, imports);
+            assertEq(WebAssembly.validate(textToBinary(moduleText)), false);
         } catch(e) {
-            if (errMsg && e.toString().indexOf(errMsg) === -1)
-                warn(`expected error message "${errMsg}", got "${e}"`);
-            caught = true;
+            if (/wasm text error/.test(e.toString()))
+                return;
+            throw e;
         }
-        assert(caught, "assert_invalid error");
         return;
     }
 
@@ -284,7 +294,8 @@ function exec(e) {
             exec(e.list[1]);
         } catch(err) {
             caught = true;
-            assert(err.toString().indexOf(errMsg) !== -1, `expected error message "${errMsg}", got "${err}"`);
+            if (err.toString().indexOf(errMsg) === -1)
+                warn(`expected error message "${errMsg}", got "${err}"`);
         }
         assert(caught, "assert_trap exception not caught");
         return;
@@ -295,7 +306,7 @@ function exec(e) {
     }
 }
 
-var args = scriptArgs;
+var args = typeof importedArgs !== 'undefined' ? importedArgs : scriptArgs;
 
 // Whether we should keep on executing tests if one of them failed or throw.
 var softFail = false;
@@ -331,16 +342,13 @@ for (let arg of args) {
     }
 }
 
-if (targets.length)
-    specTests = targets;
-
 top_loop:
-for (var test of specTests) {
+for (var test of targets) {
     module = null;
 
     debug(`Running test ${test}...`);
 
-    let source = read(scriptdir + "spec/" + test);
+    let source = read(scriptdir + test);
 
     let root = new parseSExpression(source);
 
@@ -349,11 +357,6 @@ for (var test of specTests) {
         try {
             exec(e);
         } catch(err) {
-            if (err && err.message && err.message.indexOf("i64 NYI") !== -1) {
-                assert(!hasI64(), 'i64 NYI should happen only on platforms without i64');
-                warn(`Skipping test file ${test} as it contains int64, NYI.\n`)
-                continue top_loop;
-            }
             success = false;
             debug(`Error in ${test}:${e.lineno}: ${err.stack ? err.stack : ''}\n${err}`);
             if (!softFail) {

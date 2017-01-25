@@ -5,10 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DisplayDeviceProvider.h"
+
+#include "DeviceProviderHelpers.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsIObserverService.h"
 #include "nsIServiceManager.h"
 #include "nsIWindowWatcher.h"
@@ -25,6 +27,7 @@ static mozilla::LazyLogModule gDisplayDeviceProviderLog("DisplayDeviceProvider")
 #define DISPLAY_CHANGED_NOTIFICATION "display-changed"
 #define DEFAULT_CHROME_FEATURES_PREF "toolkit.defaultChromeFeatures"
 #define CHROME_REMOTE_URL_PREF       "b2g.multiscreen.chrome_remote_url"
+#define PREF_PRESENTATION_DISCOVERABLE_RETRY_MS "dom.presentation.discoverable.retry_ms"
 
 namespace mozilla {
 namespace dom {
@@ -92,9 +95,7 @@ DisplayDeviceProvider::HDMIDisplayDevice::GetWindowId(nsACString& aWindowId)
 
 NS_IMETHODIMP
 DisplayDeviceProvider::HDMIDisplayDevice
-                     ::EstablishControlChannel(const nsAString& aUrl,
-                                               const nsAString& aPresentationId,
-                                               nsIPresentationControlChannel** aControlChannel)
+                     ::EstablishControlChannel(nsIPresentationControlChannel** aControlChannel)
 {
   nsresult rv = OpenTopLevelWindow();
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -105,7 +106,7 @@ DisplayDeviceProvider::HDMIDisplayDevice
   if (NS_WARN_IF(!provider)) {
     return NS_ERROR_FAILURE;
   }
-  return provider->RequestSession(this, aUrl, aPresentationId, aControlChannel);
+  return provider->Connect(this, aControlChannel);
 }
 
 NS_IMETHODIMP
@@ -116,6 +117,23 @@ DisplayDeviceProvider::HDMIDisplayDevice::Disconnect()
       return rv;
   }
   return NS_OK;;
+}
+
+NS_IMETHODIMP
+DisplayDeviceProvider::HDMIDisplayDevice::IsRequestedUrlSupported(
+                                                 const nsAString& aRequestedUrl,
+                                                 bool* aRetVal)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!aRetVal) {
+    return NS_ERROR_INVALID_POINTER;
+  }
+
+  // 1-UA device only supports HTTP/HTTPS hosted receiver page.
+  *aRetVal = DeviceProviderHelpers::IsCommonlySupportedScheme(aRequestedUrl);
+
+  return NS_OK;
 }
 
 nsresult
@@ -197,6 +215,12 @@ DisplayDeviceProvider::Init()
 
   nsresult rv;
 
+  mServerRetryMs = Preferences::GetUint(PREF_PRESENTATION_DISCOVERABLE_RETRY_MS);
+  mServerRetryTimer = do_CreateInstance(NS_TIMER_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   MOZ_ASSERT(obs);
 
@@ -241,6 +265,8 @@ DisplayDeviceProvider::Uninit()
   // Remove device from device manager when the provider is uninit
   RemoveExternalScreen();
 
+  AbortServerRetry();
+
   mInitialized = false;
   mWrappedListener->SetListener(nullptr);
   return NS_OK;
@@ -267,26 +293,35 @@ DisplayDeviceProvider::StartTCPService()
    * If |servicePort| is non-zero, it means PresentationServer is running.
    * Otherwise, we should make it start serving.
    */
-  if (!servicePort) {
-    rv = mPresentationService->SetListener(mWrappedListener);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = mPresentationService->StartServer(0);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = mPresentationService->GetPort(&servicePort);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+  if (servicePort) {
+    mPort = servicePort;
+    return NS_OK;
   }
 
-  mPort = servicePort;
+  rv = mPresentationService->SetListener(mWrappedListener);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  AbortServerRetry();
+
+  // 1-UA doesn't need encryption.
+  rv = mPresentationService->StartServer(/* aEncrypted = */ false,
+                                         /* aPort = */ 0);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   return NS_OK;
+}
+
+void
+DisplayDeviceProvider::AbortServerRetry()
+{
+  if (mIsServerRetrying) {
+    mIsServerRetrying = false;
+    mServerRetryTimer->Cancel();
+  }
 }
 
 nsresult
@@ -369,10 +404,26 @@ DisplayDeviceProvider::ForceDiscovery()
 
 // nsIPresentationControlServerListener
 NS_IMETHODIMP
-DisplayDeviceProvider::OnPortChange(uint16_t aPort)
+DisplayDeviceProvider::OnServerReady(uint16_t aPort,
+                                     const nsACString& aCertFingerprint)
 {
   MOZ_ASSERT(NS_IsMainThread());
   mPort = aPort;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+DisplayDeviceProvider::OnServerStopped(nsresult aResult)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // Try restart server if it is stopped abnormally.
+  if (NS_FAILED(aResult)) {
+    mIsServerRetrying = true;
+    mServerRetryTimer->Init(this, mServerRetryMs, nsITimer::TYPE_ONE_SHOT);
+  }
+
   return NS_OK;
 }
 
@@ -407,6 +458,68 @@ DisplayDeviceProvider::OnSessionRequest(nsITCPDeviceInfo* aDeviceInfo,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+DisplayDeviceProvider::OnTerminateRequest(nsITCPDeviceInfo* aDeviceInfo,
+                                          const nsAString& aPresentationId,
+                                          nsIPresentationControlChannel* aControlChannel,
+                                          bool aIsFromReceiver)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aDeviceInfo);
+  MOZ_ASSERT(aControlChannel);
+
+  nsresult rv;
+
+  nsCOMPtr<nsIPresentationDeviceListener> listener;
+  rv = GetListener(getter_AddRefs(listener));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  MOZ_ASSERT(!listener);
+
+  rv = listener->OnTerminateRequest(mDevice,
+                                    aPresentationId,
+                                    aControlChannel,
+                                    aIsFromReceiver);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+DisplayDeviceProvider::OnReconnectRequest(nsITCPDeviceInfo* aDeviceInfo,
+                                          const nsAString& aUrl,
+                                          const nsAString& aPresentationId,
+                                          nsIPresentationControlChannel* aControlChannel)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aDeviceInfo);
+  MOZ_ASSERT(aControlChannel);
+
+  nsresult rv;
+
+  nsCOMPtr<nsIPresentationDeviceListener> listener;
+  rv = GetListener(getter_AddRefs(listener));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  MOZ_ASSERT(!listener);
+
+  rv = listener->OnReconnectRequest(mDevice,
+                                    aUrl,
+                                    aPresentationId,
+                                    aControlChannel);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
 // nsIObserver
 NS_IMETHODIMP
 DisplayDeviceProvider::Observe(nsISupports* aSubject,
@@ -430,16 +543,24 @@ DisplayDeviceProvider::Observe(nsISupports* aSubject,
         return rv;
       }
     }
+  } else if (!strcmp(aTopic, NS_TIMER_CALLBACK_TOPIC)) {
+    nsCOMPtr<nsITimer> timer = do_QueryInterface(aSubject);
+    if (!timer) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    if (timer == mServerRetryTimer) {
+      mIsServerRetrying = false;
+      StartTCPService();
+    }
   }
 
   return NS_OK;
 }
 
 nsresult
-DisplayDeviceProvider::RequestSession(HDMIDisplayDevice* aDevice,
-                                      const nsAString& aUrl,
-                                      const nsAString& aPresentationId,
-                                      nsIPresentationControlChannel** aControlChannel)
+DisplayDeviceProvider::Connect(HDMIDisplayDevice* aDevice,
+                               nsIPresentationControlChannel** aControlChannel)
 {
   MOZ_ASSERT(aDevice);
   MOZ_ASSERT(mPresentationService);
@@ -448,12 +569,10 @@ DisplayDeviceProvider::RequestSession(HDMIDisplayDevice* aDevice,
 
   nsCOMPtr<nsITCPDeviceInfo> deviceInfo = new TCPDeviceInfo(aDevice->Id(),
                                                             aDevice->Address(),
-                                                            mPort);
+                                                            mPort,
+                                                            EmptyCString());
 
-  return mPresentationService->RequestSession(deviceInfo,
-                                              aUrl,
-                                              aPresentationId,
-                                              aControlChannel);
+  return mPresentationService->Connect(deviceInfo, aControlChannel);
 }
 
 } // namespace presentation

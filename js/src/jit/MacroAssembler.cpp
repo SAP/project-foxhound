@@ -6,6 +6,8 @@
 
 #include "jit/MacroAssembler-inl.h"
 
+#include "mozilla/CheckedInt.h"
+
 #include "jsfriendapi.h"
 #include "jsprf.h"
 
@@ -19,9 +21,12 @@
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
 #include "js/Conversions.h"
+#include "js/GCAPI.h"
 #include "vm/TraceLogging.h"
 
 #include "jsobjinlines.h"
+
+#include "gc/Nursery-inl.h"
 #include "jit/shared/Lowering-shared-inl.h"
 #include "vm/Interpreter-inl.h"
 
@@ -30,6 +35,8 @@ using namespace js::jit;
 
 using JS::GenericNaN;
 using JS::ToInt32;
+
+using mozilla::CheckedUint32;
 
 template <typename Source> void
 MacroAssembler::guardTypeSet(const Source& address, const TypeSet* types, BarrierKind kind,
@@ -173,14 +180,17 @@ MacroAssembler::guardObjectType(Register obj, const TypeSet* types,
             continue;
         }
 
-        if (lastBranch.isInitialized())
+        if (lastBranch.isInitialized()) {
+            comment("emit GC pointer checks");
             lastBranch.emit(*this);
+        }
 
         JSObject* object = types->getSingletonNoBarrier(i);
         lastBranch = BranchGCPtr(Equal, obj, ImmGCPtr(object), &matched);
     }
 
     if (hasObjectGroups) {
+        comment("has object groups");
         // We are possibly going to overwrite the obj register. So already
         // emit the branch, since branch depends on previous value of obj
         // register and there is definitely a branch following. So no need
@@ -778,6 +788,7 @@ MacroAssembler::nurseryAllocate(Register result, Register temp, gc::AllocKind al
     const Nursery& nursery = GetJitContext()->runtime->gcNursery();
     int thingSize = int(gc::Arena::thingSize(allocKind));
     int totalSize = thingSize + nDynamicSlots * sizeof(HeapSlot);
+    MOZ_ASSERT(totalSize % gc::CellSize == 0);
     loadPtr(AbsoluteAddress(nursery.addressOfPosition()), result);
     computeEffectiveAddress(Address(result, totalSize), temp);
     branchPtr(Assembler::Below, AbsoluteAddress(nursery.addressOfCurrentEnd()), temp, fail);
@@ -996,24 +1007,132 @@ MacroAssembler::fillSlotsWithUninitialized(Address base, Register temp, uint32_t
 }
 
 static void
-FindStartOfUndefinedAndUninitializedSlots(NativeObject* templateObj, uint32_t nslots,
-                                          uint32_t* startOfUndefined, uint32_t* startOfUninitialized)
+FindStartOfUninitializedAndUndefinedSlots(NativeObject* templateObj, uint32_t nslots,
+                                          uint32_t* startOfUninitialized,
+                                          uint32_t* startOfUndefined)
 {
     MOZ_ASSERT(nslots == templateObj->lastProperty()->slotSpan(templateObj->getClass()));
     MOZ_ASSERT(nslots > 0);
+
     uint32_t first = nslots;
     for (; first != 0; --first) {
-        if (!IsUninitializedLexical(templateObj->getSlot(first - 1)))
+        if (templateObj->getSlot(first - 1) != UndefinedValue())
             break;
     }
-    *startOfUninitialized = first;
-    for (; first != 0; --first) {
-        if (templateObj->getSlot(first - 1) != UndefinedValue()) {
-            *startOfUndefined = first;
-            return;
+    *startOfUndefined = first;
+
+    if (first != 0 && IsUninitializedLexical(templateObj->getSlot(first - 1))) {
+        for (; first != 0; --first) {
+            if (!IsUninitializedLexical(templateObj->getSlot(first - 1)))
+                break;
         }
+        *startOfUninitialized = first;
+    } else {
+        *startOfUninitialized = *startOfUndefined;
     }
-    *startOfUndefined = 0;
+}
+
+static void
+AllocateObjectBufferWithInit(JSContext* cx, TypedArrayObject* obj, int32_t count)
+{
+    JS::AutoCheckCannotGC nogc(cx);
+
+    obj->initPrivate(nullptr);
+
+    // Negative numbers or zero will bail out to the slow path, which in turn will raise
+    // an invalid argument exception or create a correct object with zero elements.
+    if (count <= 0) {
+        obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, Int32Value(0));
+        return;
+    }
+
+    obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, Int32Value(count));
+    size_t nbytes;
+
+    switch (obj->type()) {
+#define CREATE_TYPED_ARRAY(T, N) \
+      case Scalar::N: \
+        if (!js::CalculateAllocSize<T>(count, &nbytes)) \
+            return; \
+        break;
+JS_FOR_EACH_TYPED_ARRAY(CREATE_TYPED_ARRAY)
+#undef CREATE_TYPED_ARRAY
+      default:
+        MOZ_CRASH("Unsupported TypedArray type");
+    }
+
+    if (!(CheckedUint32(nbytes) + sizeof(Value)).isValid())
+        return;
+
+    nbytes = JS_ROUNDUP(nbytes, sizeof(Value));
+    Nursery& nursery = cx->runtime()->gc.nursery;
+    void* buf = nursery.allocateBuffer(obj, nbytes);
+    if (buf) {
+        obj->initPrivate(buf);
+        memset(buf, 0, nbytes);
+    }
+}
+
+void
+MacroAssembler::initTypedArraySlots(Register obj, Register temp, Register lengthReg,
+                                    LiveRegisterSet liveRegs, Label* fail,
+                                    TypedArrayObject* templateObj, TypedArrayLength lengthKind)
+{
+    MOZ_ASSERT(templateObj->hasPrivate());
+    MOZ_ASSERT(!templateObj->hasBuffer());
+
+    size_t dataSlotOffset = TypedArrayObject::dataOffset();
+    size_t dataOffset = TypedArrayObject::dataOffset() + sizeof(HeapSlot);
+
+    static_assert(TypedArrayObject::FIXED_DATA_START == TypedArrayObject::DATA_SLOT + 1,
+                    "fixed inline element data assumed to begin after the data slot");
+
+    // Initialise data elements to zero.
+    int32_t length = templateObj->length();
+    size_t nbytes = length * templateObj->bytesPerElement();
+
+    if (lengthKind == TypedArrayLength::Fixed && dataOffset + nbytes <= JSObject::MAX_BYTE_SIZE) {
+        MOZ_ASSERT(dataOffset + nbytes <= templateObj->tenuredSizeOfThis());
+
+        // Store data elements inside the remaining JSObject slots.
+        computeEffectiveAddress(Address(obj, dataOffset), temp);
+        storePtr(temp, Address(obj, dataSlotOffset));
+
+        // Write enough zero pointers into fixed data to zero every
+        // element.  (This zeroes past the end of a byte count that's
+        // not a multiple of pointer size.  That's okay, because fixed
+        // data is a count of 8-byte HeapSlots (i.e. <= pointer size),
+        // and we won't inline unless the desired memory fits in that
+        // space.)
+        static_assert(sizeof(HeapSlot) == 8, "Assumed 8 bytes alignment");
+
+        size_t numZeroPointers = ((nbytes + 7) & ~0x7) / sizeof(char *);
+        for (size_t i = 0; i < numZeroPointers; i++)
+            storePtr(ImmWord(0), Address(obj, dataOffset + i * sizeof(char *)));
+#ifdef DEBUG
+        if (nbytes == 0)
+            store8(Imm32(TypedArrayObject::ZeroLengthArrayData), Address(obj, dataSlotOffset));
+#endif
+    } else {
+        if (lengthKind == TypedArrayLength::Fixed)
+            move32(Imm32(length), lengthReg);
+
+        // Allocate a buffer on the heap to store the data elements.
+        liveRegs.addUnchecked(temp);
+        liveRegs.addUnchecked(obj);
+        liveRegs.addUnchecked(lengthReg);
+        PushRegsInMask(liveRegs);
+        setupUnalignedABICall(temp);
+        loadJSContext(temp);
+        passABIArg(temp);
+        passABIArg(obj);
+        passABIArg(lengthReg);
+        callWithABI(JS_FUNC_TO_DATA_PTR(void*, AllocateObjectBufferWithInit));
+        PopRegsInMask(liveRegs);
+
+        // Fail when data elements is set to NULL.
+        branchPtr(Assembler::Equal, Address(obj, dataSlotOffset), ImmWord(0), fail);
+    }
 }
 
 void
@@ -1039,25 +1158,29 @@ MacroAssembler::initGCSlots(Register obj, Register temp, NativeObject* templateO
     //
     // The template object may be a CallObject, in which case we need to
     // account for uninitialized lexical slots as well as undefined
-    // slots. Unitialized lexical slots always appear at the very end of
-    // slots, after undefined.
-    uint32_t startOfUndefined = nslots;
+    // slots. Unitialized lexical slots appears in CallObjects if the function
+    // has parameter expressions, in which case closed over parameters have
+    // TDZ. Uninitialized slots come before undefined slots in CallObjects.
     uint32_t startOfUninitialized = nslots;
-    FindStartOfUndefinedAndUninitializedSlots(templateObj, nslots,
-                                              &startOfUndefined, &startOfUninitialized);
-    MOZ_ASSERT(startOfUndefined <= nfixed); // Reserved slots must be fixed.
-    MOZ_ASSERT_IF(startOfUndefined != nfixed, startOfUndefined <= startOfUninitialized);
-    MOZ_ASSERT_IF(!templateObj->is<CallObject>(), startOfUninitialized == nslots);
+    uint32_t startOfUndefined = nslots;
+    FindStartOfUninitializedAndUndefinedSlots(templateObj, nslots,
+                                              &startOfUninitialized, &startOfUndefined);
+    MOZ_ASSERT(startOfUninitialized <= nfixed); // Reserved slots must be fixed.
+    MOZ_ASSERT(startOfUndefined >= startOfUninitialized);
+    MOZ_ASSERT_IF(!templateObj->is<CallObject>(), startOfUninitialized == startOfUndefined);
 
     // Copy over any preserved reserved slots.
-    copySlotsFromTemplate(obj, templateObj, 0, startOfUndefined);
+    copySlotsFromTemplate(obj, templateObj, 0, startOfUninitialized);
 
     // Fill the rest of the fixed slots with undefined and uninitialized.
     if (initContents) {
-        fillSlotsWithUndefined(Address(obj, NativeObject::getFixedSlotOffset(startOfUndefined)), temp,
-                               startOfUndefined, Min(startOfUninitialized, nfixed));
         size_t offset = NativeObject::getFixedSlotOffset(startOfUninitialized);
-        fillSlotsWithUninitialized(Address(obj, offset), temp, startOfUninitialized, nfixed);
+        fillSlotsWithUninitialized(Address(obj, offset), temp,
+                                   startOfUninitialized, Min(startOfUndefined, nfixed));
+
+        offset = NativeObject::getFixedSlotOffset(startOfUndefined);
+        fillSlotsWithUndefined(Address(obj, offset), temp,
+                               startOfUndefined, nfixed);
     }
 
     if (ndynamic) {
@@ -1066,12 +1189,16 @@ MacroAssembler::initGCSlots(Register obj, Register temp, NativeObject* templateO
         push(obj);
         loadPtr(Address(obj, NativeObject::offsetOfSlots()), obj);
 
-        // Initially fill all dynamic slots with undefined.
-        fillSlotsWithUndefined(Address(obj, 0), temp, 0, ndynamic);
-
-        // Fill uninitialized slots if necessary.
-        fillSlotsWithUninitialized(Address(obj, 0), temp, startOfUninitialized - nfixed,
-                                   nslots - startOfUninitialized);
+        // Fill uninitialized slots if necessary. Otherwise initialize all
+        // slots to undefined.
+        if (startOfUndefined > nfixed) {
+            MOZ_ASSERT(startOfUninitialized != startOfUndefined);
+            fillSlotsWithUninitialized(Address(obj, 0), temp, 0, startOfUndefined - nfixed);
+            size_t offset = (startOfUndefined - nfixed) * sizeof(Value);
+            fillSlotsWithUndefined(Address(obj, offset), temp, startOfUndefined - nfixed, ndynamic);
+        } else {
+            fillSlotsWithUndefined(Address(obj, 0), temp, 0, ndynamic);
+        }
 
         pop(obj);
     }
@@ -1086,7 +1213,7 @@ MacroAssembler::initGCThing(Register obj, Register temp, JSObject* templateObj,
     storePtr(ImmGCPtr(templateObj->group()), Address(obj, JSObject::offsetOfGroup()));
 
     if (Shape* shape = templateObj->maybeShape())
-        storePtr(ImmGCPtr(shape), Address(obj, JSObject::offsetOfShape()));
+        storePtr(ImmGCPtr(shape), Address(obj, ShapedObject::offsetOfShape()));
 
     MOZ_ASSERT_IF(convertDoubleElements, templateObj->is<ArrayObject>());
 
@@ -1120,16 +1247,21 @@ MacroAssembler::initGCThing(Register obj, Register temp, JSObject* templateObj,
                           : 0),
                     Address(obj, elementsOffset + ObjectElements::offsetOfFlags()));
             MOZ_ASSERT(!ntemplate->hasPrivate());
+        } else if (ntemplate->is<ArgumentsObject>()) {
+            // The caller will initialize the reserved slots.
+            MOZ_ASSERT(!initContents);
+            MOZ_ASSERT(!ntemplate->hasPrivate());
+            storePtr(ImmPtr(emptyObjectElements), Address(obj, NativeObject::offsetOfElements()));
         } else {
             // If the target type could be a TypedArray that maps shared memory
             // then this would need to store emptyObjectElementsShared in that case.
-            // That cannot happen at present; TypedArray allocation is always
-            // a VM call.
+            MOZ_ASSERT(!ntemplate->isSharedMemory());
+
             storePtr(ImmPtr(emptyObjectElements), Address(obj, NativeObject::offsetOfElements()));
 
             initGCSlots(obj, temp, ntemplate, initContents);
 
-            if (ntemplate->hasPrivate()) {
+            if (ntemplate->hasPrivate() && !ntemplate->is<TypedArrayObject>()) {
                 uint32_t nfixed = ntemplate->numFixedSlots();
                 storePtr(ImmPtr(ntemplate->getPrivate()),
                          Address(obj, NativeObject::getPrivateDataOffset(nfixed)));
@@ -1815,6 +1947,51 @@ MacroAssembler::convertTypedOrValueToFloatingPoint(TypedOrValueRegister src, Flo
 }
 
 void
+MacroAssembler::outOfLineTruncateSlow(FloatRegister src, Register dest, bool widenFloatToDouble,
+                                      bool compilingWasm)
+{
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+    if (widenFloatToDouble) {
+        convertFloat32ToDouble(src, ScratchDoubleReg);
+        src = ScratchDoubleReg;
+    }
+#elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
+    FloatRegister srcSingle;
+    if (widenFloatToDouble) {
+        MOZ_ASSERT(src.isSingle());
+        srcSingle = src;
+        src = src.asDouble();
+        push(srcSingle);
+        convertFloat32ToDouble(srcSingle, src);
+    }
+#else
+    // Also see below
+    MOZ_CRASH("MacroAssembler platform hook: outOfLineTruncateSlow");
+#endif
+
+    MOZ_ASSERT(src.isDouble());
+
+    setupUnalignedABICall(dest);
+    passABIArg(src, MoveOp::DOUBLE);
+    if (compilingWasm)
+        callWithABI(wasm::SymbolicAddress::ToInt32);
+    else
+        callWithABI(mozilla::BitwiseCast<void*, int32_t(*)(double)>(JS::ToInt32));
+    storeCallWordResult(dest);
+
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
+    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+    // Nothing
+#elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
+    if (widenFloatToDouble)
+        pop(srcSingle);
+#else
+    MOZ_CRASH("MacroAssembler platform hook: outOfLineTruncateSlow");
+#endif
+}
+
+void
 MacroAssembler::convertDoubleToInt(FloatRegister src, Register output, FloatRegister temp,
                                    Label* truncateFail, Label* fail,
                                    IntConversionBehavior behavior)
@@ -1825,7 +2002,7 @@ MacroAssembler::convertDoubleToInt(FloatRegister src, Register output, FloatRegi
         convertDoubleToInt32(src, output, fail, behavior == IntConversion_NegativeZeroCheck);
         break;
       case IntConversion_Truncate:
-        branchTruncateDouble(src, output, truncateFail ? truncateFail : fail);
+        branchTruncateDoubleMaybeModUint32(src, output, truncateFail ? truncateFail : fail);
         break;
       case IntConversion_ClampToUint8:
         // Clamping clobbers the input register, so use a temp.
@@ -2560,6 +2737,104 @@ MacroAssembler::maybeBranchTestType(MIRType type, MDefinition* maybeDef, Registe
             MOZ_CRASH("Unsupported type");
         }
     }
+}
+
+void
+MacroAssembler::wasmCallImport(const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee)
+{
+    // Load the callee, before the caller's registers are clobbered.
+    uint32_t globalDataOffset = callee.importGlobalDataOffset();
+    loadWasmGlobalPtr(globalDataOffset + offsetof(wasm::FuncImportTls, code), ABINonArgReg0);
+
+    MOZ_ASSERT(ABINonArgReg0 != WasmTlsReg, "by constraint");
+
+    // Switch to the callee's TLS and pinned registers and make the call.
+    loadWasmGlobalPtr(globalDataOffset + offsetof(wasm::FuncImportTls, tls), WasmTlsReg);
+    loadWasmPinnedRegsFromTls();
+
+    call(desc, ABINonArgReg0);
+}
+
+void
+MacroAssembler::wasmCallBuiltinInstanceMethod(const ABIArg& instanceArg,
+                                              wasm::SymbolicAddress builtin)
+{
+    MOZ_ASSERT(instanceArg != ABIArg());
+
+    if (instanceArg.kind() == ABIArg::GPR) {
+        loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, instance)), instanceArg.gpr());
+    } else if (instanceArg.kind() == ABIArg::Stack) {
+        // Safe to use ABINonArgReg0 since its the last thing before the call
+        Register scratch = ABINonArgReg0;
+        loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, instance)), scratch);
+        storePtr(scratch, Address(getStackPointer(), instanceArg.offsetFromArgBase()));
+    } else {
+        MOZ_CRASH("Unknown abi passing style for pointer");
+    }
+
+    call(builtin);
+}
+
+void
+MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee)
+{
+    Register scratch = WasmTableCallScratchReg;
+    Register index = WasmTableCallIndexReg;
+
+    if (callee.which() == wasm::CalleeDesc::AsmJSTable) {
+        // asm.js tables require no signature check, have had their index masked
+        // into range and thus need no bounds check and cannot be external.
+        loadWasmGlobalPtr(callee.tableBaseGlobalDataOffset(), scratch);
+        loadPtr(BaseIndex(scratch, index, ScalePointer), scratch);
+        call(desc, scratch);
+        return;
+    }
+
+    MOZ_ASSERT(callee.which() == wasm::CalleeDesc::WasmTable);
+
+    // Write the sig-id into the ABI sig-id register.
+    wasm::SigIdDesc sigId = callee.wasmTableSigId();
+    switch (sigId.kind()) {
+      case wasm::SigIdDesc::Kind::Global:
+        loadWasmGlobalPtr(sigId.globalDataOffset(), WasmTableCallSigReg);
+        break;
+      case wasm::SigIdDesc::Kind::Immediate:
+        move32(Imm32(sigId.immediate()), WasmTableCallSigReg);
+        break;
+      case wasm::SigIdDesc::Kind::None:
+        break;
+    }
+
+    // WebAssembly throws if the index is out-of-bounds.
+    loadWasmGlobalPtr(callee.tableLengthGlobalDataOffset(), scratch);
+    branch32(Assembler::Condition::AboveOrEqual, index, scratch, wasm::JumpTarget::OutOfBounds);
+
+    // Load the base pointer of the table.
+    loadWasmGlobalPtr(callee.tableBaseGlobalDataOffset(), scratch);
+
+    // Load the callee from the table.
+    if (callee.wasmTableIsExternal()) {
+        static_assert(sizeof(wasm::ExternalTableElem) == 8 || sizeof(wasm::ExternalTableElem) == 16,
+                      "elements of external tables are two words");
+        if (sizeof(wasm::ExternalTableElem) == 8) {
+            computeEffectiveAddress(BaseIndex(scratch, index, TimesEight), scratch);
+        } else {
+            lshift32(Imm32(4), index);
+            addPtr(index, scratch);
+        }
+
+        loadPtr(Address(scratch, offsetof(wasm::ExternalTableElem, tls)), WasmTlsReg);
+        branchTest32(Assembler::Zero, WasmTlsReg, WasmTlsReg, wasm::JumpTarget::IndirectCallToNull);
+
+        loadWasmPinnedRegsFromTls();
+
+        loadPtr(Address(scratch, offsetof(wasm::ExternalTableElem, code)), scratch);
+    } else {
+        loadPtr(BaseIndex(scratch, index, ScalePointer), scratch);
+        branchTest32(Assembler::Zero, scratch, scratch, wasm::JumpTarget::IndirectCallToNull);
+    }
+
+    call(desc, scratch);
 }
 
 //}}} check_macroassembler_style

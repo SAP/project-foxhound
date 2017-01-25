@@ -297,6 +297,26 @@ xul|*.help-button > xul|*.button-box > xul|*.button-text {
   display: none;
 }
 
+html|*.help-button {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  padding: 0;
+  display: inline-block;
+  background-image: url("chrome://global/skin/in-content/help-glyph.svg#help");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: contain;
+}
+
+html|*.help-button:hover {
+  background-image: url("chrome://global/skin/in-content/help-glyph.svg#help-hover");
+}
+
+html|*.help-button:hover:active {
+  background-image: url("chrome://global/skin/in-content/help-glyph.svg#help-pressed");
+}
+
 xul|*.spinbuttons-button {
   min-height: initial;
   margin-inline-start: 10px !important;
@@ -427,6 +447,14 @@ xul|textbox {
   min-height: 30px;
   padding-right: 10px;
   padding-left: 10px;
+}
+
+/* Create a separate rule to unset these styles on .tree-input instead of
+   using :not(.tree-input) so the selector specifity doesn't change. */
+xul|textbox.tree-input {
+  min-height: unset;
+  padding-right: unset;
+  padding-left: unset;
 }
 
 html|input[type="text"],

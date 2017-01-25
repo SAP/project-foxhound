@@ -120,6 +120,7 @@ enum MenuPopupAnchorType {
 #define POPUPPOSITION_ENDAFTER 7
 #define POPUPPOSITION_OVERLAP 8
 #define POPUPPOSITION_AFTERPOINTER 9
+#define POPUPPOSITION_SELECTION 10
 
 #define POPUPPOSITION_HFLIP(v) (v ^ 1)
 #define POPUPPOSITION_VFLIP(v) (v ^ 2)
@@ -272,6 +273,9 @@ public:
   bool IsVisible() { return mPopupState == ePopupVisible ||
                             mPopupState == ePopupShown; }
 
+  // Return true if the popup is for a menulist.
+  bool IsMenuList();
+
   bool IsMouseTransparent() { return mMouseTransparent; }
 
   static nsIContent* GetTriggerContent(nsMenuPopupFrame* aMenuPopupFrame);
@@ -355,6 +359,10 @@ public:
 
   nsIScrollableFrame* GetScrollFrame(nsIFrame* aStart);
 
+  void SetOverrideConstraintRect(mozilla::LayoutDeviceIntRect aRect) {
+    mOverrideConstraintRect = ToAppUnits(aRect, PresContext()->AppUnitsPerCSSPixel());
+  }
+
   // For a popup that should appear anchored at the given rect, determine
   // the screen area that it is constrained by. This will be the available
   // area of the screen the popup should be displayed on. Content popups,
@@ -437,6 +445,10 @@ protected:
   // flipped in that direction if there is not enough space available.
   nsPoint AdjustPositionForAnchorAlign(nsRect& anchorRect,
                                        FlipStyle& aHFlip, FlipStyle& aVFlip);
+
+  // For popups that are going to align to their selected item, get the frame of
+  // the selected item.
+  nsIFrame* GetSelectedItemForAlignment();
 
   // check if the popup will fit into the available space and resize it. This
   // method handles only one axis at a time so is called twice, once for
@@ -587,6 +599,8 @@ protected:
 
   // How the popup is anchored.
   MenuPopupAnchorType mAnchorType;
+
+  nsRect mOverrideConstraintRect;
 
   static int8_t sDefaultLevelIsTop;
 

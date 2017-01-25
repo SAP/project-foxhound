@@ -29,10 +29,13 @@ class gfxContext;
 class gfxFontGroup;
 class gfxUserFontEntry;
 class gfxUserFontSet;
-class gfxTextContextPaint;
 class nsIAtom;
 class nsILanguageAtomService;
 class gfxMissingFontRecorder;
+
+namespace mozilla {
+class SVGContextPaint;
+};
 
 /**
  * Callback for Draw() to use when drawing text with mode
@@ -68,8 +71,6 @@ struct gfxTextRunDrawCallbacks {
  * gfxFont. The glyphs are associated with a string of source text, and the
  * gfxTextRun APIs take parameters that are offsets into that source text.
  * 
- * gfxTextRuns are not refcounted. They should be deleted when no longer required.
- * 
  * gfxTextRuns are mostly immutable. The only things that can change are
  * inter-cluster spacing and line break placement. Spacing is always obtained
  * lazily by methods that need it, it is not cached. Line breaks are stored
@@ -81,8 +82,11 @@ struct gfxTextRunDrawCallbacks {
  * It is important that zero-length substrings are handled correctly. This will
  * be on the test!
  */
-class gfxTextRun : public gfxShapedText {
-public:
+class gfxTextRun : public gfxShapedText
+{
+    NS_INLINE_DECL_REFCOUNTING(gfxTextRun);
+
+protected:
     // Override operator delete to properly free the object that was
     // allocated via malloc.
     void operator delete(void* p) {
@@ -91,6 +95,7 @@ public:
 
     virtual ~gfxTextRun();
 
+public:
     typedef gfxFont::RunMetrics Metrics;
     typedef mozilla::gfx::DrawTarget DrawTarget;
 
@@ -148,7 +153,7 @@ public:
         Range() : start(0), end(0) {}
         Range(uint32_t aStart, uint32_t aEnd)
             : start(aStart), end(aEnd) {}
-        explicit Range(gfxTextRun* aTextRun)
+        explicit Range(const gfxTextRun* aTextRun)
             : start(0), end(aTextRun->GetLength()) {}
     };
 
@@ -212,38 +217,18 @@ public:
         virtual uint32_t GetAppUnitsPerDevUnit() = 0;
     };
 
-    class ClusterIterator {
-    public:
-        explicit ClusterIterator(gfxTextRun *aTextRun);
-
-        void Reset();
-
-        bool NextCluster();
-
-        uint32_t Position() const {
-            return mCurrentChar;
-        }
-
-        Range ClusterRange() const;
-
-        gfxFloat ClusterAdvance(PropertyProvider *aProvider) const;
-
-    private:
-        gfxTextRun *mTextRun;
-        uint32_t    mCurrentChar;
-    };
-
     struct DrawParams
     {
         gfxContext* context;
         DrawMode drawMode = DrawMode::GLYPH_FILL;
         nscolor textStrokeColor = 0;
+        gfxPattern* textStrokePattern = nullptr;
+        const mozilla::gfx::StrokeOptions *strokeOpts = nullptr;
         const mozilla::gfx::DrawOptions *drawOpts = nullptr;
-        float textStrokeWidth = 0.0f;
         PropertyProvider* provider = nullptr;
         // If non-null, the advance width of the substring is set.
         gfxFloat* advanceWidth = nullptr;
-        gfxTextContextPaint* contextPaint = nullptr;
+        mozilla::SVGContextPaint* contextPaint = nullptr;
         gfxTextRunDrawCallbacks* callbacks = nullptr;
         explicit DrawParams(gfxContext* aContext) : context(aContext) {}
     };
@@ -268,7 +253,7 @@ public:
      * Glyphs should be drawn in logical content order, which can be significant
      * if they overlap (perhaps due to negative spacing).
      */
-    void Draw(Range aRange, gfxPoint aPt, const DrawParams& aParams);
+    void Draw(Range aRange, gfxPoint aPt, const DrawParams& aParams) const;
 
     /**
      * Draws the emphasis marks for this text run. Uses only GetSpacing
@@ -277,7 +262,7 @@ public:
      */
     void DrawEmphasisMarks(gfxContext* aContext, gfxTextRun* aMark,
                            gfxFloat aMarkAdvance, gfxPoint aPt,
-                           Range aRange, PropertyProvider* aProvider);
+                           Range aRange, PropertyProvider* aProvider) const;
 
     /**
      * Computes the ReflowMetrics for a substring.
@@ -287,11 +272,11 @@ public:
     Metrics MeasureText(Range aRange,
                         gfxFont::BoundingBoxType aBoundingBoxType,
                         DrawTarget* aDrawTargetForTightBoundingBox,
-                        PropertyProvider* aProvider);
+                        PropertyProvider* aProvider) const;
 
     Metrics MeasureText(gfxFont::BoundingBoxType aBoundingBoxType,
                         DrawTarget* aDrawTargetForTightBoundingBox,
-                        PropertyProvider* aProvider = nullptr) {
+                        PropertyProvider* aProvider = nullptr) const {
         return MeasureText(Range(this), aBoundingBoxType,
                            aDrawTargetForTightBoundingBox, aProvider);
     }
@@ -304,9 +289,10 @@ public:
      * included in the advance width.
      */
     gfxFloat GetAdvanceWidth(Range aRange, PropertyProvider *aProvider,
-                             PropertyProvider::Spacing* aSpacing = nullptr);
+                             PropertyProvider::Spacing*
+                                 aSpacing = nullptr) const;
 
-    gfxFloat GetAdvanceWidth() {
+    gfxFloat GetAdvanceWidth() const {
         return GetAdvanceWidth(Range(this), nullptr);
     }
 
@@ -409,6 +395,7 @@ public:
                                  PropertyProvider *aProvider,
                                  SuppressBreak aSuppressBreak,
                                  gfxFloat *aTrimWhitespace,
+                                 bool aHangWhitespace,
                                  Metrics *aMetrics,
                                  gfxFont::BoundingBoxType aBoundingBoxType,
                                  DrawTarget* aDrawTargetForTightBoundingBox,
@@ -438,7 +425,7 @@ public:
 
     // Call this, don't call "new gfxTextRun" directly. This does custom
     // allocation and initialization
-    static mozilla::UniquePtr<gfxTextRun>
+    static already_AddRefed<gfxTextRun>
     Create(const gfxTextRunFactory::Parameters *aParams,
            uint32_t aLength, gfxFontGroup *aFontGroup,
            uint32_t aFlags);
@@ -453,21 +440,21 @@ public:
 
     class GlyphRunIterator {
     public:
-        GlyphRunIterator(gfxTextRun *aTextRun, Range aRange)
+        GlyphRunIterator(const gfxTextRun *aTextRun, Range aRange)
           : mTextRun(aTextRun)
           , mStartOffset(aRange.start)
           , mEndOffset(aRange.end) {
             mNextIndex = mTextRun->FindFirstGlyphRunContaining(aRange.start);
         }
         bool NextRun();
-        GlyphRun *GetGlyphRun() { return mGlyphRun; }
-        uint32_t GetStringStart() { return mStringStart; }
-        uint32_t GetStringEnd() { return mStringEnd; }
+        const GlyphRun *GetGlyphRun() const { return mGlyphRun; }
+        uint32_t GetStringStart() const { return mStringStart; }
+        uint32_t GetStringEnd() const { return mStringEnd; }
     private:
-        gfxTextRun *mTextRun;
-        GlyphRun   *mGlyphRun;
-        uint32_t    mStringStart;
-        uint32_t    mStringEnd;
+        const gfxTextRun *mTextRun;
+        MOZ_INIT_OUTSIDE_CTOR const GlyphRun   *mGlyphRun;
+        MOZ_INIT_OUTSIDE_CTOR uint32_t    mStringStart;
+        MOZ_INIT_OUTSIDE_CTOR uint32_t    mStringEnd;
         uint32_t    mNextIndex;
         uint32_t    mStartOffset;
         uint32_t    mEndOffset;
@@ -513,6 +500,10 @@ public:
     void SortGlyphRuns();
     void SanitizeGlyphRuns();
 
+    const CompressedGlyph* GetCharacterGlyphs() const final {
+        MOZ_ASSERT(mCharacterGlyphs, "failed to initialize mCharacterGlyphs");
+        return mCharacterGlyphs;
+    }
     CompressedGlyph* GetCharacterGlyphs() final {
         MOZ_ASSERT(mCharacterGlyphs, "failed to initialize mCharacterGlyphs");
         return mCharacterGlyphs;
@@ -564,14 +555,14 @@ public:
      */
     void FetchGlyphExtents(DrawTarget* aRefDrawTarget);
 
-    uint32_t CountMissingGlyphs();
-    const GlyphRun *GetGlyphRuns(uint32_t *aNumGlyphRuns) {
+    uint32_t CountMissingGlyphs() const;
+    const GlyphRun* GetGlyphRuns(uint32_t* aNumGlyphRuns) const {
         *aNumGlyphRuns = mGlyphRuns.Length();
         return mGlyphRuns.Elements();
     }
     // Returns the index of the GlyphRun containing the given offset.
     // Returns mGlyphRuns.Length() when aOffset is mCharacterCount.
-    uint32_t FindFirstGlyphRunContaining(uint32_t aOffset);
+    uint32_t FindFirstGlyphRunContaining(uint32_t aOffset) const;
 
     // Copy glyph data from a ShapedWord into this textrun.
     void CopyGlyphDataFrom(gfxShapedWord *aSource, uint32_t aStart);
@@ -639,7 +630,7 @@ public:
         mShapingState = aShapingState;
     }
 
-    int32_t GetAdvanceForGlyph(uint32_t aIndex)
+    int32_t GetAdvanceForGlyph(uint32_t aIndex) const
     {
         const CompressedGlyph& glyphData = mCharacterGlyphs[aIndex];
         if (glyphData.IsSimpleGlyph()) {
@@ -686,7 +677,7 @@ private:
     // **** general helpers **** 
 
     // Get the total advance for a range of glyphs.
-    int32_t GetAdvanceForGlyphs(Range aRange);
+    int32_t GetAdvanceForGlyphs(Range aRange) const;
 
     // Spacing for characters outside the range aSpacingStart/aSpacingEnd
     // is assumed to be zero; such characters are not passed to aProvider.
@@ -694,7 +685,8 @@ private:
     // it is not currently able to handle.
     bool GetAdjustedSpacingArray(Range aRange, PropertyProvider *aProvider,
                                  Range aSpacingRange,
-                                 nsTArray<PropertyProvider::Spacing> *aSpacing);
+                                 nsTArray<PropertyProvider::Spacing>*
+                                     aSpacing) const;
 
     CompressedGlyph& EnsureComplexGlyph(uint32_t aIndex)
     {
@@ -708,24 +700,26 @@ private:
 
     // if aProvider is null then mBeforeSpacing and mAfterSpacing are set to zero
     LigatureData ComputeLigatureData(Range aPartRange,
-                                     PropertyProvider *aProvider);
+                                     PropertyProvider *aProvider) const;
     gfxFloat ComputePartialLigatureWidth(Range aPartRange,
-                                         PropertyProvider *aProvider);
+                                         PropertyProvider *aProvider) const;
     void DrawPartialLigature(gfxFont *aFont, Range aRange,
                              gfxPoint *aPt, PropertyProvider *aProvider,
-                             TextRunDrawParams& aParams, uint16_t aOrientation);
+                             TextRunDrawParams& aParams,
+                             uint16_t aOrientation) const;
     // Advance aRange.start to the start of the nearest ligature, back
     // up aRange.end to the nearest ligature end; may result in
     // aRange->start == aRange->end.
-    void ShrinkToLigatureBoundaries(Range* aRange);
+    void ShrinkToLigatureBoundaries(Range* aRange) const;
     // result in appunits
-    gfxFloat GetPartialLigatureWidth(Range aRange, PropertyProvider *aProvider);
+    gfxFloat GetPartialLigatureWidth(Range aRange,
+                                     PropertyProvider *aProvider) const;
     void AccumulatePartialLigatureMetrics(gfxFont *aFont, Range aRange,
                                           gfxFont::BoundingBoxType aBoundingBoxType,
                                           DrawTarget* aRefDrawTarget,
                                           PropertyProvider *aProvider,
                                           uint16_t aOrientation,
-                                          Metrics *aMetrics);
+                                          Metrics *aMetrics) const;
 
     // **** measurement helper ****
     void AccumulateMetricsForRun(gfxFont *aFont, Range aRange,
@@ -734,12 +728,12 @@ private:
                                  PropertyProvider *aProvider,
                                  Range aSpacingRange,
                                  uint16_t aOrientation,
-                                 Metrics *aMetrics);
+                                 Metrics *aMetrics) const;
 
     // **** drawing helper ****
     void DrawGlyphs(gfxFont *aFont, Range aRange, gfxPoint *aPt,
                     PropertyProvider *aProvider, Range aSpacingRange,
-                    TextRunDrawParams& aParams, uint16_t aOrientation);
+                    TextRunDrawParams& aParams, uint16_t aOrientation) const;
 
     // XXX this should be changed to a GlyphRun plus a maybe-null GlyphRun*,
     // for smaller size especially in the super-common one-glyphrun case
@@ -801,7 +795,7 @@ public:
      * textrun will copy it.
      * This calls FetchGlyphExtents on the textrun.
      */
-    virtual mozilla::UniquePtr<gfxTextRun>
+    virtual already_AddRefed<gfxTextRun>
     MakeTextRun(const char16_t *aString, uint32_t aLength,
                 const Parameters *aParams, uint32_t aFlags,
                 gfxMissingFontRecorder *aMFR);
@@ -811,7 +805,7 @@ public:
      * textrun will copy it.
      * This calls FetchGlyphExtents on the textrun.
      */
-    virtual mozilla::UniquePtr<gfxTextRun>
+    virtual already_AddRefed<gfxTextRun>
     MakeTextRun(const uint8_t *aString, uint32_t aLength,
                 const Parameters *aParams, uint32_t aFlags,
                 gfxMissingFontRecorder *aMFR);
@@ -821,7 +815,7 @@ public:
      * a full Parameters record.
      */
     template<typename T>
-    mozilla::UniquePtr<gfxTextRun>
+    already_AddRefed<gfxTextRun>
     MakeTextRun(const T* aString, uint32_t aLength,
                 DrawTarget* aRefDrawTarget,
                 int32_t aAppUnitsPerDevUnit,
@@ -849,7 +843,7 @@ public:
      * The caller is responsible for deleting the returned text run
      * when no longer required.
      */
-    mozilla::UniquePtr<gfxTextRun>
+    already_AddRefed<gfxTextRun>
     MakeHyphenTextRun(DrawTarget* aDrawTarget, uint32_t aAppUnitsPerDevUnit);
 
     /**
@@ -888,6 +882,14 @@ public:
 
     // This will call UpdateUserFonts() if the user font set is changed.
     void SetUserFontSet(gfxUserFontSet *aUserFontSet);
+
+    void ClearCachedData()
+    {
+        mUnderlineOffset = UNDERLINE_OFFSET_NOT_SET;
+        mSkipDrawing = false;
+        mHyphenWidth = -1;
+        mCachedEllipsisTextRun = nullptr;
+    }
 
     // If there is a user font set, check to see whether the font list or any
     // caches need updating.
@@ -1083,7 +1085,7 @@ protected:
 
     // Cache a textrun representing an ellipsis (useful for CSS text-overflow)
     // at a specific appUnitsPerDevPixel size and orientation
-    mozilla::UniquePtr<gfxTextRun>   mCachedEllipsisTextRun;
+    RefPtr<gfxTextRun>   mCachedEllipsisTextRun;
 
     // cache the most recent pref font to avoid general pref font lookup
     RefPtr<gfxFontFamily> mLastPrefFamily;
@@ -1103,13 +1105,13 @@ protected:
      * Textrun creation short-cuts for special cases where we don't need to
      * call a font shaper to generate glyphs.
      */
-    mozilla::UniquePtr<gfxTextRun>
+    already_AddRefed<gfxTextRun>
     MakeEmptyTextRun(const Parameters *aParams, uint32_t aFlags);
 
-    mozilla::UniquePtr<gfxTextRun>
+    already_AddRefed<gfxTextRun>
     MakeSpaceTextRun(const Parameters *aParams, uint32_t aFlags);
 
-    mozilla::UniquePtr<gfxTextRun>
+    already_AddRefed<gfxTextRun>
     MakeBlankTextRun(uint32_t aLength, const Parameters *aParams,
                      uint32_t aFlags);
 

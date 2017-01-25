@@ -930,7 +930,7 @@ nsXMLContentSink::HandleStartElement(const char16_t *aName,
   // XXX Hopefully the parser will flag this before we get
   // here. If we're in the epilog, there should be no
   // new elements
-  PR_ASSERT(eXMLContentSinkState_InEpilog != mState);
+  MOZ_ASSERT(eXMLContentSinkState_InEpilog != mState);
 
   FlushText();
   DidAddContent();
@@ -1023,7 +1023,7 @@ nsXMLContentSink::HandleEndElement(const char16_t *aName,
   // XXX Hopefully the parser will flag this before we get
   // here. If we're in the prolog or epilog, there should be
   // no close tags for elements.
-  PR_ASSERT(eXMLContentSinkState_InDocumentElement == mState);
+  MOZ_ASSERT(eXMLContentSinkState_InDocumentElement == mState);
 
   FlushText();
 
@@ -1051,6 +1051,9 @@ nsXMLContentSink::HandleEndElement(const char16_t *aName,
   bool isTemplateElement = debugTagAtom == nsGkAtoms::_template &&
                            debugNameSpaceID == kNameSpaceID_XHTML;
   NS_ASSERTION(content->NodeInfo()->Equals(debugTagAtom, debugNameSpaceID) ||
+               (debugNameSpaceID == kNameSpaceID_MathML &&
+                content->NodeInfo()->NamespaceID() == kNameSpaceID_disabled_MathML &&
+                content->NodeInfo()->Equals(debugTagAtom)) ||
                isTemplateElement, "Wrong element being closed");
 #endif
 
@@ -1303,8 +1306,7 @@ nsXMLContentSink::ReportError(const char16_t* aErrorText,
   mDocument->RemoveObserver(this);
   mIsDocumentObserver = false;
 
-  // Clear the current content and
-  // prepare to set <parsererror> as the document root
+  // Clear the current content
   nsCOMPtr<nsIDOMNode> node(do_QueryInterface(mDocument));
   if (node) {
     for (;;) {
@@ -1332,8 +1334,14 @@ nsXMLContentSink::ReportError(const char16_t* aErrorText,
   mContentStack.Clear();
   mNotifyLevel = 0;
 
-  rv = HandleProcessingInstruction(MOZ_UTF16("xml-stylesheet"),
-                                   MOZ_UTF16("href=\"chrome://global/locale/intl.css\" type=\"text/css\""));
+  // return leaving the document empty if we're asked to not add a <parsererror> root node
+  if (mDocument->SuppressParserErrorElement()) {
+    return NS_OK;
+  }
+
+  // prepare to set <parsererror> as the document root
+  rv = HandleProcessingInstruction(u"xml-stylesheet",
+                                   u"href=\"chrome://global/locale/intl.css\" type=\"text/css\"");
   NS_ENSURE_SUCCESS(rv, rv);
 
   const char16_t* noAtts[] = { 0, 0 };

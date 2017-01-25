@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -20,7 +20,9 @@ with Files('GetUserMedia*'):
     BUG_COMPONENT = component_av
 
 DIRS += [
+    'eme',
     'encoder',
+    'flac',
     'gmp',
     'gmp-plugin',
     'gmp-plugin-openh264',
@@ -39,9 +41,6 @@ DIRS += [
     'standalone',
 ]
 
-if CONFIG['MOZ_RAW']:
-    DIRS += ['raw']
-
 if CONFIG['MOZ_DIRECTSHOW']:
     DIRS += ['directshow']
 
@@ -56,9 +55,6 @@ if CONFIG['MOZ_WEBRTC']:
 
 if CONFIG['MOZ_OMX_DECODER']:
     DIRS += ['omx']
-
-if CONFIG['MOZ_EME']:
-    DIRS += ['eme']
 
 TEST_DIRS += [
     'compiledtest',
@@ -108,7 +104,6 @@ EXPORTS += [
     'Intervals.h',
     'Latency.h',
     'MediaCache.h',
-    'MediaCallbackID.h',
     'MediaData.h',
     'MediaDataDemuxer.h',
     'MediaDecoder.h',
@@ -124,9 +119,12 @@ EXPORTS += [
     'MediaRecorder.h',
     'MediaResource.h',
     'MediaResourceCallback.h',
+    'MediaResult.h',
     'MediaSegment.h',
     'MediaStatistics.h',
     'MediaStreamGraph.h',
+    'MediaStreamListener.h',
+    'MediaStreamVideoSink.h',
     'MediaTimer.h',
     'MediaTrack.h',
     'MediaTrackList.h',
@@ -137,7 +135,6 @@ EXPORTS += [
     'nsIDocumentActivity.h',
     'PrincipalChangeObserver.h',
     'QueueObject.h',
-    'RtspMediaResource.h',
     'SeekJob.h',
     'SeekTarget.h',
     'SeekTask.h',
@@ -221,7 +218,6 @@ UNIFIED_SOURCES += [
     'GraphDriver.cpp',
     'Latency.cpp',
     'MediaCache.cpp',
-    'MediaCallbackID.cpp',
     'MediaData.cpp',
     'MediaDecoder.cpp',
     'MediaDecoderReader.cpp',
@@ -238,7 +234,9 @@ UNIFIED_SOURCES += [
     'MediaShutdownManager.cpp',
     'MediaStreamError.cpp',
     'MediaStreamGraph.cpp',
+    'MediaStreamListener.cpp',
     'MediaStreamTrack.cpp',
+    'MediaStreamVideoSink.cpp',
     'MediaTimer.cpp',
     'MediaTrack.cpp',
     'MediaTrackList.cpp',
@@ -247,7 +245,6 @@ UNIFIED_SOURCES += [
     'MP3FrameParser.cpp',
     'NextFrameSeekTask.cpp',
     'QueueObject.cpp',
-    'RtspMediaResource.cpp',
     'SeekJob.cpp',
     'SeekTask.cpp',
     'StreamTracks.cpp',

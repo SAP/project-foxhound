@@ -6,7 +6,7 @@
     'includes':
     [
         'deqp.gypi',
-        '../../build/common_defines.gypi',
+        '../../gyp/common_defines.gypi',
     ],
     'variables':
     {
@@ -51,34 +51,15 @@
                 {
                     'target_name': 'angle_test_support',
                     'type': 'none',
-                    'conditions':
+                    'dependencies':
                     [
-                        ['angle_standalone==1',
-                        {
-                            'dependencies': [
-                                'angle_internal_gmock',
-                                'angle_internal_gtest',
-                            ],
-                        },
-                        {
-                            'dependencies': [
-                                '<(DEPTH)/testing/gmock.gyp:gmock',
-                                '<(DEPTH)/testing/gtest.gyp:gtest',
-                            ],
-                            'all_dependent_settings':
-                            {
-                                'include_dirs':
-                                [
-                                    '<(DEPTH)/testing/gmock/include',
-                                    '<(DEPTH)/testing/gtest/include',
-                                ],
-                            },
-                        }],
+                        'angle_internal_gmock',
+                        'angle_internal_gtest',
                     ],
                 },
             ],
         }],
-        ['angle_standalone==1 and angle_build_winrt==0',
+        ['angle_build_winrt==0',
         {
             'targets':
             [
@@ -87,15 +68,15 @@
                 {
                     'target_name': 'angle_internal_gtest',
                     'type': 'static_library',
-                    'includes': [ '../../build/common_defines.gypi', ],
+                    'includes': [ '../../gyp/common_defines.gypi', ],
                     'include_dirs':
                     [
-                        'third_party/googletest',
-                        'third_party/googletest/include',
+                        '<(angle_path)/testing/gtest',
+                        '<(angle_path)/testing/gtest/include',
                     ],
                     'sources':
                     [
-                        'third_party/googletest/src/gtest-all.cc',
+                        '<(angle_path)/testing/gtest/src/gtest-all.cc',
                     ],
                     'defines':
                     [
@@ -109,8 +90,8 @@
                         ],
                         'include_dirs':
                         [
-                            'third_party/googletest',
-                            'third_party/googletest/include',
+                            '<(angle_path)/testing/gtest',
+                            '<(angle_path)/testing/gtest/include',
                         ],
                     },
                 },
@@ -118,16 +99,16 @@
                 {
                     'target_name': 'angle_internal_gmock',
                     'type': 'static_library',
-                    'includes': [ '../../build/common_defines.gypi', ],
+                    'includes': [ '../../gyp/common_defines.gypi', ],
                     'include_dirs':
                     [
-                        'third_party/googlemock',
-                        'third_party/googlemock/include',
-                        'third_party/googletest/include',
+                        '<(angle_path)/testing/gmock',
+                        '<(angle_path)/testing/gmock/include',
+                        '<(angle_path)/testing/gtest/include',
                     ],
                     'sources':
                     [
-                        'third_party/googlemock/src/gmock-all.cc',
+                        '<(angle_path)/testing/gmock/src/gmock-all.cc',
                     ],
                     'defines':
                     [
@@ -141,9 +122,9 @@
                         ],
                         'include_dirs':
                         [
-                            'third_party/googlemock',
-                            'third_party/googlemock/include',
-                            'third_party/googletest/include',
+                            '<(angle_path)/testing/gmock',
+                            '<(angle_path)/testing/gmock/include',
+                            '<(angle_path)/testing/gtest/include',
                         ],
                     },
                 },
@@ -156,7 +137,7 @@
                     'type': 'executable',
                     'includes':
                     [
-                        '../../build/common_defines.gypi',
+                        '../../gyp/common_defines.gypi',
                         'angle_unittests.gypi',
                     ],
                     'sources':
@@ -189,7 +170,7 @@
                     'type': 'executable',
                     'includes':
                     [
-                        '../../build/common_defines.gypi',
+                        '../../gyp/common_defines.gypi',
                         'angle_end2end_tests.gypi',
                     ],
                     'sources':
@@ -202,7 +183,7 @@
                     'type': 'executable',
                     'includes':
                     [
-                        '../../build/common_defines.gypi',
+                        '../../gyp/common_defines.gypi',
                         'angle_perftests.gypi',
                     ],
                     'sources':
@@ -229,7 +210,7 @@
                         {
                             'target_name': 'angle_gles2_conformance_tests',
                             'type': 'executable',
-                            'includes': [ '../../build/common_defines.gypi', ],
+                            'includes': [ '../../gyp/common_defines.gypi', ],
                             'dependencies':
                             [
                                 '<(angle_path)/src/angle.gyp:libGLESv2',
@@ -296,7 +277,7 @@
                         {
                             'target_name': 'angle_gles3_conformance_tests',
                             'type': 'executable',
-                            'includes': [ '../../build/common_defines.gypi', ],
+                            'includes': [ '../../gyp/common_defines.gypi', ],
                             'dependencies':
                             [
                                 '<(angle_path)/src/angle.gyp:libGLESv2',

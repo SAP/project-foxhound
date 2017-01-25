@@ -5,12 +5,14 @@
 #include "nsNSSCertificateDB.h"
 
 #include "CertVerifier.h"
+#include "CryptoTask.h"
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
 #include "SharedSSLState.h"
+#include "certdb.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsArray.h"
 #include "nsArrayUtils.h"
 #include "nsCOMPtr.h"
@@ -31,19 +33,17 @@
 #include "nsNSSShutDown.h"
 #include "nsPK11TokenDB.h"
 #include "nsPKCS12Blob.h"
+#include "nsPromiseFlatString.h"
+#include "nsProxyRelease.h"
 #include "nsReadableUtils.h"
 #include "nsThreadUtils.h"
+#include "nspr.h"
 #include "pkix/Time.h"
 #include "pkix/pkixtypes.h"
-
-#include "nspr.h"
-#include "certdb.h"
-#include "secerr.h"
-#include "nssb64.h"
 #include "secasn1.h"
 #include "secder.h"
+#include "secerr.h"
 #include "ssl.h"
-#include "plbase64.h"
 
 #ifdef XP_WIN
 #include <winsock.h> // for ntohl
@@ -89,7 +89,7 @@ nsNSSCertificateDB::~nsNSSCertificateDB()
     return;
   }
 
-  shutdown(calledFromObject);
+  shutdown(ShutdownCalledFrom::Object);
 }
 
 NS_IMETHODIMP
@@ -248,8 +248,8 @@ nsNSSCertificateDB::getCertsFromPackage(const UniquePLArenaPool& arena,
   }
 
   collectArgs->arena = arena.get();
-  if (CERT_DecodeCertPackage(char_ptr_cast(data), length, collect_certs,
-                             collectArgs) != SECSuccess) {
+  if (CERT_DecodeCertPackage(BitwiseCast<char*, uint8_t*>(data), length,
+                             collect_certs, collectArgs) != SECSuccess) {
     return nullptr;
   }
 
@@ -257,7 +257,7 @@ nsNSSCertificateDB::getCertsFromPackage(const UniquePLArenaPool& arena,
 }
 
 nsresult
-nsNSSCertificateDB::handleCACertDownload(nsIArray *x509Certs,
+nsNSSCertificateDB::handleCACertDownload(NotNull<nsIArray*> x509Certs,
                                          nsIInterfaceRequestor *ctx,
                                          const nsNSSShutDownPreventionLock &proofOfLock)
 {
@@ -282,7 +282,6 @@ nsNSSCertificateDB::handleCACertDownload(nsIArray *x509Certs,
     return NS_OK; // Nothing to import, so nothing to do.
 
   nsCOMPtr<nsIX509Cert> certToShow;
-  nsCOMPtr<nsISupports> isupports;
   uint32_t selCertIndex;
   if (numCerts == 1) {
     // There's only one cert, so let's show it.
@@ -335,28 +334,12 @@ nsNSSCertificateDB::handleCACertDownload(nsIArray *x509Certs,
   nsresult rv = ::getNSSDialogs(getter_AddRefs(dialogs), 
                                 NS_GET_IID(nsICertificateDialogs),
                                 NS_CERTIFICATEDIALOGS_CONTRACTID);
-                       
-  if (NS_FAILED(rv))
+  if (NS_FAILED(rv)) {
     return rv;
- 
-  SECItem der;
-  rv=certToShow->GetRawDER(&der.len, (uint8_t **)&der.data);
-
-  if (NS_FAILED(rv))
-    return rv;
-
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Creating temp cert\n"));
-  CERTCertDBHandle *certdb = CERT_GetDefaultCertDB();
-  UniqueCERTCertificate tmpCert(CERT_FindCertByDERCert(certdb, &der));
-  if (!tmpCert) {
-    tmpCert.reset(CERT_NewTempCertificate(certdb, &der, nullptr, false, true));
   }
-  free(der.data);
-  der.data = nullptr;
-  der.len = 0;
 
+  UniqueCERTCertificate tmpCert(certToShow->GetCert());
   if (!tmpCert) {
-    NS_ERROR("Couldn't create cert from DER blob");
     return NS_ERROR_FAILURE;
   }
 
@@ -380,8 +363,7 @@ nsNSSCertificateDB::handleCACertDownload(nsIArray *x509Certs,
     return NS_ERROR_NOT_AVAILABLE;
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("trust is %d\n", trustBits));
-  nsXPIDLCString nickname;
-  nickname.Adopt(CERT_MakeCANickname(tmpCert.get()));
+  UniquePORTString nickname(CERT_MakeCANickname(tmpCert.get()));
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Created nick \"%s\"\n", nickname.get()));
 
@@ -391,12 +373,10 @@ nsNSSCertificateDB::handleCACertDownload(nsIArray *x509Certs,
                    !!(trustBits & nsIX509CertDB::TRUSTED_EMAIL),
                    !!(trustBits & nsIX509CertDB::TRUSTED_OBJSIGN));
 
-  SECStatus srv = __CERT_AddTempCertToPerm(tmpCert.get(),
-                                           const_cast<char*>(nickname.get()),
-                                           trust.GetTrust());
-
-  if (srv != SECSuccess)
+  if (CERT_AddTempCertToPerm(tmpCert.get(), nickname.get(),
+                             trust.GetTrust()) != SECSuccess) {
     return NS_ERROR_FAILURE;
+  }
 
   // Import additional delivered certificates that can be verified.
 
@@ -414,22 +394,21 @@ nsNSSCertificateDB::handleCACertDownload(nsIArray *x509Certs,
       continue;
     }
 
-    certToShow = do_QueryElementAt(x509Certs, i);
-    certToShow->GetRawDER(&der.len, (uint8_t **)&der.data);
+    nsCOMPtr<nsIX509Cert> remainingCert = do_QueryElementAt(x509Certs, i);
+    if (!remainingCert) {
+      continue;
+    }
 
-    CERTCertificate *tmpCert2 = 
-      CERT_NewTempCertificate(certdb, &der, nullptr, false, true);
-
-    free(der.data);
-    der.data = nullptr;
-    der.len = 0;
-
+    UniqueCERTCertificate tmpCert2(remainingCert->GetCert());
     if (!tmpCert2) {
-      NS_ERROR("Couldn't create temp cert from DER blob");
       continue;  // Let's try to import the rest of 'em
     }
 
-    CERT_AddCertToListTail(certList.get(), tmpCert2);
+    if (CERT_AddCertToListTail(certList.get(), tmpCert2.get()) != SECSuccess) {
+      continue;
+    }
+
+    Unused << tmpCert2.release();
   }
 
   return ImportValidCACertsInList(certList, ctx, proofOfLock);
@@ -480,7 +459,7 @@ nsNSSCertificateDB::ImportCertificates(uint8_t* data, uint32_t length,
     }
   }
 
-  return handleCACertDownload(array, ctx, locker);
+  return handleCACertDownload(WrapNotNull(array), ctx, locker);
 }
 
 /**
@@ -1187,41 +1166,31 @@ nsNSSCertificateDB::FindCertByEmailAddress(const char* aEmailAddress,
 }
 
 NS_IMETHODIMP
-nsNSSCertificateDB::ConstructX509FromBase64(const char *base64,
-                                            nsIX509Cert **_retval)
+nsNSSCertificateDB::ConstructX509FromBase64(const nsACString& base64,
+                                    /*out*/ nsIX509Cert** _retval)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  if (NS_WARN_IF(!_retval)) {
+  if (!_retval) {
     return NS_ERROR_INVALID_POINTER;
   }
 
-  // sure would be nice to have a smart pointer class for PL_ allocations
-  // unfortunately, we cannot distinguish out-of-memory from bad-input here
-  uint32_t len = base64 ? strlen(base64) : 0;
-  char *certDER = PL_Base64Decode(base64, len, nullptr);
-  if (!certDER)
-    return NS_ERROR_ILLEGAL_VALUE;
-  if (!*certDER) {
-    PL_strfree(certDER);
+  // Base64Decode() doesn't consider a zero length input as an error, and just
+  // returns the empty string. We don't want this behavior, so the below check
+  // catches this case.
+  if (base64.Length() < 1) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  // If we get to this point, we know we had well-formed base64 input;
-  // therefore the input string cannot have been less than two
-  // characters long.  Compute the unpadded length of the decoded data.
-  uint32_t lengthDER = (len * 3) / 4;
-  if (base64[len-1] == '=') {
-    lengthDER--;
-    if (base64[len-2] == '=')
-      lengthDER--;
+  nsAutoCString certDER;
+  nsresult rv = Base64Decode(base64, certDER);
+  if (NS_FAILED(rv)) {
+    return rv;
   }
 
-  nsresult rv = ConstructX509(certDER, lengthDER, _retval);
-  PL_strfree(certDER);
-  return rv;
+  return ConstructX509(certDER.get(), certDER.Length(), _retval);
 }
 
 NS_IMETHODIMP
@@ -1359,56 +1328,40 @@ nsNSSCertificateDB::get_default_nickname(CERTCertificate *cert,
   }
 }
 
-NS_IMETHODIMP nsNSSCertificateDB::AddCertFromBase64(const char* aBase64,
-                                                    const char* aTrust,
-                                                    const char* aName)
+NS_IMETHODIMP
+nsNSSCertificateDB::AddCertFromBase64(const nsACString& aBase64,
+                                      const nsACString& aTrust,
+                                      const nsACString& /*aName*/)
 {
-  NS_ENSURE_ARG_POINTER(aBase64);
-  nsCOMPtr <nsIX509Cert> newCert;
-
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   nsNSSCertTrust trust;
+  if (CERT_DecodeTrustString(trust.GetTrust(), PromiseFlatCString(aTrust).get())
+        != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
 
-  // need to calculate the trust bits from the aTrust string.
-  SECStatus stat = CERT_DecodeTrustString(trust.GetTrust(),
-    /* this is const, but not declared that way */(char *) aTrust);
-  NS_ENSURE_STATE(stat == SECSuccess); // if bad trust passed in, return error.
-
-
+  nsCOMPtr<nsIX509Cert> newCert;
   nsresult rv = ConstructX509FromBase64(aBase64, getter_AddRefs(newCert));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  SECItem der;
-  rv = newCert->GetRawDER(&der.len, (uint8_t **)&der.data);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Creating temp cert\n"));
-  CERTCertDBHandle *certdb = CERT_GetDefaultCertDB();
-  UniqueCERTCertificate tmpCert(CERT_FindCertByDERCert(certdb, &der));
-  if (!tmpCert) {
-    tmpCert.reset(CERT_NewTempCertificate(certdb, &der, nullptr, false, true));
-  }
-  free(der.data);
-  der.data = nullptr;
-  der.len = 0;
-
-  if (!tmpCert) {
-    NS_ERROR("Couldn't create cert from DER blob");
-    return MapSECStatus(SECFailure);
+  if (NS_FAILED(rv)) {
+    return rv;
   }
 
-   // If there's already a certificate that matches this one in the database,
-   // we still want to set its trust to the given value.
+  UniqueCERTCertificate tmpCert(newCert->GetCert());
+  if (!tmpCert) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // If there's already a certificate that matches this one in the database, we
+  // still want to set its trust to the given value.
   if (tmpCert->isperm) {
     return SetCertTrustFromString(newCert, aTrust);
   }
 
-  nsXPIDLCString nickname;
-  nickname.Adopt(CERT_MakeCANickname(tmpCert.get()));
+  UniquePORTString nickname(CERT_MakeCANickname(tmpCert.get()));
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Created nick \"%s\"\n", nickname.get()));
 
@@ -1417,33 +1370,32 @@ NS_IMETHODIMP nsNSSCertificateDB::AddCertFromBase64(const char* aBase64,
     return rv;
   }
 
-  SECStatus srv = __CERT_AddTempCertToPerm(tmpCert.get(),
-                                           const_cast<char*>(nickname.get()),
-                                           trust.GetTrust());
+  SECStatus srv = CERT_AddTempCertToPerm(tmpCert.get(), nickname.get(),
+                                         trust.GetTrust());
   return MapSECStatus(srv);
 }
 
 NS_IMETHODIMP
-nsNSSCertificateDB::AddCert(const nsACString & aCertDER, const char *aTrust,
-                            const char *aName)
+nsNSSCertificateDB::AddCert(const nsACString& aCertDER, const nsACString& aTrust,
+                            const nsACString& aName)
 {
   nsCString base64;
   nsresult rv = Base64Encode(aCertDER, base64);
   NS_ENSURE_SUCCESS(rv, rv);
-  return AddCertFromBase64(base64.get(), aTrust, aName);
+  return AddCertFromBase64(base64, aTrust, aName);
 }
 
 NS_IMETHODIMP
 nsNSSCertificateDB::SetCertTrustFromString(nsIX509Cert* cert,
-                                           const char* trustString)
+                                           const nsACString& trustString)
 {
-  CERTCertTrust trust;
+  NS_ENSURE_ARG(cert);
 
-  // need to calculate the trust bits from the aTrust string.
+  CERTCertTrust trust;
   SECStatus srv = CERT_DecodeTrustString(&trust,
-                                         const_cast<char *>(trustString));
+                                         PromiseFlatCString(trustString).get());
   if (srv != SECSuccess) {
-    return MapSECStatus(SECFailure);
+    return MapSECStatus(srv);
   }
   UniqueCERTCertificate nssCert(cert->GetCert());
 
@@ -1571,7 +1523,6 @@ VerifyCertAtTime(nsIX509Cert* aCert,
     }
     *_retval = 0;
   } else {
-    NS_ENSURE_TRUE(evOidPolicy == SEC_OID_UNKNOWN, NS_ERROR_FAILURE);
     NS_ENSURE_TRUE(error != 0, NS_ERROR_FAILURE);
     *_retval = error;
   }
@@ -1617,6 +1568,85 @@ nsNSSCertificateDB::VerifyCertAtTime(nsIX509Cert* aCert,
   return ::VerifyCertAtTime(aCert, aUsage, aFlags, aHostname,
                             mozilla::pkix::TimeFromEpochInSeconds(aTime),
                             aVerifiedChain, aHasEVPolicy, _retval, locker);
+}
+
+class VerifyCertAtTimeTask final : public CryptoTask
+{
+public:
+  VerifyCertAtTimeTask(nsIX509Cert* aCert, int64_t aUsage, uint32_t aFlags,
+                       const char* aHostname, uint64_t aTime,
+                       nsICertVerificationCallback* aCallback)
+    : mCert(aCert)
+    , mUsage(aUsage)
+    , mFlags(aFlags)
+    , mHostname(aHostname)
+    , mTime(aTime)
+    , mCallback(new nsMainThreadPtrHolder<nsICertVerificationCallback>(aCallback))
+    , mPRErrorCode(SEC_ERROR_LIBRARY_FAILURE)
+    , mVerifiedCertList(nullptr)
+    , mHasEVPolicy(false)
+  {
+  }
+
+private:
+  virtual nsresult CalculateResult() override
+  {
+    nsCOMPtr<nsIX509CertDB> certDB = do_GetService(NS_X509CERTDB_CONTRACTID);
+    if (!certDB) {
+      return NS_ERROR_FAILURE;
+    }
+    // Unfortunately mHostname will have made the empty string out of a null
+    // pointer passed in the constructor. If we pass the empty string on to
+    // VerifyCertAtTime with the usage certificateUsageSSLServer, it will call
+    // VerifySSLServerCert, which expects a non-empty hostname. To avoid this,
+    // check the length and use nullptr if appropriate.
+    const char* hostname = mHostname.Length() > 0 ? mHostname.get() : nullptr;
+    return certDB->VerifyCertAtTime(mCert, mUsage, mFlags, hostname, mTime,
+                                    getter_AddRefs(mVerifiedCertList),
+                                    &mHasEVPolicy, &mPRErrorCode);
+  }
+
+  // No NSS resources are directly held, so there is nothing to release.
+  virtual void ReleaseNSSResources() override { }
+
+  virtual void CallCallback(nsresult rv) override
+  {
+    if (NS_FAILED(rv)) {
+      Unused << mCallback->VerifyCertFinished(SEC_ERROR_LIBRARY_FAILURE,
+                                              nullptr, false);
+    } else {
+      Unused << mCallback->VerifyCertFinished(mPRErrorCode, mVerifiedCertList,
+                                              mHasEVPolicy);
+    }
+  }
+
+  nsCOMPtr<nsIX509Cert> mCert;
+  int64_t mUsage;
+  uint32_t mFlags;
+  nsCString mHostname;
+  uint64_t mTime;
+  nsMainThreadPtrHandle<nsICertVerificationCallback> mCallback;
+  int32_t mPRErrorCode;
+  nsCOMPtr<nsIX509CertList> mVerifiedCertList;
+  bool mHasEVPolicy;
+};
+
+NS_IMETHODIMP
+nsNSSCertificateDB::AsyncVerifyCertAtTime(nsIX509Cert* aCert,
+                                          int64_t /*SECCertificateUsage*/ aUsage,
+                                          uint32_t aFlags,
+                                          const char* aHostname,
+                                          uint64_t aTime,
+                                          nsICertVerificationCallback* aCallback)
+{
+  nsNSSShutDownPreventionLock locker;
+  if (isAlreadyShutDown()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  RefPtr<VerifyCertAtTimeTask> task(new VerifyCertAtTimeTask(aCert, aUsage,
+                                                             aFlags, aHostname,
+                                                             aTime, aCallback));
+  return task->Dispatch("VerifyCert");
 }
 
 NS_IMETHODIMP

@@ -2,20 +2,6 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-function* awaitPanel(extension, win = window) {
-  let {target} = yield BrowserTestUtils.waitForEvent(win.document, "load", true, (event) => {
-    return event.target.location && event.target.location.href.endsWith("popup.html");
-  });
-
-  // Wait for the browser resize code, which is triggered asynchronously by the
-  // load event, to run.
-  yield new Promise(resolve => setTimeout(resolve, 10));
-
-  return target.defaultView
-               .QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDocShell)
-               .chromeEventHandler;
-}
-
 add_task(function* testPopupBorderRadius() {
   let extension = ExtensionTestUtils.loadExtension({
     background() {
@@ -56,12 +42,17 @@ add_task(function* testPopupBorderRadius() {
     let viewNode = browser.parentNode === panel ? browser : browser.parentNode;
     let viewStyle = getComputedStyle(viewNode);
 
+    let win = browser.contentWindow;
+    let bodyStyle = win.getComputedStyle(win.document.body);
+
     for (let prop of ["borderTopLeftRadius", "borderTopRightRadius",
                       "borderBottomRightRadius", "borderBottomLeftRadius"]) {
       if (standAlone) {
         is(viewStyle[prop], panelStyle[prop], `Panel and view ${prop} should be the same`);
+        is(bodyStyle[prop], panelStyle[prop], `Panel and body ${prop} should be the same`);
       } else {
         is(viewStyle[prop], "0px", `View node ${prop} should be 0px`);
+        is(bodyStyle[prop], "0px", `Body node ${prop} should be 0px`);
       }
     }
   }
@@ -70,7 +61,7 @@ add_task(function* testPopupBorderRadius() {
     info("Test stand-alone browserAction popup");
 
     clickBrowserAction(extension);
-    let browser = yield awaitPanel(extension);
+    let browser = yield awaitExtensionPanel(extension);
     yield testPanel(browser);
     yield closeBrowserAction(extension);
   }
@@ -82,7 +73,7 @@ add_task(function* testPopupBorderRadius() {
     CustomizableUI.addWidgetToArea(widget.id, CustomizableUI.AREA_PANEL);
 
     clickBrowserAction(extension);
-    let browser = yield awaitPanel(extension);
+    let browser = yield awaitExtensionPanel(extension);
     yield testPanel(browser, false);
     yield closeBrowserAction(extension);
   }
@@ -91,7 +82,7 @@ add_task(function* testPopupBorderRadius() {
     info("Test pageAction popup");
 
     clickPageAction(extension);
-    let browser = yield awaitPanel(extension);
+    let browser = yield awaitExtensionPanel(extension);
     yield testPanel(browser);
     yield closePageAction(extension);
   }

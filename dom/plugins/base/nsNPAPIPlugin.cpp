@@ -101,7 +101,7 @@ using mozilla::plugins::PluginModuleContentParent;
 #include <android/log.h>
 #include "android_npapi.h"
 #include "ANPBase.h"
-#include "AndroidBridge.h"
+#include "GeneratedJNIWrappers.h"
 #undef LOG
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "GeckoPlugins" , ## args)
 #endif
@@ -1062,7 +1062,7 @@ _getwindowobject(NPP npp)
   nsCOMPtr<nsPIDOMWindowOuter> outer = doc->GetWindow();
   NS_ENSURE_TRUE(outer, nullptr);
 
-  JS::Rooted<JSObject*> global(nsContentUtils::RootingCx(),
+  JS::Rooted<JSObject*> global(dom::RootingCx(),
                                nsGlobalWindow::Cast(outer)->GetGlobalJSObject());
   return nsJSObjWrapper::GetNewOrUsed(npp, global);
 }
@@ -1811,7 +1811,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
     return NPERR_GENERIC_ERROR;
 #endif
 
-#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK) || defined(MOZ_WIDGET_QT)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   case NPNVnetscapeWindow: {
     if (!npp || !npp->ndata)
       return NPERR_INVALID_INSTANCE_ERROR;
@@ -1860,10 +1860,6 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
     *((NPNToolkitType*)result) = NPNVGtk2;
 #endif
 
-#ifdef MOZ_WIDGET_QT
-    /* Fake toolkit so flash plugin works */
-    *((NPNToolkitType*)result) = NPNVGtk2;
-#endif
     if (*(NPNToolkitType*)result)
         return NPERR_NO_ERROR;
 
@@ -1872,11 +1868,6 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
 
   case NPNVSupportsXEmbedBool: {
 #ifdef MOZ_WIDGET_GTK
-    *(NPBool*)result = true;
-#elif defined(MOZ_WIDGET_QT)
-    // Desktop Flash fail to initialize if browser does not support NPNVSupportsXEmbedBool
-    // even when wmode!=windowed, lets return fake support
-    fprintf(stderr, "Fake support for XEmbed plugins in Qt port\n");
     *(NPBool*)result = true;
 #else
     *(NPBool*)result = false;
@@ -1898,7 +1889,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
 
   case NPNVSupportsWindowless: {
 #if defined(XP_WIN) || defined(XP_MACOSX) || \
-    (defined(MOZ_X11) && (defined(MOZ_WIDGET_GTK) || defined(MOZ_WIDGET_QT)))
+    (defined(MOZ_X11) && defined(MOZ_WIDGET_GTK))
     *(NPBool*)result = true;
 #else
     *(NPBool*)result = false;
@@ -2022,7 +2013,9 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
     *(NPBool*)result = true;
     return NPERR_NO_ERROR;
   }
+#endif
 
+#if defined(XP_MACOSX) || defined(XP_WIN)
   case NPNVcontentsScaleFactor: {
     nsNPAPIPluginInstance *inst =
       (nsNPAPIPluginInstance *) (npp ? npp->ndata : nullptr);
@@ -2124,7 +2117,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
 
     case kJavaContext_ANPGetValue: {
       LOG("get java context");
-      auto ret = widget::GeckoAppShell::GetContext();
+      auto ret = java::GeckoAppShell::GetContext();
       if (!ret)
         return NPERR_GENERIC_ERROR;
 

@@ -14,6 +14,7 @@
 #include "nsIDocShell.h"
 #include "nsIPrefetchService.h"
 #include "nsCPrefetchService.h"
+#include "nsStyleLinkElement.h"
 
 #include "nsEscape.h"
 #include "nsGkAtoms.h"
@@ -44,10 +45,9 @@ Link::~Link()
 bool
 Link::ElementHasHref() const
 {
-  return ((!mElement->IsSVGElement() &&
-           mElement->HasAttr(kNameSpaceID_None, nsGkAtoms::href))
-        || (!mElement->IsHTMLElement() &&
-            mElement->HasAttr(kNameSpaceID_XLink, nsGkAtoms::href)));
+  return mElement->HasAttr(kNameSpaceID_None, nsGkAtoms::href) ||
+         (!mElement->IsHTMLElement() &&
+          mElement->HasAttr(kNameSpaceID_XLink, nsGkAtoms::href));
 }
 
 void

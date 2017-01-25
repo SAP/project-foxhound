@@ -11,6 +11,7 @@
 #include "WMF.h"
 #include "MFTDecoder.h"
 #include "mozilla/RefPtr.h"
+#include "nsAutoPtr.h"
 #include "PlatformDecoderModule.h"
 
 namespace mozilla {
@@ -36,9 +37,13 @@ public:
   virtual HRESULT Output(int64_t aStreamOffset,
                          RefPtr<MediaData>& aOutput) = 0;
 
-  void Flush() { mDecoder->Flush(); }
+  virtual void Flush()
+  {
+    mDecoder->Flush();
+    mSeekTargetThreshold.reset();
+  }
 
-  void Drain()
+  virtual void Drain()
   {
     if (FAILED(mDecoder->SendMFTMessage(MFT_MESSAGE_COMMAND_DRAIN, 0))) {
       NS_WARNING("Failed to send DRAIN command to MFT");
@@ -56,9 +61,15 @@ public:
 
   virtual const char* GetDescriptionName() const = 0;
 
+  virtual void SetSeekThreshold(const media::TimeUnit& aTime) {
+    mSeekTargetThreshold = Some(aTime);
+  }
+
 protected:
   // IMFTransform wrapper that performs the decoding.
   RefPtr<MFTDecoder> mDecoder;
+
+  Maybe<media::TimeUnit> mSeekTargetThreshold;
 };
 
 // Decodes audio and video using Windows Media Foundation. Samples are decoded
@@ -75,22 +86,24 @@ public:
 
   RefPtr<MediaDataDecoder::InitPromise> Init() override;
 
-  nsresult Input(MediaRawData* aSample);
+  void Input(MediaRawData* aSample);
 
-  nsresult Flush() override;
+  void Flush() override;
 
-  nsresult Drain() override;
+  void Drain() override;
 
-  nsresult Shutdown() override;
+  void Shutdown() override;
 
   bool IsHardwareAccelerated(nsACString& aFailureReason) const override;
 
-  nsresult ConfigurationChanged(const TrackInfo& aConfig) override;
+  void ConfigurationChanged(const TrackInfo& aConfig) override;
 
   const char* GetDescriptionName() const override
   {
     return mMFTManager ? mMFTManager->GetDescriptionName() : "";
   }
+
+  virtual void SetSeekThreshold(const media::TimeUnit& aTime) override;
 
 private:
 

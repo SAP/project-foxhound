@@ -12,10 +12,10 @@
 #include "gfx2DGlue.h"
 #include "gfxMatrix.h"
 #include "gfxPlatform.h"
-#include "gfxSVGGlyphs.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SVGContextPaint.h"
 #include "nsComputedDOMStyle.h"
 #include "nsFontMetrics.h"
 #include "nsIFrame.h"
@@ -73,13 +73,13 @@ static DashState
 GetStrokeDashData(SVGContentUtils::AutoStrokeOptions* aStrokeOptions,
                   nsSVGElement* aElement,
                   const nsStyleSVG* aStyleSVG,
-                  gfxTextContextPaint *aContextPaint)
+                  SVGContextPaint* aContextPaint)
 {
   size_t dashArrayLength;
   Float totalLengthOfDashes = 0.0, totalLengthOfGaps = 0.0;
   Float pathScale = 1.0;
 
-  if (aContextPaint && aStyleSVG->mStrokeDasharrayFromObject) {
+  if (aContextPaint && aStyleSVG->StrokeDasharrayFromObject()) {
     const FallibleTArray<gfxFloat>& dashSrc = aContextPaint->GetStrokeDashArray();
     dashArrayLength = dashSrc.Length();
     if (dashArrayLength <= 0) {
@@ -155,7 +155,7 @@ GetStrokeDashData(SVGContentUtils::AutoStrokeOptions* aStrokeOptions,
     return eNoStroke;
   }
 
-  if (aContextPaint && aStyleSVG->mStrokeDashoffsetFromObject) {
+  if (aContextPaint && aStyleSVG->StrokeDashoffsetFromObject()) {
     aStrokeOptions->mDashOffset = Float(aContextPaint->GetStrokeDashOffset());
   } else {
     aStrokeOptions->mDashOffset =
@@ -170,7 +170,7 @@ void
 SVGContentUtils::GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
                                   nsSVGElement* aElement,
                                   nsStyleContext* aStyleContext,
-                                  gfxTextContextPaint *aContextPaint,
+                                  SVGContextPaint* aContextPaint,
                                   StrokeOptionFlags aFlags)
 {
   RefPtr<nsStyleContext> styleContext;
@@ -245,7 +245,7 @@ SVGContentUtils::GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
 Float
 SVGContentUtils::GetStrokeWidth(nsSVGElement* aElement,
                                 nsStyleContext* aStyleContext,
-                                gfxTextContextPaint *aContextPaint)
+                                SVGContextPaint* aContextPaint)
 {
   RefPtr<nsStyleContext> styleContext;
   if (aStyleContext) {
@@ -262,7 +262,7 @@ SVGContentUtils::GetStrokeWidth(nsSVGElement* aElement,
 
   const nsStyleSVG* styleSVG = styleContext->StyleSVG();
 
-  if (aContextPaint && styleSVG->mStrokeWidthFromObject) {
+  if (aContextPaint && styleSVG->StrokeWidthFromObject()) {
     return aContextPaint->GetStrokeWidth();
   }
 

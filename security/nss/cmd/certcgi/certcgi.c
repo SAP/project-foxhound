@@ -883,8 +883,7 @@ AddAuthKeyID(void *extHandle,
             error_out("ERROR: Unable to copy Directory Name");
         }
         authKeyID->authCertIssuer = genNames;
-        if (authKeyID->authCertIssuer == NULL && SECFailure ==
-                                                     PORT_GetError()) {
+        if (authKeyID->authCertIssuer == NULL && SECFailure == PORT_GetError()) {
             error_out("ERROR: Unable to get Issuer General Name for Authority Key ID Extension");
         }
         authKeyID->authCertSerialNumber = issuerCert->serialNumber;
@@ -919,7 +918,13 @@ AddPrivKeyUsagePeriod(void *extHandle,
         error_allocate();
     }
     notBeforeStr = (char *)PORT_Alloc(16);
+    if (notBeforeStr == NULL) {
+        error_allocate();
+    }
     notAfterStr = (char *)PORT_Alloc(16);
+    if (notAfterStr == NULL) {
+        error_allocate();
+    }
     *notBeforeStr = '\0';
     *notAfterStr = '\0';
     pkup->arena = arena;
@@ -1033,15 +1038,9 @@ AddPrivKeyUsagePeriod(void *extHandle,
                                     SEC_OID_X509_PRIVATE_KEY_USAGE_PERIOD,
                                     (EXTEN_VALUE_ENCODER)
                                         CERT_EncodePrivateKeyUsagePeriod);
-    if (arena) {
-        PORT_FreeArena(arena, PR_FALSE);
-    }
-    if (notBeforeStr != NULL) {
-        PORT_Free(notBeforeStr);
-    }
-    if (notAfterStr != NULL) {
-        PORT_Free(notAfterStr);
-    }
+    PORT_FreeArena(arena, PR_FALSE);
+    PORT_Free(notBeforeStr);
+    PORT_Free(notAfterStr);
     return (rv);
 }
 
@@ -2035,16 +2034,16 @@ main(int argc, char **argv)
     char *pos;
 #ifdef OFFLINE
     char *form_output = "key=MIIBPTCBpzCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA7"
-        "SLqjWBL9Wl11Vlg%0AaMqZCvcQOL%2FnvSqYPPRP0XZy9SoAeyWzQnBOiCm2t8H5mK7r2"
-        "jnKdAQOmfhjaJil%0A3hNVu3SekHOXF6Ze7bkWa6%2FSGVcY%2FojkydxFSgY43nd1iyd"
-        "zPQDp8WWLL%2BpVpt%2B%2B%0ATRhFtVXbF0fQI03j9h3BoTgP2lkCAwEAARYDZm9vMA0"
-        "GCSqGSIb3DQEBBAUAA4GB%0AAJ8UfRKJ0GtG%2B%2BufCC6tAfTzKrq3CTBHnom55EyXc"
-        "sAsv6WbDqI%2F0rLAPkn2Xo1r%0AnNhtMxIuj441blMt%2Fa3AGLOy5zmC7Qawt8IytvQ"
-        "ikQ1XTpTBCXevytrmLjCmlURr%0ANJryTM48WaMQHiMiJpbXCqVJC1d%2FpEWBtqvALzZ"
-        "aOOIy&subject=CN%3D%22test%22%26serial-auto%3Dtrue%26serial_value%3D%"
-        "26ver-1%3Dtrue%26ver-3%3Dfalse%26caChoiceradio-SignWithDefaultkey%3Dt"
-        "rue%26caChoiceradio-SignWithRandomChain%3Dfalse%26autoCAs%3D%26caChoi"
-        "ceradio-SignWithSpecifiedChain%3Dfalse%26manCAs%3D%26%24";
+                        "SLqjWBL9Wl11Vlg%0AaMqZCvcQOL%2FnvSqYPPRP0XZy9SoAeyWzQnBOiCm2t8H5mK7r2"
+                        "jnKdAQOmfhjaJil%0A3hNVu3SekHOXF6Ze7bkWa6%2FSGVcY%2FojkydxFSgY43nd1iyd"
+                        "zPQDp8WWLL%2BpVpt%2B%2B%0ATRhFtVXbF0fQI03j9h3BoTgP2lkCAwEAARYDZm9vMA0"
+                        "GCSqGSIb3DQEBBAUAA4GB%0AAJ8UfRKJ0GtG%2B%2BufCC6tAfTzKrq3CTBHnom55EyXc"
+                        "sAsv6WbDqI%2F0rLAPkn2Xo1r%0AnNhtMxIuj441blMt%2Fa3AGLOy5zmC7Qawt8IytvQ"
+                        "ikQ1XTpTBCXevytrmLjCmlURr%0ANJryTM48WaMQHiMiJpbXCqVJC1d%2FpEWBtqvALzZ"
+                        "aOOIy&subject=CN%3D%22test%22%26serial-auto%3Dtrue%26serial_value%3D%"
+                        "26ver-1%3Dtrue%26ver-3%3Dfalse%26caChoiceradio-SignWithDefaultkey%3Dt"
+                        "rue%26caChoiceradio-SignWithRandomChain%3Dfalse%26autoCAs%3D%26caChoi"
+                        "ceradio-SignWithSpecifiedChain%3Dfalse%26manCAs%3D%26%24";
 #else
     char *form_output;
 #endif

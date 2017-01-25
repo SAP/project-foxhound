@@ -14,7 +14,8 @@
 namespace rx
 {
 
-SurfaceGL::SurfaceGL(RendererGL *renderer) : SurfaceImpl(), mRenderer(renderer)
+SurfaceGL::SurfaceGL(const egl::SurfaceState &state, RendererGL *renderer)
+    : SurfaceImpl(state), mRenderer(renderer)
 {
 }
 
@@ -22,9 +23,14 @@ SurfaceGL::~SurfaceGL()
 {
 }
 
-FramebufferImpl *SurfaceGL::createDefaultFramebuffer(const gl::Framebuffer::Data &data)
+FramebufferImpl *SurfaceGL::createDefaultFramebuffer(const gl::FramebufferState &data)
 {
     return new FramebufferGL(data, mRenderer->getFunctions(), mRenderer->getStateManager(),
-                             mRenderer->getWorkarounds(), true);
+                             mRenderer->getWorkarounds(), mRenderer->getBlitter(), true);
+}
+
+egl::Error SurfaceGL::unMakeCurrent()
+{
+    return egl::Error(EGL_SUCCESS);
 }
 }

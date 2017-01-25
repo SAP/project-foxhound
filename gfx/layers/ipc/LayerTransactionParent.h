@@ -14,7 +14,6 @@
 #include "mozilla/Attributes.h"         // for override
 #include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc
 #include "mozilla/layers/PLayerTransactionParent.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsTArrayForwardDeclare.h"     // for InfallibleTArray
 
 namespace mozilla {
@@ -33,7 +32,7 @@ class Layer;
 class LayerManagerComposite;
 class ShadowLayerParent;
 class CompositableParent;
-class ShadowLayersManager;
+class CompositorBridgeParentBase;
 
 class LayerTransactionParent final : public PLayerTransactionParent,
                                      public CompositableParentManager,
@@ -43,12 +42,11 @@ class LayerTransactionParent final : public PLayerTransactionParent,
   typedef InfallibleTArray<Edit> EditArray;
   typedef InfallibleTArray<OpDestroy> OpDestroyArray;
   typedef InfallibleTArray<EditReply> EditReplyArray;
-  typedef InfallibleTArray<AsyncChildMessageData> AsyncChildMessageArray;
   typedef InfallibleTArray<PluginWindowData> PluginsArray;
 
 public:
   LayerTransactionParent(LayerManagerComposite* aManager,
-                         ShadowLayersManager* aLayersManager,
+                         CompositorBridgeParentBase* aBridge,
                          uint64_t aId);
 
 protected:
@@ -59,8 +57,13 @@ public:
 
   LayerManagerComposite* layer_manager() const { return mLayerManager; }
 
+  void SetLayerManager(LayerManagerComposite* aLayerManager);
+
   uint64_t GetId() const { return mId; }
   Layer* GetRoot() const { return mRoot; }
+
+  uint64_t GetChildEpoch() const { return mChildEpoch; }
+  bool ShouldParentObserveEpoch();
 
   virtual ShmemAllocator* AsShmemAllocator() override { return this; }
 
@@ -80,16 +83,18 @@ public:
   void SetPendingTransactionId(uint64_t aId) { mPendingTransaction = aId; }
 
   // CompositableParentManager
-  virtual void SendFenceHandleIfPresent(PTextureParent* aTexture) override;
-
   virtual void SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
+
+  virtual void SendPendingAsyncMessages() override;
+
+  virtual void SetAboutToSendAsyncMessages() override;
+
+  virtual void NotifyNotUsed(PTextureParent* aTexture, uint64_t aTransactionId) override;
 
   virtual base::ProcessId GetChildProcessId() override
   {
     return OtherPid();
   }
-
-  virtual void ReplyRemoveTexture(const OpReplyRemoveTexture& aReply) override;
 
   void AddPendingCompositorUpdate() {
     mPendingCompositorUpdates++;
@@ -109,8 +114,12 @@ protected:
 
   virtual bool RecvShutdown() override;
 
+  virtual bool RecvPaintTime(const uint64_t& aTransactionId,
+                             const TimeDuration& aPaintTime) override;
+
   virtual bool RecvUpdate(EditArray&& cset,
                           OpDestroyArray&& aToDestroy,
+                          const uint64_t& aFwdTransactionId,
                           const uint64_t& aTransactionId,
                           const TargetConfig& targetConfig,
                           PluginsArray&& aPlugins,
@@ -124,6 +133,7 @@ protected:
 
   virtual bool RecvUpdateNoSwap(EditArray&& cset,
                                 OpDestroyArray&& aToDestroy,
+                                const uint64_t& aFwdTransactionId,
                                 const uint64_t& aTransactionId,
                                 const TargetConfig& targetConfig,
                                 PluginsArray&& aPlugins,
@@ -134,12 +144,15 @@ protected:
                                 const mozilla::TimeStamp& aTransactionStart,
                                 const int32_t& aPaintSyncId) override;
 
+  virtual bool RecvSetLayerObserverEpoch(const uint64_t& aLayerObserverEpoch) override;
+
   virtual bool RecvClearCachedResources() override;
   virtual bool RecvForceComposite() override;
   virtual bool RecvSetTestSampleTime(const TimeStamp& aTime) override;
   virtual bool RecvLeaveTestMode() override;
-  virtual bool RecvGetOpacity(PLayerParent* aParent,
-                              float* aOpacity) override;
+  virtual bool RecvGetAnimationOpacity(PLayerParent* aParent,
+                                       float* aOpacity,
+                                       bool* aHasAnimationOpacity) override;
   virtual bool RecvGetAnimationTransform(PLayerParent* aParent,
                                          MaybeTransform* aTransform)
                                          override;
@@ -159,9 +172,6 @@ protected:
   virtual PCompositableParent* AllocPCompositableParent(const TextureInfo& aInfo) override;
   virtual bool DeallocPCompositableParent(PCompositableParent* actor) override;
 
-  virtual bool
-  RecvChildAsyncMessages(InfallibleTArray<AsyncChildMessageData>&& aMessages) override;
-
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   bool Attach(ShadowLayerParent* aLayerParent,
@@ -171,12 +181,12 @@ protected:
   void AddIPDLReference() {
     MOZ_ASSERT(mIPCOpen == false);
     mIPCOpen = true;
-    ADDREF_MANUALLY(this);
+    AddRef();
   }
   void ReleaseIPDLReference() {
     MOZ_ASSERT(mIPCOpen == true);
     mIPCOpen = false;
-    RELEASE_MANUALLY(this);
+    Release();
   }
   friend class CompositorBridgeParent;
   friend class CrossProcessCompositorBridgeParent;
@@ -184,7 +194,7 @@ protected:
 
 private:
   RefPtr<LayerManagerComposite> mLayerManager;
-  ShadowLayersManager* mShadowLayersManager;
+  CompositorBridgeParentBase* mCompositorBridge;
   // Hold the root because it might be grafted under various
   // containers in the "real" layer tree
   RefPtr<Layer> mRoot;
@@ -193,6 +203,13 @@ private:
   //   mId != 0 => mRoot == null
   // because the "real tree" is owned by the compositor.
   uint64_t mId;
+
+  // These fields keep track of the latest epoch values in the child and the
+  // parent. mChildEpoch is the latest epoch value received from the child.
+  // mParentEpoch is the latest epoch value that we have told TabParent about
+  // (via ObserveLayerUpdate).
+  uint64_t mChildEpoch;
+  uint64_t mParentEpoch;
 
   uint64_t mPendingTransaction;
 

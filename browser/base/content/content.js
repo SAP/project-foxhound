@@ -46,6 +46,8 @@ XPCOMUtils.defineLazyGetter(this, "PageMenuChild", function() {
 XPCOMUtils.defineLazyModuleGetter(this, "Feeds",
   "resource:///modules/Feeds.jsm");
 
+Cu.importGlobalProperties(["URL"]);
+
 // TabChildGlobal
 var global = this;
 
@@ -150,12 +152,12 @@ var handleContentContextMenu = function (event) {
         imageCache.findEntryProperties(event.target.currentURI, doc);
       try {
         contentType = props.get("type", Ci.nsISupportsCString).data;
-      } catch(e) {}
+      } catch (e) {}
       try {
         contentDisposition =
           props.get("content-disposition", Ci.nsISupportsCString).data;
-      } catch(e) {}
-    } catch(e) {}
+      } catch (e) {}
+    } catch (e) {}
   }
 
   let selectionInfo = BrowserUtils.getSelectionDetails(content);
@@ -174,7 +176,7 @@ var handleContentContextMenu = function (event) {
     // commands on the context menu.
     docShell.contentViewer.QueryInterface(Ci.nsIContentViewerEdit)
             .setCommandNode(event.target);
-    event.target.ownerDocument.defaultView.updateCommands("contentcontextmenu");
+    event.target.ownerGlobal.updateCommands("contentcontextmenu");
 
     let customMenuItems = PageMenuChild.build(event.target);
     let principal = doc.nodePrincipal;
@@ -189,7 +191,7 @@ var handleContentContextMenu = function (event) {
   else {
     // Break out to the parent window and pass the add-on info along
     let browser = docShell.chromeEventHandler;
-    let mainWin = browser.ownerDocument.defaultView;
+    let mainWin = browser.ownerGlobal;
     mainWin.gContextMenuContentData = {
       isRemote: false,
       event: event,
@@ -230,6 +232,7 @@ const SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE         = SEC_ERROR_BASE + 30;
 const SEC_ERROR_OCSP_FUTURE_RESPONSE               = SEC_ERROR_BASE + 131;
 const SEC_ERROR_OCSP_OLD_RESPONSE                  = SEC_ERROR_BASE + 132;
 const MOZILLA_PKIX_ERROR_NOT_YET_VALID_CERTIFICATE = MOZILLA_PKIX_ERROR_BASE + 5;
+const MOZILLA_PKIX_ERROR_NOT_YET_VALID_ISSUER_CERTIFICATE = MOZILLA_PKIX_ERROR_BASE + 6;
 
 const PREF_BLOCKLIST_CLOCK_SKEW_SECONDS = "services.blocklist.clock_skew_seconds";
 
@@ -239,6 +242,20 @@ const PREF_SSL_IMPACT = PREF_SSL_IMPACT_ROOTS.reduce((prefs, root) => {
   return prefs.concat(Services.prefs.getChildList(root));
 }, []);
 
+
+function getSerializedSecurityInfo(docShell) {
+  let serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
+                    .getService(Ci.nsISerializationHelper);
+
+  let securityInfo = docShell.failedChannel && docShell.failedChannel.securityInfo;
+  if (!securityInfo) {
+    return "";
+  }
+  securityInfo.QueryInterface(Ci.nsITransportSecurityInfo)
+              .QueryInterface(Ci.nsISerializable);
+
+  return serhelper.serializeToString(securityInfo);
+}
 
 var AboutNetAndCertErrorListener = {
   init: function(chromeGlobal) {
@@ -272,11 +289,12 @@ var AboutNetAndCertErrorListener = {
   onCertErrorDetails(msg) {
     let div = content.document.getElementById("certificateErrorText");
     div.textContent = msg.data.info;
+    let learnMoreLink = content.document.getElementById("learnMoreLink");
+    let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
 
     switch (msg.data.code) {
       case SEC_ERROR_UNKNOWN_ISSUER:
-        let learnMoreLink = content.document.getElementById("learnMoreLink");
-        learnMoreLink.href = "https://support.mozilla.org/kb/troubleshoot-SEC_ERROR_UNKNOWN_ISSUER";
+        learnMoreLink.href = baseURL  + "security-error";
         break;
 
       // in case the certificate expired we make sure the system clock
@@ -286,6 +304,7 @@ var AboutNetAndCertErrorListener = {
       case SEC_ERROR_OCSP_FUTURE_RESPONSE:
       case SEC_ERROR_OCSP_OLD_RESPONSE:
       case MOZILLA_PKIX_ERROR_NOT_YET_VALID_CERTIFICATE:
+      case MOZILLA_PKIX_ERROR_NOT_YET_VALID_ISSUER_CERTIFICATE:
 
         // use blocklist stats if available
         if (Services.prefs.getPrefType(PREF_BLOCKLIST_CLOCK_SKEW_SECONDS)) {
@@ -311,7 +330,7 @@ var AboutNetAndCertErrorListener = {
               .style.display = "block";
           }
         }
-
+        learnMoreLink.href = baseURL  + "time-errors";
         break;
     }
   },
@@ -379,19 +398,10 @@ var AboutNetAndCertErrorListener = {
 
     // if we're enabling reports, send a report for this failure
     if (evt.detail) {
-      let serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
-                        .getService(Ci.nsISerializationHelper);
-
-      let serializable = docShell.failedChannel.securityInfo
-          .QueryInterface(Ci.nsITransportSecurityInfo)
-          .QueryInterface(Ci.nsISerializable);
-
-      let serializedSecurityInfo = serhelper.serializeToString(serializable);
-
       let {host, port} = content.document.mozDocumentURIIfNotForErrorPages;
       sendAsyncMessage("Browser:SendSSLErrorReport", {
         uri: { host, port },
-        securityInfo: serializedSecurityInfo
+        securityInfo: getSerializedSecurityInfo(docShell),
       });
 
     }
@@ -455,7 +465,8 @@ var ClickEventHandler = {
                  ctrlKey: event.ctrlKey, metaKey: event.metaKey,
                  altKey: event.altKey, href: null, title: null,
                  bookmark: false, referrerPolicy: referrerPolicy,
-                 originAttributes: principal ? principal.originAttributes : {} };
+                 originAttributes: principal ? principal.originAttributes : {},
+                 isContentWindowPrivate: PrivateBrowsingUtils.isContentWindowPrivate(ownerDoc.defaultView)};
 
     if (href) {
       try {
@@ -504,26 +515,14 @@ var ClickEventHandler = {
   },
 
   onCertError: function (targetElement, ownerDoc) {
-    let docshell = ownerDoc.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+    let docShell = ownerDoc.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
                                        .getInterface(Ci.nsIWebNavigation)
                                        .QueryInterface(Ci.nsIDocShell);
-    let serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
-                     .getService(Ci.nsISerializationHelper);
-    let serializedSecurityInfo = "";
-
-    try {
-      let serializable =  docShell.failedChannel.securityInfo
-                                  .QueryInterface(Ci.nsITransportSecurityInfo)
-                                  .QueryInterface(Ci.nsISerializable);
-
-      serializedSecurityInfo = serhelper.serializeToString(serializable);
-    } catch (e) { }
-
     sendAsyncMessage("Browser:CertExceptionError", {
       location: ownerDoc.location.href,
       elementId: targetElement.getAttribute("id"),
       isTopFrame: (ownerDoc.defaultView.parent === ownerDoc.defaultView),
-      securityInfoAsString: serializedSecurityInfo
+      securityInfoAsString: getSerializedSecurityInfo(docShell),
     });
   },
 
@@ -533,8 +532,6 @@ var ClickEventHandler = {
       reason = 'malware';
     } else if (/e=unwantedBlocked/.test(ownerDoc.documentURI)) {
       reason = 'unwanted';
-    } else if (/e=forbiddenBlocked/.test(ownerDoc.documentURI)) {
-      reason = 'forbidden';
     }
     sendAsyncMessage("Browser:SiteBlockedError", {
       location: ownerDoc.location.href,
@@ -596,7 +593,8 @@ var ClickEventHandler = {
       if (node.nodeType == content.Node.ELEMENT_NODE &&
           (node.localName == "a" ||
            node.namespaceURI == "http://www.w3.org/1998/Math/MathML")) {
-        href = node.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+        href = node.getAttribute("href") ||
+               node.getAttributeNS("http://www.w3.org/1999/xlink", "href");
         if (href) {
           baseURI = node.ownerDocument.baseURIObject;
           break;
@@ -662,7 +660,7 @@ var PageMetadataMessenger = {
     addMessageListener("PageMetadata:GetMicroformats", this);
   },
   receiveMessage(message) {
-    switch(message.name) {
+    switch (message.name) {
       case "PageMetadata:GetPageData": {
         let target = message.objects.target;
         let result = PageMetadata.getData(content.document, target);
@@ -682,10 +680,6 @@ PageMetadataMessenger.init();
 
 addEventListener("ActivateSocialFeature", function (aEvent) {
   let document = content.document;
-  if (PrivateBrowsingUtils.isContentWindowPrivate(content)) {
-    Cu.reportError("cannot use social providers in private windows");
-    return;
-  }
   let dwu = content.QueryInterface(Ci.nsIInterfaceRequestor)
                    .getInterface(Ci.nsIDOMWindowUtils);
   if (!dwu.isHandlingUserInput) {
@@ -699,7 +693,7 @@ addEventListener("ActivateSocialFeature", function (aEvent) {
   if (data) {
     try {
       data = JSON.parse(data);
-    } catch(e) {
+    } catch (e) {
       Cu.reportError("Social Service manifest parse error: " + e);
       return;
     }
@@ -763,9 +757,11 @@ addMessageListener("ContextMenu:MediaCommand", (message) => {
   }
 });
 
-addMessageListener("ContextMenu:Canvas:ToDataURL", (message) => {
-  let dataURL = message.objects.target.toDataURL();
-  sendAsyncMessage("ContextMenu:Canvas:ToDataURL:Result", { dataURL });
+addMessageListener("ContextMenu:Canvas:ToBlobURL", (message) => {
+  message.objects.target.toBlob((blob) => {
+    let blobURL = URL.createObjectURL(blob);
+    sendAsyncMessage("ContextMenu:Canvas:ToBlobURL:Result", { blobURL });
+  });
 });
 
 addMessageListener("ContextMenu:ReloadFrame", (message) => {
@@ -810,10 +806,10 @@ addMessageListener("ContextMenu:SearchFieldBookmarkData", (message) => {
   let formData = [];
 
   function escapeNameValuePair(aName, aValue, aIsFormUrlEncoded) {
-    if (aIsFormUrlEncoded)
+    if (aIsFormUrlEncoded) {
       return escape(aName + "=" + aValue);
-    else
-      return escape(aName) + "=" + escape(aValue);
+    }
+    return escape(aName) + "=" + escape(aValue);
   }
 
   for (let el of node.form.elements) {
@@ -886,7 +882,7 @@ var LightWeightThemeWebInstallListener = {
           baseURI: event.target.baseURI,
           themeData: event.target.getAttribute("data-browsertheme"),
         });
-        this._previewWindow = event.target.ownerDocument.defaultView;
+        this._previewWindow = event.target.ownerGlobal;
         this._previewWindow.addEventListener("pagehide", this, true);
         break;
       }
@@ -1141,7 +1137,7 @@ var PageInfoListener = {
   getMediaItems: function(document, strings, elem)
   {
     // Check for images defined in CSS (e.g. background, borders)
-    let computedStyle = elem.ownerDocument.defaultView.getComputedStyle(elem, "");
+    let computedStyle = elem.ownerGlobal.getComputedStyle(elem);
     // A node can have multiple media items associated with it - for example,
     // multiple background images.
     let mediaItems = [];
@@ -1161,7 +1157,7 @@ var PageInfoListener = {
           // TODO: Reimplement once bug 714757 is fixed.
           let strVal = val.getStringValue();
           if (strVal.search(/^.*url\(\"?/) > -1) {
-            let url = strVal.replace(/^.*url\(\"?/,"").replace(/\"?\).*$/,"");
+            let url = strVal.replace(/^.*url\(\"?/, "").replace(/\"?\).*$/, "");
             addImage(url, label, strings.notSet, elem, true);
           }
         }
@@ -1428,7 +1424,7 @@ let OfflineApps = {
         // all pages can use offline capabilities, no need to ask the user
         return;
       }
-    } catch(e) {
+    } catch (e) {
       // this pref isn't set by default, ignore failures
     }
     let docId = ++this._docId;

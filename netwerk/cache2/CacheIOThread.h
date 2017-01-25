@@ -13,11 +13,20 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/UniquePtr.h"
 
 class nsIRunnable;
 
 namespace mozilla {
 namespace net {
+
+namespace detail {
+// A class keeping platform specific information needed to watch and
+// cancel any long blocking synchronous IO.  Must be predeclared here
+// since including windows.h breaks stuff with number of macro definition
+// conflicts.
+class BlockingIOWatcher;
+}
 
 class CacheIOThread : public nsIThreadObserver
 {
@@ -29,7 +38,9 @@ public:
 
   CacheIOThread();
 
-  enum ELevel {
+  typedef nsTArray<nsCOMPtr<nsIRunnable>> EventQueue;
+
+  enum ELevel : uint32_t {
     OPEN_PRIORITY,
     READ_PRIORITY,
     OPEN,
@@ -49,6 +60,7 @@ public:
 
   nsresult Init();
   nsresult Dispatch(nsIRunnable* aRunnable, uint32_t aLevel);
+  nsresult Dispatch(already_AddRefed<nsIRunnable>, uint32_t aLevel);
   // Makes sure that any previously posted event to OPEN or OPEN_PRIORITY
   // levels (such as file opennings and dooms) are executed before aRunnable
   // that is intended to evict stuff from the cache.
@@ -69,8 +81,21 @@ public:
     return sSelf ? sSelf->YieldInternal() : false;
   }
 
-  nsresult Shutdown();
+  void Shutdown();
+  // This method checks if there is a long blocking IO on the
+  // IO thread and tries to cancel it.  It waits maximum of
+  // two seconds.
+  void CancelBlockingIO();
   already_AddRefed<nsIEventTarget> Target();
+
+  // A stack class used to annotate running interruptable I/O event
+  class Cancelable
+  {
+    bool mCancelable;
+  public:
+    explicit Cancelable(bool aCancelable);
+    ~Cancelable();
+  };
 
   // Memory reporting
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -81,21 +106,30 @@ private:
   void ThreadFunc();
   void LoopOneLevel(uint32_t aLevel);
   bool EventsPending(uint32_t aLastLevel = LAST_LEVEL);
-  nsresult DispatchInternal(nsIRunnable* aRunnable, uint32_t aLevel);
+  nsresult DispatchInternal(already_AddRefed<nsIRunnable> aRunnable, uint32_t aLevel);
   bool YieldInternal();
 
   static CacheIOThread* sSelf;
 
   mozilla::Monitor mMonitor;
   PRThread* mThread;
+  UniquePtr<detail::BlockingIOWatcher> mBlockingIOWatcher;
   Atomic<nsIThread *> mXPCOMThread;
   Atomic<uint32_t, Relaxed> mLowestLevelWaiting;
   uint32_t mCurrentlyExecutingLevel;
-  nsTArray<nsCOMPtr<nsIRunnable> > mEventQueue[LAST_LEVEL];
 
+  EventQueue mEventQueue[LAST_LEVEL];
+  // Raised when nsIEventTarget.Dispatch() is called on this thread
   Atomic<bool, Relaxed> mHasXPCOMEvents;
+  // See YieldAndRerun() above
   bool mRerunCurrentEvent;
+  // Signal to process all pending events and then shutdown
+  // Synchronized by mMonitor
   bool mShutdown;
+  // If > 0 there is currently an I/O operation on the thread that
+  // can be canceled when after shutdown, see the Shutdown() method
+  // for usage. Made a counter to allow nesting of the Cancelable class.
+  Atomic<uint32_t, Relaxed> mIOCancelableEvents;
 #ifdef DEBUG
   bool mInsideLoop;
 #endif

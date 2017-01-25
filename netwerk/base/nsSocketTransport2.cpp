@@ -36,6 +36,7 @@
 #include <algorithm>
 
 #include "nsPrintfCString.h"
+#include "xpcpublic.h"
 
 #if defined(XP_WIN)
 #include "mozilla/WindowsVersion.h"
@@ -79,7 +80,7 @@ public:
         , mParam(param)
     {}
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         mTransport->OnSocketEvent(mType, mStatus, mParam);
         return NS_OK;
@@ -652,7 +653,7 @@ nsSocketOutputStream::WriteSegments(nsReadSegmentFun reader, void *closure,
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_METHOD
+nsresult
 nsSocketOutputStream::WriteFromSegments(nsIInputStream *input,
                                         void *closure,
                                         const char *fromSegment,
@@ -1157,6 +1158,9 @@ nsSocketTransport::BuildSocket(PRFileDesc *&fd, bool &proxyTransparent, bool &us
             if (mConnectionFlags & nsISocketTransport::MITM_OK)
                 controlFlags |= nsISocketProvider::MITM_OK;
 
+            if (mConnectionFlags & nsISocketTransport::BE_CONSERVATIVE)
+                controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
+
             nsCOMPtr<nsISupports> secinfo;
             if (i == 0) {
                 // if this is the first type, we'll want the 
@@ -1234,16 +1238,6 @@ nsSocketTransport::InitiateSocket()
 {
     SOCKET_LOG(("nsSocketTransport::InitiateSocket [this=%p]\n", this));
 
-    static int crashOnNonLocalConnections = -1;
-    if (crashOnNonLocalConnections == -1) {
-        const char *s = getenv("MOZ_DISABLE_NONLOCAL_CONNECTIONS");
-        if (s) {
-            crashOnNonLocalConnections = !!strncmp(s, "0", 1);
-        } else {
-            crashOnNonLocalConnections = 0;
-        }
-    }
-
     nsresult rv;
     bool isLocal;
     IsLocal(&isLocal);
@@ -1265,7 +1259,7 @@ nsSocketTransport::InitiateSocket()
 #endif
 
         if (NS_SUCCEEDED(mCondition) &&
-            crashOnNonLocalConnections &&
+            xpc::AreNonLocalConnectionsDisabled() &&
             !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr))) {
             nsAutoCString ipaddr;
             RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
@@ -1784,7 +1778,7 @@ class ThunkPRClose : public Runnable
 public:
   explicit ThunkPRClose(PRFileDesc *fd) : mFD(fd) {}
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     nsSocketTransport::CloseSocket(mFD,
       gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());

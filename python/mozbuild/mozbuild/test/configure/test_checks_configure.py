@@ -6,10 +6,14 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 from StringIO import StringIO
 import os
+import sys
 import textwrap
 import unittest
 
-from mozunit import main
+from mozunit import (
+    main,
+    MockedOpen,
+)
 
 from mozbuild.configure import (
     ConfigureError,
@@ -19,7 +23,7 @@ from mozbuild.util import exec_
 from mozpack import path as mozpath
 
 from buildconfig import topsrcdir
-from common import ConfigureTestSandbox
+from common import ConfigureTestSandbox, ensure_exe_extension
 
 
 class TestChecksConfigure(unittest.TestCase):
@@ -123,10 +127,10 @@ class TestChecksConfigure(unittest.TestCase):
         foo(['foo', 'bar'])
         self.assertEqual(out.getvalue(), 'checking for a thing... foo bar\n')
 
-    KNOWN_A = mozpath.abspath('/usr/bin/known-a')
-    KNOWN_B = mozpath.abspath('/usr/local/bin/known-b')
-    KNOWN_C = mozpath.abspath('/home/user/bin/known c')
-    OTHER_A = mozpath.abspath('/lib/other/known-a')
+    KNOWN_A = ensure_exe_extension(mozpath.abspath('/usr/bin/known-a'))
+    KNOWN_B = ensure_exe_extension(mozpath.abspath('/usr/local/bin/known-b'))
+    KNOWN_C = ensure_exe_extension(mozpath.abspath('/home/user/bin/known c'))
+    OTHER_A = ensure_exe_extension(mozpath.abspath('/lib/other/known-a'))
 
     def get_result(self, command='', args=[], environ={},
                    prog='/bin/configure', extra_paths=None,
@@ -206,6 +210,23 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(config, {'FOO': ':'})
         self.assertEqual(out, 'checking for foo... not found\n')
+
+    @unittest.skipIf(not sys.platform.startswith('win'), 'Windows-only test')
+    def test_check_prog_exe(self):
+        config, out, status = self.get_result(
+            'check_prog("FOO", ("unknown", "known-b", "known c"))',
+            ['FOO=known-a.exe'])
+        self.assertEqual(status, 0)
+        self.assertEqual(config, {'FOO': self.KNOWN_A})
+        self.assertEqual(out, 'checking for foo... %s\n' % self.KNOWN_A)
+
+        config, out, status = self.get_result(
+            'check_prog("FOO", ("unknown", "known-b", "known c"))',
+            ['FOO=%s' % os.path.splitext(self.KNOWN_A)[0]])
+        self.assertEqual(status, 0)
+        self.assertEqual(config, {'FOO': self.KNOWN_A})
+        self.assertEqual(out, 'checking for foo... %s\n' % self.KNOWN_A)
+
 
     def test_check_prog_with_args(self):
         config, out, status = self.get_result(
@@ -786,6 +807,97 @@ class TestChecksConfigure(unittest.TestCase):
             checking for pkg-config version... 0.8.10
             ERROR: *** Your version of pkg-config is too old. You need version 0.9.0 or newer.
         ''' % mock_pkg_config_path))
+
+    def test_simple_keyfile(self):
+        includes = ('util.configure', 'checks.configure', 'keyfiles.configure')
+
+        config, output, status = self.get_result(
+            "simple_keyfile('Mozilla API')", includes=includes)
+        self.assertEqual(status, 0)
+        self.assertEqual(output, textwrap.dedent('''\
+            checking for the Mozilla API key... no
+        '''))
+        self.assertEqual(config, {
+            'MOZ_MOZILLA_API_KEY': 'no-mozilla-api-key',
+        })
+
+        config, output, status = self.get_result(
+            "simple_keyfile('Mozilla API')",
+            args=['--with-mozilla-api-keyfile=/foo/bar/does/not/exist'],
+            includes=includes)
+        self.assertEqual(status, 0)
+        self.assertEqual(output, textwrap.dedent('''\
+            checking for the Mozilla API key... no
+        '''))
+        self.assertEqual(config, {
+            'MOZ_MOZILLA_API_KEY': 'no-mozilla-api-key',
+        })
+
+        with MockedOpen({'key': 'fake-key\n'}):
+            config, output, status = self.get_result(
+                "simple_keyfile('Mozilla API')",
+                args=['--with-mozilla-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 0)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Mozilla API key... yes
+            '''))
+            self.assertEqual(config, {
+                'MOZ_MOZILLA_API_KEY': 'fake-key',
+            })
+
+    def test_id_and_secret_keyfile(self):
+        includes = ('util.configure', 'checks.configure', 'keyfiles.configure')
+
+        config, output, status = self.get_result(
+            "id_and_secret_keyfile('Bing API')", includes=includes)
+        self.assertEqual(status, 0)
+        self.assertEqual(output, textwrap.dedent('''\
+            checking for the Bing API key... no
+        '''))
+        self.assertEqual(config, {
+            'MOZ_BING_API_CLIENTID': 'no-bing-api-clientid',
+            'MOZ_BING_API_KEY': 'no-bing-api-key',
+        })
+
+        config, output, status = self.get_result(
+            "id_and_secret_keyfile('Bing API')",
+            args=['--with-bing-api-keyfile=/foo/bar/does/not/exist'],
+            includes=includes)
+        self.assertEqual(status, 0)
+        self.assertEqual(output, textwrap.dedent('''\
+            checking for the Bing API key... no
+        '''))
+        self.assertEqual(config, {
+            'MOZ_BING_API_CLIENTID': 'no-bing-api-clientid',
+            'MOZ_BING_API_KEY': 'no-bing-api-key',
+        })
+
+        with MockedOpen({'key': 'fake-id fake-key\n'}):
+            config, output, status = self.get_result(
+                "id_and_secret_keyfile('Bing API')",
+                args=['--with-bing-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 0)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Bing API key... yes
+            '''))
+            self.assertEqual(config, {
+                'MOZ_BING_API_CLIENTID': 'fake-id',
+                'MOZ_BING_API_KEY': 'fake-key',
+            })
+
+        with MockedOpen({'key': 'fake-key\n'}):
+            config, output, status = self.get_result(
+                "id_and_secret_keyfile('Bing API')",
+                args=['--with-bing-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 1)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Bing API key... no
+                ERROR: Bing API key file has an invalid format.
+            '''))
+            self.assertEqual(config, {})
 
 
 if __name__ == '__main__':

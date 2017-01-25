@@ -55,7 +55,7 @@
 #pragma comment(lib, "pdh.lib")
 #endif
 
-// NSPR_LOG_MODULES=LoadManager:5
+// MOZ_LOG=LoadManager:5
 #undef LOG
 #undef LOG_ENABLED
 #define LOG(args) MOZ_LOG(gLoadManagerLog, mozilla::LogLevel::Debug, args)
@@ -102,7 +102,7 @@ public:
     mLoadMonitor = loadMonitor;
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     nsCOMPtr<nsIObserverService> observerService =
         mozilla::services::GetObserverService();
@@ -127,7 +127,7 @@ public:
     mLoadMonitor = loadMonitor;
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     // remove xpcom shutdown observer
     nsCOMPtr<nsIObserverService> observerService =
@@ -546,7 +546,7 @@ public:
     mLoadInfo = loadInfo;
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     if (NS_IsMainThread()) {
       if (mThread) {

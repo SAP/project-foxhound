@@ -12,14 +12,14 @@
 #include "mozilla/EffectCompositor.h" // For EffectCompositor::CascadeLevel
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Animation.h"
-#include "mozilla/dom/KeyframeEffect.h" // For KeyframeEffectReadOnly
+#include "mozilla/dom/KeyframeEffectReadOnly.h"
 #include "AnimationCommon.h"
 #include "nsCSSProps.h"
 
 class nsIGlobalObject;
 class nsStyleContext;
 class nsPresContext;
-class nsCSSPropertySet;
+class nsCSSPropertyIDSet;
 
 namespace mozilla {
 enum class CSSPseudoElementType : uint8_t;
@@ -39,8 +39,9 @@ struct ElementPropertyTransition : public dom::KeyframeEffectReadOnly
                             Maybe<OwningAnimationTarget>& aTarget,
                             const TimingParams &aTiming,
                             StyleAnimationValue aStartForReversingTest,
-                            double aReversePortion)
-    : dom::KeyframeEffectReadOnly(aDocument, aTarget, aTiming)
+                            double aReversePortion,
+                            const KeyframeEffectParams& aEffectOptions)
+    : dom::KeyframeEffectReadOnly(aDocument, aTarget, aTiming, aEffectOptions)
     , mStartForReversingTest(aStartForReversingTest)
     , mReversePortion(aReversePortion)
   { }
@@ -51,7 +52,7 @@ struct ElementPropertyTransition : public dom::KeyframeEffectReadOnly
     return this;
   }
 
-  nsCSSProperty TransitionProperty() const {
+  nsCSSPropertyID TransitionProperty() const {
     MOZ_ASSERT(mKeyframes.Length() == 2,
                "Transitions should have exactly two animation keyframes. "
                "Perhaps we are using an un-initialized transition?");
@@ -120,6 +121,7 @@ public:
     : dom::Animation(aGlobal)
     , mWasFinishedOnLastTick(false)
     , mNeedsNewAnimationIndexWhenRun(false)
+    , mTransitionProperty(eCSSProperty_UNKNOWN)
   {
   }
 
@@ -167,9 +169,11 @@ public:
     mOwningElement = OwningElementRef();
   }
 
+  void SetEffectFromStyle(AnimationEffectReadOnly* aEffect);
+
   void Tick() override;
 
-  nsCSSProperty TransitionProperty() const;
+  nsCSSPropertyID TransitionProperty() const;
   StyleAnimationValue ToValue() const;
 
   bool HasLowerCompositeOrderThan(const CSSTransition& aOther) const;
@@ -246,6 +250,14 @@ protected:
   // When true, indicates that when this transition next leaves the idle state,
   // its animation index should be updated.
   bool mNeedsNewAnimationIndexWhenRun;
+
+  // Store the transition property and to-value here since we need that
+  // information in order to determine if there is an existing transition
+  // for a given style change. We can't store that information on the
+  // ElementPropertyTransition (effect) however since it can be replaced
+  // using the Web Animations API.
+  nsCSSPropertyID mTransitionProperty;
+  StyleAnimationValue mTransitionToValue;
 };
 
 } // namespace dom
@@ -275,7 +287,7 @@ struct TransitionEventInfo {
 
   TransitionEventInfo(dom::Element* aElement,
                       CSSPseudoElementType aPseudoType,
-                      nsCSSProperty aProperty,
+                      nsCSSPropertyID aProperty,
                       StickyTimeDuration aDuration,
                       const TimeStamp& aTimeStamp,
                       dom::Animation* aAnimation)
@@ -398,18 +410,18 @@ protected:
                     nsStyleContext* aNewStyleContext);
 
   void
-  ConsiderStartingTransition(nsCSSProperty aProperty,
+  ConsiderStartingTransition(nsCSSPropertyID aProperty,
                              const mozilla::StyleTransition& aTransition,
                              mozilla::dom::Element* aElement,
                              CSSTransitionCollection*& aElementTransitions,
                              nsStyleContext* aOldStyleContext,
                              nsStyleContext* aNewStyleContext,
                              bool* aStartedAny,
-                             nsCSSPropertySet* aWhichStarted);
+                             nsCSSPropertyIDSet* aWhichStarted);
 
   nsTArray<mozilla::Keyframe> GetTransitionKeyframes(
     nsStyleContext* aStyleContext,
-    nsCSSProperty aProperty,
+    nsCSSPropertyID aProperty,
     mozilla::StyleAnimationValue&& aStartValue,
     mozilla::StyleAnimationValue&& aEndValue,
     const nsTimingFunction& aTimingFunction);

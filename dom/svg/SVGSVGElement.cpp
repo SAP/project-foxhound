@@ -1022,7 +1022,7 @@ SVGSVGElement::GetEnumInfo()
                             ArrayLength(sEnumInfo));
 }
 
-nsSVGViewBox *
+nsSVGViewBox*
 SVGSVGElement::GetViewBox()
 {
   return &mViewBox;
@@ -1120,10 +1120,6 @@ SVGSVGElement::
 
   if (!hasViewBoxRect) {
     return; // preserveAspectRatio irrelevant (only matters if we have viewBox)
-  }
-
-  if (aPAR.GetDefer() && HasPreserveAspectRatio()) {
-    return; // Referring element defers to my own preserveAspectRatio value.
   }
 
   if (SetPreserveAspectRatioProperty(aPAR)) {

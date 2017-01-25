@@ -19,15 +19,38 @@
 #include <stdio.h>
 #include <algorithm>
 
+namespace sh
+{
+
 int TSymbolTable::uniqueIdCounter = 0;
+
+TSymbol::TSymbol(const TString *n) : uniqueId(TSymbolTable::nextUniqueId()), name(n)
+{
+}
 
 //
 // Functions have buried pointers to delete.
 //
 TFunction::~TFunction()
 {
+    clearParameters();
+}
+
+void TFunction::clearParameters()
+{
     for (TParamList::iterator i = parameters.begin(); i != parameters.end(); ++i)
         delete (*i).type;
+    parameters.clear();
+    mangledName = nullptr;
+}
+
+void TFunction::swapParameters(const TFunction &parametersSource)
+{
+    clearParameters();
+    for (auto parameter : parametersSource.parameters)
+    {
+        addParameter(parameter);
+    }
 }
 
 const TString *TFunction::buildMangledName() const
@@ -53,8 +76,6 @@ TSymbolTableLevel::~TSymbolTableLevel()
 
 bool TSymbolTableLevel::insert(TSymbol *symbol)
 {
-    symbol->setUniqueId(TSymbolTable::nextUniqueId());
-
     // returning true means symbol was added to the table
     tInsertResult result = level.insert(tLevelPair(symbol->getMangledName(), symbol));
 
@@ -63,8 +84,6 @@ bool TSymbolTableLevel::insert(TSymbol *symbol)
 
 bool TSymbolTableLevel::insertUnmangled(TFunction *function)
 {
-    function->setUniqueId(TSymbolTable::nextUniqueId());
-
     // returning true means symbol was added to the table
     tInsertResult result = level.insert(tLevelPair(function->getName(), function));
 
@@ -88,7 +107,9 @@ TSymbol *TSymbolTable::find(const TString &name, int shaderVersion,
 
     do
     {
-        if (level == ESSL3_BUILTINS && shaderVersion != 300)
+        if (level == ESSL3_1_BUILTINS && shaderVersion != 310)
+            level--;
+        if (level == ESSL3_BUILTINS && shaderVersion < 300)
             level--;
         if (level == ESSL1_BUILTINS && shaderVersion != 100)
             level--;
@@ -105,12 +126,20 @@ TSymbol *TSymbolTable::find(const TString &name, int shaderVersion,
     return symbol;
 }
 
+TSymbol *TSymbolTable::findGlobal(const TString &name) const
+{
+    ASSERT(table.size() > GLOBAL_LEVEL);
+    return table[GLOBAL_LEVEL]->find(name);
+}
+
 TSymbol *TSymbolTable::findBuiltIn(
     const TString &name, int shaderVersion) const
 {
     for (int level = LAST_BUILTIN_LEVEL; level >= 0; level--)
     {
-        if (level == ESSL3_BUILTINS && shaderVersion != 300)
+        if (level == ESSL3_1_BUILTINS && shaderVersion != 310)
+            level--;
+        if (level == ESSL3_BUILTINS && shaderVersion < 300)
             level--;
         if (level == ESSL1_BUILTINS && shaderVersion != 100)
             level--;
@@ -199,6 +228,7 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level, TOperator op, const char *e
 {
     if (ptype1->getBasicType() == EbtGSampler2D)
     {
+        insertUnmangledBuiltIn(name);
         bool gvec4 = (rvalue->getBasicType() == EbtGVec4);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtFloat, 4) : rvalue, name, TCache::getType(EbtSampler2D), ptype2, ptype3, ptype4, ptype5);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtInt, 4) : rvalue, name, TCache::getType(EbtISampler2D), ptype2, ptype3, ptype4, ptype5);
@@ -206,6 +236,7 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level, TOperator op, const char *e
     }
     else if (ptype1->getBasicType() == EbtGSampler3D)
     {
+        insertUnmangledBuiltIn(name);
         bool gvec4 = (rvalue->getBasicType() == EbtGVec4);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtFloat, 4) : rvalue, name, TCache::getType(EbtSampler3D), ptype2, ptype3, ptype4, ptype5);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtInt, 4) : rvalue, name, TCache::getType(EbtISampler3D), ptype2, ptype3, ptype4, ptype5);
@@ -213,6 +244,7 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level, TOperator op, const char *e
     }
     else if (ptype1->getBasicType() == EbtGSamplerCube)
     {
+        insertUnmangledBuiltIn(name);
         bool gvec4 = (rvalue->getBasicType() == EbtGVec4);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtFloat, 4) : rvalue, name, TCache::getType(EbtSamplerCube), ptype2, ptype3, ptype4, ptype5);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtInt, 4) : rvalue, name, TCache::getType(EbtISamplerCube), ptype2, ptype3, ptype4, ptype5);
@@ -220,14 +252,53 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level, TOperator op, const char *e
     }
     else if (ptype1->getBasicType() == EbtGSampler2DArray)
     {
+        insertUnmangledBuiltIn(name);
         bool gvec4 = (rvalue->getBasicType() == EbtGVec4);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtFloat, 4) : rvalue, name, TCache::getType(EbtSampler2DArray), ptype2, ptype3, ptype4, ptype5);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtInt, 4) : rvalue, name, TCache::getType(EbtISampler2DArray), ptype2, ptype3, ptype4, ptype5);
         insertBuiltIn(level, gvec4 ? TCache::getType(EbtUInt, 4) : rvalue, name, TCache::getType(EbtUSampler2DArray), ptype2, ptype3, ptype4, ptype5);
     }
+    else if (IsGImage(ptype1->getBasicType()))
+    {
+        insertUnmangledBuiltIn(name);
+
+        const TType *floatType    = TCache::getType(EbtFloat, 4);
+        const TType *intType      = TCache::getType(EbtInt, 4);
+        const TType *unsignedType = TCache::getType(EbtUInt, 4);
+
+        const TType *floatImage =
+            TCache::getType(convertGImageToFloatImage(ptype1->getBasicType()));
+        const TType *intImage = TCache::getType(convertGImageToIntImage(ptype1->getBasicType()));
+        const TType *unsignedImage =
+            TCache::getType(convertGImageToUnsignedImage(ptype1->getBasicType()));
+
+        // GLSL ES 3.10, Revision 4, 8.12 Image Functions
+        if (rvalue->getBasicType() == EbtGVec4)
+        {
+            // imageLoad
+            insertBuiltIn(level, floatType, name, floatImage, ptype2, ptype3, ptype4, ptype5);
+            insertBuiltIn(level, intType, name, intImage, ptype2, ptype3, ptype4, ptype5);
+            insertBuiltIn(level, unsignedType, name, unsignedImage, ptype2, ptype3, ptype4, ptype5);
+        }
+        else if (rvalue->getBasicType() == EbtVoid)
+        {
+            // imageStore
+            insertBuiltIn(level, rvalue, name, floatImage, ptype2, floatType, ptype4, ptype5);
+            insertBuiltIn(level, rvalue, name, intImage, ptype2, intType, ptype4, ptype5);
+            insertBuiltIn(level, rvalue, name, unsignedImage, ptype2, unsignedType, ptype4, ptype5);
+        }
+        else
+        {
+            // imageSize
+            insertBuiltIn(level, rvalue, name, floatImage, ptype2, ptype3, ptype4, ptype5);
+            insertBuiltIn(level, rvalue, name, intImage, ptype2, ptype3, ptype4, ptype5);
+            insertBuiltIn(level, rvalue, name, unsignedImage, ptype2, ptype3, ptype4, ptype5);
+        }
+    }
     else if (IsGenType(rvalue) || IsGenType(ptype1) || IsGenType(ptype2) || IsGenType(ptype3))
     {
         ASSERT(!ptype4 && !ptype5);
+        insertUnmangledBuiltIn(name);
         insertBuiltIn(level, op, ext, SpecificType(rvalue, 1), name, SpecificType(ptype1, 1), SpecificType(ptype2, 1), SpecificType(ptype3, 1));
         insertBuiltIn(level, op, ext, SpecificType(rvalue, 2), name, SpecificType(ptype1, 2), SpecificType(ptype2, 2), SpecificType(ptype3, 2));
         insertBuiltIn(level, op, ext, SpecificType(rvalue, 3), name, SpecificType(ptype1, 3), SpecificType(ptype2, 3), SpecificType(ptype3, 3));
@@ -236,6 +307,7 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level, TOperator op, const char *e
     else if (IsVecType(rvalue) || IsVecType(ptype1) || IsVecType(ptype2) || IsVecType(ptype3))
     {
         ASSERT(!ptype4 && !ptype5);
+        insertUnmangledBuiltIn(name);
         insertBuiltIn(level, op, ext, VectorType(rvalue, 2), name, VectorType(ptype1, 2), VectorType(ptype2, 2), VectorType(ptype3, 2));
         insertBuiltIn(level, op, ext, VectorType(rvalue, 3), name, VectorType(ptype1, 3), VectorType(ptype2, 3), VectorType(ptype3, 3));
         insertBuiltIn(level, op, ext, VectorType(rvalue, 4), name, VectorType(ptype1, 4), VectorType(ptype2, 4), VectorType(ptype3, 4));
@@ -266,6 +338,7 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level, TOperator op, const char *e
             function->addParameter(TConstParameter(ptype5));
         }
 
+        ASSERT(hasUnmangledBuiltIn(name));
         insert(level, function);
     }
 }
@@ -294,3 +367,5 @@ TPrecision TSymbolTable::getDefaultPrecision(TBasicType type) const
     }
     return prec;
 }
+
+}  // namespace sh

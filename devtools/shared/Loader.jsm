@@ -8,11 +8,10 @@
  * Manages the addon-sdk loader instance used to load the developer tools.
  */
 
-var { Constructor: CC, classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-
+var { utils: Cu } = Components;
+var { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
 var { Loader, descriptor, resolveURI } = Cu.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
+var { requireRawId } = Cu.import("resource://devtools/shared/loader-plugin-raw.jsm", {});
 
 this.EXPORTED_SYMBOLS = ["DevToolsLoader", "devtools", "BuiltinProvider",
                          "require", "loader"];
@@ -34,6 +33,13 @@ BuiltinProvider.prototype = {
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       "": "resource://gre/modules/commonjs/",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+      // Modules here are intended to have one implementation for
+      // chrome, and a separate implementation for content.  Here we
+      // map the directory to the chrome subdirectory, but the content
+      // loader will map to the content subdirectory.  See the
+      // README.md in devtools/shared/platform.
+      "devtools/shared/platform": "resource://devtools/shared/platform/chrome",
+      // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       "devtools": "resource://devtools",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       "gcli": "resource://devtools/shared/gcli/source/lib/gcli",
@@ -53,7 +59,7 @@ BuiltinProvider.prototype = {
     // But we have to keep using Promise.jsm for other loader to prevent
     // breaking unhandled promise rejection in tests.
     if (this.invisibleToDebugger) {
-      paths["promise"] = "resource://gre/modules/Promise-backend.js";
+      paths.promise = "resource://gre/modules/Promise-backend.js";
     }
     this.loader = new Loader.Loader({
       id: "fx-devtools",
@@ -61,6 +67,12 @@ BuiltinProvider.prototype = {
       invisibleToDebugger: this.invisibleToDebugger,
       sharedGlobal: true,
       sharedGlobalBlocklist,
+      requireHook: (id, require) => {
+        if (id.startsWith("raw!")) {
+          return requireRawId(id, require);
+        }
+        return require(id);
+      },
     });
   },
 
@@ -84,6 +96,15 @@ this.DevToolsLoader = function DevToolsLoader() {
 };
 
 DevToolsLoader.prototype = {
+  destroy: function (reason = "shutdown") {
+    Services.obs.removeObserver(this, "devtools-unload");
+
+    if (this._provider) {
+      this._provider.unload(reason);
+      delete this._provider;
+    }
+  },
+
   get provider() {
     if (!this._provider) {
       this._loadProvider();
@@ -96,9 +117,9 @@ DevToolsLoader.prototype = {
   get id() {
     if (this._id) {
       return this._id;
-    } else {
-      return this._id = ++gNextLoaderID;
     }
+    this._id = ++gNextLoaderID;
+    return this._id;
   },
 
   /**
@@ -111,6 +132,14 @@ DevToolsLoader.prototype = {
       this._loadProvider();
     }
     return this.require.apply(this, arguments);
+  },
+
+  /**
+   * Return true if |id| refers to something requiring help from a
+   * loader plugin.
+   */
+  isLoaderPluginId: function (id) {
+    return id.startsWith("raw!");
   },
 
   /**
@@ -140,7 +169,7 @@ DevToolsLoader.prototype = {
     // Promise-backend.js, as a Loader module. Instead of Promise.jsm which
     // can't be flagged as invisible to debugger.
     if (this.invisibleToDebugger) {
-      delete modules["promise"];
+      delete modules.promise;
     }
 
     // Register custom pseudo modules to the current loader instance
@@ -179,12 +208,7 @@ DevToolsLoader.prototype = {
     if (topic != "devtools-unload") {
       return;
     }
-    Services.obs.removeObserver(this, "devtools-unload");
-
-    if (this._provider) {
-      this._provider.unload(data);
-      delete this._provider;
-    }
+    this.destroy(data);
   },
 
   /**

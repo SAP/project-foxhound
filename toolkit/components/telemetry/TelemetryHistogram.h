@@ -15,6 +15,9 @@
 
 namespace TelemetryHistogram {
 
+void CreateStatisticsRecorder();
+void DestroyStatisticsRecorder();
+
 void InitializeGlobalState(bool canRecordBase, bool canRecordExtended);
 void DeInitializeGlobalState();
 #ifdef DEBUG
@@ -37,6 +40,8 @@ void Accumulate(mozilla::Telemetry::ID aID, const nsCString& aKey,
 void Accumulate(const char* name, uint32_t sample);
 void Accumulate(const char* name, const nsCString& key, uint32_t sample);
 
+void AccumulateCategorical(mozilla::Telemetry::ID aId, const nsCString& aLabel);
+
 void
 ClearHistogram(mozilla::Telemetry::ID aId);
 
@@ -50,18 +55,6 @@ GetKeyedHistogramById(const nsACString &name, JSContext *cx,
 
 const char*
 GetHistogramName(mozilla::Telemetry::ID id);
-
-nsresult
-NewHistogram(const nsACString &name, const nsACString &expiration,
-             uint32_t histogramType, uint32_t min, uint32_t max,
-             uint32_t bucketCount, JSContext *cx,
-             uint8_t optArgCount, JS::MutableHandle<JS::Value> ret);
-
-nsresult
-NewKeyedHistogram(const nsACString &name, const nsACString &expiration,
-                  uint32_t histogramType, uint32_t min, uint32_t max,
-                  uint32_t bucketCount, JSContext *cx,
-                  uint8_t optArgCount, JS::MutableHandle<JS::Value> ret);
 
 nsresult
 HistogramFrom(const nsACString &name, const nsACString &existing_name,

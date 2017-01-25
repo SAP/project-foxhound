@@ -19,17 +19,18 @@
 #include <algorithm>
 
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/Unused.h"
 
 //
 // Log module for FTP dir listing stream converter logging...
 //
 // To enable logging (see prlog.h for full details):
 //
-//    set NSPR_LOG_MODULES=nsFTPDirListConv:5
-//    set NSPR_LOG_FILE=nspr.log
+//    set MOZ_LOG=nsFTPDirListConv:5
+//    set MOZ_LOG_FILE=network.log
 //
-// this enables LogLevel::Debug level information and places all output in
-// the file nspr.log
+// This enables LogLevel::Debug level information and places all output in
+// the file network.log.
 //
 static mozilla::LazyLogModule gFTPDirListConvLog("nsFTPDirListingConv");
 using namespace mozilla;
@@ -110,11 +111,7 @@ nsFTPDirListingConv::OnDataAvailable(nsIRequest* request, nsISupports *ctxt,
         mBuffer.Truncate();
     }
 
-#ifndef DEBUG_dougt
     MOZ_LOG(gFTPDirListConvLog, LogLevel::Debug, ("::OnData() received the following %d bytes...\n\n%s\n\n", streamLen, buffer.get()) );
-#else
-    printf("::OnData() received the following %d bytes...\n\n%s\n\n", streamLen, buffer.get());
-#endif // DEBUG_dougt
 
     nsAutoCString indexFormat;
     if (!mSentHeading) {
@@ -132,17 +129,8 @@ nsFTPDirListingConv::OnDataAvailable(nsIRequest* request, nsISupports *ctxt,
     char *line = buffer.get();
     line = DigestBufferLines(line, indexFormat);
 
-#ifndef DEBUG_dougt
     MOZ_LOG(gFTPDirListConvLog, LogLevel::Debug, ("::OnData() sending the following %d bytes...\n\n%s\n\n", 
         indexFormat.Length(), indexFormat.get()) );
-#else
-    char *unescData = ToNewCString(indexFormat);
-    NS_ENSURE_TRUE(unescData, NS_ERROR_OUT_OF_MEMORY);
-    
-    nsUnescape(unescData);
-    printf("::OnData() sending the following %d bytes...\n\n%s\n\n", indexFormat.Length(), unescData);
-    free(unescData);
-#endif // DEBUG_dougt
 
     // if there's any data left over, buffer it.
     if (line && *line) {
@@ -308,7 +296,7 @@ nsFTPDirListingConv::DigestBufferLines(char *aBuffer, nsCString &aString) {
                                "%a, %d %b %Y %H:%M:%S", &result.fe_time );
 
         nsAutoCString escaped;
-        NS_WARN_IF(!NS_Escape(nsDependentCString(buffer), escaped, url_Path));
+        Unused << NS_WARN_IF(!NS_Escape(nsDependentCString(buffer), escaped, url_Path));
         aString.Append(escaped);
         aString.Append(' ');
 

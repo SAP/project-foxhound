@@ -380,7 +380,7 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     void GetNestedParams(nsTArray<mozilla::dom::MozPluginParameter>& aParameters,
                          bool aIgnoreCodebase);
 
-    void BuildParametersArray();
+    MOZ_MUST_USE nsresult BuildParametersArray();
 
     /**
      * Loads fallback content with the specified FallbackType
@@ -586,6 +586,9 @@ class nsObjectLoadingContent : public nsImageLoadingContent
                                       nsNPAPIPluginInstance *plugin_inst,
                                       JS::MutableHandle<JSObject*> plugin_obj,
                                       JS::MutableHandle<JSObject*> plugin_proto);
+
+    // Utility for firing an error event, if we're an <object>.
+    void MaybeFireErrorEvent();
 
     // The final listener for mChannel (uriloader, pluginstreamlistener, etc.)
     nsCOMPtr<nsIStreamListener> mFinalListener;

@@ -41,7 +41,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIScriptElement
-  virtual void GetScriptType(nsAString& type) override;
+  virtual bool GetScriptType(nsAString& type) override;
   virtual void GetScriptText(nsAString& text) override;
   virtual void GetScriptCharset(nsAString& charset) override;
   virtual void FreezeUriAsyncDefer() override;
@@ -75,9 +75,9 @@ protected:
 
   virtual StringAttributesInfo GetStringInfo() override;
 
-  enum { HREF };
-  nsSVGString mStringAttributes[1];
-  static StringInfo sStringInfo[1];
+  enum { HREF, XLINK_HREF };
+  nsSVGString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
 };
 
 } // namespace dom

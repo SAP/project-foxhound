@@ -333,6 +333,43 @@ RUrsh::recover(JSContext* cx, SnapshotIterator& iter) const
 }
 
 bool
+MSignExtend::writeRecoverData(CompactBufferWriter& writer) const
+{
+    MOZ_ASSERT(canRecoverOnBailout());
+    writer.writeUnsigned(uint32_t(RInstruction::Recover_SignExtend));
+    MOZ_ASSERT(Mode(uint8_t(mode_)) == mode_);
+    writer.writeByte(uint8_t(mode_));
+    return true;
+}
+
+RSignExtend::RSignExtend(CompactBufferReader& reader)
+{
+    mode_ = reader.readByte();
+}
+
+bool
+RSignExtend::recover(JSContext* cx, SnapshotIterator& iter) const
+{
+    RootedValue operand(cx, iter.read());
+
+    int32_t result;
+    switch (MSignExtend::Mode(mode_)) {
+      case MSignExtend::Byte:
+        if (!js::SignExtendOperation<int8_t>(cx, operand, &result))
+            return false;
+        break;
+      case MSignExtend::Half:
+        if (!js::SignExtendOperation<int16_t>(cx, operand, &result))
+            return false;
+        break;
+    }
+
+    RootedValue rootedResult(cx, js::Int32Value(result));
+    iter.storeInstructionResult(rootedResult);
+    return true;
+}
+
+bool
 MAdd::writeRecoverData(CompactBufferWriter& writer) const
 {
     MOZ_ASSERT(canRecoverOnBailout());
@@ -969,6 +1006,24 @@ RMathFunction::recover(JSContext* cx, SnapshotIterator& iter) const
 }
 
 bool
+MRandom::writeRecoverData(CompactBufferWriter& writer) const
+{
+    MOZ_ASSERT(this->canRecoverOnBailout());
+    writer.writeUnsigned(uint32_t(RInstruction::Recover_Random));
+    return true;
+}
+
+RRandom::RRandom(CompactBufferReader& reader)
+{}
+
+bool
+RRandom::recover(JSContext* cx, SnapshotIterator& iter) const
+{
+    iter.storeInstructionResult(DoubleValue(math_random_impl(cx)));
+    return true;
+}
+
+bool
 MStringSplit::writeRecoverData(CompactBufferWriter& writer) const
 {
     MOZ_ASSERT(canRecoverOnBailout());
@@ -1202,11 +1257,13 @@ RNewObject::recover(JSContext* cx, SnapshotIterator& iter) const
     JSObject* resultObject = nullptr;
 
     // See CodeGenerator::visitNewObjectVMCall
-    if (mode_ == MNewObject::ObjectLiteral) {
+    switch (mode_) {
+      case MNewObject::ObjectLiteral:
         resultObject = NewObjectOperationWithTemplate(cx, templateObject);
-    } else {
-        MOZ_ASSERT(mode_ == MNewObject::ObjectCreate);
+        break;
+      case MNewObject::ObjectCreate:
         resultObject = ObjectCreateWithTemplate(cx, templateObject.as<PlainObject>());
+        break;
     }
 
     if (!resultObject)

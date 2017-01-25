@@ -6,21 +6,18 @@
 
 "use strict";
 
-const {Cc, Ci, Cu} = require("chrome");
 const promise = require("promise");
-const {CssLogic} = require("devtools/shared/inspector/css-logic");
-const {ELEMENT_STYLE} = require("devtools/server/actors/styles");
+const CssLogic = require("devtools/shared/inspector/css-logic");
+const {ELEMENT_STYLE} = require("devtools/shared/specs/styles");
 const {TextProperty} =
       require("devtools/client/inspector/rules/models/text-property");
 const {promiseWarn} = require("devtools/client/inspector/shared/utils");
-const {parseDeclarations} = require("devtools/shared/css-parsing-utils");
-const {getCssProperties} = require("devtools/shared/fronts/css-properties");
+const {parseDeclarations} = require("devtools/shared/css/parsing-utils");
+const Services = require("Services");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyGetter(this, "osString", function () {
-  return Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime).OS;
-});
+const STYLE_INSPECTOR_PROPERTIES = "devtools-shared/locale/styleinspector.properties";
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
 
 /**
  * Rule is responsible for the following:
@@ -56,8 +53,7 @@ function Rule(elementStyle, options) {
     this.mediaText = this.domRule.mediaText;
   }
 
-  const toolbox = this.elementStyle.ruleView.inspector.toolbox;
-  this.cssProperties = getCssProperties(toolbox);
+  this.cssProperties = this.elementStyle.ruleView.cssProperties;
 
   // Populate the text properties with the style's current authoredText
   // value, and add in any disabled properties from the store.
@@ -88,8 +84,7 @@ Rule.prototype = {
         eltText += "#" + this.inherited.id;
       }
       this._inheritedSource =
-        CssLogic._strings.formatStringFromName("rule.inheritedFrom",
-                                               [eltText], 1);
+        STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", eltText);
     }
     return this._inheritedSource;
   },
@@ -101,8 +96,7 @@ Rule.prototype = {
     this._keyframesName = "";
     if (this.keyframes) {
       this._keyframesName =
-        CssLogic._strings.formatStringFromName("rule.keyframe",
-                                               [this.keyframes.name], 1);
+        STYLE_INSPECTOR_L10N.getFormatStr("rule.keyframe", this.keyframes.name);
     }
     return this._keyframesName;
   },
@@ -195,7 +189,7 @@ Rule.prototype = {
     }
 
     this.applyProperties((modifications) => {
-      modifications.createProperty(ind, name, value, priority);
+      modifications.createProperty(ind, name, value, priority, enabled);
       // Now that the rule has been updated, the server might have given us data
       // that changes the state of the property. Update it now.
       prop.updateEditor();
@@ -632,7 +626,7 @@ Rule.prototype = {
   editClosestTextProperty: function (textProperty, direction) {
     let index = this.textProps.indexOf(textProperty);
 
-    if (direction === Ci.nsIFocusManager.MOVEFOCUS_FORWARD) {
+    if (direction === Services.focus.MOVEFOCUS_FORWARD) {
       for (++index; index < this.textProps.length; ++index) {
         if (!this.textProps[index].invisible) {
           break;
@@ -643,7 +637,7 @@ Rule.prototype = {
       } else {
         this.textProps[index].editor.nameSpan.click();
       }
-    } else if (direction === Ci.nsIFocusManager.MOVEFOCUS_BACKWARD) {
+    } else if (direction === Services.focus.MOVEFOCUS_BACKWARD) {
       for (--index; index >= 0; --index) {
         if (!this.textProps[index].invisible) {
           break;
@@ -663,7 +657,7 @@ Rule.prototype = {
   stringifyRule: function () {
     let selectorText = this.selectorText;
     let cssText = "";
-    let terminator = osString === "WINNT" ? "\r\n" : "\n";
+    let terminator = Services.appinfo.OS === "WINNT" ? "\r\n" : "\n";
 
     for (let textProp of this.textProps) {
       if (!textProp.invisible) {

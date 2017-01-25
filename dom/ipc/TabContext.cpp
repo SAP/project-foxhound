@@ -26,6 +26,8 @@ TabContext::TabContext()
   , mIsMozBrowserElement(false)
   , mContainingAppId(NO_APP_ID)
   , mOriginAttributes()
+  , mShowAccelerators(UIStateChangeType_NoChange)
+  , mShowFocusRings(UIStateChangeType_NoChange)
 {
 }
 
@@ -160,6 +162,12 @@ TabContext::SetTabContext(const TabContext& aContext)
   return true;
 }
 
+void
+TabContext::SetPrivateBrowsingAttributes(bool aIsPrivateBrowsing)
+{
+  mOriginAttributes.SyncAttributesWithPrivateBrowsing(aIsPrivateBrowsing);
+}
+
 bool
 TabContext::UpdateTabContextAfterSwap(const TabContext& aContext)
 {
@@ -197,11 +205,25 @@ TabContext::PresentationURL() const
   return mPresentationURL;
 }
 
+UIStateChangeType
+TabContext::ShowAccelerators() const
+{
+  return mShowAccelerators;
+}
+
+UIStateChangeType
+TabContext::ShowFocusRings() const
+{
+  return mShowFocusRings;
+}
+
 bool
 TabContext::SetTabContext(bool aIsMozBrowserElement,
                           bool aIsPrerendered,
                           mozIApplication* aOwnApp,
                           mozIApplication* aAppFrameOwnerApp,
+                          UIStateChangeType aShowAccelerators,
+                          UIStateChangeType aShowFocusRings,
                           const DocShellOriginAttributes& aOriginAttributes,
                           const nsACString& aSignedPkgOriginNoSuffix,
                           const nsAString& aPresentationURL)
@@ -238,6 +260,8 @@ TabContext::SetTabContext(bool aIsMozBrowserElement,
   mContainingApp = aAppFrameOwnerApp;
   mSignedPkgOriginNoSuffix = aSignedPkgOriginNoSuffix;
   mPresentationURL = aPresentationURL;
+  mShowAccelerators = aShowAccelerators;
+  mShowFocusRings = aShowFocusRings;
   return true;
 }
 
@@ -251,7 +275,9 @@ TabContext::AsIPCTabContext() const
                                           mSignedPkgOriginNoSuffix,
                                           mIsMozBrowserElement,
                                           mIsPrerendered,
-                                          mPresentationURL));
+                                          mPresentationURL,
+                                          mShowAccelerators,
+                                          mShowFocusRings));
 }
 
 static already_AddRefed<mozIApplication>
@@ -276,6 +302,8 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
   nsAutoCString originSuffix;
   nsAutoCString signedPkgOriginNoSuffix;
   nsAutoString presentationURL;
+  UIStateChangeType showAccelerators = UIStateChangeType_NoChange;
+  UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
 
   switch(aParams.type()) {
     case IPCTabContext::TPopupIPCTabContext: {
@@ -338,8 +366,13 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
       containingAppId = ipcContext.frameOwnerAppId();
       signedPkgOriginNoSuffix = ipcContext.signedPkgOriginNoSuffix();
       presentationURL = ipcContext.presentationURL();
+      showAccelerators = ipcContext.showAccelerators();
+      showFocusRings = ipcContext.showFocusRings();
       originSuffix = ipcContext.originSuffix();
-      originAttributes.PopulateFromSuffix(originSuffix);
+      if (!originAttributes.PopulateFromSuffix(originSuffix)) {
+        mInvalidReason = "Populate originAttributes from originSuffix failed.";
+        return;
+      }
       break;
     }
     case IPCTabContext::TUnsafeIPCTabContext: {
@@ -386,6 +419,8 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
                                  isPrerendered,
                                  ownApp,
                                  containingApp,
+                                 showAccelerators,
+                                 showFocusRings,
                                  originAttributes,
                                  signedPkgOriginNoSuffix,
                                  presentationURL);

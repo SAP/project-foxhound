@@ -15,14 +15,16 @@
 
 namespace rx
 {
+class NativeWindow9;
 class Renderer9;
 
 class SwapChain9 : public SwapChainD3D
 {
   public:
     SwapChain9(Renderer9 *renderer,
-               NativeWindow nativeWindow,
+               NativeWindow9 *nativeWindow,
                HANDLE shareHandle,
+               IUnknown *d3dTexture,
                GLenum backBufferFormat,
                GLenum depthBufferFormat,
                EGLint orientation);
@@ -52,6 +54,8 @@ class SwapChain9 : public SwapChainD3D
     EGLint mWidth;
     EGLint mHeight;
     EGLint mSwapInterval;
+
+    NativeWindow9 *mNativeWindow;
 
     IDirect3DSwapChain9 *mSwapChain;
     IDirect3DSurface9 *mBackBuffer;

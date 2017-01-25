@@ -8,7 +8,6 @@
 #include "VolumeManager.h"
 #include "VolumeServiceIOThread.h"
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDependentSubstring.h"
 #include "nsIDOMWakeLockListener.h"
@@ -514,7 +513,7 @@ public:
     MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
     DBG("UpdateVolumeRunnable::Run '%s' state %s gen %d locked %d "

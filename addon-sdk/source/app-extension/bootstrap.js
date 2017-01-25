@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// @see http://mxr.mozilla.org/mozilla-central/source/js/src/xpconnect/loader/mozJSComponentLoader.cpp
+// @see http://dxr.mozilla.org/mozilla-central/source/js/src/xpconnect/loader/mozJSComponentLoader.cpp
 
 'use strict';
 
@@ -257,6 +257,9 @@ function startup(data, reasonCode) {
     let module = cuddlefish.Module('sdk/loader/cuddlefish', cuddlefishURI);
     let require = cuddlefish.Require(loader, module);
 
+    // Init the 'sdk/webextension' module from the bootstrap addon parameter.
+    require("sdk/webextension").initFromBootstrapAddonParam(data);
+
     require('sdk/addon/runner').startup(reason, {
       loader: loader,
       main: main,
@@ -295,7 +298,7 @@ function loadSandbox(uri) {
 }
 
 function unloadSandbox(sandbox) {
-  if ("nukeSandbox" in Cu)
+  if (Cu.getClassName(sandbox, true) == "Sandbox")
     Cu.nukeSandbox(sandbox);
 }
 
@@ -343,6 +346,7 @@ function nukeModules() {
     // Bug 775067: From FF17 we can kill all CCW from a given sandbox
     unloadSandbox(sandbox);
   }
+  unloadSandbox(loader.sharedGlobalSandbox);
   loader = null;
 
   // both `toolkit/loader` and `system/xul-app` are loaded as JSM's via

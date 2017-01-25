@@ -1,6 +1,5 @@
 import os
-import urlparse
-from StringIO import StringIO
+from six import BytesIO
 
 blacklist = ["/", "/tools/", "/resources/", "/common/", "/conformance-checkers/", "_certs"]
 
@@ -27,7 +26,7 @@ def from_os_path(path):
 def to_os_path(path):
     return path.replace("/", os.path.sep)
 
-class ContextManagerStringIO(StringIO):
+class ContextManagerBytesIO(BytesIO):
     def __enter__(self):
         return self
 

@@ -8,7 +8,7 @@
 #include "nsIScriptObjectPrincipal.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
@@ -64,7 +64,7 @@ public:
                             already_AddRefed<PromiseWorkerProxy>&& aProxy,
                             nsresult aStatus,
                             bool aSuccess)
-    : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
+    : WorkerRunnable(aWorkerPrivate)
     , mProxy(Move(aProxy))
     , mStatus(aStatus)
     , mSuccess(aSuccess)

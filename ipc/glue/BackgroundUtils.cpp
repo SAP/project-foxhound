@@ -93,7 +93,7 @@ PrincipalInfoToPrincipal(const PrincipalInfo& aPrincipalInfo,
     case PrincipalInfo::TExpandedPrincipalInfo: {
       const ExpandedPrincipalInfo& info = aPrincipalInfo.get_ExpandedPrincipalInfo();
 
-      nsTArray< nsCOMPtr<nsIPrincipal> > whitelist;
+      nsTArray<nsCOMPtr<nsIPrincipal>> whitelist;
       nsCOMPtr<nsIPrincipal> wlPrincipal;
 
       for (uint32_t i = 0; i < info.whitelist().Length(); i++) {
@@ -105,7 +105,7 @@ PrincipalInfoToPrincipal(const PrincipalInfo& aPrincipalInfo,
         whitelist.AppendElement(wlPrincipal);
       }
 
-      RefPtr<nsExpandedPrincipal> expandedPrincipal = new nsExpandedPrincipal(whitelist);
+      RefPtr<nsExpandedPrincipal> expandedPrincipal = new nsExpandedPrincipal(whitelist, info.attrs());
       if (!expandedPrincipal) {
         NS_WARNING("could not instantiate expanded principal");
         return nullptr;
@@ -130,17 +130,12 @@ PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aPrincipalInfo);
 
-  bool isNullPrin;
-  nsresult rv = aPrincipal->GetIsNullPrincipal(&isNullPrin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (isNullPrin) {
+  if (aPrincipal->GetIsNullPrincipal()) {
     *aPrincipalInfo = NullPrincipalInfo(BasePrincipal::Cast(aPrincipal)->OriginAttributesRef());
     return NS_OK;
   }
 
+  nsresult rv;
   nsCOMPtr<nsIScriptSecurityManager> secMan =
     do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -178,7 +173,9 @@ PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
       whitelistInfo.AppendElement(info);
     }
 
-    *aPrincipalInfo = ExpandedPrincipalInfo(Move(whitelistInfo));
+    *aPrincipalInfo =
+      ExpandedPrincipalInfo(BasePrincipal::Cast(aPrincipal)->OriginAttributesRef(),
+                            Move(whitelistInfo));
     return NS_OK;
   }
 
@@ -251,9 +248,11 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
       aLoadInfo->GetUpgradeInsecureRequests(),
       aLoadInfo->GetVerifySignedContent(),
       aLoadInfo->GetEnforceSRI(),
+      aLoadInfo->GetForceInheritPrincipalDropped(),
       aLoadInfo->GetInnerWindowID(),
       aLoadInfo->GetOuterWindowID(),
       aLoadInfo->GetParentOuterWindowID(),
+      aLoadInfo->GetFrameOuterWindowID(),
       aLoadInfo->GetEnforceSecurity(),
       aLoadInfo->GetInitialSecurityCheckDone(),
       aLoadInfo->GetIsInThirdPartyContext(),
@@ -262,7 +261,9 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
       redirectChain,
       aLoadInfo->CorsUnsafeHeaders(),
       aLoadInfo->GetForcePreflight(),
-      aLoadInfo->GetIsPreflight());
+      aLoadInfo->GetIsPreflight(),
+      aLoadInfo->GetForceHSTSPriming(),
+      aLoadInfo->GetMixedContentWouldBlock());
 
   return NS_OK;
 }
@@ -316,9 +317,11 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
                           loadInfoArgs.upgradeInsecureRequests(),
                           loadInfoArgs.verifySignedContent(),
                           loadInfoArgs.enforceSRI(),
+                          loadInfoArgs.forceInheritPrincipalDropped(),
                           loadInfoArgs.innerWindowID(),
                           loadInfoArgs.outerWindowID(),
                           loadInfoArgs.parentOuterWindowID(),
+                          loadInfoArgs.frameOuterWindowID(),
                           loadInfoArgs.enforceSecurity(),
                           loadInfoArgs.initialSecurityCheckDone(),
                           loadInfoArgs.isInThirdPartyContext(),
@@ -327,7 +330,10 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
                           redirectChain,
                           loadInfoArgs.corsUnsafeHeaders(),
                           loadInfoArgs.forcePreflight(),
-                          loadInfoArgs.isPreflight());
+                          loadInfoArgs.isPreflight(),
+                          loadInfoArgs.forceHSTSPriming(),
+                          loadInfoArgs.mixedContentWouldBlock()
+                          );
 
    loadInfo.forget(outLoadInfo);
    return NS_OK;

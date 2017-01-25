@@ -10,7 +10,11 @@
 #include "common/angleutils.h"
 #include "compiler/preprocessor/DiagnosticsBase.h"
 
+namespace sh
+{
+
 class TInfoSink;
+struct TSourceLoc;
 
 class TDiagnostics : public pp::Diagnostics, angle::NonCopyable
 {
@@ -29,6 +33,12 @@ class TDiagnostics : public pp::Diagnostics, angle::NonCopyable
                    const std::string& token,
                    const std::string& extra);
 
+    void error(const TSourceLoc &loc, const char *reason, const char *token, const char *extraInfo);
+    void warning(const TSourceLoc &loc,
+                 const char *reason,
+                 const char *token,
+                 const char *extraInfo);
+
   protected:
     void print(ID id, const pp::SourceLocation &loc, const std::string &text) override;
 
@@ -37,5 +47,7 @@ class TDiagnostics : public pp::Diagnostics, angle::NonCopyable
     int mNumErrors;
     int mNumWarnings;
 };
+
+}  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_DIAGNOSTICS_H_

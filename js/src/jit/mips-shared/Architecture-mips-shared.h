@@ -32,7 +32,7 @@ namespace js {
 namespace jit {
 
 // How far forward/back can a jump go? Provide a generous buffer for thunks.
-static const uint32_t JumpImmediateRange = 100 * 1024;
+static const uint32_t JumpImmediateRange = UINT32_MAX;
 
 class Registers
 {
@@ -331,12 +331,6 @@ inline bool
 hasMultiAlias() {
     return true;
 }
-
-// See MIRGenerator::foldableOffsetRange for more info.
-// TODO: Implement this for MIPS. Note that it requires Codegen to respect the
-// offset field of AsmJSHeapAccess.
-static const size_t WasmCheckedImmediateRange = 0;
-static const size_t WasmImmediateRange = 0;
 
 } // namespace jit
 } // namespace js

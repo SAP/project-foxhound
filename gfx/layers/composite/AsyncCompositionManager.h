@@ -85,7 +85,8 @@ public:
   // another animation frame.
   enum class TransformsToSkip : uint8_t { NoneOfThem = 0, APZ = 1 };
   bool TransformShadowTree(TimeStamp aCurrentFrame,
-    TransformsToSkip aSkip = TransformsToSkip::NoneOfThem);
+                           TimeDuration aVsyncRate,
+                           TransformsToSkip aSkip = TransformsToSkip::NoneOfThem);
 
   // Calculates the correct rotation and applies the transform to
   // our layer manager
@@ -243,7 +244,9 @@ private:
   gfx::Matrix mWorldTransform;
   LayerTransformRecorder mLayerTransformRecorder;
 
-#ifdef MOZ_ANDROID_APZ
+  TimeStamp mPreviousFrameTimeStamp;
+
+#ifdef MOZ_WIDGET_ANDROID
   // The following two fields are only needed on Fennec with C++ APZ, because
   // then we need to reposition the gecko scrollbar to deal with the
   // dynamic toolbar shifting content around.

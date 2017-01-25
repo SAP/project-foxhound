@@ -51,6 +51,7 @@ WeakSetObject::initClass(JSContext* cx, JSObject* obj)
     if (!ctor ||
         !LinkConstructorAndPrototype(cx, ctor, proto) ||
         !DefinePropertiesAndFunctions(cx, proto, properties, methods) ||
+        !DefineToStringTag(cx, proto, cx->names().WeakSet) ||
         !GlobalObject::initBuiltinConstructor(cx, global, JSProto_WeakSet, ctor, proto))
     {
         return nullptr;
@@ -137,7 +138,7 @@ WeakSetObject::construct(JSContext* cx, unsigned argc, Value* vp)
                 if (!SetWeakMapEntry(cx, map, keyObject, placeholder))
                     return false;
             } else {
-                if (!args2.init(1))
+                if (!args2.init(cx, 1))
                     return false;
 
                 args2[0].set(keyVal);

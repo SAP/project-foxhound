@@ -20,10 +20,6 @@
 // Self
 #include "ProfileEntry.h"
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
- #define snprintf _snprintf
-#endif
-
 using mozilla::MakeUnique;
 using mozilla::UniquePtr;
 using mozilla::Maybe;
@@ -389,8 +385,8 @@ UniqueStacks::Stack UniqueStacks::BeginStack(const OnStackFrameKey& aRoot)
   return Stack(*this, aRoot);
 }
 
-UniqueStacks::UniqueStacks(JSRuntime* aRuntime)
- : mRuntime(aRuntime)
+UniqueStacks::UniqueStacks(JSContext* aContext)
+ : mContext(aContext)
  , mFrameCount(0)
 {
   mFrameTableWriter.StartBareList();
@@ -572,7 +568,7 @@ void UniqueStacks::StreamFrame(const OnStackFrameKey& aFrame)
         }
         mFrameTableWriter.EndArray();
 
-        JS::Rooted<JSScript*> script(mRuntime);
+        JS::Rooted<JSScript*> script(mContext);
         jsbytecode* pc;
         mFrameTableWriter.StartObjectProperty("attempts");
         {
@@ -661,7 +657,7 @@ static void WriteSample(SpliceableJSONWriter& aWriter, ProfileSample& aSample)
 }
 
 void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
-                                        double aSinceTime, JSRuntime* aRuntime,
+                                        double aSinceTime, JSContext* aContext,
                                         UniqueStacks& aUniqueStacks)
 {
   Maybe<ProfileSample> sample;
@@ -779,7 +775,7 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThre
               unsigned depth = aUniqueStacks.LookupJITFrameDepth(pc);
               if (depth == 0) {
                 StreamJSFramesOp framesOp(pc, stack);
-                JS::ForEachProfiledFrame(aRuntime, pc, framesOp);
+                JS::ForEachProfiledFrame(aContext, pc, framesOp);
                 aUniqueStacks.AddJITFrameDepth(pc, framesOp.depth());
               } else {
                 for (unsigned i = 0; i < depth; i++) {

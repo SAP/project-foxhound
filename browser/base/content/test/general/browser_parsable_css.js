@@ -9,20 +9,60 @@
  * matching the offending error. If an object has multiple regex criteria, they
  * ALL need to match an error in order for that error not to cause a test
  * failure. */
-const kWhitelist = [
+let whitelist = [
   // CodeMirror is imported as-is, see bug 1004423.
-  {sourceName: /codemirror\.css$/i},
+  {sourceName: /codemirror\.css$/i,
+   isFromDevTools: true},
+  // The debugger uses cross-browser CSS.
+  {sourceName: /devtools\/client\/debugger\/new\/styles.css/i,
+   isFromDevTools: true},
   // PDFjs is futureproofing its pseudoselectors, and those rules are dropped.
   {sourceName: /web\/viewer\.css$/i,
-   errorMessage: /Unknown pseudo-class.*(fullscreen|selection)/i},
+   errorMessage: /Unknown pseudo-class.*(fullscreen|selection)/i,
+   isFromDevTools: false},
   // Tracked in bug 1004428.
-  {sourceName: /aboutaccounts\/(main|normalize)\.css$/i},
+  {sourceName: /aboutaccounts\/(main|normalize)\.css$/i,
+    isFromDevTools: false},
   // Highlighter CSS uses a UA-only pseudo-class, see bug 985597.
   {sourceName: /highlighters\.css$/i,
-   errorMessage: /Unknown pseudo-class.*moz-native-anonymous/i},
+   errorMessage: /Unknown pseudo-class.*moz-native-anonymous/i,
+   isFromDevTools: true},
   // Responsive Design Mode CSS uses a UA-only pseudo-class, see Bug 1241714.
   {sourceName: /responsive-ua\.css$/i,
-   errorMessage: /Unknown pseudo-class.*moz-dropdown-list/i},
+   errorMessage: /Unknown pseudo-class.*moz-dropdown-list/i,
+   isFromDevTools: true},
+];
+
+// Platform can be "linux", "macosx" or "win". If omitted, the exception applies to all platforms.
+let allowedImageReferences = [
+  // Bug 1302759
+  {file: "chrome://browser/skin/customizableui/customize-titleBar-toggle.png",
+   from: "chrome://browser/skin/browser.css",
+   platforms: ["linux"],
+   isFromDevTools: false},
+  {file: "chrome://browser/skin/customizableui/customize-titleBar-toggle@2x.png",
+   from: "chrome://browser/skin/browser.css",
+   platforms: ["linux"],
+   isFromDevTools: false},
+
+  // Bug 1302691
+  {file: "chrome://devtools/skin/images/dock-bottom-minimize@2x.png",
+   from: "chrome://devtools/skin/toolbox.css",
+   isFromDevTools: true},
+  {file: "chrome://devtools/skin/images/dock-bottom-maximize@2x.png",
+   from: "chrome://devtools/skin/toolbox.css",
+   isFromDevTools: true},
+
+  // Bug 1302708
+  {file: "chrome/devtools/modules/devtools/client/themes/images/filter.svg",
+   from: "chrome/devtools/modules/devtools/client/themes/common.css",
+   isFromDevTools: true},
+
+  // Bug 1302890
+  {file: "chrome://global/skin/icons/warning-32.png",
+   from: "chrome://devtools/skin/tooltips.css",
+   platforms: ["linux", "win"],
+   isFromDevTools: true},
 ];
 
 var moduleLocation = gTestPath.replace(/\/[^\/]*$/i, "/parsingTestHelpers.jsm");
@@ -35,21 +75,23 @@ const kPathSuffix = "?always-parse-css-" + Math.random();
 
 /**
  * Check if an error should be ignored due to matching one of the whitelist
- * objects defined in kWhitelist
+ * objects defined in whitelist
  *
  * @param aErrorObject the error to check
  * @return true if the error should be ignored, false otherwise.
  */
 function ignoredError(aErrorObject) {
-  for (let whitelistItem of kWhitelist) {
+  for (let whitelistItem of whitelist) {
     let matches = true;
-    for (let prop in whitelistItem) {
-      if (!whitelistItem[prop].test(aErrorObject[prop] || "")) {
+    for (let prop of ["sourceName", "errorMessage"]) {
+      if (whitelistItem.hasOwnProperty(prop) &&
+          !whitelistItem[prop].test(aErrorObject[prop] || "")) {
         matches = false;
         break;
       }
     }
     if (matches) {
+      whitelistItem.used = true;
       return true;
     }
   }
@@ -143,7 +185,7 @@ function messageIsCSSError(msg) {
       msg.sourceName.endsWith(kPathSuffix)) {
     let sourceName = msg.sourceName.slice(0, -kPathSuffix.length);
     let msgInfo = { sourceName, errorMessage: msg.errorMessage };
-    // Check if this error is whitelisted in kWhitelist
+    // Check if this error is whitelisted in whitelist
     if (!ignoredError(msgInfo)) {
       ok(false, `Got error message for ${sourceName}: ${msg.errorMessage}`);
       return true;
@@ -151,6 +193,65 @@ function messageIsCSSError(msg) {
     info(`Ignored error for ${sourceName} because of filter.`);
   }
   return false;
+}
+
+let imageURIsToReferencesMap = new Map();
+
+function processCSSRules(sheet) {
+  for (let rule of sheet.cssRules) {
+    if (rule instanceof CSSMediaRule) {
+      processCSSRules(rule);
+      continue;
+    }
+    if (!(rule instanceof CSSStyleRule))
+      continue;
+
+    // Extract urls from the css text.
+    // Note: CSSStyleRule.cssText always has double quotes around URLs even
+    //       when the original CSS file didn't.
+    let urls = rule.cssText.match(/url\("[^"]*"\)/g);
+    if (!urls)
+      continue;
+
+    for (let url of urls) {
+      // Remove the url(" prefix and the ") suffix.
+      url = url.replace(/url\("(.*)"\)/, "$1");
+      if (url.startsWith("data:"))
+        continue;
+
+      // Make the url absolute and remove the ref.
+      let baseURI = Services.io.newURI(rule.parentStyleSheet.href, null, null);
+      url = Services.io.newURI(url, null, baseURI).specIgnoringRef;
+
+      // Store the image url along with the css file referencing it.
+      let baseUrl = baseURI.spec.split("?always-parse-css")[0];
+      if (!imageURIsToReferencesMap.has(url)) {
+        imageURIsToReferencesMap.set(url, new Set([baseUrl]));
+      } else {
+        imageURIsToReferencesMap.get(url).add(baseUrl);
+      }
+    }
+  }
+}
+
+function chromeFileExists(aURI)
+{
+  let available = 0;
+  try {
+    let channel = NetUtil.newChannel({uri: aURI, loadUsingSystemPrincipal: true});
+    let stream = channel.open();
+    let sstream = Cc["@mozilla.org/scriptableinputstream;1"]
+                    .createInstance(Ci.nsIScriptableInputStream);
+    sstream.init(stream);
+    available = sstream.available();
+    sstream.close();
+  } catch (e) {
+    if (e.result != Components.results.NS_ERROR_FILE_NOT_FOUND) {
+      dump("Checking " + aURI + ": " + e + "\n");
+      Cu.reportError(e);
+    }
+  }
+  return available > 0;
 }
 
 add_task(function* checkAllTheCSS() {
@@ -199,6 +300,7 @@ add_task(function* checkAllTheCSS() {
     linkEl.setAttribute("rel", "stylesheet");
     let promiseForThisSpec = Promise.defer();
     let onLoad = (e) => {
+      processCSSRules(linkEl.sheet);
       promiseForThisSpec.resolve();
       linkEl.removeEventListener("load", onLoad);
       linkEl.removeEventListener("error", onError);
@@ -221,11 +323,50 @@ add_task(function* checkAllTheCSS() {
   // Wait for all the files to have actually loaded:
   yield Promise.all(allPromises);
 
+  // Check if all the files referenced from CSS actually exist.
+  for (let [image, references] of imageURIsToReferencesMap) {
+    if (!chromeFileExists(image)) {
+      for (let ref of references) {
+        let ignored = false;
+        for (let item of allowedImageReferences) {
+          if (image.endsWith(item.file) && ref.endsWith(item.from) &&
+              isDevtools == item.isFromDevTools &&
+              (!item.platforms || item.platforms.includes(AppConstants.platform))) {
+            item.used = true;
+            ignored = true;
+            break;
+          }
+        }
+        if (!ignored)
+          ok(false, "missing " + image + " referenced from " + ref);
+      }
+    }
+  }
+
   let messages = Services.console.getMessageArray();
   // Count errors (the test output will list actual issues for us, as well
   // as the ok(false) in messageIsCSSError.
   let errors = messages.filter(messageIsCSSError);
   is(errors.length, 0, "All the styles (" + allPromises.length + ") loaded without errors.");
+
+  // Confirm that all whitelist rules have been used.
+  for (let item of whitelist) {
+    if (!item.used && isDevtools == item.isFromDevTools) {
+      ok(false, "Unused whitelist item. " +
+                (item.sourceName ? " sourceName: " + item.sourceName : "") +
+                (item.errorMessage ? " errorMessage: " + item.errorMessage : ""));
+    }
+  }
+
+  // Confirm that all file whitelist rules have been used.
+  for (let item of allowedImageReferences) {
+    if (!item.used && isDevtools == item.isFromDevTools &&
+        (!item.platforms || item.platforms.includes(AppConstants.platform))) {
+      ok(false, "Unused file whitelist item. " +
+                " file: " + item.file +
+                " from: " + item.from);
+    }
+  }
 
   // Clean up to avoid leaks:
   iframe.remove();
@@ -234,4 +375,5 @@ add_task(function* checkAllTheCSS() {
   iframe = null;
   windowless.close();
   windowless = null;
+  imageURIsToReferencesMap = null;
 });

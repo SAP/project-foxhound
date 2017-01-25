@@ -8,10 +8,7 @@
   flex-direction: column;
   padding-bottom: 20px;
   width: 100%;
-  /* Bug 1243598 - Reduce the container height by the tab height to make room
-     for the tabs above. */
-  height: calc(100% - 24px);
-  position: absolute;
+  height: 100%;
 }
 
 #sidebar-panel-fontinspector > .devtools-toolbar {
@@ -29,13 +26,11 @@
 }
 
 #font-showall {
-  border-radius: 0;
-  border: 1px solid black;
-  margin: 3px;
   cursor: pointer;
-  position: fixed;
-  bottom: 0;
-  right: 0;
+}
+
+#font-showall:hover {
+  text-decoration: underline;
 }
 
 .dim > #font-container,
@@ -70,7 +65,6 @@
 }
 
 #font-preview-text-input {
-  font: inherit;
   margin-top: 1px;
   margin-bottom: 1px;
   padding-top: 0;

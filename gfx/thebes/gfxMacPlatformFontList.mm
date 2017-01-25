@@ -64,6 +64,7 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/gfx/2D.h"
 
@@ -228,8 +229,8 @@ MacOSFontEntry::ReadCMAP(FontInfoData *aFontInfoData)
                   charmap->mHash, mCharacterMap == charmap ? " new" : ""));
     if (LOG_CMAPDATA_ENABLED()) {
         char prefix[256];
-        sprintf(prefix, "(cmapdata) name: %.220s",
-                NS_ConvertUTF16toUTF8(mName).get());
+        SprintfLiteral(prefix, "(cmapdata) name: %.220s",
+                       NS_ConvertUTF16toUTF8(mName).get());
         charmap->Dump(prefix, eGfxLog_cmapdata);
     }
 
@@ -1229,10 +1230,7 @@ public:
 
     virtual void Load() {
         nsAutoreleasePool localPool;
-        // bug 975460 - async font loader crashes sometimes under 10.6, disable
-        if (nsCocoaFeatures::OnLionOrLater()) {
-            FontInfoData::Load();
-        }
+        FontInfoData::Load();
     }
 
     // loads font data for all members of a given family

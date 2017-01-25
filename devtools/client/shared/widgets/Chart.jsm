@@ -5,10 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-const NET_STRINGS_URI = "chrome://devtools/locale/netmonitor.properties";
+const NET_STRINGS_URI = "devtools/locale/netmonitor.properties";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const PI = Math.PI;
 const TAU = PI * 2;
@@ -17,12 +16,10 @@ const NAMED_SLICE_MIN_ANGLE = TAU / 8;
 const NAMED_SLICE_TEXT_DISTANCE_RATIO = 1.9;
 const HOVERED_SLICE_TRANSLATE_DISTANCE_RATIO = 20;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://devtools/shared/event-emitter.js");
-
 const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
-const { LocalizationHelper } = require("devtools/client/shared/l10n");
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
+const EventEmitter = require("devtools/shared/event-emitter");
+const { LocalizationHelper } = require("devtools/shared/l10n");
 
 this.EXPORTED_SYMBOLS = ["Chart"];
 
@@ -384,7 +381,7 @@ function createTableChart(document, { title, data, strings, totals }) {
     boxNode.setAttribute("name", rowInfo.label);
     rowNode.appendChild(boxNode);
 
-    for (let [key, value] in Iterator(rowInfo)) {
+    for (let [key, value] of Object.entries(rowInfo)) {
       let index = data.indexOf(rowInfo);
       let stringified = strings[key] ? strings[key](value, index) : value;
       let labelNode = document.createElement("label");
@@ -402,7 +399,7 @@ function createTableChart(document, { title, data, strings, totals }) {
   let totalsNode = document.createElement("vbox");
   totalsNode.className = "table-chart-totals";
 
-  for (let [key, value] in Iterator(totals)) {
+  for (let [key, value] of Object.entries(totals)) {
     let total = data.reduce((acc, e) => acc + e[key], 0);
     let stringified = totals[key] ? totals[key](total || 0) : total;
     let labelNode = document.createElement("label");

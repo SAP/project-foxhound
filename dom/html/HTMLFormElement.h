@@ -9,10 +9,11 @@
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/HTMLFormSubmission.h"
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIForm.h"
 #include "nsIFormControl.h"
-#include "nsFormSubmission.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIWebProgressListener.h"
@@ -119,8 +120,8 @@ public:
 
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(HTMLFormElement,
-                                                         nsGenericHTMLElement)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLFormElement,
+                                           nsGenericHTMLElement)
 
   /**
    * Remove an element from this form's list of elements
@@ -277,12 +278,21 @@ public:
   bool CheckValidFormSubmission();
 
   /**
+   * Check whether submission can proceed for this form.  This basically
+   * implements steps 1-4 (more or less) of
+   * <https://html.spec.whatwg.org/multipage/forms.html#concept-form-submit>.
+   * aSubmitter, if not null, is the "submitter" from that algorithm.  Therefore
+   * it must be a valid submit control.
+   */
+  bool SubmissionCanProceed(Element* aSubmitter);
+
+  /**
    * Walk over the form elements and call SubmitNamesValues() on them to get
    * their data pumped into the FormSubmitter.
    *
    * @param aFormSubmission the form submission object
    */
-  nsresult WalkFormElements(nsFormSubmission* aFormSubmission);
+  nsresult WalkFormElements(HTMLFormSubmission* aFormSubmission);
 
   /**
    * Whether the submission of this form has been ever prevented because of
@@ -480,14 +490,14 @@ protected:
    * @param aFormSubmission the submission object
    * @param aEvent the DOM event that was passed to us for the submit
    */
-  nsresult BuildSubmission(nsFormSubmission** aFormSubmission,
+  nsresult BuildSubmission(HTMLFormSubmission** aFormSubmission,
                            WidgetEvent* aEvent);
   /**
    * Perform the submission (called by DoSubmit and FlushPendingSubmission)
    *
    * @param aFormSubmission the submission object
    */
-  nsresult SubmitSubmission(nsFormSubmission* aFormSubmission);
+  nsresult SubmitSubmission(HTMLFormSubmission* aFormSubmission);
 
   /**
    * Notify any submit observers of the submit.
@@ -589,7 +599,7 @@ protected:
   bool mSubmitInitiatedFromUserInput;
 
   /** The pending submission object */
-  nsAutoPtr<nsFormSubmission> mPendingSubmission;
+  nsAutoPtr<HTMLFormSubmission> mPendingSubmission;
   /** The request currently being submitted */
   nsCOMPtr<nsIRequest> mSubmittingRequest;
   /** The web progress object we are currently listening to */

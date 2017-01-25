@@ -69,7 +69,11 @@ public:
   virtual FrameSearchResult PeekOffsetNoAmount(bool aForward, int32_t* aOffset) override;
   virtual FrameSearchResult PeekOffsetCharacter(bool aForward, int32_t* aOffset,
                                      bool aRespectClusters = true) override;
-  
+
+  virtual nsresult AttributeChanged(int32_t         aNameSpaceID,
+                                    nsIAtom*        aAttribute,
+                                    int32_t         aModType) override;
+
 #ifdef DEBUG_FRAME_DUMP
   void List(FILE* out = stderr, const char* aPrefix = "", uint32_t aFlags = 0) const override;
 #endif  
@@ -254,8 +258,8 @@ public:
    */
   void ReflowChild(nsIFrame*                      aChildFrame,
                    nsPresContext*                 aPresContext,
-                   nsHTMLReflowMetrics&           aDesiredSize,
-                   const nsHTMLReflowState&       aReflowState,
+                   ReflowOutput&           aDesiredSize,
+                   const ReflowInput&       aReflowInput,
                    const mozilla::WritingMode&    aWM,
                    const mozilla::LogicalPoint&   aPos,
                    const nsSize&                  aContainerSize,
@@ -284,8 +288,8 @@ public:
    */
   static void FinishReflowChild(nsIFrame*                    aKidFrame,
                                 nsPresContext*               aPresContext,
-                                const nsHTMLReflowMetrics&   aDesiredSize,
-                                const nsHTMLReflowState*     aReflowState,
+                                const ReflowOutput&   aDesiredSize,
+                                const ReflowInput*     aReflowInput,
                                 const mozilla::WritingMode&  aWM,
                                 const mozilla::LogicalPoint& aPos,
                                 const nsSize&                aContainerSize,
@@ -296,8 +300,8 @@ public:
   //    incrementally.
   void ReflowChild(nsIFrame*                      aKidFrame,
                    nsPresContext*                 aPresContext,
-                   nsHTMLReflowMetrics&           aDesiredSize,
-                   const nsHTMLReflowState&       aReflowState,
+                   ReflowOutput&           aDesiredSize,
+                   const ReflowInput&       aReflowInput,
                    nscoord                        aX,
                    nscoord                        aY,
                    uint32_t                       aFlags,
@@ -306,8 +310,8 @@ public:
 
   static void FinishReflowChild(nsIFrame*                  aKidFrame,
                                 nsPresContext*             aPresContext,
-                                const nsHTMLReflowMetrics& aDesiredSize,
-                                const nsHTMLReflowState*   aReflowState,
+                                const ReflowOutput& aDesiredSize,
+                                const ReflowInput*   aReflowInput,
                                 nscoord                    aX,
                                 nscoord                    aY,
                                 uint32_t                   aFlags);
@@ -388,7 +392,7 @@ public:
    * @param aMergeFunc is passed to DrainExcessOverflowContainersList
    */
   void ReflowOverflowContainerChildren(nsPresContext*           aPresContext,
-                                       const nsHTMLReflowState& aReflowState,
+                                       const ReflowInput& aReflowInput,
                                        nsOverflowAreas&         aOverflowRects,
                                        uint32_t                 aFlags,
                                        nsReflowStatus&          aStatus,
@@ -413,17 +417,13 @@ public:
 
   /**
    * Removes aChild without destroying it and without requesting reflow.
-   * Continuations are not affected. Checks the primary and overflow
-   * or overflow containers and excess overflow containers lists, depending
-   * on whether the NS_FRAME_IS_OVERFLOW_CONTAINER flag is set. Does not
-   * check any other auxiliary lists.
-   * Returns NS_ERROR_UNEXPECTED if we failed to remove aChild.
-   * Returns other error codes if we failed to put back a proptable list.
-   * If aForceNormal is true, only checks the primary and overflow lists
-   * even when the NS_FRAME_IS_OVERFLOW_CONTAINER flag is set.
+   * Continuations are not affected.  Checks the principal and overflow lists,
+   * and also the [excess] overflow containers lists if the frame bit
+   * NS_FRAME_IS_OVERFLOW_CONTAINER is set.  It does not check any other lists.
+   * Returns NS_ERROR_UNEXPECTED if aChild wasn't found on any of the lists
+   * mentioned above.
    */
-  virtual nsresult StealFrame(nsIFrame* aChild,
-                              bool      aForceNormal = false);
+  virtual nsresult StealFrame(nsIFrame* aChild);
 
   /**
    * Removes the next-siblings of aChild without destroying them and without
@@ -464,6 +464,52 @@ public:
       nsContainerFrame::PositionChildViews(aFrame);
   }
 
+  static bool FrameStartsCounterScope(nsIFrame* aFrame);
+
+  /**
+   * Renumber the list of the counter scope started by this frame, if any.
+   * If this returns true, the frame it's called on should get the
+   * NS_FRAME_HAS_DIRTY_CHILDREN bit set on it by the caller; either directly
+   * if it's already in reflow, or via calling FrameNeedsReflow() to schedule
+   * a reflow.
+   */
+  bool RenumberList();
+
+  /**
+   * Renumber this frame if it's a list-item, then call RenumberChildFrames.
+   * @param aOrdinal Ordinal number to start counting at.
+   *        Modifies this number for each associated list
+   *        item. Changes in the numbering due to setting
+   *        the |value| attribute are included if |aForCounting|
+   *        is false. This value is both an input and output
+   *        of this function, with the output value being the
+   *        next ordinal number to be used.
+   * @param aDepth Current depth in frame tree from root list element.
+   * @param aIncrement Amount to increase by after visiting each associated
+   *        list item, unless overridden by |value|.
+   * @param aForCounting Whether we are counting the elements or actually
+   *        restyling them. When true, this simply visits all children,
+   *        ignoring |<li value="..">| changes, effectively counting them
+   *        and storing the result in |aOrdinal|. This is useful for
+   *        |<ol reversed>|, where we need to count the number of
+   *        applicable child list elements before numbering. When false,
+   *        this will restyle all applicable descendants, and the next
+   *        ordinal value will be stored in |aOrdinal|, taking into account
+   *        any changes from |<li value="..">|.
+   */
+  bool RenumberFrameAndDescendants(int32_t* aOrdinal,
+                                   int32_t aDepth,
+                                   int32_t aIncrement,
+                                   bool aForCounting) override;
+  /**
+   * Renumber the child frames using RenumberFrameAndDescendants.
+   * See RenumberFrameAndDescendants for description of parameters.
+   */
+  virtual bool RenumberChildFrames(int32_t* aOrdinal,
+                                   int32_t aDepth,
+                                   int32_t aIncrement,
+                                   bool aForCounting);
+
 #define NS_DECLARE_FRAME_PROPERTY_FRAMELIST(prop) \
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR_NEVER_CALLED(prop, nsFrameList)
 
@@ -493,6 +539,11 @@ protected:
    * See nsBlockFrame::DestroyFrom for an example.
    */
   void DestroyAbsoluteFrames(nsIFrame* aDestructRoot);
+
+  /**
+   * Helper for StealFrame.  Returns true if aChild was removed from its list.
+   */
+  bool MaybeStealOverflowContainerFrame(nsIFrame* aChild);
 
   /**
    * Builds a display list for non-block children that behave like

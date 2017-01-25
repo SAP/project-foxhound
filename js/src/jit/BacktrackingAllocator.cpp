@@ -389,6 +389,9 @@ BacktrackingAllocator::init()
 
         LBlock* block = graph.getBlock(i);
         for (LInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
+            if (mir->shouldCancel("Create data structures (inner loop 1)"))
+                return false;
+
             for (size_t j = 0; j < ins->numDefs(); j++) {
                 LDefinition* def = ins->getDef(j);
                 if (def->isBogusTemp())
@@ -560,7 +563,7 @@ BacktrackingAllocator::buildLivenessInfo()
         for (LInstructionReverseIterator ins = block->rbegin(); ins != block->rend(); ins++) {
             // Calls may clobber registers, so force a spill and reload around the callsite.
             if (ins->isCall()) {
-                for (AnyRegisterIterator iter(allRegisters_.asLiveSet()); iter.more(); iter++) {
+                for (AnyRegisterIterator iter(allRegisters_.asLiveSet()); iter.more(); ++iter) {
                     bool found = false;
                     for (size_t i = 0; i < ins->numDefs(); i++) {
                         if (ins->getDef(i)->isFixed() &&
@@ -569,7 +572,10 @@ BacktrackingAllocator::buildLivenessInfo()
                             break;
                         }
                     }
-                    if (!found) {
+                    // If this register doesn't have an explicit def above, mark
+                    // it as clobbered by the call unless it is actually
+                    // call-preserved.
+                    if (!found && !ins->isCallPreserved(*iter)) {
                         if (!addInitialFixedRange(*iter, outputOf(*ins), outputOf(*ins).next()))
                             return false;
                     }
@@ -655,17 +661,20 @@ BacktrackingAllocator::buildLivenessInfo()
                 if (inputAlloc->isUse()) {
                     LUse* use = inputAlloc->toUse();
 
-                    // Call uses should always be at-start or fixed, since
-                    // calls use all registers.
+                    // Call uses should always be at-start, since calls use all
+                    // registers.
                     MOZ_ASSERT_IF(ins->isCall() && !inputAlloc.isSnapshotInput(),
-                                  use->isFixedRegister() || use->usedAtStart());
+                                  use->usedAtStart());
 
 #ifdef DEBUG
                     // Don't allow at-start call uses if there are temps of the same kind,
-                    // so that we don't assign the same register.
+                    // so that we don't assign the same register. Only allow this when the
+                    // use and temp are fixed registers, as they can't alias.
                     if (ins->isCall() && use->usedAtStart()) {
-                        for (size_t i = 0; i < ins->numTemps(); i++)
-                            MOZ_ASSERT(vreg(ins->getTemp(i)).type() != vreg(use).type());
+                        for (size_t i = 0; i < ins->numTemps(); i++) {
+                            MOZ_ASSERT(vreg(ins->getTemp(i)).type() != vreg(use).type() ||
+                                       (use->isFixedRegister() && ins->getTemp(i)->isFixed()));
+                        }
                     }
 
                     // If there are both useRegisterAtStart(x) and useRegister(y)
@@ -686,12 +695,7 @@ BacktrackingAllocator::buildLivenessInfo()
                     if (use->policy() == LUse::RECOVERED_INPUT)
                         continue;
 
-                    // Fixed uses on calls are specially overridden to happen
-                    // at the input position.
-                    CodePosition to =
-                        (use->usedAtStart() || (ins->isCall() && use->isFixedRegister()))
-                        ? inputOf(*ins)
-                        : outputOf(*ins);
+                    CodePosition to = use->usedAtStart() ? inputOf(*ins) : outputOf(*ins);
                     if (use->isFixedRegister()) {
                         LAllocation reg(AnyRegister::FromCode(use->registerCode()));
                         for (size_t i = 0; i < ins->numDefs(); i++) {
@@ -830,7 +834,7 @@ BacktrackingAllocator::go()
             return false;
 
         QueueItem item = allocationQueue.removeHighest();
-        if (!processBundle(item.bundle))
+        if (!processBundle(mir, item.bundle))
             return false;
     }
     JitSpew(JitSpew_RegAlloc, "Main allocation loop complete");
@@ -932,7 +936,7 @@ BacktrackingAllocator::tryMergeBundles(LiveBundle* bundle0, LiveBundle* bundle1)
 }
 
 static inline LDefinition*
-FindReusingDefinition(LNode* ins, LAllocation* alloc)
+FindReusingDefOrTemp(LNode* ins, LAllocation* alloc)
 {
     for (size_t i = 0; i < ins->numDefs(); i++) {
         LDefinition* def = ins->getDef(i);
@@ -947,6 +951,18 @@ FindReusingDefinition(LNode* ins, LAllocation* alloc)
             return def;
     }
     return nullptr;
+}
+
+static inline size_t
+NumReusingDefs(LNode* ins)
+{
+    size_t num = 0;
+    for (size_t i = 0; i < ins->numDefs(); i++) {
+        LDefinition* def = ins->getDef(i);
+        if (def->policy() == LDefinition::MUST_REUSE_INPUT)
+            num++;
+    }
+    return num;
 }
 
 bool
@@ -1009,7 +1025,7 @@ BacktrackingAllocator::tryMergeReusedRegister(VirtualRegister& def, VirtualRegis
             continue;
 
         LUse* use = iter->use();
-        if (FindReusingDefinition(insData[iter->pos], use)) {
+        if (FindReusingDefOrTemp(insData[iter->pos], use)) {
             def.setMustCopyInput();
             return true;
         }
@@ -1226,7 +1242,7 @@ BacktrackingAllocator::tryAllocateNonFixed(LiveBundle* bundle,
 }
 
 bool
-BacktrackingAllocator::processBundle(LiveBundle* bundle)
+BacktrackingAllocator::processBundle(MIRGenerator* mir, LiveBundle* bundle)
 {
     if (JitSpewEnabled(JitSpew_RegAlloc)) {
         JitSpew(JitSpew_RegAlloc, "Allocating %s [priority %lu] [weight %lu]",
@@ -1261,6 +1277,9 @@ BacktrackingAllocator::processBundle(LiveBundle* bundle)
     bool fixed;
     LiveBundleVector conflicting;
     for (size_t attempt = 0;; attempt++) {
+        if (mir->shouldCancel("Backtracking Allocation (processBundle loop)"))
+            return false;
+
         if (canAllocate) {
             bool success = false;
             fixed = false;
@@ -1729,11 +1748,14 @@ BacktrackingAllocator::resolveControlFlow()
     for (size_t i = 1; i < graph.numVirtualRegisters(); i++) {
         VirtualRegister& reg = vregs[i];
 
-        if (mir->shouldCancel("Backtracking Resolve Control Flow (vreg loop)"))
+        if (mir->shouldCancel("Backtracking Resolve Control Flow (vreg outer loop)"))
             return false;
 
         for (LiveRange::RegisterLinkIterator iter = reg.rangesBegin(); iter; ) {
             LiveRange* range = LiveRange::get(*iter);
+
+            if (mir->shouldCancel("Backtracking Resolve Control Flow (vreg inner loop)"))
+                return false;
 
             // Remove ranges which will never be used.
             if (deadRange(range)) {
@@ -1876,7 +1898,7 @@ BacktrackingAllocator::resolveControlFlow()
 bool
 BacktrackingAllocator::isReusedInput(LUse* use, LNode* ins, bool considerCopy)
 {
-    if (LDefinition* def = FindReusingDefinition(ins, use))
+    if (LDefinition* def = FindReusingDefOrTemp(ins, use))
         return considerCopy || !vregs[def->virtualRegister()].mustCopyInput();
     return false;
 }
@@ -1947,7 +1969,7 @@ BacktrackingAllocator::reifyAllocations()
                 // For any uses which feed into MUST_REUSE_INPUT definitions,
                 // add copies if the use and def have different allocations.
                 LNode* ins = insData[iter->pos];
-                if (LDefinition* def = FindReusingDefinition(ins, alloc)) {
+                if (LDefinition* def = FindReusingDefOrTemp(ins, alloc)) {
                     LiveRange* outputRange = vreg(def).rangeFor(outputOf(ins));
                     LAllocation res = outputRange->bundle()->allocation();
                     LAllocation sourceAlloc = range->bundle()->allocation();
@@ -1955,9 +1977,15 @@ BacktrackingAllocator::reifyAllocations()
                     if (res != *alloc) {
                         if (!this->alloc().ensureBallast())
                             return false;
-                        LMoveGroup* group = getInputMoveGroup(ins->toInstruction());
-                        if (!group->addAfter(sourceAlloc, res, reg.type()))
-                            return false;
+                        if (NumReusingDefs(ins) <= 1) {
+                            LMoveGroup* group = getInputMoveGroup(ins->toInstruction());
+                            if (!group->addAfter(sourceAlloc, res, reg.type()))
+                                return false;
+                        } else {
+                            LMoveGroup* group = getFixReuseMoveGroup(ins->toInstruction());
+                            if (!group->add(sourceAlloc, res, reg.type()))
+                                return false;
+                        }
                         *alloc = res;
                     }
                 }

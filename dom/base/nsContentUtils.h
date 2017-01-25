@@ -34,6 +34,8 @@
 #include "mozilla/Logging.h"
 #include "mozilla/NotNull.h"
 #include "nsIContentPolicy.h"
+#include "nsIDocument.h"
+#include "nsPIDOMWindow.h"
 
 #if defined(XP_WIN)
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -54,7 +56,6 @@ class nsIContent;
 class nsIContentPolicy;
 class nsIContentSecurityPolicy;
 class nsIDocShellTreeItem;
-class nsIDocument;
 class nsIDocumentLoaderFactory;
 class nsIDOMDocument;
 class nsIDOMDocumentFragment;
@@ -118,14 +119,17 @@ class ErrorResult;
 class EventListenerManager;
 
 namespace dom {
+struct CustomElementDefinition;
 class DocumentFragment;
 class Element;
 class EventTarget;
 class IPCDataTransfer;
 class IPCDataTransferItem;
+struct LifecycleCallbackArgs;
 class NodeInfo;
 class nsIContentChild;
 class nsIContentParent;
+class TabChild;
 class Selection;
 class TabParent;
 } // namespace dom
@@ -645,7 +649,7 @@ public:
 
   /**
    * Method that gets the primary presContext for the node.
-   * 
+   *
    * @param aContent The content node.
    * @return the presContext, or nullptr if the content is not in a document
    *         (if GetCurrentDoc returns nullptr)
@@ -917,6 +921,34 @@ public:
                                      nsXPIDLString& aResult);
 
   /**
+   * A helper function that parses a sandbox attribute (of an <iframe> or a CSP
+   * directive) and converts it to the set of flags used internally.
+   *
+   * @param aSandboxAttr  the sandbox attribute
+   * @return              the set of flags (SANDBOXED_NONE if aSandboxAttr is
+   *                      null)
+   */
+  static uint32_t ParseSandboxAttributeToFlags(const nsAttrValue* aSandboxAttr);
+
+  /**
+   * A helper function that checks if a string matches a valid sandbox flag.
+   *
+   * @param aFlag   the potential sandbox flag.
+   * @return        true if the flag is a sandbox flag.
+   */
+  static bool IsValidSandboxFlag(const nsAString& aFlag);
+
+  /**
+   * A helper function that returns a string attribute corresponding to the
+   * sandbox flags.
+   *
+   * @param aFlags    the sandbox flags
+   * @param aString   the attribute corresponding to the flags (null if aFlags
+   *                  is zero)
+   */
+  static void SandboxFlagsToString(uint32_t aFlags, nsAString& aString);
+
+  /**
    * Helper function that generates a UUID.
    */
   static nsresult GenerateUUIDInPlace(nsID& aUUID);
@@ -945,6 +977,17 @@ public:
   }
 
   /**
+   * Fill (with the parameters given) the localized string named |aKey| in
+   * properties file |aFile| consuming an nsTArray of nsString parameters rather
+   * than a char16_t** for the sake of avoiding use-after-free errors involving
+   * temporaries.
+   */
+  static nsresult FormatLocalizedString(PropertiesFile aFile,
+                                        const char* aKey,
+                                        const nsTArray<nsString>& aParamArray,
+                                        nsXPIDLString& aResult);
+
+  /**
    * Returns true if aDocument is a chrome document
    */
   static bool IsChromeDoc(nsIDocument *aDocument);
@@ -953,6 +996,11 @@ public:
    * Returns true if aDocument is in a docshell whose parent is the same type
    */
   static bool IsChildOfSameType(nsIDocument* aDoc);
+
+  /**
+  '* Returns true if the content-type is any of the supported script types.
+   */
+  static bool IsScriptType(const nsACString& aContentType);
 
   /**
   '* Returns true if the content-type will be rendered as plain-text.
@@ -1693,11 +1741,7 @@ public:
                                                       nsresult* aRv);
 
   static JSContext *GetCurrentJSContext();
-  static JSContext *GetSafeJSContext();
   static JSContext *GetCurrentJSContextForThread();
-  static JSContext *GetDefaultJSContextForThread();
-  inline static JSContext *RootingCx() { return GetSafeJSContext(); }
-  inline static JSContext *RootingCxForThread() { return GetDefaultJSContextForThread(); }
 
   /**
    * Case insensitive comparison between two strings. However it only ignores
@@ -1710,13 +1754,17 @@ public:
    * Convert ASCII A-Z to a-z.
    */
   static void ASCIIToLower(nsAString& aStr);
+  static void ASCIIToLower(nsACString& aStr);
   static void ASCIIToLower(const nsAString& aSource, nsAString& aDest);
+  static void ASCIIToLower(const nsACString& aSource, nsACString& aDest);
 
   /**
    * Convert ASCII a-z to A-Z.
    */
   static void ASCIIToUpper(nsAString& aStr);
+  static void ASCIIToUpper(nsACString& aStr);
   static void ASCIIToUpper(const nsAString& aSource, nsAString& aDest);
+  static void ASCIIToUpper(const nsACString& aSource, nsACString& aDest);
 
   /**
    * Return whether aStr contains an ASCII uppercase character.
@@ -1887,7 +1935,7 @@ public:
    * layer manager should be used for retained layers
    */
   static already_AddRefed<mozilla::layers::LayerManager>
-  LayerManagerForDocument(const nsIDocument *aDoc, bool *aAllowRetaining = nullptr);
+  LayerManagerForDocument(const nsIDocument *aDoc);
 
   /**
    * Returns a layer manager to use for the given document. Basically we
@@ -1904,7 +1952,7 @@ public:
    * layer manager should be used for retained layers
    */
   static already_AddRefed<mozilla::layers::LayerManager>
-  PersistentLayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nullptr);
+  PersistentLayerManagerForDocument(nsIDocument *aDoc);
 
   /**
    * Determine whether a content node is focused or not,
@@ -2011,6 +2059,14 @@ public:
   static bool ResistFingerprinting()
   {
     return sPrivacyResistFingerprinting;
+  }
+
+  /**
+   * Returns true if the browser should show busy cursor when loading page.
+   */
+  static bool UseActivityCursor()
+  {
+    return sUseActivityCursor;
   }
 
   /**
@@ -2307,18 +2363,6 @@ public:
   static nsIEditor* GetHTMLEditor(nsPresContext* aPresContext);
 
   /**
-   * Check whether a spec feature/version is supported.
-   * @param aObject the object, which should support the feature,
-   *        for example nsIDOMNode or nsIDOMDOMImplementation
-   * @param aFeature the feature ("Views", "Core", "HTML", "Range" ...)
-   * @param aVersion the version ("1.0", "2.0", ...)
-   * @return whether the feature is supported or not
-   */
-  static bool InternalIsSupported(nsISupports* aObject,
-                                  const nsAString& aFeature,
-                                  const nsAString& aVersion);
-
-  /**
    * Returns true if the browser.dom.window.dump.enabled pref is set.
    */
   static bool DOMWindowDumpEnabled();
@@ -2397,6 +2441,15 @@ public:
                                       CallOnRemoteChildFunction aCallback,
                                       void* aArg);
 
+  /*
+   * Call nsPIDOMWindow::SetKeyboardIndicators all all remote children. This is
+   * in here rather than nsGlobalWindow because TabParent indirectly includes
+   * Windows headers which aren't allowed there.
+   */
+  static void SetKeyboardIndicatorsOnRemoteChildren(nsPIDOMWindowOuter* aWindow,
+                                                    UIStateChangeType aShowAccelerators,
+                                                    UIStateChangeType aShowFocusRings);
+
   /**
    * Given an nsIFile, attempts to read it into aString.
    *
@@ -2426,6 +2479,13 @@ public:
    * returns true if we should treat the data as an image.
    */
   static bool IsFlavorImage(const nsACString& aFlavor);
+
+  static nsresult IPCTransferableToTransferable(const mozilla::dom::IPCDataTransfer& aDataTransfer,
+                                                const bool& aIsPrivateData,
+                                                nsIPrincipal* aRequestingPrincipal,
+                                                nsITransferable* aTransferable,
+                                                mozilla::dom::nsIContentParent* aContentParent,
+                                                mozilla::dom::TabChild* aTabChild);
 
   static void TransferablesToIPCTransferables(nsISupportsArray* aTransferables,
                                               nsTArray<mozilla::dom::IPCDataTransfer>& aIPC,
@@ -2488,6 +2548,7 @@ public:
                                  float aX,
                                  float aY,
                                  int32_t aButton,
+                                 int32_t aButtons,
                                  int32_t aClickCount,
                                  int32_t aModifiers,
                                  bool aIgnoreRootScrollFrame,
@@ -2495,7 +2556,8 @@ public:
                                  unsigned short aInputSourceArg,
                                  bool aToWindow,
                                  bool *aPreventDefault,
-                                 bool aIsSynthesized);
+                                 bool aIsDOMEventSynthesized,
+                                 bool aIsWidgetEventSynthesized);
 
   static void FirePageShowEvent(nsIDocShellTreeItem* aItem,
                                 mozilla::dom::EventTarget* aChromeEventHandler,
@@ -2525,6 +2587,15 @@ public:
                                                 nsIDocument* aDoc,
                                                 nsIHttpChannel* aChannel,
                                                 mozilla::net::ReferrerPolicy aReferrerPolicy);
+
+    /*
+   * Parse a referrer policy from a Referrer-Policy header
+   * https://www.w3.org/TR/referrer-policy/#parse-referrer-policy-from-header
+   *
+   * @param aHeader the response's Referrer-Policy header to parse
+   * @return referrer policy from the response header.
+   */
+  static mozilla::net::ReferrerPolicy GetReferrerPolicyFromHeader(const nsAString& aHeader);
 
   static bool PushEnabled(JSContext* aCx, JSObject* aObj);
 
@@ -2589,6 +2660,43 @@ public:
    * Will return empty string if the docshell is not in a presented content.
    */
   static void GetPresentationURL(nsIDocShell* aDocShell, nsAString& aPresentationUrl);
+
+  /*
+   * Try to find the docshell corresponding to the given event target.
+   */
+  static nsIDocShell* GetDocShellForEventTarget(mozilla::dom::EventTarget* aTarget);
+
+  /**
+   * Returns true if the "HTTPS state" of the document should be "modern". See:
+   *
+   * https://html.spec.whatwg.org/#concept-document-https-state
+   * https://fetch.spec.whatwg.org/#concept-response-https-state
+   */
+  static bool HttpsStateIsModern(nsIDocument* aDocument);
+
+  /**
+   * Looking up a custom element definition.
+   * https://html.spec.whatwg.org/#look-up-a-custom-element-definition
+   */
+  static mozilla::dom::CustomElementDefinition*
+    LookupCustomElementDefinition(nsIDocument* aDoc,
+                                  const nsAString& aLocalName,
+                                  uint32_t aNameSpaceID,
+                                  const nsAString* aIs = nullptr);
+
+  static void SetupCustomElement(Element* aElement,
+                                 const nsAString* aTypeExtension = nullptr);
+
+  static void EnqueueLifecycleCallback(nsIDocument* aDoc,
+                                       nsIDocument::ElementCallbackType aType,
+                                       Element* aCustomElement,
+                                       mozilla::dom::LifecycleCallbackArgs* aArgs = nullptr,
+                                       mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
+
+  static void GetCustomPrototype(nsIDocument* aDoc,
+                                 int32_t aNamespaceID,
+                                 nsIAtom* aAtom,
+                                 JS::MutableHandle<JSObject*> prototype);
 
 private:
   static bool InitializeEventTable();
@@ -2699,6 +2807,7 @@ private:
   static bool sGettersDecodeURLHash;
   static bool sPrivacyResistFingerprinting;
   static bool sSendPerformanceTimingNotifications;
+  static bool sUseActivityCursor;
   static uint32_t sCookiesLifetimePolicy;
   static uint32_t sCookiesBehavior;
 

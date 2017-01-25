@@ -477,6 +477,18 @@ nsresult mozHunspell::ConvertCharset(const char16_t* aStr, char ** aDst)
   return rv;
 }
 
+NS_IMETHODIMP
+mozHunspell::CollectReports(nsIHandleReportCallback* aHandleReport,
+                            nsISupports* aData, bool aAnonymize)
+{
+  MOZ_COLLECT_REPORT(
+    "explicit/spell-check", KIND_HEAP, UNITS_BYTES,
+    HunspellAllocator::MemoryAllocated(),
+    "Memory used by the spell-checking engine.");
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP mozHunspell::Check(const char16_t *aWord, bool *aResult)
 {
   NS_ENSURE_ARG_POINTER(aWord);

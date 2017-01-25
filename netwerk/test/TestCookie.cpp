@@ -33,6 +33,36 @@ static const char kCookiesMaxPerHost[] = "network.cookie.maxPerHost";
 
 static char *sBuffer;
 
+#define OFFSET_ONE_WEEK int64_t(604800) * PR_USEC_PER_SEC
+#define OFFSET_ONE_DAY int64_t(86400) * PR_USEC_PER_SEC
+
+//Set server time or expiry time
+void
+SetTime(PRTime offsetTime,nsAutoCString& serverString,nsAutoCString& cookieString,bool expiry)
+{
+    char timeStringPreset[40];
+    PRTime CurrentTime = PR_Now();
+    PRTime SetCookieTime = CurrentTime + offsetTime;
+    PRTime SetExpiryTime;
+    if (expiry) {
+      SetExpiryTime = SetCookieTime - OFFSET_ONE_DAY;
+    } else {
+      SetExpiryTime = SetCookieTime + OFFSET_ONE_DAY;
+    }
+
+    // Set server time string
+    PRExplodedTime explodedTime;
+    PR_ExplodeTime(SetCookieTime , PR_GMTParameters, &explodedTime);
+    PR_FormatTimeUSEnglish(timeStringPreset, 40, "%c GMT", &explodedTime);
+    serverString.Assign(timeStringPreset);
+
+    // Set cookie string
+    PR_ExplodeTime(SetExpiryTime , PR_GMTParameters, &explodedTime);
+    PR_FormatTimeUSEnglish(timeStringPreset, 40, "%c GMT", &explodedTime);
+    cookieString.Replace(0, strlen("test=expiry; expires=") + strlen(timeStringPreset) + 1, "test=expiry; expires=");
+    cookieString.Append(timeStringPreset);
+}
+
 nsresult
 SetACookie(nsICookieService *aCookieService, const char *aSpec1, const char *aSpec2, const char* aCookieString, const char *aServerTime)
 {
@@ -463,8 +493,29 @@ main(int32_t argc, char *argv[])
       GetACookie(cookieService, "http://expireme.org/", nullptr, getter_Copies(cookie));
       rv[15] = CheckResult(cookie.get(), MUST_BE_NULL);
 
-      allTestsPassed = PrintResult(rv, 16) && allTestsPassed;
+      nsAutoCString ServerTime;
+      nsAutoCString CookieString;
 
+      SetTime(-OFFSET_ONE_WEEK, ServerTime, CookieString, true);
+      SetACookie(cookieService, "http://expireme.org/", nullptr, CookieString.get(), ServerTime.get());
+      GetACookie(cookieService, "http://expireme.org/", nullptr, getter_Copies(cookie));
+      rv[16] = CheckResult(cookie.get(), MUST_BE_NULL);
+      // Set server time earlier than client time for one year + one day, and expirty time earlier than server time for one day.
+      SetTime(-(OFFSET_ONE_DAY + OFFSET_ONE_WEEK), ServerTime, CookieString, false);
+      SetACookie(cookieService, "http://expireme.org/", nullptr, CookieString.get(), ServerTime.get());
+      GetACookie(cookieService, "http://expireme.org/", nullptr, getter_Copies(cookie));
+      rv[17] = CheckResult(cookie.get(), MUST_BE_NULL);
+      // Set server time later than client time for one year, and expiry time later than server time for one day.
+      SetTime(OFFSET_ONE_WEEK, ServerTime, CookieString, false);
+      SetACookie(cookieService, "http://expireme.org/", nullptr, CookieString.get(), ServerTime.get());
+      GetACookie(cookieService, "http://expireme.org/", nullptr, getter_Copies(cookie));
+      rv[18] = CheckResult(cookie.get(), MUST_EQUAL, "test=expiry");
+      // Set server time later than client time for one year + one day, and expiry time earlier than server time for one day.
+      SetTime((OFFSET_ONE_DAY + OFFSET_ONE_WEEK), ServerTime, CookieString, true);
+      SetACookie(cookieService, "http://expireme.org/", nullptr, CookieString.get(), ServerTime.get());
+      GetACookie(cookieService, "http://expireme.org/", nullptr, getter_Copies(cookie));
+      rv[19] = CheckResult(cookie.get(), MUST_EQUAL, "test=expiry");
+      allTestsPassed = PrintResult(rv, 20) && allTestsPassed;
 
       // *** multiple cookie tests
       sBuffer = PR_sprintf_append(sBuffer, "*** Beginning multiple cookie tests...\n");
@@ -588,6 +639,52 @@ main(int32_t argc, char *argv[])
       rv[8] = CheckResult(cookie.get(), MUST_EQUAL, "test=not-httponly");
 
       allTestsPassed = PrintResult(rv, 9) && allTestsPassed;
+
+
+      // *** Cookie prefix tests
+      sBuffer = PR_sprintf_append(sBuffer, "*** Beginning cookie prefix tests...\n");
+
+      // prefixed cookies can't be set from insecure HTTP
+      SetACookie(cookieService, "http://prefixed.test/", nullptr, "__Secure-test1=test", nullptr);
+      SetACookie(cookieService, "http://prefixed.test/", nullptr, "__Secure-test2=test; secure", nullptr);
+      SetACookie(cookieService, "http://prefixed.test/", nullptr, "__Host-test1=test", nullptr);
+      SetACookie(cookieService, "http://prefixed.test/", nullptr, "__Host-test2=test; secure", nullptr);
+      GetACookie(cookieService, "http://prefixed.test/", nullptr, getter_Copies(cookie));
+      rv[0] = CheckResult(cookie.get(), MUST_BE_NULL);
+
+      // prefixed cookies won't be set without the secure flag
+      SetACookie(cookieService, "https://prefixed.test/", nullptr, "__Secure-test=test", nullptr);
+      SetACookie(cookieService, "https://prefixed.test/", nullptr, "__Host-test=test", nullptr);
+      GetACookie(cookieService, "https://prefixed.test/", nullptr, getter_Copies(cookie));
+      rv[1] = CheckResult(cookie.get(), MUST_BE_NULL);
+
+      // prefixed cookies can be set when done correctly
+      SetACookie(cookieService, "https://prefixed.test/", nullptr, "__Secure-test=test; secure", nullptr);
+      SetACookie(cookieService, "https://prefixed.test/", nullptr, "__Host-test=test; secure", nullptr);
+      GetACookie(cookieService, "https://prefixed.test/", nullptr, getter_Copies(cookie));
+      rv[2] = CheckResult(cookie.get(), MUST_CONTAIN, "__Secure-test=test");
+      rv[3] = CheckResult(cookie.get(), MUST_CONTAIN, "__Host-test=test");
+
+      // but when set must not be returned to the host insecurely
+      GetACookie(cookieService, "http://prefixed.test/", nullptr, getter_Copies(cookie));
+      rv[4] = CheckResult(cookie.get(), MUST_BE_NULL);
+
+      // Host-prefixed cookies cannot specify a domain
+      SetACookie(cookieService, "https://host.prefixed.test/", nullptr, "__Host-a=test; secure; domain=prefixed.test", nullptr);
+      SetACookie(cookieService, "https://host.prefixed.test/", nullptr, "__Host-b=test; secure; domain=.prefixed.test", nullptr);
+      SetACookie(cookieService, "https://host.prefixed.test/", nullptr, "__Host-c=test; secure; domain=host.prefixed.test", nullptr);
+      SetACookie(cookieService, "https://host.prefixed.test/", nullptr, "__Host-d=test; secure; domain=.host.prefixed.test", nullptr);
+      GetACookie(cookieService, "https://host.prefixed.test/", nullptr, getter_Copies(cookie));
+      rv[5] = CheckResult(cookie.get(), MUST_BE_NULL);
+
+      // Host-prefixed cookies can only have a path of "/"
+      SetACookie(cookieService, "https://host.prefixed.test/some/path", nullptr, "__Host-e=test; secure", nullptr);
+      SetACookie(cookieService, "https://host.prefixed.test/some/path", nullptr, "__Host-f=test; secure; path=/", nullptr);
+      SetACookie(cookieService, "https://host.prefixed.test/some/path", nullptr, "__Host-g=test; secure; path=/some", nullptr);
+      GetACookie(cookieService, "https://host.prefixed.test/", nullptr, getter_Copies(cookie));
+      rv[6] = CheckResult(cookie.get(), MUST_EQUAL, "__Host-f=test");
+
+      allTestsPassed = PrintResult(rv, 7) && allTestsPassed;
 
 
       // *** nsICookieManager{2} interface tests
@@ -748,5 +845,8 @@ main(int32_t argc, char *argv[])
 // Stubs to make this test happy
 
 mozilla::dom::OriginAttributesDictionary::OriginAttributesDictionary()
-  : mAppId(0), mInIsolatedMozBrowser(false), mUserContextId(0)
+  : mAppId(0),
+    mInIsolatedMozBrowser(false),
+    mPrivateBrowsingId(0),
+    mUserContextId(0)
 {}

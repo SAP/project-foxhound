@@ -24,8 +24,8 @@ namespace dom {
 #define NS_MENUITEM_TYPE(bits) ((bits) & ~( \
   NS_CHECKED_IS_TOGGLED | NS_ORIGINAL_CHECKED_VALUE))
 
-enum CmdType                                                                 
-{                                                                            
+enum CmdType : uint8_t
+{
   CMD_TYPE_MENUITEM = 1,
   CMD_TYPE_CHECKBOX,
   CMD_TYPE_RADIO
@@ -35,7 +35,7 @@ static const nsAttrValue::EnumTable kMenuItemTypeTable[] = {
   { "menuitem", CMD_TYPE_MENUITEM },
   { "checkbox", CMD_TYPE_CHECKBOX },
   { "radio", CMD_TYPE_RADIO },
-  { 0 }
+  { nullptr, 0 }
 };
 
 static const nsAttrValue::EnumTable* kMenuItemDefaultType =
@@ -416,7 +416,7 @@ HTMLMenuItemElement::WalkRadioGroup(Visitor* aVisitor)
     return;
   }
 
-  nsAttrInfo info1(GetAttrInfo(kNameSpaceID_None,
+  BorrowedAttrInfo info1(GetAttrInfo(kNameSpaceID_None,
                                nsGkAtoms::radiogroup));
   bool info1Empty = !info1.mValue || info1.mValue->IsEmptyString();
 
@@ -429,7 +429,7 @@ HTMLMenuItemElement::WalkRadioGroup(Visitor* aVisitor)
       continue;
     }
 
-    nsAttrInfo info2(menuitem->GetAttrInfo(kNameSpaceID_None,
+    BorrowedAttrInfo info2(menuitem->GetAttrInfo(kNameSpaceID_None,
                                            nsGkAtoms::radiogroup));
     bool info2Empty = !info2.mValue || info2.mValue->IsEmptyString();
 

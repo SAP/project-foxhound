@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -17,7 +17,7 @@ else:
 
 if CONFIG['OS_TARGET'] == 'Android' and CONFIG['MOZ_ANDROID_CXX_STL'] == 'mozstlport':
     DIRS += ['stlport']
-    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android' and CONFIG['ENABLE_INTL_API']:
+    if CONFIG['ENABLE_INTL_API']:
         DIRS += ['gabi++']
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
@@ -100,4 +100,11 @@ if CONFIG['MOZ_VALGRIND']:
         'valgrind/cross-architecture.sup',
         'valgrind/i386-redhat-linux-gnu.sup',
         'valgrind/x86_64-redhat-linux-gnu.sup',
+    ]
+
+if CONFIG['MOZ_ARTIFACT_BUILDS']:
+    # Ensure a pre-built interfaces.xpt installed to the objdir by the artifact
+    # code is included by the top-level chrome.manifest.
+    EXTRA_COMPONENTS += [
+        'prebuilt-interfaces.manifest',
     ]

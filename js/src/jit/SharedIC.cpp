@@ -10,6 +10,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/SizePrintfMacros.h"
+#include "mozilla/Sprintf.h"
 
 #include "jslibmath.h"
 #include "jstypes.h"
@@ -47,7 +48,7 @@ FallbackICSpew(JSContext* cx, ICFallbackStub* stub, const char* fmt, ...)
         char fmtbuf[100];
         va_list args;
         va_start(args, fmt);
-        vsnprintf(fmtbuf, 100, fmt, args);
+        (void) VsprintfLiteral(fmtbuf, fmt, args);
         va_end(args);
 
         JitSpew(JitSpew_BaselineICFallback,
@@ -72,7 +73,7 @@ TypeFallbackICSpew(JSContext* cx, ICTypeMonitor_Fallback* stub, const char* fmt,
         char fmtbuf[100];
         va_list args;
         va_start(args, fmt);
-        vsnprintf(fmtbuf, 100, fmt, args);
+        (void) VsprintfLiteral(fmtbuf, fmt, args);
         va_end(args);
 
         JitSpew(JitSpew_BaselineICFallback,
@@ -95,7 +96,20 @@ ICEntry::fallbackStub() const
 }
 
 void
-ICEntry::trace(JSTracer* trc)
+IonICEntry::trace(JSTracer* trc)
+{
+    TraceManuallyBarrieredEdge(trc, &script_, "IonICEntry::script_");
+    traceEntry(trc);
+}
+
+void
+BaselineICEntry::trace(JSTracer* trc)
+{
+    traceEntry(trc);
+}
+
+void
+ICEntry::traceEntry(JSTracer* trc)
 {
     if (!hasStub())
         return;
@@ -373,26 +387,26 @@ ICStub::trace(JSTracer* trc)
         TraceEdge(trc, &globalStub->globalShape(), "baseline-global-stub-globalshape");
         break;
       }
-      case ICStub::GetName_Scope0:
-        static_cast<ICGetName_Scope<0>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env0:
+        static_cast<ICGetName_Env<0>*>(this)->traceEnvironments(trc);
         break;
-      case ICStub::GetName_Scope1:
-        static_cast<ICGetName_Scope<1>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env1:
+        static_cast<ICGetName_Env<1>*>(this)->traceEnvironments(trc);
         break;
-      case ICStub::GetName_Scope2:
-        static_cast<ICGetName_Scope<2>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env2:
+        static_cast<ICGetName_Env<2>*>(this)->traceEnvironments(trc);
         break;
-      case ICStub::GetName_Scope3:
-        static_cast<ICGetName_Scope<3>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env3:
+        static_cast<ICGetName_Env<3>*>(this)->traceEnvironments(trc);
         break;
-      case ICStub::GetName_Scope4:
-        static_cast<ICGetName_Scope<4>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env4:
+        static_cast<ICGetName_Env<4>*>(this)->traceEnvironments(trc);
         break;
-      case ICStub::GetName_Scope5:
-        static_cast<ICGetName_Scope<5>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env5:
+        static_cast<ICGetName_Env<5>*>(this)->traceEnvironments(trc);
         break;
-      case ICStub::GetName_Scope6:
-        static_cast<ICGetName_Scope<6>*>(this)->traceScopes(trc);
+      case ICStub::GetName_Env6:
+        static_cast<ICGetName_Env<6>*>(this)->traceEnvironments(trc);
         break;
       case ICStub::GetIntrinsic_Constant: {
         ICGetIntrinsic_Constant* constantStub = toGetIntrinsic_Constant();
@@ -829,12 +843,12 @@ ICStubCompiler::PushStubPayload(MacroAssembler& masm, Register scratch)
     masm.adjustFrame(sizeof(intptr_t));
 }
 
-bool
+void
 ICStubCompiler::emitPostWriteBarrierSlot(MacroAssembler& masm, Register obj, ValueOperand val,
                                          Register scratch, LiveGeneralRegisterSet saveRegs)
 {
     Label skipBarrier;
-    masm.branchPtrInNurseryRange(Assembler::Equal, obj, scratch, &skipBarrier);
+    masm.branchPtrInNurseryChunk(Assembler::Equal, obj, scratch, &skipBarrier);
     masm.branchValueIsNurseryObject(Assembler::NotEqual, val, scratch, &skipBarrier);
 
     // void PostWriteBarrier(JSRuntime* rt, JSObject* obj);
@@ -851,7 +865,6 @@ ICStubCompiler::emitPostWriteBarrierSlot(MacroAssembler& masm, Register obj, Val
     masm.PopRegsInMask(saveRegs);
 
     masm.bind(&skipBarrier);
-    return true;
 }
 
 SharedStubInfo::SharedStubInfo(JSContext* cx, void* payload, ICEntry* icEntry)
@@ -1106,7 +1119,8 @@ DoBinaryArithFallback(JSContext* cx, void* payload, ICBinaryArith_Fallback* stub
 typedef bool (*DoBinaryArithFallbackFn)(JSContext*, void*, ICBinaryArith_Fallback*,
                                         HandleValue, HandleValue, MutableHandleValue);
 static const VMFunction DoBinaryArithFallbackInfo =
-    FunctionInfo<DoBinaryArithFallbackFn>(DoBinaryArithFallback, TailCall, PopValues(2));
+    FunctionInfo<DoBinaryArithFallbackFn>(DoBinaryArithFallback, "DoBinaryArithFallback",
+                                          TailCall, PopValues(2));
 
 bool
 ICBinaryArith_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
@@ -1141,7 +1155,8 @@ DoConcatStrings(JSContext* cx, HandleString lhs, HandleString rhs, MutableHandle
 }
 
 typedef bool (*DoConcatStringsFn)(JSContext*, HandleString, HandleString, MutableHandleValue);
-static const VMFunction DoConcatStringsInfo = FunctionInfo<DoConcatStringsFn>(DoConcatStrings, TailCall);
+static const VMFunction DoConcatStringsInfo =
+    FunctionInfo<DoConcatStringsFn>(DoConcatStrings, "DoConcatStrings", TailCall);
 
 bool
 ICBinaryArith_StringConcat::Compiler::generateStubCode(MacroAssembler& masm)
@@ -1221,7 +1236,8 @@ DoConcatStringObject(JSContext* cx, bool lhsIsString, HandleValue lhs, HandleVal
 typedef bool (*DoConcatStringObjectFn)(JSContext*, bool lhsIsString, HandleValue, HandleValue,
                                        MutableHandleValue);
 static const VMFunction DoConcatStringObjectInfo =
-    FunctionInfo<DoConcatStringObjectFn>(DoConcatStringObject, TailCall, PopValues(2));
+    FunctionInfo<DoConcatStringObjectFn>(DoConcatStringObject, "DoConcatStringObject", TailCall,
+                                         PopValues(2));
 
 bool
 ICBinaryArith_StringObjectConcat::Compiler::generateStubCode(MacroAssembler& masm)
@@ -1396,7 +1412,7 @@ ICBinaryArith_DoubleWithInt32::Compiler::generateStubCode(MacroAssembler& masm)
     {
         Label doneTruncate;
         Label truncateABICall;
-        masm.branchTruncateDouble(FloatReg0, scratchReg, &truncateABICall);
+        masm.branchTruncateDoubleMaybeModUint32(FloatReg0, scratchReg, &truncateABICall);
         masm.jump(&doneTruncate);
 
         masm.bind(&truncateABICall);
@@ -1404,7 +1420,7 @@ ICBinaryArith_DoubleWithInt32::Compiler::generateStubCode(MacroAssembler& masm)
         masm.setupUnalignedABICall(scratchReg);
         masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
         masm.callWithABI(mozilla::BitwiseCast<void*, int32_t(*)(double)>(JS::ToInt32));
-        masm.storeCallResult(scratchReg);
+        masm.storeCallWordResult(scratchReg);
         masm.pop(intReg);
 
         masm.bind(&doneTruncate);
@@ -1509,7 +1525,8 @@ DoUnaryArithFallback(JSContext* cx, void* payload, ICUnaryArith_Fallback* stub_,
 typedef bool (*DoUnaryArithFallbackFn)(JSContext*, void*, ICUnaryArith_Fallback*,
                                        HandleValue, MutableHandleValue);
 static const VMFunction DoUnaryArithFallbackInfo =
-    FunctionInfo<DoUnaryArithFallbackFn>(DoUnaryArithFallback, TailCall, PopValues(1));
+    FunctionInfo<DoUnaryArithFallbackFn>(DoUnaryArithFallback, "DoUnaryArithFallback", TailCall,
+                                         PopValues(1));
 
 bool
 ICUnaryArith_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
@@ -1547,14 +1564,14 @@ ICUnaryArith_Double::Compiler::generateStubCode(MacroAssembler& masm)
 
         Label doneTruncate;
         Label truncateABICall;
-        masm.branchTruncateDouble(FloatReg0, scratchReg, &truncateABICall);
+        masm.branchTruncateDoubleMaybeModUint32(FloatReg0, scratchReg, &truncateABICall);
         masm.jump(&doneTruncate);
 
         masm.bind(&truncateABICall);
         masm.setupUnalignedABICall(scratchReg);
         masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
         masm.callWithABI(BitwiseCast<void*, int32_t(*)(double)>(JS::ToInt32));
-        masm.storeCallResult(scratchReg);
+        masm.storeCallWordResult(scratchReg);
 
         masm.bind(&doneTruncate);
         masm.not32(scratchReg);
@@ -1770,7 +1787,8 @@ DoCompareFallback(JSContext* cx, void* payload, ICCompare_Fallback* stub_, Handl
 typedef bool (*DoCompareFallbackFn)(JSContext*, void*, ICCompare_Fallback*,
                                     HandleValue, HandleValue, MutableHandleValue);
 static const VMFunction DoCompareFallbackInfo =
-    FunctionInfo<DoCompareFallbackFn>(DoCompareFallback, TailCall, PopValues(2));
+    FunctionInfo<DoCompareFallbackFn>(DoCompareFallback, "DoCompareFallback", TailCall,
+                                      PopValues(2));
 
 bool
 ICCompare_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
@@ -2294,6 +2312,14 @@ IsCacheableGetPropCall(JSContext* cx, JSObject* obj, JSObject* holder, Shape* sh
         return false;
 
     JSFunction* func = &shape->getterObject()->as<JSFunction>();
+    if (IsWindow(obj)) {
+        if (!func->isNative())
+            return false;
+
+        if (!func->jitInfo() || func->jitInfo()->needsOuterizedThisObject())
+            return false;
+    }
+
     if (func->isNative()) {
         *isScripted = false;
         return true;
@@ -2345,7 +2371,7 @@ UpdateExistingGetPropCallStubs(ICFallbackStub* fallbackStub,
                 MOZ_ASSERT(getPropStub->holderShape() != holder->lastProperty() ||
                            !getPropStub->receiverGuard().matches(receiverGuard) ||
                            getPropStub->toGetProp_CallNativeGlobal()->globalShape() !=
-                           receiver->as<ClonedBlockObject>().global().lastProperty(),
+                           receiver->as<LexicalEnvironmentObject>().global().lastProperty(),
                            "Why didn't we end up using this stub?");
 
                 // We want to update the holder shape to match the new one no
@@ -2360,7 +2386,7 @@ UpdateExistingGetPropCallStubs(ICFallbackStub* fallbackStub,
                     ICGetProp_CallNativeGlobal* globalStub =
                         getPropStub->toGetProp_CallNativeGlobal();
                     globalStub->globalShape() =
-                        receiver->as<ClonedBlockObject>().global().lastProperty();
+                        receiver->as<LexicalEnvironmentObject>().global().lastProperty();
                 }
 
                 if (getPropStub->receiverGuard().matches(receiverGuard))
@@ -2705,7 +2731,7 @@ DoGetPropFallback(JSContext* cx, void* payload, ICGetProp_Fallback* stub_,
         attached = true;
     }
 
-    if (!attached) {
+    if (!attached && !JitOptions.disableCacheIR) {
         mozilla::Maybe<CacheIRWriter> writer;
         GetPropIRGenerator gen(cx, pc, val, name, res);
         if (!gen.tryAttachStub(writer))
@@ -2777,7 +2803,8 @@ DoGetPropFallback(JSContext* cx, void* payload, ICGetProp_Fallback* stub_,
 typedef bool (*DoGetPropFallbackFn)(JSContext*, void*, ICGetProp_Fallback*,
                                     MutableHandleValue, MutableHandleValue);
 static const VMFunction DoGetPropFallbackInfo =
-    FunctionInfo<DoGetPropFallbackFn>(DoGetPropFallback, TailCall, PopValues(1));
+    FunctionInfo<DoGetPropFallbackFn>(DoGetPropFallback, "DoGetPropFallback", TailCall,
+                                      PopValues(1));
 
 bool
 ICGetProp_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
@@ -2879,7 +2906,7 @@ ICGetProp_Primitive::Compiler::generateStubCode(MacroAssembler& masm)
     masm.movePtr(ImmGCPtr(prototype_.get()), holderReg);
 
     Address shapeAddr(ICStubReg, ICGetProp_Primitive::offsetOfProtoShape());
-    masm.loadPtr(Address(holderReg, JSObject::offsetOfShape()), scratchReg);
+    masm.loadPtr(Address(holderReg, ShapedObject::offsetOfShape()), scratchReg);
     masm.branchPtr(Assembler::NotEqual, shapeAddr, scratchReg, &failure);
 
     if (!isFixedSlot_)
@@ -2906,7 +2933,7 @@ ICGetPropNativeCompiler::getStub(ICStubSpace* space)
       case ICStub::GetName_Global: {
         MOZ_ASSERT(obj_ != holder_);
         Shape* holderShape = holder_->as<NativeObject>().lastProperty();
-        Shape* globalShape = obj_->as<ClonedBlockObject>().global().lastProperty();
+        Shape* globalShape = obj_->as<LexicalEnvironmentObject>().global().lastProperty();
         return newStub<ICGetName_Global>(space, getStubCode(), firstMonitorStub_, guard,
                                          offset_, holder_, holderShape, globalShape);
       }
@@ -2960,7 +2987,7 @@ GuardGlobalObject(MacroAssembler& masm, HandleObject holder, Register globalLexi
 {
     if (holder->is<GlobalObject>())
         return;
-    masm.extractObject(Address(globalLexicalReg, ScopeObject::offsetOfEnclosingScope()),
+    masm.extractObject(Address(globalLexicalReg, EnvironmentObject::offsetOfEnclosingEnvironment()),
                        holderReg);
     masm.loadPtr(Address(ICStubReg, globalShapeOffset), scratch);
     masm.branchTestObjShape(Assembler::NotEqual, holderReg, scratch, failure);
@@ -2996,7 +3023,8 @@ ICGetPropNativeCompiler::generateStubCode(MacroAssembler& masm)
 
     // If we are generating a non-lexical GETGNAME stub, we must also
     // guard on the shape of the GlobalObject.
-    MOZ_ASSERT(obj_->is<ClonedBlockObject>() && obj_->as<ClonedBlockObject>().isGlobal());
+    MOZ_ASSERT(obj_->is<LexicalEnvironmentObject>() &&
+               obj_->as<LexicalEnvironmentObject>().isGlobal());
     GuardGlobalObject(masm, holder_, objReg, holderReg, scratch,
                       ICGetName_Global::offsetOfGlobalShape(), &failure);
 
@@ -3160,7 +3188,7 @@ DoCallNativeGetter(JSContext* cx, HandleFunction callee, HandleObject obj,
 
 typedef bool (*DoCallNativeGetterFn)(JSContext*, HandleFunction, HandleObject, MutableHandleValue);
 static const VMFunction DoCallNativeGetterInfo =
-    FunctionInfo<DoCallNativeGetterFn>(DoCallNativeGetter);
+    FunctionInfo<DoCallNativeGetterFn>(DoCallNativeGetter, "DoCallNativeGetter");
 
 bool
 ICGetPropCallNativeCompiler::generateStubCode(MacroAssembler& masm)
@@ -3197,8 +3225,8 @@ ICGetPropCallNativeCompiler::generateStubCode(MacroAssembler& masm)
         // If we are generating a non-lexical GETGNAME stub, we must also
         // guard on the shape of the GlobalObject.
         if (kind == ICStub::GetProp_CallNativeGlobal) {
-            MOZ_ASSERT(receiver_->is<ClonedBlockObject>() &&
-                       receiver_->as<ClonedBlockObject>().isGlobal());
+            MOZ_ASSERT(receiver_->is<LexicalEnvironmentObject>() &&
+                       receiver_->as<LexicalEnvironmentObject>().isGlobal());
             GuardGlobalObject(masm, holder_, objReg, holderReg, scratch,
                               ICGetProp_CallNativeGlobal::offsetOfGlobalShape(), &failure);
         }
@@ -3228,7 +3256,8 @@ ICGetPropCallNativeCompiler::generateStubCode(MacroAssembler& masm)
     // If we're calling a getter on the global, inline the logic for the
     // 'this' hook on the global lexical scope and manually push the global.
     if (kind == ICStub::GetProp_CallNativeGlobal)
-        masm.extractObject(Address(objReg, ScopeObject::offsetOfEnclosingScope()), objReg);
+        masm.extractObject(Address(objReg, EnvironmentObject::offsetOfEnclosingEnvironment()),
+                           objReg);
 
     // Push args for vm call.
     masm.Push(objReg);
@@ -3265,7 +3294,7 @@ ICGetPropCallNativeCompiler::getStub(ICStubSpace* space)
                                              getter_, pcOffset_);
 
       case ICStub::GetProp_CallNativeGlobal: {
-        Shape* globalShape = receiver_->as<ClonedBlockObject>().global().lastProperty();
+        Shape* globalShape = receiver_->as<LexicalEnvironmentObject>().global().lastProperty();
         return newStub<ICGetProp_CallNativeGlobal>(space, getStubCode(), firstMonitorStub_,
                                                    guard, holder_, holderShape, globalShape,
                                                    getter_, pcOffset_);
@@ -3485,7 +3514,7 @@ ProxyGet(JSContext* cx, HandleObject proxy, HandlePropertyName name, MutableHand
 
 typedef bool (*ProxyGetFn)(JSContext* cx, HandleObject proxy, HandlePropertyName name,
                            MutableHandleValue vp);
-static const VMFunction ProxyGetInfo = FunctionInfo<ProxyGetFn>(ProxyGet);
+static const VMFunction ProxyGetInfo = FunctionInfo<ProxyGetFn>(ProxyGet, "ProxyGet");
 
 bool
 ICGetProp_DOMProxyShadowed::Compiler::generateStubCode(MacroAssembler& masm)
@@ -3613,7 +3642,8 @@ DoGetPropGeneric(JSContext* cx, void* payload, ICGetProp_Generic* stub,
 }
 
 typedef bool (*DoGetPropGenericFn)(JSContext*, void*, ICGetProp_Generic*, MutableHandleValue, MutableHandleValue);
-static const VMFunction DoGetPropGenericInfo = FunctionInfo<DoGetPropGenericFn>(DoGetPropGeneric);
+static const VMFunction DoGetPropGenericInfo =
+    FunctionInfo<DoGetPropGenericFn>(DoGetPropGeneric, "DoGetPropGeneric");
 
 bool
 ICGetProp_Generic::Compiler::generateStubCode(MacroAssembler& masm)
@@ -4019,7 +4049,8 @@ DoTypeMonitorFallback(JSContext* cx, void* payload, ICTypeMonitor_Fallback* stub
 typedef bool (*DoTypeMonitorFallbackFn)(JSContext*, void*, ICTypeMonitor_Fallback*,
                                         HandleValue, MutableHandleValue);
 static const VMFunction DoTypeMonitorFallbackInfo =
-    FunctionInfo<DoTypeMonitorFallbackFn>(DoTypeMonitorFallback, TailCall);
+    FunctionInfo<DoTypeMonitorFallbackFn>(DoTypeMonitorFallback, "DoTypeMonitorFallback",
+                                          TailCall);
 
 bool
 ICTypeMonitor_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
@@ -4083,10 +4114,14 @@ static void
 MaybeWorkAroundAmdBug(MacroAssembler& masm)
 {
     // Attempt to work around an AMD bug (see bug 1034706 and bug 1281759), by
-    // inserting a 4-byte NOP.
+    // inserting 32-bytes of NOPs.
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-    if (CPUInfo::NeedAmdBugWorkaround())
-        masm.nop(4);
+    if (CPUInfo::NeedAmdBugWorkaround()) {
+        masm.nop(9);
+        masm.nop(9);
+        masm.nop(9);
+        masm.nop(5);
+    }
 #endif
 }
 
@@ -4263,7 +4298,8 @@ DoNewArray(JSContext* cx, void* payload, ICNewArray_Fallback* stub, uint32_t len
 
 typedef bool(*DoNewArrayFn)(JSContext*, void*, ICNewArray_Fallback*, uint32_t,
                             MutableHandleValue);
-static const VMFunction DoNewArrayInfo = FunctionInfo<DoNewArrayFn>(DoNewArray, TailCall);
+static const VMFunction DoNewArrayInfo =
+    FunctionInfo<DoNewArrayFn>(DoNewArray, "DoNewArray", TailCall);
 
 bool
 ICNewArray_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
@@ -4365,7 +4401,8 @@ DoNewObject(JSContext* cx, void* payload, ICNewObject_Fallback* stub, MutableHan
 }
 
 typedef bool(*DoNewObjectFn)(JSContext*, void*, ICNewObject_Fallback*, MutableHandleValue);
-static const VMFunction DoNewObjectInfo = FunctionInfo<DoNewObjectFn>(DoNewObject, TailCall);
+static const VMFunction DoNewObjectInfo =
+    FunctionInfo<DoNewObjectFn>(DoNewObject, "DoNewObject", TailCall);
 
 bool
 ICNewObject_Fallback::Compiler::generateStubCode(MacroAssembler& masm)

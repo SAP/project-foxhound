@@ -13,7 +13,7 @@ if (!cachedLeftPaneFolderIdGetter && typeof(getter) == "function") {
 }
 
 // ...And restore it when test ends.
-registerCleanupFunction(function(){
+registerCleanupFunction(function() {
   let getter = PlacesUIUtils.__lookupGetter__("leftPaneFolderId");
   if (cachedLeftPaneFolderIdGetter && typeof(getter) != "function") {
     PlacesUIUtils.__defineGetter__("leftPaneFolderId", cachedLeftPaneFolderIdGetter);
@@ -136,7 +136,7 @@ function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
   var y = rect.y + rect.height / 2;
   // Simulate the click.
   EventUtils.synthesizeMouse(aTree.body, x, y, aOptions || {},
-                             aTree.ownerDocument.defaultView);
+                             aTree.ownerGlobal);
 }
 
 /**

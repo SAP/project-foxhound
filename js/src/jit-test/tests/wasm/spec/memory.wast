@@ -19,24 +19,14 @@
   (module (memory 1 2 (segment 0 "a") (segment 98304 "b")))
   "data segment does not fit memory"
 )
-(assert_invalid
-  (module (memory 1 2 (segment 0 "abc") (segment 0 "def")))
-  "data segment not disjoint and ordered"
-)
-(assert_invalid
-  (module (memory 1 2 (segment 3 "ab") (segment 0 "de")))
-  "data segment not disjoint and ordered"
-)
-(assert_invalid
-  (module (memory 1 2 (segment 0 "a") (segment 2 "b") (segment 1 "c")))
-  "data segment not disjoint and ordered"
-)
 
 ;; Test alignment annotation rules
-(module (memory 0) (func (i32.load8_u align=2 (i32.const 0))))
-(module (memory 0) (func (i32.load16_u align=4 (i32.const 0))))
-(module (memory 0) (func (i32.load align=8 (i32.const 0))))
-(module (memory 0) (func (f32.load align=8 (i32.const 0))))
+;; TODO Tests being debated on the spec repo.
+;; https://github.com/WebAssembly/spec/issues/217
+;;(module (memory 0) (func (i32.load8_u align=2 (i32.const 0))))
+;;(module (memory 0) (func (i32.load16_u align=4 (i32.const 0))))
+;;(module (memory 0) (func (i32.load align=8 (i32.const 0))))
+;;(module (memory 0) (func (f32.load align=8 (i32.const 0))))
 
 (assert_invalid
   (module (memory 0) (func (i64.load align=0 (i32.const 0))))

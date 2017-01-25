@@ -6,15 +6,16 @@
 
 #include "ExtendedValidation.h"
 
+#include "base64.h"
 #include "cert.h"
 #include "certdb.h"
-#include "base64.h"
 #include "hasht.h"
-#include "pkix/pkixtypes.h"
+#include "mozilla/ArrayUtils.h"
 #include "pk11pub.h"
-#include "secerr.h"
+#include "pkix/pkixtypes.h"
 #include "prerror.h"
 #include "prinit.h"
+#include "secerr.h"
 
 extern mozilla::LazyLogModule gPIPNSSLog;
 
@@ -30,7 +31,7 @@ struct nsMyTrustedEVInfo
   const unsigned char ev_root_sha256_fingerprint[SHA256_LENGTH];
   const char* issuer_base64;
   const char* serial_base64;
-  CERTCertificate* cert;
+  mozilla::UniqueCERTCertificate cert;
 };
 
 // HOWTO enable additional CA root certificates for EV:
@@ -1174,19 +1175,97 @@ static struct nsMyTrustedEVInfo myTrustedEVInfos[] = {
     "drEgUnTwhYdGs/gjGvbCwA==",
     nullptr
   },
+  {
+    // CN=Certplus Root CA G1,O=Certplus,C=FR
+    "1.3.6.1.4.1.22234.3.5.3.1",
+    "DocuSign EV OID 1",
+    SEC_OID_UNKNOWN,
+    { 0x15, 0x2A, 0x40, 0x2B, 0xFC, 0xDF, 0x2C, 0xD5, 0x48, 0x05, 0x4D,
+      0x22, 0x75, 0xB3, 0x9C, 0x7F, 0xCA, 0x3E, 0xC0, 0x97, 0x80, 0x78,
+      0xB0, 0xF0, 0xEA, 0x76, 0xE5, 0x61, 0xA6, 0xC7, 0x43, 0x3E },
+    "MD4xCzAJBgNVBAYTAkZSMREwDwYDVQQKDAhDZXJ0cGx1czEcMBoGA1UEAwwTQ2Vy"
+    "dHBsdXMgUm9vdCBDQSBHMQ==",
+    "ESBVg+QtPlRWhS2DN7cs3EYR",
+    nullptr
+  },
+  {
+    // CN=Certplus Root CA G2,O=Certplus,C=FR
+    "1.3.6.1.4.1.22234.3.5.3.2",
+    "DocuSign EV OID 2",
+    SEC_OID_UNKNOWN,
+    { 0x6C, 0xC0, 0x50, 0x41, 0xE6, 0x44, 0x5E, 0x74, 0x69, 0x6C, 0x4C,
+      0xFB, 0xC9, 0xF8, 0x0F, 0x54, 0x3B, 0x7E, 0xAB, 0xBB, 0x44, 0xB4,
+      0xCE, 0x6F, 0x78, 0x7C, 0x6A, 0x99, 0x71, 0xC4, 0x2F, 0x17 },
+    "MD4xCzAJBgNVBAYTAkZSMREwDwYDVQQKDAhDZXJ0cGx1czEcMBoGA1UEAwwTQ2Vy"
+    "dHBsdXMgUm9vdCBDQSBHMg==",
+    "ESDZkc6uo+jF5//pAq/Pc7xV",
+    nullptr
+  },
+  {
+    // CN=OpenTrust Root CA G1,O=OpenTrust,C=FR
+    "1.3.6.1.4.1.22234.2.14.3.11",
+    "DocuSign EV OID 3",
+    SEC_OID_UNKNOWN,
+    { 0x56, 0xC7, 0x71, 0x28, 0xD9, 0x8C, 0x18, 0xD9, 0x1B, 0x4C, 0xFD,
+      0xFF, 0xBC, 0x25, 0xEE, 0x91, 0x03, 0xD4, 0x75, 0x8E, 0xA2, 0xAB,
+      0xAD, 0x82, 0x6A, 0x90, 0xF3, 0x45, 0x7D, 0x46, 0x0E, 0xB4 },
+    "MEAxCzAJBgNVBAYTAkZSMRIwEAYDVQQKDAlPcGVuVHJ1c3QxHTAbBgNVBAMMFE9w"
+    "ZW5UcnVzdCBSb290IENBIEcx",
+    "ESCzkFU5fX82bWTCp59rY45n",
+    nullptr
+  },
+  {
+    // CN=OpenTrust Root CA G2,O=OpenTrust,C=FR
+    "1.3.6.1.4.1.22234.2.14.3.11",
+    "DocuSign EV OID 3",
+    SEC_OID_UNKNOWN,
+    { 0x27, 0x99, 0x58, 0x29, 0xFE, 0x6A, 0x75, 0x15, 0xC1, 0xBF, 0xE8,
+      0x48, 0xF9, 0xC4, 0x76, 0x1D, 0xB1, 0x6C, 0x22, 0x59, 0x29, 0x25,
+      0x7B, 0xF4, 0x0D, 0x08, 0x94, 0xF2, 0x9E, 0xA8, 0xBA, 0xF2 },
+    "MEAxCzAJBgNVBAYTAkZSMRIwEAYDVQQKDAlPcGVuVHJ1c3QxHTAbBgNVBAMMFE9w"
+    "ZW5UcnVzdCBSb290IENBIEcy",
+    "ESChaRu/vbm9UpaPI+hIvyYR",
+    nullptr
+  },
+  {
+    // CN=OpenTrust Root CA G3,O=OpenTrust,C=FR
+    "1.3.6.1.4.1.22234.2.14.3.11",
+    "DocuSign EV OID 3",
+    SEC_OID_UNKNOWN,
+    { 0xB7, 0xC3, 0x62, 0x31, 0x70, 0x6E, 0x81, 0x07, 0x8C, 0x36, 0x7C,
+      0xB8, 0x96, 0x19, 0x8F, 0x1E, 0x32, 0x08, 0xDD, 0x92, 0x69, 0x49,
+      0xDD, 0x8F, 0x57, 0x09, 0xA4, 0x10, 0xF7, 0x5B, 0x62, 0x92 },
+    "MEAxCzAJBgNVBAYTAkZSMRIwEAYDVQQKDAlPcGVuVHJ1c3QxHTAbBgNVBAMMFE9w"
+    "ZW5UcnVzdCBSb290IENBIEcz",
+    "ESDm+Ez8JLC+BUCs2oMbNGA/",
+    nullptr
+  },
+  {
+    // CN=VeriSign Class 3 Public Primary Certification Authority - G4,OU="(c) 2007 VeriSign, Inc. - For authorized use only",OU=VeriSign Trust Network,O="VeriSign, Inc.",C=US
+    "2.16.840.1.113733.1.7.23.6",
+    "VeriSign EV OID",
+    SEC_OID_UNKNOWN,
+    { 0x69, 0xDD, 0xD7, 0xEA, 0x90, 0xBB, 0x57, 0xC9, 0x3E, 0x13, 0x5D,
+      0xC8, 0x5E, 0xA6, 0xFC, 0xD5, 0x48, 0x0B, 0x60, 0x32, 0x39, 0xBD,
+      0xC4, 0x54, 0xFC, 0x75, 0x8B, 0x2A, 0x26, 0xCF, 0x7F, 0x79 },
+    "MIHKMQswCQYDVQQGEwJVUzEXMBUGA1UEChMOVmVyaVNpZ24sIEluYy4xHzAdBgNV"
+    "BAsTFlZlcmlTaWduIFRydXN0IE5ldHdvcmsxOjA4BgNVBAsTMShjKSAyMDA3IFZl"
+    "cmlTaWduLCBJbmMuIC0gRm9yIGF1dGhvcml6ZWQgdXNlIG9ubHkxRTBDBgNVBAMT"
+    "PFZlcmlTaWduIENsYXNzIDMgUHVibGljIFByaW1hcnkgQ2VydGlmaWNhdGlvbiBB"
+    "dXRob3JpdHkgLSBHNA==",
+    "L4D+I4wOIg9IZxIokYessw==",
+    nullptr
+  },
 };
 
 static SECOidTag
-register_oid(const SECItem* oid_item, const char* oid_name)
+RegisterOID(const SECItem& oidItem, const char* oidName)
 {
-  if (!oid_item)
-    return SEC_OID_UNKNOWN;
-
   SECOidData od;
-  od.oid.len = oid_item->len;
-  od.oid.data = oid_item->data;
+  od.oid.len = oidItem.len;
+  od.oid.data = oidItem.data;
   od.offset = SEC_OID_UNKNOWN;
-  od.desc = oid_name;
+  od.desc = oidName;
   od.mechanism = CKM_INVALID_MECHANISM;
   od.supportedExtension = INVALID_CERT_EXTENSION;
   return SECOID_AddEntry(&od);
@@ -1195,8 +1274,7 @@ register_oid(const SECItem* oid_item, const char* oid_name)
 static bool
 isEVPolicy(SECOidTag policyOIDTag)
 {
-  for (size_t iEV = 0; iEV < PR_ARRAY_SIZE(myTrustedEVInfos); ++iEV) {
-    nsMyTrustedEVInfo& entry = myTrustedEVInfos[iEV];
+  for (const nsMyTrustedEVInfo& entry : myTrustedEVInfos) {
     if (policyOIDTag == entry.oid_tag) {
       return true;
     }
@@ -1208,7 +1286,7 @@ isEVPolicy(SECOidTag policyOIDTag)
 namespace mozilla { namespace psm {
 
 bool
-CertIsAuthoritativeForEVPolicy(const CERTCertificate* cert,
+CertIsAuthoritativeForEVPolicy(const UniqueCERTCertificate& cert,
                                const mozilla::pkix::CertPolicyId& policy)
 {
   PR_ASSERT(cert);
@@ -1216,9 +1294,8 @@ CertIsAuthoritativeForEVPolicy(const CERTCertificate* cert,
     return false;
   }
 
-  for (size_t iEV = 0; iEV < PR_ARRAY_SIZE(myTrustedEVInfos); ++iEV) {
-    nsMyTrustedEVInfo& entry = myTrustedEVInfos[iEV];
-    if (entry.cert && CERT_CompareCerts(cert, entry.cert)) {
+  for (const nsMyTrustedEVInfo& entry : myTrustedEVInfos) {
+    if (entry.cert && CERT_CompareCerts(cert.get(), entry.cert.get())) {
       const SECOidData* oidData = SECOID_FindOIDByTag(entry.oid_tag);
       if (oidData && oidData->oid.len == policy.numBytes &&
           !memcmp(oidData->oid.data, policy.bytes, policy.numBytes)) {
@@ -1233,31 +1310,31 @@ CertIsAuthoritativeForEVPolicy(const CERTCertificate* cert,
 static PRStatus
 IdentityInfoInit()
 {
-  for (size_t iEV = 0; iEV < PR_ARRAY_SIZE(myTrustedEVInfos); ++iEV) {
+  for (size_t iEV = 0; iEV < mozilla::ArrayLength(myTrustedEVInfos); ++iEV) {
     nsMyTrustedEVInfo& entry = myTrustedEVInfos[iEV];
 
-    SECStatus rv;
+    mozilla::ScopedAutoSECItem derIssuer;
+    SECStatus rv = ATOB_ConvertAsciiToItem(&derIssuer, entry.issuer_base64);
+    PR_ASSERT(rv == SECSuccess);
+    if (rv != SECSuccess) {
+      return PR_FAILURE;
+    }
+
+    mozilla::ScopedAutoSECItem serialNumber;
+    rv = ATOB_ConvertAsciiToItem(&serialNumber, entry.serial_base64);
+    PR_ASSERT(rv == SECSuccess);
+    if (rv != SECSuccess) {
+      return PR_FAILURE;
+    }
+
     CERTIssuerAndSN ias;
-
-    rv = ATOB_ConvertAsciiToItem(&ias.derIssuer, const_cast<char*>(entry.issuer_base64));
-    PR_ASSERT(rv == SECSuccess);
-    if (rv != SECSuccess) {
-      return PR_FAILURE;
-    }
-    rv = ATOB_ConvertAsciiToItem(&ias.serialNumber,
-                                 const_cast<char*>(entry.serial_base64));
-    PR_ASSERT(rv == SECSuccess);
-    if (rv != SECSuccess) {
-      SECITEM_FreeItem(&ias.derIssuer, false);
-      return PR_FAILURE;
-    }
-
+    ias.derIssuer.data = derIssuer.data;
+    ias.derIssuer.len = derIssuer.len;
+    ias.serialNumber.data = serialNumber.data;
+    ias.serialNumber.len = serialNumber.len;
     ias.serialNumber.type = siUnsignedInteger;
 
-    entry.cert = CERT_FindCertByIssuerAndSN(nullptr, &ias);
-
-    SECITEM_FreeItem(&ias.derIssuer, false);
-    SECITEM_FreeItem(&ias.serialNumber, false);
+    entry.cert = UniqueCERTCertificate(CERT_FindCertByIssuerAndSN(nullptr, &ias));
 
     // If an entry is missing in the NSS root database, it may be because the
     // root database is out of sync with what we expect (e.g. a different
@@ -1286,18 +1363,14 @@ IdentityInfoInit()
                           sizeof(certFingerprint));
       PR_ASSERT(same);
       if (same) {
-
-        SECItem ev_oid_item;
-        ev_oid_item.data = nullptr;
-        ev_oid_item.len = 0;
-        rv = SEC_StringToOID(nullptr, &ev_oid_item, entry.dotted_oid, 0);
+        mozilla::ScopedAutoSECItem evOIDItem;
+        rv = SEC_StringToOID(nullptr, &evOIDItem, entry.dotted_oid, 0);
         PR_ASSERT(rv == SECSuccess);
         if (rv == SECSuccess) {
-          entry.oid_tag = register_oid(&ev_oid_item, entry.oid_name);
+          entry.oid_tag = RegisterOID(evOIDItem, entry.oid_name);
           if (entry.oid_tag == SEC_OID_UNKNOWN) {
             rv = SECFailure;
           }
-          SECITEM_FreeItem(&ev_oid_item, false);
         }
       } else {
         PR_SetError(SEC_ERROR_BAD_DATA, 0);
@@ -1306,7 +1379,6 @@ IdentityInfoInit()
     }
 
     if (rv != SECSuccess) {
-      CERT_DestroyCertificate(entry.cert);
       entry.cert = nullptr;
       entry.oid_tag = SEC_OID_UNKNOWN;
       return PR_FAILURE;
@@ -1327,12 +1399,8 @@ EnsureIdentityInfoLoaded()
 void
 CleanupIdentityInfo()
 {
-  for (size_t iEV = 0; iEV < PR_ARRAY_SIZE(myTrustedEVInfos); ++iEV) {
-    nsMyTrustedEVInfo &entry = myTrustedEVInfos[iEV];
-    if (entry.cert) {
-      CERT_DestroyCertificate(entry.cert);
-      entry.cert = nullptr;
-    }
+  for (nsMyTrustedEVInfo& entry : myTrustedEVInfos) {
+    entry.cert = nullptr;
   }
 
   memset(&sIdentityInfoCallOnce, 0, sizeof(PRCallOnceType));

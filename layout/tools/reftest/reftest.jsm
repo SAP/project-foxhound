@@ -108,6 +108,7 @@ var gWindowUtils;
 
 var gSlowestTestTime = 0;
 var gSlowestTestURL;
+var gFailedUseWidgetLayers = false;
 
 var gDrawWindowFlags;
 
@@ -210,6 +211,12 @@ function FlushTestBuffer()
     }
   }
   gTestLog = [];
+}
+
+function LogWidgetLayersFailure()
+{
+  logger.error("USE_WIDGET_LAYERS disabled because the screen resolution is too low. This falls back to an alternate rendering path (that may not be representative) and is not implemented with e10s enabled.");
+  logger.error("Consider increasing your screen resolution, or adding '--disable-e10s' to your './mach reftest' command");
 }
 
 function AllocateCanvas()
@@ -635,8 +642,10 @@ function BuildConditionSandbox(aURL) {
     var gfxInfo = (NS_GFXINFO_CONTRACTID in CC) && CC[NS_GFXINFO_CONTRACTID].getService(CI.nsIGfxInfo);
     try {
       sandbox.d2d = gfxInfo.D2DEnabled;
+      sandbox.dwrite = gfxInfo.DWriteEnabled;
     } catch (e) {
       sandbox.d2d = false;
+      sandbox.dwrite = false;
     }
     var info = gfxInfo.getInfo();
     sandbox.azureCairo = info.AzureCanvasBackend == "cairo";
@@ -1388,6 +1397,9 @@ function DoneTests()
     logger.suiteEnd(extra={'results': gTestResults});
     logger.info("Slowest test took " + gSlowestTestTime + "ms (" + gSlowestTestURL + ")");
     logger.info("Total canvas count = " + gRecycledCanvases.length);
+    if (gFailedUseWidgetLayers) {
+        LogWidgetLayersFailure();
+    }
 
     function onStopped() {
         let appStartup = CC["@mozilla.org/toolkit/app-startup;1"].getService(CI.nsIAppStartup);
@@ -1449,7 +1461,8 @@ function DoDrawWindow(ctx, x, y, w, h)
         } else {
             // Output a special warning because we need to be able to detect
             // this whenever it happens.
-            logger.error("WARNING: USE_WIDGET_LAYERS disabled");
+            LogWidgetLayersFailure();
+            gFailedUseWidgetLayers = true;
         }
         logger.info("drawWindow flags = " + flagsStr +
                     "; window size = " + gContainingWindow.innerWidth + "," + gContainingWindow.innerHeight +
@@ -1690,19 +1703,27 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
                 var failureString = failures.join(", ");
                 logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1], failureString, null, extra);
             } else {
+                var message = "image comparison";
                 if (!test_passed && expected == EXPECTED_PASS ||
                     !test_passed && expected == EXPECTED_FUZZY ||
                     test_passed && expected == EXPECTED_FAIL) {
                     if (!equal) {
                         extra.max_difference = maxDifference.value;
                         extra.differences = differences;
+                        extra.reftest_screenshots = [
+                            {url:gURLs[0].identifier[0], screenshot: gCanvas1.toDataURL()},
+                            gURLs[0].identifier[1],
+                            {url:gURLs[0].identifier[1], screenshot: gCanvas2.toDataURL()}
+                        ];
                         extra.image1 = gCanvas1.toDataURL();
                         extra.image2 = gCanvas2.toDataURL();
+                        message += (", max difference: " + extra.max_difference +
+                                    ", number of differing pixels: " + differences);
                     } else {
                         extra.image1 = gCanvas1.toDataURL();
                     }
                 }
-                logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1], null, null, extra);
+                logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1], message, null, extra);
 
                 if (gURLs[0].prefSettings1.length == 0) {
                     UpdateCanvasCache(gURLs[0].url1, gCanvas1);

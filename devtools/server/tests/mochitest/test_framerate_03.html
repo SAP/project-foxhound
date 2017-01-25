@@ -31,7 +31,7 @@ window.onload = function() {
 
   SimpleTest.waitForExplicitFinish();
 
-  var {FramerateFront} = require("devtools/server/actors/framerate");
+  var {FramerateFront} = require("devtools/shared/fronts/framerate");
   var START_TICK = 2000;
   var STOP_TICK = 3000;
   var TOTAL_TIME = 5000;
@@ -70,7 +70,7 @@ window.onload = function() {
       is(typeof tick, "number", "All values should be numbers.");
     }
 
-    client.close(() => {
+    client.close().then(() => {
       DebuggerServer.destroy();
       SimpleTest.finish()
     });

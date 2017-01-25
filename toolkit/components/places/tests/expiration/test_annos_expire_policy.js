@@ -45,14 +45,14 @@ function add_old_anno(aIdentifier, aName, aValue, aExpirePolicy,
                       "WHERE item_id = :id " +
                       "ORDER BY dateAdded DESC LIMIT 1)";
   }
-  else if (aIdentifier instanceof Ci.nsIURI){
+  else if (aIdentifier instanceof Ci.nsIURI) {
     // Page annotation.
     as.setPageAnnotation(aIdentifier, aName, aValue, 0, aExpirePolicy);
     // Update dateAdded for the last added annotation.
     sql = "UPDATE moz_annos SET dateAdded = :expire_date, lastModified = :last_modified " +
           "WHERE id = (SELECT a.id FROM moz_annos a " +
                       "LEFT JOIN moz_places h on h.id = a.place_id " +
-                      "WHERE h.url = :id " +
+                      "WHERE h.url_hash = hash(:id) AND h.url = :id " +
                       "ORDER BY a.dateAdded DESC LIMIT 1)";
   }
   else

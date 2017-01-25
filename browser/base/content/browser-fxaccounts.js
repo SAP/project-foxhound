@@ -21,8 +21,9 @@ var gFxAccounts = {
     delete this.topics;
     return this.topics = [
       "weave:service:ready",
-      "weave:service:login:error",
+      "weave:service:login:change",
       "weave:service:setup-complete",
+      "weave:service:sync:error",
       "weave:ui:login:error",
       "fxa-migration:state-changed",
       this.FxAccountsCommon.ONLOGIN_NOTIFICATION,
@@ -76,6 +77,15 @@ var gFxAccounts = {
     // All other login failures are assumed to be transient and should go
     // away by themselves, so aren't reflected here.
     return Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED;
+  },
+
+  get sendTabToDeviceEnabled() {
+    return Services.prefs.getBoolPref("services.sync.sendTabToDevice.enabled");
+  },
+
+  get remoteClients() {
+    return Weave.Service.clientsEngine.remoteClients
+           .sort((a, b) => a.name.localeCompare(b.name));
   },
 
   init: function () {
@@ -229,7 +239,7 @@ var gFxAccounts = {
       this.panelUIFooter.removeAttribute("fxaprofileimage");
       this.panelUIAvatar.style.removeProperty("list-style-image");
       let showErrorBadge = false;
-      if (!this._inCustomizationMode && userData) {
+      if (userData) {
         // At this point we consider the user as logged-in (but still can be in an error state)
         if (this.loginFailed) {
           let tooltipDescription = this.strings.formatStringFromName("reconnectDescription", [userData.email], 1);
@@ -260,7 +270,7 @@ var gFxAccounts = {
     }
 
     let updateWithProfile = (profile) => {
-      if (!this._inCustomizationMode && profileInfoEnabled) {
+      if (profileInfoEnabled) {
         if (profile.displayName) {
           this.panelUILabel.setAttribute("label", profile.displayName);
         }
@@ -361,6 +371,83 @@ var gFxAccounts = {
   openSignInAgainPage: function (entryPoint) {
     this.openAccountsPage("reauth", { entrypoint: entryPoint });
   },
+
+  sendTabToDevice: function (url, clientId, title) {
+    Weave.Service.clientsEngine.sendURIToClientForDisplay(url, clientId, title);
+  },
+
+  populateSendTabToDevicesMenu: function (devicesPopup, url, title) {
+    // remove existing menu items
+    while (devicesPopup.hasChildNodes()) {
+      devicesPopup.removeChild(devicesPopup.firstChild);
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    const onTargetDeviceCommand = (event) => {
+      const clientId = event.target.getAttribute("clientId");
+      const clients = clientId
+                      ? [clientId]
+                      : this.remoteClients.map(client => client.id);
+
+      clients.forEach(clientId => this.sendTabToDevice(url, clientId, title));
+    }
+
+    function addTargetDevice(clientId, name) {
+      const targetDevice = document.createElement("menuitem");
+      targetDevice.addEventListener("command", onTargetDeviceCommand, true);
+      targetDevice.setAttribute("class", "sendtab-target");
+      targetDevice.setAttribute("clientId", clientId);
+      targetDevice.setAttribute("label", name);
+      fragment.appendChild(targetDevice);
+    }
+
+    const clients = this.remoteClients;
+    for (let client of clients) {
+      addTargetDevice(client.id, client.name);
+    }
+
+    // "All devices" menu item
+    if (clients.length > 1) {
+      const separator = document.createElement("menuseparator");
+      fragment.appendChild(separator);
+      const allDevicesLabel = this.strings.GetStringFromName("sendTabToAllDevices.menuitem");
+      addTargetDevice("", allDevicesLabel);
+    }
+
+    devicesPopup.appendChild(fragment);
+  },
+
+  updateTabContextMenu: function (aPopupMenu) {
+    if (!this.sendTabToDeviceEnabled) {
+      return;
+    }
+
+    const remoteClientPresent = this.remoteClients.length > 0;
+    ["context_sendTabToDevice", "context_sendTabToDevice_separator"]
+    .forEach(id => { document.getElementById(id).hidden = !remoteClientPresent });
+  },
+
+  initPageContextMenu: function (contextMenu) {
+    if (!this.sendTabToDeviceEnabled) {
+      return;
+    }
+
+    const remoteClientPresent = this.remoteClients.length > 0;
+    // showSendLink and showSendPage are mutually exclusive
+    const showSendLink = remoteClientPresent
+                         && (contextMenu.onSaveableLink || contextMenu.onPlainTextLink);
+    const showSendPage = !showSendLink && remoteClientPresent
+                         && !(contextMenu.isContentSelected ||
+                              contextMenu.onImage || contextMenu.onCanvas ||
+                              contextMenu.onVideo || contextMenu.onAudio ||
+                              contextMenu.onLink || contextMenu.onTextInput);
+
+    ["context-sendpagetodevice", "context-sep-sendpagetodevice"]
+    .forEach(id => contextMenu.showItem(id, showSendPage));
+    ["context-sendlinktodevice", "context-sep-sendlinktodevice"]
+    .forEach(id => contextMenu.showItem(id, showSendLink));
+  }
 };
 
 XPCOMUtils.defineLazyGetter(gFxAccounts, "FxAccountsCommon", function () {

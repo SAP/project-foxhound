@@ -27,7 +27,7 @@ bool
 TestEndpointBridgeMainParent::RecvBridged(Endpoint<PTestEndpointBridgeMainSubParent>&& endpoint)
 {
   TestEndpointBridgeMainSubParent* a = new TestEndpointBridgeMainSubParent();
-  if (!endpoint.Bind(a, nullptr)) {
+  if (!endpoint.Bind(a)) {
     fail("Bind failed");
   }
   return true;
@@ -73,8 +73,6 @@ TestEndpointBridgeMainSubParent::ActorDestroy(ActorDestroyReason why)
   // longer so other things can be cleaned up.
   MessageLoop::current()->PostTask(
     do_AddRef(new DeleteTask<TestEndpointBridgeMainSubParent>(this)));
-  XRE_GetIOMessageLoop()->PostTask(
-    do_AddRef(new DeleteTask<Transport>(GetTransport())));
 }
 
 //-----------------------------------------------------------------------------
@@ -192,7 +190,7 @@ TestEndpointBridgeSubChild::RecvBridged(Endpoint<PTestEndpointBridgeMainSubChild
 {
   TestEndpointBridgeMainSubChild* a = new TestEndpointBridgeMainSubChild();
 
-  if (!endpoint.Bind(a, nullptr)) {
+  if (!endpoint.Bind(a)) {
     fail("failed to Bind");
   }
 
@@ -253,8 +251,6 @@ TestEndpointBridgeMainSubChild::ActorDestroy(ActorDestroyReason why)
   // longer so other things can be cleaned up.
   MessageLoop::current()->PostTask(
     do_AddRef(new DeleteTask<TestEndpointBridgeMainSubChild>(this)));
-  XRE_GetIOMessageLoop()->PostTask(
-    do_AddRef(new DeleteTask<Transport>(GetTransport())));
 }
 
 } // namespace mozilla

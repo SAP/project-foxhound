@@ -69,8 +69,16 @@ public:
    *        - |mozIStorageAsyncConnection|;
    *        If |false|, the result also implements synchronous interface:
    *        - |mozIStorageConnection|.
+   * @param aIgnoreLockingMode
+   *        If |true|, ignore locks in force on the file. Only usable with
+   *        read-only connections. Defaults to false.
+   *        Use with extreme caution. If sqlite ignores locks, reads may fail
+   *        indicating database corruption (the database won't actually be
+   *        corrupt) or produce wrong results without any indication that has
+   *        happened.
    */
-  Connection(Service *aService, int aFlags, bool aAsyncOnly);
+  Connection(Service *aService, int aFlags, bool aAsyncOnly,
+             bool aIgnoreLockingMode = false);
 
   /**
    * Creates the connection to an in-memory database.
@@ -356,6 +364,11 @@ private:
    */
   const int mFlags;
 
+  /**
+   * Stores whether we should ask sqlite3_open_v2 to ignore locking.
+   */
+  const bool mIgnoreLockingMode;
+
   // This is here for two reasons: 1) It's used to make sure that the
   // connections do not outlive the service.  2) Our custom collating functions
   // call its localeCompareStrings() method.
@@ -391,7 +404,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread());
     nsresult rv = mCallback->Complete(mStatus, mValue);
 
@@ -412,5 +425,15 @@ private:
 
 } // namespace storage
 } // namespace mozilla
+
+/**
+ * Casting Connection to nsISupports is ambiguous.
+ * This method handles that.
+ */
+inline nsISupports*
+ToSupports(mozilla::storage::Connection* p)
+{
+  return NS_ISUPPORTS_CAST(mozIStorageAsyncConnection*, p);
+}
 
 #endif // mozilla_storage_Connection_h

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/dom/VideoTrack.h"
 #include "mozilla/dom/VideoTrackBinding.h"
 #include "mozilla/dom/VideoTrackList.h"
@@ -15,11 +16,24 @@ namespace dom {
 VideoTrack::VideoTrack(const nsAString& aId,
                        const nsAString& aKind,
                        const nsAString& aLabel,
-                       const nsAString& aLanguage)
+                       const nsAString& aLanguage,
+                       VideoStreamTrack* aStreamTarck)
   : MediaTrack(aId, aKind, aLabel, aLanguage)
   , mSelected(false)
+  , mVideoStreamTrack(aStreamTarck)
 {
 }
+
+VideoTrack::~VideoTrack()
+{
+}
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(VideoTrack, MediaTrack, mVideoStreamTrack)
+
+NS_IMPL_ADDREF_INHERITED(VideoTrack, MediaTrack)
+NS_IMPL_RELEASE_INHERITED(VideoTrack, MediaTrack)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(VideoTrack)
+NS_INTERFACE_MAP_END_INHERITING(MediaTrack)
 
 JSObject*
 VideoTrack::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
@@ -64,19 +78,24 @@ VideoTrack::SetEnabledInternal(bool aEnabled, int aFlags)
 
     // Set the index of selected video track to the current's index.
     list.mSelectedIndex = curIndex;
+
+    HTMLMediaElement* element = mList->GetMediaElement();
+    if (element) {
+      element->NotifyMediaTrackEnabled(this);
+    }
   } else {
     list.mSelectedIndex = -1;
+
+    HTMLMediaElement* element = mList->GetMediaElement();
+    if (element) {
+      element->NotifyMediaTrackDisabled(this);
+    }
   }
 
   // Fire the change event at selection changes on this video track, shall
   // propose a spec change later.
   if (!(aFlags & MediaTrack::FIRE_NO_EVENTS)) {
     list.CreateAndDispatchChangeEvent();
-
-    HTMLMediaElement* element = mList->GetMediaElement();
-    if (element) {
-      element->NotifyMediaTrackEnabled(this);
-    }
   }
 }
 

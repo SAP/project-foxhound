@@ -5,6 +5,7 @@
 //
 
 #include "test_utils/ANGLETest.h"
+#include "random_utils.h"
 #include "Vector.h"
 
 using namespace angle;
@@ -17,7 +18,6 @@ class TransformFeedbackTest : public ANGLETest
   protected:
     TransformFeedbackTest()
         : mProgram(0),
-          mTransformFeedbackBufferSize(0),
           mTransformFeedbackBuffer(0),
           mTransformFeedback(0)
     {
@@ -34,7 +34,6 @@ class TransformFeedbackTest : public ANGLETest
         ANGLETest::SetUp();
 
         glGenBuffers(1, &mTransformFeedbackBuffer);
-        mTransformFeedbackBufferSize = 1 << 24;  // ~16MB
         glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBuffer);
         glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBufferSize, NULL,
                      GL_STATIC_DRAW);
@@ -99,7 +98,7 @@ class TransformFeedbackTest : public ANGLETest
 
     GLuint mProgram;
 
-    size_t mTransformFeedbackBufferSize;
+    static const size_t mTransformFeedbackBufferSize = 1 << 24;
     GLuint mTransformFeedbackBuffer;
     GLuint mTransformFeedback;
 };
@@ -132,6 +131,8 @@ TEST_P(TransformFeedbackTest, ZeroSizedViewport)
     glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
     glEndTransformFeedback();
 
+    glUseProgram(0);
+
     // Check how many primitives were written and verify that some were written even if
     // no pixels were rendered
     GLuint primitivesWritten = 0;
@@ -141,11 +142,87 @@ TEST_P(TransformFeedbackTest, ZeroSizedViewport)
     EXPECT_EQ(2u, primitivesWritten);
 }
 
+// Test that rebinding a buffer with the same offset resets the offset (no longer appending from the
+// old position)
+TEST_P(TransformFeedbackTest, BufferRebinding)
+{
+    glDisable(GL_DEPTH_TEST);
+
+    // Set the program's transform feedback varyings (just gl_Position)
+    std::vector<std::string> tfVaryings;
+    tfVaryings.push_back("gl_Position");
+    compileDefaultProgram(tfVaryings, GL_INTERLEAVED_ATTRIBS);
+
+    glUseProgram(mProgram);
+
+    // Make sure the buffer has zero'd data
+    std::vector<float> data(mTransformFeedbackBufferSize / sizeof(float), 0.0f);
+    glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBuffer);
+    glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBufferSize, data.data(),
+                 GL_STATIC_DRAW);
+
+
+    // Create a query to check how many primitives were written
+    GLuint primitivesWrittenQuery = 0;
+    glGenQueries(1, &primitivesWrittenQuery);
+    glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
+
+    const float finalZ = 0.95f;
+
+    RNG rng;
+
+    const size_t loopCount = 64;
+    for (size_t loopIdx = 0; loopIdx < loopCount; loopIdx++)
+    {
+        // Bind the buffer for transform feedback output and start transform feedback
+        glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
+        glBeginTransformFeedback(GL_TRIANGLES);
+
+        float z = (loopIdx + 1 == loopCount) ? finalZ : rng.randomFloatBetween(0.1f, 0.5f);
+        drawQuad(mProgram, "position", z);
+
+        glEndTransformFeedback();
+    }
+
+    // End the query and transform feedback
+    glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
+
+    glUseProgram(0);
+
+    // Check how many primitives were written and verify that some were written even if
+    // no pixels were rendered
+    GLuint primitivesWritten = 0;
+    glGetQueryObjectuiv(primitivesWrittenQuery, GL_QUERY_RESULT_EXT, &primitivesWritten);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_EQ(loopCount * 2, primitivesWritten);
+
+    // Check the buffer data
+    const float *bufferData = static_cast<float *>(glMapBufferRange(
+        GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBufferSize, GL_MAP_READ_BIT));
+
+    for (size_t vertexIdx = 0; vertexIdx < 6; vertexIdx++)
+    {
+        // Check the third (Z) component of each vertex written and make sure it has the final
+        // value
+        EXPECT_NEAR(finalZ, bufferData[vertexIdx * 4 + 2], 0.0001);
+    }
+
+    for (size_t dataIdx = 24; dataIdx < mTransformFeedbackBufferSize / sizeof(float); dataIdx++)
+    {
+        EXPECT_EQ(data[dataIdx], bufferData[dataIdx]) << "Buffer overrun detected.";
+    }
+
+    glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
+
+    EXPECT_GL_NO_ERROR();
+}
+
 // Test that XFB can write back vertices to a buffer and that we can draw from this buffer afterward.
 TEST_P(TransformFeedbackTest, RecordAndDraw)
 {
     // TODO(jmadill): Figure out why this fails on Intel.
-    if (isIntel() && GetParam().getRenderer() == EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE)
+    if (IsIntel() && GetParam().getRenderer() == EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE)
     {
         std::cout << "Test skipped on Intel." << std::endl;
         return;
@@ -305,6 +382,8 @@ TEST_P(TransformFeedbackTest, VertexOnly)
                                                    tfVaryings, GL_INTERLEAVED_ATTRIBS);
     ASSERT_NE(0u, mProgram);
 
+    glUseProgram(mProgram);
+
     glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, mTransformFeedback);
     glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
 
@@ -324,6 +403,8 @@ TEST_P(TransformFeedbackTest, VertexOnly)
     drawQuad(mProgram, "position", 0.5f);
     glEndTransformFeedback();
     ASSERT_GL_NO_ERROR();
+
+    glUseProgram(0);
 
     GLvoid *mappedBuffer =
         glMapBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, sizeof(float) * 6, GL_MAP_READ_BIT);
@@ -435,16 +516,8 @@ TEST_P(TransformFeedbackTest, MultiplePaused)
 // contexts returns the correct results.  Helps expose bugs in ANGLE's virtual contexts.
 TEST_P(TransformFeedbackTest, MultiContext)
 {
-    if (GetParam() == ES3_D3D11())
-    {
-        std::cout << "Test skipped because the D3D backends cannot support simultaneous transform "
-                     "feedback or queries on multiple contexts yet."
-                  << std::endl;
-        return;
-    }
-
 #if defined(ANGLE_PLATFORM_APPLE)
-    if ((isNVidia() || isAMD()) && GetParam() == ES3_OPENGL())
+    if ((IsNVIDIA() || IsAMD()) && GetParam() == ES3_OPENGL())
     {
         std::cout << "Test skipped on NVidia and AMD OpenGL on OSX." << std::endl;
         return;
@@ -452,7 +525,7 @@ TEST_P(TransformFeedbackTest, MultiContext)
 #endif
 
 #if defined(ANGLE_PLATFORM_LINUX)
-    if (isAMD() && GetParam() == ES3_OPENGL())
+    if (IsAMD() && GetParam() == ES3_OPENGL())
     {
         std::cout << "Test skipped on AMD OpenGL on Linux." << std::endl;
         return;
@@ -669,18 +742,26 @@ TEST_P(TransformFeedbackTest, PackingBug)
     GLint attrib1Loc = glGetAttribLocation(mProgram, "inAttrib1");
     GLint attrib2Loc = glGetAttribLocation(mProgram, "inAttrib2");
 
-    Vector2 attrib1Data[] = {Vector2(1.0, 2.0), Vector2(3.0, 4.0), Vector2(5.0, 6.0)};
-    Vector2 attrib2Data[] = {Vector2(11.0, 12.0), Vector2(13.0, 14.0), Vector2(15.0, 16.0)};
+    std::vector<Vector2> attrib1Data;
+    std::vector<Vector2> attrib2Data;
+    int counter = 0;
+    for (size_t i = 0; i < 6; i++) {
+        attrib1Data.push_back(Vector2(counter + 0.0f, counter + 1.0f));
+        attrib2Data.push_back(Vector2(counter + 2.0f, counter + 3.0f));
+        counter += 4;
+    }
 
     glEnableVertexAttribArray(attrib1Loc);
     glEnableVertexAttribArray(attrib2Loc);
 
-    glVertexAttribPointer(attrib1Loc, 2, GL_FLOAT, GL_FALSE, 0, attrib1Data);
-    glVertexAttribPointer(attrib2Loc, 2, GL_FLOAT, GL_FALSE, 0, attrib2Data);
+    glVertexAttribPointer(attrib1Loc, 2, GL_FLOAT, GL_FALSE, 0, attrib1Data.data());
+    glVertexAttribPointer(attrib2Loc, 2, GL_FLOAT, GL_FALSE, 0, attrib2Data.data());
 
+    glUseProgram(mProgram);
     glBeginTransformFeedback(GL_TRIANGLES);
     drawQuad(mProgram, "position", 0.5f);
     glEndTransformFeedback();
+    glUseProgram(0);
     ASSERT_GL_NO_ERROR();
 
     const GLvoid *mapPointer =
@@ -699,7 +780,201 @@ TEST_P(TransformFeedbackTest, PackingBug)
     ASSERT_GL_NO_ERROR();
 }
 
+// Test that transform feedback varyings that can be optimized out yet do not cause program
+// compilation to fail
+TEST_P(TransformFeedbackTest, OptimizedVaryings)
+{
+    const std::string &vertexShaderSource =
+        "#version 300 es\n"
+        "in vec4 a_vertex;\n"
+        "in vec3 a_normal; \n"
+        "\n"
+        "uniform Transform\n"
+        "{\n"
+        "    mat4 u_modelViewMatrix;\n"
+        "    mat4 u_projectionMatrix;\n"
+        "    mat3 u_normalMatrix;\n"
+        "};\n"
+        "\n"
+        "out vec3 normal;\n"
+        "out vec4 ecPosition;\n"
+        "\n"
+        "void main()\n"
+        "{\n"
+        "    normal = normalize(u_normalMatrix * a_normal);\n"
+        "    ecPosition = u_modelViewMatrix * a_vertex;\n"
+        "    gl_Position = u_projectionMatrix * ecPosition;\n"
+        "}\n";
+
+    const std::string &fragmentShaderSource =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "\n"
+        "in vec3 normal;\n"
+        "in vec4 ecPosition;\n"
+        "\n"
+        "out vec4 fragColor;\n"
+        "\n"
+        "void main()\n"
+        "{\n"
+        "    fragColor = vec4(normal/2.0+vec3(0.5), 1);\n"
+        "}\n";
+
+    std::vector<std::string> tfVaryings;
+    tfVaryings.push_back("normal");
+    tfVaryings.push_back("ecPosition");
+
+    mProgram = CompileProgramWithTransformFeedback(vertexShaderSource, fragmentShaderSource,
+                                                   tfVaryings, GL_INTERLEAVED_ATTRIBS);
+    ASSERT_NE(0u, mProgram);
+}
+
+// Test an edge case where two varyings are unreferenced in the frag shader.
+TEST_P(TransformFeedbackTest, TwoUnreferencedInFragShader)
+{
+    // TODO(jmadill): With points and rasterizer discard?
+    const std::string &vertexShaderSource =
+        "#version 300 es\n"
+        "in vec3 position;\n"
+        "out vec3 outAttrib1;\n"
+        "out vec3 outAttrib2;\n"
+        "void main() {"
+        "  outAttrib1 = position;\n"
+        "  outAttrib2 = position;\n"
+        "  gl_Position = vec4(position, 1);\n"
+        "}";
+
+    const std::string &fragmentShaderSource =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "out vec4 color;\n"
+        "in vec3 outAttrib1;\n"
+        "in vec3 outAttrib2;\n"
+        "void main() {\n"
+        "  color = vec4(0);\n"
+        "}";
+
+    std::vector<std::string> tfVaryings;
+    tfVaryings.push_back("outAttrib1");
+    tfVaryings.push_back("outAttrib2");
+
+    mProgram = CompileProgramWithTransformFeedback(vertexShaderSource, fragmentShaderSource,
+                                                   tfVaryings, GL_INTERLEAVED_ATTRIBS);
+    ASSERT_NE(0u, mProgram);
+
+    glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBuffer);
+    glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, sizeof(Vector3) * 2 * 6, nullptr, GL_STREAM_DRAW);
+
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, mTransformFeedback);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
+
+    glUseProgram(mProgram);
+    glBeginTransformFeedback(GL_TRIANGLES);
+    drawQuad(mProgram, "position", 0.5f);
+    glEndTransformFeedback();
+    glUseProgram(0);
+    ASSERT_GL_NO_ERROR();
+
+    const GLvoid *mapPointer =
+        glMapBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, sizeof(Vector2) * 2 * 6, GL_MAP_READ_BIT);
+    ASSERT_NE(nullptr, mapPointer);
+
+    const auto &quadVertices = GetQuadVertices();
+
+    const Vector3 *vecPointer = static_cast<const Vector3 *>(mapPointer);
+    for (unsigned int vectorIndex = 0; vectorIndex < 3; ++vectorIndex)
+    {
+        unsigned int stream1Index = vectorIndex * 2;
+        unsigned int stream2Index = vectorIndex * 2 + 1;
+        EXPECT_EQ(quadVertices[vectorIndex], vecPointer[stream1Index]);
+        EXPECT_EQ(quadVertices[vectorIndex], vecPointer[stream2Index]);
+    }
+
+    ASSERT_GL_NO_ERROR();
+}
+class TransformFeedbackLifetimeTest : public TransformFeedbackTest
+{
+  protected:
+    TransformFeedbackLifetimeTest() : mVertexArray(0) {}
+
+    void SetUp() override
+    {
+        ANGLETest::SetUp();
+
+        glGenVertexArrays(1, &mVertexArray);
+        glBindVertexArray(mVertexArray);
+
+        std::vector<std::string> tfVaryings;
+        tfVaryings.push_back("gl_Position");
+        compileDefaultProgram(tfVaryings, GL_SEPARATE_ATTRIBS);
+
+        glGenBuffers(1, &mTransformFeedbackBuffer);
+        glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBuffer);
+        glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, mTransformFeedbackBufferSize, NULL,
+                     GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, 0);
+
+        glGenTransformFeedbacks(1, &mTransformFeedback);
+
+        ASSERT_GL_NO_ERROR();
+    }
+
+    void TearDown() override
+    {
+        glDeleteVertexArrays(1, &mVertexArray);
+        TransformFeedbackTest::TearDown();
+    }
+
+    GLuint mVertexArray;
+};
+
+// Tests a bug with state syncing and deleted transform feedback buffers.
+TEST_P(TransformFeedbackLifetimeTest, DeletedBuffer)
+{
+    // First stream vertex data to mTransformFeedbackBuffer.
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, mTransformFeedback);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
+
+    glUseProgram(mProgram);
+
+    glBeginTransformFeedback(GL_TRIANGLES);
+    drawQuad(mProgram, "position", 0.5f, 1.0f, true);
+    glEndTransformFeedback();
+
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
+
+    // TODO(jmadill): Remove this when http://anglebug.com/1351 is fixed.
+    glBindVertexArray(0);
+    drawQuad(mProgram, "position", 0.5f);
+    glBindVertexArray(1);
+
+    // Next, draw vertices with mTransformFeedbackBuffer. This will link to mVertexArray.
+    glBindBuffer(GL_ARRAY_BUFFER, mTransformFeedbackBuffer);
+    GLint loc = glGetAttribLocation(mProgram, "position");
+    ASSERT_NE(-1, loc);
+    glVertexAttribPointer(loc, 1, GL_FLOAT, GL_FALSE, 4, nullptr);
+    glEnableVertexAttribArray(loc);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    // Delete resources, making a stranded pointer to mVertexArray in mTransformFeedbackBuffer.
+    glDeleteBuffers(1, &mTransformFeedbackBuffer);
+    mTransformFeedbackBuffer = 0;
+    glDeleteVertexArrays(1, &mVertexArray);
+    mVertexArray = 0;
+
+    // Then draw again with transform feedback, dereferencing the stranded pointer.
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, mTransformFeedback);
+    glBeginTransformFeedback(GL_TRIANGLES);
+    drawQuad(mProgram, "position", 0.5f, 1.0f, true);
+    glEndTransformFeedback();
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
+
+    ASSERT_GL_NO_ERROR();
+}
+
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these tests should be run against.
 ANGLE_INSTANTIATE_TEST(TransformFeedbackTest, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());
+ANGLE_INSTANTIATE_TEST(TransformFeedbackLifetimeTest, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());
 
 }  // anonymous namespace

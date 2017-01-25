@@ -38,7 +38,7 @@ struct user_state
 
 
 
-long data_cb(cubeb_stream *stream, void *user, const void * inputbuffer, void *outputbuffer, long nframes)
+long data_cb(cubeb_stream * stream, void * user, const void * inputbuffer, void * outputbuffer, long nframes)
 {
   user_state * u = reinterpret_cast<user_state*>(user);
 #if (defined(_WIN32) || defined(__WIN32__))
@@ -70,7 +70,7 @@ long data_cb(cubeb_stream *stream, void *user, const void * inputbuffer, void *o
   return nframes;
 }
 
-void state_cb(cubeb_stream *stream, void *user, cubeb_state state)
+void state_cb(cubeb_stream * stream, void * /*user*/, cubeb_state state)
 {
   if (stream == NULL)
     return;
@@ -89,7 +89,7 @@ void state_cb(cubeb_stream *stream, void *user, cubeb_state state)
   return;
 }
 
-int main(int argc, char *argv[])
+int main(int /*argc*/, char * /*argv*/[])
 {
 #ifdef CUBEB_GECKO_BUILD
   ScopedXPCOM xpcom("test_duplex");
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
   cubeb_stream_params output_params;
   int r;
   user_state stream_state = { false };
-  uint32_t latency_ms = 0;
+  uint32_t latency_frames = 0;
 
   r = cubeb_init(&ctx, "Cubeb duplex example");
   if (r != CUBEB_OK) {
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
   output_params.rate = 48000;
   output_params.channels = 2;
 
-  r = cubeb_get_min_latency(ctx, output_params, &latency_ms);
+  r = cubeb_get_min_latency(ctx, output_params, &latency_frames);
 
   if (r != CUBEB_OK) {
     fprintf(stderr, "Could not get minimal latency\n");
@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
 
   r = cubeb_stream_init(ctx, &stream, "Cubeb duplex",
                         NULL, &input_params, NULL, &output_params,
-                        latency_ms, data_cb, state_cb, &stream_state);
+                        latency_frames, data_cb, state_cb, &stream_state);
   if (r != CUBEB_OK) {
     fprintf(stderr, "Error initializing cubeb stream\n");
     return r;

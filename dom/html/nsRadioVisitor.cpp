@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsRadioVisitor.h"
-#include "nsAutoPtr.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "nsIConstraintValidation.h"
 
@@ -56,3 +55,15 @@ nsRadioSetValueMissingState::Visit(nsIFormControl* aRadio)
   return true;
 }
 
+bool
+nsRadioUpdateStateVisitor::Visit(nsIFormControl* aRadio)
+{
+  if (aRadio == mExcludeElement) {
+    return true;
+  }
+
+  HTMLInputElement* input = static_cast<HTMLInputElement*>(aRadio);
+  input->UpdateState(true);
+
+  return true;
+}

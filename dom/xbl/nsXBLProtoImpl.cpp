@@ -213,7 +213,7 @@ nsXBLProtoImpl::InitTargetObjects(nsXBLPrototypeBinding* aBinding,
   // Make sure the interface object is created before the prototype object
   // so that XULElement is hidden from content. See bug 909340.
   bool defineOnGlobal = dom::XULElementBinding::ConstructorEnabled(cx, global);
-  dom::XULElementBinding::GetConstructorObjectHandle(cx, global, defineOnGlobal);
+  dom::XULElementBinding::GetConstructorObjectHandle(cx, defineOnGlobal);
 
   rv = nsContentUtils::WrapNative(cx, aBoundElement, &v,
                                   /* aAllowWrapping = */ false);
@@ -513,7 +513,7 @@ nsXBLProtoImpl::Write(nsIObjectOutputStream* aStream,
   return aStream->Write8(XBLBinding_Serialize_NoMoreItems);
 }
 
-nsresult
+void
 NS_NewXBLProtoImpl(nsXBLPrototypeBinding* aBinding, 
                    const char16_t* aClassName, 
                    nsXBLProtoImpl** aResult)
@@ -523,13 +523,13 @@ NS_NewXBLProtoImpl(nsXBLPrototypeBinding* aBinding,
     impl->mClassName = aClassName;
   } else {
     nsCString spec;
-    aBinding->BindingURI()->GetSpec(spec);
+    nsresult rv = aBinding->BindingURI()->GetSpec(spec);
+    // XXX: should handle this better
+    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
     impl->mClassName = NS_ConvertUTF8toUTF16(spec);
   }
 
   aBinding->SetImplementation(impl);
   *aResult = impl;
-
-  return NS_OK;
 }
 

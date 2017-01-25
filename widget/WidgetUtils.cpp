@@ -7,7 +7,7 @@
 
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsIBidiKeyboard.h"
 #include "nsTArray.h"
@@ -127,11 +127,13 @@ WidgetUtils::SendBidiKeyboardInfoToContent()
   if (NS_FAILED(bidiKeyboard->IsLangRTL(&rtl))) {
     return;
   }
+  bool bidiKeyboards = false;
+  bidiKeyboard->GetHaveBidiKeyboards(&bidiKeyboards);
 
   nsTArray<dom::ContentParent*> children;
   dom::ContentParent::GetAll(children);
   for (uint32_t i = 0; i < children.Length(); i++) {
-    Unused << children[i]->SendBidiKeyboardNotify(rtl);
+    Unused << children[i]->SendBidiKeyboardNotify(rtl, bidiKeyboards);
   }
 }
 

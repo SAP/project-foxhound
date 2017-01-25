@@ -23,6 +23,7 @@ using mozilla::dom::DOMRequestService;
 using mozilla::dom::DOMCursor;
 using mozilla::dom::Promise;
 using mozilla::dom::AutoJSAPI;
+using mozilla::dom::RootingCx;
 
 DOMRequest::DOMRequest(nsPIDOMWindowInner* aWindow)
   : DOMEventTargetHelper(aWindow)
@@ -301,7 +302,7 @@ class FireSuccessAsyncTask : public mozilla::Runnable
   FireSuccessAsyncTask(DOMRequest* aRequest,
                        const JS::Value& aResult) :
     mReq(aRequest),
-    mResult(nsContentUtils::RootingCxForThread(), aResult)
+    mResult(RootingCx(), aResult)
   {
   }
 
@@ -320,8 +321,8 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHODIMP
-  Run()
+  NS_IMETHOD
+  Run() override
   {
     mReq->FireSuccess(JS::Handle<JS::Value>::fromMarkedLocation(mResult.address()));
     return NS_OK;
@@ -342,8 +343,8 @@ public:
   {
   }
 
-  NS_IMETHODIMP
-  Run()
+  NS_IMETHOD
+  Run() override
   {
     mReq->FireError(mError);
     return NS_OK;

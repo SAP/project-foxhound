@@ -11,11 +11,12 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoBindingHelpers.h"
+#include "mozilla/ServoElementSnapshot.h"
 #include "mozilla/ServoStyleSheet.h"
 #include "mozilla/SheetType.h"
 #include "mozilla/UniquePtr.h"
-#include "nsChangeHint.h"
 #include "nsCSSPseudoElements.h"
+#include "nsChangeHint.h"
 #include "nsIAtom.h"
 #include "nsTArray.h"
 
@@ -24,6 +25,7 @@ namespace dom {
 class Element;
 } // namespace dom
 class CSSStyleSheet;
+class ServoRestyleManager;
 class ServoStyleSheet;
 } // namespace mozilla
 class nsIDocument;
@@ -39,6 +41,7 @@ namespace mozilla {
  */
 class ServoStyleSet
 {
+  friend class ServoRestyleManager;
 public:
   ServoStyleSet();
 
@@ -111,12 +114,44 @@ public:
   // Test if style is dependent on content state
   nsRestyleHint HasStateDependentStyle(dom::Element* aElement,
                                        EventStates aStateMask);
-  nsRestyleHint HasStateDependentStyle(dom::Element* aElement,
-                                       mozilla::CSSPseudoElementType aPseudoType,
-                                       dom::Element* aPseudoElement,
-                                       EventStates aStateMask);
+  nsRestyleHint HasStateDependentStyle(
+    dom::Element* aElement, mozilla::CSSPseudoElementType aPseudoType,
+    dom::Element* aPseudoElement, EventStates aStateMask);
 
-  void RestyleSubtree(nsINode* aNode);
+  /**
+   * Computes a restyle hint given a element and a previous element snapshot.
+   */
+  nsRestyleHint ComputeRestyleHint(dom::Element* aElement,
+                                   ServoElementSnapshot* aSnapshot);
+
+  /**
+   * Performs a Servo traversal to compute style for all dirty nodes in the
+   * document. The root element must be non-null.
+   *
+   * If aLeaveDirtyBits is true, the dirty/dirty-descendant bits are not
+   * cleared.
+   */
+  void StyleDocument(bool aLeaveDirtyBits);
+
+  /**
+   * Eagerly styles a subtree of dirty nodes that were just appended to the
+   * tree. This is used in situations where we need the style immediately and
+   * cannot wait for a future batch restyle.
+   *
+   * The subtree must have the root dirty bit set, which currently gets
+   * propagated to all descendants. The dirty bits are cleared before
+   * returning.
+   */
+  void StyleNewSubtree(nsIContent* aContent);
+
+  /**
+   * Like the above, but does not assume that the root node is dirty. When
+   * appending multiple children to a potentially-non-dirty node, it's
+   * preferable to call StyleNewChildren on the node rather than making multiple
+   * calls to StyleNewSubtree on each child, since it allows for more
+   * parallelism.
+   */
+  void StyleNewChildren(nsIContent* aParent);
 
 private:
   already_AddRefed<nsStyleContext> GetContext(already_AddRefed<ServoComputedValues>,

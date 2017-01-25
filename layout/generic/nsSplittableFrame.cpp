@@ -217,10 +217,10 @@ nsSplittableFrame::GetConsumedBSize() const
 }
 
 nscoord
-nsSplittableFrame::GetEffectiveComputedBSize(const nsHTMLReflowState& aReflowState,
+nsSplittableFrame::GetEffectiveComputedBSize(const ReflowInput& aReflowInput,
                                               nscoord aConsumedBSize) const
 {
-  nscoord bSize = aReflowState.ComputedBSize();
+  nscoord bSize = aReflowInput.ComputedBSize();
   if (bSize == NS_INTRINSICSIZE) {
     return NS_INTRINSICSIZE;
   }
@@ -236,14 +236,14 @@ nsSplittableFrame::GetEffectiveComputedBSize(const nsHTMLReflowState& aReflowSta
 }
 
 nsIFrame::LogicalSides
-nsSplittableFrame::GetLogicalSkipSides(const nsHTMLReflowState* aReflowState) const
+nsSplittableFrame::GetLogicalSkipSides(const ReflowInput* aReflowInput) const
 {
   if (IS_TRUE_OVERFLOW_CONTAINER(this)) {
     return LogicalSides(eLogicalSideBitsBBoth);
   }
 
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
-                     NS_STYLE_BOX_DECORATION_BREAK_CLONE)) {
+                     StyleBoxDecorationBreak::Clone)) {
     return LogicalSides();
   }
 
@@ -252,16 +252,16 @@ nsSplittableFrame::GetLogicalSkipSides(const nsHTMLReflowState* aReflowState) co
     skip |= eLogicalSideBitsBStart;
   }
 
-  if (aReflowState) {
+  if (aReflowInput) {
     // We're in the midst of reflow right now, so it's possible that we haven't
     // created a nif yet. If our content height is going to exceed our available
     // height, though, then we're going to need a next-in-flow, it just hasn't
     // been created yet.
 
-    if (NS_UNCONSTRAINEDSIZE != aReflowState->AvailableBSize()) {
-      nscoord effectiveCH = this->GetEffectiveComputedBSize(*aReflowState);
+    if (NS_UNCONSTRAINEDSIZE != aReflowInput->AvailableBSize()) {
+      nscoord effectiveCH = this->GetEffectiveComputedBSize(*aReflowInput);
       if (effectiveCH != NS_INTRINSICSIZE &&
-          effectiveCH > aReflowState->AvailableBSize()) {
+          effectiveCH > aReflowInput->AvailableBSize()) {
         // Our content height is going to exceed our available height, so we're
         // going to need a next-in-flow.
         skip |= eLogicalSideBitsBEnd;
@@ -284,7 +284,7 @@ nsSplittableFrame::PreReflowBlockLevelLogicalSkipSides() const
     return LogicalSides(mozilla::eLogicalSideBitsBBoth);
   }
   if (MOZ_LIKELY(StyleBorder()->mBoxDecorationBreak !=
-                   NS_STYLE_BOX_DECORATION_BREAK_CLONE) &&
+                   StyleBoxDecorationBreak::Clone) &&
       GetPrevInFlow()) {
     return LogicalSides(mozilla::eLogicalSideBitsBStart);
   }

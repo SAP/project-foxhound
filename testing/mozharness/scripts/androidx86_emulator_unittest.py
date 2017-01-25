@@ -6,6 +6,7 @@
 # ***** END LICENSE BLOCK *****
 
 import copy
+import glob
 import os
 import sys
 import signal
@@ -21,7 +22,7 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 from mozprocess import ProcessHandler
 
 from mozharness.base.log import FATAL
-from mozharness.base.script import BaseScript, PostScriptRun, PreScriptAction
+from mozharness.base.script import BaseScript, PostScriptRun, PreScriptAction, PostScriptAction
 from mozharness.base.vcs.vcsbase import VCSMixin
 from mozharness.mozilla.blob_upload import BlobUploadMixin, blobupload_config_options
 from mozharness.mozilla.mozbase import MozbaseMixin
@@ -37,13 +38,6 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
          "dest": "robocop_url",
          "default": None,
          "help": "URL to the robocop apk",
-         }
-    ], [
-        ["--host-utils-url"],
-        {"action": "store",
-         "dest": "xre_url",
-         "default": None,
-         "help": "URL to the host utils zip",
          }
     ], [
         ["--test-suite"],
@@ -82,14 +76,14 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
                          'create-virtualenv',
                          'install',
                          'run-tests',
-                         'stop-emulators'],
+                        ],
             default_actions=['clobber',
                              'start-emulators',
                              'download-and-extract',
                              'create-virtualenv',
                              'install',
                              'run-tests',
-                             'stop-emulators'],
+                            ],
             require_config_file=require_config_file,
             config={
                 'virtualenv_modules': self.virtualenv_modules,
@@ -110,13 +104,13 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
         self.test_manifest = c.get('test_manifest')
         self.robocop_url = c.get('robocop_url')
         self.robocop_path = os.path.join(abs_dirs['abs_work_dir'], "robocop.apk")
-        self.host_utils_url = c.get('host_utils_url')
         self.minidump_stackwalk_path = c.get("minidump_stackwalk_path")
         self.emulators = c.get('emulators')
         self.test_suite_definitions = c['test_suite_definitions']
         self.test_suites = c.get('test_suites')
         for suite in self.test_suites:
             assert suite in self.test_suite_definitions
+        self.xre_path = None
 
     def _query_tests_dir(self, suite_name):
         dirs = self.query_abs_dirs()
@@ -430,8 +424,8 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
         str_format_values = {
             'app': self._query_package_name(),
             'remote_webserver': c['remote_webserver'],
-            'xre_path': os.path.join(dirs['abs_xre_dir'], 'xre'),
-            'utility_path':  os.path.join(dirs['abs_xre_dir'], 'bin'),
+            'xre_path': self.xre_path,
+            'utility_path': self.xre_path,
             'http_port': emulator['http_port'],
             'ssl_port': emulator['ssl_port'],
             'certs_path': os.path.join(dirs['abs_work_dir'], 'tests/certs'),
@@ -509,22 +503,48 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
             "emulator_index": emulator_index
         }
 
-    def _tooltool_fetch(self, url):
+    def _get_repo_url(self, path):
+        """
+           Return a url for a file (typically a tooltool manifest) in this hg repo
+           and using this revision (or mozilla-central/default if repo/rev cannot
+           be determined).
+
+           :param path specifies the directory path to the file of interest.
+        """
+        if 'GECKO_HEAD_REPOSITORY' in os.environ and 'GECKO_HEAD_REV' in os.environ:
+            # probably taskcluster
+            repo = os.environ['GECKO_HEAD_REPOSITORY']
+            revision = os.environ['GECKO_HEAD_REV']
+        elif self.buildbot_config and 'properties' in self.buildbot_config:
+            # probably buildbot
+            repo = 'https://hg.mozilla.org/%s' % self.buildbot_config['properties']['repo_path']
+            revision = self.buildbot_config['properties']['revision']
+        else:
+            # something unexpected!
+            repo = 'https://hg.mozilla.org/mozilla-central'
+            revision = 'default'
+            self.warning('Unable to find repo/revision for manifest; using mozilla-central/default')
+        url = '%s/raw-file/%s/%s' % (
+            repo,
+            revision,
+            path)
+        return url
+
+    def _tooltool_fetch(self, url, dir):
         c = self.config
-        dirs = self.query_abs_dirs()
 
         manifest_path = self.download_file(
             url,
             file_name='releng.manifest',
-            parent_dir=dirs['abs_avds_dir']
+            parent_dir=dir
         )
 
         if not os.path.exists(manifest_path):
-            self.fatal("Could not retrieve manifest needed to retrieve avds "
+            self.fatal("Could not retrieve manifest needed to retrieve "
                        "artifacts from %s" % manifest_path)
 
         self.tooltool_fetch(manifest_path,
-                            output_dir=dirs['abs_avds_dir'],
+                            output_dir=dir,
                             cache=c.get("tooltool_cache", None))
 
     ##########################################
@@ -545,20 +565,8 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
         # contents of the tar ball
         self.rmtree(dirs['abs_avds_dir'])
         self.mkdir_p(dirs['abs_avds_dir'])
-        if not self.buildbot_config:
-            # XXX until we figure out how to determine the repo_path, revision
-            url = 'https://hg.mozilla.org/%s/raw-file/%s/%s' % (
-                "try", "default", c["tooltool_manifest_path"])
-            self._tooltool_fetch(url)
-        elif self.buildbot_config and 'properties' in self.buildbot_config:
-            url = 'https://hg.mozilla.org/%s/raw-file/%s/%s' % (
-                self.buildbot_config['properties']['repo_path'],
-                self.buildbot_config['properties']['revision'],
-                c["tooltool_manifest_path"])
-            self._tooltool_fetch(url)
-        else:
-            self.fatal("properties in self.buildbot_config are required to "
-                       "retrieve tooltool manifest to be used for avds setup")
+        url = self._get_repo_url(c["tooltool_manifest_path"])
+        self._tooltool_fetch(url, dirs['abs_avds_dir'])
 
         avd_home_dir = self.abs_dirs['abs_avds_dir']
         if avd_home_dir != "/home/cltbld/.android":
@@ -686,7 +694,18 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
                 self._download_robocop_apk()
                 break
 
-        self.download_unzip(self.host_utils_url, dirs['abs_xre_dir'])
+        self.rmtree(dirs['abs_xre_dir'])
+        self.mkdir_p(dirs['abs_xre_dir'])
+        if self.config["hostutils_manifest_path"]:
+            url = self._get_repo_url(self.config["hostutils_manifest_path"])
+            self._tooltool_fetch(url, dirs['abs_xre_dir'])
+            for p in glob.glob(os.path.join(dirs['abs_xre_dir'], 'host-utils-*')):
+                if os.path.isdir(p) and os.path.isfile(os.path.join(p, 'xpcshell')):
+                    self.xre_path = p
+            if not self.xre_path:
+                self.fatal("xre path not found in %s" % dirs['abs_xre_dir'])
+        else:
+            self.fatal("configure hostutils_manifest_path!")
 
     def install(self):
         assert self.installer_path is not None, \
@@ -803,7 +822,8 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
 
         self.buildbot_status(joint_tbpl_status, level=joint_log_level)
 
-    def stop_emulators(self):
+    @PostScriptAction('run-tests')
+    def stop_emulators(self, action, success=None):
         '''
         Report emulator health, then make sure that every emulator has been stopped
         '''

@@ -24,6 +24,8 @@ Cu.import("resource://gre/modules/AppConstants.jsm");
 
 const Utils = TelemetryUtils;
 
+XPCOMUtils.defineLazyModuleGetter(this, "AttributionCode",
+                                  "resource:///modules/AttributionCode.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ctypes",
                                   "resource://gre/modules/ctypes.jsm");
 if (AppConstants.platform !== "gonk") {
@@ -42,6 +44,8 @@ const CHANGE_THROTTLE_INTERVAL_MS = 5 * 60 * 1000;
 
 // The maximum length of a string (e.g. description) in the addons section.
 const MAX_ADDON_STRING_LENGTH = 100;
+// The maximum length of a string value in the settings.attribution object.
+const MAX_ATTRIBUTION_STRING_LENGTH = 100;
 
 /**
  * This is a policy object used to override behavior for testing.
@@ -133,6 +137,8 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.tabs.animate", {what: RECORD_PREF_VALUE}],
   ["browser.urlbar.suggest.searches", {what: RECORD_PREF_VALUE}],
   ["browser.urlbar.userMadeSearchSuggestionsChoice", {what: RECORD_PREF_VALUE}],
+  // Record "Zoom Text Only" pref in Firefox 50 to 52 (Bug 979323).
+  ["browser.zoom.full", {what: RECORD_PREF_VALUE}],
   ["devtools.chrome.enabled", {what: RECORD_PREF_VALUE}],
   ["devtools.debugger.enabled", {what: RECORD_PREF_VALUE}],
   ["devtools.debugger.remote-enabled", {what: RECORD_PREF_VALUE}],
@@ -175,6 +181,7 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["services.sync.serverURL", {what: RECORD_PREF_STATE}],
   ["security.mixed_content.block_active_content", {what: RECORD_PREF_VALUE}],
   ["security.mixed_content.block_display_content", {what: RECORD_PREF_VALUE}],
+  ["security.sandbox.content.level", {what: RECORD_PREF_VALUE}],
   ["xpinstall.signatures.required", {what: RECORD_PREF_VALUE}],
 ]);
 
@@ -377,8 +384,8 @@ function getWindowsVersionInfo() {
     let winVer = OSVERSIONINFOEXW();
     winVer.dwOSVersionInfoSize = OSVERSIONINFOEXW.size;
 
-    if(0 === GetVersionEx(winVer.address())) {
-      throw("Failure in GetVersionEx (returned 0)");
+    if (0 === GetVersionEx(winVer.address())) {
+      throw ("Failure in GetVersionEx (returned 0)");
     }
 
     return {
@@ -709,7 +716,7 @@ EnvironmentAddonBuilder.prototype = {
         experimentInfo.id = activeExperiment;
         experimentInfo.branch = experiments.getActiveExperimentBranch();
       }
-    } catch(e) {
+    } catch (e) {
       // If this is not Firefox, the import will fail.
     }
 
@@ -761,6 +768,9 @@ function EnvironmentCache() {
 
   this._currentEnvironment.profile = {};
   p.push(this._updateProfile());
+  if (AppConstants.MOZ_BUILD_APP == "browser") {
+    p.push(this._updateAttribution());
+  }
 
   let setup = () => {
     this._initTask = null;
@@ -887,7 +897,7 @@ EnvironmentCache.prototype = {
     this._log.trace("_startWatchingPrefs - " + this._watchedPrefs);
 
     for (let [pref, options] of this._watchedPrefs) {
-      if(!("requiresRestart" in options) || !options.requiresRestart) {
+      if (!("requiresRestart" in options) || !options.requiresRestart) {
         Preferences.observe(pref, this._onPrefChanged, this);
       }
     }
@@ -907,7 +917,7 @@ EnvironmentCache.prototype = {
     this._log.trace("_stopWatchingPrefs");
 
     for (let [pref, options] of this._watchedPrefs) {
-      if(!("requiresRestart" in options) || !options.requiresRestart) {
+      if (!("requiresRestart" in options) || !options.requiresRestart) {
         Preferences.ignore(pref, this._onPrefChanged, this);
       }
     }
@@ -926,7 +936,7 @@ EnvironmentCache.prototype = {
     Services.obs.removeObserver(this, COMPOSITOR_CREATED_TOPIC);
     try {
       Services.obs.removeObserver(this, DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC);
-    } catch(ex) {}
+    } catch (ex) {}
     Services.obs.removeObserver(this, GFX_FEATURES_READY_TOPIC);
     Services.obs.removeObserver(this, SEARCH_ENGINE_MODIFIED_TOPIC);
     Services.obs.removeObserver(this, SEARCH_SERVICE_TOPIC);
@@ -1176,6 +1186,21 @@ EnvironmentCache.prototype = {
   }),
 
   /**
+   * Update the cached attribution data object.
+   * @returns Promise<> resolved when the I/O is complete.
+   */
+  _updateAttribution: Task.async(function* () {
+    let data = yield AttributionCode.getAttrDataAsync();
+    if (Object.keys(data).length > 0) {
+      this._currentEnvironment.settings.attribution = {};
+      for (let key in data) {
+        this._currentEnvironment.settings.attribution[key] =
+          limitStringToLength(data[key], MAX_ATTRIBUTION_STRING_LENGTH);
+      }
+    }
+  }),
+
+  /**
    * Get the partner data in object form.
    * @return Object containing the partner data.
    */
@@ -1313,6 +1338,7 @@ EnvironmentCache.prototype = {
     let gfxData = {
       D2DEnabled: getGfxField("D2DEnabled", null),
       DWriteEnabled: getGfxField("DWriteEnabled", null),
+      ContentBackend: getGfxField("ContentBackend", null),
       // The following line is disabled due to main thread jank and will be enabled
       // again as part of bug 1154500.
       //DWriteVersion: getGfxField("DWriteVersion", null),
@@ -1411,7 +1437,7 @@ EnvironmentCache.prototype = {
       return;
     }
 
-    if(this._delayedInitFinished) {
+    if (this._delayedInitFinished) {
       this._lastEnvironmentChangeDate = now;
     }
 

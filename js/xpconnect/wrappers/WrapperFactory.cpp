@@ -19,6 +19,7 @@
 #include "jsfriendapi.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/Likely.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "nsContentUtils.h"
 #include "nsXULAppAPI.h"
 
@@ -101,9 +102,11 @@ WrapperFactory::WaiveXray(JSContext* cx, JSObject* objArg)
     MOZ_ASSERT(!js::IsWindow(obj));
 
     JSObject* waiver = GetXrayWaiver(obj);
-    if (waiver)
-        return waiver;
-    return CreateXrayWaiver(cx, obj);
+    if (!waiver) {
+        waiver = CreateXrayWaiver(cx, obj);
+    }
+    MOZ_ASSERT(!ObjectIsMarkedGray(waiver));
+    return waiver;
 }
 
 /* static */ bool
@@ -147,12 +150,14 @@ ShouldWaiveXray(JSContext* cx, JSObject* originalObj)
     return sameOrigin;
 }
 
-JSObject*
+void
 WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
-                                   HandleObject objArg, HandleObject objectPassedToWrap)
+                                   HandleObject objArg, HandleObject objectPassedToWrap,
+                                   MutableHandleObject retObj)
 {
     bool waive = ShouldWaiveXray(cx, objectPassedToWrap);
     RootedObject obj(cx, objArg);
+    retObj.set(nullptr);
     // Outerize any raw inner objects at the entry point here, so that we don't
     // have to worry about them for the rest of the wrapping code.
     if (js::IsWindow(obj)) {
@@ -164,16 +169,22 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
         obj = js::UncheckedUnwrap(obj);
         if (JS_IsDeadWrapper(obj)) {
             JS_ReportError(cx, "Can't wrap dead object");
-            return nullptr;
+            return;
         }
         MOZ_ASSERT(js::IsWindowProxy(obj));
+        // We crossed a compartment boundary there, so may now have a gray
+        // object.  This function is not allowed to return gray objects, so
+        // don't do that.
+        ExposeObjectToActiveJS(obj);
     }
 
     // If we've got a WindowProxy, there's nothing special that needs to be
     // done here, and we can move on to the next phase of wrapping. We handle
     // this case first to allow us to assert against wrappers below.
-    if (js::IsWindowProxy(obj))
-        return waive ? WaiveXray(cx, obj) : obj;
+    if (js::IsWindowProxy(obj)) {
+        retObj.set(waive ? WaiveXray(cx, obj) : obj);
+        return;
+    }
 
     // Here are the rules for wrapping:
     // We should never get a proxy here (the JS engine unwraps those for us).
@@ -184,13 +195,15 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
     // those objects in a security wrapper, then we need to hand back the
     // wrapper for the new scope instead. Also, global objects don't move
     // between scopes so for those we also want to return the wrapper. So...
-    if (!IS_WN_REFLECTOR(obj) || JS_IsGlobalObject(obj))
-        return waive ? WaiveXray(cx, obj) : obj;
+    if (!IS_WN_REFLECTOR(obj) || JS_IsGlobalObject(obj)) {
+        retObj.set(waive ? WaiveXray(cx, obj) : obj);
+        return;
+    }
 
     XPCWrappedNative* wn = XPCWrappedNative::Get(obj);
 
     JSAutoCompartment ac(cx, obj);
-    XPCCallContext ccx(JS_CALLER, cx, obj);
+    XPCCallContext ccx(cx, obj);
     RootedObject wrapScope(cx, scope);
 
     {
@@ -204,14 +217,19 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
             // wrapper?"
             nsresult rv = wn->GetScriptableInfo()->GetCallback()->
                 PreCreate(wn->Native(), cx, scope, wrapScope.address());
-            NS_ENSURE_SUCCESS(rv, waive ? WaiveXray(cx, obj) : obj);
+            if (NS_FAILED(rv)) {
+                retObj.set(waive ? WaiveXray(cx, obj) : obj);
+                return;
+            }
 
             // If the handed back scope differs from the passed-in scope and is in
             // a separate compartment, then this object is explicitly requesting
             // that we don't create a second JS object for it: create a security
             // wrapper.
-            if (js::GetObjectCompartment(scope) != js::GetObjectCompartment(wrapScope))
-                return waive ? WaiveXray(cx, obj) : obj;
+            if (js::GetObjectCompartment(scope) != js::GetObjectCompartment(wrapScope)) {
+                retObj.set(waive ? WaiveXray(cx, obj) : obj);
+                return;
+            }
 
             RootedObject currentScope(cx, JS_GetGlobalForObject(cx, obj));
             if (MOZ_UNLIKELY(wrapScope != currentScope)) {
@@ -242,7 +260,8 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
                 // Check for case (2).
                 if (probe != currentScope) {
                     MOZ_ASSERT(probe == wrapScope);
-                    return waive ? WaiveXray(cx, obj) : obj;
+                    retObj.set(waive ? WaiveXray(cx, obj) : obj);
+                    return;
                 }
 
                 // Ok, must be case (1). Fall through and create a new wrapper.
@@ -264,7 +283,8 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
                  AccessCheck::subsumes(js::GetObjectCompartment(wrapScope),
                                        js::GetObjectCompartment(obj)))
             {
-                return waive ? WaiveXray(cx, obj) : obj;
+                retObj.set(waive ? WaiveXray(cx, obj) : obj);
+                return;
             }
         }
     }
@@ -275,10 +295,13 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
     nsresult rv =
         nsXPConnect::XPConnect()->WrapNativeToJSVal(cx, wrapScope, wn->Native(), nullptr,
                                                     &NS_GET_IID(nsISupports), false, &v);
-    NS_ENSURE_SUCCESS(rv, nullptr);
+    if (NS_FAILED(rv)) {
+        return;
+    }
 
     obj.set(&v.toObject());
     MOZ_ASSERT(IS_WN_REFLECTOR(obj), "bad object");
+    MOZ_ASSERT(!ObjectIsMarkedGray(obj), "Should never return gray reflectors");
 
     // Because the underlying native didn't have a PreCreate hook, we had
     // to a new (or possibly pre-existing) XPCWN in our compartment.
@@ -292,11 +315,12 @@ WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
     XPCWrappedNative* newwn = XPCWrappedNative::Get(obj);
     XPCNativeSet* unionSet = XPCNativeSet::GetNewOrUsed(newwn->GetSet(),
                                                         wn->GetSet(), false);
-    if (!unionSet)
-        return nullptr;
+    if (!unionSet) {
+        return;
+    }
     newwn->SetSet(unionSet);
 
-    return waive ? WaiveXray(cx, obj) : obj;
+    retObj.set(waive ? WaiveXray(cx, obj) : obj);
 }
 
 #ifdef DEBUG
@@ -405,9 +429,7 @@ WrapperFactory::Rewrap(JSContext* cx, HandleObject existing, HandleObject obj)
                "wrapped object passed to rewrap");
     MOZ_ASSERT(!XrayUtils::IsXPCWNHolderClass(JS_GetClass(obj)), "trying to wrap a holder");
     MOZ_ASSERT(!js::IsWindow(obj));
-    // We sometimes end up here after nsContentUtils has been shut down but before
-    // XPConnect has been shut down, so check the context stack the roundabout way.
-    MOZ_ASSERT(XPCJSRuntime::Get()->GetJSContextStack()->Peek() == cx);
+    MOZ_ASSERT(dom::IsJSAPIActive());
 
     // Compute the information we need to select the right wrapper.
     JSCompartment* origin = js::GetObjectCompartment(obj);

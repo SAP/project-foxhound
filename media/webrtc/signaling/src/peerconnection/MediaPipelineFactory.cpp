@@ -149,6 +149,7 @@ JsepCodecDescToCodecConfig(const JsepCodecDescription& aCodec,
   configRaw->mNackFbTypes = desc.mNackFbTypes;
   configRaw->mCcmFbTypes = desc.mCcmFbTypes;
   configRaw->mRembFbSet = desc.RtcpFbRembIsSet();
+  configRaw->mFECFbSet = desc.mFECEnabled;
 
   *aConfig = configRaw;
   return NS_OK;
@@ -862,7 +863,22 @@ MediaPipelineFactory::GetOrCreateVideoConduit(
       return NS_ERROR_FAILURE;
     }
 
+
     auto error = conduit->ConfigureSendMediaCodec(configs.values[0]);
+
+    const SdpExtmapAttributeList::Extmap* rtpStreamIdExt =
+        aTrack.GetNegotiatedDetails()->GetExt(
+            "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id");
+
+    if (rtpStreamIdExt) {
+      MOZ_MTLOG(ML_DEBUG, "Calling EnableRTPSenderIdExtension");
+      error = conduit->EnableRTPStreamIdExtension(true, rtpStreamIdExt->entry);
+
+      if (error) {
+        MOZ_MTLOG(ML_ERROR, "EnableRTPSenderIdExtension failed: " << error);
+        return NS_ERROR_FAILURE;
+      }
+    }
 
     if (error) {
       MOZ_MTLOG(ML_ERROR, "ConfigureSendMediaCodec failed: " << error);

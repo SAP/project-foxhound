@@ -18,7 +18,6 @@
 #include "mozilla/dom/SourceBufferBinding.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/mozalloc.h"
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
@@ -88,6 +87,13 @@ public:
   void AbortBufferAppend();
 
   void Remove(double aStart, double aEnd, ErrorResult& aRv);
+
+  IMPL_EVENT_HANDLER(updatestart);
+  IMPL_EVENT_HANDLER(update);
+  IMPL_EVENT_HANDLER(updateend);
+  IMPL_EVENT_HANDLER(error);
+  IMPL_EVENT_HANDLER(abort);
+
   /** End WebIDL Methods. */
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -111,6 +117,8 @@ public:
 
   double GetBufferedStart();
   double GetBufferedEnd();
+  double HighestStartTime();
+  double HighestEndTime();
 
   // Runs the range removal algorithm as defined by the MSE spec.
   void RangeRemoval(double aStart, double aEnd);
@@ -147,7 +155,7 @@ private:
   // Will call endOfStream() with "decode" error if aDecodeError is true.
   // 3.5.3 Append Error Algorithm
   // http://w3c.github.io/media-source/#sourcebuffer-append-error
-  void AppendError(bool aDecoderError);
+  void AppendError(const MediaResult& aDecodeError);
 
   // Implements the "Prepare Append Algorithm". Returns MediaByteBuffer object
   // on success or nullptr (with aRv set) on error.
@@ -156,7 +164,7 @@ private:
                                                   ErrorResult& aRv);
 
   void AppendDataCompletedWithSuccess(SourceBufferTask::AppendBufferResult aResult);
-  void AppendDataErrored(nsresult aError);
+  void AppendDataErrored(const MediaResult& aError);
 
   RefPtr<MediaSource> mMediaSource;
 
@@ -168,6 +176,7 @@ private:
   mozilla::Atomic<bool> mActive;
 
   MozPromiseRequestHolder<SourceBufferTask::AppendPromise> mPendingAppend;
+  MozPromiseRequestHolder<SourceBufferTask::RangeRemovalPromise> mPendingRemoval;
   const nsCString mType;
 
   RefPtr<TimeRanges> mBuffered;

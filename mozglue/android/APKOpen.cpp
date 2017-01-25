@@ -83,7 +83,8 @@ enum StartupEvent {
 
 using namespace mozilla;
 
-static struct mapping_info * lib_mapping = nullptr;
+static const int MAX_MAPPING_INFO = 32;
+static mapping_info lib_mapping[MAX_MAPPING_INFO];
 
 NS_EXPORT const struct mapping_info *
 getLibraryMapping()
@@ -110,6 +111,7 @@ JNI_Throw(JNIEnv* jenv, const char* classname, const char* msg)
 
 namespace {
     JavaVM* sJavaVM;
+    pthread_t sJavaUiThread;
 }
 
 void
@@ -152,9 +154,17 @@ abortThroughJava(const char* msg)
     env->PopLocalFrame(nullptr);
 }
 
-#define JNI_STUBS
-#include "jni-stubs.inc"
-#undef JNI_STUBS
+NS_EXPORT pthread_t
+getJavaUiThread()
+{
+    return sJavaUiThread;
+}
+
+extern "C" NS_EXPORT void MOZ_JNICALL
+Java_org_mozilla_gecko_GeckoThread_registerUiThread(JNIEnv*, jclass)
+{
+    sJavaUiThread = pthread_self();
+}
 
 static void * xul_handle = nullptr;
 #ifndef MOZ_FOLD_LIBS
@@ -176,8 +186,6 @@ xul_dlsym(const char *symbolName, T *value)
 
 static int mapping_count = 0;
 
-#define MAX_MAPPING_INFO 32
-
 extern "C" void
 report_mapping(char *name, void *base, uint32_t len, uint32_t offset)
 {
@@ -189,6 +197,21 @@ report_mapping(char *name, void *base, uint32_t len, uint32_t offset)
   info->base = (uintptr_t)base;
   info->len = len;
   info->offset = offset;
+}
+
+extern "C" void
+delete_mapping(const char *name)
+{
+  for (int pos = 0; pos < mapping_count; ++pos) {
+    struct mapping_info *info = &lib_mapping[pos];
+    if (!strcmp(info->name, name)) {
+      struct mapping_info *last = &lib_mapping[mapping_count - 1];
+      free(info->name);
+      *info = *last;
+      --mapping_count;
+      break;
+    }
+  }
 }
 
 static void*
@@ -217,10 +240,6 @@ loadGeckoLibs(const char *apkName)
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't get a handle to libxul!");
     return FAILURE;
   }
-
-#define JNI_BINDINGS
-#include "jni-stubs.inc"
-#undef JNI_BINDINGS
 
   void (*XRE_StartupTimelineRecord)(int, TimeStamp);
   xul_dlsym("XRE_StartupTimelineRecord", &XRE_StartupTimelineRecord);
@@ -260,9 +279,6 @@ loadSQLiteLibs(const char *apkName)
   if (loadNSSLibs(apkName) != SUCCESS)
     return FAILURE;
 #else
-  if (!lib_mapping) {
-    lib_mapping = (struct mapping_info *)calloc(MAX_MAPPING_INFO, sizeof(*lib_mapping));
-  }
 
   sqlite_handle = dlopenAPKLibrary(apkName, "libmozsqlite3.so");
   if (!sqlite_handle) {
@@ -280,10 +296,6 @@ loadNSSLibs(const char *apkName)
 {
   if (nss_handle && nspr_handle && plc_handle)
     return SUCCESS;
-
-  if (!lib_mapping) {
-    lib_mapping = (struct mapping_info *)calloc(MAX_MAPPING_INFO, sizeof(*lib_mapping));
-  }
 
   nss_handle = dlopenAPKLibrary(apkName, "libnss3.so");
 

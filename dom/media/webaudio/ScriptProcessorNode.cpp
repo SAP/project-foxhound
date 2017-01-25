@@ -15,6 +15,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/PodOperations.h"
+#include "nsAutoPtr.h"
 #include <deque>
 
 namespace mozilla {
@@ -431,6 +432,7 @@ private:
                                 aNode->BufferSize(), context->SampleRate(),
                                 mInputBuffer.forget(), rv);
           if (rv.Failed()) {
+            rv.SuppressException();
             return nullptr;
           }
         }
@@ -502,7 +504,8 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* aContext,
                                   BufferSize(),
                                   aNumberOfInputChannels);
   mStream = AudioNodeStream::Create(aContext, engine,
-                                    AudioNodeStream::NO_STREAM_FLAGS);
+                                    AudioNodeStream::NO_STREAM_FLAGS,
+                                    aContext->Graph());
 }
 
 ScriptProcessorNode::~ScriptProcessorNode()

@@ -6,6 +6,7 @@
 
 #include "nsBindingManager.h"
 
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsXBLService.h"
 #include "nsIInputStream.h"
@@ -48,7 +49,7 @@
 #include "nsThreadUtils.h"
 #include "mozilla/dom/NodeListBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

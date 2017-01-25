@@ -12,29 +12,12 @@
 #include "GLSLANG/ShaderLang.h"
 #include "tests/test_utils/compiler_test.h"
 
-class RecordConstantPrecisionTest : public testing::Test
+using namespace sh;
+
+class RecordConstantPrecisionTest : public MatchOutputCodeTest
 {
   public:
-    RecordConstantPrecisionTest() {}
-
-  protected:
-    void compile(const std::string &shaderString)
-    {
-        std::string infoLog;
-        bool compilationSuccess = compileTestShader(GL_FRAGMENT_SHADER, SH_GLES2_SPEC, SH_ESSL_OUTPUT,
-                                                    shaderString, &mTranslatedCode, &infoLog);
-        if (!compilationSuccess)
-        {
-            FAIL() << "Shader compilation into ESSL failed " << infoLog;
-        }
-    }
-
-    bool foundInCode(const char *stringToFind)
-    {
-        return mTranslatedCode.find(stringToFind) != std::string::npos;
-    }
-  private:
-    std::string mTranslatedCode;
+    RecordConstantPrecisionTest() : MatchOutputCodeTest(GL_FRAGMENT_SHADER, 0, SH_ESSL_OUTPUT) {}
 };
 
 // The constant cannot be folded if its precision is higher than the other operands, since it
@@ -50,7 +33,7 @@ TEST_F(RecordConstantPrecisionTest, HigherPrecisionConstantAsParameter)
         "    gl_FragColor = vec4(b);\n"
         "}\n";
     compile(shaderString);
-    ASSERT_TRUE(foundInCode("const highp float s"));
+    ASSERT_TRUE(foundInCode("const highp float webgl_angle_s"));
     ASSERT_FALSE(foundInCode("fract(4096.5"));
     ASSERT_FALSE(foundInCode("fract((4096.5"));
 }
@@ -68,7 +51,7 @@ TEST_F(RecordConstantPrecisionTest, EqualPrecisionConstantAsParameter)
         "    gl_FragColor = vec4(b);\n"
         "}\n";
     compile(shaderString);
-    ASSERT_FALSE(foundInCode("const mediump float s"));
+    ASSERT_FALSE(foundInCode("const mediump float webgl_angle_s"));
     ASSERT_TRUE(foundInCode("fract((4096.5"));
 }
 
@@ -86,7 +69,7 @@ TEST_F(RecordConstantPrecisionTest, FoldedBinaryConstantPrecisionIsHigher)
         "    gl_FragColor = vec4(b);\n"
         "}\n";
     compile(shaderString);
-    ASSERT_TRUE(foundInCode("const highp float s"));
+    ASSERT_TRUE(foundInCode("const highp float webgl_angle_s"));
     ASSERT_FALSE(foundInCode("fract(4096.5"));
     ASSERT_FALSE(foundInCode("fract((4096.5"));
 }
@@ -106,7 +89,7 @@ TEST_F(RecordConstantPrecisionTest, FoldedUnaryConstantPrecisionIsHigher)
         "    gl_FragColor = vec4(b);\n"
         "}\n";
     compile(shaderString);
-    ASSERT_TRUE(foundInCode("const highp float s"));
+    ASSERT_TRUE(foundInCode("const highp float webgl_angle_s"));
     ASSERT_FALSE(foundInCode("sin(0.5"));
     ASSERT_FALSE(foundInCode("sin((0.5"));
 }

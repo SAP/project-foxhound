@@ -18,16 +18,16 @@ class GLContextWGL : public GLContext
 public:
     MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(GLContextWGL, override)
     // From Window: (possibly for offscreen!)
-    GLContextWGL(const SurfaceCaps& caps,
-                 GLContext* sharedContext,
+    GLContextWGL(CreateContextFlags flags,
+                 const SurfaceCaps& caps,
                  bool isOffscreen,
                  HDC aDC,
                  HGLRC aContext,
                  HWND aWindow = nullptr);
 
     // From PBuffer
-    GLContextWGL(const SurfaceCaps& caps,
-                 GLContext* sharedContext,
+    GLContextWGL(CreateContextFlags flags,
+                 const SurfaceCaps& caps,
                  bool isOffscreen,
                  HANDLE aPbuffer,
                  HDC aDC,

@@ -653,17 +653,18 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
     if (script->isDebuggee())
         flags |= BaselineFrame::DEBUGGEE;
 
-    // Initialize BaselineFrame's scopeChain and argsObj
-    JSObject* scopeChain = nullptr;
+    // Initialize BaselineFrame's envChain and argsObj
+    JSObject* envChain = nullptr;
     Value returnValue;
     ArgumentsObject* argsObj = nullptr;
     BailoutKind bailoutKind = iter.bailoutKind();
     if (bailoutKind == Bailout_ArgumentCheck) {
-        // Temporary hack -- skip the (unused) scopeChain, because it could be
-        // bogus (we can fail before the scope chain slot is set). Strip the
-        // hasScopeChain flag and this will be fixed up later in |FinishBailoutToBaseline|,
-        // which calls |EnsureHasScopeObjects|.
-        JitSpew(JitSpew_BaselineBailouts, "      Bailout_ArgumentCheck! (no valid scopeChain)");
+        // Temporary hack -- skip the (unused) envChain, because it could be
+        // bogus (we can fail before the env chain slot is set). Strip the
+        // hasEnvironmentChain flag and this will be fixed up later in
+        // |FinishBailoutToBaseline|, which calls
+        // |EnsureHasEnvironmentObjects|.
+        JitSpew(JitSpew_BaselineBailouts, "      Bailout_ArgumentCheck! (no valid envChain)");
         iter.skip();
 
         // skip |return value|
@@ -680,38 +681,47 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
     } else {
         Value v = iter.read();
         if (v.isObject()) {
-            scopeChain = &v.toObject();
-            if (fun && fun->needsCallObject())
-                flags |= BaselineFrame::HAS_CALL_OBJ;
+            envChain = &v.toObject();
+            if (fun &&
+                ((fun->needsCallObject() && envChain->is<CallObject>()) ||
+                 (fun->needsNamedLambdaEnvironment() &&
+                  !fun->needsCallObject() &&
+                  envChain->is<LexicalEnvironmentObject>() &&
+                  &envChain->as<LexicalEnvironmentObject>().scope() ==
+                  script->maybeNamedLambdaScope())))
+            {
+                MOZ_ASSERT(!fun->needsExtraBodyVarEnvironment());
+                flags |= BaselineFrame::HAS_INITIAL_ENV;
+            }
         } else {
             MOZ_ASSERT(v.isUndefined() || v.isMagic(JS_OPTIMIZED_OUT));
 
-            // Get scope chain from function or script.
+            // Get env chain from function or script.
             if (fun) {
                 // If pcOffset == 0, we may have to push a new call object, so
-                // we leave scopeChain nullptr and enter baseline code before
+                // we leave envChain nullptr and enter baseline code before
                 // the prologue.
                 //
                 // If we are propagating an exception for debug mode, we will
                 // not resume into baseline code, but instead into
-                // HandleExceptionBaseline, so *do* set the scope chain here.
+                // HandleExceptionBaseline, so *do* set the env chain here.
                 if (iter.pcOffset() != 0 || iter.resumeAfter() ||
                     (excInfo && excInfo->propagatingIonExceptionForDebugMode()))
                 {
-                    scopeChain = fun->environment();
+                    envChain = fun->environment();
                 }
             } else if (script->module()) {
-                scopeChain = script->module()->environment();
+                envChain = script->module()->environment();
             } else {
-                // For global scripts without a non-syntactic scope the scope
-                // chain is the script's global lexical scope (Ion does not
-                // compile scripts with a non-syntactic global scope). Also
-                // note that it's invalid to resume into the prologue in this
-                // case because the prologue expects the scope chain in R1 for
-                // eval and global scripts.
+                // For global scripts without a non-syntactic env the env
+                // chain is the script's global lexical environment (Ion does
+                // not compile scripts with a non-syntactic global scope).
+                // Also note that it's invalid to resume into the prologue in
+                // this case because the prologue expects the env chain in R1
+                // for eval and global scripts.
                 MOZ_ASSERT(!script->isForEval());
                 MOZ_ASSERT(!script->hasNonSyntacticScope());
-                scopeChain = &(script->global().lexicalScope());
+                envChain = &(script->global().lexicalEnvironment());
             }
         }
 
@@ -728,8 +738,8 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
                 argsObj = &v.toObject().as<ArgumentsObject>();
         }
     }
-    JitSpew(JitSpew_BaselineBailouts, "      ScopeChain=%p", scopeChain);
-    blFrame->setScopeChain(scopeChain);
+    JitSpew(JitSpew_BaselineBailouts, "      EnvChain=%p", envChain);
+    blFrame->setEnvironmentChain(envChain);
     JitSpew(JitSpew_BaselineBailouts, "      ReturnValue=%016llx", *((uint64_t*) &returnValue));
     blFrame->setReturnValue(returnValue);
 
@@ -1013,7 +1023,7 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
             // Not every monitored op has a monitored fallback stub, e.g.
             // JSOP_NEWOBJECT, which always returns the same type for a
             // particular script/pc location.
-            ICEntry& icEntry = baselineScript->icEntryFromPCOffset(pcOff);
+            BaselineICEntry& icEntry = baselineScript->icEntryFromPCOffset(pcOff);
             ICFallbackStub* fallbackStub = icEntry.firstStub()->getChainFallback();
             if (fallbackStub->isMonitoredFallback())
                 enterMonitorChain = true;
@@ -1028,7 +1038,7 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
         builder.setResumeFramePtr(prevFramePtr);
 
         if (enterMonitorChain) {
-            ICEntry& icEntry = baselineScript->icEntryFromPCOffset(pcOff);
+            BaselineICEntry& icEntry = baselineScript->icEntryFromPCOffset(pcOff);
             ICFallbackStub* fallbackStub = icEntry.firstStub()->getChainFallback();
             MOZ_ASSERT(fallbackStub->isMonitoredFallback());
             JitSpew(JitSpew_BaselineBailouts, "      [TYPE-MONITOR CHAIN]");
@@ -1123,11 +1133,11 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
             JitSpew(JitSpew_BaselineBailouts, "      Adjusted framesize -= %d: %d",
                     int(sizeof(Value) * numUnsynced), int(frameSize));
 
-            // If scopeChain is nullptr, then bailout is occurring during argument check.
+            // If envChain is nullptr, then bailout is occurring during argument check.
             // In this case, resume into the prologue.
             uint8_t* opReturnAddr;
-            if (scopeChain == nullptr) {
-                // Global and eval scripts expect the scope chain in R1, so only
+            if (envChain == nullptr) {
+                // Global and eval scripts expect the env chain in R1, so only
                 // resume into the prologue for function scripts.
                 MOZ_ASSERT(fun);
                 MOZ_ASSERT(numUnsynced == 0);
@@ -1152,13 +1162,13 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
                 ReportOutOfMemory(cx);
                 return false;
             }
-            JS_snprintf(buf, len, "%s %s %s on line %u of %s:%" PRIuSIZE,
-                                  BailoutKindString(bailoutKind),
-                                  resumeAfter ? "after" : "at",
-                                  CodeName[op],
-                                  PCToLineNumber(script, pc),
-                                  filename,
-                                  script->lineno());
+            snprintf(buf, len, "%s %s %s on line %u of %s:%" PRIuSIZE,
+                     BailoutKindString(bailoutKind),
+                     resumeAfter ? "after" : "at",
+                     CodeName[op],
+                     PCToLineNumber(script, pc),
+                     filename,
+                     script->lineno());
             cx->runtime()->spsProfiler.markEvent(buf);
             js_free(buf);
         }
@@ -1177,7 +1187,7 @@ InitFromBailout(JSContext* cx, HandleScript caller, jsbytecode* callerPC,
 
     // Calculate and write out return address.
     // The icEntry in question MUST have an inlinable fallback stub.
-    ICEntry& icEntry = baselineScript->icEntryFromPCOffset(pcOff);
+    BaselineICEntry& icEntry = baselineScript->icEntryFromPCOffset(pcOff);
     MOZ_ASSERT(IsInlinableFallback(icEntry.firstStub()->getChainFallback()));
     if (!builder.writePtr(baselineScript->returnAddressForIC(icEntry), "ReturnAddr"))
         return false;
@@ -1579,7 +1589,7 @@ jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation, JitFrameIter
         caller = scr;
         callerPC = callPC;
         fun = nextCallee;
-        scr = fun->existingScriptForInlinedFunction();
+        scr = fun->existingScript();
 
         frameNo++;
 
@@ -1709,7 +1719,7 @@ CopyFromRematerializedFrame(JSContext* cx, JitActivation* act, uint8_t* fp, size
     MOZ_ASSERT(rematFrame->script() == frame->script());
     MOZ_ASSERT(rematFrame->numActualArgs() == frame->numActualArgs());
 
-    frame->setScopeChain(rematFrame->scopeChain());
+    frame->setEnvironmentChain(rematFrame->environmentChain());
 
     if (frame->isFunctionFrame())
         frame->thisArgument() = rematFrame->thisArgument();
@@ -1719,6 +1729,8 @@ CopyFromRematerializedFrame(JSContext* cx, JitActivation* act, uint8_t* fp, size
 
     for (size_t i = 0; i < frame->script()->nfixed(); i++)
         *frame->valueSlot(i) = rematFrame->locals()[i];
+
+    frame->setReturnValue(rematFrame->returnValue());
 
     if (rematFrame->hasCachedSavedFrame())
         frame->setHasCachedSavedFrame();
@@ -1744,7 +1756,7 @@ jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfo)
 {
     // The caller pushes R0 and R1 on the stack without rooting them.
     // Since GC here is very unlikely just suppress it.
-    JSContext* cx = GetJSContextFromJitCode();
+    JSContext* cx = GetJSContextFromMainThread();
     js::gc::AutoSuppressGC suppressGC(cx);
 
     JitSpew(JitSpew_BaselineBailouts, "  Done restoring frames");
@@ -1764,10 +1776,10 @@ jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfo)
     js_free(bailoutInfo);
     bailoutInfo = nullptr;
 
-    // Ensure the frame has a call object if it needs one. If the scope chain
+    // Ensure the frame has a call object if it needs one. If the env chain
     // is nullptr, we will enter baseline code at the prologue so no need to do
     // anything in that case.
-    if (topFrame->scopeChain() && !EnsureHasScopeObjects(cx, topFrame))
+    if (topFrame->environmentChain() && !EnsureHasEnvironmentObjects(cx, topFrame))
         return false;
 
     // Create arguments objects for bailed out frames, to maintain the invariant
@@ -1793,10 +1805,10 @@ jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfo)
             BaselineFrame* frame = iter.baselineFrame();
             MOZ_ASSERT(frame->script()->hasBaselineScript());
 
-            // If the frame doesn't even have a scope chain set yet, then it's resuming
-            // into the the prologue before the scope chain is initialized.  Any
+            // If the frame doesn't even have a env chain set yet, then it's resuming
+            // into the the prologue before the env chain is initialized.  Any
             // necessary args object will also be initialized there.
-            if (frame->scopeChain() && frame->script()->needsArgsObj()) {
+            if (frame->environmentChain() && frame->script()->needsArgsObj()) {
                 ArgumentsObject* argsObj;
                 if (frame->hasArgsObj()) {
                     argsObj = &frame->argsObj();

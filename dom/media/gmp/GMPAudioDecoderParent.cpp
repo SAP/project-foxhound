@@ -6,7 +6,7 @@
 #include "GMPAudioDecoderParent.h"
 #include "GMPContentParent.h"
 #include <stdio.h>
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "GMPMessageUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
@@ -226,6 +226,7 @@ GMPAudioDecoderParent::ActorDestroy(ActorDestroyReason aWhy)
     mPlugin->AudioDecoderDestroyed(this);
     mPlugin = nullptr;
   }
+  MaybeDisconnect(aWhy == AbnormalShutdown);
 }
 
 bool

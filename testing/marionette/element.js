@@ -287,9 +287,10 @@ function find_(container, strategy, selector, searchFn, opts) {
         `Given ${strategy} expression "${selector}" is invalid: ${e}`);
   }
 
-  if (element.isElementCollection(res)) {
-    return res;
-  } else if (res) {
+  if (res) {
+    if (opts.all) {
+      return res;
+    }
     return [res];
   }
   return [];
@@ -577,14 +578,22 @@ function implicitlyWaitFor(func, timeout, interval = 100) {
         reject(e);
       }
 
-      // empty arrays evaluate to true in JS,
-      // so we must first ascertan if the result is a collection
-      //
-      // we also return immediately if timeout is 0,
-      // allowing |func| to be evaluated at least once
-      let col = element.isElementCollection(res);
-      if (((col && res.length > 0 ) || (!col && !!res)) ||
-          (startTime == endTime || new Date().getTime() >= endTime)) {
+      if (
+        // collections that might contain web elements
+        // should be checked until they are not empty
+        (element.isCollection(res) && res.length > 0)
+
+        // !![] (ensuring boolean type on empty array) always returns true
+        // and we can only use it on non-collections
+        || (!element.isCollection(res) && !!res)
+
+        // return immediately if timeout is 0,
+        // allowing |func| to be evaluted at least once
+        || startTime == endTime
+
+        // return if timeout has elapsed
+        || new Date().getTime() >= endTime
+      ) {
         resolve(res);
       }
     };
@@ -605,19 +614,22 @@ function implicitlyWaitFor(func, timeout, interval = 100) {
   });
 }
 
-element.isElementCollection = function(seq) {
-  if (seq === null) {
-    return false;
+/** Determines if |obj| is an HTML or JS collection. */
+element.isCollection = function(seq) {
+  switch (Object.prototype.toString.call(seq)) {
+    case "[object Arguments]":
+    case "[object Array]":
+    case "[object FileList]":
+    case "[object HTMLAllCollection]":
+    case "[object HTMLCollection]":
+    case "[object HTMLFormControlsCollection]":
+    case "[object HTMLOptionsCollection]":
+    case "[object NodeList]":
+      return true;
+
+    default:
+      return false;
   }
-
-  const arrayLike = {
-    "[object Array]": 0,
-    "[object HTMLCollection]": 1,
-    "[object NodeList]": 2,
-  };
-
-  let typ = Object.prototype.toString.call(seq);
-  return typ in arrayLike;
 };
 
 element.makeWebElement = function(uuid) {
@@ -625,6 +637,19 @@ element.makeWebElement = function(uuid) {
     [element.Key]: uuid,
     [element.LegacyKey]: uuid,
   };
+};
+
+/**
+ * Checks if |ref| has either |element.Key| or |element.LegacyKey| as properties.
+ *
+ * @param {?} ref
+ *     Object that represents a web element reference.
+ * @return {boolean}
+ *     True if |ref| has either expected property.
+ */
+element.isWebElementReference = function(ref) {
+  let properties = Object.getOwnPropertyNames(ref);
+  return properties.includes(element.Key) || properties.includes(element.LegacyKey);
 };
 
 element.generateUUID = function() {
@@ -706,43 +731,40 @@ element.fromJson = function(
  *     web elements.
  */
 element.toJson = function(obj, seenEls) {
-  switch (typeof obj) {
-    case "undefined":
-      return null;
+  let t = Object.prototype.toString.call(obj);
 
-    case "boolean":
-    case "number":
-    case "string":
-      return obj;
+  // null
+  if (t == "[object Undefined]" || t == "[object Null]") {
+    return null;
+  }
 
-    case "object":
-      if (obj === null) {
-        return obj;
+  // literals
+  else if (t == "[object Boolean]" || t == "[object Number]" || t == "[object String]") {
+    return obj;
+  }
+
+  // Array, NodeList, HTMLCollection, et al.
+  else if (element.isCollection(obj)) {
+    return [...obj].map(el => element.toJson(el, seenEls));
+  }
+
+  // HTMLElement
+  else if ("nodeType" in obj && obj.nodeType == 1) {
+    let uuid = seenEls.add(obj);
+    return element.makeWebElement(uuid);
+  }
+
+  // arbitrary objects + files
+  else {
+    let rv = {};
+    for (let prop in obj) {
+      try {
+        rv[prop] = element.toJson(obj[prop], seenEls);
+      } catch (e if (e.result == Cr.NS_ERROR_NOT_IMPLEMENTED)) {
+        logger.debug(`Skipping ${prop}: ${e.message}`);
       }
-
-      // NodeList, HTMLCollection
-      else if (element.isElementCollection(obj)) {
-        return [...obj].map(el => element.toJson(el, seenEls));
-      }
-
-      // DOM element
-      else if (obj.nodeType == 1) {
-        let uuid = seenEls.add(obj);
-        return {[element.Key]: uuid, [element.LegacyKey]: uuid};
-      }
-
-      // arbitrary objects
-      else {
-        let rv = {};
-        for (let prop in obj) {
-          try {
-            rv[prop] = element.toJson(obj[prop], seenEls);
-          } catch (e if (e.result == Cr.NS_ERROR_NOT_IMPLEMENTED)) {
-            logger.debug(`Skipping ${prop}: ${e.message}`);
-          }
-        }
-        return rv;
-      }
+    }
+    return rv;
   }
 };
 
@@ -752,7 +774,7 @@ element.toJson = function(obj, seenEls) {
  *
  * @param {nsIDOMElement} el
  *     Element to be checked.
- * @param nsIDOMWindow frame
+ * @param {nsIDOMWindow} frame
  *     Window object that contains the element or the current host
  *     of the shadow root.
  * @param {ShadowRoot=} shadowRoot
@@ -888,12 +910,8 @@ element.isVisible = function(el, x = undefined, y = undefined) {
   }
 
   if (!element.inViewport(el, x, y)) {
-    if (el.scrollIntoView) {
-      el.scrollIntoView({block: "start", inline: "nearest"});
-      if (!element.inViewport(el)) {
-        return false;
-      }
-    } else {
+    element.scrollIntoView(el);
+    if (!element.inViewport(el)) {
       return false;
     }
   }
@@ -918,8 +936,39 @@ element.isInteractable = function(el) {
  *     True if interactable, false otherwise.
  */
 element.isPointerInteractable = function(el) {
-  let tree = element.getInteractableElementTree(el);
-  return tree.length > 0;
+  let tree = element.getInteractableElementTree(el, el.ownerDocument);
+  return tree[0] === el;
+};
+
+/**
+ * Calculate the in-view centre point of the area of the given DOM client
+ * rectangle that is inside the viewport.
+ *
+ * @param {DOMRect} rect
+ *     Element off a DOMRect sequence produced by calling |getClientRects|
+ *     on a |DOMElement|.
+ * @param {nsIDOMWindow} win
+ *     Current browsing context.
+ *
+ * @return {Map.<string, number>}
+ *     X and Y coordinates that denotes the in-view centre point of |rect|.
+ */
+element.getInViewCentrePoint = function(rect, win) {
+  const {max, min} = Math;
+
+  let x = {
+    left: max(0, min(rect.x, rect.x + rect.width)),
+    right: min(win.innerWidth, max(rect.x, rect.x + rect.width)),
+  };
+  let y = {
+    top: max(0, min(rect.y, rect.y + rect.height)),
+    bottom: min(win.innerHeight, max(rect.y, rect.y + rect.height)),
+  };
+
+  return {
+    x: (x.left + x.right) / 2,
+    y: (y.top + y.bottom) / 2,
+  };
 };
 
 /**
@@ -931,54 +980,52 @@ element.isPointerInteractable = function(el) {
  *
  * @param {DOMElement} el
  *     Element to determine if is pointer-interactable.
+ * @param {DOMDocument} doc
+ *     Current browsing context's active document.
  *
  * @return {Array.<DOMElement>}
  *     Sequence of non-opaque elements in paint order.
  */
-element.getInteractableElementTree = function(el) {
-  let doc = el.ownerDocument;
+element.getInteractableElementTree = function(el, doc) {
   let win = doc.defaultView;
 
-  // step 1
-  // TODO
-
-  // steps 2-3
-  let box = el.getBoundingClientRect();
-  let visible = {
-    width: Math.max(box.x, box.x + box.width) - win.innerWidth,
-    height: Math.max(box.y, box.y + box.height) - win.innerHeight,
-  };
-
-  // steps 4-5
-  let offset = {
-    vertical: visible.width / 2.0,
-    horizontal: visible.height / 2.0,
-  };
-
-  // step 6
-  let centre = {
-    x: box.x + offset.horizontal,
-    y: box.y + offset.vertical,
-  };
-
-  // step 7
-  let tree = doc.elementsFromPoint(centre.x, centre.y);
-
-  // filter out non-interactable elements
-  let rv = [];
-  for (let el of tree) {
-    if (win.getComputedStyle(el).opacity === "1") {
-      rv.push(el);
-    }
+  // pointer-interactable elements tree, step 1
+  if (element.isDisconnected(el, win)) {
+    return [];
   }
 
-  return rv;
+  // steps 2-3
+  let rects = el.getClientRects();
+  if (rects.length == 0) {
+    return [];
+  }
+
+  // step 4
+  let centre = element.getInViewCentrePoint(rects[0], win);
+
+  // step 5
+  let tree = doc.elementsFromPoint(centre.x, centre.y);
+
+  // only visible elements are considered interactable
+  return tree.filter(el => win.getComputedStyle(el).opacity === "1");
 };
 
 // TODO(ato): Not implemented.
 // In fact, it's not defined in the spec.
 element.isKeyboardInteractable = function(el) {
   return true;
+};
+
+/**
+ * Attempts to scroll into view |el|.
+ *
+ * @param {DOMElement} el
+ *     Element to scroll into view.
+ */
+element.scrollIntoView = function(el) {
+  if (el.scrollIntoView) {
+    el.scrollIntoView({block: "end", inline: "nearest", behavior: "instant"});
+  }
 };
 
 element.isXULElement = function(el) {

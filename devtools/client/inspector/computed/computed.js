@@ -8,39 +8,27 @@
 
 "use strict";
 
-const {Cc, Ci, Cu} = require("chrome");
-
 const ToolDefinitions = require("devtools/client/definitions").Tools;
-const {CssLogic} = require("devtools/shared/inspector/css-logic");
-const {ELEMENT_STYLE} = require("devtools/server/actors/styles");
+const CssLogic = require("devtools/shared/inspector/css-logic");
+const {ELEMENT_STYLE} = require("devtools/shared/specs/styles");
 const promise = require("promise");
+const defer = require("devtools/shared/defer");
 const Services = require("Services");
 const {OutputParser} = require("devtools/client/shared/output-parser");
 const {PrefObserver, PREF_ORIG_SOURCES} = require("devtools/client/styleeditor/utils");
 const {createChild} = require("devtools/client/inspector/shared/utils");
 const {gDevTools} = require("devtools/client/framework/devtools");
+const {getCssProperties} = require("devtools/shared/fronts/css-properties");
 
-loader.lazyRequireGetter(this, "overlays",
-  "devtools/client/inspector/shared/style-inspector-overlays");
-loader.lazyRequireGetter(this, "StyleInspectorMenu",
-  "devtools/client/inspector/shared/style-inspector-menu");
-loader.lazyRequireGetter(this, "KeyShortcuts",
-  "devtools/client/shared/key-shortcuts", true);
+const overlays = require("devtools/client/inspector/shared/style-inspector-overlays");
+const StyleInspectorMenu = require("devtools/client/inspector/shared/style-inspector-menu");
+const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
+const {BoxModelView} = require("devtools/client/inspector/components/box-model");
+const clipboardHelper = require("devtools/shared/platform/clipboard");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
-
-XPCOMUtils.defineLazyGetter(CssComputedView, "_strings", function () {
-  return Services.strings.createBundle(
-    "chrome://devtools-shared/locale/styleinspector.properties");
-});
-
-XPCOMUtils.defineLazyGetter(this, "clipboardHelper", function () {
-  return Cc["@mozilla.org/widget/clipboardhelper;1"]
-         .getService(Ci.nsIClipboardHelper);
-});
+const STYLE_INSPECTOR_PROPERTIES = "devtools-shared/locale/styleinspector.properties";
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
 
 const FILTER_CHANGED_TIMEOUT = 150;
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -149,11 +137,8 @@ function CssComputedView(inspector, document, pageStyle) {
 
   this.propertyViews = [];
 
-  this._outputParser = new OutputParser(document);
-
-  let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"]
-    .getService(Ci.nsIXULChromeRegistry);
-  this.getRTLAttr = chromeReg.isLocaleRTL("global") ? "rtl" : "ltr";
+  let cssProperties = getCssProperties(inspector.toolbox);
+  this._outputParser = new OutputParser(document, cssProperties.supportsType);
 
   // Create bound methods.
   this.focusWindow = this.focusWindow.bind(this);
@@ -167,7 +152,6 @@ function CssComputedView(inspector, document, pageStyle) {
     this._onFilterTextboxContextMenu.bind(this);
 
   let doc = this.styleDocument;
-  this.root = doc.getElementById("root");
   this.element = doc.getElementById("propertyContainer");
   this.searchField = doc.getElementById("computedview-searchbox");
   this.searchClearButton = doc.getElementById("computedview-searchinput-clear");
@@ -186,13 +170,13 @@ function CssComputedView(inspector, document, pageStyle) {
   this.searchField.addEventListener("contextmenu",
                                     this._onFilterTextboxContextMenu);
   this.searchClearButton.addEventListener("click", this._onClearSearch);
-  this.includeBrowserStylesCheckbox.addEventListener("command",
+  this.includeBrowserStylesCheckbox.addEventListener("input",
     this._onIncludeBrowserStyles);
 
   this.searchClearButton.hidden = true;
 
   // No results text.
-  this.noResults = this.styleDocument.getElementById("noResults");
+  this.noResults = this.styleDocument.getElementById("computedview-no-results");
 
   // Refresh panel when color unit changed.
   this._handlePrefChange = this._handlePrefChange.bind(this);
@@ -204,7 +188,7 @@ function CssComputedView(inspector, document, pageStyle) {
   this._prefObserver.on(PREF_ORIG_SOURCES, this._onSourcePrefChanged);
 
   // The element that we're inspecting, and the document that it comes from.
-  this.viewedElement = null;
+  this._viewedElement = null;
 
   this.createStyleViews();
 
@@ -219,7 +203,7 @@ function CssComputedView(inspector, document, pageStyle) {
 }
 
 /**
- * Memoized lookup of a l10n string from a string bundle.
+ * Lookup a l10n string in the shared styleinspector string bundle.
  *
  * @param {String} name
  *        The key to lookup.
@@ -227,7 +211,7 @@ function CssComputedView(inspector, document, pageStyle) {
  */
 CssComputedView.l10n = function (name) {
   try {
-    return CssComputedView._strings.GetStringFromName(name);
+    return STYLE_INSPECTOR_L10N.getStr(name);
   } catch (ex) {
     console.log("Error reading '" + name + "'");
     throw new Error("l10n error with " + name);
@@ -275,7 +259,7 @@ CssComputedView.prototype = {
    */
   selectElement: function (element) {
     if (!element) {
-      this.viewedElement = null;
+      this._viewedElement = null;
       this.noResults.hidden = false;
 
       if (this._refreshProcess) {
@@ -288,11 +272,11 @@ CssComputedView.prototype = {
       return promise.resolve(undefined);
     }
 
-    if (element === this.viewedElement) {
+    if (element === this._viewedElement) {
       return promise.resolve(undefined);
     }
 
-    this.viewedElement = element;
+    this._viewedElement = element;
     this.refreshSourceFilter();
 
     return this.refreshPanel();
@@ -394,7 +378,7 @@ CssComputedView.prototype = {
       return this._createViewsPromise;
     }
 
-    let deferred = promise.defer();
+    let deferred = defer();
     this._createViewsPromise = deferred.promise;
 
     this.refreshSourceFilter();
@@ -434,23 +418,23 @@ CssComputedView.prototype = {
    * Refresh the panel content.
    */
   refreshPanel: function () {
-    if (!this.viewedElement) {
+    if (!this._viewedElement) {
       return promise.resolve();
     }
 
     // Capture the current viewed element to return from the promise handler
     // early if it changed
-    let viewedElement = this.viewedElement;
+    let viewedElement = this._viewedElement;
 
     return promise.all([
       this._createPropertyViews(),
-      this.pageStyle.getComputed(this.viewedElement, {
+      this.pageStyle.getComputed(this._viewedElement, {
         filter: this._sourceFilter,
         onlyMatched: !this.includeBrowserStyles,
         markMatched: true
       })
     ]).then(([, computed]) => {
-      if (viewedElement !== this.viewedElement) {
+      if (viewedElement !== this._viewedElement) {
         return promise.resolve();
       }
 
@@ -474,11 +458,14 @@ CssComputedView.prototype = {
       // Reset zebra striping.
       this._darkStripe = true;
 
-      let deferred = promise.defer();
+      let deferred = defer();
       this._refreshProcess = new UpdateProcess(
         this.styleWindow, this.propertyViews, {
           onItem: (propView) => {
             propView.refresh();
+          },
+          onCancel: () => {
+            deferred.reject("_refreshProcess of computed view cancelled");
           },
           onDone: () => {
             this._refreshProcess = null;
@@ -548,8 +535,10 @@ CssComputedView.prototype = {
     this._filterChangedTimeout = setTimeout(() => {
       if (this.searchField.value.length > 0) {
         this.searchField.setAttribute("filled", true);
+        this.inspector.emit("computed-view-filtered", true);
       } else {
         this.searchField.removeAttribute("filled");
+        this.inspector.emit("computed-view-filtered", false);
       }
 
       this.refreshPanel();
@@ -737,7 +726,7 @@ CssComputedView.prototype = {
    * Destructor for CssComputedView.
    */
   destroy: function () {
-    this.viewedElement = null;
+    this._viewedElement = null;
     this._outputParser = null;
 
     gDevTools.off("pref-changed", this._handlePrefChange);
@@ -771,11 +760,10 @@ CssComputedView.prototype = {
     this.searchField.removeEventListener("contextmenu",
                                          this._onFilterTextboxContextMenu);
     this.searchClearButton.removeEventListener("click", this._onClearSearch);
-    this.includeBrowserStylesCheckbox.removeEventListener("command",
-      this.includeBrowserStylesChanged);
+    this.includeBrowserStylesCheckbox.removeEventListener("input",
+      this._onIncludeBrowserStyles);
 
     // Nodes used in templating
-    this.root = null;
     this.element = null;
     this.panel = null;
     this.searchField = null;
@@ -823,7 +811,6 @@ PropertyInfo.prototype = {
 function PropertyView(tree, name) {
   this.tree = tree;
   this.name = name;
-  this.getRTLAttr = tree.getRTLAttr;
 
   this.link = "https://developer.mozilla.org/CSS/" + name;
 
@@ -856,7 +843,7 @@ PropertyView.prototype = {
   _matchedSelectorViews: null,
 
   // The previously selected element used for the selector view caches
-  prevViewedElement: null,
+  _prevViewedElement: null,
 
   /**
    * Get the computed style for the current property.
@@ -886,7 +873,7 @@ PropertyView.prototype = {
    * Should this property be visible?
    */
   get visible() {
-    if (!this.tree.viewedElement) {
+    if (!this.tree._viewedElement) {
       return false;
     }
 
@@ -1016,12 +1003,12 @@ PropertyView.prototype = {
     this.element.className = this.propertyHeaderClassName;
     this.element.nextElementSibling.className = this.propertyContentClassName;
 
-    if (this.prevViewedElement !== this.tree.viewedElement) {
+    if (this._prevViewedElement !== this.tree._viewedElement) {
       this._matchedSelectorViews = null;
-      this.prevViewedElement = this.tree.viewedElement;
+      this._prevViewedElement = this.tree._viewedElement;
     }
 
-    if (!this.tree.viewedElement || !this.visible) {
+    if (!this.tree._viewedElement || !this.visible) {
       this.valueNode.textContent = this.valueNode.title = "";
       this.matchedSelectorsContainer.parentNode.hidden = true;
       this.matchedSelectorsContainer.textContent = "";
@@ -1061,7 +1048,7 @@ PropertyView.prototype = {
 
     if (this.matchedExpanded && hasMatchedSelectors) {
       return this.tree.pageStyle
-        .getMatchedSelectors(this.tree.viewedElement, this.name)
+        .getMatchedSelectors(this.tree._viewedElement, this.name)
         .then(matched => {
           if (!this.matchedExpanded) {
             return promise.resolve(undefined);
@@ -1341,7 +1328,7 @@ SelectorView.prototype = {
     let showOrig = Services.prefs.getBoolPref(PREF_ORIG_SOURCES);
 
     if (showOrig && rule.type !== ELEMENT_STYLE) {
-      let deferred = promise.defer();
+      let deferred = defer();
 
       // set as this first so we show something while we're fetching
       this.source = CssLogic.shortSource(this.sheet) + ":" + rule.line;
@@ -1405,8 +1392,9 @@ function ComputedViewTool(inspector, window) {
   this.inspector = inspector;
   this.document = window.document;
 
-  this.view = new CssComputedView(this.inspector, this.document,
+  this.computedView = new CssComputedView(this.inspector, this.document,
     this.inspector.pageStyle);
+  this.boxModelView = new BoxModelView(this.inspector, this.document);
 
   this.onSelected = this.onSelected.bind(this);
   this.refresh = this.refresh.bind(this);
@@ -1414,7 +1402,7 @@ function ComputedViewTool(inspector, window) {
   this.onMutations = this.onMutations.bind(this);
   this.onResized = this.onResized.bind(this);
 
-  this.inspector.selection.on("detached", this.onSelected);
+  this.inspector.selection.on("detached-front", this.onSelected);
   this.inspector.selection.on("new-node-front", this.onSelected);
   this.inspector.selection.on("pseudoclass", this.refresh);
   this.inspector.sidebar.on("computedview-selected", this.onPanelSelected);
@@ -1422,14 +1410,14 @@ function ComputedViewTool(inspector, window) {
   this.inspector.walker.on("mutations", this.onMutations);
   this.inspector.walker.on("resize", this.onResized);
 
-  this.view.selectElement(null);
+  this.computedView.selectElement(null);
 
   this.onSelected();
 }
 
 ComputedViewTool.prototype = {
   isSidebarActive: function () {
-    if (!this.view) {
+    if (!this.computedView) {
       return false;
     }
     return this.inspector.sidebar.getCurrentTabID() == "computedview";
@@ -1440,7 +1428,7 @@ ComputedViewTool.prototype = {
     // But only if the current selection isn't null. If it's been set to null,
     // let the update go through as this is needed to empty the view on
     // navigation.
-    if (!this.view) {
+    if (!this.computedView) {
       return;
     }
 
@@ -1450,17 +1438,17 @@ ComputedViewTool.prototype = {
       return;
     }
 
-    this.view.setPageStyle(this.inspector.pageStyle);
+    this.computedView.setPageStyle(this.inspector.pageStyle);
 
     if (!this.inspector.selection.isConnected() ||
         !this.inspector.selection.isElementNode()) {
-      this.view.selectElement(null);
+      this.computedView.selectElement(null);
       return;
     }
 
     if (!event || event == "new-node-front") {
       let done = this.inspector.updating("computed-view");
-      this.view.selectElement(this.inspector.selection.nodeFront).then(() => {
+      this.computedView.selectElement(this.inspector.selection.nodeFront).then(() => {
         done();
       });
     }
@@ -1468,12 +1456,12 @@ ComputedViewTool.prototype = {
 
   refresh: function () {
     if (this.isSidebarActive()) {
-      this.view.refreshPanel();
+      this.computedView.refreshPanel();
     }
   },
 
   onPanelSelected: function () {
-    if (this.inspector.selection.nodeFront === this.view.viewedElement) {
+    if (this.inspector.selection.nodeFront === this.computedView._viewedElement) {
       this.refresh();
     } else {
       this.onSelected();
@@ -1508,15 +1496,16 @@ ComputedViewTool.prototype = {
     this.inspector.sidebar.off("computedview-selected", this.refresh);
     this.inspector.selection.off("pseudoclass", this.refresh);
     this.inspector.selection.off("new-node-front", this.onSelected);
-    this.inspector.selection.off("detached", this.onSelected);
+    this.inspector.selection.off("detached-front", this.onSelected);
     this.inspector.sidebar.off("computedview-selected", this.onPanelSelected);
     if (this.inspector.pageStyle) {
       this.inspector.pageStyle.off("stylesheet-updated", this.refresh);
     }
 
-    this.view.destroy();
+    this.computedView.destroy();
+    this.boxModelView.destroy();
 
-    this.view = this.document = this.inspector = null;
+    this.computedView = this.boxModelView = this.document = this.inspector = null;
   }
 };
 

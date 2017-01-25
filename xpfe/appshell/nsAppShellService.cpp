@@ -526,7 +526,9 @@ nsAppShellService::CreateWindowlessBrowser(bool aIsChrome, nsIWindowlessBrowser 
     NS_ERROR("Couldn't create instance of PuppetWidget");
     return NS_ERROR_FAILURE;
   }
-  widget->Create(nullptr, 0, LayoutDeviceIntRect(0, 0, 0, 0), nullptr);
+  nsresult rv =
+    widget->Create(nullptr, 0, LayoutDeviceIntRect(0, 0, 0, 0), nullptr);
+  NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIBaseWindow> window = do_QueryInterface(navigation);
   window->InitWindow(0, widget, 0, 0, 0, 0);
   window->Create();
@@ -778,7 +780,7 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
     thisContext->SetRemoteTabs(isUsingRemoteTabs);
   }
 
-  window.swap(*aResult); // transfer reference
+  window.forget(aResult);
   if (parent)
     parent->AddChildWindow(*aResult);
 
@@ -895,8 +897,11 @@ nsAppShellService::RegisterTopLevelWindow(nsIXULWindow* aWindow)
   nsCOMPtr<nsIObserverService> obssvc = services::GetObserverService();
   NS_ASSERTION(obssvc, "Couldn't get observer service.");
 
-  if (obssvc)
+  if (obssvc) {
     obssvc->NotifyObservers(aWindow, "xul-window-registered", nullptr);
+    nsXULWindow* xulWindow = static_cast<nsXULWindow*>(aWindow);
+    xulWindow->WasRegistered();
+  }
 
   return NS_OK;
 }

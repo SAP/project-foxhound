@@ -75,7 +75,7 @@
                           accesskey="&emailPageCmd.accesskey;"
                           command="Browser:SendLink"/>
                 <menuseparator/>
-#if !defined(MOZ_WIDGET_GTK) && !defined(MOZ_WIDGET_QT)
+#if !defined(MOZ_WIDGET_GTK)
                 <menuitem id="menu_printSetup"
                           label="&printSetupCmd.label;"
                           accesskey="&printSetupCmd.accesskey;"
@@ -220,9 +220,6 @@
                     <menuitem id="menu_tabsSidebar"
                               observes="viewTabsSidebar"
                               label="&syncedTabs.sidebar.label;"/>
-                    <!-- Service providers with sidebars are inserted between these two menuseperators -->
-                    <menuseparator hidden="true"/>
-                    <menuseparator class="social-provider-menu" hidden="true"/>
                   </menupopup>
                 </menu>
                 <menuseparator/>

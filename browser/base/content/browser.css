@@ -19,30 +19,6 @@
 %endif
 }
 
-/* These values are chosen to keep the Loop detached chat window from
- * getting too small.  When it's too small, three bad things happen:
- *
- * - It looks terrible
- * - It's not really usable
- * - It's possible for the user to be transmitting video that's cropped by the
- *   the edge of the window, so that they're not aware of it, which is a
- *   privacy problem
- *
- * Note that if the chat window grows more users than Loop who want this
- * ability, we'll need to generalize.  A partial patch for this is in
- * bug 1112264.
- */
-
-#chat-window {
- /*
-  * In some ideal world, we'd have a simple way to express "block resizing
-  * along any dimension beyond the point at which an overflow event would
-  * occur".  But none of -moz-{fit,max,min}-content do what we want here. So..
-  */
-  min-width: 260px;
-  min-height: 315px;
-}
-
 #main-window[customize-entered] {
   min-width: -moz-fit-content;
 }
@@ -152,8 +128,8 @@ tabbrowser {
   max-width: 210px;
   min-width: 100px;
   width: 0;
-  transition: min-width 200ms ease-out,
-              max-width 230ms ease-out;
+  transition: min-width 100ms ease-out,
+              max-width 100ms ease-out;
 }
 
 .tabbrowser-tab:not([pinned]):not([fadein]) {
@@ -267,16 +243,6 @@ toolbar[customizing] > .overflow-button {
   -moz-box-ordinal-group: 0;
 }
 
-/* In private windows, the #titlebar-content is higher because of the
- * private browsing indicator. With the margin-top the titlebar buttons
- * align to the top correctly in that case, but only if we don't stretch
- * the box they're in because the container is too high, so we override
- * the default alignment value (stretch).
- */
-#main-window[tabsintitlebar] > #titlebar > #titlebar-content > #titlebar-buttonbox-container {
-  -moz-box-align: start;
-}
-
 %else
 /* On non-OSX, these should be start-aligned */
 #titlebar-buttonbox-container {
@@ -284,7 +250,7 @@ toolbar[customizing] > .overflow-button {
 }
 %endif
 
-%if !defined(MOZ_WIDGET_GTK) && !defined(MOZ_WIDGET_QT)
+%if !defined(MOZ_WIDGET_GTK)
 #TabsToolbar > .private-browsing-indicator {
   -moz-box-ordinal-group: 1000;
 }
@@ -336,6 +302,36 @@ toolbarpaletteitem:-moz-any([place="palette"], [place="panel"]) > toolbaritem[sd
 
 toolbarpaletteitem > toolbaritem[sdkstylewidget="true"][cui-areatype="toolbar"] > .toolbarbutton-text {
   display: -moz-box;
+}
+
+@media not all and (min-resolution: 1.1dppx) {
+  .webextension-browser-action {
+    list-style-image: var(--webextension-toolbar-image);
+  }
+
+  .webextension-browser-action[cui-areatype="menu-panel"],
+  toolbarpaletteitem[place="palette"] > .webextension-browser-action {
+    list-style-image: var(--webextension-menupanel-image);
+  }
+
+  .webextension-page-action {
+    list-style-image: var(--webextension-urlbar-image);
+  }
+}
+
+@media (min-resolution: 1.1dppx) {
+  .webextension-browser-action {
+    list-style-image: var(--webextension-toolbar-image-2x);
+  }
+
+  .webextension-browser-action[cui-areatype="menu-panel"],
+  toolbarpaletteitem[place="palette"] > .webextension-browser-action {
+    list-style-image: var(--webextension-menupanel-image-2x);
+  }
+
+  .webextension-page-action {
+    list-style-image: var(--webextension-urlbar-image-2x);
+  }
 }
 
 toolbarpaletteitem[removable="false"] {
@@ -534,6 +530,10 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   pointer-events: none;
 }
 
+#urlbar[pageproxystate="invalid"] > #identity-box > #notification-popup-box {
+  pointer-events: auto;
+}
+
 #identity-icon-labels {
   max-width: 18em;
 }
@@ -667,7 +667,7 @@ window[chromehidden~="toolbar"] toolbar:not(#nav-bar):not(#TabsToolbar):not(#pri
   background: black;
 }
 
-html|*#fullscreen-warning {
+html|*.pointerlockfswarning {
   position: fixed;
   z-index: 2147483647 !important;
   visibility: visible;
@@ -681,28 +681,28 @@ html|*#fullscreen-warning {
   max-width: 95%;
   pointer-events: none;
 }
-html|*#fullscreen-warning:not([hidden]) {
+html|*.pointerlockfswarning:not([hidden]) {
   display: flex;
   will-change: transform;
 }
-html|*#fullscreen-warning[onscreen] {
+html|*.pointerlockfswarning[onscreen] {
   transform: translate(-50%, 50px);
 }
-html|*#fullscreen-warning[ontop] {
+html|*.pointerlockfswarning[ontop] {
   /* Use -10px to hide the border and border-radius on the top */
   transform: translate(-50%, -10px);
 }
-#main-window[OSXLionFullscreen] html|*#fullscreen-warning[ontop] {
+#main-window[OSXLionFullscreen] html|*.pointerlockfswarning[ontop] {
   transform: translate(-50%, 80px);
 }
 
-html|*#fullscreen-domain-text,
-html|*#fullscreen-generic-text {
+html|*.pointerlockfswarning-domain-text,
+html|*.pointerlockfswarning-generic-text {
   word-wrap: break-word;
   /* We must specify a min-width, otherwise word-wrap:break-word doesn't work. Bug 630864. */
   min-width: 1px
 }
-html|*#fullscreen-domain-text:not([hidden]) + html|*#fullscreen-generic-text {
+html|*.pointerlockfswarning-domain-text:not([hidden]) + html|*.pointerlockfswarning-generic-text {
   display: none;
 }
 
@@ -752,6 +752,7 @@ html|*#fullscreen-exit-button {
   -moz-user-focus: normal;
 }
 
+#blocked-permissions-container > .blocked-permission-icon:not([showing]),
 .notification-anchor-icon:not([showing]) {
   display: none;
 }
@@ -776,13 +777,6 @@ html|*#fullscreen-exit-button {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#click-to-play-plugins-notification");
 }
 
-#login-fill-notification {
-  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#login-fill-notification");
-}
-
-.login-fill-item {
-  -moz-binding: url("chrome://passwordmgr/content/login.xml#login");
-}
 
 .plugin-popupnotification-centeritem {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#plugin-popupnotification-center-item");
@@ -889,10 +883,6 @@ html|*#gcli-output-frame,
   transition: none;
 }
 
-toolbarbutton[type="socialmark"] {
-  -moz-binding: url("chrome://browser/content/socialmarks.xml#toolbarbutton-marks");
-}
-
 panelview > .social-panel-frame {
   width: auto;
   height: auto;
@@ -901,77 +891,6 @@ panelview > .social-panel-frame {
 /* Translation */
 notification[value="translation"] {
   -moz-binding: url("chrome://browser/content/translation-infobar.xml#translationbar");
-}
-
-/* Social */
-/* Note the chatbox 'width' values are duplicated in socialchat.xml */
-chatbox {
-  -moz-binding: url("chrome://browser/content/socialchat.xml#chatbox");
-  transition: height 150ms ease-out, width 150ms ease-out;
-  height: 290px;
-  width: 300px; /* CHAT_WIDTH_OPEN in socialchat.xml */
-}
-
-chatbox[customSize] {
-  width: 350px; /* CHAT_WIDTH_OPEN_ALT in socialchat.xml */
-}
-
-#chat-window[customSize] {
-  min-width: 350px;
-}
-
-chatbox[customSize="loopChatEnabled"] {
-  /* 430px as defined per UX */
-  height: 430px;
-}
-
-#chat-window[customSize="loopChatEnabled"] {
-  /* 325px + 30px top bar height. */
-  min-height: calc(325px + 30px);
-}
-
-chatbox[customSize="loopChatMessageAppended"] {
-  /* 430px as defined per UX */
-  height: 430px;
-}
-
-chatbox[customSize="loopChatDisabledMessageAppended"] {
-  /* 388px as defined per UX */
-  height: 388px;
-}
-
-#chat-window[customSize="loopChatMessageAppended"] {
-  /* 445px + 30px top bar height. */
-  min-height: calc(400px + 30px);
-}
-
-chatbox[minimized="true"] {
-  width: 160px;
-  height: 20px; /* CHAT_WIDTH_MINIMIZED in socialchat.xml */
-}
-
-chatbar {
-  -moz-binding: url("chrome://browser/content/socialchat.xml#chatbar");
-  height: 0;
-  max-height: 0;
-}
-
-.chatbar-innerbox {
-  margin: -285px 0 0;
-}
-
-chatbar[customSize] > .chatbar-innerbox {
-  /* 450px to make room for the maximum custom-size chatbox; currently 'loopChatMessageAppended'. */
-  margin-top: -450px;
-}
-
-/* Apply crisp rendering for favicons at exactly 2dppx resolution */
-@media (resolution: 2dppx) {
-  #social-sidebar-favico,
-  .social-status-button,
-  .chat-status-icon {
-    image-rendering: -moz-crisp-edges;
-  }
 }
 
 /** See bug 872317 for why the following rule is necessary. */
@@ -1005,21 +924,8 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > #downloads-
   visibility: hidden;
 }
 
-/* hide chat chrome when chat is fullscreen */
-#chat-window[sizemode="fullscreen"] chatbox > .chat-titlebar {
-  display: none;
-}
-
-/* hide chatbar and sidebar if browser tab is fullscreen */
-#main-window[inFullscreen][inDOMFullscreen] chatbar,
-#main-window[inFullscreen][inDOMFullscreen] #social-sidebar-box,
-#main-window[inFullscreen][inDOMFullscreen] #social-sidebar-splitter {
-  display: none;
-}
-
 /* Combobox dropdown renderer */
 #ContentSelectDropdown > menupopup {
-  max-height: 350px;
   /* The menupopup itself should always be rendered LTR to ensure the scrollbar aligns with
    * the dropdown arrow on the dropdown widget. If a menuitem is RTL, its style will be set accordingly */
   direction: ltr;
@@ -1270,10 +1176,6 @@ toolbarpaletteitem[place="palette"][hidden] {
 #context-navigation > .menuitem-iconic > .menu-iconic-text,
 #context-navigation > .menuitem-iconic > .menu-accel-container {
   display: none;
-}
-
-#login-fill-doorhanger:not([inDetailView]) > #login-fill-clickcapturer {
-  pointer-events: none;
 }
 
 .popup-notification-invalid-input {

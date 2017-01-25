@@ -21,8 +21,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/PodOperations.h"
 
-#include "asmjs/Wasm.h"
-#include "asmjs/WasmModule.h"
+#include "asmjs/WasmInstance.h"
 #include "jit/AtomicOperations.h"
 #include "jit/Disassembler.h"
 #include "vm/Runtime.h"
@@ -147,6 +146,9 @@ class AutoSetHandlingSegFault
 #  define R15_sig(p) ((p)->uc_mcontext.arm_pc)
 # else
 #  define R15_sig(p) ((p)->uc_mcontext.gregs[REG_R15])
+# endif
+# if defined(__linux__) && defined(__aarch64__)
+#  define EPC_sig(p) ((p)->uc_mcontext.pc)
 # endif
 # if defined(__linux__) && defined(__mips__)
 #  define EPC_sig(p) ((p)->uc_mcontext.pc)
@@ -317,20 +319,20 @@ enum { REG_EIP = 14 };
 // the same as CONTEXT, but on Mac we use a different structure since we call
 // into the emulator code from a Mach exception handler rather than a
 // sigaction-style signal handler.
-#if defined(XP_DARWIN) && defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB)
-# if defined(JS_CODEGEN_X64)
+#if defined(XP_DARWIN)
+# if defined(JS_CPU_X64)
 struct macos_x64_context {
     x86_thread_state64_t thread;
     x86_float_state64_t float_;
 };
 #  define EMULATOR_CONTEXT macos_x64_context
-# elif defined(JS_CODEGEN_X86)
+# elif defined(JS_CPU_X86)
 struct macos_x86_context {
     x86_thread_state_t thread;
     x86_float_state_t float_;
 };
 #  define EMULATOR_CONTEXT macos_x86_context
-# elif defined(JS_CODEGEN_ARM)
+# elif defined(JS_CPU_ARM)
 struct macos_arm_context {
     arm_thread_state_t thread;
     arm_neon_state_t float_;
@@ -349,6 +351,8 @@ struct macos_arm_context {
 # define PC_sig(p) EIP_sig(p)
 #elif defined(JS_CPU_ARM)
 # define PC_sig(p) R15_sig(p)
+#elif defined(__aarch64__)
+# define PC_sig(p) EPC_sig(p)
 #elif defined(JS_CPU_MIPS)
 # define PC_sig(p) EPC_sig(p)
 #endif
@@ -359,11 +363,9 @@ ContextToPC(CONTEXT* context)
 #ifdef JS_CODEGEN_NONE
     MOZ_CRASH();
 #else
-     return reinterpret_cast<uint8_t**>(&PC_sig(context));
+    return reinterpret_cast<uint8_t**>(&PC_sig(context));
 #endif
 }
-
-#if defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB)
 
 #if defined(JS_CODEGEN_X64)
 MOZ_COLD static void
@@ -534,7 +536,6 @@ AddressOfGPRegisterSlot(EMULATOR_CONTEXT* context, Registers::Code code)
     MOZ_CRASH();
 }
 # endif  // !XP_DARWIN
-#endif // JS_CODEGEN_X64
 
 MOZ_COLD static void
 SetRegisterToCoercedUndefined(EMULATOR_CONTEXT* context, size_t size,
@@ -600,14 +601,25 @@ ComputeAccessAddress(EMULATOR_CONTEXT* context, const Disassembler::ComplexAddre
     return reinterpret_cast<uint8_t*>(result);
 }
 
-MOZ_COLD static uint8_t*
-EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddress,
-                  const HeapAccess* heapAccess, const Module& module)
+MOZ_COLD static bool
+HugeMemoryAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddress,
+                 const Instance& instance, uint8_t** ppc)
 {
-    MOZ_RELEASE_ASSERT(module.containsFunctionPC(pc));
-    MOZ_RELEASE_ASSERT(module.compileArgs().useSignalHandlersForOOB);
-    MOZ_RELEASE_ASSERT(!heapAccess->hasLengthCheck());
-    MOZ_RELEASE_ASSERT(heapAccess->insnOffset() == (pc - module.code()));
+    MOZ_RELEASE_ASSERT(instance.codeSegment().containsFunctionPC(pc));
+
+    // On WASM_HUGE_MEMORY platforms, wasm::MemoryAccess is only created for
+    // asm.js loads and stores since they unfortunately do not simply throw on
+    // out-of-bounds. Everything else (WebAssembly and experimental
+    // SIMD/Atomics) throws.
+
+    const MemoryAccess* memoryAccess = instance.code().lookupMemoryAccess(pc);
+    if (!memoryAccess) {
+        *ppc = instance.codeSegment().outOfBoundsCode();
+        return true;
+    }
+
+    MOZ_RELEASE_ASSERT(instance.isAsmJS());
+    MOZ_RELEASE_ASSERT(memoryAccess->insnOffset() == (pc - instance.codeBase()));
 
     // Disassemble the instruction which caused the trap so that we can extract
     // information about it and decide what to do.
@@ -615,9 +627,8 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
     uint8_t* end = Disassembler::DisassembleHeapAccess(pc, &access);
     const Disassembler::ComplexAddress& address = access.address();
     MOZ_RELEASE_ASSERT(end > pc);
-    MOZ_RELEASE_ASSERT(module.containsFunctionPC(end));
+    MOZ_RELEASE_ASSERT(instance.codeSegment().containsFunctionPC(end));
 
-#if defined(JS_CODEGEN_X64)
     // Check x64 asm.js heap access invariants.
     MOZ_RELEASE_ASSERT(address.disp() >= 0);
     MOZ_RELEASE_ASSERT(address.base() == HeapReg.code());
@@ -627,7 +638,7 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
         uintptr_t base;
         StoreValueFromGPReg(SharedMem<void*>::unshared(&base), sizeof(uintptr_t),
                             AddressOfGPRegisterSlot(context, address.base()));
-        MOZ_RELEASE_ASSERT(reinterpret_cast<uint8_t*>(base) == module.heap());
+        MOZ_RELEASE_ASSERT(reinterpret_cast<uint8_t*>(base) == instance.memoryBase());
     }
     if (address.hasIndex()) {
         uintptr_t index;
@@ -635,7 +646,6 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
                             AddressOfGPRegisterSlot(context, address.index()));
         MOZ_RELEASE_ASSERT(uint32_t(index) == index);
     }
-#endif
 
     // Determine the actual effective address of the faulting access. We can't
     // rely on the faultingAddress given to us by the OS, because we need the
@@ -645,11 +655,13 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
     MOZ_RELEASE_ASSERT(size_t(faultingAddress - accessAddress) < access.size(),
                        "Given faulting address does not appear to be within computed "
                        "faulting address range");
-    MOZ_RELEASE_ASSERT(accessAddress >= module.heap(),
+    MOZ_RELEASE_ASSERT(accessAddress >= instance.memoryBase(),
                        "Access begins outside the asm.js heap");
-    MOZ_RELEASE_ASSERT(accessAddress + access.size() <= module.heap() + MappedSize,
+    MOZ_RELEASE_ASSERT(accessAddress + access.size() <= instance.memoryBase() +
+                       instance.memoryMappedSize(),
                        "Access extends beyond the asm.js heap guard region");
-    MOZ_RELEASE_ASSERT(accessAddress + access.size() > module.heap() + module.heapLength(),
+    MOZ_RELEASE_ASSERT(accessAddress + access.size() > instance.memoryBase() +
+                       instance.memoryLength(),
                        "Computed access address is not actually out of bounds");
 
     // The basic sandbox model is that all heap accesses are a heap base
@@ -659,34 +671,27 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
     // However, we wish to support the optimization of folding immediates
     // and scaled indices into addresses, and any address arithmetic we fold
     // gets done at full pointer width, so it doesn't get properly wrapped.
-    // We support this by extending MappedSize to the greatest size that could
-    // be reached by such an unwrapped address, and then when we arrive here in
-    // the signal handler for such an access, we compute the fully wrapped
-    // address, and perform the load or store on it.
+    // We support this by extending HugeMappedSize to the greatest size that
+    // could be reached by such an unwrapped address, and then when we arrive
+    // here in the signal handler for such an access, we compute the fully
+    // wrapped address, and perform the load or store on it.
     //
     // Taking a signal is really slow, but in theory programs really shouldn't
     // be hitting this anyway.
-    intptr_t unwrappedOffset = accessAddress - module.heap().unwrap(/*safe - for value*/);
+    intptr_t unwrappedOffset = accessAddress - instance.memoryBase().unwrap(/* for value */);
     uint32_t wrappedOffset = uint32_t(unwrappedOffset);
     size_t size = access.size();
     MOZ_RELEASE_ASSERT(wrappedOffset + size > wrappedOffset);
-    bool inBounds = wrappedOffset + size < module.heapLength();
-
-    // If this is storing Z of an XYZ, check whether X is also in bounds, so
-    // that we don't store anything before throwing.
-    MOZ_RELEASE_ASSERT(unwrappedOffset > heapAccess->offsetWithinWholeSimdVector());
-    uint32_t wrappedBaseOffset = uint32_t(unwrappedOffset - heapAccess->offsetWithinWholeSimdVector());
-    if (wrappedBaseOffset >= module.heapLength())
-        inBounds = false;
+    bool inBounds = wrappedOffset + size < instance.memoryLength();
 
     if (inBounds) {
         // We now know that this is an access that is actually in bounds when
         // properly wrapped. Complete the load or store with the wrapped
         // address.
-        SharedMem<uint8_t*> wrappedAddress = module.heap() + wrappedOffset;
-        MOZ_RELEASE_ASSERT(wrappedAddress >= module.heap());
+        SharedMem<uint8_t*> wrappedAddress = instance.memoryBase() + wrappedOffset;
+        MOZ_RELEASE_ASSERT(wrappedAddress >= instance.memoryBase());
         MOZ_RELEASE_ASSERT(wrappedAddress + size > wrappedAddress);
-        MOZ_RELEASE_ASSERT(wrappedAddress + size <= module.heap() + module.heapLength());
+        MOZ_RELEASE_ASSERT(wrappedAddress + size <= instance.memoryBase() + instance.memoryLength());
         switch (access.kind()) {
           case Disassembler::HeapAccess::Load:
             SetRegisterToLoadedValue(context, wrappedAddress.cast<void*>(), size, access.otherOperand());
@@ -697,16 +702,14 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
           case Disassembler::HeapAccess::Store:
             StoreValueFromRegister(context, wrappedAddress.cast<void*>(), size, access.otherOperand());
             break;
+          case Disassembler::HeapAccess::LoadSext64:
+            MOZ_CRASH("no int64 accesses in asm.js");
           case Disassembler::HeapAccess::Unknown:
             MOZ_CRASH("Failed to disassemble instruction");
         }
     } else {
         // We now know that this is an out-of-bounds access made by an asm.js
         // load/store that we should handle.
-
-        if (heapAccess->throwOnOOB())
-            return module.outOfBounds();
-
         switch (access.kind()) {
           case Disassembler::HeapAccess::Load:
           case Disassembler::HeapAccess::LoadSext32:
@@ -721,39 +724,26 @@ EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddre
           case Disassembler::HeapAccess::Store:
             // Do nothing.
             break;
+          case Disassembler::HeapAccess::LoadSext64:
+            MOZ_CRASH("no int64 accesses in asm.js");
           case Disassembler::HeapAccess::Unknown:
             MOZ_CRASH("Failed to disassemble instruction");
         }
     }
 
-    return end;
+    *ppc = end;
+    return true;
 }
-
-#elif defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_UNALIGNED)
-
-MOZ_COLD static uint8_t*
-EmulateHeapAccess(EMULATOR_CONTEXT* context, uint8_t* pc, uint8_t* faultingAddress,
-                  const HeapAccess* heapAccess, const Module& module)
-{
-    // TODO: Implement unaligned accesses.
-    return module.outOfBounds();
-}
-
-#endif // defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_UNALIGNED)
-
-#if defined(ASMJS_MAY_USE_SIGNAL_HANDLERS)
+#endif // JS_CODEGEN_X64
 
 MOZ_COLD static bool
-IsHeapAccessAddress(const Module &module, uint8_t* faultingAddress)
+IsHeapAccessAddress(const Instance &instance, uint8_t* faultingAddress)
 {
-#if defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB)
-    size_t accessLimit = MappedSize;
-#elif defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_UNALIGNED)
-    size_t accessLimit = module.heapLength();
-#endif
-    return module.usesHeap() &&
-           faultingAddress >= module.heap() &&
-           faultingAddress < module.heap() + accessLimit;
+    size_t accessLimit = instance.memoryMappedSize();
+
+    return instance.metadata().usesMemory() &&
+           faultingAddress >= instance.memoryBase() &&
+           faultingAddress < instance.memoryBase() + accessLimit;
 }
 
 #if defined(XP_WIN)
@@ -783,36 +773,37 @@ HandleFault(PEXCEPTION_POINTERS exception)
     if (!activation)
         return false;
 
-    const Module& module = activation->module();
+    const Instance* instance = activation->compartment()->wasm.lookupInstanceDeprecated(pc);
+    if (!instance)
+        return false;
 
     uint8_t* faultingAddress = reinterpret_cast<uint8_t*>(record->ExceptionInformation[1]);
 
     // This check isn't necessary, but, since we can, check anyway to make
     // sure we aren't covering up a real bug.
-    if (!IsHeapAccessAddress(module, faultingAddress))
+    if (!IsHeapAccessAddress(*instance, faultingAddress))
         return false;
 
-    if (!module.containsFunctionPC(pc)) {
+    if (!instance->codeSegment().containsFunctionPC(pc)) {
         // On Windows, it is possible for InterruptRunningCode to execute
         // between a faulting heap access and the handling of the fault due
         // to InterruptRunningCode's use of SuspendThread. When this happens,
         // after ResumeThread, the exception handler is called with pc equal to
-        // module.interrupt, which is logically wrong. The Right Thing would
+        // instance.interrupt, which is logically wrong. The Right Thing would
         // be for the OS to make fault-handling atomic (so that CONTEXT.pc was
         // always the logically-faulting pc). Fortunately, we can detect this
         // case and silence the exception ourselves (the exception will
         // retrigger after the interrupt jumps back to resumePC).
-        return pc == module.interrupt() &&
-               module.containsFunctionPC(activation->resumePC()) &&
-               module.lookupHeapAccess(activation->resumePC());
+        return pc == instance->codeSegment().interruptCode() &&
+               instance->codeSegment().containsFunctionPC(activation->resumePC());
     }
 
-    const HeapAccess* heapAccess = module.lookupHeapAccess(pc);
-    if (!heapAccess)
-        return false;
-
-    *ppc = EmulateHeapAccess(context, pc, faultingAddress, heapAccess, module);
+#ifdef WASM_HUGE_MEMORY
+    return HugeMemoryAccess(context, pc, faultingAddress, *instance, ppc);
+#else
+    *ppc = instance->codeSegment().outOfBoundsCode();
     return true;
+#endif
 }
 
 static LONG WINAPI
@@ -885,17 +876,17 @@ HandleMachException(JSRuntime* rt, const ExceptionRequest& request)
 
     // Read out the JSRuntime thread's register state.
     EMULATOR_CONTEXT context;
-# if defined(JS_CODEGEN_X64)
+# if defined(JS_CPU_X64)
     unsigned int thread_state_count = x86_THREAD_STATE64_COUNT;
     unsigned int float_state_count = x86_FLOAT_STATE64_COUNT;
     int thread_state = x86_THREAD_STATE64;
     int float_state = x86_FLOAT_STATE64;
-# elif defined(JS_CODEGEN_X86)
+# elif defined(JS_CPU_X86)
     unsigned int thread_state_count = x86_THREAD_STATE_COUNT;
     unsigned int float_state_count = x86_FLOAT_STATE_COUNT;
     int thread_state = x86_THREAD_STATE;
     int float_state = x86_FLOAT_STATE;
-# elif defined(JS_CODEGEN_ARM)
+# elif defined(JS_CPU_ARM)
     unsigned int thread_state_count = ARM_THREAD_STATE_COUNT;
     unsigned int float_state_count = ARM_NEON_STATE_COUNT;
     int thread_state = ARM_THREAD_STATE;
@@ -923,22 +914,23 @@ HandleMachException(JSRuntime* rt, const ExceptionRequest& request)
     if (!activation)
         return false;
 
-    const Module& module = activation->module();
-    if (!module.containsFunctionPC(pc))
+    const Instance* instance = activation->compartment()->wasm.lookupInstanceDeprecated(pc);
+    if (!instance || !instance->codeSegment().containsFunctionPC(pc))
         return false;
 
     uint8_t* faultingAddress = reinterpret_cast<uint8_t*>(request.body.code[1]);
 
     // This check isn't necessary, but, since we can, check anyway to make
     // sure we aren't covering up a real bug.
-    if (!IsHeapAccessAddress(module, faultingAddress))
+    if (!IsHeapAccessAddress(*instance, faultingAddress))
         return false;
 
-    const HeapAccess* heapAccess = module.lookupHeapAccess(pc);
-    if (!heapAccess)
+#ifdef WASM_HUGE_MEMORY
+    if (!HugeMemoryAccess(&context, pc, faultingAddress, *instance, ppc))
         return false;
-
-    *ppc = EmulateHeapAccess(&context, pc, faultingAddress, heapAccess, module);
+#else
+    *ppc = instance->codeSegment().outOfBoundsCode();
+#endif
 
     // Update the thread state with the new pc and register values.
     kret = thread_set_state(rtThread, float_state, (thread_state_t)&context.float_, float_state_count);
@@ -1011,6 +1003,7 @@ MachExceptionHandlerThread(JSRuntime* rt)
 
 MachExceptionHandler::MachExceptionHandler()
   : installed_(false),
+    thread_(),
     port_(MACH_PORT_NULL)
 {}
 
@@ -1099,17 +1092,24 @@ MachExceptionHandler::install(JSRuntime* rt)
 
 #else  // If not Windows or Mac, assume Unix
 
+enum class Signal {
+    SegFault,
+    BusError
+};
+
 // Be very cautious and default to not handling; we don't want to accidentally
 // silence real crashes from real bugs.
+template<Signal signal>
 static bool
 HandleFault(int signum, siginfo_t* info, void* ctx)
 {
     // The signals we're expecting come from access violations, accessing
     // mprotected memory. If the signal originates anywhere else, don't try
     // to handle it.
-    MOZ_RELEASE_ASSERT(signum == SIGSEGV);
-    if (info->si_code != SEGV_ACCERR)
-        return false;
+    if (signal == Signal::SegFault)
+        MOZ_RELEASE_ASSERT(signum == SIGSEGV);
+    else
+        MOZ_RELEASE_ASSERT(signum == SIGBUS);
 
     CONTEXT* context = (CONTEXT*)ctx;
     uint8_t** ppc = ContextToPC(context);
@@ -1125,33 +1125,59 @@ HandleFault(int signum, siginfo_t* info, void* ctx)
     if (!activation)
         return false;
 
-    const Module& module = activation->module();
-    if (!module.containsFunctionPC(pc))
+    const Instance* instance = activation->compartment()->wasm.lookupInstanceDeprecated(pc);
+    if (!instance || !instance->codeSegment().containsFunctionPC(pc))
         return false;
 
     uint8_t* faultingAddress = reinterpret_cast<uint8_t*>(info->si_addr);
 
-    // This check isn't necessary, but, since we can, check anyway to make
-    // sure we aren't covering up a real bug.
-    if (!IsHeapAccessAddress(module, faultingAddress))
+    // Although it's not strictly necessary, to make sure we're not covering up
+    // any real bugs, check that the faulting address is indeed in the
+    // instance's memory.
+    if (!faultingAddress) {
+        // On some Linux systems, the kernel apparently sometimes "gives up" and
+        // passes a null faultingAddress with si_code set to SI_KERNEL.
+        // This is observed on some automation machines for some out-of-bounds
+        // atomic accesses on x86/64.
+#ifdef SI_KERNEL
+        if (info->si_code != SI_KERNEL)
+            return false;
+#else
         return false;
+#endif
+    } else {
+        if (!IsHeapAccessAddress(*instance, faultingAddress))
+            return false;
+    }
 
-    const HeapAccess* heapAccess = module.lookupHeapAccess(pc);
-    if (!heapAccess)
-        return false;
-
-    *ppc = EmulateHeapAccess(context, pc, faultingAddress, heapAccess, module);
-
+#ifdef WASM_HUGE_MEMORY
+    return HugeMemoryAccess(context, pc, faultingAddress, *instance, ppc);
+#elif defined(JS_CODEGEN_ARM)
+    MOZ_RELEASE_ASSERT(signal == Signal::BusError || signal == Signal::SegFault);
+    if (signal == Signal::BusError)
+        *ppc = instance->codeSegment().unalignedAccessCode();
+    else
+        *ppc = instance->codeSegment().outOfBoundsCode();
     return true;
+#else
+    *ppc = instance->codeSegment().outOfBoundsCode();
+    return true;
+#endif
 }
 
 static struct sigaction sPrevSEGVHandler;
+static struct sigaction sPrevSIGBUSHandler;
 
+template<Signal signal>
 static void
 AsmJSFaultHandler(int signum, siginfo_t* info, void* context)
 {
-    if (HandleFault(signum, info, context))
+    if (HandleFault<signal>(signum, info, context))
         return;
+
+    struct sigaction* previousSignal = signal == Signal::SegFault
+                                       ? &sPrevSEGVHandler
+                                       : &sPrevSIGBUSHandler;
 
     // This signal is not for any asm.js code we expect, so we need to forward
     // the signal to the next handler. If there is no next handler (SIG_IGN or
@@ -1165,16 +1191,14 @@ AsmJSFaultHandler(int signum, siginfo_t* info, void* context)
     // signal to it's original disposition and returning.
     //
     // Note: the order of these tests matter.
-    if (sPrevSEGVHandler.sa_flags & SA_SIGINFO)
-        sPrevSEGVHandler.sa_sigaction(signum, info, context);
-    else if (sPrevSEGVHandler.sa_handler == SIG_DFL || sPrevSEGVHandler.sa_handler == SIG_IGN)
-        sigaction(signum, &sPrevSEGVHandler, nullptr);
+    if (previousSignal->sa_flags & SA_SIGINFO)
+        previousSignal->sa_sigaction(signum, info, context);
+    else if (previousSignal->sa_handler == SIG_DFL || previousSignal->sa_handler == SIG_IGN)
+        sigaction(signum, previousSignal, nullptr);
     else
-        sPrevSEGVHandler.sa_handler(signum);
+        previousSignal->sa_handler(signum);
 }
-#endif
-
-#endif // defined(ASMJS_MAY_USE_SIGNAL_HANDLERS)
+# endif // XP_WIN || XP_DARWIN || assume unix
 
 static void
 RedirectIonBackedgesToInterruptCheck(JSRuntime* rt)
@@ -1189,26 +1213,33 @@ RedirectIonBackedgesToInterruptCheck(JSRuntime* rt)
     }
 }
 
+// The return value indicates whether the PC was changed, not whether there was
+// a failure.
 static bool
 RedirectJitCodeToInterruptCheck(JSRuntime* rt, CONTEXT* context)
 {
     RedirectIonBackedgesToInterruptCheck(rt);
 
     if (WasmActivation* activation = rt->wasmActivationStack()) {
-        const Module& module = activation->module();
-
 #ifdef JS_SIMULATOR
-        if (module.containsFunctionPC(rt->simulator()->get_pc_as<void*>()))
-            rt->simulator()->set_resume_pc(module.interrupt());
-#endif
+        (void)ContextToPC(context);  // silence static 'unused' errors
 
+        void* pc = rt->simulator()->get_pc_as<void*>();
+
+        const Instance* instance = activation->compartment()->wasm.lookupInstanceDeprecated(pc);
+        if (instance && instance->codeSegment().containsFunctionPC(pc))
+            rt->simulator()->set_resume_pc(instance->codeSegment().interruptCode());
+#else
         uint8_t** ppc = ContextToPC(context);
         uint8_t* pc = *ppc;
-        if (module.containsFunctionPC(pc)) {
+
+        const Instance* instance = activation->compartment()->wasm.lookupInstanceDeprecated(pc);
+        if (instance && instance->codeSegment().containsFunctionPC(pc)) {
             activation->setResumePC(pc);
-            *ppc = module.interrupt();
+            *ppc = instance->codeSegment().interruptCode();
             return true;
         }
+#endif
     }
 
     return false;
@@ -1232,23 +1263,21 @@ JitInterruptHandler(int signum, siginfo_t* info, void* context)
 }
 #endif
 
-bool
-wasm::EnsureSignalHandlersInstalled(JSRuntime* rt)
-{
-#if defined(XP_DARWIN) && defined(ASMJS_MAY_USE_SIGNAL_HANDLERS)
-    // On OSX, each JSRuntime gets its own handler thread.
-    if (!rt->wasmMachExceptionHandler.installed() && !rt->wasmMachExceptionHandler.install(rt))
-        return false;
-#endif
+static bool sTriedInstallSignalHandlers = false;
+static bool sHaveSignalHandlers = false;
 
-    // All the rest of the handlers are process-wide and thus must only be
-    // installed once. We assume that there are no races creating the first
-    // JSRuntime of the process.
-    static bool sTried = false;
-    static bool sResult = false;
-    if (sTried)
-        return sResult;
-    sTried = true;
+static bool
+ProcessHasSignalHandlers()
+{
+    // We assume that there are no races creating the first JSRuntime of the process.
+    if (sTriedInstallSignalHandlers)
+        return sHaveSignalHandlers;
+    sTriedInstallSignalHandlers = true;
+
+    // Developers might want to forcibly disable signals to avoid seeing
+    // spurious SIGSEGVs in the debugger.
+    if (getenv("JS_DISABLE_SLOW_SCRIPT_SIGNALS") || getenv("JS_NO_SIGNALS"))
+        return false;
 
 #if defined(ANDROID)
     // Before Android 4.4 (SDK version 19), there is a bug
@@ -1292,7 +1321,6 @@ wasm::EnsureSignalHandlersInstalled(JSRuntime* rt)
     }
 #endif // defined(XP_WIN)
 
-#if defined(ASMJS_MAY_USE_SIGNAL_HANDLERS)
     // Install a SIGSEGV handler to handle safely-out-of-bounds asm.js heap
     // access and/or unaligned accesses.
 # if defined(XP_WIN)
@@ -1305,17 +1333,51 @@ wasm::EnsureSignalHandlersInstalled(JSRuntime* rt)
     // SA_NODEFER allows us to reenter the signal handler if we crash while
     // handling the signal, and fall through to the Breakpad handler by testing
     // handlingSegFault.
+
+    // Allow handling OOB with signals on all architectures
     struct sigaction faultHandler;
     faultHandler.sa_flags = SA_SIGINFO | SA_NODEFER;
-    faultHandler.sa_sigaction = &AsmJSFaultHandler;
+    faultHandler.sa_sigaction = &AsmJSFaultHandler<Signal::SegFault>;
     sigemptyset(&faultHandler.sa_mask);
     if (sigaction(SIGSEGV, &faultHandler, &sPrevSEGVHandler))
         MOZ_CRASH("unable to install segv handler");
-# endif
-#endif // defined(ASMJS_MAY_USE_SIGNAL_HANDLERS)
 
-    sResult = true;
+#  if defined(JS_CODEGEN_ARM)
+    // On Arm Handle Unaligned Accesses
+    struct sigaction busHandler;
+    busHandler.sa_flags = SA_SIGINFO | SA_NODEFER;
+    busHandler.sa_sigaction = &AsmJSFaultHandler<Signal::BusError>;
+    sigemptyset(&busHandler.sa_mask);
+    if (sigaction(SIGBUS, &busHandler, &sPrevSIGBUSHandler))
+        MOZ_CRASH("unable to install sigbus handler");
+#  endif
+# endif
+
+    sHaveSignalHandlers = true;
     return true;
+}
+
+bool
+wasm::EnsureSignalHandlers(JSRuntime* rt)
+{
+    // Nothing to do if the platform doesn't support it.
+    if (!ProcessHasSignalHandlers())
+        return true;
+
+#if defined(XP_DARWIN)
+    // On OSX, each JSRuntime gets its own handler thread.
+    if (!rt->wasmMachExceptionHandler.installed() && !rt->wasmMachExceptionHandler.install(rt))
+        return false;
+#endif
+
+    return true;
+}
+
+bool
+wasm::HaveSignalHandlers()
+{
+    MOZ_ASSERT(sTriedInstallSignalHandlers);
+    return sHaveSignalHandlers;
 }
 
 // JSRuntime::requestInterrupt sets interrupt_ (which is checked frequently by
@@ -1332,7 +1394,7 @@ js::InterruptRunningJitCode(JSRuntime* rt)
 {
     // If signal handlers weren't installed, then Ion and wasm emit normal
     // interrupt checks and don't need asynchronous interruption.
-    if (!rt->canUseSignalHandlers())
+    if (!HaveSignalHandlers())
         return;
 
     // Do nothing if we're already handling an interrupt here, to avoid races
@@ -1389,6 +1451,5 @@ js::wasm::IsPCInWasmCode(void *pc)
     if (!activation)
         return false;
 
-    const Module& module = activation->module();
-    return module.containsFunctionPC(pc);
+    return !!activation->compartment()->wasm.lookupInstanceDeprecated(pc);
 }

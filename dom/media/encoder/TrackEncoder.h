@@ -48,12 +48,7 @@ public:
    * MediaStreamGraph. Called on the MediaStreamGraph thread.
    */
   void NotifyEvent(MediaStreamGraph* aGraph,
-                   MediaStreamListener::MediaStreamGraphEvent event)
-  {
-    if (event == MediaStreamListener::MediaStreamGraphEvent::EVENT_REMOVED) {
-      NotifyEndOfStream();
-    }
-  }
+                   MediaStreamGraphEvent event);
 
   /**
    * Creates and sets up meta data for a specific codec, called on the worker
@@ -253,13 +248,13 @@ protected:
 class VideoTrackEncoder : public TrackEncoder
 {
 public:
-  VideoTrackEncoder()
+  explicit VideoTrackEncoder(TrackRate aTrackRate)
     : TrackEncoder()
     , mFrameWidth(0)
     , mFrameHeight(0)
     , mDisplayWidth(0)
     , mDisplayHeight(0)
-    , mTrackRate(0)
+    , mTrackRate(aTrackRate)
     , mTotalFrameDuration(0)
     , mLastFrameDuration(0)
     , mVideoBitrate(0)
@@ -282,6 +277,18 @@ public:
   {
     mVideoBitrate = aBitrate;
   }
+
+  void Init(const VideoSegment& aSegment);
+
+  void SetCurrentFrames(const VideoSegment& aSegment);
+
+  StreamTime SecondsToMediaTime(double aS) const
+  {
+    NS_ASSERTION(0 <= aS && aS <= TRACK_TICKS_MAX/TRACK_RATE_MAX,
+                 "Bad seconds");
+    return mTrackRate * aS;
+  }
+
 protected:
   /**
    * Initialized the video encoder. In order to collect the value of width and
@@ -291,7 +298,7 @@ protected:
    * and this method is called on the MediaStramGraph thread.
    */
   virtual nsresult Init(int aWidth, int aHeight, int aDisplayWidth,
-                        int aDisplayHeight, TrackRate aTrackRate) = 0;
+                        int aDisplayHeight) = 0;
 
   /**
    * Appends source video frames to mRawSegment. We only append the source chunk

@@ -553,7 +553,7 @@ public:
     document->UnblockOnload(true);
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     mProcessor->TransformToDoc(nullptr, false);
     return NS_OK;
@@ -1094,12 +1094,12 @@ txMozillaXSLTProcessor::reportError(nsresult aResult,
             if (bundle) {
                 const char16_t* error[] = { errorText.get() };
                 if (mStylesheet) {
-                    bundle->FormatStringFromName(MOZ_UTF16("TransformError"),
+                    bundle->FormatStringFromName(u"TransformError",
                                                  error, 1,
                                                  getter_Copies(errorMessage));
                 }
                 else {
-                    bundle->FormatStringFromName(MOZ_UTF16("LoadingError"),
+                    bundle->FormatStringFromName(u"LoadingError",
                                                  error, 1,
                                                  getter_Copies(errorMessage));
                 }

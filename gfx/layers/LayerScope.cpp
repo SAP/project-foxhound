@@ -143,10 +143,10 @@ private:
        SocketListener() { }
 
        /* nsIServerSocketListener */
-       NS_IMETHODIMP OnSocketAccepted(nsIServerSocket *aServ,
-                                      nsISocketTransport *aTransport) override;
-       NS_IMETHODIMP OnStopListening(nsIServerSocket *aServ,
-                                   nsresult aStatus) override
+       NS_IMETHOD OnSocketAccepted(nsIServerSocket *aServ,
+                                   nsISocketTransport *aTransport) override;
+       NS_IMETHOD OnStopListening(nsIServerSocket *aServ,
+                                  nsresult aStatus) override
        {
            return NS_OK;
        }
@@ -171,7 +171,7 @@ private:
         bool WriteToStream(void *aPtr, uint32_t aSize);
 
         // nsIInputStreamCallback
-        NS_IMETHODIMP OnInputStreamReady(nsIAsyncInputStream *aStream) override;
+        NS_IMETHOD OnInputStreamReady(nsIAsyncInputStream *aStream) override;
 
     private:
         virtual ~SocketHandler() { CloseConnection(); }
@@ -349,7 +349,7 @@ private:
             : mLayerScopeManager(aLayerScopeManager)
         {
         }
-        NS_IMETHOD Run() {
+        NS_IMETHOD Run() override {
             mLayerScopeManager->mWebSocketManager =
                 mozilla::MakeUnique<LayerScopeWebSocketManager>();
             return NS_OK;
@@ -797,7 +797,7 @@ public:
               mHost(host)
         {  }
 
-        NS_IMETHODIMP Run() override {
+        NS_IMETHOD Run() override {
             mHost->mList.insertBack(mData);
             return NS_OK;
         }
@@ -821,7 +821,7 @@ public:
             : mHost(host)
         {  }
 
-        NS_IMETHODIMP Run() override {
+        NS_IMETHOD Run() override {
             mHost->RemoveData();
             return NS_OK;
         }
@@ -843,7 +843,7 @@ public:
             : mHost(host)
         {  }
 
-        NS_IMETHODIMP Run() override {
+        NS_IMETHOD Run() override {
             // Sendout all appended debug data.
             DebugGLData *d = nullptr;
             while ((d = mHost->mList.popFirst()) != nullptr) {
@@ -1129,7 +1129,7 @@ SenderHelper::SendGraphicBuffer(GLContext* aGLContext,
     auto packet = MakeUnique<layerscope::Packet>();
     layerscope::TexturePacket* texturePacket = packet->mutable_texture();
     texturePacket->set_mpremultiplied(aEffect->mPremultiplied);
-    DumpFilter(texturePacket, aEffect->mFilter);
+    DumpFilter(texturePacket, aEffect->mSamplingFilter);
     DumpRect(texturePacket->mutable_mtexturecoords(), aEffect->mTextureCoords);
 
     GLenum target = aSource->GetTextureTarget();
@@ -1477,8 +1477,10 @@ LayerScopeWebSocketManager::SocketHandler::WebSocketHandshake(nsTArray<nsCString
     uint8_t digest[SHA1Sum::kHashSize]; // SHA1 digests are 20 bytes long.
     sha1.finish(digest);
     nsCString newString(reinterpret_cast<char*>(digest), SHA1Sum::kHashSize);
-    Base64Encode(newString, res);
-
+    rv = Base64Encode(newString, res);
+    if (NS_FAILED(rv)) {
+        return false;
+    }
     nsCString response("HTTP/1.1 101 Switching Protocols\r\n");
     response.AppendLiteral("Upgrade: websocket\r\n");
     response.AppendLiteral("Connection: Upgrade\r\n");

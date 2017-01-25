@@ -13,6 +13,7 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMXULElement.h"
+#include "nsIDOMXULMenuListElement.h"
 #include "nsIXULDocument.h"
 #include "nsIXULTemplateBuilder.h"
 #include "nsCSSFrameConstructor.h"
@@ -524,6 +525,14 @@ nsXULPopupManager::PopupResized(nsIFrame* aFrame, LayoutDeviceIntSize aSize)
   if (curDevSize.width == aSize.width && curDevSize.height == aSize.height)
     return;
 
+  nsIContent* popup = menuPopupFrame->GetContent();
+
+  // Only set the width and height if the popup already has these attributes.
+  if (!popup->HasAttr(kNameSpaceID_None, nsGkAtoms::width) ||
+      !popup->HasAttr(kNameSpaceID_None, nsGkAtoms::height)) {
+    return;
+  }
+
   // The size is different. Convert the actual size to css pixels and store it
   // as 'width' and 'height' attributes on the popup.
   nsPresContext* presContext = menuPopupFrame->PresContext();
@@ -531,7 +540,6 @@ nsXULPopupManager::PopupResized(nsIFrame* aFrame, LayoutDeviceIntSize aSize)
   CSSIntSize newCSS(presContext->DevPixelsToIntCSSPixels(aSize.width),
                     presContext->DevPixelsToIntCSSPixels(aSize.height));
 
-  nsIContent* popup = menuPopupFrame->GetContent();
   nsAutoString width, height;
   width.AppendInt(newCSS.width);
   height.AppendInt(newCSS.height);
@@ -703,6 +711,22 @@ nsXULPopupManager::ShowMenu(nsIContent *aMenu,
   }
 
   nsAutoString position;
+
+#ifdef XP_MACOSX
+  nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(aMenu);
+  bool isNonEditableMenulist = false;
+  if (menulist) {
+    bool editable;
+    menulist->GetEditable(&editable);
+    isNonEditableMenulist = !editable;
+  }
+
+  if (isNonEditableMenulist) {
+    position.AssignLiteral("selection");
+  }
+  else
+#endif
+
   if (onMenuBar || !onmenu)
     position.AssignLiteral("after_start");
   else
@@ -1485,6 +1509,7 @@ nsXULPopupManager::FirePopupHidingEvent(nsIContent* aPopup,
                                         bool aIsCancel)
 {
   nsCOMPtr<nsIPresShell> presShell = aPresContext->PresShell();
+  mozilla::Unused << presShell; // This presShell may be keeping things alive on non GTK platforms
 
   nsEventStatus status = nsEventStatus_eIgnore;
   WidgetMouseEvent event(true, eXULPopupHiding, nullptr,
@@ -2598,10 +2623,12 @@ nsXULPopupManager::KeyDown(nsIDOMKeyEvent* aKeyEvent)
       if (!(ctrl || alt || shift || meta)) {
         // The access key just went down and no other
         // modifiers are already down.
-        if (mPopups)
+        nsMenuChainItem* item = GetTopVisibleMenu();
+        if (mPopups && item && !item->Frame()->IsMenuList()) {
           Rollup(0, false, nullptr, nullptr);
-        else if (mActiveMenuBar)
+        } else if (mActiveMenuBar) {
           mActiveMenuBar->MenuClosed();
+        }
 
         // Clear the item to avoid bugs as it may have been deleted during rollup.
         item = nullptr; 
@@ -2719,6 +2746,7 @@ nsXULMenuCommandEvent::Run()
     nsPresContext* presContext = menuFrame->PresContext();
     nsCOMPtr<nsIPresShell> shell = presContext->PresShell();
     RefPtr<nsViewManager> kungFuDeathGrip = shell->GetViewManager();
+    mozilla::Unused << kungFuDeathGrip; // Not referred to directly within this function
 
     // Deselect ourselves.
     if (mCloseMenuMode != CloseMenuMode_None)

@@ -836,7 +836,9 @@ function DownloadURL(aURL, aFileName, aInitiatingDocument) {
       target: { path: file.path, partFilePath: file.path + ".part" }
     });
     download.tryToKeepPartialData = true;
-    download.start();
+
+    // Ignore errors because failures are reported through the download list.
+    download.start().catch(() => {});
 
     // Add the download to the list, allowing it to be managed.
     let list = yield Downloads.getList(Downloads.ALL);
@@ -1206,17 +1208,15 @@ function getDefaultExtension(aFilename, aURI, aContentType)
   if (urlext && mimeInfo && mimeInfo.extensionExists(urlext)) {
     return urlext;
   }
-  else {
-    try {
-      if (mimeInfo)
-        return mimeInfo.primaryExtension;
-    }
-    catch (e) {
-    }
-    // Fall back on the extensions in the filename and URI for lack
-    // of anything better.
-    return ext || urlext;
+  try {
+    if (mimeInfo)
+      return mimeInfo.primaryExtension;
   }
+  catch (e) {
+  }
+  // Fall back on the extensions in the filename and URI for lack
+  // of anything better.
+  return ext || urlext;
 }
 
 function GetSaveModeForContentType(aContentType, aDocument)

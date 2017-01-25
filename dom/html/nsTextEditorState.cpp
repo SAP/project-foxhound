@@ -35,8 +35,8 @@
 #include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIEditor.h"
-#include "nsTextEditRules.h"
 #include "mozilla/dom/Selection.h"
+#include "mozilla/TextEditRules.h"
 #include "mozilla/EventListenerManager.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
@@ -91,7 +91,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     if (!mTextEditorState) {
       return NS_OK;
     }
@@ -103,11 +103,13 @@ public:
       // SetSelectionRange leads to Selection::AddRange which flushes Layout -
       // need to block script to avoid nested PrepareEditor calls (bug 642800).
       nsAutoScriptBlocker scriptBlocker;
-       nsTextEditorState::SelectionProperties& properties =
-         mTextEditorState->GetSelectionProperties();
-       mFrame->SetSelectionRange(properties.mStart,
-                                 properties.mEnd,
-                                 properties.mDirection);
+      nsTextEditorState::SelectionProperties& properties =
+        mTextEditorState->GetSelectionProperties();
+      if (properties.IsDirty()) {
+        mFrame->SetSelectionRange(properties.GetStart(),
+                                  properties.GetEnd(),
+                                  properties.GetDirection());
+      }
       if (!mTextEditorState->mSelectionRestoreEagerInit) {
         mTextEditorState->HideSelectionIfBlurred();
       }
@@ -228,10 +230,13 @@ public:
   NS_IMETHOD GetDisplaySelection(int16_t* _retval) override;
   NS_IMETHOD SetSelectionFlags(int16_t aInEnable) override;
   NS_IMETHOD GetSelectionFlags(int16_t *aOutEnable) override;
-  NS_IMETHOD GetSelection(int16_t type, nsISelection** _retval) override;
-  NS_IMETHOD ScrollSelectionIntoView(int16_t aType, int16_t aRegion, int16_t aFlags) override;
-  NS_IMETHOD RepaintSelection(int16_t type) override;
-  NS_IMETHOD RepaintSelection(nsPresContext* aPresContext, SelectionType aSelectionType);
+  NS_IMETHOD GetSelection(RawSelectionType aRawSelectionType,
+                          nsISelection** aSelection) override;
+  NS_IMETHOD ScrollSelectionIntoView(RawSelectionType aRawSelectionType,
+                                     int16_t aRegion, int16_t aFlags) override;
+  NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
+  nsresult RepaintSelection(nsPresContext* aPresContext,
+                            SelectionType aSelectionType);
   NS_IMETHOD SetCaretEnabled(bool enabled) override;
   NS_IMETHOD SetCaretReadOnly(bool aReadOnly) override;
   NS_IMETHOD GetCaretEnabled(bool* _retval) override;
@@ -335,40 +340,50 @@ nsTextInputSelectionImpl::GetSelectionFlags(int16_t *aOutEnable)
 }
 
 NS_IMETHODIMP
-nsTextInputSelectionImpl::GetSelection(int16_t type, nsISelection **_retval)
+nsTextInputSelectionImpl::GetSelection(RawSelectionType aRawSelectionType,
+                                       nsISelection** aSelection)
 {
   if (!mFrameSelection)
     return NS_ERROR_NULL_POINTER;
-    
-  *_retval = mFrameSelection->GetSelection(type);
-  
-  if (!(*_retval))
-    return NS_ERROR_FAILURE;
 
-  NS_ADDREF(*_retval);
+  *aSelection =
+    mFrameSelection->GetSelection(ToSelectionType(aRawSelectionType));
+
+  // GetSelection() fails only when aRawSelectionType is invalid value.
+  if (!(*aSelection)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  NS_ADDREF(*aSelection);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsTextInputSelectionImpl::ScrollSelectionIntoView(int16_t aType, int16_t aRegion, int16_t aFlags)
+nsTextInputSelectionImpl::ScrollSelectionIntoView(
+                            RawSelectionType aRawSelectionType,
+                            int16_t aRegion,
+                            int16_t aFlags)
 {
   if (!mFrameSelection) 
     return NS_ERROR_FAILURE; 
 
-  return mFrameSelection->ScrollSelectionIntoView(aType, aRegion, aFlags);
+  return mFrameSelection->ScrollSelectionIntoView(
+                            ToSelectionType(aRawSelectionType),
+                            aRegion, aFlags);
 }
 
 NS_IMETHODIMP
-nsTextInputSelectionImpl::RepaintSelection(int16_t type)
+nsTextInputSelectionImpl::RepaintSelection(RawSelectionType aRawSelectionType)
 {
   if (!mFrameSelection)
     return NS_ERROR_FAILURE;
 
-  return mFrameSelection->RepaintSelection(type);
+  return mFrameSelection->RepaintSelection(ToSelectionType(aRawSelectionType));
 }
 
-NS_IMETHODIMP
-nsTextInputSelectionImpl::RepaintSelection(nsPresContext* aPresContext, SelectionType aSelectionType)
+nsresult
+nsTextInputSelectionImpl::RepaintSelection(nsPresContext* aPresContext,
+                                           SelectionType aSelectionType)
 {
   if (!mFrameSelection)
     return NS_ERROR_FAILURE;
@@ -403,8 +418,8 @@ nsTextInputSelectionImpl::SetCaretReadOnly(bool aReadOnly)
   {
     RefPtr<nsCaret> caret = shell->GetCaret();
     if (caret) {
-      nsISelection* domSel = mFrameSelection->
-        GetSelection(nsISelectionController::SELECTION_NORMAL);
+      nsISelection* domSel =
+        mFrameSelection->GetSelection(SelectionType::eNormal);
       if (domSel)
         caret->SetCaretReadOnly(aReadOnly);
       return NS_OK;
@@ -446,8 +461,8 @@ nsTextInputSelectionImpl::SetCaretVisibilityDuringSelection(bool aVisibility)
   {
     RefPtr<nsCaret> caret = shell->GetCaret();
     if (caret) {
-      nsISelection* domSel = mFrameSelection->
-        GetSelection(nsISelectionController::SELECTION_NORMAL);
+      nsISelection* domSel =
+        mFrameSelection->GetSelection(SelectionType::eNormal);
       if (domSel)
         caret->SetVisibilityDuringSelection(aVisibility);
       return NS_OK;
@@ -963,7 +978,8 @@ nsTextInputListener::EditAction()
   }
 
   if (!mSettingValue) {
-    mTxtCtrlElement->OnValueChanged(true);
+    mTxtCtrlElement->OnValueChanged(/* aNotify = */ true,
+                                    /* aWasInteractiveUserChange = */ true);
   }
 
   return NS_OK;
@@ -1099,7 +1115,7 @@ public:
     aState.mValueTransferInProgress = true;
   }
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     NS_ENSURE_TRUE(mState, NS_ERROR_NULL_POINTER);
 
     // Transfer the saved value to the editor if we have one
@@ -1141,9 +1157,11 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
 
   mBoundFrame = aFrame;
 
-  nsIContent *rootNode = GetRootNode();
+  nsresult rv = CreateRootNode();
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  nsresult rv = InitializeRootNode();
+  nsIContent *rootNode = GetRootNode();
+  rv = InitializeRootNode();
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsIPresShell *shell = mBoundFrame->PresContext()->GetPresShell();
@@ -1520,6 +1538,19 @@ nsTextEditorState::GetSelectionProperties()
   return mSelectionProperties;
 }
 
+void
+nsTextEditorState::SetSelectionProperties(nsTextEditorState::SelectionProperties& aProps)
+{
+  if (mBoundFrame) {
+    mBoundFrame->SetSelectionRange(aProps.GetStart(),
+                                   aProps.GetEnd(),
+                                   aProps.GetDirection());
+  } else {
+    mSelectionProperties = aProps;
+  }
+}
+
+
 HTMLInputElement*
 nsTextEditorState::GetParentNumberControl(nsFrame* aFrame) const
 {
@@ -1596,6 +1627,9 @@ nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
   // side effect for unbinding from a text control frame, we need to call
   // GetSelectionRange before calling DestroyEditor, and only if
   // mEditorInitialized indicates that we actually have an editor available.
+  int32_t start = 0, end = 0;
+  nsITextControlFrame::SelectionDirection direction =
+    nsITextControlFrame::eForward;
   if (mEditorInitialized) {
     HTMLInputElement* number = GetParentNumberControl(aFrame);
     if (number) {
@@ -1603,13 +1637,16 @@ nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
       // parent control, because this text editor state will be destroyed
       // together with the native anonymous text control.
       SelectionProperties props;
-      mBoundFrame->GetSelectionRange(&props.mStart, &props.mEnd,
-                                     &props.mDirection);
+      mBoundFrame->GetSelectionRange(&start, &end, &direction);
+      props.SetStart(start);
+      props.SetEnd(end);
+      props.SetDirection(direction);
       number->SetSelectionProperties(props);
     } else {
-      mBoundFrame->GetSelectionRange(&mSelectionProperties.mStart,
-                                     &mSelectionProperties.mEnd,
-                                     &mSelectionProperties.mDirection);
+      mBoundFrame->GetSelectionRange(&start, &end, &direction);
+      mSelectionProperties.SetStart(start);
+      mSelectionProperties.SetEnd(end);
+      mSelectionProperties.SetDirection(direction);
       mSelectionCached = true;
     }
   }
@@ -1718,8 +1755,8 @@ nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
 nsresult
 nsTextEditorState::CreateRootNode()
 {
-  NS_ENSURE_TRUE(!mRootNode, NS_ERROR_UNEXPECTED);
-  NS_ENSURE_ARG_POINTER(mBoundFrame);
+  MOZ_ASSERT(!mRootNode);
+  MOZ_ASSERT(mBoundFrame);
 
   nsIPresShell *shell = mBoundFrame->PresContext()->GetPresShell();
   NS_ENSURE_TRUE(shell, NS_ERROR_FAILURE);
@@ -2069,7 +2106,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, uint32_t aFlags)
             !StringBeginsWith(newValue, currentValue)) {
           // Replace the whole text.
           currentLength = 0;
-          mSelCon->SelectAll();
+          kungFuDeathGrip->SelectAll();
         } else {
           // Collapse selection to the end so that we can append data.
           mBoundFrame->SelectAllOrCollapseToEndOfText(false);
@@ -2161,7 +2198,8 @@ nsTextEditorState::SetValue(const nsAString& aValue, uint32_t aFlags)
   // can assume that it's safe to notify.
   ValueWasChanged(!!mRootNode);
 
-  mTextCtrlElement->OnValueChanged(!!mRootNode);
+  mTextCtrlElement->OnValueChanged(/* aNotify = */ !!mRootNode,
+                                   /* aWasInteractiveUserChange = */ false);
 
   return true;
 }

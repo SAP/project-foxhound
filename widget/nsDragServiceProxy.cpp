@@ -10,7 +10,7 @@
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 
 using mozilla::ipc::Shmem;
@@ -53,7 +53,6 @@ nsDragServiceProxy::InvokeDragSessionImpl(nsISupportsArray* aArrayTransferables,
     if (surface) {
       RefPtr<mozilla::gfx::DataSourceSurface> dataSurface =
         surface->GetDataSurface();
-      mozilla::gfx::IntSize size = dataSurface->GetSize();
       if (dataSurface) {
         size_t length;
         int32_t stride;
@@ -66,6 +65,7 @@ nsDragServiceProxy::InvokeDragSessionImpl(nsISupportsArray* aArrayTransferables,
           return NS_ERROR_FAILURE;
         }
 
+        mozilla::gfx::IntSize size = dataSurface->GetSize();
         mozilla::Unused <<
           child->SendInvokeDragSession(dataTransfers, aActionType, surfaceData,
                                        size.width, size.height, stride,

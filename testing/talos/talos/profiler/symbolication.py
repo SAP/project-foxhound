@@ -16,6 +16,16 @@ from symFileManager import SymFileManager
 from symbolicationRequest import SymbolicationRequest
 from symLogging import LogMessage
 
+"""
+Symbolication is broken when using type 'str' in python 2.7, so we use 'basestring'.
+But for python 3.0 compatibility, 'basestring' isn't defined, but the 'str' type works.
+So we force 'basestring' to 'str'.
+"""
+try:
+    basestring
+except NameError:
+    basestring = str
+
 
 class SymbolError(Exception):
     pass

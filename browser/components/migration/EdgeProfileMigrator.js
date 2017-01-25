@@ -4,10 +4,11 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
+Cu.import("resource://gre/modules/osfile.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource:///modules/MigrationUtils.jsm");
 Cu.import("resource:///modules/MSMigrationUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
@@ -136,7 +137,7 @@ EdgeTypedURLMigrator.prototype = {
       return;
     }
 
-    PlacesUtils.asyncHistory.updatePlaces(places, {
+    MigrationUtils.insertVisitsWrapper(places, {
       _success: false,
       handleResult: function() {
         // Importing any entry is considered a successful import.
@@ -199,7 +200,7 @@ EdgeReadingListMigrator.prototype = {
     let exceptionThrown;
     for (let item of readingListItems) {
       let dateAdded = item.AddedDate || new Date();
-      yield PlacesUtils.bookmarks.insert({
+      yield MigrationUtils.insertBookmarkWrapper({
         parentGuid: destFolderGuid, url: item.URL, title: item.Title, dateAdded
       }).catch(ex => {
         if (!exceptionThrown) {
@@ -217,7 +218,7 @@ EdgeReadingListMigrator.prototype = {
     if (!this.__readingListFolderGuid) {
       let folderTitle = MigrationUtils.getLocalizedString("importedEdgeReadingList");
       let folderSpec = {type: PlacesUtils.bookmarks.TYPE_FOLDER, parentGuid, title: folderTitle};
-      this.__readingListFolderGuid = (yield PlacesUtils.bookmarks.insert(folderSpec)).guid;
+      this.__readingListFolderGuid = (yield MigrationUtils.insertBookmarkWrapper(folderSpec)).guid;
     }
     return this.__readingListFolderGuid;
   }),
@@ -320,7 +321,7 @@ EdgeBookmarksMigrator.prototype = {
         title: bookmark.Title,
       }
 
-      yield PlacesUtils.bookmarks.insert(placesInfo).catch(ex => {
+      yield MigrationUtils.insertBookmarkWrapper(placesInfo).catch(ex => {
         if (!exceptionThrown) {
           exceptionThrown = ex;
         }
@@ -387,8 +388,9 @@ EdgeBookmarksMigrator.prototype = {
       parentGuid,
     };
     // and add ourselves as a kid, and return the guid we got.
-    let parentBM = yield PlacesUtils.bookmarks.insert(folderInfo);
-    return folder._guid = parentBM.guid;
+    let parentBM = yield MigrationUtils.insertBookmarkWrapper(folderInfo);
+    folder._guid = parentBM.guid;
+    return folder._guid;
   }),
 }
 
@@ -418,6 +420,34 @@ EdgeProfileMigrator.prototype.getResources = function() {
   windowsVaultFormPasswordsMigrator.name = "EdgeVaultFormPasswords";
   resources.push(windowsVaultFormPasswordsMigrator);
   return resources.filter(r => r.exists);
+};
+
+EdgeProfileMigrator.prototype.getLastUsedDate = function() {
+  // Don't do this if we don't have a single profile (see the comment for
+  // sourceProfiles) or if we can't find the database file:
+  if (this.sourceProfiles !== null || !gEdgeDatabase) {
+    return Promise.resolve(new Date(0));
+  }
+  let logFilePath = OS.Path.join(gEdgeDatabase.parent.path, "LogFiles", "edb.log");
+  let dbPath = gEdgeDatabase.path;
+  let cookieMigrator = MSMigrationUtils.getCookiesMigrator(MSMigrationUtils.MIGRATION_TYPE_EDGE);
+  let cookiePaths = cookieMigrator._cookiesFolders.map(f => f.path);
+  let datePromises = [logFilePath, dbPath, ... cookiePaths].map(path => {
+    return OS.File.stat(path).catch(_ => null).then(info => {
+      return info ? info.lastModificationDate : 0;
+    });
+  });
+  datePromises.push(new Promise(resolve => {
+    let typedURLs = new Map();
+    try {
+      typedURLs = MSMigrationUtils.getTypedURLs(kEdgeRegistryRoot);
+    } catch (ex) {}
+    let times = [0, ... typedURLs.values()];
+    resolve(Math.max.apply(Math, times));
+  }));
+  return Promise.all(datePromises).then(dates => {
+    return new Date(Math.max.apply(Math, dates));
+  });
 };
 
 /* Somewhat counterintuitively, this returns:

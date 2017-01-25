@@ -139,14 +139,6 @@ interface nsIFrameLoader : nsISupports
   void requestNotifyAfterRemotePaint();
 
   /**
-   * Request an event when the layer tree from the remote tab becomes
-   * available or unavailable. When this happens, a mozLayerTreeReady
-   * or mozLayerTreeCleared event is fired.
-   */
-  void requestNotifyLayerTreeReady();
-  void requestNotifyLayerTreeCleared();
-
-  /**
    * Print the current document.
    *
    * @param aOuterWindowID the ID of the outer window to print
@@ -227,6 +219,21 @@ interface nsIFrameLoader : nsISupports
    */
   readonly attribute boolean ownerIsWidget;
 
+  /**
+   * The last known width of the frame. Reading this property will not trigger
+   * a reflow, and therefore may not reflect the current state of things. It
+   * should only be used in asynchronous APIs where values are not guaranteed
+   * to be up-to-date when received.
+   */
+  readonly attribute unsigned long lazyWidth;
+
+  /**
+   * The last known height of the frame. Reading this property will not trigger
+   * a reflow, and therefore may not reflect the current state of things. It
+   * should only be used in asynchronous APIs where values are not guaranteed
+   * to be up-to-date when received.
+   */
+  readonly attribute unsigned long lazyHeight;
 };
 
 %{C++
@@ -241,7 +248,7 @@ interface nsIFrameLoaderOwner : nsISupports
   /**
    * The frame loader owned by this nsIFrameLoaderOwner
    */
-  readonly attribute nsIFrameLoader frameLoader;
+  [binaryname(FrameLoaderXPCOM)] readonly attribute nsIFrameLoader frameLoader;
   [noscript, notxpcom] alreadyAddRefed_nsFrameLoader GetFrameLoader();
 
   /**

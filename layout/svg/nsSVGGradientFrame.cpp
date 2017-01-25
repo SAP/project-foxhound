@@ -68,10 +68,11 @@ nsSVGGradientFrame::AttributeChanged(int32_t         aNameSpaceID,
        aAttribute == nsGkAtoms::gradientTransform ||
        aAttribute == nsGkAtoms::spreadMethod)) {
     nsSVGEffects::InvalidateDirectRenderingObservers(this);
-  } else if (aNameSpaceID == kNameSpaceID_XLink &&
+  } else if ((aNameSpaceID == kNameSpaceID_XLink ||
+              aNameSpaceID == kNameSpaceID_None) &&
              aAttribute == nsGkAtoms::href) {
     // Blow away our reference, if any
-    Properties().Delete(nsSVGEffects::HrefProperty());
+    Properties().Delete(nsSVGEffects::HrefAsPaintingProperty());
     mNoHRefURI = false;
     // And update whoever references us
     nsSVGEffects::InvalidateDirectRenderingObservers(this);
@@ -314,14 +315,23 @@ nsSVGGradientFrame::GetReferencedGradient()
   if (mNoHRefURI)
     return nullptr;
 
-  nsSVGPaintingProperty *property = static_cast<nsSVGPaintingProperty*>
-    (Properties().Get(nsSVGEffects::HrefProperty()));
+  nsSVGPaintingProperty *property =
+    Properties().Get(nsSVGEffects::HrefAsPaintingProperty());
 
   if (!property) {
-    // Fetch our gradient element's xlink:href attribute
-    dom::SVGGradientElement*grad = static_cast<dom::SVGGradientElement*>(mContent);
+    // Fetch our gradient element's href or xlink:href attribute
+    dom::SVGGradientElement* grad =
+      static_cast<dom::SVGGradientElement*>(mContent);
     nsAutoString href;
-    grad->mStringAttributes[dom::SVGGradientElement::HREF].GetAnimValue(href, grad);
+    if (grad->mStringAttributes[dom::SVGGradientElement::HREF]
+          .IsExplicitlySet()) {
+      grad->mStringAttributes[dom::SVGGradientElement::HREF]
+        .GetAnimValue(href, grad);
+    } else {
+      grad->mStringAttributes[dom::SVGGradientElement::XLINK_HREF]
+        .GetAnimValue(href, grad);
+    }
+
     if (href.IsEmpty()) {
       mNoHRefURI = true;
       return nullptr; // no URL
@@ -334,7 +344,8 @@ nsSVGGradientFrame::GetReferencedGradient()
                                               mContent->GetUncomposedDoc(), base);
 
     property =
-      nsSVGEffects::GetPaintingProperty(targetURI, this, nsSVGEffects::HrefProperty());
+      nsSVGEffects::GetPaintingProperty(targetURI, this,
+                                        nsSVGEffects::HrefAsPaintingProperty());
     if (!property)
       return nullptr;
   }

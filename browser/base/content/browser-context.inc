@@ -54,14 +54,14 @@
                 label="&openLinkCmdInCurrent.label;"
                 accesskey="&openLinkCmdInCurrent.accesskey;"
                 oncommand="gContextMenu.openLinkInCurrent();"/>
-# label and usercontextid are dynamically set.
+# label and data-usercontextid are dynamically set.
       <menuitem id="context-openlinkincontainertab"
                 accesskey="&openLinkCmdInTab.accesskey;"
                 oncommand="gContextMenu.openLinkInTab(event);"/>
       <menuitem id="context-openlinkintab"
                 label="&openLinkCmdInTab.label;"
                 accesskey="&openLinkCmdInTab.accesskey;"
-                usercontextid="0"
+                data-usercontextid="0"
                 oncommand="gContextMenu.openLinkInTab(event);"/>
 
       <menu id="context-openlinkinusercontext-menu"
@@ -93,10 +93,6 @@
                 label="&saveLinkCmd.label;"
                 accesskey="&saveLinkCmd.accesskey;"
                 oncommand="gContextMenu.saveLink();"/>
-      <menu id="context-marklinkMenu" label="&social.marklinkMenu.label;"
-            accesskey="&social.marklinkMenu.accesskey;">
-        <menupopup/>
-      </menu>
       <menuitem id="context-copyemail"
                 label="&copyEmailCmd.label;"
                 accesskey="&copyEmailCmd.accesskey;"
@@ -283,9 +279,13 @@
                 label="&savePageCmd.label;"
                 accesskey="&savePageCmd.accesskey2;"
                 oncommand="gContextMenu.savePageAs();"/>
-      <menu id="context-markpageMenu" label="&social.markpageMenu.label;"
-            accesskey="&social.markpageMenu.accesskey;">
-        <menupopup/>
+      <menuseparator id="context-sep-sendpagetodevice" hidden="true"/>
+      <menu id="context-sendpagetodevice"
+                label="&sendPageToDevice.label;"
+                accesskey="&sendPageToDevice.accesskey;"
+                hidden="true">
+        <menupopup id="context-sendpagetodevice-popup"
+                   onpopupshowing="(() => { let browser = gBrowser || getPanelBrowser(); gFxAccounts.populateSendTabToDevicesMenu(event.target, browser.currentURI.spec, browser.contentTitle); })()"/>
       </menu>
       <menuseparator id="context-sep-viewbgimage"/>
       <menuitem id="context-viewbgimage"
@@ -326,6 +326,14 @@
                 oncommand="AddKeywordForSearchField();"/>
       <menuitem id="context-searchselect"
                 oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms);"/>
+      <menuseparator id="context-sep-sendlinktodevice" hidden="true"/>
+      <menu id="context-sendlinktodevice"
+                label="&sendLinkToDevice.label;"
+                accesskey="&sendLinkToDevice.accesskey;"
+                hidden="true">
+        <menupopup id="context-sendlinktodevice-popup"
+                   onpopupshowing="gFxAccounts.populateSendTabToDevicesMenu(event.target, gContextMenu.linkURL, gContextMenu.linkTextStr);"/>
+      </menu>
       <menuitem id="context-shareselect"
                 label="&shareSelect.label;"
                 accesskey="&shareSelect.accesskey;"

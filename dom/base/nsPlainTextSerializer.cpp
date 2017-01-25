@@ -113,7 +113,7 @@ nsPlainTextSerializer::~nsPlainTextSerializer()
 {
   delete[] mTagStack;
   delete[] mOLStack;
-  NS_WARN_IF_FALSE(mHeadLevel == 0, "Wrong head level!");
+  NS_WARNING_ASSERTION(mHeadLevel == 0, "Wrong head level!");
 }
 
 NS_IMPL_ISUPPORTS(nsPlainTextSerializer,
@@ -445,7 +445,7 @@ nsPlainTextSerializer::DoOpenContainer(nsIAtom* aTag)
   if (ShouldReplaceContainerWithPlaceholder(mElement->NodeInfo()->NameAtom())) {
     if (mIgnoredChildNodeLevel == 0) {
       // Serialize current node as placeholder character
-      Write(NS_LITERAL_STRING("\xFFFC"));
+      Write(NS_LITERAL_STRING(u"\xFFFC"));
     }
     // Ignore child nodes.
     mIgnoredChildNodeLevel++;
@@ -601,7 +601,7 @@ nsPlainTextSerializer::DoOpenContainer(nsIAtom* aTag)
     // importable, we use a TAB.
     if (GetLastBool(mHasWrittenCellsForRow)) {
       // Bypass |Write| so that the TAB isn't compressed away.
-      AddToLine(MOZ_UTF16("\t"), 1);
+      AddToLine(u"\t", 1);
       mInWhitespace = true;
     }
     else if (mHasWrittenCellsForRow.IsEmpty()) {
@@ -1118,7 +1118,7 @@ nsPlainTextSerializer::DoAddLeaf(nsIAtom* aTag)
     EnsureVerticalSpace(0);
   }
   else if (mFlags & nsIDocumentEncoder::OutputNonTextContentAsPlaceholder) {
-    Write(NS_LITERAL_STRING("\xFFFC"));
+    Write(NS_LITERAL_STRING(u"\xFFFC"));
   }
   else if (aTag == nsGkAtoms::img) {
     /* Output (in decreasing order of preference)
@@ -1217,7 +1217,7 @@ static bool
 IsSpaceStuffable(const char16_t *s)
 {
   if (s[0] == '>' || s[0] == ' ' || s[0] == kNBSP ||
-      nsCRT::strncmp(s, MOZ_UTF16("From "), 5) == 0)
+      nsCRT::strncmp(s, u"From ", 5) == 0)
     return true;
   else
     return false;
@@ -2031,4 +2031,3 @@ int32_t GetUnicharStringWidth(const char16_t* pwcs, int32_t n)
 
   return width;
 }
-

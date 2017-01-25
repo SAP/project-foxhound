@@ -10,20 +10,27 @@
 #include "DOMMediaStream.h"
 
 namespace mozilla {
+
+class MediaStreamVideoSink;
+
 namespace dom {
 
 class VideoStreamTrack : public MediaStreamTrack {
 public:
   VideoStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
                    TrackID aInputTrackID,
-                   MediaStreamTrackSource* aSource)
-    : MediaStreamTrack(aStream, aTrackID, aInputTrackID, aSource) {}
+                   MediaStreamTrackSource* aSource,
+                   const MediaTrackConstraints& aConstraints = MediaTrackConstraints())
+    : MediaStreamTrack(aStream, aTrackID, aInputTrackID, aSource, aConstraints) {}
 
   JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   VideoStreamTrack* AsVideoStreamTrack() override { return this; }
 
   const VideoStreamTrack* AsVideoStreamTrack() const override { return this; }
+
+  void AddVideoOutput(MediaStreamVideoSink* aSink);
+  void RemoveVideoOutput(MediaStreamVideoSink* aSink);
 
   // WebIDL
   void GetKind(nsAString& aKind) override { aKind.AssignLiteral("video"); }
@@ -35,7 +42,8 @@ protected:
     return do_AddRef(new VideoStreamTrack(aOwningStream,
                                           aTrackID,
                                           mInputTrackID,
-                                          mSource));
+                                          mSource,
+                                          mConstraints));
   }
 };
 

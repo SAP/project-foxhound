@@ -14,6 +14,7 @@
 #include "PresentationSessionInfo.h"
 
 class nsIPresentationSessionRequest;
+class nsIPresentationTerminateRequest;
 class nsIURI;
 class nsIPresentationSessionTransportBuilder;
 
@@ -55,10 +56,6 @@ public:
                            const uint8_t aRole,
                            base::ProcessId aProcessId);
 
-  nsresult RegisterTransportBuilder(const nsAString& aSessionId,
-                                    uint8_t aRole,
-                                    nsIPresentationSessionTransportBuilder* aBuilder);
-
 private:
   friend class PresentationDeviceRequest;
 
@@ -66,6 +63,8 @@ private:
   void HandleShutdown();
   nsresult HandleDeviceChange();
   nsresult HandleSessionRequest(nsIPresentationSessionRequest* aRequest);
+  nsresult HandleTerminateRequest(nsIPresentationTerminateRequest* aRequest);
+  nsresult HandleReconnectRequest(nsIPresentationSessionRequest* aRequest);
   void NotifyAvailableChange(bool aIsAvailable);
   bool IsAppInstalled(nsIURI* aUri);
 

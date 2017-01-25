@@ -240,9 +240,6 @@ nsRange::~nsRange()
 {
   NS_ASSERTION(!IsInSelection(), "deleting nsRange that is in use");
 
-  // Maybe we can remove Detach() -- bug 702948.
-  Telemetry::Accumulate(Telemetry::DOM_RANGE_DETACHED, mIsDetached);
-
   // we want the side effects (releases and list removals)
   DoSetRange(nullptr, 0, nullptr, 0, nullptr);
 }
@@ -252,7 +249,6 @@ nsRange::nsRange(nsINode* aNode)
   , mStartOffset(0)
   , mEndOffset(0)
   , mIsPositioned(false)
-  , mIsDetached(false)
   , mMaySpanAnonymousSubtrees(false)
   , mIsGenerated(false)
   , mStartOffsetWasIncremented(false)
@@ -1842,8 +1838,23 @@ ValidateCurrentNode(nsRange* aRange, RangeSubtreeIterator& aIter)
   }
 
   nsresult res = nsRange::CompareNodeToRange(node, aRange, &before, &after);
+  NS_ENSURE_SUCCESS(res, false);
 
-  return NS_SUCCEEDED(res) && !before && !after;
+  if (before || after) {
+    nsCOMPtr<nsIDOMCharacterData> charData = do_QueryInterface(node);
+    if (charData) {
+      // If we're dealing with the start/end container which is a character
+      // node, pretend that the node is in the range.
+      if (before && node == aRange->GetStartParent()) {
+        before = false;
+      }
+      if (after && node == aRange->GetEndParent()) {
+        after = false;
+      }
+    }
+  }
+
+  return !before && !after;
 }
 
 nsresult
@@ -2524,6 +2535,11 @@ nsRange::InsertNode(nsINode& aNode, ErrorResult& aRv)
     return;
   }
 
+  if (&aNode == tStartContainer) {
+    aRv.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
+    return;
+  }
+
   // This is the node we'll be inserting before, and its parent
   nsCOMPtr<nsINode> referenceNode;
   nsCOMPtr<nsINode> referenceParentNode = tStartContainer;
@@ -2809,8 +2825,6 @@ nsRange::ToString(nsAString& aReturn)
 NS_IMETHODIMP
 nsRange::Detach()
 {
-  // No-op, but still set mIsDetached for telemetry (bug 702948)
-  mIsDetached = true;
   return NS_OK;
 }
 
@@ -3306,7 +3320,8 @@ IsVisibleAndNotInReplacedElement(nsIFrame* aFrame)
   }
   for (nsIFrame* f = aFrame->GetParent(); f; f = f->GetParent()) {
     if (f->IsFrameOfType(nsIFrame::eReplaced) &&
-        !f->GetContent()->IsHTMLElement(nsGkAtoms::button)) {
+        !f->GetContent()->IsHTMLElement(nsGkAtoms::button) &&
+        !f->GetContent()->IsHTMLElement(nsGkAtoms::select)) {
       return false;
     }
   }
@@ -3357,7 +3372,7 @@ GetRequiredInnerTextLineBreakCount(nsIFrame* aFrame)
   }
   const nsStyleDisplay* styleDisplay = aFrame->StyleDisplay();
   if (styleDisplay->IsBlockOutside(aFrame) ||
-      styleDisplay->mDisplay == NS_STYLE_DISPLAY_TABLE_CAPTION) {
+      styleDisplay->mDisplay == StyleDisplay::TableCaption) {
     return 1;
   }
   return 0;
@@ -3474,17 +3489,19 @@ nsRange::GetInnerTextNoFlush(DOMString& aValue, ErrorResult& aError,
         result.Append('\n');
       }
       switch (f->StyleDisplay()->mDisplay) {
-      case NS_STYLE_DISPLAY_TABLE_CELL:
+      case StyleDisplay::TableCell:
         if (!IsLastCellOfRow(f)) {
           result.Append('\t');
         }
         break;
-      case NS_STYLE_DISPLAY_TABLE_ROW:
+      case StyleDisplay::TableRow:
         if (!IsLastRowOfRowGroup(f) ||
             !IsLastNonemptyRowGroupOfTable(f->GetParent())) {
           result.Append('\n');
         }
         break;
+      default:
+        break; // Do nothing
       }
       result.AddRequiredLineBreakCount(GetRequiredInnerTextLineBreakCount(f));
     }

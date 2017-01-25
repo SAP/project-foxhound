@@ -21,11 +21,9 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/TextureClient.h"  // for TextureClient, etc
 #include "mozilla/layers/TextureClientOGL.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsDebug.h"                    // for printf_stderr, NS_ASSERTION
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType, etc
 #include "TextureClientSharedSurface.h"
-#include "VRManagerChild.h"
 
 using namespace mozilla::gfx;
 using namespace mozilla::gl;
@@ -68,11 +66,37 @@ CanvasClientBridge::UpdateAsync(AsyncCanvasRenderer* aRenderer)
 }
 
 void
+CanvasClient2D::UpdateFromTexture(TextureClient* aTexture)
+{
+  MOZ_ASSERT(aTexture);
+
+  if (!aTexture->IsSharedWithCompositor()) {
+    if (!AddTextureClient(aTexture)) {
+      return;
+    }
+  }
+
+  mBackBuffer = nullptr;
+  mFrontBuffer = nullptr;
+  mBufferProviderTexture = aTexture;
+
+  AutoTArray<CompositableForwarder::TimedTextureClient,1> textures;
+  CompositableForwarder::TimedTextureClient* t = textures.AppendElement();
+  t->mTextureClient = aTexture;
+  t->mPictureRect = nsIntRect(nsIntPoint(0, 0), aTexture->GetSize());
+  t->mFrameID = mFrameID;
+
+  GetForwarder()->UseTextures(this, textures);
+  aTexture->SyncWithObject(GetForwarder()->GetSyncObject());
+}
+
+void
 CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
 {
+  mBufferProviderTexture = nullptr;
+
   AutoRemoveTexture autoRemove(this);
-  if (mBackBuffer &&
-      (mBackBuffer->IsImmutable() || mBackBuffer->GetSize() != aSize)) {
+  if (mBackBuffer && (mBackBuffer->IsReadLocked() || mBackBuffer->GetSize() != aSize)) {
     autoRemove.mTexture = mBackBuffer;
     mBackBuffer = nullptr;
   }
@@ -95,6 +119,7 @@ CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
       NS_WARNING("Failed to allocate the TextureClient");
       return;
     }
+    mBackBuffer->EnableReadLock();
     MOZ_ASSERT(mBackBuffer->CanExposeDrawTarget());
 
     bufferCreated = true;
@@ -110,7 +135,10 @@ CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
 
     RefPtr<DrawTarget> target = mBackBuffer->BorrowDrawTarget();
     if (target) {
-      aLayer->UpdateTarget(target);
+      if (!aLayer->UpdateTarget(target)) {
+        NS_WARNING("Failed to copy the canvas into a TextureClient.");
+        return;
+      }
       updated = true;
     }
   }
@@ -126,7 +154,6 @@ CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
     t->mTextureClient = mBackBuffer;
     t->mPictureRect = nsIntRect(nsIntPoint(0, 0), mBackBuffer->GetSize());
     t->mFrameID = mFrameID;
-    t->mInputFrameID = VRManagerChild::Get()->GetInputFrameID();
     GetForwarder()->UseTextures(this, textures);
     mBackBuffer->SyncWithObject(GetForwarder()->GetSyncObject());
   }
@@ -286,7 +313,7 @@ TexClientFromReadback(SharedSurface* src, ClientIPCAllocator* allocator,
 
     MOZ_ASSERT(texClient);
     if (!texClient)
-        return nullptr;
+      return nullptr;
 
     // With a texClient, we can lock for writing.
     TextureClientAutoLock autoLock(texClient, OpenMode::OPEN_WRITE);
@@ -301,7 +328,7 @@ TexClientFromReadback(SharedSurface* src, ClientIPCAllocator* allocator,
     auto height = src->mSize.height;
 
     {
-      ScopedPackAlignment autoAlign(gl, 4);
+      ScopedPackState scopedPackState(gl);
 
       MOZ_ASSERT(mapped.stride/4 == mapped.size.width);
       gl->raw_fReadPixels(0, 0, width, height, readFormat, readType, mapped.data);
@@ -388,6 +415,11 @@ CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize, Renderer& aRendere
       gfxCriticalError() << "Invalid canvas front buffer";
       return;
     }
+  } else if (layer && layer->mIsMirror) {
+    mShSurfClient = CloneSurface(gl->Screen()->Front()->Surf(), layer->mFactory.get());
+    if (!mShSurfClient) {
+      return;
+    }
   } else {
     mShSurfClient = gl->Screen()->Front();
     if (mShSurfClient && mShSurfClient->GetAllocator() &&
@@ -465,25 +497,6 @@ CanvasClientSharedSurface::Updated()
 
   auto forwarder = GetForwarder();
 
-#ifndef MOZ_WIDGET_GONK
-  if (mFront) {
-    if (mFront->GetFlags() & TextureFlags::RECYCLE) {
-      mFront->WaitForCompositorRecycle();
-    }
-  }
-#else
-  // AutoRemoveTexture does the followings.
-  // - Ensure to deliver FenceHandle from TextureHost to TextureClient, before
-  //   next TextureClient usage.
-  // - Control TextureClient's recycling timing.
-  // - Call RemoveTexture() after newFront's UseTextures() call.
-  //   It could improve performance of Host side's EGL handling on gonk
-  AutoRemoveTexture autoRemove(this);
-  if (mFront && mFront != mNewFront) {
-    autoRemove.mTexture = mFront;
-  }
-#endif
-
   mFront = mNewFront;
   mNewFront = nullptr;
 
@@ -495,25 +508,20 @@ CanvasClientSharedSurface::Updated()
   t->mTextureClient = mFront;
   t->mPictureRect = nsIntRect(nsIntPoint(0, 0), mFront->GetSize());
   t->mFrameID = mFrameID;
-  // XXX TODO - This reference to VRManagerChild will be moved with the
-  //            implementation of the WebVR 1.0 API, which will enable
-  //            the inputFrameID to be passed through Javascript with
-  //            the new VRDisplay API.
-  t->mInputFrameID = VRManagerChild::Get()->GetInputFrameID();
   forwarder->UseTextures(this, textures);
 }
 
 void
 CanvasClientSharedSurface::OnDetach() {
-  if (mShSurfClient) {
-    mShSurfClient->CancelWaitForCompositorRecycle();
-  }
   ClearSurfaces();
 }
 
 void
 CanvasClientSharedSurface::ClearSurfaces()
 {
+  if (mFront) {
+    mFront->CancelWaitForRecycle();
+  }
   mFront = nullptr;
   mNewFront = nullptr;
   mShSurfClient = nullptr;

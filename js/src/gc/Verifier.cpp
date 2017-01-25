@@ -9,6 +9,7 @@
 #endif
 
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Sprintf.h"
 
 #include "jscntxt.h"
 #include "jsgc.h"
@@ -79,7 +80,7 @@ typedef HashMap<void*, VerifyNode*, DefaultHasher<void*>, SystemAllocPolicy> Nod
  * The nodemap field is a hashtable that maps from the address of the GC thing
  * to the VerifyNode that represents it.
  */
-class js::VerifyPreTracer : public JS::CallbackTracer
+class js::VerifyPreTracer final : public JS::CallbackTracer
 {
     JS::AutoDisableGenerationalGC noggc;
 
@@ -183,7 +184,7 @@ gc::GCRuntime::startVerifyPreBarriers()
     if (!trc)
         return;
 
-    AutoPrepareForTracing prep(rt, WithAtoms);
+    AutoPrepareForTracing prep(rt->contextFromMainThread(), WithAtoms);
 
     for (auto chunk = allNonEmptyChunks(); !chunk.done(); chunk.next())
         chunk->bitmap.clear();
@@ -203,10 +204,10 @@ gc::GCRuntime::startVerifyPreBarriers()
     /* Create the root node. */
     trc->curnode = MakeNode(trc, nullptr, JS::TraceKind(0));
 
-    incrementalState = MARK_ROOTS;
+    incrementalState = State::MarkRoots;
 
     /* Make all the roots be edges emanating from the root node. */
-    markRuntime(trc, TraceRuntime, prep.session().lock);
+    traceRuntime(trc, prep.session().lock);
 
     VerifyNode* node;
     node = trc->curnode;
@@ -230,19 +231,21 @@ gc::GCRuntime::startVerifyPreBarriers()
     }
 
     verifyPreData = trc;
-    incrementalState = MARK;
+    incrementalState = State::Mark;
     marker.start();
 
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next()) {
         PurgeJITCaches(zone);
-        zone->setNeedsIncrementalBarrier(true, Zone::UpdateJit);
-        zone->arenas.purge();
+        if (!zone->usedByExclusiveThread) {
+            zone->setNeedsIncrementalBarrier(true, Zone::UpdateJit);
+            zone->arenas.purge();
+        }
     }
 
     return;
 
 oom:
-    incrementalState = NO_INCREMENTAL;
+    incrementalState = State::NotActive;
     js_delete(trc);
     verifyPreData = nullptr;
 }
@@ -284,22 +287,26 @@ CheckEdgeTracer::onChild(const JS::GCCellPtr& thing)
     }
 }
 
-static void
-AssertMarkedOrAllocated(const EdgeValue& edge)
+void
+js::gc::AssertSafeToSkipBarrier(TenuredCell* thing)
+{
+    Zone* zone = thing->zoneFromAnyThread();
+    MOZ_ASSERT(!zone->needsIncrementalBarrier() || zone->isAtomsZone());
+}
+
+static bool
+IsMarkedOrAllocated(const EdgeValue& edge)
 {
     if (!edge.thing || IsMarkedOrAllocated(TenuredCell::fromPointer(edge.thing)))
-        return;
+        return true;
 
     // Permanent atoms and well-known symbols aren't marked during graph traversal.
     if (edge.kind == JS::TraceKind::String && static_cast<JSString*>(edge.thing)->isPermanentAtom())
-        return;
+        return true;
     if (edge.kind == JS::TraceKind::Symbol && static_cast<JS::Symbol*>(edge.thing)->isWellKnownSymbol())
-        return;
+        return true;
 
-    char msgbuf[1024];
-    JS_snprintf(msgbuf, sizeof(msgbuf), "[barrier verifier] Unmarked edge: %s", edge.label);
-    MOZ_ReportAssertionFailure(msgbuf, __FILE__, __LINE__);
-    MOZ_CRASH();
+    return false;
 }
 
 void
@@ -312,7 +319,7 @@ gc::GCRuntime::endVerifyPreBarriers()
 
     MOZ_ASSERT(!JS::IsGenerationalGCEnabled(rt));
 
-    AutoPrepareForTracing prep(rt, SkipAtoms);
+    AutoPrepareForTracing prep(rt->contextFromMainThread(), SkipAtoms);
 
     bool compartmentCreated = false;
 
@@ -333,7 +340,7 @@ gc::GCRuntime::endVerifyPreBarriers()
     number++;
 
     verifyPreData = nullptr;
-    incrementalState = NO_INCREMENTAL;
+    incrementalState = State::NotActive;
 
     if (!compartmentCreated && IsIncrementalGCSafe(rt)) {
         CheckEdgeTracer cetrc(rt);
@@ -345,8 +352,19 @@ gc::GCRuntime::endVerifyPreBarriers()
             js::TraceChildren(&cetrc, node->thing, node->kind);
 
             if (node->count <= MAX_VERIFIER_EDGES) {
-                for (uint32_t i = 0; i < node->count; i++)
-                    AssertMarkedOrAllocated(node->edges[i]);
+                for (uint32_t i = 0; i < node->count; i++) {
+                    EdgeValue& edge = node->edges[i];
+                    if (!IsMarkedOrAllocated(edge)) {
+                        char msgbuf[1024];
+                        SprintfLiteral(msgbuf,
+                                       "[barrier verifier] Unmarked edge: %s %p '%s' edge to %s %p",
+                                       JS::GCTraceKindToAscii(node->kind), node->thing,
+                                       edge.label,
+                                       JS::GCTraceKindToAscii(edge.kind), edge.thing);
+                        MOZ_ReportAssertionFailure(msgbuf, __FILE__, __LINE__);
+                        MOZ_CRASH();
+                    }
+                }
             }
 
             node = NextNode(node);
@@ -498,9 +516,10 @@ CheckHeapTracer::onChild(const JS::GCCellPtr& thing)
 bool
 CheckHeapTracer::check(AutoLockForExclusiveAccess& lock)
 {
-    // The analysis thinks that markRuntime might GC by calling a GC callback.
-    JS::AutoSuppressGCAnalysis nogc(rt);
-    rt->gc.markRuntime(this, GCRuntime::TraceRuntime, lock);
+    // The analysis thinks that traceRuntime might GC by calling a GC callback.
+    JS::AutoSuppressGCAnalysis nogc;
+    if (!rt->isBeingDestroyed())
+        rt->gc.traceRuntime(this, lock);
 
     while (!stack.empty()) {
         WorkItem item = stack.back();

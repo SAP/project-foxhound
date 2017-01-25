@@ -24,7 +24,6 @@
 #endif
 #endif
 
-#include "nscore.h"
 #include "nsXULAppAPI.h"
 
 // This directory service key is a lot like NS_APP_LOCALSTORE_50_FILE,
@@ -97,6 +96,13 @@ WriteConsoleLog();
 
 void
 OverrideDefaultLocaleIfNeeded();
+
+/**
+ * Allow exit() calls to complete. This should be done from a proper Gecko
+ * shutdown path. Otherwise we aim to catch improper shutdowns.
+ */
+void
+MozExpectedExit();
 
 #ifdef XP_WIN
 void

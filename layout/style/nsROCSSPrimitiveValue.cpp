@@ -100,7 +100,8 @@ nsROCSSPrimitiveValue::GetCssText(nsAString& aCssText)
       {
         if (mValue.mURI) {
           nsAutoCString specUTF8;
-          mValue.mURI->GetSpec(specUTF8);
+          nsresult rv = mValue.mURI->GetSpec(specUTF8);
+          NS_ENSURE_SUCCESS(rv, rv);
 
           tmpStr.AssignLiteral("url(");
           nsStyleUtil::AppendEscapedCSSString(NS_ConvertUTF8toUTF16(specUTF8),
@@ -111,7 +112,7 @@ nsROCSSPrimitiveValue::GetCssText(nsAString& aCssText)
           // 'about:invalid' as the default value for url attributes,
           // so let's also use it here as the default computed value
           // for invalid URLs.
-          tmpStr.AssignLiteral(MOZ_UTF16("url(about:invalid)"));
+          tmpStr.AssignLiteral(u"url(about:invalid)");
         }
         break;
       }
@@ -461,10 +462,13 @@ nsROCSSPrimitiveValue::GetStringValue(nsAString& aReturn)
       break;
     case CSS_URI: {
       nsAutoCString spec;
-      if (mValue.mURI)
-        mValue.mURI->GetSpec(spec);
+      if (mValue.mURI) {
+        nsresult rv = mValue.mURI->GetSpec(spec);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
       CopyUTF8toUTF16(spec, aReturn);
-      } break;
+      break;
+    }
     default:
       aReturn.Truncate();
       return NS_ERROR_DOM_INVALID_ACCESS_ERR;

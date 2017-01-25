@@ -206,7 +206,7 @@ class TestProxy(MarionetteTestCase):
 
         self.assertEqual(result["proxyType"], 1)
         self.assertNotEqual(result["httpProxy"], url,
-                            'httpProxy was set. %s' % result["httpProxy"])
+                            'httpProxy was set. {}'.format(result["httpProxy"]))
         self.assertNotEqual(result["httpProxyPort"], port, 'httpProxyPort was set')
         self.assertNotEqual(result["sslProxy"], url, 'sslProxy url was set')
         self.assertNotEqual(result["sslProxyPort"], port, 'sslProxyPort was set')
@@ -225,7 +225,7 @@ class TestProxy(MarionetteTestCase):
             self.marionette.start_session(capabilities)
             self.fail("We should have started a session because proxy should be a dict")
         except InvalidArgumentException as e:
-            assert e.msg == "Value of 'proxy' should be an object"
+            assert e.message == "Value of 'proxy' should be an object"
 
     def test_proxy_is_passed_in_with_no_proxy_doesnt_set_it(self):
         capabilities = {"requiredCapabilities":

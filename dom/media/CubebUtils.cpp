@@ -6,8 +6,14 @@
 
 #include <stdint.h>
 #include <algorithm>
+#include "nsIStringBundle.h"
+#include "nsDebug.h"
+#include "nsString.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/Telemetry.h"
+#include "nsThreadUtils.h"
 #include "CubebUtils.h"
 #include "nsAutoRef.h"
 #include "prdtoa.h"
@@ -21,10 +27,42 @@ namespace {
 
 // This mutex protects the variables below.
 StaticMutex sMutex;
+enum class CubebState {
+  Uninitialized = 0,
+  Initialized,
+  Shutdown
+} sCubebState = CubebState::Uninitialized;
 cubeb* sCubebContext;
 double sVolumeScale;
 uint32_t sCubebLatency;
 bool sCubebLatencyPrefSet;
+bool sAudioStreamInitEverSucceeded = false;
+StaticAutoPtr<char> sBrandName;
+
+const char kBrandBundleURL[]      = "chrome://branding/locale/brand.properties";
+
+const char* AUDIOSTREAM_BACKEND_ID_STR[] = {
+  "jack",
+  "pulse",
+  "alsa",
+  "audiounit",
+  "audioqueue",
+  "wasapi",
+  "winmm",
+  "directsound",
+  "sndio",
+  "opensl",
+  "audiotrack",
+  "kai"
+};
+/* Index for failures to create an audio stream the first time. */
+const int CUBEB_BACKEND_INIT_FAILURE_FIRST =
+  ArrayLength(AUDIOSTREAM_BACKEND_ID_STR);
+/* Index for failures to create an audio stream after the first time */
+const int CUBEB_BACKEND_INIT_FAILURE_OTHER = CUBEB_BACKEND_INIT_FAILURE_FIRST + 1;
+/* Index for an unknown backend. */
+const int CUBEB_BACKEND_UNKNOWN = CUBEB_BACKEND_INIT_FAILURE_FIRST + 2;
+
 
 // Prefered samplerate, in Hz (characteristic of the hardware, mixer, platform,
 // and API used).
@@ -90,26 +128,114 @@ cubeb* GetCubebContext()
   return GetCubebContextUnlocked();
 }
 
-void InitPreferredSampleRate()
+bool InitPreferredSampleRate()
 {
   StaticMutexAutoLock lock(sMutex);
-  if (sPreferredSampleRate == 0 &&
-      cubeb_get_preferred_sample_rate(GetCubebContextUnlocked(),
-                                      &sPreferredSampleRate) != CUBEB_OK) {
-    // Query failed, use a sensible default.
-    sPreferredSampleRate = 44100;
+  if (sPreferredSampleRate != 0) {
+    return true;
   }
+  cubeb* context = GetCubebContextUnlocked();
+  if (!context) {
+    return false;
+  }
+  if (cubeb_get_preferred_sample_rate(context,
+                                      &sPreferredSampleRate) != CUBEB_OK) {
+
+    return false;
+  }
+  MOZ_ASSERT(sPreferredSampleRate);
+  return true;
+}
+
+uint32_t PreferredSampleRate()
+{
+  if (!InitPreferredSampleRate()) {
+    return 44100;
+  }
+  MOZ_ASSERT(sPreferredSampleRate);
+  return sPreferredSampleRate;
+}
+
+void InitBrandName()
+{
+  if (sBrandName) {
+    return;
+  }
+  nsXPIDLString brandName;
+  nsCOMPtr<nsIStringBundleService> stringBundleService =
+    mozilla::services::GetStringBundleService();
+  if (stringBundleService) {
+    nsCOMPtr<nsIStringBundle> brandBundle;
+    nsresult rv = stringBundleService->CreateBundle(kBrandBundleURL,
+                                           getter_AddRefs(brandBundle));
+    if (NS_SUCCEEDED(rv)) {
+      rv = brandBundle->GetStringFromName(u"brandShortName",
+                                          getter_Copies(brandName));
+      NS_WARNING_ASSERTION(
+        NS_SUCCEEDED(rv), "Could not get the program name for a cubeb stream.");
+    }
+  }
+  /* cubeb expects a c-string. */
+  const char* ascii = NS_LossyConvertUTF16toASCII(brandName).get();
+  sBrandName = new char[brandName.Length() + 1];
+  PodCopy(sBrandName.get(), ascii, brandName.Length());
+  sBrandName[brandName.Length()] = 0;
 }
 
 cubeb* GetCubebContextUnlocked()
 {
   sMutex.AssertCurrentThreadOwns();
-  if (sCubebContext ||
-      cubeb_init(&sCubebContext, "CubebUtils") == CUBEB_OK) {
+  if (sCubebState != CubebState::Uninitialized) {
+    // If we have already passed the initialization point (below), just return
+    // the current context, which may be null (e.g., after error or shutdown.)
     return sCubebContext;
   }
-  NS_WARNING("cubeb_init failed");
-  return nullptr;
+
+  if (!sBrandName && NS_IsMainThread()) {
+    InitBrandName();
+  } else {
+    NS_WARNING_ASSERTION(
+      sBrandName, "Did not initialize sbrandName, and not on the main thread?");
+  }
+
+  int rv = cubeb_init(&sCubebContext, sBrandName);
+  NS_WARNING_ASSERTION(rv == CUBEB_OK, "Could not get a cubeb context.");
+  sCubebState = (rv == CUBEB_OK) ? CubebState::Initialized : CubebState::Uninitialized;
+
+  return sCubebContext;
+}
+
+void ReportCubebBackendUsed()
+{
+  StaticMutexAutoLock lock(sMutex);
+
+  sAudioStreamInitEverSucceeded = true;
+
+  bool foundBackend = false;
+  for (uint32_t i = 0; i < ArrayLength(AUDIOSTREAM_BACKEND_ID_STR); i++) {
+    if (!strcmp(cubeb_get_backend_id(sCubebContext), AUDIOSTREAM_BACKEND_ID_STR[i])) {
+      Telemetry::Accumulate(Telemetry::AUDIOSTREAM_BACKEND_USED, i);
+      foundBackend = true;
+    }
+  }
+  if (!foundBackend) {
+    Telemetry::Accumulate(Telemetry::AUDIOSTREAM_BACKEND_USED,
+                          CUBEB_BACKEND_UNKNOWN);
+  }
+}
+
+void ReportCubebStreamInitFailure(bool aIsFirst)
+{
+  StaticMutexAutoLock lock(sMutex);
+  if (!aIsFirst && !sAudioStreamInitEverSucceeded) {
+    // This machine has no audio hardware, or it's in really bad shape, don't
+    // send this info, since we want CUBEB_BACKEND_INIT_FAILURE_OTHER to detect
+    // failures to open multiple streams in a process over time.
+    return;
+  }
+  Telemetry::Accumulate(Telemetry::AUDIOSTREAM_BACKEND_USED,
+                        aIsFirst ? CUBEB_BACKEND_INIT_FAILURE_FIRST
+                                 : CUBEB_BACKEND_INIT_FAILURE_OTHER);
 }
 
 uint32_t GetCubebLatency()
@@ -130,6 +256,9 @@ void InitLibrary()
   Preferences::RegisterCallback(PrefChanged, PREF_VOLUME_SCALE);
   PrefChanged(PREF_CUBEB_LATENCY, nullptr);
   Preferences::RegisterCallback(PrefChanged, PREF_CUBEB_LATENCY);
+#ifndef MOZ_WIDGET_ANDROID
+  NS_DispatchToMainThread(NS_NewRunnableFunction(&InitBrandName));
+#endif
 }
 
 void ShutdownLibrary()
@@ -142,6 +271,9 @@ void ShutdownLibrary()
     cubeb_destroy(sCubebContext);
     sCubebContext = nullptr;
   }
+  sBrandName = nullptr;
+  // This will ensure we don't try to re-create a context.
+  sCubebState = CubebState::Shutdown;
 }
 
 uint32_t MaxNumberOfChannels()
@@ -155,13 +287,6 @@ uint32_t MaxNumberOfChannels()
   }
 
   return 0;
-}
-
-uint32_t PreferredSampleRate()
-{
-  MOZ_ASSERT(sPreferredSampleRate,
-             "sPreferredSampleRate has not been initialized!");
-  return sPreferredSampleRate;
 }
 
 #if defined(__ANDROID__) && defined(MOZ_B2G)
@@ -190,6 +315,19 @@ cubeb_stream_type ConvertChannelToCubebType(dom::AudioChannel aChannel)
   }
 }
 #endif
+
+void GetCurrentBackend(nsAString& aBackend)
+{
+  cubeb* cubebContext = GetCubebContext();
+  if (cubebContext) {
+    const char* backend = cubeb_get_backend_id(cubebContext);
+    if (backend) {
+      aBackend.AssignASCII(backend);
+      return;
+    }
+  }
+  aBackend.AssignLiteral("unknown");
+}
 
 } // namespace CubebUtils
 } // namespace mozilla

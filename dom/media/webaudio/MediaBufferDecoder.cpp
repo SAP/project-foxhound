@@ -16,7 +16,6 @@
 #include "DecoderTraits.h"
 #include "AudioContext.h"
 #include "AudioBuffer.h"
-#include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptError.h"
@@ -26,6 +25,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/Telemetry.h"
 #include "nsPrintfCString.h"
+#include "GMPService.h"
 
 namespace mozilla {
 
@@ -68,7 +68,7 @@ public:
     MOZ_ASSERT(aFunction);
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -132,10 +132,10 @@ private:
 
   void Decode();
   void OnMetadataRead(MetadataHolder* aMetadata);
-  void OnMetadataNotRead(ReadMetadataFailureReason aReason);
+  void OnMetadataNotRead(const MediaResult& aError);
   void RequestSample();
   void SampleDecoded(MediaData* aData);
-  void SampleNotDecoded(MediaDecoderReader::NotDecodedReason aReason);
+  void SampleNotDecoded(const MediaResult& aError);
   void FinishDecode();
   void AllocateBuffer();
   void CallbackTheResult();
@@ -182,6 +182,24 @@ MediaDecodeTask::Run()
   return NS_OK;
 }
 
+class BufferDecoderGMPCrashHelper : public GMPCrashHelper
+{
+public:
+  explicit BufferDecoderGMPCrashHelper(nsPIDOMWindowInner* aParent)
+    : mParent(do_GetWeakReference(aParent))
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+  }
+  already_AddRefed<nsPIDOMWindowInner> GetPluginCrashedEventTarget() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(mParent);
+    return window.forget();
+  }
+private:
+  nsWeakPtr mParent;
+};
+
 bool
 MediaDecodeTask::CreateReader()
 {
@@ -199,7 +217,8 @@ MediaDecodeTask::CreateReader()
                             mLength, principal, mContentType);
 
   MOZ_ASSERT(!mBufferDecoder);
-  mBufferDecoder = new BufferDecoder(resource);
+  mBufferDecoder = new BufferDecoder(resource,
+    new BufferDecoderGMPCrashHelper(mDecodeJob.mContext->GetParentObject()));
 
   // If you change this list to add support for new decoders, please consider
   // updating HTMLMediaElement::CreateDecoder as well.
@@ -291,7 +310,7 @@ MediaDecodeTask::OnMetadataRead(MetadataHolder* aMetadata)
 }
 
 void
-MediaDecodeTask::OnMetadataNotRead(ReadMetadataFailureReason aReason)
+MediaDecodeTask::OnMetadataNotRead(const MediaResult& aReason)
 {
   mDecoderReader->Shutdown();
   ReportFailureOnMainThread(WebAudioDecodeJob::InvalidContent);
@@ -318,15 +337,14 @@ MediaDecodeTask::SampleDecoded(MediaData* aData)
 }
 
 void
-MediaDecodeTask::SampleNotDecoded(MediaDecoderReader::NotDecodedReason aReason)
+MediaDecodeTask::SampleNotDecoded(const MediaResult& aError)
 {
   MOZ_ASSERT(!NS_IsMainThread());
-  if (aReason == MediaDecoderReader::DECODE_ERROR) {
+  if (aError == NS_ERROR_DOM_MEDIA_END_OF_STREAM) {
+    FinishDecode();
+  } else {
     mDecoderReader->Shutdown();
     ReportFailureOnMainThread(WebAudioDecodeJob::InvalidContent);
-  } else {
-    MOZ_ASSERT(aReason == MediaDecoderReader::END_OF_STREAM);
-    FinishDecode();
   }
 }
 

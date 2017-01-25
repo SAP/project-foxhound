@@ -7,6 +7,7 @@ include protocol PBackgroundMutableFile;
 include protocol PBlob;
 
 include DOMTypes;
+include ProtocolTypes;
 
 include "mozilla/dom/indexedDB/SerializationHelpers.h";
 include "mozilla/dom/quota/SerializationHelpers.h";
@@ -28,6 +29,9 @@ using class mozilla::dom::indexedDB::KeyPath
 
 using mozilla::dom::quota::PersistenceType
   from "mozilla/dom/quota/PersistenceType.h";
+
+using mozilla::SerializedStructuredCloneBuffer
+  from "ipc/IPCMessageUtils.h";
 
 namespace mozilla {
 namespace dom {
@@ -56,13 +60,13 @@ union BlobOrMutableFile
 
 struct SerializedStructuredCloneReadInfo
 {
-  uint8_t[] data;
+  SerializedStructuredCloneBuffer data;
   BlobOrMutableFile[] blobs;
 };
 
 struct SerializedStructuredCloneWriteInfo
 {
-  uint8_t[] data;
+  SerializedStructuredCloneBuffer data;
   uint64_t offsetToKeyProp;
 };
 
@@ -186,6 +190,12 @@ struct ObjectStoreGetParams
   SerializedKeyRange keyRange;
 };
 
+struct ObjectStoreGetKeyParams
+{
+  int64_t objectStoreId;
+  SerializedKeyRange keyRange;
+};
+
 struct ObjectStoreGetAllParams
 {
   int64_t objectStoreId;
@@ -259,6 +269,7 @@ union RequestParams
   ObjectStoreAddParams;
   ObjectStorePutParams;
   ObjectStoreGetParams;
+  ObjectStoreGetKeyParams;
   ObjectStoreGetAllParams;
   ObjectStoreGetAllKeysParams;
   ObjectStoreDeleteParams;

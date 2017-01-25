@@ -139,7 +139,7 @@ XPC_MSG_DEF(NS_ERROR_NO_CONTENT                     , "Channel opened successful
 XPC_MSG_DEF(NS_ERROR_IN_PROGRESS                    , "The requested action could not be completed while the object is busy")
 XPC_MSG_DEF(NS_ERROR_ALREADY_OPENED                 , "Channel is already open")
 XPC_MSG_DEF(NS_ERROR_INVALID_CONTENT_ENCODING       , "The content encoding of the source document is incorrect")
-XPC_MSG_DEF(NS_ERROR_CORRUPTED_CONTENT              , "Corrupted content was received from server")
+XPC_MSG_DEF(NS_ERROR_CORRUPTED_CONTENT              , "Corrupted content received from server (potentially MIME type mismatch because of 'X-Content-Type-Options: nosniff')")
 XPC_MSG_DEF(NS_ERROR_FIRST_HEADER_FIELD_COMPONENT_EMPTY, "Couldn't extract first component from potentially corrupted header field")
 XPC_MSG_DEF(NS_ERROR_ALREADY_CONNECTED              , "The connection is already established")
 XPC_MSG_DEF(NS_ERROR_NOT_CONNECTED                  , "The connection does not exist")
@@ -222,3 +222,7 @@ XPC_MSG_DEF(NS_ERROR_CONTENT_CRASHED                  , "The process that hosted
 /* Codes for the JS-implemented Push DOM API. These can be removed as part of bug 1252660. */
 XPC_MSG_DEF(NS_ERROR_DOM_PUSH_INVALID_KEY_ERR         , "Invalid raw ECDSA P-256 public key.")
 XPC_MSG_DEF(NS_ERROR_DOM_PUSH_MISMATCHED_KEY_ERR      , "A subscription with a different application server key already exists.")
+
+/* Codes defined in WebIDL https://heycam.github.io/webidl/#idl-DOMException-error-names */
+XPC_MSG_DEF(NS_ERROR_DOM_NOT_FOUND_ERR                , "The object can not be found here.")
+XPC_MSG_DEF(NS_ERROR_DOM_NOT_ALLOWED_ERR              , "The request is not allowed.")

@@ -46,7 +46,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/Telemetry.h"
 
 // Normally, the number of milliseconds that AsyncShutdown waits until
@@ -173,7 +173,7 @@ RunWatchdog(void* arg)
 class PR_CloseDelete
 {
 public:
-  MOZ_CONSTEXPR PR_CloseDelete() {}
+  constexpr PR_CloseDelete() {}
 
   PR_CloseDelete(const PR_CloseDelete& aOther)
   {}
@@ -308,7 +308,7 @@ struct ShutdownStep
   char const* const mTopic;
   int mTicks;
 
-  MOZ_CONSTEXPR explicit ShutdownStep(const char *const topic)
+  constexpr explicit ShutdownStep(const char *const topic)
     : mTopic(topic)
     , mTicks(-1)
   {}
@@ -344,9 +344,7 @@ nsTerminator::SelfInit()
 
   for (size_t i = 0; i < ArrayLength(sShutdownSteps); ++i) {
     DebugOnly<nsresult> rv = os->AddObserver(this, sShutdownSteps[i].mTopic, false);
-#if defined(DEBUG)
-    NS_WARN_IF(NS_FAILED(rv));
-#endif // defined(DEBUG)
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "AddObserver failed");
   }
 
   return NS_OK;

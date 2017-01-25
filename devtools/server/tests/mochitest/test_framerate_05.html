@@ -31,7 +31,7 @@ window.onload = function() {
 
   SimpleTest.waitForExplicitFinish();
 
-  var {FramerateFront} = require("devtools/server/actors/framerate");
+  var {FramerateFront} = require("devtools/shared/fronts/framerate");
 
   DebuggerServer.init();
   DebuggerServer.addBrowserActors();
@@ -58,7 +58,7 @@ window.onload = function() {
                   is(rawData.length, 0,
                     "The returned raw data should be an empty array (2).");
 
-                  client.close(() => {
+                  client.close().then(() => {
                     DebuggerServer.destroy();
                     SimpleTest.finish()
                   });

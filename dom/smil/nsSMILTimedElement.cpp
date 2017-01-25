@@ -9,6 +9,7 @@
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/SVGAnimationElement.h"
+#include "nsAutoPtr.h"
 #include "nsSMILTimedElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsSMILAnimationFunction.h"
@@ -94,7 +95,7 @@ namespace
     {
     }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
       InternalSMILTimeEvent event(true, mMsg);
       event.mDetail = mDetail;

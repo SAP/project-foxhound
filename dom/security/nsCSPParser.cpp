@@ -7,6 +7,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Preferences.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsCSPParser.h"
 #include "nsCSPUtils.h"
 #include "nsIConsoleService.h"
@@ -190,63 +191,6 @@ nsCSPParser::atEndOfPath()
   return (atEnd() || peek(QUESTIONMARK) || peek(NUMBER_SIGN));
 }
 
-void
-nsCSPParser::percentDecodeStr(const nsAString& aEncStr, nsAString& outDecStr)
-{
-  outDecStr.Truncate();
-
-  // helper function that should not be visible outside this methods scope
-  struct local {
-    static inline char16_t convertHexDig(char16_t aHexDig) {
-      if (isNumberToken(aHexDig)) {
-        return aHexDig - '0';
-      }
-      if (aHexDig >= 'A' && aHexDig <= 'F') {
-        return aHexDig - 'A' + 10;
-      }
-      // must be a lower case character
-      // (aHexDig >= 'a' && aHexDig <= 'f')
-      return aHexDig - 'a' + 10;
-    }
-  };
-
-  const char16_t *cur, *end, *hexDig1, *hexDig2;
-  cur = aEncStr.BeginReading();
-  end = aEncStr.EndReading();
-
-  while (cur != end) {
-    // if it's not a percent sign then there is
-    // nothing to do for that character
-    if (*cur != PERCENT_SIGN) {
-      outDecStr.Append(*cur);
-      cur++;
-      continue;
-    }
-
-    // get the two hexDigs following the '%'-sign
-    hexDig1 = cur + 1;
-    hexDig2 = cur + 2;
-
-    // if there are no hexdigs after the '%' then
-    // there is nothing to do for us.
-    if (hexDig1 == end || hexDig2 == end ||
-        !isValidHexDig(*hexDig1) ||
-        !isValidHexDig(*hexDig2)) {
-      outDecStr.Append(PERCENT_SIGN);
-      cur++;
-      continue;
-    }
-
-    // decode "% hexDig1 hexDig2" into a character.
-    char16_t decChar = (local::convertHexDig(*hexDig1) << 4) +
-                       local::convertHexDig(*hexDig2);
-    outDecStr.Append(decChar);
-
-    // increment 'cur' to after the second hexDig
-    cur = ++hexDig2;
-  }
-}
-
 // unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
 bool
 nsCSPParser::atValidUnreservedChar()
@@ -397,7 +341,7 @@ nsCSPParser::subPath(nsCSPHostSrc* aCspHost)
       // before appendig any additional portion of a subpath we have to pct-decode
       // that portion of the subpath. atValidPathChar() already verified a correct
       // pct-encoding, now we can safely decode and append the decoded-sub path.
-      percentDecodeStr(mCurValue, pctDecodedSubPath);
+      CSP_PercentDecodeStr(mCurValue, pctDecodedSubPath);
       aCspHost->appendPath(pctDecodedSubPath);
       // Resetting current value since we are appending parts of the path
       // to aCspHost, e.g; "http://www.example.com/path1/path2" then the
@@ -426,7 +370,7 @@ nsCSPParser::subPath(nsCSPHostSrc* aCspHost)
   // before appendig any additional portion of a subpath we have to pct-decode
   // that portion of the subpath. atValidPathChar() already verified a correct
   // pct-encoding, now we can safely decode and append the decoded-sub path.
-  percentDecodeStr(mCurValue, pctDecodedSubPath);
+  CSP_PercentDecodeStr(mCurValue, pctDecodedSubPath);
   aCspHost->appendPath(pctDecodedSubPath);
   resetCurValue();
   return true;
@@ -927,7 +871,10 @@ nsCSPParser::referrerDirectiveValue(nsCSPDirective* aDir)
 }
 
 void
-nsCSPParser::requireSRIForDirectiveValue(nsRequireSRIForDirective* aDir) {
+nsCSPParser::requireSRIForDirectiveValue(nsRequireSRIForDirective* aDir)
+{
+  CSPPARSERLOG(("nsCSPParser::requireSRIForDirectiveValue"));
+
   // directive-value = "style" / "script"
   // directive name is token 0, we need to examine the remaining tokens
   for (uint32_t i = 1; i < mCurDir.Length(); i++) {
@@ -955,20 +902,25 @@ nsCSPParser::requireSRIForDirectiveValue(nsRequireSRIForDirective* aDir) {
                     NS_ConvertUTF16toUTF8(mCurValue).get()));
     }
   }
+
   if (!(aDir->hasType(nsIContentPolicy::TYPE_STYLESHEET)) &&
       !(aDir->hasType(nsIContentPolicy::TYPE_SCRIPT))) {
     const char16_t* directiveName[] = { mCurToken.get() };
     logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringDirectiveWithNoValues",
                                directiveName, ArrayLength(directiveName));
+    delete aDir;
     return;
-  } else {
-    mPolicy->addDirective(aDir);
   }
+  
+  mPolicy->addDirective(aDir);
 }
 
 void
-nsCSPParser::reportURIList(nsTArray<nsCSPBaseSrc*>& outSrcs)
+nsCSPParser::reportURIList(nsCSPDirective* aDir)
 {
+  CSPPARSERLOG(("nsCSPParser::reportURIList"));
+
+  nsTArray<nsCSPBaseSrc*> srcs;
   nsCOMPtr<nsIURI> uri;
   nsresult rv;
 
@@ -992,8 +944,60 @@ nsCSPParser::reportURIList(nsTArray<nsCSPBaseSrc*>& outSrcs)
 
     // Create new nsCSPReportURI and append to the list.
     nsCSPReportURI* reportURI = new nsCSPReportURI(uri);
-    outSrcs.AppendElement(reportURI);
+    srcs.AppendElement(reportURI);
   }
+
+  if (srcs.Length() == 0) {
+    const char16_t* directiveName[] = { mCurToken.get() };
+    logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringDirectiveWithNoValues",
+                             directiveName, ArrayLength(directiveName));
+    delete aDir;
+    return;
+  }
+
+  aDir->addSrcs(srcs);
+  mPolicy->addDirective(aDir);
+}
+
+/* Helper function for parsing sandbox flags. This function solely concatenates
+ * all the source list tokens (the sandbox flags) so the attribute parser
+ * (nsContentUtils::ParseSandboxAttributeToFlags) can parse them.
+ */
+void
+nsCSPParser::sandboxFlagList(nsCSPDirective* aDir)
+{
+  CSPPARSERLOG(("nsCSPParser::sandboxFlagList"));
+
+  nsAutoString flags;
+
+  // remember, srcs start at index 1
+  for (uint32_t i = 1; i < mCurDir.Length(); i++) {
+    mCurToken = mCurDir[i];
+
+    CSPPARSERLOG(("nsCSPParser::sandboxFlagList, mCurToken: %s, mCurValue: %s",
+                 NS_ConvertUTF16toUTF8(mCurToken).get(),
+                 NS_ConvertUTF16toUTF8(mCurValue).get()));
+
+    if (!nsContentUtils::IsValidSandboxFlag(mCurToken)) {
+      const char16_t* params[] = { mCurToken.get() };
+      logWarningErrorToConsole(nsIScriptError::warningFlag,
+                               "couldntParseInvalidSandboxFlag",
+                               params, ArrayLength(params));
+      continue;
+    }
+
+    flags.Append(mCurToken);
+    if (i != mCurDir.Length() - 1) {
+      flags.AppendASCII(" ");
+    }
+  }
+
+  // Please note that the sandbox directive can exist
+  // by itself (not containing any flags).
+  nsTArray<nsCSPBaseSrc*> srcs;
+  srcs.AppendElement(new nsCSPSandboxFlags(flags));
+  aDir->addSrcs(srcs);
+  mPolicy->addDirective(aDir);
 }
 
 // directive-value = *( WSP / <VCHAR except ";" and ","> )
@@ -1002,15 +1006,7 @@ nsCSPParser::directiveValue(nsTArray<nsCSPBaseSrc*>& outSrcs)
 {
   CSPPARSERLOG(("nsCSPParser::directiveValue"));
 
-  // The tokenzier already generated an array in the form of
-  // [ name, src, src, ... ], no need to parse again, but
-  // special case handling in case the directive is report-uri.
-  if (CSP_IsDirective(mCurDir[0], nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE)) {
-    reportURIList(outSrcs);
-    return;
-  }
-
-  // Otherwise just forward to sourceList
+  // Just forward to sourceList
   sourceList(outSrcs);
 }
 
@@ -1057,7 +1053,8 @@ nsCSPParser::directiveName()
   // http://www.w3.org/TR/CSP11/#delivery-html-meta-element
   if (mDeliveredViaMetaTag &&
        ((CSP_IsDirective(mCurToken, nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE)) ||
-        (CSP_IsDirective(mCurToken, nsIContentSecurityPolicy::FRAME_ANCESTORS_DIRECTIVE)))) {
+        (CSP_IsDirective(mCurToken, nsIContentSecurityPolicy::FRAME_ANCESTORS_DIRECTIVE)) ||
+        (CSP_IsDirective(mCurToken, nsIContentSecurityPolicy::SANDBOX_DIRECTIVE)))) {
     // log to the console to indicate that meta CSP is ignoring the directive
     const char16_t* params[] = { mCurToken.get() };
     logWarningErrorToConsole(nsIScriptError::warningFlag,
@@ -1113,7 +1110,7 @@ nsCSPParser::directive()
   // Make sure that the directive-srcs-array contains at least
   // one directive and one src.
   if (mCurDir.Length() < 1) {
-    const char16_t* params[] = { MOZ_UTF16("directive missing") };
+    const char16_t* params[] = { u"directive missing" };
     logWarningErrorToConsole(nsIScriptError::warningFlag, "failedToParseUnrecognizedSource",
                              params, ArrayLength(params));
     return;
@@ -1130,7 +1127,7 @@ nsCSPParser::directive()
   // by a directive name but does not include any srcs.
   if (cspDir->equals(nsIContentSecurityPolicy::BLOCK_ALL_MIXED_CONTENT)) {
     if (mCurDir.Length() > 1) {
-      const char16_t* params[] = { MOZ_UTF16("block-all-mixed-content") };
+      const char16_t* params[] = { u"block-all-mixed-content" };
       logWarningErrorToConsole(nsIScriptError::warningFlag,
                                "ignoreSrcForDirective",
                                params, ArrayLength(params));
@@ -1144,7 +1141,7 @@ nsCSPParser::directive()
   // by a directive name but does not include any srcs.
   if (cspDir->equals(nsIContentSecurityPolicy::UPGRADE_IF_INSECURE_DIRECTIVE)) {
     if (mCurDir.Length() > 1) {
-      const char16_t* params[] = { MOZ_UTF16("upgrade-insecure-requests") };
+      const char16_t* params[] = { u"upgrade-insecure-requests" };
       logWarningErrorToConsole(nsIScriptError::warningFlag,
                                "ignoreSrcForDirective",
                                params, ArrayLength(params));
@@ -1165,6 +1162,20 @@ nsCSPParser::directive()
   // source lists)
   if (cspDir->equals(nsIContentSecurityPolicy::REFERRER_DIRECTIVE)) {
     referrerDirectiveValue(cspDir);
+    return;
+  }
+
+  // special case handling for report-uri directive (since it doesn't contain
+  // a valid source list but rather actual URIs)
+  if (CSP_IsDirective(mCurDir[0], nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE)) {
+    reportURIList(cspDir);
+    return;
+  }
+
+  // special case handling for sandbox directive (since it doe4sn't contain
+  // a valid source list but rather special sandbox flags)
+  if (CSP_IsDirective(mCurDir[0], nsIContentSecurityPolicy::SANDBOX_DIRECTIVE)) {
+    sandboxFlagList(cspDir);
     return;
   }
 
@@ -1192,7 +1203,7 @@ nsCSPParser::directive()
       mHasHashOrNonce && mUnsafeInlineKeywordSrc) {
     mUnsafeInlineKeywordSrc->invalidate();
     // log to the console that unsafe-inline will be ignored
-    const char16_t* params[] = { MOZ_UTF16("'unsafe-inline'") };
+    const char16_t* params[] = { u"'unsafe-inline'" };
     logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringSrcWithinScriptStyleSrc",
                              params, ArrayLength(params));
   }
@@ -1235,9 +1246,8 @@ nsCSPParser::parseContentSecurityPolicy(const nsAString& aPolicyString,
   if (CSPPARSERLOGENABLED()) {
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, policy: %s",
                  NS_ConvertUTF16toUTF8(aPolicyString).get()));
-    nsAutoCString spec;
-    aSelfURI->GetSpec(spec);
-    CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, selfURI: %s", spec.get()));
+    CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, selfURI: %s",
+                 aSelfURI->GetSpecOrDefault().get()));
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, reportOnly: %s",
                  (aReportOnly ? "true" : "false")));
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, deliveredViaMetaTag: %s",

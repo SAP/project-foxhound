@@ -37,7 +37,7 @@
 #include "nsIContent.h"
 #include "nsVersionComparator.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsILoadContext.h"
 #include "mozilla/dom/HTMLObjectElementBinding.h"
 #include "AudioChannelService.h"
@@ -51,7 +51,6 @@ using namespace mozilla::dom;
 #include "android_npapi.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/CondVar.h"
-#include "AndroidBridge.h"
 #include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/Hal.h"
 #include "GLContextProvider.h"
@@ -92,8 +91,9 @@ static RefPtr<GLContext> sPluginContext = nullptr;
 static bool EnsureGLContext()
 {
   if (!sPluginContext) {
-    nsCString failureId;
-    sPluginContext = GLContextProvider::CreateHeadless(CreateContextFlags::REQUIRE_COMPAT_PROFILE, failureId);
+    const auto flags = CreateContextFlags::REQUIRE_COMPAT_PROFILE;
+    nsCString discardedFailureId;
+    sPluginContext = GLContextProvider::CreateHeadless(flags, &discardedFailureId);
   }
 
   return sPluginContext != nullptr;
@@ -318,10 +318,10 @@ nsNPAPIPluginInstance::GetDOMWindow()
   if (!mOwner)
     return nullptr;
 
-  RefPtr<nsPluginInstanceOwner> deathGrip(mOwner);
+  RefPtr<nsPluginInstanceOwner> kungFuDeathGrip(mOwner);
 
   nsCOMPtr<nsIDocument> doc;
-  mOwner->GetDocument(getter_AddRefs(doc));
+  kungFuDeathGrip->GetDocument(getter_AddRefs(doc));
   if (!doc)
     return nullptr;
 
@@ -787,7 +787,7 @@ void nsNPAPIPluginInstance::NotifyFullScreen(bool aFullScreen)
   SendLifecycleEvent(this, mFullScreen ? kEnterFullScreen_ANPLifecycleAction : kExitFullScreen_ANPLifecycleAction);
 
   if (mFullScreen && mFullScreenOrientation != dom::eScreenOrientation_None) {
-    widget::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
+    java::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
   }
 }
 
@@ -844,11 +844,11 @@ void nsNPAPIPluginInstance::SetFullScreenOrientation(uint32_t orientation)
     // We're already fullscreen so immediately apply the orientation change
 
     if (mFullScreenOrientation != dom::eScreenOrientation_None) {
-      widget::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
+      java::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
     } else if (oldOrientation != dom::eScreenOrientation_None) {
       // We applied an orientation when we entered fullscreen, but
       // we don't want it anymore
-      widget::GeckoAppShell::UnlockScreenOrientation();
+      java::GeckoAppShell::UnlockScreenOrientation();
     }
   }
 }
@@ -900,7 +900,7 @@ already_AddRefed<AndroidSurfaceTexture> nsNPAPIPluginInstance::CreateSurfaceText
 void nsNPAPIPluginInstance::OnSurfaceTextureFrameAvailable()
 {
   if (mRunning == RUNNING && mOwner)
-    AndroidBridge::Bridge()->InvalidateAndScheduleComposite();
+    mOwner->Recomposite();
 }
 
 void* nsNPAPIPluginInstance::AcquireContentWindow()
@@ -912,7 +912,7 @@ void* nsNPAPIPluginInstance::AcquireContentWindow()
       return nullptr;
   }
 
-  return mContentSurface->NativeWindow()->Handle();
+  return mContentSurface->NativeWindow();
 }
 
 AndroidSurfaceTexture*
@@ -933,7 +933,7 @@ void* nsNPAPIPluginInstance::AcquireVideoWindow()
 
   VideoInfo* info = new VideoInfo(surface);
 
-  void* window = info->mSurfaceTexture->NativeWindow()->Handle();
+  void* window = info->mSurfaceTexture->NativeWindow();
   mVideos.insert(std::pair<void*, VideoInfo*>(window, info));
 
   return window;
@@ -1005,7 +1005,7 @@ nsresult nsNPAPIPluginInstance::IsRemoteDrawingCoreAnimation(bool* aDrawing)
 nsresult
 nsNPAPIPluginInstance::ContentsScaleFactorChanged(double aContentsScaleFactor)
 {
-#ifdef XP_MACOSX
+#if defined(XP_MACOSX) || defined(XP_WIN)
   if (!mPlugin)
       return NS_ERROR_FAILURE;
 
@@ -1159,15 +1159,6 @@ nsNPAPIPluginInstance::GetScrollCaptureContainer(ImageContainer**aContainer)
 
   AutoPluginLibraryCall library(this);
   return !library ? NS_ERROR_FAILURE : library->GetScrollCaptureContainer(&mNPP, aContainer);
-}
-nsresult
-nsNPAPIPluginInstance::UpdateScrollState(bool aIsScrolling)
-{
-  if (RUNNING != mRunning)
-    return NS_OK;
-
-  AutoPluginLibraryCall library(this);
-  return !library ? NS_ERROR_FAILURE : library->UpdateScrollState(&mNPP, aIsScrolling);
 }
 #endif
 
@@ -1816,7 +1807,7 @@ nsNPAPIPluginInstance::WindowVolumeChanged(float aVolume, bool aMuted)
 {
   // We just support mute/unmute
   nsresult rv = SetMuted(aMuted);
-  NS_WARN_IF(NS_FAILED(rv));
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetMuted failed");
   return rv;
 }
 

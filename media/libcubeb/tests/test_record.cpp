@@ -33,7 +33,7 @@ struct user_state
   bool seen_noise;
 };
 
-long data_cb(cubeb_stream *stream, void *user, const void * inputbuffer, void *outputbuffer, long nframes)
+long data_cb(cubeb_stream * stream, void * user, const void * inputbuffer, void * outputbuffer, long nframes)
 {
   user_state * u = reinterpret_cast<user_state*>(user);
 #if STREAM_FORMAT != CUBEB_SAMPLE_FLOAT32LE
@@ -58,7 +58,7 @@ long data_cb(cubeb_stream *stream, void *user, const void * inputbuffer, void *o
   return nframes;
 }
 
-void state_cb(cubeb_stream *stream, void *user, cubeb_state state)
+void state_cb(cubeb_stream * stream, void * /*user*/, cubeb_state state)
 {
   if (stream == NULL)
     return;
@@ -77,7 +77,7 @@ void state_cb(cubeb_stream *stream, void *user, cubeb_state state)
   return;
 }
 
-int main(int argc, char *argv[])
+int main(int /*argc*/, char * /*argv*/[])
 {
 #ifdef CUBEB_GECKO_BUILD
   ScopedXPCOM xpcom("test_record");
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
   params.channels = 1;
 
   r = cubeb_stream_init(ctx, &stream, "Cubeb record (mono)", NULL, &params, NULL, nullptr,
-                        250, data_cb, state_cb, &stream_state);
+                        4096, data_cb, state_cb, &stream_state);
   if (r != CUBEB_OK) {
     fprintf(stderr, "Error initializing cubeb stream\n");
     return r;

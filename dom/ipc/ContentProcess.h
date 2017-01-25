@@ -11,6 +11,10 @@
 #include "mozilla/ipc/ScopedXREEmbed.h"
 #include "ContentChild.h"
 
+#if defined(XP_WIN)
+#include "mozilla/mscom/MainThreadRuntime.h"
+#endif
+
 namespace mozilla {
 namespace dom {
 
@@ -35,9 +39,22 @@ public:
 
   void SetAppDir(const nsACString& aPath);
 
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+  void SetProfile(const nsACString& aProfile);
+#endif
+
 private:
   ContentChild mContent;
   mozilla::ipc::ScopedXREEmbed mXREEmbed;
+
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+  nsCOMPtr<nsIFile> mProfileDir;
+#endif
+
+#if defined(XP_WIN)
+  // This object initializes and configures COM.
+  mozilla::mscom::MainThreadRuntime mCOMRuntime;
+#endif
 
   DISALLOW_EVIL_CONSTRUCTORS(ContentProcess);
 };

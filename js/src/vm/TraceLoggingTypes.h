@@ -10,6 +10,7 @@
 #include "jsalloc.h"
 #include "jsstr.h"
 
+// Tree items, meaning they have a start and stop and form a nested tree.
 #define TRACELOGGER_TREE_ITEMS(_)                     \
     _(AnnotateScripts)                                \
     _(Baseline)                                       \
@@ -67,8 +68,10 @@
     _(GenerateLIR)                                    \
     _(RegisterAllocation)                             \
     _(GenerateCode)                                   \
-    _(IonBuilderRestartLoop)
+    _(IonBuilderRestartLoop)                          \
+    _(VMSpecific)
 
+// Log items, with timestamp only.
 #define TRACELOGGER_LOG_ITEMS(_)                      \
     _(Bailout)                                        \
     _(Invalidation)                                   \
@@ -106,8 +109,9 @@ TLTextIdString(TraceLoggerTextId id)
 uint32_t
 TLStringToTextId(JSLinearString* str);
 
+// Return whether a given item id can be enabled/disabled.
 inline bool
-TLTextIdIsToggable(uint32_t id)
+TLTextIdIsTogglable(uint32_t id)
 {
     if (id == TraceLogger_Error)
         return false;
@@ -142,7 +146,7 @@ class ContinuousSpace {
     uint32_t size_;
     uint32_t capacity_;
 
-    // The maximum amount of ram memory a continuous space structure can take (in bytes).
+    // The maximum number of bytes of RAM a continuous space structure can take.
     static const uint32_t LIMIT = 200 * 1024 * 1024;
 
   public:
@@ -174,19 +178,19 @@ class ContinuousSpace {
         return data_;
     }
 
-    uint32_t capacity() {
+    uint32_t capacity() const {
         return capacity_;
     }
 
-    uint32_t size() {
+    uint32_t size() const {
         return size_;
     }
 
-    bool empty() {
+    bool empty() const {
         return size_ == 0;
     }
 
-    uint32_t lastEntryId() {
+    uint32_t lastEntryId() const {
         MOZ_ASSERT(!empty());
         return size_ - 1;
     }

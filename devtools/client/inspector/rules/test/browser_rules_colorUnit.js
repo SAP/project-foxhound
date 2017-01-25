@@ -42,9 +42,9 @@ function* basicTest(view, name, result) {
   let cPicker = view.tooltips.colorPicker;
   let swatch = getRuleViewProperty(view, "#testid", "color").valueSpan
       .querySelector(".ruleview-colorswatch");
-  let onShown = cPicker.tooltip.once("shown");
+  let onColorPickerReady = cPicker.once("ready");
   swatch.click();
-  yield onShown;
+  yield onColorPickerReady;
 
   yield simulateColorPickerChange(view, cPicker, [0, 255, 0, 1], {
     selector: "#testid",
@@ -52,7 +52,7 @@ function* basicTest(view, name, result) {
     value: "rgb(0, 255, 0)"
   });
 
-  let spectrum = yield cPicker.spectrum;
+  let spectrum = cPicker.spectrum;
   let onHidden = cPicker.tooltip.once("hidden");
   // Validating the color change ends up updating the rule view twice
   let onRuleViewChanged = waitForNEvents(view, "ruleview-changed", 2);

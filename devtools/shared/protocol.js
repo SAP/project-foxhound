@@ -4,14 +4,13 @@
 
 "use strict";
 
-var { Cu, components } = require("chrome");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var Services = require("Services");
 var promise = require("promise");
+var defer = require("devtools/shared/defer");
 var {Class} = require("sdk/core/heritage");
 var {EventTarget} = require("sdk/event/target");
 var events = require("sdk/event/core");
 var object = require("sdk/util/object");
+var {getStack, callFunctionWithAsyncStack} = require("devtools/shared/platform/stack");
 
 exports.emit = events.emit;
 
@@ -94,7 +93,7 @@ types.getType = function (type) {
 
   // Might be a lazily-loaded type
   if (type === "longstring") {
-    require("devtools/server/actors/string");
+    require("devtools/shared/specs/string");
     return registeredTypes.get("longstring");
   }
 
@@ -933,7 +932,6 @@ exports.Actor = Actor;
  *      request (object): a request template.
  *      response (object): a response template.
  *      oneway (bool): 'true' if no response should be sent.
- *      telemetry (string): Telemetry probe ID for measuring completion time.
  */
 exports.method = function (fn, spec = {}) {
   fn._methodSpec = Object.freeze(spec);
@@ -975,7 +973,6 @@ var generateActorSpec = function (actorDesc) {
       spec.name = methodSpec.name || name;
       spec.request = Request(object.merge({type: spec.name}, methodSpec.request || undefined));
       spec.response = Response(methodSpec.response || undefined);
-      spec.telemetry = methodSpec.telemetry;
       spec.release = methodSpec.release;
       spec.oneway = methodSpec.oneway;
 
@@ -992,7 +989,6 @@ var generateActorSpec = function (actorDesc) {
       spec.name = methodSpec.name || name;
       spec.request = Request(object.merge({type: spec.name}, methodSpec.request || undefined));
       spec.response = Response(methodSpec.response || undefined);
-      spec.telemetry = methodSpec.telemetry;
       spec.release = methodSpec.release;
       spec.oneway = methodSpec.oneway;
 
@@ -1094,6 +1090,9 @@ var generateRequestHandlers = function (actorSpec, actorProto) {
 };
 
 /**
+ * THIS METHOD IS DEPRECATED, AND PRESERVED ONLY FOR ADD-ONS. IT SHOULD NOT BE
+ * USED INSIDE THE TREE.
+ *
  * Create an actor class for the given actor prototype.
  *
  * @param object actorProto
@@ -1105,6 +1104,9 @@ exports.ActorClass = function (actorProto) {
 };
 
 /**
+ * THIS METHOD IS DEPRECATED, AND PRESERVED ONLY FOR ADD-ONS. IT SHOULD NOT BE
+ * USED INSIDE THE TREE.
+ *
  * Create an actor class for the given actor specification and prototype.
  *
  * @param object actorSpec
@@ -1205,7 +1207,7 @@ var Front = Class({
       this.actor().then(actorID => {
         packet.to = actorID;
         this.conn._transport.send(packet);
-      }).then(null, e => DevToolsUtils.reportException("Front.prototype.send", e));
+      }).then(null, e => console.error(e));
     }
   },
 
@@ -1213,14 +1215,14 @@ var Front = Class({
    * Send a two-way request on the connection.
    */
   request: function (packet) {
-    let deferred = promise.defer();
+    let deferred = defer();
     // Save packet basics for debugging
     let { to, type } = packet;
     this._requests.push({
       deferred,
       to: to || this.actorID,
       type,
-      stack: components.stack,
+      stack: getStack(),
     });
     this.send(packet);
     return deferred.promise;
@@ -1266,10 +1268,10 @@ var Front = Class({
     }
 
     let { deferred, stack } = this._requests.shift();
-    Cu.callFunctionWithAsyncStack(() => {
+    callFunctionWithAsyncStack(() => {
       if (packet.error) {
         // "Protocol error" is here to avoid TBPL heuristics. See also
-        // https://mxr.mozilla.org/webtools-central/source/tbpl/php/inc/GeneralErrorFilter.php
+        // https://dxr.mozilla.org/webtools-central/source/tbpl/php/inc/GeneralErrorFilter.php
         let message;
         if (packet.error && packet.message) {
           message = "Protocol error (" + packet.error + "): " + packet.message;
@@ -1345,27 +1347,6 @@ var generateRequestMethods = function (actorSpec, frontProto) {
     }
 
     frontProto[name] = function (...args) {
-      let histogram, startTime;
-      if (spec.telemetry) {
-        if (spec.oneway) {
-          // That just doesn't make sense.
-          throw Error("Telemetry specified for a oneway request");
-        }
-        let transportType = this.conn.localTransport
-          ? "LOCAL_"
-          : "REMOTE_";
-        let histogramId = "DEVTOOLS_DEBUGGER_RDP_"
-          + transportType + spec.telemetry + "_MS";
-        try {
-          histogram = Services.telemetry.getHistogramById(histogramId);
-          startTime = new Date();
-        } catch (ex) {
-          // XXX: Is this expected in xpcshell tests?
-          console.error(ex);
-          spec.telemetry = false;
-        }
-      }
-
       let packet;
       try {
         packet = spec.request.write(args, this);
@@ -1387,11 +1368,6 @@ var generateRequestMethods = function (actorSpec, frontProto) {
           console.error("Error reading response to: " + name);
           throw ex;
         }
-
-        if (histogram) {
-          histogram.add(+new Date - startTime);
-        }
-
         return ret;
       });
     };
