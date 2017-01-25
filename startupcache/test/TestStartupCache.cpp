@@ -155,7 +155,8 @@ TestWriteObject() {
     return NS_ERROR_UNEXPECTED;
   }
   NS_NAMED_LITERAL_CSTRING(spec, "http://www.mozilla.org");
-  obj->SetSpec(spec);
+  rv = obj->SetSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIStartupCache> sc = do_GetService("@mozilla.org/startupcache/cache;1", &rv);
 
   sc->InvalidateCache();
@@ -232,7 +233,11 @@ TestWriteObject() {
   nsCOMPtr<nsIURI> uri(do_QueryInterface(deserialized));
   if (uri) {
     nsCString outSpec;
-    uri->GetSpec(outSpec);
+    rv = uri->GetSpec(outSpec);
+    if (NS_FAILED(rv)) {
+      fail("failed to get spec");
+      return rv;
+    }
     match = outSpec.Equals(spec);
   }
   if (!match) {
@@ -396,8 +401,12 @@ int main(int argc, char** argv)
     return 1;
 
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
+  if (!prefs) {
+    fail("prefs");
+    return 1;
+  }
   prefs->SetIntPref("hangmonitor.timeout", 0);
-  
+
   int rv = 0;
   nsresult scrv;
 

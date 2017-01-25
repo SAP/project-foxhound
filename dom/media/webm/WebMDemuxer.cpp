@@ -8,6 +8,7 @@
 #include "MediaDecoderStateMachine.h"
 #include "AbstractMediaDecoder.h"
 #include "MediaResource.h"
+#include "OpusDecoder.h"
 #include "WebMDemuxer.h"
 #include "WebMBufferedParser.h"
 #include "gfx2DGlue.h"
@@ -15,11 +16,12 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/SharedThreadPool.h"
 #include "MediaDataDemuxer.h"
+#include "nsAutoPtr.h"
 #include "nsAutoRef.h"
 #include "NesteggPacketHolder.h"
 #include "XiphExtradata.h"
 #include "prprf.h"           // leaving it for PR_vsnprintf()
-#include "mozilla/Snprintf.h"
+#include "mozilla/Sprintf.h"
 
 #include <algorithm>
 #include <stdint.h>
@@ -28,13 +30,13 @@
 #include "vpx/vp8dx.h"
 #include "vpx/vpx_decoder.h"
 
-#define WEBM_DEBUG(arg, ...) MOZ_LOG(gWebMDemuxerLog, mozilla::LogLevel::Debug, ("WebMDemuxer(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define WEBM_DEBUG(arg, ...) MOZ_LOG(gMediaDemuxerLog, mozilla::LogLevel::Debug, ("WebMDemuxer(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+extern mozilla::LazyLogModule gMediaDemuxerLog;
 
 namespace mozilla {
 
 using namespace gfx;
 
-LazyLogModule gWebMDemuxerLog("WebMDemuxer");
 LazyLogModule gNesteggLog("Nestegg");
 
 // How far ahead will we look when searching future keyframe. In microseconds.
@@ -121,7 +123,7 @@ static void webmdemux_log(nestegg* aContext,
 
   va_start(args, aFormat);
 
-  snprintf_literal(msg, "%p [Nestegg-%s] ", aContext, sevStr);
+  SprintfLiteral(msg, "%p [Nestegg-%s] ", aContext, sevStr);
   PR_vsnprintf(msg+strlen(msg), sizeof(msg)-strlen(msg), aFormat, args);
   MOZ_LOG(gNesteggLog, LogLevel::Debug, (msg));
 
@@ -186,12 +188,12 @@ WebMDemuxer::Init()
   InitBufferedState();
 
   if (NS_FAILED(ReadMetadata())) {
-    return InitPromise::CreateAndReject(DemuxerFailureReason::DEMUXER_ERROR, __func__);
+    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_METADATA_ERR, __func__);
   }
 
   if (!GetNumberTracks(TrackInfo::kAudioTrack) &&
       !GetNumberTracks(TrackInfo::kVideoTrack)) {
-    return InitPromise::CreateAndReject(DemuxerFailureReason::DEMUXER_ERROR, __func__);
+    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_METADATA_ERR, __func__);
   }
 
   return InitPromise::CreateAndResolve(NS_OK, __func__);
@@ -395,15 +397,13 @@ WebMDemuxer::ReadMetadata()
 
       mAudioTrack = track;
       mHasAudio = true;
-      mCodecDelay = media::TimeUnit::FromNanoseconds(params.codec_delay).ToMicroseconds();
       mAudioCodec = nestegg_track_codec_id(context, track);
       if (mAudioCodec == NESTEGG_CODEC_VORBIS) {
         mInfo.mAudio.mMimeType = "audio/webm; codecs=vorbis";
       } else if (mAudioCodec == NESTEGG_CODEC_OPUS) {
         mInfo.mAudio.mMimeType = "audio/webm; codecs=opus";
-        uint8_t c[sizeof(uint64_t)];
-        BigEndian::writeUint64(&c[0], mCodecDelay);
-        mInfo.mAudio.mCodecSpecificConfig->AppendElements(&c[0], sizeof(uint64_t));
+        OpusDataDecoder::AppendCodecDelay(mInfo.mAudio.mCodecSpecificConfig,
+            media::TimeUnit::FromNanoseconds(params.codec_delay).ToMicroseconds());
       }
       mSeekPreroll = params.seek_preroll;
       mInfo.mAudio.mRate = params.rate;
@@ -955,9 +955,7 @@ RefPtr<WebMTrackDemuxer::SamplesPromise>
 WebMTrackDemuxer::GetSamples(int32_t aNumSamples)
 {
   RefPtr<SamplesHolder> samples = new SamplesHolder;
-  if (!aNumSamples) {
-    return SamplesPromise::CreateAndReject(DemuxerFailureReason::DEMUXER_ERROR, __func__);
-  }
+  MOZ_ASSERT(aNumSamples);
 
   while (aNumSamples) {
     RefPtr<MediaRawData> sample(NextSample());
@@ -973,7 +971,7 @@ WebMTrackDemuxer::GetSamples(int32_t aNumSamples)
   }
 
   if (samples->mSamples.IsEmpty()) {
-    return SamplesPromise::CreateAndReject(DemuxerFailureReason::END_OF_STREAM, __func__);
+    return SamplesPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_END_OF_STREAM, __func__);
   } else {
     UpdateSamples(samples->mSamples);
     return SamplesPromise::CreateAndResolve(samples, __func__);
@@ -1109,7 +1107,7 @@ WebMTrackDemuxer::SkipToNextRandomAccessPoint(media::TimeUnit aTimeThreshold)
                parsed);
     return SkipAccessPointPromise::CreateAndResolve(parsed, __func__);
   } else {
-    SkipFailureHolder failure(DemuxerFailureReason::END_OF_STREAM, parsed);
+    SkipFailureHolder failure(NS_ERROR_DOM_MEDIA_END_OF_STREAM, parsed);
     return SkipAccessPointPromise::CreateAndReject(Move(failure), __func__);
   }
 }

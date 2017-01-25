@@ -25,6 +25,8 @@ XPCOMUtils.defineLazyGetter(window, "gChromeWin", function() {
            .getInterface(Ci.nsIDOMWindow)
            .QueryInterface(Ci.nsIDOMChromeWindow);
 });
+XPCOMUtils.defineLazyModuleGetter(window, "Preferences",
+                                  "resource://gre/modules/Preferences.jsm");
 
 var ContextMenus = {
   target: null,
@@ -83,12 +85,12 @@ var ContextMenus = {
     Addons.setEnabled(true, this.target.addon);
     this.target = null;
   },
-  
+
   disable: function (event) {
     Addons.setEnabled(false, this.target.addon);
     this.target = null;
   },
-  
+
   uninstall: function (event) {
     Addons.uninstall(this.target.addon);
     this.target = null;
@@ -223,6 +225,16 @@ var Addons = {
     let updateable = (aAddon.permissions & AddonManager.PERM_CAN_UPGRADE) > 0;
     let uninstallable = (aAddon.permissions & AddonManager.PERM_CAN_UNINSTALL) > 0;
 
+    // TODO(matt): Add support for OPTIONS_TYPE_INLINE_BROWSER once bug 1302504 lands.
+    let optionsURL;
+    switch (aAddon.optionsType) {
+      case AddonManager.OPTIONS_TYPE_INLINE:
+        optionsURL = aAddon.optionsURL || "";
+        break;
+      default:
+        optionsURL = "";
+    }
+
     let blocked = "";
     switch(aAddon.blocklistState) {
       case Ci.nsIBlocklistService.STATE_BLOCKED:
@@ -243,7 +255,7 @@ var Addons = {
     item.setAttribute("updateable", updateable);
     if (blocked)
       item.setAttribute("blockedStatus", blocked);
-    item.setAttribute("optionsURL", aAddon.optionsURL || "");
+    item.setAttribute("optionsURL", optionsURL);
     item.addon = aAddon;
 
     return item;
@@ -266,6 +278,10 @@ var Addons = {
         return a.name.localeCompare(b.name);
       });
       for (let i=0; i<aAddons.length; i++) {
+        // Don't create item for system add-ons.
+        if (aAddons[i].isSystem)
+          continue;
+
         let item = self._createItemForAddon(aAddons[i]);
         list.appendChild(item);
       }

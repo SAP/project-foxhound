@@ -19,6 +19,7 @@
 #include <linux/net.h>
 #include <linux/prctl.h>
 #include <linux/sched.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -26,8 +27,8 @@
 #include <unistd.h>
 
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
-#include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
-#include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/system_headers/linux_seccomp.h"
+#include "sandbox/linux/system_headers/linux_syscalls.h"
 
 using namespace sandbox::bpf_dsl;
 #define CASES SANDBOX_BPF_DSL_CASES
@@ -39,6 +40,11 @@ using namespace sandbox::bpf_dsl;
 #endif
 #ifndef MADV_DONTDUMP
 #define MADV_DONTDUMP 16
+#endif
+
+// Added in Linux 4.5; see bug 1303813.
+#ifndef MADV_FREE
+#define MADV_FREE 8
 #endif
 
 #ifndef PR_SET_PTRACER
@@ -91,7 +97,7 @@ public:
     return Trap(BlockedSyscallTrap, nullptr);
   }
 
-  virtual ResultExpr ClonePolicy() const {
+  virtual ResultExpr ClonePolicy(ResultExpr failPolicy) const {
     // Allow use for simple thread creation (pthread_create) only.
 
     // WARNING: s390 and cris pass the flags in the second arg -- see
@@ -117,7 +123,7 @@ public:
       .Case(flags_common, Allow()) // JB 4.3 or KK 4.4
 #endif
       .Case(flags_modern, Allow()) // Android L or glibc
-      .Default(InvalidSyscall());
+      .Default(failPolicy);
   }
 
   virtual ResultExpr PrctlPolicy() const {
@@ -192,6 +198,7 @@ public:
       // Simple I/O
     case __NR_write:
     case __NR_read:
+    case __NR_readv:
     case __NR_writev: // see SandboxLogging.cpp
     CASES_FOR_lseek:
       return Allow();
@@ -229,7 +236,7 @@ public:
 
       // Thread creation.
     case __NR_clone:
-      return ClonePolicy();
+      return ClonePolicy(InvalidSyscall());
 
       // More thread creation.
 #ifdef __NR_set_robust_list
@@ -408,8 +415,15 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
       : broker->LStat(path, buf);
   }
 
+  static intptr_t GetPPidTrap(ArgsRef aArgs, void* aux) {
+    // In a pid namespace, getppid() will return 0. We will return 0 instead
+    // of the real parent pid to see what breaks when we introduce the
+    // pid namespace (Bug 1151624).
+    return 0;
+  }
+
 public:
-  ContentSandboxPolicy(SandboxBrokerClient* aBroker):mBroker(aBroker) { }
+  explicit ContentSandboxPolicy(SandboxBrokerClient* aBroker):mBroker(aBroker) { }
   virtual ~ContentSandboxPolicy() { }
   virtual ResultExpr PrctlPolicy() const override {
     // Ideally this should be restricted to a whitelist, but content
@@ -429,8 +443,9 @@ public:
         return Some(Allow());
       }
       Arg<int> domain(0), type(1);
-      return Some(If(domain == AF_UNIX &&
-                     (type == SOCK_STREAM || type == SOCK_SEQPACKET), Allow())
+      return Some(If(AllOf(domain == AF_UNIX,
+                           AnyOf(type == SOCK_STREAM, type == SOCK_SEQPACKET)),
+                     Allow())
                   .Else(InvalidSyscall()));
     }
 
@@ -443,8 +458,10 @@ public:
     case SYS_SOCKET: // DANGEROUS
     case SYS_CONNECT: // DANGEROUS
     case SYS_ACCEPT:
+    case SYS_ACCEPT4:
     case SYS_BIND:
     case SYS_LISTEN:
+    case SYS_GETSOCKOPT:
     case SYS_SETSOCKOPT:
     case SYS_GETSOCKNAME:
     case SYS_GETPEERNAME:
@@ -467,6 +484,10 @@ public:
     case SHMCTL:
     case SHMAT:
     case SHMDT:
+    case SEMGET:
+    case SEMCTL:
+    case SEMOP:
+    case MSGGET:
       return Some(Allow());
     default:
       return SandboxPolicyCommon::EvaluateIpcCall(aCall);
@@ -509,27 +530,37 @@ public:
 
     switch (sysno) {
 #ifdef DESKTOP
+    case __NR_getppid:
+      return Trap(GetPPidTrap, nullptr);
+
       // Filesystem syscalls that need more work to determine who's
       // using them, if they need to be, and what we intend to about it.
     case __NR_mkdir:
     case __NR_rmdir:
     case __NR_getcwd:
     CASES_FOR_statfs:
+    CASES_FOR_fstatfs:
     case __NR_chmod:
     case __NR_rename:
     case __NR_symlink:
     case __NR_quotactl:
-    case __NR_utimes:
+    case __NR_link:
     case __NR_unlink:
-    case __NR_fchown:
+    CASES_FOR_fchown:
     case __NR_fchmod:
+    case __NR_flock:
 #endif
       return Allow();
 
     case __NR_readlink:
     case __NR_readlinkat:
+#ifdef DESKTOP
+      // Bug 1290896
+      return Allow();
+#else
       // Workaround for bug 964455:
       return Error(EINVAL);
+#endif
 
     CASES_FOR_select:
     case __NR_pselect6:
@@ -540,6 +571,7 @@ public:
     case __NR_writev:
     case __NR_pread64:
 #ifdef DESKTOP
+    case __NR_pwrite64:
     case __NR_readahead:
 #endif
       return Allow();
@@ -559,8 +591,8 @@ public:
     case __NR_mprotect:
     case __NR_brk:
     case __NR_madvise:
-#if defined(ANDROID) && !defined(MOZ_MEMORY)
-      // Android's libc's realloc uses mremap.
+#if !defined(MOZ_MEMORY)
+      // libc's realloc uses mremap (Bug 1286119).
     case __NR_mremap:
 #endif
       return Allow();
@@ -609,8 +641,8 @@ public:
 
     CASES_FOR_getrlimit:
     case __NR_clock_getres:
-    case __NR_getresuid:
-    case __NR_getresgid:
+    CASES_FOR_getresuid:
+    CASES_FOR_getresgid:
       return Allow();
 
     case __NR_umask:
@@ -626,6 +658,55 @@ public:
     case __NR_inotify_add_watch:
     case __NR_inotify_rm_watch:
       return Allow();
+
+#ifdef __NR_memfd_create
+    case __NR_memfd_create:
+      return Allow();
+#endif
+
+#ifdef __NR_rt_tgsigqueueinfo
+      // Only allow to send signals within the process.
+    case __NR_rt_tgsigqueueinfo: {
+      Arg<pid_t> tgid(0);
+      return If(tgid == getpid(), Allow())
+        .Else(InvalidSyscall());
+    }
+#endif
+
+    case __NR_mlock:
+    case __NR_munlock:
+      return Allow();
+
+      // We can't usefully allow fork+exec, even on a temporary basis;
+      // the child would inherit the seccomp-bpf policy and almost
+      // certainly die from an unexpected SIGSYS.  We also can't have
+      // fork() crash, currently, because there are too many system
+      // libraries/plugins that try to run commands.  But they can
+      // usually do something reasonable on error.
+    case __NR_clone:
+      return ClonePolicy(Error(EPERM));
+
+#ifdef __NR_fadvise64
+    case __NR_fadvise64:
+      return Allow();
+#endif
+
+#ifdef __NR_fadvise64_64
+    case __NR_fadvise64_64:
+      return Allow();
+#endif
+
+    case __NR_fallocate:
+      return Allow();
+
+    case __NR_get_mempolicy:
+      return Allow();
+
+#endif // DESKTOP
+
+#ifdef __NR_getrandom
+    case __NR_getrandom:
+      return Allow();
 #endif
 
       // nsSystemInfo uses uname (and we cache an instance, so
@@ -635,6 +716,11 @@ public:
     case __NR_sysinfo:
 #endif
       return Allow();
+
+#ifdef MOZ_JPROF
+    case __NR_setitimer:
+      return Allow();
+#endif // MOZ_JPROF
 
     default:
       return SandboxPolicyCommon::EvaluateSyscall(sysno);
@@ -741,6 +827,7 @@ public:
     case __NR_madvise: {
       Arg<int> advice(2);
       return If(advice == MADV_DONTNEED, Allow())
+        .ElseIf(advice == MADV_FREE, Allow())
 #ifdef MOZ_ASAN
         .ElseIf(advice == MADV_NOHUGEPAGE, Allow())
         .ElseIf(advice == MADV_DONTDUMP, Allow())
@@ -759,6 +846,10 @@ public:
       return If(pid == 0, Allow())
         .Else(Trap(SchedTrap, nullptr));
     }
+
+    // For clock(3) on older glibcs; bug 1304220.
+    case __NR_times:
+      return Allow();
 
     default:
       return SandboxPolicyCommon::EvaluateSyscall(sysno);

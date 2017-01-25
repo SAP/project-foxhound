@@ -86,7 +86,6 @@
 #include "nsRuleProcessorData.h"
 #include "nsString.h"
 #include "nsStyleConsts.h"
-#include "nsSVGFeatures.h"
 #include "nsSVGUtils.h"
 #include "nsTextNode.h"
 #include "nsUnicharUtils.h"
@@ -107,6 +106,10 @@
 #include "GeometryUtils.h"
 #include "nsIAnimationObserver.h"
 #include "nsChildContentList.h"
+
+#ifdef ACCESSIBILITY
+#include "mozilla/dom/AccessibleNode.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -149,12 +152,6 @@ nsINode::~nsINode()
 {
   MOZ_ASSERT(!HasSlots(), "nsNodeUtils::LastRelease was not called?");
   MOZ_ASSERT(mSubtreeRoot == this, "Didn't restore state properly?");
-
-#ifdef MOZ_STYLO
-  if (mServoNodeData) {
-    Servo_DropNodeData(mServoNodeData);
-  }
-#endif
 }
 
 void*
@@ -697,19 +694,24 @@ nsINode::GetBaseURI(nsAString &aURI) const
 
   nsAutoCString spec;
   if (baseURI) {
-    baseURI->GetSpec(spec);
+    // XXX: should handle GetSpec() failure properly. See bug 1301254.
+    Unused << baseURI->GetSpec(spec);
   }
 
   CopyUTF8toUTF16(spec, aURI);
 }
 
 void
-nsINode::GetBaseURIFromJS(nsAString& aURI) const
+nsINode::GetBaseURIFromJS(nsAString& aURI, ErrorResult& aRv) const
 {
   nsCOMPtr<nsIURI> baseURI = GetBaseURI(nsContentUtils::IsCallerChrome());
   nsAutoCString spec;
   if (baseURI) {
-    baseURI->GetSpec(spec);
+    nsresult res = baseURI->GetSpec(spec);
+    if (NS_FAILED(res)) {
+      aRv.Throw(res);
+      return;
+    }
   }
   CopyUTF8toUTF16(spec, aURI);
 
@@ -1540,8 +1542,7 @@ static nsresult
 CheckForOutdatedParent(nsINode* aParent, nsINode* aNode)
 {
   if (JSObject* existingObjUnrooted = aNode->GetWrapper()) {
-    JSRuntime* runtime = JS_GetObjectRuntime(existingObjUnrooted);
-    JS::Rooted<JSObject*> existingObj(runtime, existingObjUnrooted);
+    JS::Rooted<JSObject*> existingObj(RootingCx(), existingObjUnrooted);
 
     AutoJSContext cx;
     nsIGlobalObject* global = aParent->OwnerDoc()->GetScopeObject();
@@ -1763,7 +1764,8 @@ nsINode::Before(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
-  nsINode* viablePreviousSibling = FindViablePreviousSibling(*this, aNodes);
+  nsCOMPtr<nsINode> viablePreviousSibling =
+    FindViablePreviousSibling(*this, aNodes);
 
   nsCOMPtr<nsINode> node =
     ConvertNodesOrStringsIntoNode(aNodes, OwnerDoc(), aRv);
@@ -1786,7 +1788,7 @@ nsINode::After(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
-  nsINode* viableNextSibling = FindViableNextSibling(*this, aNodes);
+  nsCOMPtr<nsINode> viableNextSibling = FindViableNextSibling(*this, aNodes);
 
   nsCOMPtr<nsINode> node =
     ConvertNodesOrStringsIntoNode(aNodes, OwnerDoc(), aRv);
@@ -1806,7 +1808,7 @@ nsINode::ReplaceWith(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
-  nsINode* viableNextSibling = FindViableNextSibling(*this, aNodes);
+  nsCOMPtr<nsINode> viableNextSibling = FindViableNextSibling(*this, aNodes);
 
   nsCOMPtr<nsINode> node =
     ConvertNodesOrStringsIntoNode(aNodes, OwnerDoc(), aRv);
@@ -1874,7 +1876,8 @@ nsINode::Prepend(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
-  InsertBefore(*node, mFirstChild, aRv);
+  nsCOMPtr<nsINode> refNode = mFirstChild;
+  InsertBefore(*node, refNode, aRv);
 }
 
 void
@@ -2589,6 +2592,17 @@ nsINode::GetBoundMutationObservers(nsTArray<RefPtr<nsDOMMutationObserver> >& aRe
   }
 }
 
+already_AddRefed<AccessibleNode>
+nsINode::GetAccessibleNode()
+{
+#ifdef ACCESSIBILITY
+  RefPtr<AccessibleNode> anode = new AccessibleNode(this);
+  return anode.forget();
+#endif
+
+  return nullptr;
+}
+
 size_t
 nsINode::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
@@ -2702,7 +2716,10 @@ nsINode::ParseSelectorList(const nsAString& aSelectorString,
   if (haveCachedList) {
     if (!selectorList) {
       // Invalid selector.
-      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+      aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR,
+        NS_LITERAL_CSTRING("'") + NS_ConvertUTF16toUTF8(aSelectorString) +
+        NS_LITERAL_CSTRING("' is not a valid selector")
+      );
     }
     return selectorList;
   }
@@ -2719,6 +2736,13 @@ nsINode::ParseSelectorList(const nsAString& aSelectorString,
     // of selectors, but it sees if we can parse them first.)
     MOZ_ASSERT(aRv.ErrorCodeIs(NS_ERROR_DOM_SYNTAX_ERR),
                "Unexpected error, so cached version won't return it");
+
+    // Change the error message to match above.
+    aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR,
+      NS_LITERAL_CSTRING("'") + NS_ConvertUTF16toUTF8(aSelectorString) +
+      NS_LITERAL_CSTRING("' is not a valid selector")
+    );
+
     cache.CacheList(aSelectorString, nullptr);
     return nullptr;
   }
@@ -3057,10 +3081,21 @@ nsINode::AddAnimationObserverUnlessExists(
 }
 
 bool
-nsINode::HasApzAwareListeners() const
+nsINode::IsApzAware() const
 {
-  if (NodeMayHaveApzAwareListeners()) {
-    return EventTarget::HasApzAwareListeners();
-  }
-  return false;
+  return IsNodeApzAware();
 }
+
+bool
+nsINode::IsNodeApzAwareInternal() const
+{
+  return EventTarget::IsApzAware();
+}
+
+#ifdef MOZ_STYLO
+bool
+nsINode::IsStyledByServo() const
+{
+  return OwnerDoc()->IsStyledByServo();
+}
+#endif

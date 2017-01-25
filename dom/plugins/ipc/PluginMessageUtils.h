@@ -18,7 +18,6 @@
 #include "npapi.h"
 #include "npruntime.h"
 #include "npfunctions.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "mozilla/Logging.h"
@@ -94,7 +93,7 @@ struct NPRemoteWindow
   VisualID visualID;
   Colormap colormap;
 #endif /* XP_UNIX */
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
   double contentsScaleFactor;
 #endif
 };
@@ -103,7 +102,7 @@ struct NPRemoteWindow
 typedef HWND NativeWindowHandle;
 #elif defined(MOZ_X11)
 typedef XID NativeWindowHandle;
-#elif defined(XP_DARWIN) || defined(ANDROID) || defined(MOZ_WIDGET_QT)
+#elif defined(XP_DARWIN) || defined(ANDROID)
 typedef intptr_t NativeWindowHandle; // never actually used, will always be 0
 #else
 #error Need NativeWindowHandle for this platform
@@ -347,7 +346,7 @@ struct ParamTraits<mozilla::plugins::NPRemoteWindow>
     aMsg->WriteULong(aParam.visualID);
     aMsg->WriteULong(aParam.colormap);
 #endif
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     aMsg->WriteDouble(aParam.contentsScaleFactor);
 #endif
   }
@@ -376,7 +375,7 @@ struct ParamTraits<mozilla::plugins::NPRemoteWindow>
       return false;
 #endif
 
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     double contentsScaleFactor;
     if (!aMsg->ReadDouble(aIter, &contentsScaleFactor))
       return false;
@@ -393,7 +392,7 @@ struct ParamTraits<mozilla::plugins::NPRemoteWindow>
     aResult->visualID = visualID;
     aResult->colormap = colormap;
 #endif
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     aResult->contentsScaleFactor = contentsScaleFactor;
 #endif
     return true;

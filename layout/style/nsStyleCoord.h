@@ -72,6 +72,7 @@ typedef union {
  * the unit is a must before asking for the value in any particular
  * form.
  */
+ /** <div rustbindgen private accessor="unsafe"></div> */
 class nsStyleCoord {
 public:
   // Non-reference counted calc() value.  See nsStyleStruct.h for some uses
@@ -104,7 +105,7 @@ public:
   // Reference counted calc() value.  This is the type that is used to store
   // the calc() value in nsStyleCoord.
   struct Calc final : public CalcValue {
-    NS_INLINE_DECL_REFCOUNTING(Calc)
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Calc)
     Calc() {}
 
   private:
@@ -262,6 +263,7 @@ private:
  * This is commonly used to hold the widths of the borders, margins,
  * or paddings of a box.
  */
+ /** <div rustbindgen private accessor="unsafe"></div> */
 class nsStyleSides {
 public:
   nsStyleSides();
@@ -336,10 +338,11 @@ protected:
 };
 
 /**
- * Class that represents a set of top-left/top-right/bottom-left/bottom-right
+ * Class that represents a set of top-left/top-right/bottom-right/bottom-left
  * nsStyleCoord pairs.  This is used to hold the dimensions of the
  * corners of a box (for, e.g., border-radius and outline-radius).
  */
+ /** <div rustbindgen private accessor="unsafe"></div> */
 class nsStyleCorners {
 public:
   nsStyleCorners();
@@ -364,6 +367,11 @@ public:
   inline void Set(uint8_t aHalfCorner, const nsStyleCoord& aCoord);
 
 protected:
+  // Stored as:
+  // top-left.x, top-left.y,
+  // top-right.x, top-right.y,
+  // bottom-right.x, bottom-right.y,
+  // bottom-left.x, bottom-left.y
   nsStyleUnit   mUnits[8];
   nsStyleUnion  mValues[8];
 };

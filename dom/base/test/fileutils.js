@@ -49,7 +49,7 @@ function testFile(file, contents, test) {
 
   // Send file to server using plain XMLHttpRequest
   var xhr = new XMLHttpRequest;
-  xhr.open("POST", "file_XHRSendData.sjs");
+  xhr.open("POST", "../../../dom/xhr/tests/file_XHRSendData.sjs");
   xhr.onload = function (event) {
     is(event.target.getResponseHeader("Result-Content-Type"),
        file.type ? file.type : null,
@@ -100,7 +100,7 @@ function getXHRLoadHandler(expectedResult, expectedLength, testName) {
        "[XHR] Length of result in test " + testName);
     ok(convertedData == expectedResult,
        "[XHR] Content of result in test " + testName);
-    is(event.lengthComputable, true,
+    is(event.lengthComputable, event.total != 0,
        "[XHR] lengthComputable in test " + testName);
     is(event.loaded, expectedLength,
        "[XHR] Loaded length in test " + testName);

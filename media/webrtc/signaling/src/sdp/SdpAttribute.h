@@ -39,6 +39,7 @@ public:
     kCandidateAttribute,
     kConnectionAttribute,
     kDirectionAttribute,
+    kDtlsMessageAttribute,
     kEndOfCandidatesAttribute,
     kExtmapAttribute,
     kFingerprintAttribute,
@@ -219,6 +220,67 @@ inline std::ostream& operator<<(std::ostream& os,
   }
   return os;
 }
+
+///////////////////////////////////////////////////////////////////////////
+// a=dtls-message, draft-rescorla-dtls-in-sdp
+//-------------------------------------------------------------------------
+//   attribute               =/   dtls-message-attribute
+//
+//   dtls-message-attribute  =    "dtls-message" ":" role SP value
+//
+//   role                    =    "client" / "server"
+//
+//   value                   =    1*(ALPHA / DIGIT / "+" / "/" / "=" )
+//                                ; base64 encoded message
+class SdpDtlsMessageAttribute : public SdpAttribute
+{
+public:
+  enum Role {
+    kClient,
+    kServer
+  };
+
+  explicit SdpDtlsMessageAttribute(Role role, const std::string& value)
+    : SdpAttribute(kDtlsMessageAttribute),
+      mRole(role),
+      mValue(value)
+  {}
+
+  explicit SdpDtlsMessageAttribute(const std::string& unparsed)
+    : SdpAttribute(kDtlsMessageAttribute),
+      mRole(kClient)
+  {
+    std::istringstream is(unparsed);
+    std::string error;
+    // We're not really worried about errors here if we don't parse;
+    // this attribute is a pure optimization.
+    Parse(is, &error);
+  }
+
+  virtual void Serialize(std::ostream& os) const override;
+  bool Parse(std::istream& is, std::string* error);
+
+  Role mRole;
+  std::string mValue;
+};
+
+inline std::ostream& operator<<(std::ostream& os,
+                                SdpDtlsMessageAttribute::Role r)
+{
+  switch (r) {
+    case SdpDtlsMessageAttribute::kClient:
+      os << "client";
+      break;
+    case SdpDtlsMessageAttribute::kServer:
+      os << "server";
+      break;
+    default:
+      MOZ_ASSERT(false);
+      os << "?";
+  }
+  return os;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////
 // a=extmap, RFC5285
@@ -1023,6 +1085,8 @@ public:
     kiLBC,
     kiSAC,
     kH264,
+    kRed,
+    kUlpfec,
     kOtherCodec
   };
 
@@ -1102,6 +1166,12 @@ inline std::ostream& operator<<(std::ostream& os,
     case SdpRtpmapAttributeList::kH264:
       os << "H264";
       break;
+    case SdpRtpmapAttributeList::kRed:
+      os << "red";
+      break;
+    case SdpRtpmapAttributeList::kUlpfec:
+      os << "ulpfec";
+      break;
     default:
       MOZ_ASSERT(false);
       os << "?";
@@ -1133,6 +1203,32 @@ public:
     virtual void Serialize(std::ostream& os) const = 0;
 
     SdpRtpmapAttributeList::CodecType codec_type;
+  };
+
+  class RedParameters : public Parameters
+  {
+  public:
+    RedParameters()
+        : Parameters(SdpRtpmapAttributeList::kRed)
+    {
+    }
+
+    virtual Parameters*
+    Clone() const override
+    {
+      return new RedParameters(*this);
+    }
+
+    virtual void
+    Serialize(std::ostream& os) const override
+    {
+      for(size_t i = 0; i < encodings.size(); ++i) {
+        os << (i != 0 ? "/" : "")
+           << std::to_string(encodings[i]);
+      }
+    }
+
+    std::vector<uint8_t> encodings;
   };
 
   class H264Parameters : public Parameters
@@ -1243,11 +1339,13 @@ public:
   {
   public:
     enum { kDefaultMaxPlaybackRate = 48000,
-           kDefaultStereo = 0 };
+           kDefaultStereo = 0,
+           kDefaultUseInBandFec = 0 };
     OpusParameters() :
       Parameters(SdpRtpmapAttributeList::kOpus),
       maxplaybackrate(kDefaultMaxPlaybackRate),
-      stereo(kDefaultStereo)
+      stereo(kDefaultStereo),
+      useInBandFec(kDefaultUseInBandFec)
     {}
 
     Parameters*
@@ -1259,12 +1357,14 @@ public:
     void
     Serialize(std::ostream& os) const override
     {
-      os << "maxplaybackrate=" << maxplaybackrate << ";"
-         << "stereo=" << stereo;
+      os << "maxplaybackrate=" << maxplaybackrate
+         << ";stereo=" << stereo
+         << ";useinbandfec=" << useInBandFec;
     }
 
     unsigned int maxplaybackrate;
     unsigned int stereo;
+    unsigned int useInBandFec;
   };
 
   class Fmtp

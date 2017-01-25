@@ -3,10 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var { utils: Cu } = Components;
+/* global BrowserLoader */
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://devtools/client/shared/browser-loader.js");
+var { utils: Cu } = Components;
 
 // Initialize module loader and load all modules of the new inline
 // preview feature. The entire code-base doesn't need any extra
@@ -20,9 +19,8 @@ const NetRequest = require("./net-request");
 const { loadSheet } = require("sdk/stylesheet/utils");
 
 // Localization
-const { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
-var networkStrings = Services.strings.createBundle(
-  "chrome://devtools/locale/netmonitor.properties");
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/locale/netmonitor.properties");
 
 // Stylesheets
 var styleSheets = [
@@ -56,7 +54,7 @@ styleSheets.forEach(url => {
 this.Locale = {
   $STR: key => {
     try {
-      return networkStrings.GetStringFromName(key);
+      return L10N.getStr(key);
     } catch (err) {
       console.error(key + ": " + err);
     }

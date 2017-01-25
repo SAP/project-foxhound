@@ -4,7 +4,7 @@
 
 "use strict";
 
-const {DirectorManagerFront} = require("devtools/server/actors/director-manager");
+const {DirectorManagerFront} = require("devtools/shared/fronts/director-manager");
 const {DirectorRegistry} = require("devtools/server/actors/director-registry");
 
 DirectorRegistry.clear();
@@ -57,7 +57,7 @@ add_task(function* () {
   ok(!!message, "testDirectorScript_undefinedAttachMethod error event received");
   assertIsDirectorScriptError(errorUndefinedAttachMethod);
 
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
   DirectorRegistry.clear();
 });

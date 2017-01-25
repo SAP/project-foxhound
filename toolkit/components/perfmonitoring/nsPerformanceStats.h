@@ -19,7 +19,6 @@
 class nsPerformanceGroup;
 class nsPerformanceGroupDetails;
 
-typedef mozilla::Vector<RefPtr<js::PerformanceGroup>> JSGroupVector;
 typedef mozilla::Vector<RefPtr<nsPerformanceGroup>> GroupVector;
 
 /**
@@ -155,9 +154,9 @@ protected:
   const uint64_t mProcessId;
 
   /**
-   * The JS Runtime for the main thread.
+   * The JS Context for the main thread.
    */
-  JSRuntime* const mRuntime;
+  JSContext* const mContext;
 
   /**
    * Generate unique identifiers.
@@ -192,8 +191,8 @@ protected:
    * calling it more than once may not return the same instances of
    * performance groups.
    */
-  bool GetPerformanceGroups(JSContext* cx, JSGroupVector&);
-  static bool GetPerformanceGroupsCallback(JSContext* cx, JSGroupVector&, void* closure);
+  bool GetPerformanceGroups(JSContext* cx, js::PerformanceGroupVector&);
+  static bool GetPerformanceGroupsCallback(JSContext* cx, js::PerformanceGroupVector&, void* closure);
 
 
 
@@ -329,8 +328,10 @@ protected:
    * @param recentGroups The groups that have seen activity during this
    * event.
    */
-  static bool StopwatchCommitCallback(uint64_t iteration, JSGroupVector& recentGroups, void* closure);
-  bool StopwatchCommit(uint64_t iteration, JSGroupVector& recentGroups);
+  static bool StopwatchCommitCallback(uint64_t iteration,
+                                      js::PerformanceGroupVector& recentGroups,
+                                      void* closure);
+  bool StopwatchCommit(uint64_t iteration, js::PerformanceGroupVector& recentGroups);
 
   /**
    * The number of times we have started executing JavaScript code.
@@ -629,7 +630,7 @@ public:
   /**
    * Construct a performance group.
    *
-   * @param rt The container runtime. Used to generate a unique identifier.
+   * @param cx The container context. Used to generate a unique identifier.
    * @param service The performance service. Used during destruction to
    *   cleanup the hash tables.
    * @param name A name for the group, designed mostly for debugging purposes,
@@ -644,7 +645,7 @@ public:
    * @param scope the scope of this group.
    */
   static nsPerformanceGroup*
-    Make(JSRuntime* rt,
+    Make(JSContext* cx,
          nsPerformanceStatsService* service,
          const nsAString& name,
          const nsAString& addonId,

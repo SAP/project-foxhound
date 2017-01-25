@@ -28,31 +28,16 @@ public:
 
 class EMEVideoDecoder : public GMPVideoDecoder {
 public:
-  EMEVideoDecoder(CDMProxy* aProxy,
-                  const VideoInfo& aConfig,
-                  layers::LayersBackend aLayersBackend,
-                  layers::ImageContainer* aImageContainer,
-                  TaskQueue* aTaskQueue,
-                  MediaDataDecoderCallbackProxy* aCallback)
-   : GMPVideoDecoder(aConfig,
-                     aLayersBackend,
-                     aImageContainer,
-                     aTaskQueue,
-                     aCallback,
-                     new EMEVideoCallbackAdapter(aCallback,
-                                                 VideoInfo(aConfig.mDisplay.width,
-                                                           aConfig.mDisplay.height),
-                                                 aImageContainer))
-   , mProxy(aProxy)
-  {
-  }
+  EMEVideoDecoder(CDMProxy* aProxy, const GMPVideoDecoderParams& aParams);
 
 private:
   void InitTags(nsTArray<nsCString>& aTags) override;
   nsCString GetNodeId() override;
+  uint32_t DecryptorId() const override { return mDecryptorId; }
   GMPUniquePtr<GMPVideoEncodedFrame> CreateFrame(MediaRawData* aSample) override;
 
   RefPtr<CDMProxy> mProxy;
+  uint32_t mDecryptorId;
 };
 
 } // namespace mozilla

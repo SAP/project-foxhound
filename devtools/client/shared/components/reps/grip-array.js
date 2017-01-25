@@ -11,11 +11,10 @@ define(function (require, exports, module) {
   // Dependencies
   const React = require("devtools/client/shared/vendor/react");
   const { createFactories, isGrip } = require("./rep-utils");
-  const { ObjectBox } = createFactories(require("./object-box"));
   const { Caption } = createFactories(require("./caption"));
 
   // Shortcuts
-  const { a, span } = React.DOM;
+  const { span } = React.DOM;
 
   /**
    * Renders an array. The array is enclosed by left and right bracket
@@ -35,7 +34,13 @@ define(function (require, exports, module) {
     },
 
     getTitle: function (object, context) {
-      return "[" + object.length + "]";
+      let objectLink = this.props.objectLink || span;
+      if (this.props.mode != "tiny") {
+        return objectLink({
+          object: object
+        }, object.class + " ");
+      }
+      return "";
     },
 
     arrayIterator: function (grip, max) {
@@ -50,32 +55,25 @@ define(function (require, exports, module) {
         return items;
       }
 
-      let provider = this.props.provider;
-      if (!provider) {
-        return items;
-      }
-
       let delim;
+      // number of grip.preview.items is limited to 10, but we may have more
+      // items in grip-array
+      let delimMax = grip.preview.length > array.length ?
+        array.length : array.length - 1;
+      let provider = this.props.provider;
 
-      for (let i = 0; i < array.length && i <= max; i++) {
+      for (let i = 0; i < array.length && i < max; i++) {
         try {
-          let value = provider.getValue(array[i]);
+          let itemGrip = array[i];
+          let value = provider ? provider.getValue(itemGrip) : itemGrip;
 
-          delim = (i == array.length - 1 ? "" : ", ");
+          delim = (i == delimMax ? "" : ", ");
 
-          if (value === array) {
-            items.push(Reference({
-              key: i,
-              object: value,
-              delim: delim}
-            ));
-          } else {
-            items.push(GripArrayItem(Object.assign({}, this.props, {
-              key: i,
-              object: value,
-              delim: delim}
-            )));
-          }
+          items.push(GripArrayItem(Object.assign({}, this.props, {
+            key: i,
+            object: value,
+            delim: delim}
+          )));
         } catch (exc) {
           items.push(GripArrayItem(Object.assign({}, this.props, {
             object: exc,
@@ -84,28 +82,19 @@ define(function (require, exports, module) {
           )));
         }
       }
-
-      if (array.length > max + 1) {
-        items.pop();
+      if (array.length > max || grip.preview.length > array.length) {
+        let objectLink = this.props.objectLink || span;
+        let leftItemNum = grip.preview.length - max > 0 ?
+          grip.preview.length - max : grip.preview.length - array.length;
         items.push(Caption({
           key: "more",
-          object: "more..."}
-        ));
+          object: objectLink({
+            object: this.props.object
+          }, leftItemNum + " more…")
+        }));
       }
 
       return items;
-    },
-
-    hasSpecialProperties: function (array) {
-      return false;
-    },
-
-    // Event Handlers
-
-    onToggleProperties: function (event) {
-    },
-
-    onClickBracket: function (event) {
     },
 
     render: function () {
@@ -113,37 +102,38 @@ define(function (require, exports, module) {
       let object = this.props.object;
 
       let items;
+      let brackets;
+      let needSpace = function (space) {
+        return space ? { left: "[ ", right: " ]"} : { left: "[", right: "]"};
+      };
 
       if (mode == "tiny") {
-        items = span({className: "length"}, this.getLength(object));
+        let objectLength = this.getLength(object);
+        let isEmpty = objectLength === 0;
+        items = span({className: "length"}, isEmpty ? "" : objectLength);
+        brackets = needSpace(false);
       } else {
         let max = (mode == "short") ? 3 : 300;
         items = this.arrayIterator(object, max);
+        brackets = needSpace(items.length > 0);
       }
 
+      let objectLink = this.props.objectLink || span;
+      let title = this.getTitle(object);
+
       return (
-        ObjectBox({
-          className: "array",
-          onClick: this.onToggleProperties},
-          a({
-            className: "objectLink",
-            onclick: this.onClickBracket},
-            span({
-              className: "arrayLeftBracket",
-              role: "presentation"},
-              "["
-            )
-          ),
+        span({
+          className: "objectBox objectBox-array"},
+          title,
+          objectLink({
+            className: "arrayLeftBracket",
+            object: object
+          }, brackets.left),
           items,
-          a({
-            className: "objectLink",
-            onclick: this.onClickBracket},
-            span({
-              className: "arrayRightBracket",
-              role: "presentation"},
-              "]"
-            )
-          ),
+          objectLink({
+            className: "arrayRightBracket",
+            object: object
+          }, brackets.right),
           span({
             className: "arrayProperties",
             role: "group"}
@@ -173,21 +163,6 @@ define(function (require, exports, module) {
             mode: "tiny"
           })),
           this.props.delim
-        )
-      );
-    }
-  }));
-
-  /**
-   * Renders cycle references in an array.
-   */
-  let Reference = React.createFactory(React.createClass({
-    displayName: "Reference",
-
-    render: function () {
-      return (
-        span({title: "Circular reference"},
-          "[...]"
         )
       );
     }

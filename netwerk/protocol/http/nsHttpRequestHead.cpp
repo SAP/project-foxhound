@@ -119,7 +119,7 @@ nsHttpRequestHead::Path(nsACString &aPath)
 void
 nsHttpRequestHead::SetHTTPS(bool val)
 {
-    ReentrantMonitorAutoEnter monk(mReentrantMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     mHTTPS = val;
 }
 
@@ -249,21 +249,22 @@ nsHttpRequestHead::EqualsMethod(ParsedMethodType aType)
 }
 
 void
-nsHttpRequestHead::ParseHeaderSet(char *buffer)
+nsHttpRequestHead::ParseHeaderSet(const char *buffer)
 {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     nsHttpAtom hdr;
-    char *val;
+    nsAutoCString val;
     while (buffer) {
-        char *eof = strchr(buffer, '\r');
+        const char *eof = strchr(buffer, '\r');
         if (!eof) {
             break;
         }
-        *eof = '\0';
-        if (NS_SUCCEEDED(nsHttpHeaderArray::ParseHeaderLine(buffer,
-                                                            &hdr,
-                                                            &val))) {
-            mHeaders.SetHeaderFromNet(hdr, nsDependentCString(val), false);
+        if (NS_SUCCEEDED(nsHttpHeaderArray::ParseHeaderLine(
+            nsDependentCSubstring(buffer, eof - buffer),
+            &hdr,
+            &val))) {
+
+            mHeaders.SetHeaderFromNet(hdr, val, false);
         }
         buffer = eof + 1;
         if (*buffer == '\n') {

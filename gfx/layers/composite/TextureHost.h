@@ -39,10 +39,12 @@ class Shmem;
 namespace layers {
 
 class BufferDescriptor;
+class BufferTextureHost;
 class Compositor;
 class CompositableParentManager;
 class ReadLockDescriptor;
 class CompositorBridgeParent;
+class GrallocTextureHostOGL;
 class SurfaceDescriptor;
 class HostIPCAllocator;
 class ISurfaceAllocator;
@@ -55,6 +57,7 @@ class TextureSourceBasic;
 class DataTextureSource;
 class PTextureParent;
 class TextureParent;
+class WrappingTextureSourceYCbCrBasic;
 
 /**
  * A view on a TextureHost where the texture is internally represented as tiles
@@ -126,6 +129,7 @@ public:
    * Cast to a DataTextureSurce.
    */
   virtual DataTextureSource* AsDataTextureSource() { return nullptr; }
+  virtual WrappingTextureSourceYCbCrBasic* AsWrappingTextureSourceYCbCrBasic() { return nullptr; }
 
   /**
    * Overload this if the TextureSource supports big textures that don't fit in
@@ -134,6 +138,8 @@ public:
   virtual BigImageIterator* AsBigImageIterator() { return nullptr; }
 
   virtual void SetCompositor(Compositor* aCompositor) {}
+
+  virtual void Unbind() {}
 
   void SetNextSibling(TextureSource* aTexture) { mNextSibling = aTexture; }
 
@@ -385,24 +391,23 @@ public:
     TextureFlags aFlags);
 
   /**
-   * Tell to TextureChild that TextureHost is recycled.
-   * This function should be called from TextureHost's RecycleCallback.
-   * If SetRecycleCallback is set to TextureHost.
-   * TextureHost can be recycled by calling RecycleCallback
-   * when reference count becomes one.
-   * One reference count is always added by TextureChild.
-   */
-  void CompositorRecycle();
-
-  /**
    * Lock the texture host for compositing.
    */
   virtual bool Lock() { return true; }
-
   /**
-   * Unlock the texture host after compositing.
+   * Unlock the texture host after compositing. Lock() and Unlock() should be
+   * called in pair.
    */
   virtual void Unlock() {}
+
+  /**
+   * Lock the texture host for compositing without using compositor.
+   */
+  virtual bool LockWithoutCompositor() { return true; }
+  /**
+   * Similar to Unlock(), but it should be called with LockWithoutCompositor().
+   */
+  virtual void UnlockWithoutCompositor() {}
 
   /**
    * Note that the texture host format can be different from its corresponding
@@ -511,7 +516,8 @@ public:
   static PTextureParent* CreateIPDLActor(HostIPCAllocator* aAllocator,
                                          const SurfaceDescriptor& aSharedData,
                                          LayersBackend aLayersBackend,
-                                         TextureFlags aFlags);
+                                         TextureFlags aFlags,
+                                         uint64_t aSerial);
   static bool DestroyIPDLActor(PTextureParent* actor);
 
   /**
@@ -525,6 +531,8 @@ public:
    * Get the TextureHost corresponding to the actor passed in parameter.
    */
   static TextureHost* AsTextureHost(PTextureParent* actor);
+
+  static uint64_t GetTextureSerial(PTextureParent* actor);
 
   /**
    * Return a pointer to the IPDLActor.
@@ -570,6 +578,8 @@ public:
     MOZ_ASSERT(mCompositableCount >= 0);
     if (mCompositableCount == 0) {
       UnbindTextureSource();
+      // Send mFwdTransactionId to client side if necessary.
+      NotifyNotUsed();
     }
   }
 
@@ -595,6 +605,8 @@ public:
 
   virtual void WaitAcquireFenceHandleSyncComplete() {};
 
+  void SetLastFwdTransactionId(uint64_t aTransactionId);
+
   virtual bool NeedsFenceHandle() { return false; }
 
   virtual FenceHandle GetCompositorReleaseFence() { return FenceHandle(); }
@@ -605,6 +617,10 @@ public:
   TextureReadLock* GetReadLock() { return mReadLock; }
 
   virtual Compositor* GetCompositor() = 0;
+
+  virtual BufferTextureHost* AsBufferTextureHost() { return nullptr; }
+
+  virtual GrallocTextureHostOGL* AsGrallocTextureHostOGL() { return nullptr; }
 
 protected:
   void ReadUnlock();
@@ -617,13 +633,23 @@ protected:
 
   virtual void UpdatedInternal(const nsIntRegion *Region) {}
 
+  /**
+   * Called when mCompositableCount becomes 0.
+   */
+  void NotifyNotUsed();
+
+  // for Compositor.
+  void CallNotifyNotUsed();
+
   PTextureParent* mActor;
   RefPtr<TextureReadLock> mReadLock;
   TextureFlags mFlags;
   int mCompositableCount;
+  uint64_t mFwdTransactionId;
 
   friend class Compositor;
   friend class TextureParent;
+  friend class TiledLayerBufferComposite;
 };
 
 /**
@@ -681,6 +707,10 @@ public:
 
   virtual bool HasIntermediateBuffer() const override { return mHasIntermediateBuffer; }
 
+  virtual BufferTextureHost* AsBufferTextureHost() override { return this; }
+
+  const BufferDescriptor& GetBufferDescriptor() const { return mDescriptor; }
+
 protected:
   bool Upload(nsIntRegion *aRegion = nullptr);
   bool MaybeUpload(nsIntRegion *aRegion = nullptr);
@@ -698,6 +728,8 @@ protected:
   bool mLocked;
   bool mNeedsFullUpdate;
   bool mHasIntermediateBuffer;
+
+  class DataTextureSourceYCbCrBasic;
 };
 
 /**
@@ -778,6 +810,29 @@ public:
   {
     if (mTexture && mLocked) {
       mTexture->Unlock();
+    }
+  }
+
+  bool Failed() { return mTexture && !mLocked; }
+
+private:
+  RefPtr<TextureHost> mTexture;
+  bool mLocked;
+};
+
+class MOZ_STACK_CLASS AutoLockTextureHostWithoutCompositor
+{
+public:
+  explicit AutoLockTextureHostWithoutCompositor(TextureHost* aTexture)
+    : mTexture(aTexture)
+  {
+    mLocked = mTexture ? mTexture->LockWithoutCompositor() : false;
+  }
+
+  ~AutoLockTextureHostWithoutCompositor()
+  {
+    if (mTexture && mLocked) {
+      mTexture->UnlockWithoutCompositor();
     }
   }
 

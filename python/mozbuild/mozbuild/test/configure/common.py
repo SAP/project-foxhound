@@ -8,6 +8,7 @@ import copy
 import errno
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +23,12 @@ from buildconfig import (
     topobjdir,
     topsrcdir,
 )
+
+
+def ensure_exe_extension(path):
+    if sys.platform.startswith('win'):
+        return path + '.exe'
+    return path
 
 
 class ConfigureTestVFS(object):
@@ -113,13 +120,59 @@ class ConfigureTestSandbox(ConfigureSandbox):
         if what == 'os.environ':
             return self._environ
 
+        if what == 'ctypes.wintypes':
+            return ReadOnlyNamespace(
+                LPCWSTR=0,
+                LPWSTR=1,
+                DWORD=2,
+            )
+
+        if what == 'ctypes':
+            class CTypesFunc(object):
+                def __init__(self, func):
+                    self._func = func
+
+                def __call__(self, *args, **kwargs):
+                    return self._func(*args, **kwargs)
+
+
+            return ReadOnlyNamespace(
+                create_unicode_buffer=self.create_unicode_buffer,
+                windll=ReadOnlyNamespace(
+                    kernel32=ReadOnlyNamespace(
+                        GetShortPathNameW=CTypesFunc(self.GetShortPathNameW),
+                    )
+                ),
+            )
+
+        if what == '_winreg':
+            def OpenKey(*args, **kwargs):
+                raise WindowsError()
+
+            return ReadOnlyNamespace(
+                HKEY_LOCAL_MACHINE=0,
+                OpenKey=OpenKey,
+            )
+
         return super(ConfigureTestSandbox, self)._get_one_import(what)
+
+    def create_unicode_buffer(self, *args, **kwargs):
+        class Buffer(object):
+            def __init__(self):
+                self.value = ''
+
+        return Buffer()
+
+    def GetShortPathNameW(self, path_in, path_out, length):
+        path_out.value = path_in
+        return length
 
     def which(self, command, path=None):
         for parent in (path or self._search_path):
-            candidate = mozpath.join(parent, command)
-            if self.OS.path.exists(candidate):
-                return candidate
+            c = mozpath.abspath(mozpath.join(parent, command))
+            for candidate in (c, ensure_exe_extension(c)):
+                if self.OS.path.exists(candidate):
+                    return candidate
         raise WhichError()
 
     def Popen(self, args, stdin=None, stdout=None, stderr=None, **kargs):

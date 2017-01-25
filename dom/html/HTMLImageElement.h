@@ -52,6 +52,9 @@ public:
   // Element
   virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
 
+  // EventTarget
+  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+
   // nsIDOMHTMLImageElement
   NS_DECL_NSIDOMHTMLIMAGEELEMENT
 
@@ -92,6 +95,8 @@ public:
 
   virtual EventStates IntrinsicState() const override;
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+
+  virtual void NodeInfoChanged() override;
 
   nsresult CopyInnerTo(Element* aDest);
 
@@ -292,6 +297,9 @@ protected:
   // only mode after Bug 1076583
   bool InResponsiveMode();
 
+  // True if the given URL and density equal the last URL and density that was loaded by this element.
+  bool SelectedSourceMatchesLast(nsIURI* aSelectedSource, double aSelectedDensity);
+
   // Resolve and load the current mResponsiveSelector (responsive mode) or src
   // attr image.
   nsresult LoadSelectedImage(bool aForce, bool aNotify, bool aAlwaysLoad);
@@ -363,6 +371,11 @@ private:
 
   bool mInDocResponsiveContent;
   RefPtr<ImageLoadTask> mPendingImageLoadTask;
+
+  // Last URL that was attempted to load by this element.
+  nsCOMPtr<nsIURI> mLastSelectedSource;
+  // Last pixel density that was selected.
+  double mCurrentDensity;
 };
 
 } // namespace dom

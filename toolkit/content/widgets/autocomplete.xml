@@ -44,7 +44,6 @@
       <field name="mController">null</field>
       <field name="mSearchNames">null</field>
       <field name="mIgnoreInput">false</field>
-      <field name="mEnterEvent">null</field>
 
       <field name="_searchBeginHandler">null</field>
       <field name="_searchCompleteHandler">null</field>
@@ -232,11 +231,12 @@
       </method>
 
       <method name="onTextEntered">
+        <parameter name="event"/>
         <body><![CDATA[
           let rv = false;
-          if (this._textEnteredHandler)
-            rv = this._textEnteredHandler(this.mEnterEvent);
-          this.mEnterEvent = null;
+          if (this._textEnteredHandler) {
+            rv = this._textEnteredHandler(event);
+          }
           return rv;
         ]]></body>
       </method>
@@ -446,12 +446,10 @@
 
           var cancel = false;
 
-          let { AppConstants } =
-              Components.utils.import("resource://gre/modules/AppConstants.jsm", {});
           // Catch any keys that could potentially move the caret. Ctrl can be
           // used in combination with these keys on Windows and Linux; and Alt
           // can be used on OS X, so make sure the unused one isn't used.
-          let metaKey = AppConstants.platform == "macosx" ? aEvent.ctrlKey : aEvent.altKey;
+          let metaKey = /Mac/.test(navigator.platform) ? aEvent.ctrlKey : aEvent.altKey;
           if (!this.disableKeyNavigation && !metaKey) {
             switch (aEvent.keyCode) {
               case KeyEvent.DOM_VK_LEFT:
@@ -489,28 +487,27 @@
               cancel = this.mController.handleEscape();
               break;
             case KeyEvent.DOM_VK_RETURN:
-              if (AppConstants.platform == "macosx") {
+              if (/Mac/.test(navigator.platform)) {
                 // Prevent the default action, since it will beep on Mac
                 if (aEvent.metaKey)
                   aEvent.preventDefault();
               }
-              this.mEnterEvent = aEvent;
               if (this.mController.selection) {
                 this._selectionDetails = {
                   index: this.mController.selection.currentIndex,
                   kind: "key"
                 };
               }
-              cancel = this.handleEnter();
+              cancel = this.handleEnter(aEvent);
               break;
             case KeyEvent.DOM_VK_DELETE:
-              if (AppConstants.platform == "macosx" && !aEvent.shiftKey) {
+              if (/Mac/.test(navigator.platform) && !aEvent.shiftKey) {
                 break;
               }
               cancel = this.handleDelete();
               break;
             case KeyEvent.DOM_VK_BACK_SPACE:
-              if (AppConstants.platform == "macosx" && aEvent.shiftKey) {
+              if (/Mac/.test(navigator.platform) && aEvent.shiftKey) {
                 cancel = this.handleDelete();
               }
               break;
@@ -520,7 +517,7 @@
                 this.toggleHistoryPopup();
               break;
             case KeyEvent.DOM_VK_F4:
-              if (AppConstants.platform != "macosx") {
+              if (!/Mac/.test(navigator.platform)) {
                 this.toggleHistoryPopup();
               }
               break;
@@ -536,8 +533,9 @@
       </method>
 
       <method name="handleEnter">
+        <parameter name="event"/>
         <body><![CDATA[
-          return this.mController.handleEnter(false);
+          return this.mController.handleEnter(false, event || null);
         ]]></body>
       </method>
 
@@ -623,8 +621,12 @@
       <handler event="compositionend" phase="capturing"
                action="if (this.mController.input == this) this.mController.handleEndComposition();"/>
 
-      <handler event="focus" phase="capturing"
-               action="this.attachController();"/>
+      <handler event="focus" phase="capturing"><![CDATA[
+        this.attachController();
+        if (window.gBrowser) {
+          this.userContextId = window.gBrowser.selectedBrowser.contentPrincipal.originAttributes.userContextId;
+        }
+      ]]></handler>
 
       <handler event="blur" phase="capturing"><![CDATA[
         if (!this._dontBlur) {
@@ -946,7 +948,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
         <parameter name="aEvent"/>
         <body><![CDATA[
           var controller = this.view.QueryInterface(Components.interfaces.nsIAutoCompleteController);
-          controller.handleEnter(true);
+          controller.handleEnter(true, aEvent);
         ]]></body>
       </method>
     </implementation>
@@ -1025,7 +1027,6 @@ extends="chrome://global/content/bindings/popup.xml#popup">
 
     <implementation implements="nsIAutoCompletePopup">
       <field name="_currentIndex">0</field>
-      <field name="_rowHeight">0</field>
       <field name="_rlbAnimated">false</field>
 
       <!-- =================== nsIAutoCompletePopup =================== -->
@@ -1049,6 +1050,10 @@ extends="chrome://global/content/bindings/popup.xml#popup">
       <method name="onSearchBegin">
         <body><![CDATA[
           this.richlistbox.mouseSelectedIndex = -1;
+
+          if (typeof this._onSearchBegin == "function") {
+            this._onSearchBegin();
+          }
         ]]></body>
       </method>
 
@@ -1113,7 +1118,13 @@ extends="chrome://global/content/bindings/popup.xml#popup">
           if (this._shrinkTimeout) {
             clearTimeout(this._shrinkTimeout);
           }
-          this._adjustHeightTimeout = setTimeout(() => this.adjustHeight(), 0);
+
+          if (this.mPopupOpen) {
+            delete this._adjustHeightOnPopupShown;
+            this._adjustHeightTimeout = setTimeout(() => this.adjustHeight(), 0);
+          } else {
+            this._adjustHeightOnPopupShown = true;
+          }
 
           this._currentIndex = 0;
           if (this._appendResultTimeout) {
@@ -1165,10 +1176,8 @@ extends="chrome://global/content/bindings/popup.xml#popup">
           // Default the height to 0 if we have no rows to show
           let height = 0;
           if (numRows) {
-            if (!this._rowHeight) {
-              let firstRowRect = rows[0].getBoundingClientRect();
-              this._rowHeight = firstRowRect.height;
-
+            let firstRowRect = rows[0].getBoundingClientRect();
+            if (this._rlbPadding == undefined) {
               let style = window.getComputedStyle(this.richlistbox);
 
               let transition = style.transitionProperty;
@@ -1177,14 +1186,20 @@ extends="chrome://global/content/bindings/popup.xml#popup">
               let paddingTop = parseInt(style.paddingTop) || 0;
               let paddingBottom = parseInt(style.paddingBottom) || 0;
               this._rlbPadding = paddingTop + paddingBottom;
-
-              // Set a fixed max-height to avoid flicker when growing the panel.
-              this.richlistbox.style.maxHeight =
-                ((this._rowHeight * this.maxRows) + this._rlbPadding) + "px";
             }
 
+            if (numRows > this.maxRows) {
+              // Set a fixed max-height to avoid flicker when growing the panel.
+              let lastVisibleRowRect = rows[this.maxRows - 1].getBoundingClientRect();
+              let visibleHeight = lastVisibleRowRect.bottom - firstRowRect.top;
+              this.richlistbox.style.maxHeight =
+                visibleHeight + this._rlbPadding + "px";
+            }
+
+            let lastRowRect = rows[numRows - 1].getBoundingClientRect();
             // Calculate the height to have the first row to last row shown
-            height = (this._rowHeight * numRows) + this._rlbPadding;
+            height = lastRowRect.bottom - firstRowRect.top +
+                     this._rlbPadding;
           }
 
           let animate = this._rlbAnimated &&
@@ -1250,15 +1265,24 @@ extends="chrome://global/content/bindings/popup.xml#popup">
                   invalidateReason == iface.INVALIDATE_REASON_NEW_RESULT &&
                   (item.getAttribute("url") == url ||
                    this.richlistbox.mouseSelectedIndex === this._currentIndex)) {
-                item.collapsed = false;
-                // Call adjustSiteIconStart only after setting collapsed=false.
-                // The calculations it does may be wrong otherwise.
-                item.adjustSiteIconStart(this._siteIconStart);
-                // The popup may have changed size between now and the last time
-                // the item was shown, so always handle over/underflow.
-                item.handleOverUnderflow();
-                this._currentIndex++;
-                continue;
+                // Additionally, if the item is a searchengine action, then it
+                // should only be reused if the engine name is the same as the
+                // popup's override engine name, if any.
+                let action = item._parseActionUrl(url);
+                if (!action ||
+                    action.type != "searchengine" ||
+                    !this.overrideSearchEngineName ||
+                    action.params.engineName == this.overrideSearchEngineName) {
+                  item.collapsed = false;
+                  // Call adjustSiteIconStart only after setting collapsed=
+                  // false.  The calculations it does may be wrong otherwise.
+                  item.adjustSiteIconStart(this._siteIconStart);
+                  // The popup may have changed size between now and the last
+                  // time the item was shown, so always handle over/underflow.
+                  item.handleOverUnderflow();
+                  this._currentIndex++;
+                  continue;
+                }
               }
             }
             else {
@@ -1273,7 +1297,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
             item.setAttribute("image", iconURI);
             item.setAttribute("url", url);
             item.setAttribute("title", controller.getCommentAt(this._currentIndex));
-            item.setAttribute("type", controller.getStyleAt(this._currentIndex));
+            item.setAttribute("originaltype", controller.getStyleAt(this._currentIndex));
             item.setAttribute("text", trimmedSearchString);
 
             if (this._currentIndex < existingItemsCount) {
@@ -1288,10 +1312,13 @@ extends="chrome://global/content/bindings/popup.xml#popup">
               this.richlistbox.appendChild(item);
             }
 
-            let changed = item.adjustSiteIconStart(this._siteIconStart);
-            if (changed) {
-              item.handleOverUnderflow();
-            }
+            // The binding may have not been applied yet.
+            setTimeout(() => {
+              let changed = item.adjustSiteIconStart(this._siteIconStart);
+              if (changed) {
+                item.handleOverUnderflow();
+              }
+            }, 0);
 
             this._currentIndex++;
           }
@@ -1359,6 +1386,16 @@ extends="chrome://global/content/bindings/popup.xml#popup">
                 onset="return val;"/>
 
     </implementation>
+    <handlers>
+      <handler event="popupshown">
+        <![CDATA[
+          if (this._adjustHeightOnPopupShown) {
+            delete this._adjustHeightOnPopupShown;
+            this.adjustHeight();
+          }
+      ]]>
+      </handler>
+    </handlers>
   </binding>
 
   <binding id="autocomplete-richlistitem" extends="chrome://global/content/bindings/richlistbox.xml#richlistitem">
@@ -1803,7 +1840,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
               let span = aDescriptionElement.appendChild(
                 document.createElementNS("http://www.w3.org/1999/xhtml", "span"));
               span.textContent = text;
-              switch(emphasise) {
+              switch (emphasise) {
                 case "match":
                   this._setUpEmphasisSpan(span, aDescriptionElement);
                   break;
@@ -1848,7 +1885,7 @@ extends="chrome://global/content/bindings/popup.xml#popup">
           let originalUrl = this.getAttribute("url");
           let emphasiseUrl = true;
 
-          let type = this.getAttribute("type");
+          let type = this.getAttribute("originaltype");
           let types = new Set(type.split(/\s+/));
           let initialTypes = new Set(types);
           // Remove types that should ultimately not be in the `type` string.
@@ -1895,6 +1932,17 @@ extends="chrome://global/content/bindings/popup.xml#popup">
               // changed the order while it was possible, so doesn't look like
               // there's a strong need for that.
               let {engineName, searchSuggestion, searchQuery} = action.params;
+
+              // Override the engine name if the popup defines an override.
+              let override = popup.overrideSearchEngineName;
+              if (override && override != engineName) {
+                engineName = override;
+                action.params.engineName = override;
+                let newURL =
+                  PlacesUtils.mozActionURI(action.type, action.params);
+                this.setAttribute("url", newURL);
+              }
+
               let engineStr =
                 this._stringBundle.formatStringFromName("searchWithEngine",
                                                         [engineName], 1);

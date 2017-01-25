@@ -359,6 +359,10 @@ SipccSdpAttributeList::GetCodecType(rtp_ptype type)
       return SdpRtpmapAttributeList::kVP8;
     case RTP_VP9:
       return SdpRtpmapAttributeList::kVP9;
+    case RTP_RED:
+      return SdpRtpmapAttributeList::kRed;
+    case RTP_ULPFEC:
+      return SdpRtpmapAttributeList::kUlpfec;
     case RTP_NONE:
     // Happens when sipcc doesn't know how to translate to the enum
     case RTP_CELP:
@@ -656,6 +660,19 @@ SipccSdpAttributeList::LoadIdentity(sdp_t* sdp, uint16_t level)
 }
 
 void
+SipccSdpAttributeList::LoadDtlsMessage(sdp_t* sdp, uint16_t level)
+{
+  const char* val = sdp_attr_get_long_string(sdp, SDP_ATTR_DTLS_MESSAGE, level,
+                                             0, 1);
+  if (val) {
+    // sipcc does not expose parse code for this, so we use a SDParta-provided
+    // parser
+    std::string strval(val);
+    SetAttribute(new SdpDtlsMessageAttribute(strval));
+  }
+}
+
+void
 SipccSdpAttributeList::LoadFmtp(sdp_t* sdp, uint16_t level)
 {
   auto fmtps = MakeUnique<SdpFmtpAttributeList>();
@@ -721,11 +738,23 @@ SipccSdpAttributeList::LoadFmtp(sdp_t* sdp, uint16_t level)
 
         parameters.reset(vp8Parameters);
       } break;
+      case RTP_RED: {
+        SdpFmtpAttributeList::RedParameters* redParameters(
+            new SdpFmtpAttributeList::RedParameters);
+        for (int i = 0;
+             i < SDP_FMTP_MAX_REDUNDANT_ENCODINGS && fmtp->redundant_encodings[i];
+             ++i) {
+          redParameters->encodings.push_back(fmtp->redundant_encodings[i]);
+        }
+
+        parameters.reset(redParameters);
+      } break;
       case RTP_OPUS: {
         SdpFmtpAttributeList::OpusParameters* opusParameters(
             new SdpFmtpAttributeList::OpusParameters);
         opusParameters->maxplaybackrate = fmtp->maxplaybackrate;
         opusParameters->stereo = fmtp->stereo;
+        opusParameters->useInBandFec = fmtp->useinbandfec;
         parameters.reset(opusParameters);
       } break;
       default: {
@@ -1009,6 +1038,7 @@ SipccSdpAttributeList::Load(sdp_t* sdp, uint16_t level,
     }
 
     LoadIdentity(sdp, level);
+    LoadDtlsMessage(sdp, level);
   } else {
     sdp_media_e mtype = sdp_get_media_type(sdp, level);
     if (mtype == SDP_MEDIA_APPLICATION) {
@@ -1103,6 +1133,16 @@ SipccSdpAttributeList::GetDirection() const
 
   const SdpAttribute* attr = GetAttribute(SdpAttribute::kDirectionAttribute);
   return static_cast<const SdpDirectionAttribute*>(attr)->mValue;
+}
+
+const SdpDtlsMessageAttribute&
+SipccSdpAttributeList::GetDtlsMessage() const
+{
+  if (!HasAttribute(SdpAttribute::kDtlsMessageAttribute)) {
+    MOZ_CRASH();
+  }
+  const SdpAttribute* attr = GetAttribute(SdpAttribute::kDtlsMessageAttribute);
+  return *static_cast<const SdpDtlsMessageAttribute*>(attr);
 }
 
 const SdpExtmapAttributeList&

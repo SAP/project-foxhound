@@ -6,6 +6,7 @@
 #ifndef WEBGL_SHADER_H_
 #define WEBGL_SHADER_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -27,7 +28,6 @@ class WebGLShader final
     : public nsWrapperCache
     , public WebGLRefCountedObject<WebGLShader>
     , public LinkedListElement<WebGLShader>
-    , public WebGLContextBoundObject
 {
     friend class WebGLContext;
     friend class WebGLProgram;
@@ -51,30 +51,29 @@ public:
     bool CanLinkTo(const WebGLShader* prev, nsCString* const out_log) const;
     size_t CalcNumSamplerUniforms() const;
     size_t NumAttributes() const;
-    void BindAttribLocation(GLuint prog, const nsCString& userName, GLuint index) const;
-    bool FindActiveOutputMappedNameByUserName(const nsACString& userName,
-                                              nsCString* const out_mappedName) const;
     bool FindAttribUserNameByMappedName(const nsACString& mappedName,
-                                        nsDependentCString* const out_userName) const;
+                                        nsCString* const out_userName) const;
     bool FindVaryingByMappedName(const nsACString& mappedName,
                                  nsCString* const out_userName,
                                  bool* const out_isArray) const;
     bool FindUniformByMappedName(const nsACString& mappedName,
                                  nsCString* const out_userName,
                                  bool* const out_isArray) const;
-    bool FindUniformBlockByMappedName(const nsACString& mappedName,
-                                      nsCString* const out_userName,
-                                      bool* const out_isArray) const;
+    bool UnmapUniformBlockName(const nsACString& baseMappedName,
+                               nsCString* const out_baseUserName) const;
+
+    void EnumerateFragOutputs(std::map<nsCString, const nsCString> &out_FragOutputs) const;
 
     bool IsCompiled() const {
         return mTranslationSuccessful && mCompilationSuccessful;
     }
 
-    void ApplyTransformFeedbackVaryings(GLuint prog,
-                                        const std::vector<nsCString>& varyings,
-                                        GLenum bufferMode,
-                                        std::vector<std::string>* out_mappedVaryings) const;
+private:
+    void BindAttribLocation(GLuint prog, const nsCString& userName, GLuint index) const;
+    void MapTransformFeedbackVaryings(const std::vector<nsString>& varyings,
+                                      std::vector<std::string>* out_mappedVaryings) const;
 
+public:
     // Other funcs
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
     void Delete();
@@ -89,6 +88,7 @@ public:
 public:
     const GLuint mGLName;
     const GLenum mType;
+
 protected:
     nsString mSource;
     nsCString mCleanSource;

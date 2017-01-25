@@ -51,6 +51,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
+using namespace mozilla::image;
 
 // ============================================================================
 // Utility functions
@@ -3029,91 +3030,6 @@ SVGTextDrawPathCallbacks::StrokeGeometry()
   }
 }
 
-//----------------------------------------------------------------------
-// SVGTextContextPaint methods:
-
-already_AddRefed<gfxPattern>
-SVGTextContextPaint::GetFillPattern(const DrawTarget* aDrawTarget,
-                                    float aOpacity,
-                                    const gfxMatrix& aCTM)
-{
-  return mFillPaint.GetPattern(aDrawTarget, aOpacity, &nsStyleSVG::mFill, aCTM);
-}
-
-already_AddRefed<gfxPattern>
-SVGTextContextPaint::GetStrokePattern(const DrawTarget* aDrawTarget,
-                                      float aOpacity,
-                                      const gfxMatrix& aCTM)
-{
-  return mStrokePaint.GetPattern(aDrawTarget, aOpacity, &nsStyleSVG::mStroke, aCTM);
-}
-
-already_AddRefed<gfxPattern>
-SVGTextContextPaint::Paint::GetPattern(const DrawTarget* aDrawTarget,
-                                       float aOpacity,
-                                       nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
-                                       const gfxMatrix& aCTM)
-{
-  RefPtr<gfxPattern> pattern;
-  if (mPatternCache.Get(aOpacity, getter_AddRefs(pattern))) {
-    // Set the pattern matrix just in case it was messed with by a previous
-    // caller. We should get the same matrix each time a pattern is constructed
-    // so this should be fine.
-    pattern->SetMatrix(aCTM * mPatternMatrix);
-    return pattern.forget();
-  }
-
-  switch (mPaintType) {
-  case eStyleSVGPaintType_None:
-    pattern = new gfxPattern(Color());
-    mPatternMatrix = gfxMatrix();
-    break;
-  case eStyleSVGPaintType_Color: {
-    Color color = Color::FromABGR(mPaintDefinition.mColor);
-    color.a *= aOpacity;
-    pattern = new gfxPattern(color);
-    mPatternMatrix = gfxMatrix();
-    break;
-  }
-  case eStyleSVGPaintType_Server:
-    pattern = mPaintDefinition.mPaintServerFrame->GetPaintServerPattern(mFrame,
-                                                                        aDrawTarget,
-                                                                        mContextMatrix,
-                                                                        aFillOrStroke,
-                                                                        aOpacity);
-    {
-      // m maps original-user-space to pattern space
-      gfxMatrix m = pattern->GetMatrix();
-      gfxMatrix deviceToOriginalUserSpace = mContextMatrix;
-      if (!deviceToOriginalUserSpace.Invert()) {
-        return nullptr;
-      }
-      // mPatternMatrix maps device space to pattern space via original user space
-      mPatternMatrix = deviceToOriginalUserSpace * m;
-    }
-    pattern->SetMatrix(aCTM * mPatternMatrix);
-    break;
-  case eStyleSVGPaintType_ContextFill:
-    pattern = mPaintDefinition.mContextPaint->GetFillPattern(aDrawTarget,
-                                                             aOpacity, aCTM);
-    // Don't cache this. mContextPaint will have cached it anyway. If we
-    // cache it, we'll have to compute mPatternMatrix, which is annoying.
-    return pattern.forget();
-  case eStyleSVGPaintType_ContextStroke:
-    pattern = mPaintDefinition.mContextPaint->GetStrokePattern(aDrawTarget,
-                                                               aOpacity, aCTM);
-    // Don't cache this. mContextPaint will have cached it anyway. If we
-    // cache it, we'll have to compute mPatternMatrix, which is annoying.
-    return pattern.forget();
-  default:
-    MOZ_ASSERT(false, "invalid paint type");
-    return nullptr;
-  }
-
-  mPatternCache.Put(aOpacity, pattern);
-  return pattern.forget();
-}
-
 } // namespace mozilla
 
 
@@ -3149,6 +3065,10 @@ public:
                        nsTArray<nsIFrame*> *aOutFrames) override;
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      nsRenderingContext* aCtx) override;
+  nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder* aBuilder) override
+  {
+    return new nsDisplayItemGenericImageGeometry(this, aBuilder);
+  }
   virtual nsRect GetComponentAlphaBounds(nsDisplayListBuilder* aBuilder) override {
     bool snap;
     return GetBounds(aBuilder, &snap);
@@ -3199,7 +3119,8 @@ nsDisplaySVGText::Paint(nsDisplayListBuilder* aBuilder,
 
   gfxContext* ctx = aCtx->ThebesContext();
   ctx->Save();
-  static_cast<SVGTextFrame*>(mFrame)->PaintSVG(*ctx, tm);
+  DrawResult result = static_cast<SVGTextFrame*>(mFrame)->PaintSVG(*ctx, tm);
+  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   ctx->Restore();
 }
 
@@ -3253,6 +3174,7 @@ SVGTextFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       aBuilder->IsForPainting()) {
     return;
   }
+  DisplayOutline(aBuilder, aLists);
   aLists.Content()->AppendNewToTop(
     new (aBuilder) nsDisplaySVGText(aBuilder, this));
 }
@@ -3316,7 +3238,7 @@ SVGTextFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
     // child to be reflowed when it is next painted, and (b) not cause the
     // <text> to be repainted anyway since the user of the <mask> would not
     // know it needs to be repainted.
-    ScheduleReflowSVGNonDisplayText();
+    ScheduleReflowSVGNonDisplayText(nsIPresShell::eStyleChange);
   }
 }
 
@@ -3350,7 +3272,7 @@ SVGTextFrame::ReflowSVGNonDisplayText()
 }
 
 void
-SVGTextFrame::ScheduleReflowSVGNonDisplayText()
+SVGTextFrame::ScheduleReflowSVGNonDisplayText(nsIPresShell::IntrinsicDirty aReason)
 {
   MOZ_ASSERT(!nsSVGUtils::OuterSVGIsCallingReflowSVG(this),
              "do not call ScheduleReflowSVGNonDisplayText when the outer SVG "
@@ -3388,8 +3310,7 @@ SVGTextFrame::ScheduleReflowSVGNonDisplayText()
 
   MOZ_ASSERT(f, "should have found an ancestor frame to reflow");
 
-  PresContext()->PresShell()->FrameNeedsReflow(
-    f, nsIPresShell::eStyleChange, NS_FRAME_IS_DIRTY);
+  PresContext()->PresShell()->FrameNeedsReflow(f, aReason, NS_FRAME_IS_DIRTY);
 }
 
 NS_IMPL_ISUPPORTS(SVGTextFrame::MutationObserver, nsIMutationObserver)
@@ -3464,12 +3385,14 @@ SVGTextFrame::HandleAttributeChangeInDescendant(Element* aElement,
     if (aNameSpaceID == kNameSpaceID_None &&
         aAttribute == nsGkAtoms::startOffset) {
       NotifyGlyphMetricsChange();
-    } else if (aNameSpaceID == kNameSpaceID_XLink &&
+    } else if ((aNameSpaceID == kNameSpaceID_XLink ||
+                aNameSpaceID == kNameSpaceID_None) &&
                aAttribute == nsGkAtoms::href) {
       // Blow away our reference, if any
       nsIFrame* childElementFrame = aElement->GetPrimaryFrame();
       if (childElementFrame) {
-        childElementFrame->Properties().Delete(nsSVGEffects::HrefProperty());
+        childElementFrame->Properties().Delete(
+          nsSVGEffects::HrefAsTextPathProperty());
         NotifyGlyphMetricsChange();
       }
     }
@@ -3634,7 +3557,7 @@ ShouldPaintCaret(const TextRenderedRun& aThisRun, nsCaret* aCaret)
   return false;
 }
 
-nsresult
+DrawResult
 SVGTextFrame::PaintSVG(gfxContext& aContext,
                        const gfxMatrix& aTransform,
                        const nsIntRect *aDirtyRect)
@@ -3643,7 +3566,7 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
 
   nsIFrame* kid = PrincipalChildList().FirstChild();
   if (!kid)
-    return NS_OK;
+    return DrawResult::SUCCESS;
 
   nsPresContext* presContext = PresContext();
 
@@ -3656,7 +3579,7 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
     // dirty.
     if (presContext->PresShell()->InDrawWindowNotFlushing() &&
         NS_SUBTREE_DIRTY(this)) {
-      return NS_OK;
+      return DrawResult::SUCCESS;
     }
     // Text frames inside <clipPath>, <mask>, etc. will never have had
     // ReflowSVG called on them, so call UpdateGlyphPositioning to do this now.
@@ -3665,12 +3588,12 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
     // If we are asked to paint before reflow has recomputed mPositions etc.
     // directly via PaintSVG, rather than via a display list, then we need
     // to bail out here too.
-    return NS_OK;
+    return DrawResult::SUCCESS;
   }
 
   if (aTransform.IsSingular()) {
     NS_WARNING("Can't render text element!");
-    return NS_ERROR_FAILURE;
+    return DrawResult::BAD_ARGS;
   }
 
   gfxMatrix matrixForPaintServers = aTransform * initialMatrix;
@@ -3692,7 +3615,7 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
     nsRect canvasRect = nsLayoutUtils::RoundGfxRectToAppRect(
         GetCanvasTM().TransformBounds(frameRect), 1);
     if (!canvasRect.Intersects(dirtyRect)) {
-      return NS_OK;
+      return DrawResult::SUCCESS;
     }
   }
 
@@ -3717,8 +3640,8 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
   TextRenderedRunIterator it(this, TextRenderedRunIterator::eVisibleFrames);
   TextRenderedRun run = it.Current();
 
-  gfxTextContextPaint *outerContextPaint =
-    (gfxTextContextPaint*)aDrawTarget.GetUserData(&gfxTextContextPaint::sUserDataKey);
+  SVGContextPaint* outerContextPaint =
+    SVGContextPaint::GetContextPaint(mContent);
 
   nsRenderingContext rendCtx(&aContext);
 
@@ -3733,10 +3656,10 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
     // when they use context-fill etc.
     aContext.SetMatrix(initialMatrix);
 
-    SVGTextContextPaint contextPaint;
-    DrawMode drawMode =
-      nsSVGUtils::SetupContextPaint(&aDrawTarget, aContext.CurrentMatrix(),
-                                    frame, outerContextPaint, &contextPaint);
+    SVGContextPaintImpl contextPaint;
+    DrawMode drawMode = contextPaint.Init(&aDrawTarget,
+                                          aContext.CurrentMatrix(),
+                                          frame, outerContextPaint);
 
     if (drawMode & DrawMode::GLYPH_STROKE) {
       // This may change the gfxContext's transform (for non-scaling stroke),
@@ -3779,7 +3702,7 @@ SVGTextFrame::PaintSVG(gfxContext& aContext,
     run = it.Next();
   }
 
-  return NS_OK;
+  return DrawResult::SUCCESS;
 }
 
 nsIFrame*
@@ -4304,7 +4227,7 @@ SVGTextFrame::GetEndPositionOfChar(nsIContent* aContent,
   Matrix m =
     Matrix::Rotation(mPositions[startIndex].mAngle) *
     Matrix::Translation(ToPoint(mPositions[startIndex].mPosition));
-  Point p = m * Point(advance / mFontSizeScaleFactor, 0);
+  Point p = m.TransformPoint(Point(advance / mFontSizeScaleFactor, 0));
 
   NS_ADDREF(*aResult = new DOMSVGPoint(p));
   return NS_OK;
@@ -4893,14 +4816,21 @@ SVGTextFrame::AdjustPositionsForClusters()
 SVGPathElement*
 SVGTextFrame::GetTextPathPathElement(nsIFrame* aTextPathFrame)
 {
-  nsSVGTextPathProperty *property = static_cast<nsSVGTextPathProperty*>
-    (aTextPathFrame->Properties().Get(nsSVGEffects::HrefProperty()));
+  nsSVGTextPathProperty *property =
+    aTextPathFrame->Properties().Get(nsSVGEffects::HrefAsTextPathProperty());
 
   if (!property) {
     nsIContent* content = aTextPathFrame->GetContent();
     dom::SVGTextPathElement* tp = static_cast<dom::SVGTextPathElement*>(content);
     nsAutoString href;
-    tp->mStringAttributes[dom::SVGTextPathElement::HREF].GetAnimValue(href, tp);
+    if (tp->mStringAttributes[dom::SVGTextPathElement::HREF].IsExplicitlySet()) {
+      tp->mStringAttributes[dom::SVGTextPathElement::HREF]
+        .GetAnimValue(href, tp);
+    } else {
+      tp->mStringAttributes[dom::SVGTextPathElement::XLINK_HREF]
+        .GetAnimValue(href, tp);
+    }
+
     if (href.IsEmpty()) {
       return nullptr; // no URL
     }
@@ -4910,8 +4840,10 @@ SVGTextFrame::GetTextPathPathElement(nsIFrame* aTextPathFrame)
     nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
                                               content->GetUncomposedDoc(), base);
 
-    property = nsSVGEffects::GetTextPathProperty(targetURI, aTextPathFrame,
-                                                 nsSVGEffects::HrefProperty());
+    property = nsSVGEffects::GetTextPathProperty(
+      targetURI,
+      aTextPathFrame,
+      nsSVGEffects::HrefAsTextPathProperty());
     if (!property)
       return nullptr;
   }
@@ -5288,7 +5220,7 @@ void
 SVGTextFrame::ScheduleReflowSVG()
 {
   if (mState & NS_FRAME_IS_NONDISPLAY) {
-    ScheduleReflowSVGNonDisplayText();
+    ScheduleReflowSVGNonDisplayText(nsIPresShell::eStyleChange);
   } else {
     nsSVGUtils::ScheduleReflowSVG(this);
   }
@@ -5380,20 +5312,20 @@ SVGTextFrame::DoReflow()
 
   nscoord inlineSize = kid->GetPrefISize(&renderingContext);
   WritingMode wm = kid->GetWritingMode();
-  nsHTMLReflowState reflowState(presContext, kid,
+  ReflowInput reflowInput(presContext, kid,
                                 &renderingContext,
                                 LogicalSize(wm, inlineSize,
                                             NS_UNCONSTRAINEDSIZE));
-  nsHTMLReflowMetrics desiredSize(reflowState);
+  ReflowOutput desiredSize(reflowInput);
   nsReflowStatus status;
 
-  NS_ASSERTION(reflowState.ComputedPhysicalBorderPadding() == nsMargin(0, 0, 0, 0) &&
-               reflowState.ComputedPhysicalMargin() == nsMargin(0, 0, 0, 0),
+  NS_ASSERTION(reflowInput.ComputedPhysicalBorderPadding() == nsMargin(0, 0, 0, 0) &&
+               reflowInput.ComputedPhysicalMargin() == nsMargin(0, 0, 0, 0),
                "style system should ensure that :-moz-svg-text "
                "does not get styled");
 
-  kid->Reflow(presContext, desiredSize, reflowState, status);
-  kid->DidReflow(presContext, &reflowState, nsDidReflowStatus::FINISHED);
+  kid->Reflow(presContext, desiredSize, reflowInput, status);
+  kid->DidReflow(presContext, &reflowInput, nsDidReflowStatus::FINISHED);
   kid->SetSize(wm, desiredSize.Size(wm));
 
   mState &= ~NS_STATE_SVG_TEXT_IN_REFLOW;
@@ -5697,10 +5629,9 @@ SVGTextFrame::TransformFrameRectFromTextChild(const nsRect& aRect,
     // Intersect it with the run.
     uint32_t flags = TextRenderedRun::eIncludeFill |
                      TextRenderedRun::eIncludeStroke;
-    rectInFrameUserSpace.IntersectRect
-      (rectInFrameUserSpace, run.GetFrameUserSpaceRect(presContext, flags).ToThebesRect());
 
-    if (!rectInFrameUserSpace.IsEmpty()) {
+    if (rectInFrameUserSpace.IntersectRect(rectInFrameUserSpace,
+        run.GetFrameUserSpaceRect(presContext, flags).ToThebesRect())) {
       // Transform it up to user space of the <text>, also taking into
       // account the font size scale.
       gfxMatrix m = run.GetTransformFromRunUserSpaceToUserSpace(presContext);

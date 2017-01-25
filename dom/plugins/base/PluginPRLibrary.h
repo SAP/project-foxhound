@@ -114,6 +114,8 @@ public:
     virtual bool IsOOP() override { return false; }
 #if defined(XP_MACOSX)
     virtual nsresult IsRemoteDrawingCoreAnimation(NPP aInstance, bool* aDrawing) override;
+#endif
+#if defined(XP_MACOSX) || defined(XP_WIN)
     virtual nsresult ContentsScaleFactorChanged(NPP aInstance, double aContentsScaleFactor) override;
 #endif
     virtual nsresult SetBackgroundUnknown(NPP instance) override;
@@ -127,7 +129,6 @@ public:
     virtual void SetHasLocalInstance() override { }
 #if defined(XP_WIN)
     virtual nsresult GetScrollCaptureContainer(NPP aInstance, mozilla::layers::ImageContainer** aContainer) override;
-    virtual nsresult UpdateScrollState(NPP aInstance, bool aIsScrolling) override;
 #endif
     virtual nsresult HandledWindowedPluginKeyEvent(
                        NPP aInstance,

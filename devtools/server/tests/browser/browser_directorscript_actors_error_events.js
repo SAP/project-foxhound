@@ -4,7 +4,7 @@
 
 "use strict";
 
-const {DirectorManagerFront} = require("devtools/server/actors/director-manager");
+const {DirectorManagerFront} = require("devtools/shared/fronts/director-manager");
 const {DirectorRegistry} = require("devtools/server/actors/director-registry");
 
 add_task(function* () {
@@ -23,7 +23,7 @@ add_task(function* () {
   yield testErrorOnAttach(directorManager);
   yield testErrorOnDetach(directorManager);
 
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
   DirectorRegistry.clear();
 });

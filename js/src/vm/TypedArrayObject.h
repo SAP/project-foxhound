@@ -16,9 +16,22 @@
 #include "vm/ArrayBufferObject.h"
 #include "vm/SharedArrayObject.h"
 
+#define JS_FOR_EACH_TYPED_ARRAY(macro) \
+    macro(int8_t, Int8) \
+    macro(uint8_t, Uint8) \
+    macro(int16_t, Int16) \
+    macro(uint16_t, Uint16) \
+    macro(int32_t, Int32) \
+    macro(uint32_t, Uint32) \
+    macro(float, Float32) \
+    macro(double, Float64) \
+    macro(uint8_clamped, Uint8Clamped)
+
 typedef struct JSProperty JSProperty;
 
 namespace js {
+
+enum class TypedArrayLength { Fixed, Dynamic };
 
 /*
  * TypedArrayObject
@@ -50,6 +63,10 @@ class TypedArrayObject : public NativeObject
                   "right byteOffset slot");
 
     static const size_t RESERVED_SLOTS = 3;
+
+#ifdef DEBUG
+    static const uint8_t ZeroLengthArrayData = 0x4A;
+#endif
 
     static int lengthOffset();
     static int dataOffset();
@@ -107,8 +124,9 @@ class TypedArrayObject : public NativeObject
     AllocKindForLazyBuffer(size_t nbytes)
     {
         MOZ_ASSERT(nbytes <= INLINE_BUFFER_LIMIT);
-        /* For GGC we need at least one slot in which to store a forwarding pointer. */
-        size_t dataSlots = Max(size_t(1), AlignBytes(nbytes, sizeof(Value)) / sizeof(Value));
+        if (nbytes == 0)
+            nbytes += sizeof(uint8_t);
+        size_t dataSlots = AlignBytes(nbytes, sizeof(Value)) / sizeof(Value);
         MOZ_ASSERT(nbytes <= dataSlots * sizeof(Value));
         return gc::GetGCObjectKind(FIXED_DATA_START + dataSlots);
     }
@@ -150,10 +168,30 @@ class TypedArrayObject : public NativeObject
         return lengthValue(const_cast<TypedArrayObject*>(this)).toInt32();
     }
 
+    bool hasInlineElements() const;
+    void setInlineElements();
+    uint8_t* elementsRaw() const {
+        return *(uint8_t **)((((char *)this) + this->dataOffset()));
+    }
+    uint8_t* elements() const {
+        assertZeroLengthArrayData();
+        return elementsRaw();
+    }
+
+#ifdef DEBUG
+    void assertZeroLengthArrayData() const;
+#else
+    void assertZeroLengthArrayData() const {};
+#endif
+
     Value getElement(uint32_t index);
     static void setElement(TypedArrayObject& obj, uint32_t index, double d);
 
-    void notifyBufferDetached(void* newData);
+    void notifyBufferDetached(JSContext* cx, void* newData);
+
+    static bool
+    GetTemplateObjectForNative(JSContext* cx, Native native, uint32_t len,
+                               MutableHandleObject res);
 
     /*
      * Byte length above which created typed arrays and data views will have
@@ -232,6 +270,10 @@ class TypedArrayObject : public NativeObject
 
   public:
     static void trace(JSTracer* trc, JSObject* obj);
+    static void finalize(FreeOp* fop, JSObject* obj);
+    static void objectMoved(JSObject* obj, const JSObject* old);
+    static size_t objectMovedDuringMinorGC(JSTracer* trc, JSObject* obj, const JSObject* old,
+                                           gc::AllocKind allocKind);
 
     /* Initialization bits */
 
@@ -266,6 +308,11 @@ class TypedArrayObject : public NativeObject
 
     static bool set(JSContext* cx, unsigned argc, Value* vp);
 };
+
+MOZ_MUST_USE bool TypedArray_bufferGetter(JSContext* cx, unsigned argc, Value* vp);
+
+extern TypedArrayObject*
+TypedArrayCreateWithTemplate(JSContext* cx, HandleObject templateObj, int32_t len);
 
 inline bool
 IsTypedArrayClass(const Class* clasp)
@@ -350,6 +397,7 @@ TypedArrayShift(Scalar::Type viewType)
       case Scalar::Uint32:
       case Scalar::Float32:
         return 2;
+      case Scalar::Int64:
       case Scalar::Float64:
         return 3;
       case Scalar::Float32x4:
@@ -395,7 +443,7 @@ class DataViewObject : public NativeObject
 
     template <typename NativeType>
     static uint8_t*
-    getDataPointer(JSContext* cx, Handle<DataViewObject*> obj, uint32_t offset);
+    getDataPointer(JSContext* cx, Handle<DataViewObject*> obj, double offset);
 
     template<Value ValueGetter(DataViewObject* view)>
     static bool

@@ -106,8 +106,16 @@ nsDisplayBoxShadowOuterGeometry::nsDisplayBoxShadowOuterGeometry(nsDisplayItem* 
   , mOpacity(aOpacity)
 {}
 
+void
+nsDisplaySolidColorRegionGeometry::MoveBy(const nsPoint& aOffset)
+{
+  nsDisplayItemGeometry::MoveBy(aOffset);
+  mRegion.MoveBy(aOffset);
+}
+
 nsDisplaySVGEffectsGeometry::nsDisplaySVGEffectsGeometry(nsDisplaySVGEffects* aItem, nsDisplayListBuilder* aBuilder)
   : nsDisplayItemGeometry(aItem, aBuilder)
+  , nsImageGeometryMixin(aItem, aBuilder)
   , mBBox(aItem->BBoxInUserSpace())
   , mUserSpaceOffset(aItem->UserSpaceOffset())
   , mFrameOffsetToReferenceFrame(aItem->ToReferenceFrame())

@@ -9,6 +9,7 @@
 var { Ci, Cc } = require("chrome");
 var Services = require("Services");
 var promise = require("promise");
+var defer = require("devtools/shared/defer");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { dumpn, dumpv } = DevToolsUtils;
 loader.lazyRequireGetter(this, "prompt",
@@ -95,6 +96,13 @@ Prompt.Client = function () {};
 Prompt.Client.prototype = {
 
   mode: Prompt.mode,
+
+  /**
+   * When client is about to make a new connection, verify that the connection settings
+   * are compatible with this authenticator.
+   * @throws if validation requirements are not met
+   */
+  validateSettings() {},
 
   /**
    * When client has just made a new socket connection, validate the connection
@@ -261,6 +269,17 @@ OOBCert.Client.prototype = {
   mode: OOBCert.mode,
 
   /**
+   * When client is about to make a new connection, verify that the connection settings
+   * are compatible with this authenticator.
+   * @throws if validation requirements are not met
+   */
+  validateSettings({ encryption }) {
+    if (!encryption) {
+      throw new Error(`${OOBCert.mode} authentication requires encryption.`);
+    }
+  },
+
+  /**
    * When client has just made a new socket connection, validate the connection
    * to ensure it meets the authenticator's policies.
    *
@@ -311,7 +330,7 @@ OOBCert.Client.prototype = {
    * @return A promise can be used if there is async behavior.
    */
   authenticate({ host, port, cert, transport }) {
-    let deferred = promise.defer();
+    let deferred = defer();
     let oobData;
 
     let activeSendDialog;

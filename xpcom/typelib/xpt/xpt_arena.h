@@ -10,7 +10,7 @@
 #ifndef __xpt_arena_h__
 #define __xpt_arena_h__
 
-#include "prtypes.h"
+#include "prcpucfg.h"
 #include <stdlib.h>
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
@@ -50,8 +50,7 @@ XPT_SizeOfArenaIncludingThis(XPTArena *arena, MozMallocSizeOf mallocSizeOf);
 
 #define XPT_CALLOC8(_arena, _bytes) XPT_ArenaCalloc((_arena), (_bytes), 8)
 #define XPT_CALLOC1(_arena, _bytes) XPT_ArenaCalloc((_arena), (_bytes), 1)
-#define XPT_NEW(_arena, _struct) ((_struct *) XPT_CALLOC8((_arena), sizeof(_struct)))
-#define XPT_NEWZAP(_arena, _struct) XPT_NEW((_arena), _struct)
+#define XPT_NEWZAP(_arena, _struct) ((_struct *) XPT_CALLOC8((_arena), sizeof(_struct)))
 
 /* --------------------------------------------------------- */
 

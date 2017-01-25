@@ -157,7 +157,7 @@ class MochitestB2G(MochitestBase):
                     self.remote_log)):
                 self.app_ctx.dm.mkDirs(self.remote_log)
 
-            if options.chrome:
+            if options.flavor == 'chrome':
                 # Update chrome manifest file in profile with correct path.
                 self.writeChromeManifest(options)
 
@@ -200,7 +200,7 @@ class MochitestB2G(MochitestBase):
 
             self.start_script_args.append(not options.emulator)
             self.start_script_args.append(options.wifi)
-            self.start_script_args.append(options.chrome)
+            self.start_script_args.append(options.flavor == 'chrome')
 
             self.runner.start(outputTimeout=timeout)
 
@@ -232,7 +232,7 @@ class MochitestB2G(MochitestBase):
                 }
                 """)
 
-            if options.chrome:
+            if options.flavor == 'chrome':
                 self.app_ctx.dm.removeDir(self.remote_chrome_test_dir)
                 self.app_ctx.dm.mkDir(self.remote_chrome_test_dir)
                 local = MochitestBase.getChromeTestDir(self, options)
@@ -360,7 +360,9 @@ class MochitestB2G(MochitestBase):
         options.logFile = self.local_log
 
 
-def run_test_harness(options):
+def run_test_harness(parser, options):
+    parser.validate(options)
+
     # create our Marionette instance
     marionette_args = {
         'adb_path': options.adbPath,
@@ -413,7 +415,7 @@ def run_test_harness(options):
 def main():
     parser = MochitestArgumentParser(app='b2g')
     options = parser.parse_args()
-    return run_test_harness(options)
+    return run_test_harness(parser, options)
 
 if __name__ == "__main__":
     sys.exit(main())

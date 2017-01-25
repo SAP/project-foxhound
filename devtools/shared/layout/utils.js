@@ -6,6 +6,7 @@
 
 const { Ci, Cc } = require("chrome");
 const { memoize } = require("sdk/lang/functional");
+const nodeFilterConstants = require("devtools/shared/dom-node-filter-constants");
 
 loader.lazyRequireGetter(this, "setIgnoreLayoutChanges", "devtools/server/actors/layout", true);
 exports.setIgnoreLayoutChanges = (...args) =>
@@ -135,7 +136,8 @@ exports.getFrameElement = getFrameElement;
 function getFrameOffsets(boundaryWindow, node) {
   let xOffset = 0;
   let yOffset = 0;
-  let frameWin = node.ownerDocument.defaultView;
+
+  let frameWin = getWindowFor(node);
   let scale = getCurrentZoom(node);
 
   if (boundaryWindow === null) {
@@ -165,6 +167,7 @@ function getFrameOffsets(boundaryWindow, node) {
 
   return [xOffset * scale, yOffset * scale];
 }
+exports.getFrameOffsets = getFrameOffsets;
 
 /**
  * Get box quads adjusted for iframes and zoom level.
@@ -377,7 +380,7 @@ function safelyGetContentWindow(frame) {
                .createInstance(Ci.inIDeepTreeWalker);
   walker.showSubDocuments = true;
   walker.showDocumentsAsNodes = true;
-  walker.init(frame, Ci.nsIDOMNodeFilter.SHOW_ALL);
+  walker.init(frame, nodeFilterConstants.SHOW_ALL);
   walker.currentNode = frame;
 
   let document = walker.nextNode();
@@ -459,53 +462,6 @@ function getElementFromPoint(document, x, y) {
   return node;
 }
 exports.getElementFromPoint = getElementFromPoint;
-
-/**
- * Scroll the document so that the element "elem" appears in the viewport.
- *
- * @param {DOMNode} elem
- *        The element that needs to appear in the viewport.
- * @param {Boolean} centered
- *        true if you want it centered, false if you want it to appear on the
- *        top of the viewport. It is true by default, and that is usually what
- *        you want.
- */
-function scrollIntoViewIfNeeded(elem, centered = true) {
-  let win = elem.ownerDocument.defaultView;
-  let clientRect = elem.getBoundingClientRect();
-
-  // The following are always from the {top, bottom}
-  // of the viewport, to the {top, …} of the box.
-  // Think of them as geometrical vectors, it helps.
-  // The origin is at the top left.
-
-  let topToBottom = clientRect.bottom;
-  let bottomToTop = clientRect.top - win.innerHeight;
-  // We allow one translation on the y axis.
-  let yAllowed = true;
-
-  // Whatever `centered` is, the behavior is the same if the box is
-  // (even partially) visible.
-  if ((topToBottom > 0 || !centered) && topToBottom <= elem.offsetHeight) {
-    win.scrollBy(0, topToBottom - elem.offsetHeight);
-    yAllowed = false;
-  } else if ((bottomToTop < 0 || !centered) &&
-             bottomToTop >= -elem.offsetHeight) {
-    win.scrollBy(0, bottomToTop + elem.offsetHeight);
-    yAllowed = false;
-  }
-
-  // If we want it centered, and the box is completely hidden,
-  // then we center it explicitly.
-  if (centered) {
-    if (yAllowed && (topToBottom <= 0 || bottomToTop >= 0)) {
-      win.scroll(win.scrollX,
-                 win.scrollY + clientRect.top
-                 - (win.innerHeight - elem.offsetHeight) / 2);
-    }
-  }
-}
-exports.scrollIntoViewIfNeeded = scrollIntoViewIfNeeded;
 
 /**
  * Check if a node and its document are still alive
@@ -659,13 +615,7 @@ exports.isShadowAnonymous = isShadowAnonymous;
  * @return {Number}
  */
 function getCurrentZoom(node) {
-  let win = null;
-
-  if (node instanceof Ci.nsIDOMNode) {
-    win = node.ownerDocument.defaultView;
-  } else if (node instanceof Ci.nsIDOMWindow) {
-    win = node;
-  }
+  let win = getWindowFor(node);
 
   if (!win) {
     throw new Error("Unable to get the zoom from the given argument.");
@@ -674,3 +624,23 @@ function getCurrentZoom(node) {
   return utilsFor(win).fullZoom;
 }
 exports.getCurrentZoom = getCurrentZoom;
+
+/**
+ * Return the default view for a given node, where node can be:
+ * - a DOM node
+ * - the document node
+ * - the window itself
+ * @param {DOMNode|DOMWindow|DOMDocument} node The node to get the window for.
+ * @return {DOMWindow}
+ */
+function getWindowFor(node) {
+  if (node instanceof Ci.nsIDOMNode) {
+    if (node.nodeType === node.DOCUMENT_NODE) {
+      return node.defaultView;
+    }
+    return node.ownerDocument.defaultView;
+  } else if (node instanceof Ci.nsIDOMWindow) {
+    return node;
+  }
+  return null;
+}

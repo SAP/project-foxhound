@@ -9,14 +9,21 @@
 #include "gfxASurface.h"
 #include "gfxPlatform.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
+#include "mozilla/gfx/PrintTargetThebes.h"
 #include "mozilla/layout/RemotePrintJobChild.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 #include "nsIPrintSession.h"
 #include "nsIPrintSettings.h"
+#include "nsIUUIDGenerator.h"
 
 using mozilla::Unused;
+
+using namespace mozilla;
+using namespace mozilla::gfx;
 
 NS_IMPL_ISUPPORTS(nsDeviceContextSpecProxy, nsIDeviceContextSpec)
 
@@ -58,19 +65,29 @@ nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
     return NS_ERROR_FAILURE;
   }
 
+  rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
+                              getter_AddRefs(mRecordingDir));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  mUuidGenerator = do_GetService("@mozilla.org/uuid-generator;1", &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDeviceContextSpecProxy::GetSurfaceForPrinter(gfxASurface** aSurface)
+already_AddRefed<PrintTarget>
+nsDeviceContextSpecProxy::MakePrintTarget()
 {
-  MOZ_ASSERT(aSurface);
   MOZ_ASSERT(mRealDeviceContextSpec);
 
   double width, height;
   nsresult rv = mPrintSettings->GetEffectivePageSize(&width, &height);
   if (NS_WARN_IF(NS_FAILED(rv)) || width <= 0 || height <= 0) {
-    return NS_ERROR_FAILURE;
+    return nullptr;
   }
 
   // convert twips to points
@@ -78,11 +95,27 @@ nsDeviceContextSpecProxy::GetSurfaceForPrinter(gfxASurface** aSurface)
   height /= TWIPS_PER_POINT_FLOAT;
 
   RefPtr<gfxASurface> surface = gfxPlatform::GetPlatform()->
-    CreateOffscreenSurface(mozilla::gfx::IntSize(width, height),
+    CreateOffscreenSurface(mozilla::gfx::IntSize::Truncate(width, height),
                            mozilla::gfx::SurfaceFormat::A8R8G8B8_UINT32);
+  if (!surface) {
+    return nullptr;
+  }
 
-  surface.forget(aSurface);
-  return NS_OK;
+  // The type of PrintTarget that we return here shouldn't really matter since
+  // our implementation of GetDrawEventRecorder returns an object, which means
+  // the DrawTarget returned by the PrintTarget will be a DrawTargetRecording.
+  // The recording will be serialized and sent over to the parent process where
+  // PrintTranslator::TranslateRecording will call MakePrintTarget (indirectly
+  // via PrintTranslator::CreateDrawTarget) on whatever type of
+  // nsIDeviceContextSpecProxy is created for the platform that we are running
+  // on.  It is that DrawTarget that the recording will be replayed on to
+  // print.
+  // XXX(jwatt): The above isn't quite true.  We do want to use a
+  // PrintTargetRecording here, but we can't until bug 1280324 is figured out
+  // and fixed otherwise we will cause bug 1280181 to happen again.
+  RefPtr<PrintTarget> target = PrintTargetThebes::CreateOrNull(surface);
+
+  return target.forget();
 }
 
 NS_IMETHODIMP
@@ -110,12 +143,48 @@ nsDeviceContextSpecProxy::GetPrintingScale()
   return mRealDeviceContextSpec->GetPrintingScale();
 }
 
+nsresult
+nsDeviceContextSpecProxy::CreateUniqueTempPath(nsACString& aFilePath)
+{
+  MOZ_ASSERT(mRecordingDir);
+  MOZ_ASSERT(mUuidGenerator);
+
+  nsID uuid;
+  nsresult rv = mUuidGenerator->GenerateUUIDInPlace(&uuid);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  char uuidChars[NSID_LENGTH];
+  uuid.ToProvidedString(uuidChars);
+  mRecordingFileName.AssignASCII(uuidChars);
+
+  nsCOMPtr<nsIFile> recordingFile;
+  rv = mRecordingDir->Clone(getter_AddRefs(recordingFile));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = recordingFile->AppendNative(mRecordingFileName);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return recordingFile->GetNativePath(aFilePath);
+}
+
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
                                         int32_t aStartPage, int32_t aEndPage)
 {
-  mRecorder = new mozilla::gfx::DrawEventRecorderMemory();
+  nsAutoCString recordingPath;
+  nsresult rv = CreateUniqueTempPath(recordingPath);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  mRecorder = new mozilla::gfx::DrawEventRecorderFile(recordingPath.get());
   return mRemotePrintJob->InitializePrint(nsString(aTitle),
                                           nsString(aPrintToFileName),
                                           aStartPage, aEndPage);
@@ -138,34 +207,26 @@ nsDeviceContextSpecProxy::AbortDocument()
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginPage()
 {
+  // Reopen the file, if necessary, ready for the next page.
+  if (!mRecorder->IsOpen()) {
+    nsAutoCString recordingPath;
+    nsresult rv = CreateUniqueTempPath(recordingPath);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    mRecorder->OpenNew(recordingPath.get());
+  }
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::EndPage()
 {
-  // Save the current page recording to shared memory.
-  mozilla::ipc::Shmem storedPage;
-  size_t recordingSize = mRecorder->RecordingSize();
-  if (!mRemotePrintJob->AllocShmem(recordingSize,
-                                   mozilla::ipc::SharedMemory::TYPE_BASIC,
-                                   &storedPage)) {
-    NS_WARNING("Failed to create shared memory for remote printing.");
-    return NS_ERROR_FAILURE;
-  }
-
-  bool success = mRecorder->CopyRecording(storedPage.get<char>(), recordingSize);
-  if (!success) {
-    NS_WARNING("Copying recording to shared memory was not succesful.");
-    return NS_ERROR_FAILURE;
-  }
-
-  // Wipe the recording to free memory. The recorder does not forget which data
-  // backed objects that it has stored.
-  mRecorder->WipeRecording();
-
   // Send the page recording to the parent.
-  mRemotePrintJob->ProcessPage(storedPage);
+  mRecorder->Close();
+  mRemotePrintJob->ProcessPage(mRecordingFileName);
 
   return NS_OK;
 }

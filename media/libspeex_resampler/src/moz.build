@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -44,7 +44,7 @@ if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['BUILD_ARM_NEON']:
     SOURCES += [
         'resample_neon.c'
     ]
-    SOURCES['resample_neon.c'].flags += ['-mfpu=neon']
+    SOURCES['resample_neon.c'].flags += CONFIG['NEON_FLAGS']
 
 # Suppress warnings in third-party code.
 if CONFIG['GNU_CC']:

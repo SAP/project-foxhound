@@ -54,7 +54,6 @@ class TestCapabilities(MarionetteTestCase):
     def test_extensions(self):
         self.assertIn("XULappId", self.caps)
         self.assertIn("appBuildId", self.caps)
-        self.assertIn("device", self.caps)
         self.assertIn("version", self.caps)
 
         self.assertEqual(self.caps["XULappId"], self.appinfo["ID"])
@@ -105,4 +104,5 @@ class TestCapabilities(MarionetteTestCase):
 
     def test_we_get_valid_uuid4_when_creating_a_session(self):
         self.assertNotIn("{", self.marionette.session_id,
-                         "Session ID has {} in it: %s" % self.marionette.session_id)
+                         "Session ID has {{}} in it: {}".format(
+                             self.marionette.session_id))

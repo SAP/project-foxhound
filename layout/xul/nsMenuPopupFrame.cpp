@@ -444,7 +444,8 @@ nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
   }
 
   // if the popup has just been opened, make sure the scrolled window is at 0,0
-  if (mIsOpenChanged) {
+  // Don't scroll menulists as they will scroll to their selected item on their own.
+  if (mIsOpenChanged && !IsMenuList()) {
     nsIScrollableFrame *scrollframe = do_QueryFrame(nsBox::GetChildXULBox(this));
     if (scrollframe) {
       nsWeakFrame weakFrame(this);
@@ -474,7 +475,6 @@ nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
   }
 
   bool needCallback = false;
-
   if (shouldPosition) {
     SetPopupPosition(aAnchor, false, aSizedToPopup);
     needCallback = true;
@@ -487,6 +487,7 @@ nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
   // special case for tooltips where the preferred height doesn't include the
   // real height for its inline element, but does once it is laid out.
   // This is bug 228673 which doesn't have a simple fix.
+  bool rePosition = shouldPosition && (mPosition == POPUPPOSITION_SELECTION);
   if (!aParentMenu) {
     nsSize newsize = GetSize();
     if (newsize.width > bounds.width || newsize.height > bounds.height) {
@@ -494,10 +495,14 @@ nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
       // so set the preferred size accordingly
       mPrefSize = newsize;
       if (isOpen) {
-        SetPopupPosition(aAnchor, false, aSizedToPopup);
+        rePosition = true;
         needCallback = true;
       }
     }
+  }
+
+  if (rePosition) {
+    SetPopupPosition(aAnchor, false, aSizedToPopup);
   }
 
   nsPresContext* pc = PresContext();
@@ -528,6 +533,11 @@ nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
   // finally, if the popup just opened, send a popupshown event
   if (mIsOpenChanged) {
     mIsOpenChanged = false;
+
+    // Make sure the current selection in a menulist is visible.
+    if (IsMenuList() && mCurrentMenu) {
+      EnsureMenuItemIsVisible(mCurrentMenu);
+    }
 
 #ifndef MOZ_WIDGET_GTK
     // If the animate attribute is set to open, check for a transition and wait
@@ -567,6 +577,18 @@ void
 nsMenuPopupFrame::ReflowCallbackCanceled()
 {
   mReflowCallbackData.Clear();
+}
+
+bool
+nsMenuPopupFrame::IsMenuList()
+{
+  nsIFrame* parentMenu = GetParent();
+  if (!parentMenu) {
+    return false;
+  }
+
+  nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(parentMenu->GetContent());
+  return menulist != nullptr;
 }
 
 nsIContent*
@@ -742,6 +764,11 @@ nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
       // horizontal position as the mouse pointer.
       mYPos += 21;
     }
+    else if (position.EqualsLiteral("selection")) {
+      mPopupAnchor = POPUPALIGNMENT_BOTTOMLEFT;
+      mPopupAlignment = POPUPALIGNMENT_TOPLEFT;
+      mPosition = POPUPPOSITION_SELECTION;
+    }
     else {
       InitPositionFromAnchorAlign(anchor, align);
     }
@@ -786,6 +813,7 @@ nsMenuPopupFrame::InitializePopupAtScreen(nsIContent* aTriggerContent,
   mFlip = FlipType_Default;
   mPopupAnchor = POPUPALIGNMENT_NONE;
   mPopupAlignment = POPUPALIGNMENT_NONE;
+  mPosition = POPUPPOSITION_UNKNOWN;
   mIsContextMenu = aIsContextMenu;
   mAdjustOffsetForContextMenu = aIsContextMenu;
   mAnchorType = MenuPopupAnchorType_Point;
@@ -830,6 +858,7 @@ nsMenuPopupFrame::InitializePopupWithAnchorAlign(nsIContent* aAnchorContent,
     mAnchorType = MenuPopupAnchorType_Point;
     mPopupAnchor = POPUPALIGNMENT_NONE;
     mPopupAlignment = POPUPALIGNMENT_NONE;
+    mPosition = POPUPPOSITION_UNKNOWN;
     mScreenRect = nsIntRect(aXPos, aYPos, 0, 0);
     mXPos = aXPos;
     mYPos = aYPos;
@@ -847,8 +876,8 @@ nsMenuPopupFrame::ShowPopup(bool aIsContextMenu)
     mPopupState = ePopupOpening;
     mIsOpenChanged = true;
 
-    // Clear mouse capture when a context menu is opened.
-    if (aIsContextMenu) {
+    // Clear mouse capture when a popup is opened.
+    if (mPopupType == ePopupTypeMenu) {
       nsIPresShell::SetCapturingContent(nullptr, 0);
     }
 
@@ -1004,6 +1033,8 @@ nsMenuPopupFrame::AdjustPositionForAnchorAlign(nsRect& anchorRect,
     popupAlign = -popupAlign;
   }
 
+  nsRect originalAnchorRect(anchorRect);
+
   // first, determine at which corner of the anchor the popup should appear
   nsPoint pnt;
   switch (popupAnchor) {
@@ -1064,6 +1095,21 @@ nsMenuPopupFrame::AdjustPositionForAnchorAlign(nsRect& anchorRect,
       break;
   }
 
+  // If we aligning to the selected item in the popup, adjust the vertical
+  // position by the height of the menulist label and the selected item's
+  // position.
+  if (mPosition == POPUPPOSITION_SELECTION) {
+    MOZ_ASSERT(popupAnchor == POPUPALIGNMENT_BOTTOMLEFT ||
+              popupAnchor == POPUPALIGNMENT_BOTTOMRIGHT);
+    MOZ_ASSERT(popupAlign == POPUPALIGNMENT_TOPLEFT ||
+               popupAlign == POPUPALIGNMENT_TOPRIGHT);
+
+    nsIFrame* selectedItemFrame = GetSelectedItemForAlignment();
+    if (selectedItemFrame) {
+      pnt.y -= originalAnchorRect.height + selectedItemFrame->GetRect().y;
+    }
+  }
+
   // Flipping horizontally is allowed as long as the popup is above or below
   // the anchor. This will happen if both the anchor and alignment are top or
   // both are bottom, but different values. Similarly, flipping vertically is
@@ -1103,6 +1149,26 @@ nsMenuPopupFrame::AdjustPositionForAnchorAlign(nsRect& anchorRect,
   }
 
   return pnt;
+}
+
+nsIFrame* nsMenuPopupFrame::GetSelectedItemForAlignment()
+{
+  // This method adjusts a menulist's popup such that the selected item is under the cursor, aligned
+  // with the menulist label.
+  nsCOMPtr<nsIDOMXULSelectControlElement> select = do_QueryInterface(mAnchorContent);
+  if (!select) {
+    // If there isn't an anchor, then try just getting the parent of the popup.
+    select = do_QueryInterface(mContent->GetParent());
+    if (!select) {
+      return nullptr;
+    }
+  }
+
+  nsCOMPtr<nsIDOMXULSelectControlItemElement> item;
+  select->GetSelectedItem(getter_AddRefs(item));
+
+  nsCOMPtr<nsIContent> selectedElement = do_QueryInterface(item);
+  return selectedElement ? selectedElement->GetPrimaryFrame() : nullptr;
 }
 
 nscoord
@@ -1583,6 +1649,17 @@ nsMenuPopupFrame::GetConstraintRect(const LayoutDeviceIntRect& aAnchorRect,
     // for content shells, clip to the client area rather than the screen area
     screenRectPixels.IntersectRect(screenRectPixels, aRootScreenRect);
   }
+  else if (!mOverrideConstraintRect.IsEmpty()) {
+    LayoutDeviceIntRect overrideConstrainRect =
+      LayoutDeviceIntRect::FromAppUnitsToNearest(mOverrideConstraintRect,
+                                                 PresContext()->AppUnitsPerDevPixel());
+    // This is currently only used for <select> elements where we want to constrain
+    // vertically to the screen but not horizontally, so do the intersection and then
+    // reset the horizontal values.
+    screenRectPixels.IntersectRect(screenRectPixels, overrideConstrainRect);
+    screenRectPixels.x = overrideConstrainRect.x;
+    screenRectPixels.width = overrideConstrainRect.width;
+  }
 
   return screenRectPixels;
 }
@@ -1716,13 +1793,9 @@ void nsMenuPopupFrame::EnsureMenuItemIsVisible(nsMenuFrame* aMenuItem)
 
 void nsMenuPopupFrame::ChangeByPage(bool aIsUp)
 {
-  nsIFrame* parentMenu = GetParent();
-  if (parentMenu) {
-    // Only scroll by page within menulists.
-    nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(parentMenu->GetContent());
-    if (!menulist) {
-      return;
-    }
+  // Only scroll by page within menulists.
+  if (!IsMenuList()) {
+    return;
   }
 
   nsMenuFrame* newMenu = nullptr;
@@ -1854,19 +1927,13 @@ nsMenuPopupFrame::ChangeMenuItem(nsMenuFrame* aMenuItem,
     // On Windows, a menulist should update its value whenever navigation was
     // done by the keyboard.
 #ifdef XP_WIN
-    if (aFromKey && IsOpen()) {
-      nsIFrame* parentMenu = GetParent();
-      if (parentMenu) {
-        nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(parentMenu->GetContent());
-        if (menulist) {
-          // Fire a command event as the new item, but we don't want to close
-          // the menu, blink it, or update any other state of the menuitem. The
-          // command event will cause the item to be selected.
-          nsContentUtils::DispatchXULCommand(aMenuItem->GetContent(), /* aTrusted = */ true,
-                                             nullptr, PresContext()->PresShell(),
-                                             false, false, false, false);
-        }
-      }
+    if (aFromKey && IsOpen() && IsMenuList()) {
+      // Fire a command event as the new item, but we don't want to close
+      // the menu, blink it, or update any other state of the menuitem. The
+      // command event will cause the item to be selected.
+      nsContentUtils::DispatchXULCommand(aMenuItem->GetContent(), /* aTrusted = */ true,
+                                         nullptr, PresContext()->PresShell(),
+                                         false, false, false, false);
     }
 #endif
   }
@@ -2268,7 +2335,8 @@ nsMenuPopupFrame::GetAlignmentPosition() const
   // The code below handles most cases of alignment, anchor and position values. Those that are
   // not handled just return POPUPPOSITION_UNKNOWN.
 
-  if (mPosition == POPUPPOSITION_OVERLAP || mPosition == POPUPPOSITION_AFTERPOINTER)
+  if (mPosition == POPUPPOSITION_OVERLAP || mPosition == POPUPPOSITION_AFTERPOINTER ||
+      mPosition == POPUPPOSITION_SELECTION)
     return mPosition;
 
   int8_t position = mPosition;

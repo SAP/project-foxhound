@@ -42,9 +42,9 @@
 
 #include "vm/ArgumentsObject-inl.h"
 #include "vm/ArrayObject-inl.h"
+#include "vm/Caches-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/NativeObject-inl.h"
-#include "vm/Runtime-inl.h"
 #include "vm/UnboxedObject-inl.h"
 
 using namespace js;
@@ -430,7 +430,9 @@ DeleteArrayElement(JSContext* cx, HandleObject obj, double index, ObjectOpResult
     MOZ_ASSERT(index >= 0);
     MOZ_ASSERT(floor(index) == index);
 
-    if (obj->is<ArrayObject>() && !obj->isIndexed()) {
+    if (obj->is<ArrayObject>() && !obj->isIndexed() &&
+        !obj->as<NativeObject>().denseElementsAreFrozen())
+    {
         ArrayObject* aobj = &obj->as<ArrayObject>();
         if (index <= UINT32_MAX) {
             uint32_t idx = uint32_t(index);
@@ -1356,6 +1358,9 @@ ArrayReverseDenseKernel(JSContext* cx, HandleObject obj, uint32_t length)
         return DenseElementResult::Success;
 
     if (Type == JSVAL_TYPE_MAGIC) {
+        if (obj->as<NativeObject>().denseElementsAreFrozen())
+            return DenseElementResult::Incomplete;
+
         /*
          * It's actually surprisingly complicated to reverse an array due to the
          * orthogonality of array length and array capacity while handling
@@ -2188,9 +2193,8 @@ ArrayShiftDenseKernel(JSContext* cx, HandleObject obj, MutableHandleValue rval)
         rval.setUndefined();
 
     DenseElementResult result = MoveBoxedOrUnboxedDenseElements<Type>(cx, obj, 0, 1, initlen - 1);
-    MOZ_ASSERT(result != DenseElementResult::Incomplete);
-    if (result == DenseElementResult::Failure)
-        return DenseElementResult::Failure;
+    if (result != DenseElementResult::Success)
+        return result;
 
     SetBoxedOrUnboxedInitializedLength<Type>(cx, obj, initlen - 1);
     return DenseElementResult::Success;
@@ -2362,6 +2366,10 @@ CanOptimizeForDenseStorage(HandleObject arr, uint32_t startingIndex, uint32_t co
 
     /* There's no optimizing possible if it's not an array. */
     if (!arr->is<ArrayObject>() && !arr->is<UnboxedArrayObject>())
+        return false;
+
+    /* If it's a frozen array, always pick the slow path */
+    if (arr->is<ArrayObject>() && arr->as<ArrayObject>().denseElementsAreFrozen())
         return false;
 
     /*
@@ -3391,8 +3399,7 @@ NewArray(ExclusiveContext* cxArg, uint32_t length,
     bool isCachable = NewObjectWithTaggedProtoIsCachable(cxArg, taggedProto, newKind, &ArrayObject::class_);
     if (isCachable) {
         JSContext* cx = cxArg->asJSContext();
-        JSRuntime* rt = cx->runtime();
-        NewObjectCache& cache = rt->newObjectCache;
+        NewObjectCache& cache = cx->caches.newObjectCache;
         NewObjectCache::EntryIndex entry = -1;
         if (cache.lookupProto(&ArrayObject::class_, proto, allocKind, &entry)) {
             gc::InitialHeap heap = GetInitialHeap(newKind, &ArrayObject::class_);
@@ -3446,7 +3453,7 @@ NewArray(ExclusiveContext* cxArg, uint32_t length,
         return nullptr;
 
     if (isCachable) {
-        NewObjectCache& cache = cxArg->asJSContext()->runtime()->newObjectCache;
+        NewObjectCache& cache = cxArg->asJSContext()->caches.newObjectCache;
         NewObjectCache::EntryIndex entry = -1;
         cache.lookupProto(&ArrayObject::class_, proto, allocKind, &entry);
         cache.fillProto(entry, &ArrayObject::class_, taggedProto, allocKind, arr);

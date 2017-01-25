@@ -9,14 +9,16 @@ var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
 
 var Services = require("Services");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-DevToolsUtils.testing = true;
-DevToolsUtils.dumpn.wantLogging = true;
-DevToolsUtils.dumpv.wantVerbose = false;
+var flags = require("devtools/shared/flags");
+flags.testing = true;
+flags.wantLogging = true;
+flags.wantVerbose = false;
 
 var { OS } = require("resource://gre/modules/osfile.jsm");
 var { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
 var { TargetFactory } = require("devtools/client/framework/target");
 var promise = require("promise");
+var defer = require("devtools/shared/defer");
 var { Task } = require("devtools/shared/task");
 var { expectState } = require("devtools/server/actors/common");
 var HeapSnapshotFileUtils = require("devtools/shared/heapsnapshot/HeapSnapshotFileUtils");

@@ -16,6 +16,7 @@ class nsIGlobalObject;
 
 namespace mozilla {
 
+class AsyncEventDispatcher;
 class ErrorResult;
 class EventListenerManager;
 
@@ -91,7 +92,10 @@ public:
    */
   virtual EventListenerManager* GetExistingListenerManager() const = 0;
 
-  virtual bool HasApzAwareListeners() const;
+  // Called from AsyncEventDispatcher to notify it is running.
+  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) {}
+
+  virtual bool IsApzAware() const;
 
 protected:
   EventHandlerNonNull* GetEventHandler(nsIAtom* aType,

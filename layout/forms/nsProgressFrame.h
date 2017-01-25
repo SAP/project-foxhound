@@ -36,8 +36,8 @@ public:
                                 const nsDisplayListSet& aLists) override;
 
   virtual void Reflow(nsPresContext*           aCX,
-                      nsHTMLReflowMetrics&     aDesiredSize,
-                      const nsHTMLReflowState& aReflowState,
+                      ReflowOutput&     aDesiredSize,
+                      const ReflowInput& aReflowInput,
                       nsReflowStatus&          aStatus) override;
 
   virtual nsIAtom* GetType() const override;
@@ -86,11 +86,11 @@ public:
   virtual Element* GetPseudoElement(CSSPseudoElementType aType) override;
 
 protected:
-  // Helper function which reflow the anonymous div frame.
-  void ReflowBarFrame(nsIFrame*                aBarFrame,
-                      nsPresContext*           aPresContext,
-                      const nsHTMLReflowState& aReflowState,
-                      nsReflowStatus&          aStatus);
+  // Helper function to reflow a child frame.
+  void ReflowChildFrame(nsIFrame*          aChild,
+                        nsPresContext*     aPresContext,
+                        const ReflowInput& aReflowInput,
+                        nsReflowStatus&    aStatus);
 
   /**
    * The div used to show the progress bar.
@@ -100,4 +100,3 @@ protected:
 };
 
 #endif
-

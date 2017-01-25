@@ -6,6 +6,7 @@
 #define MOCK_MEDIA_DECODER_OWNER_H_
 
 #include "MediaDecoderOwner.h"
+#include "nsAutoPtr.h"
 
 namespace mozilla
 {
@@ -24,7 +25,7 @@ public:
   {
   }
   void NetworkError() override {}
-  void DecodeError() override {}
+  void DecodeError(const MediaResult& aError) override {}
   bool HasError() const override { return false; }
   void LoadAborted() override {}
   void PlaybackEnded() override {}
@@ -33,10 +34,8 @@ public:
   void DownloadProgressed() override {}
   void UpdateReadyState() override {}
   void FirstFrameLoaded() override {}
-#ifdef MOZ_EME
   void DispatchEncrypted(const nsTArray<uint8_t>& aInitData,
                          const nsAString& aInitDataType) override {}
-#endif // MOZ_EME
   bool IsActive() const override { return true; }
   bool IsHidden() const override { return false; }
   void DownloadSuspended() override {}
@@ -47,8 +46,8 @@ public:
   {
     return nullptr;
   }
-  void ResetConnectionState() override {}
   void SetAudibleState(bool aAudible) override {}
+  void NotifyXPCOMShutdown() override {}
 };
 }
 

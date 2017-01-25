@@ -18,7 +18,6 @@
 <?xml-stylesheet href="chrome://devtools/content/shared/splitview.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/skin/widgets.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/skin/splitview.css" type="text/css"?>
-<?xml-stylesheet href="chrome://devtools/content/styleeditor/styleeditor.css" type="text/css"?>
 <?xml-stylesheet href="chrome://devtools/skin/styleeditor.css" type="text/css"?>
 <?xul-overlay href="chrome://global/content/editMenuOverlay.xul"?>
 
@@ -97,12 +96,10 @@
              <xul:hbox class="devtools-toolbarbutton-group">
               <xul:toolbarbutton class="style-editor-newButton devtools-toolbarbutton"
                           accesskey="&newButton.accesskey;"
-                          tooltiptext="&newButton.tooltip;"
-                          label="&newButton.label;"/>
+                          tooltiptext="&newButton.tooltip;"/>
               <xul:toolbarbutton class="style-editor-importButton devtools-toolbarbutton"
                           accesskey="&importButton.accesskey;"
-                          tooltiptext="&importButton.tooltip;"
-                          label="&importButton.label;"/>
+                          tooltiptext="&importButton.tooltip;"/>
             </xul:hbox>
             <xul:spacer/>
             <xul:toolbarbutton id="style-editor-options"

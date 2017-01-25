@@ -29,7 +29,7 @@
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLMediaElement.h"
-#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/KeyframeEffectReadOnly.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsObjectLoadingContent.h"
 #include "nsDOMMutationObserver.h"
@@ -231,8 +231,11 @@ nsNodeUtils::ContentRemoved(nsINode* aContainer,
 Maybe<NonOwningAnimationTarget>
 nsNodeUtils::GetTargetForAnimation(const Animation* aAnimation)
 {
-  KeyframeEffectReadOnly* effect = aAnimation->GetEffect();
-  return effect ? effect->GetTarget() : Nothing();
+  AnimationEffectReadOnly* effect = aAnimation->GetEffect();
+  if (!effect || !effect->AsKeyframeEffect()) {
+    return Nothing();
+  }
+  return effect->AsKeyframeEffect()->GetTarget();
 }
 
 void
@@ -400,7 +403,7 @@ nsNodeUtils::CloneNodeImpl(nsINode *aNode, bool aDeep, nsINode **aResult)
                       getter_AddRefs(newNode));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  newNode.swap(*aResult);
+  newNode.forget(aResult);
   return NS_OK;
 }
 
@@ -468,15 +471,14 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, bool aClone, bool aDeep,
       // enqueing created callback and prototype swizzling.
       Element* elem = clone->AsElement();
       if (nsContentUtils::IsCustomElementName(nodeInfo->NameAtom())) {
-        elem->OwnerDoc()->SetupCustomElement(elem, nodeInfo->NamespaceID());
+        nsContentUtils::SetupCustomElement(elem);
       } else {
         // Check if node may be custom element by type extension.
         // ex. <button is="x-button">
         nsAutoString extension;
         if (elem->GetAttr(kNameSpaceID_None, nsGkAtoms::is, extension) &&
             !extension.IsEmpty()) {
-          elem->OwnerDoc()->SetupCustomElement(elem, nodeInfo->NamespaceID(),
-                                               &extension);
+          nsContentUtils::SetupCustomElement(elem, &extension);
         }
       }
     }
@@ -506,7 +508,7 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, bool aClone, bool aDeep,
 
     aNode->mNodeInfo.swap(newNodeInfo);
     if (elem) {
-      elem->NodeInfoChanged(newNodeInfo);
+      elem->NodeInfoChanged();
     }
 
     nsIDocument* newDoc = aNode->OwnerDoc();
@@ -570,8 +572,13 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, bool aClone, bool aDeep,
         JSAutoCompartment ac(cx, wrapper);
         rv = ReparentWrapper(cx, wrapper);
         if (NS_FAILED(rv)) {
+          if (wasRegistered) {
+            aNode->OwnerDoc()->UnregisterActivityObserver(aNode->AsElement());
+          }
           aNode->mNodeInfo.swap(newNodeInfo);
-
+          if (wasRegistered) {
+            aNode->OwnerDoc()->RegisterActivityObserver(aNode->AsElement());
+          }
           return rv;
         }
       }

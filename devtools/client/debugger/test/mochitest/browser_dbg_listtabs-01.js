@@ -29,7 +29,7 @@ function test() {
       .then(testSecondTab)
       .then(testRemoveTab)
       .then(testAttachRemovedTab)
-      .then(closeConnection)
+      .then(() => gClient.close())
       .then(finish)
       .then(null, aError => {
         ok(false, "Got an error: " + aError.message + "\n" + aError.stack);
@@ -80,18 +80,13 @@ function testAttachRemovedTab() {
     });
 
     gClient.request({ to: gTab2Actor, type: "attach" }, aResponse => {
-      is(aResponse.type, "exited", "Tab should consider itself exited.");
+      is(aResponse.error, "connectionClosed",
+         "Connection is gone since the tab was removed.");
       deferred.resolve();
     });
 
     return deferred.promise;
   });
-}
-
-function closeConnection() {
-  let deferred = promise.defer();
-  gClient.close(deferred.resolve);
-  return deferred.promise;
 }
 
 registerCleanupFunction(function () {

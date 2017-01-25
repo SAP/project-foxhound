@@ -11,7 +11,6 @@
 #include "mozIDOMWindow.h"
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsTArray.h"
 #include "mozilla/dom/EventTarget.h"
 #include "js/TypeDecls.h"
@@ -31,7 +30,6 @@ class nsIDocument;
 class nsIIdleObserver;
 class nsIScriptTimeoutHandler;
 class nsIURI;
-class nsPerformance;
 class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
 class nsPIWindowRoot;
@@ -44,11 +42,10 @@ namespace mozilla {
 namespace dom {
 class AudioContext;
 class Element;
-class ServiceWorkerRegistrationMainThread;
+class Performance;
+class ServiceWorkerRegistration;
+class CustomElementsRegistry;
 } // namespace dom
-namespace gfx {
-class VRDeviceProxy;
-} // namespace gfx
 } // namespace mozilla
 
 // Popup control state enum. The values in this enum must go from most
@@ -67,7 +64,8 @@ enum UIStateChangeType
 {
   UIStateChangeType_NoChange,
   UIStateChangeType_Set,
-  UIStateChangeType_Clear
+  UIStateChangeType_Clear,
+  UIStateChangeType_Invalid // used for serialization only
 };
 
 enum class FullscreenReason
@@ -96,7 +94,7 @@ public:
   const nsPIDOMWindowOuter* AsOuter() const;
 
   virtual nsPIDOMWindowOuter* GetPrivateRoot() = 0;
-
+  virtual mozilla::dom::CustomElementsRegistry* CustomElements() = 0;
   // Outer windows only.
   virtual void ActivateOrDeactivate(bool aActivate) = 0;
 
@@ -321,7 +319,7 @@ public:
   {
     return mMayHavePaintEventListener;
   }
-  
+
   /**
    * Call this to indicate that some node (this window, its document,
    * or content in that document) has a touch event listener.
@@ -338,14 +336,10 @@ public:
    * Moves the top-level window into fullscreen mode if aIsFullScreen is true,
    * otherwise exits fullscreen.
    *
-   * If aHMD is not null, the window is made full screen on the given VR HMD
-   * device instead of its currrent display.
-   *
    * Outer windows only.
    */
   virtual nsresult SetFullscreenInternal(
-    FullscreenReason aReason, bool aIsFullscreen,
-    mozilla::gfx::VRDeviceProxy *aHMD = nullptr) = 0;
+    FullscreenReason aReason, bool aIsFullscreen) = 0;
 
   /**
    * This function should be called when the fullscreen state is flipped.
@@ -409,12 +403,6 @@ public:
    */
   virtual void SetKeyboardIndicators(UIStateChangeType aShowAccelerators,
                                      UIStateChangeType aShowFocusRings) = 0;
-
-  /**
-   * Get the keyboard indicator state for accelerators and focus rings.
-   */
-  virtual void GetKeyboardIndicators(bool* aShowAccelerators,
-                                     bool* aShowFocusRings) = 0;
 
   /**
    * Indicates that the page in the window has been hidden. This is used to
@@ -616,10 +604,10 @@ protected:
   nsIDocShell* MOZ_NON_OWNING_REF mDocShell;  // Weak Reference
 
   // mPerformance is only used on inner windows.
-  RefPtr<nsPerformance>       mPerformance;
+  RefPtr<mozilla::dom::Performance> mPerformance;
 
   typedef nsRefPtrHashtable<nsStringHashKey,
-                            mozilla::dom::ServiceWorkerRegistrationMainThread>
+                            mozilla::dom::ServiceWorkerRegistration>
           ServiceWorkerRegistrationTable;
   ServiceWorkerRegistrationTable mServiceWorkerRegistrationTable;
 
@@ -742,11 +730,11 @@ public:
   bool GetAudioCaptured() const;
   nsresult SetAudioCapture(bool aCapture);
 
-  already_AddRefed<mozilla::dom::ServiceWorkerRegistrationMainThread>
+  already_AddRefed<mozilla::dom::ServiceWorkerRegistration>
     GetServiceWorkerRegistration(const nsAString& aScope);
   void InvalidateServiceWorkerRegistration(const nsAString& aScope);
 
-  nsPerformance* GetPerformance();
+  mozilla::dom::Performance* GetPerformance();
 
   bool HasMutationListeners(uint32_t aMutationEventType) const
   {
@@ -852,6 +840,12 @@ public:
     GetDoc();
     return GetCurrentInnerWindow();
   }
+
+  /**
+   * Set initial keyboard indicator state for accelerators and focus rings.
+   */
+  void SetInitialKeyboardIndicators(UIStateChangeType aShowAccelerators,
+                                    UIStateChangeType aShowFocusRings);
 
   // Internal getter/setter for the frame element, this version of the
   // getter crosses chrome boundaries whereas the public scriptable

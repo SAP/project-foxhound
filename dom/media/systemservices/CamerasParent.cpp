@@ -5,12 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CamerasParent.h"
-#include "CamerasUtils.h"
 #include "MediaEngine.h"
 #include "MediaUtils.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/Services.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -40,6 +39,24 @@ namespace camera {
 //   called "VideoCapture". On Windows this is a thread with an event loop
 //   suitable for UI access.
 
+void InputObserver::DeviceChange() {
+  LOG((__PRETTY_FUNCTION__));
+  MOZ_ASSERT(mParent);
+
+  RefPtr<nsIRunnable> ipc_runnable =
+    media::NewRunnableFrom([this]() -> nsresult {
+      if (mParent->IsShuttingDown()) {
+        return NS_ERROR_FAILURE;
+      }
+      Unused << mParent->SendDeviceChange();
+      return NS_OK;
+    });
+
+  nsIThread* thread = mParent->GetBackgroundThread();
+  MOZ_ASSERT(thread != nullptr);
+  thread->Dispatch(ipc_runnable, NS_DISPATCH_NORMAL);
+};
+
 class FrameSizeChangeRunnable : public Runnable {
 public:
   FrameSizeChangeRunnable(CamerasParent *aParent, CaptureEngine capEngine,
@@ -47,7 +64,7 @@ public:
     : mParent(aParent), mCapEngine(capEngine), mCapId(cap_id),
       mWidth(aWidth), mHeight(aHeight) {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     if (mParent->IsShuttingDown()) {
       // Communication channel is being torn down
       LOG(("FrameSizeChangeRunnable is active without active Child"));
@@ -115,7 +132,7 @@ public:
     }
   };
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     if (mParent->IsShuttingDown()) {
       // Communication channel is being torn down
       mResult = 0;
@@ -400,6 +417,15 @@ CamerasParent::SetupEngine(CaptureEngine aCapEngine)
     return false;
   }
 
+  InputObserver** observer = mObservers.AppendElement(
+          new InputObserver(this));
+
+#ifdef DEBUG
+  MOZ_ASSERT(0 == helper->mPtrViECapture->RegisterInputObserver(*observer));
+#else
+  helper->mPtrViECapture->RegisterInputObserver(*observer);
+#endif
+
   helper->mPtrViERender = webrtc::ViERender::GetInterface(helper->mEngine);
   if (!helper->mPtrViERender) {
     LOG(("ViERender::GetInterface failed"));
@@ -436,6 +462,12 @@ CamerasParent::CloseEngines()
       mEngines[i].mPtrViERender = nullptr;
     }
     if (mEngines[i].mPtrViECapture) {
+#ifdef DEBUG
+      MOZ_ASSERT(0 == mEngines[i].mPtrViECapture->DeregisterInputObserver());
+#else
+      mEngines[i].mPtrViECapture->DeregisterInputObserver();
+#endif
+
       mEngines[i].mPtrViECapture->Release();
         mEngines[i].mPtrViECapture = nullptr;
     }
@@ -449,6 +481,11 @@ CamerasParent::CloseEngines()
       mEngines[i].mEngine = nullptr;
     }
   }
+
+  for (InputObserver* observer : mObservers) {
+    delete observer;
+  }
+  mObservers.Clear();
 
   mWebRTCAlive = false;
 }
@@ -670,9 +707,8 @@ static bool
 HasCameraPermission(const nsCString& aOrigin)
 {
   // Name used with nsIPermissionManager
-  static const char* cameraPermission = "camera";
+  static const char* cameraPermission = "MediaManagerVideo";
   bool allowed = false;
-  bool permanent = false;
   nsresult rv;
   nsCOMPtr<nsIPermissionManager> mgr =
     do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
@@ -691,19 +727,9 @@ HasCameraPermission(const nsCString& aOrigin)
                                                    &video);
         if (NS_SUCCEEDED(rv)) {
           allowed = (video == nsIPermissionManager::ALLOW_ACTION);
-          // Was allowed, now see if this is a persistent permission
-          // or a session one.
-          if (allowed) {
-            rv = mgr->TestExactPermanentPermission(principal,
-                                                   cameraPermission,
-                                                   &video);
-            if (NS_SUCCEEDED(rv)) {
-              permanent = (video == nsIPermissionManager::ALLOW_ACTION);
-            }
-          }
         }
         // Session permissions are removed after one use.
-        if (allowed && !permanent) {
+        if (allowed) {
           mgr->RemoveFromPrincipal(principal, cameraPermission);
         }
       }

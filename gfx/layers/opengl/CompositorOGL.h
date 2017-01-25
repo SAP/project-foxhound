@@ -24,7 +24,6 @@
 #include "mozilla/layers/Compositor.h"  // for SurfaceInitMode, Compositor, etc
 #include "mozilla/layers/CompositorTypes.h"  // for MaskType::MaskType::NumMaskTypes, etc
 #include "mozilla/layers/LayersTypes.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr, nsAutoPtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_ASSERTION, NS_WARNING
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
@@ -32,7 +31,6 @@
 #include "nsThreadUtils.h"              // for nsRunnable
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType
 #include "nscore.h"                     // for NS_IMETHOD
-#include "gfxVR.h"
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
 #include "nsTHashtable.h"               // for nsTHashtable
@@ -155,33 +153,6 @@ protected:
   nsTArray<GLuint> mUnusedTextures;
 };
 
-struct CompositorOGLVRObjects {
-  bool mInitialized;
-
-  gfx::VRHMDConfiguration mConfiguration;
-
-  GLuint mDistortionVertices[2];
-  GLuint mDistortionIndices[2];
-  GLuint mDistortionIndexCount[2];
-
-  GLint mAPosition;
-  GLint mATexCoord0;
-  GLint mATexCoord1;
-  GLint mATexCoord2;
-  GLint mAGenericAttribs;
-
-  // The program here implements distortion rendering for VR devices
-  // (in this case Oculus only).  We'll need to extend this to support
-  // other device types in the future.
-
-  // 0 = TEXTURE_2D, 1 = TEXTURE_RECTANGLE for source
-  GLuint mDistortionProgram[2];
-  GLint mUTexture[2];
-  GLint mUVREyeToSource[2];
-  GLint mUVRDestionatinScaleAndOffset[2];
-  GLint mUHeight[2];
-};
-
 // If you want to make this class not final, first remove calls to virtual
 // methods (Destroy) that are made in the destructor.
 class CompositorOGL final : public Compositor
@@ -194,7 +165,7 @@ class CompositorOGL final : public Compositor
   std::map<ShaderConfigOGL, ShaderProgramOGL*> mPrograms;
 public:
   explicit CompositorOGL(CompositorBridgeParent* aParent,
-                         widget::CompositorWidgetProxy* aWidget,
+                         widget::CompositorWidget* aWidget,
                          int aSurfaceWidth = -1, int aSurfaceHeight = -1,
                          bool aUseExternalSurfaceSize = false);
 
@@ -207,7 +178,7 @@ public:
   virtual already_AddRefed<DataTextureSource>
   CreateDataTextureSource(TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
 
-  virtual bool Initialize() override;
+  virtual bool Initialize(nsCString* const out_failureReason) override;
 
   virtual void Destroy() override;
 
@@ -338,15 +309,6 @@ public:
   }
 
 private:
-  bool InitializeVR();
-  void DestroyVR(GLContext *gl);
-
-  void DrawVRDistortion(const gfx::Rect& aRect,
-                        const gfx::IntRect& aClipRect,
-                        const EffectChain& aEffectChain,
-                        gfx::Float aOpacity,
-                        const gfx::Matrix4x4& aTransform);
-
   void PrepareViewport(CompositingRenderTargetOGL *aRenderTarget);
 
   /** Widget associated with this compositor */
@@ -483,8 +445,6 @@ private:
   gfx::IntSize mViewportSize;
 
   ShaderProgramOGL *mCurrentProgram;
-
-  CompositorOGLVRObjects mVR;
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
   nsTHashtable<nsPtrHashKey<ImageHostOverlay> > mImageHostOverlays;

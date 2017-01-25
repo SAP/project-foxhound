@@ -27,7 +27,7 @@
 #include <string.h>
 #include "prdtoa.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Snprintf.h"
+#include "mozilla/Sprintf.h"
 #include "prmem.h"
 #include "nsCRTGlue.h"
 #include "nsTextFormatter.h"
@@ -94,6 +94,8 @@ struct NumArgState
 #define _NEG		0x10
 
 #define ELEMENTS_OF(array_) (sizeof(array_) / sizeof(array_[0]))
+
+#define PR_CHECK_DELETE(nas) if (nas && (nas != nasArray)) { PR_DELETE(nas); }
 
 /*
 ** Fill into the buffer using the data in src
@@ -527,7 +529,7 @@ cvt_S(SprintfState* aState, const char16_t* aStr, int aWidth, int aPrec,
   }
 
   /* and away we go */
-  return fill2(aState, aStr ? aStr : MOZ_UTF16("(null)"), slen, aWidth, aFlags);
+  return fill2(aState, aStr ? aStr : u"(null)", slen, aWidth, aFlags);
 }
 
 /*
@@ -631,7 +633,7 @@ BuildArgArray(const char16_t* aFmt, va_list aAp, int* aRv,
       continue;
     }
     cn = 0;
-    /* should imporve error check later */
+    /* should improve error check later */
     while (c && c != '$') {
       cn = cn * 10 + c - '0';
       c = *p++;
@@ -803,12 +805,15 @@ BuildArgArray(const char16_t* aFmt, va_list aAp, int* aRv,
           PR_DELETE(nas);
         }
         *aRv = -1;
+        va_end(aAp);
         return nullptr;
     }
     cn++;
   }
+  va_end(aAp);
   return nas;
 }
+
 
 /*
 ** The workhorse sprintf code.
@@ -858,6 +863,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
     if (c != '%') {
       rv = (*aState->stuff)(aState, aFmt - 1, 1);
       if (rv < 0) {
+        va_end(aAp);
+        PR_CHECK_DELETE(nas);
         return rv;
       }
       continue;
@@ -873,6 +880,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
       /* quoting a % with %% */
       rv = (*aState->stuff)(aState, aFmt - 1, 1);
       if (rv < 0) {
+        va_end(aAp);
+        PR_CHECK_DELETE(nas);
         return rv;
       }
       continue;
@@ -881,16 +890,17 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
     if (nas) {
       /* the aFmt contains the Numbered Arguments feature */
       i = 0;
-      /* should imporve error check later */
+      /* should improve error check later */
       while (c && c != '$') {
         i = (i * 10) + (c - '0');
         c = *aFmt++;
       }
 
       if (nas[i - 1].type == NumArgState::UNKNOWN) {
-        if (nas && (nas != nasArray)) {
+        if (nas != nasArray) {
           PR_DELETE(nas);
         }
+        va_end(aAp);
         return -1;
       }
 
@@ -1037,6 +1047,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
           do_long:
             rv = cvt_l(aState, u.l, width, prec, radix, type, flags, hexp);
             if (rv < 0) {
+              va_end(aAp);
+              PR_CHECK_DELETE(nas);
               return rv;
             }
             break;
@@ -1053,6 +1065,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
           do_longlong:
             rv = cvt_ll(aState, u.ll, width, prec, radix, type, flags, hexp);
             if (rv < 0) {
+              va_end(aAp);
+              PR_CHECK_DELETE(nas);
               return rv;
             }
             break;
@@ -1077,18 +1091,24 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
           while (width-- > 1) {
             rv = (*aState->stuff)(aState, &space, 1);
             if (rv < 0) {
+              va_end(aAp);
+              PR_CHECK_DELETE(nas);
               return rv;
             }
           }
         }
         rv = (*aState->stuff)(aState, &u.ch, 1);
         if (rv < 0) {
+          va_end(aAp);
+          PR_CHECK_DELETE(nas);
           return rv;
         }
         if (flags & _LEFT) {
           while (width-- > 1) {
             rv = (*aState->stuff)(aState, &space, 1);
             if (rv < 0) {
+              va_end(aAp);
+              PR_CHECK_DELETE(nas);
               return rv;
             }
           }
@@ -1120,6 +1140,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
         u.S = va_arg(aAp, const char16_t*);
         rv = cvt_S(aState, u.S, width, prec, flags);
         if (rv < 0) {
+          va_end(aAp);
+          PR_CHECK_DELETE(nas);
           return rv;
         }
         break;
@@ -1128,6 +1150,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
         u.s = va_arg(aAp, const char*);
         rv = cvt_s(aState, u.s, width, prec, flags);
         if (rv < 0) {
+          va_end(aAp);
+          PR_CHECK_DELETE(nas);
           return rv;
         }
         break;
@@ -1147,10 +1171,14 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
         char16_t perct = '%';
         rv = (*aState->stuff)(aState, &perct, 1);
         if (rv < 0) {
+          va_end(aAp);
+          PR_CHECK_DELETE(nas);
           return rv;
         }
         rv = (*aState->stuff)(aState, aFmt - 1, 1);
         if (rv < 0) {
+          va_end(aAp);
+          PR_CHECK_DELETE(nas);
           return rv;
         }
     }
@@ -1161,9 +1189,8 @@ dosprintf(SprintfState* aState, const char16_t* aFmt, va_list aAp)
 
   rv = (*aState->stuff)(aState, &null, 1);
 
-  if (nas && (nas != nasArray)) {
-    PR_DELETE(nas);
-  }
+  va_end(aAp);
+  PR_CHECK_DELETE(nas);
 
   return rv;
 }
@@ -1223,7 +1250,7 @@ GrowStuff(SprintfState* aState, const char16_t* aStr, uint32_t aLen)
     --aLen;
     *aState->cur++ = *aStr++;
   }
-  PR_ASSERT((uint32_t)(aState->cur - aState->base) <= aState->maxlen);
+  MOZ_ASSERT((uint32_t)(aState->cur - aState->base) <= aState->maxlen);
   return 0;
 }
 
@@ -1318,7 +1345,7 @@ nsTextFormatter::snprintf(char16_t* aOut, uint32_t aOutLen,
   va_list ap;
   uint32_t rv;
 
-  PR_ASSERT((int32_t)aOutLen > 0);
+  MOZ_ASSERT((int32_t)aOutLen > 0);
   if ((int32_t)aOutLen <= 0) {
     return 0;
   }
@@ -1336,7 +1363,7 @@ nsTextFormatter::vsnprintf(char16_t* aOut, uint32_t aOutLen,
   SprintfState ss;
   uint32_t n;
 
-  PR_ASSERT((int32_t)aOutLen > 0);
+  MOZ_ASSERT((int32_t)aOutLen > 0);
   if ((int32_t)aOutLen <= 0) {
     return 0;
   }

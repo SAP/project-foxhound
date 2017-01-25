@@ -20,19 +20,10 @@ namespace ImageDataSerializer {
 
 using namespace gfx;
 
-#define MOZ_ALIGN_WORD(x) (((x) + 3) & ~3)
-
 int32_t
 ComputeRGBStride(SurfaceFormat aFormat, int32_t aWidth)
 {
-  CheckedInt<int32_t> size = BytesPerPixel(aFormat);
-  size *= aWidth;
-  if (!size.isValid() || size.value() <= 0) {
-    gfxDebug() << "ComputeStride overflow " << aWidth;
-    return 0;
-  }
-
-  return GetAlignedStride<4>(size.value());
+  return GetAlignedStride<4>(aWidth, BytesPerPixel(aFormat));
 }
 
 int32_t
@@ -52,8 +43,11 @@ ComputeRGBBufferSize(IntSize aSize, SurfaceFormat aFormat)
     return 0;
   }
 
-  int32_t bufsize = GetAlignedStride<16>(ComputeRGBStride(aFormat, aSize.width)
-                                         * aSize.height);
+  // Note we're passing height instad of the bpp parameter, but the end
+  // result is the same - and the bpp was already taken care of in the
+  // ComputeRGBStride function.
+  int32_t bufsize = GetAlignedStride<16>(ComputeRGBStride(aFormat, aSize.width),
+                                         aSize.height);
 
   if (bufsize < 0) {
     // This should not be possible thanks to Factory::AllowedSurfaceSize
@@ -78,8 +72,8 @@ ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, int32_t aYStride,
     return 0;
   }
   // Overflow checks are performed in AllowedSurfaceSize
-  return MOZ_ALIGN_WORD(aYSize.height * aYStride)
-         + 2 * MOZ_ALIGN_WORD(aCbCrSize.height * aCbCrStride);
+  return GetAlignedStride<4>(aYSize.height, aYStride) +
+         2 * GetAlignedStride<4>(aCbCrSize.height, aCbCrStride);
 }
 
 // Minimum required shmem size in bytes
@@ -92,16 +86,17 @@ ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, const gfx::IntSize& aCbCrSize
 uint32_t
 ComputeYCbCrBufferSize(uint32_t aBufferSize)
 {
-  return MOZ_ALIGN_WORD(aBufferSize);
+  return GetAlignedStride<4>(aBufferSize, 1);
 }
 
 void ComputeYCbCrOffsets(int32_t yStride, int32_t yHeight,
                          int32_t cbCrStride, int32_t cbCrHeight,
-                         uint32_t& outYOffset, uint32_t& outCbOffset, uint32_t& outCrOffset)
+                         uint32_t& outYOffset, uint32_t& outCbOffset,
+                         uint32_t& outCrOffset)
 {
   outYOffset = 0;
-  outCbOffset = outYOffset + MOZ_ALIGN_WORD(yStride * yHeight);
-  outCrOffset = outCbOffset + MOZ_ALIGN_WORD(cbCrStride * cbCrHeight);
+  outCbOffset = outYOffset + GetAlignedStride<4>(yStride, yHeight);
+  outCrOffset = outCbOffset + GetAlignedStride<4>(cbCrStride, cbCrHeight);
 }
 
 gfx::SurfaceFormat FormatFromBufferDescriptor(const BufferDescriptor& aDescriptor)
@@ -128,6 +123,30 @@ gfx::IntSize SizeFromBufferDescriptor(const BufferDescriptor& aDescriptor)
   }
 }
 
+Maybe<gfx::IntSize> CbCrSizeFromBufferDescriptor(const BufferDescriptor& aDescriptor)
+{
+  switch (aDescriptor.type()) {
+    case BufferDescriptor::TRGBDescriptor:
+      return Nothing();
+    case BufferDescriptor::TYCbCrDescriptor:
+      return Some(aDescriptor.get_YCbCrDescriptor().cbCrSize());
+    default:
+      MOZ_CRASH("GFX:  CbCrSizeFromBufferDescriptor");
+  }
+}
+
+Maybe<StereoMode> StereoModeFromBufferDescriptor(const BufferDescriptor& aDescriptor)
+{
+  switch (aDescriptor.type()) {
+    case BufferDescriptor::TRGBDescriptor:
+      return Nothing();
+    case BufferDescriptor::TYCbCrDescriptor:
+      return Some(aDescriptor.get_YCbCrDescriptor().stereoMode());
+    default:
+      MOZ_CRASH("GFX:  CbCrSizeFromBufferDescriptor");
+  }
+}
+
 uint8_t* GetYChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor)
 {
   return aBuffer + aDescriptor.yOffset();
@@ -144,15 +163,27 @@ uint8_t* GetCrChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor)
 }
 
 already_AddRefed<DataSourceSurface>
-DataSourceSurfaceFromYCbCrDescriptor(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor)
+DataSourceSurfaceFromYCbCrDescriptor(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor, gfx::DataSourceSurface* aSurface)
 {
   gfx::IntSize ySize = aDescriptor.ySize();
   gfx::IntSize cbCrSize = aDescriptor.cbCrSize();
   int32_t yStride = ySize.width;
   int32_t cbCrStride = cbCrSize.width;
 
-  RefPtr<DataSourceSurface> result =
-    Factory::CreateDataSourceSurface(ySize, gfx::SurfaceFormat::B8G8R8X8);
+  RefPtr<DataSourceSurface> result;
+  if (aSurface) {
+    MOZ_ASSERT(aSurface->GetSize() == ySize);
+    MOZ_ASSERT(aSurface->GetFormat() == gfx::SurfaceFormat::B8G8R8X8);
+    if (aSurface->GetSize() == ySize &&
+        aSurface->GetFormat() == gfx::SurfaceFormat::B8G8R8X8) {
+      result = aSurface;
+    }
+  }
+
+  if (!result) {
+    result =
+      Factory::CreateDataSourceSurface(ySize, gfx::SurfaceFormat::B8G8R8X8);
+  }
   if (NS_WARN_IF(!result)) {
     return nullptr;
   }
@@ -182,6 +213,32 @@ DataSourceSurfaceFromYCbCrDescriptor(uint8_t* aBuffer, const YCbCrDescriptor& aD
   return result.forget();
 }
 
+void
+ConvertAndScaleFromYCbCrDescriptor(uint8_t* aBuffer,
+                                   const YCbCrDescriptor& aDescriptor,
+                                   const gfx::SurfaceFormat& aDestFormat,
+                                   const gfx::IntSize& aDestSize,
+                                   unsigned char* aDestBuffer,
+                                   int32_t aStride)
+{
+  MOZ_ASSERT(aBuffer);
+  gfx::IntSize ySize = aDescriptor.ySize();
+  gfx::IntSize cbCrSize = aDescriptor.cbCrSize();
+  int32_t yStride = ySize.width;
+  int32_t cbCrStride = cbCrSize.width;
+
+  layers::PlanarYCbCrData ycbcrData;
+  ycbcrData.mYChannel     = GetYChannel(aBuffer, aDescriptor);
+  ycbcrData.mYStride      = yStride;
+  ycbcrData.mYSize        = ySize;
+  ycbcrData.mCbChannel    = GetCbChannel(aBuffer, aDescriptor);
+  ycbcrData.mCrChannel    = GetCrChannel(aBuffer, aDescriptor);
+  ycbcrData.mCbCrStride   = cbCrStride;
+  ycbcrData.mCbCrSize     = cbCrSize;
+  ycbcrData.mPicSize      = ySize;
+
+  gfx::ConvertYCbCrToRGB(ycbcrData, aDestFormat, aDestSize, aDestBuffer, aStride);
+}
 
 } // namespace ImageDataSerializer
 } // namespace layers

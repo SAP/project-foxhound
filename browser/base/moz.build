@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -16,7 +16,6 @@ MOCHITEST_CHROME_MANIFESTS += [
 
 BROWSER_CHROME_MANIFESTS += [
     'content/test/alerts/browser.ini',
-    'content/test/chat/browser.ini',
     'content/test/general/browser.ini',
     'content/test/newtab/browser.ini',
     'content/test/plugins/browser.ini',
@@ -25,6 +24,7 @@ BROWSER_CHROME_MANIFESTS += [
     'content/test/social/browser.ini',
     'content/test/tabPrompts/browser.ini',
     'content/test/urlbar/browser.ini',
+    'content/test/webrtc/browser.ini',
 ]
 
 DEFINES['MOZ_APP_VERSION'] = CONFIG['MOZ_APP_VERSION']

@@ -17,16 +17,6 @@
      (potentially) of the push feature. -->
 #include GcmAndroidManifest_permissions.xml.in
 
-    <!-- A signature level permission specific to each Firefox version (Android
-         package name, e.g., org.mozilla.firefox).  Use this permission to
-         broadcast securely within a single Firefox version.  This needs to
-         agree with GlobalConstants.PER_ANDROID_PACKAGE_PERMISSION. -->
-    <permission
-        android:name="@ANDROID_PACKAGE_NAME@.permission.PER_ANDROID_PACKAGE"
-        android:protectionLevel="signature"/>
-
-    <uses-permission android:name="@ANDROID_PACKAGE_NAME@.permission.PER_ANDROID_PACKAGE" />
-
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -60,13 +50,6 @@
     <uses-feature android:name="android.hardware.location" android:required="false"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen"/>
-
-#ifdef NIGHTLY_BUILD
-    <!-- Contacts API -->
-    <uses-permission android:name="android.permission.READ_CONTACTS"/>
-    <uses-permission android:name="android.permission.WRITE_CONTACTS"/>
-    <uses-permission android:name="android.permission.GET_ACCOUNTS"/>
-#endif
 
     <!-- Tab Queue -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>

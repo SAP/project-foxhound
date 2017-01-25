@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -46,18 +46,20 @@ EXPORTS += [
     'imgRequestProxy.h',
     'IProgressObserver.h',
     'Orientation.h',
-    'SurfaceCache.h',
-    'SurfaceFlags.h',
+    'SurfaceCacheUtils.h',
 ]
 
 UNIFIED_SOURCES += [
+    'AnimationSurfaceProvider.cpp',
     'ClippedImage.cpp',
+    'DecodedSurfaceProvider.cpp',
     'DecodePool.cpp',
     'Decoder.cpp',
     'DecoderFactory.cpp',
     'DynamicImage.cpp',
     'FrameAnimator.cpp',
     'FrozenImage.cpp',
+    'IDecodingTask.cpp',
     'Image.cpp',
     'ImageCacheKey.cpp',
     'ImageFactory.cpp',
@@ -71,6 +73,7 @@ UNIFIED_SOURCES += [
     'ShutdownTracker.cpp',
     'SourceBuffer.cpp',
     'SurfaceCache.cpp',
+    'SurfaceCacheUtils.cpp',
     'SurfacePipe.cpp',
     'SVGDocumentWrapper.cpp',
     'VectorImage.cpp',

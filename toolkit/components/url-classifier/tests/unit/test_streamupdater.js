@@ -132,7 +132,6 @@ function testMultipleTables() {
   var add2Urls = [ "foo-multiple.com/b" ];
   var add3Urls = [ "bar-multiple.com/d" ];
   var add4Urls = [ "bar-multiple.com/e" ];
-  var add5Urls = [ "bar-multiple.com/f" ];
   var add6Urls = [ "bar-multiple.com/g" ];
 
   var update = "n:1000\n";
@@ -161,12 +160,6 @@ function testMultipleTables() {
        "urls" : add4Urls }]);
   update += "u:data:," + encodeURIComponent(update4) + "\n";
 
-  update += "i:test-forbid-simple\n";
-  var update5 = buildBareUpdate(
-    [{ "chunkNum" : 5,
-       "urls" : add5Urls }]);
-  update += "u:data:," + encodeURIComponent(update5) + "\n";
-
   update += "i:test-block-simple\n";
   var update6 = buildBareUpdate(
     [{ "chunkNum" : 6,
@@ -174,12 +167,43 @@ function testMultipleTables() {
   update += "u:data:," + encodeURIComponent(update6) + "\n";
 
   var assertions = {
-    "tableData" : "test-block-simple;a:6\ntest-forbid-simple;a:5\ntest-malware-simple;a:3\ntest-phish-simple;a:1-2\ntest-unwanted-simple;a:4",
+    "tableData" : "test-block-simple;a:6\ntest-malware-simple;a:3\ntest-phish-simple;a:1-2\ntest-unwanted-simple;a:4",
     "urlsExist" : add1Urls.concat(add2Urls),
     "malwareUrlsExist" : add3Urls,
     "unwantedUrlsExist" : add4Urls,
-    "forbiddenUrlsExist" : add5Urls,
     "blockedUrlsExist" : add6Urls
+  };
+
+  doTest([update], assertions, false);
+}
+
+function testUrlInMultipleTables() {
+  var add1Urls = [ "foo-forward.com/a" ];
+
+  var update = "n:1000\n";
+  update += "i:test-phish-simple\n";
+
+  var update1 = buildBareUpdate(
+    [{ "chunkNum" : 1,
+       "urls" : add1Urls }]);
+  update += "u:data:," + encodeURIComponent(update1) + "\n";
+
+  update += "i:test-malware-simple\n";
+  var update2 = buildBareUpdate(
+    [{ "chunkNum" : 2,
+       "urls" : add1Urls }]);
+  update += "u:data:," + encodeURIComponent(update2) + "\n";
+
+  update += "i:test-unwanted-simple\n";
+  var update3 = buildBareUpdate(
+    [{ "chunkNum" : 3,
+       "urls" : add1Urls }]);
+  update += "u:data:," + encodeURIComponent(update3) + "\n";
+
+  var assertions = {
+    "tableData" : "test-malware-simple;a:2\ntest-phish-simple;a:1\ntest-unwanted-simple;a:3",
+    "urlExistInMultipleTables" : { url: add1Urls,
+                                   tables: "test-malware-simple,test-phish-simple,test-unwanted-simple" }
   };
 
   doTest([update], assertions, false);
@@ -203,6 +227,21 @@ QueryInterface: function(iid)
 
 // Tests a database reset request.
 function testReset() {
+  // The moz-phish-simple table is populated separately from the other update in
+  // a separate update request. Therefore it should not be reset when we run the
+  // updates later in this function.
+  var mozAddUrls = [ "moz-reset.com/a" ];
+  var mozUpdate = buildMozPhishingUpdate(
+    [
+      { "chunkNum" : 1,
+        "urls" : mozAddUrls
+      }]);
+
+  var dataUpdate = "data:," + encodeURIComponent(mozUpdate);
+
+  streamUpdater.downloadUpdates(mozTables, "", true,
+                                dataUpdate, () => {}, updateError, updateError);
+
   var addUrls1 = [ "foo-reset.com/a", "foo-reset.com/b" ];
   var update1 = buildPhishingUpdate(
     [
@@ -220,11 +259,15 @@ function testReset() {
       }]);
 
   var assertions = {
-    "tableData" : "test-phish-simple;a:3",
-    "urlsExist" : addUrls3,
-    "urlsDontExist" : addUrls1
+    "tableData" : "moz-phish-simple;a:1\ntest-phish-simple;a:3", // tables that should still be there.
+    "mozPhishingUrlsExist" : mozAddUrls,                         // mozAddUrls added prior to the reset
+                                                                 // but it should still exist after reset.
+    "urlsExist" : addUrls3,                                      // addUrls3 added after the reset.
+    "urlsDontExist" : addUrls1                                   // addUrls1 added prior to the reset
   };
 
+  // Use these update responses in order. The update request only
+  // contains test-*-simple tables so the reset will only apply to these.
   doTest([update1, update2, update3], assertions, false);
 }
 
@@ -237,6 +280,7 @@ function run_test()
     testInvalidUrlForward,
     testErrorUrlForward,
     testMultipleTables,
+    testUrlInMultipleTables,
     testReset
   ]);
 }

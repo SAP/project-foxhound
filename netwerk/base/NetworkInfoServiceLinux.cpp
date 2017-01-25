@@ -12,6 +12,7 @@
 #include <net/if.h>
 #include <netdb.h>
 
+#include "mozilla/DebugOnly.h"
 #include "mozilla/ScopeExit.h"
 
 #include "NetworkInfoServiceImpl.h"
@@ -52,8 +53,9 @@ DoListAddresses(AddrMapType& aAddrMap)
     while (i < ifconf.ifc_len) {
         size_t len = sizeof(struct ifreq);
 
-        nsresult rv = ListInterfaceAddresses(fd, ifreq->ifr_name, aAddrMap);
-        NS_WARN_IF(NS_FAILED(rv));
+        DebugOnly<nsresult> rv =
+          ListInterfaceAddresses(fd, ifreq->ifr_name, aAddrMap);
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "ListInterfaceAddresses failed");
 
         ifreq = (struct ifreq*) ((char*)ifreq + len);
         i += len;
@@ -68,7 +70,7 @@ ListInterfaceAddresses(int aFd, const char* aInterface, AddrMapType& aAddrMap)
 {
     struct ifreq ifreq;
     memset(&ifreq, 0, sizeof(struct ifreq));
-    strncpy(ifreq.ifr_name, aInterface, IFNAMSIZ);
+    strncpy(ifreq.ifr_name, aInterface, IFNAMSIZ - 1);
     if (ioctl(aFd, SIOCGIFADDR, &ifreq) != 0) {
         return NS_ERROR_FAILURE;
     }

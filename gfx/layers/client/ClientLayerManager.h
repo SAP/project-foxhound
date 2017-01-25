@@ -17,7 +17,6 @@
 #include "mozilla/layers/LayersTypes.h"  // for BufferMode, LayersBackend, etc
 #include "mozilla/layers/ShadowLayers.h"  // for ShadowLayerForwarder, etc
 #include "mozilla/layers/APZTestData.h" // for APZTestData
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsIObserver.h"                // for nsIObserver
 #include "nsISupportsImpl.h"            // for Layer::Release, etc
@@ -35,7 +34,6 @@ class CompositorBridgeChild;
 class ImageLayer;
 class PLayerChild;
 class FrameUniformityData;
-class TextureClientPool;
 
 class ClientLayerManager final : public LayerManager
 {
@@ -116,8 +114,6 @@ public:
 
   virtual void SetIsFirstPaint() override;
 
-  TextureClientPool* GetTexturePool(gfx::SurfaceFormat aFormat, TextureFlags aFlags);
-
   /**
    * Pass through call to the forwarder for nsPresContext's
    * CollectPluginGeometryUpdates. Passes widget configuration information
@@ -158,22 +154,6 @@ public:
 
   // Disable component alpha layers with the software compositor.
   virtual bool ShouldAvoidComponentAlphaLayers() override { return !IsCompositingCheap(); }
-
-  /**
-   * Called for each iteration of a progressive tile update. Updates
-   * aMetrics with the current scroll offset and scale being used to composite
-   * the primary scrollable layer in this manager, to determine what area
-   * intersects with the target composition bounds.
-   * aDrawingCritical will be true if the current drawing operation is using
-   * the critical displayport.
-   * Returns true if the update should continue, or false if it should be
-   * cancelled.
-   * This is only called if gfxPlatform::UseProgressiveTilePainting() returns
-   * true.
-   */
-  bool ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
-                                 FrameMetrics& aMetrics,
-                                 bool aDrawingCritical);
 
   bool InConstruction() { return mPhase == PHASE_CONSTRUCTION; }
 #ifdef DEBUG
@@ -242,6 +222,8 @@ public:
 
   void SetNextPaintSyncId(int32_t aSyncId);
 
+  void SetLayerObserverEpoch(uint64_t aLayerObserverEpoch);
+
   class DidCompositeObserver {
   public:
     virtual void DidComposite() = 0;
@@ -249,6 +231,9 @@ public:
 
   void AddDidCompositeObserver(DidCompositeObserver* aObserver);
   void RemoveDidCompositeObserver(DidCompositeObserver* aObserver);
+
+  virtual already_AddRefed<PersistentBufferProvider>
+  CreatePersistentBufferProvider(const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) override;
 
 protected:
   enum TransactionPhase {
@@ -304,7 +289,7 @@ private:
   LayerRefArray mKeepAlive;
 
   nsIWidget* mWidget;
-  
+
   /* PaintedLayer callbacks; valid at the end of a transaciton,
    * while rendering */
   DrawPaintedLayerCallback mPaintedLayerCallback;
@@ -322,6 +307,7 @@ private:
 
   RefPtr<TransactionIdAllocator> mTransactionIdAllocator;
   uint64_t mLatestTransactionId;
+  TimeDuration mLastPaintTime;
 
   // Sometimes we draw to targets that don't natively support
   // landscape/portrait orientation.  When we need to implement that
@@ -344,7 +330,6 @@ private:
   APZTestData mApzTestData;
 
   RefPtr<ShadowLayerForwarder> mForwarder;
-  AutoTArray<RefPtr<TextureClientPool>,2> mTexturePools;
   AutoTArray<dom::OverfillCallback*,0> mOverfillCallbacks;
   mozilla::TimeStamp mTransactionStart;
 

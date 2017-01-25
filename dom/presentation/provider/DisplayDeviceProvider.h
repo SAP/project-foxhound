@@ -16,6 +16,7 @@
 #include "nsIPresentationDeviceProvider.h"
 #include "nsIPresentationLocalDevice.h"
 #include "nsIPresentationControlService.h"
+#include "nsITimer.h"
 #include "nsIWindowWatcher.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -93,10 +94,8 @@ public:
   // For using WeakPtr when MOZ_REFCOUNTED_LEAK_CHECKING defined
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(DisplayDeviceProvider)
 
-  nsresult RequestSession(HDMIDisplayDevice* aDevice,
-                          const nsAString& aUrl,
-                          const nsAString& aPresentationId,
-                          nsIPresentationControlChannel** aControlChannel);
+  nsresult Connect(HDMIDisplayDevice* aDevice,
+                   nsIPresentationControlChannel** aControlChannel);
 private:
   virtual ~DisplayDeviceProvider();
 
@@ -107,6 +106,8 @@ private:
   nsresult RemoveExternalScreen();
 
   nsresult StartTCPService();
+
+  void AbortServerRetry();
 
   // Now support HDMI display only and there should be only one HDMI display.
   nsCOMPtr<nsIPresentationLocalDevice> mDevice = nullptr;
@@ -121,6 +122,10 @@ private:
 
   bool mInitialized = false;
   uint16_t mPort;
+
+  bool mIsServerRetrying = false;
+  uint32_t mServerRetryMs;
+  nsCOMPtr<nsITimer> mServerRetryTimer;
 };
 
 } // mozilla

@@ -12,7 +12,6 @@ function hasTabModalPrompts() {
 var isTabModal = hasTabModalPrompts();
 var isSelectDialog = false;
 var isOSX = ("nsILocalFileMac" in SpecialPowers.Ci);
-var isLinux = ("@mozilla.org/gnome-gconf-service;1" in SpecialPowers.Cc);
 var isE10S = SpecialPowers.Services.appinfo.processType == 2;
 
 
@@ -77,11 +76,84 @@ function checkPromptState(promptState, expectedState) {
     is(promptState.defButton1, expectedState.defButton == "button1", "checking button1 default");
     is(promptState.defButton2, expectedState.defButton == "button2", "checking button2 default");
 
-    if (isLinux && (!promptState.focused || isE10S)) {
-        todo(false, "Focus seems missing or wrong on Linux"); // bug 1265077
-    } else if (isOSX && expectedState.focused && expectedState.focused.startsWith("button")) {
+    if (isOSX && expectedState.focused && expectedState.focused.startsWith("button")) {
         is(promptState.focused, "infoBody", "buttons don't focus on OS X, but infoBody does instead");
     } else {
         is(promptState.focused, expectedState.focused, "Checking focused element");
     }
+}
+
+function checkEchoedAuthInfo(expectedState, doc) {
+    // The server echos back the HTTP auth info it received.
+    let username = doc.getElementById("user").textContent;
+    let password = doc.getElementById("pass").textContent;
+    let authok = doc.getElementById("ok").textContent;
+
+    is(authok, "PASS", "Checking for successful authentication");
+    is(username, expectedState.user, "Checking for echoed username");
+    is(password, expectedState.pass, "Checking for echoed password");
+}
+
+/**
+ * Create a Proxy to relay method calls on an nsIAuthPrompt[2] prompter to a chrome script which can
+ * perform the calls in the parent. Out and inout params will be copied back from the parent to
+ * content.
+ *
+ * @param chromeScript The reference to the chrome script that will listen to `proxyPrompter`
+ *                     messages in the parent and call the `methodName` method.
+ *                     The return value from the message handler should be an object with properties:
+ * `rv` - containing the return value of the method call.
+ * `args` - containing the array of arguments passed to the method since out or inout ones could have
+ *          been modified.
+ */
+function PrompterProxy(chromeScript) {
+  return new Proxy({}, {
+    get(target, prop, receiver) {
+      return (...args) => {
+        // Array of indices of out/inout params to copy from the parent back to the caller.
+        let outParams = [];
+
+        switch (prop) {
+          case "prompt": {
+            outParams = [/* result */ 5];
+            break;
+          }
+          case "promptAuth": {
+            outParams = [];
+            break;
+          }
+          case "promptPassword": {
+            outParams = [/* pwd */ 4];
+            break;
+          }
+          case "promptUsernameAndPassword": {
+            outParams = [/* user */ 4, /* pwd */ 5];
+            break;
+          }
+          default: {
+            throw new Error("Unknown nsIAuthPrompt method");
+            break;
+          }
+        }
+
+        let result = chromeScript.sendSyncMessage("proxyPrompter", {
+          args,
+          methodName: prop,
+        })[0][0];
+
+        for (let outParam of outParams) {
+          // Copy the out or inout param value over the original
+          args[outParam].value = result.args[outParam].value;
+        }
+
+        if (prop == "promptAuth") {
+          args[2].username = result.args[2].username;
+          args[2].password = result.args[2].password;
+          args[2].domain = result.args[2].domain;
+        }
+
+        return result.rv;
+      };
+    },
+  });
 }

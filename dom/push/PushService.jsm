@@ -800,16 +800,18 @@ this.PushService = {
       if (!record) {
         throw new Error("Ignoring update for key ID " + keyID);
       }
-      // Update quota after the delay, at which point
-      // we check for visible notifications.
-      let timeoutID = setTimeout(_ =>
-        {
-          this._updateQuota(keyID);
-          if (!this._updateQuotaTimeouts.delete(timeoutID)) {
-            console.debug("receivedPushMessage: quota update timeout missing?");
-          }
-        }, prefs.get("quotaUpdateDelay"));
-      this._updateQuotaTimeouts.add(timeoutID);
+      if (record.quotaApplies()) {
+        // Update quota after the delay, at which point
+        // we check for visible notifications.
+        let timeoutID = setTimeout(_ =>
+          {
+            this._updateQuota(keyID);
+            if (!this._updateQuotaTimeouts.delete(timeoutID)) {
+              console.debug("receivedPushMessage: quota update timeout missing?");
+            }
+          }, prefs.get("quotaUpdateDelay"));
+        this._updateQuotaTimeouts.add(timeoutID);
+      }
       return this._decryptAndNotifyApp(record, messageID, data, cryptoParams);
     }).catch(error => {
       console.error("receivedPushMessage: Error notifying app", error);
@@ -860,9 +862,36 @@ this.PushService = {
         });
       });
     }).then(record => {
-      gPushNotifier.notifySubscriptionModified(record.scope, record.principal);
+      if (record) {
+        gPushNotifier.notifySubscriptionModified(record.scope,
+                                                 record.principal);
+      }
       return record;
     });
+  },
+
+  /**
+   * Decrypts a message. Will resolve with null if cryptoParams is falsy.
+   *
+   * @param {PushRecord} record The receiving registration.
+   * @param {ArrayBuffer|Uint8Array} data The encrypted message data.
+   * @param {Object} cryptoParams The message encryption settings.
+   * @returns {Promise} Resolves with the decrypted message.
+   */
+  _decryptMessage(data, record, cryptoParams) {
+    if (!cryptoParams) {
+      return Promise.resolve(null);
+    }
+    return PushCrypto.decodeMsg(
+      data,
+      record.p256dhPrivateKey,
+      record.p256dhPublicKey,
+      cryptoParams.dh,
+      cryptoParams.salt,
+      cryptoParams.rs,
+      record.authenticationSecret,
+      cryptoParams.padSize
+    );
   },
 
   /**
@@ -875,25 +904,16 @@ this.PushService = {
    * @returns {Promise} Resolves with an ack status code.
    */
   _decryptAndNotifyApp(record, messageID, data, cryptoParams) {
-    if (!cryptoParams) {
-      return this._notifyApp(record, messageID, null);
-    }
-    return PushCrypto.decodeMsg(
-      data,
-      record.p256dhPrivateKey,
-      record.p256dhPublicKey,
-      cryptoParams.dh,
-      cryptoParams.salt,
-      cryptoParams.rs,
-      record.authenticationSecret,
-      cryptoParams.padSize
-    ).then(message => this._notifyApp(record, messageID, message), error => {
-      let message = gDOMBundle.formatStringFromName(
-        "PushMessageDecryptionFailure", [record.scope, String(error)], 2);
-      gPushNotifier.notifyError(record.scope, record.principal, message,
-                                Ci.nsIScriptError.errorFlag);
-      return Ci.nsIPushErrorReporter.ACK_DECRYPTION_ERROR;
-    });
+    return this._decryptMessage(data, record, cryptoParams)
+      .then(
+        message => this._notifyApp(record, messageID, message),
+        error => {
+          let message = gDOMBundle.formatStringFromName(
+            "PushMessageDecryptionFailure", [record.scope, String(error)], 2);
+          gPushNotifier.notifyError(record.scope, record.principal, message,
+                                    Ci.nsIScriptError.errorFlag);
+          return Ci.nsIPushErrorReporter.ACK_DECRYPTION_ERROR;
+        });
   },
 
   _updateQuota: function(keyID) {
@@ -1018,10 +1038,8 @@ this.PushService = {
   _sendRequest(action, ...params) {
     if (this._state == PUSH_SERVICE_CONNECTION_DISABLE) {
       return Promise.reject(new Error("Push service disabled"));
-    } else if (this._state == PUSH_SERVICE_ACTIVE_OFFLINE) {
-      if (this._service.serviceType() == "WebSocket" && action == "unregister") {
-        return Promise.resolve();
-      }
+    }
+    if (this._state == PUSH_SERVICE_ACTIVE_OFFLINE) {
       return Promise.reject(new Error("Push service offline"));
     }
     // Ensure the backend is ready. `getByPageRecord` already checks this, but
@@ -1040,7 +1058,7 @@ this.PushService = {
 
   /**
    * Called on message from the child process. aPageRecord is an object sent by
-   * navigator.push, identifying the sending page and other fields.
+   * the push manager, identifying the sending page and other fields.
    */
   _registerWithServer: function(aPageRecord) {
     console.debug("registerWithServer()", aPageRecord);
@@ -1198,12 +1216,13 @@ this.PushService = {
         let reason = Ci.nsIPushErrorReporter.UNSUBSCRIBE_MANUAL;
         return Promise.all([
           this._sendUnregister(record, reason),
-          this._db.delete(record.keyID),
-        ]).then(() => {
-          gPushNotifier.notifySubscriptionModified(record.scope,
-                                                   record.principal);
-          return true;
-        });
+          this._db.delete(record.keyID).then(record => {
+            if (record) {
+              gPushNotifier.notifySubscriptionModified(record.scope,
+                                                       record.principal);
+            }
+          }),
+        ]).then(([success]) => success);
       });
   },
 

@@ -99,8 +99,8 @@ public:
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) override;
 
   virtual void Reflow(nsPresContext* aPresContext,
-                      nsHTMLReflowMetrics& aDesiredSize,
-                      const nsHTMLReflowState& aReflowState,
+                      ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
 
   virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
@@ -138,6 +138,15 @@ public:
 #endif
 
   virtual nsStyleContext* GetParentStyleContext(nsIFrame** aProviderFrame) const override;
+
+  bool RenumberFrameAndDescendants(int32_t* aOrdinal,
+                                   int32_t aDepth,
+                                   int32_t aIncrement,
+                                   bool aForCounting) override
+  {
+    return mOutOfFlowFrame->
+      RenumberFrameAndDescendants(aOrdinal, aDepth, aIncrement, aForCounting);
+  }
 
   /**
    * @return the out-of-flow for aFrame if aFrame is a placeholder; otherwise

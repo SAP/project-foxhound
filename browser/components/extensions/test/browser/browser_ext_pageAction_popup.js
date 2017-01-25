@@ -3,6 +3,8 @@
 "use strict";
 
 add_task(function* testPageActionPopup() {
+  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+
   let scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head></html>`;
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -69,6 +71,12 @@ add_task(function* testPageActionPopup() {
           () => {
             browser.test.sendMessage("next-test", {expectClosed: true});
           },
+          () => {
+            sendClick({expectEvent: false, expectPopup: "a", runNextTest: true});
+          },
+          () => {
+            browser.test.sendMessage("next-test", {closeOnTabSwitch: true});
+          },
         ];
 
         let expect = {};
@@ -128,21 +136,22 @@ add_task(function* testPageActionPopup() {
         browser.tabs.query({active: true, currentWindow: true}, tabs => {
           tabId = tabs[0].id;
 
-          browser.pageAction.show(tabId);
-          browser.test.sendMessage("next-test");
+          browser.pageAction.show(tabId).then(() => {
+            browser.test.sendMessage("next-test");
+          });
         });
       },
     },
   });
 
-  let pageActionId = makeWidgetId(extension.id) + "-page-action";
-  let panelId = makeWidgetId(extension.id) + "-panel";
-
   extension.onMessage("send-click", () => {
     clickPageAction(extension);
   });
 
+  let pageActionId, panelId;
   extension.onMessage("next-test", Task.async(function* (expecting = {}) {
+    pageActionId = `${makeWidgetId(extension.id)}-page-action`;
+    panelId = `${makeWidgetId(extension.id)}-panel`;
     let panel = document.getElementById(panelId);
     if (expecting.expectClosed) {
       ok(panel, "Expect panel to exist");
@@ -152,6 +161,20 @@ add_task(function* testPageActionPopup() {
 
       yield promisePopupHidden(panel);
       ok(true, `Panel is closed`);
+    } else if (expecting.closeOnTabSwitch) {
+      ok(panel, "Expect panel to exist");
+      yield promisePopupShown(panel);
+
+      let oldTab = gBrowser.selectedTab;
+      ok(oldTab != gBrowser.tabs[0], "Should have an inactive tab to switch to");
+
+      let hiddenPromise = promisePopupHidden(panel);
+
+      gBrowser.selectedTab = gBrowser.tabs[0];
+      yield hiddenPromise;
+      info("Panel closed");
+
+      gBrowser.selectedTab = oldTab;
     } else if (panel) {
       yield promisePopupShown(panel);
       panel.hidePopup();
@@ -176,6 +199,8 @@ add_task(function* testPageActionPopup() {
 
   let panel = document.getElementById(panelId);
   is(panel, null, "pageAction panel removed from document");
+
+  yield BrowserTestUtils.removeTab(tab);
 });
 
 

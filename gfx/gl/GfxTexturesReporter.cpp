@@ -47,6 +47,9 @@ FormatBytes(size_t amount)
       case 3:
       unit = "GB";
       break;
+      default:
+      unit = "";
+      break;
   }
 
   stream << val << " " << unit;
@@ -57,7 +60,7 @@ FormatBytes(size_t amount)
 GfxTexturesReporter::UpdateAmount(MemoryUse action, size_t amount)
 {
     if (action == MemoryFreed) {
-        MOZ_RELEASE_ASSERT(amount <= sAmount);
+        MOZ_RELEASE_ASSERT(amount <= sAmount, "GFX: Current texture usage greater than update amount.");
         sAmount -= amount;
 
         if (gfxPrefs::GfxLoggingTextureUsageEnabled()) {

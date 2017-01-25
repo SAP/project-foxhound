@@ -9,6 +9,7 @@ import os
 import stat
 import platform
 import errno
+import subprocess
 
 from mach.decorators import (
     CommandArgument,
@@ -21,15 +22,6 @@ from mozbuild.base import MachCommandBase, MozbuildObject
 
 @CommandProvider
 class SearchProvider(object):
-    @Command('mxr', category='misc',
-        description='Search for something in MXR.')
-    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
-    def mxr(self, term):
-        import webbrowser
-        term = ' '.join(term)
-        uri = 'https://mxr.mozilla.org/mozilla-central/search?string=%s' % term
-        webbrowser.open_new_tab(uri)
-
     @Command('dxr', category='misc',
         description='Search for something in DXR.')
     @CommandArgument('term', nargs='+', help='Term(s) to search for.')
@@ -60,12 +52,12 @@ class SearchProvider(object):
     @Command('search', category='misc',
         description='Search for something on the Internets. '
         'This will open 3 new browser tabs and search for the term on Google, '
-        'MDN, and MXR.')
+        'MDN, and DXR.')
     @CommandArgument('term', nargs='+', help='Term(s) to search for.')
     def search(self, term):
         self.google(term)
         self.mdn(term)
-        self.mxr(term)
+        self.dxr(term)
 
 
 @CommandProvider
@@ -86,6 +78,59 @@ class UUIDProvider(object):
             print('{ 0x%s, 0x%s, 0x%s, \\' % (u[0:8], u[8:12], u[12:16]))
             pairs = tuple(map(lambda n: u[n:n+2], range(16, 32, 2)))
             print(('  { ' + '0x%s, ' * 7 + '0x%s } }') % pairs)
+
+
+@CommandProvider
+class RageProvider(MachCommandBase):
+    @Command('rage', category='misc',
+             description='Express your frustration')
+    def rage(self):
+        """Have a bad experience developing Firefox? Run this command to
+        express your frustration.
+
+        This command will open your default configured web browser to a short
+        form where you can submit feedback. Just close the tab when done.
+        """
+        import getpass
+        import urllib
+        import webbrowser
+
+        # Try to resolve the current user.
+        user = None
+        with open(os.devnull, 'wb') as null:
+            if os.path.exists(os.path.join(self.topsrcdir, '.hg')):
+                try:
+                    user = subprocess.check_output(['hg', 'config',
+                                                    'ui.username'],
+                                                   cwd=self.topsrcdir,
+                                                   stderr=null)
+
+                    i = user.find('<')
+                    if i >= 0:
+                        user = user[i + 1:-2]
+                except subprocess.CalledProcessError:
+                    pass
+            elif os.path.exists(os.path.join(self.topsrcdir, '.git')):
+                try:
+                    user = subprocess.check_output(['git', 'config', '--get',
+                                                    'user.email'],
+                                                   cwd=self.topsrcdir,
+                                                   stderr=null)
+                except subprocess.CalledProcessError:
+                    pass
+
+        if not user:
+            try:
+                user = getpass.getuser()
+            except Exception:
+                pass
+
+        url = 'https://docs.google.com/a/mozilla.com/forms/d/e/1FAIpQLSeDVC3IXJu5d33Hp_ZTCOw06xEUiYH1pBjAqJ1g_y63sO2vvA/viewform'
+        if user:
+            url += '?entry.1281044204=%s' % urllib.quote(user)
+
+        print('Please leave your feedback in the opened web form')
+        webbrowser.open_new_tab(url)
 
 
 @CommandProvider

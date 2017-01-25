@@ -18,6 +18,9 @@
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
 
+namespace sh
+{
+
 namespace
 {
 
@@ -45,6 +48,11 @@ RecordConstantPrecisionTraverser::RecordConstantPrecisionTraverser()
 
 bool RecordConstantPrecisionTraverser::operandAffectsParentOperationPrecision(TIntermTyped *operand)
 {
+    if (getParentNode()->getAsCaseNode() || getParentNode()->getAsBlock())
+    {
+        return false;
+    }
+
     const TIntermBinary *parentAsBinary = getParentNode()->getAsBinaryNode();
     if (parentAsBinary != nullptr)
     {
@@ -128,7 +136,7 @@ void RecordConstantPrecisionTraverser::visitConstantUnion(TIntermConstantUnion *
     TIntermSequence insertions;
     insertions.push_back(createTempInitDeclaration(node, EvqConst));
     insertStatementsInParentBlock(insertions);
-    mReplacements.push_back(NodeUpdateEntry(getParentNode(), node, createTempSymbol(node->getType()), false));
+    queueReplacement(node, createTempSymbol(node->getType()), OriginalNode::IS_DROPPED);
     mFoundHigherPrecisionConstant = true;
 }
 
@@ -155,3 +163,5 @@ void RecordConstantPrecision(TIntermNode *root, unsigned int *temporaryIndex)
     }
     while (traverser.foundHigherPrecisionConstant());
 }
+
+}  // namespace sh

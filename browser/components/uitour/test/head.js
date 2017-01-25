@@ -54,13 +54,13 @@ function taskify(fun) {
 }
 
 function is_hidden(element) {
-  var style = element.ownerDocument.defaultView.getComputedStyle(element, "");
+  var style = element.ownerGlobal.getComputedStyle(element);
   if (style.display == "none")
     return true;
   if (style.visibility != "visible")
     return true;
   if (style.display == "-moz-popup")
-    return ["hiding","closed"].indexOf(element.state) != -1;
+    return ["hiding", "closed"].indexOf(element.state) != -1;
 
   // Hiding a parent element will hide all its children
   if (element.parentNode != element.ownerDocument)
@@ -70,7 +70,7 @@ function is_hidden(element) {
 }
 
 function is_visible(element) {
-  var style = element.ownerDocument.defaultView.getComputedStyle(element, "");
+  var style = element.ownerGlobal.getComputedStyle(element);
   if (style.display == "none")
     return false;
   if (style.visibility != "visible")
@@ -223,7 +223,7 @@ function is_element_hidden(element, msg) {
 }
 
 function isTourBrowser(aBrowser) {
-  let chromeWindow = aBrowser.ownerDocument.defaultView;
+  let chromeWindow = aBrowser.ownerGlobal;
   return UITour.tourBrowsersByWindow.has(chromeWindow) &&
          UITour.tourBrowsersByWindow.get(chromeWindow).has(aBrowser);
 }

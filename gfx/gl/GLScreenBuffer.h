@@ -139,6 +139,12 @@ public:
                   const SurfaceCaps& caps,
                   const RefPtr<layers::CompositableForwarder>& forwarder,
                   const layers::TextureFlags& flags);
+    static UniquePtr<SurfaceFactory>
+    CreateFactory(GLContext* gl,
+                  const SurfaceCaps& caps,
+                  const RefPtr<layers::ClientIPCAllocator>& allocator,
+                  const mozilla::layers::LayersBackend backend,
+                  const layers::TextureFlags& flags);
 
 protected:
     GLContext* const mGL; // Owns us.
@@ -234,9 +240,8 @@ public:
     void SetReadBuffer(GLenum userMode);
     void SetDrawBuffer(GLenum userMode);
 
-    GLenum GetReadBufferMode() const {
-        return mUserReadBufferMode;
-    }
+    GLenum GetReadBufferMode() const { return mUserReadBufferMode; }
+    GLenum GetDrawBufferMode() const { return mUserDrawBufferMode; }
 
     /**
      * Attempts to read pixels from the current bound framebuffer, if
@@ -246,7 +251,7 @@ public:
      * otherwise.
      */
     bool ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
-                    GLenum format, GLenum type, GLvoid *pixels);
+                    GLenum format, GLenum type, GLvoid* pixels);
 
     // Morph changes the factory used to create surfaces.
     void Morph(UniquePtr<SurfaceFactory> newFactory);

@@ -14,7 +14,6 @@
 #include "nsIPluginTag.h"
 #include "nsPluginsDir.h"
 #include "nsPluginDirServiceProvider.h"
-#include "nsAutoPtr.h"
 #include "nsWeakPtr.h"
 #include "nsIPrompt.h"
 #include "nsWeakReference.h"
@@ -387,8 +386,6 @@ private:
 
   // set by pref plugin.disable
   bool mPluginsDisabled;
-  // set by pref plugins.click_to_play
-  bool mPluginsClickToPlay;
 
   // Any instances in this array will have valid plugin objects via GetPlugin().
   // When removing an instance it might not die - be sure to null out it's plugin.

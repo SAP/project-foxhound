@@ -19,7 +19,10 @@ from mach.decorators import (
 
 def setup_argument_parser():
     from external_media_harness.runtests import MediaTestArguments
-    return MediaTestArguments()
+    from mozlog.structured import commandline
+    parser = MediaTestArguments()
+    commandline.add_logging_group(parser)
+    return parser
 
 
 def run_external_media_test(tests, testtype=None, topsrcdir=None, **kwargs):
@@ -32,14 +35,15 @@ def run_external_media_test(tests, testtype=None, topsrcdir=None, **kwargs):
 
     from mozlog.structured import commandline
 
-    parser = MediaTestArguments()
-    commandline.add_logging_group(parser)
+    from argparse import Namespace
+
+    parser = setup_argument_parser()
 
     if not tests:
         tests = [os.path.join(topsrcdir,
                  'dom/media/test/external/external_media_tests/manifest.ini')]
 
-    args = parser.parse_args(args=tests)
+    args = Namespace(tests=tests)
 
     for k, v in kwargs.iteritems():
         setattr(args, k, v)

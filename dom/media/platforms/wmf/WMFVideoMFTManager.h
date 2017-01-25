@@ -9,6 +9,7 @@
 
 #include "WMF.h"
 #include "MFTDecoder.h"
+#include "nsAutoPtr.h"
 #include "nsRect.h"
 #include "WMFMediaDataDecoder.h"
 #include "mozilla/RefPtr.h"
@@ -48,7 +49,22 @@ public:
       ? "wmf hardware video decoder" : "wmf software video decoder";
   }
 
+  void Flush() override
+  {
+    MFTManager::Flush();
+    mDraining = false;
+    mSamplesCount = 0;
+  }
+
+  void Drain() override
+  {
+    MFTManager::Drain();
+    mDraining = true;
+  }
+
 private:
+
+  bool ValidateVideoInfo();
 
   bool InitializeDXVA(bool aForceD3D9);
 
@@ -78,6 +94,9 @@ private:
 
   RefPtr<IMFSample> mLastInput;
   float mLastDuration;
+  int64_t mLastTime = 0;
+  bool mDraining = false;
+  int64_t mSamplesCount = 0;
 
   bool mDXVAEnabled;
   const layers::LayersBackend mLayersBackend;
@@ -100,6 +119,7 @@ private:
   uint32_t mNullOutputCount;
   bool mGotValidOutputAfterNullOutput;
   bool mGotExcessiveNullOutput;
+  bool mIsValid;
 };
 
 } // namespace mozilla

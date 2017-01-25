@@ -23,6 +23,9 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Move.h"
+#include "mozilla/RefCounted.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Unused.h"
 
 #include "NamespaceImports.h"
 
@@ -32,10 +35,36 @@
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
+#include "vm/MallocProvider.h"
 
 namespace js {
 
 class PropertyName;
+namespace jit { struct BaselineScript; }
+
+// This is a widespread header, so lets keep out the core wasm impl types.
+
+class WasmMemoryObject;
+typedef GCPtr<WasmMemoryObject*> GCPtrWasmMemoryObject;
+typedef Rooted<WasmMemoryObject*> RootedWasmMemoryObject;
+typedef Handle<WasmMemoryObject*> HandleWasmMemoryObject;
+typedef MutableHandle<WasmMemoryObject*> MutableHandleWasmMemoryObject;
+
+class WasmModuleObject;
+typedef Rooted<WasmModuleObject*> RootedWasmModuleObject;
+typedef Handle<WasmModuleObject*> HandleWasmModuleObject;
+typedef MutableHandle<WasmModuleObject*> MutableHandleWasmModuleObject;
+
+class WasmInstanceObject;
+typedef GCVector<WasmInstanceObject*> WasmInstanceObjectVector;
+typedef Rooted<WasmInstanceObject*> RootedWasmInstanceObject;
+typedef Handle<WasmInstanceObject*> HandleWasmInstanceObject;
+typedef MutableHandle<WasmInstanceObject*> MutableHandleWasmInstanceObject;
+
+class WasmTableObject;
+typedef Rooted<WasmTableObject*> RootedWasmTableObject;
+typedef Handle<WasmTableObject*> HandleWasmTableObject;
+typedef MutableHandle<WasmTableObject*> MutableHandleWasmTableObject;
 
 namespace wasm {
 
@@ -44,8 +73,76 @@ using mozilla::EnumeratedArray;
 using mozilla::Maybe;
 using mozilla::Move;
 using mozilla::MallocSizeOf;
+using mozilla::Nothing;
+using mozilla::PodZero;
+using mozilla::PodCopy;
+using mozilla::PodEqual;
+using mozilla::RefCounted;
+using mozilla::Some;
+using mozilla::Unused;
 
 typedef Vector<uint32_t, 0, SystemAllocPolicy> Uint32Vector;
+
+class Code;
+class CodeRange;
+class Memory;
+class Module;
+class Instance;
+class Table;
+
+// To call Vector::podResizeToFit, a type must specialize mozilla::IsPod
+// which is pretty verbose to do within js::wasm, so factor that process out
+// into a macro.
+
+#define WASM_DECLARE_POD_VECTOR(Type, VectorName)                               \
+} } namespace mozilla {                                                         \
+template <> struct IsPod<js::wasm::Type> : TrueType {};                         \
+} namespace js { namespace wasm {                                               \
+typedef Vector<Type, 0, SystemAllocPolicy> VectorName;
+
+// A wasm Module and everything it contains must support serialization and
+// deserialization. Some data can be simply copied as raw bytes and,
+// as a convention, is stored in an inline CacheablePod struct. Everything else
+// should implement the below methods which are called recusively by the
+// containing Module.
+
+#define WASM_DECLARE_SERIALIZABLE(Type)                                         \
+    size_t serializedSize() const;                                              \
+    uint8_t* serialize(uint8_t* cursor) const;                                  \
+    const uint8_t* deserialize(const uint8_t* cursor);                          \
+    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+
+#define WASM_DECLARE_SERIALIZABLE_VIRTUAL(Type)                                 \
+    virtual size_t serializedSize() const;                                      \
+    virtual uint8_t* serialize(uint8_t* cursor) const;                          \
+    virtual const uint8_t* deserialize(const uint8_t* cursor);                  \
+    virtual size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+
+#define WASM_DECLARE_SERIALIZABLE_OVERRIDE(Type)                                \
+    size_t serializedSize() const override;                                     \
+    uint8_t* serialize(uint8_t* cursor) const override;                         \
+    const uint8_t* deserialize(const uint8_t* cursor) override;                 \
+    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const override;
+
+// This reusable base class factors out the logic for a resource that is shared
+// by multiple instances/modules but should only be counted once when computing
+// about:memory stats.
+
+template <class T>
+struct ShareableBase : RefCounted<T>
+{
+    using SeenSet = HashSet<const T*, DefaultHasher<const T*>, SystemAllocPolicy>;
+
+    size_t sizeOfIncludingThisIfNotSeen(MallocSizeOf mallocSizeOf, SeenSet* seen) const {
+        const T* self = static_cast<const T*>(this);
+        typename SeenSet::AddPtr p = seen->lookupForAdd(self);
+        if (p)
+            return 0;
+        bool ok = seen->add(p, self);
+        (void)ok;  // oh well
+        return mallocSizeOf(self) + self->sizeOfExcludingThis(mallocSizeOf);
+    }
+};
 
 // ValType/ExprType utilities
 
@@ -269,15 +366,18 @@ class Val
         MOZ_ASSERT(type_ == ValType::I32x4 || type_ == ValType::B32x4);
         memcpy(u.i32x4_, i32x4, sizeof(u.i32x4_));
     }
-    explicit Val(const F32x4& f32x4) : type_(ValType::F32x4) { memcpy(u.f32x4_, f32x4, sizeof(u.f32x4_)); }
+    explicit Val(const F32x4& f32x4) : type_(ValType::F32x4) {
+        memcpy(u.f32x4_, f32x4, sizeof(u.f32x4_));
+    }
 
     ValType type() const { return type_; }
     bool isSimd() const { return IsSimdType(type()); }
 
     uint32_t i32() const { MOZ_ASSERT(type_ == ValType::I32); return u.i32_; }
     uint64_t i64() const { MOZ_ASSERT(type_ == ValType::I64); return u.i64_; }
-    float f32() const { MOZ_ASSERT(type_ == ValType::F32); return u.f32_; }
-    double f64() const { MOZ_ASSERT(type_ == ValType::F64); return u.f64_; }
+    const float& f32() const { MOZ_ASSERT(type_ == ValType::F32); return u.f32_; }
+    const double& f64() const { MOZ_ASSERT(type_ == ValType::F64); return u.f64_; }
+
     const I8x16& i8x16() const {
         MOZ_ASSERT(type_ == ValType::I8x16 || type_ == ValType::B8x16);
         return u.i8x16_;
@@ -290,8 +390,15 @@ class Val
         MOZ_ASSERT(type_ == ValType::I32x4 || type_ == ValType::B32x4);
         return u.i32x4_;
     }
-    const F32x4& f32x4() const { MOZ_ASSERT(type_ == ValType::F32x4); return u.f32x4_; }
+    const F32x4& f32x4() const {
+        MOZ_ASSERT(type_ == ValType::F32x4);
+        return u.f32x4_;
+    }
+
+    void writePayload(uint8_t* dst) const;
 };
+
+typedef Vector<Val, 0, SystemAllocPolicy> ValVector;
 
 // The Sig class represents a WebAssembly function signature which takes a list
 // of value types and returns an expression type. The engine uses two in-memory
@@ -308,23 +415,14 @@ class Sig
     ValTypeVector args_;
     ExprType ret_;
 
-    Sig(const Sig&) = delete;
-    Sig& operator=(const Sig&) = delete;
-
   public:
     Sig() : args_(), ret_(ExprType::Void) {}
-    Sig(Sig&& rhs) : args_(Move(rhs.args_)), ret_(rhs.ret_) {}
     Sig(ValTypeVector&& args, ExprType ret) : args_(Move(args)), ret_(ret) {}
 
     MOZ_MUST_USE bool clone(const Sig& rhs) {
         ret_ = rhs.ret_;
         MOZ_ASSERT(args_.empty());
         return args_.appendAll(rhs.args_);
-    }
-    Sig& operator=(Sig&& rhs) {
-        ret_ = rhs.ret_;
-        args_ = Move(rhs.args_);
-        return *this;
     }
 
     ValType arg(unsigned i) const { return args_[i]; }
@@ -340,6 +438,8 @@ class Sig
     bool operator!=(const Sig& rhs) const {
         return !(*this == rhs);
     }
+
+    WASM_DECLARE_SERIALIZABLE(Sig)
 };
 
 struct SigHashPolicy
@@ -349,37 +449,196 @@ struct SigHashPolicy
     static bool match(const Sig* lhs, Lookup rhs) { return *lhs == rhs; }
 };
 
-// A GlobalDesc describes a single global variable. Currently, globals are only
-// exposed through asm.js.
+// An InitExpr describes a deferred initializer expression, used to initialize
+// a global or a table element offset. Such expressions are created during
+// decoding and actually executed on module instantiation.
 
-struct GlobalDesc
+class InitExpr
 {
-    ValType type;
-    unsigned globalDataOffset;
-    bool isConst;
-    GlobalDesc(ValType type, unsigned offset, bool isConst)
-      : type(type), globalDataOffset(offset), isConst(isConst)
-    {}
+  public:
+    enum class Kind {
+        Constant,
+        GetGlobal
+    };
+
+  private:
+    Kind kind_;
+    union {
+        Val val_;
+        struct {
+            uint32_t index_;
+            ValType type_;
+        } global;
+    } u;
+
+  public:
+    InitExpr() = default;
+
+    explicit InitExpr(Val val) : kind_(Kind::Constant) {
+        u.val_ = val;
+    }
+
+    explicit InitExpr(uint32_t globalIndex, ValType type) : kind_(Kind::GetGlobal) {
+        u.global.index_ = globalIndex;
+        u.global.type_ = type;
+    }
+
+    Kind kind() const { return kind_; }
+
+    bool isVal() const { return kind() == Kind::Constant; }
+    Val val() const { MOZ_ASSERT(isVal()); return u.val_; }
+
+    uint32_t globalIndex() const { MOZ_ASSERT(kind() == Kind::GetGlobal); return u.global.index_; }
+
+    ValType type() const {
+        switch (kind()) {
+          case Kind::Constant: return u.val_.type();
+          case Kind::GetGlobal: return u.global.type_;
+        }
+        MOZ_CRASH("unexpected initExpr type");
+    }
+};
+
+// A GlobalDesc describes a single global variable. Currently, asm.js and wasm
+// exposes mutable and immutable private globals, but can't import nor export
+// mutable globals.
+
+enum class GlobalKind
+{
+    Import,
+    Constant,
+    Variable
+};
+
+class GlobalDesc
+{
+    union {
+        struct {
+            union {
+                InitExpr initial_;
+                struct {
+                    ValType type_;
+                    uint32_t index_;
+                } import;
+            } val;
+            unsigned offset_;
+            bool isMutable_;
+        } var;
+        Val cst_;
+    } u;
+    GlobalKind kind_;
+
+  public:
+    GlobalDesc() = default;
+
+    explicit GlobalDesc(InitExpr initial, bool isMutable)
+      : kind_((isMutable || !initial.isVal()) ? GlobalKind::Variable : GlobalKind::Constant)
+    {
+        if (isVariable()) {
+            u.var.val.initial_ = initial;
+            u.var.isMutable_ = isMutable;
+            u.var.offset_ = UINT32_MAX;
+        } else {
+            u.cst_ = initial.val();
+        }
+    }
+
+    explicit GlobalDesc(ValType type, bool isMutable, uint32_t importIndex)
+      : kind_(GlobalKind::Import)
+    {
+        u.var.val.import.type_ = type;
+        u.var.val.import.index_ = importIndex;
+        u.var.isMutable_ = isMutable;
+        u.var.offset_ = UINT32_MAX;
+    }
+
+    void setOffset(unsigned offset) {
+        MOZ_ASSERT(!isConstant());
+        MOZ_ASSERT(u.var.offset_ == UINT32_MAX);
+        u.var.offset_ = offset;
+    }
+    unsigned offset() const {
+        MOZ_ASSERT(!isConstant());
+        MOZ_ASSERT(u.var.offset_ != UINT32_MAX);
+        return u.var.offset_;
+    }
+
+    GlobalKind kind() const { return kind_; }
+    bool isVariable() const { return kind_ == GlobalKind::Variable; }
+    bool isConstant() const { return kind_ == GlobalKind::Constant; }
+    bool isImport() const { return kind_ == GlobalKind::Import; }
+
+    bool isMutable() const { return !isConstant() && u.var.isMutable_; }
+    Val constantValue() const { MOZ_ASSERT(isConstant()); return u.cst_; }
+    const InitExpr& initExpr() const { MOZ_ASSERT(isVariable()); return u.var.val.initial_; }
+    uint32_t importIndex() const { MOZ_ASSERT(isImport()); return u.var.val.import.index_; }
+
+    ValType type() const {
+        switch (kind_) {
+          case GlobalKind::Import:   return u.var.val.import.type_;
+          case GlobalKind::Variable: return u.var.val.initial_.type();
+          case GlobalKind::Constant: return u.cst_.type();
+        }
+        MOZ_CRASH("unexpected global kind");
+    }
 };
 
 typedef Vector<GlobalDesc, 0, SystemAllocPolicy> GlobalDescVector;
 
-// A "declared" signature is a Sig object that is created and owned by the
-// ModuleGenerator. These signature objects are read-only and have the same
-// lifetime as the ModuleGenerator. This type is useful since some uses of Sig
-// need this extended lifetime and want to statically distinguish from the
-// common stack-allocated Sig objects that get passed around.
+// SigIdDesc describes a signature id that can be used by call_indirect and
+// table-entry prologues to structurally compare whether the caller and callee's
+// signatures *structurally* match. To handle the general case, a Sig is
+// allocated and stored in a process-wide hash table, so that pointer equality
+// implies structural equality. As an optimization for the 99% case where the
+// Sig has a small number of parameters, the Sig is bit-packed into a uint32
+// immediate value so that integer equality implies structural equality. Both
+// cases can be handled with a single comparison by always setting the LSB for
+// the immediates (the LSB is necessarily 0 for allocated Sig pointers due to
+// alignment).
 
-struct DeclaredSig : Sig
+class SigIdDesc
 {
-    DeclaredSig() = default;
-    DeclaredSig(DeclaredSig&& rhs) : Sig(Move(rhs)) {}
-    explicit DeclaredSig(Sig&& sig) : Sig(Move(sig)) {}
-    void operator=(Sig&& rhs) { Sig& base = *this; base = Move(rhs); }
+  public:
+    enum class Kind { None, Immediate, Global };
+    static const uintptr_t ImmediateBit = 0x1;
+
+  private:
+    Kind kind_;
+    size_t bits_;
+
+    SigIdDesc(Kind kind, size_t bits) : kind_(kind), bits_(bits) {}
+
+  public:
+    Kind kind() const { return kind_; }
+    static bool isGlobal(const Sig& sig);
+
+    SigIdDesc() : kind_(Kind::None), bits_(0) {}
+    static SigIdDesc global(const Sig& sig, uint32_t globalDataOffset);
+    static SigIdDesc immediate(const Sig& sig);
+
+    bool isGlobal() const { return kind_ == Kind::Global; }
+
+    size_t immediate() const { MOZ_ASSERT(kind_ == Kind::Immediate); return bits_; }
+    uint32_t globalDataOffset() const { MOZ_ASSERT(kind_ == Kind::Global); return bits_; }
 };
 
-typedef Vector<DeclaredSig, 0, SystemAllocPolicy> DeclaredSigVector;
-typedef Vector<const DeclaredSig*, 0, SystemAllocPolicy> DeclaredSigPtrVector;
+// SigWithId pairs a Sig with SigIdDesc, describing either how to compile code
+// that compares this signature's id or, at instantiation what signature ids to
+// allocate in the global hash and where to put them.
+
+struct SigWithId : Sig
+{
+    SigIdDesc id;
+
+    SigWithId() = default;
+    explicit SigWithId(Sig&& sig, SigIdDesc id) : Sig(Move(sig)), id(id) {}
+    void operator=(Sig&& rhs) { Sig::operator=(Move(rhs)); }
+
+    WASM_DECLARE_SERIALIZABLE(SigWithId)
+};
+
+typedef Vector<SigWithId, 0, SystemAllocPolicy> SigWithIdVector;
+typedef Vector<const SigWithId*, 0, SystemAllocPolicy> SigWithIdPtrVector;
 
 // The (,Profiling,Func)Offsets classes are used to record the offsets of
 // different key points in a CodeRange during compilation.
@@ -513,141 +772,24 @@ class CallSite : public CallSiteDesc
     uint32_t stackDepth() const { return stackDepth_; }
 };
 
+WASM_DECLARE_POD_VECTOR(CallSite, CallSiteVector)
+
 class CallSiteAndTarget : public CallSite
 {
-    uint32_t targetIndex_;
+    uint32_t funcDefIndex_;
 
   public:
-    CallSiteAndTarget(CallSite cs, uint32_t targetIndex)
-      : CallSite(cs), targetIndex_(targetIndex)
+    CallSiteAndTarget(CallSite cs, uint32_t funcDefIndex)
+      : CallSite(cs), funcDefIndex_(funcDefIndex)
     { }
 
-    static const uint32_t NOT_INTERNAL = UINT32_MAX;
+    static const uint32_t NOT_DEFINITION = UINT32_MAX;
 
-    bool isInternal() const { return targetIndex_ != NOT_INTERNAL; }
-    uint32_t targetIndex() const { MOZ_ASSERT(isInternal()); return targetIndex_; }
+    bool isDefinition() const { return funcDefIndex_ != NOT_DEFINITION; }
+    uint32_t funcDefIndex() const { MOZ_ASSERT(isDefinition()); return funcDefIndex_; }
 };
 
-} // namespace wasm
-} // namespace js
-namespace mozilla {
-template <> struct IsPod<js::wasm::CallSite>          : TrueType {};
-template <> struct IsPod<js::wasm::CallSiteAndTarget> : TrueType {};
-}
-namespace js {
-namespace wasm {
-
-typedef Vector<CallSite, 0, SystemAllocPolicy> CallSiteVector;
 typedef Vector<CallSiteAndTarget, 0, SystemAllocPolicy> CallSiteAndTargetVector;
-
-// Summarizes a heap access made by wasm code that needs to be patched later
-// and/or looked up by the wasm signal handlers. Different architectures need
-// to know different things (x64: offset and length, ARM: where to patch in
-// heap length, x86: where to patch in heap length and base).
-
-#if defined(JS_CODEGEN_X86)
-class HeapAccess
-{
-    uint32_t insnOffset_;
-    uint8_t opLength_;  // the length of the load/store instruction
-    uint8_t cmpDelta_;  // the number of bytes from the cmp to the load/store instruction
-
-  public:
-    HeapAccess() = default;
-    static const uint32_t NoLengthCheck = UINT32_MAX;
-
-    // If 'cmp' equals 'insnOffset' or if it is not supplied then the
-    // cmpDelta_ is zero indicating that there is no length to patch.
-    HeapAccess(uint32_t insnOffset, uint32_t after, uint32_t cmp = NoLengthCheck) {
-        mozilla::PodZero(this);  // zero padding for Valgrind
-        insnOffset_ = insnOffset;
-        opLength_ = after - insnOffset;
-        cmpDelta_ = cmp == NoLengthCheck ? 0 : insnOffset - cmp;
-    }
-
-    uint32_t insnOffset() const { return insnOffset_; }
-    void setInsnOffset(uint32_t insnOffset) { insnOffset_ = insnOffset; }
-    void offsetInsnOffsetBy(uint32_t offset) { insnOffset_ += offset; }
-    void* patchHeapPtrImmAt(uint8_t* code) const { return code + (insnOffset_ + opLength_); }
-    bool hasLengthCheck() const { return cmpDelta_ > 0; }
-    void* patchLengthAt(uint8_t* code) const {
-        MOZ_ASSERT(hasLengthCheck());
-        return code + (insnOffset_ - cmpDelta_);
-    }
-};
-#elif defined(JS_CODEGEN_X64)
-class HeapAccess
-{
-  public:
-    enum WhatToDoOnOOB {
-        CarryOn, // loads return undefined, stores do nothing.
-        Throw    // throw a RangeError
-    };
-
-  private:
-    uint32_t insnOffset_;
-    uint8_t offsetWithinWholeSimdVector_; // if is this e.g. the Z of an XYZ
-    bool throwOnOOB_;                     // should we throw on OOB?
-    uint8_t cmpDelta_;                    // the number of bytes from the cmp to the load/store instruction
-
-  public:
-    HeapAccess() = default;
-    static const uint32_t NoLengthCheck = UINT32_MAX;
-
-    // If 'cmp' equals 'insnOffset' or if it is not supplied then the
-    // cmpDelta_ is zero indicating that there is no length to patch.
-    HeapAccess(uint32_t insnOffset, WhatToDoOnOOB oob,
-               uint32_t cmp = NoLengthCheck,
-               uint32_t offsetWithinWholeSimdVector = 0)
-    {
-        mozilla::PodZero(this);  // zero padding for Valgrind
-        insnOffset_ = insnOffset;
-        offsetWithinWholeSimdVector_ = offsetWithinWholeSimdVector;
-        throwOnOOB_ = oob == Throw;
-        cmpDelta_ = cmp == NoLengthCheck ? 0 : insnOffset - cmp;
-        MOZ_ASSERT(offsetWithinWholeSimdVector_ == offsetWithinWholeSimdVector);
-    }
-
-    uint32_t insnOffset() const { return insnOffset_; }
-    void setInsnOffset(uint32_t insnOffset) { insnOffset_ = insnOffset; }
-    void offsetInsnOffsetBy(uint32_t offset) { insnOffset_ += offset; }
-    bool throwOnOOB() const { return throwOnOOB_; }
-    uint32_t offsetWithinWholeSimdVector() const { return offsetWithinWholeSimdVector_; }
-    bool hasLengthCheck() const { return cmpDelta_ > 0; }
-    void* patchLengthAt(uint8_t* code) const {
-        MOZ_ASSERT(hasLengthCheck());
-        return code + (insnOffset_ - cmpDelta_);
-    }
-};
-#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-      defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
-class HeapAccess
-{
-    uint32_t insnOffset_;
-  public:
-    HeapAccess() = default;
-    explicit HeapAccess(uint32_t insnOffset) : insnOffset_(insnOffset) {}
-    uint32_t insnOffset() const { return insnOffset_; }
-    void setInsnOffset(uint32_t insnOffset) { insnOffset_ = insnOffset; }
-    void offsetInsnOffsetBy(uint32_t offset) { insnOffset_ += offset; }
-};
-#elif defined(JS_CODEGEN_NONE)
-class HeapAccess {
-  public:
-    void offsetInsnOffsetBy(uint32_t) { MOZ_CRASH(); }
-    uint32_t insnOffset() const { MOZ_CRASH(); }
-};
-#endif
-
-} // namespace wasm
-} // namespace js
-namespace mozilla {
-template <> struct IsPod<js::wasm::HeapAccess> : TrueType {};
-}
-namespace js {
-namespace wasm {
-
-typedef Vector<HeapAccess, 0, SystemAllocPolicy> HeapAccessVector;
 
 // A wasm::SymbolicAddress represents a pointer to a well-known function or
 // object that is embedded in wasm code. Since wasm code is serialized and
@@ -689,27 +831,32 @@ enum class SymbolicAddress
     LogD,
     PowD,
     ATan2D,
-    Runtime,
-    RuntimeInterruptUint32,
-    StackLimit,
+    Context,
+    InterruptUint32,
     ReportOverRecursed,
     HandleExecutionInterrupt,
     HandleTrap,
-    InvokeImport_Void,
-    InvokeImport_I32,
-    InvokeImport_I64,
-    InvokeImport_F64,
+    CallImport_Void,
+    CallImport_I32,
+    CallImport_I64,
+    CallImport_F64,
     CoerceInPlace_ToInt32,
     CoerceInPlace_ToNumber,
+    DivI64,
+    UDivI64,
+    ModI64,
+    UModI64,
+    TruncateDoubleToInt64,
+    TruncateDoubleToUint64,
+    Uint64ToFloatingPoint,
+    Int64ToFloatingPoint,
+    GrowMemory,
+    CurrentMemory,
     Limit
 };
 
 void*
 AddressOf(SymbolicAddress imm, ExclusiveContext* cx);
-
-// Extracts low and high from an int64 object {low: int32, high: int32}, for
-// testing purposes mainly.
-MOZ_MUST_USE bool ReadI64Object(JSContext* cx, HandleValue v, int64_t* val);
 
 // A wasm::Trap is a reason for why we reached a trap in executed code. Each
 // different trap is mapped to a different error message.
@@ -726,8 +873,12 @@ enum class Trap
     IntegerDivideByZero,
     // Out of bounds on wasm memory accesses and asm.js SIMD/atomic accesses.
     OutOfBounds,
-    // Bad signature for an indirect call.
-    BadIndirectCall,
+    // Unaligned memory access.
+    UnalignedAccess,
+    // call_indirect to null.
+    IndirectCallToNull,
+    // call_indirect signature mismatch.
+    IndirectCallBadSig,
 
     // (asm.js only) SIMD float to int conversion failed because the input
     // wasn't in bounds.
@@ -749,7 +900,9 @@ enum class JumpTarget
     InvalidConversionToInteger = unsigned(Trap::InvalidConversionToInteger),
     IntegerDivideByZero = unsigned(Trap::IntegerDivideByZero),
     OutOfBounds = unsigned(Trap::OutOfBounds),
-    BadIndirectCall = unsigned(Trap::BadIndirectCall),
+    UnalignedAccess = unsigned(Trap::UnalignedAccess),
+    IndirectCallToNull = unsigned(Trap::IndirectCallToNull),
+    IndirectCallBadSig = unsigned(Trap::IndirectCallBadSig),
     ImpreciseSimdConversion = unsigned(Trap::ImpreciseSimdConversion),
     // Non-traps
     StackOverflow,
@@ -759,19 +912,29 @@ enum class JumpTarget
 
 typedef EnumeratedArray<JumpTarget, JumpTarget::Limit, Uint32Vector> JumpSiteArray;
 
-// The CompileArgs struct captures global parameters that affect all wasm code
-// generation. It also currently is the single source of truth for whether or
-// not to use signal handlers for different purposes.
+// Assumptions captures ambient state that must be the same when compiling and
+// deserializing a module for the compiled code to be valid. If it's not, then
+// the module must be recompiled from scratch.
 
-struct CompileArgs
+struct Assumptions
 {
-    bool useSignalHandlersForOOB;
-    bool useSignalHandlersForInterrupt;
+    uint32_t              cpuId;
+    JS::BuildIdCharVector buildId;
+    bool                  newFormat;
 
-    CompileArgs() = default;
-    explicit CompileArgs(ExclusiveContext* cx);
-    bool operator==(CompileArgs rhs) const;
-    bool operator!=(CompileArgs rhs) const { return !(*this == rhs); }
+    explicit Assumptions(JS::BuildIdCharVector&& buildId);
+
+    // If Assumptions is constructed without arguments, initBuildIdFromContext()
+    // must be called to complete initialization.
+    Assumptions();
+    bool initBuildIdFromContext(ExclusiveContext* cx);
+
+    bool clone(const Assumptions& other);
+
+    bool operator==(const Assumptions& rhs) const;
+    bool operator!=(const Assumptions& rhs) const { return !(*this == rhs); }
+
+    WASM_DECLARE_SERIALIZABLE(Assumptions)
 };
 
 // A Module can either be asm.js or wasm.
@@ -782,23 +945,427 @@ enum ModuleKind
     AsmJS
 };
 
+// Represents the resizable limits of memories and tables.
+
+struct ResizableLimits
+{
+    uint32_t initial;
+    Maybe<uint32_t> maximum;
+};
+
+// TableDesc describes a table as well as the offset of the table's base pointer
+// in global memory. Currently, wasm only has "any function" and asm.js only
+// "typed function".
+
+enum class TableKind
+{
+    AnyFunction,
+    TypedFunction
+};
+
+struct TableDesc
+{
+    TableKind kind;
+    bool external;
+    uint32_t globalDataOffset;
+    ResizableLimits limits;
+
+    TableDesc() = default;
+    TableDesc(TableKind kind, ResizableLimits limits)
+     : kind(kind),
+       external(false),
+       globalDataOffset(UINT32_MAX),
+       limits(limits)
+    {}
+};
+
+typedef Vector<TableDesc, 0, SystemAllocPolicy> TableDescVector;
+
+// ExportArg holds the unboxed operands to the wasm entry trampoline which can
+// be called through an ExportFuncPtr.
+
+struct ExportArg
+{
+    uint64_t lo;
+    uint64_t hi;
+};
+
+// TLS data for a single module instance.
+//
+// Every WebAssembly function expects to be passed a hidden TLS pointer argument
+// in WasmTlsReg. The TLS pointer argument points to a TlsData struct.
+// Compiled functions expect that the TLS pointer does not change for the
+// lifetime of the thread.
+//
+// There is a TlsData per module instance per thread, so inter-module calls need
+// to pass the TLS pointer appropriate for the callee module.
+//
+// After the TlsData struct follows the module's declared TLS variables.
+
+struct TlsData
+{
+    // Pointer to the JSContext that contains this TLS data.
+    JSContext* cx;
+
+    // Pointer to the Instance that contains this TLS data.
+    Instance* instance;
+
+    // Pointer to the global data for this Instance.
+    uint8_t* globalData;
+
+    // Pointer to the base of the default memory (or null if there is none).
+    uint8_t* memoryBase;
+
+    // Stack limit for the current thread. This limit is checked against the
+    // stack pointer in the prologue of functions that allocate stack space. See
+    // `CodeGenerator::generateWasm`.
+    void* stackLimit;
+};
+
+typedef int32_t (*ExportFuncPtr)(ExportArg* args, TlsData* tls);
+
+// FuncImportTls describes the region of wasm global memory allocated in the
+// instance's thread-local storage for a function import. This is accessed
+// directly from JIT code and mutated by Instance as exits become optimized and
+// deoptimized.
+
+struct FuncImportTls
+{
+    // The code to call at an import site: a wasm callee, a thunk into C++, or a
+    // thunk into JIT code.
+    void* code;
+
+    // The callee's TlsData pointer, which must be loaded to WasmTlsReg (along
+    // with any pinned registers) before calling 'code'.
+    TlsData* tls;
+
+    // If 'code' points into a JIT code thunk, the BaselineScript of the callee,
+    // for bidirectional registration purposes.
+    jit::BaselineScript* baselineScript;
+
+    // A GC pointer which keeps the callee alive. For imported wasm functions,
+    // this points to the wasm function's WasmInstanceObject. For all other
+    // imported functions, 'obj' points to the JSFunction.
+    GCPtrObject obj;
+    static_assert(sizeof(GCPtrObject) == sizeof(void*), "for JIT access");
+};
+
+// TableTls describes the region of wasm global memory allocated in the
+// instance's thread-local storage which is accessed directly from JIT code
+// to bounds-check and index the table.
+
+struct TableTls
+{
+    // Length of the table in number of elements (not bytes).
+    uint32_t length;
+
+    // Pointer to the array of elements (of type either ExternalTableElem or
+    // void*).
+    void* base;
+};
+
+// When a table can contain functions from other instances (it is "external"),
+// the internal representation is an array of ExternalTableElem instead of just
+// an array of code pointers.
+
+struct ExternalTableElem
+{
+    // The code to call when calling this element. The table ABI is the system
+    // ABI with the additional ABI requirements that:
+    //  - WasmTlsReg and any pinned registers have been loaded appropriately
+    //  - if this is a heterogeneous table that requires a signature check,
+    //    WasmTableCallSigReg holds the signature id.
+    void* code;
+
+    // The pointer to the callee's instance's TlsData. This must be loaded into
+    // WasmTlsReg before calling 'code'.
+    TlsData* tls;
+};
+
+// CalleeDesc describes how to compile one of the variety of asm.js/wasm calls.
+// This is hoisted into WasmTypes.h for sharing between Ion and Baseline.
+
+class CalleeDesc
+{
+  public:
+    enum Which {
+        // Calls a function defined in the same module by its index.
+        Definition,
+
+        // Calls the import identified by the offset of its FuncImportTls in
+        // thread-local data.
+        Import,
+
+        // Calls a WebAssembly table (heterogeneous, index must be bounds
+        // checked, callee instance depends on TableDesc).
+        WasmTable,
+
+        // Calls an asm.js table (homogeneous, masked index, same-instance).
+        AsmJSTable,
+
+        // Call a C++ function identified by SymbolicAddress.
+        Builtin,
+
+        // Like Builtin, but automatically passes Instance* as first argument.
+        BuiltinInstanceMethod
+    };
+
+  private:
+    Which which_;
+    union U {
+        U() {}
+        uint32_t funcDefIndex_;
+        struct {
+            uint32_t globalDataOffset_;
+        } import;
+        struct {
+            uint32_t globalDataOffset_;
+            bool external_;
+            SigIdDesc sigId_;
+        } table;
+        SymbolicAddress builtin_;
+    } u;
+
+  public:
+    CalleeDesc() {}
+    static CalleeDesc definition(uint32_t funcDefIndex) {
+        CalleeDesc c;
+        c.which_ = Definition;
+        c.u.funcDefIndex_ = funcDefIndex;
+        return c;
+    }
+    static CalleeDesc import(uint32_t globalDataOffset) {
+        CalleeDesc c;
+        c.which_ = Import;
+        c.u.import.globalDataOffset_ = globalDataOffset;
+        return c;
+    }
+    static CalleeDesc wasmTable(const TableDesc& desc, SigIdDesc sigId) {
+        CalleeDesc c;
+        c.which_ = WasmTable;
+        c.u.table.globalDataOffset_ = desc.globalDataOffset;
+        c.u.table.external_ = desc.external;
+        c.u.table.sigId_ = sigId;
+        return c;
+    }
+    static CalleeDesc asmJSTable(const TableDesc& desc) {
+        CalleeDesc c;
+        c.which_ = AsmJSTable;
+        c.u.table.globalDataOffset_ = desc.globalDataOffset;
+        return c;
+    }
+    static CalleeDesc builtin(SymbolicAddress callee) {
+        CalleeDesc c;
+        c.which_ = Builtin;
+        c.u.builtin_ = callee;
+        return c;
+    }
+    static CalleeDesc builtinInstanceMethod(SymbolicAddress callee) {
+        CalleeDesc c;
+        c.which_ = BuiltinInstanceMethod;
+        c.u.builtin_ = callee;
+        return c;
+    }
+    Which which() const {
+        return which_;
+    }
+    uint32_t funcDefIndex() const {
+        MOZ_ASSERT(which_ == Definition);
+        return u.funcDefIndex_;
+    }
+    uint32_t importGlobalDataOffset() const {
+        MOZ_ASSERT(which_ == Import);
+        return u.import.globalDataOffset_;
+    }
+    bool isTable() const {
+        return which_ == WasmTable || which_ == AsmJSTable;
+    }
+    uint32_t tableLengthGlobalDataOffset() const {
+        MOZ_ASSERT(isTable());
+        return u.table.globalDataOffset_ + offsetof(TableTls, length);
+    }
+    uint32_t tableBaseGlobalDataOffset() const {
+        MOZ_ASSERT(isTable());
+        return u.table.globalDataOffset_ + offsetof(TableTls, base);
+    }
+    bool wasmTableIsExternal() const {
+        MOZ_ASSERT(which_ == WasmTable);
+        return u.table.external_;
+    }
+    SigIdDesc wasmTableSigId() const {
+        MOZ_ASSERT(which_ == WasmTable);
+        return u.table.sigId_;
+    }
+    SymbolicAddress builtin() const {
+        MOZ_ASSERT(which_ == Builtin || which_ == BuiltinInstanceMethod);
+        return u.builtin_;
+    }
+};
+
+// Because ARM has a fixed-width instruction encoding, ARM can only express a
+// limited subset of immediates (in a single instruction).
+
+extern bool
+IsValidARMImmediate(uint32_t i);
+
+extern uint32_t
+RoundUpToNextValidARMImmediate(uint32_t i);
+
+// The WebAssembly spec hard-codes the virtual page size to be 64KiB and
+// requires the size of linear memory to always be a multiple of 64KiB.
+
+static const unsigned PageSize = 64 * 1024;
+
+// Bounds checks always compare the base of the memory access with the bounds
+// check limit. If the memory access is unaligned, this means that, even if the
+// bounds check succeeds, a few bytes of the access can extend past the end of
+// memory. To guard against this, extra space is included in the guard region to
+// catch the overflow. MaxMemoryAccessSize is a conservative approximation of
+// the maximum guard space needed to catch all unaligned overflows.
+
+static const unsigned MaxMemoryAccessSize = sizeof(Val);
+
+#ifdef JS_CODEGEN_X64
+
+// All other code should use WASM_HUGE_MEMORY instead of JS_CODEGEN_X64 so that
+// it is easy to use the huge-mapping optimization for other 64-bit platforms in
+// the future.
+# define WASM_HUGE_MEMORY
+
+// On WASM_HUGE_MEMORY platforms, every asm.js or WebAssembly memory
+// unconditionally allocates a huge region of virtual memory of size
+// wasm::HugeMappedSize. This allows all memory resizing to work without
+// reallocation and provides enough guard space for all offsets to be folded
+// into memory accesses.
+
+static const uint64_t IndexRange = uint64_t(UINT32_MAX) + 1;
+static const uint64_t OffsetGuardLimit = uint64_t(INT32_MAX) + 1;
+static const uint64_t UnalignedGuardPage = PageSize;
+static const uint64_t HugeMappedSize = IndexRange + OffsetGuardLimit + UnalignedGuardPage;
+
+static_assert(MaxMemoryAccessSize <= UnalignedGuardPage, "rounded up to static page size");
+
+#else // !WASM_HUGE_MEMORY
+
+// On !WASM_HUGE_MEMORY platforms:
+//  - To avoid OOM in ArrayBuffer::prepareForAsmJS, asm.js continues to use the
+//    original ArrayBuffer allocation which has no guard region at all.
+//  - For WebAssembly memories, an additional GuardSize is mapped after the
+//    accessible region of the memory to catch folded (base+offset) accesses
+//    where `offset < OffsetGuardLimit` as well as the overflow from unaligned
+//    accesses, as described above for MaxMemoryAccessSize.
+
+static const size_t OffsetGuardLimit = PageSize - MaxMemoryAccessSize;
+static const size_t GuardSize = PageSize;
+
+// Return whether the given immediate satisfies the constraints of the platform
+// (viz. that, on ARM, IsValidARMImmediate).
+
+extern bool
+IsValidBoundsCheckImmediate(uint32_t i);
+
+// For a given WebAssembly/asm.js max size, return the number of bytes to
+// map which will necessarily be a multiple of the system page size and greater
+// than maxSize. For a returned mappedSize:
+//   boundsCheckLimit = mappedSize - GuardSize
+//   IsValidBoundsCheckImmediate(boundsCheckLimit)
+
+extern size_t
+ComputeMappedSize(uint32_t maxSize);
+
+#endif // WASM_HUGE_MEMORY
+
+// Metadata for bounds check instructions that are patched at runtime with the
+// appropriate bounds check limit. On WASM_HUGE_MEMORY platforms for wasm (and
+// SIMD/Atomic) bounds checks, no BoundsCheck is created: the signal handler
+// catches everything. On !WASM_HUGE_MEMORY, a BoundsCheck is created for each
+// memory access (except when statically eliminated by optimizations) so that
+// the length can be patched in as an immediate. This requires that the bounds
+// check limit IsValidBoundsCheckImmediate.
+
+class BoundsCheck
+{
+  public:
+    BoundsCheck() = default;
+
+    explicit BoundsCheck(uint32_t cmpOffset)
+      : cmpOffset_(cmpOffset)
+    { }
+
+    uint8_t* patchAt(uint8_t* code) const { return code + cmpOffset_; }
+    void offsetBy(uint32_t offset) { cmpOffset_ += offset; }
+
+  private:
+    uint32_t cmpOffset_;
+};
+
+// Metadata for memory accesses. On WASM_HUGE_MEMORY platforms, only
+// (non-SIMD/Atomic) asm.js loads and stores create a MemoryAccess so that the
+// signal handler can implement the semantically-correct wraparound logic; the
+// rest simply redirect to the out-of-bounds stub in the signal handler. On x86,
+// the base address of memory is baked into each memory access instruction so
+// the MemoryAccess records the location of each for patching. On all other
+// platforms, no MemoryAccess is created.
+
+#ifdef WASM_HUGE_MEMORY
+class MemoryAccess
+{
+    uint32_t insnOffset_;
+
+  public:
+    MemoryAccess() = default;
+    explicit MemoryAccess(uint32_t insnOffset)
+      : insnOffset_(insnOffset)
+    {}
+
+    uint32_t insnOffset() const { return insnOffset_; }
+
+    void offsetBy(uint32_t offset) { insnOffset_ += offset; }
+};
+#elif defined(JS_CODEGEN_X86)
+class MemoryAccess
+{
+    uint32_t nextInsOffset_;
+
+  public:
+    MemoryAccess() = default;
+    explicit MemoryAccess(uint32_t nextInsOffset)
+      : nextInsOffset_(nextInsOffset)
+    { }
+
+    void* patchMemoryPtrImmAt(uint8_t* code) const { return code + nextInsOffset_; }
+    void offsetBy(uint32_t offset) { nextInsOffset_ += offset; }
+};
+#else
+class MemoryAccess {
+  public:
+    MemoryAccess() { MOZ_CRASH(); }
+    void offsetBy(uint32_t) { MOZ_CRASH(); }
+    uint32_t insnOffset() const { MOZ_CRASH(); }
+};
+#endif
+
+WASM_DECLARE_POD_VECTOR(MemoryAccess, MemoryAccessVector)
+WASM_DECLARE_POD_VECTOR(BoundsCheck, BoundsCheckVector)
+
 // Constants:
 
-static const unsigned ActivationGlobalDataOffset = 0;
-static const unsigned HeapGlobalDataOffset       = ActivationGlobalDataOffset + sizeof(void*);
-static const unsigned NaN64GlobalDataOffset      = HeapGlobalDataOffset + sizeof(void*);
-static const unsigned NaN32GlobalDataOffset      = NaN64GlobalDataOffset + sizeof(double);
-static const unsigned InitialGlobalDataBytes     = NaN32GlobalDataOffset + sizeof(float);
+static const unsigned NaN64GlobalDataOffset       = 0;
+static const unsigned NaN32GlobalDataOffset       = NaN64GlobalDataOffset + sizeof(double);
+static const unsigned InitialGlobalDataBytes      = NaN32GlobalDataOffset + sizeof(float);
 
-static const unsigned MaxSigs                    =        4 * 1024;
-static const unsigned MaxFuncs                   =      512 * 1024;
-static const unsigned MaxLocals                  =       64 * 1024;
-static const unsigned MaxImports                 =       64 * 1024;
-static const unsigned MaxExports                 =       64 * 1024;
-static const unsigned MaxTables                  =        4 * 1024;
-static const unsigned MaxTableElems              =      128 * 1024;
-static const unsigned MaxArgsPerFunc             =        4 * 1024;
-static const unsigned MaxBrTableElems            = 4 * 1024 * 1024;
+static const unsigned MaxSigs                     =        4 * 1024;
+static const unsigned MaxFuncs                    =      512 * 1024;
+static const unsigned MaxGlobals                  =        4 * 1024;
+static const unsigned MaxLocals                   =       64 * 1024;
+static const unsigned MaxImports                  =       64 * 1024;
+static const unsigned MaxExports                  =       64 * 1024;
+static const unsigned MaxTables                   =        4 * 1024;
+static const unsigned MaxTableElems               =     1024 * 1024;
+static const unsigned MaxDataSegments             =       64 * 1024;
+static const unsigned MaxElemSegments             =       64 * 1024;
+static const unsigned MaxArgsPerFunc              =        4 * 1024;
+static const unsigned MaxBrTableElems             = 4 * 1024 * 1024;
 
 } // namespace wasm
 } // namespace js

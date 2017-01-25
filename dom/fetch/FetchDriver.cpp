@@ -21,7 +21,6 @@
 #include "nsIPipe.h"
 
 #include "nsContentPolicyUtils.h"
-#include "nsCORSListenerProxy.h"
 #include "nsDataHandler.h"
 #include "nsHostObjectProtocolHandler.h"
 #include "nsNetUtil.h"
@@ -32,7 +31,7 @@
 
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/workers/Workers.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 
 #include "Fetch.h"
 #include "InternalRequest.h"
@@ -83,20 +82,12 @@ FetchDriver::Fetch(FetchDriverObserver* aObserver)
   MOZ_RELEASE_ASSERT(!mRequest->IsSynchronous(),
                      "Synchronous fetch not supported");
 
-  return NS_DispatchToCurrentThread(NewRunnableMethod(this, &FetchDriver::ContinueFetch));
-}
-
-nsresult
-FetchDriver::ContinueFetch()
-{
-  workers::AssertIsOnMainThread();
-
-  nsresult rv = HttpFetch();
-  if (NS_FAILED(rv)) {
+  if (NS_FAILED(HttpFetch())) {
     FailWithNetworkError();
   }
 
-  return rv;
+  // Any failure is handled by FailWithNetworkError notifying the aObserver.
+  return NS_OK;
 }
 
 // This function implements the "HTTP Fetch" algorithm from the Fetch spec.
@@ -261,11 +252,15 @@ FetchDriver::HttpFetch()
     // Step 2. Set the referrer.
     nsAutoString referrer;
     mRequest->GetReferrer(referrer);
+
+    // The Referrer Policy in Request can be used to override a referrer policy
+    // associated with an environment settings object.
+    // If there's no Referrer Policy in the request, it should be inherited
+    // from environment.
     ReferrerPolicy referrerPolicy = mRequest->ReferrerPolicy_();
-    net::ReferrerPolicy net_referrerPolicy = net::RP_Unset;
+    net::ReferrerPolicy net_referrerPolicy = mRequest->GetEnvironmentReferrerPolicy();
     switch (referrerPolicy) {
     case ReferrerPolicy::_empty:
-      net_referrerPolicy = net::RP_Default;
       break;
     case ReferrerPolicy::No_referrer:
       net_referrerPolicy = net::RP_No_Referrer;
@@ -303,12 +298,10 @@ FetchDriver::HttpFetch()
       rv = NS_NewURI(getter_AddRefs(referrerURI), referrer, nullptr, nullptr);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      uint32_t documentReferrerPolicy = mDocument ? mDocument->GetReferrerPolicy() :
-                                                    net::RP_Default;
       rv =
         httpChan->SetReferrerWithPolicy(referrerURI,
                                         referrerPolicy == ReferrerPolicy::_empty ?
-                                          documentReferrerPolicy :
+                                          mRequest->GetEnvironmentReferrerPolicy() :
                                           net_referrerPolicy);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -326,6 +319,7 @@ FetchDriver::HttpFetch()
     internalChan->SetRedirectMode(static_cast<uint32_t>(mRequest->GetRedirectMode()));
     mRequest->MaybeSkipCacheIfPerformingRevalidation();
     internalChan->SetFetchCacheMode(static_cast<uint32_t>(mRequest->GetCacheMode()));
+    internalChan->SetIntegrityMetadata(mRequest->GetIntegrity());
   }
 
   // Step 5. Proxy authentication will be handled by Necko.
@@ -404,10 +398,14 @@ FetchDriver::BeginAndGetFilteredResponse(InternalResponse* aResponse,
 
   MOZ_ASSERT(filteredResponse);
   MOZ_ASSERT(mObserver);
-  mObserver->OnResponseAvailable(filteredResponse);
-#ifdef DEBUG
-  mResponseAvailableCalled = true;
-#endif
+  if (filteredResponse->Type() == ResponseType::Error ||
+      mRequest->GetIntegrity().IsEmpty()) {
+    mObserver->OnResponseAvailable(filteredResponse);
+  #ifdef DEBUG
+    mResponseAvailableCalled = true;
+  #endif
+  }
+
   return filteredResponse.forget();
 }
 
@@ -605,6 +603,30 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest,
   // sure the Response is fully initialized before calling this.
   mResponse = BeginAndGetFilteredResponse(response, foundOpaqueRedirect);
 
+  // From "Main Fetch" step 17: SRI-part1.
+  if (mResponse->Type() != ResponseType::Error &&
+      !mRequest->GetIntegrity().IsEmpty() &&
+      mSRIMetadata.IsEmpty()) {
+    nsIConsoleReportCollector* aReporter = nullptr;
+    if (mObserver) {
+      aReporter = mObserver->GetReporter();
+    }
+
+    nsAutoCString sourceUri;
+    if (mDocument && mDocument->GetDocumentURI()) {
+      mDocument->GetDocumentURI()->GetAsciiSpec(sourceUri);
+    } else if (!mWorkerScript.IsEmpty()) {
+      sourceUri.Assign(mWorkerScript);
+    }
+    SRICheck::IntegrityMetadata(mRequest->GetIntegrity(), sourceUri,
+                                aReporter, &mSRIMetadata);
+    mSRIDataVerifier = new SRICheckDataVerifier(mSRIMetadata, sourceUri,
+                                                aReporter);
+
+    // Do not retarget off main thread when using SRI API.
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIEventTarget> sts = do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     FailWithNetworkError();
@@ -614,7 +636,7 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest,
 
   // Try to retarget off main thread.
   if (nsCOMPtr<nsIThreadRetargetableRequest> rr = do_QueryInterface(aRequest)) {
-    NS_WARN_IF(NS_FAILED(rr->RetargetDeliveryTo(sts)));
+    Unused << NS_WARN_IF(NS_FAILED(rr->RetargetDeliveryTo(sts)));
   }
   return NS_OK;
 }
@@ -633,6 +655,46 @@ FetchDriver::OnDataAvailable(nsIRequest* aRequest,
   uint32_t aRead;
   MOZ_ASSERT(mResponse);
   MOZ_ASSERT(mPipeOutputStream);
+
+  // From "Main Fetch" step 17: SRI-part2.
+  if (mResponse->Type() != ResponseType::Error &&
+      !mRequest->GetIntegrity().IsEmpty()) {
+    MOZ_ASSERT(mSRIDataVerifier);
+
+    uint32_t aWrite;
+    nsTArray<uint8_t> buffer;
+    nsresult rv;
+    buffer.SetCapacity(aCount);
+    while (aCount > 0) {
+      rv = aInputStream->Read(reinterpret_cast<char*>(buffer.Elements()),
+                              aCount, &aRead);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+
+      rv = mSRIDataVerifier->Update(aRead, (uint8_t*)buffer.Elements());
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      while (aRead > 0) {
+        rv = mPipeOutputStream->Write(reinterpret_cast<char*>(buffer.Elements()),
+                                      aRead, &aWrite);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return rv;
+        }
+
+        if (aRead < aWrite) {
+          return NS_ERROR_FAILURE;
+        }
+
+        aRead -= aWrite;
+      }
+
+
+      aCount -= aWrite;
+    }
+
+    return NS_OK;
+  }
 
   nsresult rv = aInputStream->ReadSegments(NS_CopySegmentToStream,
                                            mPipeOutputStream,
@@ -658,12 +720,49 @@ FetchDriver::OnStopRequest(nsIRequest* aRequest,
     MOZ_ASSERT(mResponse);
     MOZ_ASSERT(!mResponse->IsError());
 
+    // From "Main Fetch" step 17: SRI-part3.
+    if (mResponse->Type() != ResponseType::Error &&
+        !mRequest->GetIntegrity().IsEmpty()) {
+      MOZ_ASSERT(mSRIDataVerifier);
+
+      nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+
+      nsIConsoleReportCollector* aReporter = nullptr;
+      if (mObserver) {
+        aReporter = mObserver->GetReporter();
+      }
+
+      nsAutoCString sourceUri;
+      if (mDocument && mDocument->GetDocumentURI()) {
+        mDocument->GetDocumentURI()->GetAsciiSpec(sourceUri);
+      } else if (!mWorkerScript.IsEmpty()) {
+        sourceUri.Assign(mWorkerScript);
+      }
+      nsresult rv = mSRIDataVerifier->Verify(mSRIMetadata, channel, sourceUri,
+                                             aReporter);
+      if (NS_FAILED(rv)) {
+        FailWithNetworkError();
+        // Cancel request.
+        return rv;
+      }
+    }
+
     if (mPipeOutputStream) {
       mPipeOutputStream->Close();
     }
   }
 
   if (mObserver) {
+    if (mResponse->Type() != ResponseType::Error &&
+        !mRequest->GetIntegrity().IsEmpty()) {
+      //From "Main Fetch" step 23: Process response.
+      MOZ_ASSERT(mResponse);
+      mObserver->OnResponseAvailable(mResponse);
+      #ifdef DEBUG
+        mResponseAvailableCalled = true;
+      #endif
+    }
+
     mObserver->OnResponseEnd();
     mObserver = nullptr;
   }
@@ -680,6 +779,13 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aNewChannel);
   if (httpChannel) {
     SetRequestHeaders(httpChannel);
+  }
+
+  nsCOMPtr<nsIHttpChannel> oldHttpChannel = do_QueryInterface(aOldChannel);
+  nsAutoCString tRPHeaderCValue;
+  if (oldHttpChannel) {
+    oldHttpChannel->GetResponseHeader(NS_LITERAL_CSTRING("referrer-policy"),
+                                      tRPHeaderCValue);
   }
 
   // "HTTP-redirect fetch": step 14 "Append locationURL to request's URL list."
@@ -699,6 +805,39 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
   }
 
   mRequest->AddURL(spec);
+
+  NS_ConvertUTF8toUTF16 tRPHeaderValue(tRPHeaderCValue);
+  // updates request’s associated referrer policy according to the
+  // Referrer-Policy header (if any).
+  if (!tRPHeaderValue.IsEmpty()) {
+    net::ReferrerPolicy net_referrerPolicy =
+      nsContentUtils::GetReferrerPolicyFromHeader(tRPHeaderValue);
+    if (net_referrerPolicy != net::RP_Unset) {
+      ReferrerPolicy referrerPolicy = mRequest->ReferrerPolicy_();
+      switch (net_referrerPolicy) {
+        case net::RP_No_Referrer:
+          referrerPolicy = ReferrerPolicy::No_referrer;
+          break;
+        case net::RP_No_Referrer_When_Downgrade:
+          referrerPolicy = ReferrerPolicy::No_referrer_when_downgrade;
+          break;
+        case net::RP_Origin:
+          referrerPolicy = ReferrerPolicy::Origin;
+          break;
+        case net::RP_Origin_When_Crossorigin:
+          referrerPolicy = ReferrerPolicy::Origin_when_cross_origin;
+          break;
+        case net::RP_Unsafe_URL:
+          referrerPolicy = ReferrerPolicy::Unsafe_url;
+          break;
+        default:
+          MOZ_ASSERT_UNREACHABLE("Invalid ReferrerPolicy value");
+          break;
+      }
+
+      mRequest->SetReferrerPolicy(referrerPolicy);
+    }
+  }
 
   aCallback->OnRedirectVerifyCallback(NS_OK);
   return NS_OK;

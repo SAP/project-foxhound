@@ -39,7 +39,7 @@ class HTTPRequest(object):
             conn.close()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def http(request, session):
     return HTTPRequest(session.transport.host, session.transport.port)
 
@@ -67,7 +67,6 @@ def test_get_current_url_no_browsing_context(session, new_window):
 
 def test_get_current_url_alert_prompt(session):
     # 7.2 step 2
-    import time
     session.url = alert_doc
     with pytest.raises(webdriver.UnexpectedAlertOpenException):
         session.url = "about:blank"

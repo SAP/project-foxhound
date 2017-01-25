@@ -17,7 +17,7 @@ import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
 import org.mozilla.gecko.delegates.BrowserAppDelegateWithReference;
 import org.mozilla.gecko.reader.ReaderModeUtils;
-import org.mozilla.gecko.util.Experiments;
+import org.mozilla.gecko.Experiments;
 
 public class ReaderViewBookmarkPromotion extends BrowserAppDelegateWithReference implements Tabs.OnTabsChangedListener {
     private static final String PREF_FIRST_RV_HINT_SHOWN = "first_reader_view_hint_shown";
@@ -41,7 +41,7 @@ public class ReaderViewBookmarkPromotion extends BrowserAppDelegateWithReference
             case LOCATION_CHANGE:
                 // old url: data
                 // new url: tab.getURL()
-                final boolean enteringReaderMode = ReaderModeUtils.isEnteringReaderMode(tab.getURL(), data);
+                final boolean enteringReaderMode = ReaderModeUtils.isEnteringReaderMode(data, tab.getURL());
 
                 if (!hasEnteredReaderMode && enteringReaderMode) {
                     hasEnteredReaderMode = true;

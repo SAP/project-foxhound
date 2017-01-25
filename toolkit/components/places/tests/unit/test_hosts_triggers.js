@@ -18,11 +18,11 @@ function isHostInMozPlaces(aURI)
   let stmt = DBConn().createStatement(
     `SELECT url
        FROM moz_places
-       WHERE url = :host`
+       WHERE url_hash = hash(:host) AND url = :host`
   );
   let result = false;
   stmt.params.host = aURI.spec;
-  while(stmt.executeStep()) {
+  while (stmt.executeStep()) {
     if (stmt.row.url == aURI.spec) {
       result = true;
       break;

@@ -19,6 +19,8 @@
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 #include "nsCRT.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 
 using namespace mozilla;
 
@@ -125,9 +127,8 @@ nsHyphenationManager::GetHyphenator(nsIAtom *aLocale)
     return hyph.forget();
   }
 #ifdef DEBUG
-  nsCString msg;
-  uri->GetSpec(msg);
-  msg.Insert("failed to load patterns from ", 0);
+  nsCString msg("failed to load patterns from ");
+  msg += uri->GetSpecOrDefault();
   NS_WARNING(msg.get());
 #endif
   mPatternFiles.Remove(aLocale);
@@ -167,6 +168,14 @@ nsHyphenationManager::LoadPatternList()
     if (NS_SUCCEEDED(appDir->Equals(greDir, &equals)) && !equals) {
       LoadPatternListFromDir(appDir);
     }
+  }
+
+  nsCOMPtr<nsIFile> profileDir;
+  rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_LOCAL_50_DIR,
+                                       getter_AddRefs(profileDir));
+  if (NS_SUCCEEDED(rv)) {
+      profileDir->AppendNative(NS_LITERAL_CSTRING("hyphenation"));
+      LoadPatternListFromDir(profileDir);
   }
 }
 

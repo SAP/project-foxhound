@@ -101,13 +101,7 @@ public:
   // helper method for converting a word to the charset of the dictionary
   nsresult ConvertCharset(const char16_t* aStr, char ** aDst);
 
-  NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                            nsISupports* aData, bool aAnonymize) override
-  {
-    return MOZ_COLLECT_REPORT(
-      "explicit/spell-check", KIND_HEAP, UNITS_BYTES, HunspellAllocator::MemoryAllocated(),
-      "Memory used by the spell-checking engine.");
-  }
+  NS_DECL_NSIMEMORYREPORTER
 
 protected:
   virtual ~mozHunspell();

@@ -90,7 +90,7 @@ var pktApi = (function() {
         return out;
     }
 
-    var parseJSON = function(jsonString){
+    var parseJSON = function(jsonString) {
         try {
             var o = JSON.parse(jsonString);
 
@@ -261,7 +261,7 @@ var pktApi = (function() {
 
         var request = Components.classes["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Components.interfaces.nsIXMLHttpRequest);
         request.open("POST", url, true);
-        request.onreadystatechange = function(e){
+        request.onreadystatechange = function(e) {
             if (request.readyState == 4) {
                 if (request.status === 200) {
                     // There could still be an error if the response is no valid json
@@ -295,11 +295,11 @@ var pktApi = (function() {
 
         // Set headers
         request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-        request.setRequestHeader('X-Accept',' application/json');
+        request.setRequestHeader('X-Accept', ' application/json');
 
         // Serialize and Fire off the request
         var str = [];
-        for(var p in data) {
+        for (var p in data) {
             if (data.hasOwnProperty(p)) {
                 str.push(encodeURIComponent(p) + "=" + encodeURIComponent(data[p]));
             }
@@ -610,30 +610,33 @@ var pktApi = (function() {
      * Helper function to get current signup AB group the user is in
      */
     function getSignupPanelTabTestVariant() {
-        return getSimpleTestOption('panelTab', 0.1, 'tab');
+        return getMultipleTestOption('panelSignUp', {control: 1, v1: 8, v2: 1 })
     }
 
-    function getSimpleTestOption(testName, threshold, testOptionName) {
+    function getMultipleTestOption(testName, testOptions) {
         // Get the test from preferences if we've already assigned the user to a test
         var settingName = 'test.' + testName;
         var assignedValue = getSetting(settingName);
+        var valArray = [];
 
         // If not assigned yet, pick and store a value
         if (!assignedValue)
         {
-            if (Math.random() <= threshold) {
-                assignedValue = testOptionName;
-            }
-            else {
-                assignedValue = 'control';
-            }
+            // Get a weighted array of test variants from the testOptions object
+            Object.keys(testOptions).forEach(function(key) {
+              for (var i = 0; i < testOptions[key]; i++) {
+                valArray.push(key);
+              }
+            });
 
-            setSetting('test.'+testName, assignedValue);
+            // Get a random test variant and set the user to it
+            assignedValue = valArray[Math.floor(Math.random() * valArray.length)];
+            setSetting(settingName, assignedValue);
         }
 
         return assignedValue;
-    }
 
+    }
 
     /**
      * Public functions

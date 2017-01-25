@@ -16,11 +16,10 @@ MOZ_ARG_WITH_BOOL(system-icu,
 
 if test -n "$MOZ_SYSTEM_ICU"; then
     PKG_CHECK_MODULES(MOZ_ICU, icu-i18n >= 50.1)
-else
-    MOZ_ICU_INCLUDES="/intl/icu/source/common /intl/icu/source/i18n"
+    CFLAGS="$CFLAGS $MOZ_ICU_CFLAGS"
+    CXXFLAGS="$CXXFLAGS $MOZ_ICU_CFLAGS"
 fi
 
-AC_SUBST_LIST(MOZ_ICU_INCLUDES)
 AC_SUBST(MOZ_SYSTEM_ICU)
 
 MOZ_ARG_WITH_STRING(intl-api,
@@ -70,7 +69,7 @@ if test -n "$USE_ICU"; then
         fi
     fi
 
-    version=`sed -n 's/^[[:space:]]*#[[:space:]]*define[[:space:]][[:space:]]*U_ICU_VERSION_MAJOR_NUM[[:space:]][[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$icudir/common/unicode/uvernum.h"`
+    version=`sed -n 's/^[[[:space:]]]*#[[:space:]]*define[[:space:]][[:space:]]*U_ICU_VERSION_MAJOR_NUM[[:space:]][[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$icudir/common/unicode/uvernum.h"`
     if test x"$version" = x; then
        AC_MSG_ERROR([cannot determine icu version number from uvernum.h header file $lineno])
     fi
@@ -86,7 +85,7 @@ if test -n "$USE_ICU"; then
     dnl We also don't do it on Windows because sometimes the file goes
     dnl missing -- possibly due to overzealous antivirus software? --
     dnl which prevents the browser from starting up :(
-    if test -z "$JS_STANDALONE" -a -z "$MOZ_SYSTEM_ICU" -a "$OS_TARGET" != WINNT; then
+    if test -z "$JS_STANDALONE" -a -z "$MOZ_SYSTEM_ICU" -a "$OS_TARGET" != WINNT -a "$MOZ_WIDGET_TOOLKIT" != "android"; then
         MOZ_ICU_DATA_ARCHIVE=1
     else
         MOZ_ICU_DATA_ARCHIVE=

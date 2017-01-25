@@ -35,7 +35,7 @@ static const char printable[257] = {
 };
 
 void
-ssl_PrintBuf(sslSocket *ss, const char *msg, const void *vp, int len)
+ssl_PrintBuf(const sslSocket *ss, const char *msg, const void *vp, int len)
 {
     const unsigned char *cp = (const unsigned char *)vp;
     char buf[80];
@@ -48,6 +48,12 @@ ssl_PrintBuf(sslSocket *ss, const char *msg, const void *vp, int len)
     } else {
         SSL_TRACE(("%d: SSL: %s [Len: %d]", SSL_GETPID(), msg, len));
     }
+
+    if (!cp) {
+        SSL_TRACE(("   <NULL>"));
+        return;
+    }
+
     memset(buf, ' ', sizeof buf);
     bp = buf;
     ap = buf + 50;
@@ -88,7 +94,7 @@ ssl_Trace(const char *format, ...)
 }
 
 void
-ssl_PrintKey(sslSocket *ss, const char *msg, PK11SymKey *key)
+ssl_PrintKey(const sslSocket *ss, const char *msg, PK11SymKey *key)
 {
     SECStatus rv;
     SECItem *rawkey;

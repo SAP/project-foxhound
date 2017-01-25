@@ -12,10 +12,11 @@
 
 #include <stddef.h>
 
-#include "jslock.h"
 #include "jsscript.h"
 
 #include "js/ProfilingStack.h"
+#include "threading/ExclusiveData.h"
+#include "threading/Mutex.h"
 
 /*
  * SPS Profiler integration with the JS Engine
@@ -106,8 +107,13 @@
 
 namespace js {
 
-typedef HashMap<JSScript*, const char*, DefaultHasher<JSScript*>, SystemAllocPolicy>
-        ProfileStringMap;
+// The `ProfileStringMap` weakly holds its `JSScript*` keys and owns its string
+// values. Entries are removed when the `JSScript` is finalized; see
+// `SPSProfiler::onScriptFinalized`.
+using ProfileStringMap = HashMap<JSScript*,
+                                 UniqueChars,
+                                 DefaultHasher<JSScript*>,
+                                 SystemAllocPolicy>;
 
 class AutoSPSEntry;
 class SPSEntryMarker;
@@ -120,23 +126,21 @@ class SPSProfiler
     friend class SPSBaselineOSRMarker;
 
     JSRuntime*           rt;
-    ProfileStringMap     strings;
+    ExclusiveData<ProfileStringMap> strings;
     ProfileEntry*        stack_;
     uint32_t*            size_;
     uint32_t             max_;
     bool                 slowAssertions;
     uint32_t             enabled_;
-    PRLock*              lock_;
     void                (*eventMarker_)(const char*);
 
-    const char* allocProfileString(JSScript* script, JSFunction* function);
+    UniqueChars allocProfileString(JSScript* script, JSFunction* function);
     void push(const char* string, void* sp, JSScript* script, jsbytecode* pc, bool copy,
               ProfileEntry::Category category = ProfileEntry::Category::JS);
     void pop();
 
   public:
     explicit SPSProfiler(JSRuntime* rt);
-    ~SPSProfiler();
 
     bool init();
 
@@ -178,7 +182,7 @@ class SPSProfiler
     void updatePC(JSScript* script, jsbytecode* pc) {
         if (enabled() && *size_ - 1 < max_) {
             MOZ_ASSERT(*size_ > 0);
-            MOZ_ASSERT(stack_[*size_ - 1].script() == script);
+            MOZ_ASSERT(stack_[*size_ - 1].rawScript() == script);
             stack_[*size_ - 1].setPC(pc);
         }
     }
@@ -212,25 +216,6 @@ class SPSProfiler
 };
 
 /*
- * This class is used to make sure the strings table
- * is only accessed on one thread at a time.
- */
-class AutoSPSLock
-{
-  public:
-    explicit AutoSPSLock(PRLock* lock)
-    {
-        MOZ_ASSERT(lock, "Parameter should not be null!");
-        lock_ = lock;
-        PR_Lock(lock);
-    }
-    ~AutoSPSLock() { PR_Unlock(lock_); }
-
-  private:
-    PRLock* lock_;
-};
-
-/*
  * This class is used to suppress profiler sampling during
  * critical sections where stack state is not valid.
  */
@@ -251,15 +236,13 @@ class MOZ_RAII AutoSuppressProfilerSampling
 inline size_t
 SPSProfiler::stringsCount()
 {
-    AutoSPSLock lock(lock_);
-    return strings.count();
+    return strings.lock()->count();
 }
 
 inline void
 SPSProfiler::stringsReset()
 {
-    AutoSPSLock lock(lock_);
-    strings.clear();
+    strings.lock()->clear();
 }
 
 /*

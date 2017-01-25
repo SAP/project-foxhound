@@ -23,12 +23,12 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/Logging.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include <algorithm>
 
 using namespace mozilla;
 
-// NSPR_LOG_MODULES=UrlClassifierPrefixSet:5
+// MOZ_LOG=UrlClassifierPrefixSet:5
 static LazyLogModule gUrlClassifierPrefixSetLog("UrlClassifierPrefixSet");
 #define LOG(args) MOZ_LOG(gUrlClassifierPrefixSetLog, mozilla::LogLevel::Debug, args)
 #define LOG_ENABLED() MOZ_LOG_TEST(gUrlClassifierPrefixSetLog, mozilla::LogLevel::Debug)
@@ -277,12 +277,13 @@ nsUrlClassifierPrefixSet::CollectReports(nsIHandleReportCallback* aHandleReport,
   // No need to get mLock here because this function does not directly touch
   // the class's data members. (SizeOfIncludingThis() will get mLock, however.)
 
-  size_t amount = SizeOfIncludingThis(UrlClassifierMallocSizeOf);
-
-  return aHandleReport->Callback(
-    EmptyCString(), mMemoryReportPath, KIND_HEAP, UNITS_BYTES, amount,
+  aHandleReport->Callback(
+    EmptyCString(), mMemoryReportPath, KIND_HEAP, UNITS_BYTES,
+    SizeOfIncludingThis(UrlClassifierMallocSizeOf),
     NS_LITERAL_CSTRING("Memory used by the prefix set for a URL classifier."),
     aData);
+
+  return NS_OK;
 }
 
 size_t

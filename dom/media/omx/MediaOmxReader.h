@@ -74,17 +74,19 @@ protected:
   void NotifyDataArrivedInternal() override;
 public:
 
-  nsresult ResetDecode(TargetQueues aQueues) override
+  nsresult ResetDecode(
+    TrackSet aTracks = TrackSet(TrackInfo::kAudioTrack,
+                                TrackInfo::kVideoTrack)) override
   {
     mSeekRequest.DisconnectIfExists();
     mSeekPromise.RejectIfExists(NS_OK, __func__);
-    return MediaDecoderReader::ResetDecode(aQueues);
+    return MediaDecoderReader::ResetDecode(aTracks);
   }
 
   bool DecodeAudioData() override;
   bool DecodeVideoFrame(bool &aKeyframeSkip, int64_t aTimeThreshold) override;
 
-  void ReleaseMediaResources() override;
+  void ReleaseResources() override;
 
   RefPtr<MediaDecoderReader::MetadataPromise> AsyncReadMetadata() override;
 

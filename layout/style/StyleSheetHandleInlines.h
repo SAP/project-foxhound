@@ -84,12 +84,6 @@ StyleSheetHandle::Ptr::IsApplicable() const
   FORWARD(IsApplicable, ());
 }
 
-void
-StyleSheetHandle::Ptr::SetParsingMode(css::SheetParsingMode aMode)
-{
-  FORWARD(SetParsingMode, (aMode));
-}
-
 bool
 StyleSheetHandle::Ptr::HasRules() const
 {
@@ -176,13 +170,11 @@ StyleSheetHandle::Ptr::List(FILE* aOut, int32_t aIndex) const
 }
 #endif
 
-} // namespace mozilla
-
 #undef FORWARD
 
 inline void
 ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
-                            mozilla::StyleSheetHandle& aField,
+                            StyleSheetHandle& aField,
                             const char* aName,
                             uint32_t aFlags = 0)
 {
@@ -193,14 +185,14 @@ ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
 }
 
 inline void
-ImplCycleCollectionUnlink(mozilla::StyleSheetHandle& aField)
+ImplCycleCollectionUnlink(StyleSheetHandle& aField)
 {
   aField = nullptr;
 }
 
 inline void
 ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
-                            mozilla::StyleSheetHandle::RefPtr& aField,
+                            StyleSheetHandle::RefPtr& aField,
                             const char* aName,
                             uint32_t aFlags = 0)
 {
@@ -211,9 +203,11 @@ ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
 }
 
 inline void
-ImplCycleCollectionUnlink(mozilla::StyleSheetHandle::RefPtr& aField)
+ImplCycleCollectionUnlink(StyleSheetHandle::RefPtr& aField)
 {
   aField = nullptr;
 }
+
+} // namespace mozilla
 
 #endif // mozilla_StyleSheetHandleInlines_h

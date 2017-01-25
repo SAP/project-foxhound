@@ -24,10 +24,6 @@ XPCOMUtils.defineLazyGetter(this, "DOMApplicationRegistry", function () {
   return DOMApplicationRegistry;
 });
 
-XPCOMUtils.defineLazyServiceGetter(this, "systemMessenger",
-                                   "@mozilla.org/system-message-internal;1",
-                                   "nsISystemMessagesInternal");
-
 function debug(msg) {
   //dump("BrowserElementParent - " + msg + "\n");
 }
@@ -267,6 +263,7 @@ BrowserElementParent.prototype = {
                                          Ci.nsISupportsWeakReference]),
 
   setFrameLoader: function(frameLoader) {
+    debug("Setting frameLoader");
     this._frameLoader = frameLoader;
     this._frameElement = frameLoader.QueryInterface(Ci.nsIFrameLoader).ownerElement;
     if (!this._frameElement) {
@@ -304,6 +301,11 @@ BrowserElementParent.prototype = {
 
     this.proxyCallHandler.init(
       this._frameElement, this._frameLoader.messageManager);
+  },
+
+  destroyFrameScripts() {
+    debug("Destroying frame scripts");
+    this._mm.sendAsyncMessage("browser-element-api:destroy");
   },
 
   _runPendingAPICall: function() {
@@ -793,39 +795,25 @@ BrowserElementParent.prototype = {
                                                 radiisX, radiisY, rotationAngles, forces,
                                                 count, modifiers) {
 
-    let tabParent = this._frameLoader.tabParent;
-    if (tabParent && tabParent.useAsyncPanZoom) {
-      tabParent.injectTouchEvent(type,
-                                 identifiers,
-                                 touchesX,
-                                 touchesY,
-                                 radiisX,
-                                 radiisY,
-                                 rotationAngles,
-                                 forces,
-                                 count,
-                                 modifiers);
-    } else {
-      let offset = this.getChildProcessOffset();
-      for (var i = 0; i < touchesX.length; i++) {
-        touchesX[i] += offset.x;
-      }
-      for (var i = 0; i < touchesY.length; i++) {
-        touchesY[i] += offset.y;
-      }
-      this._sendAsyncMsg("send-touch-event", {
-        "type": type,
-        "identifiers": identifiers,
-        "touchesX": touchesX,
-        "touchesY": touchesY,
-        "radiisX": radiisX,
-        "radiisY": radiisY,
-        "rotationAngles": rotationAngles,
-        "forces": forces,
-        "count": count,
-        "modifiers": modifiers
-      });
+    let offset = this.getChildProcessOffset();
+    for (var i = 0; i < touchesX.length; i++) {
+      touchesX[i] += offset.x;
     }
+    for (var i = 0; i < touchesY.length; i++) {
+      touchesY[i] += offset.y;
+    }
+    this._sendAsyncMsg("send-touch-event", {
+      "type": type,
+      "identifiers": identifiers,
+      "touchesX": touchesX,
+      "touchesY": touchesY,
+      "radiisX": radiisX,
+      "radiisY": radiisY,
+      "rotationAngles": rotationAngles,
+      "forces": forces,
+      "count": count,
+      "modifiers": modifiers
+    });
   }),
 
   getCanGoBack: defineDOMRequestMethod('get-can-go-back'),
@@ -1185,26 +1173,6 @@ BrowserElementParent.prototype = {
   isAudioChannelActive: function(aAudioChannel) {
     return this._sendDOMRequest('get-is-audio-channel-active',
                                 {audioChannel: aAudioChannel});
-  },
-
-  notifyChannel: function(aEvent, aManifest, aAudioChannel) {
-    var self = this;
-    var req = Services.DOMRequest.createRequest(self._window);
-
-    // Since the pageURI of the app has been registered to the system messager,
-    // when the app was installed. The system messager can only use the manifest
-    // to send the message to correct page.
-    let manifestURL = Services.io.newURI(aManifest, null, null);
-    systemMessenger.sendMessage(aEvent, aAudioChannel, null, manifestURL)
-      .then(function() {
-        Services.DOMRequest.fireSuccess(req,
-          Cu.cloneInto(true, self._window));
-      }, function() {
-        debug("Error : NotifyChannel fail.");
-        Services.DOMRequest.fireErrorAsync(req,
-          Cu.cloneInto("NotifyChannel fail.", self._window));
-      });
-    return req;
   },
 
   getWebManifest: defineDOMRequestMethod('get-web-manifest'),

@@ -65,7 +65,9 @@ CommandList.prototype = {
 
   /**
    * Creates a Map from commands for each command in the manifest.commands object.
+   *
    * @param {Object} manifest The manifest JSON object.
+   * @returns {Map<string, object>}
    */
   loadCommandsFromManifest(manifest) {
     let commands = new Map();
@@ -106,8 +108,8 @@ CommandList.prototype = {
    * emits a command event with the provided name when fired.
    *
    * @param {Document} doc The XUL document.
-   * @param {String} name The name of the command.
-   * @param {String} shortcut The shortcut provided in the manifest.
+   * @param {string} name The name of the command.
+   * @param {string} shortcut The shortcut provided in the manifest.
    * @see https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XUL/key
    *
    * @returns {Document} The newly created Key element.
@@ -127,6 +129,8 @@ CommandList.prototype = {
         let win = event.target.ownerDocument.defaultView;
         pageActionFor(this.extension).triggerAction(win);
       } else {
+        TabManager.for(this.extension)
+                  .addActiveTabPermission(TabManager.activeTab);
         this.emit("command", name);
       }
     });
@@ -139,8 +143,7 @@ CommandList.prototype = {
    * Builds a XUL Key element from the provided shortcut.
    *
    * @param {Document} doc The XUL document.
-   * @param {String} name The name of the command.
-   * @param {String} shortcut The shortcut provided in the manifest.
+   * @param {string} shortcut The shortcut provided in the manifest.
    *
    * @see https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XUL/key
    * @returns {Document} The newly created Key element.
@@ -176,8 +179,8 @@ CommandList.prototype = {
    *    "PageUP"  |  "VK_PAGE_UP"
    *    "Delete"  |  "VK_DELETE"
    *
-   * @param {String} key The chrome key (e.g. "PageUp", "Space", ...)
-   * @return The constructed value for the Key's 'keycode' attribute.
+   * @param {string} chromeKey The chrome key (e.g. "PageUp", "Space", ...)
+   * @returns {string} The constructed value for the Key's 'keycode' attribute.
    */
   getKeycodeAttribute(chromeKey) {
     return `VK${chromeKey.replace(/([A-Z])/g, "_$&").toUpperCase()}`;
@@ -194,7 +197,7 @@ CommandList.prototype = {
    *    ["MacCtrl"]       |   "control"
    *
    * @param {Array} chromeModifiers The array of chrome modifiers.
-   * @return The constructed value for the Key's 'modifiers' attribute.
+   * @returns {string} The constructed value for the Key's 'modifiers' attribute.
    */
   getModifiersAttribute(chromeModifiers) {
     let modifiersMap = {
@@ -225,7 +228,8 @@ extensions.on("shutdown", (type, extension) => {
 });
 /* eslint-enable mozilla/balanced-listeners */
 
-extensions.registerSchemaAPI("commands", null, (extension, context) => {
+extensions.registerSchemaAPI("commands", "addon_parent", context => {
+  let {extension} = context;
   return {
     commands: {
       getAll() {
@@ -239,8 +243,8 @@ extensions.registerSchemaAPI("commands", null, (extension, context) => {
         }));
       },
       onCommand: new EventManager(context, "commands.onCommand", fire => {
-        let listener = (event, name) => {
-          fire(name);
+        let listener = (eventName, commandName) => {
+          fire(commandName);
         };
         commandsMap.get(extension).on("command", listener);
         return () => {

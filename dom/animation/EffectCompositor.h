@@ -12,13 +12,13 @@
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/PseudoElementHashEntry.h"
 #include "mozilla/RefPtr.h"
-#include "nsCSSProperty.h"
+#include "nsCSSPropertyID.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
 #include "nsIStyleRuleProcessor.h"
 #include "nsTArray.h"
 
-class nsCSSPropertySet;
+class nsCSSPropertyIDSet;
 class nsIFrame;
 class nsIStyleRule;
 class nsPresContext;
@@ -123,13 +123,30 @@ public:
   // specified (pseudo-)element for cascade level |aLevel|.
   // If the animation rule is not marked as needing an update,
   // no work is done.
+  // |aStyleContext| is used for UpdateCascadingResults.
+  // |aStyleContext| can be nullptr if style context, which is associated with
+  // the primary frame of the specified (pseudo-)element, is the current style
+  // context.
+  // If we are resolving a new style context, we shoud pass the newly created
+  // style context, otherwise we may use an old style context, it will result
+  // unexpected cascading results.
   void MaybeUpdateAnimationRule(dom::Element* aElement,
                                 CSSPseudoElementType aPseudoType,
-                                CascadeLevel aCascadeLevel);
+                                CascadeLevel aCascadeLevel,
+                                nsStyleContext *aStyleContext);
 
+  // We need to pass the newly resolved style context as |aStyleContext| when
+  // we call this function during resolving style context because this function
+  // calls UpdateCascadingResults with a style context if necessary, at the
+  // time, we end up using the previous style context if we don't pass the new
+  // style context.
+  // When we are not resolving style context, |aStyleContext| can be nullptr, we
+  // will use a style context associated with the primary frame of the specified
+  // (pseudo-)element.
   nsIStyleRule* GetAnimationRule(dom::Element* aElement,
                                  CSSPseudoElementType aPseudoType,
-                                 CascadeLevel aCascadeLevel);
+                                 CascadeLevel aCascadeLevel,
+                                 nsStyleContext* aStyleContext);
 
   bool HasPendingStyleUpdates() const;
   bool HasThrottledStyleUpdates() const;
@@ -145,19 +162,21 @@ public:
   }
 
   static bool HasAnimationsForCompositor(const nsIFrame* aFrame,
-                                         nsCSSProperty aProperty);
+                                         nsCSSPropertyID aProperty);
 
   static nsTArray<RefPtr<dom::Animation>>
   GetAnimationsForCompositor(const nsIFrame* aFrame,
-                             nsCSSProperty aProperty);
+                             nsCSSPropertyID aProperty);
 
   static void ClearIsRunningOnCompositor(const nsIFrame* aFrame,
-                                         nsCSSProperty aProperty);
+                                         nsCSSPropertyID aProperty);
 
   // Update animation cascade results for the specified (pseudo-)element
   // but only if we have marked the cascade as needing an update due a
   // the change in the set of effects or a change in one of the effects'
   // "in effect" state.
+  // |aStyleContext| may be nullptr in which case we will use the
+  // nsStyleContext of the primary frame of the specified (pseudo-)element.
   //
   // This method does NOT detect if other styles that apply above the
   // animation level of the cascade have changed.
@@ -165,12 +184,6 @@ public:
   MaybeUpdateCascadeResults(dom::Element* aElement,
                             CSSPseudoElementType aPseudoType,
                             nsStyleContext* aStyleContext);
-
-  // An overload of MaybeUpdateCascadeResults that uses the style context
-  // of the primary frame of the specified (pseudo-)element, when available.
-  static void
-  MaybeUpdateCascadeResults(dom::Element* aElement,
-                            CSSPseudoElementType aPseudoType);
 
   // Update the mWinsInCascade member for each property in effects targetting
   // the specified (pseudo-)element.
@@ -199,7 +212,7 @@ public:
   // |aProperty|.
   static void SetPerformanceWarning(
     const nsIFrame* aFrame,
-    nsCSSProperty aProperty,
+    nsCSSPropertyID aProperty,
     const AnimationPerformanceWarning& aWarning);
 
 private:
@@ -222,7 +235,7 @@ private:
   static void
   GetOverriddenProperties(nsStyleContext* aStyleContext,
                           EffectSet& aEffectSet,
-                          nsCSSPropertySet& aPropertiesOverridden);
+                          nsCSSPropertyIDSet& aPropertiesOverridden);
 
   static void
   UpdateCascadeResults(EffectSet& aEffectSet,

@@ -767,7 +767,6 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
 #endif
         break;
     case eIntID_MacGraphiteTheme:
-    case eIntID_MacLionTheme:
         aResult = 0;
         res = NS_ERROR_NOT_IMPLEMENTED;
         break;
@@ -1345,14 +1344,14 @@ nsLookAndFeel::Init()
     sOddCellBackground = GDK_RGBA_TO_NS_RGBA(color);
     gtk_style_context_restore(style);
 
-    GtkWidget *frame = gtk_frame_new(nullptr);
-    gtk_container_add(GTK_CONTAINER(parent), frame);
-    style = gtk_widget_get_style_context(frame);
-    GetBorderColors(style, &sFrameOuterLightBorder, &sFrameInnerDarkBorder);
-
     gtk_widget_path_free(path);
 
+    style = ClaimStyleContext(MOZ_GTK_FRAME_BORDER);
+    GetBorderColors(style, &sFrameOuterLightBorder, &sFrameInnerDarkBorder);
+    ReleaseStyleContext(style);
+
     // GtkInfoBar
+    // TODO - Use WidgetCache for it?
     GtkWidget* infoBar = gtk_info_bar_new();
     GtkWidget* infoBarContent = gtk_info_bar_get_content_area(GTK_INFO_BAR(infoBar));
     GtkWidget* infoBarLabel = gtk_label_new(nullptr);

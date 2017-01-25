@@ -10,8 +10,6 @@
 
 #include "base/eintr_wrapper.h"
 
-#include "chrome/common/child_process_info.h"
-
 #include "mozilla/ipc/Transport.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "ProtocolUtils.h"
@@ -41,7 +39,14 @@ CreateTransport(base::ProcessId aProcIdOne,
   // The Transport closes these fds when it goes out of scope, so we
   // dup them here
   fd1 = dup(fd1);
+  if (fd1 < 0) {
+    AnnotateCrashReportWithErrno("IpcCreateTransportDupErrno", errno);
+  }
   fd2 = dup(fd2);
+  if (fd2 < 0) {
+    AnnotateCrashReportWithErrno("IpcCreateTransportDupErrno", errno);
+  }
+
   if (fd1 < 0 || fd2 < 0) {
     HANDLE_EINTR(close(fd1));
     HANDLE_EINTR(close(fd2));
@@ -53,16 +58,17 @@ CreateTransport(base::ProcessId aProcIdOne,
   return NS_OK;
 }
 
-Transport*
+UniquePtr<Transport>
 OpenDescriptor(const TransportDescriptor& aTd, Transport::Mode aMode)
 {
-  return new Transport(aTd.mFd.fd, aMode, nullptr);
+  return MakeUnique<Transport>(aTd.mFd.fd, aMode, nullptr);
 }
 
-Transport*
+UniquePtr<Transport>
 OpenDescriptor(const FileDescriptor& aFd, Transport::Mode aMode)
 {
-  return new Transport(aFd.PlatformHandle(), aMode, nullptr);
+  auto rawFD = aFd.ClonePlatformHandle();
+  return MakeUnique<Transport>(rawFD.release(), aMode, nullptr);
 }
 
 TransportDescriptor

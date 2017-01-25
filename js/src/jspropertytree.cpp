@@ -54,8 +54,8 @@ PropertyTree::insertChild(ExclusiveContext* cx, Shape* parent, Shape* child)
     MOZ_ASSERT(!parent->inDictionary());
     MOZ_ASSERT(!child->parent);
     MOZ_ASSERT(!child->inDictionary());
-    MOZ_ASSERT(child->compartment() == parent->compartment());
-    MOZ_ASSERT(cx->isInsideCurrentCompartment(this));
+    MOZ_ASSERT(child->zone() == parent->zone());
+    MOZ_ASSERT(cx->zone() == zone_);
 
     KidsPointer* kidp = &parent->kids;
 
@@ -227,14 +227,6 @@ Shape::fixupDictionaryShapeAfterMovingGC()
     if (!listp)
         return;
 
-    // It's possible that this shape is unreachable and that listp points to the
-    // location of a dead object in the nursery, in which case we should never
-    // touch it again.
-    if (IsInsideNursery(reinterpret_cast<Cell*>(listp))) {
-        listp = nullptr;
-        return;
-    }
-
     // The listp field either points to the parent field of the next shape in
     // the list if there is one.  Otherwise if this shape is the last in the
     // list then it points to the shape_ field of the object the list is for.
@@ -260,7 +252,7 @@ Shape::fixupDictionaryShapeAfterMovingGC()
             listp = &gc::Forwarded(next)->parent;
     } else {
         // listp points to the shape_ field of an object.
-        JSObject* last = reinterpret_cast<JSObject*>(uintptr_t(listp) - JSObject::offsetOfShape());
+        JSObject* last = reinterpret_cast<JSObject*>(uintptr_t(listp) - ShapedObject::offsetOfShape());
         if (gc::IsForwarded(last))
             listp = &gc::Forwarded(last)->as<NativeObject>().shape_;
     }
@@ -377,11 +369,8 @@ KidsPointer::checkConsistency(Shape* aKid) const
 }
 
 void
-Shape::dump(JSContext* cx, FILE* fp) const
+Shape::dump(FILE* fp) const
 {
-    /* This is only used from gdb, so allowing GC here would just be confusing. */
-    gc::AutoSuppressGC suppress(cx);
-
     jsid propid = this->propid();
 
     MOZ_ASSERT(!JSID_IS_VOID(propid));
@@ -429,7 +418,7 @@ Shape::dump(JSContext* cx, FILE* fp) const
 }
 
 void
-Shape::dumpSubtree(JSContext* cx, int level, FILE* fp) const
+Shape::dumpSubtree(int level, FILE* fp) const
 {
     if (!parent) {
         MOZ_ASSERT(level == 0);
@@ -437,7 +426,7 @@ Shape::dumpSubtree(JSContext* cx, int level, FILE* fp) const
         fprintf(fp, "class %s emptyShape\n", getObjectClass()->name);
     } else {
         fprintf(fp, "%*sid ", level, "");
-        dump(cx, fp);
+        dump(fp);
     }
 
     if (!kids.isNull()) {
@@ -445,14 +434,14 @@ Shape::dumpSubtree(JSContext* cx, int level, FILE* fp) const
         if (kids.isShape()) {
             Shape* kid = kids.toShape();
             MOZ_ASSERT(kid->parent == this);
-            kid->dumpSubtree(cx, level, fp);
+            kid->dumpSubtree(level, fp);
         } else {
             const KidsHash& hash = *kids.toHash();
             for (KidsHash::Range range = hash.all(); !range.empty(); range.popFront()) {
                 Shape* kid = range.front();
 
                 MOZ_ASSERT(kid->parent == this);
-                kid->dumpSubtree(cx, level, fp);
+                kid->dumpSubtree(level, fp);
             }
         }
     }

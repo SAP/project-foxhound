@@ -17,7 +17,8 @@
 #include "mozilla/dom/network/Types.h"
 #include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/Observer.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
+#include "nsAutoPtr.h"
 #include "WindowIdentifier.h"
 
 using namespace mozilla;

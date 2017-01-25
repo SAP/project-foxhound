@@ -108,18 +108,14 @@ const ACTIVITY_TYPE = {
   DISABLE_CACHE: 4
 };
 
-Cu.import("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
-Cu.import("resource://devtools/client/shared/widgets/VariablesView.jsm");
-Cu.import("resource://devtools/client/shared/widgets/VariablesViewController.jsm");
-
 const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
 const promise = require("promise");
 const Services = require("Services");
 const {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
 const EventEmitter = require("devtools/shared/event-emitter");
 const Editor = require("devtools/client/sourceeditor/editor");
-const {TimelineFront} = require("devtools/server/actors/timeline");
-const { Task } = require("devtools/shared/task");
+const {TimelineFront} = require("devtools/shared/fronts/timeline");
+const {Task} = require("devtools/shared/task");
 
 XPCOMUtils.defineConstant(this, "EVENTS", EVENTS);
 XPCOMUtils.defineConstant(this, "ACTIVITY_TYPE", ACTIVITY_TYPE);
@@ -128,20 +124,8 @@ XPCOMUtils.defineConstant(this, "Editor", Editor);
 XPCOMUtils.defineLazyModuleGetter(this, "Chart",
   "resource://devtools/client/shared/widgets/Chart.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Curl",
-  "resource://devtools/client/shared/Curl.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "CurlUtils",
-  "resource://devtools/client/shared/Curl.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-  "resource://gre/modules/PluralForm.jsm");
-
 XPCOMUtils.defineLazyServiceGetter(this, "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1", "nsIClipboardHelper");
-
-XPCOMUtils.defineLazyServiceGetter(this, "DOMParser",
-  "@mozilla.org/xmlextras/domparser;1", "nsIDOMParser");
 
 Object.defineProperty(this, "NetworkHelper", {
   get: function () {

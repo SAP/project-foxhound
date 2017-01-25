@@ -8,7 +8,6 @@
 #include "nsNetUtil.h"
 #include "nsAboutProtocolUtils.h"
 #include "mozilla/ArrayUtils.h"
-#include "nsDOMString.h"
 #include "nsIProtocolHandler.h"
 
 NS_IMPL_ISUPPORTS(nsAboutRedirector, nsIAboutModule)
@@ -65,7 +64,8 @@ static RedirEntry kRedirMap[] = {
 #endif
   {
     "license", "chrome://global/content/license.html",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT
+    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+      nsIAboutModule::MAKE_LINKABLE
   },
   {
     "logo", "chrome://branding/content/about.png",
@@ -214,13 +214,6 @@ nsAboutRedirector::GetURIFlags(nsIURI* aURI, uint32_t* aResult)
 
   NS_ERROR("nsAboutRedirector called for unknown case");
   return NS_ERROR_ILLEGAL_VALUE;
-}
-
-NS_IMETHODIMP
-nsAboutRedirector::GetIndexedDBOriginPostfix(nsIURI* aURI, nsAString& aResult)
-{
-  SetDOMStringToNull(aResult);
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult

@@ -8,7 +8,9 @@
 #define builtin_Intl_h
 
 #include "NamespaceImports.h"
+#if ENABLE_INTL_API
 #include "unicode/utypes.h"
+#endif
 
 /*
  * The Intl module specified by standard ECMA-402,
@@ -180,6 +182,33 @@ extern MOZ_MUST_USE bool
 intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp);
 
 /**
+ * Returns a plain object with calendar information for a single valid locale
+ * (callers must perform this validation).  The object will have these
+ * properties:
+ *
+ *   firstDayOfWeek
+ *     an integer in the range 1=Sunday to 7=Saturday indicating the day
+ *     considered the first day of the week in calendars, e.g. 1 for en-US,
+ *     2 for en-GB, 1 for bn-IN
+ *   minDays
+ *     an integer in the range of 1 to 7 indicating the minimum number
+ *     of days required in the first week of the year, e.g. 1 for en-US, 4 for de
+ *   weekendStart
+ *     an integer in the range 1=Sunday to 7=Saturday indicating the day
+ *     considered the beginning of a weekend, e.g. 7 for en-US, 7 for en-GB,
+ *     1 for bn-IN
+ *   weekendEnd
+ *     an integer in the range 1=Sunday to 7=Saturday indicating the day
+ *     considered the end of a weekend, e.g. 1 for en-US, 1 for en-GB,
+ *     1 for bn-IN (note that "weekend" is *not* necessarily two days)
+ *
+ * NOTE: "calendar" and "locale" properties are *not* added to the object.
+ */
+extern MOZ_MUST_USE bool
+intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp);
+
+#if ENABLE_INTL_API
+/**
  * Cast char16_t* strings to UChar* strings used by ICU.
  */
 inline const UChar*
@@ -193,6 +222,7 @@ Char16ToUChar(char16_t* chars)
 {
   return reinterpret_cast<UChar*>(chars);
 }
+#endif // ENABLE_INTL_API
 
 } // namespace js
 

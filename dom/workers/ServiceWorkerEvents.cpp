@@ -6,11 +6,14 @@
 
 #include "ServiceWorkerEvents.h"
 
+#include "nsAutoPtr.h"
 #include "nsIConsoleReportCollector.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIOutputStream.h"
 #include "nsIScriptError.h"
+#include "nsIUnicodeDecoder.h"
+#include "nsIUnicodeEncoder.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -25,29 +28,22 @@
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/BodyUtil.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/EncodingUtils.h"
 #include "mozilla/dom/FetchEventBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/MessagePortList.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/PushEventBinding.h"
+#include "mozilla/dom/PushMessageDataBinding.h"
+#include "mozilla/dom/PushUtil.h"
 #include "mozilla/dom/Request.h"
+#include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/workers/bindings/ServiceWorker.h"
-
-#ifndef MOZ_SIMPLEPUSH
-#include "mozilla/dom/PushEventBinding.h"
-#include "mozilla/dom/PushMessageDataBinding.h"
-
-#include "nsIUnicodeDecoder.h"
-#include "nsIUnicodeEncoder.h"
-
-#include "mozilla/dom/BodyUtil.h"
-#include "mozilla/dom/EncodingUtils.h"
-#include "mozilla/dom/PushUtil.h"
-#include "mozilla/dom/TypedArray.h"
-#endif
 
 #include "js/Conversions.h"
 #include "js/TypeDecls.h"
@@ -184,7 +180,7 @@ public:
   }
 
   NS_IMETHOD
-  Run()
+  Run() override
   {
     AssertIsOnMainThread();
 
@@ -398,7 +394,13 @@ void RespondWithCopyComplete(void* aClosure, nsresult aStatus)
                                data->mScriptSpec,
                                data->mResponseURLSpec);
   }
-  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(event));
+  // In theory this can happen after the worker thread is terminated.
+  WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
+  if (worker) {
+    MOZ_ALWAYS_SUCCEEDS(worker->DispatchToMainThread(event.forget()));
+  } else {
+    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(event.forget()));
+  }
 }
 
 namespace {
@@ -728,7 +730,13 @@ RespondWithHandler::CancelRequest(nsresult aStatus)
 {
   nsCOMPtr<nsIRunnable> runnable =
     new CancelChannelRunnable(mInterceptedChannel, mRegistration, aStatus);
-  NS_DispatchToMainThread(runnable);
+  // Note, this may run off the worker thread during worker termination.
+  WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
+  if (worker) {
+    MOZ_ALWAYS_SUCCEEDS(worker->DispatchToMainThread(runnable.forget()));
+  } else {
+    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable.forget()));
+  }
   mRequestWasHandled = true;
 }
 
@@ -861,8 +869,8 @@ public:
       mColumn = column;
     }
 
-    MOZ_ALWAYS_SUCCEEDS(
-      NS_DispatchToMainThread(NewRunnableMethod(this, &WaitUntilHandler::ReportOnMainThread)));
+    MOZ_ALWAYS_SUCCEEDS(mWorkerPrivate->DispatchToMainThread(
+        NewRunnableMethod(this, &WaitUntilHandler::ReportOnMainThread)));
   }
 
   void
@@ -870,6 +878,10 @@ public:
   {
     AssertIsOnMainThread();
     RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    if (!swm) {
+      // browser shutdown
+      return;
+    }
 
     // TODO: Make the error message a localized string. (bug 1222720)
     nsString message;
@@ -960,8 +972,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(ExtendableEvent)
 NS_INTERFACE_MAP_END_INHERITING(Event)
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ExtendableEvent, Event, mPromises)
-
-#ifndef MOZ_SIMPLEPUSH
 
 namespace {
 nsresult
@@ -1090,7 +1100,7 @@ PushMessageData::Blob(ErrorResult& aRv)
   return nullptr;
 }
 
-NS_METHOD
+nsresult
 PushMessageData::EnsureDecodedText()
 {
   if (mBytes.IsEmpty() || !mDecodedText.IsEmpty()) {
@@ -1160,8 +1170,6 @@ PushEvent::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
   return mozilla::dom::PushEventBinding::Wrap(aCx, this, aGivenProto);
 }
-
-#endif /* ! MOZ_SIMPLEPUSH */
 
 ExtendableMessageEvent::ExtendableMessageEvent(EventTarget* aOwner)
   : ExtendableEvent(aOwner)
@@ -1233,7 +1241,7 @@ ExtendableMessageEvent::Constructor(mozilla::dom::EventTarget* aEventTarget,
       event->mClient = aOptions.mSource.Value().Value().GetAsClient();
     } else if (aOptions.mSource.Value().Value().IsServiceWorker()){
       event->mServiceWorker = aOptions.mSource.Value().Value().GetAsServiceWorker();
-    } else if (aOptions.mSource.Value().Value().IsServiceWorker()){
+    } else if (aOptions.mSource.Value().Value().IsMessagePort()){
       event->mMessagePort = aOptions.mSource.Value().Value().GetAsMessagePort();
     }
     MOZ_ASSERT(event->mClient || event->mServiceWorker || event->mMessagePort);

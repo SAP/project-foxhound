@@ -6,7 +6,7 @@
 
 #include "mozilla/dom/cache/CacheStorageParent.h"
 
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/cache/CacheOpParent.h"
@@ -101,8 +101,9 @@ CacheStorageParent::RecvPCacheOpConstructor(PCacheOpParent* aActor,
   }
 
   if (NS_WARN_IF(NS_FAILED(mVerifiedStatus))) {
-    Unused << CacheOpParent::Send__delete__(actor, ErrorResult(mVerifiedStatus),
-                                            void_t());
+    ErrorResult result(mVerifiedStatus);
+    Unused << CacheOpParent::Send__delete__(actor, result, void_t());
+    result.SuppressException();
     return true;
   }
 

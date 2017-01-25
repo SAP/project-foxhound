@@ -8,9 +8,10 @@
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Tools.h"
+#include "mozilla/layers/BufferTexture.h"
+#include "mozilla/layers/ImageBridgeChild.h"  // for ImageBridgeChild
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureHost.h"
-#include "mozilla/layers/BufferTexture.h"
 #include "mozilla/RefPtr.h"
 #include "gfx2DGlue.h"
 #include "gfxImageSurface.h"
@@ -225,7 +226,8 @@ TEST(Layers, TextureSerialization) {
 
     auto texData = BufferTextureData::Create(surface->GetSize(),
       gfx::ImageFormatToSurfaceFormat(surface->Format()),
-      gfx::BackendType::CAIRO, TextureFlags::DEALLOCATE_CLIENT, ALLOC_DEFAULT, nullptr
+      gfx::BackendType::CAIRO, LayersBackend::LAYERS_NONE,
+      TextureFlags::DEALLOCATE_CLIENT, ALLOC_DEFAULT, nullptr
     );
     ASSERT_TRUE(!!texData);
 
@@ -264,7 +266,27 @@ TEST(Layers, TextureYCbCrSerialization) {
   clientData.mPicX = 0;
   clientData.mPicX = 0;
 
-  RefPtr<TextureClient> client = TextureClient::CreateForYCbCr(nullptr, clientData.mYSize, clientData.mCbCrSize,
+  ImageBridgeChild::InitSameProcess();
+
+  RefPtr<ImageBridgeChild> imageBridge = ImageBridgeChild::GetSingleton();
+  static int retry = 5;
+  while(!imageBridge->IPCOpen() && retry) {
+    // IPDL connection takes time especially in slow testing environment, like
+    // VM machines. Here we added retry mechanism to wait for IPDL connnection.
+#ifdef XP_WIN
+    Sleep(1);
+#else
+    sleep(1);
+#endif
+    retry--;
+  }
+
+  // Skip this testing if IPDL connection is not ready
+  if (!retry && !imageBridge->IPCOpen()) {
+    return;
+  }
+
+  RefPtr<TextureClient> client = TextureClient::CreateForYCbCr(imageBridge, clientData.mYSize, clientData.mCbCrSize,
                                                                StereoMode::MONO, TextureFlags::DEALLOCATE_CLIENT);
 
   TestTextureClientYCbCr(client, clientData);

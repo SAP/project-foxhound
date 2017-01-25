@@ -68,6 +68,7 @@
 #include "jsfriendapi.h"
 #include "ImportManager.h"
 #include "mozilla/LinkedList.h"
+#include "CustomElementsRegistry.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -111,7 +112,6 @@ private:
   RefPtr<nsDocument> mDocument;
 
 public:
-  RefPtr<gfx::VRDeviceProxy> mVRHMDDevice;
   // This value should be true if the fullscreen request is
   // originated from chrome code.
   bool mIsCallerChrome = false;
@@ -132,7 +132,7 @@ public:
  * and 'id' mappings of a given string. This is so that
  * nsHTMLDocument::ResolveName only has to do one hash lookup instead
  * of two. It's not clear whether this still matters for performance.
- * 
+ *
  * We also store the document.all result list here. This is mainly so that
  * when all elements with the given ID are removed and we remove
  * the ID's nsIdentifierMapEntry, the document.all result is released too.
@@ -263,183 +263,6 @@ private:
 
 namespace mozilla {
 namespace dom {
-
-class CustomElementHashKey : public PLDHashEntryHdr
-{
-public:
-  typedef CustomElementHashKey *KeyType;
-  typedef const CustomElementHashKey *KeyTypePointer;
-
-  CustomElementHashKey(int32_t aNamespaceID, nsIAtom *aAtom)
-    : mNamespaceID(aNamespaceID),
-      mAtom(aAtom)
-  {}
-  explicit CustomElementHashKey(const CustomElementHashKey* aKey)
-    : mNamespaceID(aKey->mNamespaceID),
-      mAtom(aKey->mAtom)
-  {}
-  ~CustomElementHashKey()
-  {}
-
-  KeyType GetKey() const { return const_cast<KeyType>(this); }
-  bool KeyEquals(const KeyTypePointer aKey) const
-  {
-    MOZ_ASSERT(mNamespaceID != kNameSpaceID_Unknown,
-               "This equals method is not transitive, nor symmetric. "
-               "A key with a namespace of kNamespaceID_Unknown should "
-               "not be stored in a hashtable.");
-    return (kNameSpaceID_Unknown == aKey->mNamespaceID ||
-            mNamespaceID == aKey->mNamespaceID) &&
-           aKey->mAtom == mAtom;
-  }
-
-  static KeyTypePointer KeyToPointer(KeyType aKey) { return aKey; }
-  static PLDHashNumber HashKey(const KeyTypePointer aKey)
-  {
-    return aKey->mAtom->hash();
-  }
-  enum { ALLOW_MEMMOVE = true };
-
-private:
-  int32_t mNamespaceID;
-  nsCOMPtr<nsIAtom> mAtom;
-};
-
-struct LifecycleCallbackArgs
-{
-  nsString name;
-  nsString oldValue;
-  nsString newValue;
-};
-
-struct CustomElementData;
-
-class CustomElementCallback
-{
-public:
-  CustomElementCallback(Element* aThisObject,
-                        nsIDocument::ElementCallbackType aCallbackType,
-                        mozilla::dom::CallbackFunction* aCallback,
-                        CustomElementData* aOwnerData);
-  void Traverse(nsCycleCollectionTraversalCallback& aCb) const;
-  void Call();
-  void SetArgs(LifecycleCallbackArgs& aArgs)
-  {
-    MOZ_ASSERT(mType == nsIDocument::eAttributeChanged,
-               "Arguments are only used by attribute changed callback.");
-    mArgs = aArgs;
-  }
-
-private:
-  // The this value to use for invocation of the callback.
-  RefPtr<mozilla::dom::Element> mThisObject;
-  RefPtr<mozilla::dom::CallbackFunction> mCallback;
-  // The type of callback (eCreated, eAttached, etc.)
-  nsIDocument::ElementCallbackType mType;
-  // Arguments to be passed to the callback,
-  // used by the attribute changed callback.
-  LifecycleCallbackArgs mArgs;
-  // CustomElementData that contains this callback in the
-  // callback queue.
-  CustomElementData* mOwnerData;
-};
-
-// Each custom element has an associated callback queue and an element is
-// being created flag.
-struct CustomElementData
-{
-  NS_INLINE_DECL_REFCOUNTING(CustomElementData)
-
-  explicit CustomElementData(nsIAtom* aType);
-  // Objects in this array are transient and empty after each microtask
-  // checkpoint.
-  nsTArray<nsAutoPtr<CustomElementCallback>> mCallbackQueue;
-  // Custom element type, for <button is="x-button"> or <x-button>
-  // this would be x-button.
-  nsCOMPtr<nsIAtom> mType;
-  // The callback that is next to be processed upon calling RunCallbackQueue.
-  int32_t mCurrentCallback;
-  // Element is being created flag as described in the custom elements spec.
-  bool mElementIsBeingCreated;
-  // Flag to determine if the created callback has been invoked, thus it
-  // determines if other callbacks can be enqueued.
-  bool mCreatedCallbackInvoked;
-  // The microtask level associated with the callbacks in the callback queue,
-  // it is used to determine if a new queue needs to be pushed onto the
-  // processing stack.
-  int32_t mAssociatedMicroTask;
-
-  // Empties the callback queue.
-  void RunCallbackQueue();
-
-private:
-  virtual ~CustomElementData() {}
-};
-
-// The required information for a custom element as defined in:
-// https://dvcs.w3.org/hg/webcomponents/raw-file/tip/spec/custom/index.html
-struct CustomElementDefinition
-{
-  CustomElementDefinition(JSObject* aPrototype,
-                          nsIAtom* aType,
-                          nsIAtom* aLocalName,
-                          mozilla::dom::LifecycleCallbacks* aCallbacks,
-                          uint32_t aNamespaceID,
-                          uint32_t aDocOrder);
-
-  // The prototype to use for new custom elements of this type.
-  JS::Heap<JSObject *> mPrototype;
-
-  // The type (name) for this custom element.
-  nsCOMPtr<nsIAtom> mType;
-
-  // The localname to (e.g. <button is=type> -- this would be button).
-  nsCOMPtr<nsIAtom> mLocalName;
-
-  // The lifecycle callbacks to call for this custom element.
-  nsAutoPtr<mozilla::dom::LifecycleCallbacks> mCallbacks;
-
-  // Whether we're currently calling the created callback for a custom element
-  // of this type.
-  bool mElementIsBeingCreated;
-
-  // Element namespace.
-  int32_t mNamespaceID;
-
-  // The document custom element order.
-  uint32_t mDocOrder;
-};
-
-class Registry : public nsISupports
-{
-public:
-  friend class ::nsDocument;
-
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Registry)
-
-  Registry();
-
-protected:
-  virtual ~Registry();
-
-  typedef nsClassHashtable<mozilla::dom::CustomElementHashKey,
-                           mozilla::dom::CustomElementDefinition>
-    DefinitionMap;
-  typedef nsClassHashtable<mozilla::dom::CustomElementHashKey,
-                           nsTArray<nsWeakPtr>>
-    CandidateMap;
-
-  // Hashtable for custom element definitions in web components.
-  // Custom prototypes are stored in the compartment where
-  // registerElement was called.
-  DefinitionMap mCustomDefinitions;
-
-  // The "upgrade candidates map" from the web components spec. Maps from a
-  // namespace id and local name to a list of elements to upgrade if that
-  // element is registered as a custom element.
-  CandidateMap mCandidatesMap;
-};
 
 } // namespace dom
 } // namespace mozilla
@@ -616,7 +439,7 @@ protected:
     // don't hand out references to the docshell.  The shims should all allow
     // getInterface back on us, but other than that each one should only
     // implement one interface.
-    
+
     // XXXbz I wish we could just derive the _allcaps thing from _i
 #define DECL_SHIM(_i, _allcaps)                                              \
     class _i##Shim final : public nsIInterfaceRequestor,                     \
@@ -655,7 +478,7 @@ protected:
   nsresult AddExternalResource(nsIURI* aURI, nsIContentViewer* aViewer,
                                nsILoadGroup* aLoadGroup,
                                nsIDocument* aDisplayDocument);
-  
+
   nsClassHashtable<nsURIHashKey, ExternalResource> mMap;
   nsRefPtrHashtable<nsURIHashKey, PendingLoad> mPendingLoads;
   bool mHaveShutDown;
@@ -791,6 +614,10 @@ public:
   virtual mozilla::dom::DocumentTimeline* Timeline() override;
   virtual void GetAnimations(
       nsTArray<RefPtr<mozilla::dom::Animation>>& aAnimations) override;
+  mozilla::LinkedList<mozilla::dom::DocumentTimeline>& Timelines() override
+  {
+    return mTimelines;
+  }
 
   virtual nsresult SetSubDocumentFor(Element* aContent,
                                      nsIDocument* aSubDoc) override;
@@ -1004,7 +831,8 @@ public:
 
   virtual already_AddRefed<Element> CreateElem(const nsAString& aName,
                                                nsIAtom* aPrefix,
-                                               int32_t aNamespaceID) override;
+                                               int32_t aNamespaceID,
+                                               const nsAString* aIs = nullptr) override;
 
   virtual void Sanitize() override;
 
@@ -1268,8 +1096,6 @@ public:
   Element* GetFullscreenElement() override;
 
   void RequestPointerLock(Element* aElement) override;
-  bool ShouldLockPointer(Element* aElement, Element* aCurrentLock,
-                         bool aNoFocusCheck = false);
   bool SetPointerLock(Element* aElement, int aCursorStyle);
   static void UnlockPointer(nsIDocument* aDoc = nullptr);
 
@@ -1286,40 +1112,14 @@ public:
   // Posts an event to call UpdateVisibilityState
   virtual void PostVisibilityUpdateEvent() override;
 
+  // Since we wouldn't automatically play media from non-visited page, we need
+  // to notify window when the page was first visited.
+  void MaybeActiveMediaComponents();
+
   virtual void DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const override;
   // DocAddSizeOfIncludingThis is inherited from nsIDocument.
 
   virtual nsIDOMNode* AsDOMNode() override { return this; }
-
-  virtual void EnqueueLifecycleCallback(nsIDocument::ElementCallbackType aType,
-                                        Element* aCustomElement,
-                                        mozilla::dom::LifecycleCallbackArgs* aArgs = nullptr,
-                                        mozilla::dom::CustomElementDefinition* aDefinition = nullptr) override;
-
-  static void ProcessTopElementQueue();
-
-  void GetCustomPrototype(int32_t aNamespaceID,
-                          nsIAtom* aAtom,
-                          JS::MutableHandle<JSObject*> prototype)
-  {
-    if (!mRegistry) {
-      prototype.set(nullptr);
-      return;
-    }
-
-    mozilla::dom::CustomElementHashKey key(aNamespaceID, aAtom);
-    mozilla::dom::CustomElementDefinition* definition;
-    if (mRegistry->mCustomDefinitions.Get(&key, &definition)) {
-      prototype.set(definition->mPrototype);
-    } else {
-      prototype.set(nullptr);
-    }
-  }
-
-  static bool RegisterEnabled();
-
-  virtual nsresult RegisterUnresolvedElement(mozilla::dom::Element* aElement,
-                                             nsIAtom* aTypeName = nullptr) override;
 
   // WebIDL bits
   virtual mozilla::dom::DOMImplementation*
@@ -1334,16 +1134,13 @@ public:
   virtual void GetLastStyleSheetSet(nsString& aSheetSet) override;
   virtual mozilla::dom::DOMStringList* StyleSheetSets() override;
   virtual void EnableStyleSheetsForSet(const nsAString& aSheetSet) override;
-  using nsIDocument::CreateElement;
-  using nsIDocument::CreateElementNS;
   virtual already_AddRefed<Element> CreateElement(const nsAString& aTagName,
-                                                  const nsAString& aTypeExtension,
-                                                  mozilla::ErrorResult& rv) override;
+                                                  const mozilla::dom::ElementCreationOptionsOrString& aOptions,
+                                                  ErrorResult& rv) override;
   virtual already_AddRefed<Element> CreateElementNS(const nsAString& aNamespaceURI,
                                                     const nsAString& aQualifiedName,
-                                                    const nsAString& aTypeExtension,
+                                                    const mozilla::dom::ElementCreationOptions& aOptions,
                                                     mozilla::ErrorResult& rv) override;
-  virtual void UseRegistryFromDocument(nsIDocument* aDocument) override;
 
   virtual nsIDocument* MasterDocument() override
   {
@@ -1355,7 +1152,6 @@ public:
   {
     MOZ_ASSERT(master);
     mMasterDocument = master;
-    UseRegistryFromDocument(mMasterDocument);
   }
 
   virtual bool IsMasterDocument() override
@@ -1472,8 +1268,6 @@ public:
   // Set our title
   virtual void SetTitle(const nsAString& aTitle, mozilla::ErrorResult& rv) override;
 
-  static void XPCOMShutdown();
-
   bool mIsTopLevelContentDocument: 1;
   bool mIsContentDocument: 1;
 
@@ -1485,9 +1279,7 @@ public:
 
   js::ExpandoAndGeneration mExpandoAndGeneration;
 
-#ifdef MOZ_EME
   bool ContainsEMEContent();
-#endif
 
   bool ContainsMSEContent();
 
@@ -1578,28 +1370,27 @@ protected:
   nsWeakPtr mFullscreenRoot;
 
 private:
-  // Array representing the processing stack in the custom elements
-  // specification. The processing stack is conceptually a stack of
-  // element queues. Each queue is represented by a sequence of
-  // CustomElementData in this array, separated by nullptr that
-  // represent the boundaries of the items in the stack. The first
-  // queue in the stack is the base element queue.
-  static mozilla::Maybe<nsTArray<RefPtr<mozilla::dom::CustomElementData>>> sProcessingStack;
-
   static bool CustomElementConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp);
 
+  /**
+   * Check if the passed custom element name, aOptions.mIs, is a registered
+   * custom element type or not, then return the custom element name for future
+   * usage.
+   *
+   * If there is no existing custom element definition for this name, throw a
+   * NotFoundError.
+   */
+  const nsString* CheckCustomElementName(
+    const mozilla::dom::ElementCreationOptions& aOptions,
+    const nsAString& aLocalName,
+    uint32_t aNamespaceID,
+    ErrorResult& rv);
+
 public:
-  // Enqueue created callback or register upgrade candidate for
-  // newly created custom elements, possibly extending an existing type.
-  // ex. <x-button>, <button is="x-button> (type extension)
-  virtual void SetupCustomElement(Element* aElement,
-                                  uint32_t aNamespaceID,
-                                  const nsAString* aTypeExtension) override;
+  virtual already_AddRefed<mozilla::dom::CustomElementsRegistry>
+    GetCustomElementsRegistry() override;
 
   static bool IsWebComponentsEnabled(JSContext* aCx, JSObject* aObject);
-
-  // The "registry" from the web components spec.
-  RefPtr<mozilla::dom::Registry> mRegistry;
 
   RefPtr<mozilla::EventListenerManager> mListenerManager;
   RefPtr<mozilla::dom::StyleSheetList> mDOMStyleSheets;
@@ -1651,11 +1442,7 @@ public:
   // terminated instead of letting it finish at its own pace.
   bool mParserAborted:1;
 
-  friend class nsPointerLockPermissionRequest;
   friend class nsCallRequestFullScreen;
-  // When set, trying to lock the pointer doesn't require permission from the
-  // user.
-  bool mAllowRelocking:1;
 
   // ScreenOrientation "pending promise" as described by
   // http://www.w3.org/TR/screen-orientation/
@@ -1673,10 +1460,6 @@ public:
   // Keeps track of whether we have a pending
   // 'style-sheet-applicable-state-changed' notification.
   bool mSSApplicableStateNotificationPending:1;
-
-  // The number of pointer lock requests which are cancelled by the user.
-  // The value is saturated to kPointerLockRequestLimit+1 = 3.
-  uint8_t mCancelledPointerLockRequests:2;
 
   // Whether we have reported use counters for this document with Telemetry yet.
   // Normally this is only done at document destruction time, but for image
@@ -1829,6 +1612,7 @@ private:
   RefPtr<mozilla::dom::UndoManager> mUndoManager;
 
   RefPtr<mozilla::dom::DocumentTimeline> mDocumentTimeline;
+  mozilla::LinkedList<mozilla::dom::DocumentTimeline> mTimelines;
 
   enum ViewportType {
     DisplayWidthHeight,

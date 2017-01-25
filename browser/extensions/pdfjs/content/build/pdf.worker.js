@@ -28,8 +28,8 @@ factory((root.pdfjsDistBuildPdfWorker = {}));
   // Use strict in our context only - users might not want it
   'use strict';
 
-var pdfjsVersion = '1.5.281';
-var pdfjsBuild = '5a5bb99';
+var pdfjsVersion = '1.5.476';
+var pdfjsBuild = 'c0e82db';
 
   var pdfjsFilePath =
     typeof document !== 'undefined' && document.currentScript ?
@@ -1027,1041 +1027,6 @@ exports.ExpertSubsetCharset = ExpertSubsetCharset;
 }));
 
 
-
-(function (root, factory) {
-  {
-    factory((root.pdfjsCoreJpg = {}));
-  }
-}(this, function (exports) {
-
-/*
-This code was forked from https://github.com/notmasteryet/jpgjs. The original
-version was created by github user notmasteryet
-
-- The JPEG specification can be found in the ITU CCITT Recommendation T.81
- (www.w3.org/Graphics/JPEG/itu-t81.pdf)
-- The JFIF specification can be found in the JPEG File Interchange Format
- (www.w3.org/Graphics/JPEG/jfif3.pdf)
-- The Adobe Application-Specific JPEG markers in the Supporting the DCT Filters
- in PostScript Level 2, Technical Note #5116
- (partners.adobe.com/public/developer/en/ps/sdk/5116.DCT_Filter.pdf)
-*/
-
-var JpegImage = (function jpegImage() {
-  var dctZigZag = new Uint8Array([
-     0,
-     1,  8,
-    16,  9,  2,
-     3, 10, 17, 24,
-    32, 25, 18, 11, 4,
-     5, 12, 19, 26, 33, 40,
-    48, 41, 34, 27, 20, 13,  6,
-     7, 14, 21, 28, 35, 42, 49, 56,
-    57, 50, 43, 36, 29, 22, 15,
-    23, 30, 37, 44, 51, 58,
-    59, 52, 45, 38, 31,
-    39, 46, 53, 60,
-    61, 54, 47,
-    55, 62,
-    63
-  ]);
-
-  var dctCos1  =  4017;   // cos(pi/16)
-  var dctSin1  =   799;   // sin(pi/16)
-  var dctCos3  =  3406;   // cos(3*pi/16)
-  var dctSin3  =  2276;   // sin(3*pi/16)
-  var dctCos6  =  1567;   // cos(6*pi/16)
-  var dctSin6  =  3784;   // sin(6*pi/16)
-  var dctSqrt2 =  5793;   // sqrt(2)
-  var dctSqrt1d2 = 2896;  // sqrt(2) / 2
-
-  function constructor() {
-  }
-
-  function buildHuffmanTable(codeLengths, values) {
-    var k = 0, code = [], i, j, length = 16;
-    while (length > 0 && !codeLengths[length - 1]) {
-      length--;
-    }
-    code.push({children: [], index: 0});
-    var p = code[0], q;
-    for (i = 0; i < length; i++) {
-      for (j = 0; j < codeLengths[i]; j++) {
-        p = code.pop();
-        p.children[p.index] = values[k];
-        while (p.index > 0) {
-          p = code.pop();
-        }
-        p.index++;
-        code.push(p);
-        while (code.length <= i) {
-          code.push(q = {children: [], index: 0});
-          p.children[p.index] = q.children;
-          p = q;
-        }
-        k++;
-      }
-      if (i + 1 < length) {
-        // p here points to last code
-        code.push(q = {children: [], index: 0});
-        p.children[p.index] = q.children;
-        p = q;
-      }
-    }
-    return code[0].children;
-  }
-
-  function getBlockBufferOffset(component, row, col) {
-    return 64 * ((component.blocksPerLine + 1) * row + col);
-  }
-
-  function decodeScan(data, offset, frame, components, resetInterval,
-                      spectralStart, spectralEnd, successivePrev, successive) {
-    var mcusPerLine = frame.mcusPerLine;
-    var progressive = frame.progressive;
-
-    var startOffset = offset, bitsData = 0, bitsCount = 0;
-
-    function readBit() {
-      if (bitsCount > 0) {
-        bitsCount--;
-        return (bitsData >> bitsCount) & 1;
-      }
-      bitsData = data[offset++];
-      if (bitsData === 0xFF) {
-        var nextByte = data[offset++];
-        if (nextByte) {
-          throw 'unexpected marker: ' +
-            ((bitsData << 8) | nextByte).toString(16);
-        }
-        // unstuff 0
-      }
-      bitsCount = 7;
-      return bitsData >>> 7;
-    }
-
-    function decodeHuffman(tree) {
-      var node = tree;
-      while (true) {
-        node = node[readBit()];
-        if (typeof node === 'number') {
-          return node;
-        }
-        if (typeof node !== 'object') {
-          throw 'invalid huffman sequence';
-        }
-      }
-    }
-
-    function receive(length) {
-      var n = 0;
-      while (length > 0) {
-        n = (n << 1) | readBit();
-        length--;
-      }
-      return n;
-    }
-
-    function receiveAndExtend(length) {
-      if (length === 1) {
-        return readBit() === 1 ? 1 : -1;
-      }
-      var n = receive(length);
-      if (n >= 1 << (length - 1)) {
-        return n;
-      }
-      return n + (-1 << length) + 1;
-    }
-
-    function decodeBaseline(component, offset) {
-      var t = decodeHuffman(component.huffmanTableDC);
-      var diff = t === 0 ? 0 : receiveAndExtend(t);
-      component.blockData[offset] = (component.pred += diff);
-      var k = 1;
-      while (k < 64) {
-        var rs = decodeHuffman(component.huffmanTableAC);
-        var s = rs & 15, r = rs >> 4;
-        if (s === 0) {
-          if (r < 15) {
-            break;
-          }
-          k += 16;
-          continue;
-        }
-        k += r;
-        var z = dctZigZag[k];
-        component.blockData[offset + z] = receiveAndExtend(s);
-        k++;
-      }
-    }
-
-    function decodeDCFirst(component, offset) {
-      var t = decodeHuffman(component.huffmanTableDC);
-      var diff = t === 0 ? 0 : (receiveAndExtend(t) << successive);
-      component.blockData[offset] = (component.pred += diff);
-    }
-
-    function decodeDCSuccessive(component, offset) {
-      component.blockData[offset] |= readBit() << successive;
-    }
-
-    var eobrun = 0;
-    function decodeACFirst(component, offset) {
-      if (eobrun > 0) {
-        eobrun--;
-        return;
-      }
-      var k = spectralStart, e = spectralEnd;
-      while (k <= e) {
-        var rs = decodeHuffman(component.huffmanTableAC);
-        var s = rs & 15, r = rs >> 4;
-        if (s === 0) {
-          if (r < 15) {
-            eobrun = receive(r) + (1 << r) - 1;
-            break;
-          }
-          k += 16;
-          continue;
-        }
-        k += r;
-        var z = dctZigZag[k];
-        component.blockData[offset + z] =
-          receiveAndExtend(s) * (1 << successive);
-        k++;
-      }
-    }
-
-    var successiveACState = 0, successiveACNextValue;
-    function decodeACSuccessive(component, offset) {
-      var k = spectralStart;
-      var e = spectralEnd;
-      var r = 0;
-      var s;
-      var rs;
-      while (k <= e) {
-        var z = dctZigZag[k];
-        switch (successiveACState) {
-        case 0: // initial state
-          rs = decodeHuffman(component.huffmanTableAC);
-          s = rs & 15;
-          r = rs >> 4;
-          if (s === 0) {
-            if (r < 15) {
-              eobrun = receive(r) + (1 << r);
-              successiveACState = 4;
-            } else {
-              r = 16;
-              successiveACState = 1;
-            }
-          } else {
-            if (s !== 1) {
-              throw 'invalid ACn encoding';
-            }
-            successiveACNextValue = receiveAndExtend(s);
-            successiveACState = r ? 2 : 3;
-          }
-          continue;
-        case 1: // skipping r zero items
-        case 2:
-          if (component.blockData[offset + z]) {
-            component.blockData[offset + z] += (readBit() << successive);
-          } else {
-            r--;
-            if (r === 0) {
-              successiveACState = successiveACState === 2 ? 3 : 0;
-            }
-          }
-          break;
-        case 3: // set value for a zero item
-          if (component.blockData[offset + z]) {
-            component.blockData[offset + z] += (readBit() << successive);
-          } else {
-            component.blockData[offset + z] =
-              successiveACNextValue << successive;
-            successiveACState = 0;
-          }
-          break;
-        case 4: // eob
-          if (component.blockData[offset + z]) {
-            component.blockData[offset + z] += (readBit() << successive);
-          }
-          break;
-        }
-        k++;
-      }
-      if (successiveACState === 4) {
-        eobrun--;
-        if (eobrun === 0) {
-          successiveACState = 0;
-        }
-      }
-    }
-
-    function decodeMcu(component, decode, mcu, row, col) {
-      var mcuRow = (mcu / mcusPerLine) | 0;
-      var mcuCol = mcu % mcusPerLine;
-      var blockRow = mcuRow * component.v + row;
-      var blockCol = mcuCol * component.h + col;
-      var offset = getBlockBufferOffset(component, blockRow, blockCol);
-      decode(component, offset);
-    }
-
-    function decodeBlock(component, decode, mcu) {
-      var blockRow = (mcu / component.blocksPerLine) | 0;
-      var blockCol = mcu % component.blocksPerLine;
-      var offset = getBlockBufferOffset(component, blockRow, blockCol);
-      decode(component, offset);
-    }
-
-    var componentsLength = components.length;
-    var component, i, j, k, n;
-    var decodeFn;
-    if (progressive) {
-      if (spectralStart === 0) {
-        decodeFn = successivePrev === 0 ? decodeDCFirst : decodeDCSuccessive;
-      } else {
-        decodeFn = successivePrev === 0 ? decodeACFirst : decodeACSuccessive;
-      }
-    } else {
-      decodeFn = decodeBaseline;
-    }
-
-    var mcu = 0, marker;
-    var mcuExpected;
-    if (componentsLength === 1) {
-      mcuExpected = components[0].blocksPerLine * components[0].blocksPerColumn;
-    } else {
-      mcuExpected = mcusPerLine * frame.mcusPerColumn;
-    }
-    if (!resetInterval) {
-      resetInterval = mcuExpected;
-    }
-
-    var h, v;
-    while (mcu < mcuExpected) {
-      // reset interval stuff
-      for (i = 0; i < componentsLength; i++) {
-        components[i].pred = 0;
-      }
-      eobrun = 0;
-
-      if (componentsLength === 1) {
-        component = components[0];
-        for (n = 0; n < resetInterval; n++) {
-          decodeBlock(component, decodeFn, mcu);
-          mcu++;
-        }
-      } else {
-        for (n = 0; n < resetInterval; n++) {
-          for (i = 0; i < componentsLength; i++) {
-            component = components[i];
-            h = component.h;
-            v = component.v;
-            for (j = 0; j < v; j++) {
-              for (k = 0; k < h; k++) {
-                decodeMcu(component, decodeFn, mcu, j, k);
-              }
-            }
-          }
-          mcu++;
-        }
-      }
-
-      // find marker
-      bitsCount = 0;
-      marker = (data[offset] << 8) | data[offset + 1];
-      if (marker <= 0xFF00) {
-        throw 'marker was not found';
-      }
-
-      if (marker >= 0xFFD0 && marker <= 0xFFD7) { // RSTx
-        offset += 2;
-      } else {
-        break;
-      }
-    }
-
-    return offset - startOffset;
-  }
-
-  // A port of poppler's IDCT method which in turn is taken from:
-  //   Christoph Loeffler, Adriaan Ligtenberg, George S. Moschytz,
-  //   'Practical Fast 1-D DCT Algorithms with 11 Multiplications',
-  //   IEEE Intl. Conf. on Acoustics, Speech & Signal Processing, 1989,
-  //   988-991.
-  function quantizeAndInverse(component, blockBufferOffset, p) {
-    var qt = component.quantizationTable, blockData = component.blockData;
-    var v0, v1, v2, v3, v4, v5, v6, v7;
-    var p0, p1, p2, p3, p4, p5, p6, p7;
-    var t;
-
-    // inverse DCT on rows
-    for (var row = 0; row < 64; row += 8) {
-      // gather block data
-      p0 = blockData[blockBufferOffset + row];
-      p1 = blockData[blockBufferOffset + row + 1];
-      p2 = blockData[blockBufferOffset + row + 2];
-      p3 = blockData[blockBufferOffset + row + 3];
-      p4 = blockData[blockBufferOffset + row + 4];
-      p5 = blockData[blockBufferOffset + row + 5];
-      p6 = blockData[blockBufferOffset + row + 6];
-      p7 = blockData[blockBufferOffset + row + 7];
-
-      // dequant p0
-      p0 *= qt[row];
-
-      // check for all-zero AC coefficients
-      if ((p1 | p2 | p3 | p4 | p5 | p6 | p7) === 0) {
-        t = (dctSqrt2 * p0 + 512) >> 10;
-        p[row] = t;
-        p[row + 1] = t;
-        p[row + 2] = t;
-        p[row + 3] = t;
-        p[row + 4] = t;
-        p[row + 5] = t;
-        p[row + 6] = t;
-        p[row + 7] = t;
-        continue;
-      }
-      // dequant p1 ... p7
-      p1 *= qt[row + 1];
-      p2 *= qt[row + 2];
-      p3 *= qt[row + 3];
-      p4 *= qt[row + 4];
-      p5 *= qt[row + 5];
-      p6 *= qt[row + 6];
-      p7 *= qt[row + 7];
-
-      // stage 4
-      v0 = (dctSqrt2 * p0 + 128) >> 8;
-      v1 = (dctSqrt2 * p4 + 128) >> 8;
-      v2 = p2;
-      v3 = p6;
-      v4 = (dctSqrt1d2 * (p1 - p7) + 128) >> 8;
-      v7 = (dctSqrt1d2 * (p1 + p7) + 128) >> 8;
-      v5 = p3 << 4;
-      v6 = p5 << 4;
-
-      // stage 3
-      v0 = (v0 + v1 + 1) >> 1;
-      v1 = v0 - v1;
-      t  = (v2 * dctSin6 + v3 * dctCos6 + 128) >> 8;
-      v2 = (v2 * dctCos6 - v3 * dctSin6 + 128) >> 8;
-      v3 = t;
-      v4 = (v4 + v6 + 1) >> 1;
-      v6 = v4 - v6;
-      v7 = (v7 + v5 + 1) >> 1;
-      v5 = v7 - v5;
-
-      // stage 2
-      v0 = (v0 + v3 + 1) >> 1;
-      v3 = v0 - v3;
-      v1 = (v1 + v2 + 1) >> 1;
-      v2 = v1 - v2;
-      t  = (v4 * dctSin3 + v7 * dctCos3 + 2048) >> 12;
-      v4 = (v4 * dctCos3 - v7 * dctSin3 + 2048) >> 12;
-      v7 = t;
-      t  = (v5 * dctSin1 + v6 * dctCos1 + 2048) >> 12;
-      v5 = (v5 * dctCos1 - v6 * dctSin1 + 2048) >> 12;
-      v6 = t;
-
-      // stage 1
-      p[row] = v0 + v7;
-      p[row + 7] = v0 - v7;
-      p[row + 1] = v1 + v6;
-      p[row + 6] = v1 - v6;
-      p[row + 2] = v2 + v5;
-      p[row + 5] = v2 - v5;
-      p[row + 3] = v3 + v4;
-      p[row + 4] = v3 - v4;
-    }
-
-    // inverse DCT on columns
-    for (var col = 0; col < 8; ++col) {
-      p0 = p[col];
-      p1 = p[col +  8];
-      p2 = p[col + 16];
-      p3 = p[col + 24];
-      p4 = p[col + 32];
-      p5 = p[col + 40];
-      p6 = p[col + 48];
-      p7 = p[col + 56];
-
-      // check for all-zero AC coefficients
-      if ((p1 | p2 | p3 | p4 | p5 | p6 | p7) === 0) {
-        t = (dctSqrt2 * p0 + 8192) >> 14;
-        // convert to 8 bit
-        t = (t < -2040) ? 0 : (t >= 2024) ? 255 : (t + 2056) >> 4;
-        blockData[blockBufferOffset + col] = t;
-        blockData[blockBufferOffset + col +  8] = t;
-        blockData[blockBufferOffset + col + 16] = t;
-        blockData[blockBufferOffset + col + 24] = t;
-        blockData[blockBufferOffset + col + 32] = t;
-        blockData[blockBufferOffset + col + 40] = t;
-        blockData[blockBufferOffset + col + 48] = t;
-        blockData[blockBufferOffset + col + 56] = t;
-        continue;
-      }
-
-      // stage 4
-      v0 = (dctSqrt2 * p0 + 2048) >> 12;
-      v1 = (dctSqrt2 * p4 + 2048) >> 12;
-      v2 = p2;
-      v3 = p6;
-      v4 = (dctSqrt1d2 * (p1 - p7) + 2048) >> 12;
-      v7 = (dctSqrt1d2 * (p1 + p7) + 2048) >> 12;
-      v5 = p3;
-      v6 = p5;
-
-      // stage 3
-      // Shift v0 by 128.5 << 5 here, so we don't need to shift p0...p7 when
-      // converting to UInt8 range later.
-      v0 = ((v0 + v1 + 1) >> 1) + 4112;
-      v1 = v0 - v1;
-      t  = (v2 * dctSin6 + v3 * dctCos6 + 2048) >> 12;
-      v2 = (v2 * dctCos6 - v3 * dctSin6 + 2048) >> 12;
-      v3 = t;
-      v4 = (v4 + v6 + 1) >> 1;
-      v6 = v4 - v6;
-      v7 = (v7 + v5 + 1) >> 1;
-      v5 = v7 - v5;
-
-      // stage 2
-      v0 = (v0 + v3 + 1) >> 1;
-      v3 = v0 - v3;
-      v1 = (v1 + v2 + 1) >> 1;
-      v2 = v1 - v2;
-      t  = (v4 * dctSin3 + v7 * dctCos3 + 2048) >> 12;
-      v4 = (v4 * dctCos3 - v7 * dctSin3 + 2048) >> 12;
-      v7 = t;
-      t  = (v5 * dctSin1 + v6 * dctCos1 + 2048) >> 12;
-      v5 = (v5 * dctCos1 - v6 * dctSin1 + 2048) >> 12;
-      v6 = t;
-
-      // stage 1
-      p0 = v0 + v7;
-      p7 = v0 - v7;
-      p1 = v1 + v6;
-      p6 = v1 - v6;
-      p2 = v2 + v5;
-      p5 = v2 - v5;
-      p3 = v3 + v4;
-      p4 = v3 - v4;
-
-      // convert to 8-bit integers
-      p0 = (p0 < 16) ? 0 : (p0 >= 4080) ? 255 : p0 >> 4;
-      p1 = (p1 < 16) ? 0 : (p1 >= 4080) ? 255 : p1 >> 4;
-      p2 = (p2 < 16) ? 0 : (p2 >= 4080) ? 255 : p2 >> 4;
-      p3 = (p3 < 16) ? 0 : (p3 >= 4080) ? 255 : p3 >> 4;
-      p4 = (p4 < 16) ? 0 : (p4 >= 4080) ? 255 : p4 >> 4;
-      p5 = (p5 < 16) ? 0 : (p5 >= 4080) ? 255 : p5 >> 4;
-      p6 = (p6 < 16) ? 0 : (p6 >= 4080) ? 255 : p6 >> 4;
-      p7 = (p7 < 16) ? 0 : (p7 >= 4080) ? 255 : p7 >> 4;
-
-      // store block data
-      blockData[blockBufferOffset + col] = p0;
-      blockData[blockBufferOffset + col +  8] = p1;
-      blockData[blockBufferOffset + col + 16] = p2;
-      blockData[blockBufferOffset + col + 24] = p3;
-      blockData[blockBufferOffset + col + 32] = p4;
-      blockData[blockBufferOffset + col + 40] = p5;
-      blockData[blockBufferOffset + col + 48] = p6;
-      blockData[blockBufferOffset + col + 56] = p7;
-    }
-  }
-
-  function buildComponentData(frame, component) {
-    var blocksPerLine = component.blocksPerLine;
-    var blocksPerColumn = component.blocksPerColumn;
-    var computationBuffer = new Int16Array(64);
-
-    for (var blockRow = 0; blockRow < blocksPerColumn; blockRow++) {
-      for (var blockCol = 0; blockCol < blocksPerLine; blockCol++) {
-        var offset = getBlockBufferOffset(component, blockRow, blockCol);
-        quantizeAndInverse(component, offset, computationBuffer);
-      }
-    }
-    return component.blockData;
-  }
-
-  function clamp0to255(a) {
-    return a <= 0 ? 0 : a >= 255 ? 255 : a;
-  }
-
-  constructor.prototype = {
-    parse: function parse(data) {
-
-      function readUint16() {
-        var value = (data[offset] << 8) | data[offset + 1];
-        offset += 2;
-        return value;
-      }
-
-      function readDataBlock() {
-        var length = readUint16();
-        var array = data.subarray(offset, offset + length - 2);
-        offset += array.length;
-        return array;
-      }
-
-      function prepareComponents(frame) {
-        var mcusPerLine = Math.ceil(frame.samplesPerLine / 8 / frame.maxH);
-        var mcusPerColumn = Math.ceil(frame.scanLines / 8 / frame.maxV);
-        for (var i = 0; i < frame.components.length; i++) {
-          component = frame.components[i];
-          var blocksPerLine = Math.ceil(Math.ceil(frame.samplesPerLine / 8) *
-                                        component.h / frame.maxH);
-          var blocksPerColumn = Math.ceil(Math.ceil(frame.scanLines  / 8) *
-                                          component.v / frame.maxV);
-          var blocksPerLineForMcu = mcusPerLine * component.h;
-          var blocksPerColumnForMcu = mcusPerColumn * component.v;
-
-          var blocksBufferSize = 64 * blocksPerColumnForMcu *
-                                      (blocksPerLineForMcu + 1);
-          component.blockData = new Int16Array(blocksBufferSize);
-          component.blocksPerLine = blocksPerLine;
-          component.blocksPerColumn = blocksPerColumn;
-        }
-        frame.mcusPerLine = mcusPerLine;
-        frame.mcusPerColumn = mcusPerColumn;
-      }
-
-      var offset = 0;
-      var jfif = null;
-      var adobe = null;
-      var frame, resetInterval;
-      var quantizationTables = [];
-      var huffmanTablesAC = [], huffmanTablesDC = [];
-      var fileMarker = readUint16();
-      if (fileMarker !== 0xFFD8) { // SOI (Start of Image)
-        throw 'SOI not found';
-      }
-
-      fileMarker = readUint16();
-      while (fileMarker !== 0xFFD9) { // EOI (End of image)
-        var i, j, l;
-        switch(fileMarker) {
-          case 0xFFE0: // APP0 (Application Specific)
-          case 0xFFE1: // APP1
-          case 0xFFE2: // APP2
-          case 0xFFE3: // APP3
-          case 0xFFE4: // APP4
-          case 0xFFE5: // APP5
-          case 0xFFE6: // APP6
-          case 0xFFE7: // APP7
-          case 0xFFE8: // APP8
-          case 0xFFE9: // APP9
-          case 0xFFEA: // APP10
-          case 0xFFEB: // APP11
-          case 0xFFEC: // APP12
-          case 0xFFED: // APP13
-          case 0xFFEE: // APP14
-          case 0xFFEF: // APP15
-          case 0xFFFE: // COM (Comment)
-            var appData = readDataBlock();
-
-            if (fileMarker === 0xFFE0) {
-              if (appData[0] === 0x4A && appData[1] === 0x46 &&
-                  appData[2] === 0x49 && appData[3] === 0x46 &&
-                  appData[4] === 0) { // 'JFIF\x00'
-                jfif = {
-                  version: { major: appData[5], minor: appData[6] },
-                  densityUnits: appData[7],
-                  xDensity: (appData[8] << 8) | appData[9],
-                  yDensity: (appData[10] << 8) | appData[11],
-                  thumbWidth: appData[12],
-                  thumbHeight: appData[13],
-                  thumbData: appData.subarray(14, 14 +
-                                              3 * appData[12] * appData[13])
-                };
-              }
-            }
-            // TODO APP1 - Exif
-            if (fileMarker === 0xFFEE) {
-              if (appData[0] === 0x41 && appData[1] === 0x64 &&
-                  appData[2] === 0x6F && appData[3] === 0x62 &&
-                  appData[4] === 0x65) { // 'Adobe'
-                adobe = {
-                  version: (appData[5] << 8) | appData[6],
-                  flags0: (appData[7] << 8) | appData[8],
-                  flags1: (appData[9] << 8) | appData[10],
-                  transformCode: appData[11]
-                };
-              }
-            }
-            break;
-
-          case 0xFFDB: // DQT (Define Quantization Tables)
-            var quantizationTablesLength = readUint16();
-            var quantizationTablesEnd = quantizationTablesLength + offset - 2;
-            var z;
-            while (offset < quantizationTablesEnd) {
-              var quantizationTableSpec = data[offset++];
-              var tableData = new Uint16Array(64);
-              if ((quantizationTableSpec >> 4) === 0) { // 8 bit values
-                for (j = 0; j < 64; j++) {
-                  z = dctZigZag[j];
-                  tableData[z] = data[offset++];
-                }
-              } else if ((quantizationTableSpec >> 4) === 1) { //16 bit
-                for (j = 0; j < 64; j++) {
-                  z = dctZigZag[j];
-                  tableData[z] = readUint16();
-                }
-              } else {
-                throw 'DQT: invalid table spec';
-              }
-              quantizationTables[quantizationTableSpec & 15] = tableData;
-            }
-            break;
-
-          case 0xFFC0: // SOF0 (Start of Frame, Baseline DCT)
-          case 0xFFC1: // SOF1 (Start of Frame, Extended DCT)
-          case 0xFFC2: // SOF2 (Start of Frame, Progressive DCT)
-            if (frame) {
-              throw 'Only single frame JPEGs supported';
-            }
-            readUint16(); // skip data length
-            frame = {};
-            frame.extended = (fileMarker === 0xFFC1);
-            frame.progressive = (fileMarker === 0xFFC2);
-            frame.precision = data[offset++];
-            frame.scanLines = readUint16();
-            frame.samplesPerLine = readUint16();
-            frame.components = [];
-            frame.componentIds = {};
-            var componentsCount = data[offset++], componentId;
-            var maxH = 0, maxV = 0;
-            for (i = 0; i < componentsCount; i++) {
-              componentId = data[offset];
-              var h = data[offset + 1] >> 4;
-              var v = data[offset + 1] & 15;
-              if (maxH < h) {
-                maxH = h;
-              }
-              if (maxV < v) {
-                maxV = v;
-              }
-              var qId = data[offset + 2];
-              l = frame.components.push({
-                h: h,
-                v: v,
-                quantizationTable: quantizationTables[qId]
-              });
-              frame.componentIds[componentId] = l - 1;
-              offset += 3;
-            }
-            frame.maxH = maxH;
-            frame.maxV = maxV;
-            prepareComponents(frame);
-            break;
-
-          case 0xFFC4: // DHT (Define Huffman Tables)
-            var huffmanLength = readUint16();
-            for (i = 2; i < huffmanLength;) {
-              var huffmanTableSpec = data[offset++];
-              var codeLengths = new Uint8Array(16);
-              var codeLengthSum = 0;
-              for (j = 0; j < 16; j++, offset++) {
-                codeLengthSum += (codeLengths[j] = data[offset]);
-              }
-              var huffmanValues = new Uint8Array(codeLengthSum);
-              for (j = 0; j < codeLengthSum; j++, offset++) {
-                huffmanValues[j] = data[offset];
-              }
-              i += 17 + codeLengthSum;
-
-              ((huffmanTableSpec >> 4) === 0 ?
-                huffmanTablesDC : huffmanTablesAC)[huffmanTableSpec & 15] =
-                buildHuffmanTable(codeLengths, huffmanValues);
-            }
-            break;
-
-          case 0xFFDD: // DRI (Define Restart Interval)
-            readUint16(); // skip data length
-            resetInterval = readUint16();
-            break;
-
-          case 0xFFDA: // SOS (Start of Scan)
-            var scanLength = readUint16();
-            var selectorsCount = data[offset++];
-            var components = [], component;
-            for (i = 0; i < selectorsCount; i++) {
-              var componentIndex = frame.componentIds[data[offset++]];
-              component = frame.components[componentIndex];
-              var tableSpec = data[offset++];
-              component.huffmanTableDC = huffmanTablesDC[tableSpec >> 4];
-              component.huffmanTableAC = huffmanTablesAC[tableSpec & 15];
-              components.push(component);
-            }
-            var spectralStart = data[offset++];
-            var spectralEnd = data[offset++];
-            var successiveApproximation = data[offset++];
-            var processed = decodeScan(data, offset,
-              frame, components, resetInterval,
-              spectralStart, spectralEnd,
-              successiveApproximation >> 4, successiveApproximation & 15);
-            offset += processed;
-            break;
-
-          case 0xFFFF: // Fill bytes
-            if (data[offset] !== 0xFF) { // Avoid skipping a valid marker.
-              offset--;
-            }
-            break;
-
-          default:
-            if (data[offset - 3] === 0xFF &&
-                data[offset - 2] >= 0xC0 && data[offset - 2] <= 0xFE) {
-              // could be incorrect encoding -- last 0xFF byte of the previous
-              // block was eaten by the encoder
-              offset -= 3;
-              break;
-            }
-            throw 'unknown JPEG marker ' + fileMarker.toString(16);
-        }
-        fileMarker = readUint16();
-      }
-
-      this.width = frame.samplesPerLine;
-      this.height = frame.scanLines;
-      this.jfif = jfif;
-      this.adobe = adobe;
-      this.components = [];
-      for (i = 0; i < frame.components.length; i++) {
-        component = frame.components[i];
-        this.components.push({
-          output: buildComponentData(frame, component),
-          scaleX: component.h / frame.maxH,
-          scaleY: component.v / frame.maxV,
-          blocksPerLine: component.blocksPerLine,
-          blocksPerColumn: component.blocksPerColumn
-        });
-      }
-      this.numComponents = this.components.length;
-    },
-
-    _getLinearizedBlockData: function getLinearizedBlockData(width, height) {
-      var scaleX = this.width / width, scaleY = this.height / height;
-
-      var component, componentScaleX, componentScaleY, blocksPerScanline;
-      var x, y, i, j, k;
-      var index;
-      var offset = 0;
-      var output;
-      var numComponents = this.components.length;
-      var dataLength = width * height * numComponents;
-      var data = new Uint8Array(dataLength);
-      var xScaleBlockOffset = new Uint32Array(width);
-      var mask3LSB = 0xfffffff8; // used to clear the 3 LSBs
-
-      for (i = 0; i < numComponents; i++) {
-        component = this.components[i];
-        componentScaleX = component.scaleX * scaleX;
-        componentScaleY = component.scaleY * scaleY;
-        offset = i;
-        output = component.output;
-        blocksPerScanline = (component.blocksPerLine + 1) << 3;
-        // precalculate the xScaleBlockOffset
-        for (x = 0; x < width; x++) {
-          j = 0 | (x * componentScaleX);
-          xScaleBlockOffset[x] = ((j & mask3LSB) << 3) | (j & 7);
-        }
-        // linearize the blocks of the component
-        for (y = 0; y < height; y++) {
-          j = 0 | (y * componentScaleY);
-          index = blocksPerScanline * (j & mask3LSB) | ((j & 7) << 3);
-          for (x = 0; x < width; x++) {
-            data[offset] = output[index + xScaleBlockOffset[x]];
-            offset += numComponents;
-          }
-        }
-      }
-
-      // decodeTransform contains pairs of multiplier (-256..256) and additive
-      var transform = this.decodeTransform;
-      if (transform) {
-        for (i = 0; i < dataLength;) {
-          for (j = 0, k = 0; j < numComponents; j++, i++, k += 2) {
-            data[i] = ((data[i] * transform[k]) >> 8) + transform[k + 1];
-          }
-        }
-      }
-      return data;
-    },
-
-    _isColorConversionNeeded: function isColorConversionNeeded() {
-      if (this.adobe && this.adobe.transformCode) {
-        // The adobe transform marker overrides any previous setting
-        return true;
-      } else if (this.numComponents === 3) {
-        return true;
-      } else {
-        return false;
-      }
-    },
-
-    _convertYccToRgb: function convertYccToRgb(data) {
-      var Y, Cb, Cr;
-      for (var i = 0, length = data.length; i < length; i += 3) {
-        Y  = data[i    ];
-        Cb = data[i + 1];
-        Cr = data[i + 2];
-        data[i    ] = clamp0to255(Y - 179.456 + 1.402 * Cr);
-        data[i + 1] = clamp0to255(Y + 135.459 - 0.344 * Cb - 0.714 * Cr);
-        data[i + 2] = clamp0to255(Y - 226.816 + 1.772 * Cb);
-      }
-      return data;
-    },
-
-    _convertYcckToRgb: function convertYcckToRgb(data) {
-      var Y, Cb, Cr, k;
-      var offset = 0;
-      for (var i = 0, length = data.length; i < length; i += 4) {
-        Y  = data[i];
-        Cb = data[i + 1];
-        Cr = data[i + 2];
-        k = data[i + 3];
-
-        var r = -122.67195406894 +
-          Cb * (-6.60635669420364e-5 * Cb + 0.000437130475926232 * Cr -
-                5.4080610064599e-5 * Y + 0.00048449797120281 * k -
-                0.154362151871126) +
-          Cr * (-0.000957964378445773 * Cr + 0.000817076911346625 * Y -
-                0.00477271405408747 * k + 1.53380253221734) +
-          Y * (0.000961250184130688 * Y - 0.00266257332283933 * k +
-               0.48357088451265) +
-          k * (-0.000336197177618394 * k + 0.484791561490776);
-
-        var g = 107.268039397724 +
-          Cb * (2.19927104525741e-5 * Cb - 0.000640992018297945 * Cr +
-                0.000659397001245577 * Y + 0.000426105652938837 * k -
-                0.176491792462875) +
-          Cr * (-0.000778269941513683 * Cr + 0.00130872261408275 * Y +
-                0.000770482631801132 * k - 0.151051492775562) +
-          Y * (0.00126935368114843 * Y - 0.00265090189010898 * k +
-               0.25802910206845) +
-          k * (-0.000318913117588328 * k - 0.213742400323665);
-
-        var b = -20.810012546947 +
-          Cb * (-0.000570115196973677 * Cb - 2.63409051004589e-5 * Cr +
-                0.0020741088115012 * Y - 0.00288260236853442 * k +
-                0.814272968359295) +
-          Cr * (-1.53496057440975e-5 * Cr - 0.000132689043961446 * Y +
-                0.000560833691242812 * k - 0.195152027534049) +
-          Y * (0.00174418132927582 * Y - 0.00255243321439347 * k +
-               0.116935020465145) +
-          k * (-0.000343531996510555 * k + 0.24165260232407);
-
-        data[offset++] = clamp0to255(r);
-        data[offset++] = clamp0to255(g);
-        data[offset++] = clamp0to255(b);
-      }
-      return data;
-    },
-
-    _convertYcckToCmyk: function convertYcckToCmyk(data) {
-      var Y, Cb, Cr;
-      for (var i = 0, length = data.length; i < length; i += 4) {
-        Y  = data[i];
-        Cb = data[i + 1];
-        Cr = data[i + 2];
-        data[i    ] = clamp0to255(434.456 - Y - 1.402 * Cr);
-        data[i + 1] = clamp0to255(119.541 - Y + 0.344 * Cb + 0.714 * Cr);
-        data[i + 2] = clamp0to255(481.816 - Y - 1.772 * Cb);
-        // K in data[i + 3] is unchanged
-      }
-      return data;
-    },
-
-    _convertCmykToRgb: function convertCmykToRgb(data) {
-      var c, m, y, k;
-      var offset = 0;
-      var min = -255 * 255 * 255;
-      var scale = 1 / 255 / 255;
-      for (var i = 0, length = data.length; i < length; i += 4) {
-        c = data[i];
-        m = data[i + 1];
-        y = data[i + 2];
-        k = data[i + 3];
-
-        var r =
-          c * (-4.387332384609988 * c + 54.48615194189176 * m +
-               18.82290502165302 * y + 212.25662451639585 * k -
-               72734.4411664936) +
-          m * (1.7149763477362134 * m - 5.6096736904047315 * y -
-               17.873870861415444 * k - 1401.7366389350734) +
-          y * (-2.5217340131683033 * y - 21.248923337353073 * k +
-               4465.541406466231) -
-          k * (21.86122147463605 * k + 48317.86113160301);
-        var g =
-          c * (8.841041422036149 * c + 60.118027045597366 * m +
-               6.871425592049007 * y + 31.159100130055922 * k -
-               20220.756542821975) +
-          m * (-15.310361306967817 * m + 17.575251261109482 * y +
-               131.35250912493976 * k - 48691.05921601825) +
-          y * (4.444339102852739 * y + 9.8632861493405 * k -
-               6341.191035517494) -
-          k * (20.737325471181034 * k + 47890.15695978492);
-        var b =
-          c * (0.8842522430003296 * c + 8.078677503112928 * m +
-               30.89978309703729 * y - 0.23883238689178934 * k -
-               3616.812083916688) +
-          m * (10.49593273432072 * m + 63.02378494754052 * y +
-               50.606957656360734 * k - 28620.90484698408) +
-          y * (0.03296041114873217 * y + 115.60384449646641 * k -
-               49363.43385999684) -
-          k * (22.33816807309886 * k + 45932.16563550634);
-
-        data[offset++] = r >= 0 ? 255 : r <= min ? 0 : 255 + r * scale | 0;
-        data[offset++] = g >= 0 ? 255 : g <= min ? 0 : 255 + g * scale | 0;
-        data[offset++] = b >= 0 ? 255 : b <= min ? 0 : 255 + b * scale | 0;
-      }
-      return data;
-    },
-
-    getData: function getData(width, height, forceRGBoutput) {
-      if (this.numComponents > 4) {
-        throw 'Unsupported color mode';
-      }
-      // type of data: Uint8Array(width * height * numComponents)
-      var data = this._getLinearizedBlockData(width, height);
-
-      if (this.numComponents === 1 && forceRGBoutput) {
-        var dataLength = data.length;
-        var rgbData = new Uint8Array(dataLength * 3);
-        var offset = 0;
-        for (var i = 0; i < dataLength; i++) {
-          var grayColor = data[i];
-          rgbData[offset++] = grayColor;
-          rgbData[offset++] = grayColor;
-          rgbData[offset++] = grayColor;
-        }
-        return rgbData;
-      } else if (this.numComponents === 3) {
-        return this._convertYccToRgb(data);
-      } else if (this.numComponents === 4) {
-        if (this._isColorConversionNeeded()) {
-          if (forceRGBoutput) {
-            return this._convertYcckToRgb(data);
-          } else {
-            return this._convertYcckToCmyk(data);
-          }
-        } else if (forceRGBoutput) {
-          return this._convertCmykToRgb(data);
-        }
-      }
-      return data;
-    }
-  };
-
-  return constructor;
-})();
-
-exports.JpegImage = JpegImage;
-}));
-
-
 (function (root, factory) {
   {
     factory((root.pdfjsSharedUtil = {}));
@@ -2133,6 +1098,28 @@ var AnnotationFlag = {
   LOCKED: 0x80,
   TOGGLENOVIEW: 0x100,
   LOCKEDCONTENTS: 0x200
+};
+
+var AnnotationFieldFlag = {
+  READONLY: 1,
+  REQUIRED: 2,
+  NOEXPORT: 3,
+  MULTILINE: 13,
+  PASSWORD: 14,
+  NOTOGGLETOOFF: 15,
+  RADIO: 16,
+  PUSHBUTTON: 17,
+  COMBO: 18,
+  EDIT: 19,
+  SORT: 20,
+  FILESELECT: 21,
+  MULTISELECT: 22,
+  DONOTSPELLCHECK: 23,
+  DONOTSCROLL: 24,
+  COMB: 25,
+  RICHTEXT: 26,
+  RADIOSINUNISON: 26,
+  COMMITONSELCHANGE: 27,
 };
 
 var AnnotationBorderStyleType = {
@@ -3091,12 +2078,17 @@ function isArrayBuffer(v) {
   return typeof v === 'object' && v !== null && v.byteLength !== undefined;
 }
 
+// Checks if ch is one of the following characters: SPACE, TAB, CR or LF.
+function isSpace(ch) {
+  return (ch === 0x20 || ch === 0x09 || ch === 0x0D || ch === 0x0A);
+}
+
 /**
  * Promise Capability object.
  *
  * @typedef {Object} PromiseCapability
  * @property {Promise} promise - A promise object.
- * @property {function} resolve - Fullfills the promise.
+ * @property {function} resolve - Fulfills the promise.
  * @property {function} reject - Rejects the promise.
  */
 
@@ -3119,8 +2111,8 @@ function createPromiseCapability() {
 /**
  * Polyfill for Promises:
  * The following promise implementation tries to generally implement the
- * Promise/A+ spec. Some notable differences from other promise libaries are:
- * - There currently isn't a seperate deferred and promise object.
+ * Promise/A+ spec. Some notable differences from other promise libraries are:
+ * - There currently isn't a separate deferred and promise object.
  * - Unhandled rejections eventually show an error if they aren't handled.
  *
  * Based off of the work in:
@@ -3173,6 +2165,7 @@ function createPromiseCapability() {
   }
   throw new Error('DOM Promise is not present');
 })();
+
 
 var StatTimer = (function StatTimerClosure() {
   function rpad(str, pad, length) {
@@ -3238,10 +2231,7 @@ var createBlob = function createBlob(data, contentType) {
   if (typeof Blob !== 'undefined') {
     return new Blob([data], { type: contentType });
   }
-  // Blob builder is deprecated in FF14 and removed in FF18.
-  var bb = new MozBlobBuilder();
-  bb.append(data);
-  return bb.getBlob(contentType);
+  warn('The "Blob" constructor is not supported.');
 };
 
 var createObjectURL = (function createObjectURLClosure() {
@@ -3423,6 +2413,7 @@ exports.OPS = OPS;
 exports.VERBOSITY_LEVELS = VERBOSITY_LEVELS;
 exports.UNSUPPORTED_FEATURES = UNSUPPORTED_FEATURES;
 exports.AnnotationBorderStyleType = AnnotationBorderStyleType;
+exports.AnnotationFieldFlag = AnnotationFieldFlag;
 exports.AnnotationFlag = AnnotationFlag;
 exports.AnnotationType = AnnotationType;
 exports.FontType = FontType;
@@ -3462,6 +2453,7 @@ exports.isEmptyObj = isEmptyObj;
 exports.isInt = isInt;
 exports.isNum = isNum;
 exports.isString = isString;
+exports.isSpace = isSpace;
 exports.isSameOrigin = isSameOrigin;
 exports.isValidUrl = isValidUrl;
 exports.isLittleEndian = isLittleEndian;
@@ -4295,7 +3287,7 @@ var CFFParser = (function CFFParserClosure() {
             break;
 
           default:
-            error('Unknow encoding format: ' + format + ' in CFF');
+            error('Unknown encoding format: ' + format + ' in CFF');
             break;
         }
         var dataEnd = pos;
@@ -4318,8 +3310,8 @@ var CFFParser = (function CFFParserClosure() {
       var start = pos;
       var bytes = this.bytes;
       var format = bytes[pos++];
-      var fdSelect = [];
-      var i;
+      var fdSelect = [], rawBytes;
+      var i, invalidFirstGID = false;
 
       switch (format) {
         case 0:
@@ -4327,11 +3319,18 @@ var CFFParser = (function CFFParserClosure() {
             var id = bytes[pos++];
             fdSelect.push(id);
           }
+          rawBytes = bytes.subarray(start, pos);
           break;
         case 3:
           var rangesCount = (bytes[pos++] << 8) | bytes[pos++];
           for (i = 0; i < rangesCount; ++i) {
             var first = (bytes[pos++] << 8) | bytes[pos++];
+            if (i === 0 && first !== 0) {
+              warn('parseFDSelect: The first range must have a first GID of 0' +
+                   ' -- trying to recover.');
+              invalidFirstGID = true;
+              first = 0;
+            }
             var fdIndex = bytes[pos++];
             var next = (bytes[pos] << 8) | bytes[pos + 1];
             for (var j = first; j < next; ++j) {
@@ -4340,13 +3339,19 @@ var CFFParser = (function CFFParserClosure() {
           }
           // Advance past the sentinel(next).
           pos += 2;
+          rawBytes = bytes.subarray(start, pos);
+
+          if (invalidFirstGID) {
+            rawBytes[3] = rawBytes[4] = 0; // Adjust the first range, first GID.
+          }
           break;
         default:
-          error('Unknown fdselect format ' + format);
+          error('parseFDSelect: Unknown format "' + format + '".');
           break;
       }
-      var end = pos;
-      return new CFFFDSelect(fdSelect, bytes.subarray(start, end));
+      assert(fdSelect.length === length, 'parseFDSelect: Invalid font data.');
+
+      return new CFFFDSelect(fdSelect, rawBytes);
     }
   };
   return CFFParser;
@@ -4755,7 +3760,7 @@ var CFFCompiler = (function CFFCompilerClosure() {
       var globalSubrIndex = this.compileIndex(cff.globalSubrIndex);
       output.add(globalSubrIndex);
 
-      // Now start on the other entries that have no specfic order.
+      // Now start on the other entries that have no specific order.
       if (cff.encoding && cff.topDict.hasName('Encoding')) {
         if (cff.encoding.predefined) {
           topDictTracker.setEntryLocation('Encoding', [cff.encoding.format],
@@ -11190,16 +10195,1067 @@ exports.Jbig2Image = Jbig2Image;
 
 (function (root, factory) {
   {
+    factory((root.pdfjsCoreJpg = {}), root.pdfjsSharedUtil);
+  }
+}(this, function (exports, sharedUtil) {
+
+var error = sharedUtil.error;
+
+/**
+ * This code was forked from https://github.com/notmasteryet/jpgjs.
+ * The original version was created by GitHub user notmasteryet.
+ *
+ * - The JPEG specification can be found in the ITU CCITT Recommendation T.81
+ *   (www.w3.org/Graphics/JPEG/itu-t81.pdf)
+ * - The JFIF specification can be found in the JPEG File Interchange Format
+ *   (www.w3.org/Graphics/JPEG/jfif3.pdf)
+ * - The Adobe Application-Specific JPEG markers in the
+ *   Supporting the DCT Filters in PostScript Level 2, Technical Note #5116
+ *   (partners.adobe.com/public/developer/en/ps/sdk/5116.DCT_Filter.pdf)
+ */
+
+var JpegImage = (function jpegImage() {
+  var dctZigZag = new Uint8Array([
+     0,
+     1,  8,
+    16,  9,  2,
+     3, 10, 17, 24,
+    32, 25, 18, 11, 4,
+     5, 12, 19, 26, 33, 40,
+    48, 41, 34, 27, 20, 13,  6,
+     7, 14, 21, 28, 35, 42, 49, 56,
+    57, 50, 43, 36, 29, 22, 15,
+    23, 30, 37, 44, 51, 58,
+    59, 52, 45, 38, 31,
+    39, 46, 53, 60,
+    61, 54, 47,
+    55, 62,
+    63
+  ]);
+
+  var dctCos1  =  4017;   // cos(pi/16)
+  var dctSin1  =   799;   // sin(pi/16)
+  var dctCos3  =  3406;   // cos(3*pi/16)
+  var dctSin3  =  2276;   // sin(3*pi/16)
+  var dctCos6  =  1567;   // cos(6*pi/16)
+  var dctSin6  =  3784;   // sin(6*pi/16)
+  var dctSqrt2 =  5793;   // sqrt(2)
+  var dctSqrt1d2 = 2896;  // sqrt(2) / 2
+
+  function constructor() {
+  }
+
+  function buildHuffmanTable(codeLengths, values) {
+    var k = 0, code = [], i, j, length = 16;
+    while (length > 0 && !codeLengths[length - 1]) {
+      length--;
+    }
+    code.push({children: [], index: 0});
+    var p = code[0], q;
+    for (i = 0; i < length; i++) {
+      for (j = 0; j < codeLengths[i]; j++) {
+        p = code.pop();
+        p.children[p.index] = values[k];
+        while (p.index > 0) {
+          p = code.pop();
+        }
+        p.index++;
+        code.push(p);
+        while (code.length <= i) {
+          code.push(q = {children: [], index: 0});
+          p.children[p.index] = q.children;
+          p = q;
+        }
+        k++;
+      }
+      if (i + 1 < length) {
+        // p here points to last code
+        code.push(q = {children: [], index: 0});
+        p.children[p.index] = q.children;
+        p = q;
+      }
+    }
+    return code[0].children;
+  }
+
+  function getBlockBufferOffset(component, row, col) {
+    return 64 * ((component.blocksPerLine + 1) * row + col);
+  }
+
+  function decodeScan(data, offset, frame, components, resetInterval,
+                      spectralStart, spectralEnd, successivePrev, successive) {
+    var mcusPerLine = frame.mcusPerLine;
+    var progressive = frame.progressive;
+
+    var startOffset = offset, bitsData = 0, bitsCount = 0;
+
+    function readBit() {
+      if (bitsCount > 0) {
+        bitsCount--;
+        return (bitsData >> bitsCount) & 1;
+      }
+      bitsData = data[offset++];
+      if (bitsData === 0xFF) {
+        var nextByte = data[offset++];
+        if (nextByte) {
+          error('JPEG error: unexpected marker ' +
+                ((bitsData << 8) | nextByte).toString(16));
+        }
+        // unstuff 0
+      }
+      bitsCount = 7;
+      return bitsData >>> 7;
+    }
+
+    function decodeHuffman(tree) {
+      var node = tree;
+      while (true) {
+        node = node[readBit()];
+        if (typeof node === 'number') {
+          return node;
+        }
+        if (typeof node !== 'object') {
+          error('JPEG error: invalid huffman sequence');
+        }
+      }
+    }
+
+    function receive(length) {
+      var n = 0;
+      while (length > 0) {
+        n = (n << 1) | readBit();
+        length--;
+      }
+      return n;
+    }
+
+    function receiveAndExtend(length) {
+      if (length === 1) {
+        return readBit() === 1 ? 1 : -1;
+      }
+      var n = receive(length);
+      if (n >= 1 << (length - 1)) {
+        return n;
+      }
+      return n + (-1 << length) + 1;
+    }
+
+    function decodeBaseline(component, offset) {
+      var t = decodeHuffman(component.huffmanTableDC);
+      var diff = t === 0 ? 0 : receiveAndExtend(t);
+      component.blockData[offset] = (component.pred += diff);
+      var k = 1;
+      while (k < 64) {
+        var rs = decodeHuffman(component.huffmanTableAC);
+        var s = rs & 15, r = rs >> 4;
+        if (s === 0) {
+          if (r < 15) {
+            break;
+          }
+          k += 16;
+          continue;
+        }
+        k += r;
+        var z = dctZigZag[k];
+        component.blockData[offset + z] = receiveAndExtend(s);
+        k++;
+      }
+    }
+
+    function decodeDCFirst(component, offset) {
+      var t = decodeHuffman(component.huffmanTableDC);
+      var diff = t === 0 ? 0 : (receiveAndExtend(t) << successive);
+      component.blockData[offset] = (component.pred += diff);
+    }
+
+    function decodeDCSuccessive(component, offset) {
+      component.blockData[offset] |= readBit() << successive;
+    }
+
+    var eobrun = 0;
+    function decodeACFirst(component, offset) {
+      if (eobrun > 0) {
+        eobrun--;
+        return;
+      }
+      var k = spectralStart, e = spectralEnd;
+      while (k <= e) {
+        var rs = decodeHuffman(component.huffmanTableAC);
+        var s = rs & 15, r = rs >> 4;
+        if (s === 0) {
+          if (r < 15) {
+            eobrun = receive(r) + (1 << r) - 1;
+            break;
+          }
+          k += 16;
+          continue;
+        }
+        k += r;
+        var z = dctZigZag[k];
+        component.blockData[offset + z] =
+          receiveAndExtend(s) * (1 << successive);
+        k++;
+      }
+    }
+
+    var successiveACState = 0, successiveACNextValue;
+    function decodeACSuccessive(component, offset) {
+      var k = spectralStart;
+      var e = spectralEnd;
+      var r = 0;
+      var s;
+      var rs;
+      while (k <= e) {
+        var z = dctZigZag[k];
+        switch (successiveACState) {
+        case 0: // initial state
+          rs = decodeHuffman(component.huffmanTableAC);
+          s = rs & 15;
+          r = rs >> 4;
+          if (s === 0) {
+            if (r < 15) {
+              eobrun = receive(r) + (1 << r);
+              successiveACState = 4;
+            } else {
+              r = 16;
+              successiveACState = 1;
+            }
+          } else {
+            if (s !== 1) {
+              error('JPEG error: invalid ACn encoding');
+            }
+            successiveACNextValue = receiveAndExtend(s);
+            successiveACState = r ? 2 : 3;
+          }
+          continue;
+        case 1: // skipping r zero items
+        case 2:
+          if (component.blockData[offset + z]) {
+            component.blockData[offset + z] += (readBit() << successive);
+          } else {
+            r--;
+            if (r === 0) {
+              successiveACState = successiveACState === 2 ? 3 : 0;
+            }
+          }
+          break;
+        case 3: // set value for a zero item
+          if (component.blockData[offset + z]) {
+            component.blockData[offset + z] += (readBit() << successive);
+          } else {
+            component.blockData[offset + z] =
+              successiveACNextValue << successive;
+            successiveACState = 0;
+          }
+          break;
+        case 4: // eob
+          if (component.blockData[offset + z]) {
+            component.blockData[offset + z] += (readBit() << successive);
+          }
+          break;
+        }
+        k++;
+      }
+      if (successiveACState === 4) {
+        eobrun--;
+        if (eobrun === 0) {
+          successiveACState = 0;
+        }
+      }
+    }
+
+    function decodeMcu(component, decode, mcu, row, col) {
+      var mcuRow = (mcu / mcusPerLine) | 0;
+      var mcuCol = mcu % mcusPerLine;
+      var blockRow = mcuRow * component.v + row;
+      var blockCol = mcuCol * component.h + col;
+      var offset = getBlockBufferOffset(component, blockRow, blockCol);
+      decode(component, offset);
+    }
+
+    function decodeBlock(component, decode, mcu) {
+      var blockRow = (mcu / component.blocksPerLine) | 0;
+      var blockCol = mcu % component.blocksPerLine;
+      var offset = getBlockBufferOffset(component, blockRow, blockCol);
+      decode(component, offset);
+    }
+
+    var componentsLength = components.length;
+    var component, i, j, k, n;
+    var decodeFn;
+    if (progressive) {
+      if (spectralStart === 0) {
+        decodeFn = successivePrev === 0 ? decodeDCFirst : decodeDCSuccessive;
+      } else {
+        decodeFn = successivePrev === 0 ? decodeACFirst : decodeACSuccessive;
+      }
+    } else {
+      decodeFn = decodeBaseline;
+    }
+
+    var mcu = 0, marker;
+    var mcuExpected;
+    if (componentsLength === 1) {
+      mcuExpected = components[0].blocksPerLine * components[0].blocksPerColumn;
+    } else {
+      mcuExpected = mcusPerLine * frame.mcusPerColumn;
+    }
+    if (!resetInterval) {
+      resetInterval = mcuExpected;
+    }
+
+    var h, v;
+    while (mcu < mcuExpected) {
+      // reset interval stuff
+      for (i = 0; i < componentsLength; i++) {
+        components[i].pred = 0;
+      }
+      eobrun = 0;
+
+      if (componentsLength === 1) {
+        component = components[0];
+        for (n = 0; n < resetInterval; n++) {
+          decodeBlock(component, decodeFn, mcu);
+          mcu++;
+        }
+      } else {
+        for (n = 0; n < resetInterval; n++) {
+          for (i = 0; i < componentsLength; i++) {
+            component = components[i];
+            h = component.h;
+            v = component.v;
+            for (j = 0; j < v; j++) {
+              for (k = 0; k < h; k++) {
+                decodeMcu(component, decodeFn, mcu, j, k);
+              }
+            }
+          }
+          mcu++;
+        }
+      }
+
+      // find marker
+      bitsCount = 0;
+      marker = (data[offset] << 8) | data[offset + 1];
+      if (marker <= 0xFF00) {
+        error('JPEG error: marker was not found');
+      }
+
+      if (marker >= 0xFFD0 && marker <= 0xFFD7) { // RSTx
+        offset += 2;
+      } else {
+        break;
+      }
+    }
+
+    return offset - startOffset;
+  }
+
+  // A port of poppler's IDCT method which in turn is taken from:
+  //   Christoph Loeffler, Adriaan Ligtenberg, George S. Moschytz,
+  //   'Practical Fast 1-D DCT Algorithms with 11 Multiplications',
+  //   IEEE Intl. Conf. on Acoustics, Speech & Signal Processing, 1989,
+  //   988-991.
+  function quantizeAndInverse(component, blockBufferOffset, p) {
+    var qt = component.quantizationTable, blockData = component.blockData;
+    var v0, v1, v2, v3, v4, v5, v6, v7;
+    var p0, p1, p2, p3, p4, p5, p6, p7;
+    var t;
+
+    if (!qt) {
+      error('JPEG error: missing required Quantization Table.');
+    }
+
+    // inverse DCT on rows
+    for (var row = 0; row < 64; row += 8) {
+      // gather block data
+      p0 = blockData[blockBufferOffset + row];
+      p1 = blockData[blockBufferOffset + row + 1];
+      p2 = blockData[blockBufferOffset + row + 2];
+      p3 = blockData[blockBufferOffset + row + 3];
+      p4 = blockData[blockBufferOffset + row + 4];
+      p5 = blockData[blockBufferOffset + row + 5];
+      p6 = blockData[blockBufferOffset + row + 6];
+      p7 = blockData[blockBufferOffset + row + 7];
+
+      // dequant p0
+      p0 *= qt[row];
+
+      // check for all-zero AC coefficients
+      if ((p1 | p2 | p3 | p4 | p5 | p6 | p7) === 0) {
+        t = (dctSqrt2 * p0 + 512) >> 10;
+        p[row] = t;
+        p[row + 1] = t;
+        p[row + 2] = t;
+        p[row + 3] = t;
+        p[row + 4] = t;
+        p[row + 5] = t;
+        p[row + 6] = t;
+        p[row + 7] = t;
+        continue;
+      }
+      // dequant p1 ... p7
+      p1 *= qt[row + 1];
+      p2 *= qt[row + 2];
+      p3 *= qt[row + 3];
+      p4 *= qt[row + 4];
+      p5 *= qt[row + 5];
+      p6 *= qt[row + 6];
+      p7 *= qt[row + 7];
+
+      // stage 4
+      v0 = (dctSqrt2 * p0 + 128) >> 8;
+      v1 = (dctSqrt2 * p4 + 128) >> 8;
+      v2 = p2;
+      v3 = p6;
+      v4 = (dctSqrt1d2 * (p1 - p7) + 128) >> 8;
+      v7 = (dctSqrt1d2 * (p1 + p7) + 128) >> 8;
+      v5 = p3 << 4;
+      v6 = p5 << 4;
+
+      // stage 3
+      v0 = (v0 + v1 + 1) >> 1;
+      v1 = v0 - v1;
+      t  = (v2 * dctSin6 + v3 * dctCos6 + 128) >> 8;
+      v2 = (v2 * dctCos6 - v3 * dctSin6 + 128) >> 8;
+      v3 = t;
+      v4 = (v4 + v6 + 1) >> 1;
+      v6 = v4 - v6;
+      v7 = (v7 + v5 + 1) >> 1;
+      v5 = v7 - v5;
+
+      // stage 2
+      v0 = (v0 + v3 + 1) >> 1;
+      v3 = v0 - v3;
+      v1 = (v1 + v2 + 1) >> 1;
+      v2 = v1 - v2;
+      t  = (v4 * dctSin3 + v7 * dctCos3 + 2048) >> 12;
+      v4 = (v4 * dctCos3 - v7 * dctSin3 + 2048) >> 12;
+      v7 = t;
+      t  = (v5 * dctSin1 + v6 * dctCos1 + 2048) >> 12;
+      v5 = (v5 * dctCos1 - v6 * dctSin1 + 2048) >> 12;
+      v6 = t;
+
+      // stage 1
+      p[row] = v0 + v7;
+      p[row + 7] = v0 - v7;
+      p[row + 1] = v1 + v6;
+      p[row + 6] = v1 - v6;
+      p[row + 2] = v2 + v5;
+      p[row + 5] = v2 - v5;
+      p[row + 3] = v3 + v4;
+      p[row + 4] = v3 - v4;
+    }
+
+    // inverse DCT on columns
+    for (var col = 0; col < 8; ++col) {
+      p0 = p[col];
+      p1 = p[col +  8];
+      p2 = p[col + 16];
+      p3 = p[col + 24];
+      p4 = p[col + 32];
+      p5 = p[col + 40];
+      p6 = p[col + 48];
+      p7 = p[col + 56];
+
+      // check for all-zero AC coefficients
+      if ((p1 | p2 | p3 | p4 | p5 | p6 | p7) === 0) {
+        t = (dctSqrt2 * p0 + 8192) >> 14;
+        // convert to 8 bit
+        t = (t < -2040) ? 0 : (t >= 2024) ? 255 : (t + 2056) >> 4;
+        blockData[blockBufferOffset + col] = t;
+        blockData[blockBufferOffset + col +  8] = t;
+        blockData[blockBufferOffset + col + 16] = t;
+        blockData[blockBufferOffset + col + 24] = t;
+        blockData[blockBufferOffset + col + 32] = t;
+        blockData[blockBufferOffset + col + 40] = t;
+        blockData[blockBufferOffset + col + 48] = t;
+        blockData[blockBufferOffset + col + 56] = t;
+        continue;
+      }
+
+      // stage 4
+      v0 = (dctSqrt2 * p0 + 2048) >> 12;
+      v1 = (dctSqrt2 * p4 + 2048) >> 12;
+      v2 = p2;
+      v3 = p6;
+      v4 = (dctSqrt1d2 * (p1 - p7) + 2048) >> 12;
+      v7 = (dctSqrt1d2 * (p1 + p7) + 2048) >> 12;
+      v5 = p3;
+      v6 = p5;
+
+      // stage 3
+      // Shift v0 by 128.5 << 5 here, so we don't need to shift p0...p7 when
+      // converting to UInt8 range later.
+      v0 = ((v0 + v1 + 1) >> 1) + 4112;
+      v1 = v0 - v1;
+      t  = (v2 * dctSin6 + v3 * dctCos6 + 2048) >> 12;
+      v2 = (v2 * dctCos6 - v3 * dctSin6 + 2048) >> 12;
+      v3 = t;
+      v4 = (v4 + v6 + 1) >> 1;
+      v6 = v4 - v6;
+      v7 = (v7 + v5 + 1) >> 1;
+      v5 = v7 - v5;
+
+      // stage 2
+      v0 = (v0 + v3 + 1) >> 1;
+      v3 = v0 - v3;
+      v1 = (v1 + v2 + 1) >> 1;
+      v2 = v1 - v2;
+      t  = (v4 * dctSin3 + v7 * dctCos3 + 2048) >> 12;
+      v4 = (v4 * dctCos3 - v7 * dctSin3 + 2048) >> 12;
+      v7 = t;
+      t  = (v5 * dctSin1 + v6 * dctCos1 + 2048) >> 12;
+      v5 = (v5 * dctCos1 - v6 * dctSin1 + 2048) >> 12;
+      v6 = t;
+
+      // stage 1
+      p0 = v0 + v7;
+      p7 = v0 - v7;
+      p1 = v1 + v6;
+      p6 = v1 - v6;
+      p2 = v2 + v5;
+      p5 = v2 - v5;
+      p3 = v3 + v4;
+      p4 = v3 - v4;
+
+      // convert to 8-bit integers
+      p0 = (p0 < 16) ? 0 : (p0 >= 4080) ? 255 : p0 >> 4;
+      p1 = (p1 < 16) ? 0 : (p1 >= 4080) ? 255 : p1 >> 4;
+      p2 = (p2 < 16) ? 0 : (p2 >= 4080) ? 255 : p2 >> 4;
+      p3 = (p3 < 16) ? 0 : (p3 >= 4080) ? 255 : p3 >> 4;
+      p4 = (p4 < 16) ? 0 : (p4 >= 4080) ? 255 : p4 >> 4;
+      p5 = (p5 < 16) ? 0 : (p5 >= 4080) ? 255 : p5 >> 4;
+      p6 = (p6 < 16) ? 0 : (p6 >= 4080) ? 255 : p6 >> 4;
+      p7 = (p7 < 16) ? 0 : (p7 >= 4080) ? 255 : p7 >> 4;
+
+      // store block data
+      blockData[blockBufferOffset + col] = p0;
+      blockData[blockBufferOffset + col +  8] = p1;
+      blockData[blockBufferOffset + col + 16] = p2;
+      blockData[blockBufferOffset + col + 24] = p3;
+      blockData[blockBufferOffset + col + 32] = p4;
+      blockData[blockBufferOffset + col + 40] = p5;
+      blockData[blockBufferOffset + col + 48] = p6;
+      blockData[blockBufferOffset + col + 56] = p7;
+    }
+  }
+
+  function buildComponentData(frame, component) {
+    var blocksPerLine = component.blocksPerLine;
+    var blocksPerColumn = component.blocksPerColumn;
+    var computationBuffer = new Int16Array(64);
+
+    for (var blockRow = 0; blockRow < blocksPerColumn; blockRow++) {
+      for (var blockCol = 0; blockCol < blocksPerLine; blockCol++) {
+        var offset = getBlockBufferOffset(component, blockRow, blockCol);
+        quantizeAndInverse(component, offset, computationBuffer);
+      }
+    }
+    return component.blockData;
+  }
+
+  function clamp0to255(a) {
+    return a <= 0 ? 0 : a >= 255 ? 255 : a;
+  }
+
+  constructor.prototype = {
+    parse: function parse(data) {
+
+      function readUint16() {
+        var value = (data[offset] << 8) | data[offset + 1];
+        offset += 2;
+        return value;
+      }
+
+      function readDataBlock() {
+        var length = readUint16();
+        var array = data.subarray(offset, offset + length - 2);
+        offset += array.length;
+        return array;
+      }
+
+      function prepareComponents(frame) {
+        var mcusPerLine = Math.ceil(frame.samplesPerLine / 8 / frame.maxH);
+        var mcusPerColumn = Math.ceil(frame.scanLines / 8 / frame.maxV);
+        for (var i = 0; i < frame.components.length; i++) {
+          component = frame.components[i];
+          var blocksPerLine = Math.ceil(Math.ceil(frame.samplesPerLine / 8) *
+                                        component.h / frame.maxH);
+          var blocksPerColumn = Math.ceil(Math.ceil(frame.scanLines  / 8) *
+                                          component.v / frame.maxV);
+          var blocksPerLineForMcu = mcusPerLine * component.h;
+          var blocksPerColumnForMcu = mcusPerColumn * component.v;
+
+          var blocksBufferSize = 64 * blocksPerColumnForMcu *
+                                      (blocksPerLineForMcu + 1);
+          component.blockData = new Int16Array(blocksBufferSize);
+          component.blocksPerLine = blocksPerLine;
+          component.blocksPerColumn = blocksPerColumn;
+        }
+        frame.mcusPerLine = mcusPerLine;
+        frame.mcusPerColumn = mcusPerColumn;
+      }
+
+      var offset = 0;
+      var jfif = null;
+      var adobe = null;
+      var frame, resetInterval;
+      var quantizationTables = [];
+      var huffmanTablesAC = [], huffmanTablesDC = [];
+      var fileMarker = readUint16();
+      if (fileMarker !== 0xFFD8) { // SOI (Start of Image)
+        error('JPEG error: SOI not found');
+      }
+
+      fileMarker = readUint16();
+      while (fileMarker !== 0xFFD9) { // EOI (End of image)
+        var i, j, l;
+        switch(fileMarker) {
+          case 0xFFE0: // APP0 (Application Specific)
+          case 0xFFE1: // APP1
+          case 0xFFE2: // APP2
+          case 0xFFE3: // APP3
+          case 0xFFE4: // APP4
+          case 0xFFE5: // APP5
+          case 0xFFE6: // APP6
+          case 0xFFE7: // APP7
+          case 0xFFE8: // APP8
+          case 0xFFE9: // APP9
+          case 0xFFEA: // APP10
+          case 0xFFEB: // APP11
+          case 0xFFEC: // APP12
+          case 0xFFED: // APP13
+          case 0xFFEE: // APP14
+          case 0xFFEF: // APP15
+          case 0xFFFE: // COM (Comment)
+            var appData = readDataBlock();
+
+            if (fileMarker === 0xFFE0) {
+              if (appData[0] === 0x4A && appData[1] === 0x46 &&
+                  appData[2] === 0x49 && appData[3] === 0x46 &&
+                  appData[4] === 0) { // 'JFIF\x00'
+                jfif = {
+                  version: { major: appData[5], minor: appData[6] },
+                  densityUnits: appData[7],
+                  xDensity: (appData[8] << 8) | appData[9],
+                  yDensity: (appData[10] << 8) | appData[11],
+                  thumbWidth: appData[12],
+                  thumbHeight: appData[13],
+                  thumbData: appData.subarray(14, 14 +
+                                              3 * appData[12] * appData[13])
+                };
+              }
+            }
+            // TODO APP1 - Exif
+            if (fileMarker === 0xFFEE) {
+              if (appData[0] === 0x41 && appData[1] === 0x64 &&
+                  appData[2] === 0x6F && appData[3] === 0x62 &&
+                  appData[4] === 0x65) { // 'Adobe'
+                adobe = {
+                  version: (appData[5] << 8) | appData[6],
+                  flags0: (appData[7] << 8) | appData[8],
+                  flags1: (appData[9] << 8) | appData[10],
+                  transformCode: appData[11]
+                };
+              }
+            }
+            break;
+
+          case 0xFFDB: // DQT (Define Quantization Tables)
+            var quantizationTablesLength = readUint16();
+            var quantizationTablesEnd = quantizationTablesLength + offset - 2;
+            var z;
+            while (offset < quantizationTablesEnd) {
+              var quantizationTableSpec = data[offset++];
+              var tableData = new Uint16Array(64);
+              if ((quantizationTableSpec >> 4) === 0) { // 8 bit values
+                for (j = 0; j < 64; j++) {
+                  z = dctZigZag[j];
+                  tableData[z] = data[offset++];
+                }
+              } else if ((quantizationTableSpec >> 4) === 1) { //16 bit
+                for (j = 0; j < 64; j++) {
+                  z = dctZigZag[j];
+                  tableData[z] = readUint16();
+                }
+              } else {
+                error('JPEG error: DQT - invalid table spec');
+              }
+              quantizationTables[quantizationTableSpec & 15] = tableData;
+            }
+            break;
+
+          case 0xFFC0: // SOF0 (Start of Frame, Baseline DCT)
+          case 0xFFC1: // SOF1 (Start of Frame, Extended DCT)
+          case 0xFFC2: // SOF2 (Start of Frame, Progressive DCT)
+            if (frame) {
+              error('JPEG error: Only single frame JPEGs supported');
+            }
+            readUint16(); // skip data length
+            frame = {};
+            frame.extended = (fileMarker === 0xFFC1);
+            frame.progressive = (fileMarker === 0xFFC2);
+            frame.precision = data[offset++];
+            frame.scanLines = readUint16();
+            frame.samplesPerLine = readUint16();
+            frame.components = [];
+            frame.componentIds = {};
+            var componentsCount = data[offset++], componentId;
+            var maxH = 0, maxV = 0;
+            for (i = 0; i < componentsCount; i++) {
+              componentId = data[offset];
+              var h = data[offset + 1] >> 4;
+              var v = data[offset + 1] & 15;
+              if (maxH < h) {
+                maxH = h;
+              }
+              if (maxV < v) {
+                maxV = v;
+              }
+              var qId = data[offset + 2];
+              l = frame.components.push({
+                h: h,
+                v: v,
+                quantizationId: qId,
+                quantizationTable: null, // See comment below.
+              });
+              frame.componentIds[componentId] = l - 1;
+              offset += 3;
+            }
+            frame.maxH = maxH;
+            frame.maxV = maxV;
+            prepareComponents(frame);
+            break;
+
+          case 0xFFC4: // DHT (Define Huffman Tables)
+            var huffmanLength = readUint16();
+            for (i = 2; i < huffmanLength;) {
+              var huffmanTableSpec = data[offset++];
+              var codeLengths = new Uint8Array(16);
+              var codeLengthSum = 0;
+              for (j = 0; j < 16; j++, offset++) {
+                codeLengthSum += (codeLengths[j] = data[offset]);
+              }
+              var huffmanValues = new Uint8Array(codeLengthSum);
+              for (j = 0; j < codeLengthSum; j++, offset++) {
+                huffmanValues[j] = data[offset];
+              }
+              i += 17 + codeLengthSum;
+
+              ((huffmanTableSpec >> 4) === 0 ?
+                huffmanTablesDC : huffmanTablesAC)[huffmanTableSpec & 15] =
+                buildHuffmanTable(codeLengths, huffmanValues);
+            }
+            break;
+
+          case 0xFFDD: // DRI (Define Restart Interval)
+            readUint16(); // skip data length
+            resetInterval = readUint16();
+            break;
+
+          case 0xFFDA: // SOS (Start of Scan)
+            var scanLength = readUint16();
+            var selectorsCount = data[offset++];
+            var components = [], component;
+            for (i = 0; i < selectorsCount; i++) {
+              var componentIndex = frame.componentIds[data[offset++]];
+              component = frame.components[componentIndex];
+              var tableSpec = data[offset++];
+              component.huffmanTableDC = huffmanTablesDC[tableSpec >> 4];
+              component.huffmanTableAC = huffmanTablesAC[tableSpec & 15];
+              components.push(component);
+            }
+            var spectralStart = data[offset++];
+            var spectralEnd = data[offset++];
+            var successiveApproximation = data[offset++];
+            var processed = decodeScan(data, offset,
+              frame, components, resetInterval,
+              spectralStart, spectralEnd,
+              successiveApproximation >> 4, successiveApproximation & 15);
+            offset += processed;
+            break;
+
+          case 0xFFFF: // Fill bytes
+            if (data[offset] !== 0xFF) { // Avoid skipping a valid marker.
+              offset--;
+            }
+            break;
+
+          default:
+            if (data[offset - 3] === 0xFF &&
+                data[offset - 2] >= 0xC0 && data[offset - 2] <= 0xFE) {
+              // could be incorrect encoding -- last 0xFF byte of the previous
+              // block was eaten by the encoder
+              offset -= 3;
+              break;
+            }
+            error('JPEG error: unknown marker ' + fileMarker.toString(16));
+        }
+        fileMarker = readUint16();
+      }
+
+      this.width = frame.samplesPerLine;
+      this.height = frame.scanLines;
+      this.jfif = jfif;
+      this.adobe = adobe;
+      this.components = [];
+      for (i = 0; i < frame.components.length; i++) {
+        component = frame.components[i];
+
+        // Prevent errors when DQT markers are placed after SOF{n} markers,
+        // by assigning the `quantizationTable` entry after the entire image
+        // has been parsed (fixes issue7406.pdf).
+        var quantizationTable = quantizationTables[component.quantizationId];
+        if (quantizationTable) {
+          component.quantizationTable = quantizationTable;
+        }
+
+        this.components.push({
+          output: buildComponentData(frame, component),
+          scaleX: component.h / frame.maxH,
+          scaleY: component.v / frame.maxV,
+          blocksPerLine: component.blocksPerLine,
+          blocksPerColumn: component.blocksPerColumn
+        });
+      }
+      this.numComponents = this.components.length;
+    },
+
+    _getLinearizedBlockData: function getLinearizedBlockData(width, height) {
+      var scaleX = this.width / width, scaleY = this.height / height;
+
+      var component, componentScaleX, componentScaleY, blocksPerScanline;
+      var x, y, i, j, k;
+      var index;
+      var offset = 0;
+      var output;
+      var numComponents = this.components.length;
+      var dataLength = width * height * numComponents;
+      var data = new Uint8Array(dataLength);
+      var xScaleBlockOffset = new Uint32Array(width);
+      var mask3LSB = 0xfffffff8; // used to clear the 3 LSBs
+
+      for (i = 0; i < numComponents; i++) {
+        component = this.components[i];
+        componentScaleX = component.scaleX * scaleX;
+        componentScaleY = component.scaleY * scaleY;
+        offset = i;
+        output = component.output;
+        blocksPerScanline = (component.blocksPerLine + 1) << 3;
+        // precalculate the xScaleBlockOffset
+        for (x = 0; x < width; x++) {
+          j = 0 | (x * componentScaleX);
+          xScaleBlockOffset[x] = ((j & mask3LSB) << 3) | (j & 7);
+        }
+        // linearize the blocks of the component
+        for (y = 0; y < height; y++) {
+          j = 0 | (y * componentScaleY);
+          index = blocksPerScanline * (j & mask3LSB) | ((j & 7) << 3);
+          for (x = 0; x < width; x++) {
+            data[offset] = output[index + xScaleBlockOffset[x]];
+            offset += numComponents;
+          }
+        }
+      }
+
+      // decodeTransform contains pairs of multiplier (-256..256) and additive
+      var transform = this.decodeTransform;
+      if (transform) {
+        for (i = 0; i < dataLength;) {
+          for (j = 0, k = 0; j < numComponents; j++, i++, k += 2) {
+            data[i] = ((data[i] * transform[k]) >> 8) + transform[k + 1];
+          }
+        }
+      }
+      return data;
+    },
+
+    _isColorConversionNeeded: function isColorConversionNeeded() {
+      if (this.adobe && this.adobe.transformCode) {
+        // The adobe transform marker overrides any previous setting
+        return true;
+      } else if (this.numComponents === 3) {
+        return true;
+      } else {
+        return false;
+      }
+    },
+
+    _convertYccToRgb: function convertYccToRgb(data) {
+      var Y, Cb, Cr;
+      for (var i = 0, length = data.length; i < length; i += 3) {
+        Y  = data[i    ];
+        Cb = data[i + 1];
+        Cr = data[i + 2];
+        data[i    ] = clamp0to255(Y - 179.456 + 1.402 * Cr);
+        data[i + 1] = clamp0to255(Y + 135.459 - 0.344 * Cb - 0.714 * Cr);
+        data[i + 2] = clamp0to255(Y - 226.816 + 1.772 * Cb);
+      }
+      return data;
+    },
+
+    _convertYcckToRgb: function convertYcckToRgb(data) {
+      var Y, Cb, Cr, k;
+      var offset = 0;
+      for (var i = 0, length = data.length; i < length; i += 4) {
+        Y  = data[i];
+        Cb = data[i + 1];
+        Cr = data[i + 2];
+        k = data[i + 3];
+
+        var r = -122.67195406894 +
+          Cb * (-6.60635669420364e-5 * Cb + 0.000437130475926232 * Cr -
+                5.4080610064599e-5 * Y + 0.00048449797120281 * k -
+                0.154362151871126) +
+          Cr * (-0.000957964378445773 * Cr + 0.000817076911346625 * Y -
+                0.00477271405408747 * k + 1.53380253221734) +
+          Y * (0.000961250184130688 * Y - 0.00266257332283933 * k +
+               0.48357088451265) +
+          k * (-0.000336197177618394 * k + 0.484791561490776);
+
+        var g = 107.268039397724 +
+          Cb * (2.19927104525741e-5 * Cb - 0.000640992018297945 * Cr +
+                0.000659397001245577 * Y + 0.000426105652938837 * k -
+                0.176491792462875) +
+          Cr * (-0.000778269941513683 * Cr + 0.00130872261408275 * Y +
+                0.000770482631801132 * k - 0.151051492775562) +
+          Y * (0.00126935368114843 * Y - 0.00265090189010898 * k +
+               0.25802910206845) +
+          k * (-0.000318913117588328 * k - 0.213742400323665);
+
+        var b = -20.810012546947 +
+          Cb * (-0.000570115196973677 * Cb - 2.63409051004589e-5 * Cr +
+                0.0020741088115012 * Y - 0.00288260236853442 * k +
+                0.814272968359295) +
+          Cr * (-1.53496057440975e-5 * Cr - 0.000132689043961446 * Y +
+                0.000560833691242812 * k - 0.195152027534049) +
+          Y * (0.00174418132927582 * Y - 0.00255243321439347 * k +
+               0.116935020465145) +
+          k * (-0.000343531996510555 * k + 0.24165260232407);
+
+        data[offset++] = clamp0to255(r);
+        data[offset++] = clamp0to255(g);
+        data[offset++] = clamp0to255(b);
+      }
+      return data;
+    },
+
+    _convertYcckToCmyk: function convertYcckToCmyk(data) {
+      var Y, Cb, Cr;
+      for (var i = 0, length = data.length; i < length; i += 4) {
+        Y  = data[i];
+        Cb = data[i + 1];
+        Cr = data[i + 2];
+        data[i    ] = clamp0to255(434.456 - Y - 1.402 * Cr);
+        data[i + 1] = clamp0to255(119.541 - Y + 0.344 * Cb + 0.714 * Cr);
+        data[i + 2] = clamp0to255(481.816 - Y - 1.772 * Cb);
+        // K in data[i + 3] is unchanged
+      }
+      return data;
+    },
+
+    _convertCmykToRgb: function convertCmykToRgb(data) {
+      var c, m, y, k;
+      var offset = 0;
+      var min = -255 * 255 * 255;
+      var scale = 1 / 255 / 255;
+      for (var i = 0, length = data.length; i < length; i += 4) {
+        c = data[i];
+        m = data[i + 1];
+        y = data[i + 2];
+        k = data[i + 3];
+
+        var r =
+          c * (-4.387332384609988 * c + 54.48615194189176 * m +
+               18.82290502165302 * y + 212.25662451639585 * k -
+               72734.4411664936) +
+          m * (1.7149763477362134 * m - 5.6096736904047315 * y -
+               17.873870861415444 * k - 1401.7366389350734) +
+          y * (-2.5217340131683033 * y - 21.248923337353073 * k +
+               4465.541406466231) -
+          k * (21.86122147463605 * k + 48317.86113160301);
+        var g =
+          c * (8.841041422036149 * c + 60.118027045597366 * m +
+               6.871425592049007 * y + 31.159100130055922 * k -
+               20220.756542821975) +
+          m * (-15.310361306967817 * m + 17.575251261109482 * y +
+               131.35250912493976 * k - 48691.05921601825) +
+          y * (4.444339102852739 * y + 9.8632861493405 * k -
+               6341.191035517494) -
+          k * (20.737325471181034 * k + 47890.15695978492);
+        var b =
+          c * (0.8842522430003296 * c + 8.078677503112928 * m +
+               30.89978309703729 * y - 0.23883238689178934 * k -
+               3616.812083916688) +
+          m * (10.49593273432072 * m + 63.02378494754052 * y +
+               50.606957656360734 * k - 28620.90484698408) +
+          y * (0.03296041114873217 * y + 115.60384449646641 * k -
+               49363.43385999684) -
+          k * (22.33816807309886 * k + 45932.16563550634);
+
+        data[offset++] = r >= 0 ? 255 : r <= min ? 0 : 255 + r * scale | 0;
+        data[offset++] = g >= 0 ? 255 : g <= min ? 0 : 255 + g * scale | 0;
+        data[offset++] = b >= 0 ? 255 : b <= min ? 0 : 255 + b * scale | 0;
+      }
+      return data;
+    },
+
+    getData: function getData(width, height, forceRGBoutput) {
+      if (this.numComponents > 4) {
+        error('JPEG error: Unsupported color mode');
+      }
+      // type of data: Uint8Array(width * height * numComponents)
+      var data = this._getLinearizedBlockData(width, height);
+
+      if (this.numComponents === 1 && forceRGBoutput) {
+        var dataLength = data.length;
+        var rgbData = new Uint8Array(dataLength * 3);
+        var offset = 0;
+        for (var i = 0; i < dataLength; i++) {
+          var grayColor = data[i];
+          rgbData[offset++] = grayColor;
+          rgbData[offset++] = grayColor;
+          rgbData[offset++] = grayColor;
+        }
+        return rgbData;
+      } else if (this.numComponents === 3) {
+        return this._convertYccToRgb(data);
+      } else if (this.numComponents === 4) {
+        if (this._isColorConversionNeeded()) {
+          if (forceRGBoutput) {
+            return this._convertYcckToRgb(data);
+          } else {
+            return this._convertYcckToCmyk(data);
+          }
+        } else if (forceRGBoutput) {
+          return this._convertCmykToRgb(data);
+        }
+      }
+      return data;
+    }
+  };
+
+  return constructor;
+})();
+
+exports.JpegImage = JpegImage;
+}));
+
+
+(function (root, factory) {
+  {
     factory((root.pdfjsCoreJpx = {}), root.pdfjsSharedUtil,
       root.pdfjsCoreArithmeticDecoder);
   }
 }(this, function (exports, sharedUtil, coreArithmeticDecoder) {
 
 var info = sharedUtil.info;
+var warn = sharedUtil.warn;
+var error = sharedUtil.error;
 var log2 = sharedUtil.log2;
 var readUint16 = sharedUtil.readUint16;
 var readUint32 = sharedUtil.readUint32;
-var warn = sharedUtil.warn;
 var ArithmeticDecoder = coreArithmeticDecoder.ArithmeticDecoder;
 
 var JpxImage = (function JpxImageClosure() {
@@ -11241,7 +11297,7 @@ var JpxImage = (function JpxImageClosure() {
           lbox = length - position + headerSize;
         }
         if (lbox < headerSize) {
-          throw new Error('JPX Error: Invalid box field size');
+          error('JPX Error: Invalid box field size');
         }
         var dataLength = lbox - headerSize;
         var jumpDataLength = true;
@@ -11319,12 +11375,12 @@ var JpxImage = (function JpxImageClosure() {
           return;
         }
       }
-      throw new Error('JPX Error: No size marker found in JPX stream');
+      error('JPX Error: No size marker found in JPX stream');
     },
     parseCodestream: function JpxImage_parseCodestream(data, start, end) {
       var context = {};
+      var doNotRecover = false;
       try {
-        var doNotRecover = false;
         var position = start;
         while (position + 1 < end) {
           var code = readUint16(data, position);
@@ -11387,7 +11443,7 @@ var JpxImage = (function JpxImageClosure() {
                   scalarExpounded = true;
                   break;
                 default:
-                  throw new Error('JPX Error: Invalid SQcd value ' + sqcd);
+                  throw new Error('Invalid SQcd value ' + sqcd);
               }
               qcd.noQuantization = (spqcdSize === 8);
               qcd.scalarExpounded = scalarExpounded;
@@ -11439,7 +11495,7 @@ var JpxImage = (function JpxImageClosure() {
                   scalarExpounded = true;
                   break;
                 default:
-                  throw new Error('JPX Error: Invalid SQcd value ' + sqcd);
+                  throw new Error('Invalid SQcd value ' + sqcd);
               }
               qcc.noQuantization = (spqcdSize === 8);
               qcc.scalarExpounded = scalarExpounded;
@@ -11517,7 +11573,7 @@ var JpxImage = (function JpxImageClosure() {
               }
               if (unsupported.length > 0) {
                 doNotRecover = true;
-                throw new Error('JPX Error: Unsupported COD options (' +
+                throw new Error('Unsupported COD options (' +
                                 unsupported.join(', ') + ')');
               }
               if (context.mainHeader) {
@@ -11565,19 +11621,18 @@ var JpxImage = (function JpxImageClosure() {
               // skipping content
               break;
             case 0xFF53: // Coding style component (COC)
-              throw new Error('JPX Error: Codestream code 0xFF53 (COC) is ' +
+              throw new Error('Codestream code 0xFF53 (COC) is ' +
                               'not implemented');
             default:
-              throw new Error('JPX Error: Unknown codestream code: ' +
-                              code.toString(16));
+              throw new Error('Unknown codestream code: ' + code.toString(16));
           }
           position += length;
         }
       } catch (e) {
         if (doNotRecover || this.failOnCorruptedImage) {
-          throw e;
+          error('JPX Error: ' + e.message);
         } else {
-          warn('Trying to recover from ' + e.message);
+          warn('JPX: Trying to recover from: ' + e.message);
         }
       }
       this.tiles = transformComponents(context);
@@ -11827,7 +11882,7 @@ var JpxImage = (function JpxImageClosure() {
         }
         r = 0;
       }
-      throw new Error('JPX Error: Out of packets');
+      error('JPX Error: Out of packets');
     };
   }
   function ResolutionLayerComponentPositionIterator(context) {
@@ -11867,7 +11922,7 @@ var JpxImage = (function JpxImageClosure() {
         }
         l = 0;
       }
-      throw new Error('JPX Error: Out of packets');
+      error('JPX Error: Out of packets');
     };
   }
   function ResolutionPositionComponentLayerIterator(context) {
@@ -11926,7 +11981,7 @@ var JpxImage = (function JpxImageClosure() {
         }
         p = 0;
       }
-      throw new Error('JPX Error: Out of packets');
+      error('JPX Error: Out of packets');
     };
   }
   function PositionComponentResolutionLayerIterator(context) {
@@ -11973,7 +12028,7 @@ var JpxImage = (function JpxImageClosure() {
         }
         px = 0;
       }
-      throw new Error('JPX Error: Out of packets');
+      error('JPX Error: Out of packets');
     };
   }
   function ComponentPositionResolutionLayerIterator(context) {
@@ -12019,7 +12074,7 @@ var JpxImage = (function JpxImageClosure() {
         }
         py = 0;
       }
-      throw new Error('JPX Error: Out of packets');
+      error('JPX Error: Out of packets');
     };
   }
   function getPrecinctIndexIfExist(
@@ -12199,8 +12254,7 @@ var JpxImage = (function JpxImageClosure() {
           new ComponentPositionResolutionLayerIterator(context);
         break;
       default:
-        throw new Error('JPX Error: Unsupported progression order ' +
-                        progressionOrder);
+        error('JPX Error: Unsupported progression order ' + progressionOrder);
     }
   }
   function parseTilePackets(context, data, offset, dataLength) {
@@ -12517,13 +12571,13 @@ var JpxImage = (function JpxImageClosure() {
         var subband = resolution.subbands[j];
         var gainLog2 = SubbandsGainLog2[subband.type];
 
-        // calulate quantization coefficient (Section E.1.1.1)
+        // calculate quantization coefficient (Section E.1.1.1)
         var delta = (reversible ? 1 :
           Math.pow(2, precision + gainLog2 - epsilon) * (1 + mu / 2048));
         var mb = (guardBits + epsilon - 1);
 
         // In the first resolution level, copyCoefficients will fill the
-        // whole array with coefficients. In the succeding passes,
+        // whole array with coefficients. In the succeeding passes,
         // copyCoefficients will consecutively fill in the values that belong
         // to the interleaved positions of the HL, LH, and HH coefficients.
         // The LL coefficients will then be interleaved in Transform.iterate().
@@ -13137,7 +13191,7 @@ var JpxImage = (function JpxImageClosure() {
                      (decoder.readBit(contexts, UNIFORM_CONTEXT) << 1) |
                       decoder.readBit(contexts, UNIFORM_CONTEXT);
         if (symbol !== 0xA) {
-          throw new Error('JPX Error: Invalid segmentation symbol');
+          error('JPX Error: Invalid segmentation symbol');
         }
       }
     };
@@ -16362,7 +16416,7 @@ exports.getMetrics = getMetrics;
 var Uint32ArrayView = sharedUtil.Uint32ArrayView;
 
 var MurmurHash3_64 = (function MurmurHash3_64Closure (seed) {
-  // Workaround for missing math precison in JS.
+  // Workaround for missing math precision in JS.
   var MASK_HIGH = 0xffff0000;
   var MASK_LOW = 0xffff;
 
@@ -16746,8 +16800,8 @@ var RefSetCache = (function RefSetCacheClosure() {
   return RefSetCache;
 })();
 
-function isName(v) {
-  return v instanceof Name;
+function isName(v, name) {
+  return v instanceof Name && (name === undefined || v.name === name);
 }
 
 function isCmd(v, cmd) {
@@ -16755,18 +16809,16 @@ function isCmd(v, cmd) {
 }
 
 function isDict(v, type) {
-  if (!(v instanceof Dict)) {
-    return false;
-  }
-  if (!type) {
-    return true;
-  }
-  var dictType = v.get('Type');
-  return isName(dictType) && dictType.name === type;
+  return v instanceof Dict &&
+         (type === undefined || isName(v.get('Type'), type));
 }
 
 function isRef(v) {
   return v instanceof Ref;
+}
+
+function isRefsEqual(v1, v2) {
+  return v1.num === v2.num && v1.gen === v2.gen;
 }
 
 function isStream(v) {
@@ -16783,6 +16835,7 @@ exports.isCmd = isCmd;
 exports.isDict = isDict;
 exports.isName = isName;
 exports.isRef = isRef;
+exports.isRefsEqual = isRefsEqual;
 exports.isStream = isStream;
 }));
 
@@ -18780,6 +18833,7 @@ var isArray = sharedUtil.isArray;
 var createObjectURL = sharedUtil.createObjectURL;
 var shadow = sharedUtil.shadow;
 var warn = sharedUtil.warn;
+var isSpace = sharedUtil.isSpace;
 var Dict = corePrimitives.Dict;
 var isDict = corePrimitives.isDict;
 var Jbig2Image = coreJbig2.Jbig2Image;
@@ -19663,38 +19717,34 @@ var JpegStream = (function JpegStreamClosure() {
     if (this.bufferLength) {
       return;
     }
-    try {
-      var jpegImage = new JpegImage();
+    var jpegImage = new JpegImage();
 
-      // checking if values needs to be transformed before conversion
-      if (this.forceRGB && this.dict && isArray(this.dict.get('Decode'))) {
-        var decodeArr = this.dict.getArray('Decode');
-        var bitsPerComponent = this.dict.get('BitsPerComponent') || 8;
-        var decodeArrLength = decodeArr.length;
-        var transform = new Int32Array(decodeArrLength);
-        var transformNeeded = false;
-        var maxValue = (1 << bitsPerComponent) - 1;
-        for (var i = 0; i < decodeArrLength; i += 2) {
-          transform[i] = ((decodeArr[i + 1] - decodeArr[i]) * 256) | 0;
-          transform[i + 1] = (decodeArr[i] * maxValue) | 0;
-          if (transform[i] !== 256 || transform[i + 1] !== 0) {
-            transformNeeded = true;
-          }
-        }
-        if (transformNeeded) {
-          jpegImage.decodeTransform = transform;
+    // Checking if values need to be transformed before conversion.
+    if (this.forceRGB && this.dict && isArray(this.dict.get('Decode'))) {
+      var decodeArr = this.dict.getArray('Decode');
+      var bitsPerComponent = this.dict.get('BitsPerComponent') || 8;
+      var decodeArrLength = decodeArr.length;
+      var transform = new Int32Array(decodeArrLength);
+      var transformNeeded = false;
+      var maxValue = (1 << bitsPerComponent) - 1;
+      for (var i = 0; i < decodeArrLength; i += 2) {
+        transform[i] = ((decodeArr[i + 1] - decodeArr[i]) * 256) | 0;
+        transform[i + 1] = (decodeArr[i] * maxValue) | 0;
+        if (transform[i] !== 256 || transform[i + 1] !== 0) {
+          transformNeeded = true;
         }
       }
-
-      jpegImage.parse(this.bytes);
-      var data = jpegImage.getData(this.drawWidth, this.drawHeight,
-                                   this.forceRGB);
-      this.buffer = data;
-      this.bufferLength = data.length;
-      this.eof = true;
-    } catch (e) {
-      error('JPEG error: ' + e);
+      if (transformNeeded) {
+        jpegImage.decodeTransform = transform;
+      }
     }
+
+    jpegImage.parse(this.bytes);
+    var data = jpegImage.getData(this.drawWidth, this.drawHeight,
+                                 this.forceRGB);
+    this.buffer = data;
+    this.bufferLength = data.length;
+    this.eof = true;
   };
 
   JpegStream.prototype.getBytes = function JpegStream_getBytes(length) {
@@ -19888,11 +19938,6 @@ var DecryptStream = (function DecryptStreamClosure() {
 })();
 
 var Ascii85Stream = (function Ascii85StreamClosure() {
-  // Checks if ch is one of the following characters: SPACE, TAB, CR or LF.
-  function isSpace(ch) {
-    return (ch === 0x20 || ch === 0x09 || ch === 0x0D || ch === 0x0A);
-  }
-
   function Ascii85Stream(str, maybeLength) {
     this.str = str;
     this.dict = str.dict;
@@ -23131,7 +23176,7 @@ var CipherTransformFactory = (function CipherTransformFactoryClosure() {
 
   function CipherTransformFactory(dict, fileId, password) {
     var filter = dict.get('Filter');
-    if (!isName(filter) || filter.name !== 'Standard') {
+    if (!isName(filter, 'Standard')) {
       error('unknown encryption method');
     }
     this.dict = dict;
@@ -24088,10 +24133,11 @@ function isEOF(v) {
 var MAX_LENGTH_TO_CACHE = 1000;
 
 var Parser = (function ParserClosure() {
-  function Parser(lexer, allowStreams, xref) {
+  function Parser(lexer, allowStreams, xref, recoveryMode) {
     this.lexer = lexer;
     this.allowStreams = allowStreams;
     this.xref = xref;
+    this.recoveryMode = recoveryMode || false;
     this.imageCache = Object.create(null);
     this.refill();
   }
@@ -24137,7 +24183,10 @@ var Parser = (function ParserClosure() {
               array.push(this.getObj(cipherTransform));
             }
             if (isEOF(this.buf1)) {
-              error('End of file inside array');
+              if (!this.recoveryMode) {
+                error('End of file inside array');
+              }
+              return array;
             }
             this.shift();
             return array;
@@ -24158,7 +24207,10 @@ var Parser = (function ParserClosure() {
               dict.set(key, this.getObj(cipherTransform));
             }
             if (isEOF(this.buf1)) {
-              error('End of file inside dictionary');
+              if (!this.recoveryMode) {
+                error('End of file inside dictionary');
+              }
+              return dict;
             }
 
             // Stream objects are not allowed inside content streams or
@@ -24674,11 +24726,6 @@ var Lexer = (function LexerClosure() {
     this.knownCommands = knownCommands;
   }
 
-  Lexer.isSpace = function Lexer_isSpace(ch) {
-    // Space is one of the following characters: SPACE, TAB, CR or LF.
-    return (ch === 0x20 || ch === 0x09 || ch === 0x0D || ch === 0x0A);
-  };
-
   // A '1' in this array means the character is white space. A '1' or
   // '2' means the character ends a name or command.
   var specialChars = [
@@ -24769,7 +24816,7 @@ var Lexer = (function LexerClosure() {
         } else if (ch === 0x2D) { // '-'
           // ignore minus signs in the middle of numbers to match
           // Adobe's behavior
-          warn('Badly formated number');
+          warn('Badly formatted number');
         } else if (ch === 0x45 || ch === 0x65) { // 'E', 'e'
           // 'E' can be either a scientific notation or the beginning of a new
           // operator
@@ -25143,6 +25190,706 @@ exports.isEOF = isEOF;
 
 (function (root, factory) {
   {
+    factory((root.pdfjsCoreType1Parser = {}), root.pdfjsSharedUtil,
+      root.pdfjsCoreStream, root.pdfjsCoreEncodings);
+  }
+}(this, function (exports, sharedUtil, coreStream, coreEncodings) {
+
+var warn = sharedUtil.warn;
+var isSpace = sharedUtil.isSpace;
+var Stream = coreStream.Stream;
+var getEncoding = coreEncodings.getEncoding;
+
+// Hinting is currently disabled due to unknown problems on windows
+// in tracemonkey and various other pdfs with type1 fonts.
+var HINTING_ENABLED = false;
+
+/*
+ * CharStrings are encoded following the the CharString Encoding sequence
+ * describe in Chapter 6 of the "Adobe Type1 Font Format" specification.
+ * The value in a byte indicates a command, a number, or subsequent bytes
+ * that are to be interpreted in a special way.
+ *
+ * CharString Number Encoding:
+ *  A CharString byte containing the values from 32 through 255 inclusive
+ *  indicate an integer. These values are decoded in four ranges.
+ *
+ * 1. A CharString byte containing a value, v, between 32 and 246 inclusive,
+ * indicate the integer v - 139. Thus, the integer values from -107 through
+ * 107 inclusive may be encoded in single byte.
+ *
+ * 2. A CharString byte containing a value, v, between 247 and 250 inclusive,
+ * indicates an integer involving the next byte, w, according to the formula:
+ * [(v - 247) x 256] + w + 108
+ *
+ * 3. A CharString byte containing a value, v, between 251 and 254 inclusive,
+ * indicates an integer involving the next byte, w, according to the formula:
+ * -[(v - 251) * 256] - w - 108
+ *
+ * 4. A CharString containing the value 255 indicates that the next 4 bytes
+ * are a two complement signed integer. The first of these bytes contains the
+ * highest order bits, the second byte contains the next higher order bits
+ * and the fourth byte contain the lowest order bits.
+ *
+ *
+ * CharString Command Encoding:
+ *  CharStrings commands are encoded in 1 or 2 bytes.
+ *
+ *  Single byte commands are encoded in 1 byte that contains a value between
+ *  0 and 31 inclusive.
+ *  If a command byte contains the value 12, then the value in the next byte
+ *  indicates a command. This "escape" mechanism allows many extra commands
+ * to be encoded and this encoding technique helps to minimize the length of
+ * the charStrings.
+ */
+var Type1CharString = (function Type1CharStringClosure() {
+  var COMMAND_MAP = {
+    'hstem': [1],
+    'vstem': [3],
+    'vmoveto': [4],
+    'rlineto': [5],
+    'hlineto': [6],
+    'vlineto': [7],
+    'rrcurveto': [8],
+    'callsubr': [10],
+    'flex': [12, 35],
+    'drop' : [12, 18],
+    'endchar': [14],
+    'rmoveto': [21],
+    'hmoveto': [22],
+    'vhcurveto': [30],
+    'hvcurveto': [31]
+  };
+
+  function Type1CharString() {
+    this.width = 0;
+    this.lsb = 0;
+    this.flexing = false;
+    this.output = [];
+    this.stack = [];
+  }
+
+  Type1CharString.prototype = {
+    convert: function Type1CharString_convert(encoded, subrs,
+                                              seacAnalysisEnabled) {
+      var count = encoded.length;
+      var error = false;
+      var wx, sbx, subrNumber;
+      for (var i = 0; i < count; i++) {
+        var value = encoded[i];
+        if (value < 32) {
+          if (value === 12) {
+            value = (value << 8) + encoded[++i];
+          }
+          switch (value) {
+            case 1: // hstem
+              if (!HINTING_ENABLED) {
+                this.stack = [];
+                break;
+              }
+              error = this.executeCommand(2, COMMAND_MAP.hstem);
+              break;
+            case 3: // vstem
+              if (!HINTING_ENABLED) {
+                this.stack = [];
+                break;
+              }
+              error = this.executeCommand(2, COMMAND_MAP.vstem);
+              break;
+            case 4: // vmoveto
+              if (this.flexing) {
+                if (this.stack.length < 1) {
+                  error = true;
+                  break;
+                }
+                // Add the dx for flex and but also swap the values so they are
+                // the right order.
+                var dy = this.stack.pop();
+                this.stack.push(0, dy);
+                break;
+              }
+              error = this.executeCommand(1, COMMAND_MAP.vmoveto);
+              break;
+            case 5: // rlineto
+              error = this.executeCommand(2, COMMAND_MAP.rlineto);
+              break;
+            case 6: // hlineto
+              error = this.executeCommand(1, COMMAND_MAP.hlineto);
+              break;
+            case 7: // vlineto
+              error = this.executeCommand(1, COMMAND_MAP.vlineto);
+              break;
+            case 8: // rrcurveto
+              error = this.executeCommand(6, COMMAND_MAP.rrcurveto);
+              break;
+            case 9: // closepath
+              // closepath is a Type1 command that does not take argument and is
+              // useless in Type2 and it can simply be ignored.
+              this.stack = [];
+              break;
+            case 10: // callsubr
+              if (this.stack.length < 1) {
+                error = true;
+                break;
+              }
+              subrNumber = this.stack.pop();
+              error = this.convert(subrs[subrNumber], subrs,
+                                   seacAnalysisEnabled);
+              break;
+            case 11: // return
+              return error;
+            case 13: // hsbw
+              if (this.stack.length < 2) {
+                error = true;
+                break;
+              }
+              // To convert to type2 we have to move the width value to the
+              // first part of the charstring and then use hmoveto with lsb.
+              wx = this.stack.pop();
+              sbx = this.stack.pop();
+              this.lsb = sbx;
+              this.width = wx;
+              this.stack.push(wx, sbx);
+              error = this.executeCommand(2, COMMAND_MAP.hmoveto);
+              break;
+            case 14: // endchar
+              this.output.push(COMMAND_MAP.endchar[0]);
+              break;
+            case 21: // rmoveto
+              if (this.flexing) {
+                break;
+              }
+              error = this.executeCommand(2, COMMAND_MAP.rmoveto);
+              break;
+            case 22: // hmoveto
+              if (this.flexing) {
+                // Add the dy for flex.
+                this.stack.push(0);
+                break;
+              }
+              error = this.executeCommand(1, COMMAND_MAP.hmoveto);
+              break;
+            case 30: // vhcurveto
+              error = this.executeCommand(4, COMMAND_MAP.vhcurveto);
+              break;
+            case 31: // hvcurveto
+              error = this.executeCommand(4, COMMAND_MAP.hvcurveto);
+              break;
+            case (12 << 8) + 0: // dotsection
+              // dotsection is a Type1 command to specify some hinting feature
+              // for dots that do not take a parameter and it can safely be
+              // ignored for Type2.
+              this.stack = [];
+              break;
+            case (12 << 8) + 1: // vstem3
+              if (!HINTING_ENABLED) {
+                this.stack = [];
+                break;
+              }
+              // [vh]stem3 are Type1 only and Type2 supports [vh]stem with
+              // multiple parameters, so instead of returning [vh]stem3 take a
+              // shortcut and return [vhstem] instead.
+              error = this.executeCommand(2, COMMAND_MAP.vstem);
+              break;
+            case (12 << 8) + 2: // hstem3
+              if (!HINTING_ENABLED) {
+                 this.stack = [];
+                break;
+              }
+              // See vstem3.
+              error = this.executeCommand(2, COMMAND_MAP.hstem);
+              break;
+            case (12 << 8) + 6: // seac
+              // seac is like type 2's special endchar but it doesn't use the
+              // first argument asb, so remove it.
+              if (seacAnalysisEnabled) {
+                this.seac = this.stack.splice(-4, 4);
+                error = this.executeCommand(0, COMMAND_MAP.endchar);
+              } else {
+                error = this.executeCommand(4, COMMAND_MAP.endchar);
+              }
+              break;
+            case (12 << 8) + 7: // sbw
+              if (this.stack.length < 4) {
+                error = true;
+                break;
+              }
+              // To convert to type2 we have to move the width value to the
+              // first part of the charstring and then use rmoveto with
+              // (dx, dy). The height argument will not be used for vmtx and
+              // vhea tables reconstruction -- ignoring it.
+              var wy = this.stack.pop();
+              wx = this.stack.pop();
+              var sby = this.stack.pop();
+              sbx = this.stack.pop();
+              this.lsb = sbx;
+              this.width = wx;
+              this.stack.push(wx, sbx, sby);
+              error = this.executeCommand(3, COMMAND_MAP.rmoveto);
+              break;
+            case (12 << 8) + 12: // div
+              if (this.stack.length < 2) {
+                error = true;
+                break;
+              }
+              var num2 = this.stack.pop();
+              var num1 = this.stack.pop();
+              this.stack.push(num1 / num2);
+              break;
+            case (12 << 8) + 16: // callothersubr
+              if (this.stack.length < 2) {
+                error = true;
+                break;
+              }
+              subrNumber = this.stack.pop();
+              var numArgs = this.stack.pop();
+              if (subrNumber === 0 && numArgs === 3) {
+                var flexArgs = this.stack.splice(this.stack.length - 17, 17);
+                this.stack.push(
+                  flexArgs[2] + flexArgs[0], // bcp1x + rpx
+                  flexArgs[3] + flexArgs[1], // bcp1y + rpy
+                  flexArgs[4], // bcp2x
+                  flexArgs[5], // bcp2y
+                  flexArgs[6], // p2x
+                  flexArgs[7], // p2y
+                  flexArgs[8], // bcp3x
+                  flexArgs[9], // bcp3y
+                  flexArgs[10], // bcp4x
+                  flexArgs[11], // bcp4y
+                  flexArgs[12], // p3x
+                  flexArgs[13], // p3y
+                  flexArgs[14] // flexDepth
+                  // 15 = finalx unused by flex
+                  // 16 = finaly unused by flex
+                );
+                error = this.executeCommand(13, COMMAND_MAP.flex, true);
+                this.flexing = false;
+                this.stack.push(flexArgs[15], flexArgs[16]);
+              } else if (subrNumber === 1 && numArgs === 0) {
+                this.flexing = true;
+              }
+              break;
+            case (12 << 8) + 17: // pop
+              // Ignore this since it is only used with othersubr.
+              break;
+            case (12 << 8) + 33: // setcurrentpoint
+              // Ignore for now.
+              this.stack = [];
+              break;
+            default:
+              warn('Unknown type 1 charstring command of "' + value + '"');
+              break;
+          }
+          if (error) {
+            break;
+          }
+          continue;
+        } else if (value <= 246) {
+          value = value - 139;
+        } else if (value <= 250) {
+          value = ((value - 247) * 256) + encoded[++i] + 108;
+        } else if (value <= 254) {
+          value = -((value - 251) * 256) - encoded[++i] - 108;
+        } else {
+          value = (encoded[++i] & 0xff) << 24 | (encoded[++i] & 0xff) << 16 |
+                  (encoded[++i] & 0xff) << 8 | (encoded[++i] & 0xff) << 0;
+        }
+        this.stack.push(value);
+      }
+      return error;
+    },
+
+    executeCommand: function(howManyArgs, command, keepStack) {
+      var stackLength = this.stack.length;
+      if (howManyArgs > stackLength) {
+        return true;
+      }
+      var start = stackLength - howManyArgs;
+      for (var i = start; i < stackLength; i++) {
+        var value = this.stack[i];
+        if (value === (value | 0)) { // int
+          this.output.push(28, (value >> 8) & 0xff, value & 0xff);
+        } else { // fixed point
+          value = (65536 * value) | 0;
+          this.output.push(255,
+                           (value >> 24) & 0xFF,
+                           (value >> 16) & 0xFF,
+                           (value >> 8) & 0xFF,
+                           value & 0xFF);
+        }
+      }
+      this.output.push.apply(this.output, command);
+      if (keepStack) {
+        this.stack.splice(start, howManyArgs);
+      } else {
+        this.stack.length = 0;
+      }
+      return false;
+    }
+  };
+
+  return Type1CharString;
+})();
+
+/*
+ * Type1Parser encapsulate the needed code for parsing a Type1 font
+ * program. Some of its logic depends on the Type2 charstrings
+ * structure.
+ * Note: this doesn't really parse the font since that would require evaluation
+ * of PostScript, but it is possible in most cases to extract what we need
+ * without a full parse.
+ */
+var Type1Parser = (function Type1ParserClosure() {
+  /*
+   * Decrypt a Sequence of Ciphertext Bytes to Produce the Original Sequence
+   * of Plaintext Bytes. The function took a key as a parameter which can be
+   * for decrypting the eexec block of for decoding charStrings.
+   */
+  var EEXEC_ENCRYPT_KEY = 55665;
+  var CHAR_STRS_ENCRYPT_KEY = 4330;
+
+  function isHexDigit(code) {
+    return code >= 48 && code <= 57 || // '0'-'9'
+           code >= 65 && code <= 70 || // 'A'-'F'
+           code >= 97 && code <= 102;  // 'a'-'f'
+  }
+
+  function decrypt(data, key, discardNumber) {
+    if (discardNumber >= data.length) {
+      return new Uint8Array(0);
+    }
+    var r = key | 0, c1 = 52845, c2 = 22719, i, j;
+    for (i = 0; i < discardNumber; i++) {
+      r = ((data[i] + r) * c1 + c2) & ((1 << 16) - 1);
+    }
+    var count = data.length - discardNumber;
+    var decrypted = new Uint8Array(count);
+    for (i = discardNumber, j = 0; j < count; i++, j++) {
+      var value = data[i];
+      decrypted[j] = value ^ (r >> 8);
+      r = ((value + r) * c1 + c2) & ((1 << 16) - 1);
+    }
+    return decrypted;
+  }
+
+  function decryptAscii(data, key, discardNumber) {
+    var r = key | 0, c1 = 52845, c2 = 22719;
+    var count = data.length, maybeLength = count >>> 1;
+    var decrypted = new Uint8Array(maybeLength);
+    var i, j;
+    for (i = 0, j = 0; i < count; i++) {
+      var digit1 = data[i];
+      if (!isHexDigit(digit1)) {
+        continue;
+      }
+      i++;
+      var digit2;
+      while (i < count && !isHexDigit(digit2 = data[i])) {
+        i++;
+      }
+      if (i < count) {
+        var value = parseInt(String.fromCharCode(digit1, digit2), 16);
+        decrypted[j++] = value ^ (r >> 8);
+        r = ((value + r) * c1 + c2) & ((1 << 16) - 1);
+      }
+    }
+    return Array.prototype.slice.call(decrypted, discardNumber, j);
+  }
+
+  function isSpecial(c) {
+    return c === 0x2F || // '/'
+           c === 0x5B || c === 0x5D || // '[', ']'
+           c === 0x7B || c === 0x7D || // '{', '}'
+           c === 0x28 || c === 0x29; // '(', ')'
+  }
+
+  function Type1Parser(stream, encrypted, seacAnalysisEnabled) {
+    if (encrypted) {
+      var data = stream.getBytes();
+      var isBinary = !(isHexDigit(data[0]) && isHexDigit(data[1]) &&
+                       isHexDigit(data[2]) && isHexDigit(data[3]));
+      stream = new Stream(isBinary ? decrypt(data, EEXEC_ENCRYPT_KEY, 4) :
+                          decryptAscii(data, EEXEC_ENCRYPT_KEY, 4));
+    }
+    this.seacAnalysisEnabled = !!seacAnalysisEnabled;
+
+    this.stream = stream;
+    this.nextChar();
+  }
+
+  Type1Parser.prototype = {
+    readNumberArray: function Type1Parser_readNumberArray() {
+      this.getToken(); // read '[' or '{' (arrays can start with either)
+      var array = [];
+      while (true) {
+        var token = this.getToken();
+        if (token === null || token === ']' || token === '}') {
+          break;
+        }
+        array.push(parseFloat(token || 0));
+      }
+      return array;
+    },
+
+    readNumber: function Type1Parser_readNumber() {
+      var token = this.getToken();
+      return parseFloat(token || 0);
+    },
+
+    readInt: function Type1Parser_readInt() {
+      // Use '| 0' to prevent setting a double into length such as the double
+      // does not flow into the loop variable.
+      var token = this.getToken();
+      return parseInt(token || 0, 10) | 0;
+    },
+
+    readBoolean: function Type1Parser_readBoolean() {
+      var token = this.getToken();
+
+      // Use 1 and 0 since that's what type2 charstrings use.
+      return token === 'true' ? 1 : 0;
+    },
+
+    nextChar : function Type1_nextChar() {
+      return (this.currentChar = this.stream.getByte());
+    },
+
+    getToken: function Type1Parser_getToken() {
+      // Eat whitespace and comments.
+      var comment = false;
+      var ch = this.currentChar;
+      while (true) {
+        if (ch === -1) {
+          return null;
+        }
+
+        if (comment) {
+          if (ch === 0x0A || ch === 0x0D) {
+            comment = false;
+          }
+        } else if (ch === 0x25) { // '%'
+          comment = true;
+        } else if (!isSpace(ch)) {
+          break;
+        }
+        ch = this.nextChar();
+      }
+      if (isSpecial(ch)) {
+        this.nextChar();
+        return String.fromCharCode(ch);
+      }
+      var token = '';
+      do {
+        token += String.fromCharCode(ch);
+        ch = this.nextChar();
+      } while (ch >= 0 && !isSpace(ch) && !isSpecial(ch));
+      return token;
+    },
+
+    /*
+     * Returns an object containing a Subrs array and a CharStrings
+     * array extracted from and eexec encrypted block of data
+     */
+    extractFontProgram: function Type1Parser_extractFontProgram() {
+      var stream = this.stream;
+
+      var subrs = [], charstrings = [];
+      var privateData = Object.create(null);
+      privateData['lenIV'] = 4;
+      var program = {
+        subrs: [],
+        charstrings: [],
+        properties: {
+          'privateData': privateData
+        }
+      };
+      var token, length, data, lenIV, encoded;
+      while ((token = this.getToken()) !== null) {
+        if (token !== '/') {
+          continue;
+        }
+        token = this.getToken();
+        switch (token) {
+          case 'CharStrings':
+            // The number immediately following CharStrings must be greater or
+            // equal to the number of CharStrings.
+            this.getToken();
+            this.getToken(); // read in 'dict'
+            this.getToken(); // read in 'dup'
+            this.getToken(); // read in 'begin'
+            while(true) {
+              token = this.getToken();
+              if (token === null || token === 'end') {
+                break;
+              }
+
+              if (token !== '/') {
+                continue;
+              }
+              var glyph = this.getToken();
+              length = this.readInt();
+              this.getToken(); // read in 'RD' or '-|'
+              data = stream.makeSubStream(stream.pos, length);
+              lenIV = program.properties.privateData['lenIV'];
+              encoded = decrypt(data.getBytes(), CHAR_STRS_ENCRYPT_KEY, lenIV);
+              // Skip past the required space and binary data.
+              stream.skip(length);
+              this.nextChar();
+              token = this.getToken(); // read in 'ND' or '|-'
+              if (token === 'noaccess') {
+                this.getToken(); // read in 'def'
+              }
+              charstrings.push({
+                glyph: glyph,
+                encoded: encoded
+              });
+            }
+            break;
+          case 'Subrs':
+            var num = this.readInt();
+            this.getToken(); // read in 'array'
+            while ((token = this.getToken()) === 'dup') {
+              var index = this.readInt();
+              length = this.readInt();
+              this.getToken(); // read in 'RD' or '-|'
+              data = stream.makeSubStream(stream.pos, length);
+              lenIV = program.properties.privateData['lenIV'];
+              encoded = decrypt(data.getBytes(), CHAR_STRS_ENCRYPT_KEY, lenIV);
+              // Skip past the required space and binary data.
+              stream.skip(length);
+              this.nextChar();
+              token = this.getToken(); // read in 'NP' or '|'
+              if (token === 'noaccess') {
+                this.getToken(); // read in 'put'
+              }
+              subrs[index] = encoded;
+            }
+            break;
+          case 'BlueValues':
+          case 'OtherBlues':
+          case 'FamilyBlues':
+          case 'FamilyOtherBlues':
+            var blueArray = this.readNumberArray();
+            // *Blue* values may contain invalid data: disables reading of
+            // those values when hinting is disabled.
+            if (blueArray.length > 0 && (blueArray.length % 2) === 0 &&
+                HINTING_ENABLED) {
+              program.properties.privateData[token] = blueArray;
+            }
+            break;
+          case 'StemSnapH':
+          case 'StemSnapV':
+            program.properties.privateData[token] = this.readNumberArray();
+            break;
+          case 'StdHW':
+          case 'StdVW':
+            program.properties.privateData[token] =
+              this.readNumberArray()[0];
+            break;
+          case 'BlueShift':
+          case 'lenIV':
+          case 'BlueFuzz':
+          case 'BlueScale':
+          case 'LanguageGroup':
+          case 'ExpansionFactor':
+            program.properties.privateData[token] = this.readNumber();
+            break;
+          case 'ForceBold':
+            program.properties.privateData[token] = this.readBoolean();
+            break;
+        }
+      }
+
+      for (var i = 0; i < charstrings.length; i++) {
+        glyph = charstrings[i].glyph;
+        encoded = charstrings[i].encoded;
+        var charString = new Type1CharString();
+        var error = charString.convert(encoded, subrs,
+                                       this.seacAnalysisEnabled);
+        var output = charString.output;
+        if (error) {
+          // It seems when FreeType encounters an error while evaluating a glyph
+          // that it completely ignores the glyph so we'll mimic that behaviour
+          // here and put an endchar to make the validator happy.
+          output = [14];
+        }
+        program.charstrings.push({
+          glyphName: glyph,
+          charstring: output,
+          width: charString.width,
+          lsb: charString.lsb,
+          seac: charString.seac
+        });
+      }
+
+      return program;
+    },
+
+    extractFontHeader: function Type1Parser_extractFontHeader(properties) {
+      var token;
+      while ((token = this.getToken()) !== null) {
+        if (token !== '/') {
+          continue;
+        }
+        token = this.getToken();
+        switch (token) {
+          case 'FontMatrix':
+            var matrix = this.readNumberArray();
+            properties.fontMatrix = matrix;
+            break;
+          case 'Encoding':
+            var encodingArg = this.getToken();
+            var encoding;
+            if (!/^\d+$/.test(encodingArg)) {
+              // encoding name is specified
+              encoding = getEncoding(encodingArg);
+            } else {
+              encoding = [];
+              var size = parseInt(encodingArg, 10) | 0;
+              this.getToken(); // read in 'array'
+
+              for (var j = 0; j < size; j++) {
+                token = this.getToken();
+                // skipping till first dup or def (e.g. ignoring for statement)
+                while (token !== 'dup' && token !== 'def') {
+                  token = this.getToken();
+                  if (token === null) {
+                    return; // invalid header
+                  }
+                }
+                if (token === 'def') {
+                  break; // read all array data
+                }
+                var index = this.readInt();
+                this.getToken(); // read in '/'
+                var glyph = this.getToken();
+                encoding[index] = glyph;
+                this.getToken(); // read the in 'put'
+              }
+            }
+            properties.builtInEncoding = encoding;
+            break;
+          case 'FontBBox':
+            var fontBBox = this.readNumberArray();
+            // adjusting ascent/descent
+            properties.ascent = fontBBox[3];
+            properties.descent = fontBBox[1];
+            properties.ascentScaled = true;
+            break;
+        }
+      }
+    }
+  };
+
+  return Type1Parser;
+})();
+
+exports.Type1Parser = Type1Parser;
+}));
+
+
+(function (root, factory) {
+  {
     factory((root.pdfjsCoreCMap = {}), root.pdfjsSharedUtil,
       root.pdfjsCorePrimitives, root.pdfjsCoreStream, root.pdfjsCoreParser);
   }
@@ -25150,9 +25897,11 @@ exports.isEOF = isEOF;
 
 var Util = sharedUtil.Util;
 var assert = sharedUtil.assert;
+var warn = sharedUtil.warn;
 var error = sharedUtil.error;
 var isInt = sharedUtil.isInt;
 var isString = sharedUtil.isString;
+var MissingDataException = sharedUtil.MissingDataException;
 var isName = corePrimitives.isName;
 var isCmd = corePrimitives.isCmd;
 var isStream = corePrimitives.isStream;
@@ -26000,41 +26749,49 @@ var CMapFactory = (function CMapFactoryClosure() {
     var previous;
     var embededUseCMap;
     objLoop: while (true) {
-      var obj = lexer.getObj();
-      if (isEOF(obj)) {
-        break;
-      } else if (isName(obj)) {
-        if (obj.name === 'WMode') {
-          parseWMode(cMap, lexer);
-        } else if (obj.name === 'CMapName') {
-          parseCMapName(cMap, lexer);
+      try {
+        var obj = lexer.getObj();
+        if (isEOF(obj)) {
+          break;
+        } else if (isName(obj)) {
+          if (obj.name === 'WMode') {
+            parseWMode(cMap, lexer);
+          } else if (obj.name === 'CMapName') {
+            parseCMapName(cMap, lexer);
+          }
+          previous = obj;
+        } else if (isCmd(obj)) {
+          switch (obj.cmd) {
+            case 'endcmap':
+              break objLoop;
+            case 'usecmap':
+              if (isName(previous)) {
+                embededUseCMap = previous.name;
+              }
+              break;
+            case 'begincodespacerange':
+              parseCodespaceRange(cMap, lexer);
+              break;
+            case 'beginbfchar':
+              parseBfChar(cMap, lexer);
+              break;
+            case 'begincidchar':
+              parseCidChar(cMap, lexer);
+              break;
+            case 'beginbfrange':
+              parseBfRange(cMap, lexer);
+              break;
+            case 'begincidrange':
+              parseCidRange(cMap, lexer);
+              break;
+          }
         }
-        previous = obj;
-      } else if (isCmd(obj)) {
-        switch (obj.cmd) {
-          case 'endcmap':
-            break objLoop;
-          case 'usecmap':
-            if (isName(previous)) {
-              embededUseCMap = previous.name;
-            }
-            break;
-          case 'begincodespacerange':
-            parseCodespaceRange(cMap, lexer);
-            break;
-          case 'beginbfchar':
-            parseBfChar(cMap, lexer);
-            break;
-          case 'begincidchar':
-            parseCidChar(cMap, lexer);
-            break;
-          case 'beginbfrange':
-            parseBfRange(cMap, lexer);
-            break;
-          case 'begincidrange':
-            parseCidRange(cMap, lexer);
-            break;
+      } catch (ex) {
+        if (ex instanceof MissingDataException) {
+          throw ex;
         }
+        warn('Invalid cMap data: ' + ex);
+        continue;
       }
     }
 
@@ -26045,9 +26802,8 @@ var CMapFactory = (function CMapFactoryClosure() {
     }
     if (useCMap) {
       return extendCMap(cMap, builtInCMapParams, useCMap);
-    } else {
-      return Promise.resolve(cMap);
     }
+    return Promise.resolve(cMap);
   }
 
   function extendCMap(cMap, builtInCMapParams, useCMap) {
@@ -26109,8 +26865,6 @@ var CMapFactory = (function CMapFactoryClosure() {
             parseCMap(cMap, lexer, builtInCMapParams, null).then(
                 function (parsedCMap) {
               resolve(parsedCMap);
-            }).catch(function (e) {
-              reject(new Error({ message: 'Invalid CMap data', error: e }));
             });
           } else {
             reject(new Error('Unable to get cMap at: ' + url));
@@ -26150,933 +26904,13 @@ exports.IdentityCMap = IdentityCMap;
 
 (function (root, factory) {
   {
-    factory((root.pdfjsCorePsParser = {}), root.pdfjsSharedUtil,
-      root.pdfjsCoreParser);
-  }
-}(this, function (exports, sharedUtil, coreParser) {
-
-var error = sharedUtil.error;
-var EOF = coreParser.EOF;
-var Lexer = coreParser.Lexer;
-
-var PostScriptParser = (function PostScriptParserClosure() {
-  function PostScriptParser(lexer) {
-    this.lexer = lexer;
-    this.operators = [];
-    this.token = null;
-    this.prev = null;
-  }
-  PostScriptParser.prototype = {
-    nextToken: function PostScriptParser_nextToken() {
-      this.prev = this.token;
-      this.token = this.lexer.getToken();
-    },
-    accept: function PostScriptParser_accept(type) {
-      if (this.token.type === type) {
-        this.nextToken();
-        return true;
-      }
-      return false;
-    },
-    expect: function PostScriptParser_expect(type) {
-      if (this.accept(type)) {
-        return true;
-      }
-      error('Unexpected symbol: found ' + this.token.type + ' expected ' +
-        type + '.');
-    },
-    parse: function PostScriptParser_parse() {
-      this.nextToken();
-      this.expect(PostScriptTokenTypes.LBRACE);
-      this.parseBlock();
-      this.expect(PostScriptTokenTypes.RBRACE);
-      return this.operators;
-    },
-    parseBlock: function PostScriptParser_parseBlock() {
-      while (true) {
-        if (this.accept(PostScriptTokenTypes.NUMBER)) {
-          this.operators.push(this.prev.value);
-        } else if (this.accept(PostScriptTokenTypes.OPERATOR)) {
-          this.operators.push(this.prev.value);
-        } else if (this.accept(PostScriptTokenTypes.LBRACE)) {
-          this.parseCondition();
-        } else {
-          return;
-        }
-      }
-    },
-    parseCondition: function PostScriptParser_parseCondition() {
-      // Add two place holders that will be updated later
-      var conditionLocation = this.operators.length;
-      this.operators.push(null, null);
-
-      this.parseBlock();
-      this.expect(PostScriptTokenTypes.RBRACE);
-      if (this.accept(PostScriptTokenTypes.IF)) {
-        // The true block is right after the 'if' so it just falls through on
-        // true else it jumps and skips the true block.
-        this.operators[conditionLocation] = this.operators.length;
-        this.operators[conditionLocation + 1] = 'jz';
-      } else if (this.accept(PostScriptTokenTypes.LBRACE)) {
-        var jumpLocation = this.operators.length;
-        this.operators.push(null, null);
-        var endOfTrue = this.operators.length;
-        this.parseBlock();
-        this.expect(PostScriptTokenTypes.RBRACE);
-        this.expect(PostScriptTokenTypes.IFELSE);
-        // The jump is added at the end of the true block to skip the false
-        // block.
-        this.operators[jumpLocation] = this.operators.length;
-        this.operators[jumpLocation + 1] = 'j';
-
-        this.operators[conditionLocation] = endOfTrue;
-        this.operators[conditionLocation + 1] = 'jz';
-      } else {
-        error('PS Function: error parsing conditional.');
-      }
-    }
-  };
-  return PostScriptParser;
-})();
-
-var PostScriptTokenTypes = {
-  LBRACE: 0,
-  RBRACE: 1,
-  NUMBER: 2,
-  OPERATOR: 3,
-  IF: 4,
-  IFELSE: 5
-};
-
-var PostScriptToken = (function PostScriptTokenClosure() {
-  function PostScriptToken(type, value) {
-    this.type = type;
-    this.value = value;
-  }
-
-  var opCache = Object.create(null);
-
-  PostScriptToken.getOperator = function PostScriptToken_getOperator(op) {
-    var opValue = opCache[op];
-    if (opValue) {
-      return opValue;
-    }
-    return opCache[op] = new PostScriptToken(PostScriptTokenTypes.OPERATOR, op);
-  };
-
-  PostScriptToken.LBRACE = new PostScriptToken(PostScriptTokenTypes.LBRACE,
-    '{');
-  PostScriptToken.RBRACE = new PostScriptToken(PostScriptTokenTypes.RBRACE,
-    '}');
-  PostScriptToken.IF = new PostScriptToken(PostScriptTokenTypes.IF, 'IF');
-  PostScriptToken.IFELSE = new PostScriptToken(PostScriptTokenTypes.IFELSE,
-    'IFELSE');
-  return PostScriptToken;
-})();
-
-var PostScriptLexer = (function PostScriptLexerClosure() {
-  function PostScriptLexer(stream) {
-    this.stream = stream;
-    this.nextChar();
-
-    this.strBuf = [];
-  }
-  PostScriptLexer.prototype = {
-    nextChar: function PostScriptLexer_nextChar() {
-      return (this.currentChar = this.stream.getByte());
-    },
-    getToken: function PostScriptLexer_getToken() {
-      var comment = false;
-      var ch = this.currentChar;
-
-      // skip comments
-      while (true) {
-        if (ch < 0) {
-          return EOF;
-        }
-
-        if (comment) {
-          if (ch === 0x0A || ch === 0x0D) {
-            comment = false;
-          }
-        } else if (ch === 0x25) { // '%'
-          comment = true;
-        } else if (!Lexer.isSpace(ch)) {
-          break;
-        }
-        ch = this.nextChar();
-      }
-      switch (ch | 0) {
-        case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: // '0'-'4'
-        case 0x35: case 0x36: case 0x37: case 0x38: case 0x39: // '5'-'9'
-        case 0x2B: case 0x2D: case 0x2E: // '+', '-', '.'
-          return new PostScriptToken(PostScriptTokenTypes.NUMBER,
-                                     this.getNumber());
-        case 0x7B: // '{'
-          this.nextChar();
-          return PostScriptToken.LBRACE;
-        case 0x7D: // '}'
-          this.nextChar();
-          return PostScriptToken.RBRACE;
-      }
-      // operator
-      var strBuf = this.strBuf;
-      strBuf.length = 0;
-      strBuf[0] = String.fromCharCode(ch);
-
-      while ((ch = this.nextChar()) >= 0 && // and 'A'-'Z', 'a'-'z'
-             ((ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A))) {
-        strBuf.push(String.fromCharCode(ch));
-      }
-      var str = strBuf.join('');
-      switch (str.toLowerCase()) {
-        case 'if':
-          return PostScriptToken.IF;
-        case 'ifelse':
-          return PostScriptToken.IFELSE;
-        default:
-          return PostScriptToken.getOperator(str);
-      }
-    },
-    getNumber: function PostScriptLexer_getNumber() {
-      var ch = this.currentChar;
-      var strBuf = this.strBuf;
-      strBuf.length = 0;
-      strBuf[0] = String.fromCharCode(ch);
-
-      while ((ch = this.nextChar()) >= 0) {
-        if ((ch >= 0x30 && ch <= 0x39) || // '0'-'9'
-            ch === 0x2D || ch === 0x2E) { // '-', '.'
-          strBuf.push(String.fromCharCode(ch));
-        } else {
-          break;
-        }
-      }
-      var value = parseFloat(strBuf.join(''));
-      if (isNaN(value)) {
-        error('Invalid floating point number: ' + value);
-      }
-      return value;
-    }
-  };
-  return PostScriptLexer;
-})();
-
-exports.PostScriptLexer = PostScriptLexer;
-exports.PostScriptParser = PostScriptParser;
-}));
-
-
-(function (root, factory) {
-  {
-    factory((root.pdfjsCoreType1Parser = {}), root.pdfjsSharedUtil,
-      root.pdfjsCoreStream, root.pdfjsCoreParser, root.pdfjsCoreEncodings);
-  }
-}(this, function (exports, sharedUtil, coreStream, coreParser, coreEncodings) {
-
-var warn = sharedUtil.warn;
-var Stream = coreStream.Stream;
-var Lexer = coreParser.Lexer;
-var getEncoding = coreEncodings.getEncoding;
-
-// Hinting is currently disabled due to unknown problems on windows
-// in tracemonkey and various other pdfs with type1 fonts.
-var HINTING_ENABLED = false;
-
-/*
- * CharStrings are encoded following the the CharString Encoding sequence
- * describe in Chapter 6 of the "Adobe Type1 Font Format" specification.
- * The value in a byte indicates a command, a number, or subsequent bytes
- * that are to be interpreted in a special way.
- *
- * CharString Number Encoding:
- *  A CharString byte containing the values from 32 through 255 inclusive
- *  indicate an integer. These values are decoded in four ranges.
- *
- * 1. A CharString byte containing a value, v, between 32 and 246 inclusive,
- * indicate the integer v - 139. Thus, the integer values from -107 through
- * 107 inclusive may be encoded in single byte.
- *
- * 2. A CharString byte containing a value, v, between 247 and 250 inclusive,
- * indicates an integer involving the next byte, w, according to the formula:
- * [(v - 247) x 256] + w + 108
- *
- * 3. A CharString byte containing a value, v, between 251 and 254 inclusive,
- * indicates an integer involving the next byte, w, according to the formula:
- * -[(v - 251) * 256] - w - 108
- *
- * 4. A CharString containing the value 255 indicates that the next 4 bytes
- * are a two complement signed integer. The first of these bytes contains the
- * highest order bits, the second byte contains the next higher order bits
- * and the fourth byte contain the lowest order bits.
- *
- *
- * CharString Command Encoding:
- *  CharStrings commands are encoded in 1 or 2 bytes.
- *
- *  Single byte commands are encoded in 1 byte that contains a value between
- *  0 and 31 inclusive.
- *  If a command byte contains the value 12, then the value in the next byte
- *  indicates a command. This "escape" mechanism allows many extra commands
- * to be encoded and this encoding technique helps to minimize the length of
- * the charStrings.
- */
-var Type1CharString = (function Type1CharStringClosure() {
-  var COMMAND_MAP = {
-    'hstem': [1],
-    'vstem': [3],
-    'vmoveto': [4],
-    'rlineto': [5],
-    'hlineto': [6],
-    'vlineto': [7],
-    'rrcurveto': [8],
-    'callsubr': [10],
-    'flex': [12, 35],
-    'drop' : [12, 18],
-    'endchar': [14],
-    'rmoveto': [21],
-    'hmoveto': [22],
-    'vhcurveto': [30],
-    'hvcurveto': [31]
-  };
-
-  function Type1CharString() {
-    this.width = 0;
-    this.lsb = 0;
-    this.flexing = false;
-    this.output = [];
-    this.stack = [];
-  }
-
-  Type1CharString.prototype = {
-    convert: function Type1CharString_convert(encoded, subrs,
-                                              seacAnalysisEnabled) {
-      var count = encoded.length;
-      var error = false;
-      var wx, sbx, subrNumber;
-      for (var i = 0; i < count; i++) {
-        var value = encoded[i];
-        if (value < 32) {
-          if (value === 12) {
-            value = (value << 8) + encoded[++i];
-          }
-          switch (value) {
-            case 1: // hstem
-              if (!HINTING_ENABLED) {
-                this.stack = [];
-                break;
-              }
-              error = this.executeCommand(2, COMMAND_MAP.hstem);
-              break;
-            case 3: // vstem
-              if (!HINTING_ENABLED) {
-                this.stack = [];
-                break;
-              }
-              error = this.executeCommand(2, COMMAND_MAP.vstem);
-              break;
-            case 4: // vmoveto
-              if (this.flexing) {
-                if (this.stack.length < 1) {
-                  error = true;
-                  break;
-                }
-                // Add the dx for flex and but also swap the values so they are
-                // the right order.
-                var dy = this.stack.pop();
-                this.stack.push(0, dy);
-                break;
-              }
-              error = this.executeCommand(1, COMMAND_MAP.vmoveto);
-              break;
-            case 5: // rlineto
-              error = this.executeCommand(2, COMMAND_MAP.rlineto);
-              break;
-            case 6: // hlineto
-              error = this.executeCommand(1, COMMAND_MAP.hlineto);
-              break;
-            case 7: // vlineto
-              error = this.executeCommand(1, COMMAND_MAP.vlineto);
-              break;
-            case 8: // rrcurveto
-              error = this.executeCommand(6, COMMAND_MAP.rrcurveto);
-              break;
-            case 9: // closepath
-              // closepath is a Type1 command that does not take argument and is
-              // useless in Type2 and it can simply be ignored.
-              this.stack = [];
-              break;
-            case 10: // callsubr
-              if (this.stack.length < 1) {
-                error = true;
-                break;
-              }
-              subrNumber = this.stack.pop();
-              error = this.convert(subrs[subrNumber], subrs,
-                                   seacAnalysisEnabled);
-              break;
-            case 11: // return
-              return error;
-            case 13: // hsbw
-              if (this.stack.length < 2) {
-                error = true;
-                break;
-              }
-              // To convert to type2 we have to move the width value to the
-              // first part of the charstring and then use hmoveto with lsb.
-              wx = this.stack.pop();
-              sbx = this.stack.pop();
-              this.lsb = sbx;
-              this.width = wx;
-              this.stack.push(wx, sbx);
-              error = this.executeCommand(2, COMMAND_MAP.hmoveto);
-              break;
-            case 14: // endchar
-              this.output.push(COMMAND_MAP.endchar[0]);
-              break;
-            case 21: // rmoveto
-              if (this.flexing) {
-                break;
-              }
-              error = this.executeCommand(2, COMMAND_MAP.rmoveto);
-              break;
-            case 22: // hmoveto
-              if (this.flexing) {
-                // Add the dy for flex.
-                this.stack.push(0);
-                break;
-              }
-              error = this.executeCommand(1, COMMAND_MAP.hmoveto);
-              break;
-            case 30: // vhcurveto
-              error = this.executeCommand(4, COMMAND_MAP.vhcurveto);
-              break;
-            case 31: // hvcurveto
-              error = this.executeCommand(4, COMMAND_MAP.hvcurveto);
-              break;
-            case (12 << 8) + 0: // dotsection
-              // dotsection is a Type1 command to specify some hinting feature
-              // for dots that do not take a parameter and it can safely be
-              // ignored for Type2.
-              this.stack = [];
-              break;
-            case (12 << 8) + 1: // vstem3
-              if (!HINTING_ENABLED) {
-                this.stack = [];
-                break;
-              }
-              // [vh]stem3 are Type1 only and Type2 supports [vh]stem with
-              // multiple parameters, so instead of returning [vh]stem3 take a
-              // shortcut and return [vhstem] instead.
-              error = this.executeCommand(2, COMMAND_MAP.vstem);
-              break;
-            case (12 << 8) + 2: // hstem3
-              if (!HINTING_ENABLED) {
-                 this.stack = [];
-                break;
-              }
-              // See vstem3.
-              error = this.executeCommand(2, COMMAND_MAP.hstem);
-              break;
-            case (12 << 8) + 6: // seac
-              // seac is like type 2's special endchar but it doesn't use the
-              // first argument asb, so remove it.
-              if (seacAnalysisEnabled) {
-                this.seac = this.stack.splice(-4, 4);
-                error = this.executeCommand(0, COMMAND_MAP.endchar);
-              } else {
-                error = this.executeCommand(4, COMMAND_MAP.endchar);
-              }
-              break;
-            case (12 << 8) + 7: // sbw
-              if (this.stack.length < 4) {
-                error = true;
-                break;
-              }
-              // To convert to type2 we have to move the width value to the
-              // first part of the charstring and then use rmoveto with
-              // (dx, dy). The height argument will not be used for vmtx and
-              // vhea tables reconstruction -- ignoring it.
-              var wy = this.stack.pop();
-              wx = this.stack.pop();
-              var sby = this.stack.pop();
-              sbx = this.stack.pop();
-              this.lsb = sbx;
-              this.width = wx;
-              this.stack.push(wx, sbx, sby);
-              error = this.executeCommand(3, COMMAND_MAP.rmoveto);
-              break;
-            case (12 << 8) + 12: // div
-              if (this.stack.length < 2) {
-                error = true;
-                break;
-              }
-              var num2 = this.stack.pop();
-              var num1 = this.stack.pop();
-              this.stack.push(num1 / num2);
-              break;
-            case (12 << 8) + 16: // callothersubr
-              if (this.stack.length < 2) {
-                error = true;
-                break;
-              }
-              subrNumber = this.stack.pop();
-              var numArgs = this.stack.pop();
-              if (subrNumber === 0 && numArgs === 3) {
-                var flexArgs = this.stack.splice(this.stack.length - 17, 17);
-                this.stack.push(
-                  flexArgs[2] + flexArgs[0], // bcp1x + rpx
-                  flexArgs[3] + flexArgs[1], // bcp1y + rpy
-                  flexArgs[4], // bcp2x
-                  flexArgs[5], // bcp2y
-                  flexArgs[6], // p2x
-                  flexArgs[7], // p2y
-                  flexArgs[8], // bcp3x
-                  flexArgs[9], // bcp3y
-                  flexArgs[10], // bcp4x
-                  flexArgs[11], // bcp4y
-                  flexArgs[12], // p3x
-                  flexArgs[13], // p3y
-                  flexArgs[14] // flexDepth
-                  // 15 = finalx unused by flex
-                  // 16 = finaly unused by flex
-                );
-                error = this.executeCommand(13, COMMAND_MAP.flex, true);
-                this.flexing = false;
-                this.stack.push(flexArgs[15], flexArgs[16]);
-              } else if (subrNumber === 1 && numArgs === 0) {
-                this.flexing = true;
-              }
-              break;
-            case (12 << 8) + 17: // pop
-              // Ignore this since it is only used with othersubr.
-              break;
-            case (12 << 8) + 33: // setcurrentpoint
-              // Ignore for now.
-              this.stack = [];
-              break;
-            default:
-              warn('Unknown type 1 charstring command of "' + value + '"');
-              break;
-          }
-          if (error) {
-            break;
-          }
-          continue;
-        } else if (value <= 246) {
-          value = value - 139;
-        } else if (value <= 250) {
-          value = ((value - 247) * 256) + encoded[++i] + 108;
-        } else if (value <= 254) {
-          value = -((value - 251) * 256) - encoded[++i] - 108;
-        } else {
-          value = (encoded[++i] & 0xff) << 24 | (encoded[++i] & 0xff) << 16 |
-                  (encoded[++i] & 0xff) << 8 | (encoded[++i] & 0xff) << 0;
-        }
-        this.stack.push(value);
-      }
-      return error;
-    },
-
-    executeCommand: function(howManyArgs, command, keepStack) {
-      var stackLength = this.stack.length;
-      if (howManyArgs > stackLength) {
-        return true;
-      }
-      var start = stackLength - howManyArgs;
-      for (var i = start; i < stackLength; i++) {
-        var value = this.stack[i];
-        if (value === (value | 0)) { // int
-          this.output.push(28, (value >> 8) & 0xff, value & 0xff);
-        } else { // fixed point
-          value = (65536 * value) | 0;
-          this.output.push(255,
-                           (value >> 24) & 0xFF,
-                           (value >> 16) & 0xFF,
-                           (value >> 8) & 0xFF,
-                           value & 0xFF);
-        }
-      }
-      this.output.push.apply(this.output, command);
-      if (keepStack) {
-        this.stack.splice(start, howManyArgs);
-      } else {
-        this.stack.length = 0;
-      }
-      return false;
-    }
-  };
-
-  return Type1CharString;
-})();
-
-/*
- * Type1Parser encapsulate the needed code for parsing a Type1 font
- * program. Some of its logic depends on the Type2 charstrings
- * structure.
- * Note: this doesn't really parse the font since that would require evaluation
- * of PostScript, but it is possible in most cases to extract what we need
- * without a full parse.
- */
-var Type1Parser = (function Type1ParserClosure() {
-  /*
-   * Decrypt a Sequence of Ciphertext Bytes to Produce the Original Sequence
-   * of Plaintext Bytes. The function took a key as a parameter which can be
-   * for decrypting the eexec block of for decoding charStrings.
-   */
-  var EEXEC_ENCRYPT_KEY = 55665;
-  var CHAR_STRS_ENCRYPT_KEY = 4330;
-
-  function isHexDigit(code) {
-    return code >= 48 && code <= 57 || // '0'-'9'
-           code >= 65 && code <= 70 || // 'A'-'F'
-           code >= 97 && code <= 102;  // 'a'-'f'
-  }
-
-  function decrypt(data, key, discardNumber) {
-    if (discardNumber >= data.length) {
-      return new Uint8Array(0);
-    }
-    var r = key | 0, c1 = 52845, c2 = 22719, i, j;
-    for (i = 0; i < discardNumber; i++) {
-      r = ((data[i] + r) * c1 + c2) & ((1 << 16) - 1);
-    }
-    var count = data.length - discardNumber;
-    var decrypted = new Uint8Array(count);
-    for (i = discardNumber, j = 0; j < count; i++, j++) {
-      var value = data[i];
-      decrypted[j] = value ^ (r >> 8);
-      r = ((value + r) * c1 + c2) & ((1 << 16) - 1);
-    }
-    return decrypted;
-  }
-
-  function decryptAscii(data, key, discardNumber) {
-    var r = key | 0, c1 = 52845, c2 = 22719;
-    var count = data.length, maybeLength = count >>> 1;
-    var decrypted = new Uint8Array(maybeLength);
-    var i, j;
-    for (i = 0, j = 0; i < count; i++) {
-      var digit1 = data[i];
-      if (!isHexDigit(digit1)) {
-        continue;
-      }
-      i++;
-      var digit2;
-      while (i < count && !isHexDigit(digit2 = data[i])) {
-        i++;
-      }
-      if (i < count) {
-        var value = parseInt(String.fromCharCode(digit1, digit2), 16);
-        decrypted[j++] = value ^ (r >> 8);
-        r = ((value + r) * c1 + c2) & ((1 << 16) - 1);
-      }
-    }
-    return Array.prototype.slice.call(decrypted, discardNumber, j);
-  }
-
-  function isSpecial(c) {
-    return c === 0x2F || // '/'
-           c === 0x5B || c === 0x5D || // '[', ']'
-           c === 0x7B || c === 0x7D || // '{', '}'
-           c === 0x28 || c === 0x29; // '(', ')'
-  }
-
-  function Type1Parser(stream, encrypted, seacAnalysisEnabled) {
-    if (encrypted) {
-      var data = stream.getBytes();
-      var isBinary = !(isHexDigit(data[0]) && isHexDigit(data[1]) &&
-                       isHexDigit(data[2]) && isHexDigit(data[3]));
-      stream = new Stream(isBinary ? decrypt(data, EEXEC_ENCRYPT_KEY, 4) :
-                          decryptAscii(data, EEXEC_ENCRYPT_KEY, 4));
-    }
-    this.seacAnalysisEnabled = !!seacAnalysisEnabled;
-
-    this.stream = stream;
-    this.nextChar();
-  }
-
-  Type1Parser.prototype = {
-    readNumberArray: function Type1Parser_readNumberArray() {
-      this.getToken(); // read '[' or '{' (arrays can start with either)
-      var array = [];
-      while (true) {
-        var token = this.getToken();
-        if (token === null || token === ']' || token === '}') {
-          break;
-        }
-        array.push(parseFloat(token || 0));
-      }
-      return array;
-    },
-
-    readNumber: function Type1Parser_readNumber() {
-      var token = this.getToken();
-      return parseFloat(token || 0);
-    },
-
-    readInt: function Type1Parser_readInt() {
-      // Use '| 0' to prevent setting a double into length such as the double
-      // does not flow into the loop variable.
-      var token = this.getToken();
-      return parseInt(token || 0, 10) | 0;
-    },
-
-    readBoolean: function Type1Parser_readBoolean() {
-      var token = this.getToken();
-
-      // Use 1 and 0 since that's what type2 charstrings use.
-      return token === 'true' ? 1 : 0;
-    },
-
-    nextChar : function Type1_nextChar() {
-      return (this.currentChar = this.stream.getByte());
-    },
-
-    getToken: function Type1Parser_getToken() {
-      // Eat whitespace and comments.
-      var comment = false;
-      var ch = this.currentChar;
-      while (true) {
-        if (ch === -1) {
-          return null;
-        }
-
-        if (comment) {
-          if (ch === 0x0A || ch === 0x0D) {
-            comment = false;
-          }
-        } else if (ch === 0x25) { // '%'
-          comment = true;
-        } else if (!Lexer.isSpace(ch)) {
-          break;
-        }
-        ch = this.nextChar();
-      }
-      if (isSpecial(ch)) {
-        this.nextChar();
-        return String.fromCharCode(ch);
-      }
-      var token = '';
-      do {
-        token += String.fromCharCode(ch);
-        ch = this.nextChar();
-      } while (ch >= 0 && !Lexer.isSpace(ch) && !isSpecial(ch));
-      return token;
-    },
-
-    /*
-     * Returns an object containing a Subrs array and a CharStrings
-     * array extracted from and eexec encrypted block of data
-     */
-    extractFontProgram: function Type1Parser_extractFontProgram() {
-      var stream = this.stream;
-
-      var subrs = [], charstrings = [];
-      var privateData = Object.create(null);
-      privateData['lenIV'] = 4;
-      var program = {
-        subrs: [],
-        charstrings: [],
-        properties: {
-          'privateData': privateData
-        }
-      };
-      var token, length, data, lenIV, encoded;
-      while ((token = this.getToken()) !== null) {
-        if (token !== '/') {
-          continue;
-        }
-        token = this.getToken();
-        switch (token) {
-          case 'CharStrings':
-            // The number immediately following CharStrings must be greater or
-            // equal to the number of CharStrings.
-            this.getToken();
-            this.getToken(); // read in 'dict'
-            this.getToken(); // read in 'dup'
-            this.getToken(); // read in 'begin'
-            while(true) {
-              token = this.getToken();
-              if (token === null || token === 'end') {
-                break;
-              }
-
-              if (token !== '/') {
-                continue;
-              }
-              var glyph = this.getToken();
-              length = this.readInt();
-              this.getToken(); // read in 'RD' or '-|'
-              data = stream.makeSubStream(stream.pos, length);
-              lenIV = program.properties.privateData['lenIV'];
-              encoded = decrypt(data.getBytes(), CHAR_STRS_ENCRYPT_KEY, lenIV);
-              // Skip past the required space and binary data.
-              stream.skip(length);
-              this.nextChar();
-              token = this.getToken(); // read in 'ND' or '|-'
-              if (token === 'noaccess') {
-                this.getToken(); // read in 'def'
-              }
-              charstrings.push({
-                glyph: glyph,
-                encoded: encoded
-              });
-            }
-            break;
-          case 'Subrs':
-            var num = this.readInt();
-            this.getToken(); // read in 'array'
-            while ((token = this.getToken()) === 'dup') {
-              var index = this.readInt();
-              length = this.readInt();
-              this.getToken(); // read in 'RD' or '-|'
-              data = stream.makeSubStream(stream.pos, length);
-              lenIV = program.properties.privateData['lenIV'];
-              encoded = decrypt(data.getBytes(), CHAR_STRS_ENCRYPT_KEY, lenIV);
-              // Skip past the required space and binary data.
-              stream.skip(length);
-              this.nextChar();
-              token = this.getToken(); // read in 'NP' or '|'
-              if (token === 'noaccess') {
-                this.getToken(); // read in 'put'
-              }
-              subrs[index] = encoded;
-            }
-            break;
-          case 'BlueValues':
-          case 'OtherBlues':
-          case 'FamilyBlues':
-          case 'FamilyOtherBlues':
-            var blueArray = this.readNumberArray();
-            // *Blue* values may contain invalid data: disables reading of
-            // those values when hinting is disabled.
-            if (blueArray.length > 0 && (blueArray.length % 2) === 0 &&
-                HINTING_ENABLED) {
-              program.properties.privateData[token] = blueArray;
-            }
-            break;
-          case 'StemSnapH':
-          case 'StemSnapV':
-            program.properties.privateData[token] = this.readNumberArray();
-            break;
-          case 'StdHW':
-          case 'StdVW':
-            program.properties.privateData[token] =
-              this.readNumberArray()[0];
-            break;
-          case 'BlueShift':
-          case 'lenIV':
-          case 'BlueFuzz':
-          case 'BlueScale':
-          case 'LanguageGroup':
-          case 'ExpansionFactor':
-            program.properties.privateData[token] = this.readNumber();
-            break;
-          case 'ForceBold':
-            program.properties.privateData[token] = this.readBoolean();
-            break;
-        }
-      }
-
-      for (var i = 0; i < charstrings.length; i++) {
-        glyph = charstrings[i].glyph;
-        encoded = charstrings[i].encoded;
-        var charString = new Type1CharString();
-        var error = charString.convert(encoded, subrs,
-                                       this.seacAnalysisEnabled);
-        var output = charString.output;
-        if (error) {
-          // It seems when FreeType encounters an error while evaluating a glyph
-          // that it completely ignores the glyph so we'll mimic that behaviour
-          // here and put an endchar to make the validator happy.
-          output = [14];
-        }
-        program.charstrings.push({
-          glyphName: glyph,
-          charstring: output,
-          width: charString.width,
-          lsb: charString.lsb,
-          seac: charString.seac
-        });
-      }
-
-      return program;
-    },
-
-    extractFontHeader: function Type1Parser_extractFontHeader(properties) {
-      var token;
-      while ((token = this.getToken()) !== null) {
-        if (token !== '/') {
-          continue;
-        }
-        token = this.getToken();
-        switch (token) {
-          case 'FontMatrix':
-            var matrix = this.readNumberArray();
-            properties.fontMatrix = matrix;
-            break;
-          case 'Encoding':
-            var encodingArg = this.getToken();
-            var encoding;
-            if (!/^\d+$/.test(encodingArg)) {
-              // encoding name is specified
-              encoding = getEncoding(encodingArg);
-            } else {
-              encoding = [];
-              var size = parseInt(encodingArg, 10) | 0;
-              this.getToken(); // read in 'array'
-
-              for (var j = 0; j < size; j++) {
-                token = this.getToken();
-                // skipping till first dup or def (e.g. ignoring for statement)
-                while (token !== 'dup' && token !== 'def') {
-                  token = this.getToken();
-                  if (token === null) {
-                    return; // invalid header
-                  }
-                }
-                if (token === 'def') {
-                  break; // read all array data
-                }
-                var index = this.readInt();
-                this.getToken(); // read in '/'
-                var glyph = this.getToken();
-                encoding[index] = glyph;
-                this.getToken(); // read the in 'put'
-              }
-            }
-            properties.builtInEncoding = encoding;
-            break;
-          case 'FontBBox':
-            var fontBBox = this.readNumberArray();
-            // adjusting ascent/descent
-            properties.ascent = fontBBox[3];
-            properties.descent = fontBBox[1];
-            properties.ascentScaled = true;
-            break;
-        }
-      }
-    }
-  };
-
-  return Type1Parser;
-})();
-
-exports.Type1Parser = Type1Parser;
-}));
-
-
-(function (root, factory) {
-  {
     factory((root.pdfjsCoreFonts = {}), root.pdfjsSharedUtil,
-      root.pdfjsCorePrimitives, root.pdfjsCoreStream, root.pdfjsCoreParser,
-      root.pdfjsCoreGlyphList, root.pdfjsCoreFontRenderer,
-      root.pdfjsCoreEncodings, root.pdfjsCoreStandardFonts,
-      root.pdfjsCoreUnicode, root.pdfjsCoreType1Parser,
-      root.pdfjsCoreCFFParser);
+      root.pdfjsCorePrimitives, root.pdfjsCoreStream, root.pdfjsCoreGlyphList,
+      root.pdfjsCoreFontRenderer, root.pdfjsCoreEncodings,
+      root.pdfjsCoreStandardFonts, root.pdfjsCoreUnicode,
+      root.pdfjsCoreType1Parser, root.pdfjsCoreCFFParser);
   }
-}(this, function (exports, sharedUtil, corePrimitives, coreStream, coreParser,
+}(this, function (exports, sharedUtil, corePrimitives, coreStream,
                   coreGlyphList, coreFontRenderer, coreEncodings,
                   coreStandardFonts, coreUnicode, coreType1Parser,
                   coreCFFParser) {
@@ -27095,8 +26929,8 @@ var shadow = sharedUtil.shadow;
 var string32 = sharedUtil.string32;
 var warn = sharedUtil.warn;
 var MissingDataException = sharedUtil.MissingDataException;
+var isSpace = sharedUtil.isSpace;
 var Stream = coreStream.Stream;
-var Lexer = coreParser.Lexer;
 var getGlyphsUnicode = coreGlyphList.getGlyphsUnicode;
 var getDingbatsGlyphsUnicode = coreGlyphList.getDingbatsGlyphsUnicode;
 var FontRendererFactory = coreFontRenderer.FontRendererFactory;
@@ -27204,6 +27038,30 @@ function adjustWidths(properties) {
   properties.defaultWidth *= scale;
 }
 
+function adjustToUnicode(properties, builtInEncoding) {
+  if (properties.hasIncludedToUnicodeMap) {
+    return; // The font dictionary has a `ToUnicode` entry.
+  }
+  if (properties.hasEncoding) {
+    return; // The font dictionary has an `Encoding` entry.
+  }
+  if (builtInEncoding === properties.defaultEncoding) {
+    return; // No point in trying to adjust `toUnicode` if the encodings match.
+  }
+  if (properties.toUnicode instanceof IdentityToUnicodeMap) {
+    return;
+  }
+  var toUnicode = [], glyphsUnicodeMap = getGlyphsUnicode();
+  for (var charCode in builtInEncoding) {
+    var glyphName = builtInEncoding[charCode];
+    var unicode = getUnicodeForGlyph(glyphName, glyphsUnicodeMap);
+    if (unicode !== -1) {
+      toUnicode[charCode] = String.fromCharCode(unicode);
+    }
+  }
+  properties.toUnicode.amend(toUnicode);
+}
+
 function getFontType(type, subtype) {
   switch (type) {
     case 'Type1':
@@ -27224,6 +27082,25 @@ function getFontType(type, subtype) {
     default:
       return FontType.UNKNOWN;
   }
+}
+
+// Some bad PDF generators, e.g. Scribus PDF, include glyph names
+// in a 'uniXXXX' format -- attempting to recover proper ones.
+function recoverGlyphName(name, glyphsUnicodeMap) {
+  if (glyphsUnicodeMap[name] !== undefined) {
+    return name;
+  }
+  // The glyph name is non-standard, trying to recover.
+  var unicode = getUnicodeForGlyph(name, glyphsUnicodeMap);
+  if (unicode !== -1) {
+    for (var key in glyphsUnicodeMap) {
+      if (glyphsUnicodeMap[key] === unicode) {
+        return key;
+      }
+    }
+  }
+  info('Unable to recover a standard glyph name for: ' + name);
+  return name;
 }
 
 var Glyph = (function GlyphClosure() {
@@ -27283,7 +27160,13 @@ var ToUnicodeMap = (function ToUnicodeMapClosure() {
 
     charCodeOf: function(v) {
       return this._map.indexOf(v);
-    }
+    },
+
+    amend: function (map) {
+      for (var charCode in map) {
+        this._map[charCode] = map[charCode];
+      }
+    },
   };
 
   return ToUnicodeMap;
@@ -27319,7 +27202,11 @@ var IdentityToUnicodeMap = (function IdentityToUnicodeMapClosure() {
 
     charCodeOf: function (v) {
       return (isInt(v) && v >= this.firstChar && v <= this.lastChar) ? v : -1;
-    }
+    },
+
+    amend: function (map) {
+      error('Should not call amend()');
+    },
   };
 
   return IdentityToUnicodeMap;
@@ -27479,17 +27366,20 @@ var ProblematicCharRanges = new Int32Array([
   0x0600, 0x0780,
   0x08A0, 0x10A0,
   0x1780, 0x1800,
+  0x1C00, 0x1C50,
   // General punctuation chars.
   0x2000, 0x2010,
   0x2011, 0x2012,
   0x2028, 0x2030,
   0x205F, 0x2070,
   0x25CC, 0x25CD,
+  0x3000, 0x3001,
   // Chars that is used in complex-script shaping.
   0xAA60, 0xAA80,
   // Specials Unicode block.
   0xFFF0, 0x10000
 ]);
+
 
 /**
  * 'Font' is the class the outside world should use, it encapsulate all the font
@@ -27641,12 +27531,17 @@ var Font = (function FontClosure() {
     }
 
     // Some fonts might use wrong font types for Type1C or CIDFontType0C
-    if (subtype === 'Type1C' && (type !== 'Type1' && type !== 'MMType1')) {
-      // Some TrueType fonts by mistake claim Type1C
-      if (isTrueTypeFile(file)) {
-        subtype = 'TrueType';
-      } else {
-        type = 'Type1';
+    if (subtype === 'Type1C') {
+      if (type !== 'Type1' && type !== 'MMType1') {
+        // Some TrueType fonts by mistake claim Type1C
+        if (isTrueTypeFile(file)) {
+          subtype = 'TrueType';
+        } else {
+          type = 'Type1';
+        }
+      } else if (isOpenTypeFile(file)) {
+        // Sometimes the type/subtype can be a complete lie (see issue7598.pdf).
+        type = subtype = 'OpenType';
       }
     }
     if (subtype === 'CIDFontType0C' && type !== 'CIDFontType0') {
@@ -27712,6 +27607,7 @@ var Font = (function FontClosure() {
     this.fontMatrix = properties.fontMatrix;
     this.widths = properties.widths;
     this.defaultWidth = properties.defaultWidth;
+    this.toUnicode = properties.toUnicode;
     this.encoding = properties.baseEncoding;
     this.seacMap = properties.seacMap;
 
@@ -29306,26 +29202,6 @@ var Font = (function FontClosure() {
         return false;
       }
 
-      // Some bad PDF generators, e.g. Scribus PDF, include glyph names
-      // in a 'uniXXXX' format -- attempting to recover proper ones.
-      function recoverGlyphName(name, glyphsUnicodeMap) {
-        if (glyphsUnicodeMap[name] !== undefined) {
-          return name;
-        }
-        // The glyph name is non-standard, trying to recover.
-        var unicode = getUnicodeForGlyph(name, glyphsUnicodeMap);
-        if (unicode !== -1) {
-          for (var key in glyphsUnicodeMap) {
-            if (glyphsUnicodeMap[key] === unicode) {
-              return key;
-            }
-          }
-        }
-        warn('Unable to recover a standard glyph name for: ' + name);
-        return name;
-      }
-
-
       if (properties.type === 'CIDFontType2') {
         var cidToGidMap = properties.cidToGidMap || [];
         var isCidToGidMapEmpty = cidToGidMap.length === 0;
@@ -29344,16 +29220,17 @@ var Font = (function FontClosure() {
             charCodeToGlyphId[charCode] = glyphId;
           }
         });
-        if (dupFirstEntry) {
+        if (dupFirstEntry && (isCidToGidMapEmpty || !charCodeToGlyphId[0])) {
+          // We don't duplicate the first entry in the `charCodeToGlyphId` map
+          // if the font has a `CIDToGIDMap` which has already mapped the first
+          // entry to a non-zero `glyphId` (fixes issue7544.pdf).
           charCodeToGlyphId[0] = numGlyphs - 1;
         }
       } else {
         // Most of the following logic in this code branch is based on the
         // 9.6.6.4 of the PDF spec.
-        var hasEncoding =
-          properties.differences.length > 0 || !!properties.baseEncodingName;
-        var cmapTable =
-          readCmapTable(tables['cmap'], font, this.isSymbolicFont, hasEncoding);
+        var cmapTable = readCmapTable(tables['cmap'], font, this.isSymbolicFont,
+                                      properties.hasEncoding);
         var cmapPlatformId = cmapTable.platformId;
         var cmapEncodingId = cmapTable.encodingId;
         var cmapMappings = cmapTable.mappings;
@@ -29362,7 +29239,7 @@ var Font = (function FontClosure() {
         // The spec seems to imply that if the font is symbolic the encoding
         // should be ignored, this doesn't appear to work for 'preistabelle.pdf'
         // where the the font is symbolic and it has an encoding.
-        if (hasEncoding &&
+        if (properties.hasEncoding &&
             (cmapPlatformId === 3 && cmapEncodingId === 1 ||
              cmapPlatformId === 1 && cmapEncodingId === 0) ||
             (cmapPlatformId === -1 && cmapEncodingId === -1 && // Temporary hack
@@ -29526,6 +29403,12 @@ var Font = (function FontClosure() {
       // TODO: Check the charstring widths to determine this.
       properties.fixedPitch = false;
 
+      if (properties.builtInEncoding) {
+        // For Type1 fonts that do not include either `ToUnicode` or `Encoding`
+        // data, attempt to use the `builtInEncoding` to improve text selection.
+        adjustToUnicode(properties, properties.builtInEncoding);
+      }
+
       var mapping = font.getGlyphMapping(properties);
       var newMapping = adjustMapping(mapping, properties);
       this.toFontChar = newMapping.toFontChar;
@@ -29678,7 +29561,7 @@ var Font = (function FontClosure() {
       // Naming tables
       builder.addTable('name', createNameTable(fontName));
 
-      // PostScript informations
+      // PostScript information
       builder.addTable('post', createPostTable(properties));
 
       return builder.toArray();
@@ -29690,7 +29573,7 @@ var Font = (function FontClosure() {
       }
 
       // trying to estimate space character width
-      var possibleSpaceReplacements = ['space', 'minus', 'one', 'i'];
+      var possibleSpaceReplacements = ['space', 'minus', 'one', 'i', 'I'];
       var width;
       for (var i = 0, ii = possibleSpaceReplacements.length; i < ii; i++) {
         var glyphName = possibleSpaceReplacements[i];
@@ -29899,11 +29782,21 @@ function type1FontGlyphMapping(properties, builtInEncoding, glyphNames) {
   }
 
   // Lastly, merge in the differences.
-  var differences = properties.differences;
+  var differences = properties.differences, glyphsUnicodeMap;
   if (differences) {
     for (charCode in differences) {
       var glyphName = differences[charCode];
       glyphId = glyphNames.indexOf(glyphName);
+
+      if (glyphId === -1) {
+        if (!glyphsUnicodeMap) {
+          glyphsUnicodeMap = getGlyphsUnicode();
+        }
+        var standardGlyphName = recoverGlyphName(glyphName, glyphsUnicodeMap);
+        if (standardGlyphName !== glyphName) {
+          glyphId = glyphNames.indexOf(standardGlyphName);
+        }
+      }
       if (glyphId >= 0) {
         charCodeToGlyphId[charCode] = glyphId;
       } else {
@@ -29929,7 +29822,7 @@ var Type1Font = (function Type1FontClosure() {
       }
       if (j >= signatureLength) { // `signature` found, skip over whitespace.
         i += j;
-        while (i < streamBytesLength && Lexer.isSpace(streamBytes[i])) {
+        while (i < streamBytesLength && isSpace(streamBytes[i])) {
           i++;
         }
         found = true;
@@ -30045,7 +29938,7 @@ var Type1Font = (function Type1FontClosure() {
                           (pfbHeader[3] << 8) | pfbHeader[2];
     }
 
-    // Get the data block containing glyphs and subrs informations
+    // Get the data block containing glyphs and subrs information
     var headerBlock = getHeaderBlock(file, headerBlockLength);
     headerBlockLength = headerBlock.length;
     var headerBlockParser = new Type1Parser(headerBlock.stream, false,
@@ -30349,6 +30242,225 @@ exports.FontFlags = FontFlags;
 exports.IdentityToUnicodeMap = IdentityToUnicodeMap;
 exports.ToUnicodeMap = ToUnicodeMap;
 exports.getFontType = getFontType;
+}));
+
+
+(function (root, factory) {
+  {
+    factory((root.pdfjsCorePsParser = {}), root.pdfjsSharedUtil,
+      root.pdfjsCoreParser);
+  }
+}(this, function (exports, sharedUtil, coreParser) {
+
+var error = sharedUtil.error;
+var isSpace = sharedUtil.isSpace;
+var EOF = coreParser.EOF;
+
+var PostScriptParser = (function PostScriptParserClosure() {
+  function PostScriptParser(lexer) {
+    this.lexer = lexer;
+    this.operators = [];
+    this.token = null;
+    this.prev = null;
+  }
+  PostScriptParser.prototype = {
+    nextToken: function PostScriptParser_nextToken() {
+      this.prev = this.token;
+      this.token = this.lexer.getToken();
+    },
+    accept: function PostScriptParser_accept(type) {
+      if (this.token.type === type) {
+        this.nextToken();
+        return true;
+      }
+      return false;
+    },
+    expect: function PostScriptParser_expect(type) {
+      if (this.accept(type)) {
+        return true;
+      }
+      error('Unexpected symbol: found ' + this.token.type + ' expected ' +
+        type + '.');
+    },
+    parse: function PostScriptParser_parse() {
+      this.nextToken();
+      this.expect(PostScriptTokenTypes.LBRACE);
+      this.parseBlock();
+      this.expect(PostScriptTokenTypes.RBRACE);
+      return this.operators;
+    },
+    parseBlock: function PostScriptParser_parseBlock() {
+      while (true) {
+        if (this.accept(PostScriptTokenTypes.NUMBER)) {
+          this.operators.push(this.prev.value);
+        } else if (this.accept(PostScriptTokenTypes.OPERATOR)) {
+          this.operators.push(this.prev.value);
+        } else if (this.accept(PostScriptTokenTypes.LBRACE)) {
+          this.parseCondition();
+        } else {
+          return;
+        }
+      }
+    },
+    parseCondition: function PostScriptParser_parseCondition() {
+      // Add two place holders that will be updated later
+      var conditionLocation = this.operators.length;
+      this.operators.push(null, null);
+
+      this.parseBlock();
+      this.expect(PostScriptTokenTypes.RBRACE);
+      if (this.accept(PostScriptTokenTypes.IF)) {
+        // The true block is right after the 'if' so it just falls through on
+        // true else it jumps and skips the true block.
+        this.operators[conditionLocation] = this.operators.length;
+        this.operators[conditionLocation + 1] = 'jz';
+      } else if (this.accept(PostScriptTokenTypes.LBRACE)) {
+        var jumpLocation = this.operators.length;
+        this.operators.push(null, null);
+        var endOfTrue = this.operators.length;
+        this.parseBlock();
+        this.expect(PostScriptTokenTypes.RBRACE);
+        this.expect(PostScriptTokenTypes.IFELSE);
+        // The jump is added at the end of the true block to skip the false
+        // block.
+        this.operators[jumpLocation] = this.operators.length;
+        this.operators[jumpLocation + 1] = 'j';
+
+        this.operators[conditionLocation] = endOfTrue;
+        this.operators[conditionLocation + 1] = 'jz';
+      } else {
+        error('PS Function: error parsing conditional.');
+      }
+    }
+  };
+  return PostScriptParser;
+})();
+
+var PostScriptTokenTypes = {
+  LBRACE: 0,
+  RBRACE: 1,
+  NUMBER: 2,
+  OPERATOR: 3,
+  IF: 4,
+  IFELSE: 5
+};
+
+var PostScriptToken = (function PostScriptTokenClosure() {
+  function PostScriptToken(type, value) {
+    this.type = type;
+    this.value = value;
+  }
+
+  var opCache = Object.create(null);
+
+  PostScriptToken.getOperator = function PostScriptToken_getOperator(op) {
+    var opValue = opCache[op];
+    if (opValue) {
+      return opValue;
+    }
+    return opCache[op] = new PostScriptToken(PostScriptTokenTypes.OPERATOR, op);
+  };
+
+  PostScriptToken.LBRACE = new PostScriptToken(PostScriptTokenTypes.LBRACE,
+    '{');
+  PostScriptToken.RBRACE = new PostScriptToken(PostScriptTokenTypes.RBRACE,
+    '}');
+  PostScriptToken.IF = new PostScriptToken(PostScriptTokenTypes.IF, 'IF');
+  PostScriptToken.IFELSE = new PostScriptToken(PostScriptTokenTypes.IFELSE,
+    'IFELSE');
+  return PostScriptToken;
+})();
+
+var PostScriptLexer = (function PostScriptLexerClosure() {
+  function PostScriptLexer(stream) {
+    this.stream = stream;
+    this.nextChar();
+
+    this.strBuf = [];
+  }
+  PostScriptLexer.prototype = {
+    nextChar: function PostScriptLexer_nextChar() {
+      return (this.currentChar = this.stream.getByte());
+    },
+    getToken: function PostScriptLexer_getToken() {
+      var comment = false;
+      var ch = this.currentChar;
+
+      // skip comments
+      while (true) {
+        if (ch < 0) {
+          return EOF;
+        }
+
+        if (comment) {
+          if (ch === 0x0A || ch === 0x0D) {
+            comment = false;
+          }
+        } else if (ch === 0x25) { // '%'
+          comment = true;
+        } else if (!isSpace(ch)) {
+          break;
+        }
+        ch = this.nextChar();
+      }
+      switch (ch | 0) {
+        case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: // '0'-'4'
+        case 0x35: case 0x36: case 0x37: case 0x38: case 0x39: // '5'-'9'
+        case 0x2B: case 0x2D: case 0x2E: // '+', '-', '.'
+          return new PostScriptToken(PostScriptTokenTypes.NUMBER,
+                                     this.getNumber());
+        case 0x7B: // '{'
+          this.nextChar();
+          return PostScriptToken.LBRACE;
+        case 0x7D: // '}'
+          this.nextChar();
+          return PostScriptToken.RBRACE;
+      }
+      // operator
+      var strBuf = this.strBuf;
+      strBuf.length = 0;
+      strBuf[0] = String.fromCharCode(ch);
+
+      while ((ch = this.nextChar()) >= 0 && // and 'A'-'Z', 'a'-'z'
+             ((ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A))) {
+        strBuf.push(String.fromCharCode(ch));
+      }
+      var str = strBuf.join('');
+      switch (str.toLowerCase()) {
+        case 'if':
+          return PostScriptToken.IF;
+        case 'ifelse':
+          return PostScriptToken.IFELSE;
+        default:
+          return PostScriptToken.getOperator(str);
+      }
+    },
+    getNumber: function PostScriptLexer_getNumber() {
+      var ch = this.currentChar;
+      var strBuf = this.strBuf;
+      strBuf.length = 0;
+      strBuf[0] = String.fromCharCode(ch);
+
+      while ((ch = this.nextChar()) >= 0) {
+        if ((ch >= 0x30 && ch <= 0x39) || // '0'-'9'
+            ch === 0x2D || ch === 0x2E) { // '-', '.'
+          strBuf.push(String.fromCharCode(ch));
+        } else {
+          break;
+        }
+      }
+      var value = parseFloat(strBuf.join(''));
+      if (isNaN(value)) {
+        error('Invalid floating point number: ' + value);
+      }
+      return value;
+    }
+  };
+  return PostScriptLexer;
+})();
+
+exports.PostScriptLexer = PostScriptLexer;
+exports.PostScriptParser = PostScriptParser;
 }));
 
 
@@ -30693,7 +30805,7 @@ var PDFFunction = (function PDFFunctionClosure() {
 
         // clip to domain
         var v = clip(src[srcOffset], domain[0], domain[1]);
-        // calulate which bound the value is in
+        // calculate which bound the value is in
         for (var i = 0, ii = bounds.length; i < ii; ++i) {
           if (v < bounds[i]) {
             break;
@@ -33136,7 +33248,7 @@ var PDFImage = (function PDFImageClosure() {
             i += 8;
           }
 
-          // handle remaing bits
+          // handle remaining bits
           if (i < loop2End) {
             buf = buffer[bufferPos++];
             mask = 128;
@@ -33204,7 +33316,7 @@ var PDFImage = (function PDFImageClosure() {
                                        width, height);
           }
         } else if (isArray(mask)) {
-          // Color key mask: if any of the compontents are outside the range
+          // Color key mask: if any of the components are outside the range
           // then they should be painted.
           alphaBuf = new Uint8Array(width * height);
           var numComps = this.numComps;
@@ -33473,6 +33585,7 @@ var isName = corePrimitives.isName;
 var isCmd = corePrimitives.isCmd;
 var isDict = corePrimitives.isDict;
 var isRef = corePrimitives.isRef;
+var isRefsEqual = corePrimitives.isRefsEqual;
 var isStream = corePrimitives.isStream;
 var CipherTransformFactory = coreCrypto.CipherTransformFactory;
 var Lexer = coreParser.Lexer;
@@ -33510,8 +33623,7 @@ var Catalog = (function CatalogClosure() {
         var type = stream.dict.get('Type');
         var subtype = stream.dict.get('Subtype');
 
-        if (isName(type) && isName(subtype) &&
-            type.name === 'Metadata' && subtype.name === 'XML') {
+        if (isName(type, 'Metadata') && isName(subtype, 'XML')) {
           // XXX: This should examine the charset the XML document defines,
           // however since there are currently no real means to decode
           // arbitrary charsets, let's just hope that the author of the PDF
@@ -33720,7 +33832,7 @@ var Catalog = (function CatalogClosure() {
           assert(isDict(labelDict), 'The PageLabel is not a dictionary.');
 
           var type = labelDict.get('Type');
-          assert(!type || (isName(type) && type.name === 'PageLabel'),
+          assert(!type || isName(type, 'PageLabel'),
                  'Invalid type in PageLabel dictionary.');
 
           var s = labelDict.get('S');
@@ -33798,7 +33910,7 @@ var Catalog = (function CatalogClosure() {
       var javaScript = [];
       function appendIfJavaScriptDict(jsDict) {
         var type = jsDict.get('S');
-        if (!isName(type) || type.name !== 'JavaScript') {
+        if (!isName(type, 'JavaScript')) {
           return;
         }
         var js = jsDict.get('JS');
@@ -33826,11 +33938,11 @@ var Catalog = (function CatalogClosure() {
       var openactionDict = this.catDict.get('OpenAction');
       if (isDict(openactionDict, 'Action')) {
         var actionType = openactionDict.get('S');
-        if (isName(actionType) && actionType.name === 'Named') {
+        if (isName(actionType, 'Named')) {
           // The named Print action is not a part of the PDF 1.7 specification,
           // but is supported by many PDF readers/writers (including Adobe's).
           var action = openactionDict.get('N');
-          if (isName(action) && action.name === 'Print') {
+          if (isName(action, 'Print')) {
             javaScript.push('print({});');
           }
         } else {
@@ -33939,7 +34051,7 @@ var Catalog = (function CatalogClosure() {
       return capability.promise;
     },
 
-    getPageIndex: function Catalog_getPageIndex(ref) {
+    getPageIndex: function Catalog_getPageIndex(pageRef) {
       // The page tree nodes have the count of all the leaves below them. To get
       // how many pages are before we just have to walk up the tree and keep
       // adding the count of siblings to the left of the node.
@@ -33948,15 +34060,21 @@ var Catalog = (function CatalogClosure() {
         var total = 0;
         var parentRef;
         return xref.fetchAsync(kidRef).then(function (node) {
+          if (isRefsEqual(kidRef, pageRef) && !isDict(node, 'Page') &&
+              !(isDict(node) && !node.has('Type') && node.has('Contents'))) {
+            throw new Error('The reference does not point to a /Page Dict.');
+          }
           if (!node) {
             return null;
           }
+          assert(isDict(node), 'node must be a Dict.');
           parentRef = node.getRaw('Parent');
           return node.getAsync('Parent');
         }).then(function (parent) {
           if (!parent) {
             return null;
           }
+          assert(isDict(parent), 'parent must be a Dict.');
           return parent.getAsync('Kids');
         }).then(function (kids) {
           if (!kids) {
@@ -33966,7 +34084,7 @@ var Catalog = (function CatalogClosure() {
           var found = false;
           for (var i = 0; i < kids.length; i++) {
             var kid = kids[i];
-            assert(isRef(kid), 'kids must be a ref');
+            assert(isRef(kid), 'kid must be a Ref.');
             if (kid.num === kidRef.num) {
               found = true;
               break;
@@ -34002,7 +34120,7 @@ var Catalog = (function CatalogClosure() {
         });
       }
 
-      return next(ref);
+      return next(pageRef);
     }
   };
 
@@ -34380,13 +34498,15 @@ var XRef = (function XRefClosure() {
       var dict;
       for (i = 0, ii = trailers.length; i < ii; ++i) {
         stream.pos = trailers[i];
-        var parser = new Parser(new Lexer(stream), true, this);
+        var parser = new Parser(new Lexer(stream), /* allowStreams = */ true,
+                                /* xref = */ this, /* recoveryMode = */ true);
         var obj = parser.getObj();
         if (!isCmd(obj, 'trailer')) {
           continue;
         }
         // read the trailer dictionary
-        if (!isDict(dict = parser.getObj())) {
+        dict = parser.getObj();
+        if (!isDict(dict)) {
           continue;
         }
         // taking the first one with 'ID'
@@ -36095,7 +36215,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
         var groupSubtype = group.get('S');
         var colorSpace;
-        if (isName(groupSubtype) && groupSubtype.name === 'Transparency') {
+        if (isName(groupSubtype, 'Transparency')) {
           groupOptions.isolated = (group.get('I') || false);
           groupOptions.knockout = (group.get('K') || false);
           colorSpace = (group.has('CS') ?
@@ -36390,7 +36510,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             gStateObj.push([key, value]);
             break;
           case 'SMask':
-            if (isName(value) && value.name === 'None') {
+            if (isName(value, 'None')) {
               gStateObj.push([key, false]);
               break;
             }
@@ -36470,8 +36590,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         return errorFont();
       }
 
-      // We are holding font.translated references just for fontRef that are not
-      // dictionaries (Dict). See explanation below.
+      // We are holding `font.translated` references just for `fontRef`s that
+      // are not actually `Ref`s, but rather `Dict`s. See explanation below.
       if (font.translated) {
         return font.translated;
       }
@@ -36480,7 +36600,12 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       var preEvaluatedFont = this.preEvaluateFont(font, xref);
       var descriptor = preEvaluatedFont.descriptor;
-      var fontID = fontRef.num + '_' + fontRef.gen;
+
+      var fontRefIsRef = isRef(fontRef), fontID;
+      if (fontRefIsRef) {
+        fontID = fontRef.toString();
+      }
+
       if (isDict(descriptor)) {
         if (!descriptor.fontAliases) {
           descriptor.fontAliases = Object.create(null);
@@ -36490,36 +36615,53 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         var hash = preEvaluatedFont.hash;
         if (fontAliases[hash]) {
           var aliasFontRef = fontAliases[hash].aliasRef;
-          if (aliasFontRef && this.fontCache.has(aliasFontRef)) {
+          if (fontRefIsRef && aliasFontRef &&
+              this.fontCache.has(aliasFontRef)) {
             this.fontCache.putAlias(fontRef, aliasFontRef);
             return this.fontCache.get(fontRef);
           }
-        }
-
-        if (!fontAliases[hash]) {
+        } else {
           fontAliases[hash] = {
             fontID: Font.getFontID()
           };
         }
 
-        fontAliases[hash].aliasRef = fontRef;
+        if (fontRefIsRef) {
+          fontAliases[hash].aliasRef = fontRef;
+        }
         fontID = fontAliases[hash].fontID;
       }
 
-      // Workaround for bad PDF generators that don't reference fonts
-      // properly, i.e. by not using an object identifier.
-      // Check if the fontRef is a Dict (as opposed to a standard object),
-      // in which case we don't cache the font and instead reference it by
-      // fontName in font.loadedName below.
-      var fontRefIsDict = isDict(fontRef);
-      if (!fontRefIsDict) {
+      // Workaround for bad PDF generators that reference fonts incorrectly,
+      // where `fontRef` is a `Dict` rather than a `Ref` (fixes bug946506.pdf).
+      // In this case we should not put the font into `this.fontCache` (which is
+      // a `RefSetCache`), since it's not meaningful to use a `Dict` as a key.
+      //
+      // However, if we don't cache the font it's not possible to remove it
+      // when `cleanup` is triggered from the API, which causes issues on
+      // subsequent rendering operations (see issue7403.pdf).
+      // A simple workaround would be to just not hold `font.translated`
+      // references in this case, but this would force us to unnecessarily load
+      // the same fonts over and over.
+      //
+      // Instead, we cheat a bit by attempting to use a modified `fontID` as a
+      // key in `this.fontCache`, to allow the font to be cached.
+      // NOTE: This works because `RefSetCache` calls `toString()` on provided
+      //       keys. Also, since `fontRef` is used when getting cached fonts,
+      //       we'll not accidentally match fonts cached with the `fontID`.
+      if (fontRefIsRef) {
         this.fontCache.put(fontRef, fontCapability.promise);
+      } else {
+        if (!fontID) {
+          fontID = (this.uniquePrefix || 'F_') + (++this.idCounters.obj);
+        }
+        this.fontCache.put('id_' + fontID, fontCapability.promise);
       }
+      assert(fontID, 'The "fontID" must be defined.');
 
       // Keep track of each font we translated so the caller can
       // load them asynchronously before calling display on a page.
-      font.loadedName = 'g_' + this.pdfManager.docId + '_f' + (fontRefIsDict ?
-        fontName.replace(/\W/g, '') : fontID);
+      font.loadedName = 'g_' + this.pdfManager.docId + '_f' + fontID;
 
       font.translated = fontCapability.promise;
 
@@ -36676,8 +36818,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                 assert(isStream(xobj), 'XObject should be a stream');
 
                 var type = xobj.dict.get('Subtype');
-                assert(isName(type),
-                  'XObject should have a Name subtype');
+                assert(isName(type), 'XObject should have a Name subtype');
 
                 if (type.name === 'Form') {
                   stateManager.save();
@@ -36918,7 +37059,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
     getTextContent:
         function PartialEvaluator_getTextContent(stream, task, resources,
                                                  stateManager,
-                                                 normalizeWhitespace) {
+                                                 normalizeWhitespace,
+                                                 combineTextItems) {
 
       stateManager = (stateManager || new StateManager(new TextState()));
 
@@ -37208,9 +37350,17 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
           switch (fn | 0) {
             case OPS.setFont:
+              // Optimization to ignore multiple identical Tf commands.
+              var fontNameArg = args[0].name, fontSizeArg = args[1];
+              if (textState.font && fontNameArg === textState.fontName &&
+                  fontSizeArg === textState.fontSize) {
+                break;
+              }
+
               flushTextContentItem();
-              textState.fontSize = args[1];
-              next(handleSetFont(args[0].name, null));
+              textState.fontName = fontNameArg;
+              textState.fontSize = fontSizeArg;
+              next(handleSetFont(fontNameArg, null));
               return;
             case OPS.setTextRise:
               flushTextContentItem();
@@ -37229,7 +37379,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               var isSameTextLine = !textState.font ? false :
                 ((textState.font.vertical ? args[0] : args[1]) === 0);
               advance = args[0] - args[1];
-              if (isSameTextLine && textContentItem.initialized &&
+              if (combineTextItems &&
+                  isSameTextLine && textContentItem.initialized &&
                   advance > 0 &&
                   advance <= textContentItem.fakeMultiSpaceMax) {
                 textState.translateTextLineMatrix(args[0], args[1]);
@@ -37261,7 +37412,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               // Optimization to treat same line movement as advance.
               advance = textState.calcTextLineMatrixAdvance(
                 args[0], args[1], args[2], args[3], args[4], args[5]);
-              if (advance !== null && textContentItem.initialized &&
+              if (combineTextItems &&
+                  advance !== null && textContentItem.initialized &&
                   advance.value > 0 &&
                   advance.value <= textContentItem.fakeMultiSpaceMax) {
                 textState.translateTextLineMatrix(advance.width,
@@ -37385,8 +37537,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               assert(isStream(xobj), 'XObject should be a stream');
 
               var type = xobj.dict.get('Subtype');
-              assert(isName(type),
-                'XObject should have a Name subtype');
+              assert(isName(type), 'XObject should have a Name subtype');
 
               if ('Form' !== type.name) {
                 xobjsCache.key = name;
@@ -37402,7 +37553,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
               next(self.getTextContent(xobj, task,
                    xobj.dict.get('Resources') || resources, stateManager,
-                   normalizeWhitespace).then(function (formTextContent) {
+                   normalizeWhitespace, combineTextItems).then(
+                function (formTextContent) {
                   Util.appendToArray(textContent.items, formTextContent.items);
                   Util.extendObj(textContent.styles, formTextContent.styles);
                   stateManager.restore();
@@ -37425,6 +37577,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               }
               var gStateFont = gState.get('Font');
               if (gStateFont) {
+                textState.fontName = null;
                 textState.fontSize = gStateFont[1];
                 next(handleSetFont(null, gStateFont[0]));
                 return;
@@ -37532,6 +37685,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       properties.differences = differences;
       properties.baseEncodingName = baseEncodingName;
+      properties.hasEncoding = !!baseEncodingName || differences.length > 0;
       properties.dict = dict;
       return toUnicodePromise.then(function(toUnicode) {
         properties.toUnicode = toUnicode;
@@ -37549,8 +37703,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
      *   {ToUnicodeMap|IdentityToUnicodeMap} object.
      */
     buildToUnicode: function PartialEvaluator_buildToUnicode(properties) {
+      properties.hasIncludedToUnicodeMap =
+        !!properties.toUnicode && properties.toUnicode.length > 0;
       // Section 9.10.2 Mapping Character Codes to Unicode Values
-      if (properties.toUnicode && properties.toUnicode.length !== 0) {
+      if (properties.hasIncludedToUnicodeMap) {
         return Promise.resolve(properties.toUnicode);
       }
       // According to the spec if the font is a simple font we should only map
@@ -37558,7 +37714,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       // the differences array only contains adobe standard or symbol set names,
       // in pratice it seems better to always try to create a toUnicode
       // map based of the default encoding.
-      var toUnicode, charcode;
+      var toUnicode, charcode, glyphName;
       if (!properties.composite /* is simple font */) {
         toUnicode = [];
         var encoding = properties.defaultEncoding.slice();
@@ -37566,12 +37722,18 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         // Merge in the differences array.
         var differences = properties.differences;
         for (charcode in differences) {
-          encoding[charcode] = differences[charcode];
+          glyphName = differences[charcode];
+          if (glyphName === '.notdef') {
+            // Skip .notdef to prevent rendering errors, e.g. boxes appearing
+            // where there should be spaces (fixes issue5256.pdf).
+            continue;
+          }
+          encoding[charcode] = glyphName;
         }
         var glyphsUnicodeMap = getGlyphsUnicode();
         for (charcode in encoding) {
           // a) Map the character code to a character name.
-          var glyphName = encoding[charcode];
+          glyphName = encoding[charcode];
           // b) Look up the character name in the Adobe Glyph List (see the
           //    Bibliography) to obtain the corresponding Unicode value.
           if (glyphName === '') {
@@ -37923,7 +38085,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         if (isName(encoding)) {
           hash.update(encoding.name);
         } else if (isRef(encoding)) {
-          hash.update(encoding.num + '_' + encoding.gen);
+          hash.update(encoding.toString());
         } else if (isDict(encoding)) {
           var keys = encoding.getKeys();
           for (var i = 0, ii = keys.length; i < ii; i++) {
@@ -37931,7 +38093,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             if (isName(entry)) {
               hash.update(entry.name);
             } else if (isRef(entry)) {
-              hash.update(entry.num + '_' + entry.gen);
+              hash.update(entry.toString());
             } else if (isArray(entry)) { // 'Differences' entry.
               // Ideally we should check the contents of the array, but to avoid
               // parsing it here and then again in |extractDataStructures|,
@@ -38030,7 +38192,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       // According to the spec if 'FontDescriptor' is declared, 'FirstChar',
       // 'LastChar' and 'Widths' should exist too, but some PDF encoders seem
-      // to ignore this rule when a variant of a standart font is used.
+      // to ignore this rule when a variant of a standard font is used.
       // TODO Fill the width array depending on which of the base font this is
       // a variant.
       var firstChar = (dict.get('FirstChar') || 0);
@@ -38338,6 +38500,7 @@ var StateManager = (function StateManagerClosure() {
 var TextState = (function TextStateClosure() {
   function TextState() {
     this.ctm = new Float32Array(IDENTITY_MATRIX);
+    this.fontName = null;
     this.fontSize = 0;
     this.font = null;
     this.fontMatrix = FONT_IDENTITY_MATRIX;
@@ -39088,6 +39251,7 @@ exports.PartialEvaluator = PartialEvaluator;
                   coreColorSpace, coreObj, coreEvaluator) {
 
 var AnnotationBorderStyleType = sharedUtil.AnnotationBorderStyleType;
+var AnnotationFieldFlag = sharedUtil.AnnotationFieldFlag;
 var AnnotationFlag = sharedUtil.AnnotationFlag;
 var AnnotationType = sharedUtil.AnnotationType;
 var OPS = sharedUtil.OPS;
@@ -39104,6 +39268,7 @@ var warn = sharedUtil.warn;
 var Dict = corePrimitives.Dict;
 var isDict = corePrimitives.isDict;
 var isName = corePrimitives.isName;
+var isRef = corePrimitives.isRef;
 var Stream = coreStream.Stream;
 var ColorSpace = coreColorSpace.ColorSpace;
 var ObjectLoader = coreObj.ObjectLoader;
@@ -39119,23 +39284,33 @@ AnnotationFactory.prototype = /** @lends AnnotationFactory.prototype */ {
   /**
    * @param {XRef} xref
    * @param {Object} ref
+   * @param {string} uniquePrefix
+   * @param {Object} idCounters
+   * @param {boolean} renderInteractiveForms
    * @returns {Annotation}
    */
-  create: function AnnotationFactory_create(xref, ref) {
+  create: function AnnotationFactory_create(xref, ref,
+                                            uniquePrefix, idCounters,
+                                            renderInteractiveForms) {
     var dict = xref.fetchIfRef(ref);
     if (!isDict(dict)) {
       return;
     }
+    var id = isRef(ref) ? ref.toString() :
+                          'annot_' + (uniquePrefix || '') + (++idCounters.obj);
 
     // Determine the annotation's subtype.
     var subtype = dict.get('Subtype');
-    subtype = isName(subtype) ? subtype.name : '';
+    subtype = isName(subtype) ? subtype.name : null;
 
     // Return the right annotation object based on the subtype and field type.
     var parameters = {
       xref: xref,
       dict: dict,
-      ref: ref
+      ref: isRef(ref) ? ref : null,
+      subtype: subtype,
+      id: id,
+      renderInteractiveForms: renderInteractiveForms,
     };
 
     switch (subtype) {
@@ -39147,9 +39322,14 @@ AnnotationFactory.prototype = /** @lends AnnotationFactory.prototype */ {
 
       case 'Widget':
         var fieldType = Util.getInheritableProperty(dict, 'FT');
-        if (isName(fieldType) && fieldType.name === 'Tx') {
-          return new TextWidgetAnnotation(parameters);
+        fieldType = isName(fieldType) ? fieldType.name : null;
+
+        switch (fieldType) {
+          case 'Tx':
+            return new TextWidgetAnnotation(parameters);
         }
+        warn('Unimplemented widget field type "' + fieldType + '", ' +
+             'falling back to base field type.');
         return new WidgetAnnotation(parameters);
 
       case 'Popup':
@@ -39171,8 +39351,12 @@ AnnotationFactory.prototype = /** @lends AnnotationFactory.prototype */ {
         return new FileAttachmentAnnotation(parameters);
 
       default:
-        warn('Unimplemented annotation type "' + subtype + '", ' +
-             'falling back to base annotation');
+        if (!subtype) {
+          warn('Annotation is missing the required /Subtype.');
+        } else {
+          warn('Unimplemented annotation type "' + subtype + '", ' +
+               'falling back to base annotation.');
+        }
         return new Annotation(parameters);
     }
   }
@@ -39235,8 +39419,8 @@ var Annotation = (function AnnotationClosure() {
 
     // Expose public properties using a data object.
     this.data = {};
-    this.data.id = params.ref.toString();
-    this.data.subtype = dict.get('Subtype').name;
+    this.data.id = params.id;
+    this.data.subtype = params.subtype;
     this.data.annotationFlags = this.flags;
     this.data.rect = this.rectangle;
     this.data.color = this.color;
@@ -39388,10 +39572,9 @@ var Annotation = (function AnnotationClosure() {
       }
       if (borderStyle.has('BS')) {
         var dict = borderStyle.get('BS');
-        var dictType;
+        var dictType = dict.get('Type');
 
-        if (!dict.has('Type') || (isName(dictType = dict.get('Type')) &&
-                                  dictType.name === 'Border')) {
+        if (!dictType || isName(dictType, 'Border')) {
           this.borderStyle.setWidth(dict.get('W'));
           this.borderStyle.setStyle(dict.get('S'));
           this.borderStyle.setDashArray(dict.getArray('D'));
@@ -39661,13 +39844,16 @@ var WidgetAnnotation = (function WidgetAnnotationClosure() {
     data.alternativeText = stringToPDFString(dict.get('TU') || '');
     data.defaultAppearance = Util.getInheritableProperty(dict, 'DA') || '';
     var fieldType = Util.getInheritableProperty(dict, 'FT');
-    data.fieldType = isName(fieldType) ? fieldType.name : '';
-    data.fieldFlags = Util.getInheritableProperty(dict, 'Ff') || 0;
+    data.fieldType = isName(fieldType) ? fieldType.name : null;
     this.fieldResources = Util.getInheritableProperty(dict, 'DR') || Dict.empty;
 
-    // Hide unsupported Widget signatures.
+    data.fieldFlags = Util.getInheritableProperty(dict, 'Ff');
+    if (!isInt(data.fieldFlags) || data.fieldFlags < 0) {
+      data.fieldFlags = 0;
+    }
+
+    // Hide signatures because we cannot validate them.
     if (data.fieldType === 'Sig') {
-      warn('unimplemented annotation type: Widget signature');
       this.setFlags(AnnotationFlag.HIDDEN);
     }
 
@@ -39704,7 +39890,22 @@ var WidgetAnnotation = (function WidgetAnnotationClosure() {
     data.fullName = fieldName.join('.');
   }
 
-  Util.inherit(WidgetAnnotation, Annotation, {});
+  Util.inherit(WidgetAnnotation, Annotation, {
+    /**
+     * Check if a provided field flag is set.
+     *
+     * @public
+     * @memberof WidgetAnnotation
+     * @param {number} flag - Bit position, numbered from one instead of
+     *                        zero, to check
+     * @return {boolean}
+     * @see {@link shared/util.js}
+     */
+    hasFieldFlag: function WidgetAnnotation_hasFieldFlag(flag) {
+      var mask = 1 << (flag - 1);
+      return !!(this.data.fieldFlags & mask);
+    },
+  });
 
   return WidgetAnnotation;
 })();
@@ -39713,30 +39914,53 @@ var TextWidgetAnnotation = (function TextWidgetAnnotationClosure() {
   function TextWidgetAnnotation(params) {
     WidgetAnnotation.call(this, params);
 
-    this.data.textAlignment = Util.getInheritableProperty(params.dict, 'Q');
+    this.renderInteractiveForms = params.renderInteractiveForms;
+
+    // Determine the alignment of text in the field.
+    var alignment = Util.getInheritableProperty(params.dict, 'Q');
+    if (!isInt(alignment) || alignment < 0 || alignment > 2) {
+      alignment = null;
+    }
+    this.data.textAlignment = alignment;
+
+    // Determine the maximum length of text in the field.
+    var maximumLength = Util.getInheritableProperty(params.dict, 'MaxLen');
+    if (!isInt(maximumLength) || maximumLength < 0) {
+      maximumLength = null;
+    }
+    this.data.maxLen = maximumLength;
+
+    // Process field flags for the display layer.
+    this.data.readOnly = this.hasFieldFlag(AnnotationFieldFlag.READONLY);
+    this.data.multiLine = this.hasFieldFlag(AnnotationFieldFlag.MULTILINE);
   }
 
   Util.inherit(TextWidgetAnnotation, WidgetAnnotation, {
     getOperatorList: function TextWidgetAnnotation_getOperatorList(evaluator,
                                                                    task) {
+      var operatorList = new OperatorList();
+
+      // Do not render form elements on the canvas when interactive forms are
+      // enabled. The display layer is responsible for rendering them instead.
+      if (this.renderInteractiveForms) {
+        return Promise.resolve(operatorList);
+      }
+
       if (this.appearance) {
         return Annotation.prototype.getOperatorList.call(this, evaluator, task);
       }
 
-      var opList = new OperatorList();
-      var data = this.data;
-
       // Even if there is an appearance stream, ignore it. This is the
       // behaviour used by Adobe Reader.
-      if (!data.defaultAppearance) {
-        return Promise.resolve(opList);
+      if (!this.data.defaultAppearance) {
+        return Promise.resolve(operatorList);
       }
 
-      var stream = new Stream(stringToBytes(data.defaultAppearance));
-      return evaluator.getOperatorList(stream, task,
-                                       this.fieldResources, opList).
+      var stream = new Stream(stringToBytes(this.data.defaultAppearance));
+      return evaluator.getOperatorList(stream, task, this.fieldResources,
+                                       operatorList).
         then(function () {
-          return opList;
+          return operatorList;
         });
     }
   });
@@ -39812,9 +40036,17 @@ var LinkAnnotation = (function LinkAnnotationClosure() {
             if (isName(remoteDest)) {
               remoteDest = remoteDest.name;
             }
-            if (isString(remoteDest) && isString(url)) {
+            if (isString(url)) {
               var baseUrl = url.split('#')[0];
-              url = baseUrl + '#' + remoteDest;
+              if (isString(remoteDest)) {
+                // In practice, a named destination may contain only a number.
+                // If that happens, use the '#nameddest=' form to avoid the link
+                // redirecting to a page, instead of the correct destination.
+                url = baseUrl + '#' +
+                  (/^\d+$/.test(remoteDest) ? 'nameddest=' : '') + remoteDest;
+              } else if (isArray(remoteDest)) {
+                url = baseUrl + '#' + JSON.stringify(remoteDest);
+              }
             }
           }
           // The 'NewWindow' property, equal to `LinkTarget.BLANK`.
@@ -40017,6 +40249,7 @@ var shadow = sharedUtil.shadow;
 var stringToBytes = sharedUtil.stringToBytes;
 var stringToPDFString = sharedUtil.stringToPDFString;
 var warn = sharedUtil.warn;
+var isSpace = sharedUtil.isSpace;
 var Dict = corePrimitives.Dict;
 var isDict = corePrimitives.isDict;
 var isName = corePrimitives.isName;
@@ -40027,7 +40260,6 @@ var StreamsSequenceStream = coreStream.StreamsSequenceStream;
 var Catalog = coreObj.Catalog;
 var ObjectLoader = coreObj.ObjectLoader;
 var XRef = coreObj.XRef;
-var Lexer = coreParser.Lexer;
 var Linearization = coreParser.Linearization;
 var calculateMD5 = coreCrypto.calculateMD5;
 var OperatorList = coreEvaluator.OperatorList;
@@ -40046,6 +40278,7 @@ var Page = (function PageClosure() {
     this.xref = xref;
     this.ref = ref;
     this.fontCache = fontCache;
+    this.uniquePrefix = 'p' + this.pageIndex + '_';
     this.idCounters = {
       obj: 0
     };
@@ -40174,7 +40407,8 @@ var Page = (function PageClosure() {
       }.bind(this));
     },
 
-    getOperatorList: function Page_getOperatorList(handler, task, intent) {
+    getOperatorList: function Page_getOperatorList(handler, task, intent,
+                                                   renderInteractiveForms) {
       var self = this;
 
       var pdfManager = this.pdfManager;
@@ -40193,7 +40427,7 @@ var Page = (function PageClosure() {
 
       var partialEvaluator = new PartialEvaluator(pdfManager, this.xref,
                                                   handler, this.pageIndex,
-                                                  'p' + this.pageIndex + '_',
+                                                  this.uniquePrefix,
                                                   this.idCounters,
                                                   this.fontCache,
                                                   this.evaluatorOptions);
@@ -40213,6 +40447,8 @@ var Page = (function PageClosure() {
             return opList;
           });
       });
+
+      this.renderInteractiveForms = renderInteractiveForms;
 
       var annotationsPromise = pdfManager.ensure(this, 'annotations');
       return Promise.all([pageListPromise, annotationsPromise]).then(
@@ -40235,7 +40471,8 @@ var Page = (function PageClosure() {
     },
 
     extractTextContent: function Page_extractTextContent(task,
-                                                         normalizeWhitespace) {
+                                                         normalizeWhitespace,
+                                                         combineTextItems) {
       var handler = {
         on: function nullHandlerOn() {},
         send: function nullHandlerSend() {}
@@ -40259,7 +40496,7 @@ var Page = (function PageClosure() {
         var contentStream = data[0];
         var partialEvaluator = new PartialEvaluator(pdfManager, self.xref,
                                                     handler, self.pageIndex,
-                                                    'p' + self.pageIndex + '_',
+                                                    self.uniquePrefix,
                                                     self.idCounters,
                                                     self.fontCache,
                                                     self.evaluatorOptions);
@@ -40268,7 +40505,8 @@ var Page = (function PageClosure() {
                                                task,
                                                self.resources,
                                                /* stateManager = */ null,
-                                               normalizeWhitespace);
+                                               normalizeWhitespace,
+                                               combineTextItems);
       });
     },
 
@@ -40293,7 +40531,10 @@ var Page = (function PageClosure() {
       var annotationFactory = new AnnotationFactory();
       for (var i = 0, n = annotationRefs.length; i < n; ++i) {
         var annotationRef = annotationRefs[i];
-        var annotation = annotationFactory.create(this.xref, annotationRef);
+        var annotation = annotationFactory.create(this.xref, annotationRef,
+                                                  this.uniquePrefix,
+                                                  this.idCounters,
+                                                  this.renderInteractiveForms);
         if (annotation) {
           annotations.push(annotation);
         }
@@ -40440,7 +40681,7 @@ var PDFDocument = (function PDFDocumentClosure() {
           var ch;
           do {
             ch = stream.getByte();
-          } while (Lexer.isSpace(ch));
+          } while (isSpace(ch));
           var str = '';
           while (ch >= 0x20 && ch <= 0x39) { // < '9'
             str += String.fromCharCode(ch);
@@ -41480,7 +41721,8 @@ var WorkerMessageHandler = {
         var pageNum = pageIndex + 1;
         var start = Date.now();
         // Pre compile the pdf page and fetch the fonts/images.
-        page.getOperatorList(handler, task, data.intent).then(
+        page.getOperatorList(handler, task, data.intent,
+                             data.renderInteractiveForms).then(
             function(operatorList) {
           finishWorkerTask(task);
 
@@ -41532,12 +41774,14 @@ var WorkerMessageHandler = {
     handler.on('GetTextContent', function wphExtractText(data) {
       var pageIndex = data.pageIndex;
       var normalizeWhitespace = data.normalizeWhitespace;
+      var combineTextItems = data.combineTextItems;
       return pdfManager.getPage(pageIndex).then(function(page) {
         var task = new WorkerTask('GetTextContent: page ' + pageIndex);
         startWorkerTask(task);
         var pageNum = pageIndex + 1;
         var start = Date.now();
-        return page.extractTextContent(task, normalizeWhitespace).then(
+        return page.extractTextContent(task, normalizeWhitespace,
+                                       combineTextItems).then(
             function(textContent) {
           finishWorkerTask(task);
           info('text indexing: page=' + pageNum + ' - time=' +

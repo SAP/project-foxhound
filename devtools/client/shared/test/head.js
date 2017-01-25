@@ -11,7 +11,6 @@ Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/devtool
 
 const {DOMHelpers} = Cu.import("resource://devtools/client/shared/DOMHelpers.jsm", {});
 const {Hosts} = require("devtools/client/framework/toolbox-hosts");
-const {defer} = require("promise");
 
 const TEST_URI_ROOT = "http://example.com/browser/devtools/client/shared/test/";
 const OPTIONS_VIEW_URL = TEST_URI_ROOT + "doc_options-view.xul";
@@ -120,44 +119,6 @@ Task.async(function* (type = "bottom", src = "data:text/html;charset=utf-8,") {
 });
 
 /**
- * Load the Telemetry utils, then stub Telemetry.prototype.log in order to
- * record everything that's logged in it.
- * Store all recordings on Telemetry.telemetryInfo.
- * @return {Telemetry}
- */
-function loadTelemetryAndRecordLogs() {
-  info("Mock the Telemetry log function to record logged information");
-
-  let Telemetry = require("devtools/client/shared/telemetry");
-  Telemetry.prototype.telemetryInfo = {};
-  Telemetry.prototype._oldlog = Telemetry.prototype.log;
-  Telemetry.prototype.log = function (histogramId, value) {
-    if (!this.telemetryInfo) {
-      // Can be removed when Bug 992911 lands (see Bug 1011652 Comment 10)
-      return;
-    }
-    if (histogramId) {
-      if (!this.telemetryInfo[histogramId]) {
-        this.telemetryInfo[histogramId] = [];
-      }
-
-      this.telemetryInfo[histogramId].push(value);
-    }
-  };
-
-  return Telemetry;
-}
-
-/**
- * Stop recording the Telemetry logs and put back the utils as it was before.
- */
-function stopRecordingTelemetryLogs(Telemetry) {
-  Telemetry.prototype.log = Telemetry.prototype._oldlog;
-  delete Telemetry.prototype._oldlog;
-  delete Telemetry.prototype.telemetryInfo;
-}
-
-/**
  * Check the correctness of the data recorded in Telemetry after
  * loadTelemetryAndRecordLogs was called.
  */
@@ -167,10 +128,7 @@ function checkTelemetryResults(Telemetry) {
   for (let histId in result) {
     let value = result[histId];
 
-    if (histId.endsWith("OPENED_PER_USER_FLAG")) {
-      ok(value.length === 1 && value[0] === true,
-         "Per user value " + histId + " has a single value of true");
-    } else if (histId.endsWith("OPENED_COUNT")) {
+    if (histId.endsWith("OPENED_COUNT")) {
       ok(value.length > 1, histId + " has more than one entry");
 
       let okay = value.every(function (element) {

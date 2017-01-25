@@ -6,16 +6,10 @@
 
 const {Cc, Ci, Cu} = require("chrome");
 const Services = require("Services");
-const promise = require("promise");
+const defer = require("devtools/shared/defer");
 
-function l10n(name) {
-  const bundle = Services.strings.createBundle("chrome://devtools/locale/toolbox.properties");
-  try {
-    return bundle.GetStringFromName(name);
-  } catch (e) {
-    throw new Error("Failed loading l10n string: " + name);
-  }
-}
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
 
 function handleThreadState(toolbox, event, packet) {
   // Suppress interrupted events by default because the thread is
@@ -42,14 +36,22 @@ function handleThreadState(toolbox, event, packet) {
 }
 
 function attachThread(toolbox) {
-  let deferred = promise.defer();
+  let deferred = defer();
 
   let target = toolbox.target;
   let { form: { chromeDebugger, actor } } = target;
-  let threadOptions = {
-    useSourceMaps: Services.prefs.getBoolPref("devtools.debugger.source-maps-enabled"),
-    autoBlackBox: Services.prefs.getBoolPref("devtools.debugger.auto-black-box")
-  };
+
+  // Sourcemaps are always turned off when using the new debugger
+  // frontend. This is because it does sourcemapping on the
+  // client-side, so the server should not do it. It also does not support
+  // blackboxing yet.
+  let useSourceMaps = false;
+  let autoBlackBox = false;
+  if(!Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
+    useSourceMaps = Services.prefs.getBoolPref("devtools.debugger.source-maps-enabled");
+    autoBlackBox = Services.prefs.getBoolPref("devtools.debugger.auto-black-box");
+  }
+  let threadOptions = { useSourceMaps, autoBlackBox };
 
   let handleResponse = (res, threadClient) => {
     if (res.error) {
@@ -78,7 +80,7 @@ function attachThread(toolbox) {
       if (res.error === "wrongOrder") {
         const box = toolbox.getNotificationBox();
         box.appendNotification(
-          l10n("toolbox.resumeOrderWarning"),
+          L10N.getStr("toolbox.resumeOrderWarning"),
           "wrong-resume-order",
           "",
           box.PRIORITY_WARNING_HIGH
@@ -89,16 +91,16 @@ function attachThread(toolbox) {
     });
   };
 
-  if (target.isAddon) {
-    // Attaching an addon
+  if (target.isTabActor) {
+    // Attaching a tab, a browser process, or a WebExtensions add-on.
+    target.activeTab.attachThread(threadOptions, handleResponse);
+  } else if (target.isAddon) {
+    // Attaching a legacy addon.
     target.client.attachAddon(actor, res => {
       target.client.attachThread(res.threadActor, handleResponse);
     });
-  } else if (target.isTabActor) {
-    // Attaching a normal thread
-    target.activeTab.attachThread(threadOptions, handleResponse);
-  } else {
-    // Attaching the browser debugger
+  }  else {
+    // Attaching an old browser debugger or a content process.
     target.client.attachThread(chromeDebugger, handleResponse);
   }
 

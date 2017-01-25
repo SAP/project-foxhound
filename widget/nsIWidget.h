@@ -65,6 +65,8 @@ class SourceSurface;
 namespace widget {
 class TextEventDispatcher;
 class TextEventDispatcherListener;
+class CompositorWidget;
+class CompositorWidgetInitData;
 } // namespace widget
 } // namespace mozilla
 
@@ -128,9 +130,14 @@ typedef void* nsNativeWidget;
 #if defined(MOZ_WIDGET_GTK)
 // set/get nsPluginNativeWindowGtk, e10s specific
 #define NS_NATIVE_PLUGIN_OBJECT_PTR    104
+#ifdef MOZ_X11
+#define NS_NATIVE_COMPOSITOR_DISPLAY   105
+#endif // MOZ_X11
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-#define NS_NATIVE_NEW_EGL_SURFACE      100
+#define NS_JAVA_SURFACE                100
+#define NS_PRESENTATION_WINDOW         101
+#define NS_PRESENTATION_SURFACE        102
 #endif
 
 #define NS_IWIDGET_IID \
@@ -164,13 +171,13 @@ enum nsTransparencyMode {
  */
 
 enum nsCursor {   ///(normal cursor,       usually rendered as an arrow)
-                eCursor_standard, 
+                eCursor_standard,
                   ///(system is busy,      usually rendered as a hourglass or watch)
-                eCursor_wait, 
+                eCursor_wait,
                   ///(Selecting something, usually rendered as an IBeam)
-                eCursor_select, 
+                eCursor_select,
                   ///(can hyper-link,      usually rendered as a human hand)
-                eCursor_hyperlink, 
+                eCursor_hyperlink,
                   ///(north/south/west/east edge sizing)
                 eCursor_n_resize,
                 eCursor_s_resize,
@@ -206,7 +213,7 @@ enum nsCursor {   ///(normal cursor,       usually rendered as an arrow)
                 eCursor_none,
                 // This one better be the last one in this list.
                 eCursorCount
-                }; 
+                };
 
 enum nsTopLevelWidgetZPlacement { // for PlaceBehind()
   eZPlacementBottom = 0,  // bottom of the window stack
@@ -383,9 +390,9 @@ class nsIWidget : public nsISupports
       ClearNativeTouchSequence(nullptr);
     }
 
-        
+
     /**
-     * Create and initialize a widget. 
+     * Create and initialize a widget.
      *
      * All the arguments can be null in which case a top level window
      * with size 0 is created. The event callback function has to be
@@ -394,10 +401,10 @@ class nsIWidget : public nsISupports
      * hook called synchronously. The return value determines whether
      * the event goes to the default window procedure or it is hidden
      * to the os. The assumption is that if the event handler returns
-     * false the widget does not see the event. The widget should not 
-     * automatically clear the window to the background color. The 
-     * calling code must handle paint messages and clear the background 
-     * itself. 
+     * false the widget does not see the event. The widget should not
+     * automatically clear the window to the background color. The
+     * calling code must handle paint messages and clear the background
+     * itself.
      *
      * In practice at least one of aParent and aNativeParent will be null. If
      * both are null the widget isn't parented (e.g. context menus or
@@ -415,10 +422,11 @@ class nsIWidget : public nsISupports
      * @param     aInitData     data that is used for widget initialization
      *
      */
-    NS_IMETHOD Create(nsIWidget* aParent,
-                      nsNativeWidget aNativeParent,
-                      const LayoutDeviceIntRect& aRect,
-                      nsWidgetInitData* aInitData = nullptr) = 0;
+    virtual MOZ_MUST_USE nsresult
+    Create(nsIWidget* aParent,
+           nsNativeWidget aNativeParent,
+           const LayoutDeviceIntRect& aRect,
+           nsWidgetInitData* aInitData = nullptr) = 0;
 
     /*
      * As above, but with aRect specified in DesktopPixel units (for top-level
@@ -428,10 +436,11 @@ class nsIWidget : public nsISupports
      * mapping is not straightforward or the native platform needs to use the
      * desktop pixel values directly.
      */
-    NS_IMETHOD Create(nsIWidget* aParent,
-                      nsNativeWidget aNativeParent,
-                      const DesktopIntRect& aRect,
-                      nsWidgetInitData* aInitData = nullptr)
+    virtual MOZ_MUST_USE nsresult
+    Create(nsIWidget* aParent,
+           nsNativeWidget aNativeParent,
+           const DesktopIntRect& aRect,
+           nsWidgetInitData* aInitData = nullptr)
     {
         LayoutDeviceIntRect devPixRect =
           RoundedToInt(aRect * GetDesktopToDeviceScale());
@@ -460,7 +469,7 @@ class nsIWidget : public nsISupports
                 bool aForceUseIWidgetParent = false) = 0;
 
     /**
-     * Attach to a top level widget. 
+     * Attach to a top level widget.
      *
      * In cases where a top level chrome widget is being used as a content
      * container, attach a secondary listener and update the device
@@ -473,7 +482,7 @@ class nsIWidget : public nsISupports
      * aUseAttachedEvents if true, events are sent to the attached listener
      * instead of the normal listener.
      */
-    NS_IMETHOD AttachViewToTopLevel(bool aUseAttachedEvents) = 0;
+    virtual void AttachViewToTopLevel(bool aUseAttachedEvents) = 0;
 
     /**
      * Accessor functions to get and set the attached listener. Used by
@@ -494,11 +503,11 @@ class nsIWidget : public nsISupports
     //@}
 
     /**
-     * Close and destroy the internal native window. 
+     * Close and destroy the internal native window.
      * This method does not delete the widget.
      */
 
-    NS_IMETHOD Destroy(void) = 0;
+    virtual void Destroy() = 0;
 
     /**
      * Destroyed() returns true if Destroy() has been called already.
@@ -512,12 +521,12 @@ class nsIWidget : public nsISupports
      *
      * Change the widget's parent. Null parents are allowed.
      *
-     * @param     aNewParent   new parent 
+     * @param     aNewParent   new parent
      */
     NS_IMETHOD SetParent(nsIWidget* aNewParent) = 0;
 
     /**
-     * Return the parent Widget of this Widget or nullptr if this is a 
+     * Return the parent Widget of this Widget or nullptr if this is a
      * top level window
      *
      * @return the parent widget or nullptr if it does not have a parent
@@ -584,7 +593,7 @@ class nsIWidget : public nsISupports
     nsIWidget* GetFirstChild() const {
         return mFirstChild;
     }
-    
+
     /**
      * Return the last child of this widget.  Will return null if
      * there are no children.
@@ -599,14 +608,14 @@ class nsIWidget : public nsISupports
     nsIWidget* GetNextSibling() const {
         return mNextSibling;
     }
-    
+
     /**
      * Set the next sibling of this widget
      */
     void SetNextSibling(nsIWidget* aSibling) {
         mNextSibling = aSibling;
     }
-    
+
     /**
      * Return the previous sibling of this widget
      */
@@ -630,18 +639,25 @@ class nsIWidget : public nsISupports
     NS_IMETHOD Show(bool aState) = 0;
 
     /**
-     * Make the window modal
-     *
+     * Make the window modal.
      */
-    NS_IMETHOD SetModal(bool aModal) = 0;
+    virtual void SetModal(bool aModal) = 0;
 
     /**
      * Make the non-modal window opened by modal window fake-modal, that will
      * call SetFakeModal(false) on destroy on Cocoa.
      */
-    NS_IMETHOD SetFakeModal(bool aModal)
+    virtual void SetFakeModal(bool aModal)
     {
-        return SetModal(aModal);
+        SetModal(aModal);
+    }
+
+    /**
+     * Are we app modal. Currently only implemented on Cocoa.
+     */
+    virtual bool IsRunningAppModal()
+    {
+      return false;
     }
 
     /**
@@ -670,12 +686,11 @@ class nsIWidget : public nsISupports
      *           out: the x position constrained to fit on the screen(s).
      * @param aY in: an y position expressed in screen coordinates.
      *           out: the y position constrained to fit on the screen(s).
-     * @return vapid success indication. but see also the parameters.
      *
      **/
-    NS_IMETHOD ConstrainPosition(bool aAllowSlop,
-                                 int32_t *aX,
-                                 int32_t *aY) = 0;
+    virtual void ConstrainPosition(bool aAllowSlop,
+                                   int32_t *aX,
+                                   int32_t *aY) = 0;
 
     /**
      * NOTE:
@@ -794,7 +809,7 @@ class nsIWidget : public nsISupports
     virtual void SetZIndex(int32_t aZIndex) = 0;
 
     /**
-     * Gets the widget's z-index. 
+     * Gets the widget's z-index.
      */
     int32_t GetZIndex()
     {
@@ -812,14 +827,14 @@ class nsIWidget : public nsISupports
      *                   null is equivalent to aPlacement of eZPlacementTop
      * @param aActivate  true to activate the widget after placing it
      */
-    NS_IMETHOD PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
-                           nsIWidget *aWidget, bool aActivate) = 0;
+    virtual void PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
+                             nsIWidget *aWidget, bool aActivate) = 0;
 
     /**
      * Minimize, maximize or normalize the window size.
      * Takes a value from nsSizeMode (see nsIWidgetListener.h)
      */
-    NS_IMETHOD SetSizeMode(nsSizeMode aMode) = 0;
+    virtual void SetSizeMode(nsSizeMode aMode) = 0;
 
     /**
      * Return size mode (minimized, maximized, normalized).
@@ -856,19 +871,17 @@ class nsIWidget : public nsISupports
      * popup widgets the returned rect is in screen coordinates and not
      * relative to its parent widget.
      *
-     * @param aRect   On return it holds the  x, y, width and height of
-     *                this widget.
+     * @return the x, y, width and height of this widget.
      */
-    NS_IMETHOD GetBounds(LayoutDeviceIntRect& aRect) = 0;
+    virtual LayoutDeviceIntRect GetBounds() = 0;
 
     /**
      * Get this widget's outside dimensions in device coordinates. This
      * includes any title bar on the window.
      *
-     * @param aRect   On return it holds the  x, y, width and height of
-     *                this widget.
+     * @return the x, y, width and height of this widget.
      */
-    NS_IMETHOD GetScreenBounds(LayoutDeviceIntRect& aRect) = 0;
+    virtual LayoutDeviceIntRect GetScreenBounds() = 0;
 
     /**
      * Similar to GetScreenBounds except that this function will always
@@ -882,7 +895,8 @@ class nsIWidget : public nsISupports
      * @param aRect   On return it holds the  x, y, width and height of
      *                this widget.
      */
-    NS_IMETHOD GetRestoredBounds(LayoutDeviceIntRect& aRect) = 0;
+    virtual MOZ_MUST_USE nsresult
+    GetRestoredBounds(LayoutDeviceIntRect& aRect) = 0;
 
     /**
      * Get this widget's client area bounds, if the window has a 3D border
@@ -890,15 +904,9 @@ class nsIWidget : public nsISupports
      * position of the client area relative to the client area of the parent
      * widget (for root widgets and popup widgets it is in screen coordinates).
      *
-     * @param aRect   On return it holds the  x. y, width and height of
-     *                the client area of this widget.
+     * @return the x, y, width and height of the client area of this widget.
      */
-    NS_IMETHOD GetClientBounds(LayoutDeviceIntRect& aRect) = 0;
-
-    /**
-     * Get the non-client area dimensions of the window.
-     */
-    NS_IMETHOD GetNonClientMargins(LayoutDeviceIntMargin& aMargins) = 0;
+    virtual LayoutDeviceIntRect GetClientBounds() = 0;
 
     /**
      * Sets the non-client area dimensions of the window. Pass -1 to restore
@@ -927,9 +935,7 @@ class nsIWidget : public nsISupports
     virtual LayoutDeviceIntSize GetClientSize() {
       // Depending on the backend, overloading this method may be useful if
       // requesting the client offset is expensive.
-      LayoutDeviceIntRect rect;
-      GetClientBounds(rect);
-      return rect.Size();
+      return GetClientBounds().Size();
     }
 
     /**
@@ -976,7 +982,7 @@ class nsIWidget : public nsISupports
     NS_IMETHOD SetCursor(imgIContainer* aCursor,
                          uint32_t aHotspotX, uint32_t aHotspotY) = 0;
 
-    /** 
+    /**
      * Get the window type of this widget.
      */
     nsWindowType WindowType() { return mWindowType; }
@@ -1079,12 +1085,34 @@ class nsIWidget : public nsISupports
     static void UpdateRegisteredPluginWindowVisibility(uintptr_t aOwnerWidget,
                                                        nsTArray<uintptr_t>& aPluginIds);
 
+#if defined(XP_WIN)
+    /**
+     * Iterates over the list of registered plugins and for any that are owned
+     * by aOwnerWidget and visible it takes a snapshot.
+     *
+     * @param aOwnerWidget only captures visible widgets owned by this
+     */
+    static void CaptureRegisteredPlugins(uintptr_t aOwnerWidget);
+
+    /**
+     * Take a scroll capture for this widget if possible.
+     */
+    virtual void UpdateScrollCapture() = 0;
+
+    /**
+     * Creates an async ImageContainer to hold scroll capture images that can be
+     * used if the plugin is hidden during scroll.
+     * @return the async container ID of the created ImageContainer.
+     */
+    virtual uint64_t CreateScrollCaptureContainer() = 0;
+#endif
+
     /**
      * Set the shadow style of the window.
      *
      * Ignored on child widgets and on non-Mac platforms.
      */
-    NS_IMETHOD SetWindowShadowStyle(int32_t aStyle) = 0;
+    virtual void SetWindowShadowStyle(int32_t aStyle) = 0;
 
     /*
      * On Mac OS X, this method shows or hides the pill button in the titlebar
@@ -1129,7 +1157,7 @@ class nsIWidget : public nsISupports
      */
     virtual void SetUseBrightTitlebarForeground(bool aBrightForeground) {}
 
-    /** 
+    /**
      * Hide window chrome (borders, buttons) for this widget.
      *
      */
@@ -1174,7 +1202,8 @@ class nsIWidget : public nsISupports
      * FullscreenChanged callback has been or will be called. If other
      * value is returned, the caller should continue the change itself.
      */
-    NS_IMETHOD MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen = nullptr) = 0;
+    virtual nsresult MakeFullScreen(bool aFullScreen,
+                                    nsIScreen* aTargetScreen = nullptr) = 0;
 
     /**
      * Same as MakeFullScreen, except that, on systems which natively
@@ -1182,7 +1211,7 @@ class nsIWidget : public nsISupports
      * requests that behavior.
      * It is currently only supported on OS X 10.7+.
      */
-    NS_IMETHOD MakeFullScreenWithNativeTransition(
+    virtual nsresult MakeFullScreenWithNativeTransition(
       bool aFullScreen, nsIScreen* aTargetScreen = nullptr)
     {
       return MakeFullScreen(aFullScreen, aTargetScreen);
@@ -1203,21 +1232,17 @@ class nsIWidget : public nsISupports
     /**
      * Return the widget's LayerManager. The layer tree for that
      * LayerManager is what gets rendered to the widget.
-     *
-     * @param aAllowRetaining an outparam that states whether the returned
-     * layer manager should be used for retained layers
      */
-    inline LayerManager* GetLayerManager(bool* aAllowRetaining = nullptr)
+    inline LayerManager* GetLayerManager()
     {
         return GetLayerManager(nullptr, mozilla::layers::LayersBackend::LAYERS_NONE,
-                               LAYER_MANAGER_CURRENT, aAllowRetaining);
+                               LAYER_MANAGER_CURRENT);
     }
 
-    inline LayerManager* GetLayerManager(LayerManagerPersistence aPersistence,
-                                         bool* aAllowRetaining = nullptr)
+    inline LayerManager* GetLayerManager(LayerManagerPersistence aPersistence)
     {
         return GetLayerManager(nullptr, mozilla::layers::LayersBackend::LAYERS_NONE,
-                               aPersistence, aAllowRetaining);
+                               aPersistence);
     }
 
     /**
@@ -1227,8 +1252,7 @@ class nsIWidget : public nsISupports
      */
     virtual LayerManager* GetLayerManager(PLayerTransactionChild* aShadowManager,
                                           LayersBackend aBackendHint,
-                                          LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
-                                          bool* aAllowRetaining = nullptr) = 0;
+                                          LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT) = 0;
 
     /**
      * Called before each layer manager transaction to allow any preparation
@@ -1351,31 +1375,31 @@ class nsIWidget : public nsISupports
     virtual bool AsyncPanZoomEnabled() const = 0;
 
     /**
-     * Enables the dropping of files to a widget (XXX this is temporary)
-     *
+     * Enables the dropping of files to a widget.
      */
-    NS_IMETHOD EnableDragDrop(bool aEnable) = 0;
-   
+    virtual void EnableDragDrop(bool aEnable) = 0;
+
     /**
      * Enables/Disables system mouse capture.
-     * @param aCapture true enables mouse capture, false disables mouse capture 
+     * @param aCapture true enables mouse capture, false disables mouse capture
      *
      */
-    NS_IMETHOD CaptureMouse(bool aCapture) = 0;
+    virtual void CaptureMouse(bool aCapture) = 0;
 
     /**
      * Classify the window for the window manager. Mostly for X11.
      */
-    NS_IMETHOD SetWindowClass(const nsAString& xulWinType) = 0;
+    virtual void SetWindowClass(const nsAString& xulWinType) = 0;
 
     /**
      * Enables/Disables system capture of any and all events that would cause a
      * popup to be rolled up. aListener should be set to a non-null value for
      * any popups that are not managed by the popup manager.
-     * @param aDoCapture true enables capture, false disables capture 
+     * @param aDoCapture true enables capture, false disables capture
      *
      */
-    NS_IMETHOD CaptureRollupEvents(nsIRollupListener* aListener, bool aDoCapture) = 0;
+    virtual void CaptureRollupEvents(nsIRollupListener* aListener,
+                                     bool aDoCapture) = 0;
 
     /**
      * Bring this window to the user's attention.  This is intended to be a more
@@ -1384,8 +1408,8 @@ class nsIWidget : public nsISupports
      * the Mac.  The notification should be suppressed if the window is already
      * in the foreground and should be dismissed when the user brings this window
      * to the foreground.
-     * @param aCycleCount Maximum number of times to animate the window per system 
-     *                    conventions. If set to -1, cycles indefinitely until 
+     * @param aCycleCount Maximum number of times to animate the window per system
+     *                    conventions. If set to -1, cycles indefinitely until
      *                    window is brought into the foreground.
      */
     NS_IMETHOD GetAttention(int32_t aCycleCount) = 0;
@@ -1404,15 +1428,15 @@ class nsIWidget : public nsISupports
      * Ignored on any platform that does not support it. Ignored by widgets that
      * do not represent windows.
      *
-     * @param aColor  The color to set the title bar background to. Alpha values 
-     *                other than fully transparent (0) are respected if possible  
-     *                on the platform. An alpha of 0 will cause the window to 
+     * @param aColor  The color to set the title bar background to. Alpha values
+     *                other than fully transparent (0) are respected if possible
+     *                on the platform. An alpha of 0 will cause the window to
      *                draw with the default style for the platform.
      *
      * @param aActive Whether the color should be applied to active or inactive
      *                windows.
      */
-    NS_IMETHOD SetWindowTitlebarColor(nscolor aColor, bool aActive) = 0;
+    virtual void SetWindowTitlebarColor(nscolor aColor, bool aActive) = 0;
 
     /**
      * If set to true, the window will draw its contents into the titlebar
@@ -1630,6 +1654,11 @@ class nsIWidget : public nsISupports
 
     virtual void StartAsyncScrollbarDrag(const AsyncDragMetrics& aDragMetrics) = 0;
 
+    // If this widget supports out-of-process compositing, it can override
+    // this method to provide additional information to the compositor.
+    virtual void GetCompositorWidgetInitData(mozilla::widget::CompositorWidgetInitData* aInitData)
+    {}
+
 private:
   class LongTapInfo
   {
@@ -1677,7 +1706,7 @@ public:
      * This is used for native menu system testing.
      *
      * Updates a native menu at the position specified by the index string.
-     * The index string is a string of positive integers separated by the "|" 
+     * The index string is a string of positive integers separated by the "|"
      * (pipe) character.
      *
      * Example: 1|0|4
@@ -1690,6 +1719,18 @@ public:
      * menu system.
      */
     virtual nsresult ForceUpdateNativeMenuAt(const nsAString& indexString) = 0;
+
+    /**
+     * This is used for testing macOS service menu code.
+     *
+     * @param aResult - the current text selection. Is empty if no selection.
+     * @return nsresult - whether or not aResult was assigned the selected text.
+     */
+    NS_IMETHOD
+    GetSelectionAsPlaintext(nsAString& aResult)
+    {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
 
     /**
      * Notify IME of the specified notification.
@@ -1719,12 +1760,12 @@ public:
      *
      * aFocused  Whether or not a plugin is focused
      */
-    NS_IMETHOD SetPluginFocused(bool& aFocused) = 0;
+    virtual void SetPluginFocused(bool& aFocused) = 0;
 
     /*
      * Tell the plugin has focus.  It is unnecessary to use IPC
      */
-    bool PluginHasFocus() 
+    bool PluginHasFocus()
     {
       return GetInputContext().mIMEState.mEnabled == IMEState::PLUGIN;
     }
@@ -1834,7 +1875,7 @@ public:
      * @param aNewParent the native widget of aNewParent is the new native
      *                   parent widget
      */
-    NS_IMETHOD ReparentNativeWidget(nsIWidget* aNewParent) = 0;
+    virtual void ReparentNativeWidget(nsIWidget* aNewParent) = 0;
 
     /**
      * Return true if widget has it's own GL context
@@ -1849,13 +1890,7 @@ public:
     virtual bool WidgetPaintsBackground() { return false; }
 
     virtual bool NeedsPaint() {
-       if (!IsVisible()) {
-           return false;
-       }
-       LayoutDeviceIntRect bounds;
-       nsresult rv = GetBounds(bounds);
-       NS_ENSURE_SUCCESS(rv, false);
-       return !bounds.IsEmpty();
+       return IsVisible() && !GetBounds().IsEmpty();
     }
 
     /**
@@ -1871,9 +1906,7 @@ public:
      * probably shouldn't call this method.
      */
     virtual LayoutDeviceIntRect GetNaturalBounds() {
-        LayoutDeviceIntRect bounds;
-        GetBounds(bounds);
-        return bounds;
+        return GetBounds();
     }
 
     /**

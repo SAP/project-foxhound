@@ -24,9 +24,10 @@ class Crypto;
 class Function;
 class IDBFactory;
 enum class ImageBitmapFormat : uint32_t;
+class Performance;
 class Promise;
 class RequestOrUSVString;
-class ServiceWorkerRegistrationWorkerThread;
+class ServiceWorkerRegistration;
 class WorkerLocation;
 class WorkerNavigator;
 
@@ -35,14 +36,13 @@ namespace cache {
 class CacheStorage;
 
 } // namespace cache
-} // namespace dom
-} // namespace mozilla
 
-BEGIN_WORKERS_NAMESPACE
+namespace workers {
 
 class ServiceWorkerClients;
 class WorkerPrivate;
-class Performance;
+
+} // namespace workers
 
 class WorkerGlobalScope : public DOMEventTargetHelper,
                           public nsIGlobalObject,
@@ -61,6 +61,7 @@ class WorkerGlobalScope : public DOMEventTargetHelper,
   uint32_t mWindowInteractionsAllowed;
 
 protected:
+  typedef mozilla::dom::workers::WorkerPrivate WorkerPrivate;
   WorkerPrivate* mWorkerPrivate;
 
   explicit WorkerGlobalScope(WorkerPrivate* aWorkerPrivate);
@@ -147,7 +148,6 @@ public:
 
   IMPL_EVENT_HANDLER(online)
   IMPL_EVENT_HANDLER(offline)
-  IMPL_EVENT_HANDLER(close)
 
   void
   Dump(const Optional<nsAString>& aString) const;
@@ -242,8 +242,8 @@ public:
 class ServiceWorkerGlobalScope final : public WorkerGlobalScope
 {
   const nsString mScope;
-  RefPtr<ServiceWorkerClients> mClients;
-  RefPtr<ServiceWorkerRegistrationWorkerThread> mRegistration;
+  RefPtr<workers::ServiceWorkerClients> mClients;
+  RefPtr<ServiceWorkerRegistration> mRegistration;
 
   ~ServiceWorkerGlobalScope();
 
@@ -269,10 +269,10 @@ public:
     aScope = mScope;
   }
 
-  ServiceWorkerClients*
+  workers::ServiceWorkerClients*
   Clients();
 
-  ServiceWorkerRegistrationWorkerThread*
+  ServiceWorkerRegistration*
   Registration();
 
   already_AddRefed<Promise>
@@ -291,6 +291,8 @@ public:
 class WorkerDebuggerGlobalScope final : public DOMEventTargetHelper,
                                         public nsIGlobalObject
 {
+  typedef mozilla::dom::workers::WorkerPrivate WorkerPrivate;
+
   WorkerPrivate* mWorkerPrivate;
   RefPtr<Console> mConsole;
 
@@ -373,10 +375,11 @@ private:
   virtual ~WorkerDebuggerGlobalScope();
 };
 
-END_WORKERS_NAMESPACE
+} // namespace dom
+} // namespace mozilla
 
 inline nsISupports*
-ToSupports(mozilla::dom::workers::WorkerGlobalScope* aScope)
+ToSupports(mozilla::dom::WorkerGlobalScope* aScope)
 {
   return static_cast<nsIDOMEventTarget*>(aScope);
 }

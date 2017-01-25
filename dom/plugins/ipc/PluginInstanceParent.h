@@ -18,13 +18,12 @@
 #endif
 
 #include "npfunctions.h"
-#include "nsAutoPtr.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsRect.h"
 #include "PluginDataResolver.h"
 
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/EventForwards.h"
 
 class gfxASurface;
@@ -325,6 +324,8 @@ public:
     nsresult GetImageSize(nsIntSize* aSize);
 #ifdef XP_MACOSX
     nsresult IsRemoteDrawingCoreAnimation(bool *aDrawing);
+#endif
+#if defined(XP_MACOSX) || defined(XP_WIN)
     nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
 #endif
     nsresult SetBackgroundUnknown();
@@ -332,8 +333,8 @@ public:
                                    DrawTarget** aDrawTarget);
     nsresult EndUpdateBackground(const nsIntRect& aRect);
 #if defined(XP_WIN)
+    nsresult SetScrollCaptureId(uint64_t aScrollCaptureId);
     nsresult GetScrollCaptureContainer(mozilla::layers::ImageContainer** aContainer);
-    nsresult UpdateScrollState(bool aIsScrolling);
 #endif
     void DidComposite();
 
@@ -401,7 +402,6 @@ private:
     nsCString mSrcAttribute;
     NPWindowType mWindowType;
     int16_t mDrawingModel;
-    IntSize mWindowSize;
 
     // Since plugins may request different drawing models to find a compatible
     // one, we only record the drawing model after a SetWindow call and if the
@@ -466,18 +466,6 @@ private:
     RefPtr<gfxASurface>    mBackground;
 
     RefPtr<ImageContainer> mImageContainer;
-
-#if defined(XP_WIN)
-    void ScheduleScrollCapture(int aTimeout);
-    void ScheduledUpdateScrollCaptureCallback();
-    bool UpdateScrollCapture(bool& aRequestNewCapture);
-    void CancelScheduledScrollCapture();
-
-    RefPtr<gfxASurface> mScrollCapture;
-    RefPtr<CancelableRunnable> mCaptureRefreshTask;
-    bool mValidFirstCapture;
-    bool mIsScrolling;
-#endif
 };
 
 

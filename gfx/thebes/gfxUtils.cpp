@@ -12,6 +12,7 @@
 #include "gfxPlatform.h"
 #include "gfxDrawable.h"
 #include "imgIEncoder.h"
+#include "libyuv.h"
 #include "mozilla/Base64.h"
 #include "mozilla/dom/ImageEncoder.h"
 #include "mozilla/dom/WorkerPrivate.h"
@@ -31,8 +32,6 @@
 #include "nsPresContext.h"
 #include "nsRegion.h"
 #include "nsServiceManagerUtils.h"
-#include "yuv_convert.h"
-#include "ycbcr_to_rgb565.h"
 #include "GeckoProfiler.h"
 #include "ImageContainer.h"
 #include "ImageRegion.h"
@@ -375,20 +374,7 @@ void
 gfxUtils::ConvertBGRAtoRGBA(uint8_t* aData, uint32_t aLength)
 {
     MOZ_ASSERT((aLength % 4) == 0, "Loop below will pass srcEnd!");
-
-    uint8_t *src = aData;
-    uint8_t *srcEnd = src + aLength;
-
-    uint8_t buffer[4];
-    for (; src != srcEnd; src += 4) {
-        buffer[0] = src[2];
-        buffer[1] = src[1];
-        buffer[2] = src[0];
-
-        src[0] = buffer[0];
-        src[1] = buffer[1];
-        src[2] = buffer[2];
-    }
+    libyuv::ABGRToARGB(aData, aLength, aData, aLength, aLength / 4, 1);
 }
 
 #if !defined(MOZ_GFX_OPTIMIZE_MOBILE)
@@ -449,7 +435,7 @@ CreateSamplingRestrictedDrawable(gfxDrawable* aDrawable,
       return nullptr;
     }
 
-    RefPtr<gfxContext> tmpCtx = gfxContext::ForDrawTarget(target);
+    RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(target);
     MOZ_ASSERT(tmpCtx); // already checked the target above
 
     tmpCtx->SetOp(OptimalFillOp());
@@ -599,7 +585,7 @@ PrescaleAndTileDrawable(gfxDrawable* aDrawable,
     return false;
   }
 
-  RefPtr<gfxContext> tmpCtx = gfxContext::ForDrawTarget(scaledDT);
+  RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(scaledDT);
   MOZ_ASSERT(tmpCtx); // already checked the target above
 
   scaledDT->SetTransform(ToMatrix(scaleMatrix));
@@ -1214,7 +1200,7 @@ gfxUtils::WriteAsPNG(nsIPresShell* aShell, const char* aFile)
                                      SurfaceFormat::B8G8R8A8);
   NS_ENSURE_TRUE(dt && dt->IsValid(), /*void*/);
 
-  RefPtr<gfxContext> context = gfxContext::ForDrawTarget(dt);
+  RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
   MOZ_ASSERT(context); // already checked the draw target above
   aShell->RenderDocument(r, 0, NS_RGB(255, 255, 0), context);
   WriteAsPNG(dt.get(), aFile);
@@ -1428,6 +1414,25 @@ gfxUtils::ThreadSafeGetFeatureStatus(const nsCOMPtr<nsIGfxInfo>& gfxInfo,
   }
 
   return gfxInfo->GetFeatureStatus(feature, failureId, status);
+}
+
+/* static */ bool
+gfxUtils::IsFeatureBlacklisted(nsCOMPtr<nsIGfxInfo> gfxInfo, int32_t feature,
+                               nsACString* const out_blacklistId)
+{
+  if (!gfxInfo) {
+    gfxInfo = services::GetGfxInfo();
+  }
+
+  int32_t status;
+  if (!NS_SUCCEEDED(gfxUtils::ThreadSafeGetFeatureStatus(gfxInfo, feature,
+                                                         *out_blacklistId, &status)))
+  {
+    out_blacklistId->AssignLiteral("");
+    return true;
+  }
+
+  return status != nsIGfxInfo::FEATURE_STATUS_OK;
 }
 
 /* static */ bool

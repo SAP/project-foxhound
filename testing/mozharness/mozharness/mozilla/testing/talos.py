@@ -285,15 +285,19 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         src_talos_webdir = os.path.join(self.talos_path, 'talos')
 
         if self.query_pagesets_url():
-            self.info("Downloading pageset...")
+            self.info('Downloading pageset...')
+            dirs = self.query_abs_dirs()
             src_talos_pageset = os.path.join(src_talos_webdir, 'tests')
-            self.download_unzip(self.pagesets_url, src_talos_pageset)
+            archive = self.download_file(self.pagesets_url, parent_dir=dirs['abs_work_dir'])
+            unzip = self.query_exe('unzip')
+            unzip_cmd = [unzip, '-q', '-o', archive, '-d', src_talos_pageset]
+            self.run_command(unzip_cmd, halt_on_failure=True)
 
     # Action methods. {{{1
     # clobber defined in BaseScript
     # read_buildbot_config defined in BuildbotMixin
 
-    def download_and_extract(self, target_unzip_dirs=None, suite_categories=None):
+    def download_and_extract(self, extract_dirs=None, suite_categories=None):
         return super(Talos, self).download_and_extract(
             suite_categories=['common', 'talos']
         )
@@ -333,8 +337,6 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         )
         # install jsonschema for perfherder validation
         self.install_module(module="jsonschema")
-        # install flake8 for static code validation
-        self.install_module(module="flake8")
 
     def _validate_treeherder_data(self, parser):
         # late import is required, because install is done in create_virtualenv
@@ -356,12 +358,6 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
             jsonschema.validate(data, schema)
         except:
             self.exception("Error while validating PERFHERDER_DATA")
-            parser.update_worst_log_and_tbpl_levels(WARNING, TBPL_WARNING)
-
-    def _flake8_check(self, parser):
-        if self.run_command([self.query_python_path('flake8'),
-                             os.path.join(self.talos_path, 'talos')]) != 0:
-            self.critical('flake8 check failed.')
             parser.update_worst_log_and_tbpl_levels(WARNING, TBPL_WARNING)
 
     def run_tests(self, args=None, **kw):
@@ -388,8 +384,6 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
             env['PYTHONPATH'] = self.talos_path + os.pathsep + env['PYTHONPATH']
         else:
             env['PYTHONPATH'] = self.talos_path
-
-        self._flake8_check(parser)
 
         # sets a timeout for how long talos should run without output
         output_timeout = self.config.get('talos_output_timeout', 3600)
@@ -429,7 +423,8 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
 
             parser.update_worst_log_and_tbpl_levels(log_level, tbpl_level)
         else:
-            self._validate_treeherder_data(parser)
+            if not self.sps_profile:
+                self._validate_treeherder_data(parser)
 
         self.buildbot_status(parser.worst_tbpl_status,
                              level=parser.worst_log_level)

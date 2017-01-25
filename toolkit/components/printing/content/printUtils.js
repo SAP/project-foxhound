@@ -114,6 +114,7 @@ var PrintUtils = {
     let mm = aBrowser.messageManager;
     mm.sendAsyncMessage("Printing:Print", {
       windowID: aWindowID,
+      simplifiedMode: this._shouldSimplify,
     });
   },
 
@@ -360,7 +361,7 @@ var PrintUtils = {
       let ppMsgName = msgName + "_PP";
       try {
         msg = this.bundle.GetStringFromName(ppMsgName);
-      } catch(e) {
+      } catch (e) {
         // We allow localizers to not have the print preview error string,
         // and just fall back to the printing error string.
       }
@@ -533,6 +534,9 @@ var PrintUtils = {
           URL: this._listener.getSourceBrowser().currentURI.spec,
           windowID: this._listener.getSourceBrowser().outerWindowID,
         });
+
+        // Here we log telemetry data for when the user enters simplify mode.
+        this.logTelemetry("PRINT_PREVIEW_SIMPLIFY_PAGE_OPENED_COUNT");
       }
     } else {
       sendEnterPreviewMessage(this._listener.getSourceBrowser(), false);
@@ -568,7 +572,11 @@ var PrintUtils = {
 
       // Set the original window as an active window so any mozPrintCallbacks can
       // run without delayed setTimeouts.
-      this._sourceBrowser.docShellIsActive = true;
+      if (this._listener.activateBrowser) {
+        this._listener.activateBrowser(this._sourceBrowser);
+      } else {
+        this._sourceBrowser.docShellIsActive = true;
+      }
 
       // show the toolbar after we go into print preview mode so
       // that we can initialize the toolbar with total num pages
@@ -584,10 +592,12 @@ var PrintUtils = {
       printPreviewTB.initialize(ppBrowser);
 
       // Enable simplify page checkbox when the page is an article
-      if (this._sourceBrowser.isArticle)
+      if (this._sourceBrowser.isArticle) {
         printPreviewTB.enableSimplifyPage();
-      else
+      } else {
+        this.logTelemetry("PRINT_PREVIEW_SIMPLIFY_PAGE_UNAVAILABLE_COUNT");
         printPreviewTB.disableSimplifyPage();
+      }
 
       // copy the window close handler
       if (document.documentElement.hasAttribute("onclose"))

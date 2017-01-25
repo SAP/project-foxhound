@@ -614,29 +614,40 @@ AboutReader.prototype = {
     if (this._articlePromise) {
       article = yield this._articlePromise;
     } else {
-      article = yield this._getArticle(url);
+      try {
+        article = yield this._getArticle(url);
+      } catch (e) {
+        if (e && e.newURL) {
+          let readerURL = "about:reader?url=" + encodeURIComponent(e.newURL);
+          this._win.location.replace(readerURL);
+          return;
+        }
+      }
     }
 
     if (this._windowUnloaded) {
       return;
     }
 
-    if (article) {
-      this._showContent(article);
-    } else if (this._articlePromise) {
-      // If we were promised an article, show an error message if there's a failure.
+    // Replace the loading message with an error message if there's a failure.
+    // Users are supposed to navigate away by themselves (because we cannot
+    // remove ourselves from session history.)
+    if (!article) {
       this._showError();
-    } else {
-      // Otherwise, just load the original URL. We can encounter this case when
-      // loading an about:reader URL directly (e.g. opening a reading list item).
-      this._win.location.href = url;
+      return;
     }
+
+    this._showContent(article);
   }),
 
   _getArticle: function(url) {
     return new Promise((resolve, reject) => {
       let listener = (message) => {
         this._mm.removeMessageListener("Reader:ArticleData", listener);
+        if (message.data.newURL) {
+          reject({ newURL: message.data.newURL });
+          return;
+        }
         resolve(message.data.article);
       };
       this._mm.addMessageListener("Reader:ArticleData", listener);
@@ -701,13 +712,28 @@ AboutReader.prototype = {
     }
   },
 
-  _maybeSetTextDirection: function Read_maybeSetTextDirection(article){
-    if(!article.dir)
+  _maybeSetTextDirection: function Read_maybeSetTextDirection(article) {
+    if (!article.dir)
       return;
 
     //Set "dir" attribute on content
     this._contentElement.setAttribute("dir", article.dir);
     this._headerElement.setAttribute("dir", article.dir);
+  },
+
+  _fixLocalLinks() {
+    // We need to do this because preprocessing the content through nsIParserUtils
+    // gives back a DOM with a <base> element. That influences how these URLs get
+    // resolved, making them no longer match the document URI (which is
+    // about:reader?url=...). To fix this, make all the hash URIs absolute. This
+    // is hacky, but the alternative of removing the base element has potential
+    // security implications if Readability has not successfully made all the URLs
+    // absolute, so we pick just fixing these in-document links explicitly.
+    let localLinks = this._contentElement.querySelectorAll("a[href^='#']");
+    for (let localLink of localLinks) {
+      // Have to get the attribute because .href provides an absolute URI.
+      localLink.href = this._doc.documentURI + localLink.getAttribute("href");
+    }
   },
 
   _showError: function() {
@@ -761,6 +787,7 @@ AboutReader.prototype = {
       false, articleUri, this._contentElement);
     this._contentElement.innerHTML = "";
     this._contentElement.appendChild(contentFragment);
+    this._fixLocalLinks();
     this._maybeSetTextDirection(article);
 
     this._contentElement.style.display = "block";

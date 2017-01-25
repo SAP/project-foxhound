@@ -6,7 +6,6 @@
 #include "gfxPlatformMac.h"
 
 #include "gfxQuartzSurface.h"
-#include "gfxQuartzImageSurface.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/MacIOSurface.h"
 
@@ -25,7 +24,6 @@
 #include <dlfcn.h>
 #include <CoreVideo/CoreVideo.h>
 
-#include "nsCocoaFeatures.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "VsyncSource.h"
 
@@ -76,13 +74,12 @@ gfxPlatformMac::gfxPlatformMac()
     DisableFontActivation();
     mFontAntiAliasingThreshold = ReadAntiAliasingThreshold();
 
-    uint32_t canvasMask = BackendTypeBit(BackendType::CAIRO) |
-                          BackendTypeBit(BackendType::SKIA) |
+    uint32_t canvasMask = BackendTypeBit(BackendType::SKIA) |
                           BackendTypeBit(BackendType::COREGRAPHICS);
     uint32_t contentMask = BackendTypeBit(BackendType::COREGRAPHICS) |
                            BackendTypeBit(BackendType::SKIA);
-    InitBackendPrefs(canvasMask, BackendType::COREGRAPHICS,
-                     contentMask, BackendType::COREGRAPHICS);
+    InitBackendPrefs(canvasMask, BackendType::SKIA,
+                     contentMask, BackendType::SKIA);
 
     // XXX: Bug 1036682 - we run out of fds on Mac when using tiled layers because
     // with 256x256 tiles we can easily hit the soft limit of 800 when using double
@@ -119,6 +116,10 @@ already_AddRefed<gfxASurface>
 gfxPlatformMac::CreateOffscreenSurface(const IntSize& aSize,
                                        gfxImageFormat aFormat)
 {
+    if (!Factory::AllowedSurfaceSize(aSize)) {
+        return nullptr;
+    }
+
     RefPtr<gfxASurface> newSurface =
       new gfxQuartzSurface(aSize, aFormat);
     return newSurface.forget();
@@ -368,14 +369,6 @@ gfxPlatformMac::ReadAntiAliasingThreshold()
     }
 
     return threshold;
-}
-
-bool
-gfxPlatformMac::UseProgressivePaint()
-{
-  // Progressive painting requires cross-process mutexes, which don't work so
-  // well on OS X 10.6 so we disable there.
-  return nsCocoaFeatures::OnLionOrLater() && gfxPlatform::UseProgressivePaint();
 }
 
 bool

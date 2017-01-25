@@ -8,71 +8,55 @@
 const actionTypes = {
   MESSAGE_ADD: "MESSAGE_ADD",
   MESSAGES_CLEAR: "MESSAGES_CLEAR",
+  MESSAGE_OPEN: "MESSAGE_OPEN",
+  MESSAGE_CLOSE: "MESSAGE_CLOSE",
+  FILTER_TOGGLE: "FILTER_TOGGLE",
+  FILTER_TEXT_SET: "FILTER_TEXT_SET",
+  FILTERS_CLEAR: "FILTERS_CLEAR",
+  FILTER_BAR_TOGGLE: "FILTER_BAR_TOGGLE",
 };
 
-const categories = {
-  CATEGORY_NETWORK: 0,
-  CATEGORY_CSS: 1,
-  CATEGORY_JS: 2,
-  CATEGORY_WEBDEV: 3,
-  CATEGORY_INPUT: 4,
-  CATEGORY_OUTPUT: 5,
-  CATEGORY_SECURITY: 6,
-  CATEGORY_SERVER: 7
-};
-
-const severities = {
-  SEVERITY_ERROR: 0,
-  SEVERITY_WARNING: 1,
-  SEVERITY_INFO: 2,
-  SEVERITY_LOG: 3
-};
-
-// The fragment of a CSS class name that identifies categories/severities.
-const fragments = {
-  CATEGORY_CLASS_FRAGMENTS: [
-    "network",
-    "cssparser",
-    "exception",
-    "console",
-    "input",
-    "output",
-    "security",
-    "server",
-  ],
-  SEVERITY_CLASS_FRAGMENTS: [
-    "error",
-    "warn",
-    "info",
-    "log",
-  ]
-};
-
-// A mapping from the console API log event levels to the Web Console
-// severities.
-const levels = {
-  LEVELS: {
-    error: severities.SEVERITY_ERROR,
-    exception: severities.SEVERITY_ERROR,
-    assert: severities.SEVERITY_ERROR,
-    warn: severities.SEVERITY_WARNING,
-    info: severities.SEVERITY_INFO,
-    log: severities.SEVERITY_LOG,
-    clear: severities.SEVERITY_LOG,
-    trace: severities.SEVERITY_LOG,
-    table: severities.SEVERITY_LOG,
-    debug: severities.SEVERITY_LOG,
-    dir: severities.SEVERITY_LOG,
-    dirxml: severities.SEVERITY_LOG,
-    group: severities.SEVERITY_LOG,
-    groupCollapsed: severities.SEVERITY_LOG,
-    groupEnd: severities.SEVERITY_LOG,
-    time: severities.SEVERITY_LOG,
-    timeEnd: severities.SEVERITY_LOG,
-    count: severities.SEVERITY_LOG
+const chromeRDPEnums = {
+  MESSAGE_SOURCE: {
+    XML: "xml",
+    JAVASCRIPT: "javascript",
+    NETWORK: "network",
+    CONSOLE_API: "console-api",
+    STORAGE: "storage",
+    APPCACHE: "appcache",
+    RENDERING: "rendering",
+    SECURITY: "security",
+    OTHER: "other",
+    DEPRECATION: "deprecation"
+  },
+  MESSAGE_TYPE: {
+    LOG: "log",
+    DIR: "dir",
+    TABLE: "table",
+    TRACE: "trace",
+    CLEAR: "clear",
+    START_GROUP: "startGroup",
+    START_GROUP_COLLAPSED: "startGroupCollapsed",
+    END_GROUP: "endGroup",
+    ASSERT: "assert",
+    PROFILE: "profile",
+    PROFILE_END: "profileEnd",
+    // Undocumented in Chrome RDP, but is used for evaluation results.
+    RESULT: "result",
+    // Undocumented in Chrome RDP, but is used for input.
+    COMMAND: "command",
+    // Undocumented in Chrome RDP, but is used for messages that should not
+    // output anything (e.g. `console.time()` calls).
+    NULL_MESSAGE: "nullMessage",
+  },
+  MESSAGE_LEVEL: {
+    LOG: "log",
+    ERROR: "error",
+    WARN: "warn",
+    DEBUG: "debug",
+    INFO: "info"
   }
 };
 
 // Combine into a single constants object
-module.exports = Object.assign({}, actionTypes, categories, severities,
-  fragments, levels);
+module.exports = Object.assign({}, actionTypes, chromeRDPEnums);

@@ -6,11 +6,12 @@
 /* This is a Cross-Platform ICO Decoder, which should work everywhere, including
  * Big-Endian machines like the PowerPC. */
 
+#include "nsICODecoder.h"
+
 #include <stdlib.h>
 
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Move.h"
-#include "nsICODecoder.h"
 
 #include "RasterImage.h"
 
@@ -52,7 +53,8 @@ nsICODecoder::GetNumColors()
 
 nsICODecoder::nsICODecoder(RasterImage* aImage)
   : Decoder(aImage)
-  , mLexer(Transition::To(ICOState::HEADER, ICOHEADERSIZE))
+  , mLexer(Transition::To(ICOState::HEADER, ICOHEADERSIZE),
+           Transition::TerminateSuccess())
   , mBiggestResourceColorDepth(0)
   , mBestResourceDelta(INT_MIN)
   , mBestResourceColorDepth(0)
@@ -65,41 +67,51 @@ nsICODecoder::nsICODecoder(RasterImage* aImage)
   , mHasMaskAlpha(false)
 { }
 
-void
+nsresult
 nsICODecoder::FinishInternal()
 {
   // We shouldn't be called in error cases
   MOZ_ASSERT(!HasError(), "Shouldn't call FinishInternal after error!");
 
-  GetFinalStateFromContainedDecoder();
+  return GetFinalStateFromContainedDecoder();
 }
 
-void
+nsresult
 nsICODecoder::FinishWithErrorInternal()
 {
-  GetFinalStateFromContainedDecoder();
+  return GetFinalStateFromContainedDecoder();
 }
 
-void
+nsresult
 nsICODecoder::GetFinalStateFromContainedDecoder()
 {
   if (!mContainedDecoder) {
-    return;
+    return NS_OK;
   }
 
-  // Finish the internally used decoder.
-  mContainedDecoder->CompleteDecode();
+  MOZ_ASSERT(mContainedSourceBuffer,
+             "Should have a SourceBuffer if we have a decoder");
 
+  // Let the contained decoder finish up if necessary.
+  if (!mContainedSourceBuffer->IsComplete()) {
+    mContainedSourceBuffer->Complete(NS_OK);
+    mContainedDecoder->Decode();
+  }
+
+  // Make our state the same as the state of the contained decoder.
   mDecodeDone = mContainedDecoder->GetDecodeDone();
-  mDataError = mDataError || mContainedDecoder->HasDataError();
-  mFailCode = NS_SUCCEEDED(mFailCode) ? mContainedDecoder->GetDecoderError()
-                                      : mFailCode;
   mDecodeAborted = mContainedDecoder->WasAborted();
   mProgress |= mContainedDecoder->TakeProgress();
   mInvalidRect.UnionRect(mInvalidRect, mContainedDecoder->TakeInvalidRect());
   mCurrentFrame = mContainedDecoder->GetCurrentFrameRef();
 
-  MOZ_ASSERT(HasError() || !mCurrentFrame || mCurrentFrame->IsFinished());
+  // Propagate errors.
+  nsresult rv = HasError() || mContainedDecoder->HasError()
+              ? NS_ERROR_FAILURE
+              : NS_OK;
+
+  MOZ_ASSERT(NS_FAILED(rv) || !mCurrentFrame || mCurrentFrame->IsFinished());
+  return rv;
 }
 
 bool
@@ -209,9 +221,13 @@ nsICODecoder::ReadDirEntry(const char* aData)
   e.mBytesInRes  = LittleEndian::readUint32(aData + 8);
   e.mImageOffset = LittleEndian::readUint32(aData + 12);
 
+  // If an explicit output size was specified, we'll try to select the resource
+  // that matches it best below.
+  const Maybe<IntSize> desiredSize = ExplicitOutputSize();
+
   // Determine if this is the biggest resource we've seen so far. We always use
-  // the biggest resource for the intrinsic size, and if we're not downscaling,
-  // we select it as the best resource as well.
+  // the biggest resource for the intrinsic size, and if we don't have a
+  // specific desired size, we select it as the best resource as well.
   IntSize entrySize(GetRealWidth(e), GetRealHeight(e));
   if (e.mBitCount >= mBiggestResourceColorDepth &&
       entrySize.width * entrySize.height >=
@@ -220,22 +236,22 @@ nsICODecoder::ReadDirEntry(const char* aData)
     mBiggestResourceColorDepth = e.mBitCount;
     mBiggestResourceHotSpot = IntSize(e.mXHotspot, e.mYHotspot);
 
-    if (!mDownscaler) {
+    if (!desiredSize) {
       mDirEntry = e;
     }
   }
 
-  if (mDownscaler) {
+  if (desiredSize) {
     // Calculate the delta between this resource's size and the desired size, so
     // we can see if it is better than our current-best option.  In the case of
     // several equally-good resources, we use the last one. "Better" in this
     // case is determined by |delta|, a measure of the difference in size
-    // between the entry we've found and the downscaler's target size. We will
-    // choose the smallest resource that is >= the target size (i.e. we assume
-    // it's better to downscale a larger icon than to upscale a smaller one).
-    IntSize desiredSize = mDownscaler->TargetSize();
-    int32_t delta = std::min(entrySize.width - desiredSize.width,
-                             entrySize.height - desiredSize.height);
+    // between the entry we've found and the desired size. We will choose the
+    // smallest resource that is greater than or equal to the desired size (i.e.
+    // we assume it's better to downscale a larger icon than to upscale a
+    // smaller one).
+    int32_t delta = std::min(entrySize.width - desiredSize->width,
+                             entrySize.height - desiredSize->height);
     if (e.mBitCount >= mBestResourceColorDepth &&
         ((mBestResourceDelta < 0 && delta >= mBestResourceDelta) ||
          (delta >= 0 && delta <= mBestResourceDelta))) {
@@ -266,9 +282,11 @@ nsICODecoder::ReadDirEntry(const char* aData)
       return Transition::TerminateSuccess();
     }
 
-    // If the resource we selected matches the downscaler's target size
-    // perfectly, we don't need to do any downscaling.
-    if (mDownscaler && GetRealSize() == mDownscaler->TargetSize()) {
+    // If the resource we selected matches the output size perfectly, we don't
+    // need to do any downscaling.
+    if (GetRealSize() == OutputSize()) {
+      MOZ_ASSERT_IF(desiredSize, GetRealSize() == *desiredSize);
+      MOZ_ASSERT_IF(!desiredSize, GetRealSize() == Size());
       mDownscaler.reset();
     }
 
@@ -290,14 +308,12 @@ nsICODecoder::SniffResource(const char* aData)
                        PNGSIGNATURESIZE);
   if (isPNG) {
     // Create a PNG decoder which will do the rest of the work for us.
-    mContainedDecoder = new nsPNGDecoder(mImage);
-    mContainedDecoder->SetMetadataDecode(IsMetadataDecode());
-    mContainedDecoder->SetDecoderFlags(GetDecoderFlags());
-    mContainedDecoder->SetSurfaceFlags(GetSurfaceFlags());
-    if (mDownscaler) {
-      mContainedDecoder->SetTargetSize(mDownscaler->TargetSize());
-    }
-    mContainedDecoder->Init();
+    mContainedSourceBuffer = new SourceBuffer();
+    mContainedSourceBuffer->ExpectLength(mDirEntry.mBytesInRes);
+    mContainedDecoder =
+      DecoderFactory::CreateDecoderForICOResource(DecoderType::PNG,
+                                                  WrapNotNull(mContainedSourceBuffer),
+                                                  WrapNotNull(this));
 
     if (!WriteToContainedDecoder(aData, PNGSIGNATURESIZE)) {
       return Transition::TerminateFailure();
@@ -370,15 +386,15 @@ nsICODecoder::ReadBIH(const char* aData)
 
   // Create a BMP decoder which will do most of the work for us; the exception
   // is the AND mask, which isn't present in standalone BMPs.
-  RefPtr<nsBMPDecoder> bmpDecoder = new nsBMPDecoder(mImage, dataOffset);
-  mContainedDecoder = bmpDecoder;
-  mContainedDecoder->SetMetadataDecode(IsMetadataDecode());
-  mContainedDecoder->SetDecoderFlags(GetDecoderFlags());
-  mContainedDecoder->SetSurfaceFlags(GetSurfaceFlags());
-  if (mDownscaler) {
-    mContainedDecoder->SetTargetSize(mDownscaler->TargetSize());
-  }
-  mContainedDecoder->Init();
+  mContainedSourceBuffer = new SourceBuffer();
+  mContainedSourceBuffer->ExpectLength(mDirEntry.mBytesInRes);
+  mContainedDecoder =
+    DecoderFactory::CreateDecoderForICOResource(DecoderType::BMP,
+                                                WrapNotNull(mContainedSourceBuffer),
+                                                WrapNotNull(this),
+                                                Some(dataOffset));
+  RefPtr<nsBMPDecoder> bmpDecoder =
+    static_cast<nsBMPDecoder*>(mContainedDecoder.get());
 
   // Verify that the BIH width and height values match the ICO directory entry,
   // and fix the BIH height value to compensate for the fact that the underlying
@@ -563,15 +579,6 @@ nsICODecoder::FinishMask()
     }
   }
 
-  // If the mask contained any transparent pixels, record that fact.
-  if (mHasMaskAlpha) {
-    PostHasTransparency();
-
-    RefPtr<nsBMPDecoder> bmpDecoder =
-      static_cast<nsBMPDecoder*>(mContainedDecoder.get());
-    bmpDecoder->SetHasTransparency();
-  }
-
   return Transition::To(ICOState::FINISHED_RESOURCE, 0);
 }
 
@@ -581,73 +588,86 @@ nsICODecoder::FinishResource()
   // Make sure the actual size of the resource matches the size in the directory
   // entry. If not, we consider the image corrupt.
   if (mContainedDecoder->HasSize() &&
-      mContainedDecoder->GetSize() != GetRealSize()) {
+      mContainedDecoder->Size() != GetRealSize()) {
     return Transition::TerminateFailure();
   }
 
   return Transition::TerminateSuccess();
 }
 
-void
-nsICODecoder::WriteInternal(const char* aBuffer, uint32_t aCount)
+LexerResult
+nsICODecoder::DoDecode(SourceBufferIterator& aIterator, IResumable* aOnResume)
 {
-  MOZ_ASSERT(!HasError(), "Shouldn't call WriteInternal after error!");
-  MOZ_ASSERT(aBuffer);
-  MOZ_ASSERT(aCount > 0);
+  MOZ_ASSERT(!HasError(), "Shouldn't call DoDecode after error!");
 
-  Maybe<TerminalState> terminalState =
-    mLexer.Lex(aBuffer, aCount,
-               [=](ICOState aState, const char* aData, size_t aLength) {
-      switch (aState) {
-        case ICOState::HEADER:
-          return ReadHeader(aData);
-        case ICOState::DIR_ENTRY:
-          return ReadDirEntry(aData);
-        case ICOState::SKIP_TO_RESOURCE:
-          return Transition::ContinueUnbuffered(ICOState::SKIP_TO_RESOURCE);
-        case ICOState::FOUND_RESOURCE:
-          return Transition::To(ICOState::SNIFF_RESOURCE, PNGSIGNATURESIZE);
-        case ICOState::SNIFF_RESOURCE:
-          return SniffResource(aData);
-        case ICOState::READ_PNG:
-          return ReadPNG(aData, aLength);
-        case ICOState::READ_BIH:
-          return ReadBIH(aData);
-        case ICOState::READ_BMP:
-          return ReadBMP(aData, aLength);
-        case ICOState::PREPARE_FOR_MASK:
-          return PrepareForMask();
-        case ICOState::READ_MASK_ROW:
-          return ReadMaskRow(aData);
-        case ICOState::FINISH_MASK:
-          return FinishMask();
-        case ICOState::SKIP_MASK:
-          return Transition::ContinueUnbuffered(ICOState::SKIP_MASK);
-        case ICOState::FINISHED_RESOURCE:
-          return FinishResource();
-        default:
-          MOZ_CRASH("Unknown ICOState");
-      }
-    });
-
-  if (terminalState == Some(TerminalState::FAILURE)) {
-    PostDataError();
-  }
+  return mLexer.Lex(aIterator, aOnResume,
+                    [=](ICOState aState, const char* aData, size_t aLength) {
+    switch (aState) {
+      case ICOState::HEADER:
+        return ReadHeader(aData);
+      case ICOState::DIR_ENTRY:
+        return ReadDirEntry(aData);
+      case ICOState::SKIP_TO_RESOURCE:
+        return Transition::ContinueUnbuffered(ICOState::SKIP_TO_RESOURCE);
+      case ICOState::FOUND_RESOURCE:
+        return Transition::To(ICOState::SNIFF_RESOURCE, PNGSIGNATURESIZE);
+      case ICOState::SNIFF_RESOURCE:
+        return SniffResource(aData);
+      case ICOState::READ_PNG:
+        return ReadPNG(aData, aLength);
+      case ICOState::READ_BIH:
+        return ReadBIH(aData);
+      case ICOState::READ_BMP:
+        return ReadBMP(aData, aLength);
+      case ICOState::PREPARE_FOR_MASK:
+        return PrepareForMask();
+      case ICOState::READ_MASK_ROW:
+        return ReadMaskRow(aData);
+      case ICOState::FINISH_MASK:
+        return FinishMask();
+      case ICOState::SKIP_MASK:
+        return Transition::ContinueUnbuffered(ICOState::SKIP_MASK);
+      case ICOState::FINISHED_RESOURCE:
+        return FinishResource();
+      default:
+        MOZ_CRASH("Unknown ICOState");
+    }
+  });
 }
 
 bool
 nsICODecoder::WriteToContainedDecoder(const char* aBuffer, uint32_t aCount)
 {
-  mContainedDecoder->Write(aBuffer, aCount);
+  MOZ_ASSERT(mContainedDecoder);
+  MOZ_ASSERT(mContainedSourceBuffer);
+
+  // Append the provided data to the SourceBuffer that the contained decoder is
+  // reading from.
+  mContainedSourceBuffer->Append(aBuffer, aCount);
+
+  bool succeeded = true;
+
+  // Write to the contained decoder. If we run out of data, the ICO decoder will
+  // get resumed when there's more data available, as usual, so we don't need
+  // the contained decoder to get resumed too. To avoid that, we provide an
+  // IResumable which just does nothing.
+  LexerResult result = mContainedDecoder->Decode();
+  if (result == LexerResult(TerminalState::FAILURE)) {
+    succeeded = false;
+  }
+
+  MOZ_ASSERT(result != LexerResult(Yield::OUTPUT_AVAILABLE),
+             "Unexpected yield");
+
+  // Make our state the same as the state of the contained decoder, and
+  // propagate errors.
   mProgress |= mContainedDecoder->TakeProgress();
   mInvalidRect.UnionRect(mInvalidRect, mContainedDecoder->TakeInvalidRect());
-  if (mContainedDecoder->HasDataError()) {
-    PostDataError();
+  if (mContainedDecoder->HasError()) {
+    succeeded = false;
   }
-  if (mContainedDecoder->HasDecoderError()) {
-    PostDecoderError(mContainedDecoder->GetDecoderError());
-  }
-  return !HasError();
+
+  return succeeded;
 }
 
 } // namespace image

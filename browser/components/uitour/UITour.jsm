@@ -11,6 +11,7 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource:///modules/RecentWindow.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
@@ -316,7 +317,7 @@ this.UITour = {
 
   onPageEvent: function(aMessage, aEvent) {
     let browser = aMessage.target;
-    let window = browser.ownerDocument.defaultView;
+    let window = browser.ownerGlobal;
 
     // Does the window have tabs? We need to make sure since windowless browsers do
     // not have tabs.
@@ -527,6 +528,11 @@ this.UITour = {
         break;
       }
 
+      case "showNewTab": {
+        this.showNewTab(window, browser);
+        break;
+      }
+
       case "getConfiguration": {
         if (typeof data.configuration != "string") {
           log.warn("getConfiguration: No configuration option specified");
@@ -602,7 +608,9 @@ this.UITour = {
         string.data = value;
         Services.prefs.setComplexValue("browser.uitour.treatment." + name,
                                        Ci.nsISupportsString, string);
-        UITourHealthReport.recordTreatmentTag(name, value);
+        // The notification is only meant to be used in tests.
+        UITourHealthReport.recordTreatmentTag(name, value)
+                          .then(() => this.notify("TreatmentTag:TelemetrySent"));
         break;
       }
 
@@ -671,7 +679,7 @@ this.UITour = {
         // was generated originally. If the browser where the UI tour is loaded
         // is windowless, just ignore the request to close the tab. The request
         // is also ignored if this is the only tab in the window.
-        let tabBrowser = browser.ownerDocument.defaultView.gBrowser;
+        let tabBrowser = browser.ownerGlobal.gBrowser;
         if (tabBrowser && tabBrowser.browsers.length > 1) {
           tabBrowser.removeTab(tabBrowser.getTabForBrowser(browser));
         }
@@ -705,7 +713,7 @@ this.UITour = {
     log.debug("handleEvent: type =", aEvent.type, "event =", aEvent);
     switch (aEvent.type) {
       case "TabSelect": {
-        let window = aEvent.target.ownerDocument.defaultView;
+        let window = aEvent.target.ownerGlobal;
 
         // Teardown the browser of the tab we just switched away from.
         if (aEvent.detail && aEvent.detail.previousTab) {
@@ -918,7 +926,7 @@ this.UITour = {
   },
 
   isElementVisible: function(aElement) {
-    let targetStyle = aElement.ownerDocument.defaultView.getComputedStyle(aElement);
+    let targetStyle = aElement.ownerGlobal.getComputedStyle(aElement);
     return !aElement.ownerDocument.hidden &&
              targetStyle.display != "none" &&
              targetStyle.visibility == "visible";
@@ -1204,9 +1212,26 @@ this.UITour = {
         },
       }];
     }
+
+    let defaultIcon = "chrome://browser/skin/heartbeat-icon.svg";
+    let iconURL = defaultIcon;
+    try {
+      // Take the optional icon URL if specified
+      if (aOptions.iconURL) {
+        iconURL = new URL(aOptions.iconURL);
+        // For now, only allow chrome URIs.
+        if (iconURL.protocol != "chrome:") {
+          iconURL = defaultIcon;
+          throw new Error("Invalid protocol");
+        }
+      }
+    } catch (error) {
+      log.error("showHeartbeat: Invalid icon URL specified.");
+    }
+
     // Create the notification. Prefix its ID to decrease the chances of collisions.
     let notice = nb.appendNotification(aOptions.message, "heartbeat-" + aOptions.flowId,
-                                       "chrome://browser/skin/heartbeat-icon.svg",
+                                       iconURL,
                                        nb.PRIORITY_INFO_HIGH, buttons,
                                        (aEventType) => {
                                          if (aEventType != "removed") {
@@ -1725,8 +1750,12 @@ this.UITour = {
     }
   },
 
+  showNewTab: function(aWindow, aBrowser) {
+    aWindow.openLinkIn("about:newtab", "current", {targetBrowser: aBrowser});
+  },
+
   hideAnnotationsForPanel: function(aEvent, aTargetPositionCallback) {
-    let win = aEvent.target.ownerDocument.defaultView;
+    let win = aEvent.target.ownerGlobal;
     let annotationElements = new Map([
       // [annotationElement (panel), method to hide the annotation]
       [win.document.getElementById("UITourHighlightContainer"), UITour.hideHighlight.bind(UITour)],
@@ -1793,7 +1822,7 @@ this.UITour = {
         let distribution = "default";
         try {
           distribution = Services.prefs.getDefaultBranch("distribution.").getCharPref("id");
-        } catch(e) {}
+        } catch (e) {}
         appinfo["distribution"] = distribution;
 
         let isDefaultBrowser = null;
@@ -1846,6 +1875,9 @@ this.UITour = {
       case "sync":
         this.sendPageCallback(aMessageManager, aCallbackID, {
           setup: Services.prefs.prefHasUserValue("services.sync.username"),
+          desktopDevices: Preferences.get("services.sync.clients.devices.desktop", 0),
+          mobileDevices: Preferences.get("services.sync.clients.devices.mobile", 0),
+          totalDevices: Preferences.get("services.sync.numClients", 0),
         });
         break;
       case "canReset":
@@ -1948,7 +1980,7 @@ this.UITour = {
       if (observer) {
         return;
       }
-      let win = aPanelEl.ownerDocument.defaultView;
+      let win = aPanelEl.ownerGlobal;
       observer = new win.MutationObserver(this._annotationMutationCallback);
       this._annotationPanelMutationObservers.set(aPanelEl, observer);
       let observerOptions = {
@@ -2066,15 +2098,15 @@ this.UITour.init();
  */
 const UITourHealthReport = {
   recordTreatmentTag: function(tag, value) {
-  TelemetryController.submitExternalPing("uitour-tag",
-    {
-      version: 1,
-      tagName: tag,
-      tagValue: value,
-    },
-    {
-      addClientId: true,
-      addEnvironment: true,
-    });
+    return TelemetryController.submitExternalPing("uitour-tag",
+      {
+        version: 1,
+        tagName: tag,
+        tagValue: value,
+      },
+      {
+        addClientId: true,
+        addEnvironment: true,
+      });
   }
 };
