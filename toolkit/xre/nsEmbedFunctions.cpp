@@ -4,10 +4,6 @@
 
 #include "mozilla/DebugOnly.h"
 
-#if defined(MOZ_WIDGET_QT)
-#include "nsQAppInstance.h"
-#endif
-
 #include "base/basictypes.h"
 
 #include "nsXULAppAPI.h"
@@ -54,7 +50,6 @@
 #include "base/message_loop.h"
 #include "base/process_util.h"
 #include "chrome/common/child_process.h"
-#include "chrome/common/notification_service.h"
 
 #include "mozilla/ipc/BrowserProcessSubThread.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -73,14 +68,19 @@
 
 #include "GMPProcessChild.h"
 #include "GMPLoader.h"
+#include "mozilla/gfx/GPUProcessImpl.h"
 
 #include "GeckoProfiler.h"
 
- #include "base/histogram.h"
+#include "mozilla/Telemetry.h"
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
 #include "mozilla/sandboxTarget.h"
 #include "mozilla/sandboxing/loggingCallbacks.h"
+#endif
+
+#if defined(MOZ_CONTENT_SANDBOX) && !defined(MOZ_WIDGET_GONK)
+#include "mozilla/Preferences.h"
 #endif
 
 #ifdef MOZ_IPDL_TESTS
@@ -89,11 +89,6 @@
 
 using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 #endif  // ifdef MOZ_IPDL_TESTS
-
-#ifdef MOZ_B2G_LOADER
-#include "nsLocalFile.h"
-#include "nsXREAppData.h"
-#endif
 
 #ifdef MOZ_JPROF
 #include "jprof.h"
@@ -298,6 +293,22 @@ SetTaskbarGroupId(const nsString& aId)
 }
 #endif
 
+#if defined(MOZ_CRASHREPORTER)
+#if defined(MOZ_CONTENT_SANDBOX) && !defined(MOZ_WIDGET_GONK)
+void
+AddContentSandboxLevelAnnotation()
+{
+  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    int level = Preferences::GetInt("security.sandbox.content.level");
+    nsAutoCString levelString;
+    levelString.AppendInt(level);
+    CrashReporter::AnnotateCrashReport(
+      NS_LITERAL_CSTRING("ContentSandboxLevel"), levelString);
+  }
+}
+#endif /* MOZ_CONTENT_SANDBOX && !MOZ_WIDGET_GONK */
+#endif /* MOZ_CRASHREPORTER */
+
 nsresult
 XRE_InitChildProcess(int aArgc,
                      char* aArgv[],
@@ -312,10 +323,6 @@ XRE_InitChildProcess(int aArgc,
   // Call the code to install our handler
   setupProfilingStuff();
 #endif
-
-  // This is needed by Telemetry to initialize histogram collection.
-  UniquePtr<base::StatisticsRecorder> statisticsRecorder =
-    MakeUnique<base::StatisticsRecorder>();
 
 #if !defined(MOZ_WIDGET_ANDROID) && !defined(MOZ_WIDGET_GONK)
   // On non-Fennec Gecko, the GMPLoader code resides in plugin-container,
@@ -361,6 +368,14 @@ XRE_InitChildProcess(int aArgc,
 
   // NB: This must be called before profiler_init
   NS_LogInit();
+
+  // This is needed by Telemetry to initialize histogram collection.
+  // NB: This must be called after NS_LogInit().
+  // NS_LogInit must be called before Telemetry::CreateStatisticsRecorder
+  // so as to avoid many log messages of the form
+  //   WARNING: XPCOM objects created/destroyed from static ctor/dtor: [..]
+  // See bug 1279614.
+  Telemetry::CreateStatisticsRecorder();
 
   mozilla::LogModule::Init();
 
@@ -488,10 +503,6 @@ XRE_InitChildProcess(int aArgc,
   g_set_prgname(aArgv[0]);
 #endif
 
-#if defined(MOZ_WIDGET_QT)
-  nsQAppInstance::AddRef();
-#endif
-
 #ifdef OS_POSIX
   if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS") ||
       PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
@@ -545,7 +556,6 @@ XRE_InitChildProcess(int aArgc,
 #endif
 
   base::AtExitManager exitManager;
-  NotificationService notificationService;
 
   nsresult rv = XRE_InitCommandLine(aArgc, aArgv);
   if (NS_FAILED(rv)) {
@@ -557,6 +567,7 @@ XRE_InitChildProcess(int aArgc,
   MessageLoop::Type uiLoopType;
   switch (XRE_GetProcessType()) {
   case GeckoProcessType_Content:
+  case GeckoProcessType_GPU:
       // Content processes need the XPCOM/chromium frankenventloop
       uiLoopType = MessageLoop::TYPE_MOZILLA_CHILD;
       break;
@@ -595,13 +606,44 @@ XRE_InitChildProcess(int aArgc,
       case GeckoProcessType_Content: {
           process = new ContentProcess(parentPID);
           // If passed in grab the application path for xpcom init
-          nsCString appDir;
+          bool foundAppdir = false;
+
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+          // If passed in grab the profile path for sandboxing
+          bool foundProfile = false;
+#endif
+
           for (int idx = aArgc; idx > 0; idx--) {
             if (aArgv[idx] && !strcmp(aArgv[idx], "-appdir")) {
+              MOZ_ASSERT(!foundAppdir);
+              if (foundAppdir) {
+                  continue;
+              }
+              nsCString appDir;
               appDir.Assign(nsDependentCString(aArgv[idx+1]));
               static_cast<ContentProcess*>(process.get())->SetAppDir(appDir);
+              foundAppdir = true;
+            }
+
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+            if (aArgv[idx] && !strcmp(aArgv[idx], "-profile")) {
+              MOZ_ASSERT(!foundProfile);
+              if (foundProfile) {
+                continue;
+              }
+              nsCString profile;
+              profile.Assign(nsDependentCString(aArgv[idx+1]));
+              static_cast<ContentProcess*>(process.get())->SetProfile(profile);
+              foundProfile = true;
+            }
+            if (foundProfile && foundAppdir) {
               break;
             }
+#else
+            if (foundAppdir) {
+              break;
+            }
+#endif /* XP_MACOSX && MOZ_CONTENT_SANDBOX */
           }
         }
         break;
@@ -616,6 +658,10 @@ XRE_InitChildProcess(int aArgc,
 
       case GeckoProcessType_GMPlugin:
         process = new gmp::GMPProcessChild(parentPID);
+        break;
+
+      case GeckoProcessType_GPU:
+        process = new gfx::GPUProcessImpl(parentPID);
         break;
 
       default:
@@ -649,6 +695,12 @@ XRE_InitChildProcess(int aArgc,
 
       OverrideDefaultLocaleIfNeeded();
 
+#if defined(MOZ_CRASHREPORTER)
+#if defined(MOZ_CONTENT_SANDBOX) && !defined(MOZ_WIDGET_GONK)
+      AddContentSandboxLevelAnnotation();
+#endif
+#endif
+
       // Run the UI event loop on the main thread.
       uiMessageLoop.MessageLoop::Run();
 
@@ -664,7 +716,7 @@ XRE_InitChildProcess(int aArgc,
     }
   }
 
-  statisticsRecorder = nullptr;
+  Telemetry::DestroyStatisticsRecorder();
   profiler_shutdown();
   NS_LogTerm();
   return XRE_DeinitCommandLine();
@@ -921,40 +973,3 @@ XRE_InstallX11ErrorHandler()
 #endif
 }
 #endif
-
-#ifdef MOZ_B2G_LOADER
-extern const nsXREAppData* gAppData;
-
-/**
- * Preload static data of Gecko for B2G loader.
- *
- * This function is supposed to be called before XPCOM is initialized.
- * For now, this function preloads
- *  - XPT interface Information
- */
-void
-XRE_ProcLoaderPreload(const char* aProgramDir, const nsXREAppData* aAppData)
-{
-    void PreloadXPT(nsIFile *);
-
-    nsresult rv;
-    nsCOMPtr<nsIFile> omnijarFile;
-    rv = NS_NewNativeLocalFile(nsCString(aProgramDir),
-			       true,
-			       getter_AddRefs(omnijarFile));
-    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-
-    rv = omnijarFile->AppendNative(NS_LITERAL_CSTRING(NS_STRINGIFY(OMNIJAR_NAME)));
-    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-
-    /*
-     * gAppData is required by nsXULAppInfo.  The manifest parser
-     * evaluate flags with the information from nsXULAppInfo.
-     */
-    gAppData = aAppData;
-
-    PreloadXPT(omnijarFile);
-
-    gAppData = nullptr;
-}
-#endif /* MOZ_B2G_LOADER */

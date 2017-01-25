@@ -11,6 +11,8 @@
 #define LIBANGLE_RENDERER_GL_RENDERERGLUTILS_H_
 
 #include "libANGLE/angletypes.h"
+#include "libANGLE/Error.h"
+#include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/gl/functionsgl_typedefs.h"
 
 #include <string>
@@ -30,6 +32,7 @@ class FunctionsGL;
 struct WorkaroundsGL;
 
 VendorID GetVendorID(const FunctionsGL *functions);
+std::string GetDriverVersion(const FunctionsGL *functions);
 
 namespace nativegl_gl
 {
@@ -40,6 +43,19 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
 void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workarounds);
 }
 
+bool CanMapBufferForRead(const FunctionsGL *functions);
+uint8_t *MapBufferRangeWithFallback(const FunctionsGL *functions,
+                                    GLenum target,
+                                    size_t offset,
+                                    size_t length,
+                                    GLbitfield access);
+
+gl::ErrorOrResult<bool> ShouldApplyLastRowPaddingWorkaround(const gl::Extents &size,
+                                                            const gl::PixelStoreStateBase &state,
+                                                            GLenum format,
+                                                            GLenum type,
+                                                            bool is3D,
+                                                            const void *pixels);
 }
 
 #endif // LIBANGLE_RENDERER_GL_RENDERERGLUTILS_H_

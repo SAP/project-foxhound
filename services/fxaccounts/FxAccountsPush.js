@@ -10,6 +10,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://gre/modules/FxAccountsCommon.js");
+Cu.import("resource://gre/modules/Task.jsm");
 
 /**
  * FxAccountsPushService manages Push notifications for Firefox Accounts in the browser
@@ -113,50 +114,92 @@ FxAccountsPushService.prototype = {
    * @param subject
    * @param topic
    * @param data
+   * @returns {Promise}
+   */
+  _observe(subject, topic, data) {
+    this.log.trace(`observed topic=${topic}, data=${data}, subject=${subject}`);
+    switch (topic) {
+      case this.pushService.pushTopic:
+        if (data === FXA_PUSH_SCOPE_ACCOUNT_UPDATE) {
+          let message = subject.QueryInterface(Ci.nsIPushMessage);
+          return this._onPushMessage(message);
+        }
+        break;
+      case this.pushService.subscriptionChangeTopic:
+        if (data === FXA_PUSH_SCOPE_ACCOUNT_UPDATE) {
+          return this._onPushSubscriptionChange();
+        }
+        break;
+      case ONLOGOUT_NOTIFICATION:
+        // user signed out, we need to stop polling the Push Server
+        return this.unsubscribe().catch(err => {
+          this.log.error("Error during unsubscribe", err);
+        });
+        break;
+      default:
+        break;
+    }
+  },
+  /**
+   * Wrapper around _observe that catches errors
    */
   observe(subject, topic, data) {
-   this.log.trace(`observed topic=${topic}, data=${data}, subject=${subject}`);
-   switch (topic) {
-     case this.pushService.pushTopic:
-       if (data === FXA_PUSH_SCOPE_ACCOUNT_UPDATE) {
-         this._onPushMessage();
-       }
-       break;
-     case this.pushService.subscriptionChangeTopic:
-       if (data === FXA_PUSH_SCOPE_ACCOUNT_UPDATE) {
-         this._onPushSubscriptionChange();
-       }
-       break;
-     case ONLOGOUT_NOTIFICATION:
-       // user signed out, we need to stop polling the Push Server
-       this.unsubscribe().catch(err => {
-         this.log.error("Error during unsubscribe", err);
-       });
-       break;
-     default:
-       break;
-   }
+    Promise.resolve()
+      .then(() => this._observe(subject, topic, data))
+      .catch(err => this.log.error(err));
   },
   /**
    * Fired when the Push server sends a notification.
    *
    * @private
+   * @returns {Promise}
    */
-  _onPushMessage() {
+  _onPushMessage(message) {
     this.log.trace("FxAccountsPushService _onPushMessage");
-    // Use this signal to check the verification state of the account right away
-    this.fxAccounts.checkVerificationStatus();
+    if (!message.data) {
+      // Use the empty signal to check the verification state of the account right away
+      return this.fxAccounts.checkVerificationStatus();
+    }
+    let payload = message.data.json();
+    switch (payload.command) {
+      case ON_DEVICE_DISCONNECTED_NOTIFICATION:
+        return this.fxAccounts.handleDeviceDisconnection(payload.data.id);
+        break;
+      case ON_PASSWORD_CHANGED_NOTIFICATION:
+      case ON_PASSWORD_RESET_NOTIFICATION:
+        return this._onPasswordChanged();
+        break;
+      case ON_COLLECTION_CHANGED_NOTIFICATION:
+        Services.obs.notifyObservers(null, ON_COLLECTION_CHANGED_NOTIFICATION, payload.data.collections);
+      default:
+        this.log.warn("FxA Push command unrecognized: " + payload.command);
+    }
   },
+  /**
+   * Check the FxA session status after a password change/reset event.
+   * If the session is invalid, reset credentials and notify listeners of
+   * ON_ACCOUNT_STATE_CHANGE_NOTIFICATION that the account may have changed
+   *
+   * @returns {Promise}
+   * @private
+   */
+  _onPasswordChanged: Task.async(function* () {
+    if (!(yield this.fxAccounts.sessionStatus())) {
+      yield this.fxAccounts.resetCredentials();
+      Services.obs.notifyObservers(null, ON_ACCOUNT_STATE_CHANGE_NOTIFICATION, null);
+    }
+  }),
   /**
    * Fired when the Push server drops a subscription, or the subscription identifier changes.
    *
    * https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Reference/Interface/nsIPushService#Receiving_Push_Messages
    *
+   * @returns {Promise}
    * @private
    */
   _onPushSubscriptionChange() {
     this.log.trace("FxAccountsPushService _onPushSubscriptionChange");
-    this.fxAccounts.updateDeviceRegistration();
+    return this.fxAccounts.updateDeviceRegistration();
   },
   /**
    * Unsubscribe from the Push server
@@ -182,8 +225,8 @@ FxAccountsPushService.prototype = {
             this.log.warn("FxAccountsPushService failed to unsubscribe", result);
           }
           return resolve(ok);
-        })
-    })
+        });
+    });
   },
 };
 

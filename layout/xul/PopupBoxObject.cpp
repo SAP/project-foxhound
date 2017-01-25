@@ -283,8 +283,7 @@ PopupBoxObject::GetOuterScreenRect()
   if (view) {
     nsIWidget* widget = view->GetWidget();
     if (widget) {
-      LayoutDeviceIntRect screenRect;
-      widget->GetScreenBounds(screenRect);
+      LayoutDeviceIntRect screenRect = widget->GetScreenBounds();
 
       int32_t pp = menuPopupFrame->PresContext()->AppUnitsPerDevPixel();
       rect->SetLayoutRect(LayoutDeviceIntRect::ToAppUnits(screenRect, pp));
@@ -335,6 +334,9 @@ PopupBoxObject::GetAlignmentPosition(nsString& positionStr)
     case POPUPPOSITION_AFTERPOINTER:
       positionStr.AssignLiteral("after_pointer");
       break;
+    case POPUPPOSITION_SELECTION:
+      positionStr.AssignLiteral("selection");
+      break;
     default:
       // Leave as an empty string.
       break;
@@ -355,6 +357,16 @@ PopupBoxObject::AlignmentOffset()
   nsPoint appOffset(menuPopupFrame->GetAlignmentOffset(), 0);
   nsIntPoint popupOffset = appOffset.ToNearestPixels(pp);
   return popupOffset.x;
+}
+
+void
+PopupBoxObject::SetConstraintRect(dom::DOMRectReadOnly& aRect)
+{
+  nsMenuPopupFrame *menuPopupFrame = do_QueryFrame(GetFrame(false));
+  if (menuPopupFrame) {
+    menuPopupFrame->SetOverrideConstraintRect(
+      LayoutDeviceIntRect::Truncate(aRect.Left(), aRect.Top(), aRect.Width(), aRect.Height()));
+  }
 }
 
 } // namespace dom

@@ -7,7 +7,9 @@ include protocol PBlobStream;
 include protocol PContent;
 include protocol PContentBridge;
 include protocol PFileDescriptorSet;
+include protocol PSendStream;
 
+include BlobTypes;
 include DOMTypes;
 include InputStreamParams;
 
@@ -42,7 +44,6 @@ parent:
   sync GetFileId()
     returns (int64_t fileId);
 
-  // Use only for testing!
   sync GetFilePath()
     returns (nsString filePath);
 

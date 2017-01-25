@@ -84,12 +84,14 @@ FileSystemBase::GetRealPath(BlobImpl* aFile, nsIFile** aPath) const
   ErrorResult rv;
   aFile->GetMozFullPathInternal(filePath, rv);
   if (NS_WARN_IF(rv.Failed())) {
+    rv.SuppressException();
     return false;
   }
 
   rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(filePath),
                              true, aPath);
   if (NS_WARN_IF(rv.Failed())) {
+    rv.SuppressException();
     return false;
   }
 
@@ -118,7 +120,7 @@ FileSystemBase::GetDirectoryName(nsIFile* aFile, nsAString& aRetval,
   MOZ_ASSERT(aFile);
 
   aRv = aFile->GetLeafName(aRetval);
-  NS_WARN_IF(aRv.Failed());
+  NS_WARNING_ASSERTION(!aRv.Failed(), "GetLeafName failed");
 }
 
 void

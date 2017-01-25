@@ -116,6 +116,7 @@ public:
                                                             int32_t aStride,
                                                             SurfaceFormat aFormat) const override;
   virtual already_AddRefed<SourceSurface> OptimizeSourceSurface(SourceSurface *aSurface) const override;
+  virtual already_AddRefed<SourceSurface> OptimizeSourceSurfaceForUnknownAlpha(SourceSurface *aSurface) const override;
   virtual already_AddRefed<SourceSurface>
     CreateSourceSurfaceFromNativeSurface(const NativeSurface &aSurface) const override;
   virtual already_AddRefed<DrawTarget>
@@ -125,6 +126,7 @@ public:
   virtual already_AddRefed<FilterNode> CreateFilter(FilterType aType) override;
   virtual void SetTransform(const Matrix &aTransform) override;
   virtual void *GetNativeSurface(NativeSurfaceType aType) override;
+  virtual void DetachAllSnapshots() override { MarkChanged(); }
 
   bool Init(const IntSize &aSize, SurfaceFormat aFormat);
   void Init(unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat, bool aUninitialized = false);
@@ -140,6 +142,8 @@ public:
                       SurfaceFormat aFormat) override {
     return InitWithGrContext(aGrContext, aSize, aFormat, false);
   }
+
+  already_AddRefed<SourceSurface> OptimizeGPUSourceSurface(SourceSurface *aSurface) const;
 #endif
 
   // Skia assumes that texture sizes fit in 16-bit signed integers.

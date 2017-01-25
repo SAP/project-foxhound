@@ -9,12 +9,16 @@
 #include "MediaStreamGraph.h"
 #include "nsIUUIDGenerator.h"
 #include "nsServiceManagerUtils.h"
+#include "MediaStreamListener.h"
+#include "systemservices/MediaUtils.h"
+
+#include "mozilla/dom/Promise.h"
 
 #ifdef LOG
 #undef LOG
 #endif
 
-static PRLogModuleInfo* gMediaStreamTrackLog;
+static mozilla::LazyLogModule gMediaStreamTrackLog("MediaStreamTrack");
 #define LOG(type, msg) MOZ_LOG(gMediaStreamTrackLog, type, msg)
 
 namespace mozilla {
@@ -37,21 +41,16 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaStreamTrackSource)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPrincipal)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-already_AddRefed<Promise>
-MediaStreamTrackSource::ApplyConstraints(nsPIDOMWindowInner* aWindow,
-                                         const dom::MediaTrackConstraints& aConstraints,
-                                         ErrorResult &aRv)
+auto
+MediaStreamTrackSource::ApplyConstraints(
+    nsPIDOMWindowInner* aWindow,
+    const dom::MediaTrackConstraints& aConstraints) -> already_AddRefed<PledgeVoid>
 {
-  nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(aWindow);
-  RefPtr<Promise> promise = Promise::Create(go, aRv);
-  MOZ_RELEASE_ASSERT(!aRv.Failed());
-
-  promise->MaybeReject(new MediaStreamError(
-    aWindow,
-    NS_LITERAL_STRING("OverconstrainedError"),
-    NS_LITERAL_STRING(""),
-    NS_LITERAL_STRING("")));
-  return promise.forget();
+  RefPtr<PledgeVoid> p = new PledgeVoid();
+  p->Reject(new MediaStreamError(aWindow,
+                                 NS_LITERAL_STRING("OverconstrainedError"),
+                                 NS_LITERAL_STRING("")));
+  return p.forget();
 }
 
 /**
@@ -111,16 +110,15 @@ protected:
 
 MediaStreamTrack::MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
                                    TrackID aInputTrackID,
-                                   MediaStreamTrackSource* aSource)
+                                   MediaStreamTrackSource* aSource,
+                                   const MediaTrackConstraints& aConstraints)
   : mOwningStream(aStream), mTrackID(aTrackID),
     mInputTrackID(aInputTrackID), mSource(aSource),
     mPrincipal(aSource->GetPrincipal()),
-    mEnded(false), mEnabled(true), mRemote(aSource->IsRemote()), mStopped(false)
+    mReadyState(MediaStreamTrackState::Live),
+    mEnabled(true), mRemote(aSource->IsRemote()),
+    mConstraints(aConstraints)
 {
-
-  if (!gMediaStreamTrackLog) {
-    gMediaStreamTrackLog = PR_NewLogModule("MediaStreamTrack");
-  }
 
   GetSource().RegisterSink(this);
 
@@ -159,6 +157,12 @@ MediaStreamTrack::Destroy()
     }
     mPrincipalHandleListener->Forget();
     mPrincipalHandleListener = nullptr;
+  }
+  for (auto l : mTrackListeners) {
+    RemoveListener(l);
+  }
+  for (auto l : mDirectTrackListeners) {
+    RemoveDirectListener(l);
   }
 }
 
@@ -208,7 +212,8 @@ MediaStreamTrack::SetEnabled(bool aEnabled)
                        this, aEnabled ? "Enabled" : "Disabled"));
 
   mEnabled = aEnabled;
-  GetOwnedStream()->SetTrackEnabled(mTrackID, aEnabled);
+  GetOwnedStream()->SetTrackEnabled(mTrackID, mEnabled ? DisabledTrackMode::ENABLED
+                                                       : DisabledTrackMode::SILENCE_BLACK);
 }
 
 void
@@ -216,8 +221,8 @@ MediaStreamTrack::Stop()
 {
   LOG(LogLevel::Info, ("MediaStreamTrack %p Stop()", this));
 
-  if (mStopped) {
-    LOG(LogLevel::Warning, ("MediaStreamTrack %p Already stopped", this));
+  if (Ended()) {
+    LOG(LogLevel::Warning, ("MediaStreamTrack %p Already ended", this));
     return;
   }
 
@@ -236,10 +241,22 @@ MediaStreamTrack::Stop()
   MOZ_ASSERT(mOwningStream, "Every MediaStreamTrack needs an owning DOMMediaStream");
   DOMMediaStream::TrackPort* port = mOwningStream->FindOwnedTrackPort(*this);
   MOZ_ASSERT(port, "A MediaStreamTrack must exist in its owning DOMMediaStream");
-  RefPtr<Pledge<bool>> p = port->BlockSourceTrackId(mInputTrackID);
+  RefPtr<Pledge<bool>> p = port->BlockSourceTrackId(mInputTrackID, BlockingMode::CREATION);
   Unused << p;
 
-  mStopped = true;
+  mReadyState = MediaStreamTrackState::Ended;
+}
+
+void
+MediaStreamTrack::GetConstraints(dom::MediaTrackConstraints& aResult)
+{
+  aResult = mConstraints;
+}
+
+void
+MediaStreamTrack::GetSettings(dom::MediaTrackSettings& aResult)
+{
+  GetSource().GetSettings(aResult);
 }
 
 already_AddRefed<Promise>
@@ -254,8 +271,28 @@ MediaStreamTrack::ApplyConstraints(const MediaTrackConstraints& aConstraints,
                          "constraints %s", this, NS_ConvertUTF16toUTF8(str).get()));
   }
 
+  typedef media::Pledge<bool, MediaStreamError*> PledgeVoid;
+
   nsPIDOMWindowInner* window = mOwningStream->GetParentObject();
-  return GetSource().ApplyConstraints(window, aConstraints, aRv);
+
+  nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(window);
+  RefPtr<Promise> promise = Promise::Create(go, aRv);
+
+  // Forward constraints to the source.
+  //
+  // After GetSource().ApplyConstraints succeeds (after it's been to media-thread
+  // and back), and no sooner, do we set mConstraints to the newly applied values.
+
+  // Keep a reference to this, to make sure it's still here when we get back.
+  RefPtr<MediaStreamTrack> that = this;
+  RefPtr<PledgeVoid> p = GetSource().ApplyConstraints(window, aConstraints);
+  p->Then([this, that, promise, aConstraints](bool& aDummy) mutable {
+    mConstraints = aConstraints;
+    promise->MaybeResolve(false);
+  }, [promise](MediaStreamError*& reason) mutable {
+    promise->MaybeReject(reason);
+  });
+  return promise.forget();
 }
 
 MediaStreamGraph*
@@ -350,6 +387,38 @@ MediaStreamTrack::Clone()
   return newStream->CloneDOMTrack(*this, mTrackID);
 }
 
+void
+MediaStreamTrack::SetReadyState(MediaStreamTrackState aState)
+{
+  MOZ_ASSERT(!(mReadyState == MediaStreamTrackState::Ended &&
+               aState == MediaStreamTrackState::Live),
+             "We don't support overriding the ready state from ended to live");
+
+  if (mReadyState == MediaStreamTrackState::Live &&
+      aState == MediaStreamTrackState::Ended &&
+      mSource) {
+    mSource->UnregisterSink(this);
+  }
+
+  mReadyState = aState;
+}
+
+void
+MediaStreamTrack::NotifyEnded()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (Ended()) {
+    return;
+  }
+
+  LOG(LogLevel::Info, ("MediaStreamTrack %p ended", this));
+
+  mReadyState = MediaStreamTrackState::Ended;
+
+  DispatchTrustedEvent(NS_LITERAL_STRING("ended"));
+}
+
 DOMMediaStream*
 MediaStreamTrack::GetInputDOMStream()
 {
@@ -370,6 +439,11 @@ MediaStreamTrack::GetInputStream()
 ProcessedMediaStream*
 MediaStreamTrack::GetOwnedStream()
 {
+  if (!mOwningStream)
+  {
+    return nullptr;
+  }
+
   return mOwningStream->GetOwnedStream();
 }
 
@@ -378,8 +452,10 @@ MediaStreamTrack::AddListener(MediaStreamTrackListener* aListener)
 {
   LOG(LogLevel::Debug, ("MediaStreamTrack %p adding listener %p",
                         this, aListener));
+  MOZ_ASSERT(GetOwnedStream());
 
   GetOwnedStream()->AddTrackListener(aListener, mTrackID);
+  mTrackListeners.AppendElement(aListener);
 }
 
 void
@@ -388,36 +464,45 @@ MediaStreamTrack::RemoveListener(MediaStreamTrackListener* aListener)
   LOG(LogLevel::Debug, ("MediaStreamTrack %p removing listener %p",
                         this, aListener));
 
-  GetOwnedStream()->RemoveTrackListener(aListener, mTrackID);
+  if (GetOwnedStream()) {
+    GetOwnedStream()->RemoveTrackListener(aListener, mTrackID);
+    mTrackListeners.RemoveElement(aListener);
+  }
 }
 
 void
-MediaStreamTrack::AddDirectListener(MediaStreamTrackDirectListener *aListener)
+MediaStreamTrack::AddDirectListener(DirectMediaStreamTrackListener *aListener)
 {
   LOG(LogLevel::Debug, ("MediaStreamTrack %p (%s) adding direct listener %p to "
                         "stream %p, track %d",
                         this, AsAudioStreamTrack() ? "audio" : "video",
                         aListener, GetOwnedStream(), mTrackID));
+  MOZ_ASSERT(GetOwnedStream());
 
   GetOwnedStream()->AddDirectTrackListener(aListener, mTrackID);
+  mDirectTrackListeners.AppendElement(aListener);
 }
 
 void
-MediaStreamTrack::RemoveDirectListener(MediaStreamTrackDirectListener *aListener)
+MediaStreamTrack::RemoveDirectListener(DirectMediaStreamTrackListener *aListener)
 {
   LOG(LogLevel::Debug, ("MediaStreamTrack %p removing direct listener %p from stream %p",
                         this, aListener, GetOwnedStream()));
 
-  GetOwnedStream()->RemoveDirectTrackListener(aListener, mTrackID);
+  if (GetOwnedStream()) {
+    GetOwnedStream()->RemoveDirectTrackListener(aListener, mTrackID);
+    mDirectTrackListeners.RemoveElement(aListener);
+  }
 }
 
 already_AddRefed<MediaInputPort>
-MediaStreamTrack::ForwardTrackContentsTo(ProcessedMediaStream* aStream)
+MediaStreamTrack::ForwardTrackContentsTo(ProcessedMediaStream* aStream,
+                                         TrackID aDestinationTrackID)
 {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_RELEASE_ASSERT(aStream);
   RefPtr<MediaInputPort> port =
-    aStream->AllocateInputPort(GetOwnedStream(), mTrackID);
+    aStream->AllocateInputPort(GetOwnedStream(), mTrackID, aDestinationTrackID);
   return port.forget();
 }
 

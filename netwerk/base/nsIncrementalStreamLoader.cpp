@@ -113,7 +113,7 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest* request, nsISupports *ctxt,
   return NS_OK;
 }
 
-NS_METHOD
+nsresult
 nsIncrementalStreamLoader::WriteSegmentFun(void *closure,
                                            const char *fromSegment,
                                            uint32_t toOffset,
@@ -191,7 +191,7 @@ nsIncrementalStreamLoader::WriteSegmentFun(void *closure,
   return NS_OK;
 }
 
-NS_METHOD
+nsresult
 nsIncrementalStreamLoader::WriteSegmentFunTaint(nsITaintawareInputStream *inStr,
                                                 void *closure,
                                                 const char *fromSegment,
@@ -203,7 +203,7 @@ nsIncrementalStreamLoader::WriteSegmentFunTaint(nsITaintawareInputStream *inStr,
     return WriteSegmentFun(closure, fromSegment, toOffset, count, taint, writeCount);
 }
 
-NS_METHOD
+nsresult
 nsIncrementalStreamLoader::WriteSegmentFunNoTaint(nsIInputStream *inStr,
                                                   void *closure,
                                                   const char *fromSegment,

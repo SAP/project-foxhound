@@ -35,9 +35,6 @@
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
-#ifdef MOZ_NUWA_PROCESS
-#include "ipc/Nuwa.h"
-#endif
 #include "mozilla/Logging.h"
 
 #include "mozilla/Preferences.h"
@@ -50,11 +47,6 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "SerializedLoadContext.h"
 #include "mozilla/net/NeckoChild.h"
-
-#if defined(ANDROID) && !defined(MOZ_WIDGET_GONK)
-#include "nsIPropertyBag2.h"
-static const int32_t ANDROID_23_VERSION = 10;
-#endif
 
 using namespace mozilla;
 
@@ -141,6 +133,8 @@ static const uint32_t PREDICTOR_MAX_RESOURCES_DEFAULT = 100;
 static const char PREDICTOR_MAX_URI_LENGTH_PREF[] =
   "network.predictor.max-uri-length";
 static const uint32_t PREDICTOR_MAX_URI_LENGTH_DEFAULT = 500;
+
+static const char PREDICTOR_DOING_TESTS_PREF[] = "network.predictor.doing-tests";
 
 static const char PREDICTOR_CLEANED_UP_PREF[] = "network.predictor.cleaned-up";
 
@@ -335,7 +329,11 @@ Predictor::Predictor()
   :mInitialized(false)
   ,mEnabled(true)
   ,mEnableHoverOnSSL(false)
+#ifdef NIGHTLY_BUILD
   ,mEnablePrefetch(true)
+#else
+  ,mEnablePrefetch(false)
+#endif
   ,mPageDegradationDay(PREDICTOR_PAGE_DELTA_DAY_DEFAULT)
   ,mPageDegradationWeek(PREDICTOR_PAGE_DELTA_WEEK_DEFAULT)
   ,mPageDegradationMonth(PREDICTOR_PAGE_DELTA_MONTH_DEFAULT)
@@ -355,6 +353,7 @@ Predictor::Predictor()
   ,mMaxResourcesPerEntry(PREDICTOR_MAX_RESOURCES_DEFAULT)
   ,mStartupCount(1)
   ,mMaxURILength(PREDICTOR_MAX_URI_LENGTH_DEFAULT)
+  ,mDoingTests(false)
 {
   MOZ_ASSERT(!sSelf, "multiple Predictor instances!");
   sSelf = this;
@@ -385,15 +384,14 @@ Predictor::InstallObserver()
   rv = obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (!prefs) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
   Preferences::AddBoolVarCache(&mEnabled, PREDICTOR_ENABLED_PREF, true);
   Preferences::AddBoolVarCache(&mEnableHoverOnSSL,
                                PREDICTOR_SSL_HOVER_PREF, false);
+#ifdef NIGHTLY_BUILD
   Preferences::AddBoolVarCache(&mEnablePrefetch, PREDICTOR_PREFETCH_PREF, true);
+#else
+  Preferences::AddBoolVarCache(&mEnablePrefetch, PREDICTOR_PREFETCH_PREF, false);
+#endif
   Preferences::AddIntVarCache(&mPageDegradationDay,
                               PREDICTOR_PAGE_DELTA_DAY_PREF,
                               PREDICTOR_PAGE_DELTA_DAY_DEFAULT);
@@ -454,6 +452,8 @@ Predictor::InstallObserver()
 
   Preferences::AddUintVarCache(&mMaxURILength, PREDICTOR_MAX_URI_LENGTH_PREF,
                                PREDICTOR_MAX_URI_LENGTH_DEFAULT);
+
+  Preferences::AddBoolVarCache(&mDoingTests, PREDICTOR_DOING_TESTS_PREF, false);
 
   if (!mCleanedUp) {
     mCleanupTimer = do_CreateInstance("@mozilla.org/timer;1");
@@ -537,23 +537,6 @@ Predictor::GetInterface(const nsIID &iid, void **result)
   return QueryInterface(iid, result);
 }
 
-#ifdef MOZ_NUWA_PROCESS
-namespace {
-class NuwaMarkPredictorThreadRunner : public Runnable
-{
-  NS_IMETHODIMP Run() override
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    if (IsNuwaProcess()) {
-      NuwaMarkCurrentThread(nullptr, nullptr);
-    }
-    return NS_OK;
-  }
-};
-} // namespace
-#endif
-
 // Predictor::nsICacheEntryMetaDataVisitor
 
 #define SEEN_META_DATA "predictor::seen"
@@ -602,22 +585,6 @@ Predictor::Init()
 
   nsresult rv = NS_OK;
 
-#if defined(ANDROID) && !defined(MOZ_WIDGET_GONK)
-  // This is an ugly hack to disable the predictor on android < 2.3, as it
-  // doesn't play nicely with those android versions, at least on our infra.
-  // Causes timeouts in reftests. See bug 881804 comment 86.
-  nsCOMPtr<nsIPropertyBag2> infoService =
-    do_GetService("@mozilla.org/system-info;1");
-  if (infoService) {
-    int32_t androidVersion = -1;
-    rv = infoService->GetPropertyAsInt32(NS_LITERAL_STRING("version"),
-                                         &androidVersion);
-    if (NS_SUCCEEDED(rv) && (androidVersion < ANDROID_23_VERSION)) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-  }
-#endif
-
   rv = InstallObserver();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -632,7 +599,7 @@ Predictor::Init()
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<LoadContextInfo> lci =
-    new LoadContextInfo(false, false, NeckoOriginAttributes());
+    new LoadContextInfo(false, NeckoOriginAttributes());
 
   rv = cacheStorageService->DiskCacheStorage(lci, false,
                                              getter_AddRefs(mCacheDiskStorage));
@@ -761,11 +728,6 @@ Predictor::MaybeCleanupOldDBFiles()
   nsCOMPtr<nsIThread> ioThread;
   rv = NS_NewNamedThread("NetPredictClean", getter_AddRefs(ioThread));
   RETURN_IF_FAILED(rv);
-
-#ifdef MOZ_NUWA_PROCESS
-  nsCOMPtr<nsIRunnable> nuwaRunner = new NuwaMarkPredictorThreadRunner();
-  ioThread->Dispatch(nuwaRunner, NS_DISPATCH_NORMAL);
-#endif
 
   RefPtr<PredictorOldCleanupRunner> runner =
     new PredictorOldCleanupRunner(ioThread, dbFile);
@@ -981,10 +943,10 @@ Predictor::PredictInternal(PredictorPredictReason reason, nsICacheEntry *entry,
 
   switch (reason) {
     case nsINetworkPredictor::PREDICT_LOAD:
-      rv = PredictForPageload(entry, targetURI, stackCount, verifier);
+      rv = PredictForPageload(entry, targetURI, stackCount, fullUri, verifier);
       break;
     case nsINetworkPredictor::PREDICT_STARTUP:
-      rv = PredictForStartup(entry, verifier);
+      rv = PredictForStartup(entry, fullUri, verifier);
       break;
     default:
       PREDICTOR_LOG(("    invalid reason"));
@@ -1027,7 +989,7 @@ Predictor::PredictForLink(nsIURI *targetURI, nsIURI *sourceURI,
 static const uint8_t MAX_PAGELOAD_DEPTH = 10;
 bool
 Predictor::PredictForPageload(nsICacheEntry *entry, nsIURI *targetURI,
-                              uint8_t stackCount,
+                              uint8_t stackCount, bool fullUri,
                               nsINetworkPredictorVerifier *verifier)
 {
   MOZ_ASSERT(NS_IsMainThread());
@@ -1073,7 +1035,7 @@ Predictor::PredictForPageload(nsICacheEntry *entry, nsIURI *targetURI,
     return RunPredictions(nullptr, verifier);
   }
 
-  CalculatePredictions(entry, targetURI, lastLoad, loadCount, globalDegradation);
+  CalculatePredictions(entry, targetURI, lastLoad, loadCount, globalDegradation, fullUri);
 
   return RunPredictions(targetURI, verifier);
 }
@@ -1081,7 +1043,7 @@ Predictor::PredictForPageload(nsICacheEntry *entry, nsIURI *targetURI,
 // This is the driver for predicting at browser startup time based on pages that
 // have previously been loaded close to startup.
 bool
-Predictor::PredictForStartup(nsICacheEntry *entry,
+Predictor::PredictForStartup(nsICacheEntry *entry, bool fullUri,
                              nsINetworkPredictorVerifier *verifier)
 {
   MOZ_ASSERT(NS_IsMainThread());
@@ -1089,7 +1051,7 @@ Predictor::PredictForStartup(nsICacheEntry *entry,
   PREDICTOR_LOG(("Predictor::PredictForStartup"));
   int32_t globalDegradation = CalculateGlobalDegradation(mLastStartupTime);
   CalculatePredictions(entry, nullptr, mLastStartupTime, mStartupCount,
-                       globalDegradation);
+                       globalDegradation, fullUri);
   return RunPredictions(nullptr, verifier);
 }
 
@@ -1242,7 +1204,7 @@ Predictor::SanitizePrefs()
 void
 Predictor::CalculatePredictions(nsICacheEntry *entry, nsIURI *referrer,
                                 uint32_t lastLoad, uint32_t loadCount,
-                                int32_t globalDegradation)
+                                int32_t globalDegradation, bool fullUri)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -1270,9 +1232,15 @@ Predictor::CalculatePredictions(nsICacheEntry *entry, nsIURI *referrer,
 
     int32_t confidence = CalculateConfidence(hitCount, loadCount, lastHit,
                                              lastLoad, globalDegradation);
-    UpdateRollingLoadCount(entry, flags, key, hitCount, lastHit);
+    if (fullUri) {
+      UpdateRollingLoadCount(entry, flags, key, hitCount, lastHit);
+    }
     PREDICTOR_LOG(("CalculatePredictions key=%s value=%s confidence=%d", key, value, confidence));
-    if (!referrer) {
+    if (!fullUri) {
+      // Not full URI - don't prefetch! No sense in it!
+      PREDICTOR_LOG(("    forcing non-cacheability - not full URI"));
+      flags &= ~FLAG_PREFETCHABLE;
+    } else if (!referrer) {
       // No referrer means we can't prefetch, so pretend it's non-cacheable,
       // no matter what.
       PREDICTOR_LOG(("    forcing non-cacheability - no referrer"));
@@ -1645,7 +1613,7 @@ Predictor::LearnInternal(PredictorLearnReason reason, nsICacheEntry *entry,
       // have no real page loads in xpcshell, and this is how we fake it up
       // so that all the work that normally happens behind the scenes in a
       // page load can be done for testing purposes.
-      if (fullUri) {
+      if (fullUri && mDoingTests) {
         PREDICTOR_LOG(("    WARNING - updating rolling load count. "
                        "If you see this outside tests, you did it wrong"));
         SanitizePrefs();
@@ -1664,7 +1632,7 @@ Predictor::LearnInternal(PredictorLearnReason reason, nsICacheEntry *entry,
 
           nsCOMPtr<nsIURI> uri;
           uint32_t hitCount, lastHit, flags;
-          if (!ParseMetaDataEntry(key, value, getter_AddRefs(uri), hitCount, lastHit, flags)) {
+          if (!ParseMetaDataEntry(nullptr, value, nullptr, hitCount, lastHit, flags)) {
             // This failed, get rid of it so we don't waste space
             entry->SetMetaDataElement(key, nullptr);
             continue;
@@ -1704,10 +1672,8 @@ Predictor::SpaceCleaner::OnMetaDataElement(const char *key, const char *value)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIURI> parsedURI;
   uint32_t hitCount, lastHit, flags;
-  bool ok = mPredictor->ParseMetaDataEntry(key, value,
-                                           getter_AddRefs(parsedURI),
+  bool ok = mPredictor->ParseMetaDataEntry(nullptr, value, nullptr,
                                            hitCount, lastHit, flags);
 
   if (!ok) {
@@ -1718,11 +1684,9 @@ Predictor::SpaceCleaner::OnMetaDataElement(const char *key, const char *value)
     return NS_OK;
   }
 
-  nsCString uri;
-  nsresult rv = parsedURI->GetAsciiSpec(uri);
+  nsCString uri(key + (sizeof(META_DATA_PREFIX) - 1));
   uint32_t uriLength = uri.Length();
-  if (NS_SUCCEEDED(rv) &&
-      uriLength > mPredictor->mMaxURILength) {
+  if (uriLength > mPredictor->mMaxURILength) {
     // Default to getting rid of URIs that are too long and were put in before
     // we had our limit on URI length, in order to free up some space.
     nsCString nsKey;
@@ -2418,6 +2382,16 @@ Predictor::UpdateCacheability(nsIURI *sourceURI, nsIURI *targetURI,
     return;
   }
 
+  if (!sourceURI || !targetURI) {
+    PREDICTOR_LOG(("Predictor::UpdateCacheability missing source or target uri"));
+    return;
+  }
+
+  if (!IsNullOrHttp(sourceURI) || !IsNullOrHttp(targetURI)) {
+    PREDICTOR_LOG(("Predictor::UpdateCacheability non-http(s) uri"));
+    return;
+  }
+
   RefPtr<Predictor> self = sSelf;
   if (self) {
     nsAutoCString method;
@@ -2433,6 +2407,22 @@ Predictor::UpdateCacheabilityInternal(nsIURI *sourceURI, nsIURI *targetURI,
                                       const nsCString &method)
 {
   PREDICTOR_LOG(("Predictor::UpdateCacheability httpStatus=%u", httpStatus));
+
+  if (!mInitialized) {
+    PREDICTOR_LOG(("    not initialized"));
+    return;
+  }
+
+  if (!mEnabled) {
+    PREDICTOR_LOG(("    not enabled"));
+    return;
+  }
+
+  if (!mEnablePrefetch) {
+    PREDICTOR_LOG(("    prefetch not enabled"));
+    return;
+  }
+
   uint32_t openFlags = nsICacheStorage::OPEN_READONLY |
                        nsICacheStorage::OPEN_SECRETLY |
                        nsICacheStorage::CHECK_MULTITHREADED;

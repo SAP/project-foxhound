@@ -372,18 +372,6 @@ class DesktopArgumentsParser(ReftestArgumentsParser):
 
             if bin_dir:
                 options.app = bin_dir
-            else:
-                self.error(
-                    "could not find the application path, --appname must be specified")
-
-        options.app = reftest.getFullPath(options.app)
-        if not os.path.exists(options.app):
-            self.error("""Error: Path %(app)s doesn't exist.
-            Are you executing $objdir/_tests/reftest/runreftest.py?"""
-                       % {"app": options.app})
-
-        if options.xrePath is None:
-            options.xrePath = os.path.dirname(options.app)
 
         if options.symbolsPath and len(urlparse(options.symbolsPath).scheme) < 2:
             options.symbolsPath = reftest.getFullPath(options.symbolsPath)
@@ -610,6 +598,13 @@ class RemoteArgumentsParser(ReftestArgumentsParser):
                           type=str,
                           dest="remoteAppPath",
                           help="Path to remote executable relative to device root using only forward slashes.  Either this or app must be specified, but not both.")
+
+        self.add_argument("--adbpath",
+                          action="store",
+                          type=str,
+                          dest="adb_path",
+                          default="adb",
+                          help="path to adb")
 
         self.add_argument("--deviceIP",
                           action="store",

@@ -24,6 +24,7 @@ namespace mozilla {
 namespace dom {
 
 class WebVTTListener;
+class WindowDestroyObserver;
 
 class HTMLTrackElement final : public nsGenericHTMLElement
 {
@@ -46,16 +47,14 @@ public:
   {
     GetHTMLURIAttr(nsGkAtoms::src, aSrc);
   }
-  void SetSrc(const nsAString& aSrc, ErrorResult& aError)
-  {
-    SetHTMLAttr(nsGkAtoms::src, aSrc, aError);
-  }
+
+  void SetSrc(const nsAString& aSrc, ErrorResult& aError);
 
   void GetSrclang(DOMString& aSrclang) const
   {
     GetHTMLAttr(nsGkAtoms::srclang, aSrclang);
   }
-  void GetSrclang(nsString& aSrclang) const
+  void GetSrclang(nsAString& aSrclang) const
   {
     GetHTMLAttr(nsGkAtoms::srclang, aSrclang);
   }
@@ -68,7 +67,7 @@ public:
   {
     GetHTMLAttr(nsGkAtoms::label, aLabel);
   }
-  void GetLabel(nsString& aLabel) const
+  void GetLabel(nsAString& aLabel) const
   {
     GetHTMLAttr(nsGkAtoms::label, aLabel);
   }
@@ -107,13 +106,12 @@ public:
                               bool aCompileEventHandlers) override;
   virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
 
-  // Check enabling preference.
-  static bool IsWebVTTEnabled();
-
   void DispatchTrackRunnable(const nsString& aEventName);
   void DispatchTrustedEvent(const nsAString& aName);
 
   void DropChannel();
+
+  void NotifyShutdown();
 
 protected:
   virtual ~HTMLTrackElement();
@@ -134,6 +132,12 @@ protected:
   RefPtr<WebVTTListener> mListener;
 
   void CreateTextTrack();
+
+private:
+  void DispatchLoadResource();
+  bool mLoadResourceDispatched;
+
+  RefPtr<WindowDestroyObserver> mWindowDestroyObserver;
 };
 
 } // namespace dom

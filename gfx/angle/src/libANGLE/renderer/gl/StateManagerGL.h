@@ -20,13 +20,14 @@
 namespace gl
 {
 struct Caps;
-struct Data;
+class ContextState;
 class State;
 }
 
 namespace rx
 {
 
+class FramebufferGL;
 class FunctionsGL;
 class TransformFeedbackGL;
 class QueryGL;
@@ -47,6 +48,7 @@ class StateManagerGL final : angle::NonCopyable
     void deleteQuery(GLuint query);
 
     void useProgram(GLuint program);
+    void forceUseProgram(GLuint program);
     void bindVertexArray(GLuint vao, GLuint elementArrayBuffer);
     void bindBuffer(GLenum type, GLuint buffer);
     void bindBufferBase(GLenum type, size_t index, GLuint buffer);
@@ -122,26 +124,41 @@ class StateManagerGL final : angle::NonCopyable
                            GLuint packBuffer);
 
     void setFramebufferSRGBEnabled(bool enabled);
+    void setFramebufferSRGBEnabledForFramebuffer(bool enabled, const FramebufferGL *framebuffer);
+
+    void setDitherEnabled(bool enabled);
+
+    void setMultisamplingStateEnabled(bool enabled);
+    void setSampleAlphaToOneStateEnabled(bool enabled);
+
+    void setCoverageModulation(GLenum components);
+
+    void setPathRenderingModelViewMatrix(const GLfloat *m);
+    void setPathRenderingProjectionMatrix(const GLfloat *m);
+    void setPathRenderingStencilState(GLenum func, GLint ref, GLuint mask);
 
     void onDeleteQueryObject(QueryGL *query);
 
-    gl::Error setDrawArraysState(const gl::Data &data,
+    gl::Error setDrawArraysState(const gl::ContextState &data,
                                  GLint first,
                                  GLsizei count,
                                  GLsizei instanceCount);
-    gl::Error setDrawElementsState(const gl::Data &data,
+    gl::Error setDrawElementsState(const gl::ContextState &data,
                                    GLsizei count,
                                    GLenum type,
                                    const GLvoid *indices,
                                    GLsizei instanceCount,
                                    const GLvoid **outIndices);
 
-    gl::Error onMakeCurrent(const gl::Data &data);
+    gl::Error pauseTransformFeedback(const gl::ContextState &data);
+    gl::Error onMakeCurrent(const gl::ContextState &data);
 
     void syncState(const gl::State &state, const gl::State::DirtyBits &glDirtyBits);
 
+    GLuint getBoundBuffer(GLenum type);
+
   private:
-    gl::Error setGenericDrawState(const gl::Data &data);
+    gl::Error setGenericDrawState(const gl::ContextState &data);
 
     void setTextureCubemapSeamlessEnabled(bool enabled);
 
@@ -251,7 +268,19 @@ class StateManagerGL final : angle::NonCopyable
     GLint mClearStencil;
 
     bool mFramebufferSRGBEnabled;
+    bool mDitherEnabled;
     bool mTextureCubemapSeamlessEnabled;
+
+    bool mMultisamplingEnabled;
+    bool mSampleAlphaToOneEnabled;
+
+    GLenum mCoverageModulation;
+
+    GLfloat mPathMatrixMV[16];
+    GLfloat mPathMatrixProj[16];
+    GLenum mPathStencilFunc;
+    GLint mPathStencilRef;
+    GLuint mPathStencilMask;
 
     gl::State::DirtyBits mLocalDirtyBits;
 };

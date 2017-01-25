@@ -28,10 +28,13 @@ UNIFIED_SOURCES += [
     'src/compiler/preprocessor/Preprocessor.cpp',
     'src/compiler/preprocessor/Token.cpp',
     'src/compiler/preprocessor/Tokenizer.cpp',
+    'src/compiler/translator/AddAndTrueToLoopCondition.cpp',
+    'src/compiler/translator/AddDefaultReturnStatements.cpp',
     'src/compiler/translator/ArrayReturnValueToOutParameter.cpp',
     'src/compiler/translator/ASTMetadataHLSL.cpp',
     'src/compiler/translator/blocklayout.cpp',
     'src/compiler/translator/blocklayoutHLSL.cpp',
+    'src/compiler/translator/BreakVariableAliasingInInnerLoops.cpp',
     'src/compiler/translator/BuiltInFunctionEmulator.cpp',
     'src/compiler/translator/BuiltInFunctionEmulatorGLSL.cpp',
     'src/compiler/translator/BuiltInFunctionEmulatorHLSL.cpp',
@@ -39,13 +42,12 @@ UNIFIED_SOURCES += [
     'src/compiler/translator/CallDAG.cpp',
     'src/compiler/translator/CodeGen.cpp',
     'src/compiler/translator/Compiler.cpp',
-    'src/compiler/translator/depgraph/DependencyGraph.cpp',
-    'src/compiler/translator/depgraph/DependencyGraphBuilder.cpp',
-    'src/compiler/translator/depgraph/DependencyGraphOutput.cpp',
-    'src/compiler/translator/depgraph/DependencyGraphTraverse.cpp',
+    'src/compiler/translator/ConstantUnion.cpp',
+    'src/compiler/translator/DeferGlobalInitializers.cpp',
     'src/compiler/translator/Diagnostics.cpp',
     'src/compiler/translator/DirectiveHandler.cpp',
     'src/compiler/translator/EmulatePrecision.cpp',
+    'src/compiler/translator/ExpandIntegerPowExpressions.cpp',
     'src/compiler/translator/ExtensionGLSL.cpp',
     'src/compiler/translator/FlagStd140Structs.cpp',
     'src/compiler/translator/ForLoopUnroll.cpp',
@@ -56,6 +58,7 @@ UNIFIED_SOURCES += [
     'src/compiler/translator/InitializeVariables.cpp',
     'src/compiler/translator/Intermediate.cpp',
     'src/compiler/translator/IntermNode.cpp',
+    'src/compiler/translator/IntermNodePatternMatcher.cpp',
     'src/compiler/translator/intermOut.cpp',
     'src/compiler/translator/IntermTraverse.cpp',
     'src/compiler/translator/LoopInfo.cpp',
@@ -67,24 +70,27 @@ UNIFIED_SOURCES += [
     'src/compiler/translator/ParseContext.cpp',
     'src/compiler/translator/PoolAlloc.cpp',
     'src/compiler/translator/PruneEmptyDeclarations.cpp',
+    'src/compiler/translator/QualifierTypes.cpp',
     'src/compiler/translator/RecordConstantPrecision.cpp',
     'src/compiler/translator/RegenerateStructNames.cpp',
     'src/compiler/translator/RemoveDynamicIndexing.cpp',
+    'src/compiler/translator/RemoveInvariantDeclaration.cpp',
     'src/compiler/translator/RemovePow.cpp',
     'src/compiler/translator/RemoveSwitchFallThrough.cpp',
     'src/compiler/translator/RewriteDoWhile.cpp',
     'src/compiler/translator/RewriteElseBlocks.cpp',
+    'src/compiler/translator/RewriteUnaryMinusOperatorInt.cpp',
     'src/compiler/translator/ScalarizeVecAndMatConstructorArgs.cpp',
     'src/compiler/translator/SearchSymbol.cpp',
     'src/compiler/translator/SeparateArrayInitialization.cpp',
     'src/compiler/translator/SeparateDeclarations.cpp',
     'src/compiler/translator/SeparateExpressionsReturningArrays.cpp',
-    'src/compiler/translator/ShaderLang.cpp',
     'src/compiler/translator/ShaderVars.cpp',
+    'src/compiler/translator/SimplifyLoopConditions.cpp',
+    'src/compiler/translator/SplitSequenceOperator.cpp',
     'src/compiler/translator/StructureHLSL.cpp',
     'src/compiler/translator/SymbolTable.cpp',
-    'src/compiler/translator/timing/RestrictFragmentShaderTiming.cpp',
-    'src/compiler/translator/timing/RestrictVertexShaderTiming.cpp',
+    'src/compiler/translator/TextureFunctionHLSL.cpp',
     'src/compiler/translator/TranslatorESSL.cpp',
     'src/compiler/translator/TranslatorGLSL.cpp',
     'src/compiler/translator/TranslatorHLSL.cpp',
@@ -92,10 +98,12 @@ UNIFIED_SOURCES += [
     'src/compiler/translator/UnfoldShortCircuitAST.cpp',
     'src/compiler/translator/UnfoldShortCircuitToIf.cpp',
     'src/compiler/translator/UniformHLSL.cpp',
+    'src/compiler/translator/UseInterfaceBlockFields.cpp',
     'src/compiler/translator/util.cpp',
     'src/compiler/translator/UtilsHLSL.cpp',
     'src/compiler/translator/ValidateGlobalInitializer.cpp',
     'src/compiler/translator/ValidateLimitations.cpp',
+    'src/compiler/translator/ValidateMaxParameters.cpp',
     'src/compiler/translator/ValidateOutputs.cpp',
     'src/compiler/translator/ValidateSwitch.cpp',
     'src/compiler/translator/VariableInfo.cpp',
@@ -104,8 +112,11 @@ UNIFIED_SOURCES += [
     'src/third_party/compiler/ArrayBoundsClamper.cpp',
 ]
 SOURCES += [
+    'src/compiler/translator/EmulateGLFragColorBroadcast.cpp',
     'src/compiler/translator/glslang_lex.cpp',
     'src/compiler/translator/glslang_tab.cpp',
+    'src/compiler/translator/RewriteTexelFetchOffset.cpp',
+    'src/compiler/translator/ShaderLang.cpp',
 ]
 
 
@@ -160,10 +171,10 @@ DEFINES['ANGLE_ENABLE_GLSL'] = "1"
 DEFINES['ANGLE_ENABLE_ESSL'] = "1"
 DEFINES['ANGLE_ENABLE_KEYEDMUTEX'] = "1"
 
-EXPORTS.angle += [ 'include/GLSLANG/ShaderLang.h', 'include/GLSLANG/ShaderVars.h' ]
+EXPORTS.angle += [ 'include/GLSLANG/ShaderLang.h', 'include/GLSLANG/ShaderVars.h', 'include/platform/Platform.h' ]
 EXPORTS.angle.KHR += [ 'include/KHR/khrplatform.h' ]
 
-LOCAL_INCLUDES += [ 'include', 'src' ]
+LOCAL_INCLUDES += [ 'include', 'src', 'src/common/third_party/numerics' ]
 
 # We allow warnings for third-party code that can be updated from upstream.
 ALLOW_COMPILER_WARNINGS = True

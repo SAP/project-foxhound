@@ -1,10 +1,13 @@
 #include "nsContentSecurityManager.h"
 #include "nsIChannel.h"
+#include "nsIHttpChannelInternal.h"
 #include "nsIStreamListener.h"
 #include "nsILoadInfo.h"
 #include "nsContentUtils.h"
 #include "nsCORSListenerProxy.h"
 #include "nsIStreamListener.h"
+#include "nsIDocument.h"
+#include "nsMixedContentBlocker.h"
 
 #include "mozilla/dom/Element.h"
 
@@ -161,14 +164,25 @@ DoCORSChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo,
 }
 
 static nsresult
-DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
+DoContentSecurityChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo)
 {
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
+  NS_ENSURE_SUCCESS(rv, rv);
+  
   nsContentPolicyType contentPolicyType =
     aLoadInfo->GetExternalContentPolicyType();
   nsContentPolicyType internalContentPolicyType =
     aLoadInfo->InternalContentPolicyType();
   nsCString mimeTypeGuess;
   nsCOMPtr<nsINode> requestingContext = nullptr;
+
+#ifdef DEBUG
+  // Don't enforce TYPE_DOCUMENT assertions for loads
+  // initiated by javascript tests.
+  bool skipContentTypeCheck = false;
+  skipContentTypeCheck = Preferences::GetBool("network.loadinfo.skip_type_assertion");
+#endif
 
   switch(contentPolicyType) {
     case nsIContentPolicy::TYPE_OTHER: {
@@ -195,9 +209,14 @@ DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
       break;
     }
 
-    case nsIContentPolicy::TYPE_OBJECT:
+    case nsIContentPolicy::TYPE_OBJECT: {
+      mimeTypeGuess = EmptyCString();
+      requestingContext = aLoadInfo->LoadingNode();
+      break;
+    }
+
     case nsIContentPolicy::TYPE_DOCUMENT: {
-      MOZ_ASSERT(false, "contentPolicyType not supported yet");
+      MOZ_ASSERT(skipContentTypeCheck || false, "contentPolicyType not supported yet");
       break;
     }
 
@@ -290,7 +309,16 @@ DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
     }
 
     case nsIContentPolicy::TYPE_WEBSOCKET: {
-      MOZ_ASSERT(false, "contentPolicyType not supported yet");
+      // Websockets have to use the proxied URI:
+      // ws:// instead of http:// for CSP checks
+      nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal
+        = do_QueryInterface(aChannel);
+      MOZ_ASSERT(httpChannelInternal);
+      if (httpChannelInternal) {
+        httpChannelInternal->GetProxyURI(getter_AddRefs(uri));
+      }
+      mimeTypeGuess = EmptyCString();
+      requestingContext = aLoadInfo->LoadingNode();
       break;
     }
 
@@ -342,19 +370,27 @@ DoContentSecurityChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo)
   }
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(internalContentPolicyType,
-                                          aURI,
-                                          aLoadInfo->LoadingPrincipal(),
-                                          requestingContext,
-                                          mimeTypeGuess,
-                                          nullptr,        //extra,
-                                          &shouldLoad,
-                                          nsContentUtils::GetContentPolicy(),
-                                          nsContentUtils::GetSecurityManager());
+  rv = NS_CheckContentLoadPolicy(internalContentPolicyType,
+                                 uri,
+                                 aLoadInfo->LoadingPrincipal(),
+                                 requestingContext,
+                                 mimeTypeGuess,
+                                 nullptr,        //extra,
+                                 &shouldLoad,
+                                 nsContentUtils::GetContentPolicy(),
+                                 nsContentUtils::GetSecurityManager());
   NS_ENSURE_SUCCESS(rv, rv);
   if (NS_CP_REJECTED(shouldLoad)) {
     return NS_ERROR_CONTENT_BLOCKED;
   }
+
+  if (nsMixedContentBlocker::sSendHSTSPriming) {
+    rv = nsMixedContentBlocker::MarkLoadInfoForPriming(uri,
+                                                       requestingContext,
+                                                       aLoadInfo);
+    return rv;
+  }
+
   return NS_OK;
 }
 
@@ -404,8 +440,7 @@ nsContentSecurityManager::doContentSecurityCheck(nsIChannel* aChannel,
   // please note that some implementations of ::AsyncOpen2 might already
   // have set that flag to true (e.g. nsViewSourceChannel) in which case
   // we just set the flag again.
-  rv = loadInfo->SetEnforceSecurity(true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  loadInfo->SetEnforceSecurity(true);
 
   if (loadInfo->GetSecurityMode() == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS) {
     rv = DoCORSChecks(aChannel, loadInfo, aInAndOutListener);
@@ -415,17 +450,12 @@ nsContentSecurityManager::doContentSecurityCheck(nsIChannel* aChannel,
   rv = CheckChannel(aChannel);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIURI> finalChannelURI;
-  rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(finalChannelURI));
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Perform all ContentPolicy checks (MixedContent, CSP, ...)
-  rv = DoContentSecurityChecks(finalChannelURI, loadInfo);
+  rv = DoContentSecurityChecks(aChannel, loadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // now lets set the initalSecurityFlag for subsequent calls
-  rv = loadInfo->SetInitialSecurityCheckDone(true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  loadInfo->SetInitialSecurityCheckDone(true);
 
   // all security checks passed - lets allow the load
   return NS_OK;
@@ -469,7 +499,7 @@ nsContentSecurityManager::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
       rv = nsContentUtils::GetSecurityManager()->
         CheckLoadURIWithPrincipal(oldPrincipal, newOriginalURI, flags);
   }
-  NS_ENSURE_SUCCESS(rv, rv);  
+  NS_ENSURE_SUCCESS(rv, rv);
 
   aCb->OnRedirectVerifyCallback(NS_OK);
   return NS_OK;
@@ -611,8 +641,8 @@ nsContentSecurityManager::IsOriginPotentiallyTrustworthy(nsIPrincipal* aPrincipa
   // Blobs are expected to inherit their principal so we don't expect to have
   // a codebase principal with scheme 'blob' here.  We can't assert that though
   // since someone could mess with a non-blob URI to give it that scheme.
-  NS_WARN_IF_FALSE(!scheme.EqualsLiteral("blob"),
-                   "IsOriginPotentiallyTrustworthy ignoring blob scheme");
+  NS_WARNING_ASSERTION(!scheme.EqualsLiteral("blob"),
+                       "IsOriginPotentiallyTrustworthy ignoring blob scheme");
 
   // According to the specification, the user agent may choose to extend the
   // trust to other, vendor-specific URL schemes. We use this for "resource:",
@@ -623,6 +653,7 @@ nsContentSecurityManager::IsOriginPotentiallyTrustworthy(nsIPrincipal* aPrincipa
       scheme.EqualsLiteral("file") ||
       scheme.EqualsLiteral("resource") ||
       scheme.EqualsLiteral("app") ||
+      scheme.EqualsLiteral("moz-extension") ||
       scheme.EqualsLiteral("wss")) {
     *aIsTrustWorthy = true;
     return NS_OK;

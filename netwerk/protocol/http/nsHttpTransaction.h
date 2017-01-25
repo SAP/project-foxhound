@@ -18,6 +18,7 @@
 #include "mozilla/net/DNS.h"
 #include "ARefBase.h"
 #include "nsIPipe.h"
+#include "AlternateServices.h"
 
 #ifdef MOZ_WIDGET_GONK
 #include "nsINetworkInterface.h"
@@ -167,6 +168,8 @@ public:
 
     int64_t GetTransferSize() { return mTransferSize; }
 
+    bool Do0RTT() override;
+    nsresult Finish0RTT(bool aRestart) override;
 private:
     friend class DeleteHttpTransaction;
     virtual ~nsHttpTransaction();
@@ -175,7 +178,7 @@ private:
     nsresult RestartInProgress();
     char    *LocateHttpStart(char *buf, uint32_t len,
                              bool aAllowPartialMatch);
-    nsresult ParseLine(char *line);
+    nsresult ParseLine(nsACString &line);
     nsresult ParseLineSegment(char *seg, uint32_t len);
     nsresult ParseHead(char *, uint32_t count, uint32_t *countRead);
     nsresult HandleContentStart();
@@ -187,10 +190,10 @@ private:
     Classifier Classify();
     void       CancelPipeline(uint32_t reason);
 
-    static NS_METHOD ReadRequestSegment(nsIInputStream *, void *, const char *,
-                                        uint32_t, uint32_t, uint32_t *);
-    static NS_METHOD WritePipeSegment(nsIOutputStream *, void *, char *,
-                                      uint32_t, uint32_t, uint32_t *);
+    static nsresult ReadRequestSegment(nsIInputStream *, void *, const char *,
+                                       uint32_t, uint32_t, uint32_t *);
+    static nsresult WritePipeSegment(nsIOutputStream *, void *, char *,
+                                     uint32_t, uint32_t, uint32_t *);
 
     bool TimingEnabled() const { return mCaps & NS_HTTP_TIMING_ENABLED; }
 
@@ -207,7 +210,7 @@ private:
                                 nsIInterfaceRequestor* aCallbacks)
         : mTrans(aTrans), mCallbacks(aCallbacks) {}
 
-        NS_IMETHOD Run()
+        NS_IMETHOD Run() override
         {
             if (mTrans->mConnection)
                 mTrans->mConnection->SetSecurityCallbacks(mCallbacks);
@@ -458,11 +461,17 @@ private:
     RefPtr<ASpdySession> mTunnelProvider;
 
 public:
+    void SetTransactionObserver(TransactionObserver *arg) { mTransactionObserver = arg; }
+private:
+    RefPtr<TransactionObserver> mTransactionObserver;
+public:
     void GetNetworkAddresses(NetAddr &self, NetAddr &peer);
 
 private:
     NetAddr                         mSelfAddr;
     NetAddr                         mPeerAddr;
+
+    bool                            m0RTTInProgress;
 };
 
 } // namespace net

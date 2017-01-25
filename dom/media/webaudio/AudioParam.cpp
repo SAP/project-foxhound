@@ -91,7 +91,8 @@ AudioParam::Stream()
   AudioNodeEngine* engine = new AudioNodeEngine(nullptr);
   RefPtr<AudioNodeStream> stream =
     AudioNodeStream::Create(mNode->Context(), engine,
-                            AudioNodeStream::NO_STREAM_FLAGS);
+                            AudioNodeStream::NO_STREAM_FLAGS,
+                            mNode->Context()->Graph());
 
   // Force the input to have only one channel, and make it down-mix using
   // the speaker rules if needed.
@@ -161,6 +162,15 @@ AudioParam::SendEventToEngine(const AudioTimelineEvent& aEvent)
   if (stream) {
     stream->SendTimelineEvent(mIndex, aEvent);
   }
+}
+
+void
+AudioParam::CleanupOldEvents()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  double currentTime = mNode->Context()->CurrentTime();
+
+  CleanupEventsOlderThan(currentTime);
 }
 
 float

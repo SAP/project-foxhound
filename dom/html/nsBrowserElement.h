@@ -122,8 +122,6 @@ public:
                  nsPIDOMWindowInner* aWindow,
                  nsIFrameLoader* aFrameLoader,
                  nsIBrowserElementAPI* aAPI,
-                 const nsAString& aManifestURL,
-                 mozIApplication* aParentApp,
                  nsTArray<RefPtr<dom::BrowserElementAudioChannel>>& aAudioChannels,
                  ErrorResult& aRv);
 
@@ -132,6 +130,7 @@ protected:
   NS_IMETHOD GetParentApplication(mozIApplication** aApplication) = 0;
 
   void InitBrowserElementAPI();
+  void DestroyBrowserElementFrameScripts();
   nsCOMPtr<nsIBrowserElementAPI> mBrowserElementAPI;
   nsTArray<RefPtr<dom::BrowserElementAudioChannel>> mBrowserElementAudioChannels;
 

@@ -21,7 +21,7 @@
 #include "mozilla/dom/WebCryptoTask.h"
 #include "mozilla/dom/WebCryptoThreadPool.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/workers/bindings/WorkerFeature.h"
+#include "mozilla/dom/workers/bindings/WorkerHolder.h"
 
 // Template taken from security/nss/lib/util/templates.c
 // This (or SGN_EncodeDigestInfo) would ideally be exported
@@ -40,9 +40,10 @@ const SEC_ASN1Template SGN_DigestInfoTemplate[] = {
 namespace mozilla {
 namespace dom {
 
+using mozilla::dom::workers::Canceling;
 using mozilla::dom::workers::GetCurrentThreadWorkerPrivate;
 using mozilla::dom::workers::Status;
-using mozilla::dom::workers::WorkerFeature;
+using mozilla::dom::workers::WorkerHolder;
 using mozilla::dom::workers::WorkerPrivate;
 
 // Pre-defined identifiers for telemetry histograms
@@ -141,22 +142,16 @@ private:
   JSContext* mCx;
 };
 
-class WebCryptoTask::InternalWorkerHolder final : public WorkerFeature
+class WebCryptoTask::InternalWorkerHolder final : public WorkerHolder
 {
-  bool mAddedToWorkerPrivate;
-
   InternalWorkerHolder()
-    : mAddedToWorkerPrivate(false)
   { }
 
   ~InternalWorkerHolder()
   {
     NS_ASSERT_OWNINGTHREAD(InternalWorkerHolder);
-    if (mAddedToWorkerPrivate) {
-      WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-      MOZ_ASSERT(workerPrivate);
-      workerPrivate->RemoveFeature(this);
-    }
+    // Nothing to do here since the parent destructor releases the
+    // worker automatically.
   }
 
 public:
@@ -167,10 +162,9 @@ public:
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
     RefPtr<InternalWorkerHolder> ref = new InternalWorkerHolder();
-    if (NS_WARN_IF(!workerPrivate->AddFeature(ref))) {
+    if (NS_WARN_IF(!ref->HoldWorker(workerPrivate, Canceling))) {
       return nullptr;
     }
-    ref->mAddedToWorkerPrivate = true;
     return ref.forget();
   }
 
@@ -3730,7 +3724,7 @@ WebCryptoTask::~WebCryptoTask()
 
   nsNSSShutDownPreventionLock lock;
   if (!isAlreadyShutDown()) {
-    shutdown(calledFromObject);
+    shutdown(ShutdownCalledFrom::Object);
   }
 
   if (mWorkerHolder) {

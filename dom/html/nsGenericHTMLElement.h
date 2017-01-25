@@ -51,9 +51,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase,
                              public nsIDOMHTMLElement
 {
 public:
+  using Element::SetTabIndex;
+  using Element::Focus;
   explicit nsGenericHTMLElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElementBase(aNodeInfo),
-      mScrollgrab(false)
+    : nsGenericHTMLElementBase(aNodeInfo)
   {
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
@@ -72,7 +73,7 @@ public:
   {
     GetHTMLAttr(nsGkAtoms::title, aTitle);
   }
-  NS_IMETHODIMP SetTitle(const nsAString& aTitle) override
+  NS_IMETHOD SetTitle(const nsAString& aTitle) override
   {
     SetHTMLAttr(nsGkAtoms::title, aTitle);
     return NS_OK;
@@ -81,7 +82,7 @@ public:
   {
     GetHTMLAttr(nsGkAtoms::lang, aLang);
   }
-  NS_IMETHODIMP SetLang(const nsAString& aLang) override
+  NS_IMETHOD SetLang(const nsAString& aLang) override
   {
     SetHTMLAttr(nsGkAtoms::lang, aLang);
     return NS_OK;
@@ -94,7 +95,6 @@ public:
   {
     SetHTMLAttr(nsGkAtoms::dir, aDir, aError);
   }
-  already_AddRefed<nsDOMStringMap> Dataset();
   bool Hidden() const
   {
     return GetBoolAttr(nsGkAtoms::hidden);
@@ -104,20 +104,6 @@ public:
     SetHTMLBoolAttr(nsGkAtoms::hidden, aHidden, aError);
   }
   virtual void Click();
-  virtual int32_t TabIndexDefault()
-  {
-    return -1;
-  }
-  int32_t TabIndex()
-  {
-    return GetIntAttr(nsGkAtoms::tabindex, TabIndexDefault());
-  }
-  void SetTabIndex(int32_t aTabIndex, mozilla::ErrorResult& aError)
-  {
-    SetHTMLIntAttr(nsGkAtoms::tabindex, aTabIndex, aError);
-  }
-  virtual void Focus(mozilla::ErrorResult& aError);
-  virtual void Blur(mozilla::ErrorResult& aError);
   void GetAccessKey(nsString& aAccessKey)
   {
     GetHTMLAttr(nsGkAtoms::accesskey, aAccessKey);
@@ -194,11 +180,15 @@ public:
   }
   bool Scrollgrab() const
   {
-    return mScrollgrab;
+    return HasFlag(ELEMENT_HAS_SCROLLGRAB);
   }
   void SetScrollgrab(bool aValue)
   {
-    mScrollgrab = aValue;
+    if (aValue) {
+      SetFlags(ELEMENT_HAS_SCROLLGRAB);
+    } else {
+      UnsetFlags(ELEMENT_HAS_SCROLLGRAB);
+    }
   }
 
   void GetInnerText(mozilla::dom::DOMString& aValue, mozilla::ErrorResult& aError);
@@ -288,8 +278,6 @@ public:
   virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() override;
   virtual bool UndoScope() override;
   virtual void SetUndoScope(bool aUndoScope, mozilla::ErrorResult& aError) override;
-  // Callback for destructor of of dataset to ensure to null out weak pointer.
-  nsresult ClearDataset();
 
   /**
    * Get width and height, using given image request if attributes are unset.
@@ -1167,8 +1155,6 @@ protected:
 
 private:
   void ChangeEditableState(int32_t aChange);
-
-  bool mScrollgrab;
 };
 
 namespace mozilla {
@@ -1399,7 +1385,7 @@ public:
    * Called when we have been cloned and adopted, and the information of the
    * node has been changed.
    */
-  virtual void NodeInfoChanged(mozilla::dom::NodeInfo* aOldNodeInfo) override;
+  virtual void NodeInfoChanged() override;
 
 protected:
   /* Generates the state key for saving the form state in the session if not

@@ -412,7 +412,8 @@ static const js::ClassOps FileObjectClassOps = {
 
 const js::Class FileObject::class_ = {
     "File",
-    JSCLASS_HAS_RESERVED_SLOTS(FileObject::NUM_SLOTS),
+    JSCLASS_HAS_RESERVED_SLOTS(FileObject::NUM_SLOTS) |
+    JSCLASS_FOREGROUND_FINALIZE,
     &FileObjectClassOps
 };
 
@@ -723,12 +724,7 @@ ReportSysError(JSContext* cx, const char* prefix)
         return;
     }
 
-#ifdef XP_WIN
-    _snprintf(final, nbytes, "%s: %s", prefix, errstr);
-#else
     snprintf(final, nbytes, "%s: %s", prefix, errstr);
-#endif
-
     JS_ReportError(cx, final);
     js_free(final);
 }

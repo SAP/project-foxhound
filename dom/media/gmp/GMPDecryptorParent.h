@@ -10,6 +10,7 @@
 #include "mozilla/RefPtr.h"
 #include "gmp-decryption.h"
 #include "GMPDecryptorProxy.h"
+#include "GMPCrashHelperHolder.h"
 
 namespace mozilla {
 
@@ -21,6 +22,7 @@ class GMPContentParent;
 
 class GMPDecryptorParent final : public GMPDecryptorProxy
                                , public PGMPDecryptorParent
+                               , public GMPCrashHelperHolder
 {
 public:
   NS_INLINE_DECL_REFCOUNTING(GMPDecryptorParent)
@@ -31,7 +33,9 @@ public:
 
   uint32_t GetPluginId() const override { return mPluginId; }
 
-  nsresult Init(GMPDecryptorProxyCallback* aCallback) override;
+  nsresult Init(GMPDecryptorProxyCallback* aCallback,
+                bool aDistinctiveIdentifierRequired,
+                bool aPersistentStateRequired) override;
 
   void CreateSession(uint32_t aCreateSessionToken,
                      uint32_t aPromiseId,
@@ -68,6 +72,8 @@ private:
 
   // PGMPDecryptorParent
 
+  bool RecvSetDecryptorId(const uint32_t& aId) override;
+
   bool RecvSetSessionId(const uint32_t& aCreateSessionToken,
                         const nsCString& aSessionId) override;
 
@@ -97,6 +103,9 @@ private:
   bool RecvKeyStatusChanged(const nsCString& aSessionId,
                             InfallibleTArray<uint8_t>&& aKeyId,
                             const GMPMediaKeyStatus& aStatus) override;
+
+  bool RecvForgetKeyStatus(const nsCString& aSessionId,
+                           InfallibleTArray<uint8_t>&& aKeyId) override;
 
   bool RecvDecrypted(const uint32_t& aId,
                      const GMPErr& aErr,

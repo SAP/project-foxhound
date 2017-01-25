@@ -6,14 +6,8 @@
 
 "use strict";
 
-const Services = require("Services");
-loader.lazyGetter(this, "GetStringFromName", () => {
-  let bundle = Services.strings.createBundle(
-    "chrome://devtools/locale/inspector.properties");
-  return key => {
-    return bundle.GetStringFromName(key);
-  };
-});
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/locale/inspector.properties");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -62,8 +56,6 @@ function getImageDimensions(doc, imageUrl) {
  *        - {Number} naturalHeight mandatory, height of the image to display
  *        - {Number} maxDim optional, max width/height of the preview
  *        - {Boolean} hideDimensionLabel optional, pass true to hide the label
- * @return {Promise} promise that will resolve when the tooltip content has been
- *         set
  */
 function setImageTooltip(tooltip, doc, imageUrl, options) {
   let {naturalWidth, naturalHeight, hideDimensionLabel, maxDim} = options;
@@ -113,7 +105,7 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
   }
   let width = Math.max(CONTAINER_MIN_WIDTH, imgWidth + 2 * IMAGE_PADDING);
 
-  return tooltip.setContent(div, width, height);
+  tooltip.setContent(div, {width, height});
 }
 
 /*
@@ -124,8 +116,6 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
  *        The tooltip instance on which the image preview content should be set
  * @param {Document} doc
  *        A document element to create the HTML elements needed for the tooltip
- * @return {Promise} promise that will resolve when the tooltip content has been
- *         set
  */
 function setBrokenImageTooltip(tooltip, doc) {
   let div = doc.createElementNS(XHTML_NS, "div");
@@ -135,9 +125,9 @@ function setBrokenImageTooltip(tooltip, doc) {
     text-align: center;
     line-height: 30px;`;
 
-  let message = GetStringFromName("previewTooltip.image.brokenImage");
+  let message = L10N.getStr("previewTooltip.image.brokenImage");
   div.textContent = message;
-  return tooltip.setContent(div, 150, 30);
+  tooltip.setContent(div, {width: 150, height: 30});
 }
 
 module.exports.getImageDimensions = getImageDimensions;

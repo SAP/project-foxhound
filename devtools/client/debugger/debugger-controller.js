@@ -7,7 +7,7 @@
 
 var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-const DBG_STRINGS_URI = "chrome://devtools/locale/debugger.properties";
+const DBG_STRINGS_URI = "devtools/locale/debugger.properties";
 const NEW_SOURCE_IGNORED_URLS = ["debugger eval code", "XStringBundle"];
 const NEW_SOURCE_DISPLAY_DELAY = 200; // ms
 const FETCH_SOURCE_RESPONSE_DELAY = 200; // ms
@@ -51,9 +51,9 @@ const EVENTS = {
   BREAKPOINT_HIDDEN_IN_EDITOR: "Debugger:BreakpointHiddenInEditor",
   BREAKPOINT_HIDDEN_IN_PANE: "Debugger:BreakpointHiddenInPane",
 
-  // When a conditional breakpoint's popup is showing or hiding.
-  CONDITIONAL_BREAKPOINT_POPUP_SHOWING: "Debugger:ConditionalBreakpointPopupShowing",
-  CONDITIONAL_BREAKPOINT_POPUP_HIDING: "Debugger:ConditionalBreakpointPopupHiding",
+  // When a conditional breakpoint's popup is shown/hidden.
+  CONDITIONAL_BREAKPOINT_POPUP_SHOWN: "Debugger:ConditionalBreakpointPopupShown",
+  CONDITIONAL_BREAKPOINT_POPUP_HIDDEN: "Debugger:ConditionalBreakpointPopupHidden",
 
   // When event listeners are fetched or event breakpoints are updated.
   EVENT_LISTENERS_FETCHED: "Debugger:EventListenersFetched",
@@ -96,20 +96,19 @@ const FRAME_TYPE = {
   PUBLIC_CLIENT_EVAL: 3
 };
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://devtools/shared/event-emitter.js");
-Cu.import("resource://devtools/client/shared/widgets/SimpleListWidget.jsm");
-Cu.import("resource://devtools/client/shared/widgets/BreadcrumbsWidget.jsm");
-Cu.import("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
-Cu.import("resource://devtools/client/shared/widgets/VariablesView.jsm");
-Cu.import("resource://devtools/client/shared/widgets/VariablesViewController.jsm");
-
-Cu.import("resource://devtools/client/shared/browser-loader.js");
+const { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
 const { require } = BrowserLoader({
   baseURI: "resource://devtools/client/debugger/",
   window,
 });
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineConstant(this, "require", require);
+const { SimpleListWidget } = require("resource://devtools/client/shared/widgets/SimpleListWidget.jsm");
+const { BreadcrumbsWidget } = require("resource://devtools/client/shared/widgets/BreadcrumbsWidget.jsm");
+const { SideMenuWidget } = require("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
+const { VariablesView } = require("resource://devtools/client/shared/widgets/VariablesView.jsm");
+const { VariablesViewController, StackFrameUtils } = require("resource://devtools/client/shared/widgets/VariablesViewController.jsm");
+const EventEmitter = require("devtools/shared/event-emitter");
 const { gDevTools } = require("devtools/client/framework/devtools");
 const { ViewHelpers, Heritage, WidgetMethods, setNamedTimeout,
         clearNamedTimeout } = require("devtools/client/shared/widgets/view-helpers");
@@ -147,7 +146,7 @@ var Editor = require("devtools/client/sourceeditor/editor");
 var DebuggerEditor = require("devtools/client/sourceeditor/debugger");
 var {Tooltip} = require("devtools/client/shared/widgets/Tooltip");
 var FastListWidget = require("devtools/client/shared/widgets/FastListWidget");
-var {LocalizationHelper} = require("devtools/client/shared/l10n");
+var {LocalizationHelper, ELLIPSIS} = require("devtools/shared/l10n");
 var {PrefsHelper} = require("devtools/client/shared/prefs");
 var {Task} = require("devtools/shared/task");
 
@@ -232,7 +231,7 @@ var DebuggerController = {
       return;
     }
 
-    yield DebuggerView.initialize();
+    yield DebuggerView.initialize(this._target.isWorkerTarget);
     this._startup = true;
   }),
 
@@ -904,7 +903,8 @@ StackFrames.prototype = {
     // to contain all the values.
     if (this._syncedWatchExpressions && aDepth == 0) {
       let label = L10N.getStr("watchExpressionsScopeLabel");
-      let scope = DebuggerView.Variables.addScope(label);
+      let scope = DebuggerView.Variables.addScope(label,
+        "variables-view-watch-expressions");
 
       // Customize the scope for holding watch expressions evaluations.
       scope.descriptorTooltip = false;

@@ -8,7 +8,6 @@
 
 #include "MediaResource.h"
 #include "MediaResourceCallback.h"
-#include "RtspMediaResource.h"
 
 #include "mozilla/Mutex.h"
 #include "nsDebug.h"
@@ -23,7 +22,6 @@
 #include "nsIRequestObserver.h"
 #include "nsIStreamListener.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsCORSListenerProxy.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "nsError.h"
 #include "nsICachingChannel.h"
@@ -256,8 +254,9 @@ ChannelMediaResource::OnStartRequest(nsIRequest* aRequest)
         }
         // Give some warnings if the ranges are unexpected.
         // XXX These could be error conditions.
-        NS_WARN_IF_FALSE(mOffset == rangeStart,
-                         "response range start does not match current offset");
+        NS_WARNING_ASSERTION(
+          mOffset == rangeStart,
+          "response range start does not match current offset");
         mOffset = rangeStart;
         mCacheStream.NotifyDataStarted(rangeStart);
       }
@@ -426,7 +425,7 @@ struct CopySegmentClosure {
   ChannelMediaResource*  mResource;
 };
 
-NS_METHOD
+nsresult
 ChannelMediaResource::CopySegmentToCache(nsIInputStream *aInStream,
                                          void *aClosure,
                                          const char *aFromSegment,
@@ -1507,8 +1506,6 @@ MediaResource::Create(MediaResourceCallback* aCallback, nsIChannel* aChannel)
   RefPtr<MediaResource> resource;
   if (fc || IsBlobURI(uri)) {
     resource = new FileMediaResource(aCallback, aChannel, uri, contentType);
-  } else if (IsRtspURI(uri)) {
-    resource = new RtspMediaResource(aCallback, aChannel, uri, contentType);
   } else {
     resource = new ChannelMediaResource(aCallback, aChannel, uri, contentType);
   }

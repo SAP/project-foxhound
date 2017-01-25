@@ -49,7 +49,6 @@
 #include "prenv.h"
 #include "mozilla/Logging.h"
 
-#include "nsAutoPtr.h"
 #include "nsCURILoader.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
@@ -83,6 +82,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/PluginCrashedEvent.h"
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/Telemetry.h"
@@ -540,7 +540,13 @@ GetExtensionFromURI(nsIURI* uri, nsCString& ext)
     url->GetFileExtension(ext);
   } else {
     nsCString spec;
-    uri->GetSpec(spec);
+    nsresult rv = uri->GetSpec(spec);
+    if (NS_FAILED(rv)) {
+      // This means we could incorrectly think a plugin is not enabled for
+      // the URI when it is, but that's not so bad.
+      ext.Truncate();
+      return;
+    }
 
     int32_t offset = spec.RFindChar('.');
     if (offset != kNotFound) {
@@ -995,26 +1001,18 @@ nsObjectLoadingContent::GetNestedParams(nsTArray<MozPluginParameter>& aParams,
   }
 }
 
-void
+nsresult
 nsObjectLoadingContent::BuildParametersArray()
 {
   if (mCachedAttributes.Length() || mCachedParameters.Length()) {
     MOZ_ASSERT(false, "Parameters array should be empty.");
-    return;
+    return NS_OK;
   }
 
   nsCOMPtr<nsIContent> content =
     do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
 
-  int32_t start = 0, end = content->GetAttrCount(), step = 1;
-  // HTML attributes are stored in reverse order.
-  if (content->IsHTMLElement() && content->IsInHTMLDocument()) {
-    start = end - 1;
-    end = -1;
-    step = -1;
-  }
-
-  for (int32_t i = start; i != end; i += step) {
+  for (uint32_t i = 0; i != content->GetAttrCount(); i += 1) {
     MozPluginParameter param;
     const nsAttrName* attrName = content->GetAttrNameAt(i);
     nsIAtom* atom = attrName->LocalName();
@@ -1027,7 +1025,8 @@ nsObjectLoadingContent::BuildParametersArray()
 
   nsCString codebase;
   if (isJava) {
-      mBaseURI->GetSpec(codebase);
+      nsresult rv = mBaseURI->GetSpec(codebase);
+      NS_ENSURE_SUCCESS(rv, rv);
   }
 
   nsAdoptingCString wmodeOverride = Preferences::GetCString("plugins.force.wmode");
@@ -1071,6 +1070,8 @@ nsObjectLoadingContent::BuildParametersArray()
   }
 
   GetNestedParams(mCachedParameters, isJava);
+
+  return NS_OK;
 }
 
 void
@@ -1139,10 +1140,8 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest *aRequest,
     if (console) {
       nsCOMPtr<nsIURI> uri;
       chan->GetURI(getter_AddRefs(uri));
-      nsAutoCString spec;
-      uri->GetSpec(spec);
       nsString message = NS_LITERAL_STRING("Blocking ") +
-        NS_ConvertASCIItoUTF16(spec.get()) +
+        NS_ConvertASCIItoUTF16(uri->GetSpecOrDefault().get()) +
         NS_LITERAL_STRING(" since it was found on an internal Firefox blocklist.");
       console->LogStringMessage(message.get());
     }
@@ -1235,7 +1234,7 @@ nsObjectLoadingContent::OnDataAvailable(nsIRequest *aRequest,
 
 // nsIFrameLoaderOwner
 NS_IMETHODIMP
-nsObjectLoadingContent::GetFrameLoader(nsIFrameLoader** aFrameLoader)
+nsObjectLoadingContent::GetFrameLoaderXPCOM(nsIFrameLoader** aFrameLoader)
 {
   NS_IF_ADDREF(*aFrameLoader = mFrameLoader);
   return NS_OK;
@@ -1552,7 +1551,11 @@ nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI, nsIURI* aBaseURI,
 
   // See if requester is planning on using the JS API.
   nsAutoCString uri;
-  aURI->GetSpec(uri);
+  nsresult rv = aURI->GetSpec(uri);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
   if (uri.Find("enablejsapi=1", true, 0, -1) != kNotFound) {
     Telemetry::Accumulate(Telemetry::YOUTUBE_NONREWRITABLE_EMBED_SEEN, 1);
     return;
@@ -1597,10 +1600,10 @@ nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI, nsIURI* aBaseURI,
   uri.ReplaceSubstring(NS_LITERAL_CSTRING("/v/"),
                        NS_LITERAL_CSTRING("/embed/"));
   nsAutoString utf16URI = NS_ConvertUTF8toUTF16(uri);
-  nsresult rv = nsContentUtils::NewURIWithDocumentCharset(aOutURI,
-                                                          utf16URI,
-                                                          thisContent->OwnerDoc(),
-                                                          aBaseURI);
+  rv = nsContentUtils::NewURIWithDocumentCharset(aOutURI,
+                                                 utf16URI,
+                                                 thisContent->OwnerDoc(),
+                                                 aBaseURI);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1609,9 +1612,9 @@ nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI, nsIURI* aBaseURI,
   // If there's no query to rewrite, just notify in the developer console
   // that we're changing the embed.
   if (!replaceQuery) {
-    msgName = "RewriteYoutubeEmbed";
+    msgName = "RewriteYouTubeEmbed";
   } else {
-    msgName = "RewriteYoutubeEmbedInvalidQuery";
+    msgName = "RewriteYouTubeEmbedPathParams";
   }
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
                                   NS_LITERAL_CSTRING("Plugins"),
@@ -1649,12 +1652,8 @@ nsObjectLoadingContent::CheckLoadPolicy(int16_t *aContentPolicy)
                                           nsContentUtils::GetSecurityManager());
   NS_ENSURE_SUCCESS(rv, false);
   if (NS_CP_REJECTED(*aContentPolicy)) {
-    nsAutoCString uri;
-    nsAutoCString baseUri;
-    mURI->GetSpec(uri);
-    mURI->GetSpec(baseUri);
-    LOG(("OBJLC [%p]: Content policy denied load of %s (base %s)",
-         this, uri.get(), baseUri.get()));
+    LOG(("OBJLC [%p]: Content policy denied load of %s",
+         this, mURI->GetSpecOrDefault().get()));
     return false;
   }
 
@@ -2292,7 +2291,10 @@ nsObjectLoadingContent::LoadObject(bool aNotify,
     }
     int16_t contentPolicy = nsIContentPolicy::ACCEPT;
     // If mChannelLoaded is set we presumably already passed load policy
-    if (allowLoad && mURI && !mChannelLoaded) {
+    // If mType == eType_Loading then we call OpenChannel() which internally
+    // creates a new channel and calls asyncOpen2() on that channel which
+    // then enforces content policy checks.
+    if (allowLoad && mURI && !mChannelLoaded && mType != eType_Loading) {
       allowLoad = CheckLoadPolicy(&contentPolicy);
     }
     // If we're loading a type now, check ProcessPolicy. Note that we may check
@@ -2400,7 +2402,8 @@ nsObjectLoadingContent::LoadObject(bool aNotify,
 
   // Cache the current attributes and parameters.
   if (mType == eType_Plugin || mType == eType_Null) {
-    BuildParametersArray();
+    rv = BuildParametersArray();
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // We don't set mFinalListener until OnStartRequest has been called, to
@@ -2528,6 +2531,12 @@ nsObjectLoadingContent::LoadObject(bool aNotify,
     NS_ASSERTION(!mFrameLoader && !mInstanceOwner,
                  "switched to type null but also loaded something");
 
+    // Don't fire error events if we're falling back to click-to-play; instead
+    // pretend like this is a really slow-loading plug-in instead.
+    if (fallbackType != eFallbackClickToPlay) {
+      MaybeFireErrorEvent();
+    }
+
     if (mChannel) {
       // If we were loading with a channel but then failed over, throw it away
       CloseChannel();
@@ -2620,8 +2629,6 @@ nsObjectLoadingContent::OpenChannel()
 {
   nsCOMPtr<nsIContent> thisContent =
     do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
-  nsCOMPtr<nsIScriptSecurityManager> secMan =
-    nsContentUtils::GetSecurityManager();
   NS_ASSERTION(thisContent, "must be a content");
   nsIDocument* doc = thisContent->OwnerDoc();
   NS_ASSERTION(doc, "No owner document?");
@@ -2634,9 +2641,6 @@ nsObjectLoadingContent::OpenChannel()
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  rv = secMan->CheckLoadURIWithPrincipal(thisContent->NodePrincipal(), mURI, 0);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsCOMPtr<nsILoadGroup> group = doc->GetDocumentLoadGroup();
   nsCOMPtr<nsIChannel> chan;
   RefPtr<ObjectInterfaceRequestorShim> shim =
@@ -2647,7 +2651,7 @@ nsObjectLoadingContent::OpenChannel()
                                                                mURI,
                                                                true,   // aInheritForAboutBlank
                                                                false); // aForceInherit
-  nsSecurityFlags securityFlags = nsILoadInfo::SEC_NORMAL;
+  nsSecurityFlags securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
   if (inherit) {
     securityFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
   }
@@ -2689,8 +2693,8 @@ nsObjectLoadingContent::OpenChannel()
     scriptChannel->SetExecutionPolicy(nsIScriptChannel::EXECUTE_NORMAL);
   }
 
-  // AsyncOpen can fail if a file does not exist.
-  rv = chan->AsyncOpen(shim, nullptr);
+  // AsyncOpen2 can fail if a file does not exist.
+  rv = chan->AsyncOpen2(shim);
   NS_ENSURE_SUCCESS(rv, rv);
   LOG(("OBJLC [%p]: Channel opened", this));
   mChannel = chan;
@@ -3036,6 +3040,7 @@ nsObjectLoadingContent::SyncStartPluginInstance()
   }
 
   nsCOMPtr<nsIURI> kungFuURIGrip(mURI);
+  mozilla::Unused << kungFuURIGrip; // This URI is not referred to within this function
   nsCString contentType(mContentType);
   return InstantiatePluginInstance();
 }
@@ -3678,8 +3683,7 @@ nsObjectLoadingContent::SetupProtoChain(JSContext* aCx,
   // If we got an xpconnect-wrapped plugin object, set obj's
   // prototype's prototype to the scriptable plugin.
 
-  JS::Rooted<JSObject*> global(aCx, JS_GetGlobalForObject(aCx, aObject));
-  JS::Handle<JSObject*> my_proto = GetDOMClass(aObject)->mGetProto(aCx, global);
+  JS::Handle<JSObject*> my_proto = GetDOMClass(aObject)->mGetProto(aCx);
   MOZ_ASSERT(my_proto);
 
   // Set 'this.__proto__' to pi
@@ -3856,6 +3860,21 @@ nsObjectLoadingContent::GetOwnPropertyNames(JSContext* aCx,
   aRv = ScriptRequestPluginInstance(aCx, getter_AddRefs(pi));
 }
 
+void
+nsObjectLoadingContent::MaybeFireErrorEvent()
+{
+  nsCOMPtr<nsIContent> thisContent =
+    do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+  // Queue a task to fire an error event if we're an <object> element.  The
+  // queueing is important, since then we don't have to worry about reentry.
+  if (thisContent->IsHTMLElement(nsGkAtoms::object)) {
+    RefPtr<AsyncEventDispatcher> loadBlockingAsyncDispatcher =
+      new LoadBlockingAsyncEventDispatcher(thisContent,
+                                           NS_LITERAL_STRING("error"),
+                                           false, false);
+    loadBlockingAsyncDispatcher->PostDOMEvent();
+  }
+}
 
 // SetupProtoChainRunner implementation
 nsObjectLoadingContent::SetupProtoChainRunner::SetupProtoChainRunner(

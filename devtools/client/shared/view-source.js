@@ -7,7 +7,7 @@
 var { Task } = require("devtools/shared/task");
 
 var Services = require("Services");
-var {gDevTools} = require("devtools/client/framework/devtools");
+var { gDevTools } = require("devtools/client/framework/devtools");
 var { getSourceText } = require("devtools/client/debugger/content/queries");
 
 /**
@@ -50,14 +50,23 @@ exports.viewSourceInStyleEditor = Task.async(function* (toolbox, sourceURL,
  *
  * @return {Promise<boolean>}
  */
-exports.viewSourceInDebugger = Task.async(function* (toolbox, sourceURL,
-                                                     sourceLine) {
+exports.viewSourceInDebugger = Task.async(function* (toolbox, sourceURL, sourceLine) {
   // If the Debugger was already open, switch to it and try to show the
   // source immediately. Otherwise, initialize it and wait for the sources
   // to be added first.
   let debuggerAlreadyOpen = toolbox.getPanel("jsdebugger");
   let { panelWin: dbg } = yield toolbox.loadTool("jsdebugger");
 
+  // New debugger frontend
+  if (Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
+    yield toolbox.selectTool("jsdebugger");
+    // TODO: Properly handle case where source will never exist in the
+    // debugger
+    dbg.actions.selectSourceURL(sourceURL, { line: sourceLine });
+    return true;
+  }
+
+  // Old debugger frontend
   if (!debuggerAlreadyOpen) {
     yield dbg.DebuggerController.waitForSourcesLoaded();
   }
@@ -157,8 +166,8 @@ exports.viewSourceInScratchpad = Task.async(function* (sourceURL, sourceLine) {
 exports.viewSource = Task.async(function* (toolbox, sourceURL, sourceLine) {
   // Attempt to access view source via a browser first, which may display it in
   // a tab, if enabled.
-  let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
-  if (browserWin) {
+  let browserWin = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
+  if (browserWin && browserWin.BrowserViewSourceOfDocument) {
     return browserWin.BrowserViewSourceOfDocument({
       URL: sourceURL,
       lineNumber: sourceLine

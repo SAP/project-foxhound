@@ -10,11 +10,10 @@
 #include "jsapi.h"
 #include "jsatom.h"
 
+#include "builtin/SelfHostingDefines.h"
 #include "gc/Zone.h"
-
 #include "js/GCVector.h"
 #include "js/Id.h"
-
 #include "vm/NativeObject.h"
 #include "vm/ProxyObject.h"
 
@@ -200,17 +199,19 @@ struct FunctionDeclaration
 
 using FunctionDeclarationVector = GCVector<FunctionDeclaration, 0, ZoneAllocPolicy>;
 
+// Possible values for ModuleState are defined in SelfHostingDefines.h.
+using ModuleState = int32_t;
+
 class ModuleObject : public NativeObject
 {
   public:
     enum
     {
         ScriptSlot = 0,
-        StaticScopeSlot,
         InitialEnvironmentSlot,
         EnvironmentSlot,
         NamespaceSlot,
-        EvaluatedSlot,
+        StateSlot,
         HostDefinedSlot,
         RequestedModulesSlot,
         ImportEntriesSlot,
@@ -224,11 +225,14 @@ class ModuleObject : public NativeObject
         SlotCount
     };
 
+    static_assert(EnvironmentSlot == MODULE_OBJECT_ENVIRONMENT_SLOT,
+                  "EnvironmentSlot must match self-hosting define");
+
     static const Class class_;
 
     static bool isInstance(HandleValue value);
 
-    static ModuleObject* create(ExclusiveContext* cx, HandleObject enclosingStaticScope);
+    static ModuleObject* create(ExclusiveContext* cx);
     void init(HandleScript script);
     void setInitialEnvironment(Handle<ModuleEnvironmentObject*> initialEnvironment);
     void initImportExportData(HandleArrayObject requestedModules,
@@ -236,16 +240,18 @@ class ModuleObject : public NativeObject
                               HandleArrayObject localExportEntries,
                               HandleArrayObject indiretExportEntries,
                               HandleArrayObject starExportEntries);
-    static bool FreezeArrayProperties(JSContext* cx, HandleModuleObject self);
-    static void AssertArrayPropertiesFrozen(JSContext* cx, HandleModuleObject self);
-    void fixScopesAfterCompartmentMerge(JSContext* cx);
+    static bool Freeze(JSContext* cx, HandleModuleObject self);
+#ifdef DEBUG
+    static bool IsFrozen(JSContext* cx, HandleModuleObject self);
+#endif
+    void fixEnvironmentsAfterCompartmentMerge(JSContext* cx);
 
     JSScript* script() const;
-    JSObject* enclosingStaticScope() const;
+    Scope* enclosingScope() const;
     ModuleEnvironmentObject& initialEnvironment() const;
     ModuleEnvironmentObject* environment() const;
     ModuleNamespaceObject* namespace_();
-    bool evaluated() const;
+    ModuleState state() const;
     Value hostDefinedField() const;
     ArrayObject& requestedModules() const;
     ArrayObject& importEntries() const;
@@ -270,8 +276,7 @@ class ModuleObject : public NativeObject
     // For intrinsic_InstantiateModuleFunctionDeclarations.
     static bool instantiateFunctionDeclarations(JSContext* cx, HandleModuleObject self);
 
-    // For intrinsic_SetModuleEvaluated.
-    void setEvaluated();
+    void setState(ModuleState newState);
 
     // For intrinsic_EvaluateModule.
     static bool evaluate(JSContext* cx, HandleModuleObject self, MutableHandleValue rval);

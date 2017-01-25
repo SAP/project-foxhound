@@ -11,6 +11,10 @@ Cu.import("resource://testing-common/httpd.js");
 Cu.import("resource://testing-common/MockRegistrar.jsm", this);
 Cu.import("resource://gre/modules/FileUtils.jsm");
 
+// AttributionCode is only needed for Firefox
+XPCOMUtils.defineLazyModuleGetter(this, "AttributionCode",
+                                  "resource:///modules/AttributionCode.jsm");
+
 // Lazy load |LightweightThemeManager|, we won't be using it on Gonk.
 XPCOMUtils.defineLazyModuleGetter(this, "LightweightThemeManager",
                                   "resource://gre/modules/LightweightThemeManager.jsm");
@@ -70,6 +74,9 @@ const PLUGIN_UPDATED_TOPIC     = "plugins-list-updated";
 
 // system add-ons are enabled at startup, so record date when the test starts
 const SYSTEM_ADDON_INSTALL_DATE = Date.now();
+
+// Valid attribution code to write so that settings.attribution can be tested.
+const ATTRIBUTION_CODE = "source%3Dgoogle.com";
 
 /**
  * Used to mock plugin tags in our fake plugin host.
@@ -268,6 +275,31 @@ function spoofPartnerInfo() {
   }
 }
 
+function getAttributionFile() {
+  let file = Services.dirsvc.get("LocalAppData", Ci.nsIFile);
+  file.append("mozilla");
+  file.append(AppConstants.MOZ_APP_NAME);
+  file.append("postSigningData");
+  return file;
+}
+
+function spoofAttributionData() {
+  if (gIsWindows) {
+    AttributionCode._clearCache();
+    let stream = Cc["@mozilla.org/network/file-output-stream;1"].
+                 createInstance(Ci.nsIFileOutputStream);
+    stream.init(getAttributionFile(), -1, -1, 0);
+    stream.write(ATTRIBUTION_CODE, ATTRIBUTION_CODE.length);
+  }
+}
+
+function cleanupAttributionData() {
+  if (gIsWindows) {
+    getAttributionFile().remove(false);
+    AttributionCode._clearCache();
+  }
+}
+
 /**
  * Check that a value is a string and not empty.
  *
@@ -381,6 +413,11 @@ function checkSettingsSection(data) {
   if ("defaultSearchEngine" in data.settings) {
     checkString(data.settings.defaultSearchEngine);
     Assert.equal(typeof data.settings.defaultSearchEngineData, "object");
+  }
+
+  if ("attribution" in data.settings) {
+    Assert.equal(typeof data.settings.attribution, "object");
+    Assert.equal(data.settings.attribution.source, "google.com");
   }
 }
 
@@ -587,7 +624,7 @@ function checkSystemSection(data) {
   catch (e) {}
 }
 
-function checkActiveAddon(data){
+function checkActiveAddon(data) {
   let signedState = mozinfo.addon_signing ? "number" : "undefined";
   // system add-ons have an undefined signState
   if (data.isSystem)
@@ -767,6 +804,13 @@ function run_test() {
   // Spoof the the hotfixVersion
   Preferences.set("extensions.hotfix.lastVersion", APP_HOTFIX_VERSION);
 
+  // Create the attribution data file, so that settings.attribution will exist.
+  // The attribution functionality only exists in Firefox.
+  if (AppConstants.MOZ_BUILD_APP == "browser") {
+    spoofAttributionData();
+    do_register_cleanup(cleanupAttributionData);
+  }
+
   run_next_test();
 }
 
@@ -907,13 +951,13 @@ add_task(function* test_addonsWatch_InterestingChange() {
 
   // Test for receiving one notification after each change.
   let checkpointPromise = registerCheckpointPromise(1);
-  yield AddonTestUtils.installXPIFromURL(ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(ADDON_INSTALL_URL);
   yield checkpointPromise;
   assertCheckpoint(1);
   Assert.ok(ADDON_ID in TelemetryEnvironment.currentEnvironment.addons.activeAddons);
 
   checkpointPromise = registerCheckpointPromise(2);
-  let addon = yield AddonTestUtils.getAddonById(ADDON_ID);
+  let addon = yield AddonManagerTesting.getAddonById(ADDON_ID);
   addon.userDisabled = true;
   yield checkpointPromise;
   assertCheckpoint(2);
@@ -926,7 +970,7 @@ add_task(function* test_addonsWatch_InterestingChange() {
   Assert.ok(ADDON_ID in TelemetryEnvironment.currentEnvironment.addons.activeAddons);
 
   checkpointPromise = registerCheckpointPromise(4);
-  yield AddonTestUtils.uninstallAddonByID(ADDON_ID);
+  yield AddonManagerTesting.uninstallAddonByID(ADDON_ID);
   yield checkpointPromise;
   assertCheckpoint(4);
   Assert.ok(!(ADDON_ID in TelemetryEnvironment.currentEnvironment.addons.activeAddons));
@@ -1017,8 +1061,8 @@ add_task(function* test_addonsWatch_NotInterestingChange() {
       deferred.resolve();
     });
 
-  yield AddonTestUtils.installXPIFromURL(DICTIONARY_ADDON_INSTALL_URL);
-  yield AddonTestUtils.installXPIFromURL(INTERESTING_ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(DICTIONARY_ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(INTERESTING_ADDON_INSTALL_URL);
 
   yield deferred.promise;
   Assert.ok(!("telemetry-dictionary@tests.mozilla.org" in
@@ -1076,7 +1120,7 @@ add_task(function* test_addonsAndPlugins() {
   };
 
   // Install an addon so we have some data.
-  yield AddonTestUtils.installXPIFromURL(ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(ADDON_INSTALL_URL);
 
   let data = TelemetryEnvironment.currentEnvironment;
   checkEnvironmentData(data);
@@ -1117,7 +1161,7 @@ add_task(function* test_addonsAndPlugins() {
   Assert.equal(data.addons.persona, personaId, "The correct Persona Id must be reported.");
 
   // Uninstall the addon.
-  yield AddonTestUtils.uninstallAddonByID(ADDON_ID);
+  yield AddonManagerTesting.uninstallAddonByID(ADDON_ID);
 });
 
 add_task(function* test_signedAddon() {
@@ -1146,7 +1190,7 @@ add_task(function* test_signedAddon() {
   TelemetryEnvironment.registerChangeListener("test_signedAddon", deferred.resolve);
 
   // Install the addon.
-  yield AddonTestUtils.installXPIFromURL(ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(ADDON_INSTALL_URL);
 
   yield deferred.promise;
   // Unregister the listener.
@@ -1173,7 +1217,7 @@ add_task(function* test_addonsFieldsLimit() {
   // Install the addon and wait for the TelemetryEnvironment to pick it up.
   let deferred = PromiseUtils.defer();
   TelemetryEnvironment.registerChangeListener("test_longFieldsAddon", deferred.resolve);
-  yield AddonTestUtils.installXPIFromURL(ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(ADDON_INSTALL_URL);
   yield deferred.promise;
   TelemetryEnvironment.unregisterChangeListener("test_longFieldsAddon");
 
@@ -1255,7 +1299,7 @@ add_task(function* test_collectionWithbrokenAddonData() {
   gNow = fakeNow(futureDate(gNow, 10 * MILLISECONDS_PER_MINUTE));
   // Now install an addon which returns the correct information.
   checkpointPromise = registerCheckpointPromise(2);
-  yield AddonTestUtils.installXPIFromURL(ADDON_INSTALL_URL);
+  yield AddonManagerTesting.installXPIFromURL(ADDON_INSTALL_URL);
   yield checkpointPromise;
   assertCheckpoint(2);
 
@@ -1278,7 +1322,7 @@ add_task(function* test_collectionWithbrokenAddonData() {
   AddonManagerPrivate.unregisterProvider(brokenAddonProvider);
 
   // Uninstall the valid addon.
-  yield AddonTestUtils.uninstallAddonByID(ADDON_ID);
+  yield AddonManagerTesting.uninstallAddonByID(ADDON_ID);
 });
 
 add_task(function* test_changeThrottling() {
@@ -1425,7 +1469,7 @@ add_task(function* test_defaultSearchEngine() {
   data = TelemetryEnvironment.currentEnvironment;
   checkEnvironmentData(data);
   Assert.deepEqual(data.settings.defaultSearchEngineData,
-                   {"name":"engine-telemetry","loadPath":"[other]/engine.xml","origin":"verified"});
+                   {"name":"engine-telemetry", "loadPath":"[other]/engine.xml", "origin":"verified"});
 
   // Now break this engine's load path hash.
   gNow = fakeNow(futureDate(gNow, 10 * MILLISECONDS_PER_MINUTE));

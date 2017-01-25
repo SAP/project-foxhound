@@ -2,6 +2,7 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint no-unused-vars: [2, {"vars": "local"}] */
 
 "use strict";
 
@@ -25,7 +26,9 @@ const {loader, require} = scopedCuImport("resource://devtools/shared/Loader.jsm"
 const {gDevTools} = require("devtools/client/framework/devtools");
 const {TargetFactory} = require("devtools/client/framework/target");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const flags = require("devtools/shared/flags");
 let promise = require("promise");
+let defer = require("devtools/shared/defer");
 const Services = require("Services");
 const {Task} = require("devtools/shared/task");
 const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
@@ -87,9 +90,9 @@ function getFrameScript() {
   return mm;
 }
 
-DevToolsUtils.testing = true;
+flags.testing = true;
 registerCleanupFunction(() => {
-  DevToolsUtils.testing = false;
+  flags.testing = false;
   Services.prefs.clearUserPref("devtools.dump.emit");
   Services.prefs.clearUserPref("devtools.toolbox.host");
   Services.prefs.clearUserPref("devtools.toolbox.previousHost");
@@ -104,13 +107,22 @@ registerCleanupFunction(function* cleanup() {
 /**
  * Add a new test tab in the browser and load the given url.
  * @param {String} url The url to be loaded in the new tab
+ * @param {Object} options Object with various optional fields:
+ *   - {Boolean} background If true, open the tab in background
+ *   - {ChromeWindow} window Firefox top level window we should use to open the tab
  * @return a promise that resolves to the tab object when the url is loaded
  */
-var addTab = Task.async(function* (url) {
+var addTab = Task.async(function* (url, options = { background: false, window: window }) {
   info("Adding a new tab with URL: " + url);
 
-  let tab = gBrowser.selectedTab = gBrowser.addTab(url);
-  yield once(gBrowser.selectedBrowser, "load", true);
+  let { background } = options;
+  let { gBrowser } = options.window ? options.window : window;
+
+  let tab = gBrowser.addTab(url);
+  if (!background) {
+    gBrowser.selectedTab = tab;
+  }
+  yield BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   info("Tab added and finished loading");
 
@@ -125,6 +137,7 @@ var addTab = Task.async(function* (url) {
 var removeTab = Task.async(function* (tab) {
   info("Removing tab.");
 
+  let { gBrowser } = tab.ownerDocument.defaultView;
   let onClose = once(gBrowser.tabContainer, "TabClose");
   gBrowser.removeTab(tab);
   yield onClose;
@@ -139,7 +152,7 @@ var removeTab = Task.async(function* (tab) {
  */
 var refreshTab = Task.async(function*(tab) {
   info("Refreshing tab.");
-  const finished = once(gBrowser.selectedBrowser, "load", true);
+  const finished = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   gBrowser.reloadTab(gBrowser.selectedTab);
   yield finished;
   info("Tab finished refreshing.");
@@ -215,7 +228,7 @@ function synthesizeKeyShortcut(key, target) {
 function waitForNEvents(target, eventName, numTimes, useCapture = false) {
   info("Waiting for event: '" + eventName + "' on " + target + ".");
 
-  let deferred = promise.defer();
+  let deferred = defer();
   let count = 0;
 
   for (let [add, remove] of [
@@ -274,7 +287,7 @@ function loadHelperScript(filePath) {
  * @return {Promise}
  */
 function waitForTick() {
-  let deferred = promise.defer();
+  let deferred = defer();
   executeSoon(deferred.resolve);
   return deferred.promise;
 }
@@ -288,9 +301,7 @@ function waitForTick() {
  * @return A promise that resolves when the time is passed
  */
 function wait(ms) {
-  let def = promise.defer();
-  content.setTimeout(def.resolve, ms);
-  return def.promise;
+  return new promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -425,7 +436,7 @@ function evalInDebuggee(mm, script) {
  *         callback is invoked.
  */
 function waitForContextMenu(popup, button, onShown, onHidden) {
-  let deferred = promise.defer();
+  let deferred = defer();
 
   function onPopupShown() {
     info("onPopupShown");
@@ -457,6 +468,15 @@ function waitForContextMenu(popup, button, onShown, onHidden) {
 }
 
 /**
+ * Promise wrapper around SimpleTest.waitForClipboard
+ */
+function waitForClipboardPromise(setup, expected) {
+  return new Promise((resolve, reject) => {
+    SimpleTest.waitForClipboard(expected, setup, resolve, reject);
+  });
+}
+
+/**
  * Simple helper to push a temporary preference. Wrapper on SpecialPowers
  * pushPrefEnv that returns a promise resolving when the preferences have been
  * updated.
@@ -472,4 +492,70 @@ function pushPref(preferenceName, value) {
     let options = {"set": [[preferenceName, value]]};
     SpecialPowers.pushPrefEnv(options, resolve);
   });
+}
+
+/**
+ * Lookup the provided dotted path ("prop1.subprop2.myProp") in the provided object.
+ *
+ * @param {Object} obj
+ *        Object to expand.
+ * @param {String} path
+ *        Dotted path to use to expand the object.
+ * @return {?} anything that is found at the provided path in the object.
+ */
+function lookupPath(obj, path) {
+  let segments = path.split(".");
+  return segments.reduce((prev, current) => prev[current], obj);
+}
+
+var closeToolbox = Task.async(function* () {
+  let target = TargetFactory.forTab(gBrowser.selectedTab);
+  yield gDevTools.closeToolbox(target);
+});
+
+/**
+ * Load the Telemetry utils, then stub Telemetry.prototype.log and
+ * Telemetry.prototype.logKeyed in order to record everything that's logged in
+ * it.
+ * Store all recordings in Telemetry.telemetryInfo.
+ * @return {Telemetry}
+ */
+function loadTelemetryAndRecordLogs() {
+  info("Mock the Telemetry log function to record logged information");
+
+  let Telemetry = require("devtools/client/shared/telemetry");
+  Telemetry.prototype.telemetryInfo = {};
+  Telemetry.prototype._oldlog = Telemetry.prototype.log;
+  Telemetry.prototype.log = function (histogramId, value) {
+    if (!this.telemetryInfo) {
+      // Telemetry instance still in use after stopRecordingTelemetryLogs
+      return;
+    }
+    if (histogramId) {
+      if (!this.telemetryInfo[histogramId]) {
+        this.telemetryInfo[histogramId] = [];
+      }
+      this.telemetryInfo[histogramId].push(value);
+    }
+  };
+  Telemetry.prototype._oldlogKeyed = Telemetry.prototype.logKeyed;
+  Telemetry.prototype.logKeyed = function (histogramId, key, value) {
+    this.log(`${histogramId}|${key}`, value);
+  };
+
+  return Telemetry;
+}
+
+/**
+ * Stop recording the Telemetry logs and put back the utils as it was before.
+ * @param {Telemetry} Required Telemetry
+ *        Telemetry object that needs to be stopped.
+ */
+function stopRecordingTelemetryLogs(Telemetry) {
+  info("Stopping Telemetry");
+  Telemetry.prototype.log = Telemetry.prototype._oldlog;
+  Telemetry.prototype.logKeyed = Telemetry.prototype._oldlogKeyed;
+  delete Telemetry.prototype._oldlog;
+  delete Telemetry.prototype._oldlogKeyed;
+  delete Telemetry.prototype.telemetryInfo;
 }

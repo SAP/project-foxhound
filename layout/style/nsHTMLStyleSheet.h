@@ -12,7 +12,6 @@
 #ifndef nsHTMLStyleSheet_h_
 #define nsHTMLStyleSheet_h_
 
-#include "nsAutoPtr.h"
 #include "nsColor.h"
 #include "nsCOMPtr.h"
 #include "nsIStyleRule.h"
@@ -85,6 +84,8 @@ private:
     // nsIStyleRule interface
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
     virtual bool MightMapInheritedStyleData() override;
+    virtual bool GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
+                                               nsCSSValue* aValue) override;
   #ifdef DEBUG
     virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
   #endif
@@ -108,6 +109,8 @@ private:
     // nsIStyleRule interface
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override = 0;
     virtual bool MightMapInheritedStyleData() override = 0;
+    virtual bool GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
+                                               nsCSSValue* aValue) override = 0;
   #ifdef DEBUG
     virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
   #endif
@@ -122,6 +125,8 @@ private:
 
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
     virtual bool MightMapInheritedStyleData() override;
+    virtual bool GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
+                                               nsCSSValue* aValue) override;
   };
 
   // Rule to handle quirk table colors
@@ -131,6 +136,8 @@ private:
 
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
     virtual bool MightMapInheritedStyleData() override;
+    virtual bool GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
+                                               nsCSSValue* aValue) override;
   };
 
 public: // for mLangRuleTable structures only
@@ -150,6 +157,8 @@ public: // for mLangRuleTable structures only
     // nsIStyleRule interface
     virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
     virtual bool MightMapInheritedStyleData() override;
+    virtual bool GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
+                                               nsCSSValue* aValue) override;
   #ifdef DEBUG
     virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
   #endif

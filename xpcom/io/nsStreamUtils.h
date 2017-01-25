@@ -184,7 +184,7 @@ NS_OutputStreamIsBuffered(nsIOutputStream* aOutputStream);
  *
  * @see nsIInputStream.idl for a description of this function's parameters.
  */
-extern NS_METHOD
+extern nsresult
 NS_CopySegmentToStream(nsIInputStream* aInputStream, void* aClosure,
                        const char* aFromSegment, uint32_t aToOffset,
                        uint32_t aCount, uint32_t* aWriteCount);
@@ -197,7 +197,7 @@ NS_CopySegmentToStream(nsIInputStream* aInputStream, void* aClosure,
  *
  * @see nsIInputStream.idl for a description of this function's parameters.
  */
-extern NS_METHOD
+extern nsresult
 NS_CopySegmentToBuffer(nsIInputStream* aInputStream, void* aClosure,
                        const char* aFromSegment, uint32_t aToOffset,
                        uint32_t aCount, uint32_t* aWriteCount);
@@ -235,7 +235,7 @@ NS_TaintedCopySegmentToBuffer(nsITaintawareInputStream* aInputStream, void* aClo
  *
  * @see nsIOutputStream.idl for a description of this function's parameters.
  */
-extern NS_METHOD
+extern nsresult
 NS_CopySegmentToBuffer(nsIOutputStream* aOutputStream, void* aClosure,
                        char* aToSegment, uint32_t aFromOffset,
                        uint32_t aCount, uint32_t* aReadCount);
@@ -247,7 +247,7 @@ NS_CopySegmentToBuffer(nsIOutputStream* aOutputStream, void* aClosure,
  *
  * @see nsIInputStream.idl for a description of this function's parameters.
  */
-extern NS_METHOD
+extern nsresult
 NS_DiscardSegment(nsIInputStream* aInputStream, void* aClosure,
                   const char* aFromSegment, uint32_t aToOffset,
                   uint32_t aCount, uint32_t* aWriteCount);
@@ -263,7 +263,7 @@ NS_DiscardSegment(nsIInputStream* aInputStream, void* aClosure,
  * This function comes in handy when implementing ReadSegments in terms of an
  * inner stream's ReadSegments.
  */
-extern NS_METHOD
+extern nsresult
 NS_WriteSegmentThunk(nsIInputStream* aInputStream, void* aClosure,
                      const char* aFromSegment, uint32_t aToOffset,
                      uint32_t aCount, uint32_t* aWriteCount);
@@ -288,7 +288,7 @@ struct MOZ_STACK_CLASS nsWriteSegmentThunk
  *        failed
  * @return the result from aInput->Read(...)
  */
-extern NS_METHOD
+extern nsresult
 NS_FillArray(FallibleTArray<char>& aDest, nsIInputStream* aInput,
              uint32_t aKeep, uint32_t* aNewBytes);
 

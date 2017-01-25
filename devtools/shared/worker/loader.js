@@ -317,12 +317,6 @@ this.WorkerDebuggerLoader = WorkerDebuggerLoader;
 // does not provide alternative definitions for them. Consequently, they are
 // stubbed out both on the main thread and worker threads.
 
-var PromiseDebugging = {
-  getState: function () {
-    throw new Error("PromiseDebugging is not available in workers!");
-  }
-};
-
 var chrome = {
   CC: undefined,
   Cc: undefined,
@@ -496,7 +490,6 @@ this.worker = new WorkerDebuggerLoader({
   loadSubScript: loadSubScript,
   modules: {
     "Debugger": Debugger,
-    "PromiseDebugging": PromiseDebugging,
     "Services": Object.create(null),
     "chrome": chrome,
     "xpcInspector": xpcInspector
@@ -504,6 +497,13 @@ this.worker = new WorkerDebuggerLoader({
   paths: {
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
     "": "resource://gre/modules/commonjs/",
+    // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+    // Modules here are intended to have one implementation for
+    // chrome, and a separate implementation for content.  Here we
+    // map the directory to the chrome subdirectory, but the content
+    // loader will map to the content subdirectory.  See the
+    // README.md in devtools/shared/platform.
+    "devtools/shared/platform": "resource://devtools/shared/platform/chrome",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
     "devtools": "resource://devtools",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠

@@ -17,6 +17,7 @@
 #include "prlock.h"
 #include "nsThreadUtils.h"
 #include "ImageContainer.h"
+#include "VideoFrameContainer.h"
 
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
@@ -28,8 +29,11 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/power/PowerManagerService.h"
-#include "nsPerformance.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/VideoPlaybackQuality.h"
+
+#include <algorithm>
+#include <limits>
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Video)
 
@@ -217,34 +221,54 @@ HTMLVideoElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
   return HTMLVideoElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
-bool
-HTMLVideoElement::NotifyOwnerDocumentActivityChangedInternal()
+void
+HTMLVideoElement::NotifyOwnerDocumentActivityChanged()
 {
-  bool pauseElement = HTMLMediaElement::NotifyOwnerDocumentActivityChangedInternal();
+  HTMLMediaElement::NotifyOwnerDocumentActivityChanged();
   UpdateScreenWakeLock();
-  return pauseElement;
+}
+
+FrameStatistics*
+HTMLVideoElement::GetFrameStatistics()
+{
+  return mDecoder ? &(mDecoder->GetFrameStatistics()) : nullptr;
 }
 
 already_AddRefed<VideoPlaybackQuality>
 HTMLVideoElement::GetVideoPlaybackQuality()
 {
   DOMHighResTimeStamp creationTime = 0;
-  uint64_t totalFrames = 0;
-  uint64_t droppedFrames = 0;
-  uint64_t corruptedFrames = 0;
+  uint32_t totalFrames = 0;
+  uint32_t droppedFrames = 0;
+  uint32_t corruptedFrames = 0;
 
   if (sVideoStatsEnabled) {
     if (nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow()) {
-      nsPerformance* perf = window->GetPerformance();
+      Performance* perf = window->GetPerformance();
       if (perf) {
         creationTime = perf->Now();
       }
     }
 
     if (mDecoder) {
-      FrameStatistics& stats = mDecoder->GetFrameStatistics();
-      totalFrames = stats.GetParsedFrames();
-      droppedFrames = stats.GetDroppedFrames();
+      FrameStatisticsData stats =
+        mDecoder->GetFrameStatistics().GetFrameStatisticsData();
+      if (sizeof(totalFrames) >= sizeof(stats.mParsedFrames)) {
+        totalFrames = stats.mParsedFrames;
+        droppedFrames = stats.mDroppedFrames;
+      } else {
+        auto maxStat = std::max(stats.mParsedFrames, stats.mDroppedFrames);
+        const auto maxNumber = std::numeric_limits<uint32_t>::max();
+        if (maxStat <= maxNumber) {
+          totalFrames = static_cast<uint32_t>(stats.mParsedFrames);
+          droppedFrames = static_cast<uint32_t>(stats.mDroppedFrames);
+        } else {
+          // Too big number(s) -> Resize everything to fit in 32 bits.
+          double ratio = double(maxNumber) / double(maxStat);
+          totalFrames = double(stats.mParsedFrames) * ratio;
+          droppedFrames = double(stats.mDroppedFrames) * ratio;
+        }
+      }
       corruptedFrames = 0;
     }
   }

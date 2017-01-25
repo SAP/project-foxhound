@@ -21,7 +21,7 @@
 #include "nsCOMPtr.h"
 #include "nsQueryObject.h"
 #include "pratom.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Logging.h"
 #include "nsIObserverService.h"
 #include "mozilla/HangMonitor.h"
@@ -32,7 +32,8 @@
 #include "nsXPCOMPrivate.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "nsThreadSyncDispatch.h"
 #include "LeakRefPtr.h"
 
@@ -40,10 +41,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsICrashReporter.h"
 #include "mozilla/dom/ContentChild.h"
-#endif
-
-#ifdef MOZ_NUWA_PROCESS
-#include "private/pprthred.h"
 #endif
 
 #ifdef XP_LINUX
@@ -204,11 +201,6 @@ public:
   // completion state.
   void Wait()
   {
-    if (mInitialized) {
-      // Maybe avoid locking...
-      return;
-    }
-
     ReentrantMonitorAutoEnter mon(mMon);
     while (!mInitialized) {
       mon.Wait();
@@ -220,7 +212,7 @@ public:
   virtual ~nsThreadStartupEvent() {}
 
 private:
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     ReentrantMonitorAutoEnter mon(mMon);
     mInitialized = true;
@@ -238,9 +230,11 @@ class DelayedRunnable : public Runnable,
                         public nsITimerCallback
 {
 public:
-  DelayedRunnable(already_AddRefed<nsIRunnable> aRunnable,
+  DelayedRunnable(already_AddRefed<nsIThread> aTargetThread,
+                  already_AddRefed<nsIRunnable> aRunnable,
                   uint32_t aDelay)
-    : mWrappedRunnable(aRunnable),
+    : mTargetThread(aTargetThread),
+      mWrappedRunnable(aRunnable),
       mDelayedFrom(TimeStamp::NowLoRes()),
       mDelay(aDelay)
   { }
@@ -254,6 +248,9 @@ public:
     NS_ENSURE_SUCCESS(rv, rv);
 
     MOZ_ASSERT(mTimer);
+    rv = mTimer->SetTarget(mTargetThread);
+
+    NS_ENSURE_SUCCESS(rv, rv);
     return mTimer->InitWithCallback(this, mDelay, nsITimer::TYPE_ONE_SHOT);
   }
 
@@ -291,6 +288,7 @@ public:
 private:
   ~DelayedRunnable() {}
 
+  nsCOMPtr<nsIThread> mTargetThread;
   nsCOMPtr<nsIRunnable> mWrappedRunnable;
   nsCOMPtr<nsITimer> mTimer;
   TimeStamp mDelayedFrom;
@@ -361,7 +359,7 @@ public:
     , mShutdownContext(aCtx)
   {
   }
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     mThread->mShutdownContext = mShutdownContext;
     MessageLoop::current()->Quit();
@@ -442,7 +440,7 @@ nsThread::ThreadFunc(void* aArg)
   SetupCurrentThreadForChaosMode();
 
   // Inform the ThreadManager
-  nsThreadManager::get()->RegisterCurrentThread(self);
+  nsThreadManager::get().RegisterCurrentThread(*self);
 
   mozilla::IOInterposer::RegisterCurrentThread();
 
@@ -499,7 +497,7 @@ nsThread::ThreadFunc(void* aArg)
   mozilla::IOInterposer::UnregisterCurrentThread();
 
   // Inform the threadmanager that this thread is going away
-  nsThreadManager::get()->UnregisterCurrentThread(self);
+  nsThreadManager::get().UnregisterCurrentThread(*self);
 
   // Dispatch shutdown ACK
   NotNull<nsThreadShutdownContext*> context =
@@ -662,7 +660,7 @@ nsThread::InitCurrentThread()
   mThread = PR_GetCurrentThread();
   SetupCurrentThreadForChaosMode();
 
-  nsThreadManager::get()->RegisterCurrentThread(this);
+  nsThreadManager::get().RegisterCurrentThread(*this);
   return NS_OK;
 }
 
@@ -680,12 +678,6 @@ nsThread::PutEvent(already_AddRefed<nsIRunnable> aEvent, nsNestedEventTarget* aT
   // we won't release the event in a wrong thread.
   LeakRefPtr<nsIRunnable> event(Move(aEvent));
   nsCOMPtr<nsIThreadObserver> obs;
-
-#ifdef MOZ_NUWA_PROCESS
-  // On debug build or when tests are enabled, assert that we are not about to
-  // create a deadlock in the Nuwa process.
-  NuwaAssertNotFrozen(PR_GetThreadID(mThread), PR_GetThreadName(mThread));
-#endif
 
   {
     MutexAutoLock lock(mLock);
@@ -734,7 +726,7 @@ nsThread::DispatchInternal(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags
 #endif
 
   if (aFlags & DISPATCH_SYNC) {
-    nsThread* thread = nsThreadManager::get()->GetCurrentThread();
+    nsThread* thread = nsThreadManager::get().GetCurrentThread();
     if (NS_WARN_IF(!thread)) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -762,7 +754,8 @@ nsThread::DispatchInternal(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags
     return NS_OK;
   }
 
-  NS_ASSERTION(aFlags == NS_DISPATCH_NORMAL, "unexpected dispatch flags");
+  NS_ASSERTION(aFlags == NS_DISPATCH_NORMAL ||
+               aFlags == NS_DISPATCH_AT_END, "unexpected dispatch flags");
   return PutEvent(event.take(), aTarget);
 }
 
@@ -789,7 +782,9 @@ nsThread::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aDelayM
 {
   NS_ENSURE_TRUE(!!aDelayMs, NS_ERROR_UNEXPECTED);
 
-  RefPtr<DelayedRunnable> r = new DelayedRunnable(Move(aEvent), aDelayMs);
+  RefPtr<DelayedRunnable> r = new DelayedRunnable(Move(do_AddRef(this)),
+                                                  Move(aEvent),
+                                                  aDelayMs);
   nsresult rv = r->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -847,7 +842,7 @@ nsThread::ShutdownInternal(bool aSync)
   }
 
   NotNull<nsThread*> currentThread =
-    WrapNotNull(nsThreadManager::get()->GetCurrentThread());
+    WrapNotNull(nsThreadManager::get().GetCurrentThread());
 
   nsAutoPtr<nsThreadShutdownContext>& context =
     *currentThread->mRequestedShutdownContexts.AppendElement();
@@ -1028,8 +1023,13 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult)
 
   ++mNestedEventLoopDepth;
 
+  // We only want to create an AutoNoJSAPI on threads that actually do DOM stuff
+  // (including workers).  Those are exactly the threads that have an
+  // mScriptObserver.
+  Maybe<dom::AutoNoJSAPI> noJSAPI;
   bool callScriptObserver = !!mScriptObserver;
   if (callScriptObserver) {
+    noJSAPI.emplace();
     mScriptObserver->BeforeProcessTask(reallyWait);
   }
 
@@ -1078,8 +1078,11 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult)
     obs->AfterProcessNextEvent(this, *aResult);
   }
 
-  if (callScriptObserver && mScriptObserver) {
-    mScriptObserver->AfterProcessTask(mNestedEventLoopDepth);
+  if (callScriptObserver) {
+    if (mScriptObserver) {
+      mScriptObserver->AfterProcessTask(mNestedEventLoopDepth);
+    }
+    noJSAPI.reset();
   }
 
   --mNestedEventLoopDepth;
@@ -1177,8 +1180,8 @@ nsThread::AddObserver(nsIThreadObserver* aObserver)
     return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  NS_WARN_IF_FALSE(!mEventObservers.Contains(aObserver),
-                   "Adding an observer twice!");
+  NS_WARNING_ASSERTION(!mEventObservers.Contains(aObserver),
+                       "Adding an observer twice!");
 
   if (!mEventObservers.AppendElement(WrapNotNull(aObserver))) {
     NS_WARNING("Out of memory!");
@@ -1265,7 +1268,7 @@ nsThread::PopEventQueue(nsIEventTarget* aInnermostTarget)
 }
 
 void
-nsThread::SetScriptObserver(mozilla::CycleCollectedJSRuntime* aScriptObserver)
+nsThread::SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver)
 {
   if (!aScriptObserver) {
     mScriptObserver = nullptr;

@@ -54,7 +54,7 @@ OpenParent(TestEndpointOpensOpenedParent* aParent,
   // Open the actor on the off-main thread to park it there.
   // Messages will be delivered to this thread's message loop
   // instead of the main thread's.
-  if (!aEndpoint.Bind(aParent, nullptr)) {
+  if (!aEndpoint.Bind(aParent)) {
     fail("binding Parent");
   }
 }
@@ -116,11 +116,6 @@ ShutdownTestEndpointOpensOpenedParent(TestEndpointOpensOpenedParent* parent,
                                       Transport* transport)
 {
   delete parent;
-
-  // Now delete the transport, which has to happen after the
-  // top-level actor is deleted.
-  XRE_GetIOMessageLoop()->PostTask(
-    do_AddRef(new DeleteTask<Transport>(transport)));
 }
 
 void
@@ -161,7 +156,7 @@ OpenChild(TestEndpointOpensOpenedChild* aChild,
   // Open the actor on the off-main thread to park it there.
   // Messages will be delivered to this thread's message loop
   // instead of the main thread's.
-  if (!endpoint.Bind(aChild, nullptr)) {
+  if (!endpoint.Bind(aChild)) {
     fail("binding child endpoint");
   }
 
@@ -249,11 +244,6 @@ ShutdownTestEndpointOpensOpenedChild(TestEndpointOpensOpenedChild* child,
                                      Transport* transport)
 {
   delete child;
-
-  // Now delete the transport, which has to happen after the
-  // top-level actor is deleted.
-  XRE_GetIOMessageLoop()->PostTask(
-    do_AddRef(new DeleteTask<Transport>(transport)));
 
   // Kick off main-thread shutdown.
   gMainThread->PostTask(

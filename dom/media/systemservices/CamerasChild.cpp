@@ -5,7 +5,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CamerasChild.h"
-#include "CamerasUtils.h"
 
 #include "webrtc/video_engine/include/vie_capture.h"
 #undef FF
@@ -16,7 +15,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "MediaUtils.h"
 #include "nsThreadUtils.h"
 
@@ -26,19 +25,51 @@ mozilla::LazyLogModule gCamerasChildLog("CamerasChild");
 #define LOG(args) MOZ_LOG(gCamerasChildLog, mozilla::LogLevel::Debug, args)
 #define LOG_ENABLED() MOZ_LOG_TEST(gCamerasChildLog, mozilla::LogLevel::Debug)
 
+#define FAKE_ONDEVICECHANGE_EVENT_PERIOD_IN_MS 5000
+#define FAKE_ONDEVICECHANGE_EVENT_REPEAT_COUNT 30
+
 namespace mozilla {
 namespace camera {
 
 CamerasSingleton::CamerasSingleton()
   : mCamerasMutex("CamerasSingleton::mCamerasMutex"),
     mCameras(nullptr),
-    mCamerasChildThread(nullptr) {
+    mCamerasChildThread(nullptr),
+    mFakeDeviceChangeEventThread(nullptr) {
   LOG(("CamerasSingleton: %p", this));
 }
 
 CamerasSingleton::~CamerasSingleton() {
   LOG(("~CamerasSingleton: %p", this));
 }
+
+class FakeOnDeviceChangeEventRunnable : public Runnable
+{
+public:
+  explicit FakeOnDeviceChangeEventRunnable(uint8_t counter)
+    : mCounter(counter) {}
+
+  NS_IMETHOD Run() override
+  {
+    OffTheBooksMutexAutoLock lock(CamerasSingleton::Mutex());
+
+    CamerasChild* child = CamerasSingleton::Child();
+    if (child) {
+      child->OnDeviceChange();
+
+      if (mCounter++ < FAKE_ONDEVICECHANGE_EVENT_REPEAT_COUNT) {
+        RefPtr<FakeOnDeviceChangeEventRunnable> evt = new FakeOnDeviceChangeEventRunnable(mCounter);
+        CamerasSingleton::FakeDeviceChangeEventThread()->DelayedDispatch(evt.forget(),
+          FAKE_ONDEVICECHANGE_EVENT_PERIOD_IN_MS);
+      }
+    }
+
+    return NS_OK;
+  }
+
+private:
+  uint8_t mCounter;
+};
 
 class InitializeIPCThread : public Runnable
 {
@@ -53,13 +84,13 @@ public:
     // If it's not spun up yet, block until it is, and retry
     if (!existingBackgroundChild) {
       LOG(("No existingBackgroundChild"));
-      SynchronouslyCreatePBackground();
       existingBackgroundChild =
-        ipc::BackgroundChild::GetForCurrentThread();
+        ipc::BackgroundChild::SynchronouslyCreateForCurrentThread();
       LOG(("BackgroundChild: %p", existingBackgroundChild));
+      if (!existingBackgroundChild) {
+        return NS_ERROR_FAILURE;
+      }
     }
-    // By now PBackground is guaranteed to be up
-    MOZ_RELEASE_ASSERT(existingBackgroundChild);
 
     // Create CamerasChild
     // We will be returning the resulting pointer (synchronously) to our caller.
@@ -94,7 +125,8 @@ GetCamerasChild() {
     // At this point we are in the MediaManager thread, and the thread we are
     // dispatching to is the specific Cameras IPC thread that was just made
     // above, so now we will fire off a runnable to run
-    // SynchronouslyCreatePBackground there, while we block in this thread.
+    // BackgroundChild::SynchronouslyCreateForCurrentThread there, while we
+    // block in this thread.
     // We block until the following happens in the Cameras IPC thread:
     // 1) Creation of PBackground finishes
     // 2) Creation of PCameras finishes by sending a message to the parent
@@ -106,6 +138,12 @@ GetCamerasChild() {
   if (!CamerasSingleton::Child()) {
     LOG(("Failed to set up CamerasChild, are we in shutdown?"));
   }
+  return CamerasSingleton::Child();
+}
+
+CamerasChild*
+GetCamerasChildIfExists() {
+  OffTheBooksMutexAutoLock lock(CamerasSingleton::Mutex());
   return CamerasSingleton::Child();
 }
 
@@ -487,14 +525,14 @@ Shutdown(void)
 class ShutdownRunnable : public Runnable {
 public:
   explicit
-  ShutdownRunnable(RefPtr<Runnable> aReplyEvent)
+  ShutdownRunnable(already_AddRefed<Runnable>&& aReplyEvent)
     : mReplyEvent(aReplyEvent) {};
 
   NS_IMETHOD Run() override {
     LOG(("Closing BackgroundChild"));
     ipc::BackgroundChild::CloseForCurrentThread();
 
-    NS_DispatchToMainThread(mReplyEvent);
+    NS_DispatchToMainThread(mReplyEvent.forget());
 
     return NS_OK;
   }
@@ -544,16 +582,24 @@ CamerasChild::ShutdownChild()
     LOG(("PBackground thread exists, dispatching close"));
     // Dispatch closing the IPC thread back to us when the
     // BackgroundChild is closed.
-    RefPtr<Runnable> event =
-      new ThreadDestructor(CamerasSingleton::Thread());
-    RefPtr<ShutdownRunnable> runnable = new ShutdownRunnable(event);
-    CamerasSingleton::Thread()->Dispatch(runnable, NS_DISPATCH_NORMAL);
+    RefPtr<ShutdownRunnable> runnable =
+      new ShutdownRunnable(NewRunnableMethod(CamerasSingleton::Thread(),
+                                             &nsIThread::Shutdown));
+    CamerasSingleton::Thread()->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
   } else {
     LOG(("Shutdown called without PBackground thread"));
   }
   LOG(("Erasing sCameras & thread refs (original thread)"));
   CamerasSingleton::Child() = nullptr;
   CamerasSingleton::Thread() = nullptr;
+
+  if (CamerasSingleton::FakeDeviceChangeEventThread()) {
+    RefPtr<ShutdownRunnable> runnable =
+      new ShutdownRunnable(NewRunnableMethod(CamerasSingleton::FakeDeviceChangeEventThread(),
+                                             &nsIThread::Shutdown));
+    CamerasSingleton::FakeDeviceChangeEventThread()->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+  }
+  CamerasSingleton::FakeDeviceChangeEventThread() = nullptr;
 }
 
 bool
@@ -578,6 +624,35 @@ CamerasChild::RecvDeliverFrame(const int& capEngine,
   }
   SendReleaseFrame(shmem);
   return true;
+}
+
+bool
+CamerasChild::RecvDeviceChange()
+{
+  this->OnDeviceChange();
+  return true;
+}
+
+int
+CamerasChild::SetFakeDeviceChangeEvents()
+{
+  CamerasSingleton::Mutex().AssertCurrentThreadOwns();
+
+  if(!CamerasSingleton::FakeDeviceChangeEventThread()) {
+    nsresult rv = NS_NewNamedThread("Fake DC Event",
+                                    getter_AddRefs(CamerasSingleton::FakeDeviceChangeEventThread()));
+    if (NS_FAILED(rv)) {
+      LOG(("Error launching Fake OnDeviceChange Event Thread"));
+      return -1;
+    }
+  }
+
+  // To simulate the devicechange event in mochitest,
+  // we fire a fake devicechange event in Camera IPC thread periodically
+  RefPtr<FakeOnDeviceChangeEventRunnable> evt = new FakeOnDeviceChangeEventRunnable(0);
+  CamerasSingleton::FakeDeviceChangeEventThread()->Dispatch(evt.forget(), NS_DISPATCH_NORMAL);
+
+  return 0;
 }
 
 bool

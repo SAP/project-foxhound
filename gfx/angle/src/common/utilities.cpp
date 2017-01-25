@@ -127,6 +127,7 @@ GLenum VariableComponentType(GLenum type)
       case GL_SAMPLER_3D:
       case GL_SAMPLER_CUBE:
       case GL_SAMPLER_2D_ARRAY:
+      case GL_SAMPLER_EXTERNAL_OES:
       case GL_INT_SAMPLER_2D:
       case GL_INT_SAMPLER_3D:
       case GL_INT_SAMPLER_CUBE:
@@ -246,7 +247,19 @@ int VariableRowCount(GLenum type)
       case GL_SAMPLER_2D_SHADOW:
       case GL_SAMPLER_CUBE_SHADOW:
       case GL_SAMPLER_2D_ARRAY_SHADOW:
-        return 1;
+      case GL_IMAGE_2D:
+      case GL_INT_IMAGE_2D:
+      case GL_UNSIGNED_INT_IMAGE_2D:
+      case GL_IMAGE_2D_ARRAY:
+      case GL_INT_IMAGE_2D_ARRAY:
+      case GL_UNSIGNED_INT_IMAGE_2D_ARRAY:
+      case GL_IMAGE_3D:
+      case GL_INT_IMAGE_3D:
+      case GL_UNSIGNED_INT_IMAGE_3D:
+      case GL_IMAGE_CUBE:
+      case GL_INT_IMAGE_CUBE:
+      case GL_UNSIGNED_INT_IMAGE_CUBE:
+          return 1;
       case GL_FLOAT_MAT2:
       case GL_FLOAT_MAT3x2:
       case GL_FLOAT_MAT4x2:
@@ -334,6 +347,7 @@ bool IsSamplerType(GLenum type)
       case GL_SAMPLER_3D:
       case GL_SAMPLER_CUBE:
       case GL_SAMPLER_2D_ARRAY:
+      case GL_SAMPLER_EXTERNAL_OES:
       case GL_INT_SAMPLER_2D:
       case GL_INT_SAMPLER_3D:
       case GL_INT_SAMPLER_CUBE:
@@ -360,6 +374,9 @@ GLenum SamplerTypeToTextureType(GLenum samplerType)
       case GL_UNSIGNED_INT_SAMPLER_2D:
       case GL_SAMPLER_2D_SHADOW:
         return GL_TEXTURE_2D;
+
+      case GL_SAMPLER_EXTERNAL_OES:
+          return GL_TEXTURE_EXTERNAL_OES;
 
       case GL_SAMPLER_CUBE:
       case GL_INT_SAMPLER_CUBE:
@@ -639,6 +656,29 @@ std::string ParseUniformName(const std::string &name, size_t *outSubscript)
     return name.substr(0, open);
 }
 
+template <>
+GLuint ConvertToGLuint(GLfloat param)
+{
+    return uiround<GLuint>(param);
+}
+
+template <>
+GLint ConvertToGLint(GLfloat param)
+{
+    return iround<GLint>(param);
+}
+
+template <>
+GLint ConvertFromGLfloat(GLfloat param)
+{
+    return iround<GLint>(param);
+}
+template <>
+GLuint ConvertFromGLfloat(GLfloat param)
+{
+    return uiround<GLuint>(param);
+}
+
 unsigned int ParseAndStripArrayIndex(std::string *name)
 {
     unsigned int subscript = GL_INVALID_INDEX;
@@ -710,7 +750,7 @@ bool IsRenderbufferTarget(EGLenum target)
 {
     return target == EGL_GL_RENDERBUFFER_KHR;
 }
-}
+}  // namespace egl
 
 namespace egl_gl
 {
@@ -748,7 +788,7 @@ GLuint EGLClientBufferToGLObjectHandle(EGLClientBuffer buffer)
 {
     return static_cast<GLuint>(reinterpret_cast<uintptr_t>(buffer));
 }
-}
+}  // namespace egl_gl
 
 #if !defined(ANGLE_ENABLE_WINDOWS_STORE)
 std::string getTempPath()

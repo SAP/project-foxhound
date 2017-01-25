@@ -279,6 +279,8 @@ PluginPRLibrary::IsRemoteDrawingCoreAnimation(NPP instance, bool *aDrawing)
   *aDrawing = false; 
   return NS_OK;
 }
+#endif
+#if defined(XP_MACOSX) || defined(XP_WIN)
 nsresult
 PluginPRLibrary::ContentsScaleFactorChanged(NPP instance, double aContentsScaleFactor)
 {
@@ -324,11 +326,6 @@ PluginPRLibrary::EndUpdateBackground(NPP instance, const nsIntRect&)
 #if defined(XP_WIN)
 nsresult
 PluginPRLibrary::GetScrollCaptureContainer(NPP aInstance, ImageContainer** aContainer)
-{
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-nsresult
-PluginPRLibrary::UpdateScrollState(NPP aInstance, bool aIsScrolling)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

@@ -15,12 +15,12 @@
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/NotNull.h"
 
 #define NS_ICANVASRENDERINGCONTEXTINTERNAL_IID \
 { 0xb84f2fed, 0x9d4b, 0x430b, \
   { 0xbd, 0xfb, 0x85, 0x57, 0x8a, 0xc2, 0xb4, 0x4b } }
 
-class gfxASurface;
 class nsDisplayListBuilder;
 
 namespace mozilla {
@@ -99,7 +99,7 @@ public:
   // Initializes with an nsIDocShell and DrawTarget. The size is taken from the
   // DrawTarget.
   NS_IMETHOD InitializeWithDrawTarget(nsIDocShell *aDocShell,
-                                      mozilla::gfx::DrawTarget* aTarget) = 0;
+                                      mozilla::NotNull<mozilla::gfx::DrawTarget*> aTarget) = 0;
 
   // Creates an image buffer. Returns null on failure.
   virtual mozilla::UniquePtr<uint8_t[]> GetImageBuffer(int32_t* format) = 0;
@@ -136,7 +136,8 @@ public:
   // one for the given layer manager if not available.
   virtual already_AddRefed<Layer> GetCanvasLayer(nsDisplayListBuilder* builder,
                                                  Layer *oldLayer,
-                                                 LayerManager *manager) = 0;
+                                                 LayerManager *manager,
+                                                 bool aMirror = false) = 0;
 
   // Return true if the canvas should be forced to be "inactive" to ensure
   // it can be drawn to the screen even if it's too large to be blitted by

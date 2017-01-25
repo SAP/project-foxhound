@@ -5,26 +5,24 @@
 
 var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
-
 const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
+const { SideMenuWidget } = require("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
 const promise = require("promise");
 const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { CallWatcherFront } = require("devtools/shared/fronts/call-watcher");
 const { CanvasFront } = require("devtools/shared/fronts/canvas");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const { LocalizationHelper } = require("devtools/client/shared/l10n");
+const flags = require("devtools/shared/flags");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const { PluralForm } = require("devtools/shared/plural-form");
 const { Heritage, WidgetMethods, setNamedTimeout, clearNamedTimeout,
         setConditionalTimeout } = require("devtools/client/shared/widgets/view-helpers");
 
-const CANVAS_ACTOR_RECORDING_ATTEMPT = DevToolsUtils.testing ? 500 : 5000;
+const CANVAS_ACTOR_RECORDING_ATTEMPT = flags.testing ? 500 : 5000;
 
 const { Task } = require("devtools/shared/task");
-
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-  "resource://gre/modules/PluralForm.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
   "resource://gre/modules/FileUtils.jsm");
@@ -77,8 +75,8 @@ const EVENTS = {
 XPCOMUtils.defineConstant(this, "EVENTS", EVENTS);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const STRINGS_URI = "chrome://devtools/locale/canvasdebugger.properties";
-const SHARED_STRINGS_URI = "chrome://devtools/locale/shared.properties";
+const STRINGS_URI = "devtools/locale/canvasdebugger.properties";
+const SHARED_STRINGS_URI = "devtools/locale/shared.properties";
 
 const SNAPSHOT_START_RECORDING_DELAY = 10; // ms
 const SNAPSHOT_DATA_EXPORT_MAX_BLOCK = 1000; // ms
@@ -129,6 +127,12 @@ var EventsHandler = {
    * Listen for events emitted by the current tab target.
    */
   initialize: function () {
+    // Make sure the backend is prepared to handle <canvas> contexts.
+    // Since actors are created lazily on the first request to them, we need to send an
+    // early request to ensure the CallWatcherActor is running and watching for new window
+    // globals.
+    gFront.setup({ reload: false });
+
     this._onTabNavigated = this._onTabNavigated.bind(this);
     gTarget.on("will-navigate", this._onTabNavigated);
     gTarget.on("navigate", this._onTabNavigated);
@@ -149,8 +153,6 @@ var EventsHandler = {
     if (event != "will-navigate") {
       return;
     }
-    // Make sure the backend is prepared to handle <canvas> contexts.
-    gFront.setup({ reload: false });
 
     // Reset UI.
     SnapshotsListView.empty();

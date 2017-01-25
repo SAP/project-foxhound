@@ -473,6 +473,7 @@ signed_data(struct signOptionsStr *signOptions)
         fprintf(stderr,
                 "Created CMS message, added signed data w/ signerinfo\n");
     }
+    signerinfo->cmsg->pwfn_arg = pwcb_arg;
     /* we want the cert chain included for this one */
     if (NSS_CMSSignerInfo_IncludeCerts(signerinfo, NSSCMSCM_CertChain,
                                        signOptions->options->certUsage) !=
@@ -1169,7 +1170,7 @@ main(int argc, char **argv)
                     Usage(progName);
                     exit(1);
                 }
-                signOptions.nickname = strdup(optstate->value);
+                signOptions.nickname = PORT_Strdup(optstate->value);
                 break;
             case 'O':
                 mode = CERTSONLY;
@@ -1251,7 +1252,7 @@ main(int argc, char **argv)
                 SECU_ConfigDirectory(optstate->value);
                 break;
             case 'e':
-                envFileName = strdup(optstate->value);
+                envFileName = PORT_Strdup(optstate->value);
                 encryptOptions.envFile = PR_Open(envFileName, PR_RDONLY, 00660);
                 break;
 
@@ -1379,9 +1380,6 @@ main(int argc, char **argv)
             SECU_PrintError(progName, "unable to read infile");
             exit(1);
         }
-        if (inFile != PR_STDIN) {
-            PR_Close(inFile);
-        }
     }
     if (cms_verbose) {
         fprintf(stderr, "received commands\n");
@@ -1461,9 +1459,6 @@ main(int argc, char **argv)
                 }
             } else {
                 exitstatus = doBatchDecode(outFile, inFile, &decodeOptions);
-                if (inFile != PR_STDIN) {
-                    PR_Close(inFile);
-                }
             }
             break;
         case SIGN: /* -S */
@@ -1537,6 +1532,11 @@ main(int argc, char **argv)
             Usage(progName);
             exitstatus = 1;
     }
+
+    if (signOptions.nickname) {
+        PORT_Free(signOptions.nickname);
+    }
+
     if ((mode == SIGN || mode == ENVELOPE || mode == CERTSONLY) &&
         (!exitstatus)) {
         PLArenaPool *arena = PORT_NewArena(1024);
@@ -1605,6 +1605,16 @@ main(int argc, char **argv)
         NSS_CMSMessage_Destroy(cmsg);
     if (outFile != stdout)
         fclose(outFile);
+
+    if (inFile != PR_STDIN) {
+        PR_Close(inFile);
+    }
+    if (envFileName) {
+        PORT_Free(envFileName);
+    }
+    if (encryptOptions.envFile) {
+        PR_Close(encryptOptions.envFile);
+    }
 
     SECITEM_FreeItem(&decodeOptions.content, PR_FALSE);
     SECITEM_FreeItem(&envmsg, PR_FALSE);

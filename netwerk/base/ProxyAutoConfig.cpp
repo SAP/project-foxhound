@@ -11,6 +11,7 @@
 #include "nsIDNSService.h"
 #include "nsThreadUtils.h"
 #include "nsIConsoleService.h"
+#include "nsIURLParser.h"
 #include "nsJSUtils.h"
 #include "jsfriendapi.h"
 #include "prnetdb.h"
@@ -274,9 +275,9 @@ public:
   }
 
   // nsIDNSListener
-  NS_IMETHODIMP OnLookupComplete(nsICancelable *request,
-                                 nsIDNSRecord *record,
-                                 nsresult status) override
+  NS_IMETHOD OnLookupComplete(nsICancelable *request,
+                              nsIDNSRecord *record,
+                              nsresult status) override
   {
     if (mTimer) {
       mTimer->Cancel();
@@ -290,7 +291,7 @@ public:
   }
 
   // nsITimerCallback
-  NS_IMETHODIMP Notify(nsITimer *timer) override
+  NS_IMETHOD Notify(nsITimer *timer) override
   {
     if (mRequest)
       mRequest->Cancel(NS_ERROR_NET_TIMEOUT);
@@ -385,9 +386,10 @@ bool PACResolve(const nsCString &aHostName, NetAddr *aNetAddr,
 }
 
 ProxyAutoConfig::ProxyAutoConfig()
-  : mJSRuntime(nullptr)
+  : mJSContext(nullptr)
   , mJSNeedsSetup(false)
   , mShutdown(false)
+  , mIncludePath(false)
 {
   MOZ_COUNT_CTOR(ProxyAutoConfig);
 }
@@ -603,19 +605,18 @@ static const JSFunctionSpec PACGlobalFunctions[] = {
   JS_FS_END
 };
 
-// JSRuntimeWrapper is a c++ object that manages the runtime and context
-// for the JS engine used on the PAC thread. It is initialized and destroyed
-// on the PAC thread.
-class JSRuntimeWrapper
+// JSContextWrapper is a c++ object that manages the context for the JS engine
+// used on the PAC thread. It is initialized and destroyed on the PAC thread.
+class JSContextWrapper
 {
  public:
-  static JSRuntimeWrapper *Create()
+  static JSContextWrapper *Create()
   {
-    JSRuntime *runtime = JS_NewRuntime(sRuntimeHeapSize);
-    if (NS_WARN_IF(!runtime))
+    JSContext* cx = JS_NewContext(sContextHeapSize);
+    if (NS_WARN_IF(!cx))
       return nullptr;
 
-    JSRuntimeWrapper *entry = new JSRuntimeWrapper(runtime);
+    JSContextWrapper *entry = new JSContextWrapper(cx);
     if (NS_FAILED(entry->Init())) {
       delete entry;
       return nullptr;
@@ -634,17 +635,14 @@ class JSRuntimeWrapper
     return mGlobal;
   }
 
-  ~JSRuntimeWrapper()
+  ~JSContextWrapper()
   {
     mGlobal = nullptr;
 
-    MOZ_COUNT_DTOR(JSRuntimeWrapper);
+    MOZ_COUNT_DTOR(JSContextWrapper);
+
     if (mContext) {
       JS_DestroyContext(mContext);
-    }
-
-    if (mRuntime) {
-      JS_DestroyRuntime(mRuntime);
     }
   }
 
@@ -659,19 +657,18 @@ class JSRuntimeWrapper
   }
 
 private:
-  static const unsigned sRuntimeHeapSize = 4 << 20; // 4 MB
+  static const unsigned sContextHeapSize = 4 << 20; // 4 MB
 
-  JSRuntime *mRuntime;
   JSContext *mContext;
   JS::PersistentRooted<JSObject*> mGlobal;
   bool      mOK;
 
   static const JSClass sGlobalClass;
 
-  explicit JSRuntimeWrapper(JSRuntime* rt)
-     : mRuntime(rt), mContext(nullptr), mGlobal(rt, nullptr), mOK(false)
+  explicit JSContextWrapper(JSContext* cx)
+    : mContext(cx), mGlobal(cx, nullptr), mOK(false)
   {
-      MOZ_COUNT_CTOR(JSRuntimeWrapper);
+      MOZ_COUNT_CTOR(JSContextWrapper);
   }
 
   nsresult Init()
@@ -680,14 +677,13 @@ private:
      * Not setting this will cause JS_CHECK_RECURSION to report false
      * positives
      */
-    JS_SetNativeStackQuota(mRuntime, 128 * sizeof(size_t) * 1024);
+    JS_SetNativeStackQuota(mContext, 128 * sizeof(size_t) * 1024);
 
-    JS_SetErrorReporter(mRuntime, PACWarningReporter);
+    JS::SetWarningReporter(mContext, PACWarningReporter);
 
-    mContext = JS_NewContext(mRuntime, 0);
-    NS_ENSURE_TRUE(mContext, NS_ERROR_OUT_OF_MEMORY);
-
-    JS::ContextOptionsRef(mContext).setAutoJSAPIOwnsErrorReporting(true);
+    if (!JS::InitSelfHostedCode(mContext)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
 
     JSAutoRequest ar(mContext);
 
@@ -717,17 +713,17 @@ private:
   }
 };
 
-static const JSClassOps sJSRuntimeWrapperGlobalClassOps = {
+static const JSClassOps sJSContextWrapperGlobalClassOps = {
   nullptr, nullptr, nullptr, nullptr,
   nullptr, nullptr, nullptr, nullptr,
   nullptr, nullptr, nullptr,
   JS_GlobalObjectTraceHook
 };
 
-const JSClass JSRuntimeWrapper::sGlobalClass = {
+const JSClass JSContextWrapper::sGlobalClass = {
   "PACResolutionThreadGlobal",
   JSCLASS_GLOBAL_FLAGS,
-  &sJSRuntimeWrapperGlobalClassOps
+  &sJSContextWrapperGlobalClassOps
 };
 
 void
@@ -738,7 +734,8 @@ ProxyAutoConfig::SetThreadLocalIndex(uint32_t index)
 
 nsresult
 ProxyAutoConfig::Init(const nsCString &aPACURI,
-                      const nsCString &aPACScript)
+                      const nsCString &aPACScript,
+                      bool aIncludePath)
 {
   mPACURI = aPACURI;
   mPACScript = sPacUtils;
@@ -747,6 +744,7 @@ ProxyAutoConfig::Init(const nsCString &aPACURI,
   if (!GetRunning())
     return SetupJS();
 
+  mIncludePath = aIncludePath;
   mJSNeedsSetup = true;
   return NS_OK;
 }
@@ -757,19 +755,19 @@ ProxyAutoConfig::SetupJS()
   mJSNeedsSetup = false;
   MOZ_ASSERT(!GetRunning(), "JIT is running");
 
-  delete mJSRuntime;
-  mJSRuntime = nullptr;
+  delete mJSContext;
+  mJSContext = nullptr;
 
   if (mPACScript.IsEmpty())
     return NS_ERROR_FAILURE;
 
-  mJSRuntime = JSRuntimeWrapper::Create();
-  if (!mJSRuntime)
+  mJSContext = JSContextWrapper::Create();
+  if (!mJSContext)
     return NS_ERROR_FAILURE;
 
-  JSContext* cx = mJSRuntime->Context();
+  JSContext* cx = mJSContext->Context();
   JSAutoRequest ar(cx);
-  JSAutoCompartment ac(cx, mJSRuntime->Global());
+  JSAutoCompartment ac(cx, mJSContext->Global());
   AutoPACErrorReporter aper(cx);
 
   // check if this is a data: uri so that we don't spam the js console with
@@ -778,7 +776,7 @@ ProxyAutoConfig::SetupJS()
   bool isDataURI = nsDependentCSubstring(mPACURI, 0, 5).LowerCaseEqualsASCII("data:", 5);
 
   SetRunning(this);
-  JS::Rooted<JSObject*> global(cx, mJSRuntime->Global());
+  JS::Rooted<JSObject*> global(cx, mJSContext->Global());
   JS::CompileOptions options(cx);
   options.setFileAndLine(mPACURI.get(), 1);
   JS::Rooted<JSScript*> script(cx);
@@ -799,7 +797,7 @@ ProxyAutoConfig::SetupJS()
   }
   SetRunning(nullptr);
 
-  mJSRuntime->SetOK();
+  mJSContext->SetOK();
   nsString alertMessage(NS_LITERAL_STRING("PAC file installed from "));
   if (isDataURI) {
     alertMessage += NS_LITERAL_STRING("data: URI");
@@ -827,12 +825,12 @@ ProxyAutoConfig::GetProxyForURI(const nsCString &aTestURI,
   if (mJSNeedsSetup)
     SetupJS();
 
-  if (!mJSRuntime || !mJSRuntime->IsOK())
+  if (!mJSContext || !mJSContext->IsOK())
     return NS_ERROR_NOT_AVAILABLE;
 
-  JSContext *cx = mJSRuntime->Context();
+  JSContext *cx = mJSContext->Context();
   JSAutoRequest ar(cx);
-  JSAutoCompartment ac(cx, mJSRuntime->Global());
+  JSAutoCompartment ac(cx, mJSContext->Global());
   AutoPACErrorReporter aper(cx);
 
   // the sRunning flag keeps a new PAC file from being installed
@@ -844,7 +842,33 @@ ProxyAutoConfig::GetProxyForURI(const nsCString &aTestURI,
   mRunningIsInIsolatedMozBrowser = aIsInIsolatedMozBrowser;
 
   nsresult rv = NS_ERROR_FAILURE;
-  JS::RootedString uriString(cx, JS_NewStringCopyZ(cx, aTestURI.get()));
+  nsCString clensedURI = aTestURI;
+
+  if (!mIncludePath) {
+    nsCOMPtr<nsIURLParser> urlParser =
+      do_GetService(NS_STDURLPARSER_CONTRACTID);
+    int32_t pathLen = 0;
+    if (urlParser) {
+      uint32_t schemePos;
+      int32_t schemeLen;
+      uint32_t authorityPos;
+      int32_t authorityLen;
+      uint32_t pathPos;
+      rv = urlParser->ParseURL(aTestURI.get(), aTestURI.Length(),
+                               &schemePos, &schemeLen,
+                               &authorityPos, &authorityLen,
+                               &pathPos, &pathLen);
+    }
+    if (NS_SUCCEEDED(rv)) {
+      if (pathLen) {
+        // cut off the path but leave the initial slash
+        pathLen--;
+      }
+      aTestURI.Left(clensedURI, aTestURI.Length() - pathLen);
+    }
+  }
+
+  JS::RootedString uriString(cx, JS_NewStringCopyZ(cx, clensedURI.get()));
   JS::RootedString hostString(cx, JS_NewStringCopyZ(cx, aTestHost.get()));
 
   if (uriString && hostString) {
@@ -853,7 +877,7 @@ ProxyAutoConfig::GetProxyForURI(const nsCString &aTestURI,
     args[1].setString(hostString);
 
     JS::Rooted<JS::Value> rval(cx);
-    JS::Rooted<JSObject*> global(cx, mJSRuntime->Global());
+    JS::Rooted<JSObject*> global(cx, mJSContext->Global());
     bool ok = JS_CallFunctionName(cx, global, "FindProxyForURL", args, &rval);
 
     if (ok && rval.isString()) {
@@ -873,18 +897,18 @@ ProxyAutoConfig::GetProxyForURI(const nsCString &aTestURI,
 void
 ProxyAutoConfig::GC()
 {
-  if (!mJSRuntime || !mJSRuntime->IsOK())
+  if (!mJSContext || !mJSContext->IsOK())
     return;
 
-  JSAutoCompartment ac(mJSRuntime->Context(), mJSRuntime->Global());
-  JS_MaybeGC(mJSRuntime->Context());
+  JSAutoCompartment ac(mJSContext->Context(), mJSContext->Global());
+  JS_MaybeGC(mJSContext->Context());
 }
 
 ProxyAutoConfig::~ProxyAutoConfig()
 {
   MOZ_COUNT_DTOR(ProxyAutoConfig);
-  NS_ASSERTION(!mJSRuntime,
-               "~ProxyAutoConfig leaking JS runtime that "
+  NS_ASSERTION(!mJSContext,
+               "~ProxyAutoConfig leaking JS context that "
                "should have been deleted on pac thread");
 }
 
@@ -897,8 +921,8 @@ ProxyAutoConfig::Shutdown()
     return;
 
   mShutdown = true;
-  delete mJSRuntime;
-  mJSRuntime = nullptr;
+  delete mJSContext;
+  mJSContext = nullptr;
 }
 
 bool
@@ -947,7 +971,7 @@ ProxyAutoConfig::MyIPAddressTryHost(const nsCString &hostName,
 
   NetAddr remoteAddress;
   nsAutoCString localDottedDecimal;
-  JSContext *cx = mJSRuntime->Context();
+  JSContext *cx = mJSContext->Context();
 
   if (PACResolve(hostName, &remoteAddress, timeout) &&
       SrcAddress(&remoteAddress, localDottedDecimal)) {
@@ -968,9 +992,9 @@ ProxyAutoConfig::MyIPAddress(const JS::CallArgs &aArgs)
 {
   nsAutoCString remoteDottedDecimal;
   nsAutoCString localDottedDecimal;
-  JSContext *cx = mJSRuntime->Context();
+  JSContext *cx = mJSContext->Context();
   JS::RootedValue v(cx);
-  JS::Rooted<JSObject*> global(cx, mJSRuntime->Global());
+  JS::Rooted<JSObject*> global(cx, mJSContext->Global());
 
   bool useMultihomedDNS =
     JS_GetProperty(cx,  global, "pacUseMultihomedDNS", &v) &&
@@ -1061,7 +1085,7 @@ ProxyAutoConfig::MyAppId(const JS::CallArgs &aArgs)
 bool
 ProxyAutoConfig::MyAppOrigin(const JS::CallArgs &aArgs)
 {
-  JSContext *cx = mJSRuntime->Context();
+  JSContext *cx = mJSContext->Context();
   JSString *origin =
     JS_NewStringCopyZ(cx, NS_ConvertUTF16toUTF8(mRunningAppOrigin).get());
   if (!origin) {

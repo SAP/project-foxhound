@@ -11,6 +11,7 @@
 #include "HyperTextAccessibleWrap.h"
 #include "AccEvent.h"
 
+#include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
 #include "nsIDocument.h"
@@ -576,7 +577,7 @@ protected:
    */
   void SetIPCDoc(DocAccessibleChild* aIPCDoc) { mIPCDoc = aIPCDoc; }
 
-  friend class DocAccessibleChild;
+  friend class DocAccessibleChildBase;
 
   /**
    * Used to fire scrolling end event after page scroll.

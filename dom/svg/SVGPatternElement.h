@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_SVGPatternElement_h
 #define mozilla_dom_SVGPatternElement_h
 
+#include "nsAutoPtr.h"
 #include "nsSVGEnum.h"
 #include "nsSVGLength2.h"
 #include "nsSVGString.h"
@@ -83,9 +84,9 @@ protected:
 
   nsAutoPtr<mozilla::nsSVGAnimatedTransformList> mPatternTransform;
 
-  enum { HREF };
-  nsSVGString mStringAttributes[1];
-  static StringInfo sStringInfo[1];
+  enum { HREF, XLINK_HREF };
+  nsSVGString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
 
   // SVGFitToViewbox properties
   nsSVGViewBox mViewBox;

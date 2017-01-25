@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasImageCache.h"
+#include "nsAutoPtr.h"
 #include "nsIImageLoadingContent.h"
 #include "nsExpirationTracker.h"
 #include "imgIRequest.h"
@@ -203,9 +204,9 @@ public:
     mImageCache = nullptr;
   }
 
-  NS_IMETHODIMP Observe(nsISupports* aSubject,
-                        const char* aTopic,
-                        const char16_t* aSomeData) override
+  NS_IMETHOD Observe(nsISupports* aSubject,
+                     const char* aTopic,
+                     const char16_t* aSomeData) override
   {
     if (!mImageCache || strcmp(aTopic, "memory-pressure")) {
       return NS_OK;
@@ -267,7 +268,7 @@ ImageCache::ImageCache()
     Preferences::AddIntVarCache(&sCanvasImageCacheLimit, "canvas.image.cache.limit", 0);
   }
   mImageCacheObserver = new ImageCacheObserver(this);
-  MOZ_RELEASE_ASSERT(mImageCacheObserver, "Can't alloc ImageCacheObserver");
+  MOZ_RELEASE_ASSERT(mImageCacheObserver, "GFX: Can't alloc ImageCacheObserver");
 }
 
 ImageCache::~ImageCache() {

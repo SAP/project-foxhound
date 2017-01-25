@@ -21,6 +21,8 @@
 #include "secoid.h"
 #include "nssutil.h"
 
+#include "pkcs1_vectors.h"
+
 #ifndef NSS_DISABLE_ECC
 #include "ecl-curve.h"
 SECStatus EC_DecodeParams(const SECItem *encodedParams,
@@ -143,23 +145,7 @@ Usage()
     PRINTUSAGE("", "-k", "file which contains key");
 #ifndef NSS_DISABLE_ECC
     PRINTUSAGE("", "-n", "name of curve for EC key generation; one of:");
-    PRINTUSAGE("", "", "  sect163k1, nistk163, sect163r1, sect163r2,");
-    PRINTUSAGE("", "", "  nistb163, sect193r1, sect193r2, sect233k1, nistk233,");
-    PRINTUSAGE("", "", "  sect233r1, nistb233, sect239k1, sect283k1, nistk283,");
-    PRINTUSAGE("", "", "  sect283r1, nistb283, sect409k1, nistk409, sect409r1,");
-    PRINTUSAGE("", "", "  nistb409, sect571k1, nistk571, sect571r1, nistb571,");
-    PRINTUSAGE("", "", "  secp160k1, secp160r1, secp160r2, secp192k1, secp192r1,");
-    PRINTUSAGE("", "", "  nistp192, secp224k1, secp224r1, nistp224, secp256k1,");
-    PRINTUSAGE("", "", "  secp256r1, nistp256, secp384r1, nistp384, secp521r1,");
-    PRINTUSAGE("", "", "  nistp521, prime192v1, prime192v2, prime192v3,");
-    PRINTUSAGE("", "", "  prime239v1, prime239v2, prime239v3, c2pnb163v1,");
-    PRINTUSAGE("", "", "  c2pnb163v2, c2pnb163v3, c2pnb176v1, c2tnb191v1,");
-    PRINTUSAGE("", "", "  c2tnb191v2, c2tnb191v3, c2onb191v4, c2onb191v5,");
-    PRINTUSAGE("", "", "  c2pnb208w1, c2tnb239v1, c2tnb239v2, c2tnb239v3,");
-    PRINTUSAGE("", "", "  c2onb239v4, c2onb239v5, c2pnb272w1, c2pnb304w1,");
-    PRINTUSAGE("", "", "  c2tnb359w1, c2pnb368w1, c2tnb431r1, secp112r1,");
-    PRINTUSAGE("", "", "  secp112r2, secp128r1, secp128r2, sect113r1, sect113r2,");
-    PRINTUSAGE("", "", "  sect131r1, sect131r2");
+    PRINTUSAGE("", "", "  nistp256, nistp384, nistp521");
 #endif
     PRINTUSAGE("", "-p", "do performance test");
     PRINTUSAGE("", "-4", "run test in multithread mode. th_num number of parallel threads");
@@ -354,11 +340,9 @@ key_from_filedata(PLArenaPool *arena, SECItem *it, int ns, int ni, SECItem *file
 }
 
 static RSAPrivateKey *
-rsakey_from_filedata(SECItem *filedata)
+rsakey_from_filedata(PLArenaPool *arena, SECItem *filedata)
 {
     RSAPrivateKey *key;
-    PLArenaPool *arena;
-    arena = PORT_NewArena(BLTEST_DEFAULT_CHUNKSIZE);
     key = (RSAPrivateKey *)PORT_ArenaZAlloc(arena, sizeof(RSAPrivateKey));
     key->arena = arena;
     key_from_filedata(arena, &key->version, 0, 9, filedata);
@@ -366,11 +350,9 @@ rsakey_from_filedata(SECItem *filedata)
 }
 
 static PQGParams *
-pqg_from_filedata(SECItem *filedata)
+pqg_from_filedata(PLArenaPool *arena, SECItem *filedata)
 {
     PQGParams *pqg;
-    PLArenaPool *arena;
-    arena = PORT_NewArena(BLTEST_DEFAULT_CHUNKSIZE);
     pqg = (PQGParams *)PORT_ArenaZAlloc(arena, sizeof(PQGParams));
     pqg->arena = arena;
     key_from_filedata(arena, &pqg->prime, 0, 3, filedata);
@@ -378,11 +360,9 @@ pqg_from_filedata(SECItem *filedata)
 }
 
 static DSAPrivateKey *
-dsakey_from_filedata(SECItem *filedata)
+dsakey_from_filedata(PLArenaPool *arena, SECItem *filedata)
 {
     DSAPrivateKey *key;
-    PLArenaPool *arena;
-    arena = PORT_NewArena(BLTEST_DEFAULT_CHUNKSIZE);
     key = (DSAPrivateKey *)PORT_ArenaZAlloc(arena, sizeof(DSAPrivateKey));
     key->params.arena = arena;
     key_from_filedata(arena, &key->params.prime, 0, 5, filedata);
@@ -391,13 +371,11 @@ dsakey_from_filedata(SECItem *filedata)
 
 #ifndef NSS_DISABLE_ECC
 static ECPrivateKey *
-eckey_from_filedata(SECItem *filedata)
+eckey_from_filedata(PLArenaPool *arena, SECItem *filedata)
 {
     ECPrivateKey *key;
-    PLArenaPool *arena;
     SECStatus rv;
     ECParams *tmpECParams = NULL;
-    arena = PORT_NewArena(BLTEST_DEFAULT_CHUNKSIZE);
     key = (ECPrivateKey *)PORT_ArenaZAlloc(arena, sizeof(ECPrivateKey));
     /* read and convert params */
     key->ecParams.arena = arena;
@@ -420,9 +398,6 @@ typedef struct curveNameTagPairStr {
     char *curveName;
     SECOidTag curveOidTag;
 } CurveNameTagPair;
-
-#define DEFAULT_CURVE_OID_TAG SEC_OID_SECG_EC_SECP192R1
-/* #define DEFAULT_CURVE_OID_TAG  SEC_OID_SECG_EC_SECP160R1 */
 
 static CurveNameTagPair nameTagPair[] =
     {
@@ -504,6 +479,7 @@ static CurveNameTagPair nameTagPair[] =
       { "sect113r2", SEC_OID_SECG_EC_SECT113R2 },
       { "sect131r1", SEC_OID_SECG_EC_SECT131R1 },
       { "sect131r2", SEC_OID_SECG_EC_SECT131R2 },
+      { "curve25519", SEC_OID_CURVE25519 },
     };
 
 static SECItem *
@@ -1244,8 +1220,7 @@ rsa_PublicKeyOp(void *cx, SECItem *output, const SECItem *input)
     RSAPublicKey *pubKey = (RSAPublicKey *)params->pubKey;
     SECStatus rv = RSA_PublicKeyOp(pubKey, output->data, input->data);
     if (rv == SECSuccess) {
-        output->len = pubKey->modulus.data[0] ? pubKey->modulus.len :
-                                              pubKey->modulus.len - 1;
+        output->len = pubKey->modulus.data[0] ? pubKey->modulus.len : pubKey->modulus.len - 1;
     }
     return rv;
 }
@@ -1257,8 +1232,7 @@ rsa_PrivateKeyOp(void *cx, SECItem *output, const SECItem *input)
     RSAPrivateKey *privKey = (RSAPrivateKey *)params->privKey;
     SECStatus rv = RSA_PrivateKeyOp(privKey, output->data, input->data);
     if (rv == SECSuccess) {
-        output->len = privKey->modulus.data[0] ? privKey->modulus.len :
-                                               privKey->modulus.len - 1;
+        output->len = privKey->modulus.data[0] ? privKey->modulus.len : privKey->modulus.len - 1;
     }
     return rv;
 }
@@ -1810,10 +1784,10 @@ bltest_dsa_init(bltestCipherInfo *cipherInfo, PRBool encrypt)
         PORT_Free(dummyKey);
     }
     if (!dsap->pqg && dsap->pqgdata.buf.len > 0) {
-        dsap->pqg = pqg_from_filedata(&dsap->pqgdata.buf);
+        dsap->pqg = pqg_from_filedata(cipherInfo->arena, &dsap->pqgdata.buf);
     }
     if (!asymk->privKey && asymk->key.buf.len > 0) {
-        asymk->privKey = dsakey_from_filedata(&asymk->key.buf);
+        asymk->privKey = dsakey_from_filedata(cipherInfo->arena, &asymk->key.buf);
     }
     if (encrypt) {
         cipherInfo->cipher.pubkeyCipher = dsa_signDigest;
@@ -1864,13 +1838,13 @@ bltest_ecdsa_init(bltestCipherInfo *cipherInfo, PRBool encrypt)
         PORT_Free(dummyKey);
     }
     if (!asymk->privKey && asymk->key.buf.len > 0) {
-        asymk->privKey = eckey_from_filedata(&asymk->key.buf);
+        asymk->privKey = eckey_from_filedata(cipherInfo->arena, &asymk->key.buf);
     }
     if (encrypt) {
         cipherInfo->cipher.pubkeyCipher = ecdsa_signDigest;
     } else {
         /* Have to convert private key to public key.  Memory
-     * is freed with private key's arena  */
+         * is freed with private key's arena  */
         ECPublicKey *pubkey;
         ECPrivateKey *key = (ECPrivateKey *)asymk->privKey;
         pubkey = (ECPublicKey *)PORT_ArenaZAlloc(key->ecParams.arena,
@@ -1897,6 +1871,7 @@ bltest_ecdsa_init(bltestCipherInfo *cipherInfo, PRBool encrypt)
         pubkey->ecParams.DEREncoding.len = key->ecParams.DEREncoding.len;
         pubkey->ecParams.DEREncoding.data = key->ecParams.DEREncoding.data;
         pubkey->ecParams.name = key->ecParams.name;
+        pubkey->ecParams.pointSize = key->ecParams.pointSize;
         pubkey->publicValue.len = key->publicValue.len;
         pubkey->publicValue.data = key->publicValue.data;
         asymk->pubKey = pubkey;
@@ -2231,7 +2206,7 @@ pubkeyInitKey(bltestCipherInfo *cipherInfo, PRFileDesc *file,
                 rsap->keysizeInBits = keysize * 8;
             } else {
                 setupIO(cipherInfo->arena, &asymk->key, file, NULL, 0);
-                *rsaKey = rsakey_from_filedata(&asymk->key.buf);
+                *rsaKey = rsakey_from_filedata(cipherInfo->arena, &asymk->key.buf);
                 rsap->keysizeInBits = (*rsaKey)->modulus.len * 8;
             }
             break;
@@ -2247,7 +2222,7 @@ pubkeyInitKey(bltestCipherInfo *cipherInfo, PRFileDesc *file,
                 serialize_key(&(*dsaKey)->params.prime, 5, file);
             } else {
                 setupIO(cipherInfo->arena, &asymk->key, file, NULL, 0);
-                *dsaKey = dsakey_from_filedata(&asymk->key.buf);
+                *dsaKey = dsakey_from_filedata(cipherInfo->arena, &asymk->key.buf);
                 dsap->keysize = (*dsaKey)->params.prime.len * 8;
             }
             break;
@@ -2278,7 +2253,7 @@ pubkeyInitKey(bltestCipherInfo *cipherInfo, PRFileDesc *file,
                 CHECKERROR(rv, __LINE__);
             } else {
                 setupIO(cipherInfo->arena, &asymk->key, file, NULL, 0);
-                *ecKey = eckey_from_filedata(&asymk->key.buf);
+                *ecKey = eckey_from_filedata(cipherInfo->arena, &asymk->key.buf);
             }
             break;
 #endif
@@ -2857,8 +2832,7 @@ print_td:
                 ECPrivateKey *key = (ECPrivateKey *)info->params.asymk.privKey;
                 ECCurveName curveName = key->ecParams.name;
                 fprintf(stdout, "%12s",
-                        ecCurve_map[curveName] ? ecCurve_map[curveName]->text :
-                                               "Unsupported curve");
+                        ecCurve_map[curveName] ? ecCurve_map[curveName]->text : "Unsupported curve");
             }
             break;
 #endif
@@ -3070,18 +3044,18 @@ get_params(PLArenaPool *arena, bltestParams *params,
             load_file_data(arena, &params->asymk.key, filename,
                            bltestBase64Encoded);
             params->asymk.privKey =
-                (void *)rsakey_from_filedata(&params->asymk.key.buf);
+                (void *)rsakey_from_filedata(arena, &params->asymk.key.buf);
             break;
         case bltestDSA:
             sprintf(filename, "%s/tests/%s/%s%d", testdir, modestr, "key", j);
             load_file_data(arena, &params->asymk.key, filename, bltestBase64Encoded);
             params->asymk.privKey =
-                (void *)dsakey_from_filedata(&params->asymk.key.buf);
+                (void *)dsakey_from_filedata(arena, &params->asymk.key.buf);
             sprintf(filename, "%s/tests/%s/%s%d", testdir, modestr, "pqg", j);
             load_file_data(arena, &params->asymk.cipherParams.dsa.pqgdata, filename,
                            bltestBase64Encoded);
             params->asymk.cipherParams.dsa.pqg =
-                pqg_from_filedata(&params->asymk.cipherParams.dsa.pqgdata.buf);
+                pqg_from_filedata(arena, &params->asymk.cipherParams.dsa.pqgdata.buf);
             sprintf(filename, "%s/tests/%s/%s%d", testdir, modestr, "keyseed", j);
             load_file_data(arena, &params->asymk.cipherParams.dsa.keyseed, filename,
                            bltestBase64Encoded);
@@ -3096,7 +3070,7 @@ get_params(PLArenaPool *arena, bltestParams *params,
             sprintf(filename, "%s/tests/%s/%s%d", testdir, modestr, "key", j);
             load_file_data(arena, &params->asymk.key, filename, bltestBase64Encoded);
             params->asymk.privKey =
-                (void *)eckey_from_filedata(&params->asymk.key.buf);
+                (void *)eckey_from_filedata(arena, &params->asymk.key.buf);
             sprintf(filename, "%s/tests/%s/%s%d", testdir, modestr, "sigseed", j);
             load_file_data(arena, &params->asymk.cipherParams.ecdsa.sigseed,
                            filename, bltestBase64Encoded);
@@ -3167,8 +3141,9 @@ verify_self_test(bltestIO *result, bltestIO *cmp, bltestCipherMode mode,
 }
 
 static SECStatus
-ReadFileToItem(SECItem *dst, const char *filename)
+ReadFileToItem(PLArenaPool *arena, SECItem *dst, const char *filename)
 {
+    SECItem tmp = { siBuffer, NULL, 0 };
     PRFileDesc *file;
     SECStatus rv;
 
@@ -3176,7 +3151,9 @@ ReadFileToItem(SECItem *dst, const char *filename)
     if (!file) {
         return SECFailure;
     }
-    rv = SECU_FileToItem(dst, file);
+    rv = SECU_FileToItem(&tmp, file);
+    rv |= SECITEM_CopyItem(arena, dst, &tmp);
+    SECITEM_FreeItem(&tmp, PR_FALSE);
     PR_Close(file);
     return rv;
 }
@@ -3215,7 +3192,7 @@ blapi_selftest(bltestCipherMode *modes, int numModes, int inoff, int outoff,
         params = &cipherInfo.params;
         /* get the number of tests in the directory */
         sprintf(filename, "%s/tests/%s/%s", testdir, modestr, "numtests");
-        if (ReadFileToItem(&item, filename) != SECSuccess) {
+        if (ReadFileToItem(arena, &item, filename) != SECSuccess) {
             fprintf(stderr, "%s: Cannot read file %s.\n", progName, filename);
             rv = SECFailure;
             continue;
@@ -3293,6 +3270,7 @@ blapi_selftest(bltestCipherMode *modes, int numModes, int inoff, int outoff,
                                    &pt, mode, PR_FALSE, srv);
         }
     }
+    PORT_FreeArena(arena, PR_FALSE);
     return rv;
 }
 
@@ -3302,10 +3280,13 @@ dump_file(bltestCipherMode mode, char *filename)
     bltestIO keydata;
     PLArenaPool *arena = NULL;
     arena = PORT_NewArena(BLTEST_DEFAULT_CHUNKSIZE);
+    if (!arena) {
+        return SECFailure;
+    }
     if (mode == bltestRSA || mode == bltestRSA_PSS || mode == bltestRSA_OAEP) {
         RSAPrivateKey *key;
         load_file_data(arena, &keydata, filename, bltestBase64Encoded);
-        key = rsakey_from_filedata(&keydata.buf);
+        key = rsakey_from_filedata(arena, &keydata.buf);
         dump_rsakey(key);
     } else if (mode == bltestDSA) {
 #if 0
@@ -3316,13 +3297,13 @@ dump_file(bltestCipherMode mode, char *filename)
 #endif
         DSAPrivateKey *key;
         load_file_data(arena, &keydata, filename, bltestBase64Encoded);
-        key = dsakey_from_filedata(&keydata.buf);
+        key = dsakey_from_filedata(arena, &keydata.buf);
         dump_dsakey(key);
 #ifndef NSS_DISABLE_ECC
     } else if (mode == bltestECDSA) {
         ECPrivateKey *key;
         load_file_data(arena, &keydata, filename, bltestBase64Encoded);
-        key = eckey_from_filedata(&keydata.buf);
+        key = eckey_from_filedata(arena, &keydata.buf);
         dump_eckey(key);
 #endif
     }
@@ -3412,9 +3393,55 @@ rsaPrivKeysAreEqual(RSAPrivateKey *src, RSAPrivateKey *dest)
     return areEqual;
 }
 
+static int
+doRSAPopulateTestKV()
+{
+    RSAPrivateKey tstKey = { 0 };
+    SECStatus rv;
+    int failed = 0;
+    int i;
+
+    tstKey.arena = NULL;
+
+    /* Test public exponent, private exponent, modulus cases from
+     * pkcs1v15sign-vectors.txt. Some are valid PKCS#1 keys but not valid RSA
+     * ones (de = 1 mod lcm(p − 1, q − 1))
+     */
+    for (i = 0; i < PR_ARRAY_SIZE(PKCS1_VECTORS); ++i) {
+        struct pkcs1_test_vector *v = &PKCS1_VECTORS[i];
+
+        rsaPrivKeyReset(&tstKey);
+        tstKey.privateExponent.data = v->d;
+        tstKey.privateExponent.len = v->d_len;
+        tstKey.publicExponent.data = v->e;
+        tstKey.publicExponent.len = v->e_len;
+        tstKey.modulus.data = v->n;
+        tstKey.modulus.len = v->n_len;
+
+        rv = RSA_PopulatePrivateKey(&tstKey);
+        if (rv != SECSuccess) {
+            fprintf(stderr, "RSA Populate failed: pkcs1v15sign-vector %d\n", i);
+            failed = 1;
+        } else if (memcmp(v->q, tstKey.prime1.data, v->q_len) ||
+                   tstKey.prime1.len != v->q_len) {
+            fprintf(stderr, "RSA Populate key mismatch: pkcs1v15sign-vector %d q\n", i);
+            failed = 1;
+        } else if (memcmp(v->p, tstKey.prime2.data, v->p_len) ||
+                   tstKey.prime1.len != v->p_len) {
+            fprintf(stderr, "RSA Populate key mismatch: pkcs1v15sign-vector %d p\n", i);
+            failed = 1;
+        } else {
+            fprintf(stderr, "RSA Populate success: pkcs1v15sign-vector %d p\n", i);
+        }
+    }
+
+    PORT_FreeArena(tstKey.arena, PR_TRUE);
+    return failed;
+}
+
 /*
  * Test the RSA populate command to see that it can really build
- * keys from it's components.
+ * keys from its components.
  */
 static int
 doRSAPopulateTest(unsigned int keySize, unsigned long exponent)
@@ -3423,7 +3450,7 @@ doRSAPopulateTest(unsigned int keySize, unsigned long exponent)
     RSAPrivateKey tstKey = { 0 };
     SECItem expitem = { 0, 0, 0 };
     SECStatus rv;
-    unsigned char pubExp[4];
+    unsigned char pubExp[32];
     int expLen = 0;
     int failed = 0;
     int i;
@@ -3506,8 +3533,8 @@ doRSAPopulateTest(unsigned int keySize, unsigned long exponent)
         fprintf(stderr, "RSA Populate failed: pubExp privExp q\n");
         fprintf(stderr, " - not fatal\n");
         /* it's possible that we can't uniquely determine the original key
-     * from just the exponents and prime. Populate returns an error rather
-     * than return the wrong key. */
+         * from just the exponents and prime. Populate returns an error rather
+         * than return the wrong key. */
     } else if (!rsaPrivKeysAreEqual(&tstKey, srcKey)) {
         /* if we returned a key, it *must* be correct */
         fprintf(stderr, "RSA Populate key mismatch: pubExp privExp  q\n");
@@ -3531,6 +3558,7 @@ doRSAPopulateTest(unsigned int keySize, unsigned long exponent)
         failed = 1;
     }
 
+    PORT_FreeArena(srcKey->arena, PR_TRUE);
     return failed ? -1 : 0;
 }
 
@@ -3543,6 +3571,7 @@ enum {
     cmd_Nonce,
     cmd_Dump,
     cmd_RSAPopulate,
+    cmd_RSAPopulateKV,
     cmd_Sign,
     cmd_SelfTest,
     cmd_Verify
@@ -3596,6 +3625,7 @@ static secuCommandFlag bltest_commands[] =
       { /* cmd_Nonce */ 'N', PR_FALSE, 0, PR_FALSE },
       { /* cmd_Dump */ 'P', PR_FALSE, 0, PR_FALSE },
       { /* cmd_RSAPopulate */ 'R', PR_FALSE, 0, PR_FALSE },
+      { /* cmd_RSAPopulateKV */ 'K', PR_FALSE, 0, PR_FALSE },
       { /* cmd_Sign */ 'S', PR_FALSE, 0, PR_FALSE },
       { /* cmd_SelfTest */ 'T', PR_FALSE, 0, PR_FALSE },
       { /* cmd_Verify */ 'V', PR_FALSE, 0, PR_FALSE }
@@ -3733,6 +3763,12 @@ main(int argc, char **argv)
      * Handle three simple cases first
      */
 
+    /* test the RSA_PopulatePrivateKey function with known vectors */
+    if (bltest.commands[cmd_RSAPopulateKV].activated) {
+        PORT_Free(cipherInfo);
+        return doRSAPopulateTestKV();
+    }
+
     /* test the RSA_PopulatePrivateKey function */
     if (bltest.commands[cmd_RSAPopulate].activated) {
         unsigned int keySize = 1024;
@@ -3760,6 +3796,7 @@ main(int argc, char **argv)
         if (ret != 0) {
             fprintf(stderr, "RSA Populate test round %d: FAILED\n", i);
         }
+        PORT_Free(cipherInfo);
         return ret;
     }
 

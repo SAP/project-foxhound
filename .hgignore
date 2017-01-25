@@ -78,6 +78,9 @@ _OPT\.OBJ/
 ^devtools/client/chrome.manifest$
 ^devtools/shared/chrome.manifest$
 
+# Ignore node_modules directories in devtools
+^devtools/.*/node_modules/
+
 # git checkout of libstagefright
 ^media/libstagefright/android$
 
@@ -108,7 +111,7 @@ GPATH
 .tox/
 
 # Ignore node_modules
-^testing/eslint/node_modules/
+^tools/lint/eslint/node_modules/
 
 # Ignore talos virtualenv and tp5n files.
 # The tp5n set is supposed to be decompressed at
@@ -126,3 +129,6 @@ GPATH
 
 # Ignore files created when running a reftest.
 ^lextab.py$
+
+# tup database
+^\.tup

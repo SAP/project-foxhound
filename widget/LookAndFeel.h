@@ -29,7 +29,7 @@ class LookAndFeel
 public:
   // When modifying this list, also modify nsXPLookAndFeel::sColorPrefs
   // in widget/xpwidgts/nsXPLookAndFeel.cpp.
-  enum ColorID {
+  enum ColorID : uint8_t {
 
     // WARNING : NO NEGATIVE VALUE IN THIS ENUMERATION
     // see patch in bug 57757 for more information
@@ -290,16 +290,6 @@ public:
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
     eIntID_MacGraphiteTheme,
-
-    /*
-     * A Boolean value to determine whether the Mac OS X Lion-specific theming
-     * should be used.
-     *
-     * The value of this metric is not used on non-Mac platforms. These
-     * platforms should return NS_ERROR_NOT_IMPLEMENTED when queried for this
-     * metric.
-     */
-    eIntID_MacLionTheme,
 
    /*
     * A Boolean value to determine whether the Mac OS X Yosemite-specific theming

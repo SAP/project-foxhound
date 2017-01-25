@@ -79,11 +79,14 @@ public:
 
   void GetPluginVoucher(const uint8_t** aVoucher,
                         uint32_t* aVoucherLength) override;
+
+  uint32_t Id() const { return mId; }
 private:
   ~GMPDecryptorChild();
 
   // GMPDecryptorChild
-  bool RecvInit() override;
+  bool RecvInit(const bool& aDistinctiveIdentifierRequired,
+                const bool& aPersistentStateRequired) override;
 
   bool RecvCreateSession(const uint32_t& aCreateSessionToken,
                          const uint32_t& aPromiseId,
@@ -128,6 +131,8 @@ private:
   // Reference to the vouchers owned by the GMPChild.
   const nsTArray<uint8_t>& mPluginVoucher;
   const nsTArray<uint8_t>& mSandboxVoucher;
+
+  const uint32_t mId;
 };
 
 } // namespace gmp

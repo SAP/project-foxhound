@@ -71,9 +71,9 @@ gfxAlphaBoxBlur::Init(const gfxRect& aRect,
     memset(mData.get(), 0, blurDataSize);
 
     RefPtr<DrawTarget> dt =
-        gfxPlatform::GetPlatform()->CreateDrawTargetForData(mData.get(), size,
-                                                            mBlur->GetStride(),
-                                                            SurfaceFormat::A8);
+        gfxPlatform::CreateDrawTargetForData(mData.get(), size,
+                                             mBlur->GetStride(),
+                                             SurfaceFormat::A8);
     if (!dt || !dt->IsValid()) {
         return nullptr;
     }
@@ -81,7 +81,7 @@ gfxAlphaBoxBlur::Init(const gfxRect& aRect,
     IntRect irect = mBlur->GetRect();
     gfxPoint topleft(irect.TopLeft().x, irect.TopLeft().y);
 
-    mContext = gfxContext::ForDrawTarget(dt);
+    mContext = gfxContext::CreateOrNull(dt);
     MOZ_ASSERT(mContext); // already checked for target above
     mContext->SetMatrix(gfxMatrix::Translation(-topleft));
 

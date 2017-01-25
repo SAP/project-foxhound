@@ -7,7 +7,7 @@
 #include "js/Value.h"
 #include "nsThreadUtils.h"
 
-#include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
 
@@ -52,7 +52,7 @@ public:
     PromiseDebugging::FlushUncaughtRejectionsInternal();
   }
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     FlushSync();
     return NS_OK;
   }
@@ -230,11 +230,8 @@ PromiseDebugging::Shutdown()
 /* static */ void
 PromiseDebugging::FlushUncaughtRejections()
 {
-  // XXXbz figure out the plan
-#ifndef SPIDERMONKEY_PROMISE
   MOZ_ASSERT(!NS_IsMainThread());
   FlushRejections::FlushSync();
-#endif // SPIDERMONKEY_PROMISE
 }
 
 #ifndef SPIDERMONKEY_PROMISE
@@ -321,7 +318,7 @@ PromiseDebugging::GetTimeToSettle(GlobalObject&, JS::Handle<JSObject*> aPromise,
 PromiseDebugging::AddUncaughtRejectionObserver(GlobalObject&,
                                                UncaughtRejectionObserver& aObserver)
 {
-  CycleCollectedJSRuntime* storage = CycleCollectedJSRuntime::Get();
+  CycleCollectedJSContext* storage = CycleCollectedJSContext::Get();
   nsTArray<nsCOMPtr<nsISupports>>& observers = storage->mUncaughtRejectionObservers;
   observers.AppendElement(&aObserver);
 }
@@ -330,7 +327,7 @@ PromiseDebugging::AddUncaughtRejectionObserver(GlobalObject&,
 PromiseDebugging::RemoveUncaughtRejectionObserver(GlobalObject&,
                                                   UncaughtRejectionObserver& aObserver)
 {
-  CycleCollectedJSRuntime* storage = CycleCollectedJSRuntime::Get();
+  CycleCollectedJSContext* storage = CycleCollectedJSContext::Get();
   nsTArray<nsCOMPtr<nsISupports>>& observers = storage->mUncaughtRejectionObservers;
   for (size_t i = 0; i < observers.Length(); ++i) {
     UncaughtRejectionObserver* observer = static_cast<UncaughtRejectionObserver*>(observers[i].get());
@@ -342,19 +339,102 @@ PromiseDebugging::RemoveUncaughtRejectionObserver(GlobalObject&,
   return false;
 }
 
-#ifndef SPIDERMONKEY_PROMISE
+#ifdef SPIDERMONKEY_PROMISE
+
+/* static */ void
+PromiseDebugging::AddUncaughtRejection(JS::HandleObject aPromise)
+{
+  // This might OOM, but won't set a pending exception, so we'll just ignore it.
+  if (CycleCollectedJSContext::Get()->mUncaughtRejections.append(aPromise)) {
+    FlushRejections::DispatchNeeded();
+  }
+}
+
+/* void */ void
+PromiseDebugging::AddConsumedRejection(JS::HandleObject aPromise)
+{
+  // If the promise is in our list of uncaught rejections, we haven't yet
+  // reported it as unhandled. In that case, just remove it from the list
+  // and don't add it to the list of consumed rejections.
+  auto& uncaughtRejections = CycleCollectedJSContext::Get()->mUncaughtRejections;
+  for (size_t i = 0; i < uncaughtRejections.length(); i++) {
+    if (uncaughtRejections[i] == aPromise) {
+      // To avoid large amounts of memmoves, we don't shrink the vector here.
+      // Instead, we filter out nullptrs when iterating over the vector later.
+      uncaughtRejections[i].set(nullptr);
+      return;
+    }
+  }
+  // This might OOM, but won't set a pending exception, so we'll just ignore it.
+  if (CycleCollectedJSContext::Get()->mConsumedRejections.append(aPromise)) {
+    FlushRejections::DispatchNeeded();
+  }
+}
+
+/* static */ void
+PromiseDebugging::FlushUncaughtRejectionsInternal()
+{
+  CycleCollectedJSContext* storage = CycleCollectedJSContext::Get();
+
+  auto& uncaught = storage->mUncaughtRejections;
+  auto& consumed = storage->mConsumedRejections;
+
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  JSContext* cx = jsapi.cx();
+
+  // Notify observers of uncaught Promise.
+  auto& observers = storage->mUncaughtRejectionObservers;
+
+  for (size_t i = 0; i < uncaught.length(); i++) {
+    JS::RootedObject promise(cx, uncaught[i]);
+    // Filter out nullptrs which might've been added by
+    // PromiseDebugging::AddConsumedRejection.
+    if (!promise) {
+      continue;
+    }
+
+    for (size_t j = 0; j < observers.Length(); ++j) {
+      RefPtr<UncaughtRejectionObserver> obs =
+        static_cast<UncaughtRejectionObserver*>(observers[j].get());
+
+      IgnoredErrorResult err;
+      obs->OnLeftUncaught(promise, err);
+    }
+    JSAutoCompartment ac(cx, promise);
+    Promise::ReportRejectedPromise(cx, promise);
+  }
+  storage->mUncaughtRejections.clear();
+
+  // Notify observers of consumed Promise.
+
+  for (size_t i = 0; i < consumed.length(); i++) {
+    JS::RootedObject promise(cx, consumed[i]);
+
+    for (size_t j = 0; j < observers.Length(); ++j) {
+      RefPtr<UncaughtRejectionObserver> obs =
+        static_cast<UncaughtRejectionObserver*>(observers[j].get());
+
+      IgnoredErrorResult err;
+      obs->OnConsumed(promise, err);
+    }
+  }
+  storage->mConsumedRejections.clear();
+}
+
+#else
 
 /* static */ void
 PromiseDebugging::AddUncaughtRejection(Promise& aPromise)
 {
-  CycleCollectedJSRuntime::Get()->mUncaughtRejections.AppendElement(&aPromise);
+  CycleCollectedJSContext::Get()->mUncaughtRejections.AppendElement(&aPromise);
   FlushRejections::DispatchNeeded();
 }
 
 /* void */ void
 PromiseDebugging::AddConsumedRejection(Promise& aPromise)
 {
-  CycleCollectedJSRuntime::Get()->mConsumedRejections.AppendElement(&aPromise);
+  CycleCollectedJSContext::Get()->mConsumedRejections.AppendElement(&aPromise);
   FlushRejections::DispatchNeeded();
 }
 
@@ -372,14 +452,11 @@ PromiseDebugging::GetPromiseID(GlobalObject&,
   aID = sIDPrefix;
   aID.AppendInt(promiseID);
 }
-#endif // SPIDERMONKEY_PROMISE
 
 /* static */ void
 PromiseDebugging::FlushUncaughtRejectionsInternal()
 {
-  // XXXbz talk to till about replacement for this stuff.
-#ifndef SPIDERMONKEY_PROMISE
-  CycleCollectedJSRuntime* storage = CycleCollectedJSRuntime::Get();
+  CycleCollectedJSContext* storage = CycleCollectedJSContext::Get();
 
   // The Promise that have been left uncaught (rejected and last in
   // their chain) since the last call to this function.
@@ -439,8 +516,8 @@ PromiseDebugging::FlushUncaughtRejectionsInternal()
       obs->OnConsumed(*promise, err); // Ignore errors
     }
   }
-#endif // SPIDERMONKEY_PROMISE
 }
+#endif // SPIDERMONKEY_PROMISE
 
 } // namespace dom
 } // namespace mozilla

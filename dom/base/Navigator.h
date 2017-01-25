@@ -12,16 +12,13 @@
 #include "mozilla/ErrorResult.h"
 #include "nsIDOMNavigator.h"
 #include "nsIMozNavigatorNetwork.h"
-#include "nsAutoPtr.h"
 #include "nsWrapperCache.h"
 #include "nsHashKeys.h"
 #include "nsInterfaceHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsWeakPtr.h"
-#ifdef MOZ_EME
 #include "mozilla/dom/MediaKeySystemAccessManager.h"
-#endif
 
 class nsPluginArray;
 class nsMimeTypeArray;
@@ -40,7 +37,6 @@ class MediaDevices;
 struct MediaStreamConstraints;
 class WakeLock;
 class ArrayBufferViewOrBlobOrStringOrFormData;
-struct MobileIdOptions;
 class ServiceWorkerContainer;
 class DOMRequest;
 struct FlyWebPublishOptions;
@@ -72,6 +68,7 @@ class MobileMessageManager;
 class MozIdleObserver;
 #ifdef MOZ_GAMEPAD
 class Gamepad;
+class GamepadServiceTest;
 #endif // MOZ_GAMEPAD
 class NavigatorUserMediaSuccessCallback;
 class NavigatorUserMediaErrorCallback;
@@ -101,6 +98,8 @@ class InputPortManager;
 class DeviceStorageAreaListener;
 class Presentation;
 class LegacyMozTCPSocket;
+class VRDisplay;
+class StorageManager;
 
 namespace time {
 class TimeManager;
@@ -147,9 +146,6 @@ public:
    */
   void OnNavigation();
 
-  // Helper to initialize mMessagesManager.
-  nsresult EnsureMessagesManager();
-
   // The XPCOM GetProduct is OK
   // The XPCOM GetLanguage is OK
   void GetUserAgent(nsString& aUserAgent, ErrorResult& /* unused */)
@@ -167,7 +163,6 @@ public:
   // The XPCOM GetDoNotTrack is ok
   Geolocation* GetGeolocation(ErrorResult& aRv);
   Promise* GetBattery(ErrorResult& aRv);
-  battery::BatteryManager* GetDeprecatedBattery(ErrorResult& aRv);
 
   already_AddRefed<Promise> PublishServer(const nsAString& aName,
                                           const FlyWebPublishOptions& aOptions,
@@ -188,13 +183,6 @@ public:
   // Clears the user agent cache by calling:
   // NavigatorBinding::ClearCachedUserAgentValue(this);
   void ClearUserAgentCache();
-
-  // Feature Detection API
-  already_AddRefed<Promise> GetFeature(const nsAString& aName,
-                                       ErrorResult& aRv);
-
-  already_AddRefed<Promise> HasFeature(const nsAString &aName,
-                                       ErrorResult& aRv);
 
   bool Vibrate(uint32_t aDuration);
   bool Vibrate(const nsTArray<uint32_t>& aDuration);
@@ -219,6 +207,7 @@ public:
   PowerManager* GetMozPower(ErrorResult& aRv);
   bool JavaEnabled(ErrorResult& aRv);
   uint64_t HardwareConcurrency();
+  bool CpuHasSSE2();
   bool TaintEnabled()
   {
     return false;
@@ -252,24 +241,16 @@ public:
   network::Connection* GetConnection(ErrorResult& aRv);
   nsDOMCameraManager* GetMozCameras(ErrorResult& aRv);
   MediaDevices* GetMediaDevices(ErrorResult& aRv);
-  void MozSetMessageHandler(const nsAString& aType,
-                            systemMessageCallback* aCallback,
-                            ErrorResult& aRv);
-  bool MozHasPendingMessage(const nsAString& aType, ErrorResult& aRv);
-  void MozSetMessageHandlerPromise(Promise& aPromise, ErrorResult& aRv);
 
-#ifdef MOZ_B2G
-  already_AddRefed<Promise> GetMobileIdAssertion(const MobileIdOptions& options,
-                                                 ErrorResult& aRv);
-#endif
 #ifdef MOZ_B2G_RIL
   MobileConnectionArray* GetMozMobileConnections(ErrorResult& aRv);
 #endif // MOZ_B2G_RIL
 #ifdef MOZ_GAMEPAD
   void GetGamepads(nsTArray<RefPtr<Gamepad> >& aGamepads, ErrorResult& aRv);
+  GamepadServiceTest* RequestGamepadServiceTest();
 #endif // MOZ_GAMEPAD
-  already_AddRefed<Promise> GetVRDevices(ErrorResult& aRv);
-  void NotifyVRDevicesUpdated();
+  already_AddRefed<Promise> GetVRDisplays(ErrorResult& aRv);
+  void GetActiveVRDisplays(nsTArray<RefPtr<VRDisplay>>& aDisplays) const;
 #ifdef MOZ_B2G_FM
   FMRadio* GetMozFMRadio(ErrorResult& aRv);
 #endif
@@ -306,11 +287,7 @@ public:
 
   bool MozE10sEnabled();
 
-#ifdef MOZ_PAY
-  already_AddRefed<DOMRequest> MozPay(JSContext* aCx,
-                                      JS::Handle<JS::Value> aJwts,
-                                      ErrorResult& aRv);
-#endif // MOZ_PAY
+  StorageManager* Storage();
 
   static void GetAcceptLanguages(nsTArray<nsString>& aLanguages);
 
@@ -326,12 +303,6 @@ public:
   static bool HasUserMediaSupport(JSContext* /* unused */,
                                   JSObject* /* unused */);
 
-#ifdef MOZ_B2G
-  static bool HasMobileIdSupport(JSContext* aCx, JSObject* aGlobal);
-#endif
-
-  static bool HasPresentationSupport(JSContext* aCx, JSObject* aGlobal);
-
   static bool IsE10sEnabled(JSContext* aCx, JSObject* aGlobal);
 
   nsPIDOMWindowInner* GetParentObject() const
@@ -345,14 +316,16 @@ public:
   // any, else null.
   static already_AddRefed<nsPIDOMWindowInner> GetWindowFromGlobal(JSObject* aGlobal);
 
-#ifdef MOZ_EME
   already_AddRefed<Promise>
   RequestMediaKeySystemAccess(const nsAString& aKeySystem,
                               const Sequence<MediaKeySystemConfiguration>& aConfig,
                               ErrorResult& aRv);
 private:
   RefPtr<MediaKeySystemAccessManager> mMediaKeySystemAccessManager;
-#endif
+
+public:
+  void NotifyVRDisplaysUpdated();
+  void NotifyActiveVRDisplaysChanged();
 
 private:
   virtual ~Navigator();
@@ -393,18 +366,18 @@ private:
 #endif
   RefPtr<nsDOMCameraManager> mCameraManager;
   RefPtr<MediaDevices> mMediaDevices;
-  nsCOMPtr<nsIDOMNavigatorSystemMessages> mMessagesManager;
   nsTArray<nsWeakPtr> mDeviceStorageStores;
   RefPtr<time::TimeManager> mTimeManager;
   RefPtr<ServiceWorkerContainer> mServiceWorkerContainer;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   RefPtr<DeviceStorageAreaListener> mDeviceStorageAreaListener;
   RefPtr<Presentation> mPresentation;
-
-  nsTArray<RefPtr<Promise> > mVRGetDevicesPromises;
+#ifdef MOZ_GAMEPAD
+  RefPtr<GamepadServiceTest> mGamepadServiceTest;
+#endif
+  nsTArray<RefPtr<Promise> > mVRGetDisplaysPromises;
   nsTArray<uint32_t> mRequestedVibrationPattern;
-
-  bool mBatteryTelemetryReported;
+  RefPtr<StorageManager> mStorageManager;
 };
 
 } // namespace dom

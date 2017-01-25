@@ -14,7 +14,6 @@
 #include "nsSMILTimeValue.h"
 #include "nsSMILKeySpline.h"
 #include "nsSMILValue.h"
-#include "nsAutoPtr.h"
 #include "nsTArray.h"
 #include "nsAttrValue.h"
 #include "nsSMILTypes.h"
@@ -272,7 +271,7 @@ protected:
   typedef FallibleTArray<nsSMILValue> nsSMILValueArray;
 
   // Types
-  enum nsSMILCalcMode
+  enum nsSMILCalcMode : uint8_t
   {
     CALC_LINEAR,
     CALC_DISCRETE,

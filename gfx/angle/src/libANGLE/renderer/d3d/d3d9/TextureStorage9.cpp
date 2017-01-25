@@ -107,7 +107,7 @@ TextureStorage9_2D::TextureStorage9_2D(Renderer9 *renderer, SwapChain9 *swapchai
     mTexture = surfaceTexture;
     mMipLevels = surfaceTexture->GetLevelCount();
 
-    mInternalFormat = swapchain->GetRenderTargetInternalFormat();
+    mInternalFormat = swapchain->getRenderTargetInternalFormat();
 
     D3DSURFACE_DESC surfaceDesc;
     surfaceTexture->GetLevelDesc(0, &surfaceDesc);
@@ -153,7 +153,6 @@ gl::Error TextureStorage9_2D::getSurfaceLevel(GLenum target,
                                               IDirect3DSurface9 **outSurface)
 {
     ASSERT(target == GL_TEXTURE_2D);
-    UNUSED_ASSERTION_VARIABLE(target);
 
     IDirect3DBaseTexture9 *baseTexture = NULL;
     gl::Error error = getBaseTexture(&baseTexture);
@@ -305,14 +304,11 @@ gl::Error TextureStorage9_2D::copyToStorage(TextureStorage *destStorage)
     return gl::Error(GL_NO_ERROR);
 }
 
-TextureStorage9_EGLImage::TextureStorage9_EGLImage(Renderer9 *renderer, EGLImageD3D *image)
+TextureStorage9_EGLImage::TextureStorage9_EGLImage(Renderer9 *renderer,
+                                                   EGLImageD3D *image,
+                                                   RenderTarget9 *renderTarget9)
     : TextureStorage9(renderer, D3DUSAGE_RENDERTARGET), mImage(image)
 {
-    RenderTargetD3D *renderTargetD3D = nullptr;
-    mImage->getRenderTarget(&renderTargetD3D);
-
-    RenderTarget9 *renderTarget9 = GetAs<RenderTarget9>(renderTargetD3D);
-
     mInternalFormat = renderTarget9->getInternalFormat();
     mTextureFormat  = renderTarget9->getD3DFormat();
     mTextureWidth   = renderTarget9->getWidth();
@@ -332,8 +328,6 @@ gl::Error TextureStorage9_EGLImage::getSurfaceLevel(GLenum target,
 {
     ASSERT(target == GL_TEXTURE_2D);
     ASSERT(level == 0);
-    UNUSED_ASSERTION_VARIABLE(target);
-    UNUSED_ASSERTION_VARIABLE(level);
 
     RenderTargetD3D *renderTargetD3D = nullptr;
     gl::Error error = mImage->getRenderTarget(&renderTargetD3D);
@@ -353,7 +347,6 @@ gl::Error TextureStorage9_EGLImage::getRenderTarget(const gl::ImageIndex &index,
 {
     ASSERT(!index.hasLayer());
     ASSERT(index.mipIndex == 0);
-    UNUSED_ASSERTION_VARIABLE(index);
 
     return mImage->getRenderTarget(outRT);
 }
@@ -434,7 +427,7 @@ TextureStorage9_Cube::TextureStorage9_Cube(Renderer9 *renderer, GLenum internalf
     : TextureStorage9(renderer, GetTextureUsage(internalformat, renderTarget))
 {
     mTexture = NULL;
-    for (int i = 0; i < CUBE_FACE_COUNT; ++i)
+    for (size_t i = 0; i < CUBE_FACE_COUNT; ++i)
     {
         mRenderTarget[i] = NULL;
     }
@@ -455,7 +448,7 @@ TextureStorage9_Cube::~TextureStorage9_Cube()
 {
     SafeRelease(mTexture);
 
-    for (int i = 0; i < CUBE_FACE_COUNT; ++i)
+    for (size_t i = 0; i < CUBE_FACE_COUNT; ++i)
     {
         SafeDelete(mRenderTarget[i]);
     }
@@ -499,7 +492,7 @@ gl::Error TextureStorage9_Cube::getRenderTarget(const gl::ImageIndex &index, Ren
 {
     ASSERT(outRT);
     ASSERT(index.mipIndex == 0);
-    ASSERT(index.layerIndex >= 0 && index.layerIndex < CUBE_FACE_COUNT);
+    ASSERT(index.layerIndex >= 0 && static_cast<size_t>(index.layerIndex) < CUBE_FACE_COUNT);
 
     if (mRenderTarget[index.layerIndex] == NULL && isRenderTarget())
     {
@@ -586,7 +579,7 @@ gl::Error TextureStorage9_Cube::copyToStorage(TextureStorage *destStorage)
     TextureStorage9_Cube *dest9 = GetAs<TextureStorage9_Cube>(destStorage);
 
     int levels = getLevelCount();
-    for (int f = 0; f < CUBE_FACE_COUNT; f++)
+    for (int f = 0; f < static_cast<int>(CUBE_FACE_COUNT); f++)
     {
         for (int i = 0; i < levels; i++)
         {

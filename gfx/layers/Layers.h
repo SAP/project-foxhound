@@ -21,6 +21,7 @@
 #include "mozilla/DebugOnly.h"          // for DebugOnly
 #include "mozilla/EventForwards.h"      // for nsPaintEvent
 #include "mozilla/Maybe.h"              // for Maybe
+#include "mozilla/Poison.h"
 #include "mozilla/RefPtr.h"             // for already_AddRefed
 #include "mozilla/StyleAnimationValue.h" // for StyleAnimationValue, etc
 #include "mozilla/TimeStamp.h"          // for TimeStamp, TimeDuration
@@ -35,7 +36,7 @@
 #include "mozilla/mozalloc.h"           // for operator delete, etc
 #include "nsAutoPtr.h"                  // for nsAutoPtr, nsRefPtr, etc
 #include "nsCOMPtr.h"                   // for already_AddRefed
-#include "nsCSSProperty.h"              // for nsCSSProperty
+#include "nsCSSPropertyID.h"              // for nsCSSPropertyID
 #include "nsDebug.h"                    // for NS_ASSERTION
 #include "nsISupportsImpl.h"            // for Layer::Release, etc
 #include "nsRect.h"                     // for mozilla::gfx::IntRect
@@ -46,7 +47,6 @@
 #include "nscore.h"                     // for nsACString, nsAString
 #include "mozilla/Logging.h"                      // for PRLogModuleInfo
 #include "nsIWidget.h"                  // For plugin window configuration information structs
-#include "gfxVR.h"
 #include "ImageContainer.h"
 
 class gfxContext;
@@ -353,6 +353,12 @@ public:
    * do not already have an ancestor in the return list.
    */
   void GetScrollableLayers(nsTArray<Layer*>& aArray);
+
+  /**
+   * Returns a LayerMetricsWrapper containing the Root
+   * Content Documents layer.
+   */
+  LayerMetricsWrapper GetRootContentLayer();
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -1317,8 +1323,18 @@ public:
   bool IsScrollInfoLayer() const;
   const EventRegions& GetEventRegions() const { return mEventRegions; }
   ContainerLayer* GetParent() { return mParent; }
-  Layer* GetNextSibling() { return mNextSibling; }
-  const Layer* GetNextSibling() const { return mNextSibling; }
+  Layer* GetNextSibling() {
+    if (mNextSibling) {
+      mNextSibling->CheckCanary();
+    }
+    return mNextSibling;
+  }
+  const Layer* GetNextSibling() const {
+    if (mNextSibling) {
+      mNextSibling->CheckCanary();
+    }
+    return mNextSibling;
+  }
   Layer* GetPrevSibling() { return mPrevSibling; }
   const Layer* GetPrevSibling() const { return mPrevSibling; }
   virtual Layer* GetFirstChild() const { return nullptr; }
@@ -1345,6 +1361,7 @@ public:
   float GetScrollbarThumbRatio() { return mScrollbarThumbRatio; }
   bool IsScrollbarContainer() { return mIsScrollbarContainer; }
   Layer* GetMaskLayer() const { return mMaskLayer; }
+  void CheckCanary() const { mCanary.Check(); }
 
   // Ancestor mask layers are associated with FrameMetrics, but for simplicity
   // in maintaining the layer tree structure we attach them to the layer.
@@ -1375,7 +1392,7 @@ public:
    * visible regions of higher siblings of this layer and each ancestor.
    *
    * Note translation values for offsets of visible regions and accumulated
-   * aLayerOffset are integer rounded using Point's RoundedToInt.
+   * aLayerOffset are integer rounded using IntPoint::Round.
    *
    * @param aResult - the resulting visible region of this layer.
    * @param aLayerOffset - this layer's total offset from the root layer.
@@ -1787,20 +1804,6 @@ public:
 #endif
   }
 
-  /**
-   * Replace the current effective transform with the given one,
-   * returning the old one.  This is currently added as a hack for VR
-   * rendering, and might go away if we find a better way to do this.
-   * If you think you have a need for this method, talk with
-   * vlad/mstange/mwoodrow first.
-   */
-  virtual gfx::Matrix4x4 ReplaceEffectiveTransform(const gfx::Matrix4x4& aNewEffectiveTransform) {
-    gfx::Matrix4x4 old = mEffectiveTransform;
-    mEffectiveTransform = aNewEffectiveTransform;
-    ComputeEffectiveTransformForMaskLayers(mEffectiveTransform);
-    return old;
-  }
-
 protected:
   Layer(LayerManager* aManager, void* aImplData);
 
@@ -1856,6 +1859,8 @@ protected:
   void* mImplData;
   RefPtr<Layer> mMaskLayer;
   nsTArray<RefPtr<Layer>> mAncestorMaskLayers;
+  // Look for out-of-bound in the middle of the structure
+  mozilla::CorruptionCanary mCanary;
   gfx::UserData mUserData;
   gfx::IntRect mLayerBounds;
   LayerIntRegion mVisibleRegion;
@@ -1973,12 +1978,11 @@ public:
     if (!gfx::ThebesPoint(residual.GetTranslation()).WithinEpsilonOf(mResidualTranslation, 1e-3f)) {
       mResidualTranslation = gfx::ThebesPoint(residual.GetTranslation());
       DebugOnly<mozilla::gfx::Point> transformedOrig =
-        idealTransform * mozilla::gfx::Point();
+        idealTransform.TransformPoint(mozilla::gfx::Point());
 #ifdef DEBUG
-      DebugOnly<mozilla::gfx::Point> transformed =
-        idealTransform * mozilla::gfx::Point(mResidualTranslation.x,
-                                             mResidualTranslation.y) -
-        *&transformedOrig;
+      DebugOnly<mozilla::gfx::Point> transformed = idealTransform.TransformPoint(
+        mozilla::gfx::Point(mResidualTranslation.x, mResidualTranslation.y)
+      ) - *&transformedOrig;
 #endif
       NS_ASSERTION(-0.5 <= (&transformed)->x && (&transformed)->x < 0.5 &&
                    -0.5 <= (&transformed)->y && (&transformed)->y < 0.5,
@@ -2199,39 +2203,6 @@ public:
     return mEventRegionsOverride;
   }
 
-  /**
-   * VR
-   */
-  void SetVRDeviceID(uint32_t aVRDeviceID) {
-    mVRDeviceID = aVRDeviceID;
-    Mutated();
-  }
-  uint32_t GetVRDeviceID() {
-    return mVRDeviceID;
-  }
-  void SetInputFrameID(int32_t aInputFrameID) {
-    mInputFrameID = aInputFrameID;
-    Mutated();
-  }
-  int32_t GetInputFrameID() {
-    return mInputFrameID;
-  }
-
-  /**
-   * Replace the current effective transform with the given one,
-   * returning the old one.  This is currently added as a hack for VR
-   * rendering, and might go away if we find a better way to do this.
-   * If you think you have a need for this method, talk with
-   * vlad/mstange/mwoodrow first.
-   */
-  gfx::Matrix4x4 ReplaceEffectiveTransform(const gfx::Matrix4x4& aNewEffectiveTransform) override {
-    gfx::Matrix4x4 old = mEffectiveTransform;
-    mEffectiveTransform = aNewEffectiveTransform;
-    ComputeEffectiveTransformsForChildren(mEffectiveTransform);
-    ComputeEffectiveTransformForMaskLayers(mEffectiveTransform);
-    return old;
-  }
-
 protected:
   friend class ReadbackProcessor;
 
@@ -2291,8 +2262,6 @@ protected:
   // the intermediate surface.
   bool mChildrenChanged;
   EventRegionsOverride mEventRegionsOverride;
-  uint32_t mVRDeviceID;
-  int32_t mInputFrameID;
 };
 
 /**
@@ -2377,6 +2346,7 @@ public:
       , mSize(0,0)
       , mHasAlpha(false)
       , mIsGLAlphaPremult(true)
+      , mIsMirror(false)
     { }
 
     // One of these three must be specified for Canvas2D, but never more than one
@@ -2395,6 +2365,10 @@ public:
 
     // Whether mGLContext contains data that is alpha-premultiplied.
     bool mIsGLAlphaPremult;
+
+    // Whether the canvas front buffer is already being rendered somewhere else.
+    // When true, do not swap buffers or Morph() to another factory on mGLContext
+    bool mIsMirror;
   };
 
   /**

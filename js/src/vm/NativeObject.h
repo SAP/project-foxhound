@@ -21,6 +21,7 @@
 #include "gc/Marking.h"
 #include "js/Value.h"
 #include "vm/Shape.h"
+#include "vm/ShapedObject.h"
 #include "vm/String.h"
 #include "vm/TypeInference.h"
 
@@ -40,7 +41,7 @@ Debug_SetValueRangeToCrashOnTouch(Value* beg, Value* end)
 {
 #ifdef DEBUG
     for (Value* v = beg; v != end; ++v)
-        v->setObject(*reinterpret_cast<JSObject*>(0x42));
+        v->setObject(*reinterpret_cast<JSObject*>(0x48));
 #endif
 }
 
@@ -182,13 +183,8 @@ class ObjectElements
         // is created and never changed.
         SHARED_MEMORY               = 0x8,
 
-        // Set if the object has already been added to the whole-cell store
-        // buffer, and therefore adding individual elements into the slots store
-        // buffer would be pointless. This is never set for the empty or shared
-        // elements headers, nor if the elements are copy on write; in such
-        // situations it isn't clear *which* object that references this
-        // elements header has already been put in the whole-cell store buffer.
-        IN_WHOLE_CELL_BUFFER        = 0x10,
+        // These elements are set to integrity level "frozen".
+        FROZEN                      = 0x10,
     };
 
   private:
@@ -245,22 +241,9 @@ class ObjectElements
         MOZ_ASSERT(isCopyOnWrite());
         flags &= ~COPY_ON_WRITE;
     }
-    bool isInWholeCellBuffer() const {
-        return flags & IN_WHOLE_CELL_BUFFER;
-    }
-    void setInWholeCellBuffer() {
-        MOZ_ASSERT(!isSharedMemory());
-        MOZ_ASSERT(!isCopyOnWrite());
-        flags |= IN_WHOLE_CELL_BUFFER;
-    }
-    void clearInWholeCellBuffer() {
-        MOZ_ASSERT(!isSharedMemory());
-        MOZ_ASSERT(!isCopyOnWrite());
-        flags &= ~IN_WHOLE_CELL_BUFFER;
-    }
 
   public:
-    MOZ_CONSTEXPR ObjectElements(uint32_t capacity, uint32_t length)
+    constexpr ObjectElements(uint32_t capacity, uint32_t length)
       : flags(0), initializedLength(0), capacity(capacity), length(length)
     {}
 
@@ -268,7 +251,7 @@ class ObjectElements
         IsShared
     };
 
-    MOZ_CONSTEXPR ObjectElements(uint32_t capacity, uint32_t length, SharedMemory shmem)
+    constexpr ObjectElements(uint32_t capacity, uint32_t length, SharedMemory shmem)
       : flags(SHARED_MEMORY), initializedLength(0), capacity(capacity), length(length)
     {}
 
@@ -306,6 +289,27 @@ class ObjectElements
 
     static bool ConvertElementsToDoubles(JSContext* cx, uintptr_t elements);
     static bool MakeElementsCopyOnWrite(ExclusiveContext* cx, NativeObject* obj);
+    static bool FreezeElements(ExclusiveContext* cx, HandleNativeObject obj);
+
+    bool isFrozen() const {
+        return flags & FROZEN;
+    }
+    void freeze() {
+        MOZ_ASSERT(!isFrozen());
+        MOZ_ASSERT(!isCopyOnWrite());
+        flags |= FROZEN;
+    }
+    void markNotFrozen() {
+        MOZ_ASSERT(isFrozen());
+        MOZ_ASSERT(!isCopyOnWrite());
+        flags &= ~FROZEN;
+    }
+
+    uint8_t elementAttributes() const {
+        if (isFrozen())
+            return JSPROP_ENUMERATE | JSPROP_PERMANENT | JSPROP_READONLY;
+        return JSPROP_ENUMERATE;
+    }
 
     // This is enough slots to store an object of this class. See the static
     // assertion below.
@@ -348,17 +352,18 @@ enum class DenseElementResult {
 /*
  * NativeObject specifies the internal implementation of a native object.
  *
- * Native objects extend the base implementation of an object with storage
- * for the object's named properties and indexed elements.
+ * Native objects use ShapedObject::shape_ to record property information.  Two
+ * native objects with the same shape are guaranteed to have the same number of
+ * fixed slots.
+ *
+ * Native objects extend the base implementation of an object with storage for
+ * the object's named properties and indexed elements.
  *
  * These are stored separately from one another. Objects are followed by a
  * variable-sized array of values for inline storage, which may be used by
  * either properties of native objects (fixed slots), by elements (fixed
  * elements), or by other data for certain kinds of objects, such as
  * ArrayBufferObjects and TypedArrayObjects.
- *
- * Two native objects with the same shape are guaranteed to have the same
- * number of fixed slots.
  *
  * Named property storage can be split between fixed slots and a dynamically
  * allocated array (the slots member). For an object with N fixed slots, shapes
@@ -375,12 +380,9 @@ enum class DenseElementResult {
  * Slots and elements may both be non-empty. The slots may be either names or
  * indexes; no indexed property will be in both the slots and elements.
  */
-class NativeObject : public JSObject
+class NativeObject : public ShapedObject
 {
   protected:
-    // Property layout description and other state.
-    GCPtrShape shape_;
-
     /* Slots for object properties. */
     js::HeapSlot* slots_;
 
@@ -398,8 +400,6 @@ class NativeObject : public JSObject
         static_assert(sizeof(NativeObject) % sizeof(Value) == 0,
                       "fixed slots after an object must be aligned");
 
-        static_assert(offsetof(NativeObject, shape_) == offsetof(shadow::Object, shape),
-                      "shadow shape must match actual shape");
         static_assert(offsetof(NativeObject, group_) == offsetof(shadow::Object, group),
                       "shadow type must match actual type");
         static_assert(offsetof(NativeObject, slots_) == offsetof(shadow::Object, slots),
@@ -434,14 +434,14 @@ class NativeObject : public JSObject
         // Backdoor allowing direct access to copy on write elements.
         return HeapSlotArray(elements_, true);
     }
-    const Value& getDenseElement(uint32_t idx) {
+    const Value& getDenseElement(uint32_t idx) const {
         MOZ_ASSERT(idx < getDenseInitializedLength());
         return elements_[idx];
     }
     bool containsDenseElement(uint32_t idx) {
         return idx < getDenseInitializedLength() && !elements_[idx].isMagic(JS_ELEMENTS_HOLE);
     }
-    uint32_t getDenseInitializedLength() {
+    uint32_t getDenseInitializedLength() const {
         return getElementsHeader()->initializedLength;
     }
     uint32_t getDenseCapacity() const {
@@ -481,15 +481,9 @@ class NativeObject : public JSObject
     }
 
     bool isInWholeCellBuffer() const {
-        return getElementsHeader()->isInWholeCellBuffer();
-    }
-    void setInWholeCellBuffer() {
-        if (!hasEmptyElements() && !isSharedMemory() && !getElementsHeader()->isCopyOnWrite())
-            getElementsHeader()->setInWholeCellBuffer();
-    }
-    void clearInWholeCellBuffer() {
-        if (!hasEmptyElements() && !isSharedMemory() && !getElementsHeader()->isCopyOnWrite())
-            getElementsHeader()->clearInWholeCellBuffer();
+        const gc::TenuredCell* cell = &asTenured();
+        gc::ArenaCellSet* cells = cell->arena()->bufferedCells;
+        return cells && cells->hasCell(cell);
     }
 
   protected:
@@ -875,7 +869,14 @@ class NativeObject : public JSObject
   protected:
     inline bool updateSlotsForSpan(ExclusiveContext* cx, size_t oldSpan, size_t newSpan);
 
-  public:
+  private:
+    void prepareElementRangeForOverwrite(size_t start, size_t end) {
+        MOZ_ASSERT(end <= getDenseInitializedLength());
+        MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        for (size_t i = start; i < end; i++)
+            elements_[i].HeapSlot::~HeapSlot();
+    }
+
     /*
      * Trigger the write barrier on a range of slots that will no longer be
      * reachable.
@@ -885,13 +886,7 @@ class NativeObject : public JSObject
             getSlotAddressUnchecked(i)->HeapSlot::~HeapSlot();
     }
 
-    void prepareElementRangeForOverwrite(size_t start, size_t end) {
-        MOZ_ASSERT(end <= getDenseInitializedLength());
-        MOZ_ASSERT(!denseElementsAreCopyOnWrite());
-        for (size_t i = start; i < end; i++)
-            elements_[i].HeapSlot::~HeapSlot();
-    }
-
+  public:
     static bool rollbackProperties(ExclusiveContext* cx, HandleNativeObject obj,
                                    uint32_t slotSpan);
 
@@ -983,6 +978,7 @@ class NativeObject : public JSObject
     /* Accessors for elements. */
     bool ensureElements(ExclusiveContext* cx, uint32_t capacity) {
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        MOZ_ASSERT(!denseElementsAreFrozen());
         if (capacity > getDenseCapacity())
             return growElements(cx, capacity);
         return true;
@@ -1024,25 +1020,41 @@ class NativeObject : public JSObject
         }
     }
 
-  public:
-    void setDenseInitializedLength(uint32_t length) {
+    // See the comment over setDenseElementUnchecked, this applies in the same way.
+    void setDenseInitializedLengthUnchecked(uint32_t length) {
         MOZ_ASSERT(length <= getDenseCapacity());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
         prepareElementRangeForOverwrite(length, getElementsHeader()->initializedLength);
         getElementsHeader()->initializedLength = length;
     }
 
-    inline void ensureDenseInitializedLength(ExclusiveContext* cx,
-                                             uint32_t index, uint32_t extra);
-    void setDenseElement(uint32_t index, const Value& val) {
+    // Use this function with care.  This is done to allow sparsifying frozen
+    // objects, but should only be called in a few places, and should be
+    // audited carefully!
+    void setDenseElementUnchecked(uint32_t index, const Value& val) {
         MOZ_ASSERT(index < getDenseInitializedLength());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
         elements_[index].set(this, HeapSlot::Element, index, val);
     }
 
+  public:
+    void setDenseInitializedLength(uint32_t length) {
+        MOZ_ASSERT(!denseElementsAreFrozen());
+        setDenseInitializedLengthUnchecked(length);
+    }
+
+    inline void ensureDenseInitializedLength(ExclusiveContext* cx,
+                                             uint32_t index, uint32_t extra);
+
+    void setDenseElement(uint32_t index, const Value& val) {
+        MOZ_ASSERT(!denseElementsAreFrozen());
+        setDenseElementUnchecked(index, val);
+    }
+
     void initDenseElement(uint32_t index, const Value& val) {
         MOZ_ASSERT(index < getDenseInitializedLength());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        MOZ_ASSERT(!denseElementsAreFrozen());
         elements_[index].init(this, HeapSlot::Element, index, val);
     }
 
@@ -1066,6 +1078,7 @@ class NativeObject : public JSObject
     void copyDenseElements(uint32_t dstStart, const Value* src, uint32_t count) {
         MOZ_ASSERT(dstStart + count <= getDenseCapacity());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        MOZ_ASSERT(!denseElementsAreFrozen());
         if (JS::shadow::Zone::asShadowZone(zone())->needsIncrementalBarrier()) {
             for (uint32_t i = 0; i < count; ++i)
                 elements_[dstStart + i].set(this, HeapSlot::Element, dstStart + i, src[i]);
@@ -1078,6 +1091,7 @@ class NativeObject : public JSObject
     void initDenseElements(uint32_t dstStart, const Value* src, uint32_t count) {
         MOZ_ASSERT(dstStart + count <= getDenseCapacity());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        MOZ_ASSERT(!denseElementsAreFrozen());
         memcpy(&elements_[dstStart], src, count * sizeof(HeapSlot));
         elementsRangeWriteBarrierPost(dstStart, count);
     }
@@ -1086,6 +1100,7 @@ class NativeObject : public JSObject
         MOZ_ASSERT(dstStart + count <= getDenseCapacity());
         MOZ_ASSERT(srcStart + count <= getDenseInitializedLength());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        MOZ_ASSERT(!denseElementsAreFrozen());
 
         /*
          * Using memmove here would skip write barriers. Also, we need to consider
@@ -1123,6 +1138,7 @@ class NativeObject : public JSObject
         MOZ_ASSERT(dstStart + count <= getDenseCapacity());
         MOZ_ASSERT(srcStart + count <= getDenseCapacity());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+        MOZ_ASSERT(!denseElementsAreFrozen());
 
         memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(Value));
         elementsRangeWriteBarrierPost(dstStart, count);
@@ -1137,6 +1153,10 @@ class NativeObject : public JSObject
 
     bool denseElementsAreCopyOnWrite() {
         return getElementsHeader()->isCopyOnWrite();
+    }
+
+    bool denseElementsAreFrozen() {
+        return getElementsHeader()->isFrozen();
     }
 
     /* Packed information for this object's elements. */
@@ -1287,6 +1307,7 @@ class NativeObject : public JSObject
          HandleNativeObject templateObject);
 
     void updateShapeAfterMovingGC();
+    void sweepDictionaryListPointer();
 
     /* JIT Accessors */
     static size_t offsetOfElements() { return offsetof(NativeObject, elements_); }

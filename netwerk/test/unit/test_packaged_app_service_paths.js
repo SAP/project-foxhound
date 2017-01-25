@@ -21,14 +21,10 @@ function getChannelForURL(url) {
     NetUtil.newChannel({
       uri: url,
       loadingPrincipal: principal,
+      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
       contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER
     });
 
-  tmpChannel.notificationCallbacks =
-    new LoadContextCallback(principal.appId,
-                            principal.isInIsolatedMozBrowserElement,
-                            false,
-                            false);
   return tmpChannel;
 }
 

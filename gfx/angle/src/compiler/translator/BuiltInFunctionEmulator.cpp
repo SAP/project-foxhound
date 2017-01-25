@@ -7,6 +7,10 @@
 #include "angle_gl.h"
 #include "compiler/translator/BuiltInFunctionEmulator.h"
 #include "compiler/translator/SymbolTable.h"
+#include "compiler/translator/Cache.h"
+
+namespace sh
+{
 
 class BuiltInFunctionEmulator::BuiltInFunctionEmulationMarker : public TIntermTraverser
 {
@@ -194,8 +198,8 @@ TString BuiltInFunctionEmulator::GetEmulatedFunctionName(
 BuiltInFunctionEmulator::FunctionId::FunctionId(TOperator op, const TType *param)
     : mOp(op),
       mParam1(param),
-      mParam2(new TType(EbtVoid)),
-      mParam3(new TType(EbtVoid))
+      mParam2(TCache::getType(EbtVoid)),
+      mParam3(TCache::getType(EbtVoid))
 {
 }
 
@@ -203,7 +207,7 @@ BuiltInFunctionEmulator::FunctionId::FunctionId(TOperator op, const TType *param
     : mOp(op),
       mParam1(param1),
       mParam2(param2),
-      mParam3(new TType(EbtVoid))
+      mParam3(TCache::getType(EbtVoid))
 {
 }
 
@@ -241,3 +245,5 @@ BuiltInFunctionEmulator::FunctionId BuiltInFunctionEmulator::FunctionId::getCopy
 {
     return FunctionId(mOp, new TType(*mParam1), new TType(*mParam2), new TType(*mParam3));
 }
+
+}  // namespace sh

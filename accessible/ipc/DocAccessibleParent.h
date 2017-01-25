@@ -8,8 +8,8 @@
 #define mozilla_a11y_DocAccessibleParent_h
 
 #include "nsAccessibilityService.h"
-#include "ProxyAccessible.h"
 #include "mozilla/a11y/PDocAccessibleParent.h"
+#include "mozilla/a11y/ProxyAccessible.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 #include "nsISupportsImpl.h"
@@ -41,6 +41,8 @@ public:
   void SetTopLevel() { mTopLevel = true; }
   bool IsTopLevel() const { return mTopLevel; }
 
+  bool IsShutdown() const { return mShutdown; }
+
   /*
    * Called when a message from a document in a child process notifies the main
    * process it is firing an event.
@@ -68,7 +70,10 @@ public:
                                   const uint64_t& aWidgetID,
                                   const uint32_t& aType) override;
 
+  virtual bool RecvRoleChangedEvent(const uint32_t& aRole) override final;
+
   virtual bool RecvBindChildDoc(PDocAccessibleParent* aChildDoc, const uint64_t& aID) override;
+
   void Unbind()
   {
     mParent = nullptr;
@@ -137,6 +142,11 @@ public:
   size_t ChildDocCount() const { return mChildDocs.Length(); }
   const DocAccessibleParent* ChildDocAt(size_t aIdx) const
     { return mChildDocs[aIdx]; }
+
+#if defined(XP_WIN)
+  virtual bool RecvCOMProxy(const IAccessibleHolder& aCOMProxy,
+                            IAccessibleHolder* aParentCOMProxy) override;
+#endif
 
 private:
 

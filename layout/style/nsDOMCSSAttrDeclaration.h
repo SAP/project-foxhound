@@ -11,7 +11,6 @@
 #include "mozilla/Attributes.h"
 #include "nsDOMCSSDeclaration.h"
 
-#include "nsAutoPtr.h"
 
 namespace mozilla {
 namespace dom {
@@ -37,7 +36,7 @@ public:
 
   virtual nsINode* GetParentObject() override;
 
-  NS_IMETHOD SetPropertyValue(const nsCSSProperty aPropID,
+  NS_IMETHOD SetPropertyValue(const nsCSSPropertyID aPropID,
                               const nsAString& aValue) override;
 
 protected:

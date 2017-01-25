@@ -278,7 +278,8 @@ public:
 
   VideoSessionConduit() : mFrameRequestMethod(FrameRequestNone),
                           mUsingNackBasic(false),
-                          mUsingTmmbr(false) {}
+                          mUsingTmmbr(false),
+                          mUsingFEC(false) {}
 
   virtual ~VideoSessionConduit() {}
 
@@ -351,6 +352,14 @@ public:
                                                      VideoDecoder* decoder) = 0;
 
   /**
+   * Function to enable the RTP Stream ID (RID) extension
+   * @param enabled: enable extension
+   * @param id: id to be used for this rtp header extension
+   * NOTE: See VideoConduit for more information
+   */
+  virtual MediaConduitErrorCode EnableRTPStreamIdExtension(bool enabled, uint8_t id) = 0;
+
+  /**
    * These methods allow unit tests to double-check that the
    * max-fs and max-fr related settings are as expected.
    */
@@ -377,11 +386,17 @@ public:
     bool UsingTmmbr() const {
       return mUsingTmmbr;
     }
+
+    bool UsingFEC() const {
+      return mUsingFEC;
+    }
+
    protected:
      /* RTCP feedback settings, for unit testing purposes */
      FrameRequestType mFrameRequestMethod;
      bool mUsingNackBasic;
      bool mUsingTmmbr;
+     bool mUsingFEC;
 };
 
 /**

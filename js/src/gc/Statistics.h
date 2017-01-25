@@ -7,6 +7,7 @@
 #ifndef gc_Statistics_h
 #define gc_Statistics_h
 
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PodOperations.h"
 
@@ -62,6 +63,7 @@ enum Phase : uint8_t {
     PHASE_SWEEP_OBJECT,
     PHASE_SWEEP_STRING,
     PHASE_SWEEP_SCRIPT,
+    PHASE_SWEEP_SCOPE,
     PHASE_SWEEP_SHAPE,
     PHASE_SWEEP_JITCODE,
     PHASE_FINALIZE_END,
@@ -79,7 +81,7 @@ enum Phase : uint8_t {
     PHASE_MARK_ROOTS,
     PHASE_BUFFER_GRAY_ROOTS,
     PHASE_MARK_CCWS,
-    PHASE_MARK_ROOTERS,
+    PHASE_MARK_STACK,
     PHASE_MARK_RUNTIME_DATA,
     PHASE_MARK_EMBEDDING,
     PHASE_MARK_COMPARTMENTS,
@@ -114,18 +116,37 @@ struct ZoneGCStats
     /* Total number of zones in the Runtime at the start of this GC. */
     int zoneCount;
 
-    /* Total number of comaprtments in all zones collected. */
+    /* Number of zones swept in this GC. */
+    int sweptZoneCount;
+
+    /* Total number of compartments in all zones collected. */
     int collectedCompartmentCount;
 
     /* Total number of compartments in the Runtime at the start of this GC. */
     int compartmentCount;
 
+    /* Total number of compartments swept by this GC. */
+    int sweptCompartmentCount;
+
     bool isCollectingAllZones() const { return collectedZoneCount == zoneCount; }
 
     ZoneGCStats()
-      : collectedZoneCount(0), zoneCount(0), collectedCompartmentCount(0), compartmentCount(0)
+      : collectedZoneCount(0), zoneCount(0), sweptZoneCount(0),
+        collectedCompartmentCount(0), compartmentCount(0), sweptCompartmentCount(0)
     {}
 };
+
+#define FOR_EACH_GC_PROFILE_TIME(_)                                           \
+    _(BeginCallback, "beginCB",  PHASE_GC_BEGIN)                              \
+    _(WaitBgThread,  "waitBG",   PHASE_WAIT_BACKGROUND_THREAD)                \
+    _(DiscardCode,   "discard",  PHASE_MARK_DISCARD_CODE)                     \
+    _(RelazifyFunc,  "relazify", PHASE_RELAZIFY_FUNCTIONS)                    \
+    _(Purge,         "purge",    PHASE_PURGE)                                 \
+    _(Mark,          "mark",     PHASE_MARK)                                  \
+    _(Sweep,         "sweep",    PHASE_SWEEP)                                 \
+    _(Compact,       "compact",  PHASE_COMPACT)                               \
+    _(EndCallback,   "endCB",    PHASE_GC_END)                                \
+    _(Barriers,      "barriers", PHASE_BARRIER)
 
 /*
  * Struct for collecting timing statistics on a "phase tree". The tree is
@@ -190,10 +211,13 @@ struct Statistics
     void beginSlice(const ZoneGCStats& zoneStats, JSGCInvocationKind gckind,
                     SliceBudget budget, JS::gcreason::Reason reason);
     void endSlice();
-    void setSliceCycleCount(unsigned cycleCount);
 
     MOZ_MUST_USE bool startTimingMutator();
     MOZ_MUST_USE bool stopTimingMutator(double& mutator_ms, double& gc_ms);
+
+    // Note when we sweep a zone or compartment.
+    void sweptZone() { ++zoneStats.sweptZoneCount; }
+    void sweptCompartment() { ++zoneStats.sweptCompartmentCount; }
 
     void reset(const char* reason) {
         if (!aborted)
@@ -209,22 +233,8 @@ struct Statistics
         counts[s]++;
     }
 
-    void beginNurseryCollection(JS::gcreason::Reason reason) {
-        count(STAT_MINOR_GC);
-        if (nurseryCollectionCallback) {
-            (*nurseryCollectionCallback)(runtime,
-                                         JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START,
-                                         reason);
-        }
-    }
-
-    void endNurseryCollection(JS::gcreason::Reason reason) {
-        if (nurseryCollectionCallback) {
-            (*nurseryCollectionCallback)(runtime,
-                                         JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END,
-                                         reason);
-        }
-    }
+    void beginNurseryCollection(JS::gcreason::Reason reason);
+    void endNurseryCollection(JS::gcreason::Reason reason);
 
     int64_t beginSCC();
     void endSCC(unsigned scc, int64_t start);
@@ -257,11 +267,10 @@ struct Statistics
                   double startTimestamp, size_t startFaults, gc::State initialState)
           : budget(budget), reason(reason),
             initialState(initialState),
-            finalState(gc::NO_INCREMENTAL),
+            finalState(gc::State::NotActive),
             resetReason(nullptr),
             start(start), startTimestamp(startTimestamp),
-            startFaults(startFaults),
-            cycleCount(0)
+            startFaults(startFaults)
         {
             for (auto i : mozilla::MakeRange(NumTimingArrays))
                 mozilla::PodArrayZero(phaseTimes[i]);
@@ -275,7 +284,6 @@ struct Statistics
         double startTimestamp, endTimestamp;
         size_t startFaults, endFaults;
         PhaseTimeTable phaseTimes;
-        unsigned cycleCount;
 
         int64_t duration() const { return end - start; }
     };
@@ -285,6 +293,9 @@ struct Statistics
 
     SliceRange sliceRange() const { return slices.all(); }
     size_t slicesLength() const { return slices.length(); }
+
+    /* Print total profile times on shutdown. */
+    void printTotalProfileTimes();
 
   private:
     JSRuntime* runtime;
@@ -357,6 +368,25 @@ struct Statistics
      */
     bool aborted;
 
+    /* Profiling data. */
+
+    enum class ProfileKey
+    {
+        Total,
+#define DEFINE_TIME_KEY(name, text, phase)                                    \
+        name,
+FOR_EACH_GC_PROFILE_TIME(DEFINE_TIME_KEY)
+#undef DEFINE_TIME_KEY
+        KeyCount
+    };
+
+    using ProfileTimes = mozilla::EnumeratedArray<ProfileKey, ProfileKey::KeyCount, int64_t>;
+
+    int64_t profileThreshold_;
+    bool enableProfiling_;
+    ProfileTimes totalTimes_;
+    uint64_t sliceCount_;
+
     void beginGC(JSGCInvocationKind kind);
     void endGC();
 
@@ -378,6 +408,10 @@ struct Statistics
     UniqueChars formatJsonPhaseTimes(const PhaseTimeTable phaseTimes);
 
     double computeMMU(int64_t resolution) const;
+
+    void printSliceProfile();
+    static void printProfileHeader();
+    static void printProfileTimes(const ProfileTimes& times);
 };
 
 struct MOZ_RAII AutoGCSlice
@@ -389,10 +423,6 @@ struct MOZ_RAII AutoGCSlice
         stats.beginSlice(zoneStats, gckind, budget, reason);
     }
     ~AutoGCSlice() { stats.endSlice(); }
-
-    void setCycleCount(unsigned cycleCount) {
-        stats.setSliceCycleCount(cycleCount);
-    }
 
     Statistics& stats;
 };

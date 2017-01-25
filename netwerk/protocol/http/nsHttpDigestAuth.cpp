@@ -7,6 +7,8 @@
 // HttpLog.h should generally be included first
 #include "HttpLog.h"
 
+#include "mozilla/Sprintf.h"
+
 #include "nsHttp.h"
 #include "nsHttpDigestAuth.h"
 #include "nsIHttpAuthenticableChannel.h"
@@ -15,7 +17,6 @@
 #include "nsString.h"
 #include "nsEscape.h"
 #include "nsNetCID.h"
-#include "prprf.h"
 #include "nsCRT.h"
 #include "nsICryptoHash.h"
 #include "nsComponentManagerUtils.h"
@@ -158,6 +159,22 @@ nsHttpDigestAuth::ChallengeReceived(nsIHttpAuthenticableChannel *authChannel,
   return NS_OK;
 }
 
+
+NS_IMETHODIMP
+nsHttpDigestAuth::GenerateCredentialsAsync(nsIHttpAuthenticableChannel *authChannel,
+                                           nsIHttpAuthenticatorCallback* aCallback,
+                                           const char *challenge,
+                                           bool isProxyAuth,
+                                           const char16_t *domain,
+                                           const char16_t *username,
+                                           const char16_t *password,
+                                           nsISupports *sessionState,
+                                           nsISupports *continuationState,
+                                           nsICancelable **aCancellable)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 NS_IMETHODIMP
 nsHttpDigestAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
                                       const char *challenge,
@@ -263,7 +280,7 @@ nsHttpDigestAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
     if (v) {
       uint32_t nc;
       v->GetData(&nc);
-      PR_snprintf(nonce_count, sizeof(nonce_count), "%08x", ++nc);
+      SprintfLiteral(nonce_count, "%08x", ++nc);
       v->SetData(nc);
     }
   }

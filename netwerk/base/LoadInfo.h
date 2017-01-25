@@ -18,9 +18,12 @@
 
 class nsINode;
 class nsPIDOMWindowOuter;
-class nsXMLHttpRequest;
 
 namespace mozilla {
+
+namespace dom {
+class XMLHttpRequestMainThread;
+}
 
 namespace net {
 class OptionalLoadInfoArgs;
@@ -89,9 +92,11 @@ private:
            bool aUpgradeInsecureRequests,
            bool aVerifySignedContent,
            bool aEnforceSRI,
+           bool aForceInheritPrincipalDropped,
            uint64_t aInnerWindowID,
            uint64_t aOuterWindowID,
            uint64_t aParentOuterWindowID,
+           uint64_t aFrameOuterWindowID,
            bool aEnforceSecurity,
            bool aInitialSecurityCheckDone,
            bool aIsThirdPartyRequest,
@@ -100,7 +105,9 @@ private:
            nsTArray<nsCOMPtr<nsIPrincipal>>& aRedirectChain,
            const nsTArray<nsCString>& aUnsafeHeaders,
            bool aForcePreflight,
-           bool aIsPreflight);
+           bool aIsPreflight,
+           bool aForceHSTSPriming,
+           bool aMixedContentWouldBlock);
   LoadInfo(const LoadInfo& rhs);
 
   friend nsresult
@@ -116,7 +123,7 @@ private:
   // of a loadinfo. It only exists because of the XHR code. Don't call it
   // from anywhere else!
   void SetIncludeCookiesSecFlag();
-  friend class ::nsXMLHttpRequest;
+  friend class mozilla::dom::XMLHttpRequestMainThread;
 
   // if you add a member, please also update the copy constructor
   nsCOMPtr<nsIPrincipal>           mLoadingPrincipal;
@@ -128,9 +135,11 @@ private:
   bool                             mUpgradeInsecureRequests;
   bool                             mVerifySignedContent;
   bool                             mEnforceSRI;
+  bool                             mForceInheritPrincipalDropped;
   uint64_t                         mInnerWindowID;
   uint64_t                         mOuterWindowID;
   uint64_t                         mParentOuterWindowID;
+  uint64_t                         mFrameOuterWindowID;
   bool                             mEnforceSecurity;
   bool                             mInitialSecurityCheckDone;
   bool                             mIsThirdPartyContext;
@@ -140,6 +149,9 @@ private:
   nsTArray<nsCString>              mCorsUnsafeHeaders;
   bool                             mForcePreflight;
   bool                             mIsPreflight;
+
+  bool                             mForceHSTSPriming : 1;
+  bool                             mMixedContentWouldBlock : 1;
 };
 
 } // namespace net

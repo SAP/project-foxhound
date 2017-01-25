@@ -15,7 +15,7 @@
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/MediaManager.h"
 #include "mozilla/Services.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "nsIAppsService.h"
 #include "nsIObserverService.h"
 #include "nsIDOMEventListener.h"
@@ -67,12 +67,12 @@ public:
   }
 
   void NotifyQueuedTrackChanges(MediaStreamGraph* aGraph, TrackID aID,
-                                StreamTime aTrackOffset, uint32_t aTrackEvents,
+                                StreamTime aTrackOffset, TrackEventCommand aTrackEvents,
                                 const MediaSegment& aQueuedMedia,
                                 MediaStream* aInputStream,
                                 TrackID aInputTrackID) override
   {
-    if (aTrackEvents & TRACK_EVENT_CREATED) {
+    if (aTrackEvents & TrackEventCommand::TRACK_EVENT_CREATED) {
       aGraph->DispatchToMainThreadAfterStreamStateUpdate(NewRunnableMethod<TrackID>(
           this, &TrackCreatedListener::DoNotifyTrackCreated, aID));
     }
@@ -259,7 +259,7 @@ nsDOMCameraControl::nsDOMCameraControl(uint32_t aCameraId,
   , mSetInitialConfig(false)
 {
   DOM_CAMERA_LOGT("%s:%d : this=%p\n", __func__, __LINE__, this);
-  mInput = new CameraPreviewMediaStream(this);
+  mInput = new CameraPreviewMediaStream();
   mOwnedStream = mInput;
 
   BindToOwner(aWindow);
@@ -1100,7 +1100,7 @@ nsDOMCameraControl::ReleaseHardware(ErrorResult& aRv)
 
   if (!mCameraControl) {
     // Always succeed if the camera instance is already closed.
-    promise->MaybeResolve(JS::UndefinedHandleValue);
+    promise->MaybeResolveWithUndefined();
     return promise.forget();
   }
 
@@ -1291,7 +1291,7 @@ nsDOMCameraControl::OnHardwareStateChange(CameraControlListener::HardwareState a
       if (!mSetInitialConfig) {
         RefPtr<Promise> promise = mReleasePromise.forget();
         if (promise) {
-          promise->MaybeResolve(JS::UndefinedHandleValue);
+          promise->MaybeResolveWithUndefined();
         }
 
         CameraClosedEventInit eventInit;
@@ -1409,7 +1409,7 @@ nsDOMCameraControl::OnRecorderStateChange(CameraControlListener::RecorderState a
       {
         RefPtr<Promise> promise = mStartRecordingPromise.forget();
         if (promise) {
-          promise->MaybeResolve(JS::UndefinedHandleValue);
+          promise->MaybeResolveWithUndefined();
         }
 
         state = NS_LITERAL_STRING("Started");
@@ -1640,7 +1640,7 @@ nsDOMCameraControl::OnUserError(CameraControlListener::UserContext aContext, nsr
         // This value indicates that the hardware is already closed; which for
         // kInStopCamera, is not actually an error.
         if (promise) {
-          promise->MaybeResolve(JS::UndefinedHandleValue);
+          promise->MaybeResolveWithUndefined();
         }
 
         return;

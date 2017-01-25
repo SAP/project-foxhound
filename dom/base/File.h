@@ -15,7 +15,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Date.h"
-#include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMBlob.h"
@@ -329,6 +328,13 @@ public:
   virtual bool IsDateUnknown() const = 0;
 
   virtual bool IsFile() const = 0;
+
+  // Returns true if the BlobImpl is backed by an nsIFile and the underlying
+  // file is a directory.
+  virtual bool IsDirectory() const
+  {
+    return false;
+  }
 
   // True if this implementation can be sent to other threads.
   virtual bool MayBeClonedToOtherThreads() const
@@ -713,6 +719,8 @@ public:
   virtual void GetInternalStream(nsIInputStream** aInputStream,
                                  ErrorResult& aRv) override;
 
+  virtual bool IsDirectory() const override;
+
   // We always have size and date for this kind of blob.
   virtual bool IsSizeUnknown() const override { return false; }
   virtual bool IsDateUnknown() const override { return false; }
@@ -727,7 +735,8 @@ protected:
       nsresult rv =
 #endif
       mFile->Remove(false);
-      NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Failed to remove temporary DOMFile.");
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "Failed to remove temporary DOMFile.");
     }
   }
 
@@ -786,6 +795,44 @@ public:
 
 private:
   ~EmptyBlobImpl() {}
+};
+
+class BlobImplStream final : public BlobImplBase
+{
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  BlobImplStream(nsIInputStream* aInputStream,
+                 const nsAString& aContentType,
+                 uint64_t aLength);
+
+  BlobImplStream(nsIInputStream* aInputStream,
+                 const nsAString& aName,
+                 const nsAString& aContentType,
+                 int64_t aLastModifiedDate,
+                 uint64_t aLength);
+
+  virtual void GetInternalStream(nsIInputStream** aStream,
+                                 ErrorResult& aRv) override;
+
+  virtual already_AddRefed<BlobImpl>
+  CreateSlice(uint64_t aStart, uint64_t aLength,
+              const nsAString& aContentType, ErrorResult& aRv) override;
+
+  virtual bool IsMemoryFile() const override
+  {
+    return true;
+  }
+
+private:
+  BlobImplStream(BlobImplStream* aOther,
+                 const nsAString& aContentType,
+                 uint64_t aStart,
+                 uint64_t aLength);
+
+  ~BlobImplStream();
+
+  nsCOMPtr<nsIInputStream> mInputStream;
 };
 
 } // namespace dom

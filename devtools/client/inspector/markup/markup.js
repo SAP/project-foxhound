@@ -7,19 +7,20 @@
 
 "use strict";
 
-const {Cc, Cu, Ci} = require("chrome");
-
 // Page size for pageup/pagedown
 const PAGE_SIZE = 10;
 const DEFAULT_MAX_CHILDREN = 100;
 const COLLAPSE_DATA_URL_REGEX = /^data.+base64/;
 const COLLAPSE_DATA_URL_LENGTH = 60;
 const NEW_SELECTION_HIGHLIGHTER_TIMER = 1000;
-const DRAG_DROP_AUTOSCROLL_EDGE_DISTANCE = 50;
-const DRAG_DROP_MIN_AUTOSCROLL_SPEED = 5;
-const DRAG_DROP_MAX_AUTOSCROLL_SPEED = 15;
+const DRAG_DROP_AUTOSCROLL_EDGE_MAX_DISTANCE = 50;
+const DRAG_DROP_AUTOSCROLL_EDGE_RATIO = 0.1;
+const DRAG_DROP_MIN_AUTOSCROLL_SPEED = 2;
+const DRAG_DROP_MAX_AUTOSCROLL_SPEED = 8;
 const DRAG_DROP_MIN_INITIAL_DISTANCE = 10;
-const AUTOCOMPLETE_POPUP_PANEL_ID = "markupview_autoCompletePopup";
+const DRAG_DROP_HEIGHT_TO_SPEED = 500;
+const DRAG_DROP_HEIGHT_TO_SPEED_MIN = 0.5;
+const DRAG_DROP_HEIGHT_TO_SPEED_MAX = 1;
 const ATTR_COLLAPSE_ENABLED_PREF = "devtools.markup.collapseAttributes";
 const ATTR_COLLAPSE_LENGTH_PREF = "devtools.markup.collapseAttributeLength";
 const PREVIEW_MAX_DIM_PREF = "devtools.inspector.imagePreviewTooltipSize";
@@ -34,36 +35,32 @@ const {editableField, InplaceEditor} =
       require("devtools/client/shared/inplace-editor");
 const {HTMLEditor} = require("devtools/client/inspector/markup/html-editor");
 const promise = require("promise");
+const defer = require("devtools/shared/defer");
 const Services = require("Services");
-const {Tooltip} = require("devtools/client/shared/widgets/Tooltip");
 const {HTMLTooltip} = require("devtools/client/shared/widgets/HTMLTooltip");
 const {setImageTooltip, setBrokenImageTooltip} =
       require("devtools/client/shared/widgets/tooltip/ImageTooltipHelper");
-
+const {setEventTooltip} = require("devtools/client/shared/widgets/tooltip/EventTooltipHelper");
 const EventEmitter = require("devtools/shared/event-emitter");
 const Heritage = require("sdk/core/heritage");
 const {parseAttribute} =
       require("devtools/client/shared/node-attribute-parser");
 const {Task} = require("devtools/shared/task");
-const {scrollIntoViewIfNeeded} = require("devtools/shared/layout/utils");
+const {scrollIntoViewIfNeeded} = require("devtools/client/shared/scroll");
 const {PrefObserver} = require("devtools/client/styleeditor/utils");
 const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
 const {template} = require("devtools/shared/gcli/templater");
 const nodeConstants = require("devtools/shared/dom-node-constants");
+const nodeFilterConstants = require("devtools/shared/dom-node-filter-constants");
+const {getCssProperties} = require("devtools/shared/fronts/css-properties");
+const {KeyCodes} = require("devtools/client/shared/keycodes");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AutocompletePopup} = require("devtools/client/shared/autocomplete-popup");
+const clipboardHelper = require("devtools/shared/platform/clipboard");
 
-loader.lazyRequireGetter(this, "CSS", "CSS");
-loader.lazyGetter(this, "DOMParser", () => {
-  return Cc["@mozilla.org/xmlextras/domparser;1"]
-    .createInstance(Ci.nsIDOMParser);
-});
-loader.lazyGetter(this, "AutocompletePopup", () => {
-  return require("devtools/client/shared/autocomplete-popup").AutocompletePopup;
-});
-
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-  "resource://gre/modules/PluralForm.jsm");
+const {PluralForm} = require("devtools/shared/plural-form");
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const INSPECTOR_L10N = new LocalizationHelper("devtools/locale/inspector.properties");
 
 /**
  * Vocabulary for the purposes of this file:
@@ -110,12 +107,9 @@ function MarkupView(inspector, frame, controllerWindow) {
   let options = {
     autoSelect: true,
     theme: "auto",
-    // panelId option prevents the markupView autocomplete popup from
-    // sharing XUL elements with other views, such as ruleView (see Bug 1191093)
-    panelId: AUTOCOMPLETE_POPUP_PANEL_ID
   };
-  this.popup = new AutocompletePopup(this.doc.defaultView.parent.document,
-                                     options);
+
+  this.popup = new AutocompletePopup(inspector._toolbox, options);
 
   this.undo = new UndoStack();
   this.undo.installController(controllerWindow);
@@ -123,6 +117,7 @@ function MarkupView(inspector, frame, controllerWindow) {
   this._containers = new Map();
 
   // Binding functions that need to be called in scope.
+  this._handleRejectionIfNotDestroyed = this._handleRejectionIfNotDestroyed.bind(this);
   this._mutationObserver = this._mutationObserver.bind(this);
   this._onDisplayChange = this._onDisplayChange.bind(this);
   this._onMouseClick = this._onMouseClick.bind(this);
@@ -131,7 +126,7 @@ function MarkupView(inspector, frame, controllerWindow) {
   this._onCopy = this._onCopy.bind(this);
   this._onFocus = this._onFocus.bind(this);
   this._onMouseMove = this._onMouseMove.bind(this);
-  this._onMouseLeave = this._onMouseLeave.bind(this);
+  this._onMouseOut = this._onMouseOut.bind(this);
   this._onToolboxPickerHover = this._onToolboxPickerHover.bind(this);
   this._onCollapseAttributesPrefChange =
     this._onCollapseAttributesPrefChange.bind(this);
@@ -143,7 +138,7 @@ function MarkupView(inspector, frame, controllerWindow) {
   // Listening to various events.
   this._elt.addEventListener("click", this._onMouseClick, false);
   this._elt.addEventListener("mousemove", this._onMouseMove, false);
-  this._elt.addEventListener("mouseleave", this._onMouseLeave, false);
+  this._elt.addEventListener("mouseout", this._onMouseOut, false);
   this._elt.addEventListener("blur", this._onBlur, true);
   this.win.addEventListener("mouseup", this._onMouseUp);
   this.win.addEventListener("copy", this._onCopy);
@@ -173,10 +168,23 @@ MarkupView.prototype = {
 
   _selectedContainer: null,
 
+  /**
+   * Handle promise rejections for various asynchronous actions, and only log errors if
+   * the markup view still exists.
+   * This is useful to silence useless errors that happen when the markup view is
+   * destroyed while still initializing (and making protocol requests).
+   */
+  _handleRejectionIfNotDestroyed: function (e) {
+    if (!this._destroyer) {
+      console.error(e);
+    }
+  },
+
   _initTooltips: function () {
-    this.eventDetailsTooltip = new Tooltip(this._inspector.panelDoc);
-    this.imagePreviewTooltip = new HTMLTooltip(this._inspector.toolbox,
+    this.eventDetailsTooltip = new HTMLTooltip(this._inspector.toolbox,
       {type: "arrow"});
+    this.imagePreviewTooltip = new HTMLTooltip(this._inspector.toolbox,
+      {type: "arrow", useXulWrapper: "true"});
     this._enableImagePreviewTooltip();
   },
 
@@ -256,37 +264,58 @@ MarkupView.prototype = {
   _autoScroll: function (event) {
     let docEl = this.doc.documentElement;
 
-    if (this._autoScrollInterval) {
-      clearInterval(this._autoScrollInterval);
+    if (this._autoScrollAnimationFrame) {
+      this.win.cancelAnimationFrame(this._autoScrollAnimationFrame);
     }
 
     // Auto-scroll when the mouse approaches top/bottom edge.
     let fromBottom = docEl.clientHeight - event.pageY + this.win.scrollY;
     let fromTop = event.pageY - this.win.scrollY;
+    let edgeDistance = Math.min(DRAG_DROP_AUTOSCROLL_EDGE_MAX_DISTANCE,
+           docEl.clientHeight * DRAG_DROP_AUTOSCROLL_EDGE_RATIO);
 
-    if (fromBottom <= DRAG_DROP_AUTOSCROLL_EDGE_DISTANCE) {
-      // Map our distance from 0-50 to 5-15 range so the speed is kept in a
-      // range not too fast, not too slow.
+    // The smaller the screen, the slower the movement.
+    let heightToSpeedRatio =
+      Math.max(DRAG_DROP_HEIGHT_TO_SPEED_MIN,
+        Math.min(DRAG_DROP_HEIGHT_TO_SPEED_MAX,
+          docEl.clientHeight / DRAG_DROP_HEIGHT_TO_SPEED));
+
+    if (fromBottom <= edgeDistance) {
+      // Map our distance range to a speed range so that the speed is not too
+      // fast or too slow.
       let speed = map(
         fromBottom,
-        0, DRAG_DROP_AUTOSCROLL_EDGE_DISTANCE,
+        0, edgeDistance,
         DRAG_DROP_MIN_AUTOSCROLL_SPEED, DRAG_DROP_MAX_AUTOSCROLL_SPEED);
 
-      this._autoScrollInterval = setInterval(() => {
-        docEl.scrollTop -= speed - DRAG_DROP_MAX_AUTOSCROLL_SPEED;
-      }, 0);
+      this._runUpdateLoop(() => {
+        docEl.scrollTop -= heightToSpeedRatio *
+          (speed - DRAG_DROP_MAX_AUTOSCROLL_SPEED);
+      });
     }
 
-    if (fromTop <= DRAG_DROP_AUTOSCROLL_EDGE_DISTANCE) {
+    if (fromTop <= edgeDistance) {
       let speed = map(
         fromTop,
-        0, DRAG_DROP_AUTOSCROLL_EDGE_DISTANCE,
+        0, edgeDistance,
         DRAG_DROP_MIN_AUTOSCROLL_SPEED, DRAG_DROP_MAX_AUTOSCROLL_SPEED);
 
-      this._autoScrollInterval = setInterval(() => {
-        docEl.scrollTop += speed - DRAG_DROP_MAX_AUTOSCROLL_SPEED;
-      }, 0);
+      this._runUpdateLoop(() => {
+        docEl.scrollTop += heightToSpeedRatio *
+          (speed - DRAG_DROP_MAX_AUTOSCROLL_SPEED);
+      });
     }
+  },
+
+  /**
+   * Run a loop on the requestAnimationFrame.
+   */
+  _runUpdateLoop: function (update) {
+    let loop = () => {
+      update();
+      this._autoScrollAnimationFrame = this.win.requestAnimationFrame(loop);
+    };
+    loop();
   },
 
   _onMouseClick: function (event) {
@@ -313,8 +342,8 @@ MarkupView.prototype = {
   _onMouseUp: function () {
     this.indicateDropTarget(null);
     this.indicateDragTarget(null);
-    if (this._autoScrollInterval) {
-      clearInterval(this._autoScrollInterval);
+    if (this._autoScrollAnimationFrame) {
+      this.win.cancelAnimationFrame(this._autoScrollAnimationFrame);
     }
   },
 
@@ -340,8 +369,8 @@ MarkupView.prototype = {
 
     this.indicateDropTarget(null);
     this.indicateDragTarget(null);
-    if (this._autoScrollInterval) {
-      clearInterval(this._autoScrollInterval);
+    if (this._autoScrollAnimationFrame) {
+      this.win.cancelAnimationFrame(this._autoScrollAnimationFrame);
     }
   },
 
@@ -366,9 +395,14 @@ MarkupView.prototype = {
     this._hoveredNode = nodeFront;
   },
 
-  _onMouseLeave: function () {
-    if (this._autoScrollInterval) {
-      clearInterval(this._autoScrollInterval);
+  _onMouseOut: function (event) {
+    // Emulate mouseleave by skipping any relatedTarget inside the markup-view.
+    if (this._elt.contains(event.relatedTarget)) {
+      return;
+    }
+
+    if (this._autoScrollAnimationFrame) {
+      this.win.cancelAnimationFrame(this._autoScrollAnimationFrame);
     }
     if (this.isDragging) {
       return;
@@ -426,7 +460,7 @@ MarkupView.prototype = {
   _brieflyShowBoxModel: function (nodeFront) {
     this._clearBriefBoxModelTimer();
     let onShown = this._showBoxModel(nodeFront);
-    this._briefBoxModelPromise = promise.defer();
+    this._briefBoxModelPromise = defer();
 
     this._briefBoxModelTimer = setTimeout(() => {
       this._hideBoxModel()
@@ -573,14 +607,7 @@ MarkupView.prototype = {
       // Make sure the new selection is navigated to.
       this.maybeNavigateToNewSelection();
       return undefined;
-    }).catch(e => {
-      if (!this._destroyer) {
-        console.error(e);
-      } else {
-        console.warn("Could not mark node as selected, the markup-view was " +
-          "destroyed while showing the node.");
-      }
-    });
+    }).catch(this._handleRejectionIfNotDestroyed);
 
     promise.all([onShowBoxModel, onShow]).then(done);
   },
@@ -615,14 +642,14 @@ MarkupView.prototype = {
   _selectionWalker: function (start) {
     let walker = this.doc.createTreeWalker(
       start || this._elt,
-      Ci.nsIDOMNodeFilter.SHOW_ELEMENT,
+      nodeFilterConstants.SHOW_ELEMENT,
       function (element) {
         if (element.container &&
             element.container.elt === element &&
             element.container.visible) {
-          return Ci.nsIDOMNodeFilter.FILTER_ACCEPT;
+          return nodeFilterConstants.FILTER_ACCEPT;
         }
-        return Ci.nsIDOMNodeFilter.FILTER_SKIP;
+        return nodeFilterConstants.FILTER_SKIP;
       }
     );
     walker.currentNode = this._selectedContainer.elt;
@@ -657,7 +684,7 @@ MarkupView.prototype = {
     ["markupView.hide.key",
      "markupView.edit.key",
      "markupView.scrollInto.key"].forEach(name => {
-       let key = this.strings.GetStringFromName(name);
+       let key = INSPECTOR_L10N.getStr(name);
        shortcuts.on(key, (_, event) => this._onShortcut(name, event));
      });
 
@@ -856,12 +883,26 @@ MarkupView.prototype = {
       this.undo.do(() => {
         this.walker.removeNode(node).then(siblings => {
           nextSibling = siblings.nextSibling;
-          let focusNode = moveBackward ? siblings.previousSibling : nextSibling;
+          let prevSibling = siblings.previousSibling;
+          let focusNode = moveBackward ? prevSibling : nextSibling;
 
           // If we can't move as the user wants, we move to the other direction.
           // If there is no sibling elements anymore, move to the parent node.
           if (!focusNode) {
-            focusNode = nextSibling || siblings.previousSibling || parent;
+            focusNode = nextSibling || prevSibling || parent;
+          }
+
+          let isNextSiblingText = nextSibling ?
+            nextSibling.nodeType === nodeConstants.TEXT_NODE : false;
+          let isPrevSiblingText = prevSibling ?
+            prevSibling.nodeType === nodeConstants.TEXT_NODE : false;
+
+          // If the parent had two children and the next or previous sibling
+          // is a text node, then it now has only a single text node, is about
+          // to be in-lined; and focus should move to the parent.
+          if (parent.numChildren === 2
+              && (isNextSiblingText || isPrevSiblingText)) {
+            focusNode = parent;
           }
 
           if (container.selected) {
@@ -999,8 +1040,8 @@ MarkupView.prototype = {
 
     this._waitForChildren().then(() => {
       if (this._destroyer) {
-        console.warn("Could not fully update after markup mutations, " +
-          "the markup-view was destroyed while waiting for children.");
+        // Could not fully update after markup mutations, the markup-view was destroyed
+        // while waiting for children. Bail out silently.
         return;
       }
       this._flashMutatedNodes(mutations);
@@ -1099,16 +1140,7 @@ MarkupView.prototype = {
       return this._ensureVisible(node);
     }).then(() => {
       scrollIntoViewIfNeeded(this.getContainer(node).editor.elt, centered);
-    }, e => {
-      // Only report this rejection as an error if the panel hasn't been
-      // destroyed in the meantime.
-      if (!this._destroyer) {
-        console.error(e);
-      } else {
-        console.warn("Could not show the node, the markup-view was destroyed " +
-          "while waiting for children");
-      }
-    });
+    }, this._handleRejectionIfNotDestroyed);
   },
 
   /**
@@ -1117,8 +1149,8 @@ MarkupView.prototype = {
   _expandContainer: function (container) {
     return this._updateChildren(container, {expand: true}).then(() => {
       if (this._destroyer) {
-        console.warn("Could not expand the node, the markup-view was " +
-          "destroyed");
+        // Could not expand the node, the markup-view was destroyed in the meantime. Just
+        // silently give up.
         return;
       }
       container.setExpanded(true);
@@ -1330,7 +1362,7 @@ MarkupView.prototype = {
       return promise.reject();
     }
 
-    let def = promise.defer();
+    let def = defer();
 
     container.undo.do(() => {
       this.walker.setInnerHTML(node, newValue).then(def.resolve, def.reject);
@@ -1360,7 +1392,7 @@ MarkupView.prototype = {
       return promise.reject();
     }
 
-    let def = promise.defer();
+    let def = defer();
 
     let injectedNodes = [];
     container.undo.do(() => {
@@ -1632,9 +1664,9 @@ MarkupView.prototype = {
         if (!(children.hasFirst && children.hasLast)) {
           let nodesCount = container.node.numChildren;
           let showAllString = PluralForm.get(nodesCount,
-            this.strings.GetStringFromName("markupView.more.showAll2"));
+            INSPECTOR_L10N.getStr("markupView.more.showAll2"));
           let data = {
-            showing: this.strings.GetStringFromName("markupView.more.showing"),
+            showing: INSPECTOR_L10N.getStr("markupView.more.showing"),
             showAll: showAllString.replace("#1", nodesCount),
             allButtonClick: () => {
               container.maxChildren = -1;
@@ -1655,7 +1687,7 @@ MarkupView.prototype = {
 
         container.children.appendChild(fragment);
         return container;
-      }).then(null, console.error);
+      }).catch(this._handleRejectionIfNotDestroyed);
     this._queuedChildUpdates.set(container, updatePromise);
     return updatePromise;
   },
@@ -1708,7 +1740,7 @@ MarkupView.prototype = {
 
     this._elt.removeEventListener("click", this._onMouseClick, false);
     this._elt.removeEventListener("mousemove", this._onMouseMove, false);
-    this._elt.removeEventListener("mouseleave", this._onMouseLeave, false);
+    this._elt.removeEventListener("mouseout", this._onMouseOut, false);
     this._elt.removeEventListener("blur", this._onBlur, true);
     this.win.removeEventListener("mouseup", this._onMouseUp);
     this.win.removeEventListener("copy", this._onCopy);
@@ -1874,6 +1906,7 @@ MarkupContainer.prototype = {
     this.undo = this.markup.undo;
     this.win = this.markup._frame.contentWindow;
     this.id = "treeitem-" + markupContainerID++;
+    this.htmlElt = this.win.document.documentElement;
 
     // The template will fill the following properties
     this.elt = null;
@@ -2175,10 +2208,12 @@ MarkupContainer.prototype = {
     this.tagLine.setAttribute("aria-grabbed", isDragging);
 
     if (isDragging) {
+      this.htmlElt.classList.add("dragging");
       this.elt.classList.add("dragging");
       this.markup.doc.body.classList.add("dragging");
       rootElt.setAttribute("aria-dropeffect", "move");
     } else {
+      this.htmlElt.classList.remove("dragging");
       this.elt.classList.remove("dragging");
       this.markup.doc.body.classList.remove("dragging");
       rootElt.setAttribute("aria-dropeffect", "none");
@@ -2234,12 +2269,12 @@ MarkupContainer.prototype = {
 
     // Ignore all keystrokes that originated in editors except for when 'Tab' is
     // pressed.
-    if (isInput && keyCode !== event.DOM_VK_TAB) {
+    if (isInput && keyCode !== KeyCodes.DOM_VK_TAB) {
       return;
     }
 
     switch (keyCode) {
-      case event.DOM_VK_TAB:
+      case KeyCodes.DOM_VK_TAB:
         // Only handle 'Tab' if tabbable element is on the edge (first or last).
         if (isInput) {
           // Corresponding tabbable element is editor's next sibling.
@@ -2260,7 +2295,7 @@ MarkupContainer.prototype = {
           }
         }
         break;
-      case event.DOM_VK_ESCAPE:
+      case KeyCodes.DOM_VK_ESCAPE:
         this.clearFocus();
         this.markup.getContainer(this.markup._rootNode).elt.focus();
         if (this.isDragging) {
@@ -2515,6 +2550,7 @@ MarkupContainer.prototype = {
     }
 
     this.win = null;
+    this.htmlElt = null;
 
     if (this.expander) {
       this.expander.removeEventListener("click", this._onToggle, false);
@@ -2610,28 +2646,23 @@ function MarkupElementContainer(markupView, node) {
 }
 
 MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
-  _buildEventTooltipContent: function (target, tooltip) {
+  _buildEventTooltipContent: Task.async(function* (target, tooltip) {
     if (target.hasAttribute("data-event")) {
-      tooltip.hide(target);
+      yield tooltip.hide();
 
-      this.node.getEventListenerInfo().then(listenerInfo => {
-        tooltip.setEventContent({
-          eventListenerInfos: listenerInfo,
-          toolbox: this.markup._inspector.toolbox
-        });
+      let listenerInfo = yield this.node.getEventListenerInfo();
 
-        // Disable the image preview tooltip while we display the event details
-        this.markup._disableImagePreviewTooltip();
-        tooltip.once("hidden", () => {
-          // Enable the image preview tooltip after closing the event details
-          this.markup._enableImagePreviewTooltip();
-        });
-        tooltip.show(target);
+      let toolbox = this.markup._inspector.toolbox;
+      setEventTooltip(tooltip, listenerInfo, toolbox);
+      // Disable the image preview tooltip while we display the event details
+      this.markup._disableImagePreviewTooltip();
+      tooltip.once("hidden", () => {
+        // Enable the image preview tooltip after closing the event details
+        this.markup._enableImagePreviewTooltip();
       });
-      return true;
+      tooltip.show(target);
     }
-    return undefined;
-  },
+  }),
 
   /**
    * Generates the an image preview for this Element. The element must be an
@@ -2704,10 +2735,10 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
         maxDim: Services.prefs.getIntPref(PREVIEW_MAX_DIM_PREF)
       };
 
-      yield setImageTooltip(tooltip, this.markup.doc, data, options);
+      setImageTooltip(tooltip, this.markup.doc, data, options);
     } catch (e) {
       // Indicate the failure but show the tooltip anyway.
-      yield setBrokenImageTooltip(tooltip, this.markup.doc);
+      setBrokenImageTooltip(tooltip, this.markup.doc);
     }
     return true;
   }),
@@ -2869,11 +2900,7 @@ function TextEditor(container, node, templateId) {
     stopOnReturn: true,
     trigger: "dblclick",
     multiline: true,
-    maxWidth: () => {
-      let elementRect = this.value.getBoundingClientRect();
-      let containerRect = this.container.elt.getBoundingClientRect();
-      return containerRect.right - elementRect.left - 2;
-    },
+    maxWidth: () => getAutocompleteMaxWidth(this.value, this.container.elt),
     trimOutput: false,
     done: (val, commit) => {
       if (!commit) {
@@ -2890,7 +2917,8 @@ function TextEditor(container, node, templateId) {
           });
         });
       });
-    }
+    },
+    cssProperties: getCssProperties(this.markup._inspector.toolbox)
   });
 
   this.update();
@@ -2944,6 +2972,7 @@ function ElementEditor(container, node) {
   this.markup = this.container.markup;
   this.template = this.markup.template.bind(this.markup);
   this.doc = this.markup.doc;
+  this._cssProperties = getCssProperties(this.markup._inspector.toolbox);
 
   this.attrElements = new Map();
   this.animationTimers = {};
@@ -2966,15 +2995,20 @@ function ElementEditor(container, node) {
     this.tag.setAttribute("tabindex", "-1");
     editableField({
       element: this.tag,
+      multiline: true,
+      maxWidth: () => getAutocompleteMaxWidth(this.tag, this.container.elt),
       trigger: "dblclick",
       stopOnReturn: true,
       done: this.onTagEdit.bind(this),
+      cssProperties: this._cssProperties
     });
   }
 
   // Make the new attribute space editable.
   this.newAttr.editMode = editableField({
     element: this.newAttr,
+    multiline: true,
+    maxWidth: () => getAutocompleteMaxWidth(this.newAttr, this.container.elt),
     trigger: "dblclick",
     stopOnReturn: true,
     contentType: InplaceEditor.CONTENT_TYPES.CSS_MIXED,
@@ -2992,7 +3026,8 @@ function ElementEditor(container, node) {
       }, function () {
         undoMods.apply();
       });
-    }
+    },
+    cssProperties: this._cssProperties
   });
 
   let displayName = this.node.displayName;
@@ -3163,6 +3198,7 @@ ElementEditor.prototype = {
     // Create the template editor, which will save some variables here.
     let data = {
       attrName: attribute.name,
+      tabindex: this.container.canFocus ? "0" : "-1",
     };
     this.template("attribute", data);
     let {attr, inner, name, val} = data;
@@ -3193,6 +3229,8 @@ ElementEditor.prototype = {
       stopOnReturn: true,
       selectAll: false,
       initial: initial,
+      multiline: true,
+      maxWidth: () => getAutocompleteMaxWidth(inner, this.container.elt),
       contentType: InplaceEditor.CONTENT_TYPES.CSS_MIXED,
       popup: this.markup.popup,
       start: (editor, event) => {
@@ -3229,7 +3267,8 @@ ElementEditor.prototype = {
         }, () => {
           undoMods.apply();
         });
-      }
+      },
+      cssProperties: this._cssProperties
     });
 
     // Figure out where we should place the attribute.
@@ -3377,9 +3416,9 @@ ElementEditor.prototype = {
           let newAttributeIndex;
           if (isDeletedAttribute) {
             newAttributeIndex = attributeIndex;
-          } else if (direction == Ci.nsIFocusManager.MOVEFOCUS_FORWARD) {
+          } else if (direction == Services.focus.MOVEFOCUS_FORWARD) {
             newAttributeIndex = attributeIndex + 1;
-          } else if (direction == Ci.nsIFocusManager.MOVEFOCUS_BACKWARD) {
+          } else if (direction == Services.focus.MOVEFOCUS_BACKWARD) {
             newAttributeIndex = attributeIndex - 1;
           }
 
@@ -3469,7 +3508,7 @@ function parseAttributeValues(attr, doc) {
   attr = attr.trim();
 
   let parseAndGetNode = str => {
-    return DOMParser.parseFromString(str, "text/html").body.childNodes[0];
+    return new DOMParser().parseFromString(str, "text/html").body.childNodes[0];
   };
 
   // Handle bad user inputs by appending a " or ' if it fails to parse without
@@ -3564,13 +3603,15 @@ function map(value, oldMin, oldMax, newMin, newMax) {
   return newMin + (newMax - newMin) * ((value - oldMin) / ratio);
 }
 
-loader.lazyGetter(MarkupView.prototype, "strings", () => Services.strings.createBundle(
-  "chrome://devtools/locale/inspector.properties"
-));
-
-XPCOMUtils.defineLazyGetter(this, "clipboardHelper", function () {
-  return Cc["@mozilla.org/widget/clipboardhelper;1"]
-    .getService(Ci.nsIClipboardHelper);
-});
+/**
+ * Retrieve the available width between a provided element left edge and a container right
+ * edge. This used can be used as a max-width for inplace-editor (autocomplete) widgets
+ * replacing Editor elements of the the markup-view;
+ */
+function getAutocompleteMaxWidth(element, container) {
+  let elementRect = element.getBoundingClientRect();
+  let containerRect = container.getBoundingClientRect();
+  return containerRect.right - elementRect.left - 2;
+}
 
 exports.MarkupView = MarkupView;

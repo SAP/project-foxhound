@@ -16,16 +16,19 @@ namespace gl
 
 struct Version
 {
-    Version();
-    Version(GLuint major, GLuint minor);
+    constexpr Version();
+    constexpr Version(GLuint major, GLuint minor);
 
     GLuint major;
     GLuint minor;
 };
 
+bool operator==(const Version &a, const Version &b);
+bool operator!=(const Version &a, const Version &b);
 bool operator>=(const Version &a, const Version &b);
+bool operator<=(const Version &a, const Version &b);
 bool operator<(const Version &a, const Version &b);
-
+bool operator>(const Version &a, const Version &b);
 }
 
 #include "Version.inl"

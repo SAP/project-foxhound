@@ -24,8 +24,8 @@
   <preference id="browser.safebrowsing.malware.enabled"
               name="browser.safebrowsing.malware.enabled"
               type="bool"/>
-  <preference id="browser.safebrowsing.enabled"
-              name="browser.safebrowsing.enabled"
+  <preference id="browser.safebrowsing.phishing.enabled"
+              name="browser.safebrowsing.phishing.enabled"
               type="bool"/>
 
   <preference id="browser.safebrowsing.downloads.enabled"
@@ -53,8 +53,7 @@
       hidden="true"
       data-category="paneSecurity">
   <label class="header-name" flex="1">&paneSecurity.title;</label>
-  <button class="help-button"
-          aria-label="&helpButton.label;"/>
+  <html:a class="help-button" target="_blank" aria-label="&helpButton.label;"></html:a>
 </hbox>
 
 <!-- addons, forgery (phishing) UI -->

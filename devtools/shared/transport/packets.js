@@ -27,8 +27,10 @@
 const { Cc, Ci, Cu } = require("chrome");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { dumpn, dumpv } = DevToolsUtils;
+const flags = require("devtools/shared/flags");
 const StreamUtils = require("devtools/shared/transport/stream-utils");
 const promise = require("promise");
+const defer = require("devtools/shared/defer");
 
 DevToolsUtils.defineLazyGetter(this, "unicodeConverter", () => {
   const unicodeConverter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
@@ -174,7 +176,7 @@ JSONPacket.prototype.read = function (stream, scriptableStream) {
 };
 
 JSONPacket.prototype._readData = function (stream, scriptableStream) {
-  if (dumpv.wantVerbose) {
+  if (flags.wantVerbose) {
     dumpv("Reading JSON data: _l: " + this.length + " dL: " +
           this._data.length + " sA: " + stream.available());
   }
@@ -225,7 +227,7 @@ exports.JSONPacket = JSONPacket;
 function BulkPacket(transport) {
   Packet.call(this, transport);
   this._done = false;
-  this._readyForWriting = promise.defer();
+  this._readyForWriting = defer();
 }
 
 /**
@@ -265,7 +267,7 @@ BulkPacket.prototype.read = function (stream) {
   // Temporarily pause monitoring of the input stream
   this._transport.pauseIncoming();
 
-  let deferred = promise.defer();
+  let deferred = defer();
 
   this._transport._onBulkReadReady({
     actor: this.actor,
@@ -318,7 +320,7 @@ BulkPacket.prototype.write = function (stream) {
   // Temporarily pause the monitoring of the output stream
   this._transport.pauseOutgoing();
 
-  let deferred = promise.defer();
+  let deferred = defer();
 
   this._readyForWriting.resolve({
     copyFrom: (input) => {

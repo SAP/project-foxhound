@@ -9,7 +9,7 @@
 
 const WAIT_TIME = 1000; // ms
 
-const { PerformanceFront } = require("devtools/server/actors/performance");
+const { PerformanceFront } = require("devtools/shared/fronts/performance");
 
 add_task(function* () {
   let browser = yield addTab(MAIN_DOMAIN + "doc_perf.html");
@@ -45,7 +45,7 @@ add_task(function* () {
     "At least some samples have been iterated over, checking for root nodes.");
 
   yield front.destroy();
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
 });
 

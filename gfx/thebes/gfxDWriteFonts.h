@@ -41,14 +41,10 @@ public:
 
     bool IsValid() const;
 
-    virtual gfxFloat GetAdjustedSize() const override {
-        return mAdjustedSize;
-    }
-
     IDWriteFontFace *GetFontFace();
 
     /* override Measure to add padding for antialiasing */
-    virtual RunMetrics Measure(gfxTextRun *aTextRun,
+    virtual RunMetrics Measure(const gfxTextRun *aTextRun,
                                uint32_t aStart, uint32_t aEnd,
                                BoundingBoxType aBoundingBoxType,
                                DrawTarget *aDrawTargetForTightBoundingBox,

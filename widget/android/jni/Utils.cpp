@@ -7,6 +7,7 @@
 
 #include "AndroidBridge.h"
 #include "GeneratedJNIWrappers.h"
+#include "nsAppShell.h"
 
 #ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
@@ -47,19 +48,20 @@ DEFINE_PRIMITIVE_TYPE_ADAPTER(double,   jdouble,  Double,  MOZ_JNICALL_ABI);
 
 } // namespace detail
 
-template<> const char Context<Object, jobject>::name[] = "java/lang/Object";
-template<> const char Context<TypedObject<jstring>, jstring>::name[] = "java/lang/String";
-template<> const char Context<TypedObject<jclass>, jclass>::name[] = "java/lang/Class";
-template<> const char Context<TypedObject<jthrowable>, jthrowable>::name[] = "java/lang/Throwable";
-template<> const char Context<TypedObject<jbooleanArray>, jbooleanArray>::name[] = "[Z";
-template<> const char Context<TypedObject<jbyteArray>, jbyteArray>::name[] = "[B";
-template<> const char Context<TypedObject<jcharArray>, jcharArray>::name[] = "[C";
-template<> const char Context<TypedObject<jshortArray>, jshortArray>::name[] = "[S";
-template<> const char Context<TypedObject<jintArray>, jintArray>::name[] = "[I";
-template<> const char Context<TypedObject<jlongArray>, jlongArray>::name[] = "[J";
-template<> const char Context<TypedObject<jfloatArray>, jfloatArray>::name[] = "[F";
-template<> const char Context<TypedObject<jdoubleArray>, jdoubleArray>::name[] = "[D";
-template<> const char Context<TypedObject<jobjectArray>, jobjectArray>::name[] = "[Ljava/lang/Object;";
+template<> const char ObjectBase<Object, jobject>::name[] = "java/lang/Object";
+template<> const char ObjectBase<TypedObject<jstring>, jstring>::name[] = "java/lang/String";
+template<> const char ObjectBase<TypedObject<jclass>, jclass>::name[] = "java/lang/Class";
+template<> const char ObjectBase<TypedObject<jthrowable>, jthrowable>::name[] = "java/lang/Throwable";
+template<> const char ObjectBase<TypedObject<jbooleanArray>, jbooleanArray>::name[] = "[Z";
+template<> const char ObjectBase<TypedObject<jbyteArray>, jbyteArray>::name[] = "[B";
+template<> const char ObjectBase<TypedObject<jcharArray>, jcharArray>::name[] = "[C";
+template<> const char ObjectBase<TypedObject<jshortArray>, jshortArray>::name[] = "[S";
+template<> const char ObjectBase<TypedObject<jintArray>, jintArray>::name[] = "[I";
+template<> const char ObjectBase<TypedObject<jlongArray>, jlongArray>::name[] = "[J";
+template<> const char ObjectBase<TypedObject<jfloatArray>, jfloatArray>::name[] = "[F";
+template<> const char ObjectBase<TypedObject<jdoubleArray>, jdoubleArray>::name[] = "[D";
+template<> const char ObjectBase<TypedObject<jobjectArray>, jobjectArray>::name[] = "[Ljava/lang/Object;";
+template<> const char ObjectBase<ByteBuffer, jobject>::name[] = "java/nio/ByteBuffer";
 
 
 JNIEnv* sGeckoThreadEnv;
@@ -68,6 +70,7 @@ namespace {
 
 JavaVM* sJavaVM;
 pthread_key_t sThreadEnvKey;
+jclass sOOMErrorClass;
 
 void UnregisterThreadEnv(void* env)
 {
@@ -99,6 +102,10 @@ void SetGeckoThreadEnv(JNIEnv* aEnv)
 
     MOZ_ALWAYS_TRUE(!aEnv->GetJavaVM(&sJavaVM));
     MOZ_ASSERT(sJavaVM);
+
+    sOOMErrorClass = Class::GlobalRef(Class::LocalRef::Adopt(
+            aEnv->FindClass("java/lang/OutOfMemoryError"))).Forget();
+    aEnv->ExceptionClear();
 }
 
 JNIEnv* GetEnvForThread()
@@ -142,26 +149,45 @@ bool HandleUncaughtException(JNIEnv* aEnv)
         return false;
     }
 
-#ifdef DEBUG
+#ifdef MOZ_CHECK_JNI
     aEnv->ExceptionDescribe();
 #endif
 
     Throwable::LocalRef e =
-            Throwable::LocalRef::Adopt(aEnv->ExceptionOccurred());
+            Throwable::LocalRef::Adopt(aEnv, aEnv->ExceptionOccurred());
     MOZ_ASSERT(e);
+    aEnv->ExceptionClear();
+
+    String::LocalRef stack = java::GeckoAppShell::GetExceptionStackTrace(e);
+    if (stack && ReportException(aEnv, e.Get(), stack.Get())) {
+        return true;
+    }
 
     aEnv->ExceptionClear();
-    String::LocalRef stack = widget::GeckoAppShell::HandleUncaughtException(e);
+    java::GeckoAppShell::HandleUncaughtException(e);
 
-#ifdef MOZ_CRASHREPORTER
-    if (stack) {
-        // GeckoAppShell wants us to annotate and trigger the crash reporter.
-        CrashReporter::AnnotateCrashReport(
-                NS_LITERAL_CSTRING("AuxiliaryJavaStack"), stack->ToCString());
+    if (NS_WARN_IF(aEnv->ExceptionCheck())) {
+        aEnv->ExceptionDescribe();
+        aEnv->ExceptionClear();
     }
-#endif // MOZ_CRASHREPORTER
 
     return true;
+}
+
+bool ReportException(JNIEnv* aEnv, jthrowable aExc, jstring aStack)
+{
+    bool result = true;
+
+#ifdef MOZ_CRASHREPORTER
+    result &= NS_SUCCEEDED(CrashReporter::AnnotateCrashReport(
+            NS_LITERAL_CSTRING("JavaStackTrace"),
+            String::Ref::From(aStack)->ToCString()));
+#endif // MOZ_CRASHREPORTER
+
+    if (sOOMErrorClass && aEnv->IsInstanceOf(aExc, sOOMErrorClass)) {
+        NS_ABORT_OOM(0); // Unknown OOM size
+    }
+    return result;
 }
 
 namespace {
@@ -207,6 +233,27 @@ void SetNativeHandle(JNIEnv* env, jobject instance, uintptr_t handle)
 jclass GetClassGlobalRef(JNIEnv* aEnv, const char* aClassName)
 {
     return AndroidBridge::GetClassGlobalRef(aEnv, aClassName);
+}
+
+
+void DispatchToGeckoThread(UniquePtr<AbstractCall>&& aCall)
+{
+    class AbstractCallEvent : public nsAppShell::Event
+    {
+        UniquePtr<AbstractCall> mCall;
+
+    public:
+        AbstractCallEvent(UniquePtr<AbstractCall>&& aCall)
+            : mCall(Move(aCall))
+        {}
+
+        void Run() override
+        {
+            (*mCall)();
+        }
+    };
+
+    nsAppShell::PostEvent(MakeUnique<AbstractCallEvent>(Move(aCall)));
 }
 
 } // jni

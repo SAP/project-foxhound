@@ -18,8 +18,8 @@ include $(CORE_DEPTH)/coreconf/config.mk
 
 #######################################################################
 # (3) Include "component" configuration information. (OPTIONAL)       #
-#######################################################################
-
+######################################################################
+#
 
 
 #######################################################################
@@ -63,8 +63,3 @@ include $(CORE_DEPTH)/coreconf/rules.mk
 #######################################################################
 
 export:: private_export
-
-ifndef NSS_NO_PKCS11_BYPASS
-# indicates dependency on freebl static lib
-$(SHARED_LIBRARY): $(CRYPTOLIB)
-endif

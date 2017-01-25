@@ -29,6 +29,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
                                   "resource://gre/modules/UpdateUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "OS",
                                   "resource://gre/modules/osfile.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ServiceRequest",
+                                  "resource://gre/modules/ServiceRequest.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "DOMApplicationRegistry",
@@ -49,7 +51,6 @@ const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_BLOCKLIST_SUPPRESSUI       = "extensions.blocklist.suppressUI";
 const PREF_ONECRL_VIA_AMO             = "security.onecrl.via.amo";
 const PREF_BLOCKLIST_UPDATE_ENABLED   = "services.blocklist.update_enabled";
-const PREF_PLUGINS_NOTIFYUSER         = "plugins.update.notifyUser";
 const PREF_GENERAL_USERAGENT_LOCALE   = "general.useragent.locale";
 const PREF_APP_DISTRIBUTION           = "distribution.id";
 const PREF_APP_DISTRIBUTION_VERSION   = "distribution.version";
@@ -613,8 +614,7 @@ Blocklist.prototype = {
     }
 
     LOG("Blocklist::notify: Requesting " + uri.spec);
-    var request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].
-                  createInstance(Ci.nsIXMLHttpRequest);
+    let request = new ServiceRequest();
     request.open("GET", uri.spec, true);
     request.channel.notificationCallbacks = new gCertUtils.BadCertHandler();
     request.overrideMimeType("text/xml");
@@ -867,7 +867,7 @@ Blocklist.prototype = {
     }
 
     var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
-    try{
+    try {
       yield this._preloadBlocklistFile(appFile.path);
       return;
     } catch (e) {
@@ -877,7 +877,7 @@ Blocklist.prototype = {
     LOG("Blocklist::_preloadBlocklist: no XML File found");
   }),
 
-  _preloadBlocklistFile: Task.async(function*(path){
+  _preloadBlocklistFile: Task.async(function*(path) {
     if (this._addonEntries) {
       // The file has been already loaded.
       return;
@@ -1174,12 +1174,11 @@ Blocklist.prototype = {
     if (AppConstants.platform == "android" ||
         AppConstants.MOZ_B2G) {
       return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
-    } else {
-      if (!this._isBlocklistLoaded())
-        this._loadBlocklist();
-      return this._getPluginBlocklistState(plugin, this._pluginEntries,
-                                           appVersion, toolkitVersion);
     }
+    if (!this._isBlocklistLoaded())
+      this._loadBlocklist();
+    return this._getPluginBlocklistState(plugin, this._pluginEntries,
+                                         appVersion, toolkitVersion);
   },
 
   /**
@@ -1428,11 +1427,9 @@ Blocklist.prototype = {
             plugin.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
         }
         else if (!plugin.disabled && state != Ci.nsIBlocklistService.STATE_NOT_BLOCKED) {
-          if (state == Ci.nsIBlocklistService.STATE_OUTDATED) {
-            gPref.setBoolPref(PREF_PLUGINS_NOTIFYUSER, true);
-          }
-          else if (state != Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE &&
-                   state != Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE) {
+          if (state != Ci.nsIBlocklistService.STATE_OUTDATED &&
+              state != Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE &&
+              state != Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE) {
             addonList.push({
               name: plugin.name,
               version: plugin.version,

@@ -5,6 +5,7 @@
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="chrome_head.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" href="chrome://mochikit/contents/tests/SimpleTest/test.css"/>
 </head>
@@ -14,7 +15,7 @@
 "use strict";
 
 add_task(function* webnav_unresolved_uri_on_expected_URI_scheme() {
-  function backgroundScript() {
+  function background() {
     let checkURLs;
 
     browser.webNavigation.onCompleted.addListener((msg) => {
@@ -42,7 +43,7 @@ add_task(function* webnav_unresolved_uri_on_expected_URI_scheme() {
         "webNavigation",
       ],
     },
-    background: "new " + backgroundScript,
+    background,
     files: {
       "tab.html": `<!DOCTYPE html>
         <html>

@@ -30,6 +30,7 @@
 #ifdef MOZ_FMP4
 #include "MP4Decoder.h"
 #endif
+#include "CubebUtils.h"
 
 #include "nsIScrollableFrame.h"
 
@@ -438,17 +439,14 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
         rootFrame == nsLayoutUtils::GetDisplayRootFrame(rootFrame)) {
       nsCOMPtr<nsIWidget> widget = GetWidget();
       if (widget) {
-        bool isRetainingManager;
-        LayerManager* manager = widget->GetLayerManager(&isRetainingManager);
-        if (isRetainingManager) {
-          manager->BeginTransaction();
-          using PaintFrameFlags = nsLayoutUtils::PaintFrameFlags;
-          nsLayoutUtils::PaintFrame(nullptr, rootFrame, nsRegion(),
-                                    NS_RGB(255, 255, 255),
-                                    nsDisplayListBuilderMode::PAINTING,
-                                    PaintFrameFlags::PAINT_WIDGET_LAYERS |
-                                    PaintFrameFlags::PAINT_EXISTING_TRANSACTION);
-        }
+        LayerManager* manager = widget->GetLayerManager();
+        manager->BeginTransaction();
+        using PaintFrameFlags = nsLayoutUtils::PaintFrameFlags;
+        nsLayoutUtils::PaintFrame(nullptr, rootFrame, nsRegion(),
+                                  NS_RGB(255, 255, 255),
+                                  nsDisplayListBuilderMode::PAINTING,
+                                  PaintFrameFlags::PAINT_WIDGET_LAYERS |
+                                  PaintFrameFlags::PAINT_EXISTING_TRANSACTION);
       }
     }
   }
@@ -650,14 +648,21 @@ nsDOMWindowUtils::SendMouseEvent(const nsAString& aType,
                                  bool aIgnoreRootScrollFrame,
                                  float aPressure,
                                  unsigned short aInputSourceArg,
-                                 bool aIsSynthesized,
+                                 bool aIsDOMEventSynthesized,
+                                 bool aIsWidgetEventSynthesized,
+                                 int32_t aButtons,
                                  uint8_t aOptionalArgCount,
                                  bool *aPreventDefault)
 {
   return SendMouseEventCommon(aType, aX, aY, aButton, aClickCount, aModifiers,
                               aIgnoreRootScrollFrame, aPressure,
                               aInputSourceArg, false, aPreventDefault,
-                              aOptionalArgCount >= 4 ? aIsSynthesized : true);
+                              aOptionalArgCount >= 4 ?
+                                aIsDOMEventSynthesized : true,
+                              aOptionalArgCount >= 5 ?
+                                aIsWidgetEventSynthesized : false,
+                              aOptionalArgCount >= 6 ?
+                              aButtons : MOUSE_BUTTONS_NOT_SPECIFIED);
 }
 
 NS_IMETHODIMP
@@ -670,7 +675,9 @@ nsDOMWindowUtils::SendMouseEventToWindow(const nsAString& aType,
                                          bool aIgnoreRootScrollFrame,
                                          float aPressure,
                                          unsigned short aInputSourceArg,
-                                         bool aIsSynthesized,
+                                         bool aIsDOMEventSynthesized,
+                                         bool aIsWidgetEventSynthesized,
+                                         int32_t aButtons,
                                          uint8_t aOptionalArgCount)
 {
   PROFILER_LABEL("nsDOMWindowUtils", "SendMouseEventToWindow",
@@ -679,7 +686,12 @@ nsDOMWindowUtils::SendMouseEventToWindow(const nsAString& aType,
   return SendMouseEventCommon(aType, aX, aY, aButton, aClickCount, aModifiers,
                               aIgnoreRootScrollFrame, aPressure,
                               aInputSourceArg, true, nullptr,
-                              aOptionalArgCount >= 4 ? aIsSynthesized : true);
+                              aOptionalArgCount >= 4 ?
+                                aIsDOMEventSynthesized : true,
+                              aOptionalArgCount >= 5 ?
+                                aIsWidgetEventSynthesized : false,
+                              aOptionalArgCount >= 6 ?
+                              aButtons : MOUSE_BUTTONS_NOT_SPECIFIED);
 }
 
 NS_IMETHODIMP
@@ -694,12 +706,15 @@ nsDOMWindowUtils::SendMouseEventCommon(const nsAString& aType,
                                        unsigned short aInputSourceArg,
                                        bool aToWindow,
                                        bool *aPreventDefault,
-                                       bool aIsSynthesized)
+                                       bool aIsDOMEventSynthesized,
+                                       bool aIsWidgetEventSynthesized,
+                                       int32_t aButtons)
 {
   nsCOMPtr<nsIPresShell> presShell = GetPresShell();
   return nsContentUtils::SendMouseEvent(presShell, aType, aX, aY, aButton,
-      aClickCount, aModifiers, aIgnoreRootScrollFrame, aPressure,
-      aInputSourceArg, aToWindow, aPreventDefault, aIsSynthesized);
+      aButtons, aClickCount, aModifiers, aIgnoreRootScrollFrame, aPressure,
+      aInputSourceArg, aToWindow, aPreventDefault, aIsDOMEventSynthesized,
+      aIsWidgetEventSynthesized);
 }
 
 NS_IMETHODIMP
@@ -756,11 +771,12 @@ nsDOMWindowUtils::SendPointerEventCommon(const nsAString& aType,
   event.pressure = aPressure;
   event.inputSource = aInputSourceArg;
   event.pointerId = aPointerId;
-  event.width = aWidth;
-  event.height = aHeight;
+  event.mWidth = aWidth;
+  event.mHeight = aHeight;
   event.tiltX = aTiltX;
   event.tiltY = aTiltY;
-  event.isPrimary = (nsIDOMMouseEvent::MOZ_SOURCE_MOUSE == aInputSourceArg) ? true : aIsPrimary;
+  event.mIsPrimary =
+    (nsIDOMMouseEvent::MOZ_SOURCE_MOUSE == aInputSourceArg) ? true : aIsPrimary;
   event.mClickCount = aClickCount;
   event.mTime = PR_IntervalNow();
   event.mFlags.mIsSynthesizedForTests = aOptionalArgCount >= 10 ? aIsSynthesized : true;
@@ -1236,6 +1252,18 @@ nsDOMWindowUtils::ForceUpdateNativeMenuAt(const nsAString& indexString)
     return NS_ERROR_FAILURE;
 
   return widget->ForceUpdateNativeMenuAt(indexString);
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetSelectionAsPlaintext(nsAString& aResult)
+{
+  // Get the widget to send the event to.
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return widget->GetSelectionAsPlaintext(aResult);
 }
 
 nsIWidget*
@@ -1888,7 +1916,7 @@ InitEvent(WidgetGUIEvent& aEvent, LayoutDeviceIntPoint* aPt = nullptr)
 
 NS_IMETHODIMP
 nsDOMWindowUtils::SendQueryContentEvent(uint32_t aType,
-                                        uint32_t aOffset, uint32_t aLength,
+                                        int64_t aOffset, uint32_t aLength,
                                         int32_t aX, int32_t aY,
                                         uint32_t aAdditionalFlags,
                                         nsIQueryContentEventResult **aResult)
@@ -1933,27 +1961,94 @@ nsDOMWindowUtils::SendQueryContentEvent(uint32_t aType,
     case QUERY_CHARACTER_AT_POINT:
       message = eQueryCharacterAtPoint;
       break;
+    case QUERY_TEXT_RECT_ARRAY:
+      message = eQueryTextRectArray;
+      break;
     default:
       return NS_ERROR_INVALID_ARG;
+  }
+
+  SelectionType selectionType = SelectionType::eNormal;
+  static const uint32_t kSelectionFlags =
+    QUERY_CONTENT_FLAG_SELECTION_SPELLCHECK |
+    QUERY_CONTENT_FLAG_SELECTION_IME_RAWINPUT |
+    QUERY_CONTENT_FLAG_SELECTION_IME_SELECTEDRAWTEXT |
+    QUERY_CONTENT_FLAG_SELECTION_IME_CONVERTEDTEXT |
+    QUERY_CONTENT_FLAG_SELECTION_IME_SELECTEDCONVERTEDTEXT |
+    QUERY_CONTENT_FLAG_SELECTION_ACCESSIBILITY |
+    QUERY_CONTENT_FLAG_SELECTION_FIND |
+    QUERY_CONTENT_FLAG_SELECTION_URLSECONDARY |
+    QUERY_CONTENT_FLAG_SELECTION_URLSTRIKEOUT;
+  switch (aAdditionalFlags & kSelectionFlags) {
+    case QUERY_CONTENT_FLAG_SELECTION_SPELLCHECK:
+      selectionType = SelectionType::eSpellCheck;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_IME_RAWINPUT:
+      selectionType = SelectionType::eIMERawClause;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_IME_SELECTEDRAWTEXT:
+      selectionType = SelectionType::eIMESelectedRawClause;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_IME_CONVERTEDTEXT:
+      selectionType = SelectionType::eIMEConvertedClause;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_IME_SELECTEDCONVERTEDTEXT:
+      selectionType = SelectionType::eIMESelectedClause;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_ACCESSIBILITY:
+      selectionType = SelectionType::eAccessibility;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_FIND:
+      selectionType = SelectionType::eFind;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_URLSECONDARY:
+      selectionType = SelectionType::eURLSecondary;
+      break;
+    case QUERY_CONTENT_FLAG_SELECTION_URLSTRIKEOUT:
+      selectionType = SelectionType::eURLStrikeout;
+      break;
+    case 0:
+      break;
+    default:
+      return NS_ERROR_INVALID_ARG;
+  }
+
+  if (selectionType != SelectionType::eNormal &&
+      message != eQuerySelectedText) {
+    return NS_ERROR_INVALID_ARG;
   }
 
   nsCOMPtr<nsIWidget> targetWidget = widget;
   LayoutDeviceIntPoint pt(aX, aY);
 
-  bool useNativeLineBreak =
+  WidgetQueryContentEvent::Options options;
+  options.mUseNativeLineBreak =
     !(aAdditionalFlags & QUERY_CONTENT_FLAG_USE_XP_LINE_BREAK);
+  options.mRelativeToInsertionPoint =
+    (aAdditionalFlags &
+       QUERY_CONTENT_FLAG_OFFSET_RELATIVE_TO_INSERTION_POINT) != 0;
+  if (options.mRelativeToInsertionPoint) {
+    switch (message) {
+      case eQueryTextContent:
+      case eQueryCaretRect:
+      case eQueryTextRect:
+        break;
+      default:
+        return NS_ERROR_INVALID_ARG;
+    }
+  } else if (aOffset < 0) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   if (message == eQueryCharacterAtPoint) {
     // Looking for the widget at the point.
     WidgetQueryContentEvent dummyEvent(true, eQueryContentState, widget);
-    dummyEvent.mUseNativeLineBreak = useNativeLineBreak;
+    dummyEvent.Init(options);
     InitEvent(dummyEvent, &pt);
     nsIFrame* popupFrame =
       nsLayoutUtils::GetPopupFrameForEventCoordinates(presContext->GetRootPresContext(), &dummyEvent);
 
-    LayoutDeviceIntRect widgetBounds;
-    nsresult rv = widget->GetClientBounds(widgetBounds);
-    NS_ENSURE_SUCCESS(rv, rv);
+    LayoutDeviceIntRect widgetBounds = widget->GetClientBounds();
     widgetBounds.MoveTo(0, 0);
 
     // There is no popup frame at the point and the point isn't in our widget,
@@ -1973,16 +2068,22 @@ nsDOMWindowUtils::SendQueryContentEvent(uint32_t aType,
 
   switch (message) {
     case eQueryTextContent:
-      queryEvent.InitForQueryTextContent(aOffset, aLength, useNativeLineBreak);
+      queryEvent.InitForQueryTextContent(aOffset, aLength, options);
       break;
     case eQueryCaretRect:
-      queryEvent.InitForQueryCaretRect(aOffset, useNativeLineBreak);
+      queryEvent.InitForQueryCaretRect(aOffset, options);
       break;
     case eQueryTextRect:
-      queryEvent.InitForQueryTextRect(aOffset, aLength, useNativeLineBreak);
+      queryEvent.InitForQueryTextRect(aOffset, aLength, options);
+      break;
+    case eQuerySelectedText:
+      queryEvent.InitForQuerySelectedText(selectionType, options);
+      break;
+    case eQueryTextRectArray:
+      queryEvent.InitForQueryTextRectArray(aOffset, aLength, options);
       break;
     default:
-      queryEvent.mUseNativeLineBreak = useNativeLineBreak;
+      queryEvent.Init(options);
       break;
   }
 
@@ -2248,9 +2349,16 @@ nsDOMWindowUtils::GetSupportsHardwareH264Decoding(JS::MutableHandle<JS::Value> a
   if (rv.Failed()) {
     return rv.StealNSResult();
   }
-  promise.MaybeResolve(NS_LITERAL_STRING("No; Compiled without MP4 support."));
+  promise->MaybeResolve(NS_LITERAL_STRING("No; Compiled without MP4 support."));
   aPromise.setObject(*promise->PromiseObj());
 #endif
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetCurrentAudioBackend(nsAString& aBackend)
+{
+  CubebUtils::GetCurrentBackend(aBackend);
   return NS_OK;
 }
 
@@ -2324,7 +2432,7 @@ nsDOMWindowUtils::BeginTabSwitch()
 }
 
 static bool
-ComputeAnimationValue(nsCSSProperty aProperty,
+ComputeAnimationValue(nsCSSPropertyID aProperty,
                       Element* aElement,
                       const nsAString& aInput,
                       StyleAnimationValue& aOutput)
@@ -2584,7 +2692,7 @@ nsDOMWindowUtils::ComputeAnimationDistance(nsIDOMElement* aElement,
   nsCOMPtr<nsIContent> content = do_QueryInterface(aElement, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCSSProperty property =
+  nsCSSPropertyID property =
     nsCSSProps::LookupProperty(aProperty, CSSEnabledState::eIgnoreEnabledState);
   if (property != eCSSProperty_UNKNOWN && nsCSSProps::IsShorthand(property)) {
     property = eCSSProperty_UNKNOWN;
@@ -2728,7 +2836,7 @@ CheckLeafLayers(Layer* aLayer, const nsIntPoint& aOffset, nsIntRegion* aCoveredR
       transform.HasNonIntegerTranslation())
     return false;
   transform.NudgeToIntegers();
-  nsIntPoint offset = aOffset + nsIntPoint(transform._31, transform._32);
+  IntPoint offset = aOffset + IntPoint::Truncate(transform._31, transform._32);
 
   Layer* child = aLayer->GetFirstChild();
   if (child) {
@@ -3022,7 +3130,7 @@ nsDOMWindowUtils::FlushPendingFileDeletions()
 NS_IMETHODIMP
 nsDOMWindowUtils::IsIncrementalGCEnabled(JSContext* cx, bool* aResult)
 {
-  *aResult = JS::IsIncrementalGCEnabled(JS_GetRuntime(cx));
+  *aResult = JS::IsIncrementalGCEnabled(cx);
   return NS_OK;
 }
 
@@ -3158,6 +3266,10 @@ PrepareForFullscreenChange(nsIPresShell* aPresShell, const nsSize& aSize,
   }
   if (nsRefreshDriver* rd = aPresShell->GetRefreshDriver()) {
     rd->SetIsResizeSuppressed();
+    // Since we are suppressing the resize reflow which would originally
+    // be triggered by view manager, we need to ensure that the refresh
+    // driver actually schedules a flush, otherwise it may get stuck.
+    rd->ScheduleViewManagerFlush();
   }
   if (!aSize.IsEmpty()) {
     if (nsViewManager* viewManager = aPresShell->GetViewManager()) {
@@ -3388,6 +3500,19 @@ nsDOMWindowUtils::GetIsHandlingUserInput(bool* aHandlingUserInput)
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::GetMillisSinceLastUserInput(double* aMillisSinceLastUserInput)
+{
+  TimeStamp lastInput = EventStateManager::LatestUserInputStart();
+  if (lastInput.IsNull()) {
+    *aMillisSinceLastUserInput = 0;
+    return NS_OK;
+  }
+
+  *aMillisSinceLastUserInput = (TimeStamp::Now() - lastInput).ToMilliseconds();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::AllowScriptsToClose()
 {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
@@ -3532,13 +3657,18 @@ nsDOMWindowUtils::GetOMTAStyle(nsIDOMElement* aElement,
         FrameLayerBuilder::GetDedicatedLayer(frame,
                                              nsDisplayItem::TYPE_OPACITY);
       if (layer) {
-        float value;
         ShadowLayerForwarder* forwarder = layer->Manager()->AsShadowForwarder();
         if (forwarder && forwarder->HasShadowManager()) {
-          forwarder->GetShadowManager()->SendGetOpacity(
-            layer->AsShadowableLayer()->GetShadow(), &value);
-          cssValue = new nsROCSSPrimitiveValue;
-          cssValue->SetNumber(value);
+          float value;
+          bool hadAnimatedOpacity;
+          forwarder->GetShadowManager()->SendGetAnimationOpacity(
+            layer->AsShadowableLayer()->GetShadow(),
+            &value, &hadAnimatedOpacity);
+
+          if (hadAnimatedOpacity) {
+            cssValue = new nsROCSSPrimitiveValue;
+            cssValue->SetNumber(value);
+          }
         }
       }
     } else if (aProperty.EqualsLiteral("transform")) {

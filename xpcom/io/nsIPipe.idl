@@ -61,20 +61,22 @@ interface nsIPipe : nsISupports
      *        should always be used with caution.  The default value for this
      *        parameter is a finite value.
      */
-    void init(in boolean nonBlockingInput,
-              in boolean nonBlockingOutput,
-              in unsigned long segmentSize,
-              in unsigned long segmentCount);
+    [must_use] void init(in boolean nonBlockingInput,
+                         in boolean nonBlockingOutput,
+                         in unsigned long segmentSize,
+                         in unsigned long segmentCount);
 
     /**
      * The pipe's input end, which also implements nsISearchableInputStream.
+     * Getting fails if the pipe hasn't been initialized.
      */
-    readonly attribute nsIAsyncInputStream inputStream;
+    [must_use] readonly attribute nsIAsyncInputStream inputStream;
 
     /**
-     * The pipe's output end.
+     * The pipe's output end. Getting fails if the pipe hasn't been
+     * initialized.
      */
-    readonly attribute nsIAsyncOutputStream outputStream;
+    [must_use] readonly attribute nsIAsyncOutputStream outputStream;
 
     /**
      * TaintFox: See taint/docs/Netwerk.md
@@ -138,7 +140,7 @@ class nsIOutputStream;
  *
  * TaintFox: extended to return a reference to the pipe itself as well. Needed for nsHttpTransaction.
  */
-extern nsresult
+extern MOZ_MUST_USE nsresult
 NS_NewPipe2(nsIAsyncInputStream **pipeIn,
             nsIAsyncOutputStream **pipeOut,
             bool nonBlockingInput = false,
@@ -172,7 +174,7 @@ NS_NewPipe2(nsIAsyncInputStream **pipeIn,
  * @param nonBlockingOutput
  *        true specifies non-blocking output stream behavior
  */
-extern nsresult
+extern MOZ_MUST_USE nsresult
 NS_NewPipe(nsIInputStream **pipeIn,
            nsIOutputStream **pipeOut,
            uint32_t segmentSize = 0,

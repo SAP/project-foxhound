@@ -5,15 +5,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
-#include "mozilla/ipc/URIUtils.h"
-
 #include "nsIconURI.h"
+
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "mozilla/Sprintf.h"
+
 #include "nsIIOService.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
-#include "prprf.h"
 #include "plstr.h"
 #include <stdlib.h>
 
@@ -94,7 +94,7 @@ nsMozIconURI::GetSpec(nsACString& aSpec)
     aSpec += kSizeStrings[mIconSize];
   } else {
     char buf[20];
-    PR_snprintf(buf, sizeof(buf), "%d", mSize);
+    SprintfLiteral(buf, "%d", mSize);
     aSpec.Append(buf);
   }
 
@@ -192,7 +192,7 @@ nsMozIconURI::SetSpec(const nsACString& aSpec)
       }
 
       int32_t sizeValue = atoi(sizeString.get());
-      if (sizeValue) {
+      if (sizeValue > 0) {
         mSize = sizeValue;
       }
     }
@@ -329,6 +329,12 @@ nsMozIconURI::SetHostPort(const nsACString& aHostPort)
 }
 
 NS_IMETHODIMP
+nsMozIconURI::SetHostAndPort(const nsACString& aHostPort)
+{
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
 nsMozIconURI::GetHost(nsACString& aHost)
 {
   return NS_ERROR_FAILURE;
@@ -381,14 +387,18 @@ nsMozIconURI::SetRef(const nsACString& aRef)
 NS_IMETHODIMP
 nsMozIconURI::Equals(nsIURI* other, bool* result)
 {
+  *result = false;
   NS_ENSURE_ARG_POINTER(other);
   NS_PRECONDITION(result, "null pointer");
 
   nsAutoCString spec1;
   nsAutoCString spec2;
 
-  other->GetSpec(spec2);
-  GetSpec(spec1);
+  nsresult rv = GetSpec(spec1);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = other->GetSpec(spec2);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   if (!PL_strcasecmp(spec1.get(), spec2.get())) {
     *result = true;
   } else {
@@ -453,6 +463,15 @@ nsMozIconURI::CloneIgnoringRef(nsIURI** result)
   // CloneIgnoringRef() is the same as Clone().
   return Clone(result);
 }
+
+NS_IMETHODIMP
+nsMozIconURI::CloneWithNewRef(const nsACString& newRef, nsIURI** result)
+{
+  // GetRef/SetRef not supported by nsMozIconURI, so
+  // CloneWithNewRef() is the same as Clone().
+  return Clone(result);
+}
+
 
 NS_IMETHODIMP
 nsMozIconURI::Resolve(const nsACString& relativePath, nsACString& result)

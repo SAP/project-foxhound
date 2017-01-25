@@ -111,6 +111,9 @@ interface Element : Node {
   [Throws, Pref="dom.w3c_pointer_events.enabled"]
   void releasePointerCapture(long pointerId);
 
+  [Pref="dom.w3c_pointer_events.enabled"]
+  boolean hasPointerCapture(long pointerId);
+
   // Proprietary extensions
   /**
    * Set this during a mousedown event to grab and retarget all mouse events
@@ -130,15 +133,6 @@ interface Element : Node {
 
   // Mozilla extensions
 
-  /**
-   * Requests that this element be made the pointer-locked element, as per the DOM
-   * pointer lock api.
-   *
-   * @see <http://dvcs.w3.org/hg/pointerlock/raw-file/default/index.html>
-   */
-  [UnsafeInPrerendering]
-  void mozRequestPointerLock();
-
   // Obsolete methods.
   Attr? getAttributeNode(DOMString name);
   [Throws]
@@ -155,6 +149,16 @@ interface Element : Node {
    * layout flushing.
    */
   boolean scrollByNoFlush(long dx, long dy);
+
+  // Support reporting of Grid properties
+
+  /**
+   * If this element has a display:grid or display:inline-grid style,
+   * this property returns an object with computed values for grid
+   * tracks and lines.
+   */
+  [ChromeOnly, Pure]
+  sequence<Grid> getGridFragments();
 };
 
 // http://dev.w3.org/csswg/cssom-view/
@@ -246,21 +250,18 @@ Element implements ParentNode;
 Element implements Animatable;
 Element implements GeometryUtils;
 
-// non-standard: allows passing options to Element.requestFullscreen
-dictionary RequestFullscreenOptions {
-  // Which HMDVRDevice to go full screen on; also enables VR rendering.
-  // If null, normal fullscreen is entered.
-  HMDVRDevice? vrDisplay = null;
-};
-
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {
-  /**
-   * The options parameter is non-standard. In Gecko, it can be:
-   *  a RequestFullscreenOptions object
-   */
   [Throws, UnsafeInPrerendering, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
-  void requestFullscreen(optional any options);
+  void requestFullscreen();
   [Throws, UnsafeInPrerendering, BinaryName="requestFullscreen"]
-  void mozRequestFullScreen(optional any options);
+  void mozRequestFullScreen();
+};
+
+// https://w3c.github.io/pointerlock/#extensions-to-the-element-interface
+partial interface Element {
+  [UnsafeInPrerendering]
+  void requestPointerLock();
+  [UnsafeInPrerendering, BinaryName="requestPointerLock", Pref="pointer-lock-api.prefixed.enabled"]
+  void mozRequestPointerLock();
 };

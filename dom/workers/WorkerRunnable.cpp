@@ -15,6 +15,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/Telemetry.h"
 
 #include "js/RootingAPI.h"
@@ -29,48 +30,6 @@ namespace {
 
 const nsIID kWorkerRunnableIID = {
   0x320cc0b5, 0xef12, 0x4084, { 0x88, 0x6e, 0xca, 0x6a, 0x81, 0xe4, 0x1d, 0x68 }
-};
-
-// This runnable is used to stop a sync loop and it's meant to be used on the
-// main-thread only. As sync loops keep the busy count incremented as long as
-// they run this runnable does not modify the busy count
-// in any way.
-class MainThreadStopSyncLoopRunnable : public WorkerSyncRunnable
-{
-  bool mResult;
-
-public:
-  // Passing null for aSyncLoopTarget is not allowed.
-  MainThreadStopSyncLoopRunnable(
-                               WorkerPrivate* aWorkerPrivate,
-                               already_AddRefed<nsIEventTarget>&& aSyncLoopTarget,
-                               bool aResult);
-
-  // By default StopSyncLoopRunnables cannot be canceled since they could leave
-  // a sync loop spinning forever.
-  nsresult
-  Cancel() override;
-
-protected:
-  virtual ~MainThreadStopSyncLoopRunnable()
-  { }
-
-private:
-  virtual bool
-  PreDispatch(WorkerPrivate* aWorkerPrivate) override final
-  {
-    AssertIsOnMainThread();
-    return true;
-  }
-
-  virtual void
-  PostDispatch(WorkerPrivate* aWorkerPrivate, bool aDispatchResult) override;
-
-  virtual bool
-  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override;
-
-  virtual bool
-  DispatchInternal() override final;
 };
 
 } // namespace
@@ -160,10 +119,7 @@ WorkerRunnable::DispatchInternal()
     return NS_SUCCEEDED(parent->Dispatch(runnable.forget()));
   }
 
-  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-  MOZ_ASSERT(mainThread);
-
-  return NS_SUCCEEDED(mainThread->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL));
+  return NS_SUCCEEDED(mWorkerPrivate->DispatchToMainThread(runnable.forget()));
 }
 
 void
@@ -302,6 +258,10 @@ WorkerRunnable::Run()
 
     MOZ_ASSERT(IsCanceled(), "Subclass Cancel() didn't set IsCanceled()!");
 
+    if (mBehavior == WorkerThreadModifyBusyCount) {
+      mWorkerPrivate->ModifyBusyCountFromWorker(false);
+    }
+
     return NS_OK;
   }
 
@@ -360,9 +320,7 @@ WorkerRunnable::Run()
   JSContext* cx;
   AutoJSAPI* jsapi;
   if (globalObject) {
-    aes.emplace(globalObject, "Worker runnable",
-                isMainThread,
-                isMainThread ? nullptr : GetCurrentThreadJSContext());
+    aes.emplace(globalObject, "Worker runnable", isMainThread);
     jsapi = aes.ptr();
     cx = aes->cx();
   } else {
@@ -525,10 +483,10 @@ nsresult
 MainThreadStopSyncLoopRunnable::Cancel()
 {
   nsresult rv = Run();
-  NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Run() failed");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Run() failed");
 
   nsresult rv2 = WorkerSyncRunnable::Cancel();
-  NS_WARN_IF_FALSE(NS_SUCCEEDED(rv2), "Cancel() failed");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv2), "Cancel() failed");
 
   return NS_FAILED(rv) ? rv : rv2;
 }
@@ -597,17 +555,7 @@ WorkerControlRunnable::DispatchInternal()
     return NS_SUCCEEDED(parent->DispatchControlRunnable(runnable.forget()));
   }
 
-  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-  MOZ_ASSERT(mainThread);
-
-  return NS_SUCCEEDED(mainThread->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL));
-}
-
-void
-MainThreadWorkerControlRunnable::PostDispatch(WorkerPrivate* aWorkerPrivate,
-                                              bool aDispatchResult)
-{
-  AssertIsOnMainThread();
+  return NS_SUCCEEDED(mWorkerPrivate->DispatchToMainThread(runnable.forget()));
 }
 
 NS_IMPL_ISUPPORTS_INHERITED0(WorkerControlRunnable, WorkerRunnable)
@@ -630,10 +578,8 @@ WorkerMainThreadRunnable::Dispatch(ErrorResult& aRv)
   AutoSyncLoopHolder syncLoop(mWorkerPrivate);
 
   mSyncLoopTarget = syncLoop.EventTarget();
-  RefPtr<WorkerMainThreadRunnable> runnable(this);
 
-  DebugOnly<nsresult> rv =
-    NS_DispatchToMainThread(runnable.forget(), NS_DISPATCH_NORMAL);
+  DebugOnly<nsresult> rv = mWorkerPrivate->DispatchToMainThread(this);
   MOZ_ASSERT(NS_SUCCEEDED(rv),
              "Should only fail after xpcom-shutdown-threads and we're gone by then");
 
@@ -707,4 +653,127 @@ WorkerSameThreadRunnable::PostDispatch(WorkerPrivate* aWorkerPrivate,
     // parent and it should be able to process a control runnable.
     MOZ_ASSERT(willIncrement);
   }
+}
+
+WorkerProxyToMainThreadRunnable::WorkerProxyToMainThreadRunnable(WorkerPrivate* aWorkerPrivate)
+  : mWorkerPrivate(aWorkerPrivate)
+{
+  MOZ_ASSERT(mWorkerPrivate);
+  mWorkerPrivate->AssertIsOnWorkerThread();
+}
+
+WorkerProxyToMainThreadRunnable::~WorkerProxyToMainThreadRunnable()
+{}
+
+bool
+WorkerProxyToMainThreadRunnable::Dispatch()
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  if (NS_WARN_IF(!HoldWorker())) {
+    RunBackOnWorkerThread();
+    return false;
+  }
+
+  if (NS_WARN_IF(NS_FAILED(mWorkerPrivate->DispatchToMainThread(this)))) {
+    ReleaseWorker();
+    RunBackOnWorkerThread();
+    return false;
+  }
+
+  return true;
+}
+
+NS_IMETHODIMP
+WorkerProxyToMainThreadRunnable::Run()
+{
+  AssertIsOnMainThread();
+  RunOnMainThread();
+  PostDispatchOnMainThread();
+  return NS_OK;
+}
+
+void
+WorkerProxyToMainThreadRunnable::PostDispatchOnMainThread()
+{
+  class ReleaseRunnable final : public MainThreadWorkerControlRunnable
+  {
+    RefPtr<WorkerProxyToMainThreadRunnable> mRunnable;
+
+  public:
+    ReleaseRunnable(WorkerPrivate* aWorkerPrivate,
+                    WorkerProxyToMainThreadRunnable* aRunnable)
+      : MainThreadWorkerControlRunnable(aWorkerPrivate)
+      , mRunnable(aRunnable)
+    {
+      MOZ_ASSERT(aRunnable);
+    }
+
+    // We must call RunBackOnWorkerThread() also if the runnable is canceled.
+    nsresult
+    Cancel() override
+    {
+      WorkerRun(nullptr, mWorkerPrivate);
+      return MainThreadWorkerControlRunnable::Cancel();
+    }
+
+    virtual bool
+    WorkerRun(JSContext* aCx, workers::WorkerPrivate* aWorkerPrivate) override
+    {
+      MOZ_ASSERT(aWorkerPrivate);
+      aWorkerPrivate->AssertIsOnWorkerThread();
+
+      if (mRunnable) {
+        mRunnable->RunBackOnWorkerThread();
+
+        // Let's release the worker thread.
+        mRunnable->ReleaseWorker();
+        mRunnable = nullptr;
+      }
+
+      return true;
+    }
+
+  private:
+    ~ReleaseRunnable()
+    {}
+  };
+
+  RefPtr<WorkerControlRunnable> runnable =
+    new ReleaseRunnable(mWorkerPrivate, this);
+  Unused << NS_WARN_IF(!runnable->Dispatch());
+}
+
+bool
+WorkerProxyToMainThreadRunnable::HoldWorker()
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  MOZ_ASSERT(!mWorkerHolder);
+
+  class SimpleWorkerHolder final : public WorkerHolder
+  {
+  public:
+    bool Notify(Status aStatus) override
+    {
+      // We don't care about the notification. We just want to keep the
+      // mWorkerPrivate alive.
+      return true;
+    }
+  };
+
+  UniquePtr<WorkerHolder> workerHolder(new SimpleWorkerHolder());
+  if (NS_WARN_IF(!workerHolder->HoldWorker(mWorkerPrivate, Canceling))) {
+    return false;
+  }
+
+  mWorkerHolder = Move(workerHolder);
+  return true;
+}
+
+void
+WorkerProxyToMainThreadRunnable::ReleaseWorker()
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  MOZ_ASSERT(mWorkerHolder);
+  mWorkerHolder = nullptr;
 }

@@ -5,10 +5,6 @@
 {
     # Everything below this is duplicated in the GN build. If you change
     # anything also change angle/BUILD.gn
-    'variables':
-    {
-        'angle_standalone%': 0,
-    },
     'targets':
     [
         {
@@ -21,7 +17,7 @@
             ],
             'includes':
             [
-                '../build/common_defines.gypi',
+                '../gyp/common_defines.gypi',
             ],
             'include_dirs':
             [

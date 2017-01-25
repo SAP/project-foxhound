@@ -13,6 +13,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/InternalMutationEvent.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
@@ -30,7 +31,6 @@
 #include "nsIScrollableFrame.h"
 #include "nsJSEnvironment.h"
 #include "nsLayoutUtils.h"
-#include "nsPerformance.h"
 #include "nsPIWindowRoot.h"
 #include "WorkerPrivate.h"
 
@@ -255,7 +255,7 @@ Event::IsChrome(JSContext* aCx) const
 }
 
 // nsIDOMEventInterface
-NS_METHOD
+NS_IMETHODIMP
 Event::GetType(nsAString& aType)
 {
   if (!mIsMainThreadEvent || !mEvent->mSpecifiedEventTypeString.IsEmpty()) {
@@ -291,7 +291,7 @@ Event::GetTarget() const
   return GetDOMEventTarget(mEvent->mTarget);
 }
 
-NS_METHOD
+NS_IMETHODIMP
 Event::GetTarget(nsIDOMEventTarget** aTarget)
 {
   NS_IF_ADDREF(*aTarget = GetTarget());
@@ -597,6 +597,8 @@ Event::InitEvent(const nsAString& aEventTypeArg,
   mEvent->mFlags.mDefaultPrevented = false;
   mEvent->mFlags.mDefaultPreventedByContent = false;
   mEvent->mFlags.mDefaultPreventedByChrome = false;
+  mEvent->mFlags.mPropagationStopped = false;
+  mEvent->mFlags.mImmediatePropagationStopped = false;
 
   // Clearing the old targets, so that the event is targeted correctly when
   // re-dispatching it.
@@ -1096,7 +1098,8 @@ Event::TimeStamp() const
     if (NS_WARN_IF(!win)) {
       return 0.0;
     }
-    nsPerformance* perf = win->GetPerformance();
+
+    Performance* perf = win->GetPerformance();
     if (NS_WARN_IF(!perf)) {
       return 0.0;
     }

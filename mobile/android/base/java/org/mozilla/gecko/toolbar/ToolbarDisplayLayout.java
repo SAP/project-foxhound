@@ -22,7 +22,7 @@ import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.animation.PropertyAnimator;
 import org.mozilla.gecko.animation.ViewHelper;
 import org.mozilla.gecko.toolbar.BrowserToolbarTabletBase.ForwardButtonAnimation;
-import org.mozilla.gecko.util.Experiments;
+import org.mozilla.gecko.Experiments;
 import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.widget.themed.ThemedLinearLayout;
@@ -115,7 +115,7 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
     private int mSecurityImageLevel;
 
     // Security level constants, which map to the icons / levels defined in:
-    // http://mxr.mozilla.org/mozilla-central/source/mobile/android/base/java/org/mozilla/gecko/resources/drawable/site_security_level.xml
+    // http://dxr.mozilla.org/mozilla-central/source/mobile/android/base/java/org/mozilla/gecko/resources/drawable/site_security_level.xml
     // Default level (unverified pages) - globe icon:
     private static final int LEVEL_DEFAULT_GLOBE = 0;
     // Levels for displaying Mixed Content state icons.
@@ -343,7 +343,7 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
             return url;
         }
 
-        return ReaderModeUtils.getUrlFromAboutReader(url);
+        return ReaderModeUtils.stripAboutReaderUrl(url);
     }
 
     private void updateSiteIdentity(@NonNull Tab tab) {
@@ -355,19 +355,16 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
         final MixedMode activeMixedMode;
         final MixedMode displayMixedMode;
         final TrackingMode trackingMode;
-        final boolean loginInsecure;
         if (siteIdentity == null) {
             securityMode = SecurityMode.UNKNOWN;
             activeMixedMode = MixedMode.UNKNOWN;
             displayMixedMode = MixedMode.UNKNOWN;
             trackingMode = TrackingMode.UNKNOWN;
-            loginInsecure = false;
         } else {
             securityMode = siteIdentity.getSecurityMode();
             activeMixedMode = siteIdentity.getMixedModeActive();
             displayMixedMode = siteIdentity.getMixedModeDisplay();
             trackingMode = siteIdentity.getTrackingMode();
-            loginInsecure = siteIdentity.loginInsecure();
         }
 
         // This is a bit tricky, but we have one icon and three potential indicators.
@@ -386,8 +383,6 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
         if (AboutPages.isTitlelessAboutPage(tab.getURL())) {
             // We always want to just show a search icon on about:home
             imageLevel = LEVEL_SEARCH_ICON;
-        } else if (loginInsecure) {
-            imageLevel = LEVEL_LOCK_DISABLED;
         } else if (trackingMode == TrackingMode.TRACKING_CONTENT_LOADED) {
             imageLevel = LEVEL_SHIELD_DISABLED;
         } else if (trackingMode == TrackingMode.TRACKING_CONTENT_BLOCKED) {

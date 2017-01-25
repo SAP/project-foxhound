@@ -12,6 +12,7 @@
 #endif
 #include "nsIAddonPolicyService.h"
 #include "nsIContentSecurityPolicy.h"
+#include "nsIEffectiveTLDService.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 
@@ -22,6 +23,7 @@
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
 
+#include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/ToJSValue.h"
@@ -45,6 +47,9 @@ PrincipalOriginAttributes::InheritFromDocShellToDoc(const DocShellOriginAttribut
   // Bug 1225349 - PrincipalOriginAttributes should inherit mSignedPkg
   // accordingly by URI
   mSignedPkg = aAttrs.mSignedPkg;
+
+  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
+  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
 
 void
@@ -56,6 +61,9 @@ PrincipalOriginAttributes::InheritFromNecko(const NeckoOriginAttributes& aAttrs)
   // addonId is computed from the principal URI and never propagated
   mUserContextId = aAttrs.mUserContextId;
   mSignedPkg = aAttrs.mSignedPkg;
+
+  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
+  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
 
 void
@@ -71,6 +79,9 @@ DocShellOriginAttributes::InheritFromDocToChildDocShell(const PrincipalOriginAtt
   // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
   // mSignedPkg accordingly by mSignedPkgInBrowser
   mSignedPkg = aAttrs.mSignedPkg;
+
+  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
+  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
 
 void
@@ -85,10 +96,15 @@ NeckoOriginAttributes::InheritFromDocToNecko(const PrincipalOriginAttributes& aA
   // TODO:
   // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
   // mSignedPkg accordingly by mSignedPkgInBrowser
+
+  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
+  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
 
 void
-NeckoOriginAttributes::InheritFromDocShellToNecko(const DocShellOriginAttributes& aAttrs)
+NeckoOriginAttributes::InheritFromDocShellToNecko(const DocShellOriginAttributes& aAttrs,
+                                                  const bool aIsTopLevelDocument,
+                                                  nsIURI* aURI)
 {
   mAppId = aAttrs.mAppId;
   mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
@@ -99,6 +115,26 @@ NeckoOriginAttributes::InheritFromDocShellToNecko(const DocShellOriginAttributes
   // TODO:
   // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
   // mSignedPkg accordingly by mSignedPkgInBrowser
+
+  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
+
+  bool isFirstPartyEnabled = IsFirstPartyEnabled();
+
+  // When the pref is on, we also compute the firstPartyDomain attribute
+  // if this is for top-level document.
+  if (isFirstPartyEnabled && aIsTopLevelDocument) {
+    nsCOMPtr<nsIEffectiveTLDService> tldService = do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
+    MOZ_ASSERT(tldService);
+    if (!tldService) {
+      return;
+    }
+
+    nsAutoCString baseDomain;
+    tldService->GetBaseDomain(aURI, 0, baseDomain);
+    mFirstPartyDomain = NS_ConvertUTF8toUTF16(baseDomain);
+  } else {
+    mFirstPartyDomain = aAttrs.mFirstPartyDomain;
+  }
 }
 
 void
@@ -145,6 +181,17 @@ OriginAttributes::CreateSuffix(nsACString& aStr) const
     params->Set(NS_LITERAL_STRING("signedPkg"), mSignedPkg);
   }
 
+  if (mPrivateBrowsingId) {
+    value.Truncate();
+    value.AppendInt(mPrivateBrowsingId);
+    params->Set(NS_LITERAL_STRING("privateBrowsingId"), value);
+  }
+
+  if (!mFirstPartyDomain.IsEmpty()) {
+    MOZ_RELEASE_ASSERT(mFirstPartyDomain.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) == kNotFound);
+    params->Set(NS_LITERAL_STRING("firstPartyDomain"), mFirstPartyDomain);
+  }
+
   aStr.Truncate();
 
   params->Serialize(value);
@@ -161,6 +208,18 @@ OriginAttributes::CreateSuffix(nsACString& aStr) const
 #endif
 }
 
+void
+OriginAttributes::CreateAnonymizedSuffix(nsACString& aStr) const
+{
+  OriginAttributes attrs = *this;
+
+  if (!attrs.mFirstPartyDomain.IsEmpty()) {
+    attrs.mFirstPartyDomain.AssignLiteral("_anonymizedFirstPartyDomain_");
+  }
+
+  attrs.CreateSuffix(aStr);
+}
+
 namespace {
 
 class MOZ_STACK_CLASS PopulateFromSuffixIterator final
@@ -171,6 +230,10 @@ public:
     : mOriginAttributes(aOriginAttributes)
   {
     MOZ_ASSERT(aOriginAttributes);
+    // If mPrivateBrowsingId is passed in as >0 and is not present in the suffix,
+    // then it will remain >0 when it should be 0 according to the suffix. Set to 0 before
+    // iterating to fix this.
+    mOriginAttributes->mPrivateBrowsingId = 0;
   }
 
   bool URLParamsIterator(const nsString& aName,
@@ -214,6 +277,22 @@ public:
     if (aName.EqualsLiteral("signedPkg")) {
       MOZ_RELEASE_ASSERT(mOriginAttributes->mSignedPkg.IsEmpty());
       mOriginAttributes->mSignedPkg.Assign(aValue);
+      return true;
+    }
+
+    if (aName.EqualsLiteral("privateBrowsingId")) {
+      nsresult rv;
+      int64_t val = aValue.ToInteger64(&rv);
+      NS_ENSURE_SUCCESS(rv, false);
+      NS_ENSURE_TRUE(val >= 0 && val <= UINT32_MAX, false);
+      mOriginAttributes->mPrivateBrowsingId = static_cast<uint32_t>(val);
+
+      return true;
+    }
+
+    if (aName.EqualsLiteral("firstPartyDomain")) {
+      MOZ_RELEASE_ASSERT(mOriginAttributes->mFirstPartyDomain.IsEmpty());
+      mOriginAttributes->mFirstPartyDomain.Assign(aValue);
       return true;
     }
 
@@ -262,6 +341,38 @@ OriginAttributes::PopulateFromOrigin(const nsACString& aOrigin,
   return PopulateFromSuffix(Substring(origin, pos));
 }
 
+void
+OriginAttributes::SyncAttributesWithPrivateBrowsing(bool aInPrivateBrowsing)
+{
+  mPrivateBrowsingId = aInPrivateBrowsing ? 1 : 0;
+}
+
+void
+OriginAttributes::SetFromGenericAttributes(const GenericOriginAttributes& aAttrs)
+{
+  mAppId = aAttrs.mAppId;
+  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
+  mAddonId = aAttrs.mAddonId;
+  mUserContextId = aAttrs.mUserContextId;
+  mSignedPkg = aAttrs.mSignedPkg;
+  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
+  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
+}
+
+bool
+OriginAttributes::IsFirstPartyEnabled()
+{
+  // Cache the privacy.firstparty.isolate pref.
+  static bool sFirstPartyIsolation = false;
+  static bool sCachedFirstPartyPref = false;
+  if (!sCachedFirstPartyPref) {
+    sCachedFirstPartyPref = true;
+    Preferences::AddBoolVarCache(&sFirstPartyIsolation, "privacy.firstparty.isolate");
+  }
+
+  return sFirstPartyIsolation;
+}
+
 BasePrincipal::BasePrincipal()
 {}
 
@@ -290,6 +401,16 @@ bool
 BasePrincipal::Subsumes(nsIPrincipal* aOther, DocumentDomainConsideration aConsideration)
 {
   MOZ_ASSERT(aOther);
+
+  // Expanded principals handle origin attributes for each of their
+  // sub-principals individually, null principals do only simple checks for
+  // pointer equality, and system principals are immune to origin attributes
+  // checks, so only do this check for codebase principals.
+  if (Kind() == eCodebasePrincipal &&
+      OriginAttributesRef() != Cast(aOther)->OriginAttributesRef()) {
+    return false;
+  }
+
   return SubsumesInternal(aOther, aConsideration);
 }
 
@@ -309,6 +430,22 @@ BasePrincipal::EqualsConsideringDomain(nsIPrincipal *aOther, bool *aResult)
   *aResult = Subsumes(aOther, ConsiderDocumentDomain) &&
              Cast(aOther)->Subsumes(this, ConsiderDocumentDomain);
   return NS_OK;
+}
+
+bool
+BasePrincipal::EqualsIgnoringAddonId(nsIPrincipal *aOther)
+{
+  MOZ_ASSERT(aOther);
+
+  // Note that this will not work for expanded principals, nor is it intended
+  // to.
+  if (!dom::ChromeUtils::IsOriginAttributesEqualIgnoringAddonId(
+          OriginAttributesRef(), Cast(aOther)->OriginAttributesRef())) {
+    return false;
+  }
+
+  return SubsumesInternal(aOther, DontConsiderDocumentDomain) &&
+         Cast(aOther)->SubsumesInternal(this, DontConsiderDocumentDomain);
 }
 
 NS_IMETHODIMP
@@ -530,6 +667,13 @@ BasePrincipal::GetUserContextId(uint32_t* aUserContextId)
 }
 
 NS_IMETHODIMP
+BasePrincipal::GetPrivateBrowsingId(uint32_t* aPrivateBrowsingId)
+{
+  *aPrivateBrowsingId = PrivateBrowsingId();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 BasePrincipal::GetIsInIsolatedMozBrowserElement(bool* aIsInIsolatedMozBrowserElement)
 {
   *aIsInIsolatedMozBrowserElement = IsInIsolatedMozBrowserElement();
@@ -541,6 +685,22 @@ BasePrincipal::GetUnknownAppId(bool* aUnknownAppId)
 {
   *aUnknownAppId = AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID;
   return NS_OK;
+}
+
+bool
+BasePrincipal::AddonHasPermission(const nsAString& aPerm)
+{
+  if (mOriginAttributes.mAddonId.IsEmpty()) {
+    return false;
+  }
+  nsCOMPtr<nsIAddonPolicyService> aps =
+    do_GetService("@mozilla.org/addons/policy-service;1");
+  NS_ENSURE_TRUE(aps, false);
+
+  bool retval = false;
+  nsresult rv = aps->AddonHasPermission(mOriginAttributes.mAddonId, aPerm, &retval);
+  NS_ENSURE_SUCCESS(rv, false);
+  return retval;
 }
 
 already_AddRefed<BasePrincipal>

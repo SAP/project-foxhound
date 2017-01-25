@@ -52,25 +52,19 @@ tasks:
       tags:
         createdForUser: {{owner}}
 
-      scopes:
-        - "queue:route:tc-treeherder-stage.nss.{{revision_hash}}"
-        - "queue:route:tc-treeherder.nss.{{revision_hash}}"
-        - "scheduler:extend-task-graph:*"
-        # mozilla-taskcluster will append the appropriate assume:repo:<repo>
-        # scope here.
-
       routes:
-        - "tc-treeherder-stage.nss.{{revision_hash}}"
-        - "tc-treeherder.nss.{{revision_hash}}"
+        - "tc-treeherder-stage.v2.{{project}}.{{revision}}.{{pushlog_id}}"
+        - "tc-treeherder.v2.{{project}}.{{revision}}.{{pushlog_id}}"
 
       payload:
-        image: "ttaubert/nss-ci:0.0.16"
+        image: ttaubert/nss-decision:0.0.2
 
         env:
           TC_OWNER: {{owner}}
           TC_SOURCE: {{{source}}}
-          TC_REVISION: '{{revision}}'
-          TC_REVISION_HASH: '{{revision_hash}}'
+          TC_PROJECT: {{project}}
+          TC_COMMENT: '{{comment}}'
+          NSS_PUSHLOG_ID: '{{pushlog_id}}'
           NSS_HEAD_REPOSITORY: '{{{url}}}'
           NSS_HEAD_REVISION: '{{revision}}'
 
@@ -83,20 +77,12 @@ tasks:
             bin/checkout.sh &&
             nss/automation/taskcluster/scripts/extend_task_graph.sh
 
-        artifacts:
-          public:
-            type: "directory"
-            path: "/home/worker/artifacts"
-            expires: "{{#from_now}}7 days{{/from_now}}"
-
-        graphs:
-          - /home/worker/artifacts/graph.json
+        features:
+          taskclusterProxy: true
 
       extra:
         treeherder:
           symbol: D
-          revision: '{{revision}}'
-          revision_hash: '{{revision_hash}}'
           build:
             platform: nss-decision
           machine:

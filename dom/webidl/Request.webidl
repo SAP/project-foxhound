@@ -25,6 +25,7 @@ interface Request {
   readonly attribute RequestCredentials credentials;
   readonly attribute RequestCache cache;
   readonly attribute RequestRedirect redirect;
+  readonly attribute DOMString integrity;
 
   [Throws,
    NewObject] Request clone();
@@ -45,6 +46,7 @@ dictionary RequestInit {
   RequestCredentials credentials;
   RequestCache cache;
   RequestRedirect redirect;
+  DOMString integrity;
 };
 
 // Gecko currently does not ship RequestContext, so please don't use it in IDL
@@ -59,6 +61,6 @@ enum RequestContext {
 
 enum RequestMode { "same-origin", "no-cors", "cors", "navigate" };
 enum RequestCredentials { "omit", "same-origin", "include" };
-enum RequestCache { "default", "no-store", "reload", "no-cache", "force-cache" };
+enum RequestCache { "default", "no-store", "reload", "no-cache", "force-cache", "only-if-cached" };
 enum RequestRedirect { "follow", "error", "manual" };
 enum ReferrerPolicy { "", "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin", "unsafe-url" };

@@ -12,7 +12,6 @@
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
 #include "mozilla/EventForwards.h"      // for Modifiers
 #include "nsISupportsImpl.h"
-#include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 
 namespace mozilla {
 
@@ -23,47 +22,45 @@ namespace layers {
 class GeckoContentController
 {
 public:
-  /**
-   * At least one class deriving from GeckoContentController needs to do
-   * synchronous cleanup on the main thread, so we use
-   * NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION.
-   */
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION(GeckoContentController)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GeckoContentController)
 
   /**
    * Requests a paint of the given FrameMetrics |aFrameMetrics| from Gecko.
    * Implementations per-platform are responsible for actually handling this.
-   * This method will always be called on the Gecko main thread.
+   *
+   * This method must always be called on the repaint thread, which depends
+   * on the GeckoContentController. For ChromeProcessController it is the
+   * Gecko main thread, while for RemoteContentController it is the compositor
+   * thread where it can send IPDL messages.
    */
   virtual void RequestContentRepaint(const FrameMetrics& aFrameMetrics) = 0;
 
   /**
-   * Requests handling of a double tap. |aPoint| is in CSS pixels, relative to
-   * the current scroll offset. This should eventually round-trip back to
-   * AsyncPanZoomController::ZoomToRect with the dimensions that we want to zoom
-   * to.
+   * Different types of tap-related events that can be sent in
+   * the HandleTap function. The names should be relatively self-explanatory.
+   * Note that the eLongTapUp will always be preceded by an eLongTap, but not
+   * all eLongTap notifications will be followed by an eLongTapUp (for instance,
+   * if the user moves their finger after triggering the long-tap but before
+   * lifting it).
    */
-  virtual void HandleDoubleTap(const CSSPoint& aPoint,
-                               Modifiers aModifiers,
-                               const ScrollableLayerGuid& aGuid) = 0;
+  enum class TapType {
+    eSingleTap,
+    eDoubleTap,
+    eLongTap,
+    eLongTapUp,
+
+    eSentinel,
+  };
 
   /**
-   * Requests handling a single tap. |aPoint| is in CSS pixels, relative to the
-   * current scroll offset. This should simulate and send to content a mouse
-   * button down, then mouse button up at |aPoint|.
-   */
-  virtual void HandleSingleTap(const CSSPoint& aPoint,
-                               Modifiers aModifiers,
-                               const ScrollableLayerGuid& aGuid) = 0;
-
-  /**
-   * Requests handling a long tap. |aPoint| is in CSS pixels, relative to the
+   * Requests handling of a tap event. |aPoint| is in LD pixels, relative to the
    * current scroll offset.
    */
-  virtual void HandleLongTap(const CSSPoint& aPoint,
-                             Modifiers aModifiers,
-                             const ScrollableLayerGuid& aGuid,
-                             uint64_t aInputBlockId) = 0;
+  virtual void HandleTap(TapType aType,
+                         const LayoutDevicePoint& aPoint,
+                         Modifiers aModifiers,
+                         const ScrollableLayerGuid& aGuid,
+                         uint64_t aInputBlockId) = 0;
 
   /**
    * Schedules a runnable to run on the controller/UI thread at some time
@@ -71,6 +68,16 @@ public:
    * This method must always be called on the controller thread.
    */
   virtual void PostDelayedTask(already_AddRefed<Runnable> aRunnable, int aDelayMs) = 0;
+
+  /**
+   * Returns true if we are currently on the thread that can send repaint requests.
+   */
+  virtual bool IsRepaintThread() = 0;
+
+  /**
+   * Runs the given task on the "repaint" thread.
+   */
+  virtual void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) = 0;
 
   /**
    * APZ uses |FrameMetrics::mCompositionBounds| for hit testing. Sometimes,
@@ -89,30 +96,33 @@ public:
     return false;
   }
 
-  enum APZStateChange {
+  enum class APZStateChange {
     /**
      * APZ started modifying the view (including panning, zooming, and fling).
      */
-    TransformBegin,
+    eTransformBegin,
     /**
      * APZ finished modifying the view.
      */
-    TransformEnd,
+    eTransformEnd,
     /**
      * APZ started a touch.
      * |aArg| is 1 if touch can be a pan, 0 otherwise.
      */
-    StartTouch,
+    eStartTouch,
     /**
      * APZ started a pan.
      */
-    StartPanning,
+    eStartPanning,
     /**
      * APZ finished processing a touch.
      * |aArg| is 1 if touch was a click, 0 otherwise.
      */
-    EndTouch,
-    APZStateChangeSentinel
+    eEndTouch,
+
+    // Sentinel value for IPC, this must be the last item in the enum and
+    // should not be used as an actual message value.
+    eSentinel
   };
   /**
    * General notices of APZ state changes for consumers.
@@ -136,12 +146,12 @@ public:
    */
   virtual void NotifyFlushComplete() = 0;
 
-  virtual void UpdateOverscrollVelocity(const float aX, const float aY) {}
-  virtual void UpdateOverscrollOffset(const float aX, const float aY) {}
-  virtual void SetScrollingRootContent(const bool isRootContent) {}
+  virtual void UpdateOverscrollVelocity(float aX, float aY, bool aIsRootContent) {}
+  virtual void UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent) {}
+  virtual void SetScrollingRootContent(bool isRootContent) {}
 
   GeckoContentController() {}
-  virtual void ChildAdopted() {}
+
   /**
    * Needs to be called on the main thread.
    */

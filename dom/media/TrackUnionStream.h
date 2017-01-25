@@ -7,6 +7,7 @@
 #define MOZILLA_TRACKUNIONSTREAM_H_
 
 #include "MediaStreamGraph.h"
+#include "nsAutoPtr.h"
 #include <algorithm>
 
 namespace mozilla {
@@ -16,12 +17,20 @@ namespace mozilla {
  */
 class TrackUnionStream : public ProcessedMediaStream {
 public:
-  explicit TrackUnionStream(DOMMediaStream* aWrapper);
+  explicit TrackUnionStream();
+
+  virtual TrackUnionStream* AsTrackUnionStream() override { return this; }
+  friend class DOMMediaStream;
 
   void RemoveInput(MediaInputPort* aPort) override;
   void ProcessInput(GraphTime aFrom, GraphTime aTo, uint32_t aFlags) override;
 
-  void SetTrackEnabledImpl(TrackID aTrackID, bool aEnabled) override;
+  void SetTrackEnabledImpl(TrackID aTrackID, DisabledTrackMode aMode) override;
+
+  MediaStream* GetInputStreamFor(TrackID aTrackID) override;
+  TrackID GetInputTrackIDFor(TrackID aTrackID) override;
+
+  friend class MediaStreamGraphImpl;
 
 protected:
   // Only non-ended tracks are allowed to persist in this map.
@@ -49,7 +58,7 @@ protected:
     // These are direct track listeners that have been added to this
     // TrackUnionStream-track and forwarded to the input track. We will update
     // these when this track's disabled status changes.
-    nsTArray<RefPtr<MediaStreamTrackDirectListener>> mOwnedDirectListeners;
+    nsTArray<RefPtr<DirectMediaStreamTrackListener>> mOwnedDirectListeners;
   };
 
   // Add the track to this stream, retaining its TrackID if it has never
@@ -61,9 +70,9 @@ protected:
                      uint32_t aMapIndex, GraphTime aFrom, GraphTime aTo,
                      bool* aOutputTrackFinished);
 
-  void AddDirectTrackListenerImpl(already_AddRefed<MediaStreamTrackDirectListener> aListener,
+  void AddDirectTrackListenerImpl(already_AddRefed<DirectMediaStreamTrackListener> aListener,
                                   TrackID aTrackID) override;
-  void RemoveDirectTrackListenerImpl(MediaStreamTrackDirectListener* aListener,
+  void RemoveDirectTrackListenerImpl(DirectMediaStreamTrackListener* aListener,
                                      TrackID aTrackID) override;
 
   nsTArray<TrackMapEntry> mTrackMap;
@@ -77,7 +86,7 @@ protected:
 
   // Direct track listeners that have not been forwarded to their input stream
   // yet. We'll forward these as their inputs become available.
-  nsTArray<TrackBound<MediaStreamTrackDirectListener>> mPendingDirectTrackListeners;
+  nsTArray<TrackBound<DirectMediaStreamTrackListener>> mPendingDirectTrackListeners;
 };
 
 } // namespace mozilla

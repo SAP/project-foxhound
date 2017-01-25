@@ -27,8 +27,6 @@ ContentBridgeParent::ContentBridgeParent(Transport* aTransport)
 
 ContentBridgeParent::~ContentBridgeParent()
 {
-  RefPtr<DeleteTask<Transport>> task = new DeleteTask<Transport>(mTransport);
-  XRE_GetIOMessageLoop()->PostTask(task.forget());
 }
 
 void
@@ -193,6 +191,30 @@ ContentBridgeParent::Observe(nsISupports* aSubject,
     Close();
   }
   return NS_OK;
+}
+
+PFileDescriptorSetParent*
+ContentBridgeParent::AllocPFileDescriptorSetParent(const FileDescriptor& aFD)
+{
+  return nsIContentParent::AllocPFileDescriptorSetParent(aFD);
+}
+
+bool
+ContentBridgeParent::DeallocPFileDescriptorSetParent(PFileDescriptorSetParent* aActor)
+{
+  return nsIContentParent::DeallocPFileDescriptorSetParent(aActor);
+}
+
+PSendStreamParent*
+ContentBridgeParent::AllocPSendStreamParent()
+{
+  return nsIContentParent::AllocPSendStreamParent();
+}
+
+bool
+ContentBridgeParent::DeallocPSendStreamParent(PSendStreamParent* aActor)
+{
+  return nsIContentParent::DeallocPSendStreamParent(aActor);
 }
 
 } // namespace dom

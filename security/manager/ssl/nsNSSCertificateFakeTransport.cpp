@@ -5,13 +5,13 @@
 
 #include "nsNSSCertificateFakeTransport.h"
 
+#include "mozilla/Assertions.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsISupportsPrimitives.h"
 #include "nsNSSCertificate.h"
 #include "nsString.h"
-#include "nsXPIDLString.h"
 
 NS_IMPL_ISUPPORTS(nsNSSCertificateFakeTransport,
                   nsIX509Cert,
@@ -25,9 +25,7 @@ nsNSSCertificateFakeTransport::nsNSSCertificateFakeTransport()
 
 nsNSSCertificateFakeTransport::~nsNSSCertificateFakeTransport()
 {
-  if (mCertSerialization) {
-    SECITEM_FreeItem(mCertSerialization, true);
-  }
+  mCertSerialization = nullptr;
 }
 
 NS_IMETHODIMP
@@ -185,17 +183,9 @@ nsNSSCertificateFakeTransport::GetValidity(nsIX509CertValidity**)
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetUsagesArray(bool, uint32_t*, uint32_t*,
-                                              char16_t***)
+nsNSSCertificateFakeTransport::GetKeyUsages(nsAString&)
 {
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetUsagesString(bool, uint32_t*, nsAString&)
-{
-  NS_NOTREACHED("Unimplemented on content process");
+  MOZ_ASSERT_UNREACHABLE("Unimplemented on content process");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -271,10 +261,11 @@ nsNSSCertificateFakeTransport::Read(nsIObjectInputStream* aStream)
   // On a non-chrome process we cannot instatiate mCert because we lack
   // nsNSSComponent. nsNSSCertificateFakeTransport object is used only to
   // carry the certificate serialization.
-
-  mCertSerialization = SECITEM_AllocItem(nullptr, nullptr, len);
-  if (!mCertSerialization)
-      return NS_ERROR_OUT_OF_MEMORY;
+  mCertSerialization =
+    mozilla::UniqueSECItem(SECITEM_AllocItem(nullptr, nullptr, len));
+  if (!mCertSerialization) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
   PORT_Memcpy(mCertSerialization->data, str.Data(), len);
 
   return NS_OK;
@@ -350,14 +341,6 @@ nsNSSCertificateFakeTransport::GetIsSelfSigned(bool*)
 
 NS_IMETHODIMP
 nsNSSCertificateFakeTransport::GetIsBuiltInRoot(bool* aIsBuiltInRoot)
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsNSSCertificateFakeTransport::RequestUsagesArrayAsync(
-  nsICertVerificationListener*)
 {
   NS_NOTREACHED("Unimplemented on content process");
   return NS_ERROR_NOT_IMPLEMENTED;

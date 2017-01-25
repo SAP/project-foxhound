@@ -26,7 +26,6 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Services.h"
 
-#include "gfxASurface.h"
 #include "gfxXlibSurface.h"
 #include "gfxContext.h"
 #include "nsImageToPixbuf.h"
@@ -238,8 +237,8 @@ OnSourceGrabEventAfter(GtkWidget *widget, GdkEvent *event, gpointer user_data)
         // the eDragEnd event.
         nsDragService *dragService = static_cast<nsDragService*>(user_data);
         gint scale = nsScreenGtk::GetGtkMonitorScaleFactor();
-        LayoutDeviceIntPoint p(floor(event->motion.x_root * scale + 0.5),
-                               floor(event->motion.y_root * scale + 0.5));
+        auto p = LayoutDeviceIntPoint::Round(event->motion.x_root * scale,
+                                             event->motion.y_root * scale);
         dragService->SetDragEndPoint(p);
     } else if (sMotionEvent && (event->type == GDK_KEY_PRESS ||
                                 event->type == GDK_KEY_RELEASE)) {
@@ -303,7 +302,9 @@ NS_IMETHODIMP
 nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
                                  nsISupportsArray * aArrayTransferables,
                                  nsIScriptableRegion * aRegion,
-                                 uint32_t aActionType)
+                                 uint32_t aActionType,
+                                 nsContentPolicyType aContentPolicyType =
+                                   nsIContentPolicy::TYPE_OTHER)
 {
     MOZ_LOG(sDragLm, LogLevel::Debug, ("nsDragService::InvokeDragSession"));
 
@@ -315,7 +316,8 @@ nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
         return NS_ERROR_NOT_AVAILABLE;
 
     return nsBaseDragService::InvokeDragSession(aDOMNode, aArrayTransferables,
-                                                aRegion, aActionType);
+                                                aRegion, aActionType,
+                                                aContentPolicyType);
 }
 
 // nsBaseDragService
@@ -436,16 +438,11 @@ nsDragService::SetAlphaPixmap(SourceSurface *aSurface,
 
     gdk_drawable_set_colormap(GDK_DRAWABLE(pixmap), alphaColormap);
 
-    // Make a gfxXlibSurface wrapped around the pixmap to render on
-    RefPtr<gfxASurface> xPixmapSurface =
-         nsWindow::GetSurfaceForGdkDrawable(GDK_DRAWABLE(pixmap),
-                                            dragRect.Size());
-    if (!xPixmapSurface)
-      return false;
-
+    // Make a DrawTarget wrapped around the pixmap to render on
     RefPtr<DrawTarget> dt =
-    gfxPlatform::GetPlatform()->
-      CreateDrawTargetForSurface(xPixmapSurface, IntSize(dragRect.width, dragRect.height));
+         nsWindow::GetDrawTargetForGdkDrawable(GDK_DRAWABLE(pixmap),
+                                               IntSize(dragRect.width,
+                                                       dragRect.height));
     if (!dt)
       return false;
 
@@ -482,8 +479,8 @@ nsDragService::SetAlphaPixmap(SourceSurface *aSurface,
     if (!surf)
         return false;
 
-    RefPtr<DrawTarget> dt = gfxPlatform::GetPlatform()->
-        CreateDrawTargetForData(cairo_image_surface_get_data(surf),
+    RefPtr<DrawTarget> dt = gfxPlatform::CreateDrawTargetForData(
+                                cairo_image_surface_get_data(surf),
                                 dragRect.Size(),
                                 cairo_image_surface_get_stride(surf),
                                 SurfaceFormat::B8G8R8A8);

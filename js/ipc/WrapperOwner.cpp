@@ -7,7 +7,7 @@
 
 #include "WrapperOwner.h"
 #include "JavaScriptLogging.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "jsfriendapi.h"
 #include "js/CharacterEncoding.h"
@@ -50,9 +50,8 @@ struct AuxCPOWData
     {}
 };
 
-WrapperOwner::WrapperOwner(JSRuntime* rt)
-  : JavaScriptShared(rt),
-    inactive_(false)
+WrapperOwner::WrapperOwner()
+  : inactive_(false)
 {
 }
 
@@ -91,7 +90,7 @@ WrapperOwner::idOf(JSObject* obj)
 class CPOWProxyHandler : public BaseProxyHandler
 {
   public:
-    MOZ_CONSTEXPR CPOWProxyHandler()
+    constexpr CPOWProxyHandler()
       : BaseProxyHandler(&family) {}
 
     virtual bool finalizeInBackground(Value priv) const override {
@@ -126,8 +125,7 @@ class CPOWProxyHandler : public BaseProxyHandler
                                               AutoIdVector& props) const override;
     virtual bool hasInstance(JSContext* cx, HandleObject proxy,
                              MutableHandleValue v, bool* bp) const override;
-    virtual bool getBuiltinClass(JSContext* cx, HandleObject obj,
-                                 js::ESClassValue* classValue) const override;
+    virtual bool getBuiltinClass(JSContext* cx, HandleObject obj, js::ESClass* cls) const override;
     virtual bool isArray(JSContext* cx, HandleObject obj,
                          IsArrayAnswer* answer) const override;
     virtual const char* className(JSContext* cx, HandleObject proxy) const override;
@@ -729,23 +727,21 @@ WrapperOwner::hasInstance(JSContext* cx, HandleObject proxy, MutableHandleValue 
 }
 
 bool
-CPOWProxyHandler::getBuiltinClass(JSContext* cx, HandleObject proxy,
-                                  js::ESClassValue* classValue) const
+CPOWProxyHandler::getBuiltinClass(JSContext* cx, HandleObject proxy, ESClass* cls) const
 {
-    FORWARD(getBuiltinClass, (cx, proxy, classValue));
+    FORWARD(getBuiltinClass, (cx, proxy, cls));
 }
 
 bool
-WrapperOwner::getBuiltinClass(JSContext* cx, HandleObject proxy,
-                              js::ESClassValue* classValue)
+WrapperOwner::getBuiltinClass(JSContext* cx, HandleObject proxy, ESClass* cls)
 {
     ObjectId objId = idOf(proxy);
 
-    uint32_t cls = ESClass_Other;
+    uint32_t classValue = uint32_t(ESClass::Other);
     ReturnStatus status;
-    if (!SendGetBuiltinClass(objId, &status, &cls))
+    if (!SendGetBuiltinClass(objId, &status, &classValue))
         return ipcfail(cx);
-    *classValue = ESClassValue(cls);
+    *cls = ESClass(classValue);
 
     LOG_STACK();
 
@@ -1078,6 +1074,11 @@ WrapperOwner::ok(JSContext* cx, const ReturnStatus& status)
 
     if (status.type() == ReturnStatus::TReturnStopIteration)
         return JS_ThrowStopIteration(cx);
+
+    if (status.type() == ReturnStatus::TReturnDeadCPOW) {
+        JS_ReportError(cx, "operation not possible on dead CPOW");
+        return false;
+    }
 
     RootedValue exn(cx);
     if (!fromVariant(cx, status.get_ReturnException().exn(), &exn))

@@ -28,6 +28,8 @@ function AddonPolicyService()
 {
   this.wrappedJSObject = this;
   this.cspStrings = new Map();
+  this.backgroundPageUrlCallbacks = new Map();
+  this.checkHasPermissionCallbacks = new Map();
   this.mayLoadURICallbacks = new Map();
   this.localizeCallbacks = new Map();
 
@@ -53,6 +55,27 @@ AddonPolicyService.prototype = {
   getAddonCSP(aAddonId) {
     let csp = this.cspStrings.get(aAddonId);
     return csp || this.defaultCSP;
+  },
+
+  /**
+   * Returns the generated background page as a data-URI, if any. If the addon
+   * does not have an auto-generated background page, an empty string is
+   * returned.
+   */
+  getGeneratedBackgroundPageUrl(aAddonId) {
+    let cb = this.backgroundPageUrlCallbacks.get(aAddonId);
+    return cb && cb(aAddonId) || '';
+  },
+
+  /*
+   * Invokes a callback (if any) associated with the addon to determine whether
+   * the addon is granted the |aPerm| API permission.
+   *
+   * @see nsIAddonPolicyService.addonHasPermission
+   */
+  addonHasPermission(aAddonId, aPerm) {
+    let cb = this.checkHasPermissionCallbacks.get(aAddonId);
+    return cb ? cb(aPerm) : false;
   },
 
   /*
@@ -109,6 +132,19 @@ AddonPolicyService.prototype = {
   },
 
   /*
+   * Sets the callbacks used in addonHasPermission above. Not accessible over
+   * XPCOM - callers should use .wrappedJSObject on the service to call it
+   * directly.
+   */
+  setAddonHasPermissionCallback(aAddonId, aCallback) {
+    if (aCallback) {
+      this.checkHasPermissionCallbacks.set(aAddonId, aCallback);
+    } else {
+      this.checkHasPermissionCallbacks.delete(aAddonId);
+    }
+  },
+
+  /*
    * Sets the callbacks used in addonMayLoadURI above. Not accessible over
    * XPCOM - callers should use .wrappedJSObject on the service to call it
    * directly.
@@ -131,6 +167,17 @@ AddonPolicyService.prototype = {
       this.cspStrings.set(aAddonId, aCSPString);
     } else {
       this.cspStrings.delete(aAddonId);
+    }
+  },
+
+  /**
+   * Set the callback that generates a data-URL for the background page.
+   */
+  setBackgroundPageUrlCallback(aAddonId, aCallback) {
+    if (aCallback) {
+      this.backgroundPageUrlCallbacks.set(aAddonId, aCallback);
+    } else {
+      this.backgroundPageUrlCallbacks.delete(aAddonId);
     }
   },
 

@@ -42,6 +42,7 @@ class Date;
 class DispatchChangeEventCallback;
 class File;
 class FileList;
+class FileSystemEntry;
 class GetFilesHelper;
 
 /**
@@ -120,8 +121,11 @@ public:
   using nsIConstraintValidation::Validity;
   using nsGenericHTMLFormElementWithState::GetForm;
 
+  enum class FromClone { no, yes };
+
   HTMLInputElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
-                   mozilla::dom::FromParser aFromParser);
+                   mozilla::dom::FromParser aFromParser,
+                   FromClone aFromClone = FromClone::no);
 
   NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLInputElement, input)
 
@@ -133,8 +137,16 @@ public:
   virtual void Blur(ErrorResult& aError) override;
   virtual void Focus(ErrorResult& aError) override;
 
+  // nsINode
+#if !defined(ANDROID) && !defined(XP_MACOSX)
+  virtual bool IsNodeApzAwareInternal() const override;
+#endif
+
   // Element
   virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
+
+  // EventTarget
+  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
   // nsIDOMHTMLInputElement
   NS_DECL_NSIDOMHTMLINPUTELEMENT
@@ -153,7 +165,7 @@ public:
   // Overriden nsIFormControl methods
   NS_IMETHOD_(uint32_t) GetType() const override { return mType; }
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission) override;
+  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
   NS_IMETHOD SaveState() override;
   virtual bool RestoreState(nsPresState* aState) override;
   virtual bool AllowDrop() override;
@@ -223,7 +235,7 @@ public:
   NS_IMETHOD_(void) UpdatePlaceholderVisibility(bool aNotify) override;
   NS_IMETHOD_(bool) GetPlaceholderVisibility() override;
   NS_IMETHOD_(void) InitializeKeyboardEventListeners() override;
-  NS_IMETHOD_(void) OnValueChanged(bool aNotify) override;
+  NS_IMETHOD_(void) OnValueChanged(bool aNotify, bool aWasInteractiveUserChange) override;
   NS_IMETHOD_(bool) HasCachedSelection() override;
 
   void GetDisplayFileName(nsAString& aFileName) const;
@@ -236,6 +248,10 @@ public:
   void SetFilesOrDirectories(const nsTArray<OwningFileOrDirectory>& aFilesOrDirectories,
                              bool aSetValueChanged);
   void SetFiles(nsIDOMFileList* aFiles, bool aSetValueChanged);
+
+  // This method is used for test only. Onces the data is set, a 'change' event
+  // is dispatched.
+  void MozSetDndFilesAndDirectories(const nsTArray<OwningFileOrDirectory>& aSequence);
 
   // Called when a nsIFilePicker or a nsIColorPicker terminate.
   void PickerClosed();
@@ -254,7 +270,7 @@ public:
    *
    * @return the selected button (or null).
    */
-  already_AddRefed<nsIDOMHTMLInputElement> GetSelectedRadioButton();
+  already_AddRefed<nsIDOMHTMLInputElement> GetSelectedRadioButton() const;
 
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
 
@@ -266,6 +282,9 @@ public:
   // which directory was last used on a site-by-site basis
   static void InitUploadLastDir();
   static void DestroyUploadLastDir();
+
+  //If the valueAsDate attribute should be enabled in webIDL
+  static bool ValueAsDateEnabled(JSContext* cx, JSObject* obj);
 
   void MaybeLoadImage();
 
@@ -293,6 +312,7 @@ public:
 
   // nsIConstraintValidation
   bool     IsTooLong();
+  bool     IsTooShort();
   bool     IsValueMissing() const;
   bool     HasTypeMismatch() const;
   bool     HasPatternMismatch() const;
@@ -301,6 +321,7 @@ public:
   bool     HasStepMismatch(bool aUseZeroIfValueNaN = false) const;
   bool     HasBadInput() const;
   void     UpdateTooLongValidityState();
+  void     UpdateTooShortValidityState();
   void     UpdateValueMissingValidityState();
   void     UpdateTypeMismatchValidityState();
   void     UpdatePatternMismatchValidityState();
@@ -521,12 +542,29 @@ public:
 
   void SetMaxLength(int32_t aValue, ErrorResult& aRv)
   {
-    if (aValue < 0) {
+    int32_t minLength = MinLength();
+    if (aValue < 0 || (minLength >= 0 && aValue < minLength)) {
       aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
       return;
     }
 
     SetHTMLIntAttr(nsGkAtoms::maxlength, aValue, aRv);
+  }
+
+  int32_t MinLength() const
+  {
+    return GetIntAttr(nsGkAtoms::minlength, -1);
+  }
+
+  void SetMinLength(int32_t aValue, ErrorResult& aRv)
+  {
+    int32_t maxLength = MaxLength();
+    if (aValue < 0 || (maxLength >= 0 && aValue > maxLength)) {
+      aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+      return;
+    }
+
+    SetHTMLIntAttr(nsGkAtoms::minlength, aValue, aRv);
   }
 
   // XPCOM GetMin() is OK
@@ -614,13 +652,6 @@ public:
   void SetType(const nsAString& aValue, ErrorResult& aRv)
   {
     SetHTMLAttr(nsGkAtoms::type, aValue, aRv);
-    if (aValue.EqualsLiteral("number")) {
-      // For NS_FORM_INPUT_NUMBER we rely on having frames to process key
-      // events. Make sure we have them in case someone changes the type of
-      // this element to "number" and then expects to be able to send key
-      // events to it (type changes are rare, so not a big perf issue):
-      FlushFrames();
-    }
   }
 
   // XPCOM GetDefaultValue() is OK
@@ -629,7 +660,7 @@ public:
     SetHTMLAttr(nsGkAtoms::value, aValue, aRv);
   }
 
-  // XPCOM GetValue() is OK
+  void GetValue(nsAString& aValue, ErrorResult& aRv);
   void SetValue(const nsAString& aValue, ErrorResult& aRv);
 
   Nullable<Date> GetValueAsDate(ErrorResult& aRv);
@@ -675,11 +706,11 @@ public:
 
   // XPCOM Select() is OK
 
-  int32_t GetSelectionStart(ErrorResult& aRv);
-  void SetSelectionStart(int32_t aValue, ErrorResult& aRv);
+  Nullable<int32_t> GetSelectionStart(ErrorResult& aRv);
+  void SetSelectionStart(const Nullable<int32_t>& aValue, ErrorResult& aRv);
 
-  int32_t GetSelectionEnd(ErrorResult& aRv);
-  void SetSelectionEnd(int32_t aValue, ErrorResult& aRv);
+  Nullable<int32_t> GetSelectionEnd(ErrorResult& aRv);
+  void SetSelectionEnd(const Nullable<int32_t>& aValue, ErrorResult& aRv);
 
   void GetSelectionDirection(nsAString& aValue, ErrorResult& aRv);
   void SetSelectionDirection(const nsAString& aValue, ErrorResult& aRv);
@@ -695,14 +726,14 @@ public:
                     ErrorResult& aRv, int32_t aSelectionStart = -1,
                     int32_t aSelectionEnd = -1);
 
-  bool DirectoryAttr() const
+  bool Allowdirs() const
   {
-    return HasAttr(kNameSpaceID_None, nsGkAtoms::directory);
+    return HasAttr(kNameSpaceID_None, nsGkAtoms::allowdirs);
   }
 
-  void SetDirectoryAttr(bool aValue, ErrorResult& aRv)
+  void SetAllowdirs(bool aValue, ErrorResult& aRv)
   {
-    SetHTMLBoolAttr(nsGkAtoms::directory, aValue, aRv);
+    SetHTMLBoolAttr(nsGkAtoms::allowdirs, aValue, aRv);
   }
 
   bool WebkitDirectoryAttr() const
@@ -714,6 +745,8 @@ public:
   {
     SetHTMLBoolAttr(nsGkAtoms::webkitdirectory, aValue, aRv);
   }
+
+  void GetWebkitEntries(nsTArray<RefPtr<FileSystemEntry>>& aSequence);
 
   bool IsFilesAndDirectoriesSupported() const;
 
@@ -790,6 +823,8 @@ public:
    * it will return a Decimal for which Decimal::isFinite() will return false.
    */
   static Decimal StringToDecimal(const nsAString& aValue);
+
+  void UpdateEntries(const nsTArray<OwningFileOrDirectory>& aFilesOrDirectories);
 
 protected:
   virtual ~HTMLInputElement();
@@ -956,7 +991,6 @@ protected:
    * This method can explore the directory recursively if needed.
    */
   void AfterSetFilesOrDirectories(bool aSetValueChanged);
-  void AfterSetFilesOrDirectoriesInternal(bool aSetValueChanged);
 
   /**
    * Recursively explore the directory and populate mFileOrDirectories correctly
@@ -1007,7 +1041,11 @@ protected:
   /**
    * Returns if the step attribute apply for the current type.
    */
-  bool DoesStepApply() const { return DoesMinMaxApply(); }
+  bool DoesStepApply() const
+  {
+    // TODO: this is temporary until bug 888316 is fixed.
+    return DoesMinMaxApply() && mType != NS_FORM_INPUT_WEEK;
+  }
 
   /**
    * Returns if stepDown and stepUp methods apply for the current type.
@@ -1017,7 +1055,11 @@ protected:
   /**
    * Returns if valueAsNumber attribute applies for the current type.
    */
-  bool DoesValueAsNumberApply() const { return DoesMinMaxApply(); }
+  bool DoesValueAsNumberApply() const
+  {
+    // TODO: this is temporary until bug 888316 is fixed.
+    return DoesMinMaxApply() && mType != NS_FORM_INPUT_WEEK;
+  }
 
   /**
    * Returns if autocomplete attribute applies for the current type.
@@ -1025,9 +1067,9 @@ protected:
   bool DoesAutocompleteApply() const;
 
   /**
-   * Returns if the maxlength attribute applies for the current type.
+   * Returns if the minlength or maxlength attributes apply for the current type.
    */
-  bool MaxLengthApplies() const { return IsSingleLineTextControl(false, mType); }
+  bool MinOrMaxLengthApplies() const { return IsSingleLineTextControl(false, mType); }
 
   void FreeData();
   nsTextEditorState *GetEditorState() const;
@@ -1129,6 +1171,22 @@ protected:
   bool IsValidSimpleColor(const nsAString& aValue) const;
 
   /**
+   * Parse a week string of the form yyyy-Www
+   * @param the string to be parsed.
+   * @return whether the string is a valid week.
+   * Note : this function does not consider the empty string as valid.
+   */
+  bool IsValidWeek(const nsAString& aValue) const;
+
+  /**
+   * Parse a month string of the form yyyy-mm
+   * @param the string to be parsed.
+   * @return whether the string is a valid month.
+   * Note : this function does not consider the empty string as valid.
+   */
+  bool IsValidMonth(const nsAString& aValue) const;
+
+  /**
    * Parse a date string of the form yyyy-mm-dd
    * @param the string to be parsed.
    * @return whether the string is a valid date.
@@ -1137,20 +1195,74 @@ protected:
   bool IsValidDate(const nsAString& aValue) const;
 
   /**
+   * Parse a year string of the form yyyy
+   *
+   * @param the string to be parsed.
+   *
+   * @return the year in aYear.
+   * @return whether the parsing was successful.
+   */
+  bool ParseYear(const nsAString& aValue, uint32_t* aYear) const;
+
+  /**
+   * Parse a month string of the form yyyy-mm
+   *
+   * @param the string to be parsed.
+   * @return the year and month in aYear and aMonth.
+   * @return whether the parsing was successful.
+   */
+  bool ParseMonth(const nsAString& aValue,
+                  uint32_t* aYear,
+                  uint32_t* aMonth) const;
+
+  /**
+   * Parse a week string of the form yyyy-Www
+   *
+   * @param the string to be parsed.
+   * @return the year and week in aYear and aWeek.
+   * @return whether the parsing was successful.
+   */
+  bool ParseWeek(const nsAString& aValue,
+                 uint32_t* aYear,
+                 uint32_t* aWeek) const;
+  /**
    * Parse a date string of the form yyyy-mm-dd
+   *
    * @param the string to be parsed.
    * @return the date in aYear, aMonth, aDay.
    * @return whether the parsing was successful.
    */
-  bool GetValueAsDate(const nsAString& aValue,
-                      uint32_t* aYear,
-                      uint32_t* aMonth,
-                      uint32_t* aDay) const;
+  bool ParseDate(const nsAString& aValue,
+                 uint32_t* aYear,
+                 uint32_t* aMonth,
+                 uint32_t* aDay) const;
 
   /**
    * This methods returns the number of days in a given month, for a given year.
    */
   uint32_t NumberOfDaysInMonth(uint32_t aMonth, uint32_t aYear) const;
+
+  /**
+   * This methods returns the number of months between January 1970 and the
+   * given year and month.
+   */
+  int32_t MonthsSinceJan1970(uint32_t aYear, uint32_t aMonth) const;
+
+  /**
+   * This methods returns the day of the week given a date, note that 0 = Sunday.
+   */
+  uint32_t DayOfWeek(uint32_t aYear, uint32_t aMonth, uint32_t aDay) const;
+
+  /**
+   * This methods returns the maximum number of week in a given year, the
+   * result is either 52 or 53.
+   */
+  uint32_t MaximumWeekInYear(uint32_t aYear) const;
+
+  /**
+   * This methods returns true if it's a leap year.
+   */
+  bool IsLeapYear(uint32_t aYear) const;
 
   /**
    * Returns whether aValue is a valid time as described by HTML specifications:
@@ -1239,10 +1351,13 @@ protected:
   /**
    * Returns if the current type is an experimental mobile type.
    */
-  static bool IsExperimentalMobileType(uint8_t aType)
-  {
-    return aType == NS_FORM_INPUT_DATE || aType == NS_FORM_INPUT_TIME;
-  }
+  static bool IsExperimentalMobileType(uint8_t aType);
+
+  /*
+   * Returns if the current type is one of the date/time input types: date,
+   * time and month. TODO: week and datetime-local.
+   */
+  static bool IsDateTimeInputType(uint8_t aType);
 
   /**
    * Flushes the layout frame tree to make sure we have up-to-date frames.
@@ -1269,6 +1384,7 @@ protected:
   };
   nsresult InitFilePicker(FilePickerType aType);
   nsresult InitColorPicker();
+  nsresult InitDatePicker();
 
   /**
    * Use this function before trying to open a picker.
@@ -1283,6 +1399,17 @@ protected:
                                             ErrorResult& aRv);
 
   void ClearGetFilesHelpers();
+
+  /**
+   * nsINode::SetMayBeApzAware() will be invoked in this function if necessary 
+   * to prevent default action of APZC so that we can increase/decrease the
+   * value of this InputElement when mouse wheel event comes without scrolling
+   * the page.
+   *
+   * SetMayBeApzAware() will set flag MayBeApzAware which is checked by apzc to
+   * decide whether to add this element into its dispatch-to-content region.
+   */
+  void UpdateApzAwareFlag();
 
   nsCOMPtr<nsIControllers> mControllers;
 
@@ -1320,14 +1447,13 @@ protected:
   RefPtr<GetFilesHelper> mGetFilesRecursiveHelper;
   RefPtr<GetFilesHelper> mGetFilesNonRecursiveHelper;
 
-#ifndef MOZ_CHILD_PERMISSIONS
   /**
    * Hack for bug 1086684: Stash the .value when we're a file picker.
    */
   nsString mFirstFilePath;
-#endif
 
   RefPtr<FileList>  mFileList;
+  Sequence<RefPtr<FileSystemEntry>> mEntries;
 
   nsString mStaticDocFileList;
 
@@ -1358,6 +1484,7 @@ protected:
   static const Decimal kStepScaleFactorDate;
   static const Decimal kStepScaleFactorNumberRange;
   static const Decimal kStepScaleFactorTime;
+  static const Decimal kStepScaleFactorMonth;
 
   // Default step base value when a type do not have specific one.
   static const Decimal kDefaultStepBase;
@@ -1369,6 +1496,13 @@ protected:
   // Float value returned by GetStep() when the step attribute is set to 'any'.
   static const Decimal kStepAny;
 
+  // Maximum year limited by ECMAScript date object range, year <= 275760.
+  static const double kMaximumYear;
+  // Minimum year limited by HTML standard, year >= 1.
+  static const double kMinimumYear;
+  // Long years in a ISO calendar have 53 weeks in them.
+  static const double kMaximumWeekInYear;
+
   /**
    * The type of this input (<input type=...>) as an integer.
    * @see nsIFormControl.h (specifically NS_FORM_INPUT_*)
@@ -1377,11 +1511,12 @@ protected:
   nsContentUtils::AutocompleteAttrState mAutocompleteAttrState;
   bool                     mDisabledChanged     : 1;
   bool                     mValueChanged        : 1;
+  bool                     mLastValueChangeWasInteractive : 1;
   bool                     mCheckedChanged      : 1;
   bool                     mChecked             : 1;
   bool                     mHandlingSelectEvent : 1;
   bool                     mShouldInitChecked   : 1;
-  bool                     mParserCreating      : 1;
+  bool                     mDoneCreating        : 1;
   bool                     mInInternalActivate  : 1;
   bool                     mCheckedIsToggled    : 1;
   bool                     mIndeterminate       : 1;
@@ -1408,12 +1543,12 @@ private:
   }
 
   /**
-   * Returns true if setRangeText can be called on element
+   * Returns true if selection methods can be called on element
    */
-  bool SupportsSetRangeText() const {
+  bool SupportsTextSelection() const {
     return mType == NS_FORM_INPUT_TEXT || mType == NS_FORM_INPUT_SEARCH ||
            mType == NS_FORM_INPUT_URL || mType == NS_FORM_INPUT_TEL ||
-           mType == NS_FORM_INPUT_PASSWORD || mType == NS_FORM_INPUT_NUMBER;
+           mType == NS_FORM_INPUT_PASSWORD;
   }
 
   static bool MayFireChangeOnBlur(uint8_t aType) {

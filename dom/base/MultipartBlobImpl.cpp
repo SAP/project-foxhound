@@ -9,7 +9,6 @@
 #include "mozilla/dom/BlobSet.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "nsAutoPtr.h"
 #include "nsDOMClassInfoID.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsStringStream.h"
@@ -168,7 +167,7 @@ void
 MultipartBlobImpl::InitializeBlob(ErrorResult& aRv)
 {
   SetLengthAndModifiedDate(aRv);
-  NS_WARN_IF(aRv.Failed());
+  NS_WARNING_ASSERTION(!aRv.Failed(), "SetLengthAndModifiedDate failed");
 }
 
 void
@@ -222,7 +221,7 @@ MultipartBlobImpl::InitializeBlob(JSContext* aCx,
 
   mBlobImpls = blobSet.GetBlobImpls();
   SetLengthAndModifiedDate(aRv);
-  NS_WARN_IF(aRv.Failed());
+  NS_WARNING_ASSERTION(!aRv.Failed(), "SetLengthAndModifiedDate failed");
 }
 
 void
@@ -353,7 +352,7 @@ MultipartBlobImpl::InitializeChromeFile(Blob& aBlob,
   mBlobImpls = blobSet.GetBlobImpls();
 
   SetLengthAndModifiedDate(aRv);
-  NS_WARN_IF(aRv.Failed());
+  NS_WARNING_ASSERTION(!aRv.Failed(), "SetLengthAndModifiedDate failed");
 }
 
 void
@@ -425,7 +424,7 @@ MultipartBlobImpl::InitializeChromeFile(nsPIDOMWindowInner* aWindow,
   mBlobImpls = blobSet.GetBlobImpls();
 
   SetLengthAndModifiedDate(aRv);
-  NS_WARN_IF(aRv.Failed());
+  NS_WARNING_ASSERTION(!aRv.Failed(), "SetLengthAndModifiedDate failed");
 }
 
 void

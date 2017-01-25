@@ -340,7 +340,7 @@ class IonBuilder
     void initLocals();
     void rewriteParameter(uint32_t slotIdx, MDefinition* param, int32_t argIndex);
     void rewriteParameters();
-    MOZ_MUST_USE bool initScopeChain(MDefinition* callee = nullptr);
+    MOZ_MUST_USE bool initEnvironmentChain(MDefinition* callee = nullptr);
     MOZ_MUST_USE bool initArgumentsObject();
     void pushConstant(const Value& v);
 
@@ -391,10 +391,10 @@ class IonBuilder
     MDefinition* createThisScriptedSingleton(JSFunction* target, MDefinition* callee);
     MDefinition* createThisScriptedBaseline(MDefinition* callee);
     MDefinition* createThis(JSFunction* target, MDefinition* callee, MDefinition* newTarget);
-    MInstruction* createDeclEnvObject(MDefinition* callee, MDefinition* scopeObj);
-    MInstruction* createCallObject(MDefinition* callee, MDefinition* scopeObj);
+    MInstruction* createNamedLambdaObject(MDefinition* callee, MDefinition* envObj);
+    MInstruction* createCallObject(MDefinition* callee, MDefinition* envObj);
 
-    MDefinition* walkScopeChain(unsigned hops);
+    MDefinition* walkEnvironmentChain(unsigned hops);
 
     MInstruction* addConvertElementsToDoubles(MDefinition* elements);
     MDefinition* addMaybeCopyElementsForWrite(MDefinition* object, bool checkNative);
@@ -412,7 +412,7 @@ class IonBuilder
 
     bool invalidatedIdempotentCache();
 
-    bool hasStaticScopeObject(ScopeCoordinate sc, JSObject** pcall);
+    bool hasStaticEnvironmentObject(EnvironmentCoordinate ec, JSObject** pcall);
     MOZ_MUST_USE bool loadSlot(MDefinition* obj, size_t slot, size_t nfixed, MIRType rvalType,
                                BarrierKind barrier, TemporaryTypeSet* types);
     MOZ_MUST_USE bool loadSlot(MDefinition* obj, Shape* shape, MIRType rvalType,
@@ -676,7 +676,7 @@ class IonBuilder
     MOZ_MUST_USE bool improveThisTypesForCall();
 
     MDefinition* getCallee();
-    MDefinition* getAliasedVar(ScopeCoordinate sc);
+    MDefinition* getAliasedVar(EnvironmentCoordinate ec);
     MDefinition* addLexicalCheck(MDefinition* input);
 
     MDefinition* convertToBoolean(MDefinition* input);
@@ -701,7 +701,7 @@ class IonBuilder
     MOZ_MUST_USE bool jsop_notearg();
     MOZ_MUST_USE bool jsop_throwsetconst();
     MOZ_MUST_USE bool jsop_checklexical();
-    MOZ_MUST_USE bool jsop_checkaliasedlet(ScopeCoordinate sc);
+    MOZ_MUST_USE bool jsop_checkaliasedlexical(EnvironmentCoordinate ec);
     MOZ_MUST_USE bool jsop_funcall(uint32_t argc);
     MOZ_MUST_USE bool jsop_funapply(uint32_t argc);
     MOZ_MUST_USE bool jsop_funapplyarguments(uint32_t argc);
@@ -737,7 +737,7 @@ class IonBuilder
     MOZ_MUST_USE bool jsop_setelem_dense(TemporaryTypeSet::DoubleConversion conversion,
                                          MDefinition* object, MDefinition* index,
                                          MDefinition* value, JSValueType unboxedType,
-                                         bool writeHole);
+                                         bool writeHole, bool* emitted);
     MOZ_MUST_USE bool jsop_setelem_typed(ScalarTypeDescr::Type arrayType,
                                          MDefinition* object, MDefinition* index,
                                          MDefinition* value);
@@ -776,11 +776,13 @@ class IonBuilder
     MOZ_MUST_USE bool jsop_iterend();
     MOZ_MUST_USE bool jsop_in();
     MOZ_MUST_USE bool jsop_instanceof();
-    MOZ_MUST_USE bool jsop_getaliasedvar(ScopeCoordinate sc);
-    MOZ_MUST_USE bool jsop_setaliasedvar(ScopeCoordinate sc);
+    MOZ_MUST_USE bool jsop_getaliasedvar(EnvironmentCoordinate ec);
+    MOZ_MUST_USE bool jsop_setaliasedvar(EnvironmentCoordinate ec);
     MOZ_MUST_USE bool jsop_debugger();
     MOZ_MUST_USE bool jsop_newtarget();
+    MOZ_MUST_USE bool jsop_checkisobj(uint8_t kind);
     MOZ_MUST_USE bool jsop_checkobjcoercible();
+    MOZ_MUST_USE bool jsop_pushcallobj();
 
     /* Inlining. */
 
@@ -890,6 +892,7 @@ class IonBuilder
 
     // TypedArray intrinsics.
     enum WrappingBehavior { AllowWrappedTypedArrays, RejectWrappedTypedArrays };
+    InliningStatus inlineTypedArray(CallInfo& callInfo, Native native);
     InliningStatus inlineIsTypedArrayHelper(CallInfo& callInfo, WrappingBehavior wrappingBehavior);
     InliningStatus inlineIsTypedArray(CallInfo& callInfo);
     InliningStatus inlineIsPossiblyWrappedTypedArray(CallInfo& callInfo);
@@ -1047,7 +1050,7 @@ class IonBuilder
     JSObject* testSingletonProperty(JSObject* obj, jsid id);
     JSObject* testSingletonPropertyTypes(MDefinition* obj, jsid id);
 
-    MOZ_MUST_USE bool testNotDefinedProperty(MDefinition* obj, jsid id);
+    ResultWithOOM<bool> testNotDefinedProperty(MDefinition* obj, jsid id);
 
     uint32_t getDefiniteSlot(TemporaryTypeSet* types, PropertyName* name, uint32_t* pnfixed);
     MDefinition* convertUnboxedObjects(MDefinition* obj);
@@ -1079,7 +1082,7 @@ class IonBuilder
 
     MOZ_MUST_USE bool setCurrentAndSpecializePhis(MBasicBlock* block) {
         if (block) {
-            if (!block->specializePhis())
+            if (!block->specializePhis(alloc()))
                 return false;
         }
         setCurrent(block);
@@ -1111,7 +1114,13 @@ class IonBuilder
     jsbytecode* actionableAbortPc_;
     const char* actionableAbortMessage_;
 
+    MRootList* rootList_;
+
   public:
+    void setRootList(MRootList& rootList) {
+        MOZ_ASSERT(!rootList_);
+        rootList_ = &rootList;
+    }
     void clearForBackEnd();
     JSObject* checkNurseryObject(JSObject* obj);
 
@@ -1151,6 +1160,8 @@ class IonBuilder
         *abortMessage = actionableAbortMessage_;
     }
 
+    void trace(JSTracer* trc);
+
   private:
     MOZ_MUST_USE bool init();
 
@@ -1173,7 +1184,7 @@ class IonBuilder
     uint32_t* bytecodeTypeMap;
 
     GSNCache gsn;
-    ScopeCoordinateNameCache scopeCoordinateNameCache;
+    EnvironmentCoordinateNameCache envCoordinateNameCache;
 
     jsbytecode* pc;
     MBasicBlock* current;

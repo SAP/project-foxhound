@@ -6,6 +6,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WindowsVersion.h"
 
 #include "nsCOMPtr.h"
@@ -91,7 +92,7 @@ GetMostRecentNavigatorHWND()
   }
 
   nsCOMPtr<mozIDOMWindowProxy> navWin;
-  rv = winMediator->GetMostRecentWindow(MOZ_UTF16("navigator:browser"),
+  rv = winMediator->GetMostRecentWindow(u"navigator:browser",
                                         getter_AddRefs(navWin));
   if (NS_FAILED(rv) || !navWin) {
     return nullptr;
@@ -121,7 +122,7 @@ public:
     MOZ_ASSERT(!NS_IsMainThread());
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     // This event shuts down the worker thread and so must be main thread.
     MOZ_ASSERT(NS_IsMainThread());
@@ -148,7 +149,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     MOZ_ASSERT(!NS_IsMainThread(),
                "AsyncRevealOperation should not be run on the main thread!");
@@ -643,7 +644,7 @@ FileTimeToPRTime(const FILETIME* aFiletime, PRTime* aPrtm)
   const PRTime _pr_filetime_offset = 116444736000000000i64;
 #endif
 
-  PR_ASSERT(sizeof(FILETIME) == sizeof(PRTime));
+  MOZ_ASSERT(sizeof(FILETIME) == sizeof(PRTime));
   ::CopyMemory(aPrtm, aFiletime, sizeof(PRTime));
 #ifdef __GNUC__
   *aPrtm = (*aPrtm - _pr_filetime_offset) / 10LL;
@@ -659,7 +660,7 @@ GetFileInfo(const nsAFlatString& aName, PRFileInfo64* aInfo)
 {
   WIN32_FILE_ATTRIBUTE_DATA fileData;
 
-  if (aName.IsEmpty() || aName.FindCharInSet(MOZ_UTF16("?*")) != kNotFound) {
+  if (aName.IsEmpty() || aName.FindCharInSet(u"?*") != kNotFound) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -1189,6 +1190,128 @@ nsLocalFile::InitWithPath(const nsAString& aFilePath)
 
   return NS_OK;
 
+}
+
+// Strip a handler command string of its quotes and parameters.
+static void
+CleanupHandlerPath(nsString& aPath)
+{
+  // Example command strings passed into this routine:
+
+  // 1) C:\Program Files\Company\some.exe -foo -bar
+  // 2) C:\Program Files\Company\some.dll
+  // 3) C:\Windows\some.dll,-foo -bar
+  // 4) C:\Windows\some.cpl,-foo -bar
+
+  int32_t lastCommaPos = aPath.RFindChar(',');
+  if (lastCommaPos != kNotFound)
+    aPath.Truncate(lastCommaPos);
+
+  aPath.Append(' ');
+
+  // case insensitive
+  uint32_t index = aPath.Find(".exe ", true);
+  if (index == kNotFound)
+    index = aPath.Find(".dll ", true);
+  if (index == kNotFound)
+    index = aPath.Find(".cpl ", true);
+
+  if (index != kNotFound)
+    aPath.Truncate(index + 4);
+  aPath.Trim(" ", true, true);
+}
+
+// Strip the windows host process bootstrap executable rundll32.exe
+// from a handler's command string if it exists.
+static void
+StripRundll32(nsString& aCommandString)
+{
+  // Example rundll formats:
+  // C:\Windows\System32\rundll32.exe "path to dll"
+  // rundll32.exe "path to dll"
+  // C:\Windows\System32\rundll32.exe "path to dll", var var
+  // rundll32.exe "path to dll", var var
+
+  NS_NAMED_LITERAL_STRING(rundllSegment, "rundll32.exe ");
+  NS_NAMED_LITERAL_STRING(rundllSegmentShort, "rundll32 ");
+
+  // case insensitive
+  int32_t strLen = rundllSegment.Length();
+  int32_t index = aCommandString.Find(rundllSegment, true);
+  if (index == kNotFound) {
+    strLen = rundllSegmentShort.Length();
+    index = aCommandString.Find(rundllSegmentShort, true);
+  }
+
+  if (index != kNotFound) {
+    uint32_t rundllSegmentLength = index + strLen;
+    aCommandString.Cut(0, rundllSegmentLength);
+  }
+}
+
+// Returns the fully qualified path to an application handler based on
+// a parameterized command string. Note this routine should not be used
+// to launch the associated application as it strips parameters and
+// rundll.exe from the string. Designed for retrieving display information
+// on a particular handler.
+/* static */ bool
+nsLocalFile::CleanupCmdHandlerPath(nsAString& aCommandHandler)
+{
+  nsAutoString handlerCommand(aCommandHandler);
+
+  // Straight command path:
+  //
+  // %SystemRoot%\system32\NOTEPAD.EXE var
+  // "C:\Program Files\iTunes\iTunes.exe" var var
+  // C:\Program Files\iTunes\iTunes.exe var var
+  //
+  // Example rundll handlers:
+  //
+  // rundll32.exe "%ProgramFiles%\Win...ery\PhotoViewer.dll", var var
+  // rundll32.exe "%ProgramFiles%\Windows Photo Gallery\PhotoViewer.dll"
+  // C:\Windows\System32\rundll32.exe "path to dll", var var
+  // %SystemRoot%\System32\rundll32.exe "%ProgramFiles%\Win...ery\Photo
+  //    Viewer.dll", var var
+
+  // Expand environment variables so we have full path strings.
+  uint32_t bufLength = ::ExpandEnvironmentStringsW(handlerCommand.get(),
+                                                   L"", 0);
+  if (bufLength == 0) // Error
+    return false;
+
+  auto destination = mozilla::MakeUniqueFallible<wchar_t[]>(bufLength);
+  if (!destination)
+    return false;
+  if (!::ExpandEnvironmentStringsW(handlerCommand.get(), destination.get(),
+                                   bufLength))
+    return false;
+
+  handlerCommand.Assign(destination.get());
+
+  // Remove quotes around paths
+  handlerCommand.StripChars("\"");
+
+  // Strip windows host process bootstrap so we can get to the actual
+  // handler.
+  StripRundll32(handlerCommand);
+
+  // Trim any command parameters so that we have a native path we can
+  // initialize a local file with.
+  CleanupHandlerPath(handlerCommand);
+
+  aCommandHandler.Assign(handlerCommand);
+  return true;
+}
+
+
+NS_IMETHODIMP
+nsLocalFile::InitWithCommandLine(const nsAString& aCommandLine)
+{
+  nsAutoString commandLine(aCommandLine);
+  if (!CleanupCmdHandlerPath(commandLine)) {
+    return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
+  return InitWithPath(commandLine);
 }
 
 NS_IMETHODIMP
@@ -3312,7 +3435,7 @@ nsLocalFile::Launch()
   // "what do you want to do" dialog
   if (r == SE_ERR_NOASSOC) {
     nsAutoString shellArg;
-    shellArg.AssignLiteral(MOZ_UTF16("shell32.dll,OpenAs_RunDLL "));
+    shellArg.AssignLiteral(u"shell32.dll,OpenAs_RunDLL ");
     shellArg.Append(mResolvedPath);
     seinfo.lpFile = L"RUNDLL32.EXE";
     seinfo.lpParameters = shellArg.get();

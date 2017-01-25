@@ -15,8 +15,12 @@
 #include "nsIWorkerDebugger.h"
 #include "nsPIDOMWindow.h"
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/CondVar.h"
+#include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/Move.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsAutoPtr.h"
@@ -30,17 +34,19 @@
 #include "nsTObserverArray.h"
 
 #include "Queue.h"
-#include "WorkerFeature.h"
+#include "WorkerHolder.h"
 
 #ifdef XP_WIN
 #undef PostMessage
 #endif
 
 class nsIChannel;
+class nsIConsoleReportCollector;
 class nsIDocument;
 class nsIEventTarget;
 class nsIPrincipal;
 class nsIScriptContext;
+class nsIScriptTimeoutHandler;
 class nsISerializable;
 class nsIThread;
 class nsIThreadInternal;
@@ -53,12 +59,15 @@ struct RuntimeStats;
 } // namespace JS
 
 namespace mozilla {
+class TaskQueue;
 namespace dom {
 class Function;
 class MessagePort;
 class MessagePortIdentifier;
 class PromiseNativeHandler;
 class StructuredCloneHolder;
+class WorkerDebuggerGlobalScope;
+class WorkerGlobalScope;
 } // namespace dom
 namespace ipc {
 class PrincipalInfo;
@@ -77,8 +86,6 @@ class SharedWorker;
 class ServiceWorkerClientInfo;
 class WorkerControlRunnable;
 class WorkerDebugger;
-class WorkerDebuggerGlobalScope;
-class WorkerGlobalScope;
 class WorkerPrivate;
 class WorkerRunnable;
 class WorkerThread;
@@ -354,7 +361,7 @@ public:
                              ErrorResult& aRv);
 
   void
-  UpdateRuntimeOptions(const JS::RuntimeOptions& aRuntimeOptions);
+  UpdateContextOptions(const JS::ContextOptions& aContextOptions);
 
   void
   UpdateLanguages(const nsTArray<nsString>& aLanguages);
@@ -604,18 +611,6 @@ public:
     return mLoadInfo.mPrincipalIsSystem;
   }
 
-  bool
-  IsInPrivilegedApp() const
-  {
-    return mLoadInfo.mIsInPrivilegedApp;
-  }
-
-  bool
-  IsInCertifiedApp() const
-  {
-    return mLoadInfo.mIsInCertifiedApp;
-  }
-
   const PrincipalInfo&
   GetPrincipalInfo() const
   {
@@ -652,6 +647,18 @@ public:
     mLoadInfo.mCSP = aCSP;
   }
 
+  net::ReferrerPolicy
+  GetReferrerPolicy() const
+  {
+    return mLoadInfo.mReferrerPolicy;
+  }
+
+  void
+  SetReferrerPolicy(net::ReferrerPolicy aReferrerPolicy)
+  {
+    mLoadInfo.mReferrerPolicy = aReferrerPolicy;
+  }
+
   bool
   IsEvalAllowed() const
   {
@@ -668,6 +675,12 @@ public:
   GetReportCSPViolations() const
   {
     return mLoadInfo.mReportCSPViolations;
+  }
+
+  void
+  SetReportCSPViolations(bool aReport)
+  {
+    mLoadInfo.mReportCSPViolations = aReport;
   }
 
   bool
@@ -801,6 +814,9 @@ public:
     return mLoadInfo.mLoadFailedAsyncRunnable.forget();
   }
 
+  void
+  FlushReportsToSharedWorkers(nsIConsoleReportCollector* aReporter);
+
   IMPL_EVENT_HANDLER(message)
   IMPL_EVENT_HANDLER(error)
 
@@ -863,6 +879,7 @@ private:
 
 class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 {
+  friend class WorkerHolder;
   friend class WorkerPrivateParent<WorkerPrivate>;
   typedef WorkerPrivateParent<WorkerPrivate> ParentType;
   friend class AutoSyncLoopHolder;
@@ -898,9 +915,11 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   RefPtr<WorkerGlobalScope> mScope;
   RefPtr<WorkerDebuggerGlobalScope> mDebuggerScope;
   nsTArray<ParentType*> mChildWorkers;
-  nsTObserverArray<WorkerFeature*> mFeatures;
+  nsTObserverArray<WorkerHolder*> mHolders;
   nsTArray<nsAutoPtr<TimeoutInfo>> mTimeouts;
   uint32_t mDebuggerEventLoopLevel;
+  RefPtr<TaskQueue> mMainThreadTaskQueue;
+  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
 
   struct SyncLoopInfo
   {
@@ -931,6 +950,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   // fired on the main thread if the worker script fails to load
   nsCOMPtr<nsIRunnable> mLoadFailedRunnable;
 
+  JS::UniqueChars mDefaultLocale; // nulled during worker JSContext init
   TimeStamp mKillTime;
   uint32_t mErrorHandlerRecursionCount;
   uint32_t mNextTimeoutId;
@@ -938,8 +958,6 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   bool mFrozen;
   bool mTimerRunning;
   bool mRunningExpiredTimeouts;
-  bool mCloseHandlerStarted;
-  bool mCloseHandlerFinished;
   bool mPendingEventQueueClearing;
   bool mMemoryReporterRunning;
   bool mBlockedForMemoryReporter;
@@ -1042,6 +1060,15 @@ public:
     mDebugger = aDebugger;
   }
 
+  JS::UniqueChars
+  AdoptDefaultLocale()
+  {
+    MOZ_ASSERT(mDefaultLocale,
+               "the default locale must have been successfully set for anyone "
+               "to be trying to adopt it");
+    return Move(mDefaultLocale);
+  }
+
   void
   DoRunLoop(JSContext* aCx);
 
@@ -1065,7 +1092,10 @@ public:
   ThawInternal();
 
   void
-  TraceTimeouts(const TraceCallbacks& aCallbacks, void* aClosure) const;
+  TraverseTimeouts(nsCycleCollectionTraversalCallback& aCallback);
+
+  void
+  UnlinkTimeouts();
 
   bool
   ModifyBusyCountFromWorker(bool aIncrease);
@@ -1075,22 +1105,6 @@ public:
 
   void
   RemoveChildWorker(ParentType* aChildWorker);
-
-  bool
-  AddFeature(WorkerFeature* aFeature);
-
-  void
-  RemoveFeature(WorkerFeature* aFeature);
-
-  void
-  NotifyFeatures(JSContext* aCx, Status aStatus);
-
-  bool
-  HasActiveFeatures()
-  {
-    return !(mChildWorkers.IsEmpty() && mTimeouts.IsEmpty() &&
-             mFeatures.IsEmpty());
-  }
 
   void
   PostMessageToParent(JSContext* aCx,
@@ -1134,12 +1148,8 @@ public:
   ReportErrorToConsole(const char* aMessage);
 
   int32_t
-  SetTimeout(JSContext* aCx,
-             Function* aHandler,
-             const nsAString& aStringHandler,
-             int32_t aTimeout,
-             const Sequence<JS::Value>& aArguments,
-             bool aIsInterval,
+  SetTimeout(JSContext* aCx, nsIScriptTimeoutHandler* aHandler,
+             int32_t aTimeout, bool aIsInterval,
              ErrorResult& aRv);
 
   void
@@ -1152,21 +1162,7 @@ public:
   RescheduleTimeoutTimer(JSContext* aCx);
 
   void
-  CloseHandlerStarted()
-  {
-    AssertIsOnWorkerThread();
-    mCloseHandlerStarted = true;
-  }
-
-  void
-  CloseHandlerFinished()
-  {
-    AssertIsOnWorkerThread();
-    mCloseHandlerFinished = true;
-  }
-
-  void
-  UpdateRuntimeOptionsInternal(JSContext* aCx, const JS::RuntimeOptions& aRuntimeOptions);
+  UpdateContextOptionsInternal(JSContext* aCx, const JS::ContextOptions& aContextOptions);
 
   void
   UpdateLanguagesInternal(const nsTArray<nsString>& aLanguages);
@@ -1348,6 +1344,20 @@ public:
   void
   MaybeDispatchLoadFailedRunnable();
 
+  // Get the event target to use when dispatching to the main thread
+  // from this Worker thread.  This may be the main thread itself or
+  // a TaskQueue throttling runnables to the main thread.
+  nsIEventTarget*
+  MainThreadEventTarget();
+
+  nsresult
+  DispatchToMainThread(nsIRunnable* aRunnable,
+                       uint32_t aFlags = NS_DISPATCH_NORMAL);
+
+  nsresult
+  DispatchToMainThread(already_AddRefed<nsIRunnable> aRunnable,
+                       uint32_t aFlags = NS_DISPATCH_NORMAL);
+
 private:
   WorkerPrivate(WorkerPrivate* aParent,
                 const nsAString& aScriptURL, bool aIsChromeWorker,
@@ -1365,23 +1375,15 @@ private:
       status = mStatus;
     }
 
-    if (status >= Killing) {
-      return false;
+    if (status < Terminating) {
+      return true;
     }
-    if (status >= Running) {
-      return mKillTime.IsNull() || RemainingRunTimeMS() > 0;
-    }
-    return true;
-  }
 
-  uint32_t
-  RemainingRunTimeMS() const;
+    return false;
+  }
 
   void
   CancelAllTimeouts();
-
-  bool
-  ScheduleKillCloseEventRunnable();
 
   enum class ProcessAllControlRunnablesResult
   {
@@ -1443,6 +1445,22 @@ private:
 
   void
   ShutdownGCTimers();
+
+  bool
+  AddHolder(WorkerHolder* aHolder, Status aFailStatus);
+
+  void
+  RemoveHolder(WorkerHolder* aHolder);
+
+  void
+  NotifyHolders(JSContext* aCx, Status aStatus);
+
+  bool
+  HasActiveHolders()
+  {
+    return !(mChildWorkers.IsEmpty() && mTimeouts.IsEmpty() &&
+             mHolders.IsEmpty());
+  }
 };
 
 // This class is only used to trick the DOM bindings.  We never create

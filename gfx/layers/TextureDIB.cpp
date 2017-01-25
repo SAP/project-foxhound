@@ -5,6 +5,7 @@
 
 #include "TextureDIB.h"
 #include "gfx2DGlue.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h" // For BufferSizeFromDimensions
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 
@@ -281,7 +282,7 @@ DIBTextureData*
 ShmemDIBTextureData::Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
                             ClientIPCAllocator* aAllocator)
 {
-  MOZ_ASSERT(aAllocator->AsLayerForwarder()->GetParentPid() != base::ProcessId());
+  MOZ_ASSERT(aAllocator->GetParentPid() != base::ProcessId());
 
   DWORD mapSize = aSize.width * aSize.height * BytesPerPixel(aFormat);
   HANDLE fileMapping = ::CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, mapSize, NULL);
@@ -343,7 +344,7 @@ ShmemDIBTextureData::Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
 
   HANDLE hostHandle = NULL;
 
-  if (!ipc::DuplicateHandle(fileMapping, aAllocator->AsLayerForwarder()->GetParentPid(),
+  if (!ipc::DuplicateHandle(fileMapping, aAllocator->GetParentPid(),
                             &hostHandle, 0, DUPLICATE_SAME_ACCESS)) {
     gfxCriticalError() << "Failed to duplicate handle to parent process for surface.";
     ::DeleteObject(bitmap);
@@ -433,7 +434,7 @@ DIBTextureHost::UpdatedInternal(const nsIntRegion* aRegion)
 
   RefPtr<DataSourceSurface> surf = Factory::CreateWrappingDataSourceSurface(imgSurf->Data(), imgSurf->Stride(), mSize, mFormat);
 
-  if (!mTextureSource->Update(surf, const_cast<nsIntRegion*>(aRegion))) {
+  if (!surf || !mTextureSource->Update(surf, const_cast<nsIntRegion*>(aRegion))) {
     mTextureSource = nullptr;
   }
 
@@ -473,14 +474,20 @@ TextureHostFileMapping::UpdatedInternal(const nsIntRegion* aRegion)
     mTextureSource = mCompositor->CreateDataTextureSource(mFlags);
   }
 
-  uint8_t* data = (uint8_t*)::MapViewOfFile(mFileMapping, FILE_MAP_READ, 0, 0, mSize.width * mSize.height * BytesPerPixel(mFormat));
+  uint8_t* data = nullptr;
+  int32_t totalBytes = BufferSizeFromDimensions(mSize.width, mSize.height, BytesPerPixel(mFormat));
+  if (totalBytes > 0) {
+    data = (uint8_t*)::MapViewOfFile(mFileMapping, FILE_MAP_READ, 0, 0, totalBytes);
+  }
 
   if (data) {
     RefPtr<DataSourceSurface> surf = Factory::CreateWrappingDataSourceSurface(data, mSize.width * BytesPerPixel(mFormat), mSize, mFormat);
-
-    surf->AddUserData(&kFileMappingKey, data, UnmapFileData);
-
-    if (!mTextureSource->Update(surf, const_cast<nsIntRegion*>(aRegion))) {
+    if (surf) {
+        surf->AddUserData(&kFileMappingKey, data, UnmapFileData);
+        if (!mTextureSource->Update(surf, const_cast<nsIntRegion*>(aRegion))) {
+          mTextureSource = nullptr;
+        }
+    } else {
       mTextureSource = nullptr;
     }
   } else {

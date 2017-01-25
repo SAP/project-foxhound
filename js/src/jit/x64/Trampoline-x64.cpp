@@ -563,11 +563,11 @@ PushBailoutFrame(MacroAssembler& masm, Register spArg)
         // the float registers to have the maximal possible size
         // (Simd128DataSize). To work around this, we just spill the double
         // registers by hand here, using the register dump offset directly.
-        for (GeneralRegisterBackwardIterator iter(AllRegs.gprs()); iter.more(); iter++)
+        for (GeneralRegisterBackwardIterator iter(AllRegs.gprs()); iter.more(); ++iter)
             masm.Push(*iter);
 
         masm.reserveStack(sizeof(RegisterDump::FPUArray));
-        for (FloatRegisterBackwardIterator iter(AllRegs.fpus()); iter.more(); iter++) {
+        for (FloatRegisterBackwardIterator iter(AllRegs.fpus()); iter.more(); ++iter) {
             FloatRegister reg = *iter;
             Address spillAddress(StackPointer, reg.getRegisterDumpOffsetInBytes());
             masm.storeDouble(reg, spillAddress);
@@ -714,6 +714,9 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
         break;
     }
 
+    if (!generateTLEnterVM(cx, masm, f))
+        return nullptr;
+
     masm.setupUnalignedABICall(regs.getAny());
     masm.passABIArg(cxreg);
 
@@ -746,6 +749,9 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
         masm.passABIArg(outReg);
 
     masm.callWithABI(f.wrapped);
+
+    if (!generateTLExitVM(cx, masm, f))
+        return nullptr;
 
     // Test for failure.
     switch (f.failType()) {
@@ -850,7 +856,8 @@ JitRuntime::generatePreBarrier(JSContext* cx, MIRType type)
 }
 
 typedef bool (*HandleDebugTrapFn)(JSContext*, BaselineFrame*, uint8_t*, bool*);
-static const VMFunction HandleDebugTrapInfo = FunctionInfo<HandleDebugTrapFn>(HandleDebugTrap);
+static const VMFunction HandleDebugTrapInfo =
+    FunctionInfo<HandleDebugTrapFn>(HandleDebugTrap, "HandleDebugTrap");
 
 JitCode*
 JitRuntime::generateDebugTrapHandler(JSContext* cx)

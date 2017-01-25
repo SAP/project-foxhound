@@ -33,6 +33,7 @@
 #include "nsIEventTarget.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIInputStream.h"
+#include "nsIThrottledInputChannel.h"
 #include "nsITransport.h"
 #include "nsIOService.h"
 #include "nsIRequestContext.h"
@@ -139,6 +140,7 @@ nsHttpTransaction::nsHttpTransaction()
     , mAppId(NECKO_NO_APP_ID)
     , mIsInIsolatedMozBrowser(false)
     , mClassOfService(0)
+    , m0RTTInProgress(false)
 {
     LOG(("Creating nsHttpTransaction @%p\n", this));
     gHttpHandler->GetMaxPipelineObjectSize(&mMaxPipelineObjectSize);
@@ -154,7 +156,9 @@ nsHttpTransaction::nsHttpTransaction()
 nsHttpTransaction::~nsHttpTransaction()
 {
     LOG(("Destroying nsHttpTransaction @%p\n", this));
-
+    if (mTransactionObserver) {
+        mTransactionObserver->Complete(this, NS_OK);
+    }
     if (mPushedStream) {
         mPushedStream->OnPushFailed();
         mPushedStream = nullptr;
@@ -232,6 +236,7 @@ nsHttpTransaction::Init(uint32_t caps,
     MOZ_ASSERT(cinfo);
     MOZ_ASSERT(requestHead);
     MOZ_ASSERT(target);
+    MOZ_ASSERT(NS_IsMainThread());
 
     mActivityDistributor = do_GetService(NS_HTTPACTIVITYDISTRIBUTOR_CONTRACTID, &rv);
     if (NS_FAILED(rv)) return rv;
@@ -378,6 +383,25 @@ nsHttpTransaction::Init(uint32_t caps,
     }
     else
         mRequestStream = headers;
+
+    nsCOMPtr<nsIThrottledInputChannel> throttled = do_QueryInterface(mChannel);
+    nsIInputChannelThrottleQueue* queue;
+    if (throttled) {
+        rv = throttled->GetThrottleQueue(&queue);
+        // In case of failure, just carry on without throttling.
+        if (NS_SUCCEEDED(rv) && queue) {
+            nsCOMPtr<nsIAsyncInputStream> wrappedStream;
+            rv = queue->WrapStream(mRequestStream, getter_AddRefs(wrappedStream));
+            // Failure to throttle isn't sufficient reason to fail
+            // initialization
+            if (NS_SUCCEEDED(rv)) {
+                MOZ_ASSERT(wrappedStream != nullptr);
+                LOG(("nsHttpTransaction::Init %p wrapping input stream using throttle queue %p\n",
+                     this, queue));
+                mRequestStream = do_QueryInterface(wrappedStream);
+            }
+        }
+    }
 
     uint64_t size_u64;
     rv = mRequestStream->Available(&size_u64);
@@ -539,7 +563,7 @@ nsHttpTransaction::OnTransportStatus(nsITransport* transport,
     // then the requestStart timestamp will be null, so we mark the timestamps
     // for domainLookupStart/End and connectStart/End
     // If we are using a persistent connection they will remain null,
-    // and the correct value will be returned in nsPerformance.
+    // and the correct value will be returned in Performance.
     if (TimingEnabled() && GetRequestStart().IsNull()) {
         if (status == NS_NET_STATUS_RESOLVING_HOST) {
             SetDomainLookupStart(TimeStamp::Now(), true);
@@ -660,7 +684,7 @@ nsHttpTransaction::Available()
     return size;
 }
 
-NS_METHOD
+nsresult
 nsHttpTransaction::ReadRequestSegment(nsIInputStream *stream,
                                       void *closure,
                                       const char *buf,
@@ -693,7 +717,7 @@ nsHttpTransaction::ReadSegments(nsAHttpSegmentReader *reader,
         return mStatus;
     }
 
-    if (!mConnected) {
+    if (!mConnected && !m0RTTInProgress) {
         mConnected = true;
         mConnection->GetSecurityInfo(getter_AddRefs(mSecurityInfo));
     }
@@ -741,7 +765,7 @@ nsHttpTransaction::ReadSegments(nsAHttpSegmentReader *reader,
     return rv;
 }
 
-NS_METHOD
+nsresult
 nsHttpTransaction::WritePipeSegment(nsIOutputStream *stream,
                                     void *closure,
                                     char *buf,
@@ -904,6 +928,11 @@ nsHttpTransaction::Close(nsresult reason)
     if (mClosed) {
         LOG(("  already closed\n"));
         return;
+    }
+
+    if (mTransactionObserver) {
+        mTransactionObserver->Complete(this, reason);
+        mTransactionObserver = nullptr;
     }
 
     if (mTokenBucketCancel) {
@@ -1367,9 +1396,9 @@ nsHttpTransaction::LocateHttpStart(char *buf, uint32_t len,
 }
 
 nsresult
-nsHttpTransaction::ParseLine(char *line)
+nsHttpTransaction::ParseLine(nsACString &line)
 {
-    LOG(("nsHttpTransaction::ParseLine [%s]\n", line));
+    LOG(("nsHttpTransaction::ParseLine [%s]\n", PromiseFlatCString(line).get()));
     nsresult rv = NS_OK;
 
     if (!mHaveStatusLine) {
@@ -1397,7 +1426,7 @@ nsHttpTransaction::ParseLineSegment(char *segment, uint32_t len)
         // of mLineBuf.
         mLineBuf.Truncate(mLineBuf.Length() - 1);
         if (!mHaveStatusLine || (*segment != ' ' && *segment != '\t')) {
-            nsresult rv = ParseLine(mLineBuf.BeginWriting());
+            nsresult rv = ParseLine(mLineBuf);
             mLineBuf.Truncate();
             if (NS_FAILED(rv)) {
                 gHttpHandler->ConnMgr()->PipelineFeedbackInfo(
@@ -1476,7 +1505,7 @@ nsHttpTransaction::ParseHead(char *buf,
                 if (mRequestHead->IsPut())
                     return NS_ERROR_ABORT;
 
-                mResponseHead->ParseStatusLine("");
+                mResponseHead->ParseStatusLine(EmptyCString());
                 mHaveStatusLine = true;
                 mHaveAllHeaders = true;
                 return NS_OK;
@@ -2110,7 +2139,7 @@ public:
         : mTrans(trans)
     {}
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
         delete mTrans;
         return NS_OK;
@@ -2327,6 +2356,34 @@ nsHttpTransaction::GetNetworkAddresses(NetAddr &self, NetAddr &peer)
     MutexAutoLock lock(mLock);
     self = mSelfAddr;
     peer = mPeerAddr;
+}
+
+bool
+nsHttpTransaction::Do0RTT()
+{
+   if (mRequestHead->IsSafeMethod() &&
+       !mConnection->IsProxyConnectInProgress()) {
+     m0RTTInProgress = true;
+   }
+   return m0RTTInProgress;
+}
+
+nsresult
+nsHttpTransaction::Finish0RTT(bool aRestart)
+{
+    MOZ_ASSERT(m0RTTInProgress);
+    m0RTTInProgress = false;
+    if (aRestart) {
+        // Reset request headers to be sent again.
+        nsCOMPtr<nsISeekableStream> seekable =
+            do_QueryInterface(mRequestStream);
+        if (seekable) {
+            seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
+        } else {
+            return NS_ERROR_FAILURE;
+        }
+    }
+    return NS_OK;
 }
 
 } // namespace net

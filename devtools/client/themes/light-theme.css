@@ -6,6 +6,7 @@
 @import url(variables.css);
 @import url(common.css);
 @import url(toolbars.css);
+@import url(tooltips.css);
 
 body {
   margin: 0;
@@ -291,6 +292,12 @@ div.CodeMirror span.eval-text {
 
 .theme-selected ~ .theme-twisty[open] {
   background-position: -42px -14px;
+}
+
+/* Mirror the twisty for rtl direction */
+.theme-twisty:dir(rtl),
+.theme-twisty:-moz-locale-dir(rtl) {
+  transform: scaleX(-1);
 }
 
 .theme-checkbox {

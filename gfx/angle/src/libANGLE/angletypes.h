@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include <bitset>
+#include <unordered_map>
 
 namespace gl
 {
@@ -43,28 +44,6 @@ enum SamplerType
     SAMPLER_PIXEL,
     SAMPLER_VERTEX
 };
-
-template <typename T>
-struct Color
-{
-    T red;
-    T green;
-    T blue;
-    T alpha;
-
-    Color() : red(0), green(0), blue(0), alpha(0) { }
-    Color(T r, T g, T b, T a) : red(r), green(g), blue(b), alpha(a) { }
-};
-
-template <typename T>
-bool operator==(const Color<T> &a, const Color<T> &b);
-
-template <typename T>
-bool operator!=(const Color<T> &a, const Color<T> &b);
-
-typedef Color<float> ColorF;
-typedef Color<int> ColorI;
-typedef Color<unsigned int> ColorUI;
 
 struct Rectangle
 {
@@ -108,6 +87,9 @@ struct Extents
 
     Extents() : width(0), height(0), depth(0) { }
     Extents(int width_, int height_, int depth_) : width(width_), height(height_), depth(depth_) { }
+
+    Extents(const Extents &other) = default;
+    Extents &operator=(const Extents &other) = default;
 
     bool empty() const { return (width * height * depth) == 0; }
 };
@@ -193,6 +175,7 @@ struct DepthStencilState
 struct SamplerState
 {
     SamplerState();
+    static SamplerState CreateDefaultForTarget(GLenum target);
 
     GLenum minFilter;
     GLenum magFilter;
@@ -209,91 +192,46 @@ struct SamplerState
 
     GLenum compareMode;
     GLenum compareFunc;
+
+    GLenum sRGBDecode;
 };
 
 bool operator==(const SamplerState &a, const SamplerState &b);
 bool operator!=(const SamplerState &a, const SamplerState &b);
 
-// State from Table 6.9 (state per texture object) in the OpenGL ES 3.0.2 spec.
-struct TextureState
-{
-    TextureState();
-
-    GLenum swizzleRed;
-    GLenum swizzleGreen;
-    GLenum swizzleBlue;
-    GLenum swizzleAlpha;
-
-    SamplerState samplerState;
-
-    GLuint baseLevel;
-    GLuint maxLevel;
-
-    bool immutableFormat;
-    GLuint immutableLevels;
-
-    // From GL_ANGLE_texture_usage
-    GLenum usage;
-
-    bool swizzleRequired() const;
-};
-
-bool operator==(const TextureState &a, const TextureState &b);
-bool operator!=(const TextureState &a, const TextureState &b);
-
-struct PixelUnpackState
+struct PixelStoreStateBase
 {
     BindingPointer<Buffer> pixelBuffer;
-    GLint alignment;
-    GLint rowLength;
-    GLint skipRows;
-    GLint skipPixels;
-    GLint imageHeight;
-    GLint skipImages;
+    GLint alignment   = 4;
+    GLint rowLength   = 0;
+    GLint skipRows    = 0;
+    GLint skipPixels  = 0;
+    GLint imageHeight = 0;
+    GLint skipImages  = 0;
+};
 
-    PixelUnpackState()
-        : alignment(4),
-          rowLength(0),
-          skipRows(0),
-          skipPixels(0),
-          imageHeight(0),
-          skipImages(0)
-    {}
+struct PixelUnpackState : PixelStoreStateBase
+{
+    PixelUnpackState() {}
 
     PixelUnpackState(GLint alignmentIn, GLint rowLengthIn)
-        : alignment(alignmentIn),
-          rowLength(rowLengthIn),
-          skipRows(0),
-          skipPixels(0),
-          imageHeight(0),
-          skipImages(0)
-    {}
+    {
+        alignment = alignmentIn;
+        rowLength = rowLengthIn;
+    }
 };
 
-struct PixelPackState
+struct PixelPackState : PixelStoreStateBase
 {
-    BindingPointer<Buffer> pixelBuffer;
-    GLint alignment;
-    bool reverseRowOrder;
-    GLint rowLength;
-    GLint skipRows;
-    GLint skipPixels;
+    PixelPackState() {}
 
-    PixelPackState()
-        : alignment(4),
-          reverseRowOrder(false),
-          rowLength(0),
-          skipRows(0),
-          skipPixels(0)
-    {}
+    PixelPackState(GLint alignmentIn, bool reverseRowOrderIn)
+        : reverseRowOrder(reverseRowOrderIn)
+    {
+        alignment = alignmentIn;
+    }
 
-    explicit PixelPackState(GLint alignmentIn, bool reverseRowOrderIn)
-        : alignment(alignmentIn),
-          reverseRowOrder(reverseRowOrderIn),
-          rowLength(0),
-          skipRows(0),
-          skipPixels(0)
-    {}
+    bool reverseRowOrder = false;
 };
 
 // Used in Program and VertexArray.
@@ -301,18 +239,15 @@ typedef std::bitset<MAX_VERTEX_ATTRIBS> AttributesMask;
 
 // Use in Program
 typedef std::bitset<IMPLEMENTATION_MAX_COMBINED_SHADER_UNIFORM_BUFFERS> UniformBlockBindingMask;
+
+// A map of GL objects indexed by object ID. The specific map implementation may change.
+// Client code should treat it as a std::map.
+template <class ResourceT>
+using ResourceMap = std::unordered_map<GLuint, ResourceT *>;
 }
 
 namespace rx
 {
-enum VendorID : uint32_t
-{
-    VENDOR_ID_UNKNOWN = 0x0,
-    VENDOR_ID_AMD     = 0x1002,
-    VENDOR_ID_INTEL   = 0x8086,
-    VENDOR_ID_NVIDIA  = 0x10DE,
-};
-
 // A macro that determines whether an object has a given runtime type.
 #if defined(__clang__)
 #if __has_feature(cxx_rtti)
@@ -351,12 +286,6 @@ template <typename DestT, typename SrcT>
 inline DestT *GetImplAs(SrcT *src)
 {
     return GetAs<DestT>(src->getImplementation());
-}
-
-template <typename DestT, typename SrcT>
-inline const DestT *GetImplAs(const SrcT *src)
-{
-    return GetAs<const DestT>(src->getImplementation());
 }
 
 }

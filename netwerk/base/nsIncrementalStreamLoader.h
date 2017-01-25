@@ -33,14 +33,14 @@ public:
 protected:
   ~nsIncrementalStreamLoader();
 
-  static NS_METHOD WriteSegmentFun(void *, const char *, uint32_t, uint32_t,
-                                   const StringTaint&, uint32_t *);
+  static nsresult WriteSegmentFun(void *, const char *, uint32_t, uint32_t,
+                                  const StringTaint&, uint32_t *);
 
-  static NS_METHOD WriteSegmentFunTaint(nsITaintawareInputStream *, void *, const char *,
-                                        uint32_t, uint32_t, const StringTaint&, uint32_t *);
+  static nsresult WriteSegmentFunTaint(nsITaintawareInputStream *, void *, const char *,
+                                       uint32_t, uint32_t, const StringTaint&, uint32_t *);
 
-  static NS_METHOD WriteSegmentFunNoTaint(nsIInputStream *, void *, const char *,
-                                          uint32_t, uint32_t, uint32_t *);
+  static nsresult WriteSegmentFunNoTaint(nsIInputStream *, void *, const char *,
+                                         uint32_t, uint32_t, uint32_t *);
 
 
   // Utility method to free mData, if present, and update other state to

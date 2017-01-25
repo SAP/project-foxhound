@@ -12,7 +12,7 @@
 #include "GMPVideoEncoderParent.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Logging.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "base/task.h"
 
 namespace mozilla {
@@ -44,8 +44,6 @@ GMPContentParent::GMPContentParent(GMPParent* aParent)
 
 GMPContentParent::~GMPContentParent()
 {
-  RefPtr<DeleteTask<Transport>> task = new DeleteTask<Transport>(GetTransport());
-  XRE_GetIOMessageLoop()->PostTask(task.forget());
 }
 
 class ReleaseGMPContentParent : public Runnable
@@ -56,7 +54,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     return NS_OK;
   }
@@ -196,10 +194,11 @@ GMPContentParent::GetGMPAudioDecoder(GMPAudioDecoderParent** aGMPAD)
 }
 
 nsresult
-GMPContentParent::GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD)
+GMPContentParent::GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD,
+                                     uint32_t aDecryptorId)
 {
   // returned with one anonymous AddRef that locks it until Destroy
-  PGMPVideoDecoderParent* pvdp = SendPGMPVideoDecoderConstructor();
+  PGMPVideoDecoderParent* pvdp = SendPGMPVideoDecoderConstructor(aDecryptorId);
   if (!pvdp) {
     return NS_ERROR_FAILURE;
   }
@@ -232,7 +231,7 @@ GMPContentParent::GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE)
 }
 
 PGMPVideoDecoderParent*
-GMPContentParent::AllocPGMPVideoDecoderParent()
+GMPContentParent::AllocPGMPVideoDecoderParent(const uint32_t& aDecryptorId)
 {
   GMPVideoDecoderParent* vdp = new GMPVideoDecoderParent(this);
   NS_ADDREF(vdp);

@@ -5,7 +5,7 @@
  * Test that we get DOMContentLoaded and Load markers
  */
 
-const { TimelineFront } = require("devtools/server/actors/timeline");
+const { TimelineFront } = require("devtools/shared/fronts/timeline");
 const MARKER_NAMES = ["document::DOMContentLoaded", "document::Load"];
 
 add_task(function* () {
@@ -34,6 +34,6 @@ add_task(function* () {
   // Wait some more time to make sure the 'doc-loading' markers never get fired.
   yield DevToolsUtils.waitForTime(1000);
 
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
 });

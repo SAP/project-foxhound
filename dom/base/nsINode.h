@@ -8,6 +8,7 @@
 #define nsINode_h___
 
 #include "mozilla/Likely.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"               // for member, local
 #include "nsGkAtoms.h"              // for nsGkAtoms::baseURIProperty
 #include "nsIDOMNode.h"
@@ -51,7 +52,22 @@ class nsIURI;
 class nsNodeSupportsWeakRefTearoff;
 class nsNodeWeakReference;
 class nsDOMMutationObserver;
+
+// We declare the bare minimum infrastructure here to allow us to have a
+// UniquePtr<ServoNodeData> on nsINode.
 struct ServoNodeData;
+extern "C" void Servo_NodeData_Drop(ServoNodeData*);
+namespace mozilla {
+template<>
+class DefaultDelete<ServoNodeData>
+{
+public:
+  void operator()(ServoNodeData* aPtr) const
+  {
+    Servo_NodeData_Drop(aPtr);
+  }
+};
+} // namespace mozilla
 
 namespace mozilla {
 class EventListenerManager;
@@ -68,6 +84,7 @@ inline bool IsSpaceCharacter(char aChar) {
   return aChar == ' ' || aChar == '\t' || aChar == '\n' || aChar == '\r' ||
          aChar == '\f';
 }
+class AccessibleNode;
 struct BoxQuadOptions;
 struct ConvertCoordinateOptions;
 class DOMPoint;
@@ -181,8 +198,20 @@ enum {
 
   NODE_IS_ROOT_OF_CHROME_ONLY_ACCESS =    NODE_FLAG_BIT(20),
 
+  // These two bits are shared by Gecko's and Servo's restyle systems for
+  // different purposes. They should not be accessed directly, and access to
+  // them should be properly guarded by asserts.
+  NODE_SHARED_RESTYLE_BIT_1 =             NODE_FLAG_BIT(21),
+  NODE_SHARED_RESTYLE_BIT_2 =             NODE_FLAG_BIT(22),
+
+  // Whether this node is dirty for Servo's style system.
+  NODE_IS_DIRTY_FOR_SERVO =               NODE_SHARED_RESTYLE_BIT_1,
+
+  // Whether this node has dirty descendants for Servo's style system.
+  NODE_HAS_DIRTY_DESCENDANTS_FOR_SERVO =  NODE_SHARED_RESTYLE_BIT_2,
+
   // Remaining bits are node type specific.
-  NODE_TYPE_SPECIFIC_BITS_OFFSET =        21
+  NODE_TYPE_SPECIFIC_BITS_OFFSET =        23
 };
 
 // Make sure we have space for our bits
@@ -328,9 +357,6 @@ public:
   , mFirstChild(nullptr)
   , mSubtreeRoot(this)
   , mSlots(nullptr)
-#ifdef MOZ_STYLO
-  , mServoNodeData(nullptr)
-#endif
   {
   }
 #endif
@@ -904,6 +930,16 @@ public:
   }
 
   /**
+   * Returns the node that is the parent of this node in the flattened
+   * tree. This differs from the normal parent if the node is filtered
+   * into an insertion point, or if the node is a direct child of a
+   * shadow root.
+   *
+   * @return the flattened tree parent
+   */
+  inline nsINode* GetFlattenedTreeParentNode() const;
+
+  /**
    * Get the parent nsINode for this node if it is an Element.
    * @return the parent node
    */
@@ -949,10 +985,64 @@ public:
                                 mozilla::ErrorResult& aRv) override;
   using nsIDOMEventTarget::AddSystemEventListener;
 
-  virtual bool HasApzAwareListeners() const override;
+  virtual bool IsApzAware() const override;
 
   virtual nsPIDOMWindowOuter* GetOwnerGlobalForBindings() override;
   virtual nsIGlobalObject* GetOwnerGlobal() const override;
+
+  /**
+   * Returns true if this is a node belonging to a document that uses the Servo
+   * style system.
+   */
+#ifdef MOZ_STYLO
+  bool IsStyledByServo() const;
+#else
+  bool IsStyledByServo() const { return false; }
+#endif
+
+  bool IsDirtyForServo() const
+  {
+    MOZ_ASSERT(IsStyledByServo());
+    return HasFlag(NODE_IS_DIRTY_FOR_SERVO);
+  }
+
+  bool HasDirtyDescendantsForServo() const
+  {
+    MOZ_ASSERT(IsStyledByServo());
+    return HasFlag(NODE_HAS_DIRTY_DESCENDANTS_FOR_SERVO);
+  }
+
+  void SetIsDirtyForServo() {
+    MOZ_ASSERT(IsStyledByServo());
+    SetFlags(NODE_IS_DIRTY_FOR_SERVO);
+  }
+
+  void SetHasDirtyDescendantsForServo() {
+    MOZ_ASSERT(IsStyledByServo());
+    SetFlags(NODE_HAS_DIRTY_DESCENDANTS_FOR_SERVO);
+  }
+
+  void SetIsDirtyAndHasDirtyDescendantsForServo() {
+    MOZ_ASSERT(IsStyledByServo());
+    SetFlags(NODE_HAS_DIRTY_DESCENDANTS_FOR_SERVO | NODE_IS_DIRTY_FOR_SERVO);
+  }
+
+  void UnsetIsDirtyForServo() {
+    MOZ_ASSERT(IsStyledByServo());
+    UnsetFlags(NODE_IS_DIRTY_FOR_SERVO);
+  }
+
+  void UnsetHasDirtyDescendantsForServo() {
+    MOZ_ASSERT(IsStyledByServo());
+    UnsetFlags(NODE_HAS_DIRTY_DESCENDANTS_FOR_SERVO);
+  }
+
+  void UnsetIsDirtyAndHasDirtyDescendantsForServo() {
+    MOZ_ASSERT(IsStyledByServo());
+    UnsetFlags(NODE_HAS_DIRTY_DESCENDANTS_FOR_SERVO | NODE_IS_DIRTY_FOR_SERVO);
+  }
+
+  inline void UnsetRestyleFlagsIfGecko();
 
   /**
    * Adds a mutation observer to be notified when this node, or any of its
@@ -1230,6 +1320,30 @@ public:
   /**
    * The explicit base URI, if set, otherwise null
    */
+
+  /**
+   * Return true if the node may be apz aware. There are two cases. One is that
+   * the node is apz aware (such as HTMLInputElement with number type). The
+   * other is that the node has apz aware listeners. This is a non-virtual
+   * function which calls IsNodeApzAwareInternal only when the MayBeApzAware is
+   * set. We check the details in IsNodeApzAwareInternal which may be overriden
+   * by child classes
+   */
+  bool IsNodeApzAware() const
+  {
+    return NodeMayBeApzAware() ? IsNodeApzAwareInternal() : false;
+  }
+
+  /**
+   * Override this function and set the flag MayBeApzAware in case the node has
+   * to let APZC be aware of it. It's used when the node may handle the apz
+   * aware events and may do preventDefault to stop APZC to do default actions.
+   *
+   * For example, instead of scrolling page by APZ, we handle mouse wheel event
+   * in HTMLInputElement with number type as increasing / decreasing its value.
+   */
+  virtual bool IsNodeApzAwareInternal() const;
+
 protected:
   nsIURI* GetExplicitBaseURI() const {
     if (HasExplicitBaseURI()) {
@@ -1497,8 +1611,8 @@ private:
     ElementHasWeirdParserInsertionMode,
     // Parser sets this flag if it has notified about the node.
     ParserHasNotified,
-    // EventListenerManager sets this flag in case we have apz aware listeners.
-    MayHaveApzAwareListeners,
+    // Sets if the node is apz aware or we have apz aware listeners.
+    MayBeApzAware,
     // Guard value
     BooleanFlagCount
   };
@@ -1645,14 +1759,14 @@ public:
   void SetParserHasNotified() { SetBoolFlag(ParserHasNotified); };
   bool HasParserNotified() { return GetBoolFlag(ParserHasNotified); }
 
-  void SetMayHaveApzAwareListeners() { SetBoolFlag(MayHaveApzAwareListeners); }
-  bool NodeMayHaveApzAwareListeners() const
+  void SetMayBeApzAware() { SetBoolFlag(MayBeApzAware); }
+  bool NodeMayBeApzAware() const
   {
-    return GetBoolFlag(MayHaveApzAwareListeners);
+    return GetBoolFlag(MayBeApzAware);
   }
 protected:
   void SetParentIsContent(bool aValue) { SetBoolFlag(ParentIsContent, aValue); }
-  void SetInDocument() { SetBoolFlag(IsInDocument); }
+  void SetIsInDocument() { SetBoolFlag(IsInDocument); }
   void SetNodeIsContent() { SetBoolFlag(NodeIsContent); }
   void ClearInDocument() { ClearBoolFlag(IsInDocument); }
   void SetIsElement() { SetBoolFlag(NodeIsElement); }
@@ -1698,6 +1812,8 @@ public:
 
   void GetBoundMutationObservers(nsTArray<RefPtr<nsDOMMutationObserver> >& aResult);
 
+  already_AddRefed<mozilla::dom::AccessibleNode> GetAccessibleNode();
+
   /**
    * Returns the length of this node, as specified at
    * <http://dvcs.w3.org/hg/domcore/raw-file/tip/Overview.html#concept-node-length>
@@ -1715,7 +1831,7 @@ public:
   // The returned value may differ if the document is loaded via XHR, and
   // when accessed from chrome privileged script and
   // from content privileged script for compatibility.
-  void GetBaseURIFromJS(nsAString& aBaseURI) const;
+  void GetBaseURIFromJS(nsAString& aBaseURI, mozilla::ErrorResult& aRv) const;
   bool HasChildNodes() const
   {
     return HasChildren();
@@ -1974,20 +2090,11 @@ public:
 #undef TOUCH_EVENT
 #undef EVENT
 
-  ServoNodeData* GetServoNodeData() {
+  mozilla::UniquePtr<ServoNodeData>& ServoData() {
 #ifdef MOZ_STYLO
     return mServoNodeData;
 #else
     MOZ_CRASH("Accessing servo node data in non-stylo build");
-#endif
-  }
-
-  void SetServoNodeData(ServoNodeData* aData) {
-#ifdef MOZ_STYLO
-  MOZ_ASSERT(!mServoNodeData);
-  mServoNodeData = aData;
-#else
-    MOZ_CRASH("Setting servo node data in non-stylo build");
 #endif
   }
 
@@ -2031,7 +2138,7 @@ protected:
 
 #ifdef MOZ_STYLO
   // Layout data managed by Servo.
-  ServoNodeData* mServoNodeData;
+  mozilla::UniquePtr<ServoNodeData> mServoNodeData;
 #endif
 };
 

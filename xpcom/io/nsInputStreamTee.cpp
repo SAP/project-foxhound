@@ -49,8 +49,8 @@ private:
 
   nsresult TeeSegment(const char* aBuf, const StringTaint& aTaint, uint32_t aCount);
 
-  static NS_METHOD WriteSegmentFun(nsIInputStream*, void*, const char*,
-                                   uint32_t, uint32_t, uint32_t*);
+  static nsresult WriteSegmentFun(nsIInputStream*, void*, const char*,
+                                  uint32_t, uint32_t, uint32_t*);
 
   static NS_METHOD WriteTaintedSegmentFun(nsITaintawareInputStream*, void*, const char*,
                                           uint32_t, uint32_t, const StringTaint&, uint32_t*);
@@ -88,7 +88,7 @@ public:
     mTee = aTee;
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     if (!mBuf) {
       NS_WARNING("nsInputStreamTeeWriteEvent::Run() "
@@ -202,7 +202,7 @@ nsInputStreamTee::TeeSegment(const char* aBuf, const StringTaint& aTaint, uint32
   }
 }
 
-NS_METHOD
+nsresult
 nsInputStreamTee::WriteSegmentFun(nsIInputStream* aIn, void* aClosure,
                                   const char* aFromSegment, uint32_t aOffset,
                                   uint32_t aCount, uint32_t* aWriteCount)

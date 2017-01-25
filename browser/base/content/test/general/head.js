@@ -61,7 +61,7 @@ function whenDelayedStartupFinished(aWindow, aCallback) {
   }, "browser-delayed-startup-finished", false);
 }
 
-function updateTabContextMenu(tab) {
+function updateTabContextMenu(tab, onOpened) {
   let menu = document.getElementById("tabContextMenu");
   if (!tab)
     tab = gBrowser.selectedTab;
@@ -69,7 +69,15 @@ function updateTabContextMenu(tab) {
   tab.dispatchEvent(evt);
   menu.openPopup(tab, "end_after", 0, 0, true, false, evt);
   is(TabContextMenu.contextTab, tab, "TabContextMenu context is the expected tab");
-  menu.hidePopup();
+  const onFinished = () => menu.hidePopup();
+  if (onOpened) {
+    return Task.spawn(function*() {
+      yield onOpened();
+      onFinished();
+    });
+  }
+  onFinished();
+  return Promise.resolve();
 }
 
 function openToolbarCustomizationUI(aCallback, aBrowserWin) {
@@ -659,119 +667,6 @@ function waitForNewTabEvent(aTabBrowser) {
 }
 
 /**
- * Waits for a window with the given URL to exist.
- *
- * @param url
- *        The url of the window.
- * @return {Promise} resolved when the window exists.
- * @resolves to the window
- */
-function promiseWindow(url) {
-  info("expecting a " + url + " window");
-  return new Promise(resolve => {
-    Services.obs.addObserver(function obs(win) {
-      win.QueryInterface(Ci.nsIDOMWindow);
-      win.addEventListener("load", function loadHandler() {
-        win.removeEventListener("load", loadHandler);
-
-        if (win.location.href !== url) {
-          info("ignoring a window with this url: " + win.location.href);
-          return;
-        }
-
-        Services.obs.removeObserver(obs, "domwindowopened");
-        resolve(win);
-      });
-    }, "domwindowopened", false);
-  });
-}
-
-function promiseIndicatorWindow() {
-  // We don't show the indicator window on Mac.
-  if ("nsISystemStatusBar" in Ci)
-    return Promise.resolve();
-
-  return promiseWindow("chrome://browser/content/webrtcIndicator.xul");
-}
-
-function assertWebRTCIndicatorStatus(expected) {
-  let ui = Cu.import("resource:///modules/webrtcUI.jsm", {}).webrtcUI;
-  let expectedState = expected ? "visible" : "hidden";
-  let msg = "WebRTC indicator " + expectedState;
-  if (!expected && ui.showGlobalIndicator) {
-    // It seems the global indicator is not always removed synchronously
-    // in some cases.
-    info("waiting for the global indicator to be hidden");
-    yield promiseWaitForCondition(() => !ui.showGlobalIndicator);
-  }
-  is(ui.showGlobalIndicator, !!expected, msg);
-
-  let expectVideo = false, expectAudio = false, expectScreen = false;
-  if (expected) {
-    if (expected.video)
-      expectVideo = true;
-    if (expected.audio)
-      expectAudio = true;
-    if (expected.screen)
-      expectScreen = true;
-  }
-  is(ui.showCameraIndicator, expectVideo, "camera global indicator as expected");
-  is(ui.showMicrophoneIndicator, expectAudio, "microphone global indicator as expected");
-  is(ui.showScreenSharingIndicator, expectScreen, "screen global indicator as expected");
-
-  let windows = Services.wm.getEnumerator("navigator:browser");
-  while (windows.hasMoreElements()) {
-    let win = windows.getNext();
-    let menu = win.document.getElementById("tabSharingMenu");
-    is(menu && !menu.hidden, !!expected, "WebRTC menu should be " + expectedState);
-  }
-
-  if (!("nsISystemStatusBar" in Ci)) {
-    if (!expected) {
-      let win = Services.wm.getMostRecentWindow("Browser:WebRTCGlobalIndicator");
-      if (win) {
-        yield new Promise((resolve, reject) => {
-          win.addEventListener("unload", function listener(e) {
-            if (e.target == win.document) {
-              win.removeEventListener("unload", listener);
-              resolve();
-            }
-          }, false);
-        });
-      }
-    }
-    let indicator = Services.wm.getEnumerator("Browser:WebRTCGlobalIndicator");
-    let hasWindow = indicator.hasMoreElements();
-    is(hasWindow, !!expected, "popup " + msg);
-    if (hasWindow) {
-      let document = indicator.getNext().document;
-      let docElt = document.documentElement;
-
-      if (document.readyState != "complete") {
-        info("Waiting for the sharing indicator's document to load");
-        let deferred = Promise.defer();
-        document.addEventListener("readystatechange",
-                                  function onReadyStateChange() {
-          if (document.readyState != "complete")
-            return;
-          document.removeEventListener("readystatechange", onReadyStateChange);
-          deferred.resolve();
-        });
-        yield deferred.promise;
-      }
-
-      for (let item of ["video", "audio", "screen"]) {
-        let expectedValue = (expected && expected[item]) ? "true" : "";
-        is(docElt.getAttribute("sharing" + item), expectedValue,
-           item + " global indicator attribute as expected");
-      }
-
-      ok(!indicator.hasMoreElements(), "only one global indicator window");
-    }
-  }
-}
-
-/**
  * Test the state of the identity box and control center to make
  * sure they are correctly showing the expected mixed content states.
  *
@@ -797,13 +692,13 @@ function assertMixedContentBlockingState(tabbrowser, states = {}) {
     throw new Error("assertMixedContentBlockingState requires a browser and a states object");
   }
 
-  let {passiveLoaded,activeLoaded,activeBlocked} = states;
+  let {passiveLoaded, activeLoaded, activeBlocked} = states;
   let {gIdentityHandler} = tabbrowser.ownerGlobal;
   let doc = tabbrowser.ownerDocument;
   let identityBox = gIdentityHandler._identityBox;
   let classList = identityBox.classList;
   let connectionIcon = doc.getElementById("connection-icon");
-  let connectionIconImage = tabbrowser.ownerGlobal.getComputedStyle(connectionIcon, "").
+  let connectionIconImage = tabbrowser.ownerGlobal.getComputedStyle(connectionIcon).
                          getPropertyValue("list-style-image");
 
   let stateSecure = gIdentityHandler._state & Ci.nsIWebProgressListener.STATE_IS_SECURE;
@@ -840,19 +735,19 @@ function assertMixedContentBlockingState(tabbrowser, states = {}) {
 
     is_element_visible(connectionIcon);
     if (activeLoaded) {
-      is(connectionIconImage, "url(\"chrome://browser/skin/identity-mixed-active-loaded.svg\")",
+      is(connectionIconImage, "url(\"chrome://browser/skin/connection-mixed-active-loaded.svg#icon\")",
         "Using active loaded icon");
     }
     if (activeBlocked && !passiveLoaded) {
-      is(connectionIconImage, "url(\"chrome://browser/skin/identity-mixed-active-blocked.svg\")",
+      is(connectionIconImage, "url(\"chrome://browser/skin/connection-secure.svg\")",
         "Using active blocked icon");
     }
     if (passiveLoaded && !(activeLoaded || activeBlocked)) {
-      is(connectionIconImage, "url(\"chrome://browser/skin/identity-mixed-passive-loaded.svg\")",
+      is(connectionIconImage, "url(\"chrome://browser/skin/connection-mixed-passive-loaded.svg#icon\")",
         "Using passive loaded icon");
     }
     if (passiveLoaded && activeBlocked) {
-      is(connectionIconImage, "url(\"chrome://browser/skin/identity-mixed-passive-loaded.svg\")",
+      is(connectionIconImage, "url(\"chrome://browser/skin/connection-mixed-passive-loaded.svg#icon\")",
         "Using active blocked and passive loaded icon");
     }
   }
@@ -880,10 +775,9 @@ function assertMixedContentBlockingState(tabbrowser, states = {}) {
   // Make sure the correct icon is visible in the Control Center.
   // This logic is controlled with CSS, so this helps prevent regressions there.
   let securityView = doc.getElementById("identity-popup-securityView");
-  let securityContent = doc.getElementById("identity-popup-security-content");
-  let securityViewBG = tabbrowser.ownerGlobal.getComputedStyle(securityView, "").
+  let securityViewBG = tabbrowser.ownerGlobal.getComputedStyle(securityView).
                        getPropertyValue("background-image");
-  let securityContentBG = tabbrowser.ownerGlobal.getComputedStyle(securityView, "").
+  let securityContentBG = tabbrowser.ownerGlobal.getComputedStyle(securityView).
                           getPropertyValue("background-image");
 
   if (stateInsecure) {
@@ -894,9 +788,9 @@ function assertMixedContentBlockingState(tabbrowser, states = {}) {
   }
 
   if (stateSecure) {
-    is(securityViewBG, "url(\"chrome://browser/skin/controlcenter/conn-secure.svg\")",
+    is(securityViewBG, "url(\"chrome://browser/skin/controlcenter/connection.svg#connection-secure\")",
       "CC using secure icon");
-    is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/conn-secure.svg\")",
+    is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/connection.svg#connection-secure\")",
       "CC using secure icon");
   }
 
@@ -907,15 +801,15 @@ function assertMixedContentBlockingState(tabbrowser, states = {}) {
       is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/mcb-disabled.svg\")",
         "CC using active loaded icon");
     } else if (activeBlocked || passiveLoaded) {
-      is(securityViewBG, "url(\"chrome://browser/skin/controlcenter/conn-degraded.svg\")",
+      is(securityViewBG, "url(\"chrome://browser/skin/controlcenter/connection.svg#connection-degraded\")",
         "CC using degraded icon");
-      is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/conn-degraded.svg\")",
+      is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/connection.svg#connection-degraded\")",
         "CC using degraded icon");
     } else {
       // There is a case here with weak ciphers, but no bc tests are handling this yet.
-      is(securityViewBG, "url(\"chrome://browser/skin/controlcenter/conn-degraded.svg\")",
+      is(securityViewBG, "url(\"chrome://browser/skin/controlcenter/connection.svg#connection-degraded\")",
         "CC using degraded icon");
-      is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/conn-degraded.svg\")",
+      is(securityContentBG, "url(\"chrome://browser/skin/controlcenter/connection.svg#connection-degraded\")",
         "CC using degraded icon");
     }
   }
@@ -937,13 +831,13 @@ function assertMixedContentBlockingState(tabbrowser, states = {}) {
 }
 
 function is_hidden(element) {
-  var style = element.ownerDocument.defaultView.getComputedStyle(element, "");
+  var style = element.ownerGlobal.getComputedStyle(element);
   if (style.display == "none")
     return true;
   if (style.visibility != "visible")
     return true;
   if (style.display == "-moz-popup")
-    return ["hiding","closed"].indexOf(element.state) != -1;
+    return ["hiding", "closed"].indexOf(element.state) != -1;
 
   // Hiding a parent element will hide all its children
   if (element.parentNode != element.ownerDocument)
@@ -953,7 +847,7 @@ function is_hidden(element) {
 }
 
 function is_visible(element) {
-  var style = element.ownerDocument.defaultView.getComputedStyle(element, "");
+  var style = element.ownerGlobal.getComputedStyle(element);
   if (style.display == "none")
     return false;
   if (style.visibility != "visible")
@@ -1003,7 +897,7 @@ function promisePopupHidden(popup) {
 }
 
 function promiseNotificationShown(notification) {
-  let win = notification.browser.ownerDocument.defaultView;
+  let win = notification.browser.ownerGlobal;
   if (win.PopupNotifications.panel.state == "open") {
     return Promise.resolve();
   }
@@ -1129,7 +1023,11 @@ function getPropertyBagValue(bag, key) {
   try {
     let val = bag.getProperty(key);
     return val;
-  } catch(e if e.result == Cr.NS_ERROR_FAILURE) {}
+  } catch (e) {
+    if (e.result != Cr.NS_ERROR_FAILURE) {
+      throw e;
+    }
+  }
 
   return null;
 }
@@ -1213,4 +1111,86 @@ function promiseErrorPageLoaded(browser) {
       resolve();
     }, false, true);
   });
+}
+
+function* loadBadCertPage(url) {
+  const EXCEPTION_DIALOG_URI = "chrome://pippki/content/exceptionDialog.xul";
+  let exceptionDialogResolved = new Promise(function(resolve) {
+    // When the certificate exception dialog has opened, click the button to add
+    // an exception.
+    let certExceptionDialogObserver = {
+      observe: function(aSubject, aTopic, aData) {
+        if (aTopic == "cert-exception-ui-ready") {
+          Services.obs.removeObserver(this, "cert-exception-ui-ready");
+          let certExceptionDialog = getCertExceptionDialog(EXCEPTION_DIALOG_URI);
+          ok(certExceptionDialog, "found exception dialog");
+          executeSoon(function() {
+            certExceptionDialog.documentElement.getButton("extra1").click();
+            resolve();
+          });
+        }
+      }
+    };
+
+    Services.obs.addObserver(certExceptionDialogObserver,
+                             "cert-exception-ui-ready", false);
+  });
+
+  yield BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  yield promiseErrorPageLoaded(gBrowser.selectedBrowser);
+  yield ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+    content.document.getElementById("exceptionDialogButton").click();
+  });
+  yield exceptionDialogResolved;
+  yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+}
+
+// Utility function to get a handle on the certificate exception dialog.
+// Modified from toolkit/components/passwordmgr/test/prompt_common.js
+function getCertExceptionDialog(aLocation) {
+  let enumerator = Services.wm.getXULWindowEnumerator(null);
+
+  while (enumerator.hasMoreElements()) {
+    let win = enumerator.getNext();
+    let windowDocShell = win.QueryInterface(Ci.nsIXULWindow).docShell;
+
+    let containedDocShells = windowDocShell.getDocShellEnumerator(
+                                      Ci.nsIDocShellTreeItem.typeChrome,
+                                      Ci.nsIDocShell.ENUMERATE_FORWARDS);
+    while (containedDocShells.hasMoreElements()) {
+      // Get the corresponding document for this docshell
+      let childDocShell = containedDocShells.getNext();
+      let childDoc = childDocShell.QueryInterface(Ci.nsIDocShell)
+                                  .contentViewer
+                                  .DOMDocument;
+
+      if (childDoc.location.href == aLocation) {
+        return childDoc;
+      }
+    }
+  }
+  return undefined;
+}
+
+function setupRemoteClientsFixture(fixture) {
+  let oldRemoteClientsGetter =
+    Object.getOwnPropertyDescriptor(gFxAccounts, "remoteClients").get;
+
+  Object.defineProperty(gFxAccounts, "remoteClients", {
+    get: function() { return fixture; }
+  });
+  return oldRemoteClientsGetter;
+}
+
+function restoreRemoteClients(getter) {
+  Object.defineProperty(gFxAccounts, "remoteClients", {
+    get: getter
+  });
+}
+
+function* openMenuItemSubmenu(id) {
+  let menuPopup = document.getElementById(id).menupopup;
+  let menuPopupPromise = BrowserTestUtils.waitForEvent(menuPopup, "popupshown");
+  menuPopup.showPopup();
+  yield menuPopupPromise;
 }

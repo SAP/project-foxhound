@@ -12,8 +12,7 @@ importScripts("resource://gre/modules/subprocess/subprocess_shared.js",
               "resource://gre/modules/subprocess/subprocess_shared_unix.js",
               "resource://gre/modules/subprocess/subprocess_worker_common.js");
 
-const POLL_INTERVAL = 50;
-const POLL_TIMEOUT = 0;
+const POLL_TIMEOUT = 5000;
 
 let io;
 
@@ -139,18 +138,22 @@ class InputPipe extends Pipe {
     return buffer;
   }
 
-
   /**
    * Called when one of the IO operations matching the `pollEvents` mask may be
    * performed without blocking.
+   *
+   * @returns {boolean}
+   *        True if any data was successfully read.
    */
   onReady() {
+    let result = false;
     let reads = this.pending;
     while (reads.length) {
       let {resolve, length} = reads[0];
 
       let buffer = this.readBuffer(length);
       if (buffer) {
+        result = true;
         this.shiftPending();
         resolve(buffer);
       } else {
@@ -161,6 +164,7 @@ class InputPipe extends Pipe {
     if (reads.length == 0) {
       io.updatePollFds();
     }
+    return result;
   }
 }
 
@@ -248,6 +252,40 @@ class OutputPipe extends Pipe {
   }
 }
 
+class Signal {
+  constructor(fd) {
+    this.fd = fd;
+  }
+
+  cleanup() {
+    libc.close(this.fd);
+    this.fd = null;
+  }
+
+  get pollEvents() {
+    return LIBC.POLLIN;
+  }
+
+  /**
+   * Called when an error occurred while polling our file descriptor.
+   */
+  onError() {
+    io.shutdown();
+  }
+
+  /**
+   * Called when one of the IO operations matching the `pollEvents` mask may be
+   * performed without blocking.
+   */
+  onReady() {
+    let buffer = new ArrayBuffer(16);
+    let count = +libc.read(this.fd, buffer, buffer.byteLength);
+    if (count > 0) {
+      io.messageCount += count;
+    }
+  }
+}
+
 class Process extends BaseProcess {
   /**
    * Each Process object opens an additional pipe from the target object, which
@@ -280,6 +318,8 @@ class Process extends BaseProcess {
    * Initializes the IO pipes for use as standard input, output, and error
    * descriptors in the spawned process.
    *
+   * @param {object} options
+   *        The Subprocess options object for this process.
    * @returns {unix.Fd[]}
    *          The array of file descriptors belonging to the spawned process.
    */
@@ -432,6 +472,7 @@ class Process extends BaseProcess {
       }
 
       this.fd.dispose();
+      io.updatePollFds();
       this.resolveExit(this.exitCode);
       return this.exitCode;
     }
@@ -446,7 +487,28 @@ io = {
 
   processes: new Map(),
 
-  interval: null,
+  messageCount: 0,
+
+  running: true,
+
+  init(details) {
+    this.signal = new Signal(details.signalFd);
+    this.updatePollFds();
+
+    setTimeout(this.loop.bind(this), 0);
+  },
+
+  shutdown() {
+    if (this.running) {
+      this.running = false;
+
+      this.signal.cleanup();
+      this.signal = null;
+
+      self.postMessage({msg: "close"});
+      self.close();
+    }
+  },
 
   getPipe(pipeId) {
     let pipe = this.pipes.get(pipeId);
@@ -469,7 +531,8 @@ io = {
   },
 
   updatePollFds() {
-    let handlers = [...this.pipes.values(),
+    let handlers = [this.signal,
+                    ...this.pipes.values(),
                     ...this.processes.values()];
 
     handlers = handlers.filter(handler => handler.pollEvents);
@@ -486,12 +549,12 @@ io = {
 
     this.pollFds = pollfds;
     this.pollHandlers = handlers;
+  },
 
-    if (pollfds.length && !this.interval) {
-      this.interval = setInterval(this.poll.bind(this), POLL_INTERVAL);
-    } else if (!pollfds.length && this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
+  loop() {
+    this.poll();
+    if (this.running) {
+      setTimeout(this.loop.bind(this), 0);
     }
   },
 
@@ -499,7 +562,8 @@ io = {
     let handlers = this.pollHandlers;
     let pollfds = this.pollFds;
 
-    let count = libc.poll(pollfds, pollfds.length, POLL_TIMEOUT);
+    let timeout = this.messageCount > 0 ? 0 : POLL_TIMEOUT;
+    let count = libc.poll(pollfds, pollfds.length, timeout);
 
     for (let i = 0; count && i < pollfds.length; i++) {
       let pollfd = pollfds[i];
@@ -508,10 +572,16 @@ io = {
 
         let handler = handlers[i];
         try {
+          let success = false;
           if (pollfd.revents & handler.pollEvents) {
-            handler.onReady();
+            success = handler.onReady();
           }
-          if (pollfd.revents & (LIBC.POLLERR | LIBC.POLLHUP | LIBC.POLLNVAL)) {
+          // Only call the error handler in this iteration if we didn't also
+          // have a success. This is necessary because Linux systems set POLLHUP
+          // on a pipe when it's closed but there's still buffered data to be
+          // read, and Darwin sets POLLIN and POLLHUP on a closed pipe, even
+          // when there's no data to be read.
+          if (!success && (pollfd.revents & (LIBC.POLLERR | LIBC.POLLHUP | LIBC.POLLNVAL))) {
             handler.onError();
           }
         } catch (e) {

@@ -56,10 +56,10 @@ using namespace mozilla::dom::bluetooth;
 #undef LOG
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "AudioManager" , ## args)
 
-#define HEADPHONES_STATUS_HEADSET     MOZ_UTF16("headset")
-#define HEADPHONES_STATUS_HEADPHONE   MOZ_UTF16("headphone")
-#define HEADPHONES_STATUS_OFF         MOZ_UTF16("off")
-#define HEADPHONES_STATUS_UNKNOWN     MOZ_UTF16("unknown")
+#define HEADPHONES_STATUS_HEADSET     u"headset"
+#define HEADPHONES_STATUS_HEADPHONE   u"headphone"
+#define HEADPHONES_STATUS_OFF         u"off"
+#define HEADPHONES_STATUS_UNKNOWN     u"unknown"
 #define HEADPHONES_STATUS_CHANGED     "headphones-status-changed"
 #define MOZ_SETTINGS_CHANGE_ID        "mozsettings-changed"
 #define AUDIO_CHANNEL_PROCESS_CHANGED "audio-channel-process-changed"
@@ -596,7 +596,7 @@ AudioManager::Observe(nsISupports* aSubject,
   // To process the volume control on each volume categories according to
   // change of settings
   else if (!strcmp(aTopic, MOZ_SETTINGS_CHANGE_ID)) {
-    RootedDictionary<dom::SettingChangeNotification> setting(nsContentUtils::RootingCxForThread());
+    RootedDictionary<dom::SettingChangeNotification> setting(RootingCx());
     if (!WrappedJSToDictionary(aSubject, setting)) {
       return NS_OK;
     }
@@ -1135,7 +1135,7 @@ AudioManager::MaybeUpdateVolumeSettingToDatabase(bool aForce)
   }
 
   // Send events to update the Gaia volumes
-  JS::Rooted<JS::Value> value(nsContentUtils::RootingCx());
+  JS::Rooted<JS::Value> value(RootingCx());
   uint32_t volume = 0;
   for (uint32_t idx = 0; idx < MOZ_ARRAY_LENGTH(gVolumeData); ++idx) {
     int32_t streamType = gVolumeData[idx].mStreamType;
