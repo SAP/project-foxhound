@@ -10,6 +10,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
   "resource://testing-common/PlacesTestUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "TabCrashHandler",
   "resource:///modules/ContentCrashHandlers.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
+  "resource://gre/modules/Preferences.jsm");
 
 function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
   retryTimes = typeof retryTimes !== 'undefined' ?  retryTimes : 30;
@@ -250,13 +252,13 @@ function makeActionURI(action, params) {
 }
 
 function is_hidden(element) {
-  var style = element.ownerDocument.defaultView.getComputedStyle(element, "");
+  var style = element.ownerGlobal.getComputedStyle(element);
   if (style.display == "none")
     return true;
   if (style.visibility != "visible")
     return true;
   if (style.display == "-moz-popup")
-    return ["hiding","closed"].indexOf(element.state) != -1;
+    return ["hiding", "closed"].indexOf(element.state) != -1;
 
   // Hiding a parent element will hide all its children
   if (element.parentNode != element.ownerDocument)
@@ -266,7 +268,7 @@ function is_hidden(element) {
 }
 
 function is_visible(element) {
-  var style = element.ownerDocument.defaultView.getComputedStyle(element, "");
+  var style = element.ownerGlobal.getComputedStyle(element);
   if (style.display == "none")
     return false;
   if (style.visibility != "visible")
@@ -327,10 +329,18 @@ function promiseSearchComplete(win = window) {
   });
 }
 
-function promiseAutocompleteResultPopup(inputText, win = window) {
+function promiseAutocompleteResultPopup(inputText,
+                                        win = window,
+                                        fireInputEvent = false) {
   waitForFocus(() => {
     win.gURLBar.focus();
     win.gURLBar.value = inputText;
+    if (fireInputEvent) {
+      // This is necessary to get the urlbar to set gBrowser.userTypedValue.
+      let event = document.createEvent("Events");
+      event.initEvent("input", true, true);
+      win.gURLBar.dispatchEvent(event);
+    }
     win.gURLBar.controller.startSearch(inputText);
   }, win);
 

@@ -81,10 +81,8 @@ SignArchive(char *tree, char *keyName, char *zip_file, int javascript,
         }
 
         /* rsa/dsa to zip */
-        sprintf(tempfn, "META-INF/%s.%s", base, (keyType == dsaKey ?
-                                                                   "dsa"
-                                                                   :
-                                                                   "rsa"));
+        sprintf(tempfn, "META-INF/%s.%s", base, (keyType == dsaKey ? "dsa"
+                                                                   : "rsa"));
         sprintf(fullfn, "%s/%s", tree, tempfn);
         JzipAdd(fullfn, tempfn, zipfile, compression_level);
 
@@ -106,10 +104,8 @@ SignArchive(char *tree, char *keyName, char *zip_file, int javascript,
     /* Add the rsa/dsa file to the zip archive normally */
     if (!xpi_arc) {
         /* rsa/dsa to zip */
-        sprintf(tempfn, "META-INF/%s.%s", base, (keyType == dsaKey ?
-                                                                   "dsa"
-                                                                   :
-                                                                   "rsa"));
+        sprintf(tempfn, "META-INF/%s.%s", base, (keyType == dsaKey ? "dsa"
+                                                                   : "rsa"));
         sprintf(fullfn, "%s/%s", tree, tempfn);
         JzipAdd(fullfn, tempfn, zipfile, compression_level);
     }
@@ -171,8 +167,7 @@ sign_all_arc_fn(char *relpath, char *basedir, char *reldir, char *filename,
 
     /* Make sure there is one and only one ".arc" in the relative path,
      * and that it is at the end of the path (don't sign .arcs within .arcs) */
-    if ((PL_strcaserstr(relpath, ".arc") == relpath + strlen(relpath) -
-                                                4) &&
+    if ((PL_strcaserstr(relpath, ".arc") == relpath + strlen(relpath) - 4) &&
         (PL_strcasestr(relpath, ".arc") == relpath + strlen(relpath) - 4)) {
 
         if (!infop) {
@@ -443,6 +438,7 @@ static int
 manifesto_fn(char *relpath, char *basedir, char *reldir, char *filename, void *arg)
 {
     int use_js;
+    char *md5, *sha1;
 
     JAR_Digest dig;
     char fullname[FNSIZE];
@@ -494,11 +490,15 @@ manifesto_fn(char *relpath, char *basedir, char *reldir, char *filename, void *a
 
     if (optimize == 0) {
         fprintf(mf, "Digest-Algorithms: MD5 SHA1\n");
-        fprintf(mf, "MD5-Digest: %s\n", BTOA_DataToAscii(dig.md5,
-                                                         MD5_LENGTH));
+
+        md5 = BTOA_DataToAscii(dig.md5, MD5_LENGTH);
+        fprintf(mf, "MD5-Digest: %s\n", md5);
+        PORT_Free(md5);
     }
 
-    fprintf(mf, "SHA1-Digest: %s\n", BTOA_DataToAscii(dig.sha1, SHA1_LENGTH));
+    sha1 = BTOA_DataToAscii(dig.sha1, SHA1_LENGTH);
+    fprintf(mf, "SHA1-Digest: %s\n", sha1);
+    PORT_Free(sha1);
 
     if (!use_js) {
         JzipAdd(fullname, relpath, zipfile, compression_level);
@@ -674,6 +674,7 @@ generate_SF_file(char *manifile, char *who)
     long r1, r2, r3;
     char whofile[FNSIZE];
     char *buf, *name = NULL;
+    char *md5, *sha1;
     JAR_Digest dig;
     int line = 0;
 
@@ -756,12 +757,15 @@ generate_SF_file(char *manifile, char *who)
 
         if (optimize == 0) {
             fprintf(sf, "Digest-Algorithms: MD5 SHA1\n");
-            fprintf(sf, "MD5-Digest: %s\n",
-                    BTOA_DataToAscii(dig.md5, MD5_LENGTH));
+
+            md5 = BTOA_DataToAscii(dig.md5, MD5_LENGTH);
+            fprintf(sf, "MD5-Digest: %s\n", md5);
+            PORT_Free(md5);
         }
 
-        fprintf(sf, "SHA1-Digest: %s\n",
-                BTOA_DataToAscii(dig.sha1, SHA1_LENGTH));
+        sha1 = BTOA_DataToAscii(dig.sha1, SHA1_LENGTH);
+        fprintf(sf, "SHA1-Digest: %s\n", sha1);
+        PORT_Free(sha1);
 
         /* restore normalcy after changing offset position */
         fseek(mf, r3, SEEK_SET);

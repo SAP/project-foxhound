@@ -63,7 +63,7 @@ def executor_kwargs(test_type, server_config, cache_manager, run_info_data,
                     **kwargs):
     executor_kwargs = base_executor_kwargs(test_type, server_config,
                                            cache_manager, **kwargs)
-    executor_kwargs["close_after_done"] = True
+    executor_kwargs["close_after_done"] = test_type != "reftest"
     if kwargs["timeout_multiplier"] is None:
         if test_type == "reftest":
             if run_info_data["debug"] or run_info_data.get("asan"):
@@ -130,6 +130,7 @@ class FirefoxBrowser(Browser):
                                       "marionette.defaultPrefs.port": self.marionette_port,
                                       "dom.disable_open_during_load": False,
                                       "network.dns.localDomains": ",".join(hostnames),
+                                      "network.proxy.type": 0,
                                       "places.history.enabled": False})
         if self.e10s:
             self.profile.set_preferences({"browser.tabs.remote.autostart": True})

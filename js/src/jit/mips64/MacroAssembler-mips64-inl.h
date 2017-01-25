@@ -177,30 +177,35 @@ MacroAssembler::inc64(AbsoluteAddress dest)
 void
 MacroAssembler::lshiftPtr(Imm32 imm, Register dest)
 {
+    MOZ_ASSERT(0 <= imm.value && imm.value < 64);
     ma_dsll(dest, dest, imm);
 }
 
 void
 MacroAssembler::lshift64(Imm32 imm, Register64 dest)
 {
+    MOZ_ASSERT(0 <= imm.value && imm.value < 64);
     ma_dsll(dest.reg, dest.reg, imm);
 }
 
 void
 MacroAssembler::rshiftPtr(Imm32 imm, Register dest)
 {
+    MOZ_ASSERT(0 <= imm.value && imm.value < 64);
     ma_dsrl(dest, dest, imm);
 }
 
 void
 MacroAssembler::rshiftPtrArithmetic(Imm32 imm, Register dest)
 {
+    MOZ_ASSERT(0 <= imm.value && imm.value < 64);
     ma_dsra(dest, dest, imm);
 }
 
 void
 MacroAssembler::rshift64(Imm32 imm, Register64 dest)
 {
+    MOZ_ASSERT(0 <= imm.value && imm.value < 64);
     ma_dsrl(dest.reg, dest.reg, imm);
 }
 
@@ -239,9 +244,10 @@ MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs, Register rh
     branchPtr(cond, lhs, ScratchRegister, label);
 }
 
+template <class L>
 void
 MacroAssembler::branchTest64(Condition cond, Register64 lhs, Register64 rhs, Register temp,
-                             Label* label)
+                             L label)
 {
     branchTestPtr(cond, lhs.reg, rhs.reg, label);
 }
@@ -401,6 +407,23 @@ MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src, const BaseIndex& 
 {
     MOZ_ASSERT(addr.offset == 0);
     ma_ss(src, addr);
+}
+
+// ========================================================================
+// wasm support
+
+template <class L>
+void
+MacroAssembler::wasmBoundsCheck(Condition cond, Register index, L label)
+{
+    MOZ_CRASH("NYI");
+}
+
+void
+MacroAssembler::wasmPatchBoundsCheck(uint8_t* patchAt, uint32_t limit)
+{
+    // Replace with new value
+    Assembler::UpdateLoad64Value((Instruction*) patchAt, limit);
 }
 
 //}}} check_macroassembler_style

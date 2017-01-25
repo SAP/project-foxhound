@@ -73,7 +73,7 @@
 #include "nsIDOMWindow.h"
 
 #include "nsNetCID.h"
-#include "mozilla/Snprintf.h"
+#include "mozilla/Sprintf.h"
 #include "nsThreadUtils.h"
 #include "nsIInputStreamTee.h"
 #include "nsQueryObject.h"
@@ -304,10 +304,8 @@ nsPluginHost::nsPluginHost()
     Preferences::GetBool("plugin.override_internal_types", false);
 
   mPluginsDisabled = Preferences::GetBool("plugin.disable", false);
-  mPluginsClickToPlay = Preferences::GetBool("plugins.click_to_play", false);
 
   Preferences::AddStrongObserver(this, "plugin.disable");
-  Preferences::AddStrongObserver(this, "plugins.click_to_play");
 
   nsCOMPtr<nsIObserverService> obsService =
     mozilla::services::GetObserverService();
@@ -951,12 +949,10 @@ nsPluginHost::TrySetUpPluginInstance(const nsACString &aMimeType,
                                      nsPluginInstanceOwner *aOwner)
 {
 #ifdef PLUGIN_LOGGING
-  nsAutoCString urlSpec;
-  if (aURL != nullptr) aURL->GetSpec(urlSpec);
-
   MOZ_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NORMAL,
-        ("nsPluginHost::TrySetupPluginInstance Begin mime=%s, owner=%p, url=%s\n",
-         PromiseFlatCString(aMimeType).get(), aOwner, urlSpec.get()));
+          ("nsPluginHost::TrySetupPluginInstance Begin mime=%s, owner=%p, url=%s\n",
+           PromiseFlatCString(aMimeType).get(), aOwner,
+           aURL ? aURL->GetSpecOrDefault().get() : ""));
 
   PR_LogFlush();
 #endif
@@ -1015,13 +1011,10 @@ nsPluginHost::TrySetUpPluginInstance(const nsACString &aMimeType,
   }
 
 #ifdef PLUGIN_LOGGING
-  nsAutoCString urlSpec2;
-  if (aURL)
-    aURL->GetSpec(urlSpec2);
-
   MOZ_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_BASIC,
         ("nsPluginHost::TrySetupPluginInstance Finished mime=%s, rv=%d, owner=%p, url=%s\n",
-         PromiseFlatCString(aMimeType).get(), rv, aOwner, urlSpec2.get()));
+         PromiseFlatCString(aMimeType).get(), rv, aOwner,
+         aURL ? aURL->GetSpecOrDefault().get() : ""));
 
   PR_LogFlush();
 #endif
@@ -1110,11 +1103,19 @@ nsPluginHost::GetPermissionStringForType(const nsACString &aMimeType,
   nsresult rv = GetPluginTagForType(aMimeType, aExcludeFlags,
                                     getter_AddRefs(tag));
   NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(tag, NS_ERROR_FAILURE);
+  return GetPermissionStringForTag(tag, aExcludeFlags, aPermissionString);
+}
+
+NS_IMETHODIMP
+nsPluginHost::GetPermissionStringForTag(nsIPluginTag* aTag,
+                                        uint32_t aExcludeFlags,
+                                        nsACString &aPermissionString)
+{
+  NS_ENSURE_TRUE(aTag, NS_ERROR_FAILURE);
 
   aPermissionString.Truncate();
   uint32_t blocklistState;
-  rv = tag->GetBlocklistState(&blocklistState);
+  nsresult rv = aTag->GetBlocklistState(&blocklistState);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (blocklistState == nsIBlocklistService::STATE_VULNERABLE_UPDATE_AVAILABLE ||
@@ -1126,7 +1127,7 @@ nsPluginHost::GetPermissionStringForType(const nsACString &aMimeType,
   }
 
   nsCString niceName;
-  rv = tag->GetNiceName(niceName);
+  rv = aTag->GetNiceName(niceName);
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(!niceName.IsEmpty(), NS_ERROR_FAILURE);
 
@@ -1408,7 +1409,7 @@ class nsPluginUnloadRunnable : public Runnable
 public:
   explicit nsPluginUnloadRunnable(uint32_t aPluginId) : mPluginId(aPluginId) {}
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     RefPtr<nsPluginHost> host = nsPluginHost::GetInst();
     if (!host) {
@@ -2016,7 +2017,7 @@ GetExtensionDirectories(nsCOMArray<nsIFile>& dirs)
     nsCOMPtr<nsIFile> file = do_QueryInterface(next);
     if (file) {
       file->Normalize();
-      dirs.AppendElement(file);
+      dirs.AppendElement(file.forget());
     }
   }
 }
@@ -2143,8 +2144,6 @@ nsresult nsPluginHost::ScanPluginsDirectory(nsIFile *pluginsDir,
   nsCOMArray<nsIFile> extensionDirs;
   GetExtensionDirectories(extensionDirs);
 
-  bool warnOutdated = false;
-
   for (int32_t i = (pluginFiles.Length() - 1); i >= 0; i--) {
     nsCOMPtr<nsIFile>& localfile = pluginFiles[i];
 
@@ -2244,13 +2243,8 @@ nsresult nsPluginHost::ScanPluginsDirectory(nsIFile *pluginsDir,
 
       // If the blocklist says it is risky and we have never seen this
       // plugin before, then disable it.
-      // If the blocklist says this is an outdated plugin, warn about
-      // outdated plugins.
       if (state == nsIBlocklistService::STATE_SOFTBLOCKED && !seenBefore) {
         pluginTag->SetEnabledState(nsIPluginTag::STATE_DISABLED);
-      }
-      if (state == nsIBlocklistService::STATE_OUTDATED && !seenBefore) {
-        warnOutdated = true;
       }
 
       // Plugin unloading is tag-based. If we created a new tag and loaded
@@ -2289,10 +2283,6 @@ nsresult nsPluginHost::ScanPluginsDirectory(nsIFile *pluginsDir,
     }
 
     AddPluginTag(pluginTag);
-  }
-
-  if (warnOutdated) {
-    Preferences::SetBool("plugins.update.notifyUser", true);
   }
 
   return NS_OK;
@@ -3627,7 +3617,6 @@ NS_IMETHODIMP nsPluginHost::Observe(nsISupports *aSubject,
   }
   if (!strcmp(NS_PREFBRANCH_PREFCHANGE_TOPIC_ID, aTopic)) {
     mPluginsDisabled = Preferences::GetBool("plugin.disable", false);
-    mPluginsClickToPlay = Preferences::GetBool("plugins.click_to_play", false);
     // Unload or load plugins as needed
     if (mPluginsDisabled) {
       UnloadPlugins();
@@ -4198,7 +4187,7 @@ public:
     PR_REMOVE_LINK(this);
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     RefPtr<nsNPAPIPluginInstance> instance;
 

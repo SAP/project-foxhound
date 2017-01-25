@@ -17,8 +17,8 @@
 #include "nsString.h"
 #include "nsWrapperCache.h"
 
+#include "WebGLContext.h"
 #include "WebGLObjectModel.h"
-
 
 namespace mozilla {
 class ErrorResult;
@@ -35,86 +35,83 @@ template<typename> class Sequence;
 
 namespace webgl {
 
-struct UniformBlockInfo final
-    : public RefCounted<UniformBlockInfo>
+struct AttribInfo final
 {
-    MOZ_DECLARE_REFCOUNTED_TYPENAME(UniformBlockInfo);
+    const RefPtr<WebGLActiveInfo> mActiveInfo;
+    const GLint mLoc; // -1 for active built-ins
+    const GLenum mBaseType;
+};
 
-    const nsCString mBaseUserName;
-    const nsCString mBaseMappedName;
+struct UniformInfo final
+{
+    typedef decltype(WebGLContext::mBound2DTextures) TexListT;
 
-    UniformBlockInfo(const nsACString& baseUserName,
-                     const nsACString& baseMappedName)
-        : mBaseUserName(baseUserName)
-        , mBaseMappedName(baseMappedName)
-    {}
+    const RefPtr<WebGLActiveInfo> mActiveInfo;
+    const TexListT* const mSamplerTexList;
+    std::vector<uint32_t> mSamplerValues;
+
+protected:
+    static const TexListT*
+    GetTexList(WebGLActiveInfo* activeInfo);
+
+public:
+    explicit UniformInfo(WebGLActiveInfo* activeInfo);
+};
+
+struct UniformBlockInfo final
+{
+    const nsCString mUserName;
+    const nsCString mMappedName;
+    const uint32_t mDataSize;
+
+    const IndexedBufferBinding* mBinding;
+
+    UniformBlockInfo(WebGLContext* webgl, const nsACString& userName,
+                     const nsACString& mappedName, uint32_t dataSize)
+        : mUserName(userName)
+        , mMappedName(mappedName)
+        , mDataSize(dataSize)
+        , mBinding(&webgl->mIndexedUniformBufferBindings[0])
+    { }
 };
 
 struct LinkedProgramInfo final
     : public RefCounted<LinkedProgramInfo>
     , public SupportsWeakPtr<LinkedProgramInfo>
 {
+    friend class WebGLProgram;
+
     MOZ_DECLARE_REFCOUNTED_TYPENAME(LinkedProgramInfo)
     MOZ_DECLARE_WEAKREFERENCE_TYPENAME(LinkedProgramInfo)
 
+    //////
+
     WebGLProgram* const prog;
-    std::vector<RefPtr<WebGLActiveInfo>> activeAttribs;
-    std::vector<RefPtr<WebGLActiveInfo>> activeUniforms;
+    const GLenum transformFeedbackBufferMode;
+
+    std::vector<AttribInfo> attribs;
+    std::vector<UniformInfo*> uniforms; // Owns its contents.
+    std::vector<UniformBlockInfo*> uniformBlocks; // Owns its contents.
     std::vector<RefPtr<WebGLActiveInfo>> transformFeedbackVaryings;
 
-    // Needed for Get{Attrib,Uniform}Location. The keys for these are non-mapped
-    // user-facing `GLActiveInfo::name`s, without any final "[0]".
-    std::map<nsCString, const WebGLActiveInfo*> attribMap;
-    std::map<nsCString, const WebGLActiveInfo*> uniformMap;
-    std::map<nsCString, const WebGLActiveInfo*> transformFeedbackVaryingsMap;
-
-    std::vector<RefPtr<UniformBlockInfo>> uniformBlocks;
-
     // Needed for draw call validation.
-    std::set<GLuint> activeAttribLocs;
+    std::vector<UniformInfo*> uniformSamplers;
+
+    mutable std::vector<size_t> componentsPerTFVert;
+
+    //////
+
+    // The maps for the frag data names to the translated names.
+    std::map<nsCString, const nsCString> fragDataMap;
 
     explicit LinkedProgramInfo(WebGLProgram* prog);
+    ~LinkedProgramInfo();
 
-    bool FindAttrib(const nsCString& baseUserName,
-                    const WebGLActiveInfo** const out_activeInfo) const
-    {
-        auto itr = attribMap.find(baseUserName);
-        if (itr == attribMap.end())
-            return false;
-
-        *out_activeInfo = itr->second;
-        return true;
-    }
-
-    bool FindUniform(const nsCString& baseUserName,
-                     const WebGLActiveInfo** const out_activeInfo) const
-    {
-        auto itr = uniformMap.find(baseUserName);
-        if (itr == uniformMap.end())
-            return false;
-
-        *out_activeInfo = itr->second;
-        return true;
-    }
-
-    bool FindUniformBlock(const nsCString& baseUserName,
-                          RefPtr<const UniformBlockInfo>* const out_info) const
-    {
-        const size_t count = uniformBlocks.size();
-        for (size_t i = 0; i < count; i++) {
-            if (baseUserName == uniformBlocks[i]->mBaseUserName) {
-                *out_info = uniformBlocks[i].get();
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool HasActiveAttrib(GLuint loc) const {
-        auto itr = activeAttribLocs.find(loc);
-        return itr != activeAttribLocs.end();
-    }
+    bool FindAttrib(const nsCString& userName, const AttribInfo** const out_info) const;
+    bool FindUniform(const nsCString& userName, nsCString* const out_mappedName,
+                     size_t* const out_arrayIndex, UniformInfo** const out_info) const;
+    bool MapFragDataName(const nsCString& userName,
+                         nsCString* const out_mappedName) const;
 };
 
 } // namespace webgl
@@ -123,8 +120,10 @@ class WebGLProgram final
     : public nsWrapperCache
     , public WebGLRefCountedObject<WebGLProgram>
     , public LinkedListElement<WebGLProgram>
-    , public WebGLContextBoundObject
 {
+    friend class WebGLTransformFeedback;
+    friend struct webgl::LinkedProgramInfo;
+
 public:
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLProgram)
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLProgram)
@@ -136,7 +135,7 @@ public:
     // GL funcs
     void AttachShader(WebGLShader* shader);
     void BindAttribLocation(GLuint index, const nsAString& name);
-    void DetachShader(WebGLShader* shader);
+    void DetachShader(const WebGLShader* shader);
     already_AddRefed<WebGLActiveInfo> GetActiveAttrib(GLuint index) const;
     already_AddRefed<WebGLActiveInfo> GetActiveUniform(GLuint index) const;
     void GetAttachedShaders(nsTArray<RefPtr<WebGLShader>>* const out) const;
@@ -146,11 +145,9 @@ public:
     JS::Value GetProgramParameter(GLenum pname) const;
     GLuint GetUniformBlockIndex(const nsAString& name) const;
     void GetActiveUniformBlockName(GLuint uniformBlockIndex, nsAString& name) const;
-    void GetActiveUniformBlockParam(GLuint uniformBlockIndex, GLenum pname,
-                                    dom::Nullable<dom::OwningUnsignedLongOrUint32ArrayOrBoolean>& retval) const;
-    void GetActiveUniformBlockActiveUniforms(JSContext* cx, GLuint uniformBlockIndex,
-                                             dom::Nullable<dom::OwningUnsignedLongOrUint32ArrayOrBoolean>& retval,
-                                             ErrorResult& rv) const;
+    JS::Value GetActiveUniformBlockParam(GLuint uniformBlockIndex, GLenum pname) const;
+    JS::Value GetActiveUniformBlockActiveUniforms(JSContext* cx, GLuint uniformBlockIndex,
+                                                  ErrorResult* const out_error) const;
     already_AddRefed<WebGLUniformLocation> GetUniformLocation(const nsAString& name) const;
     void GetUniformIndices(const dom::Sequence<nsString>& uniformNames,
                            dom::Nullable< nsTArray<GLuint> >& retval) const;
@@ -162,23 +159,22 @@ public:
 
     ////////////////
 
-    bool FindActiveOutputMappedNameByUserName(const nsACString& userName,
-                                              nsCString* const out_mappedName) const;
     bool FindAttribUserNameByMappedName(const nsACString& mappedName,
-                                        nsDependentCString* const out_userName) const;
+                                        nsCString* const out_userName) const;
     bool FindVaryingByMappedName(const nsACString& mappedName,
                                  nsCString* const out_userName,
                                  bool* const out_isArray) const;
     bool FindUniformByMappedName(const nsACString& mappedName,
                                  nsCString* const out_userName,
                                  bool* const out_isArray) const;
-    bool FindUniformBlockByMappedName(const nsACString& mappedName,
-                                      nsCString* const out_userName,
-                                      bool* const out_isArray) const;
+    bool UnmapUniformBlockName(const nsCString& mappedName,
+                               nsCString* const out_userName) const;
 
     void TransformFeedbackVaryings(const dom::Sequence<nsString>& varyings,
                                    GLenum bufferMode);
-    already_AddRefed<WebGLActiveInfo> GetTransformFeedbackVarying(GLuint index);
+    already_AddRefed<WebGLActiveInfo> GetTransformFeedbackVarying(GLuint index) const;
+
+    void EnumerateFragOutputs(std::map<nsCString, const nsCString> &out_FragOutputs) const;
 
     bool IsLinked() const { return mMostRecentLinkInfo; }
 
@@ -196,6 +192,8 @@ private:
     ~WebGLProgram();
 
     void LinkAndUpdate();
+    bool ValidateForLink();
+    bool ValidateAfterTentativeLink(nsCString* const out_linkLog) const;
 
 public:
     const GLuint mGLName;
@@ -203,14 +201,15 @@ public:
 private:
     WebGLRefPtr<WebGLShader> mVertShader;
     WebGLRefPtr<WebGLShader> mFragShader;
-    std::map<nsCString, GLuint> mBoundAttribLocs;
-    std::vector<nsCString> mTransformFeedbackVaryings;
-    GLenum mTransformFeedbackBufferMode;
+    size_t mNumActiveTFOs;
+
+    std::map<nsCString, GLuint> mNextLink_BoundAttribLocs;
+
+    std::vector<nsString> mNextLink_TransformFeedbackVaryings;
+    GLenum mNextLink_TransformFeedbackBufferMode;
+
     nsCString mLinkLog;
     RefPtr<const webgl::LinkedProgramInfo> mMostRecentLinkInfo;
-    // Storage for transform feedback varyings before link.
-    // (Work around for bug seen on nVidia drivers.)
-    std::vector<std::string> mTempMappedVaryings;
 };
 
 } // namespace mozilla

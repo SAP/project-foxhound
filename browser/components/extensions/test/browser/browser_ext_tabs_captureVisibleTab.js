@@ -95,7 +95,7 @@ function* runTest(options) {
               browser.test.assertEq(`rgba(${color},255)`, `rgba(${[...imageData]})`, `${format} image color is correct at (${x}, ${y})`);
             } else {
               // Allow for some deviation in JPEG version due to lossy compression.
-              const SLOP = 2;
+              const SLOP = 3;
 
               browser.test.log(`Testing ${format} image color at (${x}, ${y}), have rgba(${[...imageData]}), expecting approx. rgba(${color},255)`);
 
@@ -148,18 +148,10 @@ add_task(function* testCaptureVisibleTabPermissions() {
       "permissions": ["tabs"],
     },
 
-    background: function(x) {
-      browser.tabs.query({currentWindow: true, active: true}, tab => {
-        browser.tabs.captureVisibleTab(tab.windowId).then(
-          () => {
-            browser.test.notifyFail("captureVisibleTabPermissions");
-          },
-          (e) => {
-            browser.test.assertEq("The <all_urls> permission is required to use the captureVisibleTab API",
-                                  e.message, "Expected permissions error message");
-            browser.test.notifyPass("captureVisibleTabPermissions");
-          });
-      });
+    background() {
+      browser.test.assertFalse("captureVisibleTab" in browser.tabs,
+                               'Extension without "<all_tabs>" permission should not have access to captureVisibleTab');
+      browser.test.notifyPass("captureVisibleTabPermissions");
     },
   });
 

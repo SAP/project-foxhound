@@ -10,7 +10,6 @@
 #include "mozilla/DebugOnly.h"          // for DebugOnly
 #include "mozilla/layers/Compositor.h"  // for BlendOpIsMixBlendMode
 #include "nsAString.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsString.h"                   // for nsAutoCString
 #include "Layers.h"
 #include "GLContext.h"
@@ -351,8 +350,8 @@ ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig)
     fs << "uniform " << sampler2D << " uYTexture;" << endl;
     fs << "uniform " << sampler2D << " uCbTexture;" << endl;
   } else if (aConfig.mFeatures & ENABLE_TEXTURE_COMPONENT_ALPHA) {
-    fs << "uniform sampler2D uBlackTexture;" << endl;
-    fs << "uniform sampler2D uWhiteTexture;" << endl;
+    fs << "uniform " << sampler2D << " uBlackTexture;" << endl;
+    fs << "uniform " << sampler2D << " uWhiteTexture;" << endl;
     fs << "uniform bool uTexturePass2;" << endl;
   } else {
     fs << "uniform " << sampler2D << " uTexture;" << endl;
@@ -423,8 +422,13 @@ For [0,1] instead of [0,255], and to 5 places:
       fs << "  color.b = y + 2.01723*cb;" << endl;
       fs << "  color.a = 1.0;" << endl;
     } else if (aConfig.mFeatures & ENABLE_TEXTURE_COMPONENT_ALPHA) {
-      fs << "  COLOR_PRECISION vec3 onBlack = texture2D(uBlackTexture, coord).rgb;" << endl;
-      fs << "  COLOR_PRECISION vec3 onWhite = texture2D(uWhiteTexture, coord).rgb;" << endl;
+      if (aConfig.mFeatures & ENABLE_TEXTURE_RECT) {
+        fs << "  COLOR_PRECISION vec3 onBlack = " << texture2D << "(uBlackTexture, coord * uTexCoordMultiplier).rgb;" << endl;
+        fs << "  COLOR_PRECISION vec3 onWhite = " << texture2D << "(uWhiteTexture, coord * uTexCoordMultiplier).rgb;" << endl;
+      } else {
+        fs << "  COLOR_PRECISION vec3 onBlack = " << texture2D << "(uBlackTexture, coord).rgb;" << endl;
+        fs << "  COLOR_PRECISION vec3 onWhite = " << texture2D << "(uWhiteTexture, coord).rgb;" << endl;
+      }
       fs << "  COLOR_PRECISION vec4 alphas = (1.0 - onWhite + onBlack).rgbg;" << endl;
       fs << "  if (uTexturePass2)" << endl;
       fs << "    color = vec4(onBlack, alphas.a);" << endl;
@@ -733,7 +737,7 @@ ProgramProfileOGL::BuildMixBlender(const ShaderConfigOGL& aConfig, std::ostrings
   fs << "    return color;" << endl;
   fs << "  }" << endl;
   fs << "  if (color.a == 0.0) {" << endl;
-  fs << "    return backdrop;" << endl;
+  fs << "    return vec4(0.0, 0.0, 0.0, 0.0);" << endl;
   fs << "  }" << endl;
 
   // The spec assumes there is no premultiplied alpha. The backdrop is always

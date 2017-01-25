@@ -21,10 +21,10 @@
 #include "nsIUUIDGenerator.h"
 #include "nsPIDOMWindow.h"               // for use in inline functions
 #include "nsPropertyTable.h"             // for member
-#include "nsTHashtable.h"                // for member
+#include "nsDataHashtable.h"             // for member
+#include "nsURIHashKey.h"                // for member
 #include "mozilla/net/ReferrerPolicy.h"  // for member
 #include "nsWeakReference.h"
-#include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/UseCounter.h"
 #include "mozilla/WeakPtr.h"
 #include "Units.h"
@@ -34,9 +34,21 @@
 #include "prclist.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/StyleBackendType.h"
 #include "mozilla/StyleSheetHandle.h"
+#include "mozilla/TimeStamp.h"
 #include <bitset>                        // for member
+
+#ifdef MOZILLA_INTERNAL_API
+#include "mozilla/dom/DocumentBinding.h"
+#else
+namespace mozilla {
+namespace dom {
+class ElementCreationOptionsOrString;
+} // namespace dom
+} // namespace mozilla
+#endif // MOZILLA_INTERNAL_API
 
 class gfxUserFontSet;
 class imgIRequest;
@@ -76,7 +88,6 @@ class nsIStreamListener;
 class nsIStructuredCloneContainer;
 class nsIURI;
 class nsIVariant;
-class nsLocation;
 class nsViewManager;
 class nsPresContext;
 class nsRange;
@@ -118,6 +129,7 @@ class DocumentType;
 class DOMImplementation;
 class DOMStringList;
 class Element;
+struct ElementCreationOptions;
 struct ElementRegistrationOptions;
 class Event;
 class EventTarget;
@@ -128,6 +140,7 @@ class ImportManager;
 class HTMLBodyElement;
 struct LifecycleCallbackArgs;
 class Link;
+class Location;
 class MediaQueryList;
 class GlobalObject;
 class NodeFilter;
@@ -165,6 +178,13 @@ enum DocumentFlavor {
   DocumentFlavorPlain, // Just a Document
 };
 
+// Enum for HSTS priming states
+enum class HSTSPrimingState {
+  eNO_HSTS_PRIMING = 0,    // don't do HSTS Priming
+  eHSTS_PRIMING_ALLOW = 1, // if HSTS priming fails, allow the load to proceed
+  eHSTS_PRIMING_BLOCK = 2  // if HSTS priming fails, block the load
+};
+
 // Document states
 
 // RTL locale: specific to the XUL localedir attribute
@@ -194,6 +214,33 @@ public:
 #ifdef MOZILLA_INTERNAL_API
   nsIDocument();
 #endif
+
+  // This helper class must be set when we dispatch beforeunload and unload
+  // events in order to avoid unterminate sync XHRs.
+  class MOZ_RAII PageUnloadingEventTimeStamp
+  {
+    nsCOMPtr<nsIDocument> mDocument;
+    bool mSet;
+
+  public:
+    explicit PageUnloadingEventTimeStamp(nsIDocument* aDocument)
+      : mDocument(aDocument)
+      , mSet(false)
+    {
+      MOZ_ASSERT(aDocument);
+      if (mDocument->mPageUnloadingEventTimeStamp.IsNull()) {
+        mDocument->SetPageUnloadingEventTimeStamp();
+        mSet = true;
+      }
+    }
+
+    ~PageUnloadingEventTimeStamp()
+    {
+      if (mSet) {
+        mDocument->CleanUnloadEventsTimeStamp();
+      }
+    }
+  };
 
   /**
    * Let the document know that we're starting to load data into it.
@@ -236,6 +283,9 @@ public:
                                      bool aReset,
                                      nsIContentSink* aSink = nullptr) = 0;
   virtual void StopDocumentLoad() = 0;
+
+  virtual void SetSuppressParserErrorElement(bool aSuppress) {}
+  virtual bool SuppressParserErrorElement() { return false; }
 
   /**
    * Signal that the document title may have changed
@@ -342,6 +392,38 @@ public:
       return mUpgradeInsecurePreloads;
     }
     return mUpgradeInsecureRequests;
+  }
+
+  void SetReferrer(const nsACString& aReferrer) {
+    mReferrer = aReferrer;
+  }
+
+  /**
+   * Check to see if a subresource we want to load requires HSTS priming
+   * to be done.
+   */
+  HSTSPrimingState GetHSTSPrimingStateForLocation(nsIURI* aContentLocation) const
+  {
+    HSTSPrimingState state;
+    if (mHSTSPrimingURIList.Get(aContentLocation, &state)) {
+      return state;
+    }
+    return HSTSPrimingState::eNO_HSTS_PRIMING;
+  }
+
+  /**
+   * Add a subresource to the HSTS priming list. If this URI is
+   * not in the HSTS cache, it will trigger an HSTS priming request
+   * when we try to load it.
+   */
+  void AddHSTSPrimingLocation(nsIURI* aContentLocation, HSTSPrimingState aState)
+  {
+    mHSTSPrimingURIList.Put(aContentLocation, aState);
+  }
+
+  void ClearHSTSPrimingLocation(nsIURI* aContentLocation)
+  {
+    mHSTSPrimingURIList.Remove(aContentLocation);
   }
 
   /**
@@ -697,6 +779,11 @@ public:
   }
 
   /**
+   * Get string representation of sandbox flags (null if no flags are set)
+   */
+  void GetSandboxFlagsAsString(nsAString& aFlags);
+
+  /**
    * Set the sandbox flags for this document.
    * @see nsSandboxFlags.h for the possible flags
    */
@@ -872,8 +959,39 @@ public:
   nsresult GetOrCreateId(nsAString& aId);
   void SetId(const nsAString& aId);
 
+  mozilla::TimeStamp GetPageUnloadingEventTimeStamp() const
+  {
+    if (!mParentDocument) {
+      return mPageUnloadingEventTimeStamp;
+    }
+
+    mozilla::TimeStamp parentTimeStamp(mParentDocument->GetPageUnloadingEventTimeStamp());
+    if (parentTimeStamp.IsNull()) {
+      return mPageUnloadingEventTimeStamp;
+    }
+
+    if (!mPageUnloadingEventTimeStamp ||
+        parentTimeStamp < mPageUnloadingEventTimeStamp) {
+      return parentTimeStamp;
+    }
+
+    return mPageUnloadingEventTimeStamp;
+  }
+
 protected:
   virtual Element *GetRootElementInternal() const = 0;
+
+  void SetPageUnloadingEventTimeStamp()
+  {
+    MOZ_ASSERT(!mPageUnloadingEventTimeStamp);
+    mPageUnloadingEventTimeStamp = mozilla::TimeStamp::NowLoRes();
+  }
+
+  void CleanUnloadEventsTimeStamp()
+  {
+    MOZ_ASSERT(mPageUnloadingEventTimeStamp);
+    mPageUnloadingEventTimeStamp = mozilla::TimeStamp();
+  }
 
 private:
   class SelectorCacheKey
@@ -1071,7 +1189,19 @@ public:
     return mCSSLoader;
   }
 
-  mozilla::StyleBackendType GetStyleBackendType() const;
+  mozilla::StyleBackendType GetStyleBackendType() const {
+    if (mStyleBackendType == mozilla::StyleBackendType(0)) {
+      const_cast<nsIDocument*>(this)->UpdateStyleBackendType();
+    }
+    MOZ_ASSERT(mStyleBackendType != mozilla::StyleBackendType(0));
+    return mStyleBackendType;
+  }
+
+  void UpdateStyleBackendType();
+
+  bool IsStyledByServo() const {
+    return GetStyleBackendType() == mozilla::StyleBackendType::Servo;
+  }
 
   /**
    * Get this document's StyleImageLoader.  This is guaranteed to not return null.
@@ -1487,7 +1617,8 @@ public:
    */
   virtual already_AddRefed<Element> CreateElem(const nsAString& aName,
                                                nsIAtom* aPrefix,
-                                               int32_t aNamespaceID) = 0;
+                                               int32_t aNamespaceID,
+                                               const nsAString* aIs = nullptr) = 0;
 
   /**
    * Get the security info (i.e. SSL state etc) that the document got
@@ -2250,6 +2381,7 @@ public:
   virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() = 0;
 
   virtual mozilla::dom::DocumentTimeline* Timeline() = 0;
+  virtual mozilla::LinkedList<mozilla::dom::DocumentTimeline>& Timelines() = 0;
 
   virtual void GetAnimations(
       nsTArray<RefPtr<mozilla::dom::Animation>>& aAnimations) = 0;
@@ -2334,6 +2466,9 @@ public:
 #undef DEPRECATED_OPERATION
   bool HasWarnedAbout(DeprecatedOperations aOperation) const;
   void WarnOnceAbout(DeprecatedOperations aOperation,
+                     bool asError = false) const;
+  void WarnOnceAbout(DeprecatedOperations aOperation,
+                     const nsAString& aErrorText,
                      bool asError = false) const;
 
 #define DOCUMENT_WARNING(_op) e##_op,
@@ -2437,7 +2572,8 @@ public:
   // The returned value may differ if the document is loaded via XHR, and
   // when accessed from chrome privileged script and
   // from content privileged script for compatibility.
-  void GetDocumentURIFromJS(nsString& aDocumentURI) const;
+  void GetDocumentURIFromJS(nsString& aDocumentURI,
+                            mozilla::ErrorResult& aRv) const;
   void GetCompatMode(nsString& retval) const;
   void GetCharacterSet(nsAString& retval) const;
   // Skip GetContentType, because our NS_IMETHOD version above works fine here.
@@ -2456,34 +2592,13 @@ public:
 
   nsIDocument* GetTopLevelContentDocument();
 
-  /**
-   * Registers an unresolved custom element that is a candidate for
-   * upgrade when the definition is registered via registerElement.
-   * |aTypeName| is the name of the custom element type, if it is not
-   * provided, then element name is used. |aTypeName| should be provided
-   * when registering a custom element that extends an existing
-   * element. e.g. <button is="x-button">.
-   */
-  virtual nsresult RegisterUnresolvedElement(Element* aElement,
-                                             nsIAtom* aTypeName = nullptr) = 0;
-  virtual void EnqueueLifecycleCallback(ElementCallbackType aType,
-                                        Element* aCustomElement,
-                                        mozilla::dom::LifecycleCallbackArgs* aArgs = nullptr,
-                                        mozilla::dom::CustomElementDefinition* aDefinition = nullptr) = 0;
-  virtual void SetupCustomElement(Element* aElement,
-                                  uint32_t aNamespaceID,
-                                  const nsAString* aTypeExtension = nullptr) = 0;
   virtual void
     RegisterElement(JSContext* aCx, const nsAString& aName,
                     const mozilla::dom::ElementRegistrationOptions& aOptions,
                     JS::MutableHandle<JSObject*> aRetval,
                     mozilla::ErrorResult& rv) = 0;
-
-  /**
-   * In some cases, new document instances must be associated with
-   * an existing web components custom element registry as specified.
-   */
-  virtual void UseRegistryFromDocument(nsIDocument* aDocument) = 0;
+  virtual already_AddRefed<mozilla::dom::CustomElementsRegistry>
+    GetCustomElementsRegistry() = 0;
 
   already_AddRefed<nsContentList>
   GetElementsByTagName(const nsAString& aTagName)
@@ -2497,18 +2612,15 @@ public:
   already_AddRefed<nsContentList>
     GetElementsByClassName(const nsAString& aClasses);
   // GetElementById defined above
-  already_AddRefed<Element> CreateElement(const nsAString& aTagName,
-                                          mozilla::ErrorResult& rv);
-  already_AddRefed<Element> CreateElementNS(const nsAString& aNamespaceURI,
-                                            const nsAString& aQualifiedName,
-                                            mozilla::ErrorResult& rv);
-  virtual already_AddRefed<Element> CreateElement(const nsAString& aTagName,
-                                                  const nsAString& aTypeExtension,
-                                                  mozilla::ErrorResult& rv) = 0;
-  virtual already_AddRefed<Element> CreateElementNS(const nsAString& aNamespaceURI,
-                                                    const nsAString& aQualifiedName,
-                                                    const nsAString& aTypeExtension,
-                                                    mozilla::ErrorResult& rv) = 0;
+  virtual already_AddRefed<Element>
+    CreateElement(const nsAString& aTagName,
+                  const mozilla::dom::ElementCreationOptionsOrString& aOptions,
+                  mozilla::ErrorResult& rv) = 0;
+  virtual already_AddRefed<Element>
+    CreateElementNS(const nsAString& aNamespaceURI,
+                    const nsAString& aQualifiedName,
+                    const mozilla::dom::ElementCreationOptions& aOptions,
+                    mozilla::ErrorResult& rv) = 0;
   already_AddRefed<mozilla::dom::DocumentFragment>
     CreateDocumentFragment() const;
   already_AddRefed<nsTextNode> CreateTextNode(const nsAString& aData) const;
@@ -2529,14 +2641,14 @@ public:
                        mozilla::ErrorResult& rv) const;
   already_AddRefed<mozilla::dom::NodeIterator>
     CreateNodeIterator(nsINode& aRoot, uint32_t aWhatToShow,
-                       const mozilla::dom::NodeFilterHolder& aFilter,
+                       mozilla::dom::NodeFilterHolder aFilter,
                        mozilla::ErrorResult& rv) const;
   already_AddRefed<mozilla::dom::TreeWalker>
     CreateTreeWalker(nsINode& aRoot, uint32_t aWhatToShow,
                      mozilla::dom::NodeFilter* aFilter, mozilla::ErrorResult& rv) const;
   already_AddRefed<mozilla::dom::TreeWalker>
     CreateTreeWalker(nsINode& aRoot, uint32_t aWhatToShow,
-                     const mozilla::dom::NodeFilterHolder& aFilter,
+                     mozilla::dom::NodeFilterHolder aFilter,
                      mozilla::ErrorResult& rv) const;
 
   // Deprecated WebIDL bits
@@ -2549,7 +2661,7 @@ public:
                       const nsAString& aQualifiedName,
                       mozilla::ErrorResult& rv);
   void GetInputEncoding(nsAString& aInputEncoding) const;
-  already_AddRefed<nsLocation> GetLocation() const;
+  already_AddRefed<mozilla::dom::Location> GetLocation() const;
   void GetReferrer(nsAString& aReferrer) const;
   void GetLastModified(nsAString& aLastModified) const;
   void GetReadyState(nsAString& aReadyState) const;
@@ -2584,29 +2696,21 @@ public:
     return !!GetFullscreenElement();
   }
   void ExitFullscreen();
-  Element* GetMozPointerLockElement();
-  void MozExitPointerLock()
+  Element* GetPointerLockElement();
+  void ExitPointerLock()
   {
     UnlockPointer(this);
   }
+#ifdef MOZILLA_INTERNAL_API
   bool Hidden() const
   {
     return mVisibilityState != mozilla::dom::VisibilityState::Visible;
-  }
-  bool MozHidden() const
-  {
-    WarnOnceAbout(ePrefixedVisibilityAPI);
-    return Hidden();
   }
   mozilla::dom::VisibilityState VisibilityState() const
   {
     return mVisibilityState;
   }
-  mozilla::dom::VisibilityState MozVisibilityState() const
-  {
-    WarnOnceAbout(ePrefixedVisibilityAPI);
-    return VisibilityState();
-  }
+#endif
   virtual mozilla::dom::StyleSheetList* StyleSheets() = 0;
   void GetSelectedStyleSheetSet(nsAString& aSheetSet);
   virtual void SetSelectedStyleSheetSet(const nsAString& aSheetSet) = 0;
@@ -2755,6 +2859,8 @@ public:
 
   bool HasScriptsBlockedBySandbox();
 
+  bool InlineScriptAllowedByCSP();
+
   void ReportHasScrollLinkedEffect();
   bool HasScrollLinkedEffect() const
   {
@@ -2849,6 +2955,11 @@ protected:
   bool mUpgradeInsecureRequests;
   bool mUpgradeInsecurePreloads;
 
+  // if nsMixedContentBlocker requires sending an HSTS priming request,
+  // temporarily store that in the document so that it can be propogated to the
+  // LoadInfo and eventually the HTTP Channel
+  nsDataHashtable<nsURIHashKey, HSTSPrimingState> mHSTSPrimingURIList;
+
   mozilla::WeakPtr<nsDocShell> mDocumentContainer;
 
   nsCString mCharacterSet;
@@ -2900,8 +3011,17 @@ protected:
   // Our readyState
   ReadyState mReadyState;
 
+#ifdef MOZILLA_INTERNAL_API
   // Our visibility state
   mozilla::dom::VisibilityState mVisibilityState;
+  static_assert(sizeof(mozilla::dom::VisibilityState) == sizeof(uint32_t), "Error size of mVisibilityState and mDummy");
+#else
+  uint32_t mDummy;
+#endif
+
+  // Whether this document has (or will have, once we have a pres shell) a
+  // Gecko- or Servo-backed style system.
+  mozilla::StyleBackendType mStyleBackendType;
 
   // True if BIDI is enabled.
   bool mBidiEnabled : 1;
@@ -3044,6 +3164,9 @@ protected:
 
   // Do we currently have an event posted to call FlushUserFontSet?
   bool mPostedFlushUserFontSet : 1;
+
+  // True is document has ever been in a foreground window.
+  bool mEverInForeground : 1;
 
   enum Type {
     eUnknown, // should never be used
@@ -3195,6 +3318,8 @@ protected:
 
   // Whether the user has interacted with the document or not:
   bool mUserHasInteracted;
+
+  mozilla::TimeStamp mPageUnloadingEventTimeStamp;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocument, NS_IDOCUMENT_IID)

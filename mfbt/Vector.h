@@ -17,6 +17,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
+#include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/ReentrancyGuard.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TypeTraits.h"
@@ -62,7 +63,7 @@ struct VectorImpl
   MOZ_NONNULL(1)
   static inline void new_(T* aDst, Args&&... aArgs)
   {
-    new(aDst) T(Forward<Args>(aArgs)...);
+    new(KnownNotNull, aDst) T(Forward<Args>(aArgs)...);
   }
 
   /* Destroys constructed objects in the range [aBegin, aEnd). */
@@ -531,10 +532,19 @@ public:
   void reverse();
 
   /**
-   * Given that the vector is empty and has no inline storage, grow to
-   * |capacity|.
+   * Given that the vector is empty, grow the internal capacity to |aRequest|,
+   * keeping the length 0.
    */
   MOZ_MUST_USE bool initCapacity(size_t aRequest);
+
+  /**
+   * Given that the vector is empty, grow the internal capacity and length to
+   * |aRequest| leaving the elements' memory completely uninitialized (with all
+   * the associated hazards and caveats). This avoids the usual allocation-size
+   * rounding that happens in resize and overhead of initialization for elements
+   * that are about to be overwritten.
+   */
+  MOZ_MUST_USE bool initLengthUninitialized(size_t aRequest);
 
   /**
    * If reserve(aRequest) succeeds and |aRequest >= length()|, then appending
@@ -810,7 +820,7 @@ Vector<T, N, AP>::operator=(Vector&& aRhs)
 {
   MOZ_ASSERT(this != &aRhs, "self-move assignment is prohibited");
   this->~Vector();
-  new(this) Vector(Move(aRhs));
+  new(KnownNotNull, this) Vector(Move(aRhs));
   return *this;
 }
 
@@ -966,6 +976,17 @@ Vector<T, N, AP>::initCapacity(size_t aRequest)
 #ifdef DEBUG
   mReserved = aRequest;
 #endif
+  return true;
+}
+
+template<typename T, size_t N, class AP>
+inline bool
+Vector<T, N, AP>::initLengthUninitialized(size_t aRequest)
+{
+  if (!initCapacity(aRequest)) {
+    return false;
+  }
+  infallibleGrowByUninitialized(aRequest);
   return true;
 }
 

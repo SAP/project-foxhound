@@ -15,7 +15,7 @@
 #include "gmock/gmock.h"
 #include "mozilla/devtools/HeapSnapshot.h"
 #include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Move.h"
 #include "js/Principals.h"
 #include "js/UbiNode.h"
@@ -29,7 +29,6 @@ using namespace testing;
 // GTest fixture class that all of our tests derive from.
 struct DevTools : public ::testing::Test {
   bool                       _initialized;
-  JSRuntime*                 rt;
   JSContext*                 cx;
   JSCompartment*             compartment;
   JS::Zone*                  zone;
@@ -37,23 +36,19 @@ struct DevTools : public ::testing::Test {
 
   DevTools()
     : _initialized(false),
-      rt(nullptr),
       cx(nullptr)
   { }
 
   virtual void SetUp() {
     MOZ_ASSERT(!_initialized);
 
-    rt = getRuntime();
-    if (!rt)
-      return;
-
-    cx = createContext();
+    cx = getContext();
     if (!cx)
       return;
+
     JS_BeginRequest(cx);
 
-    global.init(rt, createGlobal());
+    global.init(cx, createGlobal());
     if (!global)
       return;
     JS_EnterCompartment(cx, global);
@@ -64,26 +59,8 @@ struct DevTools : public ::testing::Test {
     _initialized = true;
   }
 
-  JSRuntime* getRuntime() {
-    return CycleCollectedJSRuntime::Get()->Runtime();
-  }
-
-  static void setNativeStackQuota(JSRuntime* rt)
-  {
-    const size_t MAX_STACK_SIZE =
-      /* Assume we can't use more than 5e5 bytes of C stack by default. */
-#if (defined(DEBUG) && defined(__SUNPRO_CC))  || defined(JS_CPU_SPARC)
-      /*
-       * Sun compiler uses a larger stack space for js::Interpret() with
-       * debug.  Use a bigger gMaxStackSize to make "make check" happy.
-       */
-      5000000
-#else
-      500000
-#endif
-      ;
-
-    JS_SetNativeStackQuota(rt, MAX_STACK_SIZE);
+  JSContext* getContext() {
+    return CycleCollectedJSContext::Get()->Context();
   }
 
   static void reportError(JSContext* cx, const char* message, JSErrorReport* report) {
@@ -91,10 +68,6 @@ struct DevTools : public ::testing::Test {
             report->filename ? report->filename : "<no filename>",
             (unsigned int) report->lineno,
             message);
-  }
-
-  JSContext* createContext() {
-    return JS_NewContext(rt, 8192);
   }
 
   static const JSClass* getGlobalClass() {
@@ -139,11 +112,8 @@ struct DevTools : public ::testing::Test {
       JS_LeaveCompartment(cx, nullptr);
       global = nullptr;
     }
-    if (cx) {
+    if (cx)
       JS_EndRequest(cx);
-      JS_DestroyContext(cx);
-      cx = nullptr;
-    }
   }
 };
 
@@ -183,7 +153,7 @@ class Concrete<FakeNode> : public Base
     return concreteTypeName;
   }
 
-  js::UniquePtr<EdgeRange> edges(JSRuntime*, bool) const override {
+  js::UniquePtr<EdgeRange> edges(JSContext*, bool) const override {
     return js::UniquePtr<EdgeRange>(js_new<PreComputedEdgeRange>(get().edges));
   }
 
@@ -210,7 +180,7 @@ public:
   }
 };
 
-const char16_t Concrete<FakeNode>::concreteTypeName[] = MOZ_UTF16("FakeNode");
+const char16_t Concrete<FakeNode>::concreteTypeName[] = u"FakeNode";
 
 } // namespace ubi
 } // namespace JS
@@ -234,8 +204,8 @@ void AddEdge(FakeNode& node, FakeNode& referent, const char16_t* edgeName = null
 namespace testing {
 
 // Ensure that given node has the expected number of edges.
-MATCHER_P2(EdgesLength, rt, expectedLength, "") {
-  auto edges = arg.edges(rt);
+MATCHER_P2(EdgesLength, cx, expectedLength, "") {
+  auto edges = arg.edges(cx);
   if (!edges)
     return false;
 
@@ -248,8 +218,8 @@ MATCHER_P2(EdgesLength, rt, expectedLength, "") {
 }
 
 // Get the nth edge and match it with the given matcher.
-MATCHER_P3(Edge, rt, n, matcher, "") {
-  auto edges = arg.edges(rt);
+MATCHER_P3(Edge, cx, n, matcher, "") {
+  auto edges = arg.edges(cx);
   if (!edges)
     return false;
 

@@ -29,7 +29,7 @@
 #include "nsPrintfCString.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "prtime.h"
 
 #include "nsXULAppAPI.h"
@@ -847,6 +847,20 @@ Database::InitSchema(bool* aDatabaseMigrated)
 
       // Firefox 49 uses schema version 32.
 
+      if (currentSchemaVersion < 33) {
+        rv = MigrateV33Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 50 uses schema version 33.
+
+      if (currentSchemaVersion < 34) {
+        rv = MigrateV34Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 51 uses schema version 34.
+
       // Schema Upgrades must add migration code here.
 
       rv = UpdateBookmarkRootTitles();
@@ -861,7 +875,7 @@ Database::InitSchema(bool* aDatabaseMigrated)
     // moz_places.
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES);
     NS_ENSURE_SUCCESS(rv, rv);
-    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_PLACES_URL);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_PLACES_URL_HASH);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_PLACES_FAVICON);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -973,28 +987,28 @@ Database::CreateBookmarkRoots()
   if (NS_FAILED(rv)) return rv;
 
   // Fetch the internationalized folder name from the string bundle.
-  rv = bundle->GetStringFromName(MOZ_UTF16("BookmarksMenuFolderTitle"),
+  rv = bundle->GetStringFromName(u"BookmarksMenuFolderTitle",
                                  getter_Copies(rootTitle));
   if (NS_FAILED(rv)) return rv;
   rv = CreateRoot(mMainConn, NS_LITERAL_CSTRING("menu"),
                   NS_LITERAL_CSTRING("menu________"), rootTitle);
   if (NS_FAILED(rv)) return rv;
 
-  rv = bundle->GetStringFromName(MOZ_UTF16("BookmarksToolbarFolderTitle"),
+  rv = bundle->GetStringFromName(u"BookmarksToolbarFolderTitle",
                                  getter_Copies(rootTitle));
   if (NS_FAILED(rv)) return rv;
   rv = CreateRoot(mMainConn, NS_LITERAL_CSTRING("toolbar"),
                   NS_LITERAL_CSTRING("toolbar_____"), rootTitle);
   if (NS_FAILED(rv)) return rv;
 
-  rv = bundle->GetStringFromName(MOZ_UTF16("TagsFolderTitle"),
+  rv = bundle->GetStringFromName(u"TagsFolderTitle",
                                  getter_Copies(rootTitle));
   if (NS_FAILED(rv)) return rv;
   rv = CreateRoot(mMainConn, NS_LITERAL_CSTRING("tags"),
                   NS_LITERAL_CSTRING("tags________"), rootTitle);
   if (NS_FAILED(rv)) return rv;
 
-  rv = bundle->GetStringFromName(MOZ_UTF16("OtherBookmarksFolderTitle"),
+  rv = bundle->GetStringFromName(u"OtherBookmarksFolderTitle",
                                  getter_Copies(rootTitle));
   if (NS_FAILED(rv)) return rv;
   rv = CreateRoot(mMainConn, NS_LITERAL_CSTRING("unfiled"),
@@ -1036,6 +1050,10 @@ Database::InitFunctions()
   rv = FixupURLFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = FrecencyNotificationFunction::create(mMainConn);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = StoreLastInsertedIdFunction::create(mMainConn);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = HashFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1769,6 +1787,54 @@ Database::MigrateV32Up() {
   return NS_OK;
 }
 
+nsresult
+Database::MigrateV33Up() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "DROP INDEX IF EXISTS moz_places_url_uniqueindex"
+  ));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Add an url_hash column to moz_places.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "SELECT url_hash FROM moz_places"
+  ), getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "ALTER TABLE moz_places ADD COLUMN url_hash INTEGER DEFAULT 0 NOT NULL"
+    ));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "UPDATE moz_places SET url_hash = hash(url) WHERE url_hash = 0"
+  ));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Create an index on url_hash.
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_PLACES_URL_HASH);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+Database::MigrateV34Up() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "DELETE FROM moz_keywords WHERE id IN ( "
+      "SELECT id FROM moz_keywords k "
+      "WHERE NOT EXISTS (SELECT 1 FROM moz_places h WHERE k.place_id = h.id) "
+    ")"
+  ));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
 void
 Database::Shutdown()
 {
@@ -1800,7 +1866,7 @@ Database::Shutdown()
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     rv = stmt->ExecuteStep(&haveNullGuids);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    MOZ_ASSERT(!haveNullGuids && "Found a page without a GUID!");
+    MOZ_ASSERT(!haveNullGuids, "Found a page without a GUID!");
 
     rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
       "SELECT 1 "
@@ -1810,7 +1876,7 @@ Database::Shutdown()
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     rv = stmt->ExecuteStep(&haveNullGuids);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    MOZ_ASSERT(!haveNullGuids && "Found a bookmark without a GUID!");
+    MOZ_ASSERT(!haveNullGuids, "Found a bookmark without a GUID!");
   }
 
   { // Sanity check for unrounded dateAdded and lastModified values (bug
@@ -1826,7 +1892,31 @@ Database::Shutdown()
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     rv = stmt->ExecuteStep(&hasUnroundedDates);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    MOZ_ASSERT(!hasUnroundedDates && "Found unrounded dates!");
+    MOZ_ASSERT(!hasUnroundedDates, "Found unrounded dates!");
+  }
+
+  { // Sanity check url_hash
+    bool hasNullHash = false;
+    nsCOMPtr<mozIStorageStatement> stmt;
+    nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+      "SELECT 1 FROM moz_places WHERE url_hash = 0"
+    ), getter_AddRefs(stmt));
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    rv = stmt->ExecuteStep(&hasNullHash);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    MOZ_ASSERT(!hasNullHash, "Found a place without a hash!");
+  }
+
+  { // Sanity check unique urls
+    bool hasDupeUrls = false;
+    nsCOMPtr<mozIStorageStatement> stmt;
+    nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+      "SELECT 1 FROM moz_places GROUP BY url HAVING count(*) > 1 "
+    ), getter_AddRefs(stmt));
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    rv = stmt->ExecuteStep(&hasDupeUrls);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    MOZ_ASSERT(!hasDupeUrls, "Found a duplicate url!");
   }
 #endif
 

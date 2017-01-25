@@ -35,6 +35,10 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/UniquePtr.h"
 
+#ifdef MOZ_FAULTY
+#include "mozilla/ipc/Faulty.h"
+#endif
+
 // Work around possible OS limitations.
 static const size_t kMaxIOVecSize = 256;
 
@@ -212,11 +216,13 @@ bool Channel::ChannelImpl::CreatePipe(const std::wstring& channel_id,
   if (mode == MODE_SERVER) {
     int pipe_fds[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, pipe_fds) != 0) {
+      mozilla::ipc::AnnotateCrashReportWithErrno("IpcCreatePipeSocketPairErrno", errno);
       return false;
     }
     // Set both ends to be non-blocking.
     if (fcntl(pipe_fds[0], F_SETFL, O_NONBLOCK) == -1 ||
         fcntl(pipe_fds[1], F_SETFL, O_NONBLOCK) == -1) {
+      mozilla::ipc::AnnotateCrashReportWithErrno("IpcCreatePipeFcntlErrno", errno);
       HANDLE_EINTR(close(pipe_fds[0]));
       HANDLE_EINTR(close(pipe_fds[1]));
       return false;
@@ -224,6 +230,7 @@ bool Channel::ChannelImpl::CreatePipe(const std::wstring& channel_id,
 
     if (!SetCloseOnExec(pipe_fds[0]) ||
         !SetCloseOnExec(pipe_fds[1])) {
+      mozilla::ipc::AnnotateCrashReportWithErrno("IpcCreatePipeCloExecErrno", errno);
       HANDLE_EINTR(close(pipe_fds[0]));
       HANDLE_EINTR(close(pipe_fds[1]));
       return false;
@@ -561,6 +568,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
   // Write out all the messages we can till the write blocks or there are no
   // more outgoing messages.
   while (!output_queue_.empty()) {
+#ifdef MOZ_FAULTY
+    Singleton<mozilla::ipc::Faulty>::get()->MaybeCollectAndClosePipe(pipe_);
+#endif
     Message* msg = output_queue_.front();
 
     struct msghdr msgh = {0};

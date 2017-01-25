@@ -40,7 +40,7 @@
  * - date: (Date)
  *     The time the visit occurred.
  * - transition: (number)
- *     How the user reached the page. See constants `TRANSITION_*`
+ *     How the user reached the page. See constants `TRANSITIONS.*`
  *     for the possible transition types.
  * - referrer: (URL)
  *          or (nsIURI)
@@ -325,6 +325,9 @@ this.History = Object.freeze({
    *                been added since this date (inclusive).
    *          - endDate: (Date) Remove visits that have
    *                been added before this date (inclusive).
+   *          - limit: (Number) Limit the number of visits
+   *                we remove to this number
+   *          - url: (URL) Only remove visits to this URL
    *      If both `beginDate` and `endDate` are specified,
    *      visits between `beginDate` (inclusive) and `end`
    *      (inclusive) are removed.
@@ -349,6 +352,8 @@ this.History = Object.freeze({
 
     let hasBeginDate = "beginDate" in filter;
     let hasEndDate = "endDate" in filter;
+    let hasURL = "url" in filter;
+    let hasLimit = "limit" in filter;
     if (hasBeginDate) {
       ensureDate(filter.beginDate);
     }
@@ -358,8 +363,20 @@ this.History = Object.freeze({
     if (hasBeginDate && hasEndDate && filter.beginDate > filter.endDate) {
       throw new TypeError("`beginDate` should be at least as old as `endDate`");
     }
-    if (!hasBeginDate && !hasEndDate) {
+    if (!hasBeginDate && !hasEndDate && !hasURL && !hasLimit) {
       throw new TypeError("Expected a non-empty filter");
+    }
+
+    if (hasURL && !(filter.url instanceof URL) && typeof filter.url != "string" &&
+        !(filter.url instanceof Ci.nsIURI)) {
+      throw new TypeError("Expected a valid URL for `url`");
+    }
+
+    if (hasLimit &&
+        (typeof filter.limit != "number" ||
+         filter.limit <= 0 ||
+         !Number.isInteger(filter.limit))) {
+      throw new TypeError("Expected a non-zero positive integer as a limit");
     }
 
     if (onResult && typeof onResult != "function") {
@@ -408,51 +425,58 @@ this.History = Object.freeze({
    * objects.
    */
 
-  /**
-   * The user followed a link and got a new toplevel window.
-   */
-  TRANSITION_LINK: Ci.nsINavHistoryService.TRANSITION_LINK,
+  TRANSITIONS: {
+    /**
+     * The user followed a link and got a new toplevel window.
+     */
+    LINK: Ci.nsINavHistoryService.TRANSITION_LINK,
 
-  /**
-   * The user typed the page's URL in the URL bar or selected it from
-   * URL bar autocomplete results, clicked on it from a history query
-   * (from the History sidebar, History menu, or history query in the
-   * personal toolbar or Places organizer.
-   */
-  TRANSITION_TYPED: Ci.nsINavHistoryService.TRANSITION_TYPED,
+    /**
+     * The user typed the page's URL in the URL bar or selected it from
+     * URL bar autocomplete results, clicked on it from a history query
+     * (from the History sidebar, History menu, or history query in the
+     * personal toolbar or Places organizer.
+     */
+    TYPED: Ci.nsINavHistoryService.TRANSITION_TYPED,
 
-  /**
-   * The user followed a bookmark to get to the page.
-   */
-  TRANSITION_BOOKMARK: Ci.nsINavHistoryService.TRANSITION_BOOKMARK,
+    /**
+     * The user followed a bookmark to get to the page.
+     */
+    BOOKMARK: Ci.nsINavHistoryService.TRANSITION_BOOKMARK,
 
-  /**
-   * Some inner content is loaded. This is true of all images on a
-   * page, and the contents of the iframe. It is also true of any
-   * content in a frame if the user did not explicitly follow a link
-   * to get there.
-   */
-  TRANSITION_EMBED: Ci.nsINavHistoryService.TRANSITION_EMBED,
+    /**
+     * Some inner content is loaded. This is true of all images on a
+     * page, and the contents of the iframe. It is also true of any
+     * content in a frame if the user did not explicitly follow a link
+     * to get there.
+     */
+    EMBED: Ci.nsINavHistoryService.TRANSITION_EMBED,
 
-  /**
-   * Set when the transition was a permanent redirect.
-   */
-  TRANSITION_REDIRECT_PERMANENT: Ci.nsINavHistoryService.TRANSITION_REDIRECT_PERMANENT,
+    /**
+     * Set when the transition was a permanent redirect.
+     */
+    REDIRECT_PERMANENT: Ci.nsINavHistoryService.TRANSITION_REDIRECT_PERMANENT,
 
-  /**
-   * Set when the transition was a temporary redirect.
-   */
-  TRANSITION_REDIRECT_TEMPORARY: Ci.nsINavHistoryService.TRANSITION_REDIRECT_TEMPORARY,
+    /**
+     * Set when the transition was a temporary redirect.
+     */
+    REDIRECT_TEMPORARY: Ci.nsINavHistoryService.TRANSITION_REDIRECT_TEMPORARY,
 
-  /**
-   * Set when the transition is a download.
-   */
-  TRANSITION_DOWNLOAD: Ci.nsINavHistoryService.TRANSITION_REDIRECT_DOWNLOAD,
+    /**
+     * Set when the transition is a download.
+     */
+    DOWNLOAD: Ci.nsINavHistoryService.TRANSITION_DOWNLOAD,
 
-  /**
-   * The user followed a link and got a visit in a frame.
-   */
-  TRANSITION_FRAMED_LINK: Ci.nsINavHistoryService.TRANSITION_FRAMED_LINK,
+    /**
+     * The user followed a link and got a visit in a frame.
+     */
+    FRAMED_LINK: Ci.nsINavHistoryService.TRANSITION_FRAMED_LINK,
+
+    /**
+     * The user reloaded a page.
+     */
+    RELOAD: Ci.nsINavHistoryService.TRANSITION_RELOAD,
+  },
 });
 
 /**
@@ -484,7 +508,7 @@ function validatePageInfo(pageInfo) {
   for (let inVisit of pageInfo.visits) {
     let visit = {
       date: new Date(),
-      transition: inVisit.transition || History.TRANSITION_LINK,
+      transition: inVisit.transition || History.TRANSITIONS.LINK,
     };
 
     if (!isValidTransitionType(visit.transition)) {
@@ -541,16 +565,7 @@ function convertForUpdatePlaces(pageInfo) {
  * @return (Boolean)
  */
 function isValidTransitionType(transitionType) {
-  return [
-    History.TRANSITION_LINK,
-    History.TRANSITION_TYPED,
-    History.TRANSITION_BOOKMARK,
-    History.TRANSITION_EMBED,
-    History.TRANSITION_REDIRECT_PERMANENT,
-    History.TRANSITION_REDIRECT_TEMPORARY,
-    History.TRANSITION_DOWNLOAD,
-    History.TRANSITION_FRAMED_LINK
-  ].includes(transitionType);
+  return Object.values(History.TRANSITIONS).includes(transitionType);
 }
 
 /**
@@ -640,7 +655,8 @@ var clear = Task.async(function* (db) {
   yield db.execute(
     `UPDATE moz_places SET frecency =
      (CASE
-      WHEN url BETWEEN 'place:' AND 'place;'
+      WHEN url_hash BETWEEN hash("place", "prefix_lo") AND
+                            hash("place", "prefix_hi")
       THEN 0
       ELSE -1
       END)
@@ -648,27 +664,6 @@ var clear = Task.async(function* (db) {
 
   // Notify frecency change observers.
   notify(observers, "onManyFrecenciesChanged");
-});
-
-/**
- * Remove a list of pages from `moz_places` by their id.
- *
- * @param db: (Sqlite connection)
- *      The database.
- * @param idList: (Array of integers)
- *      The `moz_places` identifiers for the places to remove.
- * @return (Promise)
- */
-var removePagesById = Task.async(function*(db, idList) {
-  if (idList.length == 0) {
-    return;
-  }
-  // Note, we are already in a transaction, since callers create it.
-  yield db.execute(`DELETE FROM moz_places
-                    WHERE id IN ( ${ sqlList(idList) } )`);
-  // Hosts accumulated during the places delete are updated through a trigger
-  // (see nsPlacesTriggers.h).
-  yield db.execute(`DELETE FROM moz_updatehosts_temp`);
 });
 
 /**
@@ -694,7 +689,25 @@ var removePagesById = Task.async(function*(db, idList) {
  */
 var cleanupPages = Task.async(function*(db, pages) {
   yield invalidateFrecencies(db, pages.filter(p => p.hasForeign || p.hasVisits).map(p => p.id));
-  yield removePagesById(db, pages.filter(p => !p.hasForeign && !p.hasVisits).map(p => p.id));
+
+  let pageIdsToRemove = pages.filter(p => !p.hasForeign && !p.hasVisits).map(p => p.id);
+  if (pageIdsToRemove.length > 0) {
+    let idsList = sqlList(pageIdsToRemove);
+    // Note, we are already in a transaction, since callers create it.
+    yield db.execute(`DELETE FROM moz_places WHERE id IN ( ${ idsList } )`);
+    // Hosts accumulated during the places delete are updated through a trigger
+    // (see nsPlacesTriggers.h).
+    yield db.executeCached(`DELETE FROM moz_updatehosts_temp`);
+
+    // Expire orphans.
+    yield db.executeCached(`
+      DELETE FROM moz_favicons WHERE NOT EXISTS
+        (SELECT 1 FROM moz_places WHERE favicon_id = moz_favicons.id)`);
+    yield db.execute(`DELETE FROM moz_annos
+                      WHERE place_id IN ( ${ idsList } )`);
+    yield db.execute(`DELETE FROM moz_inputhistory
+                      WHERE place_id IN ( ${ idsList } )`);
+  }
 });
 
 /**
@@ -781,27 +794,43 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
   // 1. Determine visits that took place during the interval.  Note
   // that the database uses microseconds, while JS uses milliseconds,
   // so we need to *1000 one way and /1000 the other way.
-  let dates = {
-    conditions: [],
-    args: {},
-  };
+  let conditions = [];
+  let args = {};
   if ("beginDate" in filter) {
-    dates.conditions.push("visit_date >= :begin * 1000");
-    dates.args.begin = Number(filter.beginDate);
+    conditions.push("v.visit_date >= :begin * 1000");
+    args.begin = Number(filter.beginDate);
   }
   if ("endDate" in filter) {
-    dates.conditions.push("visit_date <= :end * 1000");
-    dates.args.end = Number(filter.endDate);
+    conditions.push("v.visit_date <= :end * 1000");
+    args.end = Number(filter.endDate);
   }
+  if ("limit" in filter) {
+    args.limit = Number(filter.limit);
+  }
+
+  let optionalJoin = "";
+  if ("url" in filter) {
+    let url = filter.url;
+    if (url instanceof Ci.nsIURI) {
+      url = filter.url.spec;
+    } else {
+      url = new URL(url).href;
+    }
+    optionalJoin = `JOIN moz_places h ON h.id = v.place_id`;
+    conditions.push("h.url_hash = hash(:url)", "h.url = :url");
+    args.url = url;
+  }
+
 
   let visitsToRemove = [];
   let pagesToInspect = new Set();
   let onResultData = onResult ? [] : null;
 
   yield db.executeCached(
-    `SELECT id, place_id, visit_date / 1000 AS date, visit_type FROM moz_historyvisits
-     WHERE ${ dates.conditions.join(" AND ") }`,
-     dates.args,
+     `SELECT v.id, place_id, visit_date / 1000 AS date, visit_type FROM moz_historyvisits v
+             ${optionalJoin}
+             WHERE ${ conditions.join(" AND ") }${ args.limit ? " LIMIT :limit" : "" }`,
+     args,
      row => {
        let id = row.getResultByName("id");
        let place_id = row.getResultByName("place_id");
@@ -867,10 +896,12 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
 var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
   // 1. Find out what needs to be removed
   let query =
-    `SELECT id, url, guid, foreign_count, title, frecency FROM moz_places
+    `SELECT id, url, guid, foreign_count, title, frecency
+     FROM moz_places
      WHERE guid IN (${ sqlList(guids) })
-        OR url  IN (${ sqlList(urls)  })
-     `;
+        OR (url_hash IN (${ urls.map(u => "hash(" + JSON.stringify(u) + ")").join(",") })
+            AND url IN (${ sqlList(urls) }))
+    `;
 
   let onResultData = onResult ? [] : null;
   let pages = [];

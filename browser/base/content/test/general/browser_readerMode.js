@@ -69,9 +69,12 @@ add_task(function* test_reader_button() {
     }, resolve, reject);
   });
 
+  info("Got correct URL when copying");
+
   // Switch page back out of reader mode.
+  let promisePageShow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
   readerButton.click();
-  yield BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
+  yield promisePageShow;
   is(gBrowser.selectedBrowser.currentURI.spec, url,
     "Back to the original page after clicking active reader mode button");
   ok(gBrowser.selectedBrowser.canGoForward,
@@ -115,7 +118,7 @@ add_task(function* test_reader_view_element_attribute_transform() {
       let observer = new MutationObserver((mutations) => {
         mutations.forEach( mu => {
           let muValue = element.getAttribute(attribute);
-          if(element.getAttribute(attribute) !== mu.oldValue) {
+          if (element.getAttribute(attribute) !== mu.oldValue) {
             checkFn();
             resolve();
             observer.disconnect();
@@ -131,7 +134,7 @@ add_task(function* test_reader_view_element_attribute_transform() {
 
       triggerFn();
     });
-  };
+  }
 
   let command = document.getElementById("View:ReaderView");
   let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser);

@@ -9,8 +9,11 @@
 // React & Redux
 const {
   createFactory,
+  DOM: dom,
   PropTypes
 } = require("devtools/client/shared/vendor/react");
+const GripMessageBody = createFactory(require("devtools/client/webconsole/new-console-output/components/grip-message-body").GripMessageBody);
+const MessageIcon = createFactory(require("devtools/client/webconsole/new-console-output/components/message-icon").MessageIcon);
 
 EvaluationResult.displayName = "EvaluationResult";
 
@@ -20,23 +23,33 @@ EvaluationResult.propTypes = {
 
 function EvaluationResult(props) {
   const { message } = props;
-  let PreviewComponent = getPreviewComponent(message.data);
+  const {source, level} = message;
+  const icon = MessageIcon({level});
 
-  return PreviewComponent({
-    data: message.data,
-    category: message.category,
-    severity: message.severity
-  });
-}
+  const classes = ["message", "cm-s-mozilla"];
 
-function getPreviewComponent(data) {
-  if (typeof data.class != "undefined") {
-    switch (data.class) {
-      case "Date":
-        return createFactory(require("devtools/client/webconsole/new-console-output/components/message-types/date-preview").DatePreview);
-    }
+  if (source) {
+    classes.push(source);
   }
-  return createFactory(require("devtools/client/webconsole/new-console-output/components/message-types/default-renderer").DefaultRenderer);
+
+  if (level) {
+    classes.push(level);
+  }
+
+  return dom.div({
+    className: classes.join(" ")
+  },
+    // @TODO add timestamp
+    // @TODO add indent if needed with console.group
+    icon,
+    dom.span({ className: "message-body-wrapper" },
+      dom.span({ className: "message-flex-body" },
+        dom.span({ className: "message-body devtools-monospace" },
+          GripMessageBody({grip: message.parameters})
+        )
+      )
+    )
+  );
 }
 
 module.exports.EvaluationResult = EvaluationResult;

@@ -109,30 +109,35 @@ void DisplayCGL::terminate()
     SafeDelete(mFunctions);
 }
 
-SurfaceImpl *DisplayCGL::createWindowSurface(const egl::Config *configuration,
+SurfaceImpl *DisplayCGL::createWindowSurface(const egl::SurfaceState &state,
+                                             const egl::Config *configuration,
                                              EGLNativeWindowType window,
                                              const egl::AttributeMap &attribs)
 {
-    return new WindowSurfaceCGL(this->getRenderer(), window, mFunctions, mContext);
+    return new WindowSurfaceCGL(state, this->getRenderer(), window, mFunctions, mContext);
 }
 
-SurfaceImpl *DisplayCGL::createPbufferSurface(const egl::Config *configuration,
+SurfaceImpl *DisplayCGL::createPbufferSurface(const egl::SurfaceState &state,
+                                              const egl::Config *configuration,
                                               const egl::AttributeMap &attribs)
 {
-    EGLint width  = attribs.get(EGL_WIDTH, 0);
-    EGLint height = attribs.get(EGL_HEIGHT, 0);
-    return new PbufferSurfaceCGL(this->getRenderer(), width, height, mFunctions);
+    EGLint width  = static_cast<EGLint>(attribs.get(EGL_WIDTH, 0));
+    EGLint height = static_cast<EGLint>(attribs.get(EGL_HEIGHT, 0));
+    return new PbufferSurfaceCGL(state, this->getRenderer(), width, height, mFunctions);
 }
 
-SurfaceImpl* DisplayCGL::createPbufferFromClientBuffer(const egl::Config *configuration,
-                                                       EGLClientBuffer shareHandle,
+SurfaceImpl *DisplayCGL::createPbufferFromClientBuffer(const egl::SurfaceState &state,
+                                                       const egl::Config *configuration,
+                                                       EGLenum buftype,
+                                                       EGLClientBuffer clientBuffer,
                                                        const egl::AttributeMap &attribs)
 {
     UNIMPLEMENTED();
     return nullptr;
 }
 
-SurfaceImpl *DisplayCGL::createPixmapSurface(const egl::Config *configuration,
+SurfaceImpl *DisplayCGL::createPixmapSurface(const egl::SurfaceState &state,
+                                             const egl::Config *configuration,
                                              NativePixmapType nativePixmap,
                                              const egl::AttributeMap &attribs)
 {
@@ -146,7 +151,7 @@ egl::Error DisplayCGL::getDevice(DeviceImpl **device)
     return egl::Error(EGL_BAD_DISPLAY);
 }
 
-egl::ConfigSet DisplayCGL::generateConfigs() const
+egl::ConfigSet DisplayCGL::generateConfigs()
 {
     // TODO(cwallez): generate more config permutations
     egl::ConfigSet configs;
@@ -210,12 +215,6 @@ egl::ConfigSet DisplayCGL::generateConfigs() const
     return configs;
 }
 
-bool DisplayCGL::isDeviceLost() const
-{
-    // TODO(cwallez) investigate implementing this
-    return false;
-}
-
 bool DisplayCGL::testDeviceLost()
 {
     // TODO(cwallez) investigate implementing this
@@ -247,8 +246,6 @@ const FunctionsGL *DisplayCGL::getFunctionsGL() const
 
 void DisplayCGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
 {
-    outExtensions->createContext = true;
-    outExtensions->createContextNoError = true;
 }
 
 void DisplayCGL::generateCaps(egl::Caps *outCaps) const
@@ -267,6 +264,12 @@ egl::Error DisplayCGL::waitNative(EGLint engine,
                                   egl::Surface *readSurface) const
 {
     // TODO(cwallez) UNIMPLEMENTED()
+    return egl::Error(EGL_SUCCESS);
+}
+
+egl::Error DisplayCGL::getDriverVersion(std::string *version) const
+{
+    *version = "";
     return egl::Error(EGL_SUCCESS);
 }
 }

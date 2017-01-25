@@ -27,7 +27,6 @@
 #include "mozilla/layers/TextureClientPool.h"
 #include "ClientLayerManager.h"
 #include "mozilla/mozalloc.h"           // for operator delete
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_DTOR
 #include "nsPoint.h"                    // for nsIntPoint
 #include "nsRect.h"                     // for mozilla::gfx::IntRect
@@ -71,18 +70,9 @@ struct TileClient
     return mFrontBuffer != o.mFrontBuffer;
   }
 
-  void SetLayerManager(ClientLayerManager *aManager)
-  {
-    mManager = aManager;
-  }
   void SetTextureAllocator(TextureClientAllocator* aAllocator)
   {
     mAllocator = aAllocator;
-  }
-
-  void SetCompositableClient(CompositableClient* aCompositableClient)
-  {
-    mCompositableClient = aCompositableClient;
   }
 
   bool IsPlaceholderTile() const
@@ -127,7 +117,8 @@ struct TileClient
   *
   * If nullptr is returned, aTextureClientOnWhite is undefined.
   */
-  TextureClient* GetBackBuffer(const nsIntRegion& aDirtyRegion,
+  TextureClient* GetBackBuffer(CompositableClient&,
+                               const nsIntRegion& aDirtyRegion,
                                gfxContentType aContent, SurfaceMode aMode,
                                nsIntRegion& aAddPaintedRegion,
                                RefPtr<TextureClient>* aTextureClientOnWhite);
@@ -154,10 +145,8 @@ struct TileClient
   RefPtr<TextureClient> mBackBufferOnWhite;
   RefPtr<TextureClient> mFrontBuffer;
   RefPtr<TextureClient> mFrontBufferOnWhite;
-  RefPtr<ClientLayerManager> mManager;
   RefPtr<TextureClientAllocator> mAllocator;
   gfx::IntRect mUpdateRect;
-  CompositableClient* mCompositableClient;
   bool mWasPlaceholder;
 #ifdef GFX_TILEDLAYER_DEBUG_OVERLAY
   TimeStamp        mLastUpdate;
@@ -290,8 +279,8 @@ private:
 class ClientTiledLayerBuffer
 {
 public:
-  ClientTiledLayerBuffer(ClientTiledPaintedLayer* aPaintedLayer,
-                         CompositableClient* aCompositableClient)
+  ClientTiledLayerBuffer(ClientTiledPaintedLayer& aPaintedLayer,
+                         CompositableClient& aCompositableClient)
     : mPaintedLayer(aPaintedLayer)
     , mCompositableClient(aCompositableClient)
     , mLastPaintContentType(gfxContentType::COLOR)
@@ -333,8 +322,8 @@ protected:
   void UnlockTile(TileClient& aTile);
   gfxContentType GetContentType(SurfaceMode* aMode = nullptr) const;
 
-  ClientTiledPaintedLayer* mPaintedLayer;
-  CompositableClient* mCompositableClient;
+  ClientTiledPaintedLayer& mPaintedLayer;
+  CompositableClient& mCompositableClient;
 
   gfxContentType mLastPaintContentType;
   SurfaceMode mLastPaintSurfaceMode;
@@ -349,19 +338,10 @@ class ClientMultiTiledLayerBuffer
 {
   friend class TiledLayerBuffer<ClientMultiTiledLayerBuffer, TileClient>;
 public:
-  ClientMultiTiledLayerBuffer(ClientTiledPaintedLayer* aPaintedLayer,
-                              CompositableClient* aCompositableClient,
+  ClientMultiTiledLayerBuffer(ClientTiledPaintedLayer& aPaintedLayer,
+                              CompositableClient& aCompositableClient,
                               ClientLayerManager* aManager,
                               SharedFrameMetricsHelper* aHelper);
-  ClientMultiTiledLayerBuffer()
-    : ClientTiledLayerBuffer(nullptr, nullptr)
-    , mManager(nullptr)
-    , mCallback(nullptr)
-    , mCallbackData(nullptr)
-    , mSharedFrameMetricsHelper(nullptr)
-    , mTilingOrigin(std::numeric_limits<int32_t>::max(),
-                    std::numeric_limits<int32_t>::max())
-  {}
 
   void PaintThebes(const nsIntRegion& aNewValidRegion,
                    const nsIntRegion& aPaintRegion,
@@ -436,7 +416,7 @@ protected:
   TileClient GetPlaceholderTile() const { return TileClient(); }
 
 private:
-  ClientLayerManager* mManager;
+  RefPtr<ClientLayerManager> mManager;
   LayerManager::DrawPaintedLayerCallback mCallback;
   void* mCallbackData;
 
@@ -444,9 +424,6 @@ private:
   // completed then this is identical to mValidRegion.
   nsIntRegion mNewValidRegion;
 
-  // The DrawTarget we use when UseSinglePaintBuffer() above is true.
-  RefPtr<gfx::DrawTarget>       mSinglePaintDrawTarget;
-  nsIntPoint                    mSinglePaintBufferOffset;
   SharedFrameMetricsHelper*  mSharedFrameMetricsHelper;
   // When using Moz2D's CreateTiledDrawTarget we maintain a list of gfx::Tiles
   std::vector<gfx::Tile> mMoz2DTiles;
@@ -531,7 +508,7 @@ private:
 class MultiTiledContentClient : public TiledContentClient
 {
 public:
-  MultiTiledContentClient(ClientTiledPaintedLayer* aPaintedLayer,
+  MultiTiledContentClient(ClientTiledPaintedLayer& aPaintedLayer,
                           ClientLayerManager* aManager);
 
 protected:

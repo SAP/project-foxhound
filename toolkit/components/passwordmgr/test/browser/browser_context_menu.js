@@ -139,7 +139,7 @@ add_task(function* test_context_menu_password_fill() {
         let menuItemStatus = form.getAttribute("menuitemStatus");
 
         // Synthesize a right mouse click over the username input element.
-        yield openPasswordContextMenu(browser, passwordField, ()=> {
+        yield openPasswordContextMenu(browser, passwordField, () => {
           let popupHeader = document.getElementById("fill-login");
 
           // If the password field is disabled or read-only, we want to see
@@ -195,7 +195,7 @@ add_task(function* test_context_menu_username_login_fill() {
         let menuItemStatus = form.getAttribute("menuitemStatus");
 
         // Synthesize a right mouse click over the username input element.
-        yield openPasswordContextMenu(browser, usernameField, ()=> {
+        yield openPasswordContextMenu(browser, usernameField, () => {
           let popupHeader = document.getElementById("fill-login");
 
           // If we don't want to see the actual popup menu,
@@ -258,7 +258,7 @@ function* openPasswordContextMenu(browser, passwordInput, assertCallback = null)
 /**
  * Verify that only the expected form fields are filled.
  */
-function* assertContextMenuFill(form, usernameField, passwordField, unchangedFields, loginIndex){
+function* assertContextMenuFill(form, usernameField, passwordField, unchangedFields, loginIndex) {
   let popupMenu = document.getElementById("fill-login-popup");
 
   // Store the value of fields that should remain unchanged.
@@ -289,7 +289,7 @@ function* assertContextMenuFill(form, usernameField, passwordField, unchangedFie
 
   // Check that all fields that should not change have the same value as before.
   if (unchangedFields.length) {
-    Assert.ok(()=> {
+    Assert.ok(() => {
       for (let field of unchangedFields) {
         if (field.value != field.getAttribute("original-value")) {
           return false;

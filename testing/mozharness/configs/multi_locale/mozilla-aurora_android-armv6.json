@@ -7,19 +7,16 @@
     "ignore_locales": ["en-US", "multi"],
     "repos": [{
         "repo": "https://hg.mozilla.org/releases/mozilla-aurora",
-        "tag": "default",
+        "branch": "default",
         "dest": "build"
     },{
         "repo": "https://hg.mozilla.org/build/buildbot-configs",
-        "tag": "default",
+        "branch": "production",
         "dest": "build/configs"
     },{
         "repo": "https://hg.mozilla.org/build/tools",
-        "tag": "default",
+        "branch": "default",
         "dest": "tools"
-    },{
-        "repo": "https://hg.mozilla.org/build/compare-locales",
-        "tag": "RELEASE_AUTOMATION"
     }],
     "vcs_share_base": "/builds/hg-shared",
     "hg_l10n_base": "https://hg.mozilla.org/releases/l10n/mozilla-aurora",

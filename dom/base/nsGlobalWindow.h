@@ -88,7 +88,6 @@ class nsIScriptTimeoutHandler;
 class nsIWebBrowserChrome;
 
 class nsDOMWindowList;
-class nsLocation;
 class nsScreen;
 class nsHistory;
 class nsGlobalWindowObserver;
@@ -106,10 +105,12 @@ class BarProp;
 struct ChannelPixelLayout;
 class Console;
 class Crypto;
+class CustomElementsRegistry;
 class External;
 class Function;
 class Gamepad;
 enum class ImageBitmapFormat : uint32_t;
+class Location;
 class MediaQueryList;
 class MozSelfSupport;
 class Navigator;
@@ -121,7 +122,8 @@ class RequestOrUSVString;
 class Selection;
 class SpeechSynthesis;
 class U2F;
-class VRDevice;
+class VRDisplay;
+class VREventObserver;
 class WakeLock;
 #if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
 class WindowOrientationObserver;
@@ -131,9 +133,6 @@ class CacheStorage;
 } // namespace cache
 class IDBFactory;
 } // namespace dom
-namespace gfx {
-class VRDeviceProxy;
-} // namespace gfx
 } // namespace mozilla
 
 extern already_AddRefed<nsIScriptTimeoutHandler>
@@ -199,13 +198,9 @@ public:
   // Remaining time to wait.  Used only when timeouts are suspended.
   mozilla::TimeDuration mTimeRemaining;
 
-  // Principal with which to execute
-  nsCOMPtr<nsIPrincipal> mPrincipal;
-
   // stack depth at which timeout is firing
   uint32_t mFiringDepth;
 
-  // 
   uint32_t mNestingLevel;
 
   // The popup state at timeout creation time if not created from
@@ -491,8 +486,7 @@ public:
 
   // Outer windows only.
   virtual nsresult SetFullscreenInternal(
-    FullscreenReason aReason, bool aIsFullscreen,
-    mozilla::gfx::VRDeviceProxy *aHMD = nullptr) override final;
+    FullscreenReason aReason, bool aIsFullscreen) override final;
   virtual void FinishFullscreenChange(bool aIsFullscreen) override final;
   bool SetWidgetFullscreen(FullscreenReason aReason, bool aIsFullscreen,
                            nsIWidget* aWidget, nsIScreen* aScreen);
@@ -500,6 +494,8 @@ public:
 
   // Inner windows only.
   virtual void SetHasGamepadEventListener(bool aHasGamepad = true) override;
+  void NotifyVREventListenerAdded();
+  virtual void EventListenerAdded(nsIAtom* aType) override;
 
   // nsIInterfaceRequestor
   NS_DECL_NSIINTERFACEREQUESTOR
@@ -805,8 +801,17 @@ public:
   void EnableGamepadUpdates();
   void DisableGamepadUpdates();
 
-  // Update the VR devices for this window
-  bool UpdateVRDevices(nsTArray<RefPtr<mozilla::dom::VRDevice>>& aDevices);
+  // Inner windows only.
+  // Enable/disable updates for VR
+  void EnableVRUpdates();
+  void DisableVRUpdates();
+
+  // Update the VR displays for this window
+  bool UpdateVRDisplays(nsTArray<RefPtr<mozilla::dom::VRDisplay>>& aDisplays);
+  
+  // Inner windows only.
+  // Called to inform that the set of active VR displays has changed.
+  void NotifyActiveVRDisplaysChanged();
 
 #define EVENT(name_, id_, type_, struct_)                                     \
   mozilla::dom::EventHandlerNonNull* GetOn##name_()                           \
@@ -875,9 +880,10 @@ public:
   void GetName(nsAString& aName, mozilla::ErrorResult& aError);
   void SetNameOuter(const nsAString& aName, mozilla::ErrorResult& aError);
   void SetName(const nsAString& aName, mozilla::ErrorResult& aError);
-  nsLocation* GetLocation(mozilla::ErrorResult& aError);
+  mozilla::dom::Location* GetLocation(mozilla::ErrorResult& aError);
   nsIDOMLocation* GetLocation() override;
   nsHistory* GetHistory(mozilla::ErrorResult& aError);
+  mozilla::dom::CustomElementsRegistry* CustomElements() override;
   mozilla::dom::BarProp* GetLocationbar(mozilla::ErrorResult& aError);
   mozilla::dom::BarProp* GetMenubar(mozilla::ErrorResult& aError);
   mozilla::dom::BarProp* GetPersonalbar(mozilla::ErrorResult& aError);
@@ -1226,9 +1232,9 @@ public:
                                   mozilla::ErrorResult& aError);
   void SetCursorOuter(const nsAString& aCursor, mozilla::ErrorResult& aError);
   void SetCursor(const nsAString& aCursor, mozilla::ErrorResult& aError);
-  void Maximize(mozilla::ErrorResult& aError);
-  void Minimize(mozilla::ErrorResult& aError);
-  void Restore(mozilla::ErrorResult& aError);
+  void Maximize();
+  void Minimize();
+  void Restore();
   void NotifyDefaultButtonLoaded(mozilla::dom::Element& aDefaultButton,
                                  mozilla::ErrorResult& aError);
   nsIMessageBroadcaster* GetMessageManager(mozilla::ErrorResult& aError);
@@ -1257,7 +1263,8 @@ public:
 
   already_AddRefed<nsWindowRoot> GetWindowRootOuter();
   already_AddRefed<nsWindowRoot> GetWindowRoot(mozilla::ErrorResult& aError);
-  nsPerformance* GetPerformance();
+
+  mozilla::dom::Performance* GetPerformance();
 
 protected:
   // Web IDL helpers
@@ -1607,8 +1614,6 @@ public:
 
   virtual void SetKeyboardIndicators(UIStateChangeType aShowAccelerators,
                                      UIStateChangeType aShowFocusRings) override;
-  virtual void GetKeyboardIndicators(bool* aShowAccelerators,
-                                     bool* aShowFocusRings) override;
 
   // Inner windows only.
   void UpdateCanvasFocus(bool aFocusChanged, nsIContent* aNewContent);
@@ -1704,6 +1709,10 @@ private:
   // IsSecureContext() for the inner window that corresponds to aDocument.
   bool ComputeIsSecureContext(nsIDocument* aDocument);
 
+public:
+
+  void GetConstellation(nsACString& aConstellation);
+
 protected:
   // This member is also used on both inner and outer windows, but
   // for slightly different purposes. On inner windows it means the
@@ -1759,12 +1768,6 @@ protected:
   bool                   mNeedsFocus : 1;
   bool                   mHasFocus : 1;
 
-  // whether to show keyboard accelerators
-  bool                   mShowAccelerators : 1;
-
-  // whether to show focus rings
-  bool                   mShowFocusRings : 1;
-
   // when true, show focus rings for the current focused content only.
   // This will be reset when another element is focused
   bool                   mShowFocusRingForContent : 1;
@@ -1776,6 +1779,10 @@ protected:
   // Inner windows only.
   // Indicates whether this window wants gamepad input events
   bool                   mHasGamepad : 1;
+
+  // Inner windows only.
+  // Indicates whether this window wants VR events
+  bool                   mHasVREvents : 1;
 #ifdef MOZ_GAMEPAD
   nsCheapSet<nsUint32HashKey> mGamepadIndexSet;
   nsRefPtrHashtable<nsUint32HashKey, mozilla::dom::Gamepad> mGamepads;
@@ -1843,8 +1850,9 @@ protected:
   nsTimeout*                    mTimeoutInsertionPoint;
   uint32_t                      mTimeoutPublicIdCounter;
   uint32_t                      mTimeoutFiringDepth;
-  RefPtr<nsLocation>          mLocation;
+  RefPtr<mozilla::dom::Location> mLocation;
   RefPtr<nsHistory>           mHistory;
+  RefPtr<mozilla::dom::CustomElementsRegistry> mCustomElements;
 
   // These member variables are used on both inner and the outer windows.
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
@@ -1917,8 +1925,13 @@ protected:
   // This is the CC generation the last time we called CanSkip.
   uint32_t mCanSkipCCGeneration;
 
-  // The VRDevies for this window
-  nsTArray<RefPtr<mozilla::dom::VRDevice>> mVRDevices;
+  // The VR Displays for this window
+  nsTArray<RefPtr<mozilla::dom::VRDisplay>> mVRDisplays;
+
+  nsAutoPtr<mozilla::dom::VREventObserver> mVREventObserver;
+
+  uint64_t mStaticConstellation; // Only used on outer windows
+  nsCString mConstellation; // Only used on inner windows
 
   friend class nsDOMScriptableHelper;
   friend class nsDOMWindowUtils;

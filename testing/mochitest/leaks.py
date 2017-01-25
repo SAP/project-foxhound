@@ -48,12 +48,12 @@ class ShutdownLeaks(object):
 
     def process(self):
         if not self.seenShutdown:
-            self.logger.warning(
+            self.logger.error(
                 "TEST-UNEXPECTED-FAIL | ShutdownLeaks | process() called before end of test suite")
 
         for test in self._parseLeakingTests():
             for url, count in self._zipLeakedWindows(test["leakedWindows"]):
-                self.logger.warning(
+                self.logger.error(
                     "TEST-UNEXPECTED-FAIL | %s | leaked %d window(s) until shutdown [url = %s]" % (test["fileName"], count, url))
 
             if test["leakedWindowsString"]:
@@ -61,7 +61,7 @@ class ShutdownLeaks(object):
                                  (test["fileName"], test["leakedWindowsString"]))
 
             if test["leakedDocShells"]:
-                self.logger.warning("TEST-UNEXPECTED-FAIL | %s | leaked %d docShell(s) until shutdown" % (
+                self.logger.error("TEST-UNEXPECTED-FAIL | %s | leaked %d docShell(s) until shutdown" % (
                     test["fileName"], len(test["leakedDocShells"])))
                 self.logger.info("TEST-INFO | %s | docShell(s) leaked: %s" % (test["fileName"],
                                                                               ', '.join(["[pid = %s] [id = %s]" % x for x in test["leakedDocShells"]])))
@@ -73,7 +73,7 @@ class ShutdownLeaks(object):
 
         # log line has invalid format
         if not pid or not serial:
-            self.logger.warning(
+            self.logger.error(
                 "TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line <%s>" % line)
             return
 
@@ -95,7 +95,7 @@ class ShutdownLeaks(object):
 
         # log line has invalid format
         if not pid or not id:
-            self.logger.warning(
+            self.logger.error(
                 "TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line <%s>" % line)
             return
 
@@ -158,6 +158,7 @@ class LSANLeaks(object):
     def __init__(self, logger):
         self.logger = logger
         self.inReport = False
+        self.fatalError = False
         self.foundFrames = set([])
         self.recordMoreFrames = None
         self.currStack = None
@@ -177,6 +178,8 @@ class LSANLeaks(object):
 
         self.startRegExp = re.compile(
             "==\d+==ERROR: LeakSanitizer: detected memory leaks")
+        self.fatalErrorRegExp = re.compile(
+            "==\d+==LeakSanitizer has encountered a fatal error.")
         self.stackFrameRegExp = re.compile("    #\d+ 0x[0-9a-f]+ in ([^(</]+)")
         self.sysLibStackFrameRegExp = re.compile(
             "    #\d+ 0x[0-9a-f]+ \(([^+]+)\+0x[0-9a-f]+\)")
@@ -184,6 +187,10 @@ class LSANLeaks(object):
     def log(self, line):
         if re.match(self.startRegExp, line):
             self.inReport = True
+            return
+
+        if re.match(self.fatalErrorRegExp, line):
+            self.fatalError = True
             return
 
         if not self.inReport:
@@ -221,8 +228,16 @@ class LSANLeaks(object):
         # We'll end up with "unknown stack" if everything is ignored.
 
     def process(self):
+        if self.fatalError:
+            self.logger.error(
+                "TEST-UNEXPECTED-FAIL | LeakSanitizer | LeakSanitizer has encountered a fatal error.")
+
+        if self.foundFrames:
+            self.logger.info("TEST-INFO | LeakSanitizer | To show the addresses of leaked objects add report_objects=1 to LSAN_OPTIONS")
+            self.logger.info("TEST-INFO | LeakSanitizer | This can be done in testing/mozbase/mozrunner/mozrunner/utils.py")
+
         for f in self.foundFrames:
-            self.logger.warning(
+            self.logger.error(
                 "TEST-UNEXPECTED-FAIL | LeakSanitizer | leak at " + f)
 
     def _finishStack(self):

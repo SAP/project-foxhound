@@ -3,12 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Ci} = require("chrome");
 const EventEmitter = require("devtools/shared/event-emitter");
 loader.lazyRequireGetter(this, "setNamedTimeout",
   "devtools/client/shared/widgets/view-helpers", true);
 loader.lazyRequireGetter(this, "clearNamedTimeout",
   "devtools/client/shared/widgets/view-helpers", true);
+const {KeyCodes} = require("devtools/client/shared/keycodes");
 
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -52,6 +52,8 @@ const MAX_VISIBLE_STRING_SIZE = 100;
  *                          the table. See @setupColumns for more info.
  *        - uniqueId: the column which will be the unique identifier of each
  *                    entry in the table. Default: name.
+ *        - wrapTextInElements: Don't ever use 'value' attribute on labels.
+ *                              Default: false.
  *        - emptyText: text to display when no entries in the table to display.
  *        - highlightUpdated: true to highlight the changed/added row.
  *        - removableColumns: Whether columns are removeable. If set to false,
@@ -68,9 +70,10 @@ function TableWidget(node, options = {}) {
   this._parent = node;
 
   let {initialColumns, emptyText, uniqueId, highlightUpdated, removableColumns,
-       firstColumn, cellContextMenuId} = options;
+       firstColumn, wrapTextInElements, cellContextMenuId} = options;
   this.emptyText = emptyText || "";
   this.uniqueId = uniqueId || "name";
+  this.wrapTextInElements = wrapTextInElements || false;
   this.firstColumn = firstColumn || "";
   this.highlightUpdated = highlightUpdated || false;
   this.removableColumns = removableColumns !== false;
@@ -467,7 +470,7 @@ TableWidget.prototype = {
     let cell;
 
     switch (event.keyCode) {
-      case event.DOM_VK_UP:
+      case KeyCodes.DOM_VK_UP:
         event.preventDefault();
 
         colName = selectedCell.parentNode.id;
@@ -485,7 +488,7 @@ TableWidget.prototype = {
 
         this.emit(EVENTS.ROW_SELECTED, cell.getAttribute("data-id"));
         break;
-      case event.DOM_VK_DOWN:
+      case KeyCodes.DOM_VK_DOWN:
         event.preventDefault();
 
         colName = selectedCell.parentNode.id;
@@ -800,7 +803,7 @@ TableWidget.prototype = {
    * Removes the row associated with the `item` object.
    */
   remove: function (item) {
-    if (typeof item == "string") {
+    if (typeof item != "object") {
       item = this.items.get(item);
     }
     if (!item) {
@@ -964,6 +967,7 @@ function Column(table, id, header) {
   this.window = table.window;
   this.id = id;
   this.uniqueId = table.uniqueId;
+  this.wrapTextInElements = table.wrapTextInElements;
   this.table = table;
   this.cells = [];
   this.items = {};
@@ -1346,17 +1350,17 @@ Column.prototype = {
     // Only sort the array if we are sorting based on this column
     if (this.sorted == 1) {
       items.sort((a, b) => {
-        let val1 = (a[this.id] instanceof Ci.nsIDOMNode) ?
+        let val1 = (a[this.id] instanceof Node) ?
             a[this.id].textContent : a[this.id];
-        let val2 = (b[this.id] instanceof Ci.nsIDOMNode) ?
+        let val2 = (b[this.id] instanceof Node) ?
             b[this.id].textContent : b[this.id];
         return val1 > val2;
       });
     } else if (this.sorted > 1) {
       items.sort((a, b) => {
-        let val1 = (a[this.id] instanceof Ci.nsIDOMNode) ?
+        let val1 = (a[this.id] instanceof Node) ?
             a[this.id].textContent : a[this.id];
-        let val2 = (b[this.id] instanceof Ci.nsIDOMNode) ?
+        let val2 = (b[this.id] instanceof Node) ?
             b[this.id].textContent : b[this.id];
         return val2 > val1;
       });
@@ -1424,7 +1428,7 @@ Column.prototype = {
         return;
       }
 
-      let dataid = target.getAttribute("data-id");
+      let dataid = closest.getAttribute("data-id");
       this.table.emit(EVENTS.ROW_SELECTED, dataid);
     }
   },
@@ -1446,6 +1450,7 @@ Column.prototype = {
 function Cell(column, item, nextCell) {
   let document = column.document;
 
+  this.wrapTextInElements = column.wrapTextInElements;
   this.label = document.createElementNS(XUL_NS, "label");
   this.label.setAttribute("crop", "end");
   this.label.className = "plain table-widget-cell";
@@ -1499,12 +1504,18 @@ Cell.prototype = {
       return;
     }
 
-    if (!(value instanceof Ci.nsIDOMNode) &&
+    if (this.wrapTextInElements && !(value instanceof Node)) {
+      let span = this.label.ownerDocument.createElementNS(HTML_NS, "span");
+      span.textContent = value;
+      value = span;
+    }
+
+    if (!(value instanceof Node) &&
         value.length > MAX_VISIBLE_STRING_SIZE) {
       value = value .substr(0, MAX_VISIBLE_STRING_SIZE) + "\u2026";
     }
 
-    if (value instanceof Ci.nsIDOMNode) {
+    if (value instanceof Node) {
       this.label.removeAttribute("value");
 
       while (this.label.firstChild) {
@@ -1654,14 +1665,14 @@ EditableFieldsEngine.prototype = {
     }
 
     switch (event.keyCode) {
-      case event.DOM_VK_ESCAPE:
+      case KeyCodes.DOM_VK_ESCAPE:
         this.cancelEdit();
         event.preventDefault();
         break;
-      case event.DOM_VK_RETURN:
+      case KeyCodes.DOM_VK_RETURN:
         this.completeEdit();
         break;
-      case event.DOM_VK_TAB:
+      case KeyCodes.DOM_VK_TAB:
         if (this.onTab) {
           this.onTab(event);
         }
@@ -1767,7 +1778,7 @@ EditableFieldsEngine.prototype = {
    *         The node to copy styles to.
    */
   copyStyles: function (source, destination) {
-    let style = source.ownerGlobal.getComputedStyle(source);
+    let style = source.ownerDocument.defaultView.getComputedStyle(source);
     let props = [
       "borderTopWidth",
       "borderRightWidth",

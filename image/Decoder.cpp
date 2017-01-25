@@ -1,4 +1,3 @@
-
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,7 +8,8 @@
 #include "mozilla/gfx/2D.h"
 #include "DecodePool.h"
 #include "GeckoProfiler.h"
-#include "imgIContainer.h"
+#include "IDecodingTask.h"
+#include "ISurfaceProvider.h"
 #include "nsProxyRelease.h"
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -21,6 +21,29 @@ using mozilla::gfx::SurfaceFormat;
 namespace mozilla {
 namespace image {
 
+class MOZ_STACK_CLASS AutoRecordDecoderTelemetry final
+{
+public:
+  explicit AutoRecordDecoderTelemetry(Decoder* aDecoder)
+    : mDecoder(aDecoder)
+  {
+    MOZ_ASSERT(mDecoder);
+
+    // Begin recording telemetry data.
+    mStartTime = TimeStamp::Now();
+  }
+
+  ~AutoRecordDecoderTelemetry()
+  {
+    // Finish telemetry.
+    mDecoder->mDecodeTime += (TimeStamp::Now() - mStartTime);
+  }
+
+private:
+  Decoder* mDecoder;
+  TimeStamp mStartTime;
+};
+
 Decoder::Decoder(RasterImage* aImage)
   : mImageData(nullptr)
   , mImageDataLength(0)
@@ -29,17 +52,17 @@ Decoder::Decoder(RasterImage* aImage)
   , mImage(aImage)
   , mProgress(NoProgress)
   , mFrameCount(0)
-  , mFailCode(NS_OK)
-  , mChunkCount(0)
+  , mLoopLength(FrameTimeout::Zero())
   , mDecoderFlags(DefaultDecoderFlags())
   , mSurfaceFlags(DefaultSurfaceFlags())
-  , mBytesDecoded(0)
   , mInitialized(false)
   , mMetadataDecode(false)
+  , mHaveExplicitOutputSize(false)
   , mInFrame(false)
-  , mDataDone(false)
+  , mFinishedNewFrame(false)
+  , mReachedTerminalState(false)
   , mDecodeDone(false)
-  , mDataError(false)
+  , mError(false)
   , mDecodeAborted(false)
   , mShouldReportError(false)
 { }
@@ -63,72 +86,85 @@ Decoder::~Decoder()
  * Common implementation of the decoder interface.
  */
 
-void
+nsresult
 Decoder::Init()
 {
   // No re-initializing
   MOZ_ASSERT(!mInitialized, "Can't re-initialize a decoder!");
 
-  // It doesn't make sense to decode anything but the first frame if we can't
-  // store anything in the SurfaceCache, since only the last frame we decode
-  // will be retrievable.
-  MOZ_ASSERT(ShouldUseSurfaceCache() || IsFirstFrameDecode());
+  // All decoders must have a SourceBufferIterator.
+  MOZ_ASSERT(mIterator);
 
-  // Implementation-specific initialization
-  InitInternal();
+  // Metadata decoders must not set an output size.
+  MOZ_ASSERT_IF(mMetadataDecode, !mHaveExplicitOutputSize);
+
+  // All decoders must be anonymous except for metadata decoders.
+  // XXX(seth): Soon that exception will be removed.
+  MOZ_ASSERT_IF(mImage, IsMetadataDecode());
+
+  // Implementation-specific initialization.
+  nsresult rv = InitInternal();
 
   mInitialized = true;
+
+  return rv;
 }
 
-nsresult
-Decoder::Decode(IResumable* aOnResume)
+LexerResult
+Decoder::Decode(IResumable* aOnResume /* = nullptr */)
 {
   MOZ_ASSERT(mInitialized, "Should be initialized here");
   MOZ_ASSERT(mIterator, "Should have a SourceBufferIterator");
 
-  // If no IResumable was provided, default to |this|.
-  IResumable* onResume = aOnResume ? aOnResume : this;
-
-  // We keep decoding chunks until the decode completes or there are no more
-  // chunks available.
-  while (!GetDecodeDone() && !HasError()) {
-    auto newState = mIterator->AdvanceOrScheduleResume(onResume);
-
-    if (newState == SourceBufferIterator::WAITING) {
-      // We can't continue because the rest of the data hasn't arrived from the
-      // network yet. We don't have to do anything special; the
-      // SourceBufferIterator will ensure that Decode() gets called again on a
-      // DecodePool thread when more data is available.
-      return NS_OK;
-    }
-
-    if (newState == SourceBufferIterator::COMPLETE) {
-      mDataDone = true;
-
-      nsresult finalStatus = mIterator->CompletionStatus();
-      if (NS_FAILED(finalStatus)) {
-        PostDataError();
-      }
-
-      CompleteDecode();
-      return finalStatus;
-    }
-
-    MOZ_ASSERT(newState == SourceBufferIterator::READY);
-
-    Write(mIterator->Data(), mIterator->Length());
+  // If we're already done, don't attempt to keep decoding.
+  if (GetDecodeDone()) {
+    return LexerResult(HasError() ? TerminalState::FAILURE
+                                  : TerminalState::SUCCESS);
   }
 
+  LexerResult lexerResult(TerminalState::FAILURE);
+  {
+    PROFILER_LABEL("ImageDecoder", "Decode", js::ProfileEntry::Category::GRAPHICS);
+    AutoRecordDecoderTelemetry telemetry(this);
+
+    lexerResult =  DoDecode(*mIterator, aOnResume);
+  };
+
+  if (lexerResult.is<Yield>()) {
+    // We either need more data to continue (in which case either @aOnResume or
+    // the caller will reschedule us to run again later), or the decoder is
+    // yielding to allow the caller access to some intermediate output.
+    return lexerResult;
+  }
+
+  // We reached a terminal state; we're now done decoding.
+  MOZ_ASSERT(lexerResult.is<TerminalState>());
+  mReachedTerminalState = true;
+
+  // If decoding failed, record that fact.
+  if (lexerResult.as<TerminalState>() == TerminalState::FAILURE) {
+    PostError();
+  }
+
+  // Perform final cleanup.
   CompleteDecode();
-  return HasError() ? NS_ERROR_FAILURE : NS_OK;
+
+  return LexerResult(HasError() ? TerminalState::FAILURE
+                                : TerminalState::SUCCESS);
 }
 
-void
-Decoder::Resume()
+LexerResult
+Decoder::TerminateFailure()
 {
-  DecodePool* decodePool = DecodePool::Singleton();
-  MOZ_ASSERT(decodePool);
-  decodePool->AsyncDecode(this);
+  PostError();
+
+  // Perform final cleanup if need be.
+  if (!mReachedTerminalState) {
+    mReachedTerminalState = true;
+    CompleteDecode();
+  }
+
+  return LexerResult(TerminalState::FAILURE);
 }
 
 bool
@@ -141,51 +177,23 @@ Decoder::ShouldSyncDecode(size_t aByteLimit)
 }
 
 void
-Decoder::Write(const char* aBuffer, uint32_t aCount)
-{
-  PROFILER_LABEL("ImageDecoder", "Write",
-    js::ProfileEntry::Category::GRAPHICS);
-
-  MOZ_ASSERT(aBuffer);
-  MOZ_ASSERT(aCount > 0);
-
-  // We're strict about decoder errors
-  MOZ_ASSERT(!HasDecoderError(),
-             "Not allowed to make more decoder calls after error!");
-
-  // Begin recording telemetry data.
-  TimeStamp start = TimeStamp::Now();
-  mChunkCount++;
-
-  // Keep track of the total number of bytes written.
-  mBytesDecoded += aCount;
-
-  // If a data error occured, just ignore future data.
-  if (HasDataError()) {
-    return;
-  }
-
-  if (IsMetadataDecode() && HasSize()) {
-    // More data came in since we found the size. We have nothing to do here.
-    return;
-  }
-
-  // Pass the data along to the implementation.
-  WriteInternal(aBuffer, aCount);
-
-  // Finish telemetry.
-  mDecodeTime += (TimeStamp::Now() - start);
-}
-
-void
 Decoder::CompleteDecode()
 {
-  // Implementation-specific finalization
-  BeforeFinishInternal();
-  if (!HasError()) {
-    FinishInternal();
-  } else {
-    FinishWithErrorInternal();
+  // Implementation-specific finalization.
+  nsresult rv = BeforeFinishInternal();
+  if (NS_FAILED(rv)) {
+    PostError();
+  }
+
+  rv = HasError() ? FinishWithErrorInternal()
+                  : FinishInternal();
+  if (NS_FAILED(rv)) {
+    PostError();
+  }
+
+  // If this was a metadata decode and we never got a size, the decode failed.
+  if (IsMetadataDecode() && !HasSize()) {
+    PostError();
   }
 
   // If the implementation left us mid-frame, finish that up.
@@ -200,9 +208,9 @@ Decoder::CompleteDecode()
   if (!IsMetadataDecode() && !mDecodeDone && !WasAborted()) {
     mShouldReportError = true;
 
-    // If we only have a data error, we're usable if we have at least one
-    // complete frame.
-    if (!HasDecoderError() && GetCompleteFrameCount() > 0) {
+    // Even if we encountered an error, we're still usable if we have at least
+    // one complete frame.
+    if (GetCompleteFrameCount() > 0) {
       // We're usable, so do exactly what we should have when the decoder
       // completed.
 
@@ -236,28 +244,56 @@ Decoder::CompleteDecode()
   }
 }
 
-nsresult
-Decoder::SetTargetSize(const nsIntSize& aSize)
+void
+Decoder::SetOutputSize(const gfx::IntSize& aSize)
 {
-  // Make sure the size is reasonable.
-  if (MOZ_UNLIKELY(aSize.width <= 0 || aSize.height <= 0)) {
-    return NS_ERROR_FAILURE;
-  }
+  mOutputSize = Some(aSize);
+  mHaveExplicitOutputSize = true;
+}
 
-  // Create a downscaler that we'll filter our output through.
-  mDownscaler.emplace(aSize);
+Maybe<gfx::IntSize>
+Decoder::ExplicitOutputSize() const
+{
+  MOZ_ASSERT_IF(mHaveExplicitOutputSize, mOutputSize);
+  return mHaveExplicitOutputSize ? mOutputSize : Nothing();
+}
 
-  return NS_OK;
+Maybe<uint32_t>
+Decoder::TakeCompleteFrameCount()
+{
+  const bool finishedNewFrame = mFinishedNewFrame;
+  mFinishedNewFrame = false;
+  return finishedNewFrame ? Some(GetCompleteFrameCount()) : Nothing();
+}
+
+DecoderFinalStatus
+Decoder::FinalStatus() const
+{
+  return DecoderFinalStatus(IsMetadataDecode(),
+                            GetDecodeDone(),
+                            WasAborted(),
+                            HasError(),
+                            ShouldReportError());
+}
+
+DecoderTelemetry
+Decoder::Telemetry() const
+{
+  MOZ_ASSERT(mIterator);
+  return DecoderTelemetry(SpeedHistogram(),
+                          mIterator->ByteCount(),
+                          mIterator->ChunkCount(),
+                          mDecodeTime);
 }
 
 nsresult
 Decoder::AllocateFrame(uint32_t aFrameNum,
-                       const nsIntSize& aTargetSize,
-                       const nsIntRect& aFrameRect,
+                       const gfx::IntSize& aOutputSize,
+                       const gfx::IntRect& aFrameRect,
                        gfx::SurfaceFormat aFormat,
                        uint8_t aPaletteDepth)
 {
-  mCurrentFrame = AllocateFrameInternal(aFrameNum, aTargetSize, aFrameRect,
+  mCurrentFrame = AllocateFrameInternal(aFrameNum, aOutputSize, aFrameRect,
                                         aFormat, aPaletteDepth,
                                         mCurrentFrame.get());
 
@@ -266,16 +302,16 @@ Decoder::AllocateFrame(uint32_t aFrameNum,
     mCurrentFrame->GetImageData(&mImageData, &mImageDataLength);
     mCurrentFrame->GetPaletteData(&mColormap, &mColormapSize);
 
-    if (aFrameNum + 1 == mFrameCount) {
-      // If we're past the first frame, PostIsAnimated() should've been called.
-      MOZ_ASSERT_IF(mFrameCount > 1, HasAnimation());
+    // We should now be on |aFrameNum|. (Note that we're comparing the frame
+    // number, which is zero-based, with the frame count, which is one-based.)
+    MOZ_ASSERT(aFrameNum + 1 == mFrameCount);
 
-      // Update our state to reflect the new frame
-      MOZ_ASSERT(!mInFrame, "Starting new frame but not done with old one!");
-      mInFrame = true;
-    }
-  } else {
-    PostDataError();
+    // If we're past the first frame, PostIsAnimated() should've been called.
+    MOZ_ASSERT_IF(mFrameCount > 1, HasAnimation());
+
+    // Update our state to reflect the new frame.
+    MOZ_ASSERT(!mInFrame, "Starting new frame but not done with old one!");
+    mInFrame = true;
   }
 
   return mCurrentFrame ? NS_OK : NS_ERROR_FAILURE;
@@ -283,13 +319,13 @@ Decoder::AllocateFrame(uint32_t aFrameNum,
 
 RawAccessFrameRef
 Decoder::AllocateFrameInternal(uint32_t aFrameNum,
-                               const nsIntSize& aTargetSize,
-                               const nsIntRect& aFrameRect,
+                               const gfx::IntSize& aOutputSize,
+                               const gfx::IntRect& aFrameRect,
                                SurfaceFormat aFormat,
                                uint8_t aPaletteDepth,
                                imgFrame* aPreviousFrame)
 {
-  if (mDataError || NS_FAILED(mFailCode)) {
+  if (HasError()) {
     return RawAccessFrameRef();
   }
 
@@ -298,22 +334,15 @@ Decoder::AllocateFrameInternal(uint32_t aFrameNum,
     return RawAccessFrameRef();
   }
 
-  if (aTargetSize.width <= 0 || aTargetSize.height <= 0 ||
+  if (aOutputSize.width <= 0 || aOutputSize.height <= 0 ||
       aFrameRect.width <= 0 || aFrameRect.height <= 0) {
     NS_WARNING("Trying to add frame with zero or negative size");
     return RawAccessFrameRef();
   }
 
-  const uint32_t bytesPerPixel = aPaletteDepth == 0 ? 4 : 1;
-  if (ShouldUseSurfaceCache() &&
-      !SurfaceCache::CanHold(aFrameRect.Size(), bytesPerPixel)) {
-    NS_WARNING("Trying to add frame that's too large for the SurfaceCache");
-    return RawAccessFrameRef();
-  }
-
-  RefPtr<imgFrame> frame = new imgFrame();
+  NotNull<RefPtr<imgFrame>> frame = WrapNotNull(new imgFrame());
   bool nonPremult = bool(mSurfaceFlags & SurfaceFlags::NO_PREMULTIPLY_ALPHA);
-  if (NS_FAILED(frame->InitForDecoder(aTargetSize, aFrameRect, aFormat,
+  if (NS_FAILED(frame->InitForDecoder(aOutputSize, aFrameRect, aFormat,
                                       aPaletteDepth, nonPremult))) {
     NS_WARNING("imgFrame::Init should succeed");
     return RawAccessFrameRef();
@@ -324,29 +353,6 @@ Decoder::AllocateFrameInternal(uint32_t aFrameNum,
     frame->Abort();
     return RawAccessFrameRef();
   }
-
-  if (ShouldUseSurfaceCache()) {
-    InsertOutcome outcome =
-      SurfaceCache::Insert(frame, ImageKey(mImage.get()),
-                           RasterSurfaceKey(aTargetSize,
-                                            mSurfaceFlags,
-                                            aFrameNum));
-    if (outcome == InsertOutcome::FAILURE) {
-      // We couldn't insert the surface, almost certainly due to low memory. We
-      // treat this as a permanent error to help the system recover; otherwise,
-      // we might just end up attempting to decode this image again immediately.
-      ref->Abort();
-      return RawAccessFrameRef();
-    } else if (outcome == InsertOutcome::FAILURE_ALREADY_PRESENT) {
-      // Another decoder beat us to decoding this frame. We abort this decoder
-      // rather than treat this as a real error.
-      mDecodeAborted = true;
-      ref->Abort();
-      return RawAccessFrameRef();
-    }
-  }
-
-  nsIntRect refreshArea;
 
   if (aFrameNum == 1) {
     MOZ_ASSERT(aPreviousFrame, "Must provide a previous frame when animated");
@@ -359,7 +365,7 @@ Decoder::AllocateFrameInternal(uint32_t aFrameNum,
     if (previousFrameData.mDisposalMethod == DisposalMethod::CLEAR ||
         previousFrameData.mDisposalMethod == DisposalMethod::CLEAR_ALL ||
         previousFrameData.mDisposalMethod == DisposalMethod::RESTORE_PREVIOUS) {
-      refreshArea = previousFrameData.mRect;
+      mFirstFrameRefreshArea = previousFrameData.mRect;
     }
   }
 
@@ -368,14 +374,10 @@ Decoder::AllocateFrameInternal(uint32_t aFrameNum,
 
     // Some GIFs are huge but only have a small area that they animate. We only
     // need to refresh that small area when frame 0 comes around again.
-    refreshArea.UnionRect(refreshArea, frame->GetRect());
+    mFirstFrameRefreshArea.UnionRect(mFirstFrameRefreshArea, frame->GetRect());
   }
 
   mFrameCount++;
-
-  if (mImage) {
-    mImage->OnAddedFrame(mFrameCount, refreshArea);
-  }
 
   return ref;
 }
@@ -384,10 +386,10 @@ Decoder::AllocateFrameInternal(uint32_t aFrameNum,
  * Hook stubs. Override these as necessary in decoder implementations.
  */
 
-void Decoder::InitInternal() { }
-void Decoder::BeforeFinishInternal() { }
-void Decoder::FinishInternal() { }
-void Decoder::FinishWithErrorInternal() { }
+nsresult Decoder::InitInternal() { return NS_OK; }
+nsresult Decoder::BeforeFinishInternal() { return NS_OK; }
+nsresult Decoder::FinishInternal() { return NS_OK; }
+nsresult Decoder::FinishWithErrorInternal() { return NS_OK; }
 
 /*
  * Progress Notifications
@@ -398,12 +400,27 @@ Decoder::PostSize(int32_t aWidth,
                   int32_t aHeight,
                   Orientation aOrientation /* = Orientation()*/)
 {
-  // Validate
+  // Validate.
   MOZ_ASSERT(aWidth >= 0, "Width can't be negative!");
   MOZ_ASSERT(aHeight >= 0, "Height can't be negative!");
 
-  // Tell the image
+  // Set our intrinsic size.
   mImageMetadata.SetSize(aWidth, aHeight, aOrientation);
+
+  // Set our output size if it's not already set.
+  if (!mOutputSize) {
+    mOutputSize = Some(IntSize(aWidth, aHeight));
+  }
+
+  MOZ_ASSERT(mOutputSize->width <= aWidth && mOutputSize->height <= aHeight,
+             "Output size will result in upscaling");
+
+  // Create a downscaler if we need to downscale. This is used by legacy
+  // decoders that haven't been converted to use SurfacePipe yet.
+  // XXX(seth): Obviously, we'll remove this once all decoders use SurfacePipe.
+  if (mOutputSize->width < aWidth || mOutputSize->height < aHeight) {
+    mDownscaler.emplace(*mOutputSize);
+  }
 
   // Record this notification.
   mProgress |= FLAG_SIZE_AVAILABLE;
@@ -416,7 +433,7 @@ Decoder::PostHasTransparency()
 }
 
 void
-Decoder::PostIsAnimated(int32_t aFirstFrameTimeout)
+Decoder::PostIsAnimated(FrameTimeout aFirstFrameTimeout)
 {
   mProgress |= FLAG_IS_ANIMATED;
   mImageMetadata.SetHasAnimation();
@@ -428,38 +445,37 @@ Decoder::PostFrameStop(Opacity aFrameOpacity
                          /* = Opacity::SOME_TRANSPARENCY */,
                        DisposalMethod aDisposalMethod
                          /* = DisposalMethod::KEEP */,
-                       int32_t aTimeout         /* = 0 */,
-                       BlendMethod aBlendMethod /* = BlendMethod::OVER */)
+                       FrameTimeout aTimeout /* = FrameTimeout::Forever() */,
+                       BlendMethod aBlendMethod /* = BlendMethod::OVER */,
+                       const Maybe<nsIntRect>& aBlendRect /* = Nothing() */)
 {
   // We should be mid-frame
   MOZ_ASSERT(!IsMetadataDecode(), "Stopping frame during metadata decode");
   MOZ_ASSERT(mInFrame, "Stopping frame when we didn't start one");
   MOZ_ASSERT(mCurrentFrame, "Stopping frame when we don't have one");
 
-  // Update our state
+  // Update our state.
   mInFrame = false;
+  mFinishedNewFrame = true;
 
-  mCurrentFrame->Finish(aFrameOpacity, aDisposalMethod, aTimeout, aBlendMethod);
+  mCurrentFrame->Finish(aFrameOpacity, aDisposalMethod, aTimeout,
+                        aBlendMethod, aBlendRect);
 
   mProgress |= FLAG_FRAME_COMPLETE;
+
+  mLoopLength += aTimeout;
 
   // If we're not sending partial invalidations, then we send an invalidation
   // here when the first frame is complete.
   if (!ShouldSendPartialInvalidations() && mFrameCount == 1) {
     mInvalidRect.UnionRect(mInvalidRect,
-                           gfx::IntRect(gfx::IntPoint(0, 0), GetSize()));
-  }
-
-  // If we are going to keep decoding we should notify now about the first frame being done.
-  if (mImage && mFrameCount == 1 && HasAnimation()) {
-    MOZ_ASSERT(HasProgress());
-    DecodePool::Singleton()->NotifyProgress(this);
+                           IntRect(IntPoint(), Size()));
   }
 }
 
 void
-Decoder::PostInvalidation(const nsIntRect& aRect,
-                          const Maybe<nsIntRect>& aRectAtTargetSize
+Decoder::PostInvalidation(const gfx::IntRect& aRect,
+                          const Maybe<gfx::IntRect>& aRectAtOutputSize
                             /* = Nothing() */)
 {
   // We should be mid-frame
@@ -470,7 +486,7 @@ Decoder::PostInvalidation(const nsIntRect& aRect,
   // or we're past the first frame.
   if (ShouldSendPartialInvalidations() && mFrameCount == 1) {
     mInvalidRect.UnionRect(mInvalidRect, aRect);
-    mCurrentFrame->ImageUpdated(aRectAtTargetSize.valueOr(aRect));
+    mCurrentFrame->ImageUpdated(aRectAtOutputSize.valueOr(aRect));
   }
 }
 
@@ -484,40 +500,26 @@ Decoder::PostDecodeDone(int32_t aLoopCount /* = 0 */)
 
   mImageMetadata.SetLoopCount(aLoopCount);
 
+  // Some metadata that we track should take into account every frame in the
+  // image. If this is a first-frame-only decode, our accumulated loop length
+  // and first frame refresh area only includes the first frame, so it's not
+  // correct and we don't record it.
+  if (!IsFirstFrameDecode()) {
+    mImageMetadata.SetLoopLength(mLoopLength);
+    mImageMetadata.SetFirstFrameRefreshArea(mFirstFrameRefreshArea);
+  }
+
   mProgress |= FLAG_DECODE_COMPLETE;
 }
 
 void
-Decoder::PostDataError()
+Decoder::PostError()
 {
-  mDataError = true;
+  mError = true;
 
   if (mInFrame && mCurrentFrame) {
     mCurrentFrame->Abort();
   }
-}
-
-void
-Decoder::PostDecoderError(nsresult aFailureCode)
-{
-  MOZ_ASSERT(NS_FAILED(aFailureCode), "Not a failure code!");
-
-  mFailCode = aFailureCode;
-
-  // XXXbholley - we should report the image URI here, but imgContainer
-  // needs to know its URI first
-  NS_WARNING("Image decoding error - This is probably a bug!");
-
-  if (mInFrame && mCurrentFrame) {
-    mCurrentFrame->Abort();
-  }
-}
-
-Telemetry::ID
-Decoder::SpeedHistogram()
-{
-  // Use HistogramCount as an invalid Histogram ID.
-  return Telemetry::HistogramCount;
 }
 
 } // namespace image

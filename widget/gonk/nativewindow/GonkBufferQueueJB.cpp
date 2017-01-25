@@ -424,7 +424,7 @@ status_t GonkBufferQueue::dequeueBuffer(int *outBuf, sp<Fence>* outFence,
     if (returnFlags & IGraphicBufferProducer::BUFFER_NEEDS_REALLOCATION) {
 
         usage |= GraphicBuffer::USAGE_HW_TEXTURE;
-        ClientIPCAllocator* allocator = ImageBridgeChild::GetSingleton();
+        RefPtr<ClientIPCAllocator> allocator = ImageBridgeChild::GetSingleton();
         GrallocTextureData* texData = GrallocTextureData::Create(IntSize(w,h), format,
                                                                  gfx::BackendType::NONE, usage,
                                                                  allocator);
@@ -432,7 +432,7 @@ status_t GonkBufferQueue::dequeueBuffer(int *outBuf, sp<Fence>* outFence,
             ST_LOGE("dequeueBuffer: failed to alloc gralloc buffer");
             return -ENOMEM;
         }
-        RefPtr<TextureClient> textureClient = new TextureClient(texData, TextureFlags::DEALLOCATE_CLIENT, allocator);
+        RefPtr<TextureClient> textureClient = new TextureClient(texData, TextureFlags::RECYCLE | TextureFlags::DEALLOCATE_CLIENT, allocator);
         sp<GraphicBuffer> graphicBuffer = texData->GetGraphicBuffer();
 
         { // Scope for the lock

@@ -2,26 +2,6 @@ dnl This Source Code Form is subject to the terms of the Mozilla Public
 dnl License, v. 2.0. If a copy of the MPL was not distributed with this
 dnl file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-AC_DEFUN([MOZ_CONFIG_FFI], [
-
-MOZ_ARG_ENABLE_BOOL(system-ffi,
-[  --enable-system-ffi       Use system libffi (located with pkgconfig)],
-    MOZ_SYSTEM_FFI=1 )
-
-if test -n "$MOZ_SYSTEM_FFI"; then
-    # Vanilla libffi 3.0.9 needs a few patches from upcoming version 3.0.10
-    # for non-GCC compilers.
-    if test -z "$GNU_CC"; then
-        PKG_CHECK_MODULES(MOZ_FFI, libffi > 3.0.9)
-    else
-        PKG_CHECK_MODULES(MOZ_FFI, libffi >= 3.0.9)
-    fi
-fi
-
-AC_SUBST(MOZ_SYSTEM_FFI)
-
-])
-
 AC_DEFUN([MOZ_SUBCONFIGURE_FFI], [
 if test "$MOZ_BUILD_APP" != js -o -n "$JS_STANDALONE"; then
 
@@ -37,10 +17,20 @@ if test "$MOZ_BUILD_APP" != js -o -n "$JS_STANDALONE"; then
     for var in AS CC CXX CPP LD AR RANLIB STRIP; do
       ac_configure_args="$ac_configure_args $var='`eval echo \\${${var}}`'"
     done
-    if test "$CROSS_COMPILE"; then
-      export CPPFLAGS CFLAGS LDFLAGS
+    old_cflags="$CFLAGS"
+    # The libffi sources (especially the ARM ones) are written expecting gas
+    # syntax, and clang's integrated assembler doesn't handle all of gas syntax.
+    if test -n "$CLANG_CC" -a "$CPU_ARCH" = arm; then
+      CFLAGS="-no-integrated-as $CFLAGS"
     fi
     ac_configure_args="$ac_configure_args --build=$build --host=$target"
+    if test "$CROSS_COMPILE"; then
+      ac_configure_args="$ac_configure_args \
+                         CFLAGS=\"$CFLAGS\" \
+                         CPPFLAGS=\"$CPPFLAGS\" \
+                         LDFLAGS=\"$LDFLAGS\""
+    fi
+    CFLAGS="$old_cflags"
     if test "$_MSC_VER"; then
       # Use a wrapper script for cl and ml that looks more like gcc.
       # autotools can't quite handle an MSVC build environment yet.

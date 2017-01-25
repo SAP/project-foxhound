@@ -20,6 +20,7 @@ namespace quota {
 struct UsageParams
 {
   PrincipalInfo principalInfo;
+  bool getGroupUsage;
 };
 
 union UsageRequestParams
@@ -32,6 +33,7 @@ struct ClearOriginParams
   PrincipalInfo principalInfo;
   PersistenceType persistenceType;
   bool persistenceTypeIsExplicit;
+  bool clearAll;
 };
 
 struct ClearOriginsParams

@@ -6,7 +6,6 @@
 #ifndef nsMathMLChar_h___
 #define nsMathMLChar_h___
 
-#include "nsAutoPtr.h"
 #include "nsColor.h"
 #include "nsMathMLOperators.h"
 #include "nsPoint.h"
@@ -207,7 +206,7 @@ private:
   nsStyleContext*    mStyleContext;
   // mGlyphs/mBmData are arrays describing the glyphs used to draw the operator.
   // See the drawing methods below.
-  mozilla::UniquePtr<gfxTextRun> mGlyphs[4];
+  RefPtr<gfxTextRun> mGlyphs[4];
   nsBoundingMetrics     mBmData[4];
   // mUnscaledAscent is the actual ascent of the char.
   nscoord            mUnscaledAscent;

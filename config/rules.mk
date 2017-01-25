@@ -95,22 +95,6 @@ cppunittests-remote:
 
 endif # COMPILE_ENVIRONMENT
 endif # CPP_UNIT_TESTS
-
-.PHONY: check
-
-ifdef PYTHON_UNIT_TESTS
-
-RUN_PYTHON_UNIT_TESTS := $(addsuffix -run,$(PYTHON_UNIT_TESTS))
-
-.PHONY: $(RUN_PYTHON_UNIT_TESTS)
-
-check:: $(RUN_PYTHON_UNIT_TESTS)
-
-$(RUN_PYTHON_UNIT_TESTS): %-run: %
-	@PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $<
-
-endif # PYTHON_UNIT_TESTS
-
 endif # ENABLE_TESTS
 
 
@@ -240,10 +224,9 @@ CMOBJS = $(notdir $(CMSRCS:.m=.$(OBJ_SUFFIX)))
 CMMOBJS = $(notdir $(CMMSRCS:.mm=.$(OBJ_SUFFIX)))
 # ASFILES can have different extensions (.s, .asm)
 ASOBJS = $(notdir $(addsuffix .$(OBJ_SUFFIX),$(basename $(ASFILES))))
-RSOBJS = $(addprefix lib,$(notdir $(RSSRCS:.rs=.rlib)))
 RS_STATICLIB_CRATE_OBJ = $(addprefix lib,$(notdir $(RS_STATICLIB_CRATE_SRC:.rs=.$(LIB_SUFFIX))))
 ifndef OBJS
-_OBJS = $(COBJS) $(SOBJS) $(CPPOBJS) $(CMOBJS) $(CMMOBJS) $(ASOBJS) $(RSOBJS) $(RS_STATICLIB_CRATE_OBJ)
+_OBJS = $(COBJS) $(SOBJS) $(CPPOBJS) $(CMOBJS) $(CMMOBJS) $(ASOBJS)
 OBJS = $(strip $(_OBJS))
 endif
 
@@ -566,7 +549,7 @@ compile:: host target
 
 host:: $(HOST_LIBRARY) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS)
 
-target:: $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS)
+target:: $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(RUST_LIBRARY_FILE)
 
 include $(MOZILLA_DIR)/config/makefiles/target_binaries.mk
 endif
@@ -662,14 +645,14 @@ ifdef MSMANIFEST_TOOL
 	@if test -f $@.manifest; then \
 		if test -f '$(srcdir)/$@.manifest'; then \
 			echo 'Embedding manifest from $(srcdir)/$@.manifest and $@.manifest'; \
-			mt.exe -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
+			$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		else \
 			echo 'Embedding manifest from $@.manifest'; \
-			mt.exe -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
+			$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		fi; \
 	elif test -f '$(srcdir)/$@.manifest'; then \
 		echo 'Embedding manifest from $(srcdir)/$@.manifest'; \
-		mt.exe -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;1; \
+		$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;1; \
 	fi
 endif	# MSVC with manifest tool
 ifdef MOZ_PROFILE_GENERATE
@@ -697,14 +680,14 @@ ifdef MSMANIFEST_TOOL
 	@if test -f $@.manifest; then \
 		if test -f '$(srcdir)/$@.manifest'; then \
 			echo 'Embedding manifest from $(srcdir)/$@.manifest and $@.manifest'; \
-			mt.exe -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
+			$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		else \
 			echo 'Embedding manifest from $@.manifest'; \
-			mt.exe -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
+			$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		fi; \
 	elif test -f '$(srcdir)/$@.manifest'; then \
 		echo 'Embedding manifest from $(srcdir)/$@.manifest'; \
-		mt.exe -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;1; \
+		$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;1; \
 	fi
 endif	# MSVC with manifest tool
 else
@@ -732,7 +715,7 @@ ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
 	$(EXPAND_LD) -nologo -out:$@ -pdb:$(LINK_PDBFILE) $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(EXTRA_LIBS) $(OS_LIBS)
 ifdef MSMANIFEST_TOOL
 	@if test -f $@.manifest; then \
-		mt.exe -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
+		$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		rm -f $@.manifest; \
 	fi
 endif	# MSVC with manifest tool
@@ -833,7 +816,7 @@ ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
 ifdef MSMANIFEST_TOOL
 ifdef EMBED_MANIFEST_AT
 	@if test -f $@.manifest; then \
-		mt.exe -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
+		$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
 		rm -f $@.manifest; \
 	fi
 endif   # EMBED_MANIFEST_AT
@@ -915,16 +898,36 @@ $(ASOBJS):
 endif
 
 ifdef MOZ_RUST
-# Assume any system libraries rustc links against are already
-# in the target's LIBS.
-$(RSOBJS):
-	$(REPORT_BUILD)
-	$(RUSTC) $(RUSTFLAGS) --crate-type rlib --emit dep-info=$(MDDEPDIR)/$(call mk_libname,$<).pp,link=$(call mk_libname,$<) $(_VPATH_SRCS)
+ifdef CARGO_FILE
 
-$(RS_STATICLIB_CRATE_OBJ):
-	$(REPORT_BUILD)
-	$(RUSTC) $(RUSTFLAGS) --crate-type staticlib $(RLIB_EXTERN_CRATE_OPTIONS) --emit dep-info=$(MDDEPDIR)/$(call mk_global_crate_libname,$(RS_STATICLIB_CRATE_SRC)).pp,link=$@ $(RS_STATICLIB_CRATE_SRC)
+ifdef MOZ_DEBUG
+cargo_build_flags =
+else
+cargo_build_flags = --release
 endif
+ifdef MOZ_CARGO_SUPPORTS_FROZEN
+cargo_build_flags += --frozen
+endif
+
+cargo_build_flags += --manifest-path $(CARGO_FILE)
+cargo_build_flags += --target=$(RUST_TARGET)
+cargo_build_flags += --verbose
+
+# Assume any system libraries rustc links against are already in the target's LIBS.
+#
+# We need to run cargo unconditionally, because cargo is the only thing that
+# has full visibility into how changes in Rust sources might affect the final
+# build.
+#
+# XXX: We're passing `-C debuginfo=1` to rustc to work around an llvm-dsymutil
+# crash (bug 1301751). This should be temporary until we upgrade to Rust 1.12.
+force-cargo-build:
+	$(REPORT_BUILD)
+	env CARGO_TARGET_DIR=. RUSTC=$(RUSTC) RUSTFLAGS='-C debuginfo=1' $(CARGO) build $(cargo_build_flags) --
+
+$(RUST_LIBRARY_FILE): force-cargo-build
+endif # CARGO_FILE
+endif # MOZ_RUST
 
 $(SOBJS):
 	$(REPORT_BUILD)

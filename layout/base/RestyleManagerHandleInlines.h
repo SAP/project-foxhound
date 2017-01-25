@@ -74,26 +74,52 @@ RestyleManagerHandle::Ptr::ProcessPendingRestyles()
   FORWARD(ProcessPendingRestyles, ());
 }
 
+nsresult
+RestyleManagerHandle::Ptr::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
+{
+  FORWARD(ProcessRestyledFrames, (aChangeList));
+}
+
 void
-RestyleManagerHandle::Ptr::RestyleForInsertOrChange(dom::Element* aContainer,
+RestyleManagerHandle::Ptr::FlushOverflowChangedTracker()
+{
+  FORWARD(FlushOverflowChangedTracker, ());
+}
+
+void
+RestyleManagerHandle::Ptr::ContentInserted(nsINode* aContainer,
+                                           nsIContent* aChild)
+{
+  FORWARD(ContentInserted, (aContainer, aChild));
+}
+
+void
+RestyleManagerHandle::Ptr::ContentAppended(nsIContent* aContainer,
+                                           nsIContent* aFirstNewContent)
+{
+  FORWARD(ContentAppended, (aContainer, aFirstNewContent));
+}
+
+void
+RestyleManagerHandle::Ptr::ContentRemoved(nsINode* aContainer,
+                                          nsIContent* aOldChild,
+                                          nsIContent* aFollowingSibling)
+{
+  FORWARD(ContentRemoved, (aContainer, aOldChild, aFollowingSibling));
+}
+
+void
+RestyleManagerHandle::Ptr::RestyleForInsertOrChange(nsINode* aContainer,
                                                     nsIContent* aChild)
 {
   FORWARD(RestyleForInsertOrChange, (aContainer, aChild));
 }
 
 void
-RestyleManagerHandle::Ptr::RestyleForAppend(dom::Element* aContainer,
+RestyleManagerHandle::Ptr::RestyleForAppend(nsIContent* aContainer,
                                             nsIContent* aFirstNewContent)
 {
   FORWARD(RestyleForAppend, (aContainer, aFirstNewContent));
-}
-
-void
-RestyleManagerHandle::Ptr::RestyleForRemove(dom::Element* aContainer,
-                                            nsIContent* aOldChild,
-                                            nsIContent* aFollowingSibling)
-{
-  FORWARD(RestyleForRemove, (aContainer, aOldChild, aFollowingSibling));
 }
 
 nsresult
@@ -141,6 +167,24 @@ uint64_t
 RestyleManagerHandle::Ptr::GetRestyleGeneration() const
 {
   FORWARD(GetRestyleGeneration, ());
+}
+
+uint32_t
+RestyleManagerHandle::Ptr::GetHoverGeneration() const
+{
+  FORWARD(GetHoverGeneration, ());
+}
+
+void
+RestyleManagerHandle::Ptr::SetObservingRefreshDriver(bool aObserving)
+{
+  FORWARD(SetObservingRefreshDriver, (aObserving));
+}
+
+void
+RestyleManagerHandle::Ptr::NotifyDestroyingFrame(nsIFrame* aFrame)
+{
+  FORWARD(NotifyDestroyingFrame, (aFrame));
 }
 
 } // namespace mozilla

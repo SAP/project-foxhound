@@ -22,7 +22,7 @@ try {
               getService(Ci.nsINavBookmarksService);
   var prefs = Cc["@mozilla.org/preferences-service;1"].
               getService(Ci.nsIPrefBranch);
-} catch(ex) {
+} catch (ex) {
   do_throw("Could not get services\n");
 }
 
@@ -43,6 +43,7 @@ var bonusPrefs = {
   downloadVisitBonus: Ci.nsINavHistoryService.TRANSITION_DOWNLOAD,
   permRedirectVisitBonus: Ci.nsINavHistoryService.TRANSITION_REDIRECT_PERMANENT,
   tempRedirectVisitBonus: Ci.nsINavHistoryService.TRANSITION_REDIRECT_TEMPORARY,
+  reloadVisitBonus: Ci.nsINavHistoryService.TRANSITION_RELOAD,
 };
 
 // create test data
@@ -58,10 +59,10 @@ function* task_initializeBucket(bucket) {
   var weight = 0, cutoff = 0, bonus = 0;
   try {
     weight = prefs.getIntPref(prefPrefix + weightName);
-  } catch(ex) {}
+  } catch (ex) {}
   try {
     cutoff = prefs.getIntPref(prefPrefix + cutoffName);
-  } catch(ex) {}
+  } catch (ex) {}
 
   if (cutoff < 1)
     return;
@@ -69,7 +70,7 @@ function* task_initializeBucket(bucket) {
   // generate a date within the cutoff period
   var dateInPeriod = (now - ((cutoff - 1) * 86400 * 1000)) * 1000;
 
-  for (let [bonusName, visitType] in Iterator(bonusPrefs)) {
+  for (let [bonusName, visitType] of Object.entries(bonusPrefs)) {
     var frecency = -1;
     var calculatedURI = null;
     var matchTitle = "";
@@ -110,6 +111,7 @@ function* task_initializeBucket(bucket) {
         if (visitType == Ci.nsINavHistoryService.TRANSITION_EMBED ||
             visitType == Ci.nsINavHistoryService.TRANSITION_FRAMED_LINK ||
             visitType == Ci.nsINavHistoryService.TRANSITION_DOWNLOAD ||
+            visitType == Ci.nsINavHistoryService.TRANSITION_RELOAD ||
             bonusName == "defaultVisitBonus")
           frecency = 0;
         else
@@ -207,7 +209,7 @@ add_task(function* test_frecency()
   }
 
   // sort results by frecency
-  results.sort((a,b) => b[1] - a[1]);
+  results.sort((a, b) => b[1] - a[1]);
   // Make sure there's enough results returned
   prefs.setIntPref("browser.urlbar.maxRichResults", results.length);
 

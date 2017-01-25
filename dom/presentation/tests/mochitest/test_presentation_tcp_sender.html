@@ -5,8 +5,8 @@
 <head>
   <meta charset="utf-8">
   <title>Test for B2G Presentation API at sender side</title>
-  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1069230">Test for B2G Presentation API at sender side</a>
@@ -20,15 +20,17 @@ var connection;
 
 function testSetup() {
   return new Promise(function(aResolve, aReject) {
-    request = new PresentationRequest("http://example.com");
+    request = new PresentationRequest("https://example.com");
 
     request.getAvailability().then(
       function(aAvailability) {
+        is(aAvailability.value, false, "Sender: should have no available device after setup");
         aAvailability.onchange = function() {
           aAvailability.onchange = null;
           ok(aAvailability.value, "Device should be available.");
           aResolve();
         }
+        gScript.sendAsyncMessage('trigger-device-add');
       },
       function(aError) {
         ok(false, "Error occurred when getting availability: " + aError);
@@ -37,7 +39,6 @@ function testSetup() {
       }
     );
 
-    gScript.sendAsyncMessage('trigger-device-add');
   });
 }
 
@@ -151,20 +152,77 @@ function testIncomingMessage() {
   });
 }
 
-function testTerminateConnection() {
+function testCloseConnection() {
   return new Promise(function(aResolve, aReject) {
     gScript.addMessageListener('data-transport-closed', function dataTransportClosedHandler(aReason) {
       gScript.removeMessageListener('data-transport-closed', dataTransportClosedHandler);
       info("The data transport is closed. " + aReason);
     });
 
-    connection.onterminate = function() {
-      connection.onterminate = null;
-      is(connection.state, "terminated", "Connection should be terminated.");
+    connection.onclose = function() {
+      connection.onclose = null;
+      is(connection.state, "closed", "Connection should be closed.");
       aResolve();
     };
 
-    connection.terminate();
+    connection.close();
+  });
+}
+
+function testReconnect() {
+  return new Promise(function(aResolve, aReject) {
+    info('--- testReconnect ---');
+    gScript.addMessageListener('control-channel-established', function controlChannelEstablished() {
+      gScript.removeMessageListener('control-channel-established', controlChannelEstablished);
+      gScript.sendAsyncMessage("trigger-control-channel-open");
+    });
+
+    gScript.addMessageListener('start-reconnect', function startReconnectHandler(url) {
+      gScript.removeMessageListener('start-reconnect', startReconnectHandler);
+      is(url, "https://example.com/", "URLs should be the same.")
+      gScript.sendAsyncMessage('trigger-reconnected-acked', url);
+    });
+
+    gScript.addMessageListener('offer-sent', function offerSentHandler() {
+      gScript.removeMessageListener('offer-sent', offerSentHandler);
+      gScript.sendAsyncMessage('trigger-incoming-transport');
+    });
+
+    gScript.addMessageListener('answer-received', function answerReceivedHandler() {
+      gScript.removeMessageListener('answer-received', answerReceivedHandler);
+      info("An answer is received.");
+    });
+
+    gScript.addMessageListener('data-transport-initialized', function dataTransportInitializedHandler() {
+      gScript.removeMessageListener('data-transport-initialized', dataTransportInitializedHandler);
+      info("Data transport channel is initialized.");
+      gScript.sendAsyncMessage('trigger-incoming-answer');
+    });
+
+    gScript.addMessageListener('data-transport-notification-enabled', function dataTransportNotificationEnabledHandler() {
+      gScript.removeMessageListener('data-transport-notification-enabled', dataTransportNotificationEnabledHandler);
+      info("Data notification is enabled for data transport channel.");
+    });
+
+    request.reconnect(connection.id).then(
+      function(aConnection) {
+        ok(aConnection, "Connection should be available.");
+        ok(aConnection.id, "Connection ID should be set.");
+        is(aConnection.state, "connecting", "The initial state should be connecting.");
+        is(aConnection, connection, "The reconnected connection should be the same.");
+
+        aConnection.onconnect = function() {
+          aConnection.onconnect = null;
+          is(aConnection.state, "connected", "Connection should be connected.");
+          aResolve();
+        };
+      },
+      function(aError) {
+        ok(false, "Error occurred when establishing a connection: " + aError);
+        teardown();
+        aReject();
+      }
+    );
   });
 }
 
@@ -185,19 +243,17 @@ function runTests() {
   then(testStartConnection).
   then(testSend).
   then(testIncomingMessage).
-  then(testTerminateConnection).
+  then(testCloseConnection).
+  then(testReconnect).
+  then(testCloseConnection).
   then(teardown);
 }
 
 SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPermissions([
-  {type: 'presentation-device-manage', allow: false, context: document},
-  {type: 'presentation', allow: true, context: document},
-], function() {
-  SpecialPowers.pushPrefEnv({ 'set': [["dom.presentation.enabled", true],
-                                      ["dom.presentation.session_transport.data_channel.enable", false]]},
-                            runTests);
-});
+SpecialPowers.pushPrefEnv({ 'set': [["dom.presentation.enabled", true],
+                                    ["dom.presentation.controller.enabled", true],
+                                    ["dom.presentation.session_transport.data_channel.enable", false]]},
+                          runTests);
 
 </script>
 </body>

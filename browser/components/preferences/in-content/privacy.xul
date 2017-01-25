@@ -73,7 +73,6 @@
   <preference id="browser.privatebrowsing.autostart"
               name="browser.privatebrowsing.autostart"
               type="bool"/>
-
 </preferences>
 
 <hbox id="header-privacy"
@@ -81,8 +80,7 @@
       hidden="true"
       data-category="panePrivacy">
   <label class="header-name" flex="1">&panePrivacy.title;</label>
-  <button class="help-button"
-          aria-label="&helpButton.label;"/>
+  <html:a class="help-button" target="_blank" aria-label="&helpButton.label;"></html:a>
 </hbox>
 
 <!-- Tracking -->
@@ -279,7 +277,20 @@
   <checkbox id="openpageSuggestion" label="&locbar.openpage.label;"
             accesskey="&locbar.openpage.accesskey;"
             preference="browser.urlbar.suggest.openpage"/>
-  <label class="text-link" onclick="if (event.button == 0) gotoPref('search')">
+  <label class="text-link" onclick="gotoPref('search')">
     &suggestionSettings.label;
   </label>
+</groupbox>
+
+<!-- Containers -->
+<groupbox id="browserContainersGroup" data-category="panePrivacy" hidden="true">
+  <vbox id="browserContainersbox" hidden="true">
+    <caption><label>&browserContainersHeader.label;
+      <label id="browserContainersLearnMore" class="text-link"
+             value="&browserContainersLearnMore.label;"/>
+    </label></caption>
+    <checkbox id="browserContainersCheckbox"
+              label="&browserContainersEnabled.label;"
+              accesskey="&browserContainersEnabled.accesskey;" />
+  </vbox>
 </groupbox>

@@ -16,7 +16,7 @@
 
 namespace rx
 {
-class ImplFactory;
+class GLImplFactory;
 class SamplerImpl;
 }
 
@@ -26,7 +26,7 @@ namespace gl
 class Sampler final : public RefCountObject, public LabeledObject
 {
   public:
-    Sampler(rx::ImplFactory *factory, GLuint id);
+    Sampler(rx::GLImplFactory *factory, GLuint id);
     ~Sampler() override;
 
     void setLabel(const std::string &label) override;
@@ -62,10 +62,12 @@ class Sampler final : public RefCountObject, public LabeledObject
     void setCompareFunc(GLenum compareFunc);
     GLenum getCompareFunc() const;
 
+    void setSRGBDecode(GLenum sRGBDecode);
+    GLenum getSRGBDecode() const;
+
     const SamplerState &getSamplerState() const;
 
-    const rx::SamplerImpl *getImplementation() const;
-    rx::SamplerImpl *getImplementation();
+    rx::SamplerImpl *getImplementation() const;
 
   private:
     rx::SamplerImpl *mImpl;

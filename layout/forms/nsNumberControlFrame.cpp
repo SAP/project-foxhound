@@ -46,7 +46,6 @@ NS_IMPL_FRAMEARENA_HELPERS(nsNumberControlFrame)
 NS_QUERYFRAME_HEAD(nsNumberControlFrame)
   NS_QUERYFRAME_ENTRY(nsNumberControlFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
-  NS_QUERYFRAME_ENTRY(nsITextControlFrame)
   NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
@@ -105,13 +104,13 @@ nsNumberControlFrame::GetPrefISize(nsRenderingContext* aRenderingContext)
 
 void
 nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
-                             nsHTMLReflowMetrics& aDesiredSize,
-                             const nsHTMLReflowState& aReflowState,
+                             ReflowOutput& aDesiredSize,
+                             const ReflowInput& aReflowInput,
                              nsReflowStatus& aStatus)
 {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsNumberControlFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowState, aDesiredSize, aStatus);
+  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
 
   NS_ASSERTION(mOuterWrapper, "Outer wrapper div must exist!");
 
@@ -127,22 +126,22 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     nsFormControlFrame::RegUnRegAccessKey(this, true);
   }
 
-  const WritingMode myWM = aReflowState.GetWritingMode();
+  const WritingMode myWM = aReflowInput.GetWritingMode();
 
   // The ISize of our content box, which is the available ISize
   // for our anonymous content:
-  const nscoord contentBoxISize = aReflowState.ComputedISize();
-  nscoord contentBoxBSize = aReflowState.ComputedBSize();
+  const nscoord contentBoxISize = aReflowInput.ComputedISize();
+  nscoord contentBoxBSize = aReflowInput.ComputedBSize();
 
   // Figure out our border-box sizes as well (by adding borderPadding to
   // content-box sizes):
   const nscoord borderBoxISize = contentBoxISize +
-    aReflowState.ComputedLogicalBorderPadding().IStartEnd(myWM);
+    aReflowInput.ComputedLogicalBorderPadding().IStartEnd(myWM);
 
   nscoord borderBoxBSize;
   if (contentBoxBSize != NS_INTRINSICSIZE) {
     borderBoxBSize = contentBoxBSize +
-      aReflowState.ComputedLogicalBorderPadding().BStartEnd(myWM);
+      aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
   } // else, we'll figure out borderBoxBSize after we resolve contentBoxBSize.
 
   nsIFrame* outerWrapperFrame = mOuterWrapper->GetPrimaryFrame();
@@ -151,30 +150,30 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     if (contentBoxBSize == NS_INTRINSICSIZE) {
       contentBoxBSize = 0;
       borderBoxBSize =
-        aReflowState.ComputedLogicalBorderPadding().BStartEnd(myWM);
+        aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
     }
   } else {
     NS_ASSERTION(outerWrapperFrame == mFrames.FirstChild(), "huh?");
 
-    nsHTMLReflowMetrics wrappersDesiredSize(aReflowState);
+    ReflowOutput wrappersDesiredSize(aReflowInput);
 
     WritingMode wrapperWM = outerWrapperFrame->GetWritingMode();
-    LogicalSize availSize = aReflowState.ComputedSize(wrapperWM);
+    LogicalSize availSize = aReflowInput.ComputedSize(wrapperWM);
     availSize.BSize(wrapperWM) = NS_UNCONSTRAINEDSIZE;
 
-    nsHTMLReflowState wrapperReflowState(aPresContext, aReflowState,
+    ReflowInput wrapperReflowInput(aPresContext, aReflowInput,
                                          outerWrapperFrame, availSize);
 
     // Convert wrapper margin into my own writing-mode (in case it differs):
     LogicalMargin wrapperMargin =
-      wrapperReflowState.ComputedLogicalMargin().ConvertTo(myWM, wrapperWM);
+      wrapperReflowInput.ComputedLogicalMargin().ConvertTo(myWM, wrapperWM);
 
     // offsets of wrapper frame within this frame:
     LogicalPoint
       wrapperOffset(myWM,
-                    aReflowState.ComputedLogicalBorderPadding().IStart(myWM) +
+                    aReflowInput.ComputedLogicalBorderPadding().IStart(myWM) +
                     wrapperMargin.IStart(myWM),
-                    aReflowState.ComputedLogicalBorderPadding().BStart(myWM) +
+                    aReflowInput.ComputedLogicalBorderPadding().BStart(myWM) +
                     wrapperMargin.BStart(myWM));
 
     nsReflowStatus childStatus;
@@ -182,7 +181,7 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     // will be fixed later.
     const nsSize dummyContainerSize;
     ReflowChild(outerWrapperFrame, aPresContext, wrappersDesiredSize,
-                wrapperReflowState, myWM, wrapperOffset, dummyContainerSize, 0,
+                wrapperReflowInput, myWM, wrapperOffset, dummyContainerSize, 0,
                 childStatus);
     MOZ_ASSERT(NS_FRAME_IS_FULLY_COMPLETE(childStatus),
                "We gave our child unconstrained available block-size, "
@@ -198,16 +197,16 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
 
       // Make sure we obey min/max-bsize in the case when we're doing intrinsic
       // sizing (we get it for free when we have a non-intrinsic
-      // aReflowState.ComputedBSize()).  Note that we do this before
+      // aReflowInput.ComputedBSize()).  Note that we do this before
       // adjusting for borderpadding, since ComputedMaxBSize and
       // ComputedMinBSize are content heights.
       contentBoxBSize =
         NS_CSS_MINMAX(contentBoxBSize,
-                      aReflowState.ComputedMinBSize(),
-                      aReflowState.ComputedMaxBSize());
+                      aReflowInput.ComputedMinBSize(),
+                      aReflowInput.ComputedMaxBSize());
 
       borderBoxBSize = contentBoxBSize +
-        aReflowState.ComputedLogicalBorderPadding().BStartEnd(myWM);
+        aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
     }
 
     // Center child in block axis
@@ -220,7 +219,7 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
 
     // Place the child
     FinishReflowChild(outerWrapperFrame, aPresContext, wrappersDesiredSize,
-                      &wrapperReflowState, myWM, wrapperOffset,
+                      &wrapperReflowInput, myWM, wrapperOffset,
                       borderBoxSize, 0);
 
     nsSize contentBoxSize =
@@ -228,7 +227,7 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
         GetPhysicalSize(myWM);
     aDesiredSize.SetBlockStartAscent(
        wrappersDesiredSize.BlockStartAscent() +
-       outerWrapperFrame->BStart(aReflowState.GetWritingMode(),
+       outerWrapperFrame->BStart(aReflowInput.GetWritingMode(),
                                  contentBoxSize));
   }
 
@@ -245,7 +244,7 @@ nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
 
   aStatus = NS_FRAME_COMPLETE;
 
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowState, aDesiredSize);
+  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 void
@@ -308,7 +307,7 @@ public:
       mTextField(aTextField)
   {}
 
-  NS_IMETHODIMP Run() override
+  NS_IMETHOD Run() override
   {
     if (mNumber->AsElement()->State().HasState(NS_EVENT_STATE_FOCUS)) {
       HTMLInputElement::FromContent(mTextField)->Focus();
@@ -471,72 +470,6 @@ nsIAtom*
 nsNumberControlFrame::GetType() const
 {
   return nsGkAtoms::numberControlFrame;
-}
-
-NS_IMETHODIMP
-nsNumberControlFrame::GetEditor(nsIEditor **aEditor)
-{
-  return GetTextFieldFrame()->GetEditor(aEditor);
-}
-
-NS_IMETHODIMP
-nsNumberControlFrame::SetSelectionStart(int32_t aSelectionStart)
-{
-  return GetTextFieldFrame()->SetSelectionStart(aSelectionStart);
-}
-
-NS_IMETHODIMP
-nsNumberControlFrame::SetSelectionEnd(int32_t aSelectionEnd)
-{
-  return GetTextFieldFrame()->SetSelectionEnd(aSelectionEnd);
-}
-
-NS_IMETHODIMP
-nsNumberControlFrame::SetSelectionRange(int32_t aSelectionStart,
-                                        int32_t aSelectionEnd,
-                                        SelectionDirection aDirection)
-{
-  return GetTextFieldFrame()->SetSelectionRange(aSelectionStart, aSelectionEnd,
-                                                aDirection);
-}
-
-NS_IMETHODIMP
-nsNumberControlFrame::GetSelectionRange(int32_t* aSelectionStart,
-                                        int32_t* aSelectionEnd,
-                                        SelectionDirection* aDirection)
-{
-  return GetTextFieldFrame()->GetSelectionRange(aSelectionStart, aSelectionEnd,
-                                                aDirection);
-}
-
-NS_IMETHODIMP
-nsNumberControlFrame::GetOwnedSelectionController(nsISelectionController** aSelCon)
-{
-  return GetTextFieldFrame()->GetOwnedSelectionController(aSelCon);
-}
-
-nsFrameSelection*
-nsNumberControlFrame::GetOwnedFrameSelection()
-{
-  return GetTextFieldFrame()->GetOwnedFrameSelection();
-}
-
-nsresult
-nsNumberControlFrame::GetPhonetic(nsAString& aPhonetic)
-{
-  return GetTextFieldFrame()->GetPhonetic(aPhonetic);
-}
-
-nsresult
-nsNumberControlFrame::EnsureEditorInitialized()
-{
-  return GetTextFieldFrame()->EnsureEditorInitialized();
-}
-
-nsresult
-nsNumberControlFrame::ScrollSelectionIntoView()
-{
-  return GetTextFieldFrame()->ScrollSelectionIntoView();
 }
 
 void

@@ -12,6 +12,7 @@
 #define mozilla_RestyleManager_h
 
 #include "mozilla/RestyleLogging.h"
+#include "mozilla/RestyleManagerBase.h"
 #include "nsISupportsImpl.h"
 #include "nsChangeHint.h"
 #include "RestyleTracker.h"
@@ -33,13 +34,13 @@ namespace dom {
   class Element;
 } // namespace dom
 
-class RestyleManager final
+class RestyleManager final : public RestyleManagerBase
 {
 public:
-  friend class ::nsRefreshDriver;
-  friend class RestyleTracker;
+  typedef RestyleManagerBase base_type;
 
-  typedef mozilla::dom::Element Element;
+  friend class RestyleTracker;
+  friend class ElementRestyler;
 
   explicit RestyleManager(nsPresContext* aPresContext);
 
@@ -55,19 +56,6 @@ private:
 
 public:
   NS_INLINE_DECL_REFCOUNTING(mozilla::RestyleManager)
-
-  void Disconnect() {
-    mPresContext = nullptr;
-  }
-
-  nsPresContext* PresContext() const {
-    MOZ_ASSERT(mPresContext);
-    return mPresContext;
-  }
-
-  // Should be called when a frame is going to be destroyed and
-  // WillDestroyFrameTree hasn't been called yet.
-  void NotifyDestroyingFrame(nsIFrame* aFrame);
 
   // Forwarded nsIDocumentObserver method, to handle restyling (and
   // passing the notification to the frame).
@@ -87,14 +75,6 @@ public:
                         nsIAtom* aAttribute,
                         int32_t  aModType,
                         const nsAttrValue* aOldValue);
-
-  // Get an integer that increments every time we process pending restyles.
-  // The value is never 0.
-  uint32_t GetRestyleGeneration() const { return mRestyleGeneration; }
-
-  // Get an integer that increments every time there is a style change
-  // as a result of a change to the :hover content state.
-  uint32_t GetHoverGeneration() const { return mHoverGeneration; }
 
   // Get a counter that increments on every style change, that we use to
   // track whether off-main-thread animations are up-to-date.
@@ -139,15 +119,13 @@ public:
   }
 
 private:
-  nsCSSFrameConstructor* FrameConstructor() const
-    { return PresContext()->FrameConstructor(); }
-
   // Used when restyling an element with a frame.
   void ComputeAndProcessStyleChange(nsIFrame*              aFrame,
                                     nsChangeHint           aMinChange,
                                     RestyleTracker&        aRestyleTracker,
                                     nsRestyleHint          aRestyleHint,
                                     const RestyleHintData& aRestyleHintData);
+
   // Used when restyling a display:contents element.
   void ComputeAndProcessStyleChange(nsStyleContext*        aNewContext,
                                     Element*               aElement,
@@ -157,20 +135,6 @@ private:
                                     const RestyleHintData& aRestyleHintData);
 
 public:
-
-#ifdef DEBUG
-  /**
-   * DEBUG ONLY method to verify integrity of style tree versus frame tree
-   */
-  void DebugVerifyStyleTree(nsIFrame* aFrame);
-#endif
-
-  // Note: It's the caller's responsibility to make sure to wrap a
-  // ProcessRestyledFrames call in a view update batch and a script blocker.
-  // This function does not call ProcessAttachedQueue() on the binding manager.
-  // If the caller wants that to happen synchronously, it needs to handle that
-  // itself.
-  nsresult ProcessRestyledFrames(nsStyleChangeList& aRestyleArray);
 
   /**
    * In order to start CSS transitions on elements that are being
@@ -317,23 +281,37 @@ private:
   void RestyleForEmptyChange(Element* aContainer);
 
 public:
-  // Restyling for a ContentInserted (notification after insertion) or
-  // for a CharacterDataChanged.  |aContainer| must be non-null; when
-  // the container is null, no work is needed.
-  void RestyleForInsertOrChange(Element* aContainer, nsIContent* aChild);
+  // Handle ContentInserted notifications.
+  void ContentInserted(nsINode* aContainer, nsIContent* aChild)
+  {
+    RestyleForInsertOrChange(aContainer, aChild);
+  }
 
-  // This would be the same as RestyleForInsertOrChange if we got the
+  // Handle ContentAppended notifications.
+  void ContentAppended(nsIContent* aContainer, nsIContent* aFirstNewContent)
+  {
+    RestyleForAppend(aContainer, aFirstNewContent);
+  }
+
+  // Handle ContentRemoved notifications.
+  //
+  // This would be have the same logic as RestyleForInsertOrChange if we got the
   // notification before the removal.  However, we get it after, so we need the
   // following sibling in addition to the old child.  |aContainer| must be
   // non-null; when the container is null, no work is needed.  aFollowingSibling
   // is the sibling that used to come after aOldChild before the removal.
-  void RestyleForRemove(Element* aContainer,
-                        nsIContent* aOldChild,
-                        nsIContent* aFollowingSibling);
+  void ContentRemoved(nsINode* aContainer, nsIContent* aOldChild,
+                      nsIContent* aFollowingSibling);
 
-  // Same for a ContentAppended.  |aContainer| must be non-null; when
+  // Restyling for a ContentInserted (notification after insertion) or
+  // for a CharacterDataChanged.  |aContainer| must be non-null; when
   // the container is null, no work is needed.
-  void RestyleForAppend(Element* aContainer, nsIContent* aFirstNewContent);
+  void RestyleForInsertOrChange(nsINode* aContainer, nsIContent* aChild);
+
+  // Restyling for a ContentAppended (notification after insertion) or
+  // for a CharacterDataChanged.  |aContainer| must be non-null; when
+  // the container is null, no work is needed.
+  void RestyleForAppend(nsIContent* aContainer, nsIContent* aFirstNewContent);
 
   // Process any pending restyles. This should be called after
   // CreateNeededFrames.
@@ -416,20 +394,6 @@ public:
     PostRestyleEventInternal(true);
   }
 
-  void FlushOverflowChangedTracker()
-  {
-    mOverflowChangedTracker.Flush();
-  }
-
-  static nsCString RestyleHintToString(nsRestyleHint aHint);
-
-#ifdef DEBUG
-  static nsCString ChangeHintToString(nsChangeHint aHint);
-#endif
-
-private:
-  void PostRestyleEventInternal(bool aForLazyConstruction);
-
 public:
   /**
    * Asynchronously clear style data from the root frame downwards and ensure
@@ -456,7 +420,7 @@ public:
    * RestyleManager should be logged.
    */
   bool ShouldLogRestyle() {
-    return ShouldLogRestyle(mPresContext);
+    return ShouldLogRestyle(PresContext());
   }
 
   /**
@@ -492,7 +456,12 @@ public:
 #endif
 
 private:
-  inline nsStyleSet* StyleSet() const;
+  inline nsStyleSet* StyleSet() const {
+    MOZ_ASSERT(PresContext()->StyleSet()->IsGecko(),
+               "RestyleManager should only be used with a Gecko-flavored "
+               "style backend");
+    return PresContext()->StyleSet()->AsGecko();
+  }
 
   /* aMinHint is the minimal change that should be made to the element */
   // XXXbz do we really need the aPrimaryFrame argument here?
@@ -506,16 +475,6 @@ private:
   void StartRebuildAllStyleData(RestyleTracker& aRestyleTracker);
   void FinishRebuildAllStyleData();
 
-  void StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint);
-
-  // Recursively add all the given frame and all children to the tracker.
-  void AddSubtreeToOverflowTracker(nsIFrame* aFrame);
-
-  // Returns true if this function managed to successfully move a frame, and
-  // false if it could not process the position change, and a reflow should
-  // be performed instead.
-  bool RecomputePosition(nsIFrame* aFrame);
-
   bool ShouldStartRebuildAllFor(RestyleTracker& aRestyleTracker) {
     // When we process our primary restyle tracker and we have a pending
     // rebuild-all, we need to process it.
@@ -527,38 +486,23 @@ private:
     // Fast-path the common case (esp. for the animation restyle
     // tracker) of not having anything to do.
     if (aRestyleTracker.Count() || ShouldStartRebuildAllFor(aRestyleTracker)) {
-      if (++mRestyleGeneration == 0) {
-        // Keep mRestyleGeneration from being 0, since that's what
-        // nsPresContext::GetRestyleGeneration returns when it no
-        // longer has a RestyleManager.
-        ++mRestyleGeneration;
-      }
+      IncrementRestyleGeneration();
       aRestyleTracker.DoProcessRestyles();
     }
   }
 
 private:
-  nsPresContext* mPresContext; // weak, disconnected in Disconnect
-
   // True if we need to reconstruct the rule tree the next time we
   // process restyles.
   bool mDoRebuildAllStyleData : 1;
   // True if we're currently in the process of reconstructing the rule tree.
   bool mInRebuildAllStyleData : 1;
-  // True if we're already waiting for a refresh notification
-  bool mObservingRefreshDriver : 1;
-  // True if we're in the middle of a nsRefreshDriver refresh
-  bool mInStyleRefresh : 1;
   // Whether rule matching should skip styles associated with animation
   bool mSkipAnimationRules : 1;
   bool mHavePendingNonAnimationRestyles : 1;
 
-  uint32_t mRestyleGeneration;
-  uint32_t mHoverGeneration;
   nsChangeHint mRebuildAllExtraHint;
   nsRestyleHint mRebuildAllRestyleHint;
-
-  OverflowChangedTracker mOverflowChangedTracker;
 
   // The total number of animation flushes by this frame constructor.
   // Used to keep the layer and animation manager in sync.
@@ -617,9 +561,9 @@ public:
   // Construct for a frame whose parent is being restyled, but whose
   // style context is the parent style context for its parent frame.
   // (This is only used for table frames, whose style contexts are used
-  // as the parent style context for their outer table frame (table
-  // wrapper frame).  We should probably try to get rid of this
-  // exception and have the inheritance go the other way.)
+  // as the parent style context for their table wrapper frame. We should
+  // probably try to get rid of this exception and have the inheritance go
+  // the other way.)
   enum ParentContextFromChildFrame { PARENT_CONTEXT_FROM_CHILD_FRAME };
   ElementRestyler(ParentContextFromChildFrame,
                   const ElementRestyler& aParentFrameRestyler,
@@ -692,25 +636,27 @@ public:
 private:
   inline nsStyleSet* StyleSet() const;
 
-  // Enum for the result of RestyleSelf, which indicates whether the
+  // Enum class for the result of RestyleSelf, which indicates whether the
   // restyle procedure should continue to the children, and how.
   //
   // These values must be ordered so that later values imply that all
   // the work of the earlier values is also done.
-  enum RestyleResult {
+  enum class RestyleResult : uint8_t {
+    // default initial value
+    eNone,
 
     // we left the old style context on the frame; do not restyle children
-    eRestyleResult_Stop = 1,
+    eStop,
 
     // we got a new style context on this frame, but we know that children
     // do not depend on the changed values; do not restyle children
-    eRestyleResult_StopWithStyleChange,
+    eStopWithStyleChange,
 
     // continue restyling children
-    eRestyleResult_Continue,
+    eContinue,
 
     // continue restyling children with eRestyle_ForceDescendants set
-    eRestyleResult_ContinueAndForceDescendants
+    eContinueAndForceDescendants
   };
 
   struct SwapInstruction
@@ -799,11 +745,11 @@ private:
   void DoRestyleUndisplayedDescendants(nsRestyleHint aChildRestyleHint,
                                        nsIContent* aParent,
                                        nsStyleContext* aParentStyleContext);
-  void RestyleUndisplayedNodes(nsRestyleHint    aChildRestyleHint,
-                               UndisplayedNode* aUndisplayed,
-                               nsIContent*      aUndisplayedParent,
-                               nsStyleContext*  aParentStyleContext,
-                               const uint8_t    aDisplay);
+  void RestyleUndisplayedNodes(nsRestyleHint      aChildRestyleHint,
+                               UndisplayedNode*   aUndisplayed,
+                               nsIContent*        aUndisplayedParent,
+                               nsStyleContext*    aParentStyleContext,
+                               const StyleDisplay aDisplay);
   void MaybeReframeForBeforePseudo();
   void MaybeReframeForAfterPseudo(nsIFrame* aFrame);
   void MaybeReframeForPseudo(CSSPseudoElementType aPseudoType,
@@ -852,7 +798,7 @@ private:
                                                     Element* aRestyleRoot);
   void ConditionallyRestyleUndisplayedNodes(UndisplayedNode* aUndisplayed,
                                             nsIContent* aUndisplayedParent,
-                                            const uint8_t aDisplay,
+                                            const StyleDisplay aDisplay,
                                             Element* aRestyleRoot);
   void ConditionallyRestyleContentDescendants(Element* aElement,
                                               Element* aRestyleRoot);

@@ -60,7 +60,6 @@ var snapshotFormatters = {
       case 6:
       case 7:
       case 8:
-      case 9:
         statusText = stringBundle().GetStringFromName("multiProcessStatus." + data.autoStartStatus);
         break;
 
@@ -97,10 +96,8 @@ var snapshotFormatters = {
       $("crashes-noConfig").classList.remove("no-copy");
       return;
     }
-    else {
-      $("crashes-allReports").style.display = "block";
-      $("crashes-allReports").classList.remove("no-copy");
-    }
+    $("crashes-allReports").style.display = "block";
+    $("crashes-allReports").classList.remove("no-copy");
 
     if (data.pending > 0) {
       $("crashes-allReportsWithPending").textContent =
@@ -163,7 +160,7 @@ var snapshotFormatters = {
         $.new("td", experiment.active),
         $.new("td", experiment.endDate),
         $.new("td", [
-          $.new("a", experiment.detailURL, null, {href : experiment.detailURL,})
+          $.new("a", experiment.detailURL, null, {href : experiment.detailURL, })
         ]),
         $.new("td", experiment.branch),
       ]);
@@ -303,10 +300,11 @@ var snapshotFormatters = {
           let assembled = assembleFromGraphicsFailure(i, data);
           combined.push(assembled);
         }
-        combined.sort(function(a,b) {
+        combined.sort(function(a, b) {
             if (a.index < b.index) return -1;
             if (a.index > b.index) return 1;
-            return 0;});
+            return 0;
+        });
         $.append($("graphics-failures-tbody"),
                  combined.map(function(val) {
                    return $.new("tr", [$.new("th", val.header, "column"),
@@ -366,7 +364,9 @@ var snapshotFormatters = {
            ? apzInfo.join("; ")
            : localizedMsg(["apzNone"]));
     addRowFromKey("features", "webglRenderer");
+    addRowFromKey("features", "webgl2Renderer");
     addRowFromKey("features", "supportsHardwareH264", "hardwareH264");
+    addRowFromKey("features", "currentAudioBackend", "audioBackend");
     addRowFromKey("features", "direct2DEnabled", "#Direct2D");
 
     if ("directWriteEnabled" in data) {
@@ -560,7 +560,7 @@ var snapshotFormatters = {
   },
 
   sandbox: function sandbox(data) {
-    if (AppConstants.platform != "linux" || !AppConstants.MOZ_SANDBOX)
+    if (!AppConstants.MOZ_SANDBOX)
       return;
 
     let strings = stringBundle();
@@ -949,21 +949,21 @@ function safeModeRestart() {
 /**
  * Set up event listeners for buttons.
  */
-function setupEventListeners(){
+function setupEventListeners() {
   $("show-update-history-button").addEventListener("click", function (event) {
     var prompter = Cc["@mozilla.org/updates/update-prompt;1"].createInstance(Ci.nsIUpdatePrompt);
       prompter.showUpdateHistory(window);
   });
-  $("reset-box-button").addEventListener("click", function (event){
+  $("reset-box-button").addEventListener("click", function (event) {
     ResetProfile.openConfirmationDialog(window);
   });
-  $("copy-raw-data-to-clipboard").addEventListener("click", function (event){
+  $("copy-raw-data-to-clipboard").addEventListener("click", function (event) {
     copyRawDataToClipboard(this);
   });
-  $("copy-to-clipboard").addEventListener("click", function (event){
+  $("copy-to-clipboard").addEventListener("click", function (event) {
     copyContentsToClipboard();
   });
-  $("profile-dir-button").addEventListener("click", function (event){
+  $("profile-dir-button").addEventListener("click", function (event) {
     openProfileDirectory();
   });
   $("restart-in-safe-mode-button").addEventListener("click", function (event) {
@@ -974,7 +974,7 @@ function setupEventListeners(){
       safeModeRestart();
     }
   });
-  $("verify-place-integrity-button").addEventListener("click", function (event){
+  $("verify-place-integrity-button").addEventListener("click", function (event) {
     PlacesDBUtils.checkAndFixDatabase(function(aLog) {
       let msg = aLog.join("\n");
       $("verify-place-result").style.display = "block";

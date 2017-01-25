@@ -7,48 +7,29 @@
 
 "use strict";
 
-const {Cc, Ci} = require("chrome");
 const promise = require("promise");
+const defer = require("devtools/shared/defer");
 const Services = require("Services");
-const {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
 const {Task} = require("devtools/shared/task");
 const {Tools} = require("devtools/client/definitions");
-const {CssLogic} = require("devtools/shared/inspector/css-logic");
-const {ELEMENT_STYLE} = require("devtools/server/actors/styles");
+const {l10n} = require("devtools/shared/inspector/css-logic");
+const {ELEMENT_STYLE} = require("devtools/shared/specs/styles");
 const {OutputParser} = require("devtools/client/shared/output-parser");
-const {PrefObserver, PREF_ORIG_SOURCES} =
-      require("devtools/client/styleeditor/utils");
-const {ElementStyle} =
-      require("devtools/client/inspector/rules/models/element-style");
+const {PrefObserver, PREF_ORIG_SOURCES} = require("devtools/client/styleeditor/utils");
+const {ElementStyle} = require("devtools/client/inspector/rules/models/element-style");
 const {Rule} = require("devtools/client/inspector/rules/models/rule");
-const {RuleEditor} =
-      require("devtools/client/inspector/rules/views/rule-editor");
-const {createChild, promiseWarn} =
-      require("devtools/client/inspector/shared/utils");
+const {RuleEditor} = require("devtools/client/inspector/rules/views/rule-editor");
+const {createChild, promiseWarn, throttle} = require("devtools/client/inspector/shared/utils");
 const {gDevTools} = require("devtools/client/framework/devtools");
+const {getCssProperties} = require("devtools/shared/fronts/css-properties");
 
-loader.lazyRequireGetter(this, "overlays",
-  "devtools/client/inspector/shared/style-inspector-overlays");
-loader.lazyRequireGetter(this, "EventEmitter",
-  "devtools/shared/event-emitter");
-loader.lazyRequireGetter(this, "StyleInspectorMenu",
-  "devtools/client/inspector/shared/style-inspector-menu");
-loader.lazyRequireGetter(this, "KeyShortcuts",
-  "devtools/client/shared/key-shortcuts", true);
+const overlays = require("devtools/client/inspector/shared/style-inspector-overlays");
+const EventEmitter = require("devtools/shared/event-emitter");
+const StyleInspectorMenu = require("devtools/client/inspector/shared/style-inspector-menu");
+const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
+const clipboardHelper = require("devtools/shared/platform/clipboard");
 
-XPCOMUtils.defineLazyGetter(this, "clipboardHelper", function () {
-  return Cc["@mozilla.org/widget/clipboardhelper;1"]
-    .getService(Ci.nsIClipboardHelper);
-});
-
-XPCOMUtils.defineLazyGetter(this, "_strings", function () {
-  return Services.strings.createBundle(
-    "chrome://devtools-shared/locale/styleinspector.properties");
-});
-
-loader.lazyGetter(this, "AutocompletePopup", function () {
-  return require("devtools/client/shared/autocomplete-popup").AutocompletePopup;
-});
+const {AutocompletePopup} = require("devtools/client/shared/autocomplete-popup");
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const PREF_UA_STYLES = "devtools.inspector.showUserAgentStyles";
@@ -128,7 +109,7 @@ function createDummyDocument() {
   docShell.createAboutBlankContentViewer(nullPrincipal);
   let window = docShell.contentViewer.DOMDocument.defaultView;
   window.location = "data:text/html,<html></html>";
-  let deferred = promise.defer();
+  let deferred = defer();
   eventTarget.addEventListener("DOMContentLoaded", function handler() {
     eventTarget.removeEventListener("DOMContentLoaded", handler, false);
     deferred.resolve(window.document);
@@ -161,7 +142,12 @@ function CssRuleView(inspector, document, store, pageStyle) {
   this.store = store || {};
   this.pageStyle = pageStyle;
 
-  this._outputParser = new OutputParser(document);
+  // Allow tests to override throttling behavior, as this can cause intermittents.
+  this.throttle = throttle;
+
+  this.cssProperties = getCssProperties(inspector.toolbox);
+
+  this._outputParser = new OutputParser(document, this.cssProperties.supportsType);
 
   this._onAddRule = this._onAddRule.bind(this);
   this._onContextMenu = this._onContextMenu.bind(this);
@@ -174,7 +160,7 @@ function CssRuleView(inspector, document, store, pageStyle) {
   this._onTogglePseudoClass = this._onTogglePseudoClass.bind(this);
 
   let doc = this.styleDocument;
-  this.element = doc.getElementById("ruleview-container");
+  this.element = doc.getElementById("ruleview-container-focusable");
   this.addRuleButton = doc.getElementById("ruleview-add-rule-button");
   this.searchField = doc.getElementById("ruleview-searchbox");
   this.searchClearButton = doc.getElementById("ruleview-searchinput-clear");
@@ -222,7 +208,7 @@ function CssRuleView(inspector, document, store, pageStyle) {
     autoSelect: true,
     theme: "auto"
   };
-  this.popup = new AutocompletePopup(this.styleDocument, options);
+  this.popup = new AutocompletePopup(inspector._toolbox, options);
 
   this._showEmpty();
 
@@ -477,11 +463,6 @@ CssRuleView.prototype = {
 
         // Remove any double newlines.
         text = text.replace(/(\r?\n)\r?\n/g, "$1");
-
-        // Remove "inline"
-        let inline = _strings.GetStringFromName("rule.sourceInline");
-        let rx = new RegExp("^" + inline + "\\r?\\n?", "g");
-        text = text.replace(rx, "");
       }
 
       clipboardHelper.copyString(text);
@@ -531,7 +512,7 @@ CssRuleView.prototype = {
   _onAddRule: function () {
     let elementStyle = this._elementStyle;
     let element = elementStyle.element;
-    let client = this.inspector.toolbox._target.client;
+    let client = this.inspector.toolbox.target.client;
     let pseudoClasses = element.pseudoClassLocks;
 
     if (!client.traits.addNewRule) {
@@ -967,13 +948,13 @@ CssRuleView.prototype = {
    * Show the user that the rule view has no node selected.
    */
   _showEmpty: function () {
-    if (this.styleDocument.getElementById("noResults") > 0) {
+    if (this.styleDocument.getElementById("ruleview-no-results")) {
       return;
     }
 
     createChild(this.element, "div", {
-      id: "noResults",
-      textContent: CssLogic.l10n("rule.empty")
+      id: "ruleview-no-results",
+      textContent: l10n("rule.empty")
     });
   },
 
@@ -1016,7 +997,7 @@ CssRuleView.prototype = {
     if (this._selectedElementLabel) {
       return this._selectedElementLabel;
     }
-    this._selectedElementLabel = CssLogic.l10n("rule.selectedElement");
+    this._selectedElementLabel = l10n("rule.selectedElement");
     return this._selectedElementLabel;
   },
 
@@ -1027,7 +1008,7 @@ CssRuleView.prototype = {
     if (this._pseudoElementLabel) {
       return this._pseudoElementLabel;
     }
-    this._pseudoElementLabel = CssLogic.l10n("rule.pseudoElement");
+    this._pseudoElementLabel = l10n("rule.pseudoElement");
     return this._pseudoElementLabel;
   },
 
@@ -1245,7 +1226,7 @@ CssRuleView.prototype = {
     let isSelectorHighlighted = false;
 
     let selectorNodes = [...rule.editor.selectorText.childNodes];
-    if (rule.domRule.type === Ci.nsIDOMCSSRule.KEYFRAME_RULE) {
+    if (rule.domRule.type === CSSRule.KEYFRAME_RULE) {
       selectorNodes = [rule.editor.selectorText];
     } else if (rule.domRule.type === ELEMENT_STYLE) {
       selectorNodes = [];
@@ -1595,7 +1576,7 @@ function RuleViewTool(inspector, window) {
   this.view.on("ruleview-refreshed", this.onViewRefreshed);
   this.view.on("ruleview-linked-clicked", this.onLinkClicked);
 
-  this.inspector.selection.on("detached", this.onSelected);
+  this.inspector.selection.on("detached-front", this.onSelected);
   this.inspector.selection.on("new-node-front", this.onSelected);
   this.inspector.selection.on("pseudoclass", this.refresh);
   this.inspector.target.on("navigate", this.clearUserProperties);
@@ -1658,7 +1639,7 @@ RuleViewTool.prototype = {
   },
 
   onPanelSelected: function () {
-    if (this.inspector.selection.nodeFront === this.view.viewedElement) {
+    if (this.inspector.selection.nodeFront === this.view._viewedElement) {
       this.refresh();
     } else {
       this.onSelected();
@@ -1726,7 +1707,7 @@ RuleViewTool.prototype = {
   destroy: function () {
     this.inspector.walker.off("mutations", this.onMutations);
     this.inspector.walker.off("resize", this.onResized);
-    this.inspector.selection.off("detached", this.onSelected);
+    this.inspector.selection.off("detached-front", this.onSelected);
     this.inspector.selection.off("pseudoclass", this.refresh);
     this.inspector.selection.off("new-node-front", this.onSelected);
     this.inspector.target.off("navigate", this.clearUserProperties);

@@ -28,8 +28,6 @@ ContentBridgeChild::ContentBridgeChild(Transport* aTransport)
 
 ContentBridgeChild::~ContentBridgeChild()
 {
-  RefPtr<DeleteTask<Transport>> task = new DeleteTask<Transport>(mTransport);
-  XRE_GetIOMessageLoop()->PostTask(task.forget());
 }
 
 void
@@ -90,6 +88,18 @@ ContentBridgeChild::SendPBrowserConstructor(PBrowserChild* aActor,
                                                       aCpID,
                                                       aIsForApp,
                                                       aIsForBrowser);
+}
+
+PFileDescriptorSetChild*
+ContentBridgeChild::SendPFileDescriptorSetConstructor(const FileDescriptor& aFD)
+{
+  return PContentBridgeChild::SendPFileDescriptorSetConstructor(aFD);
+}
+
+PSendStreamChild*
+ContentBridgeChild::SendPSendStreamConstructor(PSendStreamChild* aActor)
+{
+  return PContentBridgeChild::SendPSendStreamConstructor(aActor);
 }
 
 // This implementation is identical to ContentChild::GetCPOWManager but we can't
@@ -166,6 +176,30 @@ bool
 ContentBridgeChild::DeallocPBlobChild(PBlobChild* aActor)
 {
   return nsIContentChild::DeallocPBlobChild(aActor);
+}
+
+PSendStreamChild*
+ContentBridgeChild::AllocPSendStreamChild()
+{
+  return nsIContentChild::AllocPSendStreamChild();
+}
+
+bool
+ContentBridgeChild::DeallocPSendStreamChild(PSendStreamChild* aActor)
+{
+  return nsIContentChild::DeallocPSendStreamChild(aActor);
+}
+
+PFileDescriptorSetChild*
+ContentBridgeChild::AllocPFileDescriptorSetChild(const FileDescriptor& aFD)
+{
+  return nsIContentChild::AllocPFileDescriptorSetChild(aFD);
+}
+
+bool
+ContentBridgeChild::DeallocPFileDescriptorSetChild(PFileDescriptorSetChild* aActor)
+{
+  return nsIContentChild::DeallocPFileDescriptorSetChild(aActor);
 }
 
 } // namespace dom

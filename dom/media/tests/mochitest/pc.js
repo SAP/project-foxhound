@@ -134,13 +134,29 @@ PeerConnectionTest.prototype.closePC = function() {
       return Promise.resolve();
     }
 
-    return new Promise(resolve => {
-      pc.onsignalingstatechange = e => {
-        is(e.target.signalingState, "closed", "signalingState is closed");
-        resolve();
-      };
-      pc.close();
-    });
+    var promise = Promise.all([
+      new Promise(resolve => {
+        pc.onsignalingstatechange = e => {
+          is(e.target.signalingState, "closed", "signalingState is closed");
+          resolve();
+        };
+      }),
+      Promise.all(pc._pc.getReceivers()
+        .filter(receiver => receiver.track.readyState == "live")
+        .map(receiver => {
+          info("Waiting for track " + receiver.track.id + " (" +
+               receiver.track.kind + ") to end.");
+          return haveEvent(receiver.track, "ended", wait(50000))
+            .then(event => {
+              is(event.target, receiver.track, "Event target should be the correct track");
+              info("ended fired for track " + receiver.track.id);
+            }, e => e ? Promise.reject(e)
+                      : ok(false, "ended never fired for track " +
+                                    receiver.track.id));
+        }))
+    ]);
+    pc.close();
+    return promise;
   };
 
   return timerGuard(Promise.all([
@@ -156,7 +172,7 @@ PeerConnectionTest.prototype.close = function() {
   var allChannels = (this.pcLocal || this.pcRemote).dataChannels;
   return timerGuard(
     Promise.all(allChannels.map((channel, i) => this.closeDataChannels(i))),
-    60000, "failed to close data channels")
+    120000, "failed to close data channels")
     .then(() => this.closePC());
 };
 
@@ -195,7 +211,7 @@ PeerConnectionTest.prototype.closeDataChannels = function(index) {
     setupClosePromise(localChannel),
     setupClosePromise(remoteChannel)
   ]);
-  var complete = timerGuard(allClosed, 60000, "failed to close data channel pair");
+  var complete = timerGuard(allClosed, 120000, "failed to close data channel pair");
 
   // triggering close on one side should suffice
   if (remoteChannel) {
@@ -423,7 +439,7 @@ PeerConnectionTest.prototype.updateChainSteps = function() {
   if (this.testOptions.h264) {
     this.chain.insertAfterEach(
       'PC_LOCAL_CREATE_OFFER',
-      [PC_LOCAL_REMOVE_VP8_FROM_OFFER]);
+      [PC_LOCAL_REMOVE_ALL_BUT_H264_FROM_OFFER]);
   }
   if (!this.testOptions.bundle) {
     this.chain.insertAfterEach(
@@ -450,19 +466,22 @@ PeerConnectionTest.prototype.run = function() {
   /* We have to modify the chain here to allow tests which modify the default
    * test chain instantiating a PeerConnectionTest() */
   this.updateChainSteps();
+  var finished = () => {
+    if (window.SimpleTest) {
+      networkTestFinished();
+    } else {
+      finish();
+    }
+  };
   return this.chain.execute()
     .then(() => this.close())
-    .then(() => {
-      if (window.SimpleTest) {
-        networkTestFinished();
-      } else {
-        finish();
-      }
-    })
     .catch(e =>
-           ok(false, 'Error in test execution: ' + e +
-              ((typeof e.stack === 'string') ?
-               (' ' + e.stack.split('\n').join(' ... ')) : '')));
+      ok(false, 'Error in test execution: ' + e +
+         ((typeof e.stack === 'string') ?
+          (' ' + e.stack.split('\n').join(' ... ')) : '')))
+    .then(() => finished())
+    .catch(e =>
+      ok(false, "Error in finished()"));
 };
 
 /**
@@ -739,6 +758,12 @@ function PeerConnectionWrapper(label, configuration) {
 
   this.disableRtpCountChecking = false;
 
+  this.iceConnectedResolve;
+  this.iceConnectedReject;
+  this.iceConnected = new Promise((resolve, reject) => {
+    this.iceConnectedResolve = resolve;
+    this.iceConnectedReject = reject;
+  });
   this.iceCheckingRestartExpected = false;
   this.iceCheckingIceRollbackExpected = false;
 
@@ -754,10 +779,16 @@ function PeerConnectionWrapper(label, configuration) {
   this._pc.oniceconnectionstatechange = e => {
     isnot(typeof this._pc.iceConnectionState, "undefined",
           "iceConnectionState should not be undefined");
-    info(this + ": oniceconnectionstatechange fired, new state is: " + this._pc.iceConnectionState);
+    var iceState = this._pc.iceConnectionState;
+    info(this + ": oniceconnectionstatechange fired, new state is: " + iceState);
     Object.keys(this.ice_connection_callbacks).forEach(name => {
       this.ice_connection_callbacks[name]();
     });
+    if (iceState === "connected") {
+      this.iceConnectedResolve();
+    } else if (iceState === "failed") {
+      this.iceConnectedReject();
+    }
   };
 
   createOneShotEventWrapper(this, this._pc, 'datachannel');
@@ -1183,45 +1214,6 @@ PeerConnectionWrapper.prototype = {
   },
 
   /**
-   * Returns if the ICE the connection state is "connected".
-   *
-   * @returns {boolean} True if the connection state is "connected", otherwise false.
-   */
-  isIceConnected : function() {
-    info(this + ": iceConnectionState = " + this.iceConnectionState);
-    return this.iceConnectionState === "connected";
-  },
-
-  /**
-   * Returns if the ICE the connection state is "checking".
-   *
-   * @returns {boolean} True if the connection state is "checking", otherwise false.
-   */
-  isIceChecking : function() {
-    return this.iceConnectionState === "checking";
-  },
-
-  /**
-   * Returns if the ICE the connection state is "new".
-   *
-   * @returns {boolean} True if the connection state is "new", otherwise false.
-   */
-  isIceNew : function() {
-    return this.iceConnectionState === "new";
-  },
-
-  /**
-   * Checks if the ICE connection state still waits for a connection to get
-   * established.
-   *
-   * @returns {boolean} True if the connection state is "checking" or "new",
-   *  otherwise false.
-   */
-  isIceConnectionPending : function() {
-    return (this.isIceChecking() || this.isIceNew());
-  },
-
-  /**
    * Registers a callback for the ICE connection state change and
    * appends the new state to an array for logging it later.
    */
@@ -1252,24 +1244,25 @@ PeerConnectionWrapper.prototype = {
   },
 
   /**
-   * Registers a callback for the ICE connection state change and
-   * reports success (=connected) or failure via the callbacks.
-   * States "new" and "checking" are ignored.
+   * Resets the ICE connected Promise and allows ICE connection state monitoring
+   * to go backwards to 'checking'.
+   */
+  expectIceChecking : function() {
+    this.iceCheckingRestartExpected = true;
+    this.iceConnected = new Promise((resolve, reject) => {
+      this.iceConnectedResolve = resolve;
+      this.iceConnectedReject = reject;
+    });
+  },
+
+  /**
+   * Waits for ICE to either connect or fail.
    *
    * @returns {Promise}
    *          resolves when connected, rejects on failure
    */
   waitForIceConnected : function() {
-    return new Promise((resolve, reject) =>
-        this.ice_connection_callbacks.waitForIceConnected = () => {
-      if (this.isIceConnected()) {
-        delete this.ice_connection_callbacks.waitForIceConnected;
-        resolve();
-      } else if (!this.isIceConnectionPending()) {
-        delete this.ice_connection_callbacks.waitForIceConnected;
-        reject(new Error('ICE failed'));
-      }
-    });
+    return this.iceConnected;
   },
 
   /**
@@ -1441,10 +1434,10 @@ PeerConnectionWrapper.prototype = {
 
     info("Checking RTP packet flow for track " + track.id);
 
-    var retry = () => this._pc.getStats(track)
+    var retry = (delay) => this._pc.getStats(track)
       .then(stats => hasFlow(stats)? ok(true, "RTP flowing for track " + track.id) :
-                                     wait(200).then(retry));
-    return retry();
+            wait(delay).then(retry(1000)));
+    return retry(200);
   },
 
   /**

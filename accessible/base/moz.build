@@ -1,4 +1,4 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -63,6 +63,18 @@ LOCAL_INCLUDES += [
     '/accessible/generic',
     '/accessible/html',
     '/accessible/ipc',
+]
+
+if CONFIG['OS_ARCH'] == 'WINNT':
+    LOCAL_INCLUDES += [
+        '/accessible/ipc/win',
+    ]
+else:
+    LOCAL_INCLUDES += [
+        '/accessible/ipc/other',
+    ]
+
+LOCAL_INCLUDES += [
     '/accessible/xpcom',
     '/accessible/xul',
     '/dom/base',

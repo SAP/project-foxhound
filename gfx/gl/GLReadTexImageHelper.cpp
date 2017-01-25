@@ -332,7 +332,7 @@ ReadPixelsIntoDataSurface(GLContext* gl, DataSourceSurface* dest)
         needsTempSurf = true;
     }
     if (needsTempSurf) {
-        if (gl->DebugMode()) {
+        if (GLContext::ShouldSpew()) {
             NS_WARNING("Needing intermediary surface for ReadPixels. This will be slow!");
         }
         SurfaceFormat readFormatGFX;
@@ -393,57 +393,24 @@ ReadPixelsIntoDataSurface(GLContext* gl, DataSourceSurface* dest)
     MOZ_ASSERT(readAlignment);
     MOZ_ASSERT(reinterpret_cast<uintptr_t>(readSurf->GetData()) % readAlignment == 0);
 
-    GLint currentPackAlignment = 0;
-    gl->fGetIntegerv(LOCAL_GL_PACK_ALIGNMENT, &currentPackAlignment);
-
-    if (currentPackAlignment != readAlignment)
-        gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, readAlignment);
-
     GLsizei width = dest->GetSize().width;
     GLsizei height = dest->GetSize().height;
 
-    gl->fReadPixels(0, 0,
-                    width, height,
-                    readFormat, readType,
-                    readSurf->GetData());
+    {
+        ScopedPackState safePackState(gl);
+        gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, readAlignment);
 
-    if (currentPackAlignment != readAlignment)
-        gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, currentPackAlignment);
+        gl->fReadPixels(0, 0,
+                        width, height,
+                        readFormat, readType,
+                        readSurf->GetData());
+    }
 
     if (readSurf != dest) {
         MOZ_ASSERT(readFormat == LOCAL_GL_RGBA);
         MOZ_ASSERT(readType == LOCAL_GL_UNSIGNED_BYTE);
         gfx::Factory::CopyDataSourceSurface(readSurf, dest);
     }
-
-    // Check if GL is giving back 1.0 alpha for
-    // RGBA reads to RGBA images from no-alpha buffers.
-#ifdef XP_MACOSX
-    if (gl->WorkAroundDriverBugs() &&
-        gl->Vendor() == gl::GLVendor::NVIDIA &&
-        hasAlpha &&
-        width && height)
-    {
-        GLint alphaBits = 0;
-        gl->fGetIntegerv(LOCAL_GL_ALPHA_BITS, &alphaBits);
-        if (!alphaBits) {
-            const uint32_t alphaMask = gfxPackedPixelNoPreMultiply(0xff,0,0,0);
-
-            MOZ_ASSERT(dest->GetSize().width * destPixelSize == dest->Stride());
-
-            uint32_t* itr = (uint32_t*)dest->GetData();
-            uint32_t testPixel = *itr;
-            if ((testPixel & alphaMask) != alphaMask) {
-                // We need to set the alpha channel to 1.0 manually.
-                uint32_t* itrEnd = itr + width*height;  // Stride is guaranteed to be width*4.
-
-                for (; itr != itrEnd; itr++) {
-                    *itr |= alphaMask;
-                }
-            }
-        }
-    }
-#endif
 }
 
 already_AddRefed<gfx::DataSourceSurface>
@@ -496,7 +463,7 @@ ReadBackSurface(GLContext* gl, GLuint aTexture, bool aYInvert, SurfaceFormat aFo
 
     RefPtr<DataSourceSurface> surf =
       Factory::CreateDataSourceSurfaceWithStride(size, SurfaceFormat::B8G8R8A8,
-                                                 GetAlignedStride<4>(size.width * BytesPerPixel(SurfaceFormat::B8G8R8A8)));
+                                                 GetAlignedStride<4>(size.width, BytesPerPixel(SurfaceFormat::B8G8R8A8)));
 
     if (NS_WARN_IF(!surf)) {
         return nullptr;

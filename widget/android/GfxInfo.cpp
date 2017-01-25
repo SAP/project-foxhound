@@ -77,7 +77,7 @@ public:
     RefPtr<gl::GLContext> gl;
     nsCString discardFailureId;
     gl = gl::GLContextProvider::CreateHeadless(gl::CreateContextFlags::REQUIRE_COMPAT_PROFILE,
-                                               discardFailureId);
+                                               &discardFailureId);
 
     if (!gl) {
       // Setting mReady to true here means that we won't retry. Everything will
@@ -372,7 +372,7 @@ const nsTArray<GfxDriverInfo>&
 GfxInfo::GetGfxDriverInfo()
 {
   if (mDriverInfo->IsEmpty()) {
-    APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_ALL,
+    APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Android,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAll), GfxDriverInfo::allDevices,
       nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_STATUS_OK,
       DRIVER_COMPARISON_IGNORED, GfxDriverInfo::allDriverVersions,
@@ -462,84 +462,7 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
         return NS_OK;
       }
 
-      if (CompareVersions(mOSVersion.get(), "2.2.0") >= 0 &&
-          CompareVersions(mOSVersion.get(), "2.3.0") < 0)
-      {
-        // Froyo LG devices are whitelisted.
-        // All other Froyo
-        bool isWhitelisted =
-          cManufacturer.Equals("lge", nsCaseInsensitiveCStringComparator());
-
-        if (!isWhitelisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_OLD_ANDROID";
-          return NS_OK;
-        }
-      }
-      else if (CompareVersions(mOSVersion.get(), "2.3.0") >= 0 &&
-          CompareVersions(mOSVersion.get(), "2.4.0") < 0)
-      {
-        // Gingerbread HTC devices are whitelisted.
-        // Gingerbread Samsung devices are whitelisted except for:
-        //   Samsung devices identified in Bug 847837
-        // Gingerbread Sony devices are whitelisted.
-        // All other Gingerbread devices are blacklisted.
-        bool isWhitelisted =
-          cManufacturer.Equals("htc", nsCaseInsensitiveCStringComparator()) ||
-          (cManufacturer.Find("sony", true) != -1) ||
-          cManufacturer.Equals("samsung", nsCaseInsensitiveCStringComparator());
-
-        if (cModel.Equals("GT-I8160", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-I8160L", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-I8530", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-I9070", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-I9070P", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-I8160P", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-S7500", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-S7500T", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-S7500L", nsCaseInsensitiveCStringComparator()) ||
-            cModel.Equals("GT-S6500T", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("smdkc110", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("smdkc210", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("herring", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("shw-m110s", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("shw-m180s", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("n1", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("latona", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("aalto", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("atlas", nsCaseInsensitiveCStringComparator()) ||
-            cHardware.Equals("qcom", nsCaseInsensitiveCStringComparator()))
-        {
-          isWhitelisted = false;
-        }
-
-        if (!isWhitelisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_OLD_ANDROID_2";
-          return NS_OK;
-        }
-      }
-      else if (CompareVersions(mOSVersion.get(), "3.0.0") >= 0 &&
-          CompareVersions(mOSVersion.get(), "4.0.0") < 0)
-      {
-        // Honeycomb Samsung devices are whitelisted.
-        // All other Honeycomb devices are blacklisted.
-        bool isWhitelisted =
-          cManufacturer.Equals("samsung", nsCaseInsensitiveCStringComparator());
-
-        if (!isWhitelisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_SAMSUNG";
-          return NS_OK;
-        }
-      }
-      else if (CompareVersions(mOSVersion.get(), "4.0.0") < 0)
-      {
-        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION;
-        aFailureId = "FEATURE_FAILURE_OLD_ANDROID_4";
-        return NS_OK;
-      }
-      else if (CompareVersions(mOSVersion.get(), "4.1.0") < 0)
+      if (CompareVersions(mOSVersion.get(), "4.1.0") < 0)
       {
         // Whitelist:
         //   All Samsung ICS devices, except for:

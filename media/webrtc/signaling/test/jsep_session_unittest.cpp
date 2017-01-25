@@ -2120,6 +2120,21 @@ TEST_P(JsepSessionTest, RenegotiationAnswererDisablesBundleTransport)
             answererPairs[0].mRtpTransport.get());
 }
 
+TEST_P(JsepSessionTest, ParseRejectsBadMediaFormat)
+{
+  if (GetParam() == "datachannel") {
+    return;
+  }
+  AddTracks(mSessionOff);
+  std::string offer = CreateOffer();
+  UniquePtr<Sdp> munge(Parse(offer));
+  SdpMediaSection& mediaSection = munge->GetMediaSection(0);
+  mediaSection.AddCodec("75", "DummyFormatVal", 8000, 1);
+  std::string sdpString = munge->ToString();
+  nsresult rv = mSessionOff.SetLocalDescription(kJsepSdpOffer, sdpString);
+  ASSERT_EQ(NS_ERROR_INVALID_ARG, rv);
+}
+
 TEST_P(JsepSessionTest, FullCallWithCandidates)
 {
   AddTracks(mSessionOff);
@@ -2727,11 +2742,13 @@ TEST_F(JsepSessionTest, ValidateOfferedCodecParams)
   auto& video_attrs = video_section.GetAttributeList();
   ASSERT_EQ(SdpDirectionAttribute::kSendrecv, video_attrs.GetDirection());
 
-  ASSERT_EQ(4U, video_section.GetFormats().size());
-  ASSERT_EQ("121", video_section.GetFormats()[0]);
-  ASSERT_EQ("120", video_section.GetFormats()[1]);
+  ASSERT_EQ(6U, video_section.GetFormats().size());
+  ASSERT_EQ("120", video_section.GetFormats()[0]);
+  ASSERT_EQ("121", video_section.GetFormats()[1]);
   ASSERT_EQ("126", video_section.GetFormats()[2]);
   ASSERT_EQ("97", video_section.GetFormats()[3]);
+  ASSERT_EQ("122", video_section.GetFormats()[4]);
+  ASSERT_EQ("123", video_section.GetFormats()[5]);
 
   // Validate rtpmap
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kRtpmapAttribute));
@@ -2740,22 +2757,28 @@ TEST_F(JsepSessionTest, ValidateOfferedCodecParams)
   ASSERT_TRUE(rtpmaps.HasEntry("121"));
   ASSERT_TRUE(rtpmaps.HasEntry("126"));
   ASSERT_TRUE(rtpmaps.HasEntry("97"));
+  ASSERT_TRUE(rtpmaps.HasEntry("122"));
+  ASSERT_TRUE(rtpmaps.HasEntry("123"));
 
   auto& vp8_entry = rtpmaps.GetEntry("120");
   auto& vp9_entry = rtpmaps.GetEntry("121");
   auto& h264_1_entry = rtpmaps.GetEntry("126");
   auto& h264_0_entry = rtpmaps.GetEntry("97");
+  auto& red_0_entry = rtpmaps.GetEntry("122");
+  auto& ulpfec_0_entry = rtpmaps.GetEntry("123");
 
   ASSERT_EQ("VP8", vp8_entry.name);
   ASSERT_EQ("VP9", vp9_entry.name);
   ASSERT_EQ("H264", h264_1_entry.name);
   ASSERT_EQ("H264", h264_0_entry.name);
+  ASSERT_EQ("red", red_0_entry.name);
+  ASSERT_EQ("ulpfec", ulpfec_0_entry.name);
 
   // Validate fmtps
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kFmtpAttribute));
   auto& fmtps = video_attrs.GetFmtp().mFmtps;
 
-  ASSERT_EQ(4U, fmtps.size());
+  ASSERT_EQ(5U, fmtps.size());
 
   // VP8
   const SdpFmtpAttributeList::Parameters* vp8_params =
@@ -2806,11 +2829,30 @@ TEST_F(JsepSessionTest, ValidateOfferedCodecParams)
   ASSERT_EQ((uint32_t)0x42e00d, parsed_h264_0_params.profile_level_id);
   ASSERT_TRUE(parsed_h264_0_params.level_asymmetry_allowed);
   ASSERT_EQ(0U, parsed_h264_0_params.packetization_mode);
+
+  // red
+  const SdpFmtpAttributeList::Parameters* red_params =
+    video_section.FindFmtp("122");
+  ASSERT_TRUE(red_params);
+  ASSERT_EQ(SdpRtpmapAttributeList::kRed, red_params->codec_type);
+
+  auto& parsed_red_params =
+      *static_cast<const SdpFmtpAttributeList::RedParameters*>(red_params);
+  ASSERT_EQ(5U, parsed_red_params.encodings.size());
+  ASSERT_EQ(120, parsed_red_params.encodings[0]);
+  ASSERT_EQ(121, parsed_red_params.encodings[1]);
+  ASSERT_EQ(126, parsed_red_params.encodings[2]);
+  ASSERT_EQ(97, parsed_red_params.encodings[3]);
+  ASSERT_EQ(123, parsed_red_params.encodings[4]);
 }
 
 TEST_F(JsepSessionTest, ValidateAnsweredCodecParams)
 {
-
+  // TODO(bug 1099351): Once fixed, we can allow red in this offer,
+  // which will also cause multiple codecs in answer.  For now,
+  // red/ulpfec for video are behind a pref to mitigate potential for
+  // errors.
+  SetCodecEnabled(mSessionOff, "red", false);
   for (auto i = mSessionAns.Codecs().begin(); i != mSessionAns.Codecs().end();
        ++i) {
     auto* codec = *i;
@@ -2862,24 +2904,26 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams)
   // TODO(bug 1099351): Once fixed, this stuff will need to be updated.
   ASSERT_EQ(1U, video_section.GetFormats().size());
   // ASSERT_EQ(3U, video_section.GetFormats().size());
-  ASSERT_EQ("121", video_section.GetFormats()[0]);
-  // ASSERT_EQ("126", video_section.GetFormats()[1]);
-  // ASSERT_EQ("97", video_section.GetFormats()[2]);
+  ASSERT_EQ("120", video_section.GetFormats()[0]);
+  // ASSERT_EQ("121", video_section.GetFormats()[1]);
+  // ASSERT_EQ("126", video_section.GetFormats()[2]);
+  // ASSERT_EQ("97", video_section.GetFormats()[3]);
 
   // Validate rtpmap
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kRtpmapAttribute));
   auto& rtpmaps = video_attrs.GetRtpmap();
-  ASSERT_TRUE(rtpmaps.HasEntry("121"));
+  ASSERT_TRUE(rtpmaps.HasEntry("120"));
+  //ASSERT_TRUE(rtpmaps.HasEntry("121"));
   // ASSERT_TRUE(rtpmaps.HasEntry("126"));
   // ASSERT_TRUE(rtpmaps.HasEntry("97"));
 
-  //auto& vp8_entry = rtpmaps.GetEntry("120");
-  auto& vp9_entry = rtpmaps.GetEntry("121");
+  auto& vp8_entry = rtpmaps.GetEntry("120");
+  //auto& vp9_entry = rtpmaps.GetEntry("121");
   // auto& h264_1_entry = rtpmaps.GetEntry("126");
   // auto& h264_0_entry = rtpmaps.GetEntry("97");
 
-  //ASSERT_EQ("VP8", vp8_entry.name);
-  ASSERT_EQ("VP9", vp9_entry.name);
+  ASSERT_EQ("VP8", vp8_entry.name);
+  //ASSERT_EQ("VP9", vp9_entry.name);
   // ASSERT_EQ("H264", h264_1_entry.name);
   // ASSERT_EQ("H264", h264_0_entry.name);
 
@@ -2890,17 +2934,17 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams)
   ASSERT_EQ(1U, fmtps.size());
   // ASSERT_EQ(3U, fmtps.size());
 
-  // VP9
-  ASSERT_EQ("121", fmtps[0].format);
+  // VP8
+  ASSERT_EQ("120", fmtps[0].format);
   ASSERT_TRUE(!!fmtps[0].parameters);
-  ASSERT_EQ(SdpRtpmapAttributeList::kVP9, fmtps[0].parameters->codec_type);
+  ASSERT_EQ(SdpRtpmapAttributeList::kVP8, fmtps[0].parameters->codec_type);
 
-  auto& parsed_vp9_params =
+  auto& parsed_vp8_params =
       *static_cast<const SdpFmtpAttributeList::VP8Parameters*>(
           fmtps[0].parameters.get());
 
-  ASSERT_EQ((uint32_t)12288, parsed_vp9_params.max_fs);
-  ASSERT_EQ((uint32_t)60, parsed_vp9_params.max_fr);
+  ASSERT_EQ((uint32_t)12288, parsed_vp8_params.max_fs);
+  ASSERT_EQ((uint32_t)60, parsed_vp8_params.max_fr);
 
 
   SetLocalAnswer(answer);
@@ -3430,9 +3474,10 @@ TEST_F(JsepSessionTest, TestExtmap)
   AddTracks(mSessionOff, "audio");
   AddTracks(mSessionAns, "audio");
   // ssrc-audio-level will be extmap 1 for both
-  mSessionOff.AddAudioRtpExtension("foo"); // Default mapping of 2
-  mSessionOff.AddAudioRtpExtension("bar"); // Default mapping of 3
-  mSessionAns.AddAudioRtpExtension("bar"); // Default mapping of 2
+  // rtp-stream-id will be extmap 2 for both
+  mSessionOff.AddAudioRtpExtension("foo"); // Default mapping of 3
+  mSessionOff.AddAudioRtpExtension("bar"); // Default mapping of 4
+  mSessionAns.AddAudioRtpExtension("bar"); // Default mapping of 3
   std::string offer = CreateOffer();
   SetLocalOffer(offer, CHECK_SUCCESS);
   SetRemoteOffer(offer, CHECK_SUCCESS);
@@ -3446,14 +3491,17 @@ TEST_F(JsepSessionTest, TestExtmap)
   auto& offerMediaAttrs = parsedOffer->GetMediaSection(0).GetAttributeList();
   ASSERT_TRUE(offerMediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute));
   auto& offerExtmap = offerMediaAttrs.GetExtmap().mExtmaps;
-  ASSERT_EQ(3U, offerExtmap.size());
+  ASSERT_EQ(4U, offerExtmap.size());
   ASSERT_EQ("urn:ietf:params:rtp-hdrext:ssrc-audio-level",
       offerExtmap[0].extensionname);
   ASSERT_EQ(1U, offerExtmap[0].entry);
-  ASSERT_EQ("foo", offerExtmap[1].extensionname);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id",
+      offerExtmap[1].extensionname);
   ASSERT_EQ(2U, offerExtmap[1].entry);
-  ASSERT_EQ("bar", offerExtmap[2].extensionname);
+  ASSERT_EQ("foo", offerExtmap[2].extensionname);
   ASSERT_EQ(3U, offerExtmap[2].entry);
+  ASSERT_EQ("bar", offerExtmap[3].extensionname);
+  ASSERT_EQ(4U, offerExtmap[3].entry);
 
   UniquePtr<Sdp> parsedAnswer(Parse(answer));
   ASSERT_EQ(1U, parsedAnswer->GetMediaSectionCount());
@@ -3461,13 +3509,16 @@ TEST_F(JsepSessionTest, TestExtmap)
   auto& answerMediaAttrs = parsedAnswer->GetMediaSection(0).GetAttributeList();
   ASSERT_TRUE(answerMediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute));
   auto& answerExtmap = answerMediaAttrs.GetExtmap().mExtmaps;
-  ASSERT_EQ(2U, answerExtmap.size());
+  ASSERT_EQ(3U, answerExtmap.size());
   ASSERT_EQ("urn:ietf:params:rtp-hdrext:ssrc-audio-level",
       answerExtmap[0].extensionname);
   ASSERT_EQ(1U, answerExtmap[0].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id",
+      answerExtmap[1].extensionname);
+  ASSERT_EQ(2U, answerExtmap[1].entry);
   // We ensure that the entry for "bar" matches what was in the offer
-  ASSERT_EQ("bar", answerExtmap[1].extensionname);
-  ASSERT_EQ(3U, answerExtmap[1].entry);
+  ASSERT_EQ("bar", answerExtmap[2].extensionname);
+  ASSERT_EQ(4U, answerExtmap[2].entry);
 }
 
 TEST_F(JsepSessionTest, TestRtcpFbStar)

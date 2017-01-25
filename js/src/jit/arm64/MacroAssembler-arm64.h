@@ -341,7 +341,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
             return;
           }
           case 4:
-            storePtr(value.valueReg(), address);
+            store32(value.valueReg(), address);
             return;
           case 1:
             store8(value.valueReg(), address);
@@ -1512,7 +1512,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
                 Mov(ScratchReg64, immediate);
                 Eor(ScratchReg64, ScratchReg2_64, ScratchReg64);
             }
-            Tst(ScratchReg64, Operand(-1ll << JSVAL_TAG_SHIFT));
+            Tst(ScratchReg64, Operand((unsigned long long)(-1ll) << JSVAL_TAG_SHIFT));
             return cond;
         }
 
@@ -1873,13 +1873,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     }
 
     void handleFailureWithHandlerTail(void* handler);
-
-    // FIXME: See CodeGeneratorX64 calls to noteAsmJSGlobalAccess.
-    void patchAsmJSGlobalAccess(CodeOffset patchAt, uint8_t* code,
-                                uint8_t* globalData, unsigned globalDataOffset)
-    {
-        MOZ_CRASH("patchAsmJSGlobalAccess");
-    }
 
     void profilerEnterFrame(Register framePtr, Register scratch) {
         AbsoluteAddress activation(GetJitContext()->runtime->addressOfProfilingActivation());
@@ -2250,17 +2243,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     void stackCheck(ImmWord limitAddr, Label* label) {
         MOZ_CRASH("stackCheck");
     }
-    void clampIntToUint8(Register reg) {
-        vixl::UseScratchRegisterScope temps(this);
-        const ARMRegister scratch32 = temps.AcquireW();
-        const ARMRegister reg32(reg, 32);
-        MOZ_ASSERT(!scratch32.Is(reg32));
-
-        Cmp(reg32, Operand(reg32, vixl::UXTB));
-        Csel(reg32, reg32, vixl::wzr, Assembler::GreaterThanOrEqual);
-        Mov(scratch32, Operand(0xff));
-        Csel(reg32, reg32, scratch32, Assembler::LessThanOrEqual);
-    }
 
     void incrementInt32Value(const Address& addr) {
         vixl::UseScratchRegisterScope temps(this);
@@ -2312,12 +2294,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
 #endif
     }
 
-    void loadWasmActivation(Register dest) {
-        loadPtr(Address(GlobalReg, wasm::ActivationGlobalDataOffset - AsmJSGlobalRegBias), dest);
+    void loadWasmGlobalPtr(uint32_t globalDataOffset, Register dest) {
+        loadPtr(Address(GlobalReg, globalDataOffset - AsmJSGlobalRegBias), dest);
     }
-    void loadAsmJSHeapRegisterFromGlobalData() {
-        loadPtr(Address(GlobalReg, wasm::HeapGlobalDataOffset - AsmJSGlobalRegBias), HeapReg);
-        loadPtr(Address(GlobalReg, wasm::HeapGlobalDataOffset - AsmJSGlobalRegBias + 8), HeapLenReg);
+    void loadWasmPinnedRegsFromTls() {
+        loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
+        loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, globalData)), GlobalReg);
+        adds32(Imm32(AsmJSGlobalRegBias), GlobalReg);
     }
 
     // Overwrites the payload bits of a dest register containing a Value.

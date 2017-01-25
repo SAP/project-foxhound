@@ -35,6 +35,7 @@
 #include "nsPresContext.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 
+using mozilla::DebugOnly;
 using mozilla::LogLevel;
 
 static NS_DEFINE_CID(kThisImplCID, NS_THIS_DOCLOADER_IMPL_CID);
@@ -42,13 +43,13 @@ static NS_DEFINE_CID(kThisImplCID, NS_THIS_DOCLOADER_IMPL_CID);
 //
 // Log module for nsIDocumentLoader logging...
 //
-// To enable logging (see prlog.h for full details):
+// To enable logging (see mozilla/Logging.h for full details):
 //
-//    set NSPR_LOG_MODULES=DocLoader:5
-//    set NSPR_LOG_FILE=nspr.log
+//    set MOZ_LOG=DocLoader:5
+//    set MOZ_LOG_FILE=debug.log
 //
 // this enables LogLevel::Debug level information and places all output in
-// the file nspr.log
+// the file 'debug.log'.
 //
 mozilla::LazyLogModule gDocLoaderLog("DocLoader");
 
@@ -345,7 +346,8 @@ nsDocLoader::Destroy()
   // Remove the document loader from the parent list of loaders...
   if (mParent)
   {
-    mParent->RemoveChildLoader(this);
+    DebugOnly<nsresult> rv = mParent->RemoveChildLoader(this);
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "RemoveChildLoader failed");
   }
 
   // Release all the information about network requests...
@@ -376,7 +378,9 @@ nsDocLoader::DestroyChildren()
     if (loader) {
       // This is a safe cast, as we only put nsDocLoader objects into the
       // array
-      static_cast<nsDocLoader*>(loader)->SetDocLoaderParent(nullptr);
+      DebugOnly<nsresult> rv =
+        static_cast<nsDocLoader*>(loader)->SetDocLoaderParent(nullptr);
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetDocLoaderParent failed");
     }
   }
   mChildList.Clear();
@@ -616,7 +620,7 @@ nsresult nsDocLoader::RemoveChildLoader(nsDocLoader* aChild)
 {
   nsresult rv = mChildList.RemoveElement(aChild) ? NS_OK : NS_ERROR_FAILURE;
   if (NS_SUCCEEDED(rv)) {
-    aChild->SetDocLoaderParent(nullptr);
+    rv = aChild->SetDocLoaderParent(nullptr);
   }
   return rv;
 }
@@ -625,7 +629,7 @@ nsresult nsDocLoader::AddChildLoader(nsDocLoader* aChild)
 {
   nsresult rv = mChildList.AppendElement(aChild) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
   if (NS_SUCCEEDED(rv)) {
-    aChild->SetDocLoaderParent(this);
+    rv = aChild->SetDocLoaderParent(this);
   }
   return rv;
 }
@@ -656,6 +660,7 @@ void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout)
     }
 
     NS_ASSERTION(!mIsFlushingLayout, "Someone screwed up");
+    NS_ASSERTION(mDocumentRequest, "No Document Request!");
 
     // The load group for this DocumentLoader is idle.  Flush if we need to.
     if (aFlushLayout && !mDontFlushLayout) {
@@ -682,7 +687,9 @@ void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout)
 
     // And now check whether we're really busy; that might have changed with
     // the layout flush.
-    if (!IsBusy()) {
+    // Note, mDocumentRequest can be null if the flushing above re-entered this
+    // method.
+    if (!IsBusy() && mDocumentRequest) {
       // Clear out our request info hash, now that our load really is done and
       // we don't need it anymore to CalculateMaxProgress().
       ClearInternalProgress();
@@ -692,7 +699,6 @@ void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout)
 
       nsCOMPtr<nsIRequest> docRequest = mDocumentRequest;
 
-      NS_ASSERTION(mDocumentRequest, "No Document Request!");
       mDocumentRequest = 0;
       mIsLoadingDocument = false;
 
@@ -936,7 +942,6 @@ int64_t nsDocLoader::GetMaxTotalProgress()
   int64_t newMaxTotal = 0;
 
   uint32_t count = mChildList.Length();
-  nsCOMPtr<nsIWebProgress> webProgress;
   for (uint32_t i=0; i < count; i++)
   {
     int64_t individualProgress = 0;

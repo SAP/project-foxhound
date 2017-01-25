@@ -443,7 +443,7 @@ status_t GonkBufferQueue::dequeueBuffer(int *outBuf, sp<Fence>* outFence, bool a
 
     if (returnFlags & IGraphicBufferProducer::BUFFER_NEEDS_REALLOCATION) {
 
-        ClientIPCAllocator* allocator = ImageBridgeChild::GetSingleton();
+        RefPtr<ClientIPCAllocator> allocator = ImageBridgeChild::GetSingleton();
         usage |= GraphicBuffer::USAGE_HW_TEXTURE;
         GrallocTextureData* texData = GrallocTextureData::Create(IntSize(w, h), format,
                                                                  gfx::BackendType::NONE, usage,
@@ -452,7 +452,7 @@ status_t GonkBufferQueue::dequeueBuffer(int *outBuf, sp<Fence>* outFence, bool a
             return -ENOMEM;
         }
 
-        RefPtr<TextureClient> textureClient = new TextureClient(texData, TextureFlags::DEALLOCATE_CLIENT, allocator);
+        RefPtr<TextureClient> textureClient = new TextureClient(texData, TextureFlags::RECYCLE | TextureFlags::DEALLOCATE_CLIENT, allocator);
 
         { // Scope for the lock
             Mutex::Autolock lock(mMutex);

@@ -13,7 +13,7 @@ var loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
     .getService(Ci.mozIJSSubScriptLoader);
 
 Cu.import("chrome://marionette/content/accessibility.js");
-Cu.import("chrome://marionette/content/action.js");
+Cu.import("chrome://marionette/content/legacyaction.js");
 Cu.import("chrome://marionette/content/atom.js");
 Cu.import("chrome://marionette/content/capture.js");
 Cu.import("chrome://marionette/content/cookies.js");
@@ -23,12 +23,15 @@ Cu.import("chrome://marionette/content/evaluate.js");
 Cu.import("chrome://marionette/content/event.js");
 Cu.import("chrome://marionette/content/interaction.js");
 Cu.import("chrome://marionette/content/logging.js");
+Cu.import("chrome://marionette/content/navigate.js");
 Cu.import("chrome://marionette/content/proxy.js");
 Cu.import("chrome://marionette/content/simpletest.js");
 
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
+Cu.importGlobalProperties(["URL"]);
 
 var contentLog = new logging.ContentLogger();
 
@@ -57,10 +60,6 @@ var SUPPORTED_STRATEGIES = new Set([
 var capabilities = {};
 
 var actions = new action.Chain(checkForInterrupted);
-
-// Contains the last file input element that was the target of
-// sendKeysToElement.
-var fileInputElement;
 
 // the unload handler
 var onunload;
@@ -249,12 +248,12 @@ var deleteAllCookiesFn = dispatch(deleteAllCookies);
 var executeFn = dispatch(execute);
 var executeInSandboxFn = dispatch(executeInSandbox);
 var executeSimpleTestFn = dispatch(executeSimpleTest);
+var sendKeysToElementFn = dispatch(sendKeysToElement);
 
 /**
  * Start all message listeners
  */
 function startListeners() {
-  addMessageListenerId("Marionette:receiveFiles", receiveFiles);
   addMessageListenerId("Marionette:newSession", newSession);
   addMessageListenerId("Marionette:execute", executeFn);
   addMessageListenerId("Marionette:executeInSandbox", executeInSandboxFn);
@@ -284,7 +283,7 @@ function startListeners() {
   addMessageListenerId("Marionette:getElementRect", getElementRectFn);
   addMessageListenerId("Marionette:isElementEnabled", isElementEnabledFn);
   addMessageListenerId("Marionette:isElementSelected", isElementSelectedFn);
-  addMessageListenerId("Marionette:sendKeysToElement", sendKeysToElement);
+  addMessageListenerId("Marionette:sendKeysToElement", sendKeysToElementFn);
   addMessageListenerId("Marionette:clearElement", clearElementFn);
   addMessageListenerId("Marionette:switchToFrame", switchToFrame);
   addMessageListenerId("Marionette:switchToParentFrame", switchToParentFrame);
@@ -359,7 +358,6 @@ function restart(msg) {
  * Removes all listeners
  */
 function deleteSession(msg) {
-  removeMessageListenerId("Marionette:receiveFiles", receiveFiles);
   removeMessageListenerId("Marionette:newSession", newSession);
   removeMessageListenerId("Marionette:execute", executeFn);
   removeMessageListenerId("Marionette:executeInSandbox", executeInSandboxFn);
@@ -389,7 +387,7 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:getElementRect", getElementRectFn);
   removeMessageListenerId("Marionette:isElementEnabled", isElementEnabledFn);
   removeMessageListenerId("Marionette:isElementSelected", isElementSelectedFn);
-  removeMessageListenerId("Marionette:sendKeysToElement", sendKeysToElement);
+  removeMessageListenerId("Marionette:sendKeysToElement", sendKeysToElementFn);
   removeMessageListenerId("Marionette:clearElement", clearElementFn);
   removeMessageListenerId("Marionette:switchToFrame", switchToFrame);
   removeMessageListenerId("Marionette:switchToParentFrame", switchToParentFrame);
@@ -588,29 +586,6 @@ function setTestName(msg) {
 }
 
 /**
- * Receive file objects from chrome in order to complete a
- * sendKeysToElement action on a file input element.
- */
-function receiveFiles(msg) {
-  if ("error" in msg.json) {
-    let err = new InvalidArgumentError(msg.json.error);
-    sendError(err, msg.json.command_id);
-    return;
-  }
-
-  if (!fileInputElement) {
-    let err = new InvalidElementStateError("receiveFiles called with no valid fileInputElement");
-    sendError(err, msg.json.command_id);
-    return;
-  }
-
-  interaction.uploadFile(fileInputElement, msg.json.file);
-  fileInputElement = null;
-
-  sendOk(msg.json.command_id);
-}
-
-/**
  * This function creates a touch event given a touch type and a touch
  */
 function emitTouchEvent(type, touch) {
@@ -622,7 +597,7 @@ function emitTouchEvent(type, touch) {
                    getInterface(Components.interfaces.nsIWebNavigation).
                    QueryInterface(Components.interfaces.nsIDocShell);
     if (docShell.asyncPanZoomEnabled && actions.scrolling) {
-      // if we're in APZ and we're scrolling, we must use injectTouchEvent to dispatch our touchmove events
+      // if we're in APZ and we're scrolling, we must use sendNativeTouchPoint to dispatch our touchmove events
       let index = sendSyncMessage("MarionetteFrame:getCurrentFrameId");
       // only call emitTouchEventForIFrame if we're inside an iframe.
       if (index != null) {
@@ -880,43 +855,48 @@ function multiAction(args, maxLen) {
  * when a remoteness update happens in the middle of a navigate request). This is most of
  * of the work of a navigate request, but doesn't assume DOMContentLoaded is yet to fire.
  */
-function pollForReadyState(msg, start, callback) {
+function pollForReadyState(msg, start = undefined, callback = undefined) {
   let {pageTimeout, url, command_id} = msg.json;
-  start = start ? start : new Date().getTime();
-
+  if (!start) {
+    start = new Date().getTime();
+  }
   if (!callback) {
     callback = () => {};
   }
 
-  let end = null;
-  function checkLoad() {
+  let checkLoad = function() {
     navTimer.cancel();
-    end = new Date().getTime();
-    let aboutErrorRegex = /about:.+(error)\?/;
-    let elapse = end - start;
+
     let doc = curContainer.frame.document;
-    if (pageTimeout == null || elapse <= pageTimeout) {
+    let now = new Date().getTime();
+    if (pageTimeout == null || (now - start) <= pageTimeout) {
+      // document fully loaded
       if (doc.readyState == "complete") {
         callback();
         sendOk(command_id);
+
+      // we have reached an error url without requesting it
       } else if (doc.readyState == "interactive" &&
-                 aboutErrorRegex.exec(doc.baseURI) &&
-                 !doc.baseURI.startsWith(url)) {
-        // We have reached an error url without requesting it.
+          /about:.+(error)\?/.exec(doc.baseURI) &&
+          !doc.baseURI.startsWith(url)) {
         callback();
-        sendError(new UnknownError("Error loading page"), command_id);
-      } else if (doc.readyState == "interactive" &&
-                 doc.baseURI.startsWith("about:")) {
+        sendError(new UnknownError("Reached error page: " + doc.baseURI), command_id);
+
+      // return early for about: urls
+      } else if (doc.readyState == "interactive" && doc.baseURI.startsWith("about:")) {
         callback();
         sendOk(command_id);
+
+      // document not fully loaded
       } else {
         navTimer.initWithCallback(checkLoad, 100, Ci.nsITimer.TYPE_ONE_SHOT);
       }
+
     } else {
       callback();
       sendError(new TimeoutError("Error loading page, timed out (checkLoad)"), command_id);
     }
-  }
+  };
   checkLoad();
 }
 
@@ -928,41 +908,133 @@ function pollForReadyState(msg, start, callback) {
  */
 function get(msg) {
   let start = new Date().getTime();
+  let {pageTimeout, url, command_id} = msg.json;
+
+  let docShell = curContainer.frame
+      .document
+      .defaultView
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIWebNavigation)
+      .QueryInterface(Ci.nsIDocShell);
+  let webProgress = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIWebProgress);
+  let sawLoad = false;
+
+  let requestedURL;
+  let loadEventExpected = false;
+  try {
+    requestedURL = new URL(url).toString();
+    let curURL = curContainer.frame.location;
+    loadEventExpected = navigate.isLoadEventExpected(curURL, requestedURL);
+  } catch (e) {
+    sendError(new InvalidArgumentError("Malformed URL: " + e.message), command_id);
+    return;
+  }
+
+  // It's possible that a site we're being sent to will end up redirecting
+  // us before we end up on a page that fires DOMContentLoaded. We can ensure
+  // This loadListener ensures that we don't send a success signal back to
+  // the caller until we've seen the load of the requested URL attempted
+  // on this frame.
+  let loadListener = {
+    QueryInterface: XPCOMUtils.generateQI(
+        [Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
+
+    onStateChange(webProgress, request, state, status) {
+      if (!(request instanceof Ci.nsIChannel)) {
+        return;
+      }
+
+      let isDocument = state & Ci.nsIWebProgressListener.STATE_IS_DOCUMENT;
+      let isStart = state & Ci.nsIWebProgressListener.STATE_START;
+      let loadedURL = request.URI.spec;
+      // We have to look at the originalURL because for about: pages,
+      // the loadedURL is what the about: page resolves to, and is
+      // not the one that was requested.
+      let originalURL = request.originalURI.spec;
+      let isRequestedURL = loadedURL == requestedURL ||
+          originalURL == requestedURL;
+
+      if (isDocument && isStart && isRequestedURL) {
+        // We started loading the requested document. This document
+        // might not be the one that ends up firing DOMContentLoaded
+        // (if it, for example, redirects), but because we've started
+        // loading this URL, we know that any future DOMContentLoaded's
+        // are fair game to tell the Marionette client about.
+        sawLoad = true;
+      }
+    },
+
+    onLocationChange() {},
+    onProgressChange() {},
+    onStatusChange() {},
+    onSecurityChange() {},
+  };
+
+  webProgress.addProgressListener(
+      loadListener, Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT);
 
   // Prevent DOMContentLoaded events from frames from invoking this
   // code, unless the event is coming from the frame associated with
   // the current window (i.e. someone has used switch_to_frame).
   onDOMContentLoaded = function onDOMContentLoaded(event) {
-    if (!event.originalTarget.defaultView.frameElement ||
-        event.originalTarget.defaultView.frameElement == curContainer.frame.frameElement) {
+    let frameEl = event.originalTarget.defaultView.frameElement;
+    let correctFrame = !frameEl || frameEl == curContainer.frame.frameElement;
+
+    // If the page we're at fired DOMContentLoaded and appears
+    // to be the one we asked to load, then we definitely
+    // saw the load occur. We need this because for error
+    // pages, like about:neterror for unsupported protocols,
+    // we don't end up opening a channel that our
+    // WebProgressListener can monitor.
+    if (curContainer.frame.location == requestedURL) {
+      sawLoad = true;
+    }
+
+    // We also need to make sure that if the requested URL is not about:blank
+    // the DOMContentLoaded we saw isn't for the initial about:blank of a newly
+    // created docShell.
+    let loadedRequestedURI = (requestedURL == "about:blank") ||
+        docShell.hasLoadedNonBlankURI;
+
+    if (correctFrame && sawLoad && loadedRequestedURI) {
+      webProgress.removeProgressListener(loadListener);
       pollForReadyState(msg, start, () => {
         removeEventListener("DOMContentLoaded", onDOMContentLoaded, false);
       });
     }
   };
 
-  function timerFunc() {
-    removeEventListener("DOMContentLoaded", onDOMContentLoaded, false);
-    sendError(new TimeoutError("Error loading page, timed out (onDOMContentLoaded)"), msg.json.command_id);
+  if (typeof pageTimeout != "undefined") {
+    let onTimeout = function() {
+      if (loadEventExpected) {
+        removeEventListener("DOMContentLoaded", onDOMContentLoaded, false);
+      }
+      webProgress.removeProgressListener(loadListener);
+      sendError(new TimeoutError("Error loading page, timed out (onDOMContentLoaded)"), command_id);
+    }
+    navTimer.initWithCallback(onTimeout, pageTimeout, Ci.nsITimer.TYPE_ONE_SHOT);
   }
-  if (msg.json.pageTimeout != null) {
-    navTimer.initWithCallback(timerFunc, msg.json.pageTimeout, Ci.nsITimer.TYPE_ONE_SHOT);
-  }
-  addEventListener("DOMContentLoaded", onDOMContentLoaded, false);
-  if (isB2G) {
-    curContainer.frame.location = msg.json.url;
-  } else {
-    // We need to move to the top frame before navigating
-    sendSyncMessage("Marionette:switchedToFrame", { frameValue: null });
+
+  // in Firefox we need to move to the top frame before navigating
+  if (!isB2G) {
+    sendSyncMessage("Marionette:switchedToFrame", {frameValue: null});
     curContainer.frame = content;
-    curContainer.frame.location = msg.json.url;
+  }
+
+  if (loadEventExpected) {
+    addEventListener("DOMContentLoaded", onDOMContentLoaded, false);
+  }
+  curContainer.frame.location = requestedURL;
+  if (!loadEventExpected) {
+    sendOk(command_id);
   }
 }
 
- /**
- * Cancel the polling and remove the event listener associated with a current
- * navigation request in case we're interupted by an onbeforeunload handler
- * and navigation doesn't complete.
+/**
+ * Cancel the polling and remove the event listener associated with a
+ * current navigation request in case we're interupted by an onbeforeunload
+ * handler and navigation doesn't complete.
  */
 function cancelRequest() {
   navTimer.cancel();
@@ -993,9 +1065,7 @@ function getTitle() {
  * Get source of the current browsing context's DOM.
  */
 function getPageSource() {
-  let XMLSerializer = curContainer.frame.XMLSerializer;
-  let source = new XMLSerializer().serializeToString(curContainer.frame.document);
-  return source;
+  return curContainer.frame.document.documentElement.outerHTML;
 }
 
 /**
@@ -1210,28 +1280,14 @@ function isElementSelected(id) {
       el, capabilities.raisesAccessibilityExceptions);
 }
 
-/**
- * Send keys to element
- */
-function sendKeysToElement(msg) {
-  let command_id = msg.json.command_id;
-  let val = msg.json.value;
-  let id = msg.json.id;
+function* sendKeysToElement(id, val) {
   let el = seenEls.get(id, curContainer);
-
   if (el.type == "file") {
-    let p = val.join("");
-        fileInputElement = el;
-        // In e10s, we can only construct File objects in the parent process,
-        // so pass the filename to driver.js, which in turn passes them back
-        // to this frame script in receiveFiles.
-        sendSyncMessage("Marionette:getFiles",
-            {value: p, command_id: command_id});
+    let path = val.join("");
+    yield interaction.uploadFile(el, path);
   } else {
-    let promise = interaction.sendKeysToElement(
-        el, val, false, capabilities.raisesAccessibilityExceptions)
-      .then(() => sendOk(command_id))
-      .catch(e => sendError(e, command_id));
+    yield interaction.sendKeysToElement(
+        el, val, false, capabilities.raisesAccessibilityExceptions);
   }
 }
 

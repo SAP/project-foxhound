@@ -17,7 +17,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
-#include "mozilla/unused.h"
+#include "mozilla/Unused.h"
 #include "PuppetWidget.h"
 #include "nsContentUtils.h"
 #include "nsIWidgetListener.h"
@@ -101,11 +101,11 @@ PuppetWidget::~PuppetWidget()
   Destroy();
 }
 
-NS_IMETHODIMP
-PuppetWidget::Create(nsIWidget* aParent,
-                     nsNativeWidget aNativeParent,
-                     const LayoutDeviceIntRect& aRect,
-                     nsWidgetInitData* aInitData)
+void
+PuppetWidget::InfallibleCreate(nsIWidget* aParent,
+                               nsNativeWidget aNativeParent,
+                               const LayoutDeviceIntRect& aRect,
+                               nsWidgetInitData* aInitData)
 {
   MOZ_ASSERT(!aNativeParent, "got a non-Puppet native parent");
 
@@ -133,7 +133,15 @@ PuppetWidget::Create(nsIWidget* aParent,
     mMemoryPressureObserver = new MemoryPressureObserver(this);
     obs->AddObserver(mMemoryPressureObserver, "memory-pressure", false);
   }
+}
 
+nsresult
+PuppetWidget::Create(nsIWidget* aParent,
+                     nsNativeWidget aNativeParent,
+                     const LayoutDeviceIntRect& aRect,
+                     nsWidgetInitData* aInitData)
+{
+  InfallibleCreate(aParent, aNativeParent, aRect, aInitData);
   return NS_OK;
 }
 
@@ -162,11 +170,11 @@ PuppetWidget::CreateChild(const LayoutDeviceIntRect& aRect,
           widget.forget() : nullptr);
 }
 
-NS_IMETHODIMP
+void
 PuppetWidget::Destroy()
 {
   if (mOnDestroyCalled) {
-    return NS_OK;
+    return;
   }
   mOnDestroyCalled = true;
 
@@ -183,7 +191,6 @@ PuppetWidget::Destroy()
   }
   mLayerManager = nullptr;
   mTabChild = nullptr;
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -200,6 +207,15 @@ PuppetWidget::Show(bool aState)
   }
 
   if (!wasVisible && mVisible) {
+    // The previously attached widget listener is handy if
+    // we're transitioning from page to page without dropping
+    // layers (since we'll continue to show the old layers
+    // associated with that old widget listener). If the
+    // PuppetWidget was hidden, those layers are dropped,
+    // so the previously attached widget listener is really
+    // of no use anymore (and is actually actively harmful - see
+    // bug 1323586).
+    mPreviouslyAttachedWidgetListener = nullptr;
     Resize(mBounds.width, mBounds.height, false);
     Invalidate(mBounds);
   }
@@ -251,8 +267,7 @@ PuppetWidget::ConfigureChildren(const nsTArray<Configuration>& aConfigurations)
     NS_ASSERTION(w->GetParent() == this,
                  "Configured widget is not a child");
     w->SetWindowClipRegion(configuration.mClipRegion, true);
-    LayoutDeviceIntRect bounds;
-    w->GetBounds(bounds);
+    LayoutDeviceIntRect bounds = w->GetBounds();
     if (bounds.Size() != configuration.mBounds.Size()) {
       w->Resize(configuration.mBounds.x, configuration.mBounds.y,
                 configuration.mBounds.width, configuration.mBounds.height,
@@ -561,8 +576,7 @@ PuppetWidget::ExecuteNativeKeyBinding(NativeKeyBindingsType aType,
 LayerManager*
 PuppetWidget::GetLayerManager(PLayerTransactionChild* aShadowManager,
                               LayersBackend aBackendHint,
-                              LayerManagerPersistence aPersistence,
-                              bool* aAllowRetaining)
+                              LayerManagerPersistence aPersistence)
 {
   if (!mLayerManager) {
     mLayerManager = new ClientLayerManager(this);
@@ -570,9 +584,6 @@ PuppetWidget::GetLayerManager(PLayerTransactionChild* aShadowManager,
   ShadowLayerForwarder* lf = mLayerManager->AsShadowForwarder();
   if (!lf->HasShadowManager() && aShadowManager) {
     lf->SetShadowManager(aShadowManager);
-  }
-  if (aAllowRetaining) {
-    *aAllowRetaining = true;
   }
   return mLayerManager;
 }
@@ -665,13 +676,12 @@ PuppetWidget::StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
   return NS_OK;
 }
 
-NS_IMETHODIMP
+void
 PuppetWidget::SetPluginFocused(bool& aFocused)
 {
-  if (!mTabChild || !mTabChild->SendSetPluginFocused(aFocused)) {
-    return NS_ERROR_FAILURE;
+  if (mTabChild) {
+    mTabChild->SendSetPluginFocused(aFocused);
   }
-  return NS_OK;
 }
 
 void
@@ -821,7 +831,6 @@ PuppetWidget::GetIMEUpdatePreference()
                                  nsIMEUpdatePreference::NOTIFY_POSITION_CHANGE);
   }
   return nsIMEUpdatePreference(mIMEPreferenceOfParent.mWantUpdates |
-                               nsIMEUpdatePreference::NOTIFY_SELECTION_CHANGE |
                                nsIMEUpdatePreference::NOTIFY_TEXT_CHANGE |
                                nsIMEUpdatePreference::NOTIFY_POSITION_CHANGE );
 #else
@@ -858,9 +867,7 @@ PuppetWidget::NotifyIMEOfTextChange(const IMENotification& aIMENotification)
 
   // TabParent doesn't this this to cache.  we don't send the notification
   // if parent process doesn't request NOTIFY_TEXT_CHANGE.
-  if (mIMEPreferenceOfParent.WantTextChange() &&
-      (mIMEPreferenceOfParent.WantChangesCausedByComposition() ||
-       !aIMENotification.mTextChangeData.mCausedOnlyByComposition)) {
+  if (mIMEPreferenceOfParent.WantTextChange()) {
     mTabChild->SendNotifyIMETextChange(mContentCache, aIMENotification);
   } else {
     mTabChild->SendUpdateContentCache(mContentCache);
@@ -897,13 +904,8 @@ PuppetWidget::NotifyIMEOfSelectionChange(
     aIMENotification.mSelectionChangeData.mReversed,
     aIMENotification.mSelectionChangeData.GetWritingMode());
 
-  if (mIMEPreferenceOfParent.WantSelectionChange() &&
-      (mIMEPreferenceOfParent.WantChangesCausedByComposition() ||
-       !aIMENotification.mSelectionChangeData.mCausedByComposition)) {
-    mTabChild->SendNotifyIMESelection(mContentCache, aIMENotification);
-  } else {
-    mTabChild->SendUpdateContentCache(mContentCache);
-  }
+  mTabChild->SendNotifyIMESelection(mContentCache, aIMENotification);
+
   return NS_OK;
 }
 
@@ -1070,7 +1072,7 @@ PuppetWidget::Paint()
         mTabChild->NotifyPainted();
       }
     } else {
-      RefPtr<gfxContext> ctx = gfxContext::ForDrawTarget(mDrawTarget);
+      RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(mDrawTarget);
       if (!ctx) {
         gfxDevCrash(LogReason::InvalidContext) << "PuppetWidget context problem " << gfx::hexa(mDrawTarget);
         return NS_ERROR_FAILURE;
@@ -1110,6 +1112,14 @@ PuppetWidget::PaintTask::Run()
     mWidget->Paint();
   }
   return NS_OK;
+}
+
+void
+PuppetWidget::PaintNowIfNeeded()
+{
+  if (IsVisible() && mPaintTask.IsPending()) {
+    Paint();
+  }
 }
 
 NS_IMPL_ISUPPORTS(PuppetWidget::MemoryPressureObserver, nsIObserver)
@@ -1253,11 +1263,10 @@ PuppetWidget::GetWindowPosition()
   return nsIntPoint(winX, winY) + GetOwningTabChild()->GetClientOffset().ToUnknownPoint();
 }
 
-NS_METHOD
-PuppetWidget::GetScreenBounds(LayoutDeviceIntRect& aRect) {
-  aRect.MoveTo(WidgetToScreenOffset());
-  aRect.SizeTo(mBounds.Size());
-  return NS_OK;
+LayoutDeviceIntRect
+PuppetWidget::GetScreenBounds()
+{
+  return LayoutDeviceIntRect(WidgetToScreenOffset(), mBounds.Size());
 }
 
 uint32_t PuppetWidget::GetMaxTouchPoints() const

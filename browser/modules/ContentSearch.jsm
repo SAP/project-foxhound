@@ -230,17 +230,12 @@ this.ContentSearch = {
     let engine = Services.search.getEngineByName(data.engineName);
     let submission = engine.getSubmission(data.searchString, "", data.searchPurpose);
     let browser = msg.target;
-    let win;
-    try {
-      win = browser.ownerDocument.defaultView;
-    }
-    catch (err) {
+    let win = browser.ownerGlobal;
+    if (!win) {
       // The browser may have been closed between the time its content sent the
-      // message and the time we handle it.  In that case, trying to call any
-      // method on it will throw.
+      // message and the time we handle it.
       return;
     }
-
     let where = win.whereToOpenLink(data.originalEvent);
 
     // There is a chance that by the time we receive the search message, the user
@@ -260,7 +255,7 @@ this.ContentSearch = {
       win.openUILinkIn(submission.uri.spec, where, params);
     }
     win.BrowserSearch.recordSearchInTelemetry(engine, data.healthReportKey,
-                                              data.selection || null);
+                                              { selection: data.selection });
     return;
   },
 
@@ -401,7 +396,9 @@ this.ContentSearch = {
     if (methodName in this) {
       yield this._initService();
       yield this[methodName](msg, msg.data.data);
-      msg.target.removeEventListener("SwapDocShells", msg, true);
+      if (!Cu.isDeadWrapper(msg.target)) {
+        msg.target.removeEventListener("SwapDocShells", msg, true);
+      }
     }
   }),
 
@@ -424,7 +421,7 @@ this.ContentSearch = {
   },
 
   _onMessageManageEngines: function (msg, data) {
-    let browserWin = msg.target.ownerDocument.defaultView;
+    let browserWin = msg.target.ownerGlobal;
     browserWin.openPreferences("paneSearch");
   },
 
@@ -494,7 +491,7 @@ this.ContentSearch = {
   _reply: function (msg, type, data) {
     // We reply asyncly to messages, and by the time we reply the browser we're
     // responding to may have been destroyed.  messageManager is null then.
-    if (msg.target.messageManager) {
+    if (!Cu.isDeadWrapper(msg.target) && msg.target.messageManager) {
       msg.target.messageManager.sendAsyncMessage(...this._msgArgs(type, data));
     }
   },
@@ -534,8 +531,11 @@ this.ContentSearch = {
               createInstance(Ci.nsIXMLHttpRequest);
     xhr.open("GET", uri, true);
     xhr.responseType = "arraybuffer";
-    xhr.onloadend = () => {
+    xhr.onload = () => {
       deferred.resolve(xhr.response);
+    };
+    xhr.onerror = xhr.onabort = xhr.ontimeout = () => {
+      deferred.resolve(null);
     };
     try {
       // This throws if the URI is erroneously encoded.

@@ -54,24 +54,6 @@ namespace {
 
 static const char kDefaultRuntimeScriptFilename[] = "xpcshell.js";
 
-class XPCShellDirProvider : public nsIDirectoryServiceProvider
-{
-public:
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSIDIRECTORYSERVICEPROVIDER
-
-    XPCShellDirProvider() { }
-    ~XPCShellDirProvider() { }
-
-    bool SetGREDirs(const char *dir);
-    void ClearGREDirs() { mGREDir = nullptr;
-                          mGREBinDir = nullptr; }
-
-private:
-    nsCOMPtr<nsIFile> mGREDir;
-    nsCOMPtr<nsIFile> mGREBinDir;
-};
-
 inline XPCShellEnvironment*
 Environment(Handle<JSObject*> global)
 {
@@ -240,11 +222,8 @@ GC(JSContext *cx,
 {
     JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
-    JSRuntime *rt = JS_GetRuntime(cx);
-    JS_GC(rt);
-#ifdef JS_GCMETER
-    js_DumpGCStats(rt, stdout);
-#endif
+    JS_GC(cx);
+
     args.rval().setUndefined();
     return true;
 }
@@ -259,7 +238,7 @@ GCZeal(JSContext *cx, unsigned argc, JS::Value *vp)
   if (!ToUint32(cx, args.get(0), &zeal))
     return false;
 
-  JS_SetGCZeal(JS_GetRuntime(cx), uint8_t(zeal), JS_DEFAULT_ZEAL_FREQ);
+  JS_SetGCZeal(cx, uint8_t(zeal), JS_DEFAULT_ZEAL_FREQ);
   return true;
 }
 #endif
@@ -369,17 +348,17 @@ XPCShellEnvironment::ProcessFile(JSContext *cx,
         options.setFileAndLine("typein", startline);
         JS::Rooted<JSScript*> script(cx);
         if (JS_CompileScript(cx, buffer, strlen(buffer), options, &script)) {
-            JSErrorReporter older;
+            JS::WarningReporter older;
 
             ok = JS_ExecuteScript(cx, script, &result);
             if (ok && !result.isUndefined()) {
-                /* Suppress error reports from JS::ToString(). */
-                older = JS_SetErrorReporter(JS_GetRuntime(cx), nullptr);
+                /* Suppress warnings from JS::ToString(). */
+                older = JS::SetWarningReporter(cx, nullptr);
                 str = JS::ToString(cx, result);
                 JSAutoByteString bytes;
                 if (str)
                     bytes.encodeLatin1(cx, str);
-                JS_SetErrorReporter(JS_GetRuntime(cx), older);
+                JS::SetWarningReporter(cx, older);
 
                 if (!!bytes)
                     fprintf(stdout, "%s\n", bytes.ptr());
@@ -390,51 +369,6 @@ XPCShellEnvironment::ProcessFile(JSContext *cx,
     } while (!hitEOF && !env->IsQuitting());
 
     fprintf(stdout, "\n");
-}
-
-NS_IMETHODIMP_(MozExternalRefCountType)
-XPCShellDirProvider::AddRef()
-{
-    return 2;
-}
-
-NS_IMETHODIMP_(MozExternalRefCountType)
-XPCShellDirProvider::Release()
-{
-    return 1;
-}
-
-NS_IMPL_QUERY_INTERFACE(XPCShellDirProvider, nsIDirectoryServiceProvider)
-
-bool
-XPCShellDirProvider::SetGREDirs(const char *dir)
-{
-    nsresult rv = XRE_GetFileFromPath(dir, getter_AddRefs(mGREDir));
-    if (NS_SUCCEEDED(rv)) {
-        mGREDir->Clone(getter_AddRefs(mGREBinDir));
-#ifdef XP_MACOSX
-        mGREBinDir->SetNativeLeafName(NS_LITERAL_CSTRING("MacOS"));
-#endif
-    }
-    return NS_SUCCEEDED(rv);
-}
-
-NS_IMETHODIMP
-XPCShellDirProvider::GetFile(const char *prop,
-                             bool *persistent,
-                             nsIFile* *result)
-{
-    if (mGREDir && !strcmp(prop, NS_GRE_DIR)) {
-        *persistent = true;
-        NS_ADDREF(*result = mGREDir);
-        return NS_OK;
-    } else if (mGREBinDir && !strcmp(prop, NS_GRE_BIN_DIR)) {
-        *persistent = true;
-        NS_ADDREF(*result = mGREBinDir);
-        return NS_OK;
-    }
-
-    return NS_ERROR_FAILURE;
 }
 
 // static
@@ -470,8 +404,7 @@ XPCShellEnvironment::~XPCShellEnvironment()
         }
         mGlobalHolder.reset();
 
-        JSRuntime *rt = JS_GetRuntime(cx);
-        JS_GC(rt);
+        JS_GC(cx);
     }
 }
 
@@ -484,17 +417,9 @@ XPCShellEnvironment::Init()
     // is unbuffered by default
     setbuf(stdout, 0);
 
-    JSRuntime *rt = xpc::GetJSRuntime();
-    if (!rt) {
-        NS_ERROR("failed to get JSRuntime from nsJSRuntimeService!");
-        return false;
-    }
-
-    mGlobalHolder.init(rt);
-
     AutoSafeJSContext cx;
 
-    JS_SetContextPrivate(cx, this);
+    mGlobalHolder.init(cx);
 
     nsCOMPtr<nsIXPConnect> xpc =
       do_GetService(nsIXPConnect::GetCID());
@@ -597,12 +522,12 @@ XPCShellEnvironment::EvaluateString(const nsString& aString,
   JS::Rooted<JS::Value> result(cx);
   bool ok = JS_ExecuteScript(cx, script, &result);
   if (ok && !result.isUndefined()) {
-      JSErrorReporter old = JS_SetErrorReporter(JS_GetRuntime(cx), nullptr);
+      JS::WarningReporter old = JS::SetWarningReporter(cx, nullptr);
       JSString* str = JS::ToString(cx, result);
       nsAutoJSString autoStr;
       if (str)
           autoStr.init(cx, str);
-      JS_SetErrorReporter(JS_GetRuntime(cx), old);
+      JS::SetWarningReporter(cx, old);
 
       if (!autoStr.IsEmpty() && aResult) {
           aResult->Assign(autoStr);

@@ -38,8 +38,8 @@
 #include "nsProxyRelease.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDocShell.h"
-#include "nsPerformance.h"
 #include "nsINetworkInterceptController.h"
+#include "mozilla/dom/Performance.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsStreamUtils.h"
 #include "nsContentSecurityManager.h"
@@ -86,6 +86,7 @@ HttpBaseChannel::HttpBaseChannel()
   , mTimingEnabled(false)
   , mAllowSpdy(true)
   , mAllowAltSvc(true)
+  , mBeConservative(false)
   , mResponseTimeoutEnabled(true)
   , mAllRedirectsSameOrigin(true)
   , mAllRedirectsPassTimingAllowCheck(true)
@@ -226,6 +227,7 @@ NS_INTERFACE_MAP_BEGIN(HttpBaseChannel)
   NS_INTERFACE_MAP_ENTRY(nsIPrivateBrowsingChannel)
   NS_INTERFACE_MAP_ENTRY(nsITimedChannel)
   NS_INTERFACE_MAP_ENTRY(nsIConsoleReportCollector)
+  NS_INTERFACE_MAP_ENTRY(nsIThrottledInputChannel)
 NS_INTERFACE_MAP_END_INHERITING(nsHashPropertyBag)
 
 //-----------------------------------------------------------------------------
@@ -808,8 +810,14 @@ HttpBaseChannel::ExplicitSetUploadStream(nsIInputStream *aStream,
     contentLengthStr.AppendInt(aContentLength);
     SetRequestHeader(NS_LITERAL_CSTRING("Content-Length"), contentLengthStr,
                      false);
-    SetRequestHeader(NS_LITERAL_CSTRING("Content-Type"), aContentType,
-                     false);
+    if (!aContentType.IsVoid()) {
+      if (aContentType.IsEmpty()) {
+        SetEmptyRequestHeader(NS_LITERAL_CSTRING("Content-Type"));
+      } else {
+        SetRequestHeader(NS_LITERAL_CSTRING("Content-Type"), aContentType,
+                         false);
+      }
+    }
   }
 
   mUploadStreamHasHeaders = aStreamHasHeaders;
@@ -876,12 +884,12 @@ public:
   , mChannel(chan) {}
   NS_DECL_ISUPPORTS
 
-  NS_IMETHODIMP OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) override
+  NS_IMETHOD OnStartRequest(nsIRequest *aRequest, nsISupports *aContext) override
   {
     return mNext->OnStartRequest(aRequest, aContext);
   }
 
-  NS_IMETHODIMP OnStopRequest(nsIRequest *aRequest, nsISupports *aContext, nsresult aStatusCode) override
+  NS_IMETHOD OnStopRequest(nsIRequest *aRequest, nsISupports *aContext, nsresult aStatusCode) override
   {
     if (NS_FAILED(aStatusCode) && NS_SUCCEEDED(mChannel->mStatus)) {
       LOG(("HttpBaseChannel::InterceptFailedOnStop %p seting status %x", mChannel, aStatusCode));
@@ -890,7 +898,7 @@ public:
     return mNext->OnStopRequest(aRequest, aContext, aStatusCode);
   }
 
-  NS_IMETHODIMP OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
+  NS_IMETHOD OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
                            nsIInputStream *aInputStream, uint64_t aOffset,
                            uint32_t aCount) override
   {
@@ -1508,43 +1516,50 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI *referrer,
   }
 
   // check how much referer to send
-  switch (userReferrerTrimmingPolicy) {
-
-  case 1: {
-    // scheme+host+port+path
-    nsAutoCString prepath, path;
-    rv = clone->GetPrePath(prepath);
-    if (NS_FAILED(rv)) return rv;
-
-    nsCOMPtr<nsIURL> url(do_QueryInterface(clone));
-    if (!url) {
-      // if this isn't a url, play it safe
-      // and just send the prepath
-      spec = prepath;
-      break;
-    }
-    rv = url->GetFilePath(path);
-    if (NS_FAILED(rv)) return rv;
-    spec = prepath + path;
-    break;
-  }
-  case 2:
-    // scheme+host+port+/
-    rv = clone->GetPrePath(spec);
-    spec.AppendLiteral("/");
-    if (NS_FAILED(rv)) return rv;
-    break;
-
-  default:
-    // full URI
-    rv = clone->GetAsciiSpec(spec);
-    if (NS_FAILED(rv)) return rv;
-    break;
-  }
-
-  // If any user trimming policy is in effect, use the trimmed URI.
   if (userReferrerTrimmingPolicy) {
-    rv = NS_NewURI(getter_AddRefs(clone), spec);
+    // All output strings start with: scheme+host+port
+    // We want the IDN-normalized PrePath.  That's not something currently
+    // available and there doesn't yet seem to be justification for adding it to
+    // the interfaces, so just build it up ourselves from scheme+AsciiHostPort
+    nsAutoCString scheme, asciiHostPort;
+    rv = clone->GetScheme(scheme);
+    if (NS_FAILED(rv)) return rv;
+    spec = scheme;
+    spec.AppendLiteral("://");
+    // Note we explicitly cleared UserPass above, so do not need to build it.
+    rv = clone->GetAsciiHostPort(asciiHostPort);
+    if (NS_FAILED(rv)) return rv;
+    spec.Append(asciiHostPort);
+
+    switch (userReferrerTrimmingPolicy) {
+      case 1: { // scheme+host+port+path
+        nsCOMPtr<nsIURL> url(do_QueryInterface(clone));
+        if (url) {
+          nsAutoCString path;
+          rv = url->GetFilePath(path);
+          if (NS_FAILED(rv)) return rv;
+          spec.Append(path);
+          rv = url->SetQuery(EmptyCString());
+          if (NS_FAILED(rv)) return rv;
+          rv = url->SetRef(EmptyCString());
+          if (NS_FAILED(rv)) return rv;
+          break;
+        }
+        // No URL, so fall through to truncating the path and any query/ref off
+        // as well.
+      }
+      MOZ_FALLTHROUGH;
+      default: // (Pref limited to [0,2] enforced by clamp, MOZ_CRASH overkill.)
+      case 2: // scheme+host+port+/
+        spec.AppendLiteral("/");
+        // This nukes any query/ref present as well in the case of nsStandardURL
+        rv = clone->SetPath(EmptyCString());
+        if (NS_FAILED(rv)) return rv;
+        break;
+    }
+  } else {
+    // use the full URI
+    rv = clone->GetAsciiSpec(spec);
     if (NS_FAILED(rv)) return rv;
   }
 
@@ -2019,7 +2034,7 @@ public:
     CopyASCIItoUTF16(aCookie, mCookie);
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
     if (obs) {
@@ -2192,7 +2207,7 @@ HttpBaseChannel::AddSecurityMessage(const nsAString &aMessageTag,
 
   nsAutoCString spec;
   if (mURI) {
-    mURI->GetSpec(spec);
+    spec = mURI->GetSpecOrDefault();
   }
 
   nsCOMPtr<nsIScriptError> error(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
@@ -2293,6 +2308,22 @@ NS_IMETHODIMP
 HttpBaseChannel::SetAllowAltSvc(bool aAllowAltSvc)
 {
   mAllowAltSvc = aAllowAltSvc;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetBeConservative(bool *aBeConservative)
+{
+  NS_ENSURE_ARG_POINTER(aBeConservative);
+
+  *aBeConservative = mBeConservative;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetBeConservative(bool aBeConservative)
+{
+  mBeConservative = aBeConservative;
   return NS_OK;
 }
 
@@ -2417,6 +2448,8 @@ HttpBaseChannel::GetFetchCacheMode(uint32_t* aFetchCacheMode)
     *aFetchCacheMode = nsIHttpChannelInternal::FETCH_CACHE_MODE_RELOAD;
   } else if (mLoadFlags & VALIDATE_ALWAYS) {
     *aFetchCacheMode = nsIHttpChannelInternal::FETCH_CACHE_MODE_NO_CACHE;
+  } else if (mLoadFlags & (LOAD_FROM_CACHE | nsICachingChannel::LOAD_ONLY_FROM_CACHE)) {
+    *aFetchCacheMode = nsIHttpChannelInternal::FETCH_CACHE_MODE_ONLY_IF_CACHED;
   } else if (mLoadFlags & LOAD_FROM_CACHE) {
     *aFetchCacheMode = nsIHttpChannelInternal::FETCH_CACHE_MODE_FORCE_CACHE;
   } else {
@@ -2455,8 +2488,31 @@ HttpBaseChannel::SetFetchCacheMode(uint32_t aFetchCacheMode)
     // force-cache means don't validate unless if the response would vary.
     mLoadFlags |= LOAD_FROM_CACHE;
     break;
+  case nsIHttpChannelInternal::FETCH_CACHE_MODE_ONLY_IF_CACHED:
+    // only-if-cached means only from cache, no network, no validation, generate
+    // a network error if the document was't in the cache.
+    // The privacy implications of these flags (making it fast/easy to check if
+    // the user has things in their cache without any network traffic side
+    // effects) are addressed in the Request constructor which enforces/requires
+    // same-origin request mode.
+    mLoadFlags |= LOAD_FROM_CACHE | nsICachingChannel::LOAD_ONLY_FROM_CACHE;
+    break;
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetIntegrityMetadata(const nsAString& aIntegrityMetadata)
+{
+  mIntegrityMetadata = aIntegrityMetadata;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetIntegrityMetadata(nsAString& aIntegrityMetadata)
+{
+  aIntegrityMetadata = mIntegrityMetadata;
   return NS_OK;
 }
 
@@ -2542,15 +2598,29 @@ HttpBaseChannel::AddConsoleReport(uint32_t aErrorFlags,
 }
 
 void
-HttpBaseChannel::FlushConsoleReports(nsIDocument* aDocument)
+HttpBaseChannel::FlushConsoleReports(nsIDocument* aDocument,
+                                     ReportAction aAction)
 {
-  mReportCollector->FlushConsoleReports(aDocument);
+  mReportCollector->FlushConsoleReports(aDocument, aAction);
 }
 
 void
 HttpBaseChannel::FlushConsoleReports(nsIConsoleReportCollector* aCollector)
 {
   mReportCollector->FlushConsoleReports(aCollector);
+}
+
+void
+HttpBaseChannel::FlushReportsByWindowId(uint64_t aWindowId,
+                                        ReportAction aAction)
+{
+  mReportCollector->FlushReportsByWindowId(aWindowId, aAction);
+}
+
+void
+HttpBaseChannel::ClearConsoleReports()
+{
+  mReportCollector->ClearConsoleReports();
 }
 
 nsIPrincipal *
@@ -2606,6 +2676,19 @@ HttpBaseChannel::ShouldIntercept(nsIURI* aURI)
     }
   }
   return shouldIntercept;
+}
+
+void HttpBaseChannel::CheckPrivateBrowsing()
+{
+  nsCOMPtr<nsILoadContext> loadContext;
+  NS_QueryNotificationCallbacks(this, loadContext);
+  // For addons it's possible that mLoadInfo is null.
+  if (mLoadInfo && loadContext) {
+      DocShellOriginAttributes docShellAttrs;
+      loadContext->GetOriginAttributes(docShellAttrs);
+      MOZ_ASSERT(mLoadInfo->GetOriginAttributes().mPrivateBrowsingId == docShellAttrs.mPrivateBrowsingId,
+                 "PrivateBrowsingId values are not the same between LoadInfo and LoadContext.");
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -2863,6 +2946,36 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   if (mLoadInfo) {
     nsCOMPtr<nsILoadInfo> newLoadInfo =
       static_cast<mozilla::LoadInfo*>(mLoadInfo.get())->Clone();
+
+    // re-compute the origin attributes of the loadInfo if it's top-level load.
+    bool isTopLevelDoc =
+      newLoadInfo->GetExternalContentPolicyType() == nsIContentPolicy::TYPE_DOCUMENT;
+
+    if (isTopLevelDoc) {
+      nsCOMPtr<nsILoadContext> loadContext;
+      NS_QueryNotificationCallbacks(this, loadContext);
+      DocShellOriginAttributes docShellAttrs;
+      if (loadContext) {
+        loadContext->GetOriginAttributes(docShellAttrs);
+      }
+      MOZ_ASSERT(docShellAttrs.mFirstPartyDomain.IsEmpty(),
+                 "top-level docshell shouldn't have firstPartyDomain attribute.");
+
+      NeckoOriginAttributes attrs = newLoadInfo->GetOriginAttributes();
+
+      MOZ_ASSERT(docShellAttrs.mAppId == attrs.mAppId,
+                "docshell and necko should have the same appId attribute.");
+      MOZ_ASSERT(docShellAttrs.mUserContextId == attrs.mUserContextId,
+                "docshell and necko should have the same userContextId attribute.");
+      MOZ_ASSERT(docShellAttrs.mInIsolatedMozBrowser == attrs.mInIsolatedMozBrowser,
+                "docshell and necko should have the same inIsolatedMozBrowser attribute.");
+      MOZ_ASSERT(docShellAttrs.mPrivateBrowsingId == attrs.mPrivateBrowsingId,
+                 "docshell and necko should have the same privateBrowsingId attribute.");
+
+      attrs.InheritFromDocShellToNecko(docShellAttrs, true, newURI);
+      newLoadInfo->SetOriginAttributes(attrs);
+    }
+
     bool isInternalRedirect =
       (redirectFlags & (nsIChannelEventSink::REDIRECT_INTERNAL |
                         nsIChannelEventSink::REDIRECT_STS_UPGRADE));
@@ -2947,7 +3060,11 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   httpChannel->SetAllowPipelining(mAllowPipelining);
   httpChannel->SetAllowSTS(mAllowSTS);
   // convey the new redirection limit
-  httpChannel->SetRedirectionLimit(mRedirectionLimit - 1);
+  // make sure we don't underflow
+  uint32_t redirectionLimit = mRedirectionLimit
+    ? mRedirectionLimit - 1
+    : 0;
+  httpChannel->SetRedirectionLimit(redirectionLimit);
 
   // convey the Accept header value
   {
@@ -2964,10 +3081,11 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   httpChannel->SetRequestContextID(mRequestContextID);
 
   if (httpInternal) {
-    // Convey third party cookie and spdy flags.
+    // Convey third party cookie, conservative, and spdy flags.
     httpInternal->SetThirdPartyFlags(mThirdPartyFlags);
     httpInternal->SetAllowSpdy(mAllowSpdy);
     httpInternal->SetAllowAltSvc(mAllowAltSvc);
+    httpInternal->SetBeConservative(mBeConservative);
 
     RefPtr<nsHttpChannel> realChannel;
     CallQueryInterface(newChannel, realChannel.StartAssignment());
@@ -3000,6 +3118,9 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
 
     // Preserve Cache mode flag.
     httpInternal->SetFetchCacheMode(mFetchCacheMode);
+
+    // Preserve Integrity metadata.
+    httpInternal->SetIntegrityMetadata(mIntegrityMetadata);
   }
 
   // transfer application cache information
@@ -3332,10 +3453,10 @@ IMPL_TIMING_ATTR(RedirectEnd)
 
 #undef IMPL_TIMING_ATTR
 
-nsPerformance*
+mozilla::dom::Performance*
 HttpBaseChannel::GetPerformance()
 {
-  // If performance timing is disabled, there is no need for the nsPerformance
+  // If performance timing is disabled, there is no need for the Performance
   // object anymore.
   if (!mTimingEnabled) {
     return nullptr;
@@ -3372,7 +3493,7 @@ HttpBaseChannel::GetPerformance()
     return nullptr;
   }
 
-  nsPerformance* docPerformance = innerWindow->GetPerformance();
+  mozilla::dom::Performance* docPerformance = innerWindow->GetPerformance();
   if (!docPerformance) {
     return nullptr;
   }
@@ -3413,6 +3534,28 @@ HttpBaseChannel::GetInnerDOMWindow()
     }
 
     return innerWindow;
+}
+
+//-----------------------------------------------------------------------------
+// HttpBaseChannel::nsIThrottledInputChannel
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+HttpBaseChannel::SetThrottleQueue(nsIInputChannelThrottleQueue* aQueue)
+{
+  if (!XRE_IsParentProcess()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mThrottleQueue = aQueue;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetThrottleQueue(nsIInputChannelThrottleQueue** aQueue)
+{
+  *aQueue = mThrottleQueue;
+  return NS_OK;
 }
 
 //------------------------------------------------------------------------------
@@ -3472,6 +3615,16 @@ HttpBaseChannel::SetBlockAuthPrompt(bool aValue)
   ENSURE_CALLED_BEFORE_CONNECT();
 
   mBlockAuthPrompt = aValue;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetConnectionInfoHashKey(nsACString& aConnectionInfoHashKey)
+{
+  if (!mConnectionInfo) {
+    return NS_ERROR_FAILURE;
+  }
+  aConnectionInfoHashKey.Assign(mConnectionInfo->HashKey());
   return NS_OK;
 }
 

@@ -16,6 +16,7 @@
 #define NS_CASCADEENUMDATA_ARENA_BLOCK_SIZE (4096)
 #include "plarena.h"
 
+#include "nsAutoPtr.h"
 #include "nsCSSRuleProcessor.h"
 #include "nsRuleProcessorData.h"
 #include <algorithm>
@@ -53,6 +54,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Likely.h"
+#include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/TypedEnumBits.h"
 #include "RuleProcessorCache.h"
 #include "nsIDOMMutationEvent.h"
@@ -259,7 +261,7 @@ static void
 RuleHash_InitEntry(PLDHashEntryHdr *hdr, const void *key)
 {
   RuleHashTableEntry* entry = static_cast<RuleHashTableEntry*>(hdr);
-  new (entry) RuleHashTableEntry();
+  new (KnownNotNull, entry) RuleHashTableEntry();
 }
 
 static void
@@ -277,7 +279,7 @@ RuleHash_MoveEntry(PLDHashTable *table, const PLDHashEntryHdr *from,
   RuleHashTableEntry *oldEntry =
     const_cast<RuleHashTableEntry*>(
       static_cast<const RuleHashTableEntry*>(from));
-  RuleHashTableEntry *newEntry = new (to) RuleHashTableEntry();
+  RuleHashTableEntry *newEntry = new (KnownNotNull, to) RuleHashTableEntry();
   newEntry->mRules.SwapElements(oldEntry->mRules);
   oldEntry->~RuleHashTableEntry();
 }
@@ -295,7 +297,7 @@ static void
 RuleHash_TagTable_InitEntry(PLDHashEntryHdr *hdr, const void *key)
 {
   RuleHashTagTableEntry* entry = static_cast<RuleHashTagTableEntry*>(hdr);
-  new (entry) RuleHashTagTableEntry();
+  new (KnownNotNull, entry) RuleHashTagTableEntry();
   entry->mTag = const_cast<nsIAtom*>(static_cast<const nsIAtom*>(key));
 }
 
@@ -314,7 +316,7 @@ RuleHash_TagTable_MoveEntry(PLDHashTable *table, const PLDHashEntryHdr *from,
   RuleHashTagTableEntry *oldEntry =
     const_cast<RuleHashTagTableEntry*>(
       static_cast<const RuleHashTagTableEntry*>(from));
-  RuleHashTagTableEntry *newEntry = new (to) RuleHashTagTableEntry();
+  RuleHashTagTableEntry *newEntry = new (KnownNotNull, to) RuleHashTagTableEntry();
   newEntry->mTag.swap(oldEntry->mTag);
   newEntry->mRules.SwapElements(oldEntry->mRules);
   oldEntry->~RuleHashTagTableEntry();
@@ -793,7 +795,7 @@ static void
 AtomSelector_InitEntry(PLDHashEntryHdr *hdr, const void *key)
 {
   AtomSelectorEntry *entry = static_cast<AtomSelectorEntry*>(hdr);
-  new (entry) AtomSelectorEntry();
+  new (KnownNotNull, entry) AtomSelectorEntry();
   entry->mAtom = const_cast<nsIAtom*>(static_cast<const nsIAtom*>(key));
 }
 
@@ -804,7 +806,7 @@ AtomSelector_MoveEntry(PLDHashTable *table, const PLDHashEntryHdr *from,
   NS_PRECONDITION(from != to, "This is not going to work!");
   AtomSelectorEntry *oldEntry =
     const_cast<AtomSelectorEntry*>(static_cast<const AtomSelectorEntry*>(from));
-  AtomSelectorEntry *newEntry = new (to) AtomSelectorEntry();
+  AtomSelectorEntry *newEntry = new (KnownNotNull, to) AtomSelectorEntry();
   newEntry->mAtom = oldEntry->mAtom;
   newEntry->mSelectors.SwapElements(oldEntry->mSelectors);
   oldEntry->~AtomSelectorEntry();
@@ -1134,11 +1136,6 @@ InitSystemMetrics()
     sSystemMetrics->AppendElement(nsGkAtoms::mac_graphite_theme);
   }
 
-  rv = LookAndFeel::GetInt(LookAndFeel::eIntID_MacLionTheme, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement(nsGkAtoms::mac_lion_theme);
-  }
-
   rv = LookAndFeel::GetInt(LookAndFeel::eIntID_MacYosemiteTheme, &metricResult);
   if (NS_SUCCEEDED(rv) && metricResult) {
     sSystemMetrics->AppendElement(nsGkAtoms::mac_yosemite_theme);
@@ -1375,35 +1372,6 @@ enum class SelectorMatchesFlags : uint8_t {
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(SelectorMatchesFlags)
 
-static bool ValueIncludes(const nsSubstring& aValueList,
-                            const nsSubstring& aValue,
-                            const nsStringComparator& aComparator)
-{
-  const char16_t *p = aValueList.BeginReading(),
-              *p_end = aValueList.EndReading();
-
-  while (p < p_end) {
-    // skip leading space
-    while (p != p_end && nsContentUtils::IsHTMLWhitespace(*p))
-      ++p;
-
-    const char16_t *val_start = p;
-
-    // look for space or end
-    while (p != p_end && !nsContentUtils::IsHTMLWhitespace(*p))
-      ++p;
-
-    const char16_t *val_end = p;
-
-    if (val_start < val_end &&
-        aValue.Equals(Substring(val_start, val_end), aComparator))
-      return true;
-
-    ++p; // we know the next character is not whitespace
-  }
-  return false;
-}
-
 // Return whether the selector matches conditions for the :active and
 // :hover quirk.
 static inline bool ActiveHoverQuirkMatches(nsCSSSelector* aSelector,
@@ -1471,7 +1439,7 @@ static bool AttrMatchesValue(const nsAttrSelector* aAttrSelector,
     case NS_ATTR_FUNC_EQUALS:
       return aValue.Equals(aAttrSelector->mValue, comparator);
     case NS_ATTR_FUNC_INCLUDES:
-      return ValueIncludes(aValue, aAttrSelector->mValue, comparator);
+      return nsStyleUtil::ValueIncludes(aValue, aAttrSelector->mValue, comparator);
     case NS_ATTR_FUNC_DASHMATCH:
       return nsStyleUtil::DashMatchCompare(aValue, aAttrSelector->mValue, comparator);
     case NS_ATTR_FUNC_ENDSMATCH:
@@ -2339,10 +2307,10 @@ nsCSSRuleProcessor::RestrictedSelectorMatches(
   MOZ_ASSERT(aSelector->IsRestrictedSelector(),
              "aSelector must not have a pseudo-element");
 
-  NS_WARN_IF_FALSE(!HasPseudoClassSelectorArgsWithCombinators(aSelector),
-                   "processing eRestyle_SomeDescendants can be slow if "
-                   "pseudo-classes with selector arguments can now have "
-                   "combinators in them");
+  NS_WARNING_ASSERTION(
+    !HasPseudoClassSelectorArgsWithCombinators(aSelector),
+    "processing eRestyle_SomeDescendants can be slow if pseudo-classes with "
+    "selector arguments can now have combinators in them");
 
   // We match aSelector as if :visited and :link both match visited and
   // unvisited links.
@@ -2561,9 +2529,9 @@ void ContentEnumFunc(const RuleValue& value, nsCSSSelector* aSelector,
       // We can get here when calling getComputedStyle(aElt, aPseudo) if:
       //
       //   * aPseudo is a pseudo-element that supports a user action
-      //     pseudo-class, like "::-moz-placeholder";
+      //     pseudo-class, like "::placeholder";
       //   * there is a style rule that uses a pseudo-class on this
-      //     pseudo-element in the document, like ::-moz-placeholder:hover; and
+      //     pseudo-element in the document, like ::placeholder:hover; and
       //   * aElt does not have such a pseudo-element.
       //
       // We know that the selector can't match, since there is no element for
@@ -3508,7 +3476,7 @@ static void
 InitWeightEntry(PLDHashEntryHdr *hdr, const void *key)
 {
   RuleByWeightEntry* entry = static_cast<RuleByWeightEntry*>(hdr);
-  new (entry) RuleByWeightEntry();
+  new (KnownNotNull, entry) RuleByWeightEntry();
 }
 
 static const PLDHashTableOps gRulesByWeightOps = {

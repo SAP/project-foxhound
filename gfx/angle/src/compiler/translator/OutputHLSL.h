@@ -8,7 +8,6 @@
 #define COMPILER_TRANSLATOR_OUTPUTHLSL_H_
 
 #include <list>
-#include <set>
 #include <map>
 #include <stack>
 
@@ -21,8 +20,9 @@ class BuiltInFunctionEmulator;
 
 namespace sh
 {
-class UnfoldShortCircuit;
 class StructureHLSL;
+class TextureFunctionHLSL;
+class UnfoldShortCircuit;
 class UniformHLSL;
 
 typedef std::map<TString, TIntermSymbol*> ReferencedSymbols;
@@ -30,11 +30,14 @@ typedef std::map<TString, TIntermSymbol*> ReferencedSymbols;
 class OutputHLSL : public TIntermTraverser
 {
   public:
-    OutputHLSL(sh::GLenum shaderType, int shaderVersion,
-        const TExtensionBehavior &extensionBehavior,
-        const char *sourcePath, ShShaderOutput outputType,
-        int numRenderTargets, const std::vector<Uniform> &uniforms,
-        int compileOptions);
+    OutputHLSL(sh::GLenum shaderType,
+               int shaderVersion,
+               const TExtensionBehavior &extensionBehavior,
+               const char *sourcePath,
+               ShShaderOutput outputType,
+               int numRenderTargets,
+               const std::vector<Uniform> &uniforms,
+               ShCompileOptions compileOptions);
 
     ~OutputHLSL();
 
@@ -56,16 +59,20 @@ class OutputHLSL : public TIntermTraverser
     void visitSymbol(TIntermSymbol*);
     void visitRaw(TIntermRaw*);
     void visitConstantUnion(TIntermConstantUnion*);
+    bool visitSwizzle(Visit visit, TIntermSwizzle *node) override;
     bool visitBinary(Visit visit, TIntermBinary*);
     bool visitUnary(Visit visit, TIntermUnary*);
-    bool visitSelection(Visit visit, TIntermSelection*);
+    bool visitTernary(Visit visit, TIntermTernary *);
+    bool visitIfElse(Visit visit, TIntermIfElse *);
     bool visitSwitch(Visit visit, TIntermSwitch *);
     bool visitCase(Visit visit, TIntermCase *);
+    bool visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node) override;
     bool visitAggregate(Visit visit, TIntermAggregate*);
+    bool visitBlock(Visit visit, TIntermBlock *node);
+    bool visitDeclaration(Visit visit, TIntermDeclaration *node);
     bool visitLoop(Visit visit, TIntermLoop*);
     bool visitBranch(Visit visit, TIntermBranch*);
 
-    bool isSingleStatement(TIntermNode *node);
     bool handleExcessiveLoop(TInfoSinkBase &out, TIntermLoop *node);
 
     // Emit one of three strings depending on traverse phase. Called with literal strings so using const char* instead of TString.
@@ -101,7 +108,7 @@ class OutputHLSL : public TIntermTraverser
                                      TIntermTyped *expression);
 
     void writeDeferredGlobalInitializers(TInfoSinkBase &out);
-    void writeSelection(TInfoSinkBase &out, TIntermSelection *node);
+    void writeIfElse(TInfoSinkBase &out, TIntermIfElse *node);
 
     // Returns the function name
     TString addStructEqualityFunction(const TStructure &structure);
@@ -117,7 +124,7 @@ class OutputHLSL : public TIntermTraverser
     const TExtensionBehavior &mExtensionBehavior;
     const char *mSourcePath;
     const ShShaderOutput mOutputType;
-    int mCompileOptions;
+    ShCompileOptions mCompileOptions;
 
     bool mInsideFunction;
 
@@ -139,36 +146,9 @@ class OutputHLSL : public TIntermTraverser
 
     StructureHLSL *mStructureHLSL;
     UniformHLSL *mUniformHLSL;
-
-    struct TextureFunction
-    {
-        enum Method
-        {
-            IMPLICIT,   // Mipmap LOD determined implicitly (standard lookup)
-            BIAS,
-            LOD,
-            LOD0,
-            LOD0BIAS,
-            SIZE,   // textureSize()
-            FETCH,
-            GRAD
-        };
-
-        TBasicType sampler;
-        int coords;
-        bool proj;
-        bool offset;
-        Method method;
-
-        TString name() const;
-
-        bool operator<(const TextureFunction &rhs) const;
-    };
-
-    typedef std::set<TextureFunction> TextureFunctionSet;
+    TextureFunctionHLSL *mTextureFunctionHLSL;
 
     // Parameters determining what goes in the header output
-    TextureFunctionSet mUsesTexture;
     bool mUsesFragColor;
     bool mUsesFragData;
     bool mUsesDepthRange;
@@ -177,6 +157,7 @@ class OutputHLSL : public TIntermTraverser
     bool mUsesFrontFacing;
     bool mUsesPointSize;
     bool mUsesInstanceID;
+    bool mUsesVertexID;
     bool mUsesFragDepth;
     bool mUsesXor;
     bool mUsesDiscardRewriting;
@@ -201,11 +182,6 @@ class OutputHLSL : public TIntermTraverser
 
     std::map<TIntermTyped*, TString> mFlaggedStructMappedNames;
     std::map<TIntermTyped*, TString> mFlaggedStructOriginalNames;
-
-    // Some initializers may have been unfolded into if statements, thus we can't evaluate all initializers
-    // at global static scope in HLSL. Instead, we can initialize these static globals inside a helper function.
-    // This also enables initialization of globals with uniforms.
-    TIntermSequence mDeferredGlobalInitializers;
 
     struct HelperFunction
     {
@@ -239,6 +215,10 @@ class OutputHLSL : public TIntermTraverser
     // with the other N parameters of the function. This is used to work around that arrays can't be
     // return values in HLSL.
     std::vector<ArrayHelperFunction> mArrayConstructIntoFunctions;
+
+  private:
+    TString samplerNamePrefixFromStruct(TIntermTyped *node);
+    bool ancestorEvaluatesToSamplerInStruct(Visit visit);
 };
 
 }

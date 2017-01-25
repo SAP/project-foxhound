@@ -7,10 +7,8 @@ ac_add_options --with-ccache=/usr/bin/ccache
 # We could work around this (typedef basic_string<char16_t> u16string), but this should be fine.
 ac_add_options --enable-macos-target=10.10
 
-# Branding: taint branding currently does not work correctly.
-# Either choose "official" or "aurora" or use no custom branding at all (results in nightly branding).
-# TODO discuss how to deal with the branding in the future
-#ac_add_options --with-branding=browser/branding/taint
+# Official is the new taint branding
+ac_add_options --with-branding=browser/branding/official
 
 #
 # DEBUG BUILD

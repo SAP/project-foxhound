@@ -357,20 +357,17 @@ class BuildOptionParser(object):
         'graphene': 'builds/releng_sub_%s_configs/%s_graphene.py',
         'horizon': 'builds/releng_sub_%s_configs/%s_horizon.py',
         'source': 'builds/releng_sub_%s_configs/%s_source.py',
-        'api-9': 'builds/releng_sub_%s_configs/%s_api_9.py',
-        'api-11': 'builds/releng_sub_%s_configs/%s_api_11.py',
         'api-15-gradle-dependencies': 'builds/releng_sub_%s_configs/%s_api_15_gradle_dependencies.py',
         'api-15': 'builds/releng_sub_%s_configs/%s_api_15.py',
-        'api-9-debug': 'builds/releng_sub_%s_configs/%s_api_9_debug.py',
-        'api-11-debug': 'builds/releng_sub_%s_configs/%s_api_11_debug.py',
         'api-15-debug': 'builds/releng_sub_%s_configs/%s_api_15_debug.py',
+        'api-15-gradle': 'builds/releng_sub_%s_configs/%s_api_15_gradle.py',
         'x86': 'builds/releng_sub_%s_configs/%s_x86.py',
-        'api-11-partner-sample1': 'builds/releng_sub_%s_configs/%s_api_11_partner_sample1.py',
         'api-15-partner-sample1': 'builds/releng_sub_%s_configs/%s_api_15_partner_sample1.py',
         'android-test': 'builds/releng_sub_%s_configs/%s_test.py',
         'android-checkstyle': 'builds/releng_sub_%s_configs/%s_checkstyle.py',
         'android-lint': 'builds/releng_sub_%s_configs/%s_lint.py',
-        'valgrind' : 'builds/releng_sub_%s_configs/%s_valgrind.py'
+        'valgrind' : 'builds/releng_sub_%s_configs/%s_valgrind.py',
+        'artifact': 'builds/releng_sub_%s_configs/%s_artifact.py',
     }
     build_pool_cfg_file = 'builds/build_pool_specifics.py'
     branch_cfg_file = 'builds/branch_specifics.py'
@@ -426,13 +423,7 @@ class BuildOptionParser(object):
         return cls.bits, cls.platform
 
     @classmethod
-    def set_build_variant(cls, option, opt, value, parser):
-        """ sets an extra config file.
-
-        This is done by either taking an existing filepath or by taking a valid
-        shortname coupled with known platform/bits.
-        """
-
+    def find_variant_cfg_path(cls, opt, value, parser):
         valid_variant_cfg_path = None
         # first let's see if we were given a valid short-name
         if cls.build_variants.get(value):
@@ -455,6 +446,17 @@ class BuildOptionParser(object):
                     valid_variant_cfg_path = os.path.join(path,
                                                           prospective_cfg_path)
                     break
+        return valid_variant_cfg_path, prospective_cfg_path
+
+    @classmethod
+    def set_build_variant(cls, option, opt, value, parser):
+        """ sets an extra config file.
+
+        This is done by either taking an existing filepath or by taking a valid
+        shortname coupled with known platform/bits.
+        """
+        valid_variant_cfg_path, prospective_cfg_path = cls.find_variant_cfg_path(
+            '--custom-build-variant-cfg', value, parser)
 
         if not valid_variant_cfg_path:
             # either the value was an indeterminable path or an invalid short
@@ -884,6 +886,11 @@ or run without that action (ie: --no-{action})"
                 env['MOZ_SIGN_CMD'] = moz_sign_cmd.replace('\\', '\\\\\\\\')
             else:
                 self.warning("signing disabled because MOZ_SIGNING_SERVERS is not set")
+        elif 'MOZ_SIGN_CMD' in env:
+            # Ensure that signing is truly disabled
+            # MOZ_SIGN_CMD may be defined by default in buildbot (see MozillaBuildFactory)
+            self.warning("Clearing MOZ_SIGN_CMD because we don't have config['enable_signing']")
+            del env['MOZ_SIGN_CMD']
 
         # to activate the right behaviour in mozonfigs while we transition
         if c.get('enable_release_promotion'):
@@ -922,10 +929,19 @@ or run without that action (ie: --no-{action})"
                 'branch': self.branch
             }
 
+        # this prevents taskcluster from overwriting the target files with
+        # the multilocale files. Put everything from the en-US build in a
+        # separate folder.
+        if multiLocale and self.config.get('taskcluster_nightly'):
+            if 'UPLOAD_PATH' in mach_env:
+                mach_env['UPLOAD_PATH'] = os.path.join(mach_env['UPLOAD_PATH'],
+                                                       'en-US')
+
         # _query_post_upload_cmd returns a list (a cmd list), for env sake here
         # let's make it a string
-        pst_up_cmd = ' '.join([str(i) for i in self._query_post_upload_cmd(multiLocale)])
-        mach_env['POST_UPLOAD_CMD'] = pst_up_cmd
+        if c.get('is_automation'):
+            pst_up_cmd = ' '.join([str(i) for i in self._query_post_upload_cmd(multiLocale)])
+            mach_env['POST_UPLOAD_CMD'] = pst_up_cmd
 
         return mach_env
 
@@ -999,7 +1015,6 @@ or run without that action (ie: --no-{action})"
             post_upload_cmd.extend(['--revision', revision])
         if c.get('to_tinderbox_dated'):
             post_upload_cmd.append('--release-to-tinderbox-dated-builds')
-            post_upload_cmd.append('--release-to-latest-tinderbox-builds')
         if c.get('release_to_try_builds'):
             post_upload_cmd.append('--release-to-try-builds')
         if self.query_is_nightly():
@@ -1107,7 +1122,9 @@ or run without that action (ie: --no-{action})"
         if not c.get('tooltool_manifest_src'):
             return self.warning(ERROR_MSGS['tooltool_manifest_undetermined'])
         fetch_script_path = os.path.join(dirs['abs_tools_dir'],
-                                         'scripts/tooltool/tooltool_wrapper.sh')
+                                         'scripts',
+                                         'tooltool',
+                                         'tooltool_wrapper.sh')
         tooltool_manifest_path = os.path.join(dirs['abs_src_dir'],
                                               c['tooltool_manifest_src'])
         cmd = [
@@ -1189,7 +1206,7 @@ or run without that action (ie: --no-{action})"
             else:
                 self.warning(ERROR_MSGS['comments_undetermined'])
             self.set_buildbot_property('got_revision',
-                                       rev[:12],
+                                       rev,
                                        write_to_file=True)
 
     def _count_ctors(self):
@@ -1345,7 +1362,10 @@ or run without that action (ie: --no-{action})"
         self.activate_virtualenv()
 
         routes_file = os.path.join(dirs['abs_src_dir'],
-                                   'testing/taskcluster/routes.json')
+                                   'testing',
+                                   'mozharness',
+                                   'configs',
+                                   'routes.json')
         with open(routes_file) as f:
             self.routes_json = json.load(f)
 
@@ -1600,14 +1620,22 @@ or run without that action (ie: --no-{action})"
         # until an alternative solution is made or all builds that touch
         # mozconfig.cache are converted to mozharness.
         dirs = self.query_abs_dirs()
-        self.copyfile(os.path.join(dirs['base_work_dir'], 'buildprops.json'),
-                      os.path.join(dirs['abs_work_dir'], 'buildprops.json'))
+        buildprops = os.path.join(dirs['base_work_dir'], 'buildprops.json')
+        # not finding buildprops is not an error outside of buildbot
+        if os.path.exists(buildprops):
+            self.copyfile(
+                buildprops,
+                os.path.join(dirs['abs_work_dir'], 'buildprops.json'))
 
+        # use mh config override for mach build wrapper, if it exists
         python = self.query_exe('python2.7')
+        default_mach_build = [python, 'mach', '--log-no-times', 'build', '-v']
+        mach_build = self.query_exe('mach-build', default=default_mach_build)
         return_code = self.run_command_m(
-            command=[python, 'mach', '--log-no-times', 'build', '-v'],
-            cwd=self.query_abs_dirs()['abs_src_dir'],
-            env=env, output_timeout=self.config.get('max_build_output_timeout', 60 * 40)
+            command=mach_build,
+            cwd=dirs['abs_src_dir'],
+            env=env,
+            output_timeout=self.config.get('max_build_output_timeout', 60 * 40)
         )
         if return_code:
             self.return_code = self.worst_level(
@@ -1617,36 +1645,43 @@ or run without that action (ie: --no-{action})"
             self.fatal("'mach build' did not run successfully. Please check "
                        "log for errors.")
 
-    def _checkout_compare_locales(self):
-        dirs = self.query_abs_dirs()
-        dest = dirs['compare_locales_dir']
-        repo = self.config['compare_locales_repo']
-        rev = self.config['compare_locales_rev']
-        vcs = self.config['compare_locales_vcs']
-        abs_rev = self.vcs_checkout(repo=repo, dest=dest, revision=rev, vcs=vcs)
-        self.set_buildbot_property('compare_locales_revision', abs_rev, write_to_file=True)
-
     def multi_l10n(self):
         if not self.query_is_nightly():
             self.info("Not a nightly build, skipping multi l10n.")
             return
         self._initialize_taskcluster()
 
-        self._checkout_compare_locales()
         dirs = self.query_abs_dirs()
         base_work_dir = dirs['base_work_dir']
         objdir = dirs['abs_obj_dir']
-        branch = self.buildbot_config['properties']['branch']
+        branch = self.branch
+
+        # Building a nightly with the try repository fails because a
+        # config-file does not exist for try. Default to mozilla-central
+        # settings (arbitrarily).
+        if branch == 'try':
+            branch = 'mozilla-central'
 
         # Some android versions share the same .json config - if
         # multi_locale_config_platform is set, use that the .json name;
         # otherwise, use the buildbot platform.
+        default_platform = self.buildbot_config['properties'].get('platform',
+                                                                  'android')
+
         multi_config_pf = self.config.get('multi_locale_config_platform',
-                                          self.buildbot_config['properties']['platform'])
+                                          default_platform)
+
+        # The l10n script location differs on buildbot and taskcluster
+        if self.config.get('taskcluster_nightly'):
+            multil10n_path = \
+                'build/src/testing/mozharness/scripts/multil10n.py'
+            base_work_dir = os.path.join(base_work_dir, 'workspace')
+        else:
+            multil10n_path = '%s/scripts/scripts/multil10n.py' % base_work_dir,
 
         cmd = [
             self.query_exe('python'),
-            '%s/scripts/scripts/multil10n.py' % base_work_dir,
+            multil10n_path,
             '--config-file',
             'multi_locale/%s_%s.json' % (branch, multi_config_pf),
             '--config-file',
@@ -2016,6 +2051,15 @@ or run without that action (ie: --no-{action})"
         # grab any props available from this or previous unclobbered runs
         self.generate_build_props(console_output=False,
                                   halt_on_failure=False)
+
+        # generate balrog props as artifacts
+        if self.config.get('taskcluster_nightly'):
+            env = self.query_mach_build_env(multiLocale=False)
+            props_path = os.path.join(env["UPLOAD_PATH"],
+                    'balrog_props.json')
+            self.generate_balrog_props(props_path)
+            return
+
         if not self.config.get("balrog_servers"):
             self.fatal("balrog_servers not set; skipping balrog submission.")
             return

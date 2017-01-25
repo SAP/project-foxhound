@@ -15,6 +15,7 @@
 #include "chrome/common/ipc_message_utils.h"
 #include "gfxPoint.h"
 #include "gfxRect.h"
+#include "gfxTelemetry.h"
 #include "gfxTypes.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/gfx/Matrix.h"
@@ -222,6 +223,22 @@ struct ParamTraits<mozilla::layers::LayersBackend>
 {};
 
 template <>
+struct ParamTraits<mozilla::gfx::BackendType>
+  : public ContiguousEnumSerializer<
+             mozilla::gfx::BackendType,
+             mozilla::gfx::BackendType::NONE,
+             mozilla::gfx::BackendType::BACKEND_LAST>
+{};
+
+template <>
+struct ParamTraits<mozilla::gfx::FeatureStatus>
+  : public ContiguousEnumSerializer<
+             mozilla::gfx::FeatureStatus,
+             mozilla::gfx::FeatureStatus::Unused,
+             mozilla::gfx::FeatureStatus::LAST>
+{};
+
+template <>
 struct ParamTraits<mozilla::layers::ScaleMode>
   : public ContiguousEnumSerializer<
              mozilla::layers::ScaleMode,
@@ -370,7 +387,7 @@ struct RegionParamTraits
 
     for (auto iter = param.RectIter(); !iter.Done(); iter.Next()) {
       const Rect& r = iter.Get();
-      MOZ_RELEASE_ASSERT(!r.IsEmpty());
+      MOZ_RELEASE_ASSERT(!r.IsEmpty(), "GFX: rect is empty.");
       WriteParam(msg, r);
     }
     // empty rects are sentinel values because nsRegions will never
@@ -1170,14 +1187,24 @@ struct ParamTraits<mozilla::gfx::FilterDescription>
   }
 };
 
+typedef mozilla::layers::GeckoContentController::TapType TapType;
+
+template <>
+struct ParamTraits<TapType>
+  : public ContiguousEnumSerializer<
+             TapType,
+             TapType::eSingleTap,
+             TapType::eSentinel>
+{};
+
 typedef mozilla::layers::GeckoContentController::APZStateChange APZStateChange;
 
 template <>
 struct ParamTraits<APZStateChange>
   : public ContiguousEnumSerializer<
              APZStateChange,
-             APZStateChange::TransformBegin,
-             APZStateChange::APZStateChangeSentinel>
+             APZStateChange::eTransformBegin,
+             APZStateChange::eSentinel>
 {};
 
 template<>

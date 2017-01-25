@@ -32,6 +32,9 @@
 #ifdef MOZ_WIDGET_GTK
 #include <gtk/gtk.h>
 #include <dlfcn.h>
+#endif
+
+#if defined (XP_LINUX) && !defined (ANDROID)
 #include <unistd.h>
 #include <fstream>
 #include "mozilla/Tokenizer.h"
@@ -73,7 +76,7 @@ NS_EXPORT int android_sdk_version;
 // only happens well after that point.
 uint32_t nsSystemInfo::gUserUmask = 0;
 
-#if defined (MOZ_WIDGET_GTK)
+#if defined (XP_LINUX) && !defined (ANDROID)
 static void
 SimpleParseKeyValuePairs(const std::string& aFilename,
                          std::map<nsCString, nsCString>& aKeyValuePairs)
@@ -497,7 +500,7 @@ nsSystemInfo::Init()
   }
   MOZ_ASSERT(sizeof(sysctlValue32) == len);
 
-#elif defined (MOZ_WIDGET_GTK)
+#elif defined (XP_LINUX) && !defined (ANDROID)
   // Get vendor, family, model, stepping, physical cores, L3 cache size
   // from /proc/cpuinfo file
   {
@@ -622,7 +625,7 @@ nsSystemInfo::Init()
 #ifdef XP_WIN
   BOOL isWow64;
   BOOL gotWow64Value = IsWow64Process(GetCurrentProcess(), &isWow64);
-  NS_WARN_IF_FALSE(gotWow64Value, "IsWow64Process failed");
+  NS_WARNING_ASSERTION(gotWow64Value, "IsWow64Process failed");
   if (gotWow64Value) {
     rv = SetPropertyAsBool(NS_LITERAL_STRING("isWow64"), !!isWow64);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -864,7 +867,7 @@ nsSystemInfo::GetAndroidSystemInfo(AndroidSystemInfo* aInfo)
     sdk_version = 0;
   }
   aInfo->sdk_version() = sdk_version;
-  aInfo->isTablet() = mozilla::widget::GeckoAppShell::IsTablet();
+  aInfo->isTablet() = java::GeckoAppShell::IsTablet();
 }
 
 void
@@ -902,13 +905,13 @@ void
 nsSystemInfo::SetInt32Property(const nsAString& aPropertyName,
                                const int32_t aValue)
 {
-  NS_WARN_IF_FALSE(aValue > 0, "Unable to read system value");
+  NS_WARNING_ASSERTION(aValue > 0, "Unable to read system value");
   if (aValue > 0) {
 #ifdef DEBUG
     nsresult rv =
 #endif
       SetPropertyAsInt32(aPropertyName, aValue);
-    NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Unable to set property");
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Unable to set property");
   }
 }
 
@@ -922,20 +925,20 @@ nsSystemInfo::SetUint32Property(const nsAString& aPropertyName,
   nsresult rv =
 #endif
     SetPropertyAsUint32(aPropertyName, aValue);
-  NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Unable to set property");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Unable to set property");
 }
 
 void
 nsSystemInfo::SetUint64Property(const nsAString& aPropertyName,
                                 const uint64_t aValue)
 {
-  NS_WARN_IF_FALSE(aValue > 0, "Unable to read system value");
+  NS_WARNING_ASSERTION(aValue > 0, "Unable to read system value");
   if (aValue > 0) {
 #ifdef DEBUG
     nsresult rv =
 #endif
       SetPropertyAsUint64(aPropertyName, aValue);
-    NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Unable to set property");
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Unable to set property");
   }
 }
 

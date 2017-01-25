@@ -7,6 +7,8 @@
 
 #include "nsContainerFrame.h"
 
+#include "mozilla/dom/HTMLDetailsElement.h"
+#include "mozilla/dom/HTMLSummaryElement.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsIDocument.h"
 #include "nsPresContext.h"
@@ -164,7 +166,7 @@ nsContainerFrame::RemoveFrame(ChildListID aListID,
     // Please note that 'parent' may not actually be where 'aOldFrame' lives.
     // We really MUST use StealFrame() and nothing else here.
     // @see nsInlineFrame::StealFrame for details.
-    parent->StealFrame(aOldFrame, true);
+    parent->StealFrame(aOldFrame);
     aOldFrame->Destroy();
     aOldFrame = oldFrameNextContinuation;
     if (parent != lastParent && generateReflowCommand) {
@@ -796,7 +798,7 @@ nsContainerFrame::SyncFrameViewProperties(nsPresContext*  aPresContext,
   int32_t zIndex = 0;
   bool    autoZIndex = false;
 
-  if (aFrame->IsAbsPosContaininingBlock()) {
+  if (aFrame->IsAbsPosContainingBlock()) {
     // Make sure z-index is correct
     const nsStylePosition* position = aStyleContext->StylePosition();
 
@@ -852,7 +854,7 @@ nsContainerFrame::DoInlineIntrinsicISize(nsRenderingContext *aRenderingContext,
   // add that to each line.  For box-decoration-break:slice clonePBM is zero.
   nscoord clonePBM = 0; // PBM = PaddingBorderMargin
   const bool sliceBreak =
-    styleBorder->mBoxDecorationBreak == NS_STYLE_BOX_DECORATION_BREAK_SLICE;
+    styleBorder->mBoxDecorationBreak == StyleBoxDecorationBreak::Slice;
   if (!GetPrevContinuation()) {
     nscoord startPBM =
       // clamp negative calc() to 0
@@ -994,8 +996,8 @@ nsContainerFrame::ComputeAutoSize(nsRenderingContext* aRenderingContext,
 void
 nsContainerFrame::ReflowChild(nsIFrame*                aKidFrame,
                               nsPresContext*           aPresContext,
-                              nsHTMLReflowMetrics&     aDesiredSize,
-                              const nsHTMLReflowState& aReflowState,
+                              ReflowOutput&     aDesiredSize,
+                              const ReflowInput& aReflowInput,
                               const WritingMode&       aWM,
                               const LogicalPoint&      aPos,
                               const nsSize&            aContainerSize,
@@ -1003,7 +1005,7 @@ nsContainerFrame::ReflowChild(nsIFrame*                aKidFrame,
                               nsReflowStatus&          aStatus,
                               nsOverflowContinuationTracker* aTracker)
 {
-  NS_PRECONDITION(aReflowState.frame == aKidFrame, "bad reflow state");
+  NS_PRECONDITION(aReflowInput.mFrame == aKidFrame, "bad reflow state");
   if (aWM.IsVerticalRL() || (!aWM.IsVertical() && !aWM.IsBidiLTR())) {
     NS_ASSERTION(aContainerSize.width != NS_UNCONSTRAINEDSIZE,
                  "ReflowChild with unconstrained container width!");
@@ -1019,7 +1021,7 @@ nsContainerFrame::ReflowChild(nsIFrame*                aKidFrame,
   }
 
   // Reflow the child frame
-  aKidFrame->Reflow(aPresContext, aDesiredSize, aReflowState, aStatus);
+  aKidFrame->Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 
   // If the child frame is complete, delete any next-in-flows,
   // but only if the NO_DELETE_NEXT_IN_FLOW flag isn't set.
@@ -1042,15 +1044,15 @@ nsContainerFrame::ReflowChild(nsIFrame*                aKidFrame,
 void
 nsContainerFrame::ReflowChild(nsIFrame*                aKidFrame,
                               nsPresContext*           aPresContext,
-                              nsHTMLReflowMetrics&     aDesiredSize,
-                              const nsHTMLReflowState& aReflowState,
+                              ReflowOutput&     aDesiredSize,
+                              const ReflowInput& aReflowInput,
                               nscoord                  aX,
                               nscoord                  aY,
                               uint32_t                 aFlags,
                               nsReflowStatus&          aStatus,
                               nsOverflowContinuationTracker* aTracker)
 {
-  NS_PRECONDITION(aReflowState.frame == aKidFrame, "bad reflow state");
+  NS_PRECONDITION(aReflowInput.mFrame == aKidFrame, "bad reflow state");
 
   // Position the child frame and its view if requested.
   if (NS_FRAME_NO_MOVE_FRAME != (aFlags & NS_FRAME_NO_MOVE_FRAME)) {
@@ -1062,7 +1064,7 @@ nsContainerFrame::ReflowChild(nsIFrame*                aKidFrame,
   }
 
   // Reflow the child frame
-  aKidFrame->Reflow(aPresContext, aDesiredSize, aReflowState, aStatus);
+  aKidFrame->Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 
   // If the child frame is complete, delete any next-in-flows,
   // but only if the NO_DELETE_NEXT_IN_FLOW flag isn't set.
@@ -1135,8 +1137,8 @@ nsContainerFrame::PositionChildViews(nsIFrame* aFrame)
 void
 nsContainerFrame::FinishReflowChild(nsIFrame*                  aKidFrame,
                                     nsPresContext*             aPresContext,
-                                    const nsHTMLReflowMetrics& aDesiredSize,
-                                    const nsHTMLReflowState*   aReflowState,
+                                    const ReflowOutput& aDesiredSize,
+                                    const ReflowInput*   aReflowInput,
                                     const WritingMode&         aWM,
                                     const LogicalPoint&        aPos,
                                     const nsSize&              aContainerSize,
@@ -1176,7 +1178,7 @@ nsContainerFrame::FinishReflowChild(nsIFrame*                  aKidFrame,
     }
   }
 
-  aKidFrame->DidReflow(aPresContext, aReflowState, nsDidReflowStatus::FINISHED);
+  aKidFrame->DidReflow(aPresContext, aReflowInput, nsDidReflowStatus::FINISHED);
 }
 
 //XXX temporary: hold on to a copy of the old physical version of
@@ -1184,8 +1186,8 @@ nsContainerFrame::FinishReflowChild(nsIFrame*                  aKidFrame,
 void
 nsContainerFrame::FinishReflowChild(nsIFrame*                  aKidFrame,
                                     nsPresContext*             aPresContext,
-                                    const nsHTMLReflowMetrics& aDesiredSize,
-                                    const nsHTMLReflowState*   aReflowState,
+                                    const ReflowOutput& aDesiredSize,
+                                    const ReflowInput*   aReflowInput,
                                     nscoord                    aX,
                                     nscoord                    aY,
                                     uint32_t                   aFlags)
@@ -1215,12 +1217,12 @@ nsContainerFrame::FinishReflowChild(nsIFrame*                  aKidFrame,
     }
   }
 
-  aKidFrame->DidReflow(aPresContext, aReflowState, nsDidReflowStatus::FINISHED);
+  aKidFrame->DidReflow(aPresContext, aReflowInput, nsDidReflowStatus::FINISHED);
 }
 
 void
 nsContainerFrame::ReflowOverflowContainerChildren(nsPresContext*           aPresContext,
-                                                  const nsHTMLReflowState& aReflowState,
+                                                  const ReflowInput& aReflowInput,
                                                   nsOverflowAreas&         aOverflowRects,
                                                   uint32_t                 aFlags,
                                                   nsReflowStatus&          aStatus,
@@ -1234,7 +1236,7 @@ nsContainerFrame::ReflowOverflowContainerChildren(nsPresContext*           aPres
   }
 
   nsOverflowContinuationTracker tracker(this, false, false);
-  bool shouldReflowAllKids = aReflowState.ShouldReflowAllKids();
+  bool shouldReflowAllKids = aReflowInput.ShouldReflowAllKids();
 
   for (nsIFrame* frame : *overflowContainers) {
     if (frame->GetPrevInFlow()->GetParent() != GetPrevInFlow()) {
@@ -1252,14 +1254,14 @@ nsContainerFrame::ReflowOverflowContainerChildren(nsPresContext*           aPres
       NS_ASSERTION(frame->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER,
                    "overflow container frame must have overflow container bit set");
       WritingMode wm = frame->GetWritingMode();
-      nsSize containerSize = aReflowState.AvailableSize(wm).GetPhysicalSize(wm);
+      nsSize containerSize = aReflowInput.AvailableSize(wm).GetPhysicalSize(wm);
       LogicalRect prevRect = prevInFlow->GetLogicalRect(wm, containerSize);
 
       // Initialize reflow params
       LogicalSize availSpace(wm, prevRect.ISize(wm),
-                             aReflowState.AvailableSize(wm).BSize(wm));
-      nsHTMLReflowMetrics desiredSize(aReflowState);
-      nsHTMLReflowState frameState(aPresContext, aReflowState,
+                             aReflowInput.AvailableSize(wm).BSize(wm));
+      ReflowOutput desiredSize(aReflowInput);
+      ReflowInput frameState(aPresContext, aReflowInput,
                                    frame, availSpace);
       nsReflowStatus frameStatus;
 
@@ -1309,10 +1311,10 @@ nsContainerFrame::ReflowOverflowContainerChildren(nsPresContext*           aPres
     }
     else {
       tracker.Skip(frame, aStatus);
-      if (aReflowState.mFloatManager) {
-        nsBlockFrame::RecoverFloatsFor(frame, *aReflowState.mFloatManager,
-                                       aReflowState.GetWritingMode(),
-                                       aReflowState.ComputedPhysicalSize());
+      if (aReflowInput.mFloatManager) {
+        nsBlockFrame::RecoverFloatsFor(frame, *aReflowInput.mFloatManager,
+                                       aReflowInput.GetWritingMode(),
+                                       aReflowInput.ComputedPhysicalSize());
       }
     }
     ConsiderChildOverflow(aOverflowRects, frame);
@@ -1349,9 +1351,27 @@ TryRemoveFrame(nsIFrame* aFrame, FramePropertyTable* aPropTable,
   return false;
 }
 
+bool
+nsContainerFrame::MaybeStealOverflowContainerFrame(nsIFrame* aChild)
+{
+  bool removed = false;
+  if (MOZ_UNLIKELY(aChild->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER)) {
+    FramePropertyTable* propTable = PresContext()->PropertyTable();
+    // Try removing from the overflow container list.
+    removed = ::TryRemoveFrame(this, propTable, OverflowContainersProperty(),
+                               aChild);
+    if (!removed) {
+      // It might be in the excess overflow container list.
+      removed = ::TryRemoveFrame(this, propTable,
+                                 ExcessOverflowContainersProperty(),
+                                 aChild);
+    }
+  }
+  return removed;
+}
+
 nsresult
-nsContainerFrame::StealFrame(nsIFrame* aChild,
-                             bool      aForceNormal)
+nsContainerFrame::StealFrame(nsIFrame* aChild)
 {
 #ifdef DEBUG
   if (!mFrames.ContainsFrame(aChild)) {
@@ -1368,20 +1388,11 @@ nsContainerFrame::StealFrame(nsIFrame* aChild,
   }
 #endif
 
-  bool removed;
-  if ((aChild->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER)
-      && !aForceNormal) {
-    FramePropertyTable* propTable = PresContext()->PropertyTable();
-    // Try removing from the overflow container list.
-    removed = ::TryRemoveFrame(this, propTable, OverflowContainersProperty(),
-                               aChild);
-    if (!removed) {
-      // It must be in the excess overflow container list.
-      removed = ::TryRemoveFrame(this, propTable,
-                                 ExcessOverflowContainersProperty(),
-                                 aChild);
-    }
-  } else {
+  bool removed = MaybeStealOverflowContainerFrame(aChild);
+  if (!removed) {
+    // NOTE nsColumnSetFrame and nsCanvasFrame have their overflow containers
+    // on the normal lists so we might get here also if the frame bit
+    // NS_FRAME_IS_OVERFLOW_CONTAINER is set.
     removed = mFrames.StartRemoveFrame(aChild);
     if (!removed) {
       // We didn't find the child in our principal child list.
@@ -1785,6 +1796,213 @@ nsContainerFrame::ResolvedOrientationIsVertical()
   }
   NS_NOTREACHED("unexpected -moz-orient value");
   return false;
+}
+
+// static
+bool
+nsContainerFrame::FrameStartsCounterScope(nsIFrame* aFrame)
+{
+  nsIContent* content = aFrame->GetContent();
+  if (!content || !content->IsHTMLElement())
+    return false;
+
+  nsIAtom* localName = content->NodeInfo()->NameAtom();
+  return localName == nsGkAtoms::ol ||
+         localName == nsGkAtoms::ul ||
+         localName == nsGkAtoms::dir ||
+         localName == nsGkAtoms::menu;
+}
+
+bool
+nsContainerFrame::RenumberList()
+{
+  if (!FrameStartsCounterScope(this)) {
+    // If this frame doesn't start a counter scope then we don't need
+    // to renumber child list items.
+    return false;
+  }
+
+  MOZ_ASSERT(mContent->IsHTMLElement(),
+             "FrameStartsCounterScope should only return true for HTML elements");
+
+  // Setup initial list ordinal value
+  // XXX Map html's start property to counter-reset style
+  int32_t ordinal = 1;
+  int32_t increment;
+  if (mContent->IsHTMLElement(nsGkAtoms::ol) &&
+      mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::reversed)) {
+    increment = -1;
+  } else {
+    increment = 1;
+  }
+
+  nsGenericHTMLElement* hc = nsGenericHTMLElement::FromContent(mContent);
+  // Must be non-null, since FrameStartsCounterScope only returns true
+  // for HTML elements.
+  MOZ_ASSERT(hc, "How is mContent not HTML?");
+  const nsAttrValue* attr = hc->GetParsedAttr(nsGkAtoms::start);
+  nsContainerFrame* fif = static_cast<nsContainerFrame*>(FirstInFlow());
+  if (attr && attr->Type() == nsAttrValue::eInteger) {
+    ordinal = attr->GetIntegerValue();
+  } else if (increment < 0) {
+    // <ol reversed> case, or some other case with a negative increment: count
+    // up the child list
+    ordinal = 0;
+    fif->RenumberChildFrames(&ordinal, 0, -increment, true);
+  }
+
+  return fif->RenumberChildFrames(&ordinal, 0, increment, false);
+}
+
+// add in a sanity check for absurdly deep frame trees.  See bug 42138
+// can't just use IsFrameTreeTooDeep() because that method has side effects we don't want
+#define MAX_DEPTH_FOR_LIST_RENUMBERING 200  // 200 open displayable tags is pretty unrealistic
+
+bool
+nsContainerFrame::RenumberFrameAndDescendants(int32_t* aOrdinal,
+                                              int32_t aDepth,
+                                              int32_t aIncrement,
+                                              bool aForCounting)
+{
+  NS_PRECONDITION(aOrdinal, "null params are immoral!");
+
+  // add in a sanity check for absurdly deep frame trees.  See bug 42138
+  if (MAX_DEPTH_FOR_LIST_RENUMBERING < aDepth) {
+    return false;
+  }
+  const nsStyleDisplay* display = StyleDisplay();
+
+  // drill down through any wrappers to the real frame
+  nsIFrame* kid = GetContentInsertionFrame();
+  if (!kid) {
+    return false;
+  }
+
+  // Do not renumber list for summary elements.
+  if (HTMLDetailsElement::IsDetailsEnabled()) {
+    HTMLSummaryElement* summary =
+      HTMLSummaryElement::FromContent(kid->GetContent());
+    if (summary && summary->IsMainSummary()) {
+      return false;
+    }
+  }
+
+  bool kidRenumberedABullet = false;
+
+  // If the frame is a list-item and the frame implements our
+  // block frame API then get its bullet and set the list item
+  // ordinal.
+  if (mozilla::StyleDisplay::ListItem == display->mDisplay) {
+    // Make certain that the frame is a block frame in case
+    // something foreign has crept in.
+    nsBlockFrame* listItem = nsLayoutUtils::GetAsBlock(kid);
+    if (listItem) {
+      nsBulletFrame* bullet = listItem->GetBullet();
+      if (bullet) {
+        if (!aForCounting) {
+          bool changed;
+          *aOrdinal = bullet->SetListItemOrdinal(*aOrdinal, &changed, aIncrement);
+          if (changed) {
+            kidRenumberedABullet = true;
+
+            // The ordinal changed - mark the bullet frame, and any
+            // intermediate frames between it and the block (are there
+            // ever any?), dirty.
+            // The calling code will make the necessary FrameNeedsReflow
+            // call for the list ancestor.
+            bullet->AddStateBits(NS_FRAME_IS_DIRTY);
+            nsIFrame *f = bullet;
+            do {
+              nsIFrame *parent = f->GetParent();
+              parent->ChildIsDirty(f);
+              f = parent;
+            } while (f != listItem);
+          }
+        } else {
+          // We're only counting the number of children,
+          // not restyling them. Don't take |value|
+          // into account when incrementing the ordinal
+          // or dirty the bullet.
+          *aOrdinal += aIncrement;
+        }
+      }
+
+      // XXX temporary? if the list-item has child list-items they
+      // should be numbered too; especially since the list-item is
+      // itself (ASSUMED!) not to be a counter-resetter.
+      bool meToo = listItem->RenumberChildFrames(aOrdinal, aDepth + 1,
+                                                 aIncrement, aForCounting);
+      if (meToo) {
+        kidRenumberedABullet = true;
+      }
+    }
+  } else if (display->mDisplay == mozilla::StyleDisplay::Block ||
+             display->mDisplay == mozilla::StyleDisplay::Flex ||
+             display->mDisplay == mozilla::StyleDisplay::Grid) {
+    if (FrameStartsCounterScope(kid)) {
+      // Don't bother recursing into a frame that is a new counter scope.
+      // Any list-items in there will be handled by it.
+    } else {
+      nsContainerFrame* container = do_QueryFrame(kid);
+      if (container) {
+        kidRenumberedABullet =
+          container->RenumberChildFrames(aOrdinal, aDepth + 1,
+                                         aIncrement, aForCounting);
+      }
+    }
+  }
+  return kidRenumberedABullet;
+}
+
+bool
+nsContainerFrame::RenumberChildFrames(int32_t* aOrdinal,
+                                      int32_t aDepth,
+                                      int32_t aIncrement,
+                                      bool aForCounting)
+{
+  bool renumbered = false;
+  for (auto kid : mFrames) {
+    bool kidRenumbered =
+      kid->RenumberFrameAndDescendants(aOrdinal, aDepth, aIncrement, aForCounting);
+    if (!aForCounting && kidRenumbered) {
+      renumbered = true;
+    }
+  }
+
+  // We need to set NS_FRAME_HAS_DIRTY_CHILDREN bits up the tree between
+  // the bullet and the caller of RenumberLists.  But the caller itself
+  // has to be responsible for setting the bit itself, since that caller
+  // might be making a FrameNeedsReflow call, which requires that the
+  // bit not be set yet.
+  if (renumbered && aDepth != 0) {
+    AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
+  }
+
+  return renumbered;
+}
+
+nsresult
+nsContainerFrame::AttributeChanged(int32_t         aNameSpaceID,
+                                   nsIAtom*        aAttribute,
+                                   int32_t         aModType)
+{
+  nsresult rv = nsSplittableFrame::AttributeChanged(aNameSpaceID,
+                                                    aAttribute, aModType);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  if (nsGkAtoms::start == aAttribute ||
+      (nsGkAtoms::reversed == aAttribute &&
+       mContent->IsHTMLElement(nsGkAtoms::ol))) {
+
+    // XXX Not sure if this is necessary anymore
+    if (RenumberList()) {
+      PresContext()->PresShell()->
+        FrameNeedsReflow(this, nsIPresShell::eStyleChange,
+                         NS_FRAME_HAS_DIRTY_CHILDREN);
+    }
+  }
+  return rv;
 }
 
 nsOverflowContinuationTracker::nsOverflowContinuationTracker(nsContainerFrame* aFrame,

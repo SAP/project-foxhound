@@ -47,7 +47,7 @@ public:
   /**
    * Create a SharedBufferManagerParent but do not open the link
    */
-  SharedBufferManagerParent(Transport* aTransport, ProcessId aOwner, base::Thread* aThread);
+  SharedBufferManagerParent(ProcessId aOwner, base::Thread* aThread);
   virtual ~SharedBufferManagerParent();
 
   /**
@@ -63,11 +63,6 @@ public:
    */
   static void DropGrallocBuffer(ProcessId id, mozilla::layers::SurfaceDescriptor aDesc);
 
-  // Overriden from IToplevelProtocol
-  IToplevelProtocol*
-  CloneToplevel(const InfallibleTArray<ProtocolFdMapping>& aFds,
-                base::ProcessHandle aPeerProcess,
-                mozilla::ipc::ProtocolCloneContext* aCtx) override;
   MessageLoop* GetMessageLoop();
 
 protected:
@@ -101,7 +96,6 @@ protected:
   std::map<int64_t, android::sp<android::GraphicBuffer> > mBuffers;
 #endif
   
-  Transport* mTransport;
   base::ProcessId mOwner;
   base::Thread* mThread;
   bool mDestroyed;

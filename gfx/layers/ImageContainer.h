@@ -59,7 +59,7 @@ public:
   class SurfaceReleaser : public mozilla::Runnable {
   public:
     explicit SurfaceReleaser(RawRef aRef) : mRef(aRef) {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       mRef->Release();
       return NS_OK;
     }
@@ -97,7 +97,7 @@ public:
   class SurfaceReleaser : public mozilla::Runnable {
   public:
     explicit SurfaceReleaser(RawRef aRef) : mRef(aRef) {}
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
       mRef->Release();
       return NS_OK;
     }
@@ -163,6 +163,7 @@ protected:
 };
 
 /* Forward declarations for Image derivatives. */
+class GLImage;
 class EGLImageImage;
 class SharedRGBImage;
 #ifdef MOZ_WIDGET_ANDROID
@@ -230,6 +231,7 @@ public:
 
   /* Access to derived classes. */
   virtual EGLImageImage* AsEGLImageImage() { return nullptr; }
+  virtual GLImage* AsGLImage() { return nullptr; }
 #ifdef MOZ_WIDGET_ANDROID
   virtual SurfaceTextureImage* AsSurfaceTextureImage() { return nullptr; }
 #endif
@@ -280,7 +282,7 @@ public:
   void RecycleBuffer(mozilla::UniquePtr<uint8_t[]> aBuffer, uint32_t aSize);
   // Returns a recycled buffer of the right size, or allocates a new buffer.
   mozilla::UniquePtr<uint8_t[]> GetBuffer(uint32_t aSize);
-
+  virtual void ClearRecycledBuffers();
 private:
   typedef mozilla::Mutex Mutex;
 
@@ -352,14 +354,27 @@ protected:
  * updates the shared state to point to the new image and the old image
  * is immediately released (not true in Normal or Asynchronous modes).
  */
-class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
+class ImageContainer final : public SupportsWeakPtr<ImageContainer>
+{
+  friend class ImageContainerChild;
+
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainer)
+
 public:
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(ImageContainer)
 
   enum Mode { SYNCHRONOUS = 0x0, ASYNCHRONOUS = 0x01 };
 
+  static const uint64_t sInvalidAsyncContainerId = 0;
+
   explicit ImageContainer(ImageContainer::Mode flag = SYNCHRONOUS);
+
+  /**
+   * Create ImageContainer just to hold another ASYNCHRONOUS ImageContainer's
+   * async container ID.
+   * @param aAsyncContainerID async container ID for which we are a proxy
+   */
+  explicit ImageContainer(uint64_t aAsyncContainerID);
 
   typedef uint32_t FrameID;
   typedef uint32_t ProducerID;
@@ -417,6 +432,12 @@ public:
    * Clear all images. Let ImageClient release all TextureClients.
    */
   void ClearAllImages();
+
+  /**
+   * Clear any resources that are not immediately necessary. This may be called
+   * in low-memory conditions.
+   */
+  void ClearCachedResources();
 
   /**
    * Clear the current images.
@@ -554,18 +575,11 @@ public:
   }
 
   PImageContainerChild* GetPImageContainerChild();
-  static void NotifyComposite(const ImageCompositeNotification& aNotification);
 
   /**
    * Main thread only.
    */
   static ProducerID AllocateProducerID();
-
-  /// ImageBridgeChild thread only.
-  static void AsyncDestroyActor(PImageContainerChild* aActor);
-
-  /// ImageBridgeChild thread only.
-  static void DeallocActor(PImageContainerChild* aActor);
 
 private:
   typedef mozilla::ReentrantMonitor ReentrantMonitor;
@@ -619,7 +633,9 @@ private:
   // In this case the ImageContainer is perfectly usable, but it will forward
   // frames to the compositor through transactions in the main thread rather than
   // asynchronusly using the ImageBridge IPDL protocol.
-  ImageClient* mImageClient;
+  RefPtr<ImageClient> mImageClient;
+
+  uint64_t mAsyncContainerID;
 
   nsTArray<FrameID> mFrameIDsNotYetComposited;
   // ProducerID for last current image(s), including the frames in
@@ -628,7 +644,7 @@ private:
 
   // Object must be released on the ImageBridge thread. Field is immutable
   // after creation of the ImageContainer.
-  ImageContainerChild* mIPDLChild;
+  RefPtr<ImageContainerChild> mIPDLChild;
 
   static mozilla::Atomic<uint32_t> sGenerationCounter;
 };

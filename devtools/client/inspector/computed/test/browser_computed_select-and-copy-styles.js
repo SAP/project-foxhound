@@ -6,9 +6,7 @@
 
 // Tests that properties can be selected and copied from the computed view.
 
-XPCOMUtils.defineLazyGetter(this, "osString", function () {
-  return Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime).OS;
-});
+const osString = Services.appinfo.OS;
 
 const TEST_URI = `
   <style type="text/css">
@@ -64,7 +62,7 @@ function* checkCopySelection(view) {
                         "font-variant-caps: small-caps;[\\r\\n]*";
 
   try {
-    yield waitForClipboard(() => fireCopyEvent(props[0]),
+    yield waitForClipboardPromise(() => fireCopyEvent(props[0]),
                            () => checkClipboardData(expectedPattern));
   } catch (e) {
     failedClipboard(expectedPattern);
@@ -86,7 +84,7 @@ function* checkSelectAll(view) {
                         "font-variant-caps: small-caps;[\\r\\n]*";
 
   try {
-    yield waitForClipboard(() => fireCopyEvent(prop),
+    yield waitForClipboardPromise(() => fireCopyEvent(prop),
                            () => checkClipboardData(expectedPattern));
   } catch (e) {
     failedClipboard(expectedPattern);

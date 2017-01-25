@@ -5,6 +5,7 @@
   <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
   <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="chrome_head.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
 </head>
@@ -22,7 +23,7 @@ add_task(function* testEmptySchema() {
   }
 
   let extension = ExtensionTestUtils.loadExtension({
-    background: `(${background})()`,
+    background,
     manifest: {
       permissions: ["storage"],
     },
@@ -45,7 +46,7 @@ add_task(function* testUnknownProperties() {
       unknown_property: {},
     },
 
-    background: `(${background})()`,
+    background,
   });
 
   let messages = [

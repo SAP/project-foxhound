@@ -5,7 +5,7 @@
  * Test that we get "GarbageCollection" markers.
  */
 
-const { PerformanceFront } = require("devtools/server/actors/performance");
+const { PerformanceFront } = require("devtools/shared/fronts/performance");
 const MARKER_NAME = "GarbageCollection";
 
 add_task(function* () {
@@ -45,6 +45,6 @@ add_task(function* () {
 
   is(ordered, true, "All GC and non-GC markers are in order by start time.");
 
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
 });

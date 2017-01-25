@@ -8,6 +8,7 @@
 //
 
 #include "angle_gl.h"
+#include "compiler/translator/Compiler.h"
 #include "gtest/gtest.h"
 #include "GLSLANG/ShaderLang.h"
 
@@ -49,7 +50,7 @@ TEST(ShaderVariableTest, FindInfoByMappedName)
         uni.fields.push_back(a);
     }
 
-    const ShaderVariable *leafVar = NULL;
+    const ShaderVariable *leafVar = nullptr;
     std::string originalFullName;
 
     std::string mappedFullName = "wrongName";
@@ -228,10 +229,10 @@ TEST(ShaderVariableTest, IsSameVaryingWithDifferentInvariance)
 TEST(ShaderVariableTest, InvariantDoubleDeleteBug)
 {
     ShBuiltInResources resources;
-    ShInitBuiltInResources(&resources);
+    sh::InitBuiltInResources(&resources);
 
-    ShHandle compiler = ShConstructCompiler(GL_VERTEX_SHADER, SH_GLES2_SPEC,
-                                            SH_GLSL_COMPATIBILITY_OUTPUT, &resources);
+    ShHandle compiler = sh::ConstructCompiler(GL_VERTEX_SHADER, SH_GLES2_SPEC,
+                                              SH_GLSL_COMPATIBILITY_OUTPUT, &resources);
     EXPECT_NE(static_cast<ShHandle>(0), compiler);
 
     const char *program[] =
@@ -245,9 +246,176 @@ TEST(ShaderVariableTest, InvariantDoubleDeleteBug)
         "}"
     };
 
-    EXPECT_TRUE(ShCompile(compiler, program, 1, SH_OBJECT_CODE));
-    EXPECT_TRUE(ShCompile(compiler, program, 1, SH_OBJECT_CODE));
-    ShDestruct(compiler);
+    EXPECT_TRUE(sh::Compile(compiler, program, 1, SH_OBJECT_CODE));
+    EXPECT_TRUE(sh::Compile(compiler, program, 1, SH_OBJECT_CODE));
+    sh::Destruct(compiler);
+}
+
+TEST(ShaderVariableTest, IllegalInvariantVarying)
+{
+    ShBuiltInResources resources;
+    sh::InitBuiltInResources(&resources);
+
+    ShHandle compiler = sh::ConstructCompiler(GL_VERTEX_SHADER, SH_GLES2_SPEC,
+                                              SH_GLSL_COMPATIBILITY_OUTPUT, &resources);
+    EXPECT_NE(static_cast<ShHandle>(0), compiler);
+
+    const char *program1[] =
+    {
+        "void foo() {\n"
+        "  vec4 v;\n"
+        "}\n"
+        "varying vec4 v_varying;\n"
+        "invariant v_varying;\n"
+        "void main() {\n"
+        "  foo();\n"
+        "  gl_Position = v_varying;\n"
+        "}"
+    };
+    const char *program2[] =
+    {
+        "varying vec4 v_varying;\n"
+        "void foo() {\n"
+        "  invariant v_varying;\n"
+        "}\n"
+        "void main() {\n"
+        "  foo();\n"
+        "  gl_Position = v_varying;\n"
+        "}"
+    };
+
+    EXPECT_TRUE(sh::Compile(compiler, program1, 1, SH_VARIABLES));
+    EXPECT_FALSE(sh::Compile(compiler, program2, 1, SH_VARIABLES));
+}
+
+TEST(ShaderVariableTest, InvariantLeakAcrossShaders)
+{
+    ShBuiltInResources resources;
+    sh::InitBuiltInResources(&resources);
+
+    ShHandle compiler = sh::ConstructCompiler(GL_VERTEX_SHADER, SH_GLES2_SPEC,
+                                              SH_GLSL_COMPATIBILITY_OUTPUT, &resources);
+    EXPECT_NE(static_cast<ShHandle>(0), compiler);
+
+    const char *program1[] =
+    {
+        "varying vec4 v_varying;\n"
+        "invariant v_varying;\n"
+        "void main() {\n"
+        "  gl_Position = v_varying;\n"
+        "}"
+    };
+    const char *program2[] =
+    {
+        "varying vec4 v_varying;\n"
+        "void main() {\n"
+        "  gl_Position = v_varying;\n"
+        "}"
+    };
+
+    EXPECT_TRUE(sh::Compile(compiler, program1, 1, SH_VARIABLES));
+    const std::vector<sh::Varying> *varyings = sh::GetVaryings(compiler);
+    for (const sh::Varying &varying : *varyings)
+    {
+        if (varying.name == "v_varying")
+            EXPECT_TRUE(varying.isInvariant);
+    }
+    EXPECT_TRUE(sh::Compile(compiler, program2, 1, SH_VARIABLES));
+    varyings = sh::GetVaryings(compiler);
+    for (const sh::Varying &varying : *varyings)
+    {
+        if (varying.name == "v_varying")
+            EXPECT_FALSE(varying.isInvariant);
+    }
+}
+
+TEST(ShaderVariableTest, GlobalInvariantLeakAcrossShaders)
+{
+    ShBuiltInResources resources;
+    sh::InitBuiltInResources(&resources);
+
+    ShHandle compiler = sh::ConstructCompiler(GL_VERTEX_SHADER, SH_GLES2_SPEC,
+                                              SH_GLSL_COMPATIBILITY_OUTPUT, &resources);
+    EXPECT_NE(static_cast<ShHandle>(0), compiler);
+
+    const char *program1[] =
+    {
+        "#pragma STDGL invariant(all)\n"
+        "varying vec4 v_varying;\n"
+        "void main() {\n"
+        "  gl_Position = v_varying;\n"
+        "}"
+    };
+    const char *program2[] =
+    {
+        "varying vec4 v_varying;\n"
+        "void main() {\n"
+        "  gl_Position = v_varying;\n"
+        "}"
+    };
+
+    EXPECT_TRUE(sh::Compile(compiler, program1, 1, SH_VARIABLES));
+    const std::vector<sh::Varying> *varyings = sh::GetVaryings(compiler);
+    for (const sh::Varying &varying : *varyings)
+    {
+        if (varying.name == "v_varying")
+            EXPECT_TRUE(varying.isInvariant);
+    }
+    EXPECT_TRUE(sh::Compile(compiler, program2, 1, SH_VARIABLES));
+    varyings = sh::GetVaryings(compiler);
+    for (const sh::Varying &varying : *varyings)
+    {
+        if (varying.name == "v_varying")
+            EXPECT_FALSE(varying.isInvariant);
+    }
+}
+
+TEST(ShaderVariableTest, BuiltinInvariantVarying)
+{
+
+    ShBuiltInResources resources;
+    sh::InitBuiltInResources(&resources);
+
+    ShHandle compiler = sh::ConstructCompiler(GL_VERTEX_SHADER, SH_GLES2_SPEC,
+                                              SH_GLSL_COMPATIBILITY_OUTPUT, &resources);
+    EXPECT_NE(static_cast<ShHandle>(0), compiler);
+
+    const char *program1[] =
+    {
+        "invariant gl_Position;\n"
+        "void main() {\n"
+        "  gl_Position = vec4(0, 0, 0, 0);\n"
+        "}"
+    };
+    const char *program2[] =
+    {
+        "void main() {\n"
+        "  gl_Position = vec4(0, 0, 0, 0);\n"
+        "}"
+    };
+    const char *program3[] =
+    {
+        "void main() {\n"
+        "  invariant gl_Position;\n"
+        "  gl_Position = vec4(0, 0, 0, 0);\n"
+        "}"
+    };
+
+    EXPECT_TRUE(sh::Compile(compiler, program1, 1, SH_VARIABLES));
+    const std::vector<sh::Varying> *varyings = sh::GetVaryings(compiler);
+    for (const sh::Varying &varying : *varyings)
+    {
+        if (varying.name == "gl_Position")
+            EXPECT_TRUE(varying.isInvariant);
+    }
+    EXPECT_TRUE(sh::Compile(compiler, program2, 1, SH_VARIABLES));
+    varyings = sh::GetVaryings(compiler);
+    for (const sh::Varying &varying : *varyings)
+    {
+        if (varying.name == "gl_Position")
+            EXPECT_FALSE(varying.isInvariant);
+    }
+    EXPECT_FALSE(sh::Compile(compiler, program3, 1, SH_VARIABLES));
 }
 
 }  // namespace sh

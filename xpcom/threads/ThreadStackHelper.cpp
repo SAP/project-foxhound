@@ -20,7 +20,7 @@
 #include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/MemoryChecking.h"
-#include "mozilla/Snprintf.h"
+#include "mozilla/Sprintf.h"
 
 #ifdef __GNUC__
 # pragma GCC diagnostic push
@@ -247,8 +247,15 @@ ThreadStackHelper::GetStack(Stack& aStack)
     return;
   }
 
-  FillStackBuffer();
-  FillThreadContext();
+  // SuspendThread is asynchronous, so the thread may still be running. Use
+  // GetThreadContext to ensure it's really suspended.
+  // See https://blogs.msdn.microsoft.com/oldnewthing/20150205-00/?p=44743.
+  CONTEXT context;
+  context.ContextFlags = CONTEXT_CONTROL;
+  if (::GetThreadContext(mThreadID, &context)) {
+    FillStackBuffer();
+    FillThreadContext();
+  }
 
   MOZ_ALWAYS_TRUE(::ResumeThread(mThreadID) != DWORD(-1));
 
@@ -427,10 +434,12 @@ ThreadStackHelper::AppendJSEntry(const volatile StackEntry* aEntry,
   // We assume querying the script is safe but we must not manupulate it.
   // Also we must not allocate any memory from heap.
   MOZ_ASSERT(aEntry->isJs());
-  MOZ_ASSERT(aEntry->script());
 
   const char* label;
-  if (IsChromeJSScript(aEntry->script())) {
+  JSScript* script = aEntry->script();
+  if (!script) {
+    label = "(profiling suppressed)";
+  } else if (IsChromeJSScript(aEntry->script())) {
     const char* filename = JS_GetScriptFilename(aEntry->script());
     const unsigned lineno = JS_PCToLineNumber(aEntry->script(), aEntry->pc());
     MOZ_ASSERT(filename);
@@ -464,7 +473,7 @@ ThreadStackHelper::AppendJSEntry(const volatile StackEntry* aEntry,
       }
     }
 
-    size_t len = snprintf_literal(buffer, "%s:%u", basename, lineno);
+    size_t len = SprintfLiteral(buffer, "%s:%u", basename, lineno);
     if (len < sizeof(buffer)) {
       if (mStackToFill->IsSameAsEntry(aPrevLabel, buffer)) {
         return aPrevLabel;

@@ -96,7 +96,9 @@ static const JSClassOps gPrototypeJSClassOps = {
 
 static const JSClass gPrototypeJSClass = {
     "XBL prototype JSClass",
-    JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS |
+    JSCLASS_HAS_PRIVATE |
+    JSCLASS_PRIVATE_IS_NSISUPPORTS |
+    JSCLASS_FOREGROUND_FINALIZE |
     // Our one reserved slot holds the relevant nsXBLPrototypeBinding
     JSCLASS_HAS_RESERVED_SLOTS(1),
     &gPrototypeJSClassOps
@@ -204,10 +206,6 @@ nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElem
   // (2) The children's parent back pointer should not be to this synthetic root
   // but should instead point to the enclosing parent element.
   nsIDocument* doc = aElement->GetUncomposedDoc();
-  ServoStyleSet* servoStyleSet = nullptr;
-  if (nsIPresShell* presShell = aElement->OwnerDoc()->GetShell()) {
-    servoStyleSet = presShell->StyleSet()->GetAsServo();
-  }
   bool allowScripts = AllowScripts();
 
   nsAutoScriptBlocker scriptBlocker;
@@ -238,10 +236,6 @@ nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElem
     if (xuldoc)
       xuldoc->AddSubtreeToDocument(child);
 #endif
-
-    if (servoStyleSet) {
-      servoStyleSet->RestyleSubtree(child);
-    }
   }
 }
 
@@ -406,18 +400,18 @@ nsXBLBinding::GenerateAnonymousContent()
   // Always check the content element for potential attributes.
   // This shorthand hack always happens, even when we didn't
   // build anonymous content.
-  const nsAttrName* attrName;
-  for (uint32_t i = 0; (attrName = content->GetAttrNameAt(i)); ++i) {
-    int32_t namespaceID = attrName->NamespaceID();
+  BorrowedAttrInfo attrInfo;
+  for (uint32_t i = 0; (attrInfo = content->GetAttrInfoAt(i)); ++i) {
+    int32_t namespaceID = attrInfo.mName->NamespaceID();
     // Hold a strong reference here so that the atom doesn't go away during
     // UnsetAttr.
-    nsCOMPtr<nsIAtom> name = attrName->LocalName();
+    nsCOMPtr<nsIAtom> name = attrInfo.mName->LocalName();
 
     if (name != nsGkAtoms::includes) {
       if (!nsContentUtils::HasNonEmptyAttr(mBoundElement, namespaceID, name)) {
         nsAutoString value2;
-        content->GetAttr(namespaceID, name, value2);
-        mBoundElement->SetAttr(namespaceID, name, attrName->GetPrefix(),
+        attrInfo.mValue->ToString(value2);
+        mBoundElement->SetAttr(namespaceID, name, attrInfo.mName->GetPrefix(),
                                value2, false);
       }
     }
@@ -425,6 +419,15 @@ nsXBLBinding::GenerateAnonymousContent()
     // Conserve space by wiping the attributes off the clone.
     if (mContent)
       mContent->UnsetAttr(namespaceID, name, false);
+  }
+
+  // Now that we've finished shuffling the tree around, go ahead and restyle it
+  // since frame construction is about to happen.
+  nsIPresShell* presShell = mBoundElement->OwnerDoc()->GetShell();
+  ServoStyleSet* servoSet = presShell->StyleSet()->GetAsServo();
+  if (servoSet) {
+    mBoundElement->SetHasDirtyDescendantsForServo();
+    servoSet->StyleNewChildren(mBoundElement);
   }
 }
 

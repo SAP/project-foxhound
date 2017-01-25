@@ -51,9 +51,6 @@ HttpServer::Init(int32_t aPort, bool aHttps, HttpServerListener* aListener)
   mHttps = aHttps;
   mListener = aListener;
 
-  nsCOMPtr<nsIPrefBranch> prefService;
-  prefService = do_GetService(NS_PREFSERVICE_CONTRACTID);
-
   if (mHttps) {
     nsCOMPtr<nsILocalCertService> lcs =
       do_CreateInstance("@mozilla.org/security/local-cert-service;1");
@@ -260,11 +257,12 @@ HttpServer::TransportProvider::SetListener(nsIHttpUpgradeListener* aListener)
   return NS_OK;
 }
 
-NS_IMETHODIMP_(PTransportProviderChild*)
-HttpServer::TransportProvider::GetIPCChild()
+NS_IMETHODIMP
+HttpServer::TransportProvider::GetIPCChild(PTransportProviderChild** aChild)
 {
   MOZ_CRASH("Don't call this in parent process");
-  return nullptr;
+  *aChild = nullptr;
+  return NS_OK;
 }
 
 void
@@ -392,7 +390,7 @@ HttpServer::Connection::OnInputStreamReady(nsIAsyncInputStream* aStream)
   return NS_OK;
 }
 
-NS_METHOD
+nsresult
 HttpServer::Connection::ReadSegmentsFunc(nsIInputStream* aIn,
                                          void* aClosure,
                                          const char* aBuffer,
@@ -984,12 +982,12 @@ private:
     }
   ~StreamCopier() {}
 
-  static NS_METHOD FillOutputBufferHelper(nsIOutputStream* aOutStr,
-                                          void* aClosure,
-                                          char* aBuffer,
-                                          uint32_t aOffset,
-                                          uint32_t aCount,
-                                          uint32_t* aCountRead);
+  static nsresult FillOutputBufferHelper(nsIOutputStream* aOutStr,
+                                         void* aClosure,
+                                         char* aBuffer,
+                                         uint32_t aOffset,
+                                         uint32_t aCount,
+                                         uint32_t* aCountRead);
   nsresult FillOutputBuffer(char* aBuffer,
                             uint32_t aCount,
                             uint32_t* aCountRead);
@@ -1019,7 +1017,7 @@ struct WriteState
 
 // This function only exists to enable FillOutputBuffer to be a non-static
 // function where we can use member variables more easily.
-NS_METHOD
+nsresult
 StreamCopier::FillOutputBufferHelper(nsIOutputStream* aOutStr,
                                      void* aClosure,
                                      char* aBuffer,
@@ -1032,7 +1030,7 @@ StreamCopier::FillOutputBufferHelper(nsIOutputStream* aOutStr,
   return ws->sourceRv;
 }
 
-NS_METHOD
+nsresult
 CheckForEOF(nsIInputStream* aIn,
             void* aClosure,
             const char* aBuffer,

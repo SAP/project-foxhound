@@ -12,14 +12,13 @@
 #include "mozilla/TypedEnumBits.h"
 #include "nsBoundingMetrics.h"
 #include "nsChangeHint.h"
-#include "nsAutoPtr.h"
 #include "nsFrameList.h"
 #include "mozilla/layout/FrameChildList.h"
 #include "nsThreadUtils.h"
 #include "nsIPrincipal.h"
 #include "FrameMetrics.h"
 #include "nsIWidget.h"
-#include "nsCSSProperty.h"
+#include "nsCSSPropertyID.h"
 #include "nsStyleCoord.h"
 #include "nsStyleConsts.h"
 #include "nsGkAtoms.h"
@@ -28,7 +27,7 @@
 #include "mozilla/gfx/2D.h"
 #include "Units.h"
 #include "mozilla/ToString.h"
-#include "nsHTMLReflowMetrics.h"
+#include "mozilla/ReflowOutput.h"
 #include "ImageContainer.h"
 #include "gfx2DGlue.h"
 
@@ -347,21 +346,21 @@ public:
 
   /**
    * Given a frame which is the primary frame for an element,
-   * return the frame that has the non-psuedoelement style context for
+   * return the frame that has the non-pseudoelement style context for
    * the content.
-   * This is aPrimaryFrame itself except for tableOuter frames.
+   * This is aPrimaryFrame itself except for tableWrapper frames.
    *
    * Given a non-null input, this will return null if and only if its
-   * argument is a table outer frame that is mid-destruction (and its
+   * argument is a table wrapper frame that is mid-destruction (and its
    * table frame has been destroyed).
    */
   static nsIFrame* GetStyleFrame(nsIFrame* aPrimaryFrame);
 
   /**
    * Given a content node,
-   * return the frame that has the non-psuedoelement style context for
+   * return the frame that has the non-pseudoelement style context for
    * the content.  May return null.
-   * This is aContent->GetPrimaryFrame() except for tableOuter frames.
+   * This is aContent->GetPrimaryFrame() except for tableWrapper frames.
    */
   static nsIFrame* GetStyleFrame(const nsIContent* aContent);
 
@@ -378,7 +377,7 @@ public:
    * IsGeneratedContentFor returns true if aFrame is the outermost
    * frame for generated content of type aPseudoElement for aContent.
    * aFrame *might not* have the aPseudoElement pseudo-style! For example
-   * it might be a table outer frame and the inner table frame might
+   * it might be a table wrapper frame and the inner table frame might
    * have the pseudo-style.
    *
    * @param aContent the content node we're looking at.  If this is
@@ -695,8 +694,9 @@ public:
   static nsIFrame* GetFloatFromPlaceholder(nsIFrame* aPlaceholder);
 
   // Combine aNewBreakType with aOrigBreakType, but limit the break types
-  // to NS_STYLE_CLEAR_LEFT, RIGHT, LEFT_AND_RIGHT.
-  static uint8_t CombineBreakType(uint8_t aOrigBreakType, uint8_t aNewBreakType);
+  // to StyleClear::Left, Right, Both.
+  static mozilla::StyleClear CombineBreakType(mozilla::StyleClear aOrigBreakType,
+                                              mozilla::StyleClear aNewBreakType);
 
   /**
    * Get the coordinates of a given DOM mouse event, relative to a given
@@ -1134,7 +1134,7 @@ public:
   };
   /**
    * Collect all CSS boxes associated with aFrame and its
-   * continuations, "drilling down" through outer table frames and
+   * continuations, "drilling down" through table wrapper frames and
    * some anonymous blocks since they're not real CSS boxes.
    * If aFrame is null, no boxes are returned.
    * SVG frames return a single box, themselves.
@@ -1182,7 +1182,7 @@ public:
   };
   /**
    * Collect all CSS boxes (content, padding, border, or margin) associated
-   * with aFrame and its continuations, "drilling down" through outer table
+   * with aFrame and its continuations, "drilling down" through table wrapper
    * frames and some anonymous blocks since they're not real CSS boxes.
    * The boxes are positioned relative to aRelativeTo (taking scrolling
    * into account) and passed to the callback in frame-tree order.
@@ -1557,7 +1557,7 @@ public:
                                     nsRenderingContext* aRenderingContext);
 
   // Get a suitable foreground color for painting aProperty for aFrame.
-  static nscolor GetColor(nsIFrame* aFrame, nsCSSProperty aProperty);
+  static nscolor GetColor(nsIFrame* aFrame, nsCSSPropertyID aProperty);
 
   // Get a baseline y position in app units that is snapped to device pixels.
   static gfxFloat GetSnappedBaselineY(nsIFrame* aFrame, gfxContext* aContext,
@@ -2237,7 +2237,7 @@ public:
    * animations or transitions for the property.
    */
   static bool HasCurrentAnimationOfProperty(const nsIFrame* aFrame,
-                                            nsCSSProperty aProperty);
+                                            nsCSSPropertyID aProperty);
 
   /**
    * Returns true if the frame has any current CSS transitions.
@@ -2247,12 +2247,12 @@ public:
   static bool HasCurrentTransitions(const nsIFrame* aFrame);
 
   /**
-   * Returns true if the frame has any current animations or transitions
-   * for any of the specified properties.
+   * Returns true if the frame has current or in-effect (i.e. in before phase,
+   * running or filling) animations or transitions for the
+   * property.
    */
-  static bool HasCurrentAnimationsForProperties(const nsIFrame* aFrame,
-                                                const nsCSSProperty* aProperties,
-                                                size_t aPropertyCount);
+  static bool HasRelevantAnimationOfProperty(const nsIFrame* aFrame,
+                                             nsCSSPropertyID aProperty);
 
   /**
    * Checks if off-main-thread animations are enabled.
@@ -2278,12 +2278,6 @@ public:
   static gfxSize ComputeSuitableScaleForAnimation(const nsIFrame* aFrame,
                                                   const nsSize& aVisibleSize,
                                                   const nsSize& aDisplaySize);
-
-  /**
-   * Checks if we should forcibly use nearest pixel filtering for the
-   * background.
-   */
-  static bool UseBackgroundNearestFiltering();
 
   /**
    * Checks whether we want to use the GPU to scale images when
@@ -2426,6 +2420,17 @@ public:
 
   static bool TextCombineUprightDigitsEnabled() {
     return sTextCombineUprightDigitsEnabled;
+  }
+
+  // Stylo (the Servo backend for Gecko's style system) is generally enabled
+  // or disabled at compile-time. However, we provide the additional capability
+  // to disable it dynamically in stylo-enabled builds via a pref.
+  static bool StyloEnabled() {
+#ifdef MOZ_STYLO
+    return sStyloEnabled;
+#else
+    return false;
+#endif
   }
 
   /**
@@ -2731,7 +2736,7 @@ public:
   static bool IsOutlineStyleAutoEnabled();
 
   static void SetBSizeFromFontMetrics(const nsIFrame* aFrame,
-                                      nsHTMLReflowMetrics& aMetrics,
+                                      mozilla::ReflowOutput& aMetrics,
                                       const mozilla::LogicalMargin& aFramePadding,
                                       mozilla::WritingMode aLineWM,
                                       mozilla::WritingMode aFrameWM);
@@ -2847,6 +2852,14 @@ public:
    */
   static CSSPoint GetCumulativeApzCallbackTransform(nsIFrame* aFrame);
 
+  /*
+   * Returns whether the given document supports being rendered with a
+   * Servo-backed style system.  This checks whether Stylo is enabled
+   * globally, that the document is an HTML document, and that it is
+   * being presented in a content docshell.
+   */
+  static bool SupportsServoStyleBackend(nsIDocument* aDocument);
+
 private:
   static uint32_t sFontSizeInflationEmPerLine;
   static uint32_t sFontSizeInflationMinTwips;
@@ -2860,6 +2873,9 @@ private:
   static bool sInterruptibleReflowEnabled;
   static bool sSVGTransformBoxEnabled;
   static bool sTextCombineUprightDigitsEnabled;
+#ifdef MOZ_STYLO
+  static bool sStyloEnabled;
+#endif
 
   /**
    * Helper function for LogTestDataForPaint().

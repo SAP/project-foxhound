@@ -176,7 +176,7 @@ public:
       , mApzResponse(aApzResponse)
     {}
 
-    NS_IMETHOD Run() {
+    NS_IMETHOD Run() override {
         if (gFocusedWindow) {
             gFocusedWindow->DispatchTouchEventForAPZ(mInput, mGuid, mInputBlockId, mApzResponse);
         }
@@ -273,53 +273,14 @@ nsWindow::SynthesizeNativeTouchPoint(uint32_t aPointerId,
         mSynthesizedTouchInput = MakeUnique<MultiTouchInput>();
     }
 
-    ScreenIntPoint pointerScreenPoint = ViewAs<ScreenPixel>(aPoint,
-        PixelCastJustification::LayoutDeviceIsScreenForBounds);
+    // We should probably use a real timestamp here, but this is B2G and
+    // so this probably never even exercised any more.
+    uint32_t time = 0;
+    TimeStamp timestamp = TimeStamp::FromSystemTime(time);
 
-    // We can't dispatch mSynthesizedTouchInput directly because (a) dispatching
-    // it might inadvertently modify it and (b) in the case of touchend or
-    // touchcancel events mSynthesizedTouchInput will hold the touches that are
-    // still down whereas the input dispatched needs to hold the removed
-    // touch(es). We use |inputToDispatch| for this purpose.
-    MultiTouchInput inputToDispatch;
-    inputToDispatch.mInputType = MULTITOUCH_INPUT;
-
-    int32_t index = mSynthesizedTouchInput->IndexOfTouch((int32_t)aPointerId);
-    if (aPointerState == TOUCH_CONTACT) {
-        if (index >= 0) {
-            // found an existing touch point, update it
-            SingleTouchData& point = mSynthesizedTouchInput->mTouches[index];
-            point.mScreenPoint = pointerScreenPoint;
-            point.mRotationAngle = (float)aPointerOrientation;
-            point.mForce = (float)aPointerPressure;
-            inputToDispatch.mType = MultiTouchInput::MULTITOUCH_MOVE;
-        } else {
-            // new touch point, add it
-            mSynthesizedTouchInput->mTouches.AppendElement(SingleTouchData(
-                (int32_t)aPointerId,
-                pointerScreenPoint,
-                ScreenSize(0, 0),
-                (float)aPointerOrientation,
-                (float)aPointerPressure));
-            inputToDispatch.mType = MultiTouchInput::MULTITOUCH_START;
-        }
-        inputToDispatch.mTouches = mSynthesizedTouchInput->mTouches;
-    } else {
-        MOZ_ASSERT(aPointerState == TOUCH_REMOVE || aPointerState == TOUCH_CANCEL);
-        // a touch point is being lifted, so remove it from the stored list
-        if (index >= 0) {
-            mSynthesizedTouchInput->mTouches.RemoveElementAt(index);
-        }
-        inputToDispatch.mType = (aPointerState == TOUCH_REMOVE
-            ? MultiTouchInput::MULTITOUCH_END
-            : MultiTouchInput::MULTITOUCH_CANCEL);
-        inputToDispatch.mTouches.AppendElement(SingleTouchData(
-            (int32_t)aPointerId,
-            pointerScreenPoint,
-            ScreenSize(0, 0),
-            (float)aPointerOrientation,
-            (float)aPointerPressure));
-    }
+    MultiTouchInput inputToDispatch = UpdateSynthesizedTouchState(
+        mSynthesizedTouchInput.get(), time, timestamp, aPointerId, aPointerState,
+        aPoint, aPointerPressure, aPointerOrientation);
 
     // Can't use NewRunnableMethod here because that will pass a const-ref
     // argument to DispatchTouchInputViaAPZ whereas that function takes a
@@ -333,7 +294,7 @@ nsWindow::SynthesizeNativeTouchPoint(uint32_t aPointerId,
     return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsWindow::Create(nsIWidget* aParent,
                  void* aNativeParent,
                  const LayoutDeviceIntRect& aRect,
@@ -373,8 +334,8 @@ nsWindow::Create(nsIWidget* aParent,
     return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWindow::Destroy(void)
+void
+nsWindow::Destroy()
 {
     mOnDestroyCalled = true;
     mScreen->UnregisterWindow(this);
@@ -382,7 +343,6 @@ nsWindow::Destroy(void)
         gFocusedWindow = nullptr;
     }
     nsBaseWidget::OnDestroy();
-    return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -423,14 +383,6 @@ bool
 nsWindow::IsVisible() const
 {
     return mVisible;
-}
-
-NS_IMETHODIMP
-nsWindow::ConstrainPosition(bool aAllowSlop,
-                            int32_t *aX,
-                            int32_t *aY)
-{
-    return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -597,19 +549,14 @@ nsWindow::GetInputContext()
     return mInputContext;
 }
 
-NS_IMETHODIMP
-nsWindow::ReparentNativeWidget(nsIWidget* aNewParent)
-{
-    return NS_OK;
-}
-
-NS_IMETHODIMP
+nsresult
 nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen*)
 {
     if (mWindowType != eWindowType_toplevel) {
         // Ignore fullscreen request for non-toplevel windows.
         NS_WARNING("MakeFullScreen() on a dialog or child widget?");
-        return nsBaseWidget::MakeFullScreen(aFullScreen);
+        nsBaseWidget::InfallibleMakeFullScreen(aFullScreen);
+        return NS_OK;
     }
 
     if (aFullScreen) {
@@ -671,12 +618,8 @@ nsWindow::GetDefaultScaleInternal()
 LayerManager *
 nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
                           LayersBackend aBackendHint,
-                          LayerManagerPersistence aPersistence,
-                          bool* aAllowRetaining)
+                          LayerManagerPersistence aPersistence)
 {
-    if (aAllowRetaining) {
-        *aAllowRetaining = true;
-    }
     if (mLayerManager) {
         // This layer manager might be used for painting outside of DoDraw(), so we need
         // to set the correct rotation on it.

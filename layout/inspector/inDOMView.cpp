@@ -27,7 +27,7 @@
 #include "mozilla/Services.h"
 
 #ifdef ACCESSIBILITY
-#include "nsIAccessibilityService.h"
+#include "nsAccessibilityService.h"
 #endif
 
 using namespace mozilla;
@@ -329,8 +329,7 @@ inDOMView::GetCellProperties(int32_t row, nsITreeColumn* col,
 
 #ifdef ACCESSIBILITY
   if (mShowAccessibleNodes) {
-	  nsCOMPtr<nsIAccessibilityService> accService =
-        services::GetAccessibilityService();
+    nsAccessibilityService* accService = GetOrCreateAccService();
     NS_ENSURE_TRUE(accService, NS_ERROR_FAILURE);
 
     if (accService->HasAccessible(node->node))
@@ -1262,7 +1261,7 @@ inDOMView::AppendKidsToArray(nsIDOMNodeList* aKids,
         }
       }
 
-      aArray.AppendObject(kid);
+      aArray.AppendElement(kid.forget());
     }
   }
 
@@ -1278,7 +1277,7 @@ inDOMView::AppendAttrsToArray(nsIDOMMozNamedAttrMap* aAttributes,
   nsCOMPtr<nsIDOMAttr> attribute;
   for (uint32_t i = 0; i < l; ++i) {
     aAttributes->Item(i, getter_AddRefs(attribute));
-    aArray.AppendObject(attribute);
+    aArray.AppendElement(attribute.forget());
   }
   return NS_OK;
 }

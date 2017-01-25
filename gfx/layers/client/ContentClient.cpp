@@ -10,7 +10,6 @@
 #include "gfxEnv.h"                     // for gfxEnv
 #include "gfxPrefs.h"                   // for gfxPrefs
 #include "gfxPoint.h"                   // for IntSize, gfxPoint
-#include "gfxTeeSurface.h"              // for gfxTeeSurface
 #include "gfxUtils.h"                   // for gfxUtils
 #include "ipc/ShadowLayers.h"           // for ShadowLayerForwarder
 #include "mozilla/ArrayUtils.h"         // for ArrayLength
@@ -24,7 +23,6 @@
 #include "mozilla/layers/LayerManagerComposite.h"
 #include "mozilla/layers/LayersMessages.h"  // for ThebesBufferData
 #include "mozilla/layers/LayersTypes.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsDebug.h"                    // for NS_ASSERTION, NS_WARNING, etc
 #include "nsISupportsImpl.h"            // for gfxContext::Release, etc
 #include "nsIWidget.h"                  // for nsIWidget
@@ -81,7 +79,7 @@ ContentClient::CreateContentClient(CompositableForwarder* aForwarder)
   // Xrender support on Linux, as ContentHostDoubleBuffered is not
   // suited for direct uploads to the server.
   if (!gfxPlatformGtk::GetPlatform()->UseImageOffscreenSurfaces() ||
-      !gfxPlatformGtk::GetPlatform()->UseXRender())
+      !gfxVars::UseXRender())
 #endif
   {
     useDoubleBuffering = (LayerManagerComposite::SupportsDirectTexturing() &&
@@ -116,9 +114,10 @@ ContentClient::PrintInfo(std::stringstream& aStream, const char* aPrefix)
 
 // We pass a null pointer for the ContentClient Forwarder argument, which means
 // this client will not have a ContentHost on the other side.
-ContentClientBasic::ContentClientBasic()
+ContentClientBasic::ContentClientBasic(gfx::BackendType aBackend)
   : ContentClient(nullptr)
   , RotatedContentBuffer(ContainsVisibleBounds)
+  , mBackend(aBackend)
 {}
 
 void
@@ -129,9 +128,27 @@ ContentClientBasic::CreateBuffer(ContentType aType,
                                  RefPtr<gfx::DrawTarget>* aWhiteDT)
 {
   MOZ_ASSERT(!(aFlags & BUFFER_COMPONENT_ALPHA));
+  if (aFlags & BUFFER_COMPONENT_ALPHA) {
+    gfxDevCrash(LogReason::AlphaWithBasicClient) << "Asking basic content client for component alpha";
+  }
 
-  *aBlackDT = gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(
-    IntSize(aRect.width, aRect.height),
+  IntSize size(aRect.width, aRect.height);
+#ifdef XP_WIN
+  if (mBackend == BackendType::CAIRO && 
+      (aType == gfxContentType::COLOR || aType == gfxContentType::COLOR_ALPHA)) {
+    RefPtr<gfxASurface> surf =
+      new gfxWindowsSurface(size, aType == gfxContentType::COLOR ? gfxImageFormat::X8R8G8B8_UINT32 :
+                                                                   gfxImageFormat::A8R8G8B8_UINT32);
+    *aBlackDT = gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(surf, size);
+
+    if (*aBlackDT) {
+      return;
+    }
+  }
+#endif
+
+  *aBlackDT = gfxPlatform::GetPlatform()->CreateDrawTargetForBackend(
+    mBackend, size,
     gfxPlatform::GetPlatform()->Optimal2DFormatForContent(aType));
 }
 
@@ -447,14 +464,6 @@ ContentClientDoubleBuffered::Updated(const nsIntRegion& aRegionToDraw,
                                      bool aDidSelfCopy)
 {
   ContentClientRemoteBuffer::Updated(aRegionToDraw, aVisibleRegion, aDidSelfCopy);
-
-  if (mFrontClient) {
-    mFrontClient->RemoveFromCompositable(this);
-  }
-
-  if (mFrontClientOnWhite) {
-    mFrontClientOnWhite->RemoveFromCompositable(this);
-  }
 }
 
 void

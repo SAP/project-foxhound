@@ -8,16 +8,17 @@
 
 #include <inttypes.h>
 
+#include "nsAutoPtr.h"
 #include "VideoUtils.h"
 #include "TimeUnits.h"
 #include "prenv.h"
 
 #ifdef PR_LOGGING
-mozilla::LazyLogModule gADTSDemuxerLog("ADTSDemuxer");
+extern mozilla::LazyLogModule gMediaDemuxerLog;
 #define ADTSLOG(msg, ...) \
-  MOZ_LOG(gADTSDemuxerLog, LogLevel::Debug, ("ADTSDemuxer " msg, ##__VA_ARGS__))
+  MOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, ("ADTSDemuxer " msg, ##__VA_ARGS__))
 #define ADTSLOGV(msg, ...) \
-  MOZ_LOG(gADTSDemuxerLog, LogLevel::Verbose, ("ADTSDemuxer " msg, ##__VA_ARGS__))
+  MOZ_LOG(gMediaDemuxerLog, LogLevel::Verbose, ("ADTSDemuxer " msg, ##__VA_ARGS__))
 #else
 #define ADTSLOG(msg, ...)  do {} while (false)
 #define ADTSLOGV(msg, ...) do {} while (false)
@@ -317,7 +318,7 @@ ADTSDemuxer::Init()
     ADTSLOG("Init() failure: waiting for data");
 
     return InitPromise::CreateAndReject(
-      DemuxerFailureReason::DEMUXER_ERROR, __func__);
+      NS_ERROR_DOM_MEDIA_METADATA_ERR, __func__);
   }
 
   ADTSLOG("Init() successful");
@@ -514,10 +515,7 @@ ADTSTrackDemuxer::GetSamples(int32_t aNumSamples)
           aNumSamples, mOffset, mNumParsedFrames, mFrameIndex, mTotalFrameLen,
           mSamplesPerFrame, mSamplesPerSecond, mChannels);
 
-  if (!aNumSamples) {
-    return SamplesPromise::CreateAndReject(
-      DemuxerFailureReason::DEMUXER_ERROR, __func__);
-  }
+  MOZ_ASSERT(aNumSamples);
 
   RefPtr<SamplesHolder> frames = new SamplesHolder();
 
@@ -539,7 +537,7 @@ ADTSTrackDemuxer::GetSamples(int32_t aNumSamples)
 
   if (frames->mSamples.IsEmpty()) {
     return SamplesPromise::CreateAndReject(
-      DemuxerFailureReason::END_OF_STREAM, __func__);
+      NS_ERROR_DOM_MEDIA_END_OF_STREAM, __func__);
   }
 
   return SamplesPromise::CreateAndResolve(frames, __func__);
@@ -561,7 +559,7 @@ ADTSTrackDemuxer::SkipToNextRandomAccessPoint(media::TimeUnit aTimeThreshold)
 {
   // Will not be called for audio-only resources.
   return SkipAccessPointPromise::CreateAndReject(
-    SkipFailureHolder(DemuxerFailureReason::DEMUXER_ERROR, 0), __func__);
+    SkipFailureHolder(NS_ERROR_DOM_MEDIA_DEMUXER_ERR, 0), __func__);
 }
 
 int64_t
@@ -613,8 +611,7 @@ ADTSTrackDemuxer::Duration(int64_t aNumFrames) const
     return media::TimeUnit::FromMicroseconds(-1);
   }
 
-  const double usPerFrame = USECS_PER_S * mSamplesPerFrame / mSamplesPerSecond;
-  return media::TimeUnit::FromMicroseconds(aNumFrames * usPerFrame);
+  return FramesToTimeUnit(aNumFrames * mSamplesPerFrame, mSamplesPerSecond);
 }
 
 const adts::Frame&

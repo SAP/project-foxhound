@@ -54,13 +54,11 @@ pref("browser.viewport.desktopWidth", 980);
 // the value is divided by 1000 and clamped to hard-coded min/max scale values.
 pref("browser.viewport.defaultZoom", -1);
 
-#ifdef MOZ_ANDROID_APZ
 // Show/Hide scrollbars when active/inactive
 pref("ui.showHideScrollbars", 1);
 pref("ui.useOverlayScrollbars", 1);
 pref("ui.scrollbarFadeBeginDelay", 450);
 pref("ui.scrollbarFadeDuration", 0);
-#endif
 
 /* turn off the caret blink after 10 cycles */
 pref("ui.caretBlinkCount", 10);
@@ -141,7 +139,8 @@ pref("browser.sessionhistory.bfcacheIgnoreMemoryPressure", false);
 pref("browser.sessionstore.resume_session_once", false);
 pref("browser.sessionstore.resume_from_crash", true);
 pref("browser.sessionstore.interval", 10000); // milliseconds
-pref("browser.sessionstore.max_tabs_undo", 5);
+pref("browser.sessionstore.backupInterval", 120000); // milliseconds -> 2 minutes
+pref("browser.sessionstore.max_tabs_undo", 10);
 pref("browser.sessionstore.max_resumed_crashes", 1);
 pref("browser.sessionstore.privacy_level", 0); // saving data: 0 = all, 1 = unencrypted sites, 2 = never
 pref("browser.sessionstore.debug_logging", false);
@@ -195,8 +194,7 @@ pref("dom.forms.number", true);
 /* extension manager and xpinstall */
 pref("xpinstall.whitelist.directRequest", false);
 pref("xpinstall.whitelist.fileRequest", false);
-pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
-pref("xpinstall.whitelist.add", "https://testpilot.firefox.com");
+pref("xpinstall.whitelist.add", "https://addons.mozilla.org,https://testpilot.firefox.com");
 
 pref("xpinstall.signatures.required", true);
 
@@ -401,7 +399,6 @@ pref("javascript.options.mem.gc_high_frequency_low_limit_mb", 10);
 pref("javascript.options.mem.gc_low_frequency_heap_growth", 120);
 pref("javascript.options.mem.high_water_mark", 16);
 pref("javascript.options.mem.gc_allocation_threshold_mb", 3);
-pref("javascript.options.mem.gc_decommit_threshold_mb", 1);
 pref("javascript.options.mem.gc_min_empty_chunk_count", 1);
 pref("javascript.options.mem.gc_max_empty_chunk_count", 2);
 #else
@@ -471,7 +468,10 @@ pref("plugin.default.state", 1);
 // product URLs
 // The breakpad report server to link to in about:crashes
 pref("breakpad.reportURL", "https://crash-stats.mozilla.com/report/index/");
+
 pref("app.support.baseURL", "https://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/");
+pref("app.supportURL", "https://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/mobile-help");
+pref("app.faqURL", "https://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/faq");
 
 // URL for feedback page
 // This should be kept in sync with the "feedback_link" string defined in strings.xml.in
@@ -487,8 +487,6 @@ pref("app.releaseNotesURL", "https://www.mozilla.com/%LOCALE%/mobile/%VERSION%be
 #else
 pref("app.releaseNotesURL", "https://www.mozilla.com/%LOCALE%/mobile/%VERSION%/releasenotes/");
 #endif
-
-pref("app.faqURL", "https://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/faq");
 
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
 pref("security.alternate_certificate_error_page", "certerror");
@@ -561,9 +559,7 @@ pref("ui.dragThresholdY", 25);
 pref("layers.acceleration.disabled", false);
 pref("layers.async-video.enabled", true);
 
-#ifdef MOZ_ANDROID_APZ
-pref("layers.async-pan-zoom.enabled", true);
-// APZ prefs that are different from B2G
+pref("apz.content_response_timeout", 600);
 pref("apz.allow_immediate_handoff", false);
 pref("apz.touch_start_tolerance", "0.06");
 pref("apz.axis_lock.breakout_angle", "0.7853982");    // PI / 4 (45 degrees)
@@ -580,14 +576,9 @@ pref("apz.fling_stopped_threshold", "0.0");
 pref("apz.max_velocity_inches_per_ms", "0.07");
 pref("apz.fling_accel_interval_ms", 750);
 pref("apz.overscroll.enabled", true);
-#endif
 
 pref("layers.progressive-paint", true);
-#ifdef NIGHTLY_BUILD
-pref("layers.low-precision-buffer", false);
-#else
 pref("layers.low-precision-buffer", true);
-#endif
 pref("layers.low-precision-resolution", "0.25");
 pref("layers.low-precision-opacity", "1.0");
 // We want to limit layers for two reasons:
@@ -626,6 +617,8 @@ pref("media.video-queue.default-size", 3);
 // Enable the MediaCodec PlatformDecoderModule by default.
 pref("media.android-media-codec.enabled", true);
 pref("media.android-media-codec.preferred", true);
+// Run decoder in seperate process.
+pref("media.android-remote-codec.enabled", false);
 
 // Enable MSE
 pref("media.mediasource.enabled", true);
@@ -650,9 +643,6 @@ pref("browser.firstrun.show.localepicker", false);
 // $ adb shell setprop log.redirect-stdio true
 // $ adb shell start
 pref("browser.dom.window.dump.enabled", true);
-
-// SimplePush
-pref("services.push.enabled", false);
 
 // controls if we want camera support
 pref("device.camera.enabled", true);
@@ -745,10 +735,6 @@ pref("layout.framevisibility.numscrollportwidths", 1);
 pref("layout.framevisibility.numscrollportheights", 1);
 
 pref("layers.enable-tiles", true);
-#ifdef NIGHTLY_BUILD
-pref("layers.tiles.fade-in.enabled", true);
-pref("layers.tiles.fade-in.duration-ms", 250);
-#endif
 
 // Enable the dynamic toolbar
 pref("browser.chrome.dynamictoolbar", true);
@@ -885,9 +871,6 @@ pref("consoleservice.logcat", false);
 pref("consoleservice.logcat", true);
 #endif
 
-// Enable Cardboard VR on mobile, assuming VR at all is enabled
-pref("dom.vr.cardboard.enabled", true);
-
 #ifndef RELEASE_BUILD
 // Enable VR on mobile, making it enable by default.
 pref("dom.vr.enabled", true);
@@ -903,6 +886,7 @@ pref("dom.push.debug", false);
 // The upstream autopush endpoint must have the Google API key corresponding to
 // the App's sender ID; we bake this assumption directly into the URL.
 pref("dom.push.serverURL", "https://updates.push.services.mozilla.com/v1/gcm/@MOZ_ANDROID_GCM_SENDERID@");
+pref("dom.push.maxRecentMessageIDsPerSubscription", 0);
 
 #ifdef MOZ_ANDROID_GCM
 pref("dom.push.enabled", true);
@@ -921,8 +905,15 @@ pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com
 pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sync/1.5");
 
 // Enable Presentation API
-pref("dom.presentation.enabled", true);
+pref("dom.presentation.enabled", false);
 pref("dom.presentation.discovery.enabled", true);
+pref("dom.presentation.discovery.legacy.enabled", true); // for TV 2.5 backward capability
 
 pref("dom.audiochannel.audioCompeting", true);
 pref("dom.audiochannel.mediaControl", true);
+
+// Space separated list of URLS that are allowed to send objects (instead of
+// only strings) through webchannels. This list is duplicated in browser/app/profile/firefox.js
+pref("webchannel.allowObject.urlWhitelist", "https://accounts.firefox.com https://content.cdn.mozilla.net https://input.mozilla.org https://support.mozilla.org https://install.mozilla.org");
+
+pref("media.openUnsupportedTypeWithExternalApp", true);

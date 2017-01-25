@@ -7,9 +7,10 @@
 
 #include "nsMimeTypes.h"
 #include "mozilla/RefPtr.h"
-#include "nsString.h"
 
+#include "AnimationSurfaceProvider.h"
 #include "Decoder.h"
+#include "IDecodingTask.h"
 #include "nsPNGDecoder.h"
 #include "nsGIFDecoder2.h"
 #include "nsJPEGDecoder.h"
@@ -33,6 +34,8 @@ DecoderFactory::GetDecoderType(const char* aMimeType)
   if (!strcmp(aMimeType, IMAGE_PNG)) {
     type = DecoderType::PNG;
   } else if (!strcmp(aMimeType, IMAGE_X_PNG)) {
+    type = DecoderType::PNG;
+  } else if (!strcmp(aMimeType, IMAGE_APNG)) {
     type = DecoderType::PNG;
 
   // GIF
@@ -104,11 +107,12 @@ DecoderFactory::GetDecoder(DecoderType aType,
   return decoder.forget();
 }
 
-/* static */ already_AddRefed<Decoder>
+/* static */ already_AddRefed<IDecodingTask>
 DecoderFactory::CreateDecoder(DecoderType aType,
-                              RasterImage* aImage,
-                              SourceBuffer* aSourceBuffer,
-                              const Maybe<IntSize>& aTargetSize,
+                              NotNull<RasterImage*> aImage,
+                              NotNull<SourceBuffer*> aSourceBuffer,
+                              const IntSize& aIntrinsicSize,
+                              const IntSize& aOutputSize,
                               DecoderFlags aDecoderFlags,
                               SurfaceFlags aSurfaceFlags,
                               int aSampleSize)
@@ -117,35 +121,49 @@ DecoderFactory::CreateDecoder(DecoderType aType,
     return nullptr;
   }
 
+  // Create an anonymous decoder. Interaction with the SurfaceCache and the
+  // owning RasterImage will be mediated by DecodedSurfaceProvider.
   RefPtr<Decoder> decoder =
-    GetDecoder(aType, aImage, bool(aDecoderFlags & DecoderFlags::IS_REDECODE));
+    GetDecoder(aType, nullptr, bool(aDecoderFlags & DecoderFlags::IS_REDECODE));
   MOZ_ASSERT(decoder, "Should have a decoder now");
 
   // Initialize the decoder.
   decoder->SetMetadataDecode(false);
   decoder->SetIterator(aSourceBuffer->Iterator());
+  decoder->SetOutputSize(aOutputSize);
   decoder->SetDecoderFlags(aDecoderFlags | DecoderFlags::FIRST_FRAME_ONLY);
   decoder->SetSurfaceFlags(aSurfaceFlags);
   decoder->SetSampleSize(aSampleSize);
 
-  // Set a target size for downscale-during-decode if applicable.
-  if (aTargetSize) {
-    DebugOnly<nsresult> rv = decoder->SetTargetSize(*aTargetSize);
-    MOZ_ASSERT(NS_SUCCEEDED(rv), "Bad downscale-during-decode target size?");
-  }
-
-  decoder->Init();
-  if (NS_FAILED(decoder->GetDecoderError())) {
+  if (NS_FAILED(decoder->Init())) {
     return nullptr;
   }
 
-  return decoder.forget();
+  // Create a DecodedSurfaceProvider which will manage the decoding process and
+  // make this decoder's output available in the surface cache.
+  SurfaceKey surfaceKey =
+    RasterSurfaceKey(aOutputSize, aSurfaceFlags, PlaybackType::eStatic);
+  NotNull<RefPtr<DecodedSurfaceProvider>> provider =
+    WrapNotNull(new DecodedSurfaceProvider(aImage,
+                                           surfaceKey,
+                                           WrapNotNull(decoder)));
+
+  // Attempt to insert the surface provider into the surface cache right away so
+  // we won't trigger any more decoders with the same parameters.
+  if (SurfaceCache::Insert(provider) != InsertOutcome::SUCCESS) {
+    return nullptr;
+  }
+
+  // Return the surface provider in its IDecodingTask guise.
+  RefPtr<IDecodingTask> task = provider.get();
+  return task.forget();
 }
 
-/* static */ already_AddRefed<Decoder>
+/* static */ already_AddRefed<IDecodingTask>
 DecoderFactory::CreateAnimationDecoder(DecoderType aType,
-                                       RasterImage* aImage,
-                                       SourceBuffer* aSourceBuffer,
+                                       NotNull<RasterImage*> aImage,
+                                       NotNull<SourceBuffer*> aSourceBuffer,
+                                       const IntSize& aIntrinsicSize,
                                        DecoderFlags aDecoderFlags,
                                        SurfaceFlags aSurfaceFlags)
 {
@@ -156,8 +174,9 @@ DecoderFactory::CreateAnimationDecoder(DecoderType aType,
   MOZ_ASSERT(aType == DecoderType::GIF || aType == DecoderType::PNG,
              "Calling CreateAnimationDecoder for non-animating DecoderType");
 
-  RefPtr<Decoder> decoder =
-    GetDecoder(aType, aImage, /* aIsRedecode = */ true);
+  // Create an anonymous decoder. Interaction with the SurfaceCache and the
+  // owning RasterImage will be mediated by AnimationSurfaceProvider.
+  RefPtr<Decoder> decoder = GetDecoder(aType, nullptr, /* aIsRedecode = */ true);
   MOZ_ASSERT(decoder, "Should have a decoder now");
 
   // Initialize the decoder.
@@ -166,18 +185,34 @@ DecoderFactory::CreateAnimationDecoder(DecoderType aType,
   decoder->SetDecoderFlags(aDecoderFlags | DecoderFlags::IS_REDECODE);
   decoder->SetSurfaceFlags(aSurfaceFlags);
 
-  decoder->Init();
-  if (NS_FAILED(decoder->GetDecoderError())) {
+  if (NS_FAILED(decoder->Init())) {
     return nullptr;
   }
 
-  return decoder.forget();
+  // Create an AnimationSurfaceProvider which will manage the decoding process
+  // and make this decoder's output available in the surface cache.
+  SurfaceKey surfaceKey =
+    RasterSurfaceKey(aIntrinsicSize, aSurfaceFlags, PlaybackType::eAnimated);
+  NotNull<RefPtr<AnimationSurfaceProvider>> provider =
+    WrapNotNull(new AnimationSurfaceProvider(aImage,
+                                             surfaceKey,
+                                             WrapNotNull(decoder)));
+
+  // Attempt to insert the surface provider into the surface cache right away so
+  // we won't trigger any more decoders with the same parameters.
+  if (SurfaceCache::Insert(provider) != InsertOutcome::SUCCESS) {
+    return nullptr;
+  }
+
+  // Return the surface provider in its IDecodingTask guise.
+  RefPtr<IDecodingTask> task = provider.get();
+  return task.forget();
 }
 
-/* static */ already_AddRefed<Decoder>
+/* static */ already_AddRefed<IDecodingTask>
 DecoderFactory::CreateMetadataDecoder(DecoderType aType,
-                                      RasterImage* aImage,
-                                      SourceBuffer* aSourceBuffer,
+                                      NotNull<RasterImage*> aImage,
+                                      NotNull<SourceBuffer*> aSourceBuffer,
                                       int aSampleSize)
 {
   if (aType == DecoderType::UNKNOWN) {
@@ -193,8 +228,50 @@ DecoderFactory::CreateMetadataDecoder(DecoderType aType,
   decoder->SetIterator(aSourceBuffer->Iterator());
   decoder->SetSampleSize(aSampleSize);
 
-  decoder->Init();
-  if (NS_FAILED(decoder->GetDecoderError())) {
+  if (NS_FAILED(decoder->Init())) {
+    return nullptr;
+  }
+
+  RefPtr<IDecodingTask> task = new MetadataDecodingTask(WrapNotNull(decoder));
+  return task.forget();
+}
+
+/* static */ already_AddRefed<Decoder>
+DecoderFactory::CreateDecoderForICOResource(DecoderType aType,
+                                            NotNull<SourceBuffer*> aSourceBuffer,
+                                            NotNull<nsICODecoder*> aICODecoder,
+                                            const Maybe<uint32_t>& aDataOffset
+                                              /* = Nothing() */)
+{
+  // Create the decoder.
+  RefPtr<Decoder> decoder;
+  switch (aType) {
+    case DecoderType::BMP:
+      MOZ_ASSERT(aDataOffset);
+      decoder = new nsBMPDecoder(aICODecoder->GetImageMaybeNull(), *aDataOffset);
+      break;
+
+    case DecoderType::PNG:
+      MOZ_ASSERT(!aDataOffset);
+      decoder = new nsPNGDecoder(aICODecoder->GetImageMaybeNull());
+      break;
+
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid ICO resource decoder type");
+      return nullptr;
+  }
+
+  MOZ_ASSERT(decoder);
+
+  // Initialize the decoder, copying settings from @aICODecoder.
+  MOZ_ASSERT(!aICODecoder->IsMetadataDecode());
+  decoder->SetMetadataDecode(aICODecoder->IsMetadataDecode());
+  decoder->SetIterator(aSourceBuffer->Iterator());
+  decoder->SetOutputSize(aICODecoder->OutputSize());
+  decoder->SetDecoderFlags(aICODecoder->GetDecoderFlags());
+  decoder->SetSurfaceFlags(aICODecoder->GetSurfaceFlags());
+
+  if (NS_FAILED(decoder->Init())) {
     return nullptr;
   }
 
@@ -203,8 +280,8 @@ DecoderFactory::CreateMetadataDecoder(DecoderType aType,
 
 /* static */ already_AddRefed<Decoder>
 DecoderFactory::CreateAnonymousDecoder(DecoderType aType,
-                                       SourceBuffer* aSourceBuffer,
-                                       const Maybe<IntSize>& aTargetSize,
+                                       NotNull<SourceBuffer*> aSourceBuffer,
+                                       const Maybe<IntSize>& aOutputSize,
                                        SurfaceFlags aSurfaceFlags)
 {
   if (aType == DecoderType::UNKNOWN) {
@@ -233,14 +310,12 @@ DecoderFactory::CreateAnonymousDecoder(DecoderType aType,
   decoder->SetDecoderFlags(decoderFlags);
   decoder->SetSurfaceFlags(aSurfaceFlags);
 
-  // Set a target size for downscale-during-decode if applicable.
-  if (aTargetSize) {
-    DebugOnly<nsresult> rv = decoder->SetTargetSize(*aTargetSize);
-    MOZ_ASSERT(NS_SUCCEEDED(rv), "Bad downscale-during-decode target size?");
+  // Set an output size for downscale-during-decode if requested.
+  if (aOutputSize) {
+    decoder->SetOutputSize(*aOutputSize);
   }
 
-  decoder->Init();
-  if (NS_FAILED(decoder->GetDecoderError())) {
+  if (NS_FAILED(decoder->Init())) {
     return nullptr;
   }
 
@@ -249,7 +324,7 @@ DecoderFactory::CreateAnonymousDecoder(DecoderType aType,
 
 /* static */ already_AddRefed<Decoder>
 DecoderFactory::CreateAnonymousMetadataDecoder(DecoderType aType,
-                                               SourceBuffer* aSourceBuffer)
+                                               NotNull<SourceBuffer*> aSourceBuffer)
 {
   if (aType == DecoderType::UNKNOWN) {
     return nullptr;
@@ -264,8 +339,7 @@ DecoderFactory::CreateAnonymousMetadataDecoder(DecoderType aType,
   decoder->SetIterator(aSourceBuffer->Iterator());
   decoder->SetDecoderFlags(DecoderFlags::FIRST_FRAME_ONLY);
 
-  decoder->Init();
-  if (NS_FAILED(decoder->GetDecoderError())) {
+  if (NS_FAILED(decoder->Init())) {
     return nullptr;
   }
 

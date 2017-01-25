@@ -128,6 +128,13 @@ var StarUI = {
             }
             this.panel.hidePopup();
             break;
+          // This case is for catching character-generating keypresses
+          case 0:
+            let accessKey = document.getElementById("key_close");
+            if (eventMatchesKey(aEvent, accessKey)) {
+                this.panel.hidePopup();
+            }
+            break;
         }
         break;
       case "mouseout":
@@ -555,10 +562,11 @@ var PlacesCommandHook = {
     gBrowser.visibleTabs.forEach(tab => {
       let browser = tab.linkedBrowser;
       let uri = browser.currentURI;
+      let title = browser.contentTitle || tab.label;
       let spec = uri.spec;
       if (!tab.pinned && !(spec in uniquePages)) {
         uniquePages[spec] = null;
-        URIs.push({ uri, title: browser.contentTitle });
+        URIs.push({ uri, title });
       }
     });
     return URIs;
@@ -1165,7 +1173,7 @@ var PlacesToolbarHelper = {
   onWidgetUnderflow: function(aNode, aContainer) {
     // The view gets broken by being removed and reinserted by the overflowable
     // toolbar, so we have to force an uninit and reinit.
-    let win = aNode.ownerDocument.defaultView;
+    let win = aNode.ownerGlobal;
     if (aNode.id == "personal-bookmarks" && win == window) {
       this._resetView();
     }
@@ -1395,9 +1403,18 @@ var BookmarkingUI = {
 
     let updatePlacesContextMenu = (shouldHidePrefUI = false) => {
       let prefEnabled = !shouldHidePrefUI && Services.prefs.getBoolPref(this.RECENTLY_BOOKMARKED_PREF);
-      document.getElementById("placesContext_showRecentlyBookmarked").hidden = shouldHidePrefUI || prefEnabled;
-      document.getElementById("placesContext_hideRecentlyBookmarked").hidden = shouldHidePrefUI || !prefEnabled;
-      document.getElementById("placesContext_recentlyBookmarkedSeparator").hidden = shouldHidePrefUI;
+      let showItem = document.getElementById("placesContext_showRecentlyBookmarked");
+      let hideItem = document.getElementById("placesContext_hideRecentlyBookmarked");
+      let separator = document.getElementById("placesContext_recentlyBookmarkedSeparator");
+      showItem.hidden = shouldHidePrefUI || prefEnabled;
+      hideItem.hidden = shouldHidePrefUI || !prefEnabled;
+      separator.hidden = shouldHidePrefUI;
+      if (!shouldHidePrefUI) {
+        // Move to the bottom of the menu.
+        separator.parentNode.appendChild(separator);
+        showItem.parentNode.appendChild(showItem);
+        hideItem.parentNode.appendChild(hideItem);
+      }
     };
 
     let onPlacesContextMenuShowing = event => {
@@ -1632,7 +1649,7 @@ var BookmarkingUI = {
         try {
           PlacesUtils.addLazyBookmarkObserver(this);
           this._hasBookmarksObserver = true;
-        } catch(ex) {
+        } catch (ex) {
           Components.utils.reportError("BookmarkingUI failed adding a bookmarks observer: " + ex);
         }
       }
@@ -1915,7 +1932,7 @@ var BookmarkingUI = {
       gNavigatorBundle.getString("starButtonOverflowedStarred.label");
   },
   onWidgetOverflow: function(aNode, aContainer) {
-    let win = aNode.ownerDocument.defaultView;
+    let win = aNode.ownerGlobal;
     if (aNode.id != this.BOOKMARK_BUTTON_ID || win != window)
       return;
 
@@ -1931,7 +1948,7 @@ var BookmarkingUI = {
   },
 
   onWidgetUnderflow: function(aNode, aContainer) {
-    let win = aNode.ownerDocument.defaultView;
+    let win = aNode.ownerGlobal;
     if (aNode.id != this.BOOKMARK_BUTTON_ID || win != window)
       return;
 

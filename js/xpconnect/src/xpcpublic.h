@@ -123,6 +123,11 @@ AllowContentXBLScope(JSCompartment* c);
 bool
 UseContentXBLScope(JSCompartment* c);
 
+// Clear out the content XBL scope (if any) on the given global.  This will
+// force creation of a new one if one is needed again.
+void
+ClearContentXBLScope(JSObject* global);
+
 bool
 IsInAddonScope(JSObject* obj);
 
@@ -156,6 +161,8 @@ namespace JS {
 struct RuntimeStats;
 
 } // namespace JS
+
+#define XPC_WRAPPER_FLAGS (JSCLASS_HAS_PRIVATE | JSCLASS_FOREGROUND_FINALIZE)
 
 #define XPCONNECT_GLOBAL_FLAGS_WITH_EXTRA_SLOTS(n)                            \
     JSCLASS_DOM_GLOBAL | JSCLASS_HAS_PRIVATE |                                \
@@ -288,7 +295,7 @@ private:
 
     static void FinalizeDOMString(const JSStringFinalizer* fin, char16_t* chars);
 
-    XPCStringConvert();         // not implemented
+    XPCStringConvert() = delete;
 };
 
 class nsIAddonInterposition;
@@ -340,7 +347,7 @@ StringToJsval(JSContext* cx, const nsAString& str, JS::MutableHandleValue rval)
 /**
  * As above, but for mozilla::dom::DOMString.
  */
-MOZ_ALWAYS_INLINE
+inline
 bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
                           JS::MutableHandleValue rval)
 {
@@ -416,11 +423,11 @@ private:
 // (which isn't all of them).
 // @see ZoneStatsExtras
 // @see CompartmentStatsExtras
-nsresult
+void
 ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats& rtStats,
                                  const nsACString& rtPath,
-                                 nsIMemoryReporterCallback* cb,
-                                 nsISupports* closure,
+                                 nsIMemoryReporterCallback* handleReport,
+                                 nsISupports* data,
                                  bool anonymize,
                                  size_t* rtTotal = nullptr);
 
@@ -508,6 +515,9 @@ bool
 SetAddonInterposition(const nsACString& addonId, nsIAddonInterposition* interposition);
 
 bool
+AllowCPOWsInAddon(const nsACString& addonId, bool allow);
+
+bool
 ExtraWarningsForSystemJS();
 
 class ErrorReport {
@@ -557,8 +567,8 @@ class ErrorReport {
 };
 
 void
-DispatchScriptErrorEvent(nsPIDOMWindowInner* win, JSRuntime* rt, xpc::ErrorReport* xpcReport,
-                         JS::Handle<JS::Value> exception);
+DispatchScriptErrorEvent(nsPIDOMWindowInner* win, JS::RootingContext* rootingCx,
+                         xpc::ErrorReport* xpcReport, JS::Handle<JS::Value> exception);
 
 // Get a stack of the sort that can be passed to
 // xpc::ErrorReport::LogToConsoleWithStack from the given exception value.  Can
@@ -581,21 +591,31 @@ FindExceptionStackForConsoleReport(nsPIDOMWindowInner* win,
 extern void
 GetCurrentCompartmentName(JSContext*, nsCString& name);
 
-JSRuntime*
-GetJSRuntime();
-
 void AddGCCallback(xpcGCCallback cb);
 void RemoveGCCallback(xpcGCCallback cb);
+
+inline bool
+AreNonLocalConnectionsDisabled()
+{
+    static int disabledForTest = -1;
+    if (disabledForTest == -1) {
+        char *s = getenv("MOZ_DISABLE_NONLOCAL_CONNECTIONS");
+        if (s) {
+            disabledForTest = *s != '0';
+        } else {
+            disabledForTest = 0;
+        }
+    }
+    return disabledForTest;
+}
 
 inline bool
 IsInAutomation()
 {
     const char* prefName =
       "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer";
-    char *s;
     return mozilla::Preferences::GetBool(prefName) &&
-        (s = getenv("MOZ_DISABLE_NONLOCAL_CONNECTIONS")) &&
-        !!strncmp(s, "0", 1);
+        AreNonLocalConnectionsDisabled();
 }
 
 } // namespace xpc
@@ -608,6 +628,11 @@ namespace dom {
  * chrome or XBL scopes should be exposed.
  */
 bool IsChromeOrXBL(JSContext* cx, JSObject* /* unused */);
+
+/**
+ * Same as IsChromeOrXBL but can be used in worker threads as well.
+ */
+bool ThreadSafeIsChromeOrXBL(JSContext* cx, JSObject* obj);
 
 } // namespace dom
 } // namespace mozilla

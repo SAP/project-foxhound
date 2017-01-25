@@ -5,7 +5,7 @@
  * Test that we get "Styles" markers with correct meta.
  */
 
-const { PerformanceFront } = require("devtools/server/actors/performance");
+const { PerformanceFront } = require("devtools/shared/fronts/performance");
 const MARKER_NAME = "Styles";
 
 add_task(function* () {
@@ -29,6 +29,6 @@ add_task(function* () {
   ok(markers.some(({restyleHint}) => restyleHint != void 0),
     "Some markers have a restyleHint.");
 
-  yield closeDebuggerClient(client);
+  yield client.close();
   gBrowser.removeCurrentTab();
 });

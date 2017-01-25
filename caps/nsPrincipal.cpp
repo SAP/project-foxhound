@@ -99,10 +99,10 @@ nsPrincipal::Init(nsIURI *aCodebase, const PrincipalOriginAttributes& aOriginAtt
   return NS_OK;
 }
 
-void
+nsresult
 nsPrincipal::GetScriptLocation(nsACString &aStr)
 {
-  mCodebase->GetSpec(aStr);
+  return mCodebase->GetSpec(aStr);
 }
 
 /* static */ nsresult
@@ -198,10 +198,6 @@ nsPrincipal::SubsumesInternal(nsIPrincipal* aOther,
     return true;
   }
 
-  if (OriginAttributesRef() != Cast(aOther)->OriginAttributesRef()) {
-    return false;
-  }
-
   // If either the subject or the object has changed its principal by
   // explicitly setting document.domain then the other must also have
   // done so in order to be considered the same origin. This prevents
@@ -220,9 +216,9 @@ nsPrincipal::SubsumesInternal(nsIPrincipal* aOther,
     }
   }
 
-    nsCOMPtr<nsIURI> otherURI;
-    rv = aOther->GetURI(getter_AddRefs(otherURI));
-    NS_ENSURE_SUCCESS(rv, false);
+  nsCOMPtr<nsIURI> otherURI;
+  rv = aOther->GetURI(getter_AddRefs(otherURI));
+  NS_ENSURE_SUCCESS(rv, false);
 
   // Compare codebases.
   return nsScriptSecurityManager::SecurityCompareURIs(mCodebase, otherURI);
@@ -674,7 +670,8 @@ struct OriginComparator
   }
 };
 
-nsExpandedPrincipal::nsExpandedPrincipal(nsTArray<nsCOMPtr <nsIPrincipal> > &aWhiteList)
+nsExpandedPrincipal::nsExpandedPrincipal(nsTArray<nsCOMPtr<nsIPrincipal>> &aWhiteList,
+                                         const PrincipalOriginAttributes& aAttrs)
 {
   // We force the principals to be sorted by origin so that nsExpandedPrincipal
   // origins can have a canonical form.
@@ -682,6 +679,7 @@ nsExpandedPrincipal::nsExpandedPrincipal(nsTArray<nsCOMPtr <nsIPrincipal> > &aWh
   for (size_t i = 0; i < aWhiteList.Length(); ++i) {
     mPrincipals.InsertElementSorted(aWhiteList[i], c);
   }
+  mOriginAttributes = aAttrs;
 }
 
 nsExpandedPrincipal::~nsExpandedPrincipal()
@@ -730,6 +728,9 @@ nsExpandedPrincipal::SubsumesInternal(nsIPrincipal* aOther,
     nsTArray< nsCOMPtr<nsIPrincipal> >* otherList;
     expanded->GetWhiteList(&otherList);
     for (uint32_t i = 0; i < otherList->Length(); ++i){
+      // Use SubsumesInternal rather than Subsumes here, since OriginAttribute
+      // checks are only done between non-expanded sub-principals, and we don't
+      // need to incur the extra virtual call overhead.
       if (!SubsumesInternal((*otherList)[i], aConsideration)) {
         return false;
       }
@@ -787,6 +788,17 @@ nsExpandedPrincipal::GetBaseDomain(nsACString& aBaseDomain)
 }
 
 bool
+nsExpandedPrincipal::AddonHasPermission(const nsAString& aPerm)
+{
+  for (size_t i = 0; i < mPrincipals.Length(); ++i) {
+    if (BasePrincipal::Cast(mPrincipals[i])->AddonHasPermission(aPerm)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool
 nsExpandedPrincipal::IsOnCSSUnprefixingWhitelist()
 {
   // CSS Unprefixing Whitelist is a per-origin thing; doesn't really make sense
@@ -795,7 +807,7 @@ nsExpandedPrincipal::IsOnCSSUnprefixingWhitelist()
 }
 
 
-void
+nsresult
 nsExpandedPrincipal::GetScriptLocation(nsACString& aStr)
 {
   aStr.Assign("[Expanded Principal [");
@@ -805,12 +817,14 @@ nsExpandedPrincipal::GetScriptLocation(nsACString& aStr)
     }
 
     nsAutoCString spec;
-    nsJSPrincipals::get(mPrincipals.ElementAt(i))->GetScriptLocation(spec);
+    nsresult rv =
+      nsJSPrincipals::get(mPrincipals.ElementAt(i))->GetScriptLocation(spec);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     aStr.Append(spec);
-
   }
   aStr.Append("]]");
+  return NS_OK;
 }
 
 //////////////////////////////////////////

@@ -123,7 +123,7 @@ Bootstrap.prototype = {
         manifest: metadata,
         metadata: metadata,
         modules: {
-          "@test/options": {}
+          "@test/options": {},
         },
         noQuit: prefs.get(`extensions.${id}.sdk.test.no-quit`, false)
       });
@@ -133,6 +133,9 @@ Bootstrap.prototype = {
       const require = Require(loader, module);
       const main = command === "test" ? "sdk/test/runner" : null;
       const prefsURI = `${baseURI}defaults/preferences/prefs.js`;
+
+      // Init the 'sdk/webextension' module from the bootstrap addon parameter.
+      require("sdk/webextension").initFromBootstrapAddonParam(addon);
 
       const { startup } = require("sdk/addon/runner");
       startup(reason, {loader, main, prefsURI});
@@ -154,9 +157,19 @@ Bootstrap.prototype = {
 
         setTimeout(() => {
           for (let uri of Object.keys(loader.sandboxes)) {
-            Cu.nukeSandbox(loader.sandboxes[uri]);
+            try {
+              Cu.nukeSandbox(loader.sandboxes[uri]);
+            } catch (e) {
+              // This will throw for shared sandboxes.
+            }
             delete loader.sandboxes[uri];
             delete loader.modules[uri];
+          }
+
+          try {
+            Cu.nukeSandbox(loader.sharedGlobalSandbox);
+          } catch (e) {
+            Cu.reportError(e);
           }
 
           resolve();

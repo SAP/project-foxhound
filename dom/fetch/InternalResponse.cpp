@@ -29,8 +29,6 @@ InternalResponse::InternalResponse(uint16_t aStatus, const nsACString& aStatusTe
 already_AddRefed<InternalResponse>
 InternalResponse::FromIPC(const IPCInternalResponse& aIPCResponse)
 {
-  MOZ_ASSERT(!aIPCResponse.urlList().IsEmpty());
-
   if (aIPCResponse.type() == ResponseType::Error) {
     return InternalResponse::NetworkError();
   }
@@ -87,9 +85,9 @@ InternalResponse::ToIPC<PContentParent>
    PContentParent* aManager,
    UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoStream);
 template void
-InternalResponse::ToIPC<PContentChild>
+InternalResponse::ToIPC<nsIContentChild>
   (IPCInternalResponse* aIPCResponse,
-   PContentChild* aManager,
+   nsIContentChild* aManager,
    UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoStream);
 template void
 InternalResponse::ToIPC<mozilla::ipc::PBackgroundParent>
@@ -109,7 +107,6 @@ InternalResponse::ToIPC(IPCInternalResponse* aIPCResponse,
                         UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoStream)
 {
   MOZ_ASSERT(aIPCResponse);
-  MOZ_ASSERT(!mURLList.IsEmpty());
   aIPCResponse->type() = mType;
   aIPCResponse->urlList() = mURLList;
   aIPCResponse->status() = GetUnfilteredStatus();

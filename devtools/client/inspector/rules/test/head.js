@@ -20,6 +20,8 @@ var {getInplaceEditorForSpan: inplaceEditor} =
 const ROOT_TEST_DIR = getRootDirectory(gTestPath);
 const FRAME_SCRIPT_URL = ROOT_TEST_DIR + "doc_frame_script.js";
 
+const STYLE_INSPECTOR_L10N = new LocalizationHelper("chrome://devtools-shared/locale/styleinspector.properties");
+
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.defaultColorUnit");
 });
@@ -55,7 +57,7 @@ function waitForContentMessage(name) {
 
   let mm = gBrowser.selectedBrowser.messageManager;
 
-  let def = promise.defer();
+  let def = defer();
   mm.addMessageListener(name, function onMessage(msg) {
     mm.removeMessageListener(name, onMessage);
     def.resolve(msg.data);
@@ -175,13 +177,15 @@ var focusEditableField = Task.async(function* (ruleView, editable, xOffset = 1,
  * setting the value of the corresponding css property in the rule-view.
  * Use this function to close the tooltip and make sure the test waits for the
  * ruleview-changed event.
- * @param {Tooltip} tooltip
+ * @param {SwatchBasedEditorTooltip} editorTooltip
  * @param {CSSRuleView} view
  */
-function* hideTooltipAndWaitForRuleViewChanged(tooltip, view) {
+function* hideTooltipAndWaitForRuleViewChanged(editorTooltip, view) {
   let onModified = view.once("ruleview-changed");
-  tooltip.hide();
+  let onHidden = editorTooltip.tooltip.once("hidden");
+  editorTooltip.hide();
   yield onModified;
+  yield onHidden;
 }
 
 /**
@@ -338,9 +342,14 @@ function getRuleViewSelectorHighlighterIcon(view, selectorText) {
  */
 var simulateColorPickerChange = Task.async(function* (ruleView, colorPicker,
     newRgba, expectedChange) {
+  let onComputedStyleChanged;
+  if (expectedChange) {
+    let {selector, name, value} = expectedChange;
+    onComputedStyleChanged = waitForComputedStyleProperty(selector, null, name, value);
+  }
   let onRuleViewChanged = ruleView.once("ruleview-changed");
   info("Getting the spectrum colorpicker object");
-  let spectrum = yield colorPicker.spectrum;
+  let spectrum = colorPicker.spectrum;
   info("Setting the new color");
   spectrum.rgb = newRgba;
   info("Applying the change");
@@ -351,8 +360,7 @@ var simulateColorPickerChange = Task.async(function* (ruleView, colorPicker,
 
   if (expectedChange) {
     info("Waiting for the style to be applied on the page");
-    let {selector, name, value} = expectedChange;
-    yield waitForComputedStyleProperty(selector, null, name, value);
+    yield onComputedStyleChanged;
   }
 });
 
@@ -385,9 +393,9 @@ var openColorPickerAndSelectColor = Task.async(function* (view, ruleIndex,
   let cPicker = view.tooltips.colorPicker;
 
   info("Opening the colorpicker by clicking the color swatch");
-  let onShown = cPicker.tooltip.once("shown");
+  let onColorPickerReady = cPicker.once("ready");
   swatch.click();
-  yield onShown;
+  yield onColorPickerReady;
 
   yield simulateColorPickerChange(view, cPicker, newRgba, expectedChange);
 
@@ -423,9 +431,9 @@ var openCubicBezierAndChangeCoords = Task.async(function* (view, ruleIndex,
   let bezierTooltip = view.tooltips.cubicBezier;
 
   info("Opening the cubicBezier by clicking the swatch");
-  let onShown = bezierTooltip.tooltip.once("shown");
+  let onBezierWidgetReady = bezierTooltip.once("ready");
   swatch.click();
-  yield onShown;
+  yield onBezierWidgetReady;
 
   let widget = yield bezierTooltip.widget;
 
@@ -469,23 +477,6 @@ function getRuleViewLinkByIndex(view, index) {
 function getRuleViewLinkTextByIndex(view, index) {
   let link = getRuleViewLinkByIndex(view, index);
   return link.querySelector(".ruleview-rule-source-label").value;
-}
-
-/**
- * Get the rule editor from the rule-view given its index
- *
- * @param {CssRuleView} view
- *        The instance of the rule-view panel
- * @param {Number} childrenIndex
- *        The children index of the element to get
- * @param {Number} nodeIndex
- *        The child node index of the element to get
- * @return {DOMNode} The rule editor if any at this index
- */
-function getRuleViewRuleEditor(view, childrenIndex, nodeIndex) {
-  return nodeIndex !== undefined ?
-    view.element.children[childrenIndex].childNodes[nodeIndex]._ruleEditor :
-    view.element.children[childrenIndex]._ruleEditor;
 }
 
 /**
@@ -541,6 +532,7 @@ var addProperty = Task.async(function* (view, ruleIndex, name, value,
   // triggers a ruleview-changed event (see bug 1209295).
   let onPreview = view.once("ruleview-changed");
   editor.input.value = value;
+  view.throttle.flush();
   yield onPreview;
 
   let onValueAdded = view.once("ruleview-changed");
@@ -579,6 +571,7 @@ var setProperty = Task.async(function* (view, textProp, value,
   } else {
     EventUtils.sendString(value, view.styleWindow);
   }
+  view.throttle.flush();
   yield onPreview;
 
   let onValueDone = view.once("ruleview-changed");
@@ -780,4 +773,44 @@ function* sendKeysAndWaitForFocus(view, element, keys) {
     EventUtils.sendKey(key, view.styleWindow);
   }
   yield onFocus;
+}
+
+/**
+ * Open the style editor context menu and return all of it's items in a flat array
+ * @param {CssRuleView} view
+ *        The instance of the rule-view panel
+ * @return An array of MenuItems
+ */
+function openStyleContextMenuAndGetAllItems(view, target) {
+  let menu = view._contextmenu._openMenu({target: target});
+
+  // Flatten all menu items into a single array to make searching through it easier
+  let allItems = [].concat.apply([], menu.items.map(function addItem(item) {
+    if (item.submenu) {
+      return addItem(item.submenu.items);
+    }
+    return item;
+  }));
+
+  return allItems;
+}
+
+/**
+ * Wait for a markupmutation event on the inspector that is for a style modification.
+ * @param {InspectorPanel} inspector
+ * @return {Promise}
+ */
+function waitForStyleModification(inspector) {
+  return new Promise(function (resolve) {
+    function checkForStyleModification(name, mutations) {
+      for (let mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "style") {
+          inspector.off("markupmutation", checkForStyleModification);
+          resolve();
+          return;
+        }
+      }
+    }
+    inspector.on("markupmutation", checkForStyleModification);
+  });
 }

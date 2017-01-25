@@ -6,16 +6,18 @@
 
 const { Ci } = require("chrome");
 
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 const EventEmitter = require("devtools/shared/event-emitter");
 const events = require("sdk/event/core");
 const protocol = require("devtools/shared/protocol");
-const { Arg, Option, method, RetVal } = protocol;
+const Services = require("Services");
 const { isWindowIncluded } = require("devtools/shared/layout/utils");
 const { highlighterSpec, customHighlighterSpec } = require("devtools/shared/specs/highlighters");
 const { isXUL, isNodeValid } = require("./highlighters/utils/markup");
 const { SimpleOutlineHighlighter } = require("./highlighters/simple-outline");
 
 const HIGHLIGHTER_PICKED_TIMER = 1000;
+const IS_OSX = Services.appinfo.OS === "Darwin";
 
 /**
  * The registration mechanism for highlighters provide a quick way to
@@ -70,7 +72,7 @@ exports.register = register;
  * The InspectorActor will always return the same instance of
  * HighlighterActor if asked several times and this instance is used in the
  * toolbox to highlighter elements's box-model from the markup-view,
- * layout-view, console, debugger, ... as well as select elements with the
+ * box model view, console, debugger, ... as well as select elements with the
  * pointer (pick).
  *
  * Other types of highlighter actors exist and can be accessed via the
@@ -291,7 +293,7 @@ var HighlighterActor = exports.HighlighterActor = protocol.ActorClassWithSpec(hi
        * LEFT_KEY: wider or parent
        * RIGHT_KEY: narrower or child
        * ENTER/CARRIAGE_RETURN: Picks currentNode
-       * ESC: Cancels picker, picks currentNode
+       * ESC/CTRL+SHIFT+C: Cancels picker, picks currentNode
        */
       switch (event.keyCode) {
         // Wider.
@@ -332,7 +334,13 @@ var HighlighterActor = exports.HighlighterActor = protocol.ActorClassWithSpec(hi
           this.cancelPick();
           events.emit(this._walker, "picker-node-canceled");
           return;
-
+        case Ci.nsIDOMKeyEvent.DOM_VK_C:
+          if ((IS_OSX && event.metaKey && event.altKey) ||
+            (!IS_OSX && event.ctrlKey && event.shiftKey)) {
+            this.cancelPick();
+            events.emit(this._walker, "picker-node-canceled");
+            return;
+          }
         default: return;
       }
 
@@ -572,6 +580,10 @@ HighlighterEnvironment.prototype = {
     return this._win || this._tabActor;
   },
 
+  get isXUL() {
+    return isXUL(this.window);
+  },
+
   get window() {
     if (!this.isInitialized) {
       throw new Error("Initialize HighlighterEnvironment with a tabActor " +
@@ -648,6 +660,10 @@ const { BoxModelHighlighter } = require("./highlighters/box-model");
 register(BoxModelHighlighter);
 exports.BoxModelHighlighter = BoxModelHighlighter;
 
+const { CssGridHighlighter } = require("./highlighters/css-grid");
+register(CssGridHighlighter);
+exports.CssGridHighlighter = CssGridHighlighter;
+
 const { CssTransformHighlighter } = require("./highlighters/css-transform");
 register(CssTransformHighlighter);
 exports.CssTransformHighlighter = CssTransformHighlighter;
@@ -671,3 +687,7 @@ exports.RulersHighlighter = RulersHighlighter;
 const { MeasuringToolHighlighter } = require("./highlighters/measuring-tool");
 register(MeasuringToolHighlighter);
 exports.MeasuringToolHighlighter = MeasuringToolHighlighter;
+
+const { EyeDropper } = require("./highlighters/eye-dropper");
+register(EyeDropper);
+exports.EyeDropper = EyeDropper;

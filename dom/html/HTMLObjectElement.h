@@ -16,6 +16,8 @@
 namespace mozilla {
 namespace dom {
 
+class HTMLFormSubmission;
+
 class HTMLObjectElement final : public nsGenericHTMLFormElement
                               , public nsObjectLoadingContent
                               , public nsIDOMHTMLObjectElement
@@ -46,6 +48,9 @@ public:
   // Element
   virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
 
+  // EventTarget
+  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+
   // nsIDOMHTMLObjectElement
   NS_DECL_NSIDOMHTMLOBJECTELEMENT
 
@@ -70,7 +75,7 @@ public:
   }
 
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(nsFormSubmission *aFormSubmission) override;
+  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission *aFormSubmission) override;
 
   virtual bool IsDisabled() const override { return false; }
 

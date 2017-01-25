@@ -179,6 +179,30 @@ SourceBufferList::GetParentObject() const
   return mMediaSource;
 }
 
+double
+SourceBufferList::HighestStartTime()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  double highestStartTime = 0;
+  for (auto& sourceBuffer : mSourceBuffers) {
+    highestStartTime =
+      std::max(sourceBuffer->HighestStartTime(), highestStartTime);
+  }
+  return highestStartTime;
+}
+
+double
+SourceBufferList::HighestEndTime()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  double highestEndTime = 0;
+  for (auto& sourceBuffer : mSourceBuffers) {
+    highestEndTime =
+      std::max(sourceBuffer->HighestEndTime(), highestEndTime);
+  }
+  return highestEndTime;
+}
+
 JSObject*
 SourceBufferList::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {

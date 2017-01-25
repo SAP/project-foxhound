@@ -27,8 +27,12 @@
 
 #ifdef XP_DARWIN
 #include "ScaledFontMac.h"
+#include "NativeFontResourceMac.h"
 #endif
 
+#ifdef MOZ_WIDGET_GTK
+#include "ScaledFontFontconfig.h"
+#endif
 
 #ifdef XP_DARWIN
 #include "DrawTargetCG.h"
@@ -50,7 +54,6 @@
 
 #include "DrawEventRecorder.h"
 
-#include "Preferences.h"
 #include "Logging.h"
 
 #include "mozilla/CheckedInt.h"
@@ -154,9 +157,8 @@ HasCPUIDBit(unsigned int level, CPUIDRegister reg, unsigned int bit)
 namespace mozilla {
 namespace gfx {
 
-int32_t LoggingPrefs::sGfxLogLevel =
-  PreferenceAccess::RegisterLivePref("gfx.logging.level", &sGfxLogLevel,
-                                     LOG_DEFAULT);
+// In Gecko, this value is managed by gfx.logging.level in gfxPrefs.
+int32_t LoggingPrefs::sGfxLogLevel = LOG_DEFAULT;
 
 #ifdef WIN32
 ID3D11Device *Factory::mD3D11Device;
@@ -265,29 +267,24 @@ Factory::CheckSurfaceSize(const IntSize &sz,
     return false;
   }
 
-  // make sure the surface area doesn't overflow a int32_t
-  CheckedInt<int32_t> tmp = sz.width;
-  tmp *= sz.height;
-  if (!tmp.isValid()) {
-    gfxDebug() << "Surface size too large (would overflow)!";
+#if defined(XP_MACOSX)
+  // CoreGraphics is limited to images < 32K in *height*,
+  // so clamp all surfaces on the Mac to that height
+  if (sz.height > SHRT_MAX) {
+    gfxDebug() << "Surface size too large (exceeds CoreGraphics limit)!";
     return false;
   }
+#endif
 
   // assuming 4 bytes per pixel, make sure the allocation size
   // doesn't overflow a int32_t either
-  CheckedInt<int32_t> stride = sz.width;
-  stride *= 4;
-
-  // When aligning the stride to 16 bytes, it can grow by up to 15 bytes.
-  stride += 16 - 1;
-
-  if (!stride.isValid()) {
+  CheckedInt<int32_t> stride = GetAlignedStride<16>(sz.width, 4);
+  if (!stride.isValid() || stride.value() == 0) {
     gfxDebug() << "Surface size too large (stride overflows int32_t)!";
     return false;
   }
 
-  CheckedInt<int32_t> numBytes = GetAlignedStride<16>(sz.width * 4);
-  numBytes *= sz.height;
+  CheckedInt<int32_t> numBytes = stride * sz.height;
   if (!numBytes.isValid()) {
     gfxDebug() << "Surface size too large (allocation size would overflow int32_t)!";
     return false;
@@ -434,7 +431,7 @@ Factory::CreateDrawTargetForData(BackendType aBackend,
   }
 
   if (!retVal) {
-    gfxCriticalNote << "Failed to create DrawTarget, Type: " << int(aBackend) << " Size: " << aSize << ", Data: " << hexa(aData) << ", Stride: " << aStride;
+    gfxCriticalNote << "Failed to create DrawTarget, Type: " << int(aBackend) << " Size: " << aSize << ", Data: " << hexa((void *)aData) << ", Stride: " << aStride;
   }
 
   return retVal.forget();
@@ -461,6 +458,7 @@ Factory::DoesBackendSupportDataDrawtarget(BackendType aType)
   case BackendType::RECORDING:
   case BackendType::NONE:
   case BackendType::COREGRAPHICS_ACCELERATED:
+  case BackendType::BACKEND_LAST:
     return false;
   case BackendType::CAIRO:
   case BackendType::COREGRAPHICS:
@@ -551,6 +549,8 @@ Factory::CreateNativeFontResource(uint8_t *aData, uint32_t aSize,
         return NativeFontResourceGDI::Create(aData, aSize,
                                              /* aNeedsCairo = */ true);
       }
+#elif XP_DARWIN
+      return NativeFontResourceMac::Create(aData, aSize);
 #else
       gfxWarning() << "Unable to create cairo scaled font from truetype data";
       return nullptr;
@@ -577,6 +577,14 @@ Factory::CreateScaledFontWithCairo(const NativeFont& aNativeFont, Float aSize, c
   return nullptr;
 #endif
 }
+
+#ifdef MOZ_WIDGET_GTK
+already_AddRefed<ScaledFont>
+Factory::CreateScaledFontForFontconfigFont(cairo_scaled_font_t* aScaledFont, FcPattern* aPattern, Float aSize)
+{
+  return MakeAndAddRef<ScaledFontFontconfig>(aScaledFont, aPattern, aSize);
+}
+#endif
 
 already_AddRefed<DrawTarget>
 Factory::CreateDualDrawTarget(DrawTarget *targetA, DrawTarget *targetB)
@@ -700,9 +708,12 @@ already_AddRefed<ScaledFont>
 Factory::CreateScaledFontForDWriteFont(IDWriteFont* aFont,
                                        IDWriteFontFamily* aFontFamily,
                                        IDWriteFontFace* aFontFace,
-                                       float aSize)
+                                       float aSize,
+                                       bool aUseEmbeddedBitmap,
+                                       bool aForceGDIMode)
 {
-  return MakeAndAddRef<ScaledFontDWrite>(aFont, aFontFamily, aFontFace, aSize);
+  return MakeAndAddRef<ScaledFontDWrite>(aFont, aFontFamily, aFontFace,
+                                         aSize, aUseEmbeddedBitmap, aForceGDIMode);
 }
 
 #endif // XP_WIN
@@ -727,23 +738,13 @@ Factory::PurgeAllCaches()
 {
 }
 
-#ifdef USE_SKIA_FREETYPE
-already_AddRefed<GlyphRenderingOptions>
-Factory::CreateCairoGlyphRenderingOptions(FontHinting aHinting, bool aAutoHinting, AntialiasMode aAntialiasMode)
-{
-  RefPtr<GlyphRenderingOptionsCairo> options =
-    new GlyphRenderingOptionsCairo();
-
-  options->SetHinting(aHinting);
-  options->SetAutoHinting(aAutoHinting);
-  options->SetAntialiasMode(aAntialiasMode);
-  return options.forget();
-}
-#endif
-
 already_AddRefed<DrawTarget>
 Factory::CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface, const IntSize& aSize, SurfaceFormat* aFormat)
 {
+  if (!AllowedSurfaceSize(aSize)) {
+    gfxWarning() << "Allowing surface with invalid size (Cairo) " << aSize;
+  }
+
   RefPtr<DrawTarget> retVal;
 
 #ifdef USE_CAIRO
@@ -779,6 +780,11 @@ Factory::CreateSourceSurfaceForCairoSurface(cairo_surface_t* aSurface, const Int
 already_AddRefed<DrawTarget>
 Factory::CreateDrawTargetForCairoCGContext(CGContextRef cg, const IntSize& aSize)
 {
+  if (!AllowedSurfaceSize(aSize)) {
+    gfxCriticalError(LoggerOptionsBasedOnSize(aSize)) << "Failed to allocate a surface due to invalid size (CG) " << aSize;
+    return nullptr;
+  }
+
   RefPtr<DrawTarget> retVal;
 
   RefPtr<DrawTargetCG> newTarget = new DrawTargetCG();
@@ -808,6 +814,9 @@ Factory::CreateWrappingDataSourceSurface(uint8_t *aData,
                                          SourceSurfaceDeallocator aDeallocator /* = nullptr */,
                                          void* aClosure /* = nullptr */)
 {
+  // Just check for negative/zero size instead of the full AllowedSurfaceSize() - since
+  // the data is already allocated we do not need to check for a possible overflow - it
+  // already worked.
   if (aSize.width <= 0 || aSize.height <= 0) {
     return nullptr;
   }
@@ -833,8 +842,12 @@ Factory::CreateDataSourceSurface(const IntSize &aSize,
     return nullptr;
   }
 
+  // Skia doesn't support RGBX, so memset RGBX to 0xFF
+  bool clearSurface = aZero || aFormat == SurfaceFormat::B8G8R8X8;
+  uint8_t clearValue = aFormat == SurfaceFormat::B8G8R8X8 ? 0xFF : 0;
+
   RefPtr<SourceSurfaceAlignedRawData> newSurf = new SourceSurfaceAlignedRawData();
-  if (newSurf->Init(aSize, aFormat, aZero)) {
+  if (newSurf->Init(aSize, aFormat, clearSurface, clearValue)) {
     return newSurf.forget();
   }
 
@@ -848,13 +861,18 @@ Factory::CreateDataSourceSurfaceWithStride(const IntSize &aSize,
                                            int32_t aStride,
                                            bool aZero)
 {
-  if (aStride < aSize.width * BytesPerPixel(aFormat)) {
+  if (!AllowedSurfaceSize(aSize) ||
+      aStride < aSize.width * BytesPerPixel(aFormat)) {
     gfxCriticalError(LoggerOptionsBasedOnSize(aSize)) << "CreateDataSourceSurfaceWithStride failed with bad stride " << aStride << ", " << aSize << ", " << aFormat;
     return nullptr;
   }
 
+  // Skia doesn't support RGBX, so memset RGBX to 0xFF
+  bool clearSurface = aZero || aFormat == SurfaceFormat::B8G8R8X8;
+  uint8_t clearValue = aFormat == SurfaceFormat::B8G8R8X8 ? 0xFF : 0;
+
   RefPtr<SourceSurfaceAlignedRawData> newSurf = new SourceSurfaceAlignedRawData();
-  if (newSurf->InitWithStride(aSize, aFormat, aStride, aZero)) {
+  if (newSurf->Init(aSize, aFormat, clearSurface, clearValue, aStride)) {
     return newSurf.forget();
   }
 

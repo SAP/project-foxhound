@@ -104,8 +104,7 @@ protected:
   virtual PBroadcastChannelChild*
   AllocPBroadcastChannelChild(const PrincipalInfo& aPrincipalInfo,
                               const nsCString& aOrigin,
-                              const nsString& aChannel,
-                              const bool& aPrivateBrowsing) override;
+                              const nsString& aChannel) override;
 
   virtual bool
   DeallocPBroadcastChannelChild(PBroadcastChannelChild* aActor) override;
@@ -141,12 +140,6 @@ protected:
   virtual bool
   DeallocPMessagePortChild(PMessagePortChild* aActor) override;
 
-  virtual PNuwaChild*
-  AllocPNuwaChild() override;
-
-  virtual bool
-  DeallocPNuwaChild(PNuwaChild* aActor) override;
-
   virtual PSendStreamChild*
   AllocPSendStreamChild() override;
 
@@ -173,6 +166,18 @@ protected:
   virtual bool
   DeallocPFileSystemRequestChild(PFileSystemRequestChild*) override;
 
+  // Gamepad API Background IPC
+  virtual PGamepadEventChannelChild*
+  AllocPGamepadEventChannelChild() override;
+
+  virtual bool
+  DeallocPGamepadEventChannelChild(PGamepadEventChannelChild* aActor) override;
+
+  virtual PGamepadTestChannelChild*
+  AllocPGamepadTestChannelChild() override;
+
+  virtual bool
+  DeallocPGamepadTestChannelChild(PGamepadTestChannelChild* aActor) override;
 };
 
 class BackgroundChildImpl::ThreadLocal final

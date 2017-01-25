@@ -342,7 +342,7 @@ status_t GonkBufferQueueProducer::dequeueBuffer(int *outSlot,
     } // Autolock scope
 
     if (returnFlags & BUFFER_NEEDS_REALLOCATION) {
-        ClientIPCAllocator* allocator = ImageBridgeChild::GetSingleton();
+        RefPtr<ClientIPCAllocator> allocator = ImageBridgeChild::GetSingleton();
         usage |= GraphicBuffer::USAGE_HW_TEXTURE;
         GrallocTextureData* texData = GrallocTextureData::Create(IntSize(width,height), format,
                                                                  gfx::BackendType::NONE,
@@ -352,7 +352,7 @@ status_t GonkBufferQueueProducer::dequeueBuffer(int *outSlot,
             return -ENOMEM;
         }
         RefPtr<TextureClient> textureClient = TextureClient::CreateWithData(
-            texData, TextureFlags::DEALLOCATE_CLIENT, allocator);
+            texData, TextureFlags::RECYCLE | TextureFlags::DEALLOCATE_CLIENT, allocator);
 
         sp<GraphicBuffer> graphicBuffer = texData->GetGraphicBuffer();
 
