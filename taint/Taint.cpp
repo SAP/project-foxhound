@@ -83,7 +83,8 @@ TaintFlow::TaintFlow(TaintSource source) : head_(new TaintNode(source)) { }
 
 TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
 {
-    head_->addref();
+    if (head_)
+        head_->addref();
 }
 
 TaintFlow::TaintFlow(TaintFlow&& other) : head_(other.head_)
@@ -94,20 +95,18 @@ TaintFlow::TaintFlow(TaintFlow&& other) : head_(other.head_)
 
 TaintFlow::~TaintFlow()
 {
-    if (head_) {
+    if (head_)
         head_->release();
-    }
 }
 
 TaintFlow& TaintFlow::operator=(const TaintFlow& other)
 {
-    other.head_->addref();
-
-    if (head_) {
+    if (head_)
         head_->release();
-    }
 
     head_ = other.head_;
+    if (head_)
+        head_->addref();
 
     return *this;
 }
