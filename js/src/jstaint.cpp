@@ -1,6 +1,7 @@
 #include "jsapi.h"
 #include "jstaint.h"
 
+#include <codecvt>
 #include <iostream>
 #include <string>
 
@@ -44,7 +45,7 @@ std::u16string js::taintarg(JSContext* cx, int32_t num)
     return taintarg(cx, val);
 }
 
-void js::MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function, const CallArgs& args)
+void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const CallArgs& args)
 {
     if (!function)
         return;
@@ -53,11 +54,25 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function,
     if (function->displayAtom())
         name = StringValue(function->displayAtom());
 
+    std::u16string sourceinfo(u"unknown");
+    if (function->isInterpreted() && function->hasScript()) {
+        RootedScript script(cx, function->existingScript());
+        if (script) {
+            int lineno = script->lineno();
+            ScriptSource* source = script->scriptSource();
+            if (source && source->filename()) {
+                std::string filename(source->filename());
+                std::wstring_convert<std::codecvt_utf8_utf16<char16_t, 0x10ffff, std::little_endian>, char16_t> conv;
+                sourceinfo = conv.from_bytes(filename) + u":" + conv.from_bytes(std::to_string(lineno));
+            }
+        }
+    }
+
     for (unsigned i = 0; i < args.length(); i++) {
         if (args[i].isString()) {
             RootedString arg(cx, args[i].toString());
             if (arg->isTainted())
-                arg->taint().extend(TaintOperation("function call argument", { taintarg(cx, name), taintarg(cx, i) } ));
+                arg->taint().extend(TaintOperation("function call argument", { taintarg(cx, name), sourceinfo, taintarg(cx, i) } ));
         }
     }
 }
