@@ -870,10 +870,14 @@ js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt, int32_t l
         if (!rhs)
             return nullptr;
 
-        return JSRope::new_<CanGC>(cx, lhs, rhs, len);
+        JSString* res = JSRope::new_<CanGC>(cx, lhs, rhs, len);
+        res->setTaint(StringTaint::extend(str->taint(), TaintOperation("substring", { taintarg(cx, beginInt), taintarg(cx, lengthInt) })));
+        return res;
     }
 
-    return NewDependentString(cx, str, begin, len);
+    JSString* res = NewDependentString(cx, str, begin, len);
+    res->setTaint(StringTaint::extend(str->taint(), TaintOperation("substring", { taintarg(cx, beginInt), taintarg(cx, lengthInt) })));
+    return res;
 }
 
 template <typename CharT>

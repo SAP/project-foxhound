@@ -450,7 +450,8 @@ js::InternalCallOrConstruct(JSContext* cx, const CallArgs& args, MaybeConstruct 
     JSFunction* fun = &args.callee().as<JSFunction>();
 
     // TaintFox: mark tainted function call arguments for tracing purposes.
-    MarkTaintedFunctionArguments(cx, fun, args);
+    if (!fun->isSelfHostedOrIntrinsic())
+        MarkTaintedFunctionArguments(cx, fun, args);
 
     if (construct != CONSTRUCT && fun->isClassConstructor()) {
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_CANT_CALL_CLASS_CONSTRUCTOR);
@@ -2940,7 +2941,8 @@ CASE(JSOP_FUNCALL)
             goto error;
 
         // TaintFox: mark tainted function call arguments for tracing purposes.
-        MarkTaintedFunctionArguments(cx, fun, args);
+        if (!fun->isSelfHostedOrIntrinsic())
+            MarkTaintedFunctionArguments(cx, fun, args);
 
         bool createSingleton = ObjectGroup::useSingletonForNewObject(cx, script, REGS.pc);
 

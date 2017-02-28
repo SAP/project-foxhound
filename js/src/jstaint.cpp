@@ -46,30 +46,20 @@ std::u16string js::taintarg(JSContext* cx, int32_t num)
 
 void js::MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function, const CallArgs& args)
 {
-    if(!function)
+    if (!function)
         return;
 
     RootedValue name(cx);
     if (function->displayAtom())
         name = StringValue(function->displayAtom());
 
-    for(unsigned i = 0; i < args.length(); i++) {
+    for (unsigned i = 0; i < args.length(); i++) {
         if (args[i].isString()) {
             RootedString arg(cx, args[i].toString());
             if (arg->isTainted())
                 arg->taint().extend(TaintOperation("function call argument", { taintarg(cx, name), taintarg(cx, i) } ));
         }
     }
-
-    // Disabled for now as it is mostly redundant information
-    // Also this would add operations for the taint getter and setter (str.taint)
-    /*
-    if (args.thisv().isString()) {
-        RootedString thisv(cx, args.thisv().toString());
-        if (thisv->isTainted())
-            thisv->taint().extend(TaintOperation("function call this value", { taintarg(cx, name) }));
-    }
-    */
 }
 
 // Print a message to stdout.
