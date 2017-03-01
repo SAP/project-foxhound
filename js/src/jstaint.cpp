@@ -3,6 +3,8 @@
 
 #include <codecvt>
 #include <iostream>
+#include <locale>
+#include <utility>
 #include <string>
 
 using namespace js;
