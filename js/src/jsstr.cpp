@@ -828,6 +828,8 @@ js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt, int32_t l
 
     uint32_t begin = beginInt;
     uint32_t len = lengthInt;
+    
+    StringTaint newTaint = StringTaint::extend(str->taint().subtaint(begin, begin + len), TaintOperation("substring", { taintarg(cx, begin), taintarg(cx, len) }));
 
     /*
      * Optimization for one level deep ropes.
@@ -871,12 +873,12 @@ js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt, int32_t l
             return nullptr;
 
         JSString* res = JSRope::new_<CanGC>(cx, lhs, rhs, len);
-        res->setTaint(StringTaint::extend(str->taint(), TaintOperation("substring", { taintarg(cx, beginInt), taintarg(cx, lengthInt) })));
+        res->setTaint(newTaint);
         return res;
     }
 
     JSString* res = NewDependentString(cx, str, begin, len);
-    res->setTaint(StringTaint::extend(str->taint(), TaintOperation("substring", { taintarg(cx, beginInt), taintarg(cx, lengthInt) })));
+    res->setTaint(newTaint);
     return res;
 }
 

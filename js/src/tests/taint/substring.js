@@ -4,6 +4,10 @@ function substringTaintTest() {
     var c = randomString(10);
     var str = taint(a) + b + taint(c);
 
+    // Verify that taint ranges are computed correctly
+    assertEq(str.substr(1, 3).taint[0].begin, 0);
+    assertEq(str.substr(1, 3).taint[0].end, 3);
+
     // Verify that inner substring is not tainted
     assertNotTainted(str.substring(a.length, a.length + b.length));
 
