@@ -2723,6 +2723,7 @@ SplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleLinearS
 
     // Step 13.
     size_t index = 0;
+    size_t count = 0;
 
     // Step 14.
     while (index != strLength) {
@@ -2767,6 +2768,9 @@ SplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleLinearS
         if (!sub || !splits.append(StringValue(sub)))
             return nullptr;
 
+        // TaintFox: extend taint flow
+        sub->setTaint(sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) })));
+
         // Step 14.c.ii.5.
         if (splits.length() == limit)
             return NewCopiedArrayTryUseGroup(cx, group, splits.begin(), splits.length());
@@ -2785,6 +2789,9 @@ SplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleLinearS
     if (!sub || !splits.append(StringValue(sub)))
         return nullptr;
 
+    // TaintFox: extend taint flow
+    sub->setTaint(sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) })));
+
     // Step 18.
     return NewCopiedArrayTryUseGroup(cx, group, splits.begin(), splits.length());
 }
@@ -2798,6 +2805,7 @@ CharSplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleObj
         return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
 
     uint32_t resultlen = (limit < strLength ? limit : strLength);
+    size_t count = 0;
 
     AutoValueVector splits(cx);
     if (!splits.reserve(resultlen))
@@ -2808,6 +2816,10 @@ CharSplitHelper(JSContext* cx, HandleLinearString str, uint32_t limit, HandleObj
         JSString* sub = NewDependentString(cx, str, i, 1);
         if (!sub)
             return nullptr;
+
+        // TaintFox: extend taint flow
+        sub->setTaint(sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) })));
+
         splits.infallibleAppend(StringValue(sub));
     }
 

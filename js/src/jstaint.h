@@ -16,8 +16,11 @@
 
 namespace js {
 
+// Converts a raw char pointer into the argument type for a taint operation.
+std::u16string taintarg(JSContext* cx, const char16_t* str);
+
 // Converts a JS string into the argument type for a taint operation.
-std::u16string taintarg(ExclusiveContext* cx, JS::HandleString str);
+std::u16string taintarg(JSContext* cx, JS::HandleString str);
 
 // Stringifies a JS object for use as a taint argument.
 std::u16string taintarg(JSContext* cx, JS::HandleObject obj);

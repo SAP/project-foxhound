@@ -3,23 +3,22 @@ function encodingTest() {
 
     var encodedStr = encodeURI(str);
     assertTainted(encodedStr);
-    assertHasTaintOperation(encodedStr, 'encodeURI');
+    print(JSON.stringify(encodedStr.taint));
+    assertLastTaintOperationEquals(encodedStr, 'encodeURI');
 
     var decodedStr = decodeURI(encodedStr);
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
-    assertHasTaintOperation(encodedStr, 'encodeURI');
-    assertHasTaintOperation(encodedStr, 'decodeURI');
+    assertLastTaintOperationEquals(decodedStr, 'decodeURI');
 
     encodedStr = encodeURIComponent(str);
     assertTainted(encodedStr);
-    assertHasTaintOperation(encodedStr, 'encodeURIComponent');
+    assertLastTaintOperationEquals(encodedStr, 'encodeURIComponent');
 
     decodedStr = decodeURIComponent(encodedStr);
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
-    assertHasTaintOperation(encodedStr, 'encodeURIComponent');
-    assertHasTaintOperation(encodedStr, 'decodeURIComponent');
+    assertLastTaintOperationEquals(decodedStr, 'decodeURIComponent');
 }
 
 runTaintTest(encodingTest);

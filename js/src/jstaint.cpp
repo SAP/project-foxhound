@@ -9,7 +9,12 @@
 
 using namespace js;
 
-std::u16string js::taintarg(ExclusiveContext* cx, HandleString str)
+std::u16string js::taintarg(JSContext* cx, const char16_t* str)
+{
+    return std::u16string(str);
+}
+
+std::u16string js::taintarg(JSContext* cx, HandleString str)
 {
     if (!str)
         return std::u16string();

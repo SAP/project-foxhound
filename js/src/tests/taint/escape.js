@@ -3,13 +3,12 @@ function strEscapeTest() {
 
     var encodedStr = escape(str);
     assertTainted(encodedStr);
-    assertHasTaintOperation(encodedStr, 'escape');
+    assertLastTaintOperationEquals(encodedStr, 'escape');
 
     var decodedStr = unescape(encodedStr);
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
-    assertHasTaintOperation(encodedStr, 'escape');
-    assertHasTaintOperation(encodedStr, 'unescape');
+    assertLastTaintOperationEquals(decodedStr, 'unescape');
 }
 
 runTaintTest(strEscapeTest);

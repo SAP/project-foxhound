@@ -174,7 +174,26 @@ if (typeof assertHasTaintOperation === 'undefined') {
                 }
             }
         }
-        return false;
+        throw Error("String does not contain \"" + opName + "\" as taint operation. Taint: " + JSON.stringify(str.taint));
+    }
+}
+
+if (typeof assertLastTaintOperationEquals === 'undefined') {
+    var assertLastTaintOperationEquals = function(str, opName) {
+        for (var i = 0; i < str.taint.length; i++) {
+            var range = str.taint[i];
+
+            // Quirk: ignore "function call arguments" nodes for now...
+            var index = 0;
+            while (index < range.flow.length && range.flow[index].operation === "function call argument")
+                index++;
+
+            var node = range.flow[index];
+            if (node.operation === opName) {
+                return true;
+            }
+        }
+        throw Error("String does not contain \"" + opName + "\" as last taint operation. Taint: " + JSON.stringify(str.taint));
     }
 }
 
