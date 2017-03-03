@@ -829,7 +829,7 @@ js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt, int32_t l
     uint32_t begin = beginInt;
     uint32_t len = lengthInt;
     
-    StringTaint newTaint = StringTaint::extend(str->taint().subtaint(begin, begin + len), TaintOperation("substring", { taintarg(cx, begin), taintarg(cx, len) }));
+    StringTaint newTaint = StringTaint::extend(str->taint().subtaint(begin, begin + len), TaintOperation("substr", { taintarg(cx, begin), taintarg(cx, len) }));
 
     /*
      * Optimization for one level deep ropes.
