@@ -14,7 +14,7 @@ Browse websites as usual and check stdout for tainted flows. Alternatively insta
 
 ## Building
 
-Choose the appropriate mozconfig by copying "taintfox_mozconfig_[mac|win]" to ".mozconfig".
+Choose the appropriate mozconfig by copying "taintfox_mozconfig\_[mac|win]" to ".mozconfig".
 
 The default build settings should now work fine:
 
@@ -22,7 +22,7 @@ The default build settings should now work fine:
 ./mach build
 ```
 
-For recommended build settings take a look at taintfox_mozconfig:
+For recommended build settings take a look at taintfox\_mozconfig:
 ```bash
 cp taintfox_mozconfig .mozconfig
 ./mach build
@@ -63,4 +63,13 @@ var b = "def";
 var c = a.toUpperCase() + b;
 print(JSON.stringify(c.taint));
 // [{begin:0, end:3, flow:[{operation:"toUpperCase", arguments:[]}, {operation:"Manual taint source", arguments:["abc"]}]}]
+```
+
+## Tests
+
+The test suite can be run as follows, assuming a release build is available:
+
+```bash
+cd js/src
+./tests/jstests.py ../../obj-tf-release/dist/bin/js taint/
 ```

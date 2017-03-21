@@ -828,7 +828,7 @@ js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt, int32_t l
 
     uint32_t begin = beginInt;
     uint32_t len = lengthInt;
-    
+
     StringTaint newTaint = StringTaint::extend(str->taint().subtaint(begin, begin + len), TaintOperation("substr", { taintarg(cx, begin), taintarg(cx, len) }));
 
     /*
@@ -915,8 +915,12 @@ ToLowerCase(JSContext* cx, JSLinearString* str)
         }
 
         // If all characters are lower case, return the input string.
-        if (i == length)
-            return str;
+        if (i == length) {
+            // TaintFox: need to return a new string with updated taintflow
+            JSString* res = NewDependentString(cx, str, 0, length);
+            res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
+            return res;
+        }
 
         newChars = cx->make_pod_array<CharT>(length + 1);
         if (!newChars)
