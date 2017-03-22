@@ -1008,6 +1008,10 @@ js::str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp)
         if (!cx->runtime()->localeCallbacks->localeToLowerCase(cx, str, &result))
             return false;
 
+        // TaintFox: propagate taint and add operation
+        MOZ_ASSERT(result.isString());
+        result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLocaleLowerCase")));
+
         args.rval().set(result);
         return true;
     }
@@ -1186,6 +1190,10 @@ js::str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp)
         RootedValue result(cx);
         if (!cx->runtime()->localeCallbacks->localeToUpperCase(cx, str, &result))
             return false;
+
+        // TaintFox: propagate taint and add operation
+        MOZ_ASSERT(result.isString());
+        result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLocaleUpperCase")));
 
         args.rval().set(result);
         return true;
