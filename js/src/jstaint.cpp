@@ -1,13 +1,18 @@
 #include "jsapi.h"
 #include "jstaint.h"
 
-#include <codecvt>
 #include <iostream>
-#include <locale>
 #include <utility>
 #include <string>
 
 using namespace js;
+
+static std::u16string ascii2utf16(const std::string& str) {
+    std::u16string res;
+    for (auto c : str)
+        res.push_back(static_cast<char16_t>(c));
+    return res;
+}
 
 std::u16string js::taintarg(JSContext* cx, const char16_t* str)
 {
@@ -69,8 +74,7 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
             ScriptSource* source = script->scriptSource();
             if (source && source->filename()) {
                 std::string filename(source->filename());
-                std::wstring_convert<std::codecvt_utf8_utf16<char16_t, 0x10ffff, std::little_endian>, char16_t> conv;
-                sourceinfo = conv.from_bytes(filename) + u":" + conv.from_bytes(std::to_string(lineno));
+                sourceinfo = ascii2utf16(filename) + u":" + ascii2utf16(std::to_string(lineno));
             }
         }
     }
