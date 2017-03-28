@@ -1343,9 +1343,10 @@ js::str_charAt(JSContext* cx, unsigned argc, Value* vp)
     }
 
     // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
-    if (str->isTainted())
+    if (str->isTainted()) {
         str = NewDependentString(cx, str, i, 1);
-    else
+        str->setTaint(StringTaint::extend(str->taint(), TaintOperation("charAt", { taintarg(cx, i) })));
+    } else
         str = cx->staticStrings().getUnitStringForElement(cx, str, i);
 
     if (!str)

@@ -4,6 +4,9 @@ function charAtTest() {
 
     // Basic charAt() test.
     assertTainted(str.charAt(index));
+    assertLastTaintOperationEquals(str.charAt(index), 'charAt');
+    assertLastTaintOperationEquals(str.charAt(), 'charAt');
+    assertLastTaintOperationEquals(str.charAt(index.toString()), 'charAt');
 
     // There are different code paths used depending on the index type.
     assertTainted(str[index]);
