@@ -2288,7 +2288,15 @@ TrimString(JSContext* cx, const CallArgs& args, bool trimLeft, bool trimRight)
         return false;
 
     // TaintFox: Add trim operation to current taint flow.
-    str->setTaint(StringTaint::extend(str->taint(), TaintOperation("trim")));
+    if (trimLeft && trimRight)
+        str->setTaint(StringTaint::extend(str->taint(), TaintOperation("trim")));
+    else if (trimLeft)
+        str->setTaint(StringTaint::extend(str->taint(), TaintOperation("trimLeft")));
+    else if (trimRight)
+        str->setTaint(StringTaint::extend(str->taint(), TaintOperation("trimRight")));
+    else
+        // TODO deadcode?
+        str->setTaint(StringTaint::extend(str->taint(), TaintOperation("trim")));
 
     args.rval().setString(str);
     return true;
