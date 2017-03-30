@@ -1,4 +1,5 @@
-function encodingTest() {
+
+function testEncodingFunctions() {
     var str = randomMultiTaintedString();
 
     var encodedStr = encodeURI(str);
@@ -21,7 +22,19 @@ function encodingTest() {
     assertLastTaintOperationEquals(decodedStr, 'decodeURIComponent');
 }
 
-runTaintTest(encodingTest);
+function testURLDecode() {
+    var str = taint("%41%42%43");
+    var decoded = decodeURI(str);
+    assertFullTainted(decoded);
+    assertEq(decoded.taint.length, 1);
+}
+
+function runEncodingTests() {
+    testEncodingFunctions();
+    testURLDecode();
+}
+
+runTaintTest(runEncodingTests);
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);

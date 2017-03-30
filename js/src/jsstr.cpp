@@ -4066,11 +4066,9 @@ template <typename CharT>
 static DecodeResult
 Decode(StringBuffer &sb, const CharT *chars, size_t length, const bool *reservedSet, const StringTaint& taint)
 {
-    StringTaint newtaint;
-    auto current = taint.begin();
-    size_t ti = 0;      // begin of current output taint range
-
+    size_t ti = 0;          // Index of current taint flow
     for (size_t k = 0; k < length; k++) {
+        ti = k;
         char16_t c = chars[k];
         if (c == '%') {
             size_t start = k;
@@ -4138,20 +4136,10 @@ Decode(StringBuffer &sb, const CharT *chars, size_t length, const bool *reserved
                 return Decode_Failure;
         }
 
-        // TaintFox: Build new taint ranges.
-        if (current != taint.end()) {
-            // Need to use <= and >= here since k can increase by more than 1 per iteration
-            if (k + 1 >= current->end()) {
-                newtaint.append(TaintRange(ti, sb.length(), current->flow()));
-                current++;
-            }
-            if (k + 1 <= current->begin()) {
-                ti = sb.length();
-            }
-        }
+        // TaintFox: Propagate taint into output StringBuffer
+        // TODO this is likely wrong for 32-bit symbols.
+        sb.appendTaintAt(sb.length() - 1, taint.subtaint(ti, ti + 1));
     }
-
-    sb.setTaint(std::move(newtaint));
 
     return Decode_Success;
 }
