@@ -1160,8 +1160,11 @@ template <AllowGC allowGC>
 static JSFlatString*
 NewStringDeflated(ExclusiveContext* cx, const char16_t* s, size_t n)
 {
-    if (JSFlatString* str = TryEmptyOrStaticString(cx, s, n))
-        return str;
+    // TaintFox: disabled for now, causes XPConnect string conversion to
+    // fail wrt taint propagation if this function returns a JSAtom.
+    // TODO
+    //if (JSFlatString* str = TryEmptyOrStaticString(cx, s, n))
+    //    return str;
 
     if (JSInlineString::lengthFits<Latin1Char>(n))
         return NewInlineStringDeflated<allowGC>(cx, mozilla::Range<const char16_t>(s, n));
