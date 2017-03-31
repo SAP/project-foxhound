@@ -2703,14 +2703,15 @@ js::str_replace_string_raw(JSContext* cx, HandleString string, HandleString patt
     if (match < 0)
         return string;
 
-    // TaintFox: add taint operation.
-    // TODO (here and above) we only handle the second argument correctly if it is a string.
-    //RootedString pattern(cx, ArgToRootedString(cx, args, 0));
-    //res->taint().extend(TaintOperation("replace", { taintarg(cx, pattern), taintarg(cx, rdata.repstr) }));
-
+    JSString* result;
     if (dollarIndex != UINT32_MAX)
-        return BuildDollarReplacement(cx, string, repl, dollarIndex, match, patternLength);
-    return BuildFlatReplacement(cx, string, repl, match, patternLength);
+        result = BuildDollarReplacement(cx, string, repl, dollarIndex, match, patternLength);
+    result = BuildFlatReplacement(cx, string, repl, match, patternLength);
+
+    // TaintFox: add 'replace' operation to taint flow.
+    result->taint().extend(TaintOperation("replace", { taintarg(cx, pattern), taintarg(cx, replacement) }));
+
+    return result;
 }
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.

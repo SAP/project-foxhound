@@ -1,32 +1,47 @@
 function strReplaceTest() {
     // Basic replace() test
     var str = taint('asdf');
-    assertFullTainted(str.replace('s', ''));
+    var rep = str.replace('s', '');
+    assertFullTainted(rep);
     str = taint('asdfasdfasdfasdf');
-    assertFullTainted(str.replace('s', ''));
+    rep = str.replace('s', '');
+    assertFullTainted(rep);
 
     // Test replacing with non-tainted characters
     str = taint('asdf');
-    assertRangesTainted(str.replace('s', 'x'), [0, 1], [2, STR_END]);
+    rep = str.replace('s', 'x');
+    assertRangesTainted(rep, [0, 1], [2, STR_END]);
+    assertLastTaintOperationEquals(rep, 'replace');
 
     // Test replacing with tainted characters
     str = taint('asdf');
-    assertFullTainted(str.replace('s', taint('x')));
+    rep = str.replace('s', taint('x'));
+    assertFullTainted(rep);
+    assertLastTaintOperationEquals(rep, 'replace');
 
     // Test "untainting"
     str = 'foo' + taint('bar') + 'baz';
-    assertNotTainted(str.replace('bar', ''));
+    rep = str.replace('bar', '');
+    assertNotTainted(rep);
 
     // Test removal of non-tainted parts
-    assertRangeTainted(str.replace('foo', ''), [0, 3]);
-    assertRangeTainted(str.replace('baz', ''), [3, 6]);
-    assertFullTainted(str.replace('foo', '').replace('baz', ''));
+    rep = str.replace('foo', '');
+    assertRangeTainted(rep, [0, 3]);
+    rep = str.replace('baz', '');
+    assertRangeTainted(rep, [3, 6]);
+    rep = str.replace('foo', '').replace('baz', '');
+    assertFullTainted(rep);
+    // TODO check operation
 
     // Test regex removal
     str = '000' + taint('asdf') + '111';
-    assertRangeTainted(str.replace(/\d+/, ''), [0, 4]);
-    assertFullTainted(str.replace(/\d+/g, ''));
-    assertNotTainted(str.replace(/[a-z]+/, ''));
+    rep = str.replace(/\d+/, '');
+    assertRangeTainted(rep, [0, 4]);
+    rep = str.replace(/\d+/g, '');
+    assertFullTainted(rep);
+    rep = str.replace(/[a-z]+/, '');
+    assertNotTainted(rep);
+    // TODO check operation
 }
 
 runTaintTest(strReplaceTest);
