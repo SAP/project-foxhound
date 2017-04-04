@@ -515,6 +515,9 @@ function String_repeat(count) {
         else
             break;
     }
+
+    AddTaintOperation(T, "repeat");
+
     return T;
 }
 

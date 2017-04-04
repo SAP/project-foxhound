@@ -2187,6 +2187,34 @@ intrinsic_ModuleNamespaceExports(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+// TaintFox: Add taint operation to JSString.
+static bool
+taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 2 && args[0].isString() && args[1].isString());
+
+    RootedString str(cx, args[0].toString());
+    if (!str)
+        return false;
+
+    RootedString opName(cx, args[1].toString());
+    if (!opName)
+        return false;
+
+    char* op_str = JS_EncodeString(cx, opName);
+    if (!op_str)
+        return false;
+
+    // TaintFox: TODO add arguments
+    StringTaint newTaint = StringTaint::extend(
+        str->taint(),
+        TaintOperation(op_str));
+    str->setTaint(newTaint);
+
+    return true;
+}
+
 // The self-hosting global isn't initialized with the normal set of builtins.
 // Instead, individual C++-implemented functions that're required by
 // self-hosted code are defined as global functions. Accessing these
@@ -2563,6 +2591,8 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("NewModuleNamespace", intrinsic_NewModuleNamespace, 2, 0),
     JS_FN("AddModuleNamespaceBinding", intrinsic_AddModuleNamespaceBinding, 4, 0),
     JS_FN("ModuleNamespaceExports", intrinsic_ModuleNamespaceExports, 1, 0),
+
+    JS_FN("AddTaintOperation", taint_addTaintOperation, 2, 0),
 
     JS_FS_END
 };
