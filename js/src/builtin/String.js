@@ -368,7 +368,9 @@ function String_substring(start, end) {
     // While |from| and |to - from| are bounded to the length of |str| and this
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
-    return SubstringKernel(str, from | 0, (to - from) | 0);
+    var ret = SubstringKernel(str, from | 0, (to - from) | 0);
+    AddTaintOperation(ret, "substring");
+    return ret;
 }
 
 function String_static_substring(string, start, end) {
@@ -407,7 +409,9 @@ function String_substr(start, length) {
     // While |intStart| and |resultLength| are bounded to the length of |str|
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
-    return SubstringKernel(str, intStart | 0, resultLength | 0);
+    var ret = SubstringKernel(str, intStart | 0, resultLength | 0);
+    AddTaintOperation(ret, "substr");
+    return ret;
 }
 
 function String_static_substr(string, start, length) {
@@ -444,7 +448,9 @@ function String_slice(start, end) {
     // While |from| and |span| are bounded to the length of |str|
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
-    return SubstringKernel(str, from | 0, span | 0);
+    var ret = SubstringKernel(str, from | 0, span | 0);
+    AddTaintOperation(ret, "slice");
+    return ret;
 }
 
 function String_static_slice(string, start, end) {

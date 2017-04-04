@@ -21,7 +21,7 @@ function substringTaintTest() {
     assertEq(tail.taint.length, 1);
     assertEq(tail.taint[0].begin, 0);
     assertEq(tail.taint[0].end, tail.length);
-    assertLastTaintOperationEquals(tail, "substr");          // Substring is treated similar to substr
+    assertLastTaintOperationEquals(tail, "substring");
 
     // Verify that multi-tainted substrings are handled correctly
     var substring = str.substring(2, str.length - 2);
@@ -36,12 +36,12 @@ function substringTaintTest() {
 
     // Test substr()
     var substr = str.substr(2, str.length - 4);
-    assertLastTaintOperationEquals(substr, "substr");         
+    assertLastTaintOperationEquals(substr, "substr");
     assertEqualTaint(substring, substr);
 
     // Test slice()
     var slice = str.slice(2, str.length - 2);
-    assertLastTaintOperationEquals(slice, "substr");            // Slice is treated similar to substr
+    assertLastTaintOperationEquals(slice, "slice");
     assertEqualTaint(substring, slice);
 }
 
