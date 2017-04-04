@@ -2703,15 +2703,9 @@ js::str_replace_string_raw(JSContext* cx, HandleString string, HandleString patt
     if (match < 0)
         return string;
 
-    JSString* result;
     if (dollarIndex != UINT32_MAX)
-        result = BuildDollarReplacement(cx, string, repl, dollarIndex, match, patternLength);
-    result = BuildFlatReplacement(cx, string, repl, match, patternLength);
-
-    // TaintFox: add 'replace' operation to taint flow.
-    result->taint().extend(TaintOperation("replace", { taintarg(cx, pattern), taintarg(cx, replacement) }));
-
-    return result;
+        return BuildDollarReplacement(cx, string, repl, dollarIndex, match, patternLength);
+    return BuildFlatReplacement(cx, string, repl, match, patternLength);
 }
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.

@@ -143,8 +143,11 @@ function String_replace(searchValue, replaceValue) {
         var replacer = GetMethod(searchValue, std_replace);
 
         // Step 2.b.
-        if (replacer !== undefined)
-            return callContentFunction(replacer, searchValue, this, replaceValue);
+        if (replacer !== undefined) {
+            var ret = callContentFunction(replacer, searchValue, this, replaceValue);
+            AddTaintOperation(ret, "replace");
+            return ret;
+        }
     }
 
     // Step 3.
@@ -155,19 +158,26 @@ function String_replace(searchValue, replaceValue) {
 
     if (typeof replaceValue === "string") {
         // Steps 6-12: Optimized for string case.
-        return StringReplaceString(string, searchString, replaceValue);
+        var ret = StringReplaceString(string, searchString, replaceValue);
+        AddTaintOperation(ret, "replace");
+        return ret;
     }
 
     // Step 5.
     if (!IsCallable(replaceValue)) {
         // Steps 6-12.
-        return StringReplaceString(string, searchString, ToString(replaceValue));
+        var ret = StringReplaceString(string, searchString, ToString(replaceValue));
+        AddTaintOperation(ret, "replace");
+        return ret;
     }
 
     // Step 7.
     var pos = callFunction(std_String_indexOf, string, searchString);
-    if (pos === -1)
+    if (pos === -1) {
+        // Taintfox: TODO new string
+        // AddTaintOperation(string, "replace");
         return string;
+    }
 
     // Step 8.
     var replStr = ToString(callContentFunction(replaceValue, undefined, searchString, pos, string));
@@ -186,6 +196,8 @@ function String_replace(searchValue, replaceValue) {
     var stringLength = string.length;
     if (tailPos < stringLength)
         newString += Substring(string, tailPos, stringLength - tailPos);
+
+    AddTaintOperation(newString, "replace");
 
     // Step 12.
     return newString;

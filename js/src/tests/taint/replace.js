@@ -3,9 +3,11 @@ function strReplaceTest() {
     var str = taint('asdf');
     var rep = str.replace('s', '');
     assertFullTainted(rep);
+    assertLastTaintOperationEquals(rep, 'replace');
     str = taint('asdfasdfasdfasdf');
     rep = str.replace('s', '');
     assertFullTainted(rep);
+    assertLastTaintOperationEquals(rep, 'replace');
 
     // Test replacing with non-tainted characters
     str = taint('asdf');
@@ -27,21 +29,40 @@ function strReplaceTest() {
     // Test removal of non-tainted parts
     rep = str.replace('foo', '');
     assertRangeTainted(rep, [0, 3]);
+    assertLastTaintOperationEquals(rep, 'replace');
     rep = str.replace('baz', '');
     assertRangeTainted(rep, [3, 6]);
+    assertLastTaintOperationEquals(rep, 'replace');
     rep = str.replace('foo', '').replace('baz', '');
     assertFullTainted(rep);
-    // TODO check operation
+    assertLastTaintOperationEquals(rep, 'replace');
 
     // Test regex removal
     str = '000' + taint('asdf') + '111';
     rep = str.replace(/\d+/, '');
     assertRangeTainted(rep, [0, 4]);
+    assertLastTaintOperationEquals(rep, 'replace');
     rep = str.replace(/\d+/g, '');
     assertFullTainted(rep);
+    assertLastTaintOperationEquals(rep, 'replace');
     rep = str.replace(/[a-z]+/, '');
     assertNotTainted(rep);
-    // TODO check operation
+
+    // Test no replace
+    var a = taint("a");
+    var b = a.replace("x", "y");
+    // assertLastTaintOperationEquals(a, 'manual taint source');  // TODO fails
+    assertLastTaintOperationEquals(b, 'replace');
+
+    // Test function call
+    rep = taint("aba").replace("a", x => x+1)
+    assertRangeTainted(rep, [0, 1]);
+    assertRangeTainted(rep, [2, 4]);
+    assertLastTaintOperationEquals(rep, 'replace');
+    rep = taint("aba").replace(/a/g, x => x+1)
+    assertRangeTainted(rep, [0, 1]);
+    assertRangeTainted(rep, [2, 4]);
+    assertLastTaintOperationEquals(rep, 'replace');
 }
 
 runTaintTest(strReplaceTest);
