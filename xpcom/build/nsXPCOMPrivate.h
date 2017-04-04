@@ -115,6 +115,9 @@ typedef void       (*CycleCollectorSuspect3Func)(void*,
 typedef const StringTaint&   (*StringGetTaintFunc)(const nsAString&);
 typedef const StringTaint&   (*CStringGetTaintFunc)(const nsACString&);
 
+typedef void       (*StringSetTaintFunc)(nsAString&, const StringTaint&);
+typedef void       (*CStringSetTaintFunc)(nsACString&, const StringTaint&);
+
 // PRIVATE AND DEPRECATED
 typedef NS_CALLBACK(XPCOMExitRoutine)(void);
 
@@ -200,6 +203,8 @@ typedef struct XPCOMFunctions
   // TaintFox: Frozen string API, taint access.
   StringGetTaintFunc stringGetTaint;
   CStringGetTaintFunc cstringGetTaint;
+  StringSetTaintFunc stringSetTaint;
+  CStringSetTaintFunc cstringSetTaint;
 
 } XPCOMFunctions;
 

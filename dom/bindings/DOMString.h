@@ -175,6 +175,15 @@ public:
     }
   }
 
+  // TaintFox: convenience method to assign taint information to a DOMString
+  void AssignTaint(const StringTaint& aTaint) {
+    MOZ_ASSERT(mString || mStringBuffer, "Must have a string or stringbuffer when setting taint information");
+    if (mString)
+      mString->AssignTaint(aTaint);
+    else if (mStringBuffer)
+      mStringBuffer->AssignTaint(aTaint);
+  }
+
 private:
   // We need to be able to act like a string as needed
   Maybe<nsAutoString> mString;

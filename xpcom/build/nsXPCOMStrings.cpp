@@ -384,3 +384,13 @@ XPCOM_API(const StringTaint&) NS_CStringGetTaint(const nsACString& aStr)
 {
   return aStr.Taint();
 }
+
+XPCOM_API(void) NS_StringSetTaint(nsAString& aStr, const StringTaint& aTaint)
+{
+  return aStr.AssignTaint(aTaint);
+}
+
+XPCOM_API(void) NS_CStringSetTaint(nsACString& aStr, const StringTaint& aTaint)
+{
+  return aStr.AssignTaint(aTaint);
+}

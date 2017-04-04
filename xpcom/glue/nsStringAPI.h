@@ -467,6 +467,11 @@ public:
     return NS_StringGetTaint(*this);
   }
 
+  // TaintFox: Basic taint access for the frozen string API.
+  void AssignTaint(const StringTaint& aTaint) {
+    return NS_StringSetTaint(*this, aTaint);
+  }
+
 protected:
   // Prevent people from allocating a nsAString directly.
   ~nsAString() {}
@@ -888,6 +893,12 @@ public:
   const StringTaint& Taint() const {
     return NS_CStringGetTaint(*this);
   }
+
+  // TaintFox: Basic taint access for the frozen string API.
+  void AssignTaint(const StringTaint& aTaint) {
+    return NS_CStringSetTaint(*this, aTaint);
+  }
+
 
 protected:
   // Prevent people from allocating a nsAString directly.
