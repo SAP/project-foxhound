@@ -2191,8 +2191,11 @@ intrinsic_ModuleNamespaceExports(JSContext* cx, unsigned argc, Value* vp)
 static bool
 taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
 {
+    // String, operation, args...
     CallArgs args = CallArgsFromVp(argc, vp);
-    MOZ_ASSERT(args.length() == 2 && args[0].isString() && args[1].isString());
+
+    // check String and operations
+    MOZ_ASSERT(args.length() >= 2 && args[0].isString() && args[1].isString());
 
     RootedString str(cx, args[0].toString());
     if (!str)
@@ -2207,10 +2210,13 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     // TaintFox: TODO add arguments
-    StringTaint newTaint = StringTaint::extend(
-        str->taint(),
-        TaintOperation(op_str));
-    str->setTaint(newTaint);
+    if(str->isTainted()) {
+        StringTaint newTaint = StringTaint::extend(
+            str->taint(),
+            TaintOperation(op_str));
+
+        str->setTaint(newTaint);
+    }
 
     return true;
 }

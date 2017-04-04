@@ -145,7 +145,9 @@ function String_replace(searchValue, replaceValue) {
         // Step 2.b.
         if (replacer !== undefined) {
             var ret = callContentFunction(replacer, searchValue, this, replaceValue);
-            AddTaintOperation(ret, "replace");
+            if(typeof(ret) === "string") {
+                AddTaintOperation(ret, "replace");
+            }
             return ret;
         }
     }
@@ -535,7 +537,6 @@ function String_repeat(count) {
     }
 
     AddTaintOperation(T, "repeat");
-
     return T;
 }
 

@@ -2700,8 +2700,9 @@ js::str_replace_string_raw(JSContext* cx, HandleString string, HandleString patt
         match = StringMatch(&string->asLinear(), pat, 0);
     }
 
-    if (match < 0)
-        return string;
+    if (match < 0) {
+        return NewDependentString(cx, string, 0, string->length());
+    }
 
     if (dollarIndex != UINT32_MAX)
         return BuildDollarReplacement(cx, string, repl, dollarIndex, match, patternLength);
