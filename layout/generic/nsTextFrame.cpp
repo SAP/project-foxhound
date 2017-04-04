@@ -9556,6 +9556,9 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
     out[i] = ch;
   }
 
+  // TaintFox: copy taint
+  aOut.AssignTaint(aFrag->Taint());
+
   if (aStyle->mTextTransform != NS_STYLE_TEXT_TRANSFORM_NONE) {
     MOZ_ASSERT(aTextRun->GetFlags() & nsTextFrameUtils::TEXT_IS_TRANSFORMED);
     if (aTextRun->GetFlags() & nsTextFrameUtils::TEXT_IS_TRANSFORMED) {
@@ -9572,6 +9575,15 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
                                                      deletedCharsArray,
                                                      transformedTextRun,
                                                      aSkippedOffset);
+
+      // TaintFox: in almost all cases, the transformation will be trivial,
+      // mapping one character to another. In that case we can simply copy the
+      // taint information.
+      if (convertedString.Length() == fragString.Length())
+        convertedString.AssignTaint(fragString.Taint());
+      else if (fragString.isTainted())
+        puts("Warning: Loosing taint in TransformChars (nsTextFrame.cpp)");
+
       aOut.Append(convertedString);
     } else {
       // Should not happen (see assertion above), but as a fallback...
