@@ -2701,6 +2701,7 @@ js::str_replace_string_raw(JSContext* cx, HandleString string, HandleString patt
     }
 
     if (match < 0) {
+        // TaintFox: copy string to add taint operation later on
         return NewDependentString(cx, string, 0, string->length());
     }
 

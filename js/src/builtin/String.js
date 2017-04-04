@@ -145,6 +145,7 @@ function String_replace(searchValue, replaceValue) {
         // Step 2.b.
         if (replacer !== undefined) {
             var ret = callContentFunction(replacer, searchValue, this, replaceValue);
+            // Taintfox: ret could be a function, only taint strings.
             if(typeof(ret) === "string") {
                 AddTaintOperation(ret, "replace");
             }
