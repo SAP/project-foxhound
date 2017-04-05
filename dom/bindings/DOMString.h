@@ -184,6 +184,18 @@ public:
       mStringBuffer->AssignTaint(aTaint);
   }
 
+  // TaintFox: added for convenience
+  uint32_t Length() {
+    MOZ_ASSERT(mString || mStringBuffer, "Must have a string or stringbuffer when retrieving the length");
+    if (mString)
+      return mString->Length();
+    else if (mStringBuffer)
+      return mLength;
+    else
+      return 0;
+  }
+
+
 private:
   // We need to be able to act like a string as needed
   Maybe<nsAutoString> mString;
