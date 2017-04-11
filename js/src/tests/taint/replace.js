@@ -8,23 +8,27 @@ function strReplaceTest() {
     rep = str.replace('s', '');
     assertFullTainted(rep);
     assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
 
     // Test replacing with non-tainted characters
     str = taint('asdf');
     rep = str.replace('s', 'x');
     assertRangesTainted(rep, [0, 1], [2, STR_END]);
     assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
 
     // Test replacing with tainted characters
     str = taint('asdf');
     rep = str.replace('s', taint('x'));
     assertFullTainted(rep);
     assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
 
     // Test "untainting"
     str = 'foo' + taint('bar') + 'baz';
     rep = str.replace('bar', '');
     assertNotTainted(rep);
+    assertNotHasTaintOperation(str, 'replace');
 
     // Test removal of non-tainted parts
     rep = str.replace('foo', '');
@@ -36,6 +40,7 @@ function strReplaceTest() {
     rep = str.replace('foo', '').replace('baz', '');
     assertFullTainted(rep);
     assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
 
     // Test regex removal
     str = '000' + taint('asdf') + '111';
@@ -47,22 +52,27 @@ function strReplaceTest() {
     assertLastTaintOperationEquals(rep, 'replace');
     rep = str.replace(/[a-z]+/, '');
     assertNotTainted(rep);
+    assertNotHasTaintOperation(str, 'replace');
 
     // Test no replace
     var a = taint("a");
     var b = a.replace("x", "y");
-    assertLastTaintOperationEquals(a, 'manual taint source');
+    assertNotHasTaintOperation(a, 'replace');
     assertLastTaintOperationEquals(b, 'replace');
 
     // Test function call
-    rep = taint("aba").replace("a", x => x+1)
+    str = taint("aba");
+    rep = str.replace("a", x => x+1)
     // assertRangeTainted(rep, [0, 1]);  // TODO fails
     assertRangeTainted(rep, [2, 4]);
     assertLastTaintOperationEquals(rep, 'replace');
-    rep = taint("aba").replace(/a/g, x => x+1)
+    assertNotHasTaintOperation(str, 'replace');
+    str = taint("aba");
+    rep = str.replace(/a/g, x => x+1)
     assertRangeTainted(rep, [0, 1]);
     assertRangeTainted(rep, [2, 4]);
     assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
 }
 
 runTaintTest(strReplaceTest);

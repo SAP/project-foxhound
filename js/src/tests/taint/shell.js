@@ -178,6 +178,21 @@ if (typeof assertHasTaintOperation === 'undefined') {
     }
 }
 
+if (typeof assertNotHasTaintOperation === 'undefined') {
+    var assertNotHasTaintOperation = function(str, opName) {
+        for (var i = 0; i < str.taint.length; i++) {
+            var range = str.taint[i];
+            for (var j = 0; j < range.flow.length; j++) {
+                var node = range.flow[j];
+                if (node.operation === opName) {
+                    throw Error("String does contain \"" + opName + "\" as taint operation. Taint: " + JSON.stringify(str.taint));
+                }
+            }
+        }
+        return true;
+    }
+}
+
 if (typeof assertLastTaintOperationEquals === 'undefined') {
     var assertLastTaintOperationEquals = function(str, opName) {
         for (var i = 0; i < str.taint.length; i++) {
