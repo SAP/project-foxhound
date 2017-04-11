@@ -886,6 +886,8 @@ template <typename CharT>
 static JSString*
 ToLowerCase(JSContext* cx, JSLinearString* str)
 {
+    str = NewDependentString(cx, str, 0, str->length());
+
     // Unlike toUpperCase, toLowerCase has the nice invariant that if the input
     // is a Latin1 string, the output is also a Latin1 string.
     UniquePtr<CharT[], JS::FreePolicy> newChars;
@@ -918,8 +920,10 @@ ToLowerCase(JSContext* cx, JSLinearString* str)
         // TaintFox: disabled. We need to return a new string here (so we can correctly
         // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
         // allocate a new string here.
-        //if (i == length)
-        //    return str;
+        if (i == length) {
+            str->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
+            return str;
+        }
 
         newChars = cx->make_pod_array<CharT>(length + 1);
         if (!newChars)
@@ -1053,6 +1057,8 @@ template <typename CharT>
 static JSString*
 ToUpperCase(JSContext* cx, JSLinearString* str)
 {
+    str = NewDependentString(cx, str, 0, str->length());
+
     typedef UniquePtr<Latin1Char[], JS::FreePolicy> Latin1CharPtr;
     typedef UniquePtr<char16_t[], JS::FreePolicy> TwoByteCharPtr;
 
@@ -1086,8 +1092,10 @@ ToUpperCase(JSContext* cx, JSLinearString* str)
         // TaintFox: disabled. We need to return a new string here (so we can correctly
         // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
         // allocate a new string here.
-        //if (i == length)
-        //    return str;
+        if (i == length) {
+            str->setTaint(StringTaint::extend(str->taint(), TaintOperation("toUpperCase")));
+            return str;
+        }
 
         // If the string is Latin1, check if it contains the MICRO SIGN (0xb5)
         // or SMALL LETTER Y WITH DIAERESIS (0xff) character. The corresponding

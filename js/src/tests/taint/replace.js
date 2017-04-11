@@ -51,7 +51,7 @@ function strReplaceTest() {
     // Test no replace
     var a = taint("a");
     var b = a.replace("x", "y");
-    // assertLastTaintOperationEquals(a, 'manual taint source');  // TODO fails
+    assertLastTaintOperationEquals(a, 'manual taint source');
     assertLastTaintOperationEquals(b, 'replace');
 
     // Test function call
