@@ -2244,7 +2244,7 @@ taint_copyString(JSContext* cx, unsigned argc, Value* vp)
     // String, operation, args...
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    JSString* str = args[0].toString();
+    RootedString str(cx, args[0].toString());
     if (!str) {
         return false;
     }
