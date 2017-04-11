@@ -915,12 +915,11 @@ ToLowerCase(JSContext* cx, JSLinearString* str)
         }
 
         // If all characters are lower case, return the input string.
-        if (i == length) {
-            // TaintFox: need to return a new string with updated taintflow
-            JSString* res = NewDependentString(cx, str, 0, length);
-            res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
-            return res;
-        }
+        // TaintFox: disabled. We need to return a new string here (so we can correctly
+        // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
+        // allocate a new string here.
+        //if (i == length)
+        //    return str;
 
         newChars = cx->make_pod_array<CharT>(length + 1);
         if (!newChars)
@@ -1084,8 +1083,11 @@ ToUpperCase(JSContext* cx, JSLinearString* str)
         }
 
         // If all characters are upper case, return the input string.
-        if (i == length)
-            return str;
+        // TaintFox: disabled. We need to return a new string here (so we can correctly
+        // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
+        // allocate a new string here.
+        //if (i == length)
+        //    return str;
 
         // If the string is Latin1, check if it contains the MICRO SIGN (0xb5)
         // or SMALL LETTER Y WITH DIAERESIS (0xff) character. The corresponding
