@@ -18,6 +18,12 @@ function charConversionTest() {
     lower = str.toLowerCase();
     assertLastTaintOperationEquals(lower, 'toLowerCase');
     assertEqualTaint(lower, str);
+
+    // Ensure taint operation is present even if string is all upper case already
+    str = taint('ASDF');
+    upper = str.toUpperCase();
+    assertLastTaintOperationEquals(upper, 'toUpperCase');
+    assertEqualTaint(upper, str);
 }
 
 runTaintTest(charConversionTest);
