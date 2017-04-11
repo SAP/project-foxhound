@@ -178,8 +178,9 @@ function String_replace(searchValue, replaceValue) {
     var pos = callFunction(std_String_indexOf, string, searchString);
     if (pos === -1) {
         // Taintfox: TODO new string
-        // AddTaintOperation(string, "replace", searchValue, replaceValue);
-        return string;
+        var ret = CopyString(string);
+        AddTaintOperation(ret, "replace", searchValue, replaceValue);
+        return ret;
     }
 
     // Step 8.

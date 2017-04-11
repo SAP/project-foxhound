@@ -2237,6 +2237,24 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+// TaintFox: Returns a copy of the given string.
+static bool
+taint_copyString(JSContext* cx, unsigned argc, Value* vp)
+{
+    // String, operation, args...
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    JSString* str = args[0].toString();
+    if (!str) {
+        return false;
+    }
+
+    JSString* res = NewDependentString(cx, str, 0, str->length());
+    args.rval().setString(res);
+
+    return true;
+}
+
 // The self-hosting global isn't initialized with the normal set of builtins.
 // Instead, individual C++-implemented functions that're required by
 // self-hosted code are defined as global functions. Accessing these
@@ -2615,6 +2633,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("ModuleNamespaceExports", intrinsic_ModuleNamespaceExports, 1, 0),
 
     JS_FN("AddTaintOperation", taint_addTaintOperation, 2, 0),
+    JS_FN("CopyString", taint_copyString, 1, 0),
 
     JS_FS_END
 };
