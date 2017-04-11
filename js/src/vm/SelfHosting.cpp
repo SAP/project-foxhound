@@ -2209,11 +2209,27 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     if (!op_str)
         return false;
 
-    // TaintFox: TODO add arguments
+    // add arguments
+    std::vector<std::u16string> taint_args;
+
+    for(size_t i = 2; i < args.length(); i++) {
+        JSString* argStr = ToString<NoGC>(cx, args[i]);
+        if (!argStr) {
+            argStr = ToString<CanGC>(cx, args[i]);
+            if (!argStr) {
+                taint_args.push_back(taintarg(cx, u""));
+            } else {
+                taint_args.push_back(taintarg(cx, RootedString(cx, argStr)));
+            }
+        } else {
+            taint_args.push_back(taintarg(cx, RootedString(cx, argStr)));
+        }
+    }
+
     if(str->isTainted()) {
         StringTaint newTaint = StringTaint::extend(
             str->taint(),
-            TaintOperation(op_str));
+            TaintOperation(op_str, taint_args));
 
         str->setTaint(newTaint);
     }

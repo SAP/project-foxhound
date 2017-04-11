@@ -147,7 +147,7 @@ function String_replace(searchValue, replaceValue) {
             var ret = callContentFunction(replacer, searchValue, this, replaceValue);
             // Taintfox: ret could be a function, only taint strings.
             if(typeof(ret) === "string") {
-                AddTaintOperation(ret, "replace");
+                AddTaintOperation(ret, "replace", searchValue, replaceValue);
             }
             return ret;
         }
@@ -162,7 +162,7 @@ function String_replace(searchValue, replaceValue) {
     if (typeof replaceValue === "string") {
         // Steps 6-12: Optimized for string case.
         var ret = StringReplaceString(string, searchString, replaceValue);
-        AddTaintOperation(ret, "replace");
+        AddTaintOperation(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -170,7 +170,7 @@ function String_replace(searchValue, replaceValue) {
     if (!IsCallable(replaceValue)) {
         // Steps 6-12.
         var ret = StringReplaceString(string, searchString, ToString(replaceValue));
-        AddTaintOperation(ret, "replace");
+        AddTaintOperation(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -178,7 +178,7 @@ function String_replace(searchValue, replaceValue) {
     var pos = callFunction(std_String_indexOf, string, searchString);
     if (pos === -1) {
         // Taintfox: TODO new string
-        // AddTaintOperation(string, "replace");
+        // AddTaintOperation(string, "replace", searchValue, replaceValue);
         return string;
     }
 
@@ -200,7 +200,7 @@ function String_replace(searchValue, replaceValue) {
     if (tailPos < stringLength)
         newString += Substring(string, tailPos, stringLength - tailPos);
 
-    AddTaintOperation(newString, "replace");
+    AddTaintOperation(newString, "replace", searchValue, replaceValue);
 
     // Step 12.
     return newString;
@@ -384,7 +384,7 @@ function String_substring(start, end) {
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
     var ret = SubstringKernel(str, from | 0, (to - from) | 0);
-    AddTaintOperation(ret, "substring");
+    AddTaintOperation(ret, "substring", start, end);
     return ret;
 }
 
@@ -425,7 +425,7 @@ function String_substr(start, length) {
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
     var ret = SubstringKernel(str, intStart | 0, resultLength | 0);
-    AddTaintOperation(ret, "substr");
+    AddTaintOperation(ret, "substr", start, length);
     return ret;
 }
 
@@ -464,7 +464,7 @@ function String_slice(start, end) {
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
     var ret = SubstringKernel(str, from | 0, span | 0);
-    AddTaintOperation(ret, "slice");
+    AddTaintOperation(ret, "slice", start, end);
     return ret;
 }
 
@@ -537,7 +537,7 @@ function String_repeat(count) {
             break;
     }
 
-    AddTaintOperation(T, "repeat");
+    AddTaintOperation(T, "repeat", count);
     return T;
 }
 
