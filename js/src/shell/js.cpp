@@ -905,6 +905,51 @@ AddIntlExtras(JSContext* cx, unsigned argc, Value* vp)
 }
 #endif // ENABLE_INTL_API
 
+#ifndef XP_WIN
+static bool
+PrintTaintedString(JSContext* cx, RootedValue *result) {
+    StringTaint taint = result->toString()->taint();
+
+    RootedString str(cx);
+    str = JS_ValueToSource(cx, *result);
+    if (!str)
+        return false;
+
+    char* utf8chars = JS_EncodeStringToUTF8(cx, str);
+    if (!utf8chars)
+        return false;
+
+    bool marker = false;
+    size_t offset = 1;
+    bool escape = false;
+    fprintf(gOutFile->fp, "%c", utf8chars[0]);
+    for(size_t i = 1; utf8chars[i] != '\0'; i++) {
+        if (taint[i-offset] && !marker) {
+            fprintf(gOutFile->fp, "\e[91m");
+            marker = true;
+        }
+        if (!taint[i-offset] && marker) {
+            fprintf(gOutFile->fp, "\e[0m");
+            marker = false;
+        }
+        fprintf(gOutFile->fp, "%c", utf8chars[i]);
+        if (!escape && utf8chars[i] == '\\') {
+            escape = true;
+            offset++;
+        } else if (escape) {
+            escape = false;
+        }
+    }
+    if (marker)
+        fprintf(gOutFile->fp, "\033[0m");
+    fprintf(gOutFile->fp, "\n");
+
+    JS_free(cx, utf8chars);
+
+    return true;
+}
+#endif
+
 static bool
 EvalAndPrint(JSContext* cx, const char* bytes, size_t length,
              int lineno, bool compileOnly)
@@ -926,16 +971,24 @@ EvalAndPrint(JSContext* cx, const char* bytes, size_t length,
 
     if (!result.isUndefined() && gOutFile->isOpen()) {
         // Print.
-        RootedString str(cx);
-        str = JS_ValueToSource(cx, result);
-        if (!str)
-            return false;
+#ifndef XP_WIN
+        if (result.isString() && result.toString()->isTainted()) {
+            PrintTaintedString(cx, &result);
+        } else {
+#endif
+            RootedString str(cx);
+            str = JS_ValueToSource(cx, result);
+            if (!str)
+                return false;
 
-        char* utf8chars = JS_EncodeStringToUTF8(cx, str);
-        if (!utf8chars)
-            return false;
-        fprintf(gOutFile->fp, "%s\n", utf8chars);
-        JS_free(cx, utf8chars);
+            char* utf8chars = JS_EncodeStringToUTF8(cx, str);
+            if (!utf8chars)
+                return false;
+            fprintf(gOutFile->fp, "%s\n", utf8chars);
+            JS_free(cx, utf8chars);
+#ifndef XP_WIN
+        }
+#endif
     }
     return true;
 }
