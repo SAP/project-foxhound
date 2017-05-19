@@ -105,11 +105,19 @@ function String_pad(maxLength, fillString, padEnd=false) {
 }
 
 function String_pad_start(maxLength, fillString=" ") {
-    return callFunction(String_pad, this, maxLength, fillString, false);
+    var ret = callFunction(String_pad, this, maxLength, fillString, false);
+    if(typeof(ret) === "string") {
+        AddTaintOperation(ret, "padStart", maxLength, fillString);
+    }
+    return ret;
 }
 
 function String_pad_end(maxLength, fillString=" ") {
-    return callFunction(String_pad, this, maxLength, fillString, true);
+    var ret = callFunction(String_pad, this, maxLength, fillString, true);
+    if(typeof(ret) === "string") {
+        AddTaintOperation(ret, "padEnd", maxLength, fillString);
+    }
+    return ret;
 }
 
 function StringProtoHasNoReplace() {
