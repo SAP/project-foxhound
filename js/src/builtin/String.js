@@ -106,18 +106,18 @@ function String_pad(maxLength, fillString, padEnd=false) {
 
 function String_pad_start(maxLength, fillString=" ") {
     var ret = callFunction(String_pad, this, maxLength, fillString, false);
-    if(typeof(ret) === "string") {
-        AddTaintOperation(ret, "padStart", maxLength, fillString);
-    }
-    return ret;
+    // Taintfox: generate new string and add taint
+    var ret2 = CopyString(ret);
+    AddTaintOperation(ret2, "padStart", maxLength, fillString);
+    return ret2;
 }
 
 function String_pad_end(maxLength, fillString=" ") {
     var ret = callFunction(String_pad, this, maxLength, fillString, true);
-    if(typeof(ret) === "string") {
-        AddTaintOperation(ret, "padEnd", maxLength, fillString);
-    }
-    return ret;
+    // Taintfox: generate new string and add taint
+    var ret2 = CopyString(ret);
+    AddTaintOperation(ret2, "padEnd", maxLength, fillString);
+    return ret2;
 }
 
 function StringProtoHasNoReplace() {
