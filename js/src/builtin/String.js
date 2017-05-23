@@ -21,6 +21,16 @@ function IsStringMatchOptimizable() {
            RegExpProto[std_match] === RegExpMatch;
 }
 
+function addTaintToArray(array, name, arg) {
+    if (array === null || typeof(array) !== "object" || typeof(array.length) !== "number") {
+        return;
+    }
+
+    for(var i = 0; i < array.length; i++) {
+        AddTaintOperation(array[i], name, arg);
+    }
+}
+
 // ES 2016 draft Mar 25, 2016 21.1.3.11.
 function String_match(regexp) {
     // Step 1.
@@ -33,8 +43,11 @@ function String_match(regexp) {
         var matcher = GetMethod(regexp, std_match);
 
         // Step 2.b.
-        if (matcher !== undefined)
-            return callContentFunction(matcher, regexp, this);
+        if (matcher !== undefined) {
+            var ret = callContentFunction(matcher, regexp, this);
+            addTaintToArray(ret, "match", regexp);
+            return ret;
+        }
     }
 
     // Step 3.
@@ -42,19 +55,27 @@ function String_match(regexp) {
 
     if (isPatternString && IsStringMatchOptimizable()) {
         var flatResult = FlatStringMatch(S, regexp);
-        if (flatResult !== undefined)
-            return flatResult;
+        if (flatResult !== undefined) {
+            var ret = flatResult;
+            addTaintToArray(ret, "match", regexp);
+            return ret;
+        }
     }
 
     // Step 4.
     var rx = RegExpCreate(regexp);
 
     // Step 5 (optimized case).
-    if (IsStringMatchOptimizable())
-        return RegExpMatcher(rx, S, 0);
+    if (IsStringMatchOptimizable()) {
+        var ret = RegExpMatcher(rx, S, 0);
+        addTaintToArray(ret, "match", regexp);
+        return ret;
+    }
 
     // Step 5.
-    return callContentFunction(GetMethod(rx, std_match), rx, S);
+    var ret = callContentFunction(GetMethod(rx, std_match), rx, S);
+    addTaintToArray(ret, "match", regexp);
+    return ret;
 }
 
 function String_generic_match(thisValue, regexp) {
