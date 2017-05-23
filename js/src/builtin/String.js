@@ -26,7 +26,10 @@ function addTaintToArray(array, name, arg) {
         return;
     }
 
-    for(var i = 0; i < array.length; i++) {
+    for (var i = 0; i < array.length; i++) {
+        if (typeof(array[i]) !== "string") {
+            continue;
+        }
         AddTaintOperation(array[i], name, arg);
     }
 }
