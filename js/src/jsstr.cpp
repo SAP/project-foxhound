@@ -617,7 +617,7 @@ str_unescape(JSContext* cx, unsigned argc, Value* vp)
         if (!result)
             return false;
     } else {
-        result = str;
+        result = NewDependentString(cx, str, 0, str->length());
     }
 
     // TaintFox: add taint operation.
