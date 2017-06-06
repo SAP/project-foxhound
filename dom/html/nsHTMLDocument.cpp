@@ -96,7 +96,6 @@
 #include "mozAutoDocUpdate.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsHtml5Module.h"
-#include "prprf.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
 #include "nsMimeTypes.h"
@@ -169,15 +168,19 @@ NS_NewHTMLDocument(nsIDocument** aInstancePtrResult, bool aLoadedAsData)
   return NS_OK;
 }
 
-  // NOTE! nsDocument::operator new() zeroes out all members, so don't
-  // bother initializing members to 0.
-
 nsHTMLDocument::nsHTMLDocument()
   : nsDocument("text/html")
+  , mNumForms(0)
+  , mWriteLevel(0)
+  , mLoadFlags(0)
+  , mTooDeepWriteRecursion(false)
+  , mDisableDocWrite(false)
+  , mWarnedWidthHeight(false)
+  , mContentEditableCount(0)
+  , mEditingState(EditingState::eOff)
+  , mDisableCookieAccess(false)
+  , mPendingMaybeEditingStateChanged(false)
 {
-  // NOTE! nsDocument::operator new() zeroes out all members, so don't
-  // bother initializing members to 0.
-
   mType = eHTML;
   mDefaultElementType = kNameSpaceID_XHTML;
   mCompatMode = eCompatibility_NavQuirks;
@@ -1101,31 +1104,31 @@ nsHTMLDocument::Applets()
 }
 
 bool
-nsHTMLDocument::MatchLinks(nsIContent *aContent, int32_t aNamespaceID,
+nsHTMLDocument::MatchLinks(Element* aElement, int32_t aNamespaceID,
                            nsIAtom* aAtom, void* aData)
 {
-  nsIDocument* doc = aContent->GetUncomposedDoc();
+  nsIDocument* doc = aElement->GetUncomposedDoc();
 
   if (doc) {
-    NS_ASSERTION(aContent->IsInUncomposedDoc(),
+    NS_ASSERTION(aElement->IsInUncomposedDoc(),
                  "This method should never be called on content nodes that "
                  "are not in a document!");
 #ifdef DEBUG
     {
       nsCOMPtr<nsIHTMLDocument> htmldoc =
-        do_QueryInterface(aContent->GetUncomposedDoc());
+        do_QueryInterface(aElement->GetUncomposedDoc());
       NS_ASSERTION(htmldoc,
                    "Huh, how did this happen? This should only be used with "
                    "HTML documents!");
     }
 #endif
 
-    mozilla::dom::NodeInfo *ni = aContent->NodeInfo();
+    mozilla::dom::NodeInfo *ni = aElement->NodeInfo();
 
     nsIAtom *localName = ni->NameAtom();
     if (ni->NamespaceID() == kNameSpaceID_XHTML &&
         (localName == nsGkAtoms::a || localName == nsGkAtoms::area)) {
-      return aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::href);
+      return aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::href);
     }
   }
 
@@ -1149,24 +1152,24 @@ nsHTMLDocument::Links()
 }
 
 bool
-nsHTMLDocument::MatchAnchors(nsIContent *aContent, int32_t aNamespaceID,
+nsHTMLDocument::MatchAnchors(Element* aElement, int32_t aNamespaceID,
                              nsIAtom* aAtom, void* aData)
 {
-  NS_ASSERTION(aContent->IsInUncomposedDoc(),
+  NS_ASSERTION(aElement->IsInUncomposedDoc(),
                "This method should never be called on content nodes that "
                "are not in a document!");
 #ifdef DEBUG
   {
     nsCOMPtr<nsIHTMLDocument> htmldoc =
-      do_QueryInterface(aContent->GetUncomposedDoc());
+      do_QueryInterface(aElement->GetUncomposedDoc());
     NS_ASSERTION(htmldoc,
                  "Huh, how did this happen? This should only be used with "
                  "HTML documents!");
   }
 #endif
 
-  if (aContent->NodeInfo()->Equals(nsGkAtoms::a, kNameSpaceID_XHTML)) {
-    return aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::name);
+  if (aElement->IsHTMLElement(nsGkAtoms::a)) {
+    return aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::name);
   }
 
   return false;
@@ -1958,14 +1961,14 @@ nsHTMLDocument::Writeln(JSContext* cx, const Sequence<nsString>& aText,
 }
 
 bool
-nsHTMLDocument::MatchNameAttribute(nsIContent* aContent, int32_t aNamespaceID,
+nsHTMLDocument::MatchNameAttribute(Element* aElement, int32_t aNamespaceID,
                                    nsIAtom* aAtom, void* aData)
 {
-  NS_PRECONDITION(aContent, "Must have content node to work with!");
+  NS_PRECONDITION(aElement, "Must have element to work with!");
   nsString* elementName = static_cast<nsString*>(aData);
   return
-    aContent->GetNameSpaceID() == kNameSpaceID_XHTML &&
-    aContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
+    aElement->GetNameSpaceID() == kNameSpaceID_XHTML &&
+    aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
                           *elementName, eCaseMatters);
 }
 
@@ -2285,10 +2288,10 @@ nsHTMLDocument::GetForms()
   return mForms;
 }
 
-static bool MatchFormControls(nsIContent* aContent, int32_t aNamespaceID,
-                                nsIAtom* aAtom, void* aData)
+static bool MatchFormControls(Element* aElement, int32_t aNamespaceID,
+                              nsIAtom* aAtom, void* aData)
 {
-  return aContent->IsNodeOfType(nsIContent::eHTML_FORM_CONTROL);
+  return aElement->IsNodeOfType(nsIContent::eHTML_FORM_CONTROL);
 }
 
 nsContentList*
@@ -2329,7 +2332,9 @@ nsHTMLDocument::CreateAndAddWyciwygChannel(void)
                      nsIContentPolicy::TYPE_OTHER);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsILoadInfo> loadInfo = channel->GetLoadInfo();
+  NS_ENSURE_STATE(loadInfo);
   loadInfo->SetPrincipalToInherit(NodePrincipal());
+
 
   mWyciwygChannel = do_QueryInterface(channel);
 
@@ -2816,7 +2821,12 @@ nsHTMLDocument::EditingStateChanged()
     // restricted one.
     ErrorResult errorResult;
     Unused << ExecCommand(NS_LITERAL_STRING("insertBrOnReturn"), false,
-                          NS_LITERAL_STRING("false"), CallerType::NonSystem,
+                          NS_LITERAL_STRING("false"),
+                          // Principal doesn't matter here, because the
+                          // insertBrOnReturn command doesn't use it.   Still
+                          // it's too bad we can't easily grab a nullprincipal
+                          // from somewhere without allocating one..
+                          *NodePrincipal(),
                           errorResult);
 
     if (errorResult.Failed()) {
@@ -3145,7 +3155,7 @@ bool
 nsHTMLDocument::ExecCommand(const nsAString& commandID,
                             bool doShowUI,
                             const nsAString& value,
-                            CallerType aCallerType,
+                            nsIPrincipal& aSubjectPrincipal,
                             ErrorResult& rv)
 {
   //  for optional parameters see dom/src/base/nsHistory.cpp: HistoryImpl::Go()
@@ -3175,7 +3185,7 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
   // special case for cut & copy
   // cut & copy are allowed in non editable documents
   if (isCutCopy) {
-    if (!nsContentUtils::IsCutCopyAllowed()) {
+    if (!nsContentUtils::IsCutCopyAllowed(&aSubjectPrincipal)) {
       // We have rejected the event due to it not being performed in an
       // input-driven context therefore, we report the error to the console.
       nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
@@ -3205,7 +3215,8 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
   }
 
   bool restricted = commandID.LowerCaseEqualsLiteral("paste");
-  if (restricted && aCallerType != CallerType::System) {
+  if (restricted && !nsContentUtils::PrincipalHasPermission(&aSubjectPrincipal,
+                                                            NS_LITERAL_STRING("clipboardRead"))) {
     return false;
   }
 
@@ -3271,7 +3282,7 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
 
 bool
 nsHTMLDocument::QueryCommandEnabled(const nsAString& commandID,
-                                    CallerType aCallerType,
+                                    nsIPrincipal& aSubjectPrincipal,
                                     ErrorResult& rv)
 {
   nsAutoCString cmdToDispatch;
@@ -3283,12 +3294,12 @@ nsHTMLDocument::QueryCommandEnabled(const nsAString& commandID,
   bool isCutCopy = commandID.LowerCaseEqualsLiteral("cut") ||
                    commandID.LowerCaseEqualsLiteral("copy");
   if (isCutCopy) {
-    return nsContentUtils::IsCutCopyAllowed();
+    return nsContentUtils::IsCutCopyAllowed(&aSubjectPrincipal);
   }
 
   // Report false for restricted commands
   bool restricted = commandID.LowerCaseEqualsLiteral("paste");
-  if (restricted && aCallerType != CallerType::System) {
+  if (restricted && !nsContentUtils::IsSystemPrincipal(&aSubjectPrincipal)) {
     return false;
   }
 
@@ -3471,6 +3482,9 @@ nsHTMLDocument::QueryCommandSupported(const nsAString& commandID,
       return false;
     }
     if (nsContentUtils::IsCutCopyRestricted()) {
+      // XXXbz should we worry about correctly reporting "true" in the
+      // "restricted, but we're an addon with clipboardWrite permissions" case?
+      // See also nsContentUtils::IsCutCopyAllowed.
       if (commandID.LowerCaseEqualsLiteral("cut") ||
           commandID.LowerCaseEqualsLiteral("copy")) {
         return false;

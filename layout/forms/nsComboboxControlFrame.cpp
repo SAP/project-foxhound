@@ -48,6 +48,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Unused.h"
 #include "gfx2DGlue.h"
+#include "mozilla/widget/nsAutoRollup.h"
 
 #ifdef XP_WIN
 #define COMBOBOX_ROLLUP_CONSUME_EVENT 0
@@ -115,7 +116,7 @@ NS_IMPL_ISUPPORTS(nsComboButtonListener,
 // static class data member for Bug 32920
 nsComboboxControlFrame* nsComboboxControlFrame::sFocused = nullptr;
 
-nsContainerFrame*
+nsComboboxControlFrame*
 NS_NewComboboxControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, nsFrameState aStateFlags)
 {
   nsComboboxControlFrame* it = new (aPresShell) nsComboboxControlFrame(aContext);
@@ -249,6 +250,7 @@ nsComboboxControlFrame::~nsComboboxControlFrame()
 //--------------------------------------------------------------
 
 NS_QUERYFRAME_HEAD(nsComboboxControlFrame)
+  NS_QUERYFRAME_ENTRY(nsComboboxControlFrame)
   NS_QUERYFRAME_ENTRY(nsIComboboxControlFrame)
   NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
@@ -267,7 +269,7 @@ nsComboboxControlFrame::AccessibleType()
 void
 nsComboboxControlFrame::SetFocus(bool aOn, bool aRepaint)
 {
-  nsWeakFrame weakFrame(this);
+  AutoWeakFrame weakFrame(this);
   if (aOn) {
     nsListControlFrame::ComboboxFocusSet();
     sFocused = this;
@@ -351,7 +353,7 @@ nsComboboxControlFrame::ShowList(bool aShowList)
     }
   }
 
-  nsWeakFrame weakFrame(this);
+  AutoWeakFrame weakFrame(this);
   ShowPopup(aShowList);  // might destroy us
   if (!weakFrame.IsAlive()) {
     return false;
@@ -412,7 +414,7 @@ public:
     return NS_OK;
   }
 
-  nsWeakFrame mFrame;
+  WeakFrame mFrame;
 };
 
 void
@@ -526,7 +528,7 @@ public:
     }
     return NS_OK;
   }
-  nsWeakFrame mFrame;
+  WeakFrame mFrame;
 };
 
 class nsAsyncResize : public Runnable
@@ -555,7 +557,7 @@ public:
     }
     return NS_OK;
   }
-  nsWeakFrame mFrame;
+  WeakFrame mFrame;
 };
 
 void
@@ -896,11 +898,11 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
 
   mButtonFrame->SetRect(buttonRect, containerSize);
 
-  if (!NS_INLINE_IS_BREAK_BEFORE(aStatus) &&
-      !NS_FRAME_IS_FULLY_COMPLETE(aStatus)) {
+  if (!aStatus.IsInlineBreakBefore() &&
+      !aStatus.IsFullyComplete()) {
     // This frame didn't fit inside a fragmentation container.  Splitting
     // a nsComboboxControlFrame makes no sense, so we override the status here.
-    aStatus = NS_FRAME_COMPLETE;
+    aStatus.Reset();
   }
 }
 
@@ -1024,7 +1026,7 @@ nsComboboxControlFrame::HandleRedisplayTextEvent()
   // ActuallyDisplayText, since that flushes out the content sink by
   // calling SetText on a DOM node with aNotify set to true.  See bug
   // 289730.
-  nsWeakFrame weakThis(this);
+  AutoWeakFrame weakThis(this);
   PresContext()->Document()->
     FlushPendingNotifications(FlushType::ContentAndNotify);
   if (!weakThis.IsAlive())
@@ -1094,7 +1096,7 @@ nsComboboxControlFrame::AddOption(int32_t aIndex)
 NS_IMETHODIMP
 nsComboboxControlFrame::RemoveOption(int32_t aIndex)
 {
-  nsWeakFrame weakThis(this);
+  AutoWeakFrame weakThis(this);
   if (mListControlFrame->GetNumberOfOptions() > 0) {
     if (aIndex < mDisplayedIndex) {
       --mDisplayedIndex;
@@ -1149,8 +1151,7 @@ nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
 
 #if COMBOBOX_ROLLUP_CONSUME_EVENT == 0
   if (aEvent->mMessage == eMouseDown) {
-    nsIWidget* widget = GetNearestWidget();
-    if (widget && GetContent() == widget->GetLastRollup()) {
+    if (GetContent() == mozilla::widget::nsAutoRollup::GetLastRollup()) {
       // This event did a Rollup on this control - prevent it from opening
       // the dropdown again!
       *aEventStatus = nsEventStatus_eConsumeNoDefault;
@@ -1328,7 +1329,7 @@ nsComboboxDisplayFrame::Reflow(nsPresContext*           aPresContext,
   }
   state.SetComputedISize(computedISize);
   nsBlockFrame::Reflow(aPresContext, aDesiredSize, state, aStatus);
-  aStatus = NS_FRAME_COMPLETE; // this type of frame can't be split
+  aStatus.Reset(); // this type of frame can't be split
 }
 
 void
@@ -1348,16 +1349,9 @@ nsComboboxDisplayFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 }
 
 nsIFrame*
-nsComboboxControlFrame::CreateFrameFor(nsIContent*      aContent)
+nsComboboxControlFrame::CreateFrameForDisplayNode()
 {
-  NS_PRECONDITION(nullptr != aContent, "null ptr");
-
-  NS_ASSERTION(mDisplayContent, "mDisplayContent can't be null!");
-
-  if (mDisplayContent != aContent) {
-    // We only handle the frames for mDisplayContent here
-    return nullptr;
-  }
+  MOZ_ASSERT(mDisplayContent);
 
   // Get PresShell
   nsIPresShell *shell = PresContext()->PresShell();
@@ -1382,7 +1376,7 @@ nsComboboxControlFrame::CreateFrameFor(nsIContent*      aContent)
   nsIFrame* textFrame = NS_NewTextFrame(shell, textStyleContext);
 
   // initialize the text frame
-  textFrame->Init(aContent, mDisplayFrame, nullptr);
+  textFrame->Init(mDisplayContent, mDisplayFrame, nullptr);
   mDisplayContent->SetPrimaryFrame(textFrame);
 
   nsFrameList textList(textFrame, textFrame);
@@ -1462,12 +1456,16 @@ bool
 nsComboboxControlFrame::Rollup(uint32_t aCount, bool aFlush,
                                const nsIntPoint* pos, nsIContent** aLastRolledUp)
 {
+  if (aLastRolledUp) {
+    *aLastRolledUp = nullptr;
+  }
+
   if (!mDroppedDown) {
     return false;
   }
 
   bool consume = !!COMBOBOX_ROLLUP_CONSUME_EVENT;
-  nsWeakFrame weakFrame(this);
+  AutoWeakFrame weakFrame(this);
   mListControlFrame->AboutToRollup(); // might destroy us
   if (!weakFrame.IsAlive()) {
     return consume;
@@ -1632,7 +1630,7 @@ nsComboboxControlFrame::OnOptionSelected(int32_t aIndex, bool aSelected)
       nsAutoScriptBlocker blocker;
       RedisplayText(aIndex);
     } else {
-      nsWeakFrame weakFrame(this);
+      AutoWeakFrame weakFrame(this);
       RedisplaySelectedText();
       if (weakFrame.IsAlive()) {
         FireValueChangeEvent(); // Fire after old option is unselected
