@@ -35,10 +35,6 @@
 
 #include "LateWriteChecks.h"
 
-#if defined(MOZ_STACKWALKING)
-#define OBSERVE_LATE_WRITES
-#endif
-
 using namespace mozilla;
 
 /*************************** Auxiliary Declarations ***************************/
@@ -114,7 +110,6 @@ private:
 void
 LateWriteObserver::Observe(IOInterposeObserver::Observation& aOb)
 {
-#ifdef OBSERVE_LATE_WRITES
   // Crash if that is the shutdown check mode
   if (gShutdownChecks == SCM_CRASH) {
     MOZ_CRASH();
@@ -151,13 +146,13 @@ LateWriteObserver::Observe(IOInterposeObserver::Observation& aOb)
   } while (GetLastError() == ERROR_FILE_EXISTS);
 
   if (hFile == INVALID_HANDLE_VALUE) {
-    NS_RUNTIMEABORT("Um, how did we get here?");
+    MOZ_CRASH("Um, how did we get here?");
   }
 
   // http://support.microsoft.com/kb/139640
   int fd = _open_osfhandle((intptr_t)hFile, _O_APPEND);
   if (fd == -1) {
-    NS_RUNTIMEABORT("Um, how did we get here?");
+    MOZ_CRASH("Um, how did we get here?");
   }
 
   stream = _fdopen(fd, "w");
@@ -209,7 +204,6 @@ LateWriteObserver::Observe(IOInterposeObserver::Observation& aOb)
   }
   PR_Delete(finalName.get());
   PR_Rename(name, finalName.get());
-#endif
 }
 
 /******************************* Setup/Teardown *******************************/

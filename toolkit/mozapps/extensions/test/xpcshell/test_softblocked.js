@@ -19,7 +19,7 @@ testserver.registerDirectory("/data/", do_get_file("data"));
 // Don't need the full interface, attempts to call other methods will just
 // throw which is just fine
 var WindowWatcher = {
-  openWindow: function(parent, url, name, features, openArgs) {
+  openWindow(parent, url, name, features, openArgs) {
     // Should be called to list the newly blocklisted items
     do_check_eq(url, URI_EXTENSION_BLOCKLIST_DIALOG);
 
@@ -30,11 +30,11 @@ var WindowWatcher = {
         aItem.disable = true;
     });
 
-    //run the code after the blocklist is closed
+    // run the code after the blocklist is closed
     Services.obs.notifyObservers(null, "addon-blocklist-closed", null);
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIWindowWatcher)
      || iid.equals(Ci.nsISupports))
       return this;

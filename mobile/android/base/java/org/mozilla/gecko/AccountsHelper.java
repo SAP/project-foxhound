@@ -52,12 +52,7 @@ public class AccountsHelper implements NativeEventListener {
         mContext = context;
         mProfile = profile;
 
-        EventDispatcher dispatcher = EventDispatcher.getInstance();
-        if (dispatcher == null) {
-            Log.e(LOGTAG, "Gecko event dispatcher must not be null", new RuntimeException());
-            return;
-        }
-        dispatcher.registerGeckoThreadListener(this,
+        EventDispatcher.getInstance().registerGeckoThreadListener(this,
                 "Accounts:CreateFirefoxAccountFromJSON",
                 "Accounts:UpdateFirefoxAccountFromJSON",
                 "Accounts:Create",
@@ -68,12 +63,7 @@ public class AccountsHelper implements NativeEventListener {
     }
 
     public synchronized void uninit() {
-        EventDispatcher dispatcher = EventDispatcher.getInstance();
-        if (dispatcher == null) {
-            Log.e(LOGTAG, "Gecko event dispatcher must not be null", new RuntimeException());
-            return;
-        }
-        dispatcher.unregisterGeckoThreadListener(this,
+        EventDispatcher.getInstance().unregisterGeckoThreadListener(this,
                 "Accounts:CreateFirefoxAccountFromJSON",
                 "Accounts:UpdateFirefoxAccountFromJSON",
                 "Accounts:Create",
@@ -96,6 +86,10 @@ public class AccountsHelper implements NativeEventListener {
         }
 
         if ("Accounts:CreateFirefoxAccountFromJSON".equals(event)) {
+            // As we are about to create a new account, let's ensure our in-memory accounts cache
+            // is empty so that there are no undesired side-effects.
+            AndroidFxAccount.invalidateCaches();
+
             AndroidFxAccount fxAccount = null;
             try {
                 final NativeJSObject json = message.getObject("json");
@@ -153,6 +147,10 @@ public class AccountsHelper implements NativeEventListener {
             }
 
         } else if ("Accounts:UpdateFirefoxAccountFromJSON".equals(event)) {
+            // We might be significantly changing state of the account; let's ensure our in-memory
+            // accounts cache is empty so that there are no undesired side-effects.
+            AndroidFxAccount.invalidateCaches();
+
             try {
                 final Account account = FirefoxAccounts.getFirefoxAccount(mContext);
                 if (account == null) {

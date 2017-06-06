@@ -49,8 +49,6 @@ class nsXMLContentSink : public nsContentSink,
 public:
   nsXMLContentSink();
 
-  NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
-
   nsresult Init(nsIDocument* aDoc,
                 nsIURI* aURL,
                 nsISupports* aContainer,
@@ -71,7 +69,7 @@ public:
   NS_IMETHOD WillInterrupt(void) override;
   NS_IMETHOD WillResume(void) override;
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
-  virtual void FlushPendingNotifications(mozFlushType aType) override;
+  virtual void FlushPendingNotifications(mozilla::FlushType aType) override;
   NS_IMETHOD SetDocumentCharset(nsACString& aCharset) override;
   virtual nsISupports *GetTarget() override;
   virtual bool IsScriptExecuting() override;
@@ -82,7 +80,7 @@ public:
   NS_IMETHOD OnTransformDone(nsresult aResult, nsIDocument *aResultDocument) override;
 
   // nsICSSLoaderObserver
-  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheetHandle aSheet,
+  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet,
                               bool aWasAlternate,
                               nsresult aStatus) override;
   static bool ParsePIData(const nsString &aData, nsString &aHref,

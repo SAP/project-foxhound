@@ -27,7 +27,7 @@ XPCOMUtils.defineLazyServiceGetter(this, "_focusManager",
 
 
 // Constants
-const TAB_EVENTS = ["TabBrowserCreated", "TabSelect", "TabRemotenessChange"];
+const TAB_EVENTS = ["TabBrowserInserted", "TabSelect", "TabRemotenessChange"];
 const WINDOW_EVENTS = ["activate", "unload"];
 // lower value means higher priority
 const PRIORITY_DELTA = Ci.nsISupportsPriority.PRIORITY_NORMAL - Ci.nsISupportsPriority.PRIORITY_LOW;
@@ -49,7 +49,7 @@ this.trackBrowserWindow = function trackBrowserWindow(aWindow) {
 // Global methods
 function _handleEvent(aEvent) {
   switch (aEvent.type) {
-    case "TabBrowserCreated":
+    case "TabBrowserInserted":
       BrowserHelper.onOpen(aEvent.target.linkedBrowser);
       break;
     case "TabSelect":
@@ -87,7 +87,7 @@ var BrowserHelper = {
     windowEntry.lastSelectedBrowser = aBrowser;
   },
 
-  onRemotenessChange: function (aBrowser) {
+  onRemotenessChange(aBrowser) {
     aBrowser.setPriority(_priorityBackup.get(aBrowser.permanentKey));
   },
 
@@ -113,10 +113,10 @@ var WindowHelper = {
 
     // Add event listeners
     TAB_EVENTS.forEach(function(event) {
-      aWindow.gBrowser.tabContainer.addEventListener(event, _handleEvent, false);
+      aWindow.gBrowser.tabContainer.addEventListener(event, _handleEvent);
     });
     WINDOW_EVENTS.forEach(function(event) {
-      aWindow.addEventListener(event, _handleEvent, false);
+      aWindow.addEventListener(event, _handleEvent);
     });
 
     // This gets called AFTER activate event, so if this is the focused window
@@ -139,10 +139,10 @@ var WindowHelper = {
 
     // Remove the event listeners
     TAB_EVENTS.forEach(function(event) {
-      aWindow.gBrowser.tabContainer.removeEventListener(event, _handleEvent, false);
+      aWindow.gBrowser.tabContainer.removeEventListener(event, _handleEvent);
     });
     WINDOW_EVENTS.forEach(function(event) {
-      aWindow.removeEventListener(event, _handleEvent, false);
+      aWindow.removeEventListener(event, _handleEvent);
     });
   },
 

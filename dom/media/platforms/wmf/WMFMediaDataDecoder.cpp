@@ -121,6 +121,11 @@ WMFMediaDataDecoder::ProcessDecode(MediaRawData* aSample)
   }
 
   HRESULT hr = mMFTManager->Input(aSample);
+  if (hr == MF_E_NOTACCEPTING) {
+    ProcessOutput();
+    hr = mMFTManager->Input(aSample);
+  }
+
   if (FAILED(hr)) {
     NS_WARNING("MFTManager rejected sample");
     mCallback->Error(MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
@@ -207,27 +212,6 @@ WMFMediaDataDecoder::IsHardwareAccelerated(nsACString& aFailureReason) const {
   MOZ_ASSERT(!mIsShutDown);
 
   return mMFTManager && mMFTManager->IsHardwareAccelerated(aFailureReason);
-}
-
-void
-WMFMediaDataDecoder::ConfigurationChanged(const TrackInfo& aConfig)
-{
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
-
-  nsCOMPtr<nsIRunnable> runnable =
-    NewRunnableMethod<UniquePtr<TrackInfo>&&>(
-    this,
-    &WMFMediaDataDecoder::ProcessConfigurationChanged,
-    aConfig.Clone());
-  mTaskQueue->Dispatch(runnable.forget());
-}
-
-void
-WMFMediaDataDecoder::ProcessConfigurationChanged(UniquePtr<TrackInfo>&& aConfig)
-{
-  if (mMFTManager) {
-    mMFTManager->ConfigurationChanged(*aConfig);
-  }
 }
 
 void

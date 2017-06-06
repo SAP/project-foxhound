@@ -45,6 +45,11 @@
 #include "mozilla/net/ChannelEventQueue.h"
 #include "nsIThrottledInputChannel.h"
 
+#define HTTP_BASE_CHANNEL_IID \
+{ 0x9d5cde03, 0xe6e9, 0x4612, \
+    { 0xbf, 0xef, 0xbb, 0x66, 0xf3, 0xbb, 0x74, 0x46 } }
+
+
 class nsISecurityConsoleMessage;
 class nsIPrincipal;
 
@@ -93,6 +98,8 @@ public:
   NS_DECL_NSITRACEABLECHANNEL
   NS_DECL_NSITIMEDCHANNEL
   NS_DECL_NSITHROTTLEDINPUTCHANNEL
+
+  NS_DECLARE_STATIC_IID_ACCESSOR(HTTP_BASE_CHANNEL_IID)
 
   HttpBaseChannel();
 
@@ -188,6 +195,9 @@ public:
   NS_IMETHOD GetProtocolVersion(nsACString & aProtocolVersion) override;
   NS_IMETHOD GetChannelId(nsACString& aChannelId) override;
   NS_IMETHOD SetChannelId(const nsACString& aChannelId) override;
+  NS_IMETHOD GetTopLevelContentWindowId(uint64_t *aContentWindowId) override;
+  NS_IMETHOD SetTopLevelContentWindowId(uint64_t aContentWindowId) override;
+  NS_IMETHOD GetIsTrackingResource(bool* aIsTrackingResource) override;
 
   // nsIHttpChannelInternal
   NS_IMETHOD GetDocumentURI(nsIURI **aDocumentURI) override;
@@ -238,6 +248,7 @@ public:
   NS_IMETHOD GetConnectionInfoHashKey(nsACString& aConnectionInfoHashKey) override;
   NS_IMETHOD GetIntegrityMetadata(nsAString& aIntegrityMetadata) override;
   NS_IMETHOD SetIntegrityMetadata(const nsAString& aIntegrityMetadata) override;
+  virtual mozilla::net::nsHttpChannel * QueryHttpChannelImpl(void) override;
 
   inline void CleanRedirectCacheChainIfNecessary()
   {
@@ -330,6 +341,11 @@ public: /* Necko internal use only... */
     // the new mUploadStream.
     void EnsureUploadStreamIsCloneableComplete(nsresult aStatus);
 
+    void SetIsTrackingResource()
+    {
+      mIsTrackingResource = true;
+    }
+
 protected:
   nsCOMArray<nsISecurityConsoleMessage> mSecurityConsoleMessages;
 
@@ -339,6 +355,12 @@ protected:
 
   // drop reference to listener, its callbacks, and the progress sink
   void ReleaseListeners();
+
+  // This is fired only when a cookie is created due to the presence of
+  // Set-Cookie header in the response header of any network request.
+  // This notification will come only after the "http-on-examine-response"
+  // was fired.
+  void NotifySetCookie(char const *aCookie);
 
   mozilla::dom::Performance* GetPerformance();
   nsIURI* GetReferringPage();
@@ -378,8 +400,10 @@ protected:
   // for a possible synthesized response instead.
   bool ShouldIntercept(nsIURI* aURI = nullptr);
 
+#ifdef DEBUG
   // Check if mPrivateBrowsingId matches between LoadInfo and LoadContext.
-  void CheckPrivateBrowsing();
+  void AssertPrivateBrowsingId();
+#endif
 
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
@@ -527,6 +551,10 @@ protected:
   bool mOnStartRequestCalled;
   bool mOnStopRequestCalled;
 
+  // Defaults to false. Is set to true at the begining of OnStartRequest.
+  // Used to ensure methods can't be called before OnStartRequest.
+  bool mAfterOnStartRequestBegun;
+
   uint64_t mTransferSize;
   uint64_t mDecodedBodySize;
   uint64_t mEncodedBodySize;
@@ -537,17 +565,29 @@ protected:
   nsID mRequestContextID;
   bool EnsureRequestContextID();
 
+  // ID of the top-level document's inner window this channel is being
+  // originated from.
+  uint64_t mContentWindowId;
+
   bool                              mRequireCORSPreflight;
   nsTArray<nsCString>               mUnsafeHeaders;
 
   nsCOMPtr<nsIConsoleReportCollector> mReportCollector;
 
+  // Holds the name of the preferred alt-data type.
+  nsCString mPreferredCachedAltDataType;
+  // Holds the name of the alternative data type the channel returned.
+  nsCString mAvailableCachedAltDataType;
+
   bool mForceMainDocumentChannel;
+  bool mIsTrackingResource;
 
   nsID mChannelId;
 
   nsString mIntegrityMetadata;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(HttpBaseChannel, HTTP_BASE_CHANNEL_IID)
 
 // Share some code while working around C++'s absurd inability to handle casting
 // of member functions between base/derived types.

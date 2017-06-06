@@ -98,6 +98,11 @@ class GCVector
         return vector.infallibleAppend(aBegin, aLength);
     }
 
+    template<typename U, size_t O, class BP>
+    bool appendAll(const mozilla::Vector<U, O, BP>& aU) { return vector.appendAll(aU); }
+    template<typename U, size_t O, class BP>
+    bool appendAll(const GCVector<U, O, BP>& aU) { return vector.append(aU.begin(), aU.length()); }
+
     bool appendN(const T& val, size_t count) { return vector.appendN(val, count); }
 
     template<typename U> bool append(const U* aBegin, const U* aEnd) {
@@ -130,11 +135,11 @@ class GCVector
 
 namespace js {
 
-template <typename Outer, typename T, size_t Capacity, typename AllocPolicy>
-class GCVectorOperations
+template <typename Wrapper, typename T, size_t Capacity, typename AllocPolicy>
+class WrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>, Wrapper>
 {
     using Vec = JS::GCVector<T, Capacity, AllocPolicy>;
-    const Vec& vec() const { return static_cast<const Outer*>(this)->get(); }
+    const Vec& vec() const { return static_cast<const Wrapper*>(this)->get(); }
 
   public:
     const AllocPolicy& allocPolicy() const { return vec().allocPolicy(); }
@@ -150,13 +155,13 @@ class GCVectorOperations
     }
 };
 
-template <typename Outer, typename T, size_t Capacity, typename AllocPolicy>
-class MutableGCVectorOperations
-  : public GCVectorOperations<Outer, T, Capacity, AllocPolicy>
+template <typename Wrapper, typename T, size_t Capacity, typename AllocPolicy>
+class MutableWrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>, Wrapper>
+  : public WrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>, Wrapper>
 {
     using Vec = JS::GCVector<T, Capacity, AllocPolicy>;
-    const Vec& vec() const { return static_cast<const Outer*>(this)->get(); }
-    Vec& vec() { return static_cast<Outer*>(this)->get(); }
+    const Vec& vec() const { return static_cast<const Wrapper*>(this)->get(); }
+    Vec& vec() { return static_cast<Wrapper*>(this)->get(); }
 
   public:
     const AllocPolicy& allocPolicy() const { return vec().allocPolicy(); }
@@ -191,6 +196,8 @@ class MutableGCVectorOperations
     }
     template<typename U, size_t O, class BP>
     bool appendAll(const mozilla::Vector<U, O, BP>& aU) { return vec().appendAll(aU); }
+    template<typename U, size_t O, class BP>
+    bool appendAll(const JS::GCVector<U, O, BP>& aU) { return vec().appendAll(aU); }
     bool appendN(const T& aT, size_t aN) { return vec().appendN(aT, aN); }
     template<typename U> bool append(const U* aBegin, const U* aEnd) {
         return vec().append(aBegin, aEnd);
@@ -216,26 +223,6 @@ class MutableGCVectorOperations
     void erase(T* aT) { vec().erase(aT); }
     void erase(T* aBegin, T* aEnd) { vec().erase(aBegin, aEnd); }
 };
-
-template <typename T, size_t N, typename AP>
-class RootedBase<JS::GCVector<T,N,AP>>
-  : public MutableGCVectorOperations<JS::Rooted<JS::GCVector<T,N,AP>>, T,N,AP>
-{};
-
-template <typename T, size_t N, typename AP>
-class MutableHandleBase<JS::GCVector<T,N,AP>>
-  : public MutableGCVectorOperations<JS::MutableHandle<JS::GCVector<T,N,AP>>, T,N,AP>
-{};
-
-template <typename T, size_t N, typename AP>
-class HandleBase<JS::GCVector<T,N,AP>>
-  : public GCVectorOperations<JS::Handle<JS::GCVector<T,N,AP>>, T,N,AP>
-{};
-
-template <typename T, size_t N, typename AP>
-class PersistentRootedBase<JS::GCVector<T,N,AP>>
-  : public MutableGCVectorOperations<JS::PersistentRooted<JS::GCVector<T,N,AP>>, T,N,AP>
-{};
 
 } // namespace js
 

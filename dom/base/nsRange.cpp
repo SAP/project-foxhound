@@ -30,6 +30,7 @@
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/DOMRect.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/Telemetry.h"
@@ -293,6 +294,8 @@ nsRange::CreateRange(nsIDOMNode* aStartParent, int32_t aStartOffset,
 
   RefPtr<nsRange> range = new nsRange(startParent);
 
+  // XXX this can be optimized by inlining SetStart/End and calling
+  // DoSetRange *once*.
   nsresult rv = range->SetStart(startParent, aStartOffset);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -350,7 +353,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsRange)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEndParent)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRoot)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSelection)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsRange)
@@ -2885,7 +2887,7 @@ GetTextFrameForContent(nsIContent* aContent, bool aFlushLayout)
         static_cast<nsGenericDOMDataNode*>(aContent));
 
     if (aFlushLayout) {
-      aContent->OwnerDoc()->FlushPendingNotifications(Flush_Layout);
+      aContent->OwnerDoc()->FlushPendingNotifications(FlushType::Layout);
     }
 
     nsIFrame* frame = aContent->GetPrimaryFrame();
@@ -2897,17 +2899,29 @@ GetTextFrameForContent(nsIContent* aContent, bool aFlushLayout)
 }
 
 static nsresult GetPartialTextRect(nsLayoutUtils::RectCallback* aCallback,
+                                   mozilla::dom::DOMStringList* aTextList,
                                    nsIContent* aContent, int32_t aStartOffset,
                                    int32_t aEndOffset, bool aClampToEdge,
                                    bool aFlushLayout)
 {
   nsTextFrame* textFrame = GetTextFrameForContent(aContent, aFlushLayout);
   if (textFrame) {
+    // If we'll need it later, collect the full content text now.
+    nsAutoString textContent;
+    if (aTextList) {
+      mozilla::ErrorResult err; // ignored
+      aContent->GetTextContent(textContent, err);
+    }
+
     nsIFrame* relativeTo = nsLayoutUtils::GetContainingBlockForClientRect(textFrame);
     for (nsTextFrame* f = textFrame; f; f = static_cast<nsTextFrame*>(f->GetNextContinuation())) {
       int32_t fstart = f->GetContentOffset(), fend = f->GetContentEnd();
       if (fend <= aStartOffset || fstart >= aEndOffset)
         continue;
+
+      // Calculate the text content offsets we'll need if text is requested.
+      int32_t textContentStart = fstart;
+      int32_t textContentEnd = fend;
 
       // overlapping with the offset we want
       f->EnsureTextRun(nsTextFrame::eInflated);
@@ -2917,24 +2931,36 @@ static nsresult GetPartialTextRect(nsLayoutUtils::RectCallback* aCallback,
       if (fstart < aStartOffset) {
         // aStartOffset is within this frame
         ExtractRectFromOffset(f, aStartOffset, &r, rtl, aClampToEdge);
+        textContentStart = aStartOffset;
       }
       if (fend > aEndOffset) {
         // aEndOffset is in the middle of this frame
         ExtractRectFromOffset(f, aEndOffset, &r, !rtl, aClampToEdge);
+        textContentEnd = aEndOffset;
       }
       r = nsLayoutUtils::TransformFrameRectToAncestor(f, r, relativeTo);
       aCallback->AddRect(r);
+
+      // Finally capture the text, if requested.
+      if (aTextList) {
+        const nsAString& textSubstring =
+          Substring(textContent,
+                    textContentStart,
+                    (textContentEnd - textContentStart));
+        aTextList->Add(textSubstring);
+      }
     }
   }
   return NS_OK;
 }
 
 /* static */ void
-nsRange::CollectClientRects(nsLayoutUtils::RectCallback* aCollector,
-                            nsRange* aRange,
-                            nsINode* aStartParent, int32_t aStartOffset,
-                            nsINode* aEndParent, int32_t aEndOffset,
-                            bool aClampToEdge, bool aFlushLayout)
+nsRange::CollectClientRectsAndText(nsLayoutUtils::RectCallback* aCollector,
+                                   mozilla::dom::DOMStringList* aTextList,
+                                   nsRange* aRange,
+                                   nsINode* aStartParent, int32_t aStartOffset,
+                                   nsINode* aEndParent, int32_t aEndOffset,
+                                   bool aClampToEdge, bool aFlushLayout)
 {
   // Hold strong pointers across the flush
   nsCOMPtr<nsINode> startContainer = aStartParent;
@@ -2946,7 +2972,7 @@ nsRange::CollectClientRects(nsLayoutUtils::RectCallback* aCollector,
   }
 
   if (aFlushLayout) {
-    aStartParent->OwnerDoc()->FlushPendingNotifications(Flush_Layout);
+    aStartParent->OwnerDoc()->FlushPendingNotifications(FlushType::Layout);
     // Recheck whether we're still in the document
     if (!aStartParent->IsInUncomposedDoc()) {
       return;
@@ -2992,11 +3018,11 @@ nsRange::CollectClientRects(nsLayoutUtils::RectCallback* aCollector,
        if (node == startContainer) {
          int32_t offset = startContainer == endContainer ?
            aEndOffset : content->GetText()->GetLength();
-         GetPartialTextRect(aCollector, content, aStartOffset, offset,
+         GetPartialTextRect(aCollector, aTextList, content, aStartOffset, offset,
                             aClampToEdge, aFlushLayout);
          continue;
        } else if (node == endContainer) {
-         GetPartialTextRect(aCollector, content, 0, aEndOffset,
+         GetPartialTextRect(aCollector, aTextList, content, 0, aEndOffset,
                             aClampToEdge, aFlushLayout);
          continue;
        }
@@ -3004,8 +3030,9 @@ nsRange::CollectClientRects(nsLayoutUtils::RectCallback* aCollector,
 
     nsIFrame* frame = content->GetPrimaryFrame();
     if (frame) {
-      nsLayoutUtils::GetAllInFlowRects(frame,
+      nsLayoutUtils::GetAllInFlowRectsAndTexts(frame,
         nsLayoutUtils::GetContainingBlockForClientRect(frame), aCollector,
+        aTextList,
         nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
     }
   } while (!iter.IsDone());
@@ -3027,8 +3054,8 @@ nsRange::GetBoundingClientRect(bool aClampToEdge, bool aFlushLayout)
   }
 
   nsLayoutUtils::RectAccumulator accumulator;
-  CollectClientRects(&accumulator, this, mStartParent, mStartOffset, 
-    mEndParent, mEndOffset, aClampToEdge, aFlushLayout);
+  CollectClientRectsAndText(&accumulator, nullptr, this, mStartParent,
+    mStartOffset, mEndParent, mEndOffset, aClampToEdge, aFlushLayout);
 
   nsRect r = accumulator.mResultRect.IsEmpty() ? accumulator.mFirstRect : 
     accumulator.mResultRect;
@@ -3055,9 +3082,27 @@ nsRange::GetClientRects(bool aClampToEdge, bool aFlushLayout)
 
   nsLayoutUtils::RectListBuilder builder(rectList);
 
-  CollectClientRects(&builder, this, mStartParent, mStartOffset, 
-    mEndParent, mEndOffset, aClampToEdge, aFlushLayout);
+  CollectClientRectsAndText(&builder, nullptr, this, mStartParent,
+    mStartOffset, mEndParent, mEndOffset, aClampToEdge, aFlushLayout);
   return rectList.forget();
+}
+
+void
+nsRange::GetClientRectsAndTexts(
+  mozilla::dom::ClientRectsAndTexts& aResult,
+  ErrorResult& aErr)
+{
+  if (!mStartParent) {
+    return;
+  }
+
+  aResult.mRectList = new DOMRectList(static_cast<nsIDOMRange*>(this));
+  aResult.mTextList = new DOMStringList();
+
+  nsLayoutUtils::RectListBuilder builder(aResult.mRectList);
+
+  CollectClientRectsAndText(&builder, aResult.mTextList, this,
+    mStartParent, mStartOffset, mEndParent, mEndOffset, true, true);
 }
 
 NS_IMETHODIMP
@@ -3073,7 +3118,7 @@ nsRange::GetUsedFontFaces(nsIDOMFontFaceList** aResult)
   // Flush out layout so our frames are up to date.
   nsIDocument* doc = mStartParent->OwnerDoc();
   NS_ENSURE_TRUE(doc, NS_ERROR_UNEXPECTED);
-  doc->FlushPendingNotifications(Flush_Frames);
+  doc->FlushPendingNotifications(FlushType::Frames);
 
   // Recheck whether we're still in the document
   NS_ENSURE_TRUE(mStartParent->IsInUncomposedDoc(), NS_ERROR_UNEXPECTED);
@@ -3216,7 +3261,7 @@ nsRange::ExcludeNonSelectableNodes(nsTArray<RefPtr<nsRange>>* aOutRanges)
             frame = p->GetPrimaryFrame();
           }
           if (frame) {
-            frame->IsSelectable(&selectable, nullptr);
+            selectable = frame->IsSelectable(nullptr);
           }
         }
       }
@@ -3255,7 +3300,18 @@ nsRange::ExcludeNonSelectableNodes(nsTArray<RefPtr<nsRange>>* aOutRanges)
           }
 
           // Create a new range for the remainder.
-          rv = CreateRange(node, 0, endParent, endOffset,
+          nsINode* startParent = node;
+          int32_t startOffset = 0;
+          // Don't start *inside* a node with independent selection though
+          // (e.g. <input>).
+          if (content && content->HasIndependentSelection()) {
+            nsINode* parent = startParent->GetParent();
+            if (parent) {
+              startOffset = parent->IndexOf(startParent);
+              startParent = parent;
+            }
+          }
+          rv = CreateRange(startParent, startOffset, endParent, endOffset,
                            getter_AddRefs(newRange));
           if (NS_FAILED(rv) || newRange->Collapsed()) {
             newRange = nullptr;
@@ -3329,13 +3385,14 @@ IsVisibleAndNotInReplacedElement(nsIFrame* aFrame)
 }
 
 static bool
-ElementIsVisible(Element* aElement)
+ElementIsVisibleNoFlush(Element* aElement)
 {
   if (!aElement) {
     return false;
   }
-  RefPtr<nsStyleContext> sc = nsComputedDOMStyle::GetStyleContextForElement(
-    aElement, nullptr, nullptr);
+  RefPtr<nsStyleContext> sc =
+    nsComputedDOMStyle::GetStyleContextForElementNoFlush(aElement, nullptr,
+                                                         nullptr);
   return sc && sc->StyleVisibility()->IsVisible();
 }
 
@@ -3463,7 +3520,7 @@ nsRange::GetInnerTextNoFlush(DOMString& aValue, ErrorResult& aError,
     if (currentState == AT_NODE) {
       bool isText = currentNode->IsNodeOfType(nsINode::eTEXT);
       if (isText && currentNode->GetParent()->IsHTMLElement(nsGkAtoms::rp) &&
-          ElementIsVisible(currentNode->GetParent()->AsElement())) {
+          ElementIsVisibleNoFlush(currentNode->GetParent()->AsElement())) {
         nsAutoString str;
         currentNode->GetTextContent(str, aError);
         result.Append(str);

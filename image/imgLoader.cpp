@@ -65,7 +65,7 @@ MOZ_DEFINE_MALLOC_SIZE_OF(ImagesMallocSizeOf)
 
 class imgMemoryReporter final : public nsIMemoryReporter
 {
-  ~imgMemoryReporter() { }
+  ~imgMemoryReporter() = default;
 
 public:
   NS_DECL_ISUPPORTS
@@ -729,10 +729,6 @@ NewImageChannel(nsIChannel** aResult,
   }
   securityFlags |= nsILoadInfo::SEC_ALLOW_CHROME;
 
-  if (aRespectPrivacy) {
-    securityFlags |= nsILoadInfo::SEC_FORCE_PRIVATE_BROWSING;
-  }
-
   // Note we are calling NS_NewChannelWithTriggeringPrincipal() here with a
   // node and a principal. This is for things like background images that are
   // specified by user stylesheets, where the document is being styled, but
@@ -747,14 +743,28 @@ NewImageChannel(nsIChannel** aResult,
                                               nullptr,   // loadGroup
                                               callbacks,
                                               aLoadFlags);
+
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    if (aPolicyType == nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON) {
+      // If this is a favicon loading, we will use the originAttributes from the
+      // loadingPrincipal as the channel's originAttributes. This allows the favicon
+      // loading from XUL will use the correct originAttributes.
+      OriginAttributes attrs;
+      attrs.Inherit(aLoadingPrincipal->OriginAttributesRef());
+
+      nsCOMPtr<nsILoadInfo> loadInfo = (*aResult)->GetLoadInfo();
+      rv = loadInfo->SetOriginAttributes(attrs);
+    }
   } else {
     // either we are loading something inside a document, in which case
     // we should always have a requestingNode, or we are loading something
     // outside a document, in which case the loadingPrincipal and
     // triggeringPrincipal should always be the systemPrincipal.
-    // However, there are two exceptions: one is Notifications and the
-    // other one is Favicons which create a channel in the parent prcoess
-    // in which case we can't get a requestingNode.
+    // However, there are exceptions: one is Notifications which create a
+    // channel in the parent prcoess in which case we can't get a requestingNode.
     rv = NS_NewChannel(aResult,
                        aURI,
                        nsContentUtils::GetSystemPrincipal(),
@@ -763,6 +773,22 @@ NewImageChannel(nsIChannel** aResult,
                        nullptr,   // loadGroup
                        callbacks,
                        aLoadFlags);
+
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    // Use the OriginAttributes from the loading principal, if one is available,
+    // and adjust the private browsing ID based on what kind of load the caller
+    // has asked us to perform.
+    OriginAttributes attrs;
+    if (aLoadingPrincipal) {
+      attrs.Inherit(aLoadingPrincipal->OriginAttributesRef());
+    }
+    attrs.mPrivateBrowsingId = aRespectPrivacy ? 1 : 0;
+
+    nsCOMPtr<nsILoadInfo> loadInfo = (*aResult)->GetLoadInfo();
+    rv = loadInfo->SetOriginAttributes(attrs);
   }
 
   if (NS_FAILED(rv)) {
@@ -912,7 +938,7 @@ using namespace std;
 void
 imgCacheQueue::Remove(imgCacheEntry* entry)
 {
-  queueContainer::iterator it = find(mQueue.begin(), mQueue.end(), entry);
+  auto it = find(mQueue.begin(), mQueue.end(), entry);
   if (it != mQueue.end()) {
     mSize -= (*it)->GetDataSize();
     mQueue.erase(it);
@@ -1040,7 +1066,7 @@ public:
   imgCacheExpirationTracker();
 
 protected:
-  void NotifyExpired(imgCacheEntry* entry);
+  void NotifyExpired(imgCacheEntry* entry) override;
 };
 
 imgCacheExpirationTracker::imgCacheExpirationTracker()
@@ -1220,7 +1246,6 @@ imgLoader::InitCache()
   }
 
   os->AddObserver(this, "memory-pressure", false);
-  os->AddObserver(this, "app-theme-changed", false);
   os->AddObserver(this, "chrome-flush-skin-caches", false);
   os->AddObserver(this, "chrome-flush-caches", false);
   os->AddObserver(this, "last-pb-context-exited", false);
@@ -1262,9 +1287,6 @@ imgLoader::Observe(nsISupports* aSubject, const char* aTopic,
     }
 
   } else if (strcmp(aTopic, "memory-pressure") == 0) {
-    MinimizeCaches();
-  } else if (strcmp(aTopic, "app-theme-changed") == 0) {
-    ClearImageCache();
     MinimizeCaches();
   } else if (strcmp(aTopic, "chrome-flush-skin-caches") == 0 ||
              strcmp(aTopic, "chrome-flush-caches") == 0) {
@@ -1326,11 +1348,11 @@ imgLoader::FindEntryProperties(nsIURI* uri,
 
   nsCOMPtr<nsIDocument> doc = do_QueryInterface(aDOMDoc);
 
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (doc) {
     nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
     if (principal) {
-      attrs = BasePrincipal::Cast(principal)->OriginAttributesRef();
+      attrs = principal->OriginAttributesRef();
     }
   }
 
@@ -1987,8 +2009,7 @@ imgLoader::LoadImageXPCOM(nsIURI* aURI,
     nsresult rv = LoadImage(aURI,
                             aInitialDocumentURI,
                             aReferrerURI,
-                            refpol == mozilla::net::RP_Unset ?
-                              mozilla::net::RP_Default : refpol,
+                            refpol,
                             aLoadingPrincipal,
                             aLoadGroup,
                             aObserver,
@@ -2090,9 +2111,9 @@ imgLoader::LoadImage(nsIURI* aURI,
   // XXX For now ignore aCacheKey. We will need it in the future
   // for correctly dealing with image load requests that are a result
   // of post data.
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (aLoadingPrincipal) {
-    attrs = BasePrincipal::Cast(aLoadingPrincipal)->OriginAttributesRef();
+    attrs = aLoadingPrincipal->OriginAttributesRef();
   }
   ImageCacheKey key(aURI, attrs, aLoadingDocument, rv);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2302,9 +2323,9 @@ imgLoader::LoadImageWithChannel(nsIChannel* channel,
   NS_ENSURE_TRUE(channel, NS_ERROR_FAILURE);
   nsCOMPtr<nsILoadInfo> loadInfo = channel->GetLoadInfo();
 
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (loadInfo) {
-    attrs.InheritFromNecko(loadInfo->GetOriginAttributes());
+    attrs.Inherit(loadInfo->GetOriginAttributes());
   }
 
   nsresult rv;
@@ -2343,7 +2364,7 @@ imgLoader::LoadImageWithChannel(nsIChannel* channel,
         ? loadInfo->InternalContentPolicyType()
         : nsIContentPolicy::TYPE_INTERNAL_IMAGE;
 
-      if (ValidateEntry(entry, uri, nullptr, nullptr, RP_Default,
+      if (ValidateEntry(entry, uri, nullptr, nullptr, RP_Unset,
                         nullptr, aObserver, aCX, requestFlags,
                         policyType, false, nullptr,
                         nullptr, imgIRequest::CORS_NONE)) {
@@ -2432,7 +2453,7 @@ imgLoader::LoadImageWithChannel(nsIChannel* channel,
     // can set aHadInsecureRedirect to false here.
     rv = request->Init(originalURI, uri, /* aHadInsecureRedirect = */ false,
                        channel, channel, entry, aCX, nullptr,
-                       imgIRequest::CORS_NONE, RP_Default);
+                       imgIRequest::CORS_NONE, RP_Unset);
     NS_ENSURE_SUCCESS(rv, rv);
 
     RefPtr<ProxyListener> pl =

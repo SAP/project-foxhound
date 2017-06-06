@@ -58,7 +58,7 @@ function handlePrompt(action, isTabModal, isSelect) {
     promptState = getPromptState(ui);
     dismissPrompt(ui, action);
   }
-  sendAsyncMessage("promptHandled", { promptState: promptState });
+  sendAsyncMessage("promptHandled", { promptState });
   return true;
 }
 
@@ -202,7 +202,7 @@ function getDialogDoc() {
   // that has either commonDialog.xul or selectDialog.xul loaded.
   var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
            getService(Ci.nsIWindowMediator);
-  //var enumerator = wm.getEnumerator("navigator:browser");
+  // var enumerator = wm.getEnumerator("navigator:browser");
   var enumerator = wm.getXULWindowEnumerator(null);
 
   while (enumerator.hasMoreElements()) {

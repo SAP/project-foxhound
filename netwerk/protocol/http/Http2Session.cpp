@@ -832,10 +832,10 @@ Http2Session::SendHello()
   MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
   LOG3(("Http2Session::SendHello %p\n", this));
 
-  // sized for magic + 4 settings and a session window update and 5 priority frames
+  // sized for magic + 5 settings and a session window update and 5 priority frames
   // 24 magic, 33 for settings (9 header + 4 settings @6), 13 for window update,
   // 5 priority frames at 14 (9 + 5) each
-  static const uint32_t maxSettings = 4;
+  static const uint32_t maxSettings = 5;
   static const uint32_t prioritySize = 5 * (kFrameHeaderBytes + 5);
   static const uint32_t maxDataLen = 24 + kFrameHeaderBytes + maxSettings * 6 + 13 + prioritySize;
   char *packet = EnsureOutputBuffer(maxDataLen);
@@ -854,6 +854,14 @@ Http2Session::SendHello()
   // 2nd entry is bytes 15 to 20
   // 3rd entry is bytes 21 to 26
   // 4th entry is bytes 27 to 32
+  // 5th entry is bytes 33 to 38
+
+  // Let the other endpoint know about our default HPACK decompress table size
+  uint32_t maxHpackBufferSize = gHttpHandler->DefaultHpackBuffer();
+  mDecompressor.SetInitialMaxBufferSize(maxHpackBufferSize);
+  NetworkEndian::writeUint16(packet + kFrameHeaderBytes + (6 * numberOfEntries), SETTINGS_TYPE_HEADER_TABLE_SIZE);
+  NetworkEndian::writeUint32(packet + kFrameHeaderBytes + (6 * numberOfEntries) + 2, maxHpackBufferSize);
+  numberOfEntries++;
 
   if (!gHttpHandler->AllowPush()) {
     // If we don't support push then set MAX_CONCURRENT to 0 and also
@@ -1267,9 +1275,19 @@ Http2Session::RecvHeaders(Http2Session *self)
   self->mInputFrameDataStream->UpdateTransportReadEvents(self->mInputFrameDataSize);
   self->mLastDataReadEpoch = self->mLastReadEpoch;
 
+  if (!isContinuation) {
+    self->mAggregatedHeaderSize = self->mInputFrameDataSize - paddingControlBytes - priorityLen - paddingLength;
+  } else {
+    self->mAggregatedHeaderSize += self->mInputFrameDataSize - paddingControlBytes - priorityLen - paddingLength;
+  }
+
   if (!endHeadersFlag) { // more are coming - don't process yet
     self->ResetDownstreamState();
     return NS_OK;
+  }
+
+  if (isContinuation) {
+    Telemetry::Accumulate(Telemetry::SPDY_CONTINUED_HEADERS, self->mAggregatedHeaderSize);
   }
 
   rv = self->ResponseHeadersComplete();
@@ -1333,14 +1351,12 @@ Http2Session::ResponseHeadersComplete()
                                                      mDecompressBuffer,
                                                      mFlatHTTPResponseHeaders,
                                                      httpResponseCode);
-  if (rv == NS_ERROR_ABORT) {
-    LOG(("Http2Session::ResponseHeadersComplete ConvertResponseHeaders aborted\n"));
-    if (mInputFrameDataStream->IsTunnel()) {
-      gHttpHandler->ConnMgr()->CancelTransactions(
-        mInputFrameDataStream->Transaction()->ConnectionInfo(),
-        NS_ERROR_CONNECTION_REFUSED);
-    }
-    CleanupStream(mInputFrameDataStream, rv, CANCEL_ERROR);
+  if (rv == NS_ERROR_NET_RESET) {
+    LOG(("Http2Session::ResponseHeadersComplete %p ConvertResponseHeaders reset\n", this));
+    // This means the stream found connection-oriented auth. Treat this like we
+    // got a reset with HTTP_1_1_REQUIRED.
+    mInputFrameDataStream->Transaction()->DisableSpdy();
+    CleanupStream(mInputFrameDataStream, NS_ERROR_NET_RESET, CANCEL_ERROR);
     ResetDownstreamState();
     return NS_OK;
   } else if (NS_FAILED(rv)) {
@@ -1665,10 +1681,20 @@ Http2Session::RecvPushPromise(Http2Session *self)
   self->mDecompressBuffer.Append(&self->mInputFrameBuffer[kFrameHeaderBytes + paddingControlBytes + promiseLen],
                                  self->mInputFrameDataSize - paddingControlBytes - promiseLen - paddingLength);
 
+  if (self->mInputFrameType != FRAME_TYPE_CONTINUATION) {
+    self->mAggregatedHeaderSize = self->mInputFrameDataSize - paddingControlBytes - promiseLen - paddingLength;
+  } else {
+    self->mAggregatedHeaderSize += self->mInputFrameDataSize - paddingControlBytes - promiseLen - paddingLength;
+  }
+
   if (!(self->mInputFrameFlags & kFlag_END_PUSH_PROMISE)) {
     LOG3(("Http2Session::RecvPushPromise not finishing processing for multi-frame push\n"));
     self->ResetDownstreamState();
     return NS_OK;
+  }
+
+  if (self->mInputFrameType == FRAME_TYPE_CONTINUATION) {
+    Telemetry::Accumulate(Telemetry::SPDY_CONTINUED_HEADERS, self->mAggregatedHeaderSize);
   }
 
   // Create the buffering transaction and push stream
@@ -2665,7 +2691,11 @@ Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
     LOG3(("Http2Session::WriteSegments %p stream 0x%X mPaddingLength=%d", this,
           mInputFrameID, mPaddingLength));
 
-    if (1U + mPaddingLength == mInputFrameDataSize) {
+    if (1U + mPaddingLength > mInputFrameDataSize) {
+      LOG3(("Http2Session::WriteSegments %p stream 0x%X padding too large for "
+            "frame", this, mInputFrameID));
+      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+    } else if (1U + mPaddingLength == mInputFrameDataSize) {
       // This frame consists entirely of padding, we can just discard it
       LOG3(("Http2Session::WriteSegments %p stream 0x%X frame with only padding",
             this, mInputFrameID));

@@ -14,6 +14,8 @@
 
 "use strict";
 
+const {CSS_ANGLEUNIT} = require("devtools/shared/css/properties-db");
+
 const promise = require("promise");
 const {getCSSLexer} = require("devtools/shared/css/lexer");
 const {Task} = require("devtools/shared/task");
@@ -447,9 +449,19 @@ function parseDeclarations(isCssPropertyKnown, inputString,
 }
 
 /**
+ * Like @see parseDeclarations, but removes properties that do not
+ * have a name.
+ */
+function parseNamedDeclarations(isCssPropertyKnown, inputString,
+                                parseComments = false) {
+  return parseDeclarations(isCssPropertyKnown, inputString, parseComments)
+         .filter(item => !!item.name);
+}
+
+/**
  * Return an object that can be used to rewrite declarations in some
  * source text.  The source text and parsing are handled in the same
- * way as @see parseDeclarations, with |parseComments| being true.
+ * way as @see parseNamedDeclarations, with |parseComments| being true.
  * Rewriting is done by calling one of the modification functions like
  * setPropertyEnabled.  The returned object has the same interface
  * as @see RuleModificationList.
@@ -486,18 +498,12 @@ function parseDeclarations(isCssPropertyKnown, inputString,
  */
 function RuleRewriter(isCssPropertyKnown, rule, inputString) {
   this.rule = rule;
-  this.inputString = inputString;
-  // Whether there are any newlines in the input text.
-  this.hasNewLine = /[\r\n]/.test(this.inputString);
+  this.isCssPropertyKnown = isCssPropertyKnown;
+
   // Keep track of which any declarations we had to rewrite while
   // performing the requested action.
   this.changedDeclarations = {};
-  // The declarations.
-  this.declarations = parseDeclarations(isCssPropertyKnown, this.inputString,
-                                        true);
 
-  this.decl = null;
-  this.result = null;
   // If not null, a promise that must be wait upon before |apply| can
   // do its work.
   this.editPromise = null;
@@ -507,9 +513,28 @@ function RuleRewriter(isCssPropertyKnown, rule, inputString) {
   // indentation based on the style sheet's text.  This override
   // facility is for testing.
   this.defaultIndentation = null;
+
+  this.startInitialization(inputString);
 }
 
 RuleRewriter.prototype = {
+  /**
+   * An internal function to initialize the rewriter with a given
+   * input string.
+   *
+   * @param {String} inputString the input to use
+   */
+  startInitialization: function (inputString) {
+    this.inputString = inputString;
+    // Whether there are any newlines in the input text.
+    this.hasNewLine = /[\r\n]/.test(this.inputString);
+    // The declarations.
+    this.declarations = parseNamedDeclarations(this.isCssPropertyKnown, this.inputString,
+                                               true);
+    this.decl = null;
+    this.result = null;
+  },
+
   /**
    * An internal function to complete initialization and set some
    * properties for further processing.
@@ -924,6 +949,17 @@ RuleRewriter.prototype = {
       return;
     }
 
+    // If the property is disabled, then first enable it, and then
+    // delete it.  We take this approach because we want to remove the
+    // entire comment if possible; but the logic for dealing with
+    // comments is hairy and already implemented in
+    // setPropertyEnabled.
+    if (this.decl.commentOffsets) {
+      this.setPropertyEnabled(index, name, true);
+      this.startInitialization(this.result);
+      this.completeInitialization(index);
+    }
+
     let copyOffset = this.decl.offsets[1];
     // Maybe removing this rule left us with a completely blank
     // line.  In this case, we'll delete the whole thing.  We only
@@ -1109,14 +1145,38 @@ function parseSingleValue(isCssPropertyKnown, value) {
   };
 }
 
+/**
+ * Convert an angle value to degree.
+ *
+ * @param {Number} angleValue The angle value.
+ * @param {CSS_ANGLEUNIT} angleUnit The angleValue's angle unit.
+ * @return {Number} An angle value in degree.
+ */
+function getAngleValueInDegrees(angleValue, angleUnit) {
+  switch (angleUnit) {
+    case CSS_ANGLEUNIT.deg:
+      return angleValue;
+    case CSS_ANGLEUNIT.grad:
+      return angleValue * 0.9;
+    case CSS_ANGLEUNIT.rad:
+      return angleValue * 180 / Math.PI;
+    case CSS_ANGLEUNIT.turn:
+      return angleValue * 360;
+    default:
+      throw new Error("No matched angle unit.");
+  }
+}
+
 exports.cssTokenizer = cssTokenizer;
 exports.cssTokenizerWithLineColumn = cssTokenizerWithLineColumn;
 exports.escapeCSSComment = escapeCSSComment;
 // unescapeCSSComment is exported for testing.
 exports._unescapeCSSComment = unescapeCSSComment;
 exports.parseDeclarations = parseDeclarations;
+exports.parseNamedDeclarations = parseNamedDeclarations;
 // parseCommentDeclarations is exported for testing.
 exports._parseCommentDeclarations = parseCommentDeclarations;
 exports.RuleRewriter = RuleRewriter;
 exports.parsePseudoClassesAndAttributes = parsePseudoClassesAndAttributes;
 exports.parseSingleValue = parseSingleValue;
+exports.getAngleValueInDegrees = getAngleValueInDegrees;

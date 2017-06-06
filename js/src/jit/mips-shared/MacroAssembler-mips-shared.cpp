@@ -39,6 +39,17 @@ MacroAssemblerMIPSShared::ma_li(Register dest, Imm32 imm)
     }
 }
 
+// This method generates lui and ori instruction pair that can be modified by
+// UpdateLuiOriValue, either during compilation (eg. Assembler::bind), or
+// during execution (eg. jit::PatchJump).
+void
+MacroAssemblerMIPSShared::ma_liPatchable(Register dest, Imm32 imm)
+{
+    m_buffer.ensureSpace(2 * sizeof(uint32_t));
+    as_lui(dest, Imm16::Upper(imm).encode());
+    as_ori(dest, dest, Imm16::Lower(imm).encode());
+}
+
 // Shifts
 void
 MacroAssemblerMIPSShared::ma_sll(Register rd, Register rt, Imm32 shift)
@@ -220,6 +231,37 @@ MacroAssemblerMIPSShared::ma_addu(Register rd, Imm32 imm)
 {
     ma_addu(rd, rd, imm);
 }
+
+template <typename L>
+void
+MacroAssemblerMIPSShared::ma_addTestCarry(Register rd, Register rs, Register rt, L overflow)
+{
+    as_addu(rd, rs, rt);
+    as_sltu(SecondScratchReg, rd, rs);
+    ma_b(SecondScratchReg, SecondScratchReg, overflow, Assembler::NonZero);
+}
+
+template void
+MacroAssemblerMIPSShared::ma_addTestCarry<Label*>(Register rd, Register rs,
+                                                  Register rt, Label* overflow);
+template void
+MacroAssemblerMIPSShared::ma_addTestCarry<wasm::TrapDesc>(Register rd, Register rs, Register rt,
+                                                          wasm::TrapDesc overflow);
+
+template <typename L>
+void
+MacroAssemblerMIPSShared::ma_addTestCarry(Register rd, Register rs, Imm32 imm, L overflow)
+{
+    ma_li(ScratchRegister, imm);
+    ma_addTestCarry(rd, rs, ScratchRegister, overflow);
+}
+
+template void
+MacroAssemblerMIPSShared::ma_addTestCarry<Label*>(Register rd, Register rs,
+                                                  Imm32 imm, Label* overflow);
+template void
+MacroAssemblerMIPSShared::ma_addTestCarry<wasm::TrapDesc>(Register rd, Register rs, Imm32 imm,
+                                                          wasm::TrapDesc overflow);
 
 // Subtract.
 void
@@ -415,6 +457,53 @@ MacroAssemblerMIPSShared::ma_load(Register dest, const BaseIndex& src,
 }
 
 void
+MacroAssemblerMIPSShared::ma_load_unaligned(Register dest, const BaseIndex& src, Register temp,
+                                            LoadStoreSize size, LoadStoreExtension extension)
+{
+    int16_t lowOffset, hiOffset;
+    Register base;
+
+    asMasm().computeScaledAddress(src, SecondScratchReg);
+
+    if (Imm16::IsInSignedRange(src.offset) && Imm16::IsInSignedRange(src.offset + size / 8 - 1)) {
+        base = SecondScratchReg;
+        lowOffset = Imm16(src.offset).encode();
+        hiOffset = Imm16(src.offset + size / 8 - 1).encode();
+    } else {
+        ma_li(ScratchRegister, Imm32(src.offset));
+        as_daddu(ScratchRegister, SecondScratchReg, ScratchRegister);
+        base = ScratchRegister;
+        lowOffset = Imm16(0).encode();
+        hiOffset = Imm16(size / 8 - 1).encode();
+    }
+
+    switch (size) {
+      case SizeHalfWord:
+        as_lbu(dest, base, lowOffset);
+        if (extension != ZeroExtend)
+            as_lbu(temp, base, hiOffset);
+        else
+            as_lb(temp, base, hiOffset);
+        as_ins(dest, temp, 8, 24);
+        break;
+      case SizeWord:
+        as_lwl(dest, base, hiOffset);
+        as_lwr(dest, base, lowOffset);
+#ifdef JS_CODEGEN_MIPS64
+        if (extension != ZeroExtend)
+            as_dext(dest, dest, 0, 32);
+#endif
+        break;
+      case SizeDouble:
+        as_ldl(dest, base, hiOffset);
+        as_ldr(dest, base, lowOffset);
+        break;
+      default:
+        MOZ_CRASH("Invalid argument for ma_load");
+    }
+}
+
+void
 MacroAssemblerMIPSShared::ma_store(Register data, const BaseIndex& dest,
                                    LoadStoreSize size, LoadStoreExtension extension)
 {
@@ -514,6 +603,46 @@ MacroAssemblerMIPSShared::ma_store(Imm32 imm, const BaseIndex& dest,
     asMasm().ma_store(ScratchRegister, Address(SecondScratchReg, 0), size, extension);
 }
 
+void
+MacroAssemblerMIPSShared::ma_store_unaligned(Register data, const BaseIndex& dest, Register temp,
+                                             LoadStoreSize size, LoadStoreExtension extension)
+{
+    int16_t lowOffset, hiOffset;
+    Register base;
+
+    asMasm().computeEffectiveAddress(dest, SecondScratchReg);
+
+    if (Imm16::IsInSignedRange(dest.offset) && Imm16::IsInSignedRange(dest.offset + size / 8 - 1)) {
+        base = SecondScratchReg;
+        lowOffset = Imm16(dest.offset).encode();
+        hiOffset = Imm16(dest.offset + size / 8 - 1).encode();
+    } else {
+        ma_li(ScratchRegister, Imm32(dest.offset));
+        as_daddu(ScratchRegister, SecondScratchReg, ScratchRegister);
+        base = ScratchRegister;
+        lowOffset = Imm16(0).encode();
+        hiOffset = Imm16(size / 8 - 1).encode();
+    }
+
+    switch (size) {
+      case SizeHalfWord:
+        as_sb(data, base, lowOffset);
+        as_ext(temp, data, 8, 8);
+        as_sb(temp, base, hiOffset);
+        break;
+      case SizeWord:
+        as_swl(data, base, hiOffset);
+        as_swr(data, base, lowOffset);
+        break;
+      case SizeDouble:
+        as_sdl(data, base, hiOffset);
+        as_sdr(data, base, lowOffset);
+        break;
+      default:
+        MOZ_CRASH("Invalid argument for ma_store");
+    }
+}
+
 // Branches when done from within mips-specific code.
 void
 MacroAssemblerMIPSShared::ma_b(Register lhs, Register rhs, Label* label, Condition c, JumpKind jumpKind)
@@ -566,7 +695,7 @@ MacroAssemblerMIPSShared::ma_b(Register lhs, ImmPtr imm, Label* l, Condition c, 
 
 template <typename T>
 void
-MacroAssemblerMIPSShared::ma_b(Register lhs, T rhs, wasm::JumpTarget target, Condition c,
+MacroAssemblerMIPSShared::ma_b(Register lhs, T rhs, wasm::TrapDesc target, Condition c,
                                JumpKind jumpKind)
 {
     Label label;
@@ -575,13 +704,13 @@ MacroAssemblerMIPSShared::ma_b(Register lhs, T rhs, wasm::JumpTarget target, Con
 }
 
 template void MacroAssemblerMIPSShared::ma_b<Register>(Register lhs, Register rhs,
-                                                       wasm::JumpTarget target, Condition c,
+                                                       wasm::TrapDesc target, Condition c,
                                                        JumpKind jumpKind);
 template void MacroAssemblerMIPSShared::ma_b<Imm32>(Register lhs, Imm32 rhs,
-                                                       wasm::JumpTarget target, Condition c,
+                                                       wasm::TrapDesc target, Condition c,
                                                        JumpKind jumpKind);
 template void MacroAssemblerMIPSShared::ma_b<ImmTag>(Register lhs, ImmTag rhs,
-                                                       wasm::JumpTarget target, Condition c,
+                                                       wasm::TrapDesc target, Condition c,
                                                        JumpKind jumpKind);
 
 void
@@ -591,7 +720,7 @@ MacroAssemblerMIPSShared::ma_b(Label* label, JumpKind jumpKind)
 }
 
 void
-MacroAssemblerMIPSShared::ma_b(wasm::JumpTarget target, JumpKind jumpKind)
+MacroAssemblerMIPSShared::ma_b(wasm::TrapDesc target, JumpKind jumpKind)
 {
     Label label;
     asMasm().branchWithCode(getBranchCode(BranchIsJump), &label, jumpKind);
@@ -1469,33 +1598,33 @@ MacroAssembler::patchCall(uint32_t callerOffset, uint32_t calleeOffset)
 }
 
 CodeOffset
-MacroAssembler::thunkWithPatch()
+MacroAssembler::farJumpWithPatch()
 {
     ma_move(SecondScratchReg, ra);
     as_bal(BOffImm16(3 * sizeof(uint32_t)));
     as_lw(ScratchRegister, ra, 0);
-    // Allocate space which will be patched by patchThunk().
-    CodeOffset u32Offset(currentOffset());
+    // Allocate space which will be patched by patchFarJump().
+    CodeOffset farJump(currentOffset());
     writeInst(UINT32_MAX);
     addPtr(ra, ScratchRegister);
     as_jr(ScratchRegister);
     ma_move(ra, SecondScratchReg);
-    return u32Offset;
+    return farJump;
 }
 
 void
-MacroAssembler::patchThunk(uint32_t u32Offset, uint32_t targetOffset)
+MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset)
 {
-    uint32_t* u32 = reinterpret_cast<uint32_t*>(editSrc(BufferOffset(u32Offset)));
+    uint32_t* u32 = reinterpret_cast<uint32_t*>(editSrc(BufferOffset(farJump.offset())));
     MOZ_ASSERT(*u32 == UINT32_MAX);
-    *u32 = targetOffset - u32Offset;
+    *u32 = targetOffset - farJump.offset();
 }
 
 void
-MacroAssembler::repatchThunk(uint8_t* code, uint32_t u32Offset, uint32_t targetOffset)
+MacroAssembler::repatchFarJump(uint8_t* code, uint32_t farJumpOffset, uint32_t targetOffset)
 {
-    uint32_t* u32 = reinterpret_cast<uint32_t*>(code + u32Offset);
-    *u32 = targetOffset - u32Offset;
+    uint32_t* u32 = reinterpret_cast<uint32_t*>(code + farJumpOffset);
+    *u32 = targetOffset - farJumpOffset;
 }
 
 CodeOffset
@@ -1547,6 +1676,25 @@ MacroAssembler::call(JitCode* c)
     addPendingJump(bo, ImmPtr(c->raw()), Relocation::JITCODE);
     ma_liPatchable(ScratchRegister, ImmPtr(c->raw()));
     callJitNoProfiler(ScratchRegister);
+}
+
+CodeOffset
+MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc)
+{
+    MOZ_CRASH("NYI");
+    return CodeOffset();
+}
+
+void
+MacroAssembler::patchNopToCall(uint8_t* call, uint8_t* target)
+{
+    MOZ_CRASH("NYI");
+}
+
+void
+MacroAssembler::patchCallToNop(uint8_t* call)
+{
+    MOZ_CRASH("NYI");
 }
 
 void

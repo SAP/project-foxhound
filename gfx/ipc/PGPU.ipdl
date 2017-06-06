@@ -8,11 +8,18 @@ include protocol PCompositorBridge;
 include protocol PImageBridge;
 include protocol PVRManager;
 include protocol PVsyncBridge;
+include protocol PUiCompositorController;
+include protocol PVideoDecoderManager;
 
 using base::ProcessId from "base/process.h";
 using mozilla::TimeDuration from "mozilla/TimeStamp.h";
 using mozilla::CSSToLayoutDeviceScale from "Units.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
+using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
+using mozilla::Telemetry::Accumulation from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::KeyedAccumulation from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::ScalarAction from "mozilla/TelemetryComms.h";
+using mozilla::Telemetry::KeyedScalarAction from "mozilla/TelemetryComms.h";
 
 namespace mozilla {
 namespace gfx {
@@ -22,11 +29,17 @@ union GfxPrefValue {
   int32_t;
   uint32_t;
   float;
+  nsCString;
 };
 
 struct GfxPrefSetting {
   int32_t index;
   GfxPrefValue value;
+};
+
+struct LayerTreeIdMapping {
+  uint64_t layersId;
+  ProcessId ownerId;
 };
 
 sync protocol PGPU
@@ -40,6 +53,7 @@ parent:
   async InitVsyncBridge(Endpoint<PVsyncBridgeParent> endpoint);
   async InitImageBridge(Endpoint<PImageBridgeParent> endpoint);
   async InitVRManager(Endpoint<PVRManagerParent> endpoint);
+  async InitUiCompositorController(Endpoint<PUiCompositorControllerParent> endpoint);
 
   // Called to update a gfx preference or variable.
   async UpdatePref(GfxPrefSetting pref);
@@ -49,6 +63,7 @@ parent:
   async NewWidgetCompositor(Endpoint<PCompositorBridgeParent> endpoint,
                             CSSToLayoutDeviceScale scale,
                             TimeDuration vsyncRate,
+                            CompositorOptions options,
                             bool useExternalSurface,
                             IntSize surfaceSize);
 
@@ -56,20 +71,44 @@ parent:
   async NewContentCompositorBridge(Endpoint<PCompositorBridgeParent> endpoint);
   async NewContentImageBridge(Endpoint<PImageBridgeParent> endpoint);
   async NewContentVRManager(Endpoint<PVRManagerParent> endpoint);
-
-  async DeallocateLayerTreeId(uint64_t layersId);
+  async NewContentVideoDecoderManager(Endpoint<PVideoDecoderManagerParent> endpoint);
 
   // Called to notify the GPU process of who owns a layersId.
-  sync AddLayerTreeIdMapping(uint64_t layersId, ProcessId ownerId);
+  sync AddLayerTreeIdMapping(LayerTreeIdMapping[] mapping);
+  async RemoveLayerTreeIdMapping(LayerTreeIdMapping mapping);
 
   // Request the current DeviceStatus from the GPU process. This blocks until
   // one is available (i.e., Init has completed).
   sync GetDeviceStatus() returns (GPUDeviceData status);
 
+  // Have a message be broadcasted to the GPU process by the GPU process
+  // observer service.
+  async NotifyGpuObservers(nsCString aTopic);
+
 child:
   // Sent when the GPU process has initialized devices. This occurs once, after
   // Init().
   async InitComplete(GPUDeviceData data);
+
+  // Sent when APZ detects checkerboarding and apz checkerboard reporting is enabled.
+  async ReportCheckerboard(uint32_t severity, nsCString log);
+
+  // Graphics errors, analogous to PContent::GraphicsError
+  async GraphicsError(nsCString aError);
+
+  async InitCrashReporter(Shmem shmem);
+
+  // Have a message be broadcasted to the UI process by the UI process
+  // observer service.
+  async NotifyUiObservers(nsCString aTopic);
+
+  // Messages for reporting telemetry to the UI process.
+  async AccumulateChildHistogram(Accumulation[] accumulations);
+  async AccumulateChildKeyedHistogram(KeyedAccumulation[] accumulations);
+  async UpdateChildScalars(ScalarAction[] actions);
+  async UpdateChildKeyedScalars(KeyedScalarAction[] actions);
+
+  async NotifyDeviceReset();
 };
 
 } // namespace gfx

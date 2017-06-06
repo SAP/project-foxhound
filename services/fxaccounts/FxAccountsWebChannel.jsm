@@ -128,7 +128,7 @@ this.FxAccountsWebChannel.prototype = {
   _setupChannel() {
     // if this.contentUri is present but not a valid URI, then this will throw an error.
     try {
-      this._webChannelOrigin = Services.io.newURI(this._contentUri, null, null);
+      this._webChannelOrigin = Services.io.newURI(this._contentUri);
       this._registerChannel();
     } catch (e) {
       log.error(e);
@@ -157,7 +157,7 @@ this.FxAccountsWebChannel.prototype = {
         let canLinkAccount = this._helpers.shouldAllowRelink(data.email);
 
         let response = {
-          command: command,
+          command,
           messageId: message.messageId,
           data: { ok: canLinkAccount }
         };
@@ -435,7 +435,7 @@ this.FxAccountsWebChannelHelpers.prototype = {
                       ps.BUTTON_POS_1_DEFAULT;
 
     // If running in context of the browser chrome, window does not exist.
-    var targetWindow = typeof window === 'undefined' ? null : window;
+    var targetWindow = typeof window === "undefined" ? null : window;
     let pressed = Services.prompt.confirmEx(targetWindow, title, body, buttonFlags,
                                        continueLabel, null, null, null,
                                        {});
@@ -450,9 +450,13 @@ var singleton;
 // things) and allowing multiple channels would cause such notifications to be
 // sent multiple times.
 this.EnsureFxAccountsWebChannel = function() {
+  let contentUri = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.webchannel.uri");
+  if (singleton && singleton._contentUri !== contentUri) {
+    singleton.tearDown();
+    singleton = null;
+  }
   if (!singleton) {
     try {
-      let contentUri = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.webchannel.uri");
       if (contentUri) {
         // The FxAccountsWebChannel listens for events and updates
         // the state machine accordingly.

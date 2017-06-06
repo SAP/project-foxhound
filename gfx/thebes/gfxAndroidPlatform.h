@@ -19,8 +19,6 @@ namespace mozilla {
 };
 using mozilla::dom::FontListEntry;
 
-typedef struct FT_LibraryRec_ *FT_Library;
-
 class gfxAndroidPlatform : public gfxPlatform {
 public:
     gfxAndroidPlatform();
@@ -60,21 +58,13 @@ public:
     virtual bool FontHintingEnabled() override;
     virtual bool RequiresLinearZoom() override;
 
-    FT_Library GetFTLibrary();
+    FT_Library GetFTLibrary() override;
 
     virtual bool CanRenderContentToDataSurface() const override {
       return true;
     }
 
     virtual already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource() override;
-
-#ifdef MOZ_WIDGET_GONK
-    virtual bool IsInGonkEmulator() const { return mIsInGonkEmulator; }
-#endif
-
-    virtual bool SupportsApzTouchInput() const override {
-      return true;
-    }
 
 protected:
     bool AccelerateLayersByDefault() override {
@@ -83,10 +73,6 @@ protected:
 
 private:
     gfxImageFormat mOffscreenFormat;
-
-#ifdef MOZ_WIDGET_GONK
-    bool mIsInGonkEmulator;
-#endif
 };
 
 #endif /* GFX_PLATFORM_ANDROID_H */

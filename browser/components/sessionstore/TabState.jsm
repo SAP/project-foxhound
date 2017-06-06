@@ -17,7 +17,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "TabStateCache",
 XPCOMUtils.defineLazyModuleGetter(this, "TabAttributes",
   "resource:///modules/sessionstore/TabAttributes.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Utils",
-  "resource:///modules/sessionstore/Utils.jsm");
+  "resource://gre/modules/sessionstore/Utils.jsm");
 
 /**
  * Module that contains tab state collection methods.
@@ -179,7 +179,10 @@ var TabStateInternal = {
       }
 
       if (key === "history") {
-        tabData.entries = value.entries;
+        // Make a shallow copy of the entries array. We (currently) don't update
+        // entries in place, so we don't have to worry about performing a deep
+        // copy.
+        tabData.entries = [...value.entries];
 
         if (value.hasOwnProperty("userContextId")) {
           tabData.userContextId = value.userContextId;

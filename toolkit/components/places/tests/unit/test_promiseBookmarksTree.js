@@ -38,8 +38,7 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
     compare_prop_to_value("index",
                           PlacesUtils.bookmarks.getItemIndex(aNode.itemId),
                           false);
-  }
-  else {
+  } else {
     compare_prop("index", "bookmarkIndex");
   }
 
@@ -49,8 +48,7 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
   if (aIsRootItem && aNode.itemId != PlacesUtils.placesRootId) {
     do_check_true("parentGuid" in aItem);
     yield check_has_child(aItem.parentGuid, aItem.guid)
-  }
-  else {
+  } else {
     check_unset("parentGuid");
   }
 
@@ -61,8 +59,7 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
     };
     do_check_true(Array.isArray(aItem.annos))
     do_check_eq(annosToString(aItem.annos), annosToString(expectedAnnos));
-  }
-  else {
+  } else {
     check_unset("annos");
   }
   const BOOKMARK_ONLY_PROPS = ["uri", "iconuri", "tags", "charset", "keyword"];
@@ -99,8 +96,7 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
             yield compareToNode(aItem.children[i], expectedChildrenNodes[i],
                                 false, aExcludedGuids);
         }
-      }
-      else {
+      } else {
         check_unset("children");
       }
 
@@ -116,6 +112,9 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
         break;
       case PlacesUtils.unfiledBookmarksFolderId:
         compare_prop_to_value("root", "unfiledBookmarksFolder");
+        break;
+      case PlacesUtils.mobileFolderId:
+        compare_prop_to_value("root", "mobileFolder");
         break;
       default:
         check_unset("root");
@@ -137,8 +136,7 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
       if (aNode.icon) {
         let nodeIconData = aNode.icon.replace("moz-anno:favicon:", "");
         compare_prop_to_value("iconuri", nodeIconData);
-      }
-      else {
+      } else {
         check_unset(aItem.iconuri);
       }
 
@@ -165,7 +163,7 @@ function* compareToNode(aItem, aNode, aIsRootItem, aExcludedGuids = []) {
 
 var itemsCount = 0;
 function* new_bookmark(aInfo) {
-  let currentItem = ++itemsCount;
+  ++itemsCount;
   if (!("url" in aInfo))
     aInfo.url = uri("http://test.item." + itemsCount);
 
@@ -242,12 +240,12 @@ add_task(function* () {
   let guidsPassedToExcludeCallback = new Set();
   let placesRootWithoutTheMenu =
   yield test_promiseBookmarksTreeAgainstResult(PlacesUtils.bookmarks.rootGuid, {
-    excludeItemsCallback: aItem =>  {
+    excludeItemsCallback: aItem => {
       guidsPassedToExcludeCallback.add(aItem.guid);
       return aItem.root == "bookmarksMenuFolder";
     },
     includeItemIds: true
   }, [PlacesUtils.bookmarks.menuGuid]);
-  do_check_eq(guidsPassedToExcludeCallback.size, 4);
-  do_check_eq(placesRootWithoutTheMenu.children.length, 2);
+  do_check_eq(guidsPassedToExcludeCallback.size, 5);
+  do_check_eq(placesRootWithoutTheMenu.children.length, 3);
 });

@@ -7,7 +7,7 @@
 /* exported test */
 
 function test() {
-  //initialization
+  // initialization
   waitForExplicitFinish();
 
   let aboutNewTabService = Components.classes["@mozilla.org/browser/aboutnewtab-service;1"]
@@ -29,7 +29,7 @@ function test() {
 
       // Check the new tab opened while in normal/private mode
       is(aWindow.gBrowser.selectedBrowser.currentURI.spec, newTabURL,
-        "URL of NewTab should be " + newTabURL + " in " + mode +  " mode");
+        "URL of NewTab should be " + newTabURL + " in " + mode + " mode");
       // Set the custom newtab url
       aboutNewTabService.newTabURL = testURL;
       is(aboutNewTabService.newTabURL, testURL, "Custom newtab url is set");
@@ -64,8 +64,8 @@ function test() {
   testOnWindow(false, function(aWindow) {
     doTest(false, aWindow, function() {
       // test private mode
-      testOnWindow(true, function(aWindow) {
-        doTest(true, aWindow, function() {
+      testOnWindow(true, function(aWindow2) {
+        doTest(true, aWindow2, function() {
           finish();
         });
       });

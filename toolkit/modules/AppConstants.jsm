@@ -22,8 +22,8 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  RELEASE_BUILD:
-#ifdef RELEASE_BUILD
+  RELEASE_OR_BETA:
+#ifdef RELEASE_OR_BETA
   true,
 #else
   false,
@@ -260,6 +260,13 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  INSTALL_COMPACT_THEMES:
+#ifdef INSTALL_COMPACT_THEMES
+  true,
+#else
+  false,
+#endif
+
   MENUBAR_CAN_AUTOHIDE:
 #ifdef MENUBAR_CAN_AUTOHIDE
   true,
@@ -290,6 +297,13 @@ this.AppConstants = Object.freeze({
 
   MOZ_ENABLE_PROFILER_SPS:
 #ifdef MOZ_ENABLE_PROFILER_SPS
+  true,
+#else
+  false,
+#endif
+
+  MOZ_ANDROID_ACTIVITY_STREAM:
+#ifdef MOZ_ANDROID_ACTIVITY_STREAM
   true,
 #else
   false,

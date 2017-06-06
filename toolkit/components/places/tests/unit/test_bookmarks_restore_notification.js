@@ -28,15 +28,13 @@ var uris = [
   "http://example.com/5",
 ];
 
-///////////////////////////////////////////////////////////////////////////////
-
 /**
  * Adds some bookmarks for the URIs in |uris|.
  */
 function* addBookmarks() {
   for (let url of uris) {
     yield PlacesUtils.bookmarks.insert({
-      url: url, parentGuid: PlacesUtils.bookmarks.menuGuid
+      url, parentGuid: PlacesUtils.bookmarks.menuGuid
     })
   }
   checkBookmarksExist();
@@ -49,7 +47,7 @@ function* addBookmarks() {
  */
 function checkBookmarksExist() {
   let hs = PlacesUtils.history;
-  let queries = uris.map(function (u) {
+  let queries = uris.map(function(u) {
     let q = hs.getNewQuery();
     q.uri = uri(u);
     return q;
@@ -118,7 +116,7 @@ function* checkObservers(expectPromises, expectedData) {
   // Make sure folder ID is what is expected.  For importing HTML into a
   // folder, this will be an integer, otherwise null.
   if (resultSubject) {
-    Assert.equal(aSubject.QueryInterface(Ci.nsISupportsPRInt64).data,
+    Assert.equal(resultSubject.QueryInterface(Ci.nsISupportsPRInt64).data,
                 expectedData.folderId);
   } else {
     Assert.equal(expectedData.folderId, null);
@@ -138,7 +136,6 @@ function* teardown(file, begin, success, fail) {
   yield PlacesUtils.bookmarks.eraseEverything();
 }
 
-///////////////////////////////////////////////////////////////////////////////
 add_task(function* test_json_restore_normal() {
   // data: the data passed to nsIObserver.observe() corresponding to the test
   // folderId: for HTML restore into a folder, the folder ID to restore into;

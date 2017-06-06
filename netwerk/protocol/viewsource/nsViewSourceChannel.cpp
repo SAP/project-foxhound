@@ -726,6 +726,27 @@ nsViewSourceChannel::SetChannelId(const nsACString& aChannelId)
 }
 
 NS_IMETHODIMP
+nsViewSourceChannel::GetTopLevelContentWindowId(uint64_t *aWindowId)
+{
+  return !mHttpChannel ? NS_ERROR_NULL_POINTER :
+      mHttpChannel->GetTopLevelContentWindowId(aWindowId);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::SetTopLevelContentWindowId(uint64_t aWindowId)
+{
+  return !mHttpChannel ? NS_ERROR_NULL_POINTER :
+      mHttpChannel->SetTopLevelContentWindowId(aWindowId);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetIsTrackingResource(bool* aIsTrackingResource)
+{
+  return !mHttpChannel ? NS_ERROR_NULL_POINTER :
+      mHttpChannel->GetIsTrackingResource(aIsTrackingResource);
+}
+
+NS_IMETHODIMP
 nsViewSourceChannel::GetRequestMethod(nsACString & aRequestMethod)
 {
     return !mHttpChannel ? NS_ERROR_NULL_POINTER :
@@ -886,7 +907,11 @@ nsViewSourceChannel::GetResponseHeader(const nsACString & aHeader,
                         nsCaseInsensitiveCStringComparator()) &&
         !aHeader.Equals(NS_LITERAL_CSTRING("X-Frame-Options"),
                         nsCaseInsensitiveCStringComparator())) {
-        return NS_OK;
+        // We simulate the NS_ERROR_NOT_AVAILABLE error which is produced by
+        // GetResponseHeader via nsHttpHeaderArray::GetHeader when the entry is
+        // not present, such that it appears as though no headers except for the
+        // whitelisted ones were set on this channel.
+        return NS_ERROR_NOT_AVAILABLE;
     }
 
     return mHttpChannel->GetResponseHeader(aHeader, aValue);
@@ -990,9 +1015,15 @@ nsViewSourceChannel::SetIsMainDocumentChannel(bool aValue)
         mHttpChannel->SetIsMainDocumentChannel(aValue);
 }
 
-// Have to manually forward SetCorsPreflightParameters since it's [notxpcom]
+// Have to manually forward since these are [notxpcom]
 void
 nsViewSourceChannel::SetCorsPreflightParameters(const nsTArray<nsCString>& aUnsafeHeaders)
 {
   mHttpChannelInternal->SetCorsPreflightParameters(aUnsafeHeaders);
+}
+
+mozilla::net::nsHttpChannel *
+nsViewSourceChannel::QueryHttpChannelImpl()
+{
+  return mHttpChannelInternal->QueryHttpChannelImpl();
 }

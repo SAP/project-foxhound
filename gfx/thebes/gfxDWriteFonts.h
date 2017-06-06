@@ -29,7 +29,9 @@ public:
                   AntialiasOption = kAntialiasDefault);
     ~gfxDWriteFont();
 
-    virtual gfxFont*
+    static void UpdateClearTypeUsage();
+
+    mozilla::UniquePtr<gfxFont>
     CopyWithAntialiasOption(AntialiasOption anAAOption) override;
 
     virtual uint32_t GetSpaceGlyph() override;
@@ -88,8 +90,6 @@ protected:
     bool GetForceGDIClassic();
 
     RefPtr<IDWriteFontFace> mFontFace;
-    RefPtr<IDWriteFont> mFont;
-    RefPtr<IDWriteFontFamily> mFontFamily;
     cairo_font_face_t *mCairoFontFace;
 
     Metrics *mMetrics;
@@ -104,6 +104,7 @@ protected:
     bool mUseSubpixelPositions;
     bool mAllowManualShowGlyphs;
     bool mAzureScaledFontIsCairo;
+    static bool mUseClearType;
 };
 
 #endif

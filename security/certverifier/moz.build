@@ -7,7 +7,11 @@
 EXPORTS += [
     'BRNameMatchingPolicy.h',
     'CertVerifier.h',
+    'CTLog.h',
+    'CTVerifyResult.h',
     'OCSPCache.h',
+    'SignedCertificateTimestamp.h',
+    'SignedTreeHead.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -16,6 +20,7 @@ UNIFIED_SOURCES += [
     'CTLogVerifier.cpp',
     'CTObjectsExtractor.cpp',
     'CTSerialization.cpp',
+    'CTVerifyResult.cpp',
     'MultiLogCTVerifier.cpp',
     'NSSCertDBTrustDomain.cpp',
     'OCSPCache.cpp',

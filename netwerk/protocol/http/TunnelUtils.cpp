@@ -78,7 +78,8 @@ TLSFilterTransaction::TLSFilterTransaction(nsAHttpTransaction *aWrapped,
   if (provider && mFD) {
     mFD->secret = reinterpret_cast<PRFilePrivate *>(this);
     provider->AddToSocket(PR_AF_INET, aTLSHost, aTLSPort, nullptr,
-                          0, mFD, getter_AddRefs(mSecInfo));
+                          OriginAttributes(), 0, mFD,
+                          getter_AddRefs(mSecInfo));
   }
 
   if (mTransaction) {
@@ -1594,6 +1595,32 @@ FWD_TS(SetConnectionFlags, uint32_t);
 FWD_TS_PTR(GetRecvBufferSize, uint32_t);
 FWD_TS(SetRecvBufferSize, uint32_t);
 
+nsresult
+SocketTransportShim::GetOriginAttributes(mozilla::OriginAttributes* aOriginAttributes)
+{
+  return mWrapped->GetOriginAttributes(aOriginAttributes);
+}
+
+nsresult
+SocketTransportShim::SetOriginAttributes(const mozilla::OriginAttributes& aOriginAttributes)
+{
+  return mWrapped->SetOriginAttributes(aOriginAttributes);
+}
+
+NS_IMETHODIMP
+SocketTransportShim::GetScriptableOriginAttributes(JSContext* aCx,
+  JS::MutableHandle<JS::Value> aOriginAttributes)
+{
+  return mWrapped->GetScriptableOriginAttributes(aCx, aOriginAttributes);
+}
+
+NS_IMETHODIMP
+SocketTransportShim::SetScriptableOriginAttributes(JSContext* aCx,
+  JS::Handle<JS::Value> aOriginAttributes)
+{
+  return mWrapped->SetScriptableOriginAttributes(aCx, aOriginAttributes);
+}
+
 NS_IMETHODIMP
 SocketTransportShim::GetHost(nsACString & aHost)
 {
@@ -1622,6 +1649,12 @@ NS_IMETHODIMP
 SocketTransportShim::SetTimeout(uint32_t aType, uint32_t aValue)
 {
   return mWrapped->SetTimeout(aType, aValue);
+}
+
+NS_IMETHODIMP
+SocketTransportShim::SetReuseAddrPort(bool aReuseAddrPort)
+{
+  return mWrapped->SetReuseAddrPort(aReuseAddrPort);
 }
 
 NS_IMETHODIMP

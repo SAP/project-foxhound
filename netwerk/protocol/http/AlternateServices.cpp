@@ -51,7 +51,7 @@ AltSvcMapping::ProcessHeader(const nsCString &buf, const nsCString &originScheme
                              const nsCString &originHost, int32_t originPort,
                              const nsACString &username, bool privateBrowsing,
                              nsIInterfaceRequestor *callbacks, nsProxyInfo *proxyInfo,
-                             uint32_t caps, const NeckoOriginAttributes &originAttributes)
+                             uint32_t caps, const OriginAttributes &originAttributes)
 {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(("AltSvcMapping::ProcessHeader: %s\n", buf.get()));
@@ -240,7 +240,7 @@ AltSvcMapping::TTL()
 }
 
 void
-AltSvcMapping::SyncString(nsCString str)
+AltSvcMapping::SyncString(const nsCString& str)
 {
   MOZ_ASSERT(NS_IsMainThread());
   mStorage->Put(HashKey(), str,
@@ -311,7 +311,7 @@ AltSvcMapping::RouteEquals(AltSvcMapping *map)
 void
 AltSvcMapping::GetConnectionInfo(nsHttpConnectionInfo **outCI,
                                  nsProxyInfo *pi,
-                                 const NeckoOriginAttributes &originAttributes)
+                                 const OriginAttributes &originAttributes)
 {
   RefPtr<nsHttpConnectionInfo> ci =
     new nsHttpConnectionInfo(mOriginHost, mOriginPort, mNPNToken,
@@ -398,7 +398,7 @@ COMPILER ERROR
 
     MakeHashKey(mHashKey, mHttps ? NS_LITERAL_CSTRING("https") : NS_LITERAL_CSTRING("http"),
                 mOriginHost, mOriginPort, mPrivate);
-  } while (0);
+  } while (false);
 }
 
 // This is the asynchronous null transaction used to validate
@@ -820,7 +820,7 @@ void
 AltSvcCache::UpdateAltServiceMapping(AltSvcMapping *map, nsProxyInfo *pi,
                                      nsIInterfaceRequestor *aCallbacks,
                                      uint32_t caps,
-                                     const NeckoOriginAttributes &originAttributes)
+                                     const OriginAttributes &originAttributes)
 {
   MOZ_ASSERT(NS_IsMainThread());
   if (!mStorage) {
@@ -898,7 +898,7 @@ AltSvcCache::UpdateAltServiceMapping(AltSvcMapping *map, nsProxyInfo *pi,
     uri.Append(NS_LITERAL_CSTRING("/.well-known/http-opportunistic"));
     NS_NewURI(getter_AddRefs(wellKnown), uri);
 
-    WellKnownChecker *checker = new WellKnownChecker(wellKnown, origin, caps, ci, map);
+    auto *checker = new WellKnownChecker(wellKnown, origin, caps, ci, map);
     if (NS_FAILED(checker->Start())) {
       LOG(("AltSvcCache::UpdateAltServiceMapping %p .wk checker failed to start\n", this));
       map->SetExpired();

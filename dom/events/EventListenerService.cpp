@@ -138,7 +138,7 @@ EventListenerInfo::GetJSVal(JSContext* aCx,
   nsCOMPtr<JSEventHandler> jsHandler = do_QueryInterface(mListener);
   if (jsHandler && jsHandler->GetTypedEventHandler().HasEventHandler()) {
     JS::Handle<JSObject*> handler =
-      jsHandler->GetTypedEventHandler().Ptr()->Callable();
+      jsHandler->GetTypedEventHandler().Ptr()->CallableOrNull();
     if (handler) {
       aAc.emplace(aCx, handler);
       aJSVal.setObject(*handler);
@@ -220,6 +220,7 @@ EventListenerService::GetListenerInfoFor(nsIDOMEventTarget* aEventTarget,
 
 NS_IMETHODIMP
 EventListenerService::GetEventTargetChainFor(nsIDOMEventTarget* aEventTarget,
+                                             bool aComposed,
                                              uint32_t* aCount,
                                              nsIDOMEventTarget*** aOutArray)
 {
@@ -227,6 +228,7 @@ EventListenerService::GetEventTargetChainFor(nsIDOMEventTarget* aEventTarget,
   *aOutArray = nullptr;
   NS_ENSURE_ARG(aEventTarget);
   WidgetEvent event(true, eVoidEvent);
+  event.SetComposed(aComposed);
   nsTArray<EventTarget*> targets;
   nsresult rv = EventDispatcher::Dispatch(aEventTarget, nullptr, &event,
                                           nullptr, nullptr, nullptr, &targets);

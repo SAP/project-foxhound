@@ -82,6 +82,7 @@ function String_match(regexp) {
 }
 
 function String_generic_match(thisValue, regexp) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_MATCH, 'match');
     if (thisValue === undefined)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.match');
     return callFunction(String_match, thisValue, regexp);
@@ -240,6 +241,7 @@ function String_replace(searchValue, replaceValue) {
 }
 
 function String_generic_replace(thisValue, searchValue, replaceValue) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_REPLACE, 'replace');
     if (thisValue === undefined)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.replace');
     return callFunction(String_replace, thisValue, searchValue, replaceValue);
@@ -295,6 +297,7 @@ function String_search(regexp) {
 }
 
 function String_generic_search(thisValue, regexp) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_SEARCH, 'search');
     if (thisValue === undefined)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.search');
     return callFunction(String_search, thisValue, regexp);
@@ -376,6 +379,7 @@ function String_split(separator, limit) {
 }
 
 function String_generic_split(thisValue, separator, limit) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_SPLIT, 'split');
     if (thisValue === undefined)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.split');
     return callFunction(String_split, thisValue, separator, limit);
@@ -422,6 +426,7 @@ function String_substring(start, end) {
 }
 
 function String_static_substring(string, start, end) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_SUBSTRING, 'substring');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.substring');
     return callFunction(String_substring, string, start, end);
@@ -463,6 +468,7 @@ function String_substr(start, length) {
 }
 
 function String_static_substr(string, start, length) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_SUBSTR, 'substr');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.substr');
     return callFunction(String_substr, string, start, length);
@@ -502,6 +508,7 @@ function String_slice(start, end) {
 }
 
 function String_static_slice(string, start, end) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_SLICE, 'slice');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.slice');
     return callFunction(String_slice, string, start, end);
@@ -711,6 +718,7 @@ function String_static_raw(callSite, ...substitutions) {
  * Spec: https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Global_Objects/String#String_generic_methods
  */
 function String_static_localeCompare(str1, str2) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_LOCALE_COMPARE, 'localeCompare');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, "String.localeCompare");
     var locales = arguments.length > 2 ? arguments[2] : undefined;
@@ -823,30 +831,35 @@ function String_link(url) {
 }
 
 function String_static_toLowerCase(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TO_LOWER_CASE, 'toLowerCase');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.toLowerCase');
     return callFunction(std_String_toLowerCase, string);
 }
 
 function String_static_toUpperCase(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TO_UPPER_CASE, 'toUpperCase');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.toUpperCase');
     return callFunction(std_String_toUpperCase, string);
 }
 
 function String_static_charAt(string, pos) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_CHAR_AT, 'charAt');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.charAt');
     return callFunction(std_String_charAt, string, pos);
 }
 
 function String_static_charCodeAt(string, pos) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_CHAR_CODE_AT, 'charCodeAt');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.charCodeAt');
     return callFunction(std_String_charCodeAt, string, pos);
 }
 
 function String_static_includes(string, searchString) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_INCLUDES, 'includes');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.includes');
     var position = arguments.length > 2 ? arguments[2] : undefined;
@@ -854,6 +867,7 @@ function String_static_includes(string, searchString) {
 }
 
 function String_static_indexOf(string, searchString) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_INDEX_OF, 'indexOf');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.indexOf');
     var position = arguments.length > 2 ? arguments[2] : undefined;
@@ -861,6 +875,7 @@ function String_static_indexOf(string, searchString) {
 }
 
 function String_static_lastIndexOf(string, searchString) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_LAST_INDEX_OF, 'lastIndexOf');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.lastIndexOf');
     var position = arguments.length > 2 ? arguments[2] : undefined;
@@ -868,6 +883,7 @@ function String_static_lastIndexOf(string, searchString) {
 }
 
 function String_static_startsWith(string, searchString) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_STARTS_WITH, 'startsWith');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.startsWith');
     var position = arguments.length > 2 ? arguments[2] : undefined;
@@ -875,6 +891,7 @@ function String_static_startsWith(string, searchString) {
 }
 
 function String_static_endsWith(string, searchString) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_ENDS_WITH, 'endsWith');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.endsWith');
     var endPosition = arguments.length > 2 ? arguments[2] : undefined;
@@ -882,30 +899,35 @@ function String_static_endsWith(string, searchString) {
 }
 
 function String_static_trim(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TRIM, 'trim');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.trim');
     return callFunction(std_String_trim, string);
 }
 
 function String_static_trimLeft(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TRIM_LEFT, 'trimLeft');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.trimLeft');
     return callFunction(std_String_trimLeft, string);
 }
 
 function String_static_trimRight(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TRIM_RIGHT, 'trimRight');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.trimRight');
     return callFunction(std_String_trimRight, string);
 }
 
 function String_static_toLocaleLowerCase(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TO_LOCALE_LOWER_CASE, 'toLocaleLowerCase');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.toLocaleLowerCase');
     return callFunction(std_String_toLocaleLowerCase, string);
 }
 
 function String_static_toLocaleUpperCase(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_TO_LOCALE_UPPER_CASE, 'toLocaleUpperCase');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.toLocaleUpperCase');
     return callFunction(std_String_toLocaleUpperCase, string);
@@ -913,6 +935,7 @@ function String_static_toLocaleUpperCase(string) {
 
 #if EXPOSE_INTL_API
 function String_static_normalize(string) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_NORMALIZE, "normalize");
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.normalize');
     var form = arguments.length > 1 ? arguments[1] : undefined;
@@ -921,6 +944,7 @@ function String_static_normalize(string) {
 #endif
 
 function String_static_concat(string, arg1) {
+    WarnDeprecatedStringMethod(STRING_GENERICS_CONCAT, 'concat');
     if (arguments.length < 1)
         ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, 'String.concat');
     var args = callFunction(std_Array_slice, arguments, 1);

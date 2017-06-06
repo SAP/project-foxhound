@@ -35,7 +35,7 @@ function dialogOnLoad() {
         if (str == "")
             str = "<>";
         listBox.appendItem(str);
-        listBox.getItemAtIndex(i).addEventListener("dblclick", dialogDoubleClick, false);
+        listBox.getItemAtIndex(i).addEventListener("dblclick", dialogDoubleClick);
     }
     listBox.selectedIndex = 0;
     listBox.focus();
@@ -56,7 +56,6 @@ function dialogOnLoad() {
 }
 
 function dialogOK() {
-    let selected = listBox.selectedIndex;
     gArgs.setProperty("selected", listBox.selectedIndex);
     gArgs.setProperty("ok", true);
     return true;

@@ -18,6 +18,8 @@
 == flexbox-align-self-baseline-horiz-003.xhtml flexbox-align-self-baseline-horiz-003-ref.xhtml
 == flexbox-align-self-baseline-horiz-004.xhtml flexbox-align-self-baseline-horiz-004-ref.xhtml
 == flexbox-align-self-baseline-horiz-005.xhtml flexbox-align-self-baseline-horiz-005-ref.xhtml
+== flexbox-align-self-baseline-horiz-006.xhtml flexbox-align-self-baseline-horiz-006-ref.xhtml
+== flexbox-align-self-baseline-horiz-007.xhtml flexbox-align-self-baseline-horiz-007-ref.xhtml
 
 == flexbox-align-self-stretch-vert-001.html flexbox-align-self-stretch-vert-001-ref.html
 == flexbox-align-self-stretch-vert-002.html flexbox-align-self-stretch-vert-002-ref.html
@@ -36,6 +38,8 @@ fuzzy-if(Android,158,32) == flexbox-align-self-vert-rtl-001.xhtml  flexbox-align
 == flexbox-align-self-vert-rtl-002.xhtml  flexbox-align-self-vert-rtl-002-ref.xhtml
 == flexbox-align-self-vert-rtl-003.xhtml  flexbox-align-self-vert-rtl-003-ref.xhtml
 == flexbox-align-self-vert-rtl-004.xhtml  flexbox-align-self-vert-rtl-004-ref.xhtml
+
+== flexbox-align-items-center-nested-001.html flexbox-align-items-center-nested-001-ref.html
 
 # Tests for computing the baseline of a flex container
 == flexbox-baseline-align-self-baseline-horiz-001.html flexbox-baseline-align-self-baseline-horiz-001-ref.html

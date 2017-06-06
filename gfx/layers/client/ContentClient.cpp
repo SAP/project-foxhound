@@ -257,7 +257,7 @@ ContentClientRemoteBuffer::EndPaint(nsTArray<ReadbackProcessor::Update>* aReadba
   mOldTextures.Clear();
 
   if (mTextureClient && mTextureClient->IsLocked()) {
-    if (aReadbackUpdates->Length() > 0) {
+    if (aReadbackUpdates && aReadbackUpdates->Length() > 0) {
       RefPtr<TextureReadbackSink> readbackSink = new RemoteBufferReadbackProcessor(aReadbackUpdates, mBufferRect, mBufferRotation);
 
       mTextureClient->SetReadbackSink(readbackSink);
@@ -324,6 +324,7 @@ ContentClientRemoteBuffer::CreateBackBuffer(const IntRect& aBufferRect)
 
   if (mTextureFlags & TextureFlags::COMPONENT_ALPHA) {
     mTextureClientOnWhite = mTextureClient->CreateSimilar(
+      mForwarder->GetCompositorBackendType(),
       mTextureFlags | ExtraTextureFlags(),
       TextureAllocationFlags::ALLOC_CLEAR_BUFFER_WHITE
     );

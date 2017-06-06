@@ -31,8 +31,7 @@ Cu.import("resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// Constants
+// Constants
 
 // Last expiration step should run before the final sync.
 const TOPIC_SHUTDOWN = "places-will-close-connection";
@@ -242,7 +241,7 @@ const EXPIRATION_QUERIES = {
   QUERY_EXPIRE_URIS: {
     sql: `DELETE FROM moz_places WHERE id IN (
             SELECT p_id FROM expiration_notify WHERE p_id NOTNULL
-          )`,
+          ) AND foreign_count = 0 AND last_visit_date ISNULL`,
     actions: ACTION.TIMED | ACTION.TIMED_OVERLIMIT | ACTION.SHUTDOWN_DIRTY |
              ACTION.IDLE_DIRTY | ACTION.IDLE_DAILY | ACTION.DEBUG
   },
@@ -453,15 +452,12 @@ function notify(observers, notification, args = []) {
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// nsPlacesExpiration definition
+// nsPlacesExpiration definition
 
-function nsPlacesExpiration()
-{
-  //////////////////////////////////////////////////////////////////////////////
-  //// Smart Getters
+function nsPlacesExpiration() {
+  // Smart Getters
 
-  XPCOMUtils.defineLazyGetter(this, "_db", function () {
+  XPCOMUtils.defineLazyGetter(this, "_db", function() {
     let db = Cc["@mozilla.org/browser/nav-history-service;1"].
              getService(Ci.nsPIPlacesDatabase).
              DBConnection;
@@ -508,11 +504,9 @@ function nsPlacesExpiration()
 
 nsPlacesExpiration.prototype = {
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsIObserver
+  // nsIObserver
 
-  observe: function PEX_observe(aSubject, aTopic, aData)
-  {
+  observe: function PEX_observe(aSubject, aTopic, aData) {
     if (this._shuttingDown) {
       return;
     }
@@ -536,16 +530,14 @@ nsPlacesExpiration.prototype = {
       }
 
       this._finalizeInternalStatements();
-    }
-    else if (aTopic == TOPIC_PREF_CHANGED) {
+    } else if (aTopic == TOPIC_PREF_CHANGED) {
       this._loadPrefs().then(() => {
         if (aData == PREF_INTERVAL_SECONDS) {
           // Renew the timer with the new interval value.
           this._newTimer();
         }
       }, Cu.reportError);
-    }
-    else if (aTopic == TOPIC_DEBUG_START_EXPIRATION) {
+    } else if (aTopic == TOPIC_DEBUG_START_EXPIRATION) {
       // The passed-in limit is the maximum number of visits to expire when
       // history is over capacity.  Mind to correctly handle the NaN value.
       let limit = parseInt(aData);
@@ -554,14 +546,12 @@ nsPlacesExpiration.prototype = {
         // capacity then all existing visits will be expired.
         // Should only be used in tests, since may cause dataloss.
         this._expireWithActionAndLimit(ACTION.DEBUG, LIMIT.UNLIMITED);
-      }
-      else if (limit > 0) {
+      } else if (limit > 0) {
         // The number of expired visits is limited by this amount.  It may be
         // used for testing purposes, like checking that limited queries work.
         this._debugLimit = limit;
         this._expireWithActionAndLimit(ACTION.DEBUG, LIMIT.DEBUG);
-      }
-      else {
+      } else {
         // Any other value is intended as a 0 limit, that means no visits
         // will be expired.  Even if this doesn't touch visits, it will remove
         // any orphan pages, icons, annotations and similar from the database,
@@ -569,8 +559,7 @@ nsPlacesExpiration.prototype = {
         this._debugLimit = -1;
         this._expireWithActionAndLimit(ACTION.DEBUG, LIMIT.DEBUG);
       }
-    }
-    else if (aTopic == TOPIC_IDLE_BEGIN) {
+    } else if (aTopic == TOPIC_IDLE_BEGIN) {
       // Stop the expiration timer.  We don't want to keep up expiring on idle
       // to preserve batteries on mobile devices and avoid killing stand-by.
       if (this._timer) {
@@ -579,26 +568,21 @@ nsPlacesExpiration.prototype = {
       }
       if (this.expireOnIdle)
         this._expireWithActionAndLimit(ACTION.IDLE_DIRTY, LIMIT.LARGE);
-    }
-    else if (aTopic == TOPIC_IDLE_END) {
+    } else if (aTopic == TOPIC_IDLE_END) {
       // Restart the expiration timer.
       if (!this._timer)
         this._newTimer();
-    }
-    else if (aTopic == TOPIC_IDLE_DAILY) {
+    } else if (aTopic == TOPIC_IDLE_DAILY) {
       this._expireWithActionAndLimit(ACTION.IDLE_DAILY, LIMIT.LARGE);
-    }
-    else if (aTopic == TOPIC_TESTING_MODE) {
+    } else if (aTopic == TOPIC_TESTING_MODE) {
       this._testingMode = true;
     }
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsINavHistoryObserver
+  // nsINavHistoryObserver
 
   _inBatchMode: false,
-  onBeginUpdateBatch: function PEX_onBeginUpdateBatch()
-  {
+  onBeginUpdateBatch: function PEX_onBeginUpdateBatch() {
     this._inBatchMode = true;
 
     // We do not want to expire while we are doing batch work.
@@ -608,8 +592,7 @@ nsPlacesExpiration.prototype = {
     }
   },
 
-  onEndUpdateBatch: function PEX_onEndUpdateBatch()
-  {
+  onEndUpdateBatch: function PEX_onEndUpdateBatch() {
     this._inBatchMode = false;
 
     // Restore timer.
@@ -625,17 +608,15 @@ nsPlacesExpiration.prototype = {
     this._expireWithActionAndLimit(ACTION.CLEAR_HISTORY, LIMIT.UNLIMITED);
   },
 
-  onVisit: function() {},
-  onTitleChanged: function() {},
-  onDeleteURI: function() {},
-  onPageChanged: function() {},
-  onDeleteVisits: function() {},
+  onVisit() {},
+  onTitleChanged() {},
+  onDeleteURI() {},
+  onPageChanged() {},
+  onDeleteVisits() {},
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsITimerCallback
+  // nsITimerCallback
 
-  notify: function PEX_timerCallback()
-  {
+  notify: function PEX_timerCallback() {
     // Check if we are over history capacity, if so visits must be expired.
     this._getPagesStats((function onPagesCount(aPagesCount, aStatsCount) {
       let overLimitPages = aPagesCount - this._urisLimit;
@@ -656,11 +637,9 @@ nsPlacesExpiration.prototype = {
     }).bind(this));
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// mozIStorageStatementCallback
+  // mozIStorageStatementCallback
 
-  handleResult: function PEX_handleResult(aResultSet)
-  {
+  handleResult: function PEX_handleResult(aResultSet) {
     // We don't want to notify after shutdown.
     if (this._shuttingDown)
       return;
@@ -682,7 +661,7 @@ nsPlacesExpiration.prototype = {
         }
       }
 
-      let uri = Services.io.newURI(row.getResultByName("url"), null, null);
+      let uri = Services.io.newURI(row.getResultByName("url"));
       let guid = row.getResultByName("guid");
       let visitDate = row.getResultByName("visit_date");
       let wholeEntry = row.getResultByName("whole_entry");
@@ -694,8 +673,7 @@ nsPlacesExpiration.prototype = {
         let days = parseInt((Date.now() - (mostRecentExpiredVisit / 1000)) / MSECS_PER_DAY);
         if (!this._mostRecentExpiredVisitDays) {
           this._mostRecentExpiredVisitDays = days;
-        }
-        else if (days < this._mostRecentExpiredVisitDays) {
+        } else if (days < this._mostRecentExpiredVisitDays) {
           this._mostRecentExpiredVisitDays = days;
         }
       }
@@ -709,16 +687,14 @@ nsPlacesExpiration.prototype = {
     }
   },
 
-  handleError: function PEX_handleError(aError)
-  {
+  handleError: function PEX_handleError(aError) {
     Cu.reportError("Async statement execution returned with '" +
                    aError.result + "', '" + aError.message + "'");
   },
 
   // Number of expiration steps needed to reach a CLEAN status.
   _telemetrySteps: 1,
-  handleCompletion: function PEX_handleCompletion(aReason)
-  {
+  handleCompletion: function PEX_handleCompletion(aReason) {
     if (aReason == Ci.mozIStorageStatementCallback.REASON_FINISHED) {
 
       if (this._mostRecentExpiredVisitDays) {
@@ -744,8 +720,7 @@ nsPlacesExpiration.prototype = {
         // Collect or send telemetry data.
         if (this.status == STATUS.DIRTY) {
           this._telemetrySteps++;
-        }
-        else {
+        } else {
           // Avoid reporting the common cases where the database is clean, or
           // a single step is needed.
           if (oldStatus == STATUS.DIRTY) {
@@ -768,8 +743,7 @@ nsPlacesExpiration.prototype = {
     }
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsPlacesExpiration
+  // nsPlacesExpiration
 
   _urisLimit: PREF_MAX_URIS_NOTSET,
   _interval: PREF_INTERVAL_SECONDS_NOTSET,
@@ -799,8 +773,7 @@ nsPlacesExpiration.prototype = {
     if (!this._isIdleObserver && !this._shuttingDown) {
       this._idle.addIdleObserver(this, IDLE_TIMEOUT_SECONDS);
       this._isIdleObserver = true;
-    }
-    else if (this._isIdleObserver && this._shuttingDown) {
+    } else if (this._isIdleObserver && this._shuttingDown) {
       this._idle.removeIdleObserver(this, IDLE_TIMEOUT_SECONDS);
       this._isIdleObserver = false;
     }
@@ -841,7 +814,7 @@ nsPlacesExpiration.prototype = {
          memSizeBytes = Services.sysinfo.getProperty("memsize");
       } catch (ex) {}
       if (memSizeBytes <= 0) {
-        memsize = MEMSIZE_FALLBACK_BYTES;
+        memSizeBytes = MEMSIZE_FALLBACK_BYTES;
       }
 
       let diskAvailableBytes = DISKSIZE_FALLBACK_BYTES;
@@ -910,17 +883,17 @@ nsPlacesExpiration.prototype = {
     this._cachedStatements["LIMIT_COUNT"].executeAsync({
       _pagesCount: 0,
       _statsCount: 0,
-      handleResult: function(aResults) {
+      handleResult(aResults) {
         let row = aResults.getNextRow();
         this._pagesCount = row.getResultByIndex(0);
         this._statsCount = row.getResultByIndex(1);
       },
-      handleCompletion: function (aReason) {
+      handleCompletion(aReason) {
         if (aReason == Ci.mozIStorageStatementCallback.REASON_FINISHED) {
           aCallback(this._pagesCount, this._statsCount);
         }
       },
-      handleError: function(aError) {
+      handleError(aError) {
         Cu.reportError("Async statement execution returned with '" +
                        aError.result + "', '" + aError.message + "'");
       }
@@ -937,8 +910,7 @@ nsPlacesExpiration.prototype = {
    *        LIMIT const for values.
    */
   _expireWithActionAndLimit:
-  function PEX__expireWithActionAndLimit(aAction, aLimit)
-  {
+  function PEX__expireWithActionAndLimit(aAction, aLimit) {
     // Skip expiration during batch mode.
     if (this._inBatchMode)
       return;
@@ -961,8 +933,7 @@ nsPlacesExpiration.prototype = {
    * Finalizes all of our mozIStorageStatements so we can properly close the
    * database.
    */
-  _finalizeInternalStatements: function PEX__finalizeInternalStatements()
-  {
+  _finalizeInternalStatements: function PEX__finalizeInternalStatements() {
     for (let queryType in this._cachedStatements) {
       let stmt = this._cachedStatements[queryType];
       stmt.finalize();
@@ -981,8 +952,7 @@ nsPlacesExpiration.prototype = {
    *        Current action causing the expiration.  See the ACTION const.
    */
   _cachedStatements: {},
-  _getBoundStatement: function PEX__getBoundStatement(aQueryType, aLimit, aAction)
-  {
+  _getBoundStatement: function PEX__getBoundStatement(aQueryType, aLimit, aAction) {
     // Statements creation can be expensive, so we want to cache them.
     let stmt = this._cachedStatements[aQueryType];
     if (stmt === undefined) {
@@ -1073,8 +1043,7 @@ nsPlacesExpiration.prototype = {
    *
    * @return a REPEATING_SLACK nsITimer that runs every this._interval.
    */
-  _newTimer: function PEX__newTimer()
-  {
+  _newTimer: function PEX__newTimer() {
     if (this._timer)
       this._timer.cancel();
     if (this._shuttingDown)
@@ -1092,8 +1061,7 @@ nsPlacesExpiration.prototype = {
     return this._timer = timer;
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsISupports
+  // nsISupports
 
   classID: Components.ID("705a423f-2f69-42f3-b9fe-1517e0dee56f"),
 
@@ -1108,8 +1076,7 @@ nsPlacesExpiration.prototype = {
   ])
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// Module Registration
+// Module Registration
 
 var components = [nsPlacesExpiration];
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

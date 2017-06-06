@@ -11,7 +11,6 @@
 #include "nsSHEntryShared.h"
 #include "nsILayoutHistoryState.h"
 #include "nsIContentViewer.h"
-#include "nsISupportsArray.h"
 #include "nsIStructuredCloneContainer.h"
 #include "nsIInputStream.h"
 #include "nsIURI.h"
@@ -25,7 +24,7 @@ static uint32_t gEntryID = 0;
 nsSHEntry::nsSHEntry()
   : mShared(new nsSHEntryShared())
   , mLoadReplace(false)
-  , mReferrerPolicy(mozilla::net::RP_Default)
+  , mReferrerPolicy(mozilla::net::RP_Unset)
   , mLoadType(0)
   , mID(gEntryID++)
   , mScrollPositionX(0)
@@ -412,9 +411,14 @@ nsSHEntry::Create(nsIURI* aURI, const nsAString& aTitle,
                   nsIInputStream* aInputStream,
                   nsILayoutHistoryState* aLayoutHistoryState,
                   nsISupports* aCacheKey, const nsACString& aContentType,
-                  nsIPrincipal* aTriggeringPrincipal, uint64_t aDocShellID,
+                  nsIPrincipal* aTriggeringPrincipal,
+                  nsIPrincipal* aPrincipalToInherit,
+                  const nsID& aDocShellID,
                   bool aDynamicCreation)
 {
+  MOZ_ASSERT(aTriggeringPrincipal,
+             "need a valid triggeringPrincipal to create a session history entry");
+
   mURI = aURI;
   mTitle = aTitle;
   mPostData = aInputStream;
@@ -425,6 +429,7 @@ nsSHEntry::Create(nsIURI* aURI, const nsAString& aTitle,
   mShared->mCacheKey = aCacheKey;
   mShared->mContentType = aContentType;
   mShared->mTriggeringPrincipal = aTriggeringPrincipal;
+  mShared->mPrincipalToInherit = aPrincipalToInherit;
   mShared->mDocShellID = aDocShellID;
   mShared->mDynamicallyCreated = aDynamicCreation;
 
@@ -514,6 +519,20 @@ NS_IMETHODIMP
 nsSHEntry::SetTriggeringPrincipal(nsIPrincipal* aTriggeringPrincipal)
 {
   mShared->mTriggeringPrincipal = aTriggeringPrincipal;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::GetPrincipalToInherit(nsIPrincipal** aPrincipalToInherit)
+{
+  NS_IF_ADDREF(*aPrincipalToInherit = mShared->mPrincipalToInherit);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetPrincipalToInherit(nsIPrincipal* aPrincipalToInherit)
+{
+  mShared->mPrincipalToInherit = aPrincipalToInherit;
   return NS_OK;
 }
 
@@ -769,13 +788,10 @@ nsSHEntry::ReplaceChild(nsISHEntry* aNewEntry)
 {
   NS_ENSURE_STATE(aNewEntry);
 
-  uint64_t docshellID;
-  aNewEntry->GetDocshellID(&docshellID);
+  nsID docshellID = aNewEntry->DocshellID();
 
-  uint64_t otherID;
   for (int32_t i = 0; i < mChildren.Count(); ++i) {
-    if (mChildren[i] && NS_SUCCEEDED(mChildren[i]->GetDocshellID(&otherID)) &&
-        docshellID == otherID) {
+    if (mChildren[i] && docshellID == mChildren[i]->DocshellID()) {
       mChildren[i]->SetParent(nullptr);
       mChildren.ReplaceObjectAt(aNewEntry, i);
       return aNewEntry->SetParent(this);
@@ -807,14 +823,14 @@ nsSHEntry::ClearChildShells()
 }
 
 NS_IMETHODIMP
-nsSHEntry::GetRefreshURIList(nsISupportsArray** aList)
+nsSHEntry::GetRefreshURIList(nsIMutableArray** aList)
 {
   NS_IF_ADDREF(*aList = mShared->mRefreshURIList);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSHEntry::SetRefreshURIList(nsISupportsArray* aList)
+nsSHEntry::SetRefreshURIList(nsIMutableArray* aList)
 {
   mShared->mRefreshURIList = aList;
   return NS_OK;
@@ -900,16 +916,22 @@ nsSHEntry::HasDynamicallyAddedChild(bool* aAdded)
 }
 
 NS_IMETHODIMP
-nsSHEntry::GetDocshellID(uint64_t* aID)
+nsSHEntry::GetDocshellID(nsID** aID)
 {
-  *aID = mShared->mDocShellID;
+  *aID = static_cast<nsID*>(nsMemory::Clone(&mShared->mDocShellID, sizeof(nsID)));
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsSHEntry::SetDocshellID(uint64_t aID)
+const nsID
+nsSHEntry::DocshellID()
 {
-  mShared->mDocShellID = aID;
+  return mShared->mDocShellID;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetDocshellID(const nsID* aID)
+{
+  mShared->mDocShellID = *aID;
   return NS_OK;
 }
 

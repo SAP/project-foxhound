@@ -22,7 +22,7 @@
     COMPONENT(ATOMSERVICE, nsAtomServiceConstructor)
     COMPONENT_M(OBSERVERSERVICE, nsObserverService::Create, Module::ALLOW_IN_GPU_PROCESS)
 
-    COMPONENT_M(TIMER, nsTimerImplConstructor, Module::ALLOW_IN_GPU_PROCESS)
+    COMPONENT_M(TIMER, nsTimerConstructor, Module::ALLOW_IN_GPU_PROCESS)
 
 #define COMPONENT_SUPPORTS(TYPE, Type)                                         \
   COMPONENT(SUPPORTS_##TYPE, nsSupports##Type##Constructor)
@@ -42,7 +42,6 @@
     COMPONENT_SUPPORTS(PRINT64, PRInt64)
     COMPONENT_SUPPORTS(FLOAT, Float)
     COMPONENT_SUPPORTS(DOUBLE, Double)
-    COMPONENT_SUPPORTS(VOID, Void)
     COMPONENT_SUPPORTS(INTERFACE_POINTER, InterfacePointer)
 
 #undef COMPONENT_SUPPORTS
@@ -52,7 +51,7 @@
     COMPONENT(ENVIRONMENT, nsEnvironment::Create)
 
     COMPONENT(THREADMANAGER, nsThreadManagerGetSingleton)
-    COMPONENT(THREADPOOL, nsThreadPoolConstructor)
+    COMPONENT_M(THREADPOOL, nsThreadPoolConstructor, Module::ALLOW_IN_GPU_PROCESS)
 
     COMPONENT(STRINGINPUTSTREAM, nsStringInputStreamConstructor)
     COMPONENT(MULTIPLEXINPUTSTREAM, nsMultiplexInputStreamConstructor)

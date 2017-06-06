@@ -77,7 +77,7 @@ function createLoginsFragment(url, content, elementQuery) {
     ownerDocument: document
   };
 
-  let URI = Services.io.newURI(url, null, null);
+  let URI = Services.io.newURI(url);
   return {
     document,
     fragment: LoginManagerContextMenu.addLoginsToMenu(inputElement, browser, URI),
@@ -89,10 +89,10 @@ function createLoginsFragment(url, content, elementQuery) {
  * Duplicates and empty usernames have a date appended.
  */
 function checkLoginItems(logins, items) {
-  function findDuplicates(loginList) {
+  function findDuplicates(unfilteredLoginList) {
     var seen = new Set();
     var duplicates = new Set();
-    for (let login of loginList) {
+    for (let login of unfilteredLoginList) {
       if (seen.has(login.username)) {
         duplicates.add(login.username);
       }

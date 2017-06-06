@@ -4,8 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Constants
+// Constants
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -17,8 +16,7 @@ const TOPIC_GATHER_TELEMETRY = "gather-telemetry";
 // Seconds between maintenance runs.
 const MAINTENANCE_INTERVAL_SECONDS = 7 * 86400;
 
-////////////////////////////////////////////////////////////////////////////////
-//// Imports
+// Imports
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
@@ -30,8 +28,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PlacesDBUtils",
  * This component can be used as a starter for modules that have to run when
  * certain categories are invoked.
  */
-function PlacesCategoriesStarter()
-{
+function PlacesCategoriesStarter() {
   Services.obs.addObserver(this, TOPIC_GATHER_TELEMETRY, false);
   Services.obs.addObserver(this, PlacesUtils.TOPIC_SHUTDOWN, false);
 
@@ -58,11 +55,9 @@ function PlacesCategoriesStarter()
 }
 
 PlacesCategoriesStarter.prototype = {
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsIObserver
+  // nsIObserver
 
-  observe: function PCS_observe(aSubject, aTopic, aData)
-  {
+  observe: function PCS_observe(aSubject, aTopic, aData) {
     switch (aTopic) {
       case PlacesUtils.TOPIC_SHUTDOWN:
         Services.obs.removeObserver(this, PlacesUtils.TOPIC_SHUTDOWN);
@@ -95,8 +90,7 @@ PlacesCategoriesStarter.prototype = {
     }
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsISupports
+  // nsISupports
 
   classID: Components.ID("803938d5-e26d-4453-bf46-ad4b26e41114"),
 
@@ -108,8 +102,7 @@ PlacesCategoriesStarter.prototype = {
   ])
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// Module Registration
+// Module Registration
 
 var components = [PlacesCategoriesStarter];
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

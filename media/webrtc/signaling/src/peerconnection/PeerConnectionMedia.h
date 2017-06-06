@@ -161,7 +161,7 @@ class RemoteTrackSource : public dom::MediaStreamTrackSource
 {
 public:
   explicit RemoteTrackSource(nsIPrincipal* aPrincipal, const nsString& aLabel)
-    : dom::MediaStreamTrackSource(aPrincipal, true, aLabel) {}
+    : dom::MediaStreamTrackSource(aPrincipal, aLabel) {}
 
   dom::MediaSourceEnum GetMediaSource() const override
   {
@@ -172,7 +172,11 @@ public:
   ApplyConstraints(nsPIDOMWindowInner* aWindow,
                    const dom::MediaTrackConstraints& aConstraints) override;
 
-  void Stop() override { NS_ERROR("Can't stop a remote source!"); }
+  void Stop() override
+  {
+    // XXX (Bug 1314270): Implement rejection logic if necessary when we have
+    //                    clarity in the spec.
+  }
 
   void SetPrincipal(nsIPrincipal* aPrincipal)
   {
@@ -224,12 +228,6 @@ class RemoteSourceStreamInfo : public SourceStreamInfo {
   void StartReceiving();
 
  private:
-#if !defined(MOZILLA_EXTERNAL_LINKAGE)
-  // MediaStreamTrackSources associated with this remote stream.
-  // We use them for updating their principal if that's needed.
-  std::vector<RefPtr<RemoteTrackSource>> mTrackSources;
-#endif
-
   // True iff SetPullEnabled(true) has been called on the DOMMediaStream. This
   // happens when offer/answer concludes.
   bool mReceiving;
@@ -272,7 +270,8 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
 
   // Activate or remove ICE transports at the conclusion of offer/answer,
   // or when rollback occurs.
-  void ActivateOrRemoveTransports(const JsepSession& aSession);
+  void ActivateOrRemoveTransports(const JsepSession& aSession,
+                                  const bool forceIceTcp);
 
   // Start ICE checks.
   void StartIceChecks(const JsepSession& session);
@@ -293,6 +292,9 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   // Process a trickle ICE candidate.
   void AddIceCandidate(const std::string& candidate, const std::string& mid,
                        uint32_t aMLine);
+
+  // Handle notifications of network online/offline events.
+  void UpdateNetworkState(bool online);
 
   // Handle complete media pipelines.
   nsresult UpdateMediaPipelines(const JsepSession& session);
@@ -412,13 +414,13 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
         static_cast<VideoSessionConduit*>(it->second.second.get()));
   }
 
+  void AddVideoConduit(size_t level, const RefPtr<VideoSessionConduit> &aConduit) {
+    mConduits[level] = std::make_pair(true, aConduit);
+  }
+
   // Add a conduit
   void AddAudioConduit(size_t level, const RefPtr<AudioSessionConduit> &aConduit) {
     mConduits[level] = std::make_pair(false, aConduit);
-  }
-
-  void AddVideoConduit(size_t level, const RefPtr<VideoSessionConduit> &aConduit) {
-    mConduits[level] = std::make_pair(true, aConduit);
   }
 
   // ICE state signals
@@ -434,6 +436,8 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
       SignalUpdateDefaultCandidate;
   sigslot::signal1<uint16_t>
       SignalEndOfLocalCandidates;
+
+  RefPtr<WebRtcCallWrapper> mCall;
 
  private:
   nsresult InitProxy();
@@ -491,6 +495,7 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   void AddIceCandidate_s(const std::string& aCandidate, const std::string& aMid,
                          uint32_t aMLine);
 
+  void UpdateNetworkState_s(bool online);
 
   // ICE events
   void IceGatheringStateChange_s(NrIceCtx* ctx,

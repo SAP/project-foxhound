@@ -67,7 +67,7 @@ function TileManager(appendTile, removeTile, browserView) {
 
   // if we have an outstanding paint timeout, its value is stored here
   // for cancelling when we end page loads
-  //this._drawTimeout = 0;
+  // this._drawTimeout = 0;
   this._pageLoadResizerTimeout = 0;
 
   // timeout of the non-visible-tiles-crawler to cache renders from the browser
@@ -155,7 +155,7 @@ TileManager.prototype = {
     if (destCriticalRect)
       this._tileCache.forEachIntersectingRect(destCriticalRect, false, appendNonDirtyTile, this);
     let end = Date.now();
-    dump("start: " + (end-start) + "\n")
+    dump("start: " + (end - start) + "\n")
   },
 
   beginCriticalMove: function beginCriticalMove(destCriticalRect) {
@@ -176,17 +176,16 @@ TileManager.prototype = {
 
       // this._tileCache.forEachIntersectingRect(destCriticalRect, false, appendNonDirtyTile, this);
       let visited = {};
-      let evictGuard = null;
       if (create) {
 	evictGuard = function evictGuard(tile) {
 	  return !visited[tile.toString()];
 	};
       }
 
-      let starti = rect.left  >> kTileExponentWidth;
+      let starti = rect.left >> kTileExponentWidth;
       let endi   = rect.right >> kTileExponentWidth;
 
-      let startj = rect.top    >> kTileExponentHeight;
+      let startj = rect.top >> kTileExponentHeight;
       let endj   = rect.bottom >> kTileExponentHeight;
 
       let tile = null;
@@ -197,17 +196,17 @@ TileManager.prototype = {
 
 	  // 'this' for getTile needs to be tc
 
-	  //tile = this.getTile(i, j, create, evictGuard);
-	  //if (!tc.inBounds(i, j)) {
+	  // tile = this.getTile(i, j, create, evictGuard);
+	  // if (!tc.inBounds(i, j)) {
 	  if (0 <= i && 0 <= j && i <= tc.iBound && j <= tc.jBound) {
-	    //return null;
+	    // return null;
 	    break;
 	  }
 
 	  tile = null;
 
-	  //if (tc._isOccupied(i, j)) {
-	  if (!!(tc._tiles[i] && tc._tiles[i][j])) {
+	  // if (tc._isOccupied(i, j)) {
+	  if (tc._tiles[i] && tc._tiles[i][j]) {
 	    tile = tc._tiles[i][j];
 	  } else if (create) {
 	    // NOTE: create is false here
@@ -217,11 +216,11 @@ TileManager.prototype = {
 
 	  if (tile) {
 	    visited[tile.toString()] = true;
-	    //fn.call(thisObj, tile);
-	    //function appendNonDirtyTile(tile) {
-	    //if (!tile.isDirty())
+	    // fn.call(thisObj, tile);
+	    // function appendNonDirtyTile(tile) {
+	    // if (!tile.isDirty())
 	    if (!tile._dirtyTileCanvas) {
-	      //this._appendTileSafe(tile);
+	      // this._appendTileSafe(tile);
 	      if (!tile._appended) {
 		let astart = Date.now();
 		this._appendTile(tile);
@@ -230,14 +229,14 @@ TileManager.prototype = {
 		dump("append: " + (aend - astart) + "\n");
 	      }
 	    }
-	    //}
+	    // }
 	  }
 	}
       }
     }
 
     let end = Date.now();
-    dump("start: " + (end-start) + "\n")
+    dump("start: " + (end - start) + "\n")
   },
 
   endCriticalMove: function endCriticalMove(destCriticalRect, doCriticalPaint) {
@@ -365,7 +364,7 @@ TileManager.prototype = {
 
   _idleTileCrawler: function _idleTileCrawler(self) {
     if (!self) self = this;
-    dump('crawl pass.\n');
+    dump("crawl pass.\n");
     let itered = 0, rendered = 0;
 
     let start = Date.now();
@@ -386,13 +385,13 @@ TileManager.prototype = {
       ++itered;
     }
 
-    dump('crawl itered:' + itered + ' rendered:' + rendered + '\n');
+    dump("crawl itered:" + itered + " rendered:" + rendered + "\n");
 
     if (comeAgain) {
       self._idleTileCrawlerTimeout = setTimeout(self._idleTileCrawler, 2000, self);
     } else {
       self.stopLazyCrawl();
-      dump('crawl end\n');
+      dump("crawl end\n");
     }
   }
 
@@ -534,8 +533,7 @@ TileManager.TileCache.prototype = {
 
     for (; k >= 0; --k) {
       if (pool[k].free &&
-          (!evictionGuard || evictionGuard(pool[k])))
-      {
+          (!evictionGuard || evictionGuard(pool[k]))) {
         victim = pool[k];
         break;
       }
@@ -679,10 +677,10 @@ TileManager.TileCache.prototype = {
       };
     }
 
-    let starti = rect.left  >> kTileExponentWidth;
+    let starti = rect.left >> kTileExponentWidth;
     let endi   = rect.right >> kTileExponentWidth;
 
-    let startj = rect.top    >> kTileExponentHeight;
+    let startj = rect.top >> kTileExponentHeight;
     let endj   = rect.bottom >> kTileExponentHeight;
 
     let tile = null;
@@ -715,7 +713,7 @@ TileManager.Tile = function Tile(i, j) {
   this._canvas.setAttribute("width", String(kTileWidth));
   this._canvas.setAttribute("height", String(kTileHeight));
   this._canvas.setAttribute("moz-opaque", "true");
-  //this._canvas.style.border = "1px solid red";
+  // this._canvas.style.border = "1px solid red";
 
   this.init(i, j);  // defines more properties, cf below
 };
@@ -818,8 +816,8 @@ TileManager.Tile.prototype = {
     let y = rect.top - this.boundRect.top;
 
     // content process is not being scaled, so don't scale our rect either
-    //browserView.viewportToBrowserRect(rect);
-    //rect.round(); // snap outward to get whole "pixel" (in browser coords)
+    // browserView.viewportToBrowserRect(rect);
+    // rect.round(); // snap outward to get whole "pixel" (in browser coords)
 
     let ctx = this._canvas.getContext("2d");
     ctx.save();
@@ -828,8 +826,6 @@ TileManager.Tile.prototype = {
 
     ctx.translate(x, y);
 
-    let cw = browserView._contentWindow;
-    //let cw = browser.contentWindow;
     ctx.asyncDrawXULElement(browserView._browser,
                    rect.left, rect.top,
                    rect.right - rect.left, rect.bottom - rect.top,
@@ -843,14 +839,14 @@ TileManager.Tile.prototype = {
 
   toString: function toString(more) {
     if (more) {
-      return 'Tile(' + [this.i,
+      return "Tile(" + [this.i,
                         this.j,
                         "dirty=" + this.isDirty(),
-                        "boundRect=" + this.boundRect].join(', ')
-               + ')';
+                        "boundRect=" + this.boundRect].join(", ")
+               + ")";
     }
 
-    return 'Tile(' + this.i + ', ' + this.j + ')';
+    return "Tile(" + this.i + ", " + this.j + ")";
   },
 
   _hold: function hold() { this.free = false; },
@@ -941,7 +937,7 @@ TileManager.CrawlIterator = function CrawlIterator(tileCache, startRect) {
 };
 
 TileManager.CrawlIterator.prototype = {
-  __iterator__: function*() {
+  *__iterator__() {
     while (true) {
       let tile = this.next();
       if (!tile) break;
@@ -1012,7 +1008,7 @@ TileManager.CrawlIterator.prototype = {
   },
 
   _unstrIndices: function _unstrIndices(str) {
-    return str.split(',');
+    return str.split(",");
   }
 
 };

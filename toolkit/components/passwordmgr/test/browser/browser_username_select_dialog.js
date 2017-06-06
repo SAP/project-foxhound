@@ -9,7 +9,7 @@ function getSelectDialogDoc() {
   // that has selectDialog.xul loaded.
   var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
            getService(Ci.nsIWindowMediator);
-  //var enumerator = wm.getEnumerator("navigator:browser");
+  // var enumerator = wm.getEnumerator("navigator:browser");
   var enumerator = wm.getXULWindowEnumerator(null);
 
   while (enumerator.hasMoreElements()) {
@@ -63,7 +63,7 @@ add_task(function* test_changeUPLoginOnPUpdateForm_accept() {
 
     is(listbox.selectedIndex, 0, "Checking selected index");
     is(listbox.itemCount, 2, "Checking selected length");
-    ['notifyu1', 'notifyu1B'].forEach((username, i) => {
+    ["notifyu1", "notifyu1B"].forEach((username, i) => {
       is(listbox.getItemAtIndex(i).label, username, "Check username selection on dialog");
     });
 
@@ -114,7 +114,7 @@ add_task(function* test_changeUPLoginOnPUpdateForm_cancel() {
 
     is(listbox.selectedIndex, 0, "Checking selected index");
     is(listbox.itemCount, 2, "Checking selected length");
-    ['notifyu1', 'notifyu1B'].forEach((username, i) => {
+    ["notifyu1", "notifyu1B"].forEach((username, i) => {
       is(listbox.getItemAtIndex(i).label, username, "Check username selection on dialog");
     });
 

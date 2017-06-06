@@ -65,7 +65,7 @@ set_config('MOZ_DMD', dmd)
 set_define('MOZ_DMD', dmd)
 add_old_configure_assignment('MOZ_DMD', dmd)
 imply_option('--enable-profiling', dmd)
-imply_option('--enable-jemalloc', dmd)
+# --enable-jemalloc is implied below.
 imply_option('--enable-replace-malloc', dmd)
 
 # JACK cubeb backend
@@ -86,16 +86,23 @@ set_define('MOZ_JACK', jack)
 include('../js/moz.configure')
 
 
+# Rust
+# ==============================================================
+include('../build/moz.configure/rust.configure',
+        when='--enable-compile-environment')
+
+
 # L10N
 # ==============================================================
 option('--with-l10n-base', nargs=1, env='L10NBASEDIR',
        help='Path to l10n repositories')
 
 @depends('--with-l10n-base')
+@imports(_from='os.path', _import='isdir')
 def l10n_base(value):
     if value:
         path = value[0]
-        if not os.path.isdir(path):
+        if not isdir(path):
             die("Invalid value --with-l10n-base, %s doesn't exist", path)
         return os.path.realpath(os.path.abspath(path))
 
@@ -110,9 +117,8 @@ set_config('L10NBASEDIR', l10n_base)
 # `choices` depending on the target, but that doesn't pan out for the same
 # reason.
 option('--enable-default-toolkit', nargs=1,
-       choices=('cairo-windows', 'cairo-gtk2', 'cairo-gtk2-x11', 'cairo-gtk3',
-                'cairo-cocoa', 'cairo-uikit', 'cairo-android',
-                'cairo-gonk'),
+       choices=('cairo-windows', 'cairo-gtk3', 'cairo-cocoa', 'cairo-uikit',
+                'cairo-android', 'cairo-gonk'),
        help='Select default toolkit')
 
 @depends('--enable-default-toolkit', target)
@@ -134,7 +140,7 @@ def toolkit(value, target):
         else:
             platform_choices = ('cairo-android',)
     else:
-        platform_choices = ('cairo-gtk3', 'cairo-gtk2', 'cairo-gtk2-x11')
+        platform_choices = ('cairo-gtk3',)
 
     if value:
         if value[0] not in platform_choices:
@@ -274,6 +280,68 @@ def fc_freetype(value, toolkit):
 
 add_old_configure_assignment('USE_FC_FREETYPE', fc_freetype)
 
+# Pango
+# ==============================================================
+pkg_check_modules('MOZ_PANGO',
+                  'pango >= 1.22.0 pangoft2 >= 1.22.0 pangocairo >= 1.22.0',
+                  when=toolkit_gtk)
+
+# Fontconfig
+# ==============================================================
+fontconfig_info = pkg_check_modules('_FONTCONFIG', 'fontconfig >= 2.7.0',
+                                    when=fc_freetype)
+
+@depends(fc_freetype)
+def check_for_freetype2(fc_freetype):
+    if fc_freetype:
+        return True
+
+# Check for freetype2. Flags are combined with fontconfig flags.
+freetype2_info = pkg_check_modules('_FT2', 'freetype2 >= 6.1.0',
+                                   when=check_for_freetype2)
+
+@depends(fontconfig_info, freetype2_info)
+def freetype2_combined_info(fontconfig_info, freetype2_info):
+    if not freetype2_info:
+        return
+    if not fontconfig_info:
+        return freetype2_info
+    return namespace(
+        cflags=freetype2_info.cflags + fontconfig_info.cflags,
+        libs=freetype2_info.libs + fontconfig_info.libs,
+    )
+
+add_old_configure_assignment('_HAVE_FREETYPE2',
+                             depends_if(freetype2_info)(lambda _: True))
+
+# Build Freetype in the tree
+# ==============================================================
+@depends(target)
+def tree_freetype(target):
+    if target.os == 'Android':
+        return True
+
+set_define('MOZ_TREE_FREETYPE', tree_freetype)
+set_config('MOZ_TREE_FREETYPE', tree_freetype)
+add_old_configure_assignment('MOZ_TREE_FREETYPE', tree_freetype)
+
+set_define('HAVE_FT_BITMAP_SIZE_Y_PPEM', tree_freetype)
+set_define('HAVE_FT_GLYPHSLOT_EMBOLDEN', tree_freetype)
+set_define('HAVE_FT_LOAD_SFNT_TABLE', tree_freetype)
+
+@depends(freetype2_combined_info, tree_freetype, check_build_environment)
+def ft2_info(freetype2_combined_info, tree_freetype, build_env):
+    if tree_freetype:
+        return namespace(cflags=('-I%s/modules/freetype2/include' % build_env.topsrcdir,),
+                         libs=())
+    if freetype2_combined_info:
+        return freetype2_combined_info
+
+set_config('FT2_LIBS', delayed_getattr(ft2_info, 'libs'))
+add_old_configure_assignment('FT2_LIBS',
+                             delayed_getattr(ft2_info, 'libs'))
+add_old_configure_assignment('FT2_CFLAGS',
+                             delayed_getattr(ft2_info, 'cflags'))
 
 # Apple platform decoder support
 # ==============================================================
@@ -352,7 +420,7 @@ def eme_default(build_project, help):
 
 option('--enable-eme',
        nargs='*',
-       choices=('adobe','widevine',),
+       choices=('widevine',),
        default=eme_default,
        help='Enable support for Encrypted Media Extensions')
 
@@ -473,7 +541,7 @@ def gpsd(value):
 system_gpsd = pkg_check_modules('MOZ_GPSD', 'libgps >= 3.11',
                                 when=gpsd)
 
-set_config('MOZ_GPSD', system_gpsd)
+set_config('MOZ_GPSD', depends_if(system_gpsd)(lambda _: True))
 
 # Miscellaneous programs
 # ==============================================================
@@ -501,13 +569,116 @@ option('--enable-stylo', env='STYLO_ENABLED', nargs=0,
             'This requires either building servo within Gecko\'s cargo phase '
             'or passing --with-servo')
 
-@depends('--enable-stylo')
-def stylo(value):
-    if value:
+# We support setting up the appropriate options for Stylo's build-time
+# bindings generation via setting LLVM_CONFIG or by providing explicit
+# configure options.  The Windows installer of LLVM/Clang doesn't provide
+# llvm-config, so we need both methods to support all of our tier-1
+# platforms.
+llvm_config = check_prog('LLVM_CONFIG', ('llvm-config',),
+                         what='llvm-config', allow_missing=True)
+
+option('--disable-stylo-build-bindgen',
+       help='Enable build-time bindgen for Stylo')
+
+option('--with-libclang-path', nargs=1,
+       help='Absolute path to Clang/LLVM libraries for Stylo (at least version 3.9.0')
+option('--with-clang-path', nargs=1,
+       help='Absolute path to a Clang binary for Stylo bindgen (at least version 3.9.0)')
+
+def invoke_llvm_config(llvm_config, *options):
+    '''Invoke llvm_config with the given options and return the first line of
+    output.'''
+    lines = check_cmd_output(llvm_config, *options).splitlines()
+    return lines[0]
+
+@imports(_from='textwrap', _import='dedent')
+def check_minimum_llvm_config_version(llvm_config):
+    version = Version(invoke_llvm_config(llvm_config, '--version'))
+    min_version = Version('3.9.0')
+    if version < min_version:
+        die(dedent('''\
+        llvm installation {} is too old.
+
+        To compile Stylo, please install at least version {} of
+        Clang + LLVM and ensure that the 'llvm-config' from that
+        installation is first on your path.
+
+        You can verify this by typing 'llvm-config --version'.
+        '''.format(version, min_version)))
+
+@depends('--enable-stylo', '--enable-stylo-build-bindgen',
+         llvm_config, '--with-libclang-path', '--with-clang-path')
+@imports(_from='textwrap', _import='dedent')
+def bindgen_config_paths(stylo_enabled, bindgen_enabled,
+                         llvm_config, libclang_path, clang_path):
+    if not stylo_enabled:
+        return None
+
+    if not bindgen_enabled:
+        return None
+
+    if not libclang_path and not clang_path:
+        # We must have LLVM_CONFIG in this case.
+        if not llvm_config:
+            return None
+
+        check_minimum_llvm_config_version(llvm_config)
+        return namespace(
+            libclang_path=invoke_llvm_config(llvm_config, '--libdir'),
+            clang_path=os.path.join(invoke_llvm_config(llvm_config, '--bindir'),
+                                    'clang'),
+        )
+
+    if (not libclang_path and clang_path) or \
+       (libclang_path and not clang_path):
+        die(dedent('''\
+        You must provide both of --with-libclang-path and --with-clang-path
+        or neither of them.'''))
+
+    return namespace(
+        libclang_path=libclang_path[0],
+        clang_path=clang_path[0],
+    )
+
+@depends('--enable-stylo', bindgen_config_paths, '--enable-stylo-build-bindgen')
+@imports(_from='textwrap', _import='dedent')
+def stylo(stylo_enabled, bindgen_config_paths, bindgen_enabled):
+    if not stylo_enabled:
+        return None
+    elif not bindgen_enabled:
+        return namespace(
+            enabled=bool(stylo_enabled)
+        )
+    elif not bindgen_config_paths:
+        die(dedent('''\
+        Could not find LLVM/Clang installation for compiling stylo build-time
+        bindgen.  Please put 'llvm-config' in your PATH, specify the
+        'LLVM_CONFIG' environment variable, or pass the '--with-libclang-path'
+        and '--with-clang-path' options to configure.'''))
+
+    return namespace(
+        enabled=bool(stylo_enabled),
+        libclang_path=bindgen_config_paths.libclang_path,
+        clang_path=bindgen_config_paths.clang_path,
+        bindgen_enabled=bool(bindgen_enabled),
+    )
+
+set_config('MOZ_STYLO', delayed_getattr(stylo, 'enabled'))
+set_define('MOZ_STYLO', delayed_getattr(stylo, 'enabled'))
+
+set_config('MOZ_LIBCLANG_PATH', delayed_getattr(stylo, 'libclang_path'))
+set_config('MOZ_CLANG_PATH', delayed_getattr(stylo, 'clang_path'))
+set_config('MOZ_STYLO_BINDGEN', delayed_getattr(stylo, 'bindgen_enabled'))
+
+@depends(stylo, dmd)
+def jemalloc(stylo, dmd):
+    if stylo:
+        return 'moz'
+    elif dmd:
         return True
 
-set_define('MOZ_STYLO', stylo)
-imply_option('--enable-jemalloc', depends_if('--enable-stylo')(lambda _: 'moz'))
+imply_option('--enable-jemalloc', jemalloc,
+             reason='--enable-dmd or --enable-stylo')
 
 option('--with-servo', env='SERVO_TARGET_DIR', nargs=1,
        help='Absolute path of the target directory where libgeckoservo can '
@@ -614,22 +785,6 @@ def webspeech_test_backend(value):
 set_config('MOZ_WEBSPEECH_TEST_BACKEND', webspeech_test_backend)
 set_define('MOZ_WEBSPEECH_TEST_BACKEND', webspeech_test_backend)
 
-# WebSMS
-# ==============================================================
-@depends(build_project, '--help')
-def websms_default(build_project, _):
-    return build_project in ('b2g', 'b2g/graphene')
-
-option('--enable-websms-backend', default=websms_default,
-       help='Enable WebSMS backend')
-
-@depends_if('--enable-websms-backend')
-def websms_backend(value):
-    return True
-
-set_config('MOZ_WEBSMS_BACKEND', websms_backend)
-set_define('MOZ_WEBSMS_BACKEND', websms_backend)
-
 # Enable IPDL's "expensive" unit tests
 # ==============================================================
 option('--enable-ipdl-tests', help='Enable expensive IPDL tests')
@@ -708,11 +863,11 @@ add_old_configure_assignment('NECKO_PROTOCOLS', necko_protocols)
 # ==============================================================
 option('--disable-skia', help='Disable use of Skia')
 
-@depends('--disable-skia', target)
-def skia(value, target):
-    if value.origin == 'default' and target.endianness == 'big':
-        return None
-    if value:
+@depends('--disable-skia')
+def skia(value):
+    if not value:
+        die('--disable-skia is not supported anymore')
+    else:
         return True
 
 set_config('MOZ_ENABLE_SKIA', skia)
@@ -744,6 +899,48 @@ def skia_gpu(value, skia, target):
 set_config('MOZ_ENABLE_SKIA_GPU', skia_gpu)
 set_define('USE_SKIA_GPU', skia_gpu)
 
+option('--enable-skia-pdf', help='Enable Skia PDF')
+
+@depends('--enable-skia-pdf', skia, milestone)
+def skia_pdf(value, skia, milestone):
+    if value.origin == 'default':
+        if not skia:
+            return None
+        if milestone.is_nightly:
+            return True
+    elif value and not skia:
+        die('Cannot enable Skia PDF without enabling Skia')
+    if skia and value:
+        return True
+
+set_config('MOZ_ENABLE_SKIA_PDF', skia_pdf)
+set_define('MOZ_ENABLE_SKIA_PDF', skia_pdf)
+
+option('--enable-skia-pdf-sfntly', help='Enable SFNTLY font subsetting in Skia PDF')
+
+@depends('--enable-skia-pdf-sfntly', skia_pdf)
+def skia_pdf_sfntly(value, skia_pdf):
+    if value.origin == 'default':
+        return skia_pdf
+    if value and not skia_pdf:
+        die('Cannot enable SFNTLY subsetting without enabling Skia PDF')
+    if skia_pdf and value:
+        return True
+
+set_config('MOZ_ENABLE_SKIA_PDF_SFNTLY', skia_pdf_sfntly)
+set_define('MOZ_ENABLE_SKIA_PDF_SFNTLY', skia_pdf_sfntly)
+
+@depends(skia_pdf_sfntly)
+def sfntly_includes(skia_pdf_sfntly):
+    includes = []
+    if skia_pdf_sfntly:
+        includes += [
+            '/gfx/sfntly/cpp/src',
+        ]
+    return includes
+
+set_config('SFNTLY_INCLUDES', sfntly_includes)
+
 @depends(skia, skia_gpu)
 def skia_includes(skia, skia_gpu):
     includes = []
@@ -766,12 +963,66 @@ set_config('SKIA_INCLUDES', skia_includes)
 
 # Support various fuzzing options
 # ==============================================================
-option('--enable-libfuzzer', help='Enable libfuzzer support')
+with only_when('--enable-compile-environment'):
+    option('--enable-fuzzing', help='Enable fuzzing support')
 
-@depends('--enable-libfuzzer')
-def enable_libfuzzer(value):
+    @depends('--enable-fuzzing')
+    def enable_fuzzing(value):
+        if value:
+            return True
+
+    @depends(enable_fuzzing,
+             try_compile(body='__AFL_COMPILER;',
+                         check_msg='for AFL compiler',
+                         when='--enable-fuzzing'))
+    def enable_libfuzzer(fuzzing, afl):
+        if fuzzing and not afl:
+            return True
+
+    set_config('FUZZING', enable_fuzzing)
+    set_define('FUZZING', enable_fuzzing)
+
+    set_config('LIBFUZZER', enable_libfuzzer)
+    set_define('LIBFUZZER', enable_libfuzzer)
+
+# Mortar
+# ==============================================================
+option('--enable-mortar', help='Enable mortar extension')
+
+set_config('MOZ_MORTAR', True, when='--enable-mortar')
+
+# Marionette is a Web Driver / Selenium comamnd server and client automation
+# driver for Mozilla's Gecko engine.  For more, see
+# https://developer.mozilla.org/en-US/docs/Mozilla/QA/Marionette.
+#
+# Marionette isn't really a toolkit feature, it's a Gecko engine feature, but
+# it's enabled based on the toolkit (and target), so here it lives.
+
+@depends(target, toolkit)
+def marionette_default(target, toolkit):
+    # By default, enable Marionette if not Android and not gonk.
+    #
+    # None means "don't set anything", which allows to override with
+    # --enable-marionette.  False means --disable-marionette, which
+    # cannot be overridden with --enable-marionette.  We want to allow
+    # overrides.
+    if target.os == 'Android':
+        return None
+
+    if toolkit == 'gonk':
+        return None
+
+    return True
+
+imply_option('--enable-marionette', marionette_default,
+             reason='not Android and not gonk')
+
+option('--enable-marionette',
+       help='Enable internal Marionette command server')
+
+@depends('--enable-marionette')
+def marionette(value):
     if value:
         return True
 
-set_config('LIBFUZZER', enable_libfuzzer)
-set_define('LIBFUZZER', enable_libfuzzer)
+set_config('ENABLE_MARIONETTE', marionette)

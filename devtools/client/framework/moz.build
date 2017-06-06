@@ -9,6 +9,10 @@ TEST_HARNESS_FILES.xpcshell.devtools.client.framework.test += [
     'test/shared-redux-head.js',
 ]
 
+DIRS += [
+    'components',
+]
+
 DevToolsModules(
     'about-devtools-toolbox.js',
     'attach-thread.js',
@@ -25,8 +29,12 @@ DevToolsModules(
     'target-from-url.js',
     'target.js',
     'toolbox-highlighter-utils.js',
+    'toolbox-host-manager.js',
     'toolbox-hosts.js',
     'toolbox-options.js',
     'toolbox.js',
     'ToolboxProcess.jsm',
 )
+
+with Files('**'):
+    BUG_COMPONENT = ('Firefox', 'Developer Tools: Framework')

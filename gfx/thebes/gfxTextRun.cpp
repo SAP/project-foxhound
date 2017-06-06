@@ -154,10 +154,9 @@ gfxTextRun::gfxTextRun(const gfxTextRunFactory::Parameters *aParams,
     , mShapingState(eShapingState_Normal)
 {
     NS_ASSERTION(mAppUnitsPerDevUnit > 0, "Invalid app unit scale");
-    MOZ_COUNT_CTOR(gfxTextRun);
     NS_ADDREF(mFontGroup);
 
-#ifndef RELEASE_BUILD
+#ifndef RELEASE_OR_BETA
     gfxTextPerfMetrics *tp = aFontGroup->GetTextPerfMetrics();
     if (tp) {
         tp->current.textrunConst++;
@@ -191,7 +190,7 @@ gfxTextRun::~gfxTextRun()
     // been told to release its reference to the group, so we mustn't do that
     // again here.
     if (!mReleasedFontGroup) {
-#ifndef RELEASE_BUILD
+#ifndef RELEASE_OR_BETA
         gfxTextPerfMetrics *tp = mFontGroup->GetTextPerfMetrics();
         if (tp) {
             tp->current.textrunDestr++;
@@ -199,8 +198,6 @@ gfxTextRun::~gfxTextRun()
 #endif
         NS_RELEASE(mFontGroup);
     }
-
-    MOZ_COUNT_DTOR(gfxTextRun);
 }
 
 void
@@ -212,21 +209,26 @@ gfxTextRun::ReleaseFontGroup()
 }
 
 bool
-gfxTextRun::SetPotentialLineBreaks(Range aRange, uint8_t *aBreakBefore)
+gfxTextRun::SetPotentialLineBreaks(Range aRange, const uint8_t* aBreakBefore)
 {
     NS_ASSERTION(aRange.end <= GetLength(), "Overflow");
 
     uint32_t changed = 0;
-    uint32_t i;
-    CompressedGlyph *charGlyphs = mCharacterGlyphs + aRange.start;
-    for (i = 0; i < aRange.Length(); ++i) {
-        uint8_t canBreak = aBreakBefore[i];
-        if (canBreak && !charGlyphs[i].IsClusterStart()) {
-            // This can happen ... there is no guarantee that our linebreaking rules
-            // align with the platform's idea of what constitutes a cluster.
-            canBreak = CompressedGlyph::FLAG_BREAK_TYPE_NONE;
+    CompressedGlyph* cg = mCharacterGlyphs + aRange.start;
+    const CompressedGlyph* const end = cg + aRange.Length();
+    while (cg < end) {
+        uint8_t canBreak = *aBreakBefore++;
+        if (canBreak && !cg->IsClusterStart()) {
+            // XXX If we replace the line-breaker with one based more closely
+            // on UAX#14 (e.g. using ICU), this may not be needed any more.
+            // Avoid possible breaks inside a cluster, EXCEPT when the previous
+            // character was a space (compare UAX#14 rules LB9, LB10).
+            if (cg == mCharacterGlyphs || !(cg - 1)->CharIsSpace()) {
+                canBreak = CompressedGlyph::FLAG_BREAK_TYPE_NONE;
+            }
         }
-        changed |= charGlyphs[i].SetCanBreakBefore(canBreak);
+        changed |= cg->SetCanBreakBefore(canBreak);
+        ++cg;
     }
     return changed != 0;
 }
@@ -238,7 +240,7 @@ gfxTextRun::ComputeLigatureData(Range aPartRange,
     NS_ASSERTION(aPartRange.start < aPartRange.end,
                  "Computing ligature data for empty range");
     NS_ASSERTION(aPartRange.end <= GetLength(), "Character length overflow");
-  
+
     LigatureData result;
     const CompressedGlyph *charGlyphs = mCharacterGlyphs;
 
@@ -386,7 +388,7 @@ gfxTextRun::ShrinkToLigatureBoundaries(Range* aRange) const
 {
     if (aRange->start >= aRange->end)
         return;
-  
+
     const CompressedGlyph *charGlyphs = mCharacterGlyphs;
 
     while (aRange->start < aRange->end &&
@@ -434,7 +436,7 @@ ClipPartialLigature(const gfxTextRun* aTextRun,
         } else {
             *aEnd = std::min(*aEnd, endEdge);
         }
-    }    
+    }
 }
 
 void
@@ -613,11 +615,17 @@ gfxTextRun::Draw(Range aRange, gfxPoint aPt, const DrawParams& aParams) const
         HasNonOpaqueNonTransparentColor(aParams.context, currentColor) &&
         HasSyntheticBoldOrColor(this, aRange)) {
         needToRestore = true;
-        // measure text, use the bounding box
+        // Measure text; use the bounding box to determine the area we need
+        // to buffer.
         gfxTextRun::Metrics metrics = MeasureText(
             aRange, gfxFont::LOOSE_INK_EXTENTS,
             aParams.context->GetDrawTarget(), aParams.provider);
-        metrics.mBoundingBox.MoveBy(aPt);
+        if (IsRightToLeft()) {
+            metrics.mBoundingBox.MoveBy(gfxPoint(aPt.x - metrics.mAdvanceWidth,
+                                                 aPt.y));
+        } else {
+            metrics.mBoundingBox.MoveBy(aPt);
+        }
         syntheticBoldBuffer.PushSolidColor(metrics.mBoundingBox, currentColor,
                                            GetAppUnitsPerDevUnit());
     }
@@ -783,7 +791,7 @@ gfxTextRun::AccumulatePartialLigatureMetrics(gfxFont *aFont, Range aRange,
     // ligature. Shift it left.
     metrics.mBoundingBox.x -=
         IsRightToLeft() ? metrics.mAdvanceWidth - (data.mPartAdvance + data.mPartWidth)
-            : data.mPartAdvance;    
+            : data.mPartAdvance;
     metrics.mAdvanceWidth = data.mPartWidth;
 
     aMetrics->CombineWith(metrics, IsRightToLeft());
@@ -860,8 +868,8 @@ gfxTextRun::BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
     }
     bool hyphenBuffer[MEASUREMENT_BUFFER_SIZE];
     bool haveHyphenation = aProvider &&
-        (aProvider->GetHyphensOption() == NS_STYLE_HYPHENS_AUTO ||
-         (aProvider->GetHyphensOption() == NS_STYLE_HYPHENS_MANUAL &&
+        (aProvider->GetHyphensOption() == StyleHyphens::Auto ||
+         (aProvider->GetHyphensOption() == StyleHyphens::Manual &&
           (mFlags & gfxTextRunFactory::TEXT_ENABLE_HYPHEN_BREAKS) != 0));
     if (haveHyphenation) {
         aProvider->GetHyphenationBreaks(bufferRange, hyphenBuffer);
@@ -899,7 +907,7 @@ gfxTextRun::BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
         }
 
         // There can't be a word-wrap break opportunity at the beginning of the
-        // line: if the width is too small for even one character to fit, it 
+        // line: if the width is too small for even one character to fit, it
         // could be the first and last break opportunity on the line, and that
         // would trigger an infinite loop.
         if (aSuppressBreak != eSuppressAllBreaks &&
@@ -917,7 +925,7 @@ gfxTextRun::BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
                 if (atHyphenationBreak) {
                     hyphenatedAdvance += aProvider->GetHyphenWidth();
                 }
-            
+
                 if (lastBreak < 0 || width + hyphenatedAdvance - trimmableAdvance <= aWidth) {
                     // We can break here.
                     lastBreak = i;
@@ -937,7 +945,7 @@ gfxTextRun::BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
                 }
             }
         }
-        
+
         gfxFloat charAdvance;
         if (i >= ligatureRange.start && i < ligatureRange.end) {
             charAdvance = GetAdvanceForGlyphs(Range(i, i + 1));
@@ -950,7 +958,7 @@ gfxTextRun::BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
             charAdvance =
                 ComputePartialLigatureWidth(Range(i, i + 1), aProvider);
         }
-        
+
         advance += charAdvance;
         if (aTrimWhitespace || aWhitespaceCanHang) {
             if (mCharacterGlyphs[i].CharIsSpace()) {
@@ -1111,7 +1119,7 @@ gfxTextRun::AddGlyphRun(gfxFont *aFont, uint8_t aMatchType,
                  "mixed orientation should have been resolved");
     if (!aFont) {
         return NS_OK;
-    }    
+    }
     uint32_t numGlyphRuns = mGlyphRuns.Length();
     if (!aForceNewRun && numGlyphRuns > 0) {
         GlyphRun *lastGlyphRun = &mGlyphRuns[numGlyphRuns - 1];
@@ -1371,7 +1379,7 @@ gfxTextRun::SetSpaceGlyph(gfxFont* aFont, DrawTarget* aDrawTarget,
         (GetFlags() & gfxTextRunFactory::TEXT_ORIENT_VERTICAL_UPRIGHT) != 0;
     gfxShapedWord* sw = aFont->GetShapedWord(aDrawTarget,
                                              &space, 1,
-                                             gfxShapedWord::HashMix(0, ' '), 
+                                             gfxShapedWord::HashMix(0, ' '),
                                              Script::LATIN,
                                              vertical,
                                              mAppUnitsPerDevUnit,
@@ -1437,7 +1445,7 @@ gfxTextRun::FetchGlyphExtents(DrawTarget* aRefDrawTarget)
         bool fontIsSetup = false;
         uint32_t j;
         gfxGlyphExtents *extents = font->GetOrCreateGlyphExtents(mAppUnitsPerDevUnit);
-  
+
         for (j = start; j < end; ++j) {
             const gfxTextRun::CompressedGlyph *glyphData = &charGlyphs[j];
             if (glyphData->IsSimpleGlyph()) {
@@ -1893,7 +1901,7 @@ gfxFontGroup::GetFirstMathFont()
     uint32_t count = mFonts.Length();
     for (uint32_t i = 0; i < count; ++i) {
         gfxFont* font = GetFontAt(i);
-        if (font && font->GetFontEntry()->TryGetMathTable()) {
+        if (font && font->TryGetMathTable()) {
             return font;
         }
     }
@@ -1909,13 +1917,13 @@ gfxFontGroup::Copy(const gfxFontStyle *aStyle)
     return fg;
 }
 
-bool 
+bool
 gfxFontGroup::IsInvalidChar(uint8_t ch)
 {
     return ((ch & 0x7f) < 0x20 || ch == 0x7f);
 }
 
-bool 
+bool
 gfxFontGroup::IsInvalidChar(char16_t ch)
 {
     // All printable 7-bit ASCII values are OK
@@ -2902,7 +2910,7 @@ void gfxFontGroup::ComputeRanges(nsTArray<gfxTextRange>& aRanges,
             FindFontForChar(ch, prevCh, nextCh, aRunScript, prevFont,
                             &matchType);
 
-#ifndef RELEASE_BUILD
+#ifndef RELEASE_OR_BETA
         if (MOZ_UNLIKELY(mTextPerf)) {
             if (matchType == gfxTextRange::kPrefsFallback) {
                 mTextPerf->current.fallbackPrefs++;
@@ -2961,7 +2969,7 @@ void gfxFontGroup::ComputeRanges(nsTArray<gfxTextRange>& aRanges,
 
     aRanges[lastRangeIndex].end = aLength;
 
-#ifndef RELEASE_BUILD
+#ifndef RELEASE_OR_BETA
     LogModule* log = mStyle.systemFont
                    ? gfxPlatform::GetLog(eGfxLog_textrunui)
                    : gfxPlatform::GetLog(eGfxLog_textrun);
@@ -3146,7 +3154,7 @@ already_AddRefed<gfxFont>
 gfxFontGroup::WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
                                           Script aRunScript)
 {
-    gfxFontEntry *fe = 
+    gfxFontEntry *fe =
         gfxPlatformFontList::PlatformFontList()->
             SystemFindFontForChar(aCh, aNextCh, aRunScript, &mStyle);
     if (fe) {

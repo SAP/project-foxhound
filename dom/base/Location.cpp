@@ -79,7 +79,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Location)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInnerWindow)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Location)
@@ -110,7 +109,7 @@ Location::CheckURL(nsIURI* aURI, nsIDocShellLoadInfo** aLoadInfo)
 
   nsCOMPtr<nsIPrincipal> triggeringPrincipal;
   nsCOMPtr<nsIURI> sourceURI;
-  net::ReferrerPolicy referrerPolicy = net::RP_Default;
+  net::ReferrerPolicy referrerPolicy = net::RP_Unset;
 
   if (JSContext *cx = nsContentUtils::GetCurrentJSContext()) {
     // No cx means that there's no JS running, or at least no JS that
@@ -606,22 +605,20 @@ Location::GetPathname(nsAString& aPathname)
   aPathname.Truncate();
 
   nsCOMPtr<nsIURI> uri;
-  nsresult result = NS_OK;
+  nsresult result = GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(result) || !uri) {
+    return result;
+  }
 
-  result = GetURI(getter_AddRefs(uri));
+  nsAutoCString file;
 
-  nsCOMPtr<nsIURL> url(do_QueryInterface(uri));
-  if (url) {
-    nsAutoCString file;
+  result = uri->GetFilePath(file);
 
-    result = url->GetFilePath(file);
+  if (NS_SUCCEEDED(result)) {
+    AppendUTF8toUTF16(file, aPathname);
 
-    if (NS_SUCCEEDED(result)) {
-      AppendUTF8toUTF16(file, aPathname);
-
-      // TaintFox: location.pathname source.
-      aPathname.AssignTaint(StringTaint(0, aPathname.Length(), TaintSource("location.pathname")));
-    }
+    // TaintFox: location.pathname source.
+    aPathname.AssignTaint(StringTaint(0, aPathname.Length(), TaintSource("location.pathname")));
   }
 
   return result;
@@ -636,16 +633,14 @@ Location::SetPathname(const nsAString& aPathname)
     return rv;
   }
 
-  rv = uri->SetPath(NS_ConvertUTF16toUTF8(aPathname));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  if (NS_SUCCEEDED(uri->SetFilePath(NS_ConvertUTF16toUTF8(aPathname)))) {
+    if (aPathname.isTainted())
+      ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
+
+    return SetURI(uri);
   }
 
-  // TaintFox: location.pathname sink.
-  if (aPathname.isTainted())
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
-
-  return SetURI(uri);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -961,8 +956,10 @@ Location::GetSourceBaseURL(JSContext* cx, nsIURI** sourceURL)
 }
 
 bool
-Location::CallerSubsumes()
+Location::CallerSubsumes(nsIPrincipal* aSubjectPrincipal)
 {
+  MOZ_ASSERT(aSubjectPrincipal);
+
   // Get the principal associated with the location object.  Note that this is
   // the principal of the page which will actually be navigated, not the
   // principal of the Location object itself.  This is why we need this check
@@ -974,7 +971,8 @@ Location::CallerSubsumes()
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(outer);
   bool subsumes = false;
   nsresult rv =
-    nsContentUtils::SubjectPrincipal()->SubsumesConsideringDomain(sop->GetPrincipal(), &subsumes);
+    aSubjectPrincipal->SubsumesConsideringDomain(sop->GetPrincipal(),
+                                                 &subsumes);
   NS_ENSURE_SUCCESS(rv, false);
   return subsumes;
 }

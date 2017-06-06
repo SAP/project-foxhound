@@ -52,6 +52,24 @@ Links.prototype = {
    * All history events are emitted from this object.
    */
   historyObserver: {
+    _batchProcessingDepth: 0,
+    _batchCalledFrecencyChanged: false,
+
+    /**
+     * Called by the history service.
+     */
+    onBeginUpdateBatch() {
+      this._batchProcessingDepth += 1;
+    },
+
+    onEndUpdateBatch() {
+      this._batchProcessingDepth -= 1;
+      if (this._batchProcessingDepth == 0 && this._batchCalledFrecencyChanged) {
+        this.onManyFrecenciesChanged();
+        this._batchCalledFrecencyChanged = false;
+      }
+    },
+
     onDeleteURI: function historyObserver_onDeleteURI(aURI) {
       // let observers remove sensetive data associated with deleted visit
       gLinks.emit("deleteURI", {
@@ -65,6 +83,15 @@ Links.prototype = {
 
     onFrecencyChanged: function historyObserver_onFrecencyChanged(aURI,
                            aNewFrecency, aGUID, aHidden, aLastVisitDate) { // jshint ignore:line
+
+      // If something is doing a batch update of history entries we don't want
+      // to do lots of work for each record. So we just track the fact we need
+      // to call onManyFrecenciesChanged() once the batch is complete.
+      if (this._batchProcessingDepth > 0) {
+        this._batchCalledFrecencyChanged = true;
+        return;
+      }
+
       // The implementation of the query in getLinks excludes hidden and
       // unvisited pages, so it's important to exclude them here, too.
       if (!aHidden && aLastVisitDate &&
@@ -84,6 +111,14 @@ Links.prototype = {
       gLinks.emit("manyLinksChanged");
     },
 
+    onVisit(aURI, aVisitId, aTime, aSessionId, aReferrerVisitId, aTransitionType,
+            aGuid, aHidden, aVisitCount, aTyped, aLastKnownTitle) {
+      // For new visits, if we're not batch processing, notify for a title update
+      if (!this._batchProcessingDepth && aVisitCount == 1 && aLastKnownTitle) {
+        this.onTitleChanged(aURI, aLastKnownTitle, aGuid);
+      }
+    },
+
     onTitleChanged: function historyObserver_onTitleChanged(aURI, aNewTitle) {
       if (NewTabUtils.linkChecker.checkLoadURI(aURI.spec)) {
         gLinks.emit("linkChanged", {
@@ -94,7 +129,7 @@ Links.prototype = {
     },
 
     QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver,
-                        Ci.nsISupportsWeakReference])
+                                           Ci.nsISupportsWeakReference])
   },
 
   /**
@@ -104,17 +139,6 @@ Links.prototype = {
   init: function PlacesProvider_init() {
     try {
       PlacesUtils.history.addObserver(this.historyObserver, true);
-    } catch (e) {
-      Cu.reportError(e);
-    }
-  },
-
-  /**
-   * Must be called before the provider is unloaded.
-   */
-  uninit: function PlacesProvider_uninit() {
-    try {
-      PlacesUtils.history.removeObserver(this.historyObserver);
     } catch (e) {
       Cu.reportError(e);
     }
@@ -166,7 +190,7 @@ Links.prototype = {
    *
    * @returns {Promise} Returns a promise with the array of retrieved items
    */
-  executePlacesQuery: Task.async(function*(aSql, aOptions={}) {
+  executePlacesQuery: Task.async(function*(aSql, aOptions = {}) {
     let {columns, params, callback} = aOptions;
     let items = [];
     let queryError = null;
@@ -176,9 +200,8 @@ Links.prototype = {
         // check if caller wants to handle query raws
         if (callback) {
           callback(aRow);
-        }
-        // otherwise fill in the item and add items array
-        else {
+        } else {
+          // otherwise fill in the item and add items array
           let item = null;
           // if columns array is given construct an object
           if (columns && Array.isArray(columns)) {

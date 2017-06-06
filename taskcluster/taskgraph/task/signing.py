@@ -4,52 +4,25 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import logging
-import os
-
-from . import base
-from taskgraph.util.templates import Templates
+from . import transform
 
 
-logger = logging.getLogger(__name__)
-GECKO = os.path.realpath(os.path.join(__file__, '..', '..', '..', '..'))
-ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{}/artifacts/{}'
-INDEX_URL = 'https://index.taskcluster.net/v1/task/{}'
-
-
-class SigningTask(base.Task):
-
-    def __init__(self, *args, **kwargs):
-        super(SigningTask, self).__init__(*args, **kwargs)
+class SigningTask(transform.TransformTask):
+    """
+    A task implementing a signing job.  These depend on nightly build jobs and
+    sign the artifacts after a build has completed.
+    """
 
     @classmethod
-    def load_tasks(cls, kind, path, config, params, loaded_tasks):
-        root = os.path.abspath(os.path.join(path, config['signing_path']))
+    def get_inputs(cls, kind, path, config, params, loaded_tasks):
+        if (config.get('kind-dependencies', []) != ["build"] and
+                config.get('kind-dependencies', []) != ["nightly-l10n"]):
+            raise Exception("Signing kinds must depend on builds or l10n repacks")
+        for task in loaded_tasks:
+            if task.kind not in config.get('kind-dependencies'):
+                continue
+            if not task.attributes.get('nightly'):
+                continue
+            signing_task = {'dependent-task': task}
 
-        # get each nightly-fennec and add its name to this task
-        fennec_tasks = [t for t in loaded_tasks if t.attributes.get('kind') == 'nightly-fennec']
-
-        tasks = []
-        for fennec_task in fennec_tasks:
-            templates = Templates(root)
-            task = templates.load('signing.yml', {})
-
-            artifacts = ['public/build/target.apk',
-                         'public/build/en-US/target.apk']
-            for artifact in artifacts:
-                url = ARTIFACT_URL.format('<build-nightly-fennec>', artifact)
-                task['task']['payload']['unsignedArtifacts'].append({
-                    'task-reference': url
-                })
-
-            attributes = {'kind': 'signing'}
-            tasks.append(cls(kind, 'signing-nightly-fennec', task=task['task'],
-                             attributes=attributes))
-
-        return tasks
-
-    def get_dependencies(self, taskgraph):
-        return [('build-nightly-fennec', 'build-nightly-fennec')]
-
-    def optimize(self, params):
-        return False, None
+            yield signing_task

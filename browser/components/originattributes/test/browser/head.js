@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
 const TEST_URL_PATH = "/browser/browser/components/originattributes/test/browser/";
 
@@ -73,7 +73,7 @@ function* openTabInFirstParty(aURL, aFirstPartyDomain,
                               aFrameSetting = DEFAULT_FRAME_SETTING) {
 
   // If the first party domain ends with '/', we remove it.
-  if (aFirstPartyDomain.endsWith('/')) {
+  if (aFirstPartyDomain.endsWith("/")) {
     aFirstPartyDomain = aFirstPartyDomain.slice(0, -1);
   }
 
@@ -117,11 +117,11 @@ function* openTabInFirstParty(aURL, aFirstPartyDomain,
 
       if (type === typeFrame) {
         // Add a frameset which carries the frame element.
-        let frameSet = document.createElement('frameset');
+        let frameSet = document.createElement("frameset");
         frameSet.cols = "50%,50%";
 
-        let frame = document.createElement('frame');
-        let dummyFrame = document.createElement('frame');
+        let frame = document.createElement("frame");
+        let dummyFrame = document.createElement("frame");
 
         frameSet.appendChild(frame);
         frameSet.appendChild(dummyFrame);
@@ -131,7 +131,7 @@ function* openTabInFirstParty(aURL, aFirstPartyDomain,
         frameElement = frame;
       } else if (type === typeIFrame) {
         // Add an iframe.
-        let iframe = document.createElement('iframe');
+        let iframe = document.createElement("iframe");
         document.body.appendChild(iframe);
 
         frameElement = iframe;
@@ -173,30 +173,28 @@ this.IsolationTestTools = {
    *    The testing task which will be run in different settings.
    */
   _add_task(aTask) {
-    add_task(function* addTaskForIsolationTests() {
-      let testSettings = [
-        { mode: TEST_MODE_FIRSTPARTY,
-          skip: true,
-          prefs: [["privacy.firstparty.isolate", true]]
-        },
-        { mode: TEST_MODE_NO_ISOLATION,
-          skip: false,
-          prefs: [["privacy.firstparty.isolate", false]]
-        },
-        { mode: TEST_MODE_CONTAINERS,
-          skip: false,
-          prefs: [["privacy.userContext.enabled", true]]
-        },
-      ];
+    let testSettings = [
+      { mode: TEST_MODE_FIRSTPARTY,
+        skip: false,
+        prefs: [["privacy.firstparty.isolate", true]]
+      },
+      { mode: TEST_MODE_NO_ISOLATION,
+        skip: false,
+        prefs: [["privacy.firstparty.isolate", false]]
+      },
+      { mode: TEST_MODE_CONTAINERS,
+        skip: false,
+        prefs: [["privacy.userContext.enabled", true]]
+      },
+    ];
 
-      // Add test tasks.
-      for (let testSetting of testSettings) {
-        IsolationTestTools._addTaskForMode(testSetting.mode,
-                                           testSetting.prefs,
-                                           testSetting.skip,
-                                           aTask);
-      }
-    });
+    // Add test tasks.
+    for (let testSetting of testSettings) {
+      IsolationTestTools._addTaskForMode(testSetting.mode,
+                                         testSetting.prefs,
+                                         testSetting.skip,
+                                         aTask);
+    }
   },
 
   _addTaskForMode(aMode, aPref, aSkip, aTask) {
@@ -212,6 +210,8 @@ this.IsolationTestTools = {
 
       // Make sure preferences are set properly.
       yield SpecialPowers.pushPrefEnv({"set": aPref});
+
+      yield SpecialPowers.pushPrefEnv({"set": [["dom.ipc.processCount", 1]]});
 
       yield aTask(aMode);
     });
@@ -273,11 +273,19 @@ this.IsolationTestTools = {
    * @param aBeforeFunc
    *    An optional function which is called before any tabs are created so
    *    that the test case can set up/reset local state.
+   * @param aGetResultImmediately
+   *    An optional boolean to ensure we get results before the next tab is opened.
    */
-  runTests(aURL, aGetResultFuncs, aCompareResultFunc, aBeforeFunc) {
+  runTests(aURL, aGetResultFuncs, aCompareResultFunc, aBeforeFunc,
+           aGetResultImmediately, aUseHttps) {
     let pageURL;
     let firstFrameSetting;
     let secondFrameSetting;
+
+    // Request a longer timeout since the test will run a test for three times
+    // with different settings. Thus, one test here represents three tests.
+    // For this reason, we triple the timeout.
+    requestLongerTimeout(3);
 
     if (typeof aURL === "string") {
       pageURL = aURL;
@@ -291,7 +299,10 @@ this.IsolationTestTools = {
       aGetResultFuncs = [aGetResultFuncs];
     }
 
-    let tabSettings = [
+    let tabSettings = aUseHttps ? [
+                        { firstPartyDomain: "https://example.com", userContextId: 1},
+                        { firstPartyDomain: "https://example.org", userContextId: 2}
+                      ] : [
                         { firstPartyDomain: "http://example.com", userContextId: 1},
                         { firstPartyDomain: "http://example.org", userContextId: 2}
                       ];
@@ -302,7 +313,7 @@ this.IsolationTestTools = {
       for (let tabSettingB of [0, 1]) {
         // Give the test a chance to set up before each case is run.
         if (aBeforeFunc) {
-          yield aBeforeFunc();
+          yield aBeforeFunc(aMode);
         }
 
         // Create Tabs.
@@ -310,14 +321,21 @@ this.IsolationTestTools = {
                                                         pageURL,
                                                         tabSettings[tabSettingA],
                                                         firstFrameSetting);
+        let resultsA = [];
+        if (aGetResultImmediately) {
+          for (let getResultFunc of aGetResultFuncs) {
+            resultsA.push(yield getResultFunc(tabInfoA.browser));
+          }
+        }
         let tabInfoB = yield IsolationTestTools._addTab(aMode,
                                                         pageURL,
                                                         tabSettings[tabSettingB],
                                                         secondFrameSetting);
-
+        let i = 0;
         for (let getResultFunc of aGetResultFuncs) {
           // Fetch results from tabs.
-          let resultA = yield getResultFunc(tabInfoA.browser);
+          let resultA = aGetResultImmediately ? resultsA[i++] :
+                        yield getResultFunc(tabInfoA.browser);
           let resultB = yield getResultFunc(tabInfoB.browser);
 
           // Compare results.

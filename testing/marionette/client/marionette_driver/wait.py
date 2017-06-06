@@ -12,6 +12,7 @@ DEFAULT_INTERVAL = 0.1
 
 
 class Wait(object):
+
     """An explicit conditional utility class for waiting until a condition
     evaluates to true or not null.
 
@@ -29,7 +30,7 @@ class Wait(object):
     """
 
     def __init__(self, marionette, timeout=None,
-                 interval=DEFAULT_INTERVAL, ignored_exceptions=None,
+                 interval=None, ignored_exceptions=None,
                  clock=None):
         """Configure the Wait instance to have a custom timeout, interval, and
         list of ignored exceptions.  Optionally a different time
@@ -48,8 +49,7 @@ class Wait(object):
             conditions, usually a Marionette instance.
 
         :param timeout: How long to wait for the evaluated condition
-            to become true.  The default timeout is the `timeout`
-            property on the `Marionette` object if set, or
+            to become true.  The default timeout is
             `wait.DEFAULT_TIMEOUT`.
 
         :param interval: How often the condition should be evaluated.
@@ -71,11 +71,10 @@ class Wait(object):
         """
 
         self.marionette = marionette
-        self.timeout = timeout or (self.marionette.timeout and
-                                   self.marionette.timeout / 1000.0) or DEFAULT_TIMEOUT
+        self.timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+        self.interval = interval if interval is not None else DEFAULT_INTERVAL
         self.clock = clock or SystemClock()
         self.end = self.clock.now + self.timeout
-        self.interval = interval
 
         exceptions = []
         if ignored_exceptions is not None:
@@ -156,6 +155,7 @@ def until_pred(clock, end):
 
 
 class SystemClock(object):
+
     def __init__(self):
         self._time = time
 

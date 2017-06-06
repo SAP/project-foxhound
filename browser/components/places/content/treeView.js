@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const PTV_interfaces = [Ci.nsITreeView,
                         Ci.nsINavHistoryResultObserver,
@@ -33,15 +33,6 @@ PlacesTreeView.prototype = {
     return this.__xulStore;
   },
 
-  __dateService: null,
-  get _dateService() {
-    if (!this.__dateService) {
-      this.__dateService = Cc["@mozilla.org/intl/scriptabledateformat;1"].
-                           getService(Ci.nsIScriptableDateFormat);
-    }
-    return this.__dateService;
-  },
-
   QueryInterface: XPCOMUtils.generateQI(PTV_interfaces),
 
   // Bug 761494:
@@ -66,8 +57,7 @@ PlacesTreeView.prototype = {
       // This triggers containerStateChanged which then builds the visible
       // section.
       this._rootNode.containerOpen = true;
-    }
-    else
+    } else
       this.invalidateContainer(this._rootNode);
 
     // "Activate" the sorting column and update commands.
@@ -180,13 +170,11 @@ PlacesTreeView.prototype = {
     let useNodeIndex = typeof(aNodeIndex) == "number";
     if (parent == this._rootNode) {
       row = useNodeIndex ? aNodeIndex : this._rootNode.getChildIndex(aNode);
-    }
-    else if (useNodeIndex && typeof(aParentRow) == "number") {
+    } else if (useNodeIndex && typeof(aParentRow) == "number") {
       // If we have both the row of the parent node, and the node's index, we
       // can avoid searching the rows array if the parent is a plain container.
       row = aParentRow + aNodeIndex + 1;
-    }
-    else {
+    } else {
       // Look for the node in the nodes array.  Start the search at the parent
       // row.  If the parent row isn't passed, we'll pass undefined to indexOf,
       // which is fine.
@@ -272,8 +260,7 @@ PlacesTreeView.prototype = {
    * @return the number of rows which were inserted.
    */
   _buildVisibleSection:
-  function PTV__buildVisibleSection(aContainer, aFirstChildRow, aToOpen)
-  {
+  function PTV__buildVisibleSection(aContainer, aFirstChildRow, aToOpen) {
     // There's nothing to do if the container is closed.
     if (!aContainer.containerOpen)
       return 0;
@@ -289,8 +276,6 @@ PlacesTreeView.prototype = {
     if (this._isPlainContainer(aContainer))
       return cc;
 
-    const openLiteral = PlacesUIUtils.RDF.GetResource("http://home.netscape.com/NC-rdf#open");
-    const trueLiteral = PlacesUIUtils.RDF.GetLiteral("true");
     let sortingMode = this._result.sortingMode;
 
     let rowsInserted = 0;
@@ -504,16 +489,36 @@ PlacesTreeView.prototype = {
     let midnight = now - (now % MS_PER_DAY);
     midnight += new Date(midnight).getTimezoneOffset() * MS_PER_MINUTE;
 
-    let dateFormat = timeMs >= midnight ?
-                      Ci.nsIScriptableDateFormat.dateFormatNone :
-                      Ci.nsIScriptableDateFormat.dateFormatShort;
-
     let timeObj = new Date(timeMs);
-    return (this._dateService.FormatDateTime("", dateFormat,
-      Ci.nsIScriptableDateFormat.timeFormatNoSeconds,
-      timeObj.getFullYear(), timeObj.getMonth() + 1,
-      timeObj.getDate(), timeObj.getHours(),
-      timeObj.getMinutes(), timeObj.getSeconds()));
+    return timeMs >= midnight ? this._todayFormatter.format(timeObj)
+                              : this._dateFormatter.format(timeObj);
+  },
+
+  // We use a different formatter for times within the current day,
+  // so we cache both a "today" formatter and a general date formatter.
+  __todayFormatter: null,
+  get _todayFormatter() {
+    if (!this.__todayFormatter) {
+      const locale = Cc["@mozilla.org/chrome/chrome-registry;1"]
+                     .getService(Ci.nsIXULChromeRegistry)
+                     .getSelectedLocale("global", true);
+      const dtOptions = { hour: "numeric", minute: "numeric" };
+      this.__todayFormatter = new Intl.DateTimeFormat(locale, dtOptions);
+    }
+    return this.__todayFormatter;
+  },
+
+  __dateFormatter: null,
+  get _dateFormatter() {
+    if (!this.__dateFormatter) {
+      const locale = Cc["@mozilla.org/chrome/chrome-registry;1"]
+                     .getService(Ci.nsIXULChromeRegistry)
+                     .getSelectedLocale("global", true);
+      const dtOptions = { year: "numeric", month: "numeric", day: "numeric",
+                          hour: "numeric", minute: "numeric" };
+      this.__dateFormatter = new Intl.DateTimeFormat(locale, dtOptions);
+    }
+    return this.__dateFormatter;
   },
 
   COLUMN_TYPE_UNKNOWN: 0,
@@ -620,8 +625,7 @@ PlacesTreeView.prototype = {
         row = aNewIndex;
       else
         row = parentRow + aNewIndex + 1;
-    }
-    else {
+    } else {
       // Here, we try to find the next visible element in the child list so we
       // can set the new visible index to be right before that.  Note that we
       // have to search down instead of up, because some siblings could have
@@ -704,7 +708,7 @@ PlacesTreeView.prototype = {
 
     // Redraw the parent if its twisty state has changed.
     if (aParentNode != this._rootNode && !aParentNode.hasChildren) {
-      let parentRow = oldRow - 1;
+      parentRow = oldRow - 1;
       this._tree.invalidateRow(parentRow);
     }
 
@@ -850,8 +854,7 @@ PlacesTreeView.prototype = {
   nodeAnnotationChanged: function PTV_nodeAnnotationChanged(aNode, aAnno) {
     if (aAnno == PlacesUIUtils.DESCRIPTION_ANNO) {
       this._invalidateCellValue(aNode, this.COLUMN_TYPE_DESCRIPTION);
-    }
-    else if (aAnno == PlacesUtils.LMANNO_FEEDURI) {
+    } else if (aAnno == PlacesUtils.LMANNO_FEEDURI) {
       PlacesUtils.livemarks.getLivemark({ id: aNode.itemId })
         .then(aLivemark => {
           this._controller.cacheLivemarkInfo(aNode, aLivemark);
@@ -895,8 +898,7 @@ PlacesTreeView.prototype = {
               PlacesUtils.livemarks.reloadLivemarks();
               if (shouldInvalidate)
                 this.invalidateContainer(aNode);
-            }
-            else {
+            } else {
               aLivemark.unregisterForUpdates(aNode);
             }
           }, () => undefined);
@@ -922,8 +924,7 @@ PlacesTreeView.prototype = {
 
         return;
       }
-    }
-    else {
+    } else {
       // Update the twisty state.
       let row = this._getRowForNode(aContainer);
       this._tree.invalidateRow(row);
@@ -1049,7 +1050,6 @@ PlacesTreeView.prototype = {
 
     let [desiredColumn, desiredIsDescending] =
       this._sortTypeToColumnType(aSortingMode);
-    let colCount = columns.count;
     let column = this._findColumnByType(desiredColumn);
     if (column) {
       let sortDir = desiredIsDescending ? "descending" : "ascending";
@@ -1063,8 +1063,7 @@ PlacesTreeView.prototype = {
       this._inBatchMode = this.selection.selectEventsSuppressed = aToggleMode;
       if (this._inBatchMode) {
         this._tree.beginUpdateBatch();
-      }
-      else {
+      } else {
         this._tree.endUpdateBatch();
       }
     }
@@ -1084,8 +1083,7 @@ PlacesTreeView.prototype = {
       this._rootNode = this._result.root;
       this._cellProperties = new Map();
       this._cuttingNodes = new Set();
-    }
-    else if (this._result) {
+    } else if (this._result) {
       delete this._result;
       delete this._rootNode;
       delete this._cellProperties;
@@ -1110,8 +1108,7 @@ PlacesTreeView.prototype = {
     // The API allows passing invisible nodes.
     try {
       return this._getRowForNode(aNode, true);
-    }
-    catch (ex) { }
+    } catch (ex) { }
 
     return Ci.nsINavHistoryResultTreeViewer.INDEX_INVISIBLE;
   },
@@ -1127,7 +1124,7 @@ PlacesTreeView.prototype = {
     this._selection = val;
   },
 
-  getRowProperties: function() { return ""; },
+  getRowProperties() { return ""; },
 
   getCellProperties:
   function PTV_getCellProperties(aRow, aColumn) {
@@ -1166,18 +1163,16 @@ PlacesTreeView.prototype = {
             properties += " dayContainer";
           else if (PlacesUtils.nodeIsHost(node))
             properties += " hostContainer";
-        }
-        else if (nodeType == Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER ||
+        } else if (nodeType == Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER ||
                  nodeType == Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER_SHORTCUT) {
           if (this._controller.hasCachedLivemarkInfo(node)) {
             properties += " livemark";
-          }
-          else {
+          } else {
             PlacesUtils.livemarks.getLivemark({ id: node.itemId })
               .then(aLivemark => {
                 this._controller.cacheLivemarkInfo(node, aLivemark);
-                let props = this._cellProperties.get(node);
-                this._cellProperties.set(node, props += " livemark");
+                let livemarkProps = this._cellProperties.get(node);
+                this._cellProperties.set(node, livemarkProps += " livemark");
                 // The livemark attribute is set as a cell property on the title cell.
                 this._invalidateCellValue(node, this.COLUMN_TYPE_TITLE);
               }, () => undefined);
@@ -1189,8 +1184,7 @@ PlacesTreeView.prototype = {
           if (queryName)
             properties += " OrganizerQuery_" + queryName;
         }
-      }
-      else if (nodeType == Ci.nsINavHistoryResultNode.RESULT_TYPE_SEPARATOR)
+      } else if (nodeType == Ci.nsINavHistoryResultNode.RESULT_TYPE_SEPARATOR)
         properties += " separator";
       else if (PlacesUtils.nodeIsURI(node)) {
         properties += " " + PlacesUIUtils.guessUrlSchemeForUI(node.uri);
@@ -1209,7 +1203,7 @@ PlacesTreeView.prototype = {
     return props + " " + properties;
   },
 
-  getColumnProperties: function(aColumn) { return ""; },
+  getColumnProperties(aColumn) { return ""; },
 
   isContainer: function PTV_isContainer(aRow) {
     // Only leaf nodes aren't listed in the rows array.
@@ -1293,8 +1287,7 @@ PlacesTreeView.prototype = {
         // it, rather than insert adjacent to it.
         container = lastSelected;
         index = -1;
-      }
-      else if (lastSelected.containerOpen &&
+      } else if (lastSelected.containerOpen &&
                orientation == Ci.nsITreeView.DROP_AFTER &&
                lastSelected.hasChildren) {
         // If the last selected node is an open container and the user is
@@ -1302,8 +1295,7 @@ PlacesTreeView.prototype = {
         container = lastSelected;
         orientation = Ci.nsITreeView.DROP_ON;
         index = 0;
-      }
-      else {
+      } else {
         // Use the last-selected node's container.
         container = lastSelected.parent;
 
@@ -1326,8 +1318,7 @@ PlacesTreeView.prototype = {
               Ci.nsINavHistoryQueryOptions.SORT_BY_NONE) {
           // If we are within a sorted view, insert at the end.
           index = -1;
-        }
-        else if (queryOptions.excludeItems ||
+        } else if (queryOptions.excludeItems ||
                  queryOptions.excludeQueries ||
                  queryOptions.excludeReadOnlyFolders) {
           // Some item may be invisible, insert near last selected one.
@@ -1335,8 +1326,7 @@ PlacesTreeView.prototype = {
           // instead it will be calculated later by the controller.
           index = -1;
           dropNearItemId = lastSelected.itemId;
-        }
-        else {
+        } else {
           let lsi = container.getChildIndex(lastSelected);
           index = orientation == Ci.nsITreeView.DROP_BEFORE ? lsi : lsi + 1;
         }
@@ -1374,7 +1364,7 @@ PlacesTreeView.prototype = {
   },
 
   getParentIndex: function PTV_getParentIndex(aRow) {
-    let [parentNode, parentRow] = this._getParentByChildRow(aRow);
+    let [, parentRow] = this._getParentByChildRow(aRow);
     return parentRow;
   },
 
@@ -1406,7 +1396,7 @@ PlacesTreeView.prototype = {
     return false;
   },
 
-  getLevel: function(aRow) {
+  getLevel(aRow) {
     return this._getNodeForRow(aRow).indentLevel;
   },
 
@@ -1419,8 +1409,8 @@ PlacesTreeView.prototype = {
     return node.icon;
   },
 
-  getProgressMode: function(aRow, aColumn) { },
-  getCellValue: function(aRow, aColumn) { },
+  getProgressMode(aRow, aColumn) { },
+  getCellValue(aRow, aColumn) { },
 
   getCellText: function PTV_getCellText(aRow, aColumn) {
     let node = this._getNodeForRow(aRow);
@@ -1458,8 +1448,7 @@ PlacesTreeView.prototype = {
           try {
             return PlacesUtils.annotations.
                                getItemAnnotation(node.itemId, PlacesUIUtils.DESCRIPTION_ANNO);
-          }
-          catch (ex) { /* has no description */ }
+          } catch (ex) { /* has no description */ }
         }
         return "";
       case this.COLUMN_TYPE_DATEADDED:
@@ -1593,8 +1582,7 @@ PlacesTreeView.prototype = {
             oldSortingAnnotation == PlacesUIUtils.DESCRIPTION_ANNO) {
           newSort = NHQO.SORT_BY_ANNOTATION_DESCENDING;
           newSortingAnnotation = PlacesUIUtils.DESCRIPTION_ANNO;
-        }
-        else if (allowTriState &&
+        } else if (allowTriState &&
                  oldSort == NHQO.SORT_BY_ANNOTATION_DESCENDING &&
                  oldSortingAnnotation == PlacesUIUtils.DESCRIPTION_ANNO)
           newSort = NHQO.SORT_BY_NONE;
@@ -1709,10 +1697,10 @@ PlacesTreeView.prototype = {
     }
   },
 
-  selectionChanged: function() { },
-  cycleCell: function(aRow, aColumn) { },
-  isSelectable: function(aRow, aColumn) { return false; },
-  performAction: function(aAction) { },
-  performActionOnRow: function(aAction, aRow) { },
-  performActionOnCell: function(aAction, aRow, aColumn) { }
+  selectionChanged() { },
+  cycleCell(aRow, aColumn) { },
+  isSelectable(aRow, aColumn) { return false; },
+  performAction(aAction) { },
+  performActionOnRow(aAction, aRow) { },
+  performActionOnCell(aAction, aRow, aColumn) { }
 };

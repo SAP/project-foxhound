@@ -16,16 +16,14 @@ this.EXPORTED_SYMBOLS = [
   "LoginHelper",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// LoginHelper
+// LoginHelper
 
 /**
  * Contains functions shared by different Login Manager components.
@@ -37,6 +35,8 @@ this.LoginHelper = {
   debug: Services.prefs.getBoolPref("signon.debug"),
   formlessCaptureEnabled: Services.prefs.getBoolPref("signon.formlessCapture.enabled"),
   schemeUpgrades: Services.prefs.getBoolPref("signon.schemeUpgrades"),
+  insecureAutofill: Services.prefs.getBoolPref("signon.autofillForms.http"),
+  showInsecureFieldWarning: Services.prefs.getBoolPref("security.insecure_field_warning.contextual.enabled"),
 
   createLogger(aLogPrefix) {
     let getMaxLogLevel = () => {
@@ -56,7 +56,12 @@ this.LoginHelper = {
       this.debug = Services.prefs.getBoolPref("signon.debug");
       this.formlessCaptureEnabled = Services.prefs.getBoolPref("signon.formlessCapture.enabled");
       this.schemeUpgrades = Services.prefs.getBoolPref("signon.schemeUpgrades");
+      this.insecureAutofill = Services.prefs.getBoolPref("signon.autofillForms.http");
       logger.maxLogLevel = getMaxLogLevel();
+    }, false);
+
+    Services.prefs.addObserver("security.insecure_field_warning.", () => {
+      this.showInsecureFieldWarning = Services.prefs.getBoolPref("security.insecure_field_warning.contextual.enabled");
     }, false);
 
     return logger;
@@ -91,9 +96,9 @@ this.LoginHelper = {
   checkLoginValues(aLogin) {
     function badCharacterPresent(l, c) {
       return ((l.formSubmitURL && l.formSubmitURL.indexOf(c) != -1) ||
-              (l.httpRealm     && l.httpRealm.indexOf(c)     != -1) ||
-                                  l.hostname.indexOf(c)      != -1  ||
-                                  l.usernameField.indexOf(c) != -1  ||
+              (l.httpRealm && l.httpRealm.indexOf(c) != -1) ||
+                                  l.hostname.indexOf(c) != -1 ||
+                                  l.usernameField.indexOf(c) != -1 ||
                                   l.passwordField.indexOf(c) != -1);
     }
 
@@ -190,8 +195,8 @@ this.LoginHelper = {
 
     if (aOptions.schemeUpgrades) {
       try {
-        let loginURI = Services.io.newURI(aLoginOrigin, null, null);
-        let searchURI = Services.io.newURI(aSearchOrigin, null, null);
+        let loginURI = Services.io.newURI(aLoginOrigin);
+        let searchURI = Services.io.newURI(aSearchOrigin);
         if (loginURI.scheme == "http" && searchURI.scheme == "https" &&
             loginURI.hostPort == searchURI.hostPort) {
           return true;
@@ -217,14 +222,14 @@ this.LoginHelper = {
       return false;
 
     if (ignoreSchemes) {
-      let hostname1URI = Services.io.newURI(aLogin1.hostname, null, null);
-      let hostname2URI = Services.io.newURI(aLogin2.hostname, null, null);
+      let hostname1URI = Services.io.newURI(aLogin1.hostname);
+      let hostname2URI = Services.io.newURI(aLogin2.hostname);
       if (hostname1URI.hostPort != hostname2URI.hostPort)
         return false;
 
       if (aLogin1.formSubmitURL != "" && aLogin2.formSubmitURL != "" &&
-          Services.io.newURI(aLogin1.formSubmitURL, null, null).hostPort !=
-          Services.io.newURI(aLogin2.formSubmitURL, null, null).hostPort)
+          Services.io.newURI(aLogin1.formSubmitURL).hostPort !=
+          Services.io.newURI(aLogin2.formSubmitURL).hostPort)
         return false;
     } else {
       if (aLogin1.hostname != aLogin2.hostname)
@@ -399,7 +404,7 @@ this.LoginHelper = {
     let preferredOriginScheme;
     if (preferredOrigin) {
       try {
-        preferredOriginScheme = Services.io.newURI(preferredOrigin, null, null).scheme;
+        preferredOriginScheme = Services.io.newURI(preferredOrigin).scheme;
       } catch (ex) {
         // Handle strings that aren't valid URIs e.g. chrome://FirefoxAccounts
       }
@@ -440,8 +445,8 @@ this.LoginHelper = {
 
             try {
               // Only `hostname` is currently considered
-              let existingLoginURI = Services.io.newURI(existingLogin.hostname, null, null);
-              let loginURI = Services.io.newURI(login.hostname, null, null);
+              let existingLoginURI = Services.io.newURI(existingLogin.hostname);
+              let loginURI = Services.io.newURI(login.hostname);
               // If the schemes of the two logins are the same or neither match the
               // preferredOriginScheme then we have no preference and look at the next resolveBy.
               if (loginURI.scheme == existingLoginURI.scheme ||
@@ -512,7 +517,7 @@ this.LoginHelper = {
     } else {
       window.openDialog("chrome://passwordmgr/content/passwordManager.xul",
                         "Toolkit:PasswordManager", "",
-                        {filterString : filterString});
+                        {filterString});
     }
   },
 
@@ -532,10 +537,10 @@ this.LoginHelper = {
     let fieldType = (element.hasAttribute("type") ?
                      element.getAttribute("type").toLowerCase() :
                      element.type);
-    if (fieldType == "text"  ||
+    if (fieldType == "text" ||
         fieldType == "email" ||
-        fieldType == "url"   ||
-        fieldType == "tel"   ||
+        fieldType == "url" ||
+        fieldType == "tel" ||
         fieldType == "number") {
       return true;
     }
@@ -564,7 +569,7 @@ this.LoginHelper = {
     login.QueryInterface(Ci.nsILoginMetaInfo);
     login.timeCreated = loginData.timeCreated;
     login.timeLastUsed = loginData.timeLastUsed || loginData.timeCreated;
-    login.timePasswordChanged = loginData.timePasswordChanged  || loginData.timeCreated;
+    login.timePasswordChanged = loginData.timePasswordChanged || loginData.timeCreated;
     login.timesUsed = loginData.timesUsed || 1;
     // While here we're passing formSubmitURL and httpRealm, they could be empty/null and get
     // ignored in that case, leading to multiple logins for the same username.
@@ -618,7 +623,7 @@ this.LoginHelper = {
   loginToVanillaObject(login) {
     let obj = {};
     for (let i in login.QueryInterface(Ci.nsILoginMetaInfo)) {
-      if (typeof login[i] !== 'function') {
+      if (typeof login[i] !== "function") {
         obj[i] = login[i];
       }
     }
@@ -682,15 +687,10 @@ this.LoginHelper = {
    * Returns true if the user has a master password set and false otherwise.
    */
   isMasterPasswordSet() {
-    let secmodDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].
-                   getService(Ci.nsIPKCS11ModuleDB);
-    let slot = secmodDB.findSlotByName("");
-    if (!slot) {
-      return false;
-    }
-    let hasMP = slot.status != Ci.nsIPKCS11Slot.SLOT_UNINITIALIZED &&
-                slot.status != Ci.nsIPKCS11Slot.SLOT_READY;
-    return hasMP;
+    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"]
+                    .getService(Ci.nsIPK11TokenDB);
+    let token = tokenDB.getInternalKeyToken();
+    return token.hasPassword;
   },
 
   /**

@@ -277,17 +277,24 @@ int tgkill(pid_t tgid, pid_t tid, int signalno) {
 class PlatformData {
  public:
   PlatformData()
-  {}
+  {
+    MOZ_COUNT_CTOR(PlatformData);
+  }
+
+  ~PlatformData()
+  {
+    MOZ_COUNT_DTOR(PlatformData);
+  }
 };
 
-/* static */ PlatformData*
-Sampler::AllocPlatformData(int aThreadId)
+/* static */ auto
+Sampler::AllocPlatformData(int aThreadId) -> UniquePlatformData
 {
-  return new PlatformData;
+  return UniquePlatformData(new PlatformData);
 }
 
-/* static */ void
-Sampler::FreePlatformData(PlatformData* aData)
+void
+Sampler::PlatformDataDestructor::operator()(PlatformData* aData)
 {
   delete aData;
 }
@@ -310,7 +317,7 @@ static void* SignalSender(void* arg) {
 
     if (!SamplerRegistry::sampler->IsPaused()) {
       ::MutexAutoLock lock(*Sampler::sRegisteredThreadsMutex);
-      std::vector<ThreadInfo*> threads =
+      const std::vector<ThreadInfo*>& threads =
         SamplerRegistry::sampler->GetRegisteredThreads();
 
       bool isFirstProfiledThread = true;
@@ -387,9 +394,11 @@ Sampler::Sampler(double interval, bool profiling, int entrySize)
       paused_(false),
       active_(false),
       entrySize_(entrySize) {
+  MOZ_COUNT_CTOR(Sampler);
 }
 
 Sampler::~Sampler() {
+  MOZ_COUNT_DTOR(Sampler);
   ASSERT(!signal_sender_launched_);
 }
 
@@ -481,69 +490,6 @@ void Sampler::Stop() {
     sigaction(SIGNAL_SAVE_PROFILE, &old_sigsave_signal_handler_, 0);
     sigaction(SIGPROF, &old_sigprof_signal_handler_, 0);
     signal_handler_installed_ = false;
-  }
-}
-
-bool Sampler::RegisterCurrentThread(const char* aName,
-                                    PseudoStack* aPseudoStack,
-                                    bool aIsMainThread, void* stackTop)
-{
-  if (!Sampler::sRegisteredThreadsMutex)
-    return false;
-
-  ::MutexAutoLock lock(*Sampler::sRegisteredThreadsMutex);
-
-  int id = gettid();
-  for (uint32_t i = 0; i < sRegisteredThreads->size(); i++) {
-    ThreadInfo* info = sRegisteredThreads->at(i);
-    if (info->ThreadId() == id && !info->IsPendingDelete()) {
-      // Thread already registered. This means the first unregister will be
-      // too early.
-      ASSERT(false);
-      return false;
-    }
-  }
-
-  set_tls_stack_top(stackTop);
-
-  ThreadInfo* info = new StackOwningThreadInfo(aName, id,
-    aIsMainThread, aPseudoStack, stackTop);
-
-  if (sActiveSampler) {
-    sActiveSampler->RegisterThread(info);
-  }
-
-  sRegisteredThreads->push_back(info);
-
-  return true;
-}
-
-void Sampler::UnregisterCurrentThread()
-{
-  if (!Sampler::sRegisteredThreadsMutex)
-    return;
-
-  tlsStackTop.set(nullptr);
-
-  ::MutexAutoLock lock(*Sampler::sRegisteredThreadsMutex);
-
-  int id = gettid();
-
-  for (uint32_t i = 0; i < sRegisteredThreads->size(); i++) {
-    ThreadInfo* info = sRegisteredThreads->at(i);
-    if (info->ThreadId() == id && !info->IsPendingDelete()) {
-      if (profiler_is_active()) {
-        // We still want to show the results of this thread if you
-        // save the profile shortly after a thread is terminated.
-        // For now we will defer the delete to profile stop.
-        info->SetPendingDelete();
-        break;
-      } else {
-        delete info;
-        sRegisteredThreads->erase(sRegisteredThreads->begin() + i);
-        break;
-      }
-    }
   }
 }
 

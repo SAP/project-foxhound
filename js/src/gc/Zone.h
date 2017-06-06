@@ -166,7 +166,7 @@ struct Zone : public JS::shadow::Zone,
     // Iterate over all cells in the zone. See the definition of ZoneCellIter
     // in jsgcinlines.h for the possible arguments and documentation.
     template <typename T, typename... Args>
-    js::gc::ZoneCellIter<T> cellIter(Args... args) {
+    js::gc::ZoneCellIter<T> cellIter(Args&&... args) {
         return js::gc::ZoneCellIter<T>(const_cast<Zone*>(this), mozilla::Forward<Args>(args)...);
     }
 
@@ -240,6 +240,7 @@ struct Zone : public JS::shadow::Zone,
             return needsIncrementalBarrier();
     }
 
+    GCState gcState() const { return gcState_; }
     bool wasGCStarted() const { return gcState_ != NoGC; }
     bool isGCMarkingBlack() { return gcState_ == Mark; }
     bool isGCMarkingGray() { return gcState_ == MarkGray; }
@@ -351,14 +352,23 @@ struct Zone : public JS::shadow::Zone,
     // can't be determined by examining this zone by itself.
     ZoneSet gcZoneGroupEdges;
 
+    // Zones with dead proxies require an extra scan through the wrapper map,
+    // so track whether any dead proxies are known to exist.
+    bool hasDeadProxies;
+
     // Keep track of all TypeDescr and related objects in this compartment.
     // This is used by the GC to trace them all first when compacting, since the
     // TypedObject trace hook may access these objects.
-    using TypeDescrObjectSet = js::GCHashSet<js::HeapPtr<JSObject*>,
-                                             js::MovableCellHasher<js::HeapPtr<JSObject*>>,
+    //
+    // There are no barriers here - the set contains only tenured objects so no
+    // post-barrier is required, and these are weak references so no pre-barrier
+    // is required.
+    using TypeDescrObjectSet = js::GCHashSet<JSObject*,
+                                             js::MovableCellHasher<JSObject*>,
                                              js::SystemAllocPolicy>;
     JS::WeakCache<TypeDescrObjectSet> typeDescrObjects;
 
+    bool addTypeDescrObject(JSContext* cx, HandleObject obj);
 
     // Malloc counter to measure memory pressure for GC scheduling. It runs from
     // gcMaxMallocBytes down to zero. This counter should be used only when it's
@@ -391,7 +401,10 @@ struct Zone : public JS::shadow::Zone,
     // Set of all unowned base shapes in the Zone.
     JS::WeakCache<js::BaseShapeSet> baseShapes;
 
-    // Set of initial shapes in the Zone.
+    // Set of initial shapes in the Zone. For certain prototypes -- namely,
+    // those of various builtin classes -- there are two entries: one for a
+    // lookup via TaggedProto, and one for a lookup via JSProtoKey. See
+    // InitialShapeProto.
     JS::WeakCache<js::InitialShapeSet> initialShapes;
 
 #ifdef JSGC_HASH_TABLE_CHECKS
@@ -407,9 +420,6 @@ struct Zone : public JS::shadow::Zone,
     bool isSystem;
 
     mozilla::Atomic<bool> usedByExclusiveThread;
-
-    // True when there are active frames.
-    bool active;
 
 #ifdef DEBUG
     unsigned gcLastZoneGroupIndex;
@@ -512,6 +522,13 @@ struct Zone : public JS::shadow::Zone,
     void checkUniqueIdTableAfterMovingGC();
 #endif
 
+    bool keepShapeTables() const {
+        return keepShapeTables_;
+    }
+    void setKeepShapeTables(bool b) {
+        keepShapeTables_ = b;
+    }
+
   private:
     js::jit::JitZone* jitZone_;
 
@@ -519,6 +536,7 @@ struct Zone : public JS::shadow::Zone,
     bool gcScheduled_;
     bool gcPreserveCode_;
     bool jitUsingBarriers_;
+    bool keepShapeTables_;
 
     // Allow zones to be linked into a list
     friend class js::gc::ZoneList;

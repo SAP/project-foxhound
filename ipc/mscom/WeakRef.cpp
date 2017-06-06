@@ -12,6 +12,7 @@
 #include "mozilla/RefPtr.h"
 #include "nsThreadUtils.h"
 #include "nsWindowsHelpers.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla {
 namespace mscom {
@@ -40,7 +41,7 @@ WeakReferenceSupport::QueryInterface(REFIID riid, void** ppv)
   *ppv = nullptr;
 
   // Raise the refcount for stabilization purposes during aggregation
-  RefPtr<IUnknown> kungFuDeathGrip(static_cast<IUnknown*>(this));
+  RefPtr<IUnknown> kungFuDeathGrip(this);
 
   if (riid == IID_IUnknown || riid == IID_IWeakReferenceSource) {
     punk = static_cast<IUnknown*>(this);
@@ -81,14 +82,11 @@ WeakReferenceSupport::Release()
     if (mFlags != Flags::eDestroyOnMainThread || NS_IsMainThread()) {
       delete this;
     } else {
-      // It is possible for the last Release() call to happen off-main-thread.
-      // If so, we need to dispatch an event to delete ourselves.
-      mozilla::DebugOnly<nsresult> rv =
-        NS_DispatchToMainThread(NS_NewRunnableFunction([this]() -> void
-        {
-          delete this;
-        }));
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      // We need to delete this object on the main thread, but we aren't on the
+      // main thread right now, so we send a reference to ourselves to the main
+      // thread to be re-released there.
+      RefPtr<WeakReferenceSupport> self = this;
+      NS_ReleaseOnMainThread(self.forget());
     }
   }
   return newRefCnt;
@@ -99,7 +97,7 @@ WeakReferenceSupport::ClearWeakRefs()
 {
   for (uint32_t i = 0, len = mWeakRefs.Length(); i < len; ++i) {
     mWeakRefs[i]->Clear();
-    mWeakRefs[i]->Release();
+    mWeakRefs[i] = nullptr;
   }
   mWeakRefs.Clear();
 }
@@ -120,8 +118,7 @@ WeakReferenceSupport::GetWeakReference(IWeakReference** aOutWeakRef)
     return hr;
   }
 
-  mWeakRefs.AppendElement(weakRef.get());
-  weakRef->AddRef();
+  mWeakRefs.AppendElement(weakRef);
   return S_OK;
 }
 

@@ -22,7 +22,7 @@
 </head>
 
 <body dir="&locale.dir;">
-  <div id="header">
+  <div id="header" dir="ltr">
     <div id="wordmark"></div>
 #expand <p id="version">__MOZ_APP_VERSION_DISPLAY__</p>
   </div>
@@ -65,7 +65,7 @@
       <div class="bottom-border"></div>
     </ul>
 
-#ifdef RELEASE_BUILD
+#ifdef RELEASE_OR_BETA
     <div id="aboutDetails">
       <p>&aboutPage.logoTrademark;</p>
     </div>

@@ -152,20 +152,20 @@ protected:
         return MediateRace(parent, child);
     }
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvBackUpXResources(const FileDescriptor& aXSocketFd) override;
 
-    virtual bool AnswerProcessSomeEvents() override;
+    virtual mozilla::ipc::IPCResult AnswerProcessSomeEvents() override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvProcessNativeEventsInInterruptCall() override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvPluginShowWindow(const uint32_t& aWindowId, const bool& aModal,
                          const int32_t& aX, const int32_t& aY,
                          const size_t& aWidth, const size_t& aHeight) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvPluginHideWindow(const uint32_t& aWindowId) override;
 
     virtual PCrashReporterParent*
@@ -174,29 +174,34 @@ protected:
     virtual bool
     DeallocPCrashReporterParent(PCrashReporterParent* actor) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvSetCursor(const NSCursorInfo& aCursorInfo) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvShowCursor(const bool& aShow) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvPushCursor(const NSCursorInfo& aCursorInfo) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvPopCursor() override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvNPN_SetException(const nsCString& aMessage) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvNPN_ReloadPlugins(const bool& aReloadPages) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvNP_InitializeResult(const NPError& aError) override;
 
     static BrowserStreamParent* StreamCast(NPP instance, NPStream* s,
                                            PluginAsyncSurrogate** aSurrogate = nullptr);
+
+    virtual mozilla::ipc::IPCResult
+    AnswerNPN_SetValue_NPPVpluginRequiresAudioDeviceChanges(
+                                        const bool& shouldRegister,
+                                        NPError* result) override;
 
 protected:
     void SetChildTimeout(const int32_t aChildTimeout);
@@ -204,17 +209,17 @@ protected:
 
     virtual void UpdatePluginTimeout() {}
 
-    virtual bool RecvNotifyContentModuleDestroyed() override { return true; }
+    virtual mozilla::ipc::IPCResult RecvNotifyContentModuleDestroyed() override { return IPC_OK(); }
 
-    virtual bool RecvProfile(const nsCString& aProfile) override { return true; }
+    virtual mozilla::ipc::IPCResult RecvProfile(const nsCString& aProfile) override { return IPC_OK(); }
 
-    virtual bool AnswerGetKeyState(const int32_t& aVirtKey, int16_t* aRet) override;
+    virtual mozilla::ipc::IPCResult AnswerGetKeyState(const int32_t& aVirtKey, int16_t* aRet) override;
 
-    virtual bool RecvReturnClearSiteData(const NPError& aRv,
-                                         const uint64_t& aCallbackId) override;
+    virtual mozilla::ipc::IPCResult RecvReturnClearSiteData(const NPError& aRv,
+                                                            const uint64_t& aCallbackId) override;
 
-    virtual bool RecvReturnSitesWithData(nsTArray<nsCString>&& aSites,
-                                         const uint64_t& aCallbackId) override;
+    virtual mozilla::ipc::IPCResult RecvReturnSitesWithData(nsTArray<nsCString>&& aSites,
+                                                            const uint64_t& aCallbackId) override;
 
     void SetPluginFuncs(NPPluginFuncs* aFuncs);
 
@@ -312,7 +317,8 @@ public:
 
     void InitAsyncSurrogates();
 
-    layers::TextureClientRecycleAllocator* EnsureTextureAllocator();
+    layers::TextureClientRecycleAllocator* EnsureTextureAllocatorForDirectBitmap();
+    layers::TextureClientRecycleAllocator* EnsureTextureAllocatorForDXGISurface();
 
 protected:
     void NotifyFlashHang();
@@ -362,7 +368,8 @@ protected:
     nsresult          mAsyncNewRv;
     uint32_t          mRunID;
 
-    RefPtr<layers::TextureClientRecycleAllocator> mTextureAllocator;
+    RefPtr<layers::TextureClientRecycleAllocator> mTextureAllocatorForDirectBitmap;
+    RefPtr<layers::TextureClientRecycleAllocator> mTextureAllocatorForDXGISurface;
 };
 
 class PluginModuleContentParent : public PluginModuleParent
@@ -476,7 +483,7 @@ class PluginModuleChromeParent
 
     virtual bool WaitForIPCConnection() override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvNP_InitializeResult(const NPError& aError) override;
 
     void
@@ -487,11 +494,6 @@ class PluginModuleChromeParent
 
     void CachedSettingChanged();
 
-    void OnEnteredCall() override;
-    void OnExitedCall() override;
-    void OnEnteredSyncSend() override;
-    void OnExitedSyncSend() override;
-
 #ifdef  MOZ_ENABLE_PROFILER_SPS
     void GatherAsyncProfile();
     void GatheredAsyncProfile(nsIProfileSaveEvent* aSaveEvent);
@@ -499,10 +501,10 @@ class PluginModuleChromeParent
     void StopProfiler();
 #endif
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     RecvProfile(const nsCString& aProfile) override;
 
-    virtual bool
+    virtual mozilla::ipc::IPCResult
     AnswerGetKeyState(const int32_t& aVirtKey, int16_t* aRet) override;
 
 private:
@@ -565,9 +567,14 @@ private:
     void RegisterSettingsCallbacks();
     void UnregisterSettingsCallbacks();
 
-    virtual bool RecvNotifyContentModuleDestroyed() override;
+    virtual mozilla::ipc::IPCResult RecvNotifyContentModuleDestroyed() override;
 
     static void CachedSettingChanged(const char* aPref, void* aModule);
+
+    virtual mozilla::ipc::IPCResult
+    AnswerNPN_SetValue_NPPVpluginRequiresAudioDeviceChanges(
+                                        const bool& shouldRegister,
+                                        NPError* result) override;
 
     PluginProcessParent* mSubprocess;
     uint32_t mPluginId;
@@ -582,8 +589,6 @@ private:
         kHangUIDontShow = (1u << 3)
     };
     Atomic<uint32_t> mHangAnnotationFlags;
-    mozilla::Mutex mProtocolCallStackMutex;
-    InfallibleTArray<mozilla::ipc::IProtocol*> mProtocolCallStack;
 #ifdef XP_WIN
     InfallibleTArray<float> mPluginCpuUsageOnHang;
     PluginHangUIParent *mHangUIParent;

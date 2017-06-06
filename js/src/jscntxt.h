@@ -11,7 +11,9 @@
 
 #include "mozilla/MemoryReporting.h"
 
+#include "js/CharacterEncoding.h"
 #include "js/GCVector.h"
+#include "js/Result.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "vm/Caches.h"
@@ -67,7 +69,7 @@ TraceCycleDetectionSet(JSTracer* trc, AutoCycleDetector::Set& set);
 
 struct AutoResolving;
 
-namespace frontend { struct CompileError; }
+namespace frontend { class CompileError; }
 
 /*
  * Execution Context Overview:
@@ -314,6 +316,30 @@ class ExclusiveContext : public ContextFriendFields,
     bool addPendingCompileError(frontend::CompileError** err);
     void addPendingOverRecursed();
     void addPendingOutOfMemory();
+
+  private:
+    static JS::Error reportedError;
+    static JS::OOM reportedOOM;
+
+  public:
+    inline JS::Result<> boolToResult(bool ok);
+
+    /**
+     * Intentionally awkward signpost method that is stationed on the
+     * boundary between Result-using and non-Result-using code.
+     */
+    template <typename V, typename E>
+    bool resultToBool(JS::Result<V, E> result) {
+        return result.isOk();
+    }
+
+    template <typename V, typename E>
+    V* resultToPtr(JS::Result<V*, E> result) {
+        return result.isOk() ? result.unwrap() : nullptr;
+    }
+
+    mozilla::GenericErrorResult<JS::OOM&> alreadyReportedOOM();
+    mozilla::GenericErrorResult<JS::Error&> alreadyReportedError();
 };
 
 void ReportOverRecursed(JSContext* cx, unsigned errorNumber);
@@ -450,9 +476,6 @@ struct JSContext : public js::ExclusiveContext,
      */
     bool asyncCallIsExplicit;
 
-    /* Whether this context has JS frames on the stack. */
-    bool currentlyRunning() const;
-
     bool currentlyRunningInInterpreter() const {
         return activation()->isInterpreter();
     }
@@ -489,7 +512,7 @@ struct JSContext : public js::ExclusiveContext,
     }
 
   public:
-    bool isExceptionPending() {
+    bool isExceptionPending() const {
         return throwing;
     }
 
@@ -500,7 +523,7 @@ struct JSContext : public js::ExclusiveContext,
     bool isThrowingDebuggeeWouldRun();
     bool isClosingGenerator();
 
-    void setPendingException(js::Value v);
+    void setPendingException(const js::Value& v);
 
     void clearPendingException() {
         throwing = false;
@@ -521,7 +544,7 @@ struct JSContext : public js::ExclusiveContext,
 
     JS_FRIEND_API(size_t) sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
-    void mark(JSTracer* trc);
+    void trace(JSTracer* trc);
 
   private:
     /*
@@ -534,6 +557,17 @@ struct JSContext : public js::ExclusiveContext,
 }; /* struct JSContext */
 
 namespace js {
+
+inline JS::Result<>
+ExclusiveContext::boolToResult(bool ok)
+{
+    if (MOZ_LIKELY(ok)) {
+        MOZ_ASSERT_IF(isJSContext(), !asJSContext()->isExceptionPending());
+        MOZ_ASSERT_IF(isJSContext(), !asJSContext()->isPropagatingForcedReturn());
+        return JS::Ok();
+    }
+    return JS::Result<>(reportedError);
+}
 
 struct MOZ_RAII AutoResolving {
   public:
@@ -584,7 +618,8 @@ DestroyContext(JSContext* cx);
 enum ErrorArgumentsType {
     ArgumentsAreUnicode,
     ArgumentsAreASCII,
-    ArgumentsAreLatin1
+    ArgumentsAreLatin1,
+    ArgumentsAreUTF8
 };
 
 /*
@@ -598,7 +633,8 @@ SelfHostedFunction(JSContext* cx, HandlePropertyName propName);
 
 #ifdef va_start
 extern bool
-ReportErrorVA(JSContext* cx, unsigned flags, const char* format, va_list ap);
+ReportErrorVA(JSContext* cx, unsigned flags, const char* format,
+              ErrorArgumentsType argumentsType, va_list ap);
 
 extern bool
 ReportErrorNumberVA(JSContext* cx, unsigned flags, JSErrorCallback callback,
@@ -614,29 +650,29 @@ ReportErrorNumberUCArray(JSContext* cx, unsigned flags, JSErrorCallback callback
 extern bool
 ExpandErrorArgumentsVA(ExclusiveContext* cx, JSErrorCallback callback,
                        void* userRef, const unsigned errorNumber,
-                       char** message, const char16_t** messageArgs,
+                       const char16_t** messageArgs,
                        ErrorArgumentsType argumentsType,
                        JSErrorReport* reportp, va_list ap);
 
 /* |callee| requires a usage string provided by JS_DefineFunctionsWithHelp. */
 extern void
-ReportUsageError(JSContext* cx, HandleObject callee, const char* msg);
+ReportUsageErrorASCII(JSContext* cx, HandleObject callee, const char* msg);
 
 /*
  * Prints a full report and returns true if the given report is non-nullptr
  * and the report doesn't have the JSREPORT_WARNING flag set or reportWarnings
  * is true.
- * Returns false otherwise, printing just the message if the report is nullptr.
+ * Returns false otherwise.
  */
 extern bool
-PrintError(JSContext* cx, FILE* file, const char* message, JSErrorReport* report,
-           bool reportWarnings);
+PrintError(JSContext* cx, FILE* file, JS::ConstUTF8CharsZ toStringResult,
+           JSErrorReport* report, bool reportWarnings);
 
 /*
  * Send a JSErrorReport to the warningReporter callback.
  */
 void
-CallWarningReporter(JSContext* cx, const char* message, JSErrorReport* report);
+CallWarningReporter(JSContext* cx, JSErrorReport* report);
 
 extern bool
 ReportIsNotDefined(JSContext* cx, HandlePropertyName name);
@@ -817,6 +853,19 @@ class MOZ_RAII AutoLockForExclusiveAccess
 
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
+
+/*
+ * ExclusiveContext variants of encoding functions, for off-main-thread use.
+ * Refer to CharacterEncoding.h for details.
+ */
+extern JS::TwoByteCharsZ
+LossyUTF8CharsToNewTwoByteCharsZ(ExclusiveContext* cx, const JS::UTF8Chars utf8, size_t* outlen);
+
+extern JS::TwoByteCharsZ
+LossyUTF8CharsToNewTwoByteCharsZ(ExclusiveContext* cx, const JS::ConstUTF8CharsZ& utf8, size_t* outlen);
+
+extern JS::Latin1CharsZ
+LossyUTF8CharsToNewLatin1CharsZ(ExclusiveContext* cx, const JS::UTF8Chars utf8, size_t* outlen);
 
 } /* namespace js */
 

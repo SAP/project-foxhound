@@ -1,4 +1,6 @@
-let AutoMigrateBackstage = Cu.import("resource:///modules/AutoMigrate.jsm");
+"use strict";
+
+Cu.import("resource:///modules/AutoMigrate.jsm", this);
 
 let gShimmedMigratorKeyPicker = null;
 let gShimmedMigrator = null;
@@ -9,6 +11,8 @@ const kUsecPerMin = 60 * 1000000;
 // we get in trouble because the object itself is frozen, and Proxies can't
 // return a different value to an object when directly proxying a frozen
 // object.
+let AutoMigrateBackstage = Cu.import("resource:///modules/AutoMigrate.jsm", {});
+
 AutoMigrateBackstage.MigrationUtils = new Proxy({}, {
   get(target, name) {
     if (name == "getMigratorKeyForDefaultBrowser" && gShimmedMigratorKeyPicker) {
@@ -27,8 +31,7 @@ do_register_cleanup(function() {
 
 // This should be replaced by using History.fetch with a fetchVisits option,
 // once that becomes available
-function* visitsForURL(url)
-{
+function* visitsForURL(url) {
   let visitCount = 0;
   let db = yield PlacesUtils.promiseDBConnection();
   visitCount = yield db.execute(
@@ -141,6 +144,7 @@ add_task(function* checkIntegration() {
  * Test the undo preconditions and a no-op undo in the automigrator.
  */
 add_task(function* checkUndoPreconditions() {
+  let shouldAddData = false;
   gShimmedMigrator = {
     get sourceProfiles() {
       do_print("Read sourceProfiles");
@@ -152,6 +156,15 @@ add_task(function* checkUndoPreconditions() {
     },
     migrate(types, startup, profileToMigrate) {
       this._migrateArgs = [types, startup, profileToMigrate];
+      if (shouldAddData) {
+        // Insert a login and check that that worked.
+        MigrationUtils.insertLoginWrapper({
+          hostname: "www.mozilla.org",
+          formSubmitURL: "http://www.mozilla.org",
+          username: "user",
+          password: "pass",
+        });
+      }
       TestUtils.executeSoon(function() {
         Services.obs.notifyObservers(null, "Migration:Ended", undefined);
       });
@@ -174,10 +187,35 @@ add_task(function* checkUndoPreconditions() {
   yield migrationFinishedPromise;
   Assert.ok(Preferences.has("browser.migrate.automigrate.browser"),
             "Should have set browser pref");
-  Assert.ok((yield AutoMigrate.canUndo()), "Should be able to undo migration");
+  Assert.ok(!(yield AutoMigrate.canUndo()), "Should not be able to undo migration, as there's no data");
+  gShimmedMigrator._migrateArgs = null;
+  gShimmedMigrator._getMigrateDataArgs = null;
+  Preferences.reset("browser.migrate.automigrate.browser");
+  shouldAddData = true;
+
+  AutoMigrate.migrate("startup");
+  migrationFinishedPromise = TestUtils.topicObserved("Migration:Ended");
+  Assert.strictEqual(gShimmedMigrator._getMigrateDataArgs, null,
+                     "getMigrateData called with 'null' as a profile");
+  Assert.deepEqual(gShimmedMigrator._migrateArgs, [expectedTypes, "startup", null],
+                   "migrate called with 'null' as a profile");
+
+  yield migrationFinishedPromise;
+  let storedLogins = Services.logins.findLogins({}, "www.mozilla.org",
+                                                "http://www.mozilla.org", null);
+  Assert.equal(storedLogins.length, 1, "Should have 1 login");
+
+  Assert.ok(Preferences.has("browser.migrate.automigrate.browser"),
+            "Should have set browser pref");
+  Assert.ok((yield AutoMigrate.canUndo()), "Should be able to undo migration, as now there's data");
 
   yield AutoMigrate.undo();
   Assert.ok(true, "Should be able to finish an undo cycle.");
+
+  // Check that the undo removed the passwords:
+  storedLogins = Services.logins.findLogins({}, "www.mozilla.org",
+                                                "http://www.mozilla.org", null);
+  Assert.equal(storedLogins.length, 0, "Should have no logins");
 });
 
 /**
@@ -185,6 +223,7 @@ add_task(function* checkUndoPreconditions() {
  */
 add_task(function* checkUndoRemoval() {
   MigrationUtils.initializeUndoData();
+  Preferences.set("browser.migrate.automigrate.browser", "automationbrowser");
   // Insert a login and check that that worked.
   MigrationUtils.insertLoginWrapper({
     hostname: "www.mozilla.org",
@@ -209,15 +248,12 @@ add_task(function* checkUndoRemoval() {
 
   // Insert 2 history visits
   let now_uSec = Date.now() * 1000;
-  let visitedURI = Services.io.newURI("http://www.example.com/", null, null);
+  let visitedURI = Services.io.newURI("http://www.example.com/");
   let frecencyUpdatePromise = new Promise(resolve => {
-    let expectedChanges = 2;
     let observer = {
-      onFrecencyChanged: function() {
-        if (!--expectedChanges) {
-          PlacesUtils.history.removeObserver(observer);
-          resolve();
-        }
+      onManyFrecenciesChanged() {
+        PlacesUtils.history.removeObserver(observer);
+        resolve();
       },
     };
     PlacesUtils.history.addObserver(observer, false);
@@ -253,6 +289,28 @@ add_task(function* checkUndoRemoval() {
   // Verify that we can undo, then undo:
   Assert.ok(AutoMigrate.canUndo(), "Should be possible to undo migration");
   yield AutoMigrate.undo();
+
+  let histograms = [
+    "FX_STARTUP_MIGRATION_UNDO_BOOKMARKS_ERRORCOUNT",
+    "FX_STARTUP_MIGRATION_UNDO_LOGINS_ERRORCOUNT",
+    "FX_STARTUP_MIGRATION_UNDO_VISITS_ERRORCOUNT",
+  ];
+  for (let histogramId of histograms) {
+    let keyedHistogram = Services.telemetry.getKeyedHistogramById(histogramId);
+    let histogramData = keyedHistogram.snapshot().automationbrowser;
+    Assert.equal(histogramData.sum, 0, `Should have reported 0 errors to ${histogramId}.`);
+    Assert.greaterOrEqual(histogramData.counts[0], 1, `Should have reported value of 0 one time to ${histogramId}.`);
+  }
+  histograms = [
+    "FX_STARTUP_MIGRATION_UNDO_BOOKMARKS_MS",
+    "FX_STARTUP_MIGRATION_UNDO_LOGINS_MS",
+    "FX_STARTUP_MIGRATION_UNDO_VISITS_MS",
+    "FX_STARTUP_MIGRATION_UNDO_TOTAL_MS",
+  ];
+  for (let histogramId of histograms) {
+    Assert.greater(Services.telemetry.getKeyedHistogramById(histogramId).snapshot().automationbrowser.sum, 0,
+                   `Should have reported non-zero time spent using undo for ${histogramId}`);
+  }
 
   // Check that the undo removed the history visits:
   visits = PlacesUtils.history.executeQuery(query, opts);
@@ -559,31 +617,31 @@ add_task(function* checkUndoVisitsState() {
   ]);
   let wrongMethodDeferred = PromiseUtils.defer();
   let observer = {
-    onBeginUpdateBatch: function() {},
-    onEndUpdateBatch: function() {},
-    onVisit: function(uri) {
+    onBeginUpdateBatch() {},
+    onEndUpdateBatch() {},
+    onVisit(uri) {
       wrongMethodDeferred.reject(new Error("Unexpected call to onVisit " + uri.spec));
     },
-    onTitleChanged: function(uri) {
+    onTitleChanged(uri) {
       wrongMethodDeferred.reject(new Error("Unexpected call to onTitleChanged " + uri.spec));
     },
-    onClearHistory: function() {
+    onClearHistory() {
       wrongMethodDeferred.reject("Unexpected call to onClearHistory");
     },
-    onPageChanged: function(uri) {
+    onPageChanged(uri) {
       wrongMethodDeferred.reject(new Error("Unexpected call to onPageChanged " + uri.spec));
     },
-    onFrecencyChanged: function(aURI) {
+    onFrecencyChanged(aURI) {
       do_print("frecency change");
       Assert.ok(frecencyChangesExpected.has(aURI.spec),
                 "Should be expecting frecency change for " + aURI.spec);
       frecencyChangesExpected.get(aURI.spec).resolve();
     },
-    onManyFrecenciesChanged: function() {
+    onManyFrecenciesChanged() {
       do_print("Many frecencies changed");
       wrongMethodDeferred.reject(new Error("This test can't deal with onManyFrecenciesChanged to be called"));
     },
-    onDeleteURI: function(aURI) {
+    onDeleteURI(aURI) {
       do_print("delete uri");
       Assert.ok(uriDeletedExpected.has(aURI.spec),
                 "Should be expecting uri deletion for " + aURI.spec);
@@ -608,3 +666,28 @@ add_task(function* checkUndoVisitsState() {
   yield PlacesTestUtils.clearHistory();
 });
 
+add_task(function* checkHistoryRemovalCompletion() {
+  AutoMigrate._errorMap = {bookmarks: 0, visits: 0, logins: 0};
+  yield AutoMigrate._removeSomeVisits([{url: "http://www.example.com/", limit: -1}]);
+  ok(true, "Removing visits should complete even if removing some visits failed.");
+  Assert.equal(AutoMigrate._errorMap.visits, 1, "Should have logged the error for visits.");
+
+  // Unfortunately there's not a reliable way to make removing bookmarks be
+  // unhappy unless the DB is messed up (e.g. contains children but has
+  // parents removed already).
+  yield AutoMigrate._removeUnchangedBookmarks([
+    {guid: PlacesUtils.bookmarks, lastModified: new Date(0), parentGuid: 0},
+    {guid: "gobbledygook", lastModified: new Date(0), parentGuid: 0},
+  ]);
+  ok(true, "Removing bookmarks should complete even if some items are gone or bogus.");
+  Assert.equal(AutoMigrate._errorMap.bookmarks, 0,
+               "Should have ignored removing non-existing (or builtin) bookmark.");
+
+
+  yield AutoMigrate._removeUnchangedLogins([
+    {guid: "gobbledygook", timePasswordChanged: new Date(0)},
+  ]);
+  ok(true, "Removing logins should complete even if logins don't exist.");
+  Assert.equal(AutoMigrate._errorMap.logins, 0,
+               "Should have ignored removing non-existing logins.");
+});

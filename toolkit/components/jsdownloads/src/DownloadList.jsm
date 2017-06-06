@@ -26,8 +26,7 @@ this.EXPORTED_SYMBOLS = [
   "DownloadSummary",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -41,15 +40,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "Promise",
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadList
+// DownloadList
 
 /**
  * Represents a collection of Download objects that can be viewed and managed by
  * the user interface, and persisted across sessions.
  */
-this.DownloadList = function ()
-{
+this.DownloadList = function() {
   this._downloads = [];
   this._views = new Set();
 }
@@ -163,8 +160,7 @@ this.DownloadList.prototype = {
    *           notifications for the existing downloads have been sent.
    * @rejects JavaScript exception.
    */
-  addView: function DL_addView(aView)
-  {
+  addView: function DL_addView(aView) {
     this._views.add(aView);
 
     if ("onDownloadAdded" in aView) {
@@ -191,8 +187,7 @@ this.DownloadList.prototype = {
    *           will not receive any more notifications.
    * @rejects JavaScript exception.
    */
-  removeView: function DL_removeView(aView)
-  {
+  removeView: function DL_removeView(aView) {
     this._views.delete(aView);
 
     return Promise.resolve();
@@ -206,7 +201,7 @@ this.DownloadList.prototype = {
    * @param aDownload
    *        The Download object that changed.
    */
-  _notifyAllViews: function (aMethodName, aDownload) {
+  _notifyAllViews(aMethodName, aDownload) {
     for (let view of this._views) {
       try {
         if (aMethodName in view) {
@@ -255,8 +250,7 @@ this.DownloadList.prototype = {
   },
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadCombinedList
+// DownloadCombinedList
 
 /**
  * Provides a unified, unordered list combining public and private downloads.
@@ -270,8 +264,7 @@ this.DownloadList.prototype = {
  * @param aPrivateList
  *        Underlying DownloadList containing private downloads.
  */
-this.DownloadCombinedList = function (aPublicList, aPrivateList)
-{
+this.DownloadCombinedList = function(aPublicList, aPrivateList) {
   DownloadList.call(this);
   this._publicList = aPublicList;
   this._privateList = aPrivateList;
@@ -308,8 +301,7 @@ this.DownloadCombinedList.prototype = {
    * @resolves When the download has been added.
    * @rejects JavaScript exception.
    */
-  add: function (aDownload)
-  {
+  add(aDownload) {
     if (aDownload.source.isPrivate) {
       return this._privateList.add(aDownload);
     }
@@ -332,30 +324,25 @@ this.DownloadCombinedList.prototype = {
    * @resolves When the download has been removed.
    * @rejects JavaScript exception.
    */
-  remove: function (aDownload)
-  {
+  remove(aDownload) {
     if (aDownload.source.isPrivate) {
       return this._privateList.remove(aDownload);
     }
     return this._publicList.remove(aDownload);
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// DownloadList view
+  // DownloadList view
 
-  onDownloadAdded: function (aDownload)
-  {
+  onDownloadAdded(aDownload) {
     this._downloads.push(aDownload);
     this._notifyAllViews("onDownloadAdded", aDownload);
   },
 
-  onDownloadChanged: function (aDownload)
-  {
+  onDownloadChanged(aDownload) {
     this._notifyAllViews("onDownloadChanged", aDownload);
   },
 
-  onDownloadRemoved: function (aDownload)
-  {
+  onDownloadRemoved(aDownload) {
     let index = this._downloads.indexOf(aDownload);
     if (index != -1) {
       this._downloads.splice(index, 1);
@@ -364,14 +351,12 @@ this.DownloadCombinedList.prototype = {
   },
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadSummary
+// DownloadSummary
 
 /**
  * Provides an aggregated view on the contents of a DownloadList.
  */
-this.DownloadSummary = function ()
-{
+this.DownloadSummary = function() {
   this._downloads = [];
   this._views = new Set();
 }
@@ -401,8 +386,7 @@ this.DownloadSummary.prototype = {
    * @resolves When the view on the underlying list has been registered.
    * @rejects JavaScript exception.
    */
-  bindToList: function (aList)
-  {
+  bindToList(aList) {
     if (this._list) {
       throw new Error("bindToList may be called only once.");
     }
@@ -437,8 +421,7 @@ this.DownloadSummary.prototype = {
    *           notification has been sent.
    * @rejects JavaScript exception.
    */
-  addView: function (aView)
-  {
+  addView(aView) {
     this._views.add(aView);
 
     if ("onSummaryChanged" in aView) {
@@ -463,8 +446,7 @@ this.DownloadSummary.prototype = {
    *           will not receive any more notifications.
    * @rejects JavaScript exception.
    */
-  removeView: function (aView)
-  {
+  removeView(aView) {
     this._views.delete(aView);
 
     return Promise.resolve();
@@ -499,7 +481,7 @@ this.DownloadSummary.prototype = {
    * and will recalculate the summary and notify the views in case the
    * aggregated properties are different.
    */
-  _onListChanged: function () {
+  _onListChanged() {
     let allHaveStopped = true;
     let progressTotalBytes = 0;
     let progressCurrentBytes = 0;
@@ -538,24 +520,20 @@ this.DownloadSummary.prototype = {
     }
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// DownloadList view
+  // DownloadList view
 
-  onDownloadAdded: function (aDownload)
-  {
+  onDownloadAdded(aDownload) {
     this._downloads.push(aDownload);
     if (this._list) {
       this._onListChanged();
     }
   },
 
-  onDownloadChanged: function (aDownload)
-  {
+  onDownloadChanged(aDownload) {
     this._onListChanged();
   },
 
-  onDownloadRemoved: function (aDownload)
-  {
+  onDownloadRemoved(aDownload) {
     let index = this._downloads.indexOf(aDownload);
     if (index != -1) {
       this._downloads.splice(index, 1);

@@ -27,8 +27,8 @@ typedef void * CalleeToken;
 
 enum FrameType
 {
-    // A JS frame is analagous to a js::InterpreterFrame, representing one scripted
-    // functon activation. IonJS frames are used by the optimizing compiler.
+    // A JS frame is analogous to a js::InterpreterFrame, representing one scripted
+    // function activation. IonJS frames are used by the optimizing compiler.
     JitFrame_IonJS,
 
     // JS frame used by the baseline JIT.
@@ -47,8 +47,8 @@ enum FrameType
     // mismatches in calls.
     JitFrame_Rectifier,
 
-    // Ion IC calling a scripted getter/setter.
-    JitFrame_IonAccessorIC,
+    // Ion IC calling a scripted getter/setter or a VMFunction.
+    JitFrame_IonICCall,
 
     // An exit frame is necessary for transitioning from a JS frame into C++.
     // From within C++, an exit frame is always the last frame in any
@@ -151,8 +151,8 @@ class JitFrameIterator
     bool isIonStub() const {
         return type_ == JitFrame_IonStub;
     }
-    bool isIonAccessorIC() const {
-        return type_ == JitFrame_IonAccessorIC;
+    bool isIonICCall() const {
+        return type_ == JitFrame_IonICCall;
     }
     bool isBailoutJS() const {
         return type_ == JitFrame_Bailout;
@@ -378,7 +378,7 @@ struct MaybeReadFallback
         return UndefinedValue();
     }
 
-    NoGCValue noGCPlaceholder(Value v) const {
+    NoGCValue noGCPlaceholder(const Value& v) const {
         if (v.isMagic(JS_OPTIMIZED_OUT))
             return NoGC_MagicOptimizedOut;
         return NoGC_UndefinedValue;
@@ -445,7 +445,7 @@ class SnapshotIterator
 
     Value allocationValue(const RValueAllocation& a, ReadMethod rm = RM_Normal);
     MOZ_MUST_USE bool allocationReadable(const RValueAllocation& a, ReadMethod rm = RM_Normal);
-    void writeAllocationValuePayload(const RValueAllocation& a, Value v);
+    void writeAllocationValuePayload(const RValueAllocation& a, const Value& v);
     void warnUnreadableAllocation();
 
   private:
@@ -477,7 +477,7 @@ class SnapshotIterator
 
     // Used by recover instruction to store the value back into the instruction
     // results array.
-    void storeInstructionResult(Value v);
+    void storeInstructionResult(const Value& v);
 
   public:
     // Exhibits frame properties contained in the snapshot.
@@ -651,7 +651,7 @@ class InlineFrameIterator
 
   private:
     void findNextFrame();
-    JSObject* computeEnvironmentChain(Value envChainValue, MaybeReadFallback& fallback,
+    JSObject* computeEnvironmentChain(const Value& envChainValue, MaybeReadFallback& fallback,
                                       bool* hasInitialEnv = nullptr) const;
 
   public:

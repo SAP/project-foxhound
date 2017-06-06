@@ -36,6 +36,7 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DOMError.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/Headers.h"
@@ -94,7 +95,7 @@ BEGIN_WORKERS_NAMESPACE
 
 #define PURGE_DOMAIN_DATA "browser:purge-domain-data"
 #define PURGE_SESSION_HISTORY "browser:purge-session-history"
-#define CLEAR_ORIGIN_DATA "clear-origin-data"
+#define CLEAR_ORIGIN_DATA "clear-origin-attributes-data"
 
 static_assert(nsIHttpChannelInternal::CORS_MODE_SAME_ORIGIN == static_cast<uint32_t>(RequestMode::Same_origin),
               "RequestMode enumeration value should match Necko CORS mode value.");
@@ -184,7 +185,10 @@ PopulateRegistrationData(nsIPrincipal* aPrincipal,
   if (aRegistration->GetActive()) {
     aData.currentWorkerURL() = aRegistration->GetActive()->ScriptSpec();
     aData.cacheName() = aRegistration->GetActive()->CacheName();
+    aData.currentWorkerHandlesFetch() = aRegistration->GetActive()->HandlesFetch();
   }
+
+  aData.loadFlags() = aRegistration->GetLoadFlags();
 
   return NS_OK;
 }
@@ -231,8 +235,6 @@ ServiceWorkerManager::ServiceWorkerManager()
   : mActor(nullptr)
   , mShuttingDown(false)
 {
-  // Register this component to PBackground.
-  MOZ_ALWAYS_TRUE(BackgroundChild::GetOrCreateForCurrentThread(this));
 }
 
 ServiceWorkerManager::~ServiceWorkerManager()
@@ -268,6 +270,12 @@ ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar)
       rv = obs->AddObserver(this, CLEAR_ORIGIN_DATA, false /* ownsWeak */);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
+  }
+
+  if (!BackgroundChild::GetOrCreateForCurrentThread(this)) {
+    // Make sure to do this last as our failure cleanup expects Init() to have
+    // executed.
+    ActorFailed();
   }
 }
 
@@ -367,7 +375,7 @@ namespace {
 class PropagateSoftUpdateRunnable final : public Runnable
 {
 public:
-  PropagateSoftUpdateRunnable(const PrincipalOriginAttributes& aOriginAttributes,
+  PropagateSoftUpdateRunnable(const OriginAttributes& aOriginAttributes,
                               const nsAString& aScope)
     : mOriginAttributes(aOriginAttributes)
     , mScope(aScope)
@@ -389,7 +397,7 @@ private:
   ~PropagateSoftUpdateRunnable()
   {}
 
-  const PrincipalOriginAttributes mOriginAttributes;
+  const OriginAttributes mOriginAttributes;
   const nsString mScope;
 };
 
@@ -541,6 +549,7 @@ NS_IMETHODIMP
 ServiceWorkerManager::Register(mozIDOMWindow* aWindow,
                                nsIURI* aScopeURI,
                                nsIURI* aScriptURI,
+                               nsLoadFlags aLoadFlags,
                                nsISupports** aPromise)
 {
   AssertIsOnMainThread();
@@ -667,12 +676,23 @@ ServiceWorkerManager::Register(mozIDOMWindow* aWindow,
 
   RefPtr<ServiceWorkerRegisterJob> job =
     new ServiceWorkerRegisterJob(documentPrincipal, cleanedScope, spec,
-                                 loadGroup);
+                                 loadGroup, aLoadFlags);
   job->AppendResultCallback(cb);
   queue->ScheduleJob(job);
 
   AssertIsOnMainThread();
   Telemetry::Accumulate(Telemetry::SERVICE_WORKER_REGISTRATIONS, 1);
+
+  ContentChild* contentChild = ContentChild::GetSingleton();
+  if (contentChild &&
+      contentChild->GetRemoteType().EqualsLiteral(FILE_REMOTE_TYPE)) {
+    nsString message(NS_LITERAL_STRING("ServiceWorker registered by document "
+                                       "embedded in a file:/// URI.  This may "
+                                       "result in unexpected behavior."));
+    ReportToAllClients(cleanedScope, message, EmptyString(),
+                       EmptyString(), 0, 0, nsIScriptError::warningFlag);
+    Telemetry::Accumulate(Telemetry::FILE_EMBEDDED_SERVICEWORKERS, 1);
+  }
 
   promise.forget(aPromise);
   return NS_OK;
@@ -986,7 +1006,7 @@ ServiceWorkerManager::SendPushEvent(const nsACString& aOriginAttributes,
                                     const nsAString& aMessageId,
                                     const Maybe<nsTArray<uint8_t>>& aData)
 {
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginAttributes)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -1008,7 +1028,7 @@ NS_IMETHODIMP
 ServiceWorkerManager::SendPushSubscriptionChangeEvent(const nsACString& aOriginAttributes,
                                                       const nsACString& aScope)
 {
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginAttributes)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -1034,7 +1054,7 @@ ServiceWorkerManager::SendNotificationEvent(const nsAString& aEventName,
                                             const nsAString& aData,
                                             const nsAString& aBehavior)
 {
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginSuffix)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -1194,7 +1214,7 @@ ServiceWorkerManager::CheckReadyPromise(nsPIDOMWindowInner* aWindow,
 }
 
 ServiceWorkerInfo*
-ServiceWorkerManager::GetActiveWorkerInfoForScope(const PrincipalOriginAttributes& aOriginAttributes,
+ServiceWorkerManager::GetActiveWorkerInfoForScope(const OriginAttributes& aOriginAttributes,
                                                   const nsACString& aScope)
 {
   AssertIsOnMainThread();
@@ -1354,7 +1374,7 @@ void
 ServiceWorkerManager::WorkerIsIdle(ServiceWorkerInfo* aWorker)
 {
   AssertIsOnMainThread();
-  MOZ_ASSERT(aWorker);
+  MOZ_DIAGNOSTIC_ASSERT(aWorker);
 
   RefPtr<ServiceWorkerRegistrationInfo> reg =
     GetRegistration(aWorker->GetPrincipal(), aWorker->Scope());
@@ -1755,12 +1775,16 @@ ServiceWorkerManager::LoadRegistration(
   RefPtr<ServiceWorkerRegistrationInfo> registration =
     GetRegistration(principal, aRegistration.scope());
   if (!registration) {
-    registration = CreateNewRegistration(aRegistration.scope(), principal);
+    registration = CreateNewRegistration(aRegistration.scope(), principal,
+                                         aRegistration.loadFlags());
   } else {
     // If active worker script matches our expectations for a "current worker",
-    // then we are done.
+    // then we are done. Since scripts with the same URL might have different
+    // contents such as updated scripts or scripts with different LoadFlags, we
+    // use the CacheName to judje whether the two scripts are identical, where
+    // the CacheName is an UUID generated when a new script is found.
     if (registration->GetActive() &&
-        registration->GetActive()->ScriptSpec() == aRegistration.currentWorkerURL()) {
+        registration->GetActive()->CacheName() == aRegistration.cacheName()) {
       // No needs for updates.
       return;
     }
@@ -1769,8 +1793,12 @@ ServiceWorkerManager::LoadRegistration(
   const nsCString& currentWorkerURL = aRegistration.currentWorkerURL();
   if (!currentWorkerURL.IsEmpty()) {
     registration->SetActive(
-      new ServiceWorkerInfo(registration->mPrincipal, registration->mScope,
-                            currentWorkerURL, aRegistration.cacheName()));
+      new ServiceWorkerInfo(registration->mPrincipal,
+                            registration->mScope,
+                            currentWorkerURL,
+                            aRegistration.cacheName(),
+                            registration->GetLoadFlags()));
+    registration->GetActive()->SetHandlesFetch(aRegistration.currentWorkerHandlesFetch());
     registration->GetActive()->SetActivateStateUncheckedWithoutEvent(ServiceWorkerState::Activated);
   }
 }
@@ -2414,7 +2442,7 @@ public:
 } // anonymous namespace
 
 void
-ServiceWorkerManager::DispatchFetchEvent(const PrincipalOriginAttributes& aOriginAttributes,
+ServiceWorkerManager::DispatchFetchEvent(const OriginAttributes& aOriginAttributes,
                                          nsIDocument* aDoc,
                                          const nsAString& aDocumentIdForTopLevelNavigation,
                                          nsIInterceptedChannel* aChannel,
@@ -2629,6 +2657,26 @@ ServiceWorkerManager::GetActive(nsPIDOMWindowInner* aWindow,
 }
 
 void
+ServiceWorkerManager::TransitionServiceWorkerRegistrationWorker(ServiceWorkerRegistrationInfo* aRegistration,
+                                                                WhichServiceWorker aWhichOne)
+{
+  AssertIsOnMainThread();
+  nsTObserverArray<ServiceWorkerRegistrationListener*>::ForwardIterator it(mServiceWorkerRegistrationListeners);
+  while (it.HasMore()) {
+    RefPtr<ServiceWorkerRegistrationListener> target = it.GetNext();
+    nsAutoString regScope;
+    target->GetScope(regScope);
+    MOZ_ASSERT(!regScope.IsEmpty());
+
+    NS_ConvertUTF16toUTF8 utf8Scope(regScope);
+
+    if (utf8Scope.Equals(aRegistration->mScope)) {
+      target->TransitionWorker(aWhichOne);
+    }
+  }
+}
+
+void
 ServiceWorkerManager::InvalidateServiceWorkerRegistrationWorker(ServiceWorkerRegistrationInfo* aRegistration,
                                                                 WhichServiceWorker aWhichOnes)
 {
@@ -2668,7 +2716,7 @@ ServiceWorkerManager::NotifyServiceWorkerRegistrationRemoved(ServiceWorkerRegist
 }
 
 void
-ServiceWorkerManager::SoftUpdate(const PrincipalOriginAttributes& aOriginAttributes,
+ServiceWorkerManager::SoftUpdate(const OriginAttributes& aOriginAttributes,
                                  const nsACString& aScope)
 {
   AssertIsOnMainThread();
@@ -2728,7 +2776,8 @@ ServiceWorkerManager::SoftUpdate(const PrincipalOriginAttributes& aOriginAttribu
 
   RefPtr<ServiceWorkerUpdateJob> job =
     new ServiceWorkerUpdateJob(principal, registration->mScope,
-                               newest->ScriptSpec(), nullptr);
+                               newest->ScriptSpec(), nullptr,
+                               registration->GetLoadFlags());
   queue->ScheduleJob(job);
 }
 
@@ -2812,7 +2861,8 @@ ServiceWorkerManager::Update(nsIPrincipal* aPrincipal,
   // its argument."
   RefPtr<ServiceWorkerUpdateJob> job =
     new ServiceWorkerUpdateJob(aPrincipal, registration->mScope,
-                               newest->ScriptSpec(), nullptr);
+                               newest->ScriptSpec(), nullptr,
+                               registration->GetLoadFlags());
 
   RefPtr<UpdateJobCallback> cb = new UpdateJobCallback(aCallback);
   job->AppendResultCallback(cb);
@@ -3150,9 +3200,10 @@ ServiceWorkerManager::GetRegistration(const nsACString& aScopeKey,
   return reg.forget();
 }
 
-ServiceWorkerRegistrationInfo*
+already_AddRefed<ServiceWorkerRegistrationInfo>
 ServiceWorkerManager::CreateNewRegistration(const nsCString& aScope,
-                                            nsIPrincipal* aPrincipal)
+                                            nsIPrincipal* aPrincipal,
+                                            nsLoadFlags aLoadFlags)
 {
 #ifdef DEBUG
   AssertIsOnMainThread();
@@ -3165,11 +3216,12 @@ ServiceWorkerManager::CreateNewRegistration(const nsCString& aScope,
   MOZ_ASSERT(!tmp);
 #endif
 
-  ServiceWorkerRegistrationInfo* registration = new ServiceWorkerRegistrationInfo(aScope, aPrincipal);
+  RefPtr<ServiceWorkerRegistrationInfo> registration =
+    new ServiceWorkerRegistrationInfo(aScope, aPrincipal, aLoadFlags);
   // From now on ownership of registration is with
   // mServiceWorkerRegistrationInfos.
   AddScopeAndRegistration(aScope, registration);
-  return registration;
+  return registration.forget();
 }
 
 void
@@ -3212,7 +3264,7 @@ ServiceWorkerManager::RemoveRegistration(ServiceWorkerRegistrationInfo* aRegistr
 
 namespace {
 /**
- * See browser/components/sessionstore/Utils.jsm function hasRootDomain().
+ * See toolkit/modules/sessionstore/Utils.jsm function hasRootDomain().
  *
  * Returns true if the |url| passed in is part of the given root |domain|.
  * For example, if |url| is "www.mozilla.org", and we pass in |domain| as
@@ -3405,7 +3457,7 @@ ServiceWorkerManager::RemoveAllRegistrations(OriginAttributesPattern* aPattern)
       MOZ_ASSERT(reg->mPrincipal);
 
       bool matches =
-        aPattern->Matches(BasePrincipal::Cast(reg->mPrincipal)->OriginAttributesRef());
+        aPattern->Matches(reg->mPrincipal->OriginAttributesRef());
       if (!matches) {
         continue;
       }
@@ -3606,7 +3658,7 @@ ServiceWorkerManager::PropagateSoftUpdate(JS::Handle<JS::Value> aOriginAttribute
 {
   AssertIsOnMainThread();
 
-  PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -3616,7 +3668,7 @@ ServiceWorkerManager::PropagateSoftUpdate(JS::Handle<JS::Value> aOriginAttribute
 }
 
 void
-ServiceWorkerManager::PropagateSoftUpdate(const PrincipalOriginAttributes& aOriginAttributes,
+ServiceWorkerManager::PropagateSoftUpdate(const OriginAttributes& aOriginAttributes,
                                           const nsAString& aScope)
 {
   AssertIsOnMainThread();
@@ -3934,8 +3986,7 @@ ServiceWorkerManager::UpdateTimerFired(nsIPrincipal* aPrincipal,
     return;
   }
 
-  PrincipalOriginAttributes attrs =
-    BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
+  OriginAttributes attrs = aPrincipal->OriginAttributesRef();
 
   SoftUpdate(attrs, aScope);
 }

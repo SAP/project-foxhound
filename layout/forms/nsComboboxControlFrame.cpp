@@ -383,13 +383,11 @@ public:
   explicit nsResizeDropdownAtFinalPosition(nsComboboxControlFrame* aFrame)
     : mFrame(aFrame)
   {
-    MOZ_COUNT_CTOR(nsResizeDropdownAtFinalPosition);
   }
 
 protected:
   ~nsResizeDropdownAtFinalPosition()
   {
-    MOZ_COUNT_DTOR(nsResizeDropdownAtFinalPosition);
   }
 
 public:
@@ -545,7 +543,7 @@ public:
       nsCOMPtr<nsIPresShell> shell = mFrame->PresContext()->PresShell();
       shell->FrameNeedsReflow(combo->mDropdownFrame, nsIPresShell::eResize,
                               NS_FRAME_IS_DIRTY);
-      shell->FlushPendingNotifications(Flush_Layout);
+      shell->FlushPendingNotifications(FlushType::Layout);
       if (mFrame.IsAlive()) {
         combo = static_cast<nsComboboxControlFrame*>(mFrame.GetFrame());
         static_cast<nsListControlFrame*>(combo->mDropdownFrame)->
@@ -1028,7 +1026,7 @@ nsComboboxControlFrame::HandleRedisplayTextEvent()
   // 289730.
   nsWeakFrame weakThis(this);
   PresContext()->Document()->
-    FlushPendingNotifications(Flush_ContentAndNotify);
+    FlushPendingNotifications(FlushType::ContentAndNotify);
   if (!weakThis.IsAlive())
     return;
 
@@ -1164,9 +1162,10 @@ nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
   // If we have style that affects how we are selected, feed event down to
   // nsFrame::HandleEvent so that selection takes place when appropriate.
   const nsStyleUserInterface* uiStyle = StyleUserInterface();
-  if (uiStyle->mUserInput == NS_STYLE_USER_INPUT_NONE || uiStyle->mUserInput == NS_STYLE_USER_INPUT_DISABLED)
+  if (uiStyle->mUserInput == StyleUserInput::None ||
+      uiStyle->mUserInput == StyleUserInput::Disabled) {
     return nsBlockFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
-
+  }
   return NS_OK;
 }
 

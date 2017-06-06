@@ -20,8 +20,7 @@
  * sends.
  *
  * This also means that <xul:browser>'s that hope to use PrintUtils must have
- * their type attribute set to either "content", "content-targetable", or
- * "content-primary".
+ * their type attribute set to "content".
  *
  * PrintUtils sends messages at different points in its implementation, but
  * their documentation is consolidated here for ease-of-access.
@@ -82,7 +81,7 @@ var PrintUtils = {
    *
    * @return true on success, false on failure
    */
-  showPageSetup: function () {
+  showPageSetup() {
     try {
       var printSettings = this.getPrintSettings();
       var PRINTPROMPTSVC = Components.classes["@mozilla.org/embedcomp/printingprompt-service;1"]
@@ -95,10 +94,23 @@ var PrintUtils = {
         PSSVC.savePrintSettingsToPrefs(printSettings, true, printSettings.kInitSaveNativeData);
       }
     } catch (e) {
-      dump("showPageSetup "+e+"\n");
+      dump("showPageSetup " + e + "\n");
       return false;
     }
     return true;
+  },
+
+  getDefaultPrinterName() {
+    try {
+      let PSSVC = Components.classes["@mozilla.org/gfx/printsettings-service;1"]
+                            .getService(Components.interfaces.nsIPrintSettingsService);
+
+      return PSSVC.defaultPrinterName;
+    } catch (e) {
+      Components.utils.reportError(e);
+    }
+
+    return null;
   },
 
   /**
@@ -109,12 +121,13 @@ var PrintUtils = {
    * @param aBrowser
    *        The <xul:browser> that the nsIDOMWindow for aWindowID belongs to.
    */
-  printWindow: function (aWindowID, aBrowser)
-  {
+  printWindow(aWindowID, aBrowser) {
     let mm = aBrowser.messageManager;
+    let defaultPrinterName = this.getDefaultPrinterName();
     mm.sendAsyncMessage("Printing:Print", {
       windowID: aWindowID,
       simplifiedMode: this._shouldSimplify,
+      defaultPrinterName,
     });
   },
 
@@ -124,8 +137,7 @@ var PrintUtils = {
    * Starts the process of printing the contents of window.content.
    *
    */
-  print: function ()
-  {
+  print() {
     if (gBrowser) {
       return this.printWindow(gBrowser.selectedBrowser.outerWindowID,
                               gBrowser.selectedBrowser);
@@ -166,13 +178,12 @@ var PrintUtils = {
    *
    *        getPrintPreviewBrowser:
    *          Returns the <xul:browser> to display the print preview in. This
-   *          <xul:browser> must have its type attribute set to "content",
-   *          "content-targetable", or "content-primary".
+   *          <xul:browser> must have its type attribute set to "content".
    *
    *        getSourceBrowser:
    *          Returns the <xul:browser> that contains the document being
    *          printed. This <xul:browser> must have its type attribute set to
-   *          "content", "content-targetable", or "content-primary".
+   *          "content".
    *
    *        getNavToolbox:
    *          Returns the primary toolbox for this window.
@@ -188,8 +199,7 @@ var PrintUtils = {
    *        print preview (in which case, the previous aListenerObj passed
    *        to it will be used).
    */
-  printPreview: function (aListenerObj)
-  {
+  printPreview(aListenerObj) {
     // if we're already in PP mode, don't set the listener; chances
     // are it is null because someone is calling printPreview() to
     // get us to refresh the display.
@@ -205,8 +215,17 @@ var PrintUtils = {
       // collapse the browser here -- it will be shown in
       // enterPrintPreview; this forces a reflow which fixes display
       // issues in bug 267422.
+      // We use the print preview browser as the source browser to avoid
+      // re-initializing print preview with a document that might now have changed.
       this._sourceBrowser = this._listener.getPrintPreviewBrowser();
       this._sourceBrowser.collapsed = true;
+
+      // If the user transits too quickly within preview and we have a pending
+      // progress dialog, we will close it before opening a new one.
+      if (this._webProgressPP && this._webProgressPP.value) {
+        this._webProgressPP.value.onStateChange(null, null,
+          Components.interfaces.nsIWebProgressListener.STATE_STOP, 0);
+      }
     }
 
     this._webProgressPP = {};
@@ -249,8 +268,7 @@ var PrintUtils = {
    *        The window from which to get the nsIWebBrowserPrint from.
    * @return nsIWebBrowserPrint
    */
-  getWebBrowserPrint: function (aWindow)
-  {
+  getWebBrowserPrint(aWindow) {
     let Deprecated = Components.utils.import("resource://gre/modules/Deprecated.jsm", {}).Deprecated;
     let text = "getWebBrowserPrint is now deprecated, and fully unsupported for " +
                "multi-process browsers. Please use a frame script to get " +
@@ -274,7 +292,7 @@ var PrintUtils = {
    *
    * @return nsIWebBrowserPrint
    */
-  getPrintPreview: function() {
+  getPrintPreview() {
     let Deprecated = Components.utils.import("resource://gre/modules/Deprecated.jsm", {}).Deprecated;
     let text = "getPrintPreview is now deprecated, and fully unsupported for " +
                "multi-process browsers. Please use a frame script to get " +
@@ -293,9 +311,7 @@ var PrintUtils = {
     return document.getElementById("print-preview-toolbar") != null;
   },
 
-  ////////////////////////////////////////////////////
-  // "private" methods and members. Don't use them. //
-  ///////////////////////////////////////////////////
+  // "private" methods and members. Don't use them.
 
   _listener: null,
   _closeHandlerPP: null,
@@ -344,7 +360,7 @@ var PrintUtils = {
 
     // PERR_FAILURE is the catch-all error message if we've gotten one that
     // we don't recognize.
-    msgName = "PERR_FAILURE";
+    let msgName = "PERR_FAILURE";
 
     for (let code of MSG_CODES) {
       let nsErrorResult = "NS_ERROR_" + code;
@@ -405,7 +421,6 @@ var PrintUtils = {
                                          data.maxSelfProgress,
                                          data.curTotalProgress,
                                          data.maxTotalProgress);
-        break;
       }
 
       case "Printing:Preview:StateChange": {
@@ -423,30 +438,27 @@ var PrintUtils = {
         return listener.onStateChange(null, null,
                                       data.stateFlags,
                                       data.status);
-        break;
       }
     }
     return undefined;
   },
 
-  setPrinterDefaultsForSelectedPrinter: function (aPSSVC, aPrintSettings)
-  {
+  setPrinterDefaultsForSelectedPrinter(aPSSVC, aPrintSettings) {
     if (!aPrintSettings.printerName)
       aPrintSettings.printerName = aPSSVC.defaultPrinterName;
 
     // First get any defaults from the printer
     aPSSVC.initPrintSettingsFromPrinter(aPrintSettings.printerName, aPrintSettings);
     // now augment them with any values from last time
-    aPSSVC.initPrintSettingsFromPrefs(aPrintSettings, true,  aPrintSettings.kInitSaveAll);
+    aPSSVC.initPrintSettingsFromPrefs(aPrintSettings, true, aPrintSettings.kInitSaveAll);
   },
 
-  getPrintSettings: function ()
-  {
+  getPrintSettings() {
     var pref = Components.classes["@mozilla.org/preferences-service;1"]
                          .getService(Components.interfaces.nsIPrefBranch);
     if (pref) {
-      gPrintSettingsAreGlobal = pref.getBoolPref("print.use_global_printsettings", false);
-      gSavePrintSettings = pref.getBoolPref("print.save_print_settings", false);
+      gPrintSettingsAreGlobal = pref.getBoolPref("print.use_global_printsettings");
+      gSavePrintSettings = pref.getBoolPref("print.save_print_settings");
     }
 
     var printSettings;
@@ -460,7 +472,7 @@ var PrintUtils = {
         printSettings = PSSVC.newPrintSettings;
       }
     } catch (e) {
-      dump("getPrintSettings: "+e+"\n");
+      dump("getPrintSettings: " + e + "\n");
     }
     return printSettings;
   },
@@ -468,14 +480,12 @@ var PrintUtils = {
   // This observer is called once the progress dialog has been "opened"
   _obsPP:
   {
-    observe: function(aSubject, aTopic, aData)
-    {
+    observe(aSubject, aTopic, aData) {
       // delay the print preview to show the content of the progress dialog
-      setTimeout(function () { PrintUtils.enterPrintPreview(); }, 0);
+      setTimeout(function() { PrintUtils.enterPrintPreview(); }, 0);
     },
 
-    QueryInterface : function(iid)
-    {
+    QueryInterface(iid) {
       if (iid.equals(Components.interfaces.nsIObserver) ||
           iid.equals(Components.interfaces.nsISupportsWeakReference) ||
           iid.equals(Components.interfaces.nsISupports))
@@ -484,13 +494,11 @@ var PrintUtils = {
     }
   },
 
-  setSimplifiedMode: function (shouldSimplify)
-  {
+  setSimplifiedMode(shouldSimplify) {
     this._shouldSimplify = shouldSimplify;
   },
 
-  enterPrintPreview: function ()
-  {
+  enterPrintPreview() {
     // Send a message to the print preview browser to initialize
     // print preview. If we happen to have gotten a print preview
     // progress listener from nsIPrintingPromptService.showProgress
@@ -498,11 +506,13 @@ var PrintUtils = {
     // listener.
     let ppBrowser = this._listener.getPrintPreviewBrowser();
     let mm = ppBrowser.messageManager;
+    let defaultPrinterName = this.getDefaultPrinterName();
 
-    let sendEnterPreviewMessage = function (browser, simplified) {
+    let sendEnterPreviewMessage = function(browser, simplified) {
       mm.sendAsyncMessage("Printing:Preview:Enter", {
         windowID: browser.outerWindowID,
         simplifiedMode: simplified,
+        defaultPrinterName,
       });
     };
 
@@ -531,15 +541,15 @@ var PrintUtils = {
         // the original page. After we have parsed it, content will tell parent
         // that the document is ready for print previewing.
         spMM.sendAsyncMessage("Printing:Preview:ParseDocument", {
-          URL: this._listener.getSourceBrowser().currentURI.spec,
-          windowID: this._listener.getSourceBrowser().outerWindowID,
+          URL: this._originalURL,
+          windowID: this._sourceBrowser.outerWindowID,
         });
 
         // Here we log telemetry data for when the user enters simplify mode.
         this.logTelemetry("PRINT_PREVIEW_SIMPLIFY_PAGE_OPENED_COUNT");
       }
     } else {
-      sendEnterPreviewMessage(this._listener.getSourceBrowser(), false);
+      sendEnterPreviewMessage(this._sourceBrowser, false);
     }
 
     if (this._webProgressPP.value) {
@@ -548,7 +558,7 @@ var PrintUtils = {
     }
 
     let onEntered = (message) => {
-      mm.removeMessageListener("Printing:PrintPreview:Entered", onEntered);
+      mm.removeMessageListener("Printing:Preview:Entered", onEntered);
 
       if (message.data.failed) {
         // Something went wrong while putting the document into print preview
@@ -619,8 +629,7 @@ var PrintUtils = {
     mm.addMessageListener("Printing:Preview:Entered", onEntered);
   },
 
-  exitPrintPreview: function ()
-  {
+  exitPrintPreview() {
     let ppBrowser = this._listener.getPrintPreviewBrowser();
     let browserMM = ppBrowser.messageManager;
     browserMM.sendAsyncMessage("Printing:Preview:Exit");
@@ -648,35 +657,31 @@ var PrintUtils = {
     this._listener.onExit();
   },
 
-  logTelemetry: function (ID)
-  {
+  logTelemetry(ID) {
     let histogram = Services.telemetry.getHistogramById(ID);
     histogram.add(true);
   },
 
-  onKeyDownPP: function (aEvent)
-  {
+  onKeyDownPP(aEvent) {
     // Esc exits the PP
     if (aEvent.keyCode == aEvent.DOM_VK_ESCAPE) {
       PrintUtils.exitPrintPreview();
     }
   },
 
-  onKeyPressPP: function (aEvent)
-  {
+  onKeyPressPP(aEvent) {
     var closeKey;
     try {
       closeKey = document.getElementById("key_close")
                          .getAttribute("key");
-      closeKey = aEvent["DOM_VK_"+closeKey];
+      closeKey = aEvent["DOM_VK_" + closeKey];
     } catch (e) {}
     var isModif = aEvent.ctrlKey || aEvent.metaKey;
     // Ctrl-W exits the PP
     if (isModif &&
         (aEvent.charCode == closeKey || aEvent.charCode == closeKey + 32)) {
       PrintUtils.exitPrintPreview();
-    }
-    else if (isModif) {
+    } else if (isModif) {
       var printPreviewTB = document.getElementById("print-preview-toolbar");
       var printKey = document.getElementById("printKb").getAttribute("key").toUpperCase();
       var pressedKey = String.fromCharCode(aEvent.charCode).toUpperCase();

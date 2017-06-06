@@ -45,7 +45,6 @@ add_task(function*() {
   is(selected.getAttribute("label"), "6", "Should have '6' stylesheet selected by default");
 
   // Now select stylesheet "1"
-  let targets = menupopup.querySelectorAll("menuitem");
   let target = menupopup.querySelector("menuitem[label='1']");
   target.click();
 
@@ -55,7 +54,7 @@ add_task(function*() {
   // after the parent has been updated by yielding until the child
   // has finished running a ContentTask for us.
   yield ContentTask.spawn(browser, {}, function*() {
-    dump('\nJust wasting some time.\n');
+    dump("\nJust wasting some time.\n");
   });
 
   gPageStyleMenu.fillPopup(menupopup);

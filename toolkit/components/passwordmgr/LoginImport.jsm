@@ -15,8 +15,7 @@ this.EXPORTED_SYMBOLS = [
   "LoginImport",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -33,8 +32,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
                                   "resource://gre/modules/NetUtil.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// LoginImport
+// LoginImport
 
 /**
  * Provides an object that has a method to import login-related data from the
@@ -45,7 +43,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
  * @param aPath
  *        String containing the file path of the SQLite login database.
  */
-this.LoginImport = function (aStore, aPath) {
+this.LoginImport = function(aStore, aPath) {
   this.store = aStore;
   this.path = aPath;
 };
@@ -139,19 +137,19 @@ this.LoginImport.prototype = {
 
           this.store.data.logins.push({
             id: this.store.data.nextId++,
-            hostname: hostname,
-            httpRealm: httpRealm,
-            formSubmitURL: formSubmitURL,
-            usernameField: usernameField,
-            passwordField: passwordField,
-            encryptedUsername: encryptedUsername,
-            encryptedPassword: encryptedPassword,
-            guid: guid,
-            encType: encType,
-            timeCreated: timeCreated,
-            timeLastUsed: timeLastUsed,
-            timePasswordChanged: timePasswordChanged,
-            timesUsed: timesUsed,
+            hostname,
+            httpRealm,
+            formSubmitURL,
+            usernameField,
+            passwordField,
+            encryptedUsername,
+            encryptedPassword,
+            guid,
+            encType,
+            timeCreated,
+            timeLastUsed,
+            timePasswordChanged,
+            timesUsed,
           });
         } catch (ex) {
           Cu.reportError("Error importing login: " + ex);

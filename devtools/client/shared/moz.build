@@ -28,14 +28,15 @@ DevToolsModules(
     'devtools-file-watcher.js',
     'DOMHelpers.jsm',
     'doorhanger.js',
+    'enum.js',
     'file-watcher-worker.js',
     'file-watcher.js',
-    'frame-script-utils.js',
     'getjson.js',
     'inplace-editor.js',
     'Jsbeautify.jsm',
     'key-shortcuts.js',
     'keycodes.js',
+    'network-throttling-profiles.js',
     'node-attribute-parser.js',
     'options-view.js',
     'output-parser.js',
@@ -46,10 +47,15 @@ DevToolsModules(
     'SplitView.jsm',
     'suggestion-picker.js',
     'telemetry.js',
-    'theme-switching.js',
     'theme.js',
     'undo.js',
     'view-source.js',
     'webgl-utils.js',
     'zoom-keys.js',
 )
+
+with Files('**'):
+    BUG_COMPONENT = ('Firefox', 'Developer Tools')
+
+with Files('components/**'):
+    BUG_COMPONENT = ('Firefox', 'Developer Tools: Shared Components')

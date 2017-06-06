@@ -114,7 +114,7 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
     this.element.setAttribute("state",
                               DownloadsCommon.stateOfDownload(this.download));
 
-    if (this.download.error &&
+    if (!this.download.succeeded && this.download.error &&
         this.download.error.becauseBlockedByReputationCheck) {
       this.element.setAttribute("verdict",
                                 this.download.error.reputationCheckVerdict);
@@ -155,6 +155,13 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
       this.element.setAttribute("progressmode", "undetermined");
     }
 
+    if (this.download.stopped && this.download.canceled &&
+        this.download.hasPartialData) {
+      this.element.setAttribute("progresspaused", "true");
+    } else {
+      this.element.removeAttribute("progresspaused");
+    }
+
     // Dispatch the ValueChange event for accessibility, if possible.
     if (this._progressElement) {
       let event = this.element.ownerDocument.createEvent("Events");
@@ -190,16 +197,8 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
     if (!this.download.stopped) {
       let totalBytes = this.download.hasProgress ? this.download.totalBytes
                                                  : -1;
-      // By default, extended status information including the individual
-      // download rate is displayed in the tooltip. The history view overrides
-      // the getter and displays the datails in the main area instead.
-      [text] = DownloadUtils.getDownloadStatusNoRate(
-                                          this.download.currentBytes,
-                                          totalBytes,
-                                          this.download.speed,
-                                          this.lastEstimatedSecondsLeft);
       let newEstimatedSecondsLeft;
-      [tip, newEstimatedSecondsLeft] = DownloadUtils.getDownloadStatus(
+      [text, newEstimatedSecondsLeft] = DownloadUtils.getDownloadStatus(
                                           this.download.currentBytes,
                                           totalBytes,
                                           this.download.speed,

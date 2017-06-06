@@ -77,7 +77,6 @@ protected:
   virtual void Disconnect() override
   {
     DestroyBackBuffer();
-    ClientLayer::Disconnect();
   }
 
   void DestroyBackBuffer()
@@ -138,9 +137,6 @@ ClientImageLayer::RenderLayer()
       return;
     }
     TextureFlags flags = TextureFlags::DEFAULT;
-    if (mDisallowBigImage) {
-      flags |= TextureFlags::DISALLOW_BIGIMAGE;
-    }
     mImageClient = ImageClient::CreateImageClient(type,
                                                   ClientManager()->AsShadowForwarder(),
                                                   flags);

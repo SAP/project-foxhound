@@ -32,6 +32,7 @@
 #include "nsNetCID.h"
 #include "plbase64.h"
 #include "plstr.h"
+#include "mozilla/Base64.h"
 #include "prprf.h"
 #include "mozilla/Logging.h"
 #include "prmem.h"
@@ -45,6 +46,8 @@
 #include "mozilla/Mutex.h"
 #include "nsICancelable.h"
 
+using mozilla::Base64Decode;
+
 //-----------------------------------------------------------------------------
 
 static const char kNegotiate[] = "Negotiate";
@@ -53,6 +56,7 @@ static const char kNegotiateAuthDelegationURIs[] = "network.negotiate-auth.deleg
 static const char kNegotiateAuthAllowProxies[] = "network.negotiate-auth.allow-proxies";
 static const char kNegotiateAuthAllowNonFqdn[] = "network.negotiate-auth.allow-non-fqdn";
 static const char kNegotiateAuthSSPI[] = "network.auth.use-sspi";
+static const char kSSOinPBmode[] = "network.auth.private-browsing-sso";
 
 #define kNegotiateLen  (sizeof(kNegotiate)-1)
 #define DEFAULT_THREAD_TIMEOUT_MS 30000
@@ -61,8 +65,14 @@ static const char kNegotiateAuthSSPI[] = "network.auth.use-sspi";
 
 // Return false when the channel comes from a Private browsing window.
 static bool
-TestNotInPBMode(nsIHttpAuthenticableChannel *authChannel)
+TestNotInPBMode(nsIHttpAuthenticableChannel *authChannel, bool proxyAuth)
 {
+    // Proxy should go all the time, it's not considered a privacy leak
+    // to send default credentials to a proxy.
+    if (proxyAuth) {
+        return true;
+    }
+
     nsCOMPtr<nsIChannel> bareChannel = do_QueryInterface(authChannel);
     MOZ_ASSERT(bareChannel);
 
@@ -71,18 +81,21 @@ TestNotInPBMode(nsIHttpAuthenticableChannel *authChannel)
     }
 
     nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-    if (!prefs) {
-        return true;
-    }
+    if (prefs) {
+        bool ssoInPb;
+        if (NS_SUCCEEDED(prefs->GetBoolPref(kSSOinPBmode, &ssoInPb)) && ssoInPb) {
+            return true;
+        }
 
-    // When the "Never remember history" option is set, all channels are
-    // set PB mode flag, but here we want to make an exception, users
-    // want their credentials go out.
-    bool dontRememberHistory;
-    if (NS_SUCCEEDED(prefs->GetBoolPref("browser.privatebrowsing.autostart",
-                                        &dontRememberHistory)) &&
-        dontRememberHistory) {
-        return true;
+        // When the "Never remember history" option is set, all channels are
+        // set PB mode flag, but here we want to make an exception, users
+        // want their credentials go out.
+        bool dontRememberHistory;
+        if (NS_SUCCEEDED(prefs->GetBoolPref("browser.privatebrowsing.autostart",
+                                            &dontRememberHistory)) &&
+            dontRememberHistory) {
+            return true;
+        }
     }
 
     return false;
@@ -149,7 +162,7 @@ nsHttpNegotiateAuth::ChallengeReceived(nsIHttpAuthenticableChannel *authChannel,
         proxyInfo->GetHost(service);
     }
     else {
-        bool allowed = TestNotInPBMode(authChannel) &&
+        bool allowed = TestNotInPBMode(authChannel, isProxyAuth) &&
                        (TestNonFqdn(uri) ||
                        TestPref(uri, kNegotiateAuthTrustedURIs));
         if (!allowed) {
@@ -311,7 +324,7 @@ NS_IMPL_ISUPPORTS(GetNextTokenCompleteEvent, nsIRunnable, nsICancelable)
 //
 class GetNextTokenRunnable final : public mozilla::Runnable
 {
-    virtual ~GetNextTokenRunnable() {}
+    ~GetNextTokenRunnable() override = default;
     public:
         GetNextTokenRunnable(nsIHttpAuthenticableChannel *authChannel,
                              const char *challenge,
@@ -521,17 +534,14 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
         while (challenge[len - 1] == '=')
             len--;
 
-        inTokenLen = (len * 3)/4;
-        inToken = malloc(inTokenLen);
-        if (!inToken)
-            return (NS_ERROR_OUT_OF_MEMORY);
-
         //
         // Decode the response that followed the "Negotiate" token
         //
-        if (PL_Base64Decode(challenge, len, (char *) inToken) == nullptr) {
-            free(inToken);
-            return(NS_ERROR_UNEXPECTED);
+        nsresult rv =
+            Base64Decode(challenge, len, (char**)&inToken, &inTokenLen);
+
+        if (NS_FAILED(rv)) {
+            return rv;
         }
     }
     else {

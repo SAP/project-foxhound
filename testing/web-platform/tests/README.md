@@ -18,9 +18,12 @@ Running the Tests
 =================
 
 The tests are designed to be run from your local computer. The test
-environment requires Python 2.7+ (but not Python 3.x). You will also
-need a copy of OpenSSL. Users on Windows should read the
-[Windows Notes](#windows-notes) section below.
+environment requires [Python 2.7+](http://www.python.org/downloads) (but not Python 3.x).
+You will also need a copy of OpenSSL.
+
+On Windows, be sure to add the Python directory (`c:\python2x`, by default) to
+your `%Path%` [Environment Variable](http://www.computerhope.com/issues/ch000549.htm),
+and read the [Windows Notes](#windows-notes) section below.
 
 To get the tests running, you need to set up the test domains in your
 [`hosts` file](http://en.wikipedia.org/wiki/Hosts_%28file%29%23Location_in_the_file_system). The
@@ -45,15 +48,14 @@ git submodule update --init --recursive
 
 The test environment can then be started using
 
-```
-./serve
-```
+    ./serve
 
 This will start HTTP servers on two ports and a websockets server on
 one port. By default one web server starts on port 8000 and the other
 ports are randomly-chosen free ports. Tests must be loaded from the
-*first* HTTP server in the output. To change the ports, edit the
-`config.json` file, for example, replacing the part that reads:
+*first* HTTP server in the output. To change the ports, copy the
+`config.default.json` file to `config.json` and edit the new file,
+replacing the part that reads:
 
 ```
 "http": [8000, "auto"]
@@ -62,7 +64,7 @@ ports are randomly-chosen free ports. Tests must be loaded from the
 to some port of your choice e.g.
 
 ```
-"http":[1234, "auto"]
+"http": [1234, "auto"]
 ```
 
 If you installed OpenSSL in such a way that running `openssl` at a
@@ -79,20 +81,31 @@ like:
 
 Running wptserve with SSL enabled on Windows typically requires
 installing an OpenSSL distribution.
-[Shining Light](http://slproweb.com/products/Win32OpenSSL.html)
+[Shining Light](https://slproweb.com/products/Win32OpenSSL.html)
 provide a convenient installer that is known to work, but requires a
-little extra setup.
+little extra setup, i.e.:
 
-After installation ensure that the path to OpenSSL is on your `%Path%`
-environment variable.
+Run the installer for Win32_OpenSSL_v1.1.0b (30MB). During installation,
+change the default location for where to Copy OpenSSL Dlls from the
+System directory to the /bin directory.
 
-Then set the path to the default OpenSSL configuration file (usually
-something like `C:\OpenSSL-Win32\bin\openssl.cfg` in the server
-configuration. To do this copy `config.default.json` in the
-web-platform-tests root to `config.json`. Then edit the JSON so that
-the key `ssl/openssl/base_conf_path` has a value that is the path to
-the OpenSSL config file.
+After installation, ensure that the path to OpenSSL (typically,
+this will be `C:\OpenSSL-Win32\bin`) is in your `%Path%`
+[Environment Variable](http://www.computerhope.com/issues/ch000549.htm).
+If you forget to do this part, you will most likely see a 'File Not Found'
+error when you start wptserve.
 
+Finally, set the path value in the server configuration file to the
+default OpenSSL configuration file location. To do this,
+copy `config.default.json` in the web-platform-tests root to `config.json`.
+Then edit the JSON so that the key `ssl/openssl/base_conf_path` has a
+value that is the path to the OpenSSL config file (typically this
+will be `C:\\OpenSSL-Win32\\bin\\openssl.cfg`).
+
+Alternatively, you may also use
+[Bash on Ubuntu on Windows](https://msdn.microsoft.com/en-us/commandline/wsl/about)
+in the Windows 10 Anniversary Update build, then access your windows
+partition from there to launch wptserve.
 
 Test Runner
 ===========
@@ -228,6 +241,15 @@ We can sometimes take a little while to go through pull requests
 because we have to go through all the tests and ensure that they match
 the specification correctly. But we look at all of them, and take
 everything that we can.
+
+OWNERS files are used only to indicate who should be notified of pull
+requests.  If you are interested in receiving notifications of proposed
+changes to tests in a given directory, feel free to add yourself to the
+OWNERS file. Anyone with expertise in the specification under test can
+approve a pull request.  In particular, if a test change has already
+been adequately reviewed "upstream" in another repository, it can be
+pushed here without any further review by supplying a link to the
+upstream review.
 
 Getting Involved
 ================

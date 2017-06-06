@@ -701,7 +701,7 @@ TISInputSourceWrapper::IsForRTLLanguage()
     bool ret = TranslateToString(kVK_ANSI_A, 0, eKbdType_ANSI, str);
     NS_ENSURE_TRUE(ret, ret);
     char16_t ch = str.IsEmpty() ? char16_t(0) : str.CharAt(0);
-    mIsRTL = UCS2_CHAR_IS_BIDI(ch) || ch == 0xD802 || ch == 0xD803;
+    mIsRTL = UCS2_CHAR_IS_BIDI(ch);
   }
   return mIsRTL != 0;
 }
@@ -2219,8 +2219,20 @@ TextInputHandler::InsertText(NSAttributedString* aAttrString,
   }
 
   // Don't let the same event be fired twice when hitting
-  // enter/return! (Bug 420502)
-  if (currentKeyEvent && !currentKeyEvent->CanDispatchKeyPressEvent()) {
+  // enter/return for Bug 420502.  However, Korean IME (or some other
+  // simple IME) may work without marked text.  For example, composing
+  // character may be inserted as committed text and it's modified with
+  // aReplacementRange.  When a keydown starts new composition with
+  // committing previous character, InsertText() may be called twice,
+  // one is for committing previous character and then, inserting new
+  // composing character as committed character.  In the latter case,
+  // |CanDispatchKeyPressEvent()| returns true but we need to dispatch
+  // keypress event for the new character.  So, when IME tries to insert
+  // printable characters, we should ignore current key event state even
+  // after the keydown has already caused dispatching composition event.
+  // XXX Anyway, we should sort out around this at fixing bug 1338460.
+  if (currentKeyEvent && !currentKeyEvent->CanDispatchKeyPressEvent() &&
+      (str.IsEmpty() || (str.Length() == 1 && !IsPrintableChar(str[0])))) {
     return;
   }
 
@@ -2517,7 +2529,7 @@ IMEInputHandler::GetCurrentTSMDocumentID()
  *
  ******************************************************************************/
 
-NS_IMETHODIMP
+nsresult
 IMEInputHandler::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
                            const IMENotification& aNotification)
 {
@@ -2828,14 +2840,21 @@ IMEInputHandler::CreateTextRangeArray(NSAttributedString *aAttrString,
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
+  RefPtr<mozilla::TextRangeArray> textRangeArray =
+                                      new mozilla::TextRangeArray();
+
+  // Note that we shouldn't append ranges when composition string
+  // is empty because it may cause TextComposition confused.
+  if (![aAttrString length]) {
+    return textRangeArray.forget();
+  }
+
   // Convert the Cocoa range into the TextRange Array used in Gecko.
   // Iterate through the attributed string and map the underline attribute to
   // Gecko IME textrange attributes.  We may need to change the code here if
   // we change the implementation of validAttributesForMarkedText.
   NSRange limitRange = NSMakeRange(0, [aAttrString length]);
   uint32_t rangeCount = GetRangeCount(aAttrString);
-  RefPtr<mozilla::TextRangeArray> textRangeArray =
-                                      new mozilla::TextRangeArray();
   for (uint32_t i = 0; i < rangeCount && limitRange.length > 0; i++) {
     NSRange effectiveRange;
     id attributeValue = [aAttrString attribute:NSUnderlineStyleAttributeName
@@ -3750,7 +3769,24 @@ IMEInputHandler::SendCommittedText(NSString *aString)
 
   NSAttributedString* attrStr =
     [[NSAttributedString alloc] initWithString:aString];
-  [mView insertText:attrStr];
+  if ([mView conformsToProtocol:@protocol(NSTextInputClient)]) {
+    NSObject<NSTextInputClient>* textInputClient =
+      static_cast<NSObject<NSTextInputClient>*>(mView);
+    [textInputClient insertText:attrStr
+               replacementRange:NSMakeRange(NSNotFound, 0)];
+  }
+
+  // Last resort.  If we cannot retrieve NSTextInputProtocol from mView
+  // or blocking to call our InsertText(), we should call InsertText()
+  // directly to commit composition forcibly.
+  if (mIsIMEComposing) {
+    MOZ_LOG(gLog, LogLevel::Info,
+      ("%p IMEInputHandler::SendCommittedText, trying to insert text directly "
+       "due to IME not calling our InsertText()", this));
+    static_cast<TextInputHandler*>(this)->InsertText(attrStr);
+    MOZ_ASSERT(!mIsIMEComposing);
+  }
+
   [attrStr release];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;

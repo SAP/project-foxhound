@@ -8,6 +8,8 @@ DIRS += ['interfaces']
 
 MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
 
+BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+
 XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
 
 EXTRA_COMPONENTS += [
@@ -20,11 +22,10 @@ EXTRA_JS_MODULES += [
   'FxAccounts.jsm',
   'FxAccountsClient.jsm',
   'FxAccountsCommon.js',
-  'FxAccountsOAuthClient.jsm',
+  'FxAccountsConfig.jsm',
   'FxAccountsOAuthGrantClient.jsm',
   'FxAccountsProfile.jsm',
   'FxAccountsProfileClient.jsm',
-  'FxAccountsPush.js',
   'FxAccountsStorage.jsm',
   'FxAccountsWebChannel.jsm',
 ]

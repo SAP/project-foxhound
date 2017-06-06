@@ -4,24 +4,43 @@
 
 "use strict";
 
+/* exported ProductAddonChecker */
+
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+
+const LOCAL_EME_SOURCES = [{
+  "id": "gmp-gmpopenh264",
+  "src": "chrome://global/content/gmp-sources/openh264.json"
+}, {
+  "id": "gmp-widevinecdm",
+  "src": "chrome://global/content/gmp-sources/widevinecdm.json"
+}];
 
 this.EXPORTED_SYMBOLS = [ "ProductAddonChecker" ];
 
+Cu.importGlobalProperties(["XMLHttpRequest"]);
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/Log.jsm");
 Cu.import("resource://gre/modules/CertUtils.jsm");
-/*globals checkCert, BadCertHandler*/
+/* globals checkCert, BadCertHandler*/
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
-/*globals OS*/
+
+/* globals GMPPrefs */
+XPCOMUtils.defineLazyModuleGetter(this, "GMPPrefs",
+                                  "resource://gre/modules/GMPUtils.jsm");
+
+/* globals OS */
+
+XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
+                                  "resource://gre/modules/UpdateUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "ServiceRequest",
                                   "resource://gre/modules/ServiceRequest.jsm");
-
-var logger = Log.repository.getLogger("addons.productaddons");
 
 // This exists so that tests can override the XHR behaviour for downloading
 // the addon update XML file.
@@ -29,6 +48,8 @@ var CreateXHR = function() {
   return Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].
     createInstance(Ci.nsISupports);
 }
+
+var logger = Log.repository.getLogger("addons.productaddons");
 
 /**
  * Number of milliseconds after which we need to cancel `downloadXML`.
@@ -39,10 +60,6 @@ var CreateXHR = function() {
  * that we fail cleanly in such case.
  */
 const TIMEOUT_DELAY_MS = 20000;
-// Chunk size for the incremental downloader
-const DOWNLOAD_CHUNK_BYTES_SIZE = 300000;
-// Incremental downloader interval
-const DOWNLOAD_INTERVAL  = 0;
 // How much of a file to read into memory at a time for hashing
 const HASH_CHUNK_SIZE = 8192;
 
@@ -58,8 +75,7 @@ function getRequestStatus(request) {
   let status = null;
   try {
     status = request.status;
-  }
-  catch (e) {
+  } catch (e) {
   }
 
   if (status != null) {
@@ -115,7 +131,7 @@ function downloadXML(url, allowNonBuiltIn = false, allowedCerts = null) {
     let fail = (event) => {
       let request = event.target;
       let status = getRequestStatus(request);
-      let message = "Failed downloading XML, status: " + status +  ", reason: " + event.type;
+      let message = "Failed downloading XML, status: " + status + ", reason: " + event.type;
       logger.warn(message);
       let ex = new Error(message);
       ex.status = status;
@@ -138,23 +154,44 @@ function downloadXML(url, allowNonBuiltIn = false, allowedCerts = null) {
       resolve(request.responseXML);
     };
 
-    request.addEventListener("error", fail, false);
-    request.addEventListener("abort", fail, false);
-    request.addEventListener("timeout", fail, false);
-    request.addEventListener("load", success, false);
+    request.addEventListener("error", fail);
+    request.addEventListener("abort", fail);
+    request.addEventListener("timeout", fail);
+    request.addEventListener("load", success);
 
     logger.info("sending request to: " + url);
     request.send(null);
   });
 }
 
+function downloadJSON(uri) {
+  logger.info("fetching config from: " + uri);
+  return new Promise((resolve, reject) => {
+    let xmlHttp = new ServiceRequest({mozAnon: true});
+
+    xmlHttp.onload = function(aResponse) {
+      resolve(JSON.parse(this.responseText));
+    };
+
+    xmlHttp.onerror = function(e) {
+      reject("Fetching " + uri + " results in error code: " + e.target.status);
+    };
+
+    xmlHttp.open("GET", uri);
+    xmlHttp.overrideMimeType("application/json");
+    xmlHttp.send();
+  });
+}
+
+
 /**
  * Parses a list of add-ons from a DOM document.
  *
  * @param  document
  *         The DOM document to parse.
- * @return null if there is no <addons> element otherwise an array of the addons
- *         listed.
+ * @return null if there is no <addons> element otherwise an object containing
+ *         an array of the addons listed and a field notifying whether the
+ *         fallback was used.
  */
 function parseXML(document) {
   // Check that the root element is correct
@@ -184,7 +221,67 @@ function parseXML(document) {
     results.push(addon);
   }
 
-  return results;
+  return {
+    usedFallback: false,
+    gmpAddons: results
+  };
+}
+
+/**
+ * If downloading from the network fails (AUS server is down),
+ * load the sources from local build configuration.
+ */
+function downloadLocalConfig() {
+
+  if (!GMPPrefs.get(GMPPrefs.KEY_UPDATE_ENABLED, true)) {
+    logger.info("Updates are disabled via media.gmp-manager.updateEnabled");
+    return Promise.resolve({usedFallback: true, gmpAddons: []});
+  }
+
+  return Promise.all(LOCAL_EME_SOURCES.map(conf => {
+    return downloadJSON(conf.src).then(addons => {
+
+      let platforms = addons.vendors[conf.id].platforms;
+      let target = Services.appinfo.OS + "_" + UpdateUtils.ABI;
+      let details = null;
+
+      while (!details) {
+        if (!(target in platforms)) {
+          // There was no matching platform so return false, this addon
+          // will be filtered from the results below
+          logger.info("no details found for: " + target);
+          return false;
+        }
+        // Field either has the details of the binary or is an alias
+        // to another build target key that does
+        if (platforms[target].alias) {
+          target = platforms[target].alias;
+        } else {
+          details = platforms[target];
+        }
+      }
+
+      logger.info("found plugin: " + conf.id);
+      return {
+        "id": conf.id,
+        "URL": details.fileUrl,
+        "hashFunction": addons.hashFunction,
+        "hashValue": details.hashValue,
+        "version": addons.vendors[conf.id].version,
+        "size": details.filesize
+      };
+    });
+  })).then(addons => {
+
+    // Some filters may not match this platform so
+    // filter those out
+    addons = addons.filter(x => x !== false);
+
+    return {
+      usedFallback: true,
+      gmpAddons: addons
+    };
+  });
 }
 
 /**
@@ -197,8 +294,7 @@ function parseXML(document) {
  */
 function downloadFile(url) {
   return new Promise((resolve, reject) => {
-    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].
-                  createInstance(Ci.nsISupports);
+    let xhr = new XMLHttpRequest();
     xhr.onload = function(response) {
       logger.info("downloadXHR File download. status=" + xhr.status);
       if (xhr.status != 200 && xhr.status != 206) {
@@ -218,7 +314,7 @@ function downloadFile(url) {
     let fail = (event) => {
       let request = event.target;
       let status = getRequestStatus(request);
-      let message = "Failed downloading via XHR, status: " + status +  ", reason: " + event.type;
+      let message = "Failed downloading via XHR, status: " + status + ", reason: " + event.type;
       logger.warn(message);
       let ex = new Error(message);
       ex.status = status;
@@ -281,8 +377,7 @@ var computeHash = Task.async(function*(hashFunction, path) {
     } while (bytes.length == HASH_CHUNK_SIZE);
 
     return binaryToHex(hasher.finish(false));
-  }
-  finally {
+  } finally {
     yield file.close();
   }
 });
@@ -310,7 +405,7 @@ var verifyFile = Task.async(function*(properties, path) {
     let expectedDigest = properties.hashValue.toLowerCase();
     let digest = yield computeHash(properties.hashFunction, path);
     if (digest != expectedDigest) {
-      throw new Error("Hash was `" + digest + "` but expected `" + expectedDigest +  "`.");
+      throw new Error("Hash was `" + digest + "` but expected `" + expectedDigest + "`.");
     }
   }
 });
@@ -327,11 +422,19 @@ const ProductAddonChecker = {
    * @param  allowedCerts
    *         The list of certificate attributes to match the SSL certificate
    *         against or null to skip checks.
-   * @return a promise that resolves to the list of add-ons or rejects with a JS
+   * @return a promise that resolves to an object containing the list of add-ons
+   *         and whether the local fallback was used, or rejects with a JS
    *         exception in case of error.
    */
-  getProductAddonList: function(url, allowNonBuiltIn = false, allowedCerts = null) {
-    return downloadXML(url, allowNonBuiltIn, allowedCerts).then(parseXML);
+  getProductAddonList(url, allowNonBuiltIn = false, allowedCerts = null) {
+    if (!GMPPrefs.get(GMPPrefs.KEY_UPDATE_ENABLED, true)) {
+      logger.info("Updates are disabled via media.gmp-manager.updateEnabled");
+      return Promise.resolve({usedFallback: true, gmpAddons: []});
+    }
+
+    return downloadXML(url, allowNonBuiltIn, allowedCerts)
+      .then(parseXML)
+      .catch(downloadLocalConfig);
   },
 
   /**
@@ -348,8 +451,7 @@ const ProductAddonChecker = {
     try {
       yield verifyFile(addon, path);
       return path;
-    }
-    catch (e) {
+    } catch (e) {
       yield OS.File.remove(path);
       throw e;
     }

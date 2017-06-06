@@ -42,6 +42,7 @@ namespace jit {
     _(JSOP_DUP2)               \
     _(JSOP_SWAP)               \
     _(JSOP_PICK)               \
+    _(JSOP_UNPICK)             \
     _(JSOP_GOTO)               \
     _(JSOP_IFEQ)               \
     _(JSOP_IFNE)               \
@@ -71,6 +72,7 @@ namespace jit {
     _(JSOP_REGEXP)             \
     _(JSOP_LAMBDA)             \
     _(JSOP_LAMBDA_ARROW)       \
+    _(JSOP_SETFUNNAME)         \
     _(JSOP_BITOR)              \
     _(JSOP_BITXOR)             \
     _(JSOP_BITAND)             \
@@ -193,6 +195,7 @@ namespace jit {
     _(JSOP_ARGUMENTS)          \
     _(JSOP_RUNONCE)            \
     _(JSOP_REST)               \
+    _(JSOP_TOASYNC)            \
     _(JSOP_TOID)               \
     _(JSOP_TOSTRING)           \
     _(JSOP_TABLESWITCH)        \
@@ -200,6 +203,7 @@ namespace jit {
     _(JSOP_MOREITER)           \
     _(JSOP_ISNOITER)           \
     _(JSOP_ENDITER)            \
+    _(JSOP_ISGENCLOSING)       \
     _(JSOP_GENERATOR)          \
     _(JSOP_INITIALYIELD)       \
     _(JSOP_YIELD)              \
@@ -214,6 +218,7 @@ namespace jit {
     _(JSOP_FUNCTIONTHIS)       \
     _(JSOP_GLOBALTHIS)         \
     _(JSOP_CHECKISOBJ)         \
+    _(JSOP_CHECKISCALLABLE)    \
     _(JSOP_CHECKTHIS)          \
     _(JSOP_CHECKRETURN)        \
     _(JSOP_NEWTARGET)          \
@@ -338,6 +343,8 @@ class BaselineCompiler : public BaselineCompilerSpecific
 
     MOZ_MUST_USE bool emitThrowConstAssignment();
     MOZ_MUST_USE bool emitUninitializedLexicalCheck(const ValueOperand& val);
+
+    MOZ_MUST_USE bool emitIsMagicValue();
 
     MOZ_MUST_USE bool addPCMappingEntry(bool addIndexEntry);
 

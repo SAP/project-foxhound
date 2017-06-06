@@ -55,6 +55,7 @@ JSCompartment::JSCompartment(Zone* zone, const JS::CompartmentOptions& options =
     marked(true),
     warnedAboutExprClosure(false),
     warnedAboutForEach(false),
+    warnedAboutStringGenericsMethods(0),
 #ifdef DEBUG
     firedOnNewGlobalObject(false),
 #endif
@@ -115,6 +116,13 @@ JSCompartment::~JSCompartment()
     js_delete(lazyArrayBuffers);
     js_delete(nonSyntacticLexicalEnvironments_),
     js_free(enumerators);
+
+#ifdef DEBUG
+    // Avoid assertion destroying the unboxed layouts list if the embedding
+    // leaked GC things.
+    if (!rt->gc.shutdownCollectedEverything())
+        unboxedLayouts.clear();
+#endif
 
     runtime_->numCompartments--;
 }
@@ -287,8 +295,8 @@ CopyStringPure(JSContext* cx, JSString* str)
             return nullptr;
 
         copy = chars.isLatin1()
-               ? NewStringCopyN<CanGC>(cx, chars.latin1Range().start().get(), len)
-               : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len);
+               ? NewStringCopyN<CanGC>(cx, chars.latin1Range().begin().get(), len)
+               : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().begin().get(), len);
         copy->setTaint(str->taint());
         return copy;
     }
@@ -348,61 +356,33 @@ JSCompartment::wrap(JSContext* cx, MutableHandleString strp)
 }
 
 bool
-JSCompartment::wrap(JSContext* cx, MutableHandleObject obj, HandleObject existingArg)
+JSCompartment::getNonWrapperObjectForCurrentCompartment(JSContext* cx, MutableHandleObject obj)
 {
-    MOZ_ASSERT(!cx->runtime()->isAtomsCompartment(this));
-    MOZ_ASSERT(cx->compartment() == this);
-    MOZ_ASSERT_IF(existingArg, existingArg->compartment() == cx->compartment());
-    MOZ_ASSERT_IF(existingArg, IsDeadProxyObject(existingArg));
-
-    if (!obj)
-        return true;
-    AutoDisableProxyCheck adpc(cx->runtime());
-
-    // The gray bit handling here is a bit complicated.  The basic problem is
-    // that generally the return value of wrap() escapes (and the input is an
-    // object that _has_ "escaped") and in those cases the input must not be
-    // gray and the return value must not be gray.  However, when `existingArg`
-    // is non-null we're doing an internal wrapper remapping operation, and both
-    // `obj` and `existingArg` might be gray, quite purposefully.
-    //
-    // This means that when `existingArg` is not null, we can't assert anything
-    // useful about anything being non-gray.
-    MOZ_ASSERT_IF(!existingArg, !ObjectIsMarkedGray(obj));
-
-    // Wrappers should really be parented to the wrapped parent of the wrapped
-    // object, but in that case a wrapped global object would have a nullptr
-    // parent without being a proper global object (JSCLASS_IS_GLOBAL). Instead,
-    // we parent all wrappers to the global object in their home compartment.
-    // This loses us some transparency, and is generally very cheesy.
-    HandleObject global = cx->global();
-    RootedObject objGlobal(cx, &obj->global());
-    MOZ_ASSERT(global);
-    MOZ_ASSERT(objGlobal);
-
-    if (obj->compartment() == this) {
-        obj.set(ToWindowProxyIfWindow(obj));
-        MOZ_ASSERT_IF(!existingArg, !ObjectIsMarkedGray(obj));
-        return true;
-    }
+    // Ensure that we have entered a compartment.
+    MOZ_ASSERT(cx->global());
 
     // If we have a cross-compartment wrapper, make sure that the cx isn't
     // associated with the self-hosting global. We don't want to create
     // wrappers for objects in other runtimes, which may be the case for the
     // self-hosting global.
-    MOZ_ASSERT(!cx->runtime()->isSelfHostingGlobal(global) &&
-               !cx->runtime()->isSelfHostingGlobal(objGlobal));
+    MOZ_ASSERT(!cx->runtime()->isSelfHostingGlobal(cx->global()));
+    MOZ_ASSERT(!cx->runtime()->isSelfHostingGlobal(&obj->global()));
 
-    // Unwrap the object, but don't unwrap outer windows.
+    // The object is already in the right compartment. Normally same-
+    // compartment returns the object itself, however, windows are always
+    // wrapped by a proxy, so we have to check for that case here manually.
+    if (obj->compartment() == this) {
+        obj.set(ToWindowProxyIfWindow(obj));
+        return true;
+    }
+
+    // Note that if the object is same-compartment, but has been wrapped into a
+    // different compartment, we need to unwrap it and return the bare same-
+    // compartment object. Note again that windows are always wrapped by a
+    // WindowProxy even when same-compartment so take care not to strip this
+    // particular wrapper.
     RootedObject objectPassedToWrap(cx, obj);
     obj.set(UncheckedUnwrap(obj, /* stopAtWindowProxy = */ true));
-
-    // We crossed a compartment boundary, so obj may be gray.  We really don't
-    // want to return gray things from here if !existingArg, so make sure it's
-    // not.
-    if (!existingArg)
-        ExposeObjectToActiveJS(obj);
-
     if (obj->compartment() == this) {
         MOZ_ASSERT(!IsWindow(obj));
         return true;
@@ -416,53 +396,43 @@ JSCompartment::wrap(JSContext* cx, MutableHandleObject obj, HandleObject existin
         if (!GetBuiltinConstructor(cx, JSProto_StopIteration, &stopIteration))
             return false;
         obj.set(stopIteration);
-        MOZ_ASSERT_IF(!existingArg, !ObjectIsMarkedGray(obj));
         return true;
     }
 
-    const JSWrapObjectCallbacks* cb = cx->runtime()->wrapObjectCallbacks;
-
-    // Invoke the prewrap callback. We're a bit worried about infinite
-    // recursion here, so we do a check - see bug 809295.
+    // Invoke the prewrap callback. The prewrap callback is responsible for
+    // doing similar reification as above, but can account for any additional
+    // embedder requirements.
+    //
+    // We're a bit worried about infinite recursion here, so we do a check -
+    // see bug 809295.
+    auto preWrap = cx->runtime()->wrapObjectCallbacks->preWrap;
     JS_CHECK_SYSTEM_RECURSION(cx, return false);
-    if (cb->preWrap) {
-        cb->preWrap(cx, global, obj, objectPassedToWrap, obj);
+    if (preWrap) {
+        preWrap(cx, cx->global(), obj, objectPassedToWrap, obj);
         if (!obj)
             return false;
-        MOZ_ASSERT_IF(!existingArg, !ObjectIsMarkedGray(obj));
     }
     MOZ_ASSERT(!IsWindow(obj));
 
-    if (obj->compartment() == this)
-        return true;
+    return true;
+}
 
+bool
+JSCompartment::getOrCreateWrapper(JSContext* cx, HandleObject existing, MutableHandleObject obj)
+{
     // If we already have a wrapper for this value, use it.
     RootedValue key(cx, ObjectValue(*obj));
     if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(CrossCompartmentKey(key))) {
         obj.set(&p->value().get().toObject());
         MOZ_ASSERT(obj->is<CrossCompartmentWrapperObject>());
-        // crossCompartmentWrappers has a read barrier, so obj is not gray now,
-        // even if existing is non-null.
-        MOZ_ASSERT(!ObjectIsMarkedGray(obj));
         return true;
     }
 
-    RootedObject existing(cx, existingArg);
-    if (existing) {
-        // Is it possible to reuse |existing|?
-        if (existing->hasStaticPrototype() ||
-            // Note: Class asserted above, so all that's left to check is callability
-            existing->isCallable() ||
-            obj->isCallable())
-        {
-            existing = nullptr;
-        }
-    }
-
-    RootedObject wrapper(cx, cb->wrap(cx, existing, obj));
+    // Create a new wrapper for the object.
+    auto wrap = cx->runtime()->wrapObjectCallbacks->wrap;
+    RootedObject wrapper(cx, wrap(cx, existing, obj));
     if (!wrapper)
         return false;
-    MOZ_ASSERT_IF(!existingArg, !ObjectIsMarkedGray(wrapper));
 
     // We maintain the invariant that the key in the cross-compartment wrapper
     // map is always directly wrapped by the value.
@@ -481,6 +451,75 @@ JSCompartment::wrap(JSContext* cx, MutableHandleObject obj, HandleObject existin
 
     obj.set(wrapper);
     return true;
+}
+
+bool
+JSCompartment::wrap(JSContext* cx, MutableHandleObject obj)
+{
+    MOZ_ASSERT(!cx->runtime()->isAtomsCompartment(this));
+    MOZ_ASSERT(cx->compartment() == this);
+
+    if (!obj)
+        return true;
+
+    AutoDisableProxyCheck adpc(cx->runtime());
+
+    // Anything we're wrapping has already escaped into script, so must have
+    // been unmarked-gray at some point in the past.
+    MOZ_ASSERT(!ObjectIsMarkedGray(obj));
+
+    // The passed object may already be wrapped, or may fit a number of special
+    // cases that we need to check for and manually correct.
+    if (!getNonWrapperObjectForCurrentCompartment(cx, obj))
+        return false;
+
+    // If the reification above did not result in a same-compartment object,
+    // get or create a new wrapper object in this compartment for it.
+    if (obj->compartment() != this) {
+        if (!getOrCreateWrapper(cx, nullptr, obj))
+            return false;
+    }
+
+    // Ensure that the wrapper is also exposed.
+    ExposeObjectToActiveJS(obj);
+    return true;
+}
+
+bool
+JSCompartment::rewrap(JSContext* cx, MutableHandleObject obj, HandleObject existingArg)
+{
+    MOZ_ASSERT(!cx->runtime()->isAtomsCompartment(this));
+    MOZ_ASSERT(cx->compartment() == this);
+    MOZ_ASSERT(obj);
+    MOZ_ASSERT(existingArg);
+    MOZ_ASSERT(existingArg->compartment() == cx->compartment());
+    MOZ_ASSERT(IsDeadProxyObject(existingArg));
+
+    AutoDisableProxyCheck adpc(cx->runtime());
+
+    // It may not be possible to re-use existing; if so, clear it so that we
+    // are forced to create a new wrapper. Note that this cannot call out to
+    // |wrap| because of the different gray unmarking semantics.
+    RootedObject existing(cx, existingArg);
+    if (existing->hasStaticPrototype() ||
+        // Note: Class asserted above, so all that's left to check is callability
+        existing->isCallable() ||
+        obj->isCallable())
+    {
+        existing.set(nullptr);
+    }
+
+    // The passed object may already be wrapped, or may fit a number of special
+    // cases that we need to check for and manually correct.
+    if (!getNonWrapperObjectForCurrentCompartment(cx, obj))
+        return false;
+
+    // If the reification above resulted in a same-compartment object, we do
+    // not need to create or return an existing wrapper.
+    if (obj->compartment() == this)
+        return true;
+
+    return getOrCreateWrapper(cx, existing, obj);
 }
 
 bool
@@ -593,7 +632,7 @@ JSCompartment::traceIncomingCrossCompartmentEdgesForZoneGC(JSTracer* trc)
         if (!c->zone()->isCollecting())
             c->traceOutgoingCrossCompartmentWrappers(trc);
     }
-    Debugger::markIncomingCrossCompartmentEdges(trc);
+    Debugger::traceIncomingCrossCompartmentEdges(trc);
 }
 
 void
@@ -620,7 +659,7 @@ JSCompartment::traceRoots(JSTracer* trc, js::gc::GCRuntime::TraceOrMarkRuntime t
         // to trace them when not doing a minor collection.
 
         if (jitCompartment_)
-            jitCompartment_->mark(trc, this);
+            jitCompartment_->trace(trc, this);
 
         // If a compartment is on-stack, we mark its global so that
         // JSContext::global() remains valid.
@@ -636,12 +675,12 @@ JSCompartment::traceRoots(JSTracer* trc, js::gc::GCRuntime::TraceOrMarkRuntime t
     // During a GC, these are treated as weak pointers.
     if (traceOrMark == js::gc::GCRuntime::TraceRuntime) {
         if (watchpointMap)
-            watchpointMap->markAll(trc);
+            watchpointMap->trace(trc);
     }
 
     /* Mark debug scopes, if present */
     if (debugEnvs)
-        debugEnvs->mark(trc);
+        debugEnvs->trace(trc);
 
     if (lazyArrayBuffers)
         lazyArrayBuffers->trace(trc);
@@ -706,8 +745,9 @@ JSCompartment::sweepAfterMinorGC(JSTracer* trc)
 {
     globalWriteBarriered = 0;
 
-    if (innerViews.needsSweepAfterMinorGC())
-        innerViews.sweepAfterMinorGC();
+    InnerViewTable& table = innerViews.get();
+    if (table.needsSweepAfterMinorGC())
+        table.sweepAfterMinorGC();
 
     crossCompartmentWrappers.sweepAfterMinorGC(trc);
 }
@@ -1018,15 +1058,6 @@ AddLazyFunctionsForCompartment(JSContext* cx, AutoObjectVector& lazyFunctions, A
             continue;
         }
 
-        // This creates a new reference to an object that an ongoing incremental
-        // GC may find to be unreachable. Treat as if we're reading a weak
-        // reference and trigger the read barrier.
-        if (cx->zone()->needsIncrementalBarrier())
-            fun->readBarrier(fun);
-
-        // TODO: The above checks should be rolled into the cell iterator (see
-        // bug 1322971).
-
         if (fun->isInterpretedLazy()) {
             LazyScript* lazy = fun->lazyScriptOrNull();
             if (lazy && lazy->sourceObject() && !lazy->hasUncompiledEnclosingScript()) {
@@ -1055,18 +1086,18 @@ CreateLazyScriptsForCompartment(JSContext* cx)
     // Create scripts for each lazy function, updating the list of functions to
     // process with any newly exposed inner functions in created scripts.
     // A function cannot be delazified until its outer script exists.
+    RootedFunction fun(cx);
     for (size_t i = 0; i < lazyFunctions.length(); i++) {
-        JSFunction* fun = &lazyFunctions[i]->as<JSFunction>();
+        fun = &lazyFunctions[i]->as<JSFunction>();
 
         // lazyFunctions may have been populated with multiple functions for
         // a lazy script.
         if (!fun->isInterpretedLazy())
             continue;
 
-        LazyScript* lazy = fun->lazyScript();
-        bool lazyScriptHadNoScript = !lazy->maybeScript();
+        bool lazyScriptHadNoScript = !fun->lazyScript()->maybeScript();
 
-        JSScript* script = fun->getOrCreateScript(cx);
+        JSScript* script = JSFunction::getOrCreateScript(cx, fun);
         if (!script)
             return false;
         if (lazyScriptHadNoScript && !AddInnerLazyFunctionsFromScript(script, lazyFunctions))

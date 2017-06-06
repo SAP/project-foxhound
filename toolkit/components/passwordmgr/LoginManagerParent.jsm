@@ -38,7 +38,7 @@ var LoginManagerParent = {
    */
   _recipeManager: null,
 
-  init: function() {
+  init() {
     let mm = Cc["@mozilla.org/globalmessagemanager;1"]
                .getService(Ci.nsIMessageListenerManager);
     mm.addMessageListener("RemoteLogins:findLogins", this);
@@ -57,7 +57,7 @@ var LoginManagerParent = {
     });
   },
 
-  receiveMessage: function (msg) {
+  receiveMessage(msg) {
     let data = msg.data;
     switch (msg.name) {
       case "RemoteLogins:findLogins": {
@@ -156,7 +156,7 @@ var LoginManagerParent = {
     if (!showMasterPassword && !Services.logins.isLoggedIn) {
       try {
         target.sendAsyncMessage("RemoteLogins:loginsFound", {
-          requestId: requestId,
+          requestId,
           logins: [],
           recipes,
         });
@@ -175,14 +175,14 @@ var LoginManagerParent = {
         QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
                                                Ci.nsISupportsWeakReference]),
 
-        observe: function (subject, topic, data) {
+        observe(subject, topic, data) {
           log("Got deferred sendLoginDataToChild notification:", topic);
           // Only run observer once.
           Services.obs.removeObserver(this, "passwordmgr-crypto-login");
           Services.obs.removeObserver(this, "passwordmgr-crypto-loginCanceled");
           if (topic == "passwordmgr-crypto-loginCanceled") {
             target.sendAsyncMessage("RemoteLogins:loginsFound", {
-              requestId: requestId,
+              requestId,
               logins: [],
               recipes,
             });
@@ -219,15 +219,16 @@ var LoginManagerParent = {
     // doesn't support structured cloning.
     var jsLogins = LoginHelper.loginsToVanillaObjects(logins);
     target.sendAsyncMessage("RemoteLogins:loginsFound", {
-      requestId: requestId,
+      requestId,
       logins: jsLogins,
       recipes,
     });
   }),
 
-  doAutocompleteSearch: function({ formOrigin, actionOrigin,
+  doAutocompleteSearch({ formOrigin, actionOrigin,
                                    searchString, previousResult,
-                                   rect, requestId, remote }, target) {
+                                   rect, requestId, isSecure, isPasswordField,
+                                   remote }, target) {
     // Note: previousResult is a regular object, not an
     // nsIAutoCompleteResult.
 
@@ -260,7 +261,11 @@ var LoginManagerParent = {
       let match = fullMatch.username;
 
       // Remove results that are too short, or have different prefix.
-      // Also don't offer empty usernames as possible results.
+      // Also don't offer empty usernames as possible results except
+      // for password field.
+      if (isPasswordField) {
+        return true;
+      }
       return match && match.toLowerCase().startsWith(searchStringLower);
     });
 
@@ -270,7 +275,7 @@ var LoginManagerParent = {
     // for showing the autocomplete popup (via the regular
     // nsAutoCompleteController).
     if (remote) {
-      let results = new UserAutoCompleteResult(searchString, matchingLogins);
+      let results = new UserAutoCompleteResult(searchString, matchingLogins, {isSecure});
       AutoCompletePopup.showPopupWithResults({ browser: target.ownerDocument.defaultView, rect, results });
     }
 
@@ -278,12 +283,12 @@ var LoginManagerParent = {
     // doesn't support structured cloning.
     var jsLogins = LoginHelper.loginsToVanillaObjects(matchingLogins);
     target.messageManager.sendAsyncMessage("RemoteLogins:loginsAutoCompleted", {
-      requestId: requestId,
+      requestId,
       logins: jsLogins,
     });
   },
 
-  onFormSubmit: function(hostname, formSubmitURL,
+  onFormSubmit(hostname, formSubmitURL,
                          usernameField, newPasswordField,
                          oldPasswordField, openerTopWindow,
                          target) {
@@ -315,7 +320,7 @@ var LoginManagerParent = {
     formLogin.init(hostname, formSubmitURL, null,
                    (usernameField ? usernameField.value : ""),
                    newPasswordField.value,
-                   (usernameField ? usernameField.name  : ""),
+                   (usernameField ? usernameField.name : ""),
                    newPasswordField.name);
 
     let logins = LoginHelper.searchLoginsWithObject({

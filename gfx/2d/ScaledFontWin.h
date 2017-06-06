@@ -7,6 +7,7 @@
 #define MOZILLA_GFX_SCALEDFONTWIN_H_
 
 #include "ScaledFontBase.h"
+#include <windows.h>
 
 namespace mozilla {
 namespace gfx {
@@ -22,6 +23,10 @@ public:
   bool GetFontFileData(FontFileDataOutput aDataCallback, void *aBaton) override;
 
   virtual bool GetFontDescriptor(FontDescriptorOutput aCb, void* aBaton) override;
+
+  static already_AddRefed<ScaledFont>
+    CreateFromFontDescriptor(const uint8_t* aData, uint32_t aDataLength, Float aSize);
+
   virtual AntialiasMode GetDefaultAAMode() override;
 
 #ifdef USE_SKIA

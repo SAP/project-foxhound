@@ -2,6 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* eslint no-unused-vars: ["error", {vars: "local", args: "none"}] */
+
 var AM_Cc = Components.classes;
 var AM_Ci = Components.interfaces;
 var AM_Cu = Components.utils;
@@ -18,6 +20,9 @@ const PREF_EM_MIN_COMPAT_PLATFORM_VERSION = "extensions.minCompatiblePlatformVer
 const PREF_GETADDONS_BYIDS               = "extensions.getAddons.get.url";
 const PREF_GETADDONS_BYIDS_PERFORMANCE   = "extensions.getAddons.getWithPerformance.url";
 const PREF_XPI_SIGNATURES_REQUIRED    = "xpinstall.signatures.required";
+const PREF_SYSTEM_ADDON_SET           = "extensions.systemAddonSet";
+const PREF_SYSTEM_ADDON_UPDATE_URL    = "extensions.systemAddon.update.url";
+const PREF_APP_UPDATE_ENABLED         = "app.update.enabled";
 
 // Forcibly end the test if it runs longer than 15 minutes
 const TIMEOUT_MS = 900000;
@@ -47,6 +52,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Extension",
                                   "resource://gre/modules/Extension.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ExtensionTestUtils",
                                   "resource://testing-common/ExtensionXPCShellUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ExtensionTestCommon",
+                                  "resource://testing-common/ExtensionTestCommon.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "HttpServer",
                                   "resource://testing-common/httpd.js");
 XPCOMUtils.defineLazyModuleGetter(this, "MockAsyncShutdown",
@@ -55,6 +62,32 @@ XPCOMUtils.defineLazyModuleGetter(this, "MockRegistrar",
                                   "resource://testing-common/MockRegistrar.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "MockRegistry",
                                   "resource://testing-common/MockRegistry.jsm");
+
+const {
+  awaitPromise,
+  createAppInfo,
+  createInstallRDF,
+  createTempWebExtensionFile,
+  createUpdateRDF,
+  getFileForAddon,
+  manuallyInstall,
+  manuallyUninstall,
+  promiseAddonEvent,
+  promiseCompleteAllInstalls,
+  promiseCompleteInstall,
+  promiseConsoleOutput,
+  promiseFindAddonUpdates,
+  promiseInstallAllFiles,
+  promiseInstallFile,
+  promiseRestartManager,
+  promiseSetExtensionModifiedTime,
+  promiseShutdownManager,
+  promiseStartupManager,
+  promiseWriteProxyFileToDir,
+  registerDirectory,
+  setExtensionModifiedTime,
+  writeFilesToZip
+} = AddonTestUtils;
 
 // WebExtension wrapper for ease of testing
 ExtensionTestUtils.init(this);
@@ -114,6 +147,10 @@ Object.defineProperty(this, "TEST_UNPACKED", {
 var AMscope = Components.utils.import("resource://gre/modules/AddonManager.jsm", {});
 var { AddonManager, AddonManagerInternal, AddonManagerPrivate } = AMscope;
 
+const promiseAddonByID = AddonManager.getAddonByID;
+const promiseAddonsByIDs = AddonManager.getAddonsByIDs;
+const promiseAddonsWithOperationsByTypes = AddonManager.getAddonsWithOperationsByTypes;
+
 var gPort = null;
 var gUrlToFileMap = {};
 
@@ -133,11 +170,9 @@ function isManifestRegistered(file) {
     // We want the location of the XPI or directory itself.
     if (manifest instanceof AM_Ci.nsIJARURI) {
       manifest = manifest.JARFile.QueryInterface(AM_Ci.nsIFileURL).file;
-    }
-    else if (manifest instanceof AM_Ci.nsIFileURL) {
+    } else if (manifest instanceof AM_Ci.nsIFileURL) {
       manifest = manifest.file.parent;
-    }
-    else {
+    } else {
       continue;
     }
 
@@ -240,10 +275,9 @@ this.BootstrapMonitor = {
       // NOTE: in some of the new tests, we need to received the real objects instead of
       // their JSON representations, but most of the current tests expect intallPath
       // and resourceURI to have been converted to strings.
-      const {installPath, resourceURI} = info.data;
       info.data = Object.assign({}, subject.wrappedJSObject.data, {
-        installPath,
-        resourceURI,
+        installPath: info.data.installPath,
+        resourceURI: info.data.resourceURI,
       });
     }
 
@@ -256,8 +290,7 @@ this.BootstrapMonitor = {
       for (let resolve of this.installPromises)
         resolve();
       this.installPromises = [];
-    }
-    else {
+    } else {
       this.checkMatches(this.installed.get(id), info);
     }
 
@@ -277,8 +310,7 @@ this.BootstrapMonitor = {
       // consistent.
       if (info.reason == 2 /* APP_SHUTDOWN */)
         Components.manager.removeBootstrappedManifestLocation(installPath);
-    }
-    else {
+    } else {
       this.checkAddonNotStarted(id);
     }
 
@@ -289,8 +321,7 @@ this.BootstrapMonitor = {
 
       this.installed.delete(id);
       this.uninstalled.set(id, info)
-    }
-    else if (info.event == "startup") {
+    } else if (info.event == "startup") {
       this.started.set(id, info);
 
       // Chrome should be registered at this point
@@ -310,13 +341,10 @@ function isNightlyChannel() {
   var channel = "default";
   try {
     channel = Services.prefs.getCharPref("app.update.channel");
-  }
-  catch (e) { }
+  } catch (e) { }
 
   return channel != "aurora" && channel != "beta" && channel != "release" && channel != "esr";
 }
-
-var {createAppInfo} = AddonTestUtils;
 
 /**
  * Tests that an add-on does appear in the crash report annotations, if
@@ -467,8 +495,7 @@ function do_check_addon(aActualAddon, aExpectedAddon, aProperties) {
       }
 
       return;
-    }
-    else if (expectedValue && !actualValue) {
+    } else if (expectedValue && !actualValue) {
       do_throw("Missing property for add-on " + aExpectedAddon.id +
         ": expected addon[" + aProperty + "] = " + expectedValue);
       return;
@@ -576,11 +603,6 @@ function do_check_icons(aActual, aExpected) {
   }
 }
 
-var {promiseStartupManager} = AddonTestUtils;
-var {promiseRestartManager} = AddonTestUtils;
-var {promiseShutdownManager} = AddonTestUtils;
-var {awaitPromise} = AddonTestUtils;
-
 function startupManager(aAppChanged) {
   promiseStartupManager(aAppChanged);
 }
@@ -622,9 +644,6 @@ function check_startup_changes(aType, aIds) {
 
   do_check_eq(JSON.stringify(ids), JSON.stringify(changes));
 }
-
-var {createUpdateRDF} = AddonTestUtils;
-var {createInstallRDF} = AddonTestUtils;
 
 /**
  * Writes an install.rdf manifest into a directory using the properties passed
@@ -735,8 +754,6 @@ function promiseWriteWebManifestForExtension(aData, aDir, aId = aData.applicatio
   return AddonTestUtils.promiseWriteFilesToExtension(aDir.path, aId, files);
 }
 
-var {writeFilesToZip} = AddonTestUtils;
-
 /**
  * Creates an XPI file for some manifest data in the temporary directory and
  * returns the nsIFile for it. The file will be deleted when the test completes.
@@ -756,18 +773,6 @@ function createTempXPIFile(aData, aExtraFile) {
 
   return AddonTestUtils.createTempXPIFile(files);
 }
-
-var {createTempWebExtensionFile} = AddonTestUtils;
-
-var {setExtensionModifiedTime} = AddonTestUtils;
-var {promiseSetExtensionModifiedTime} = AddonTestUtils;
-
-var {manuallyInstall} = AddonTestUtils;
-var {manuallyUninstall} = AddonTestUtils;
-
-var {getFileForAddon} = AddonTestUtils;
-
-var {registerDirectory} = AddonTestUtils;
 
 var gExpectedEvents = {};
 var gExpectedInstalls = [];
@@ -798,7 +803,7 @@ function getExpectedInstall(aAddon) {
 }
 
 const AddonListener = {
-  onPropertyChanged: function(aAddon, aProperties) {
+  onPropertyChanged(aAddon, aProperties) {
     do_print(`Got onPropertyChanged event for ${aAddon.id}`);
     let [event, properties] = getExpectedEvent(aAddon.id);
     do_check_eq("onPropertyChanged", event);
@@ -812,7 +817,7 @@ const AddonListener = {
     return check_test_completed(arguments);
   },
 
-  onEnabling: function(aAddon, aRequiresRestart) {
+  onEnabling(aAddon, aRequiresRestart) {
     do_print(`Got onEnabling event for ${aAddon.id}`);
     let [event, expectedRestart] = getExpectedEvent(aAddon.id);
     do_check_eq("onEnabling", event);
@@ -823,15 +828,15 @@ const AddonListener = {
     return check_test_completed(arguments);
   },
 
-  onEnabled: function(aAddon) {
+  onEnabled(aAddon) {
     do_print(`Got onEnabled event for ${aAddon.id}`);
-    let [event, expectedRestart] = getExpectedEvent(aAddon.id);
+    let [event] = getExpectedEvent(aAddon.id);
     do_check_eq("onEnabled", event);
     do_check_false(hasFlag(aAddon.permissions, AddonManager.PERM_CAN_ENABLE));
     return check_test_completed(arguments);
   },
 
-  onDisabling: function(aAddon, aRequiresRestart) {
+  onDisabling(aAddon, aRequiresRestart) {
     do_print(`Got onDisabling event for ${aAddon.id}`);
     let [event, expectedRestart] = getExpectedEvent(aAddon.id);
     do_check_eq("onDisabling", event);
@@ -842,15 +847,15 @@ const AddonListener = {
     return check_test_completed(arguments);
   },
 
-  onDisabled: function(aAddon) {
+  onDisabled(aAddon) {
     do_print(`Got onDisabled event for ${aAddon.id}`);
-    let [event, expectedRestart] = getExpectedEvent(aAddon.id);
+    let [event] = getExpectedEvent(aAddon.id);
     do_check_eq("onDisabled", event);
     do_check_false(hasFlag(aAddon.permissions, AddonManager.PERM_CAN_DISABLE));
     return check_test_completed(arguments);
   },
 
-  onInstalling: function(aAddon, aRequiresRestart) {
+  onInstalling(aAddon, aRequiresRestart) {
     do_print(`Got onInstalling event for ${aAddon.id}`);
     let [event, expectedRestart] = getExpectedEvent(aAddon.id);
     do_check_eq("onInstalling", event);
@@ -860,14 +865,14 @@ const AddonListener = {
     return check_test_completed(arguments);
   },
 
-  onInstalled: function(aAddon) {
+  onInstalled(aAddon) {
     do_print(`Got onInstalled event for ${aAddon.id}`);
-    let [event, expectedRestart] = getExpectedEvent(aAddon.id);
+    let [event] = getExpectedEvent(aAddon.id);
     do_check_eq("onInstalled", event);
     return check_test_completed(arguments);
   },
 
-  onUninstalling: function(aAddon, aRequiresRestart) {
+  onUninstalling(aAddon, aRequiresRestart) {
     do_print(`Got onUninstalling event for ${aAddon.id}`);
     let [event, expectedRestart] = getExpectedEvent(aAddon.id);
     do_check_eq("onUninstalling", event);
@@ -877,23 +882,23 @@ const AddonListener = {
     return check_test_completed(arguments);
   },
 
-  onUninstalled: function(aAddon) {
+  onUninstalled(aAddon) {
     do_print(`Got onUninstalled event for ${aAddon.id}`);
-    let [event, expectedRestart] = getExpectedEvent(aAddon.id);
+    let [event] = getExpectedEvent(aAddon.id);
     do_check_eq("onUninstalled", event);
     return check_test_completed(arguments);
   },
 
-  onOperationCancelled: function(aAddon) {
+  onOperationCancelled(aAddon) {
     do_print(`Got onOperationCancelled event for ${aAddon.id}`);
-    let [event, expectedRestart] = getExpectedEvent(aAddon.id);
+    let [event] = getExpectedEvent(aAddon.id);
     do_check_eq("onOperationCancelled", event);
     return check_test_completed(arguments);
   }
 };
 
 const InstallListener = {
-  onNewInstall: function(install) {
+  onNewInstall(install) {
     if (install.state != AddonManager.STATE_DOWNLOADED &&
         install.state != AddonManager.STATE_DOWNLOAD_FAILED &&
         install.state != AddonManager.STATE_AVAILABLE)
@@ -906,54 +911,54 @@ const InstallListener = {
     return check_test_completed(arguments);
   },
 
-  onDownloadStarted: function(install) {
+  onDownloadStarted(install) {
     do_check_eq(install.state, AddonManager.STATE_DOWNLOADING);
     do_check_eq(install.error, 0);
     do_check_eq("onDownloadStarted", getExpectedInstall());
     return check_test_completed(arguments);
   },
 
-  onDownloadEnded: function(install) {
+  onDownloadEnded(install) {
     do_check_eq(install.state, AddonManager.STATE_DOWNLOADED);
     do_check_eq(install.error, 0);
     do_check_eq("onDownloadEnded", getExpectedInstall());
     return check_test_completed(arguments);
   },
 
-  onDownloadFailed: function(install) {
+  onDownloadFailed(install) {
     do_check_eq(install.state, AddonManager.STATE_DOWNLOAD_FAILED);
     do_check_eq("onDownloadFailed", getExpectedInstall());
     return check_test_completed(arguments);
   },
 
-  onDownloadCancelled: function(install) {
+  onDownloadCancelled(install) {
     do_check_eq(install.state, AddonManager.STATE_CANCELLED);
     do_check_eq(install.error, 0);
     do_check_eq("onDownloadCancelled", getExpectedInstall());
     return check_test_completed(arguments);
   },
 
-  onInstallStarted: function(install) {
+  onInstallStarted(install) {
     do_check_eq(install.state, AddonManager.STATE_INSTALLING);
     do_check_eq(install.error, 0);
     do_check_eq("onInstallStarted", getExpectedInstall(install.addon));
     return check_test_completed(arguments);
   },
 
-  onInstallEnded: function(install, newAddon) {
+  onInstallEnded(install, newAddon) {
     do_check_eq(install.state, AddonManager.STATE_INSTALLED);
     do_check_eq(install.error, 0);
     do_check_eq("onInstallEnded", getExpectedInstall(install.addon));
     return check_test_completed(arguments);
   },
 
-  onInstallFailed: function(install) {
+  onInstallFailed(install) {
     do_check_eq(install.state, AddonManager.STATE_INSTALL_FAILED);
     do_check_eq("onInstallFailed", getExpectedInstall(install.addon));
     return check_test_completed(arguments);
   },
 
-  onInstallCancelled: function(install) {
+  onInstallCancelled(install) {
     // If the install was cancelled by a listener returning false from
     // onInstallStarted, then the state will revert to STATE_DOWNLOADED.
     let possibleStates = [AddonManager.STATE_CANCELLED,
@@ -964,7 +969,7 @@ const InstallListener = {
     return check_test_completed(arguments);
   },
 
-  onExternalInstall: function(aAddon, existingAddon, aRequiresRestart) {
+  onExternalInstall(aAddon, existingAddon, aRequiresRestart) {
     do_check_eq("onExternalInstall", getExpectedInstall(aAddon));
     do_check_false(aRequiresRestart);
     return check_test_completed(arguments);
@@ -1019,10 +1024,6 @@ function ensure_test_completed() {
     do_check_eq(gExpectedInstalls.length, 0);
 }
 
-var {promiseAddonEvent} = AddonTestUtils;
-
-var {promiseCompleteAllInstalls} = AddonTestUtils;
-
 /**
  * A helper method to install an array of AddonInstall to completion and then
  * call a provided callback.
@@ -1035,8 +1036,6 @@ var {promiseCompleteAllInstalls} = AddonTestUtils;
 function completeAllInstalls(aInstalls, aCallback) {
   promiseCompleteAllInstalls(aInstalls).then(aCallback);
 }
-
-var {promiseInstallFile, promiseInstallAllFiles} = AddonTestUtils;
 
 /**
  * A helper method to install an array of files and call a callback after the
@@ -1197,8 +1196,7 @@ function do_exception_wrap(func) {
   return function() {
     try {
       func.apply(null, arguments);
-    }
-    catch (e) {
+    } catch (e) {
       do_report_unexpected_exception(e);
     }
   };
@@ -1274,74 +1272,341 @@ function callback_soon(aFunction) {
   }
 }
 
-var {promiseAddonsByIDs} = AddonTestUtils;
-
-var {promiseAddonByID} = AddonTestUtils;
-
-var {promiseAddonsWithOperationsByTypes} = AddonTestUtils;
-
-/**
- * Returns a promise that will be resolved when an add-on update check is
- * complete. The value resolved will be an AddonInstall if a new version was
- * found.
- */
-function promiseFindAddonUpdates(addon, reason = AddonManager.UPDATE_WHEN_PERIODIC_UPDATE) {
-  return new Promise((resolve, reject) => {
-    let result = {};
-    addon.findUpdates({
-      onNoCompatibilityUpdateAvailable: function(addon2) {
-        if ("compatibilityUpdate" in result) {
-          do_throw("Saw multiple compatibility update events");
-        }
-        equal(addon, addon2, "onNoCompatibilityUpdateAvailable");
-        result.compatibilityUpdate = false;
-      },
-
-      onCompatibilityUpdateAvailable: function(addon2) {
-        if ("compatibilityUpdate" in result) {
-          do_throw("Saw multiple compatibility update events");
-        }
-        equal(addon, addon2, "onCompatibilityUpdateAvailable");
-        result.compatibilityUpdate = true;
-      },
-
-      onNoUpdateAvailable: function(addon2) {
-        if ("updateAvailable" in result) {
-          do_throw("Saw multiple update available events");
-        }
-        equal(addon, addon2, "onNoUpdateAvailable");
-        result.updateAvailable = false;
-      },
-
-      onUpdateAvailable: function(addon2, install) {
-        if ("updateAvailable" in result) {
-          do_throw("Saw multiple update available events");
-        }
-        equal(addon, addon2, "onUpdateAvailable");
-        result.updateAvailable = install;
-      },
-
-      onUpdateFinished: function(addon2, error) {
-        equal(addon, addon2, "onUpdateFinished");
-        if (error == AddonManager.UPDATE_STATUS_NO_ERROR) {
-          resolve(result);
-        } else {
-          result.error = error;
-          reject(result);
-        }
-      }
-    }, reason);
-  });
-}
-
-var {promiseConsoleOutput} = AddonTestUtils;
-
-var {promiseWriteProxyFileToDir} = AddonTestUtils;
-
 function writeProxyFileToDir(aDir, aAddon, aId) {
   awaitPromise(promiseWriteProxyFileToDir(aDir, aAddon, aId));
 
   let file = aDir.clone();
   file.append(aId);
   return file
+}
+
+function* serveSystemUpdate(xml, perform_update, testserver) {
+  testserver.registerPathHandler("/data/update.xml", (request, response) => {
+    response.write(xml);
+  });
+
+  try {
+    yield perform_update();
+  } finally {
+    testserver.registerPathHandler("/data/update.xml", null);
+  }
+}
+
+// Runs an update check making it use the passed in xml string. Uses the direct
+// call to the update function so we get rejections on failure.
+function* installSystemAddons(xml, testserver) {
+  do_print("Triggering system add-on update check.");
+
+  yield serveSystemUpdate(xml, function*() {
+    let { XPIProvider } = Components.utils.import("resource://gre/modules/addons/XPIProvider.jsm", {});
+    yield XPIProvider.updateSystemAddons();
+  }, testserver);
+}
+
+// Runs a full add-on update check which will in some cases do a system add-on
+// update check. Always succeeds.
+function* updateAllSystemAddons(xml, testserver) {
+  do_print("Triggering full add-on update check.");
+
+  yield serveSystemUpdate(xml, function() {
+    return new Promise(resolve => {
+      Services.obs.addObserver(function() {
+        Services.obs.removeObserver(arguments.callee, "addons-background-update-complete");
+
+        resolve();
+      }, "addons-background-update-complete", false);
+
+      // Trigger the background update timer handler
+      gInternalManager.notify(null);
+    });
+  }, testserver);
+}
+
+// Builds an update.xml file for an update check based on the data passed.
+function* buildSystemAddonUpdates(addons, root) {
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n\n<updates>\n`;
+  if (addons) {
+    xml += `  <addons>\n`;
+    for (let addon of addons) {
+      xml += `    <addon id="${addon.id}" URL="${root + addon.path}" version="${addon.version}"`;
+      if (addon.size)
+        xml += ` size="${addon.size}"`;
+      if (addon.hashFunction)
+        xml += ` hashFunction="${addon.hashFunction}"`;
+      if (addon.hashValue)
+        xml += ` hashValue="${addon.hashValue}"`;
+      xml += `/>\n`;
+    }
+    xml += `  </addons>\n`;
+  }
+  xml += `</updates>\n`;
+
+  return xml;
+}
+
+function initSystemAddonDirs() {
+  let hiddenSystemAddonDir = FileUtils.getDir("ProfD", ["sysfeatures", "hidden"], true);
+  do_get_file("data/system_addons/system1_1.xpi").copyTo(hiddenSystemAddonDir, "system1@tests.mozilla.org.xpi");
+  do_get_file("data/system_addons/system2_1.xpi").copyTo(hiddenSystemAddonDir, "system2@tests.mozilla.org.xpi");
+
+  let prefilledSystemAddonDir = FileUtils.getDir("ProfD", ["sysfeatures", "prefilled"], true);
+  do_get_file("data/system_addons/system2_2.xpi").copyTo(prefilledSystemAddonDir, "system2@tests.mozilla.org.xpi");
+  do_get_file("data/system_addons/system3_2.xpi").copyTo(prefilledSystemAddonDir, "system3@tests.mozilla.org.xpi");
+}
+
+/**
+ * Returns current system add-on update directory (stored in pref).
+ */
+function getCurrentSystemAddonUpdatesDir() {
+  const updatesDir = FileUtils.getDir("ProfD", ["features"], false);
+  let dir = updatesDir.clone();
+  let set = JSON.parse(Services.prefs.getCharPref(PREF_SYSTEM_ADDON_SET));
+  dir.append(set.directory);
+  return dir;
+}
+
+/**
+ * Removes all files from system add-on update directory.
+ */
+function clearSystemAddonUpdatesDir() {
+  const updatesDir = FileUtils.getDir("ProfD", ["features"], false);
+  // Delete any existing directories
+  if (updatesDir.exists())
+    updatesDir.remove(true);
+
+  Services.prefs.clearUserPref(PREF_SYSTEM_ADDON_SET);
+}
+
+/**
+ * Installs a known set of add-ons into the system add-on update directory.
+ */
+function buildPrefilledUpdatesDir() {
+  clearSystemAddonUpdatesDir();
+
+  // Build the test set
+  let dir = FileUtils.getDir("ProfD", ["features", "prefilled"], true);
+
+  do_get_file("data/system_addons/system2_2.xpi").copyTo(dir, "system2@tests.mozilla.org.xpi");
+  do_get_file("data/system_addons/system3_2.xpi").copyTo(dir, "system3@tests.mozilla.org.xpi");
+
+  // Mark these in the past so the startup file scan notices when files have changed properly
+  FileUtils.getFile("ProfD", ["features", "prefilled", "system2@tests.mozilla.org.xpi"]).lastModifiedTime -= 10000;
+  FileUtils.getFile("ProfD", ["features", "prefilled", "system3@tests.mozilla.org.xpi"]).lastModifiedTime -= 10000;
+
+  Services.prefs.setCharPref(PREF_SYSTEM_ADDON_SET, JSON.stringify({
+    schema: 1,
+    directory: dir.leafName,
+    addons: {
+      "system2@tests.mozilla.org": {
+        version: "2.0"
+      },
+      "system3@tests.mozilla.org": {
+        version: "2.0"
+      },
+    }
+  }));
+}
+
+/**
+ * Check currently installed ssystem add-ons against a set of conditions.
+ *
+ * @param {Array<Object>} conditions - an array of objects of the form { isUpgrade: false, version: null}
+ * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
+ */
+function* checkInstalledSystemAddons(conditions, distroDir) {
+  for (let i = 0; i < conditions.length; i++) {
+    let condition = conditions[i];
+    let id = "system" + (i + 1) + "@tests.mozilla.org";
+    let addon = yield promiseAddonByID(id);
+
+    if (!("isUpgrade" in condition) || !("version" in condition)) {
+      throw Error("condition must contain isUpgrade and version");
+    }
+    let isUpgrade = conditions[i].isUpgrade;
+    let version = conditions[i].version;
+
+    let expectedDir = isUpgrade ? getCurrentSystemAddonUpdatesDir() : distroDir;
+
+    if (version) {
+      do_print(`Checking state of add-on ${id}, expecting version ${version}`);
+
+      // Add-on should be installed
+      do_check_neq(addon, null);
+      do_check_eq(addon.version, version);
+      do_check_true(addon.isActive);
+      do_check_false(addon.foreignInstall);
+      do_check_true(addon.hidden);
+      do_check_true(addon.isSystem);
+
+      // Verify the add-ons file is in the right place
+      let file = expectedDir.clone();
+      file.append(id + ".xpi");
+      do_check_true(file.exists());
+      do_check_true(file.isFile());
+
+      let uri = addon.getResourceURI(null);
+      do_check_true(uri instanceof AM_Ci.nsIFileURL);
+      do_check_eq(uri.file.path, file.path);
+
+      if (isUpgrade) {
+        do_check_eq(addon.signedState, AddonManager.SIGNEDSTATE_SYSTEM);
+      }
+
+      // Verify the add-on actually started
+      BootstrapMonitor.checkAddonStarted(id, version);
+    } else {
+      do_print(`Checking state of add-on ${id}, expecting it to be missing`);
+
+      if (isUpgrade) {
+        // Add-on should not be installed
+        do_check_eq(addon, null);
+      }
+
+      BootstrapMonitor.checkAddonNotStarted(id);
+
+      if (addon)
+        BootstrapMonitor.checkAddonInstalled(id);
+      else
+        BootstrapMonitor.checkAddonNotInstalled(id);
+    }
+  }
+}
+
+/**
+ * Returns all system add-on updates directories.
+ */
+function* getSystemAddonDirectories() {
+  const updatesDir = FileUtils.getDir("ProfD", ["features"], false);
+  let subdirs = [];
+
+  if (yield OS.File.exists(updatesDir.path)) {
+    let iterator = new OS.File.DirectoryIterator(updatesDir.path);
+    yield iterator.forEach(entry => {
+      if (entry.isDir) {
+        subdirs.push(entry);
+      }
+    });
+    iterator.close();
+  }
+
+  return subdirs;
+}
+
+/**
+ * Sets up initial system add-on update conditions.
+ *
+ * @param {Object<function, Array<Object>} setup - an object containing a setup function and an array of objects
+ *  of the form {isUpgrade: false, version: null}
+ *
+ * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
+ */
+function* setupSystemAddonConditions(setup, distroDir) {
+  do_print("Clearing existing database.");
+  Services.prefs.clearUserPref(PREF_SYSTEM_ADDON_SET);
+  distroDir.leafName = "empty";
+  startupManager(false);
+  yield promiseShutdownManager();
+
+  do_print("Setting up conditions.");
+  yield setup.setup();
+
+  startupManager(false);
+
+  // Make sure the initial state is correct
+  do_print("Checking initial state.");
+  yield checkInstalledSystemAddons(setup.initialState, distroDir);
+}
+
+/**
+ * Verify state of system add-ons after installation.
+ *
+ * @param {Array<Object>} initialState - an array of objects of the form {isUpgrade: false, version: null}
+ * @param {Array<Object>} finalState - an array of objects of the form {isUpgrade: false, version: null}
+ * @param {Boolean} alreadyUpgraded - whether a restartless upgrade has already been performed.
+ * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
+ */
+function* verifySystemAddonState(initialState, finalState = undefined, alreadyUpgraded = false, distroDir) {
+  let expectedDirs = 0;
+
+  // If the initial state was using the profile set then that directory will
+  // still exist.
+
+  if (initialState.some(a => a.isUpgrade)) {
+    expectedDirs++;
+  }
+
+  if (finalState == undefined) {
+    finalState = initialState;
+  } else if (finalState.some(a => a.isUpgrade)) {
+    // If the new state is using the profile then that directory will exist.
+    expectedDirs++;
+  }
+
+  // Since upgrades are restartless now, the previous update dir hasn't been removed.
+  if (alreadyUpgraded) {
+    expectedDirs++;
+  }
+
+  do_print("Checking final state.");
+
+  let dirs = yield getSystemAddonDirectories();
+  do_check_eq(dirs.length, expectedDirs);
+
+  yield checkInstalledSystemAddons(...finalState, distroDir);
+
+  // Check that the new state is active after a restart
+  yield promiseRestartManager();
+  yield checkInstalledSystemAddons(finalState, distroDir);
+}
+
+/**
+ * Run system add-on tests and compare the results against a set of expected conditions.
+ *
+ * @param {String} setupName - name of the current setup conditions.
+ * @param {Object<function, Array<Object>} setup -  Defines the set of initial conditions to run each test against. Each should
+ *                                                  define the following properties:
+ *    setup:        A task to setup the profile into the initial state.
+ *    initialState: The initial expected system add-on state after setup has run.
+ * @param {Array<Object>} test -  The test to run. Each test must define an updateList or test. The following
+ *                                properties are used:
+ *    updateList: The set of add-ons the server should respond with.
+ *    test:       A function to run to perform the update check (replaces
+ *                updateList)
+ *    fails:      An optional property, if true the update check is expected to
+ *                fail.
+ *    finalState: An optional property, the expected final state of system add-ons,
+ *                if missing the test condition's initialState is used.
+ * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
+ * @param {String} root - HTTP URL to the test server
+ * @param {HttpServer} testserver - existing HTTP test server to use
+ */
+
+function* execSystemAddonTest(setupName, setup, test, distroDir, root, testserver) {
+  yield setupSystemAddonConditions(setup, distroDir);
+
+  try {
+    if ("test" in test) {
+      yield test.test();
+    } else {
+      yield installSystemAddons(yield buildSystemAddonUpdates(test.updateList, root), testserver);
+    }
+
+    if (test.fails) {
+      do_throw("Expected this test to fail");
+    }
+  } catch (e) {
+    if (!test.fails) {
+      do_throw(e);
+    }
+  }
+
+  // some tests have a different expected combination of default
+  // and updated add-ons.
+  if (test.finalState && setupName in test.finalState) {
+    yield verifySystemAddonState(setup.initialState, test.finalState[setupName], false, distroDir);
+  } else {
+    yield verifySystemAddonState(setup.initialState, undefined, false, distroDir);
+  }
+
+  yield promiseShutdownManager();
 }

@@ -6,10 +6,8 @@ from __future__ import absolute_import, unicode_literals
 
 from argparse import Namespace
 from collections import defaultdict
-from itertools import chain
 import logging
 import os
-import shutil
 import sys
 import warnings
 
@@ -24,7 +22,6 @@ from mach.decorators import (
     CommandProvider,
     Command,
 )
-import mozpack.path as mozpath
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -78,61 +75,7 @@ NOW_RUNNING = '''
 '''
 
 
-# Maps test flavors to data needed to run them
-ALL_FLAVORS = {
-    'mochitest': {
-        'suite': 'plain',
-        'aliases': ('plain', 'mochitest'),
-        'enabled_apps': ('firefox', 'b2g', 'android', 'mulet'),
-        'extra_args': {
-            'flavor': 'plain',
-        }
-    },
-    'chrome': {
-        'suite': 'chrome',
-        'aliases': ('chrome', 'mochitest-chrome'),
-        'enabled_apps': ('firefox', 'mulet', 'b2g', 'android'),
-        'extra_args': {
-            'flavor': 'chrome',
-        }
-    },
-    'browser-chrome': {
-        'suite': 'browser',
-        'aliases': ('browser', 'browser-chrome', 'mochitest-browser-chrome', 'bc'),
-        'enabled_apps': ('firefox',),
-        'extra_args': {
-            'flavor': 'browser',
-        }
-    },
-    'jetpack-package': {
-        'suite': 'jetpack-package',
-        'aliases': ('jetpack-package', 'mochitest-jetpack-package', 'jpp'),
-        'enabled_apps': ('firefox',),
-        'extra_args': {
-            'flavor': 'jetpack-package',
-        }
-    },
-    'jetpack-addon': {
-        'suite': 'jetpack-addon',
-        'aliases': ('jetpack-addon', 'mochitest-jetpack-addon', 'jpa'),
-        'enabled_apps': ('firefox',),
-        'extra_args': {
-            'flavor': 'jetpack-addon',
-        }
-    },
-    'a11y': {
-        'suite': 'a11y',
-        'aliases': ('a11y', 'mochitest-a11y', 'accessibility'),
-        'enabled_apps': ('firefox',),
-        'extra_args': {
-            'flavor': 'a11y',
-        }
-    },
-}
-
-SUPPORTED_APPS = ['firefox', 'b2g', 'android', 'mulet']
-SUPPORTED_FLAVORS = list(chain.from_iterable([f['aliases'] for f in ALL_FLAVORS.values()]))
-CANONICAL_FLAVORS = sorted([f['aliases'][0] for f in ALL_FLAVORS.values()])
+SUPPORTED_APPS = ['firefox', 'android']
 
 parser = None
 
@@ -169,41 +112,6 @@ class MochitestRunner(MozbuildObject):
         tests = list(resolver.resolve_tests(paths=test_paths, cwd=cwd))
         return tests
 
-    def run_b2g_test(self, context, tests=None, suite='mochitest', **kwargs):
-        """Runs a b2g mochitest."""
-        if context.target_out:
-            host_webapps_dir = os.path.join(context.target_out, 'data', 'local', 'webapps')
-            if not os.path.isdir(os.path.join(
-                    host_webapps_dir, 'test-container.gaiamobile.org')):
-                print(ENG_BUILD_REQUIRED.format(host_webapps_dir))
-                sys.exit(1)
-
-        # TODO without os.chdir, chained imports fail below
-        os.chdir(self.mochitest_dir)
-
-        # The imp module can spew warnings if the modules below have
-        # already been imported, ignore them.
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-
-            import imp
-            path = os.path.join(self.mochitest_dir, 'runtestsb2g.py')
-            with open(path, 'r') as fh:
-                imp.load_module('mochitest', fh, path,
-                                ('.py', 'r', imp.PY_SOURCE))
-
-            import mochitest
-
-        options = Namespace(**kwargs)
-
-        from manifestparser import TestManifest
-        if tests:
-            manifest = TestManifest()
-            manifest.tests.extend(tests)
-            options.manifestFile = manifest
-
-        return mochitest.run_test_harness(parser, options)
-
     def run_desktop_test(self, context, tests=None, suite=None, **kwargs):
         """Runs a mochitest.
 
@@ -233,7 +141,7 @@ class MochitestRunner(MozbuildObject):
         options = Namespace(**kwargs)
 
         from manifestparser import TestManifest
-        if tests:
+        if tests and not options.manifestFile:
             manifest = TestManifest()
             manifest.tests.extend(tests)
             options.manifestFile = manifest
@@ -266,7 +174,7 @@ class MochitestRunner(MozbuildObject):
         options = Namespace(**kwargs)
 
         from manifestparser import TestManifest
-        if tests:
+        if tests and not options.manifestFile:
             manifest = TestManifest()
             manifest.tests.extend(tests)
             options.manifestFile = manifest
@@ -288,7 +196,7 @@ class MochitestRunner(MozbuildObject):
         options = Namespace(**kwargs)
 
         from manifestparser import TestManifest
-        if tests:
+        if tests and not options.manifestFile:
             manifest = TestManifest()
             manifest.tests.extend(tests)
             options.manifestFile = manifest
@@ -312,6 +220,9 @@ def setup_argument_parser():
 
         import imp
         path = os.path.join(build_obj.topobjdir, mochitest_dir, 'runtests.py')
+        if not os.path.exists(path):
+            path = os.path.join(here, "runtests.py")
+
         with open(path, 'r') as fh:
             imp.load_module('mochitest', fh, path,
                             ('.py', 'r', imp.PY_SOURCE))
@@ -350,7 +261,8 @@ def verify_host_bin():
     # validate MOZ_HOST_BIN environment variables for Android tests
     MOZ_HOST_BIN = os.environ.get('MOZ_HOST_BIN')
     if not MOZ_HOST_BIN:
-        print('environment variable MOZ_HOST_BIN must be set to a directory containing host xpcshell')
+        print('environment variable MOZ_HOST_BIN must be set to a directory containing host '
+              'xpcshell')
         return 1
     elif not os.path.isdir(MOZ_HOST_BIN):
         print('$MOZ_HOST_BIN does not specify a directory')
@@ -367,11 +279,9 @@ class MachCommands(MachCommandBase):
              conditions=[is_buildapp_in(*SUPPORTED_APPS)],
              description='Run any flavor of mochitest (integration test).',
              parser=setup_argument_parser)
-    @CommandArgument('-f', '--flavor',
-                     metavar='{{{}}}'.format(', '.join(CANONICAL_FLAVORS)),
-                     choices=SUPPORTED_FLAVORS,
-                     help='Only run tests of this flavor.')
     def run_mochitest_general(self, flavor=None, test_objects=None, resolve_tests=True, **kwargs):
+        from mochitest_options import ALL_FLAVORS
+
         buildapp = None
         for app in SUPPORTED_APPS:
             if is_buildapp_in(app)(self):
@@ -395,20 +305,6 @@ class MachCommands(MachCommandBase):
         test_paths = kwargs['test_paths']
         kwargs['test_paths'] = []
 
-        if test_paths and buildapp == 'b2g':
-            # In B2G there is often a 'gecko' directory, though topsrcdir is actually
-            # elsewhere. This little hack makes test paths like 'gecko/dom' work, even if
-            # GECKO_PATH is set in the .userconfig
-            gecko_path = mozpath.abspath(mozpath.join(kwargs['b2gPath'], 'gecko'))
-            if gecko_path != self.topsrcdir:
-                new_paths = []
-                for tp in test_paths:
-                    if mozpath.abspath(tp).startswith(gecko_path):
-                        new_paths.append(mozpath.relpath(tp, gecko_path))
-                    else:
-                        new_paths.append(tp)
-                test_paths = new_paths
-
         mochitest = self._spawn(MochitestRunner)
         tests = []
         if resolve_tests:
@@ -428,21 +324,31 @@ class MachCommands(MachCommandBase):
             if test['flavor'] not in ALL_FLAVORS:
                 continue
 
-            key = (test['flavor'], test['subsuite'])
+            key = (test['flavor'], test.get('subsuite', ''))
             if test['flavor'] not in flavors:
                 unsupported.add(key)
                 continue
 
             if subsuite == 'default':
                 # "--subsuite default" means only run tests that don't have a subsuite
-                if test['subsuite']:
+                if test.get('subsuite'):
                     unsupported.add(key)
                     continue
-            elif subsuite and test['subsuite'] != subsuite:
+            elif subsuite and test.get('subsuite', '') != subsuite:
                 unsupported.add(key)
                 continue
 
             suites[key].append(test)
+
+        if ('mochitest', 'media') in suites:
+            req = os.path.join('testing', 'tools', 'websocketprocessbridge',
+                               'websocketprocessbridge_requirements.txt')
+            self.virtualenv_manager.activate()
+            self.virtualenv_manager.install_pip_requirements(req, require_hashes=False)
+
+            # sys.executable is used to start the websocketprocessbridge, though for some
+            # reason it doesn't get set when calling `activate_this.py` in the virtualenv.
+            sys.executable = self.virtualenv_manager.python_path
 
         # This is a hack to introduce an option in mach to not send
         # filtered tests to the mochitest harness. Mochitest harness will read
@@ -476,9 +382,7 @@ class MachCommands(MachCommandBase):
                 buildapp, '\n'.join(sorted(msg))))
             return 1
 
-        if buildapp in ('b2g',):
-            run_mochitest = mochitest.run_b2g_test
-        elif buildapp == 'android':
+        if buildapp == 'android':
             from mozrunner.devices.android_device import grant_runtime_permissions
             grant_runtime_permissions(self)
             run_mochitest = mochitest.run_android_test

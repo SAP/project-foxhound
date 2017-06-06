@@ -337,14 +337,6 @@ public:
     eIntID_SpellCheckerUnderlineStyle,
 
     /**
-     * If this metric != 0, show icons in menus.
-     */
-    eIntID_ImagesInMenus,
-    /**
-     * If this metric != 0, show icons in buttons.
-     */
-    eIntID_ImagesInButtons,
-    /**
      * If this metric != 0, support window dragging on the menubar.
      */
     eIntID_MenuBarDrag,
@@ -426,6 +418,7 @@ public:
    * Operating system versions.
    */
   enum OperatingSystemVersion {
+    // XXX: The XP and Vista values can now be removed (see bug 1330146).
     eOperatingSystemVersion_WindowsXP = 0,
     eOperatingSystemVersion_WindowsVista,
     eOperatingSystemVersion_Windows7,

@@ -10,7 +10,11 @@
 define(function (require, exports, module) {
   // Dependencies
   const React = require("devtools/client/shared/vendor/react");
-  const { cropMultipleLines } = require("./rep-utils");
+
+  const {
+    cropString,
+    wrapRender,
+  } = require("./rep-utils");
 
   // Shortcuts
   const { span } = React.DOM;
@@ -21,28 +25,42 @@ define(function (require, exports, module) {
   const StringRep = React.createClass({
     displayName: "StringRep",
 
-    render: function () {
+    propTypes: {
+      useQuotes: React.PropTypes.bool,
+      style: React.PropTypes.object,
+      object: React.PropTypes.string.isRequired,
+      member: React.PropTypes.any,
+      cropLimit: React.PropTypes.number,
+    },
+
+    getDefaultProps: function () {
+      return {
+        useQuotes: true,
+      };
+    },
+
+    render: wrapRender(function () {
       let text = this.props.object;
       let member = this.props.member;
+      let style = this.props.style;
+
+      let config = {className: "objectBox objectBox-string"};
+      if (style) {
+        config.style = style;
+      }
+
       if (member && member.open) {
-        return (
-          span({className: "objectBox objectBox-string"},
-            "\"" + text + "\""
-          )
-        );
+        return span(config, "\"" + text + "\"");
       }
 
       let croppedString = this.props.cropLimit ?
-        cropMultipleLines(text, this.props.cropLimit) : cropMultipleLines(text);
+        cropString(text, this.props.cropLimit) : cropString(text);
 
-      let formattedString = this.props.omitQuotes ?
-        croppedString : "\"" + croppedString + "\"";
+      let formattedString = this.props.useQuotes ?
+        "\"" + croppedString + "\"" : croppedString;
 
-      return (
-        span({className: "objectBox objectBox-string"}, formattedString
-        )
-      );
-    },
+      return span(config, formattedString);
+    }),
   });
 
   function supportsObject(object, type) {

@@ -9,8 +9,9 @@
 #include "nsStyleSheetService.h"
 #include "mozilla/CSSStyleSheet.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/StyleSheetHandle.h"
-#include "mozilla/StyleSheetHandleInlines.h"
+#include "mozilla/PreloadedStyleSheet.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Unused.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/ContentParent.h"
@@ -21,6 +22,7 @@
 #include "nsISupportsPrimitives.h"
 #include "nsISimpleEnumerator.h"
 #include "nsNetUtil.h"
+#include "nsIConsoleService.h"
 #include "nsIObserverService.h"
 #include "nsLayoutStatics.h"
 
@@ -81,7 +83,7 @@ nsStyleSheetService::RegisterFromEnumerator(nsICategoryManager  *aManager,
 }
 
 int32_t
-nsStyleSheetService::FindSheetByURI(const nsTArray<StyleSheetHandle::RefPtr>& aSheets,
+nsStyleSheetService::FindSheetByURI(const nsTArray<RefPtr<StyleSheet>>& aSheets,
                                     nsIURI* aSheetURI)
 {
   for (int32_t i = aSheets.Length() - 1; i >= 0; i-- ) {
@@ -135,7 +137,27 @@ NS_IMETHODIMP
 nsStyleSheetService::LoadAndRegisterSheet(nsIURI *aSheetURI,
                                           uint32_t aSheetType)
 {
-  nsresult rv = LoadAndRegisterSheetInternal(aSheetURI, aSheetType);
+  // Warn developers if their stylesheet URL has a #ref at the end.
+  // Stylesheet URIs don't benefit from having a #ref suffix -- and if the
+  // sheet is a data URI, someone might've created this #ref by accident (and
+  // truncated their data-URI stylesheet) by using an unescaped # character in
+  // a #RRGGBB color or #foo() ID-selector in their data-URI representation.
+  bool hasRef;
+  nsresult rv = aSheetURI->GetHasRef(&hasRef);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (aSheetURI && hasRef) {
+    nsCOMPtr<nsIConsoleService> consoleService =
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID);
+    NS_WARNING_ASSERTION(consoleService, "Failed to get console service!");
+    if (consoleService) {
+      const char16_t* message = u"nsStyleSheetService::LoadAndRegisterSheet: "
+        u"URI contains unescaped hash character, which might be truncating "
+        u"the sheet, if it's a data URI.";
+      consoleService->LogStringMessage(message);
+    }
+  }
+
+  rv = LoadAndRegisterSheetInternal(aSheetURI, aSheetType);
   if (NS_SUCCEEDED(rv)) {
     const char* message;
     switch (aSheetType) {
@@ -158,7 +180,7 @@ nsStyleSheetService::LoadAndRegisterSheet(nsIURI *aSheetURI,
 
       // XXXheycam Once the nsStyleSheetService can hold ServoStyleSheets too,
       // we'll need to include them in the notification.
-      StyleSheetHandle sheet = mSheets[aSheetType].LastElement();
+      StyleSheet* sheet = mSheets[aSheetType].LastElement();
       if (sheet->IsGecko()) {
         CSSStyleSheet* cssSheet = sheet->AsGecko();
         serv->NotifyObservers(NS_ISUPPORTS_CAST(nsIDOMCSSStyleSheet*, cssSheet),
@@ -216,7 +238,7 @@ nsStyleSheetService::LoadAndRegisterSheetInternal(nsIURI *aSheetURI,
   // style sheet.
   RefPtr<css::Loader> loader = new css::Loader(StyleBackendType::Gecko);
 
-  StyleSheetHandle::RefPtr sheet;
+  RefPtr<StyleSheet> sheet;
   nsresult rv = loader->LoadSheetSync(aSheetURI, parsingMode, true, &sheet);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -241,11 +263,14 @@ nsStyleSheetService::SheetRegistered(nsIURI *sheetURI,
 }
 
 NS_IMETHODIMP
-nsStyleSheetService::PreloadSheet(nsIURI *aSheetURI, uint32_t aSheetType,
-                                  nsIDOMStyleSheet **aSheet)
+nsStyleSheetService::PreloadSheet(nsIURI* aSheetURI, uint32_t aSheetType,
+                                  nsIPreloadedStyleSheet** aSheet)
 {
   NS_PRECONDITION(aSheet, "Null out param");
   NS_ENSURE_ARG_POINTER(aSheetURI);
+
+  *aSheet = nullptr;
+
   css::SheetParsingMode parsingMode;
   switch (aSheetType) {
     case AGENT_SHEET:
@@ -265,21 +290,12 @@ nsStyleSheetService::PreloadSheet(nsIURI *aSheetURI, uint32_t aSheetType,
       return NS_ERROR_INVALID_ARG;
   }
 
-  // XXXheycam PreloadSheet can't support ServoStyleSheets until they implement
-  // nsIDOMStyleSheet.
-
-  RefPtr<css::Loader> loader = new css::Loader(StyleBackendType::Gecko);
-
-  StyleSheetHandle::RefPtr sheet;
-  nsresult rv = loader->LoadSheetSync(aSheetURI, parsingMode, true, &sheet);
+  RefPtr<PreloadedStyleSheet> sheet;
+  nsresult rv = PreloadedStyleSheet::Create(aSheetURI, parsingMode,
+                                            getter_AddRefs(sheet));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  MOZ_ASSERT(sheet->IsGecko(),
-             "stylo: didn't expect Loader to create a ServoStyleSheet");
-
-  RefPtr<CSSStyleSheet> cssSheet = sheet->AsGecko();
-  cssSheet.forget(aSheet);
-
+  sheet.forget(aSheet);
   return NS_OK;
 }
 
@@ -293,7 +309,7 @@ nsStyleSheetService::UnregisterSheet(nsIURI *aSheetURI, uint32_t aSheetType)
 
   int32_t foundIndex = FindSheetByURI(mSheets[aSheetType], aSheetURI);
   NS_ENSURE_TRUE(foundIndex >= 0, NS_ERROR_INVALID_ARG);
-  StyleSheetHandle::RefPtr sheet = mSheets[aSheetType][foundIndex];
+  RefPtr<StyleSheet> sheet = mSheets[aSheetType][foundIndex];
   mSheets[aSheetType].RemoveElementAt(foundIndex);
 
   const char* message;
@@ -376,7 +392,7 @@ nsStyleSheetService::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) co
   size_t n = aMallocSizeOf(this);
   for (auto& sheetArray : mSheets) {
     n += sheetArray.ShallowSizeOfExcludingThis(aMallocSizeOf);
-    for (StyleSheetHandle sheet : sheetArray) {
+    for (StyleSheet* sheet : sheetArray) {
       n += sheet->SizeOfIncludingThis(aMallocSizeOf);
     }
   }

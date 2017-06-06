@@ -82,7 +82,7 @@
 }
 
 #identity-popup-multiView > .panel-viewcontainer > .panel-viewstack > .panel-subviews {
-  background: var(--panel-arrowcontent-background);
+  background: var(--arrowpanel-background);
   padding: 0;
 }
 
@@ -103,7 +103,7 @@
 #identity-popup-permissions-content,
 #tracking-protection-content {
   padding: 0.5em 0 1em;
-  /* .identity-popup-headline.host depends on this width */
+  /* .identity-popup-host depends on this width */
   padding-inline-start: calc(2em + 24px);
   padding-inline-end: 1em;
 }
@@ -124,12 +124,8 @@
   width: var(--identity-popup-expander-width);
   border: 0 none;
   -moz-appearance: none;
-  background-image: url("chrome://browser/skin/controlcenter/arrow-subview.svg"),
-                    linear-gradient(rgba(255,255,255,0.3), transparent);
+  background: url("chrome://browser/skin/controlcenter/arrow-subview.svg") center no-repeat;
   background-size: 16px, auto;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-color: transparent;
 }
 
 .identity-popup-expander:-moz-locale-dir(rtl) {
@@ -157,6 +153,8 @@
 
 .identity-popup-expander:hover {
   background-color: var(--arrowpanel-dimmed);
+  background-image: url("chrome://browser/skin/controlcenter/arrow-subview.svg"),
+                    linear-gradient(rgba(255,255,255,0.3), transparent);
 }
 
 .identity-popup-expander:hover:active {
@@ -184,7 +182,7 @@
   font-size: 150%;
 }
 
-.identity-popup-headline.host {
+.identity-popup-host {
   word-wrap: break-word;
   /* 1em + 2em + 24px is #identity-popup-security-content padding
    * 30em is .panel-mainview:not([panelid="PanelUI-popup"]) width */
@@ -425,7 +423,7 @@ description#identity-popup-content-verifier,
   width: 16px;
   height: 16px;
   list-style-image: url(chrome://browser/skin/panel-icons.svg#cancel);
-  filter: url(chrome://browser/skin/filters.svg#fill);
+  filter: url(chrome://global/skin/filters.svg#fill);
   fill: graytext;
 }
 

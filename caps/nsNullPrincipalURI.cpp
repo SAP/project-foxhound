@@ -98,6 +98,8 @@ nsNullPrincipalURI::GetAsciiSpec(nsACString &_spec)
   nsAutoCString buffer;
   // Ignore the return value -- nsNullPrincipalURI::GetSpec() is infallible.
   Unused << GetSpec(buffer);
+  // This uses the infallible version of |NS_EscapeURL| as |GetSpec| is
+  // already infallible.
   NS_EscapeURL(buffer, esc_OnlyNonASCII | esc_AlwaysCopy, _spec);
   return NS_OK;
 }
@@ -161,6 +163,32 @@ nsNullPrincipalURI::GetPath(nsACString &_path)
 
 NS_IMETHODIMP
 nsNullPrincipalURI::SetPath(const nsACString &aPath)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsNullPrincipalURI::GetFilePath(nsACString &aFilePath)
+{
+  aFilePath.Truncate();
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsNullPrincipalURI::SetFilePath(const nsACString &aFilePath)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsNullPrincipalURI::GetQuery(nsACString &aQuery)
+{
+  aQuery.Truncate();
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsNullPrincipalURI::SetQuery(const nsACString &aQuery)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

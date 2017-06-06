@@ -83,6 +83,8 @@ AccessibleCaretManager::sCaretsAllowDraggingAcrossOtherCaret = true;
 AccessibleCaretManager::sHapticFeedback = false;
 /*static*/ bool
 AccessibleCaretManager::sExtendSelectionForPhoneNumber = false;
+/*static*/ bool
+AccessibleCaretManager::sHideCaretsForMouseInput = true;
 
 AccessibleCaretManager::AccessibleCaretManager(nsIPresShell* aPresShell)
   : mPresShell(aPresShell)
@@ -114,6 +116,8 @@ AccessibleCaretManager::AccessibleCaretManager(nsIPresShell* aPresShell)
                                  "layout.accessiblecaret.hapticfeedback");
     Preferences::AddBoolVarCache(&sExtendSelectionForPhoneNumber,
       "layout.accessiblecaret.extend_selection_for_phone_number");
+    Preferences::AddBoolVarCache(&sHideCaretsForMouseInput,
+      "layout.accessiblecaret.hide_carets_for_mouse_input");
     addedPrefs = true;
   }
 }
@@ -181,6 +185,22 @@ AccessibleCaretManager::OnSelectionChanged(nsIDOMDocument* aDoc,
   // Range will collapse after cutting or copying text.
   if (aReason & (nsISelectionListener::COLLAPSETOSTART_REASON |
                  nsISelectionListener::COLLAPSETOEND_REASON)) {
+    HideCarets();
+    return NS_OK;
+  }
+
+  // For mouse input we don't want to show the carets.
+  if (sHideCaretsForMouseInput &&
+      mLastInputSource == nsIDOMMouseEvent::MOZ_SOURCE_MOUSE) {
+    HideCarets();
+    return NS_OK;
+  }
+
+  // When we want to hide the carets for mouse input, hide them for select
+  // all action fired by keyboard as well.
+  if (sHideCaretsForMouseInput &&
+      mLastInputSource == nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD &&
+      (aReason & nsISelectionListener::SELECTALL_REASON)) {
     HideCarets();
     return NS_OK;
   }
@@ -536,6 +556,16 @@ AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint)
     ProvideHapticFeedback();
   };
 
+  // If the long-tap is landing on a pre-existing selection, don't replace
+  // it with a new one. Instead just return and let the context menu pop up
+  // on the pre-existing selection.
+  if (GetCaretMode() == CaretMode::Selection &&
+      GetSelection()->ContainsPoint(aPoint)) {
+    AC_LOG("%s: UpdateCarets() for current selection", __FUNCTION__);
+    UpdateCaretsWithHapticFeedback();
+    return NS_OK;
+  }
+
   if (!mPresShell) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -585,8 +615,7 @@ AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint)
     return NS_OK;
   }
 
-  bool selectable = false;
-  ptFrame->IsSelectable(&selectable, nullptr);
+  bool selectable = ptFrame->IsSelectable(nullptr);
 
 #ifdef DEBUG_FRAME_DUMP
   AC_LOG("%s: %s %s selectable.", __FUNCTION__, ptFrame->ListTag().get(),
@@ -611,16 +640,6 @@ AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint)
   if (!ptFrame.IsAlive()) {
     // Cannot continue because ptFrame died.
     return NS_ERROR_FAILURE;
-  }
-
-  if (GetCaretMode() == CaretMode::Selection &&
-      !mFirstCaret->IsLogicallyVisible() && !mSecondCaret->IsLogicallyVisible()) {
-    // We have a selection while both carets have Appearance::None because of
-    // previous operations like blur event. Just update carets on the selection
-    // without selecting a new word.
-    AC_LOG("%s: UpdateCarets() for current selection", __FUNCTION__);
-    UpdateCaretsWithHapticFeedback();
-    return NS_OK;
   }
 
   // Then try select a word under point.
@@ -670,6 +689,14 @@ AccessibleCaretManager::OnScrollEnd()
       // need to update it.
       return;
     }
+  }
+
+  // For mouse input we don't want to show the carets.
+  if (sHideCaretsForMouseInput &&
+      mLastInputSource == nsIDOMMouseEvent::MOZ_SOURCE_MOUSE) {
+    AC_LOG("%s: HideCarets()", __FUNCTION__);
+    HideCarets();
+    return;
   }
 
   AC_LOG("%s: UpdateCarets()", __FUNCTION__);
@@ -723,6 +750,12 @@ AccessibleCaretManager::OnFrameReconstruction()
 {
   mFirstCaret->EnsureApzAware();
   mSecondCaret->EnsureApzAware();
+}
+
+void
+AccessibleCaretManager::SetLastInputSource(uint16_t aInputSource)
+{
+  mLastInputSource = aInputSource;
 }
 
 Selection*
@@ -962,7 +995,7 @@ void
 AccessibleCaretManager::FlushLayout() const
 {
   if (mPresShell) {
-    mPresShell->FlushPendingNotifications(Flush_Layout);
+    mPresShell->FlushPendingNotifications(FlushType::Layout);
   }
 }
 
@@ -1178,9 +1211,7 @@ AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint)
     return NS_ERROR_FAILURE;
   }
 
-  bool selectable;
-  newFrame->IsSelectable(&selectable, nullptr);
-  if (!selectable) {
+  if (!newFrame->IsSelectable(nullptr)) {
     return NS_ERROR_FAILURE;
   }
 

@@ -30,19 +30,19 @@ MOZ_XULRUNNER=
 MOZ_CAPTURE=1
 MOZ_RAW=1
 
+MOZ_RUST_MP4PARSE=1
+
 # use custom widget for html:select
 MOZ_USE_NATIVE_POPUP_WINDOWS=1
 
 MOZ_APP_ID={aa3c5121-dab2-40e2-81ca-7ea25febc110}
-
-MOZ_APP_STATIC_INI=1
 
 # Enable second screen using native Android libraries.
 MOZ_NATIVE_DEVICES=1
 
 # Enable install tracking SDK if we have Google Play support; MOZ_NATIVE_DEVICES
 # is a proxy flag for that support.
-if test "$RELEASE_BUILD"; then
+if test "$RELEASE_OR_BETA"; then
 if test "$MOZ_NATIVE_DEVICES"; then
   MOZ_INSTALL_TRACKING=1
 fi

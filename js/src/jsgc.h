@@ -12,6 +12,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/TypeTraits.h"
 
 #include "js/GCAPI.h"
@@ -48,6 +49,24 @@ enum class State {
 #define MAKE_STATE(name) name,
     GCSTATES(MAKE_STATE)
 #undef MAKE_STATE
+};
+
+// Reasons we reset an ongoing incremental GC or perform a non-incremental GC.
+#define GC_ABORT_REASONS(D) \
+    D(None) \
+    D(NonIncrementalRequested) \
+    D(AbortRequested) \
+    D(Unused1) \
+    D(IncrementalDisabled) \
+    D(ModeChange) \
+    D(MallocBytesTrigger) \
+    D(GCBytesTrigger) \
+    D(ZoneChange) \
+    D(CompartmentRevived)
+enum class AbortReason {
+#define MAKE_REASON(name) name,
+    GC_ABORT_REASONS(MAKE_REASON)
+#undef MAKE_REASON
 };
 
 /*
@@ -436,6 +455,11 @@ class ArenaList {
         return !*cursorp_;
     }
 
+    void moveCursorToEnd() {
+        while (!isCursorAtEnd())
+            cursorp_ = &(*cursorp_)->next;
+    }
+
     // This can return nullptr.
     Arena* arenaAfterCursor() const {
         check();
@@ -585,6 +609,12 @@ class SortedArenaList
     }
 };
 
+enum ShouldCheckThresholds
+{
+    DontCheckThresholds = 0,
+    CheckThresholds = 1
+};
+
 class ArenaLists
 {
     JSRuntime* runtime_;
@@ -715,7 +745,7 @@ class ArenaLists
             freeLists[i] = &placeholder;
     }
 
-    inline void prepareForIncrementalGC(JSRuntime* rt);
+    inline void prepareForIncrementalGC();
 
     /* Check if this arena is in use. */
     bool arenaIsInUse(Arena* arena, AllocKind kind) const {
@@ -779,19 +809,16 @@ class ArenaLists
     };
 
   private:
-    inline void finalizeNow(FreeOp* fop, const FinalizePhase& phase);
     inline void queueForForegroundSweep(FreeOp* fop, const FinalizePhase& phase);
     inline void queueForBackgroundSweep(FreeOp* fop, const FinalizePhase& phase);
 
-    inline void finalizeNow(FreeOp* fop, AllocKind thingKind,
-                            KeepArenasEnum keepArenas, Arena** empty = nullptr);
-    inline void forceFinalizeNow(FreeOp* fop, AllocKind thingKind,
-                                 KeepArenasEnum keepArenas, Arena** empty = nullptr);
+    inline void finalizeNow(FreeOp* fop, AllocKind thingKind, Arena** empty = nullptr);
     inline void queueForForegroundSweep(FreeOp* fop, AllocKind thingKind);
     inline void queueForBackgroundSweep(FreeOp* fop, AllocKind thingKind);
     inline void mergeSweptArenas(AllocKind thingKind);
 
     TenuredCell* allocateFromArena(JS::Zone* zone, AllocKind thingKind,
+                                   ShouldCheckThresholds checkThresholds,
                                    AutoMaybeStartBackgroundAllocation& maybeStartBGAlloc);
     inline TenuredCell* allocateFromArenaInner(JS::Zone* zone, Arena* arena, AllocKind kind);
 
@@ -808,9 +835,6 @@ const size_t MAX_EMPTY_CHUNK_AGE = 4;
 } /* namespace gc */
 
 class InterpreterFrame;
-
-extern void
-MarkCompartmentActive(js::InterpreterFrame* fp);
 
 extern void
 TraceRuntime(JSTracer* trc);
@@ -924,7 +948,7 @@ class GCParallelTask
     } state;
 
     // Amount of time this task took to execute.
-    uint64_t duration_;
+    mozilla::TimeDuration duration_;
 
     explicit GCParallelTask(const GCParallelTask&) = delete;
 
@@ -947,7 +971,7 @@ class GCParallelTask
     virtual ~GCParallelTask();
 
     // Time spent in the most recent invocation of this task.
-    int64_t duration() const { return duration_; }
+    mozilla::TimeDuration duration() const { return duration_; }
 
     // The simple interface to a parallel task works exactly like pthreads.
     bool start();
@@ -976,7 +1000,7 @@ class GCParallelTask
     // This should be friended to HelperThread, but cannot be because it
     // would introduce several circular dependencies.
   public:
-    virtual void runFromHelperThread(AutoLockHelperThreadState& locked);
+    void runFromHelperThread(AutoLockHelperThreadState& locked);
 };
 
 typedef void (*IterateChunkCallback)(JSRuntime* rt, void* data, gc::Chunk* chunk);
@@ -1226,7 +1250,7 @@ CheckValueAfterMovingGC(const JS::Value& value)
             D(ElementsBarrier, 12)             \
             D(CheckHashTablesOnMinorGC, 13)    \
             D(Compact, 14)                     \
-            D(CheckHeapOnMovingGC, 15)         \
+            D(CheckHeapAfterGC, 15)            \
             D(CheckNursery, 16)
 
 enum class ZealMode {

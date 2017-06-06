@@ -57,7 +57,7 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
  , mValidator(nullptr)
  , mInnerWindowId(0)
  , mCORSMode(imgIRequest::CORS_NONE)
- , mReferrerPolicy(mozilla::net::RP_Default)
+ , mReferrerPolicy(mozilla::net::RP_Unset)
  , mImageErrorCode(NS_OK)
  , mMutex("imgRequest")
  , mProgressTracker(new ProgressTracker())
@@ -798,6 +798,12 @@ imgRequest::OnStopRequest(nsIRequest* aRequest,
 
   RefPtr<Image> image = GetImage();
 
+  RefPtr<imgRequest> strongThis = this;
+
+  if (mIsMultiPartChannel && mNewPartPending) {
+    OnDataAvailable(aRequest, ctxt, nullptr, 0, 0);
+  }
+
   // XXXldb What if this is a non-last part of a multipart request?
   // xxx before we release our reference to mRequest, lets
   // save the last status that we saw so that the
@@ -919,13 +925,15 @@ PrepareForNewPart(nsIRequest* aRequest, nsIInputStream* aInStr, uint32_t aCount,
 {
   NewPartResult result(aExistingImage);
 
-  mimetype_closure closure;
-  closure.newType = &result.mContentType;
+  if (aInStr) {
+    mimetype_closure closure;
+    closure.newType = &result.mContentType;
 
-  // Look at the first few bytes and see if we can tell what the data is from
-  // that since servers tend to lie. :(
-  uint32_t out;
-  aInStr->ReadSegments(sniff_mimetype_callback, &closure, aCount, &out);
+    // Look at the first few bytes and see if we can tell what the data is from
+    // that since servers tend to lie. :(
+    uint32_t out;
+    aInStr->ReadSegments(sniff_mimetype_callback, &closure, aCount, &out);
+  }
 
   nsCOMPtr<nsIChannel> chan(do_QueryInterface(aRequest));
   if (result.mContentType.IsEmpty()) {
@@ -935,7 +943,9 @@ PrepareForNewPart(nsIRequest* aRequest, nsIInputStream* aInStr, uint32_t aCount,
       MOZ_LOG(gImgLog,
               LogLevel::Error, ("imgRequest::PrepareForNewPart -- "
                                 "Content type unavailable from the channel\n"));
-      return result;
+      if (!aIsMultipart) {
+        return result;
+      }
     }
   }
 
@@ -963,6 +973,7 @@ PrepareForNewPart(nsIRequest* aRequest, nsIInputStream* aInStr, uint32_t aCount,
     if (result.mIsFirstPart) {
       // First part for a multipart channel. Create the MultipartImage wrapper.
       MOZ_ASSERT(aProgressTracker, "Shouldn't have given away tracker yet");
+      aProgressTracker->SetIsMultipart();
       result.mImage =
         ImageFactory::CreateMultipartImage(partImage, aProgressTracker);
     } else {
@@ -1038,7 +1049,7 @@ imgRequest::FinishPreparingForNewPart(const NewPartResult& aResult)
   }
 
   if (IsDecodeRequested()) {
-    aResult.mImage->StartDecoding();
+    aResult.mImage->StartDecoding(imgIContainer::FLAG_NONE);
   }
 }
 
@@ -1105,15 +1116,17 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
   }
 
   // Notify the image that it has new data.
-  nsresult rv =
-    image->OnImageDataAvailable(aRequest, aContext, aInStr, aOffset, aCount);
+  if (aInStr) {
+    nsresult rv =
+      image->OnImageDataAvailable(aRequest, aContext, aInStr, aOffset, aCount);
 
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gImgLog, LogLevel::Warning,
-           ("[this=%p] imgRequest::OnDataAvailable -- "
-            "copy to RasterImage failed\n", this));
-    Cancel(NS_IMAGELIB_ERROR_FAILURE);
-    return NS_BINDING_ABORTED;
+    if (NS_FAILED(rv)) {
+      MOZ_LOG(gImgLog, LogLevel::Warning,
+             ("[this=%p] imgRequest::OnDataAvailable -- "
+              "copy to RasterImage failed\n", this));
+      Cancel(NS_IMAGELIB_ERROR_FAILURE);
+      return NS_BINDING_ABORTED;
+    }
   }
 
   return NS_OK;

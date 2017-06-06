@@ -12,14 +12,19 @@ define(function (require, exports, module) {
   const React = require("devtools/client/shared/vendor/react");
 
   const { isGrip } = require("./rep-utils");
+  const { MODE } = require("./constants");
 
   // Load all existing rep templates
   const { Undefined } = require("./undefined");
   const { Null } = require("./null");
   const { StringRep } = require("./string");
+  const { LongStringRep } = require("./long-string");
   const { Number } = require("./number");
   const { ArrayRep } = require("./array");
   const { Obj } = require("./object");
+  const { SymbolRep } = require("./symbol");
+  const { InfinityRep } = require("./infinity");
+  const { NaNRep } = require("./nan");
 
   // DOM types (grips)
   const { Attribute } = require("./attribute");
@@ -27,13 +32,18 @@ define(function (require, exports, module) {
   const { Document } = require("./document");
   const { Event } = require("./event");
   const { Func } = require("./function");
+  const { PromiseRep } = require("./promise");
   const { RegExp } = require("./regexp");
   const { StyleSheet } = require("./stylesheet");
+  const { CommentNode } = require("./comment-node");
+  const { ElementNode } = require("./element-node");
   const { TextNode } = require("./text-node");
+  const { ErrorRep } = require("./error");
   const { Window } = require("./window");
   const { ObjectWithText } = require("./object-with-text");
   const { ObjectWithURL } = require("./object-with-url");
   const { GripArray } = require("./grip-array");
+  const { GripMap } = require("./grip-map");
   const { Grip } = require("./grip");
 
   // List of all registered template.
@@ -44,20 +54,29 @@ define(function (require, exports, module) {
     StyleSheet,
     Event,
     DateTime,
+    CommentNode,
+    ElementNode,
     TextNode,
     Attribute,
+    LongStringRep,
     Func,
+    PromiseRep,
     ArrayRep,
     Document,
     Window,
     ObjectWithText,
     ObjectWithURL,
+    ErrorRep,
     GripArray,
+    GripMap,
     Grip,
     Undefined,
     Null,
     StringRep,
     Number,
+    SymbolRep,
+    InfinityRep,
+    NaNRep,
   ];
 
   /**
@@ -72,7 +91,8 @@ define(function (require, exports, module) {
     propTypes: {
       object: React.PropTypes.any,
       defaultRep: React.PropTypes.object,
-      mode: React.PropTypes.string
+      // @TODO Change this to Object.values once it's supported in Node's version of V8
+      mode: React.PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
     },
 
     render: function () {
@@ -98,6 +118,8 @@ define(function (require, exports, module) {
     let type = typeof object;
     if (type == "object" && object instanceof String) {
       type = "string";
+    } else if (object && type == "object" && object.type) {
+      type = object.type;
     }
 
     if (isGrip(object)) {
@@ -123,4 +145,36 @@ define(function (require, exports, module) {
 
   // Exports from this module
   exports.Rep = Rep;
+
+  // Export all reps
+  exports.REPS = {
+    ArrayRep,
+    Attribute,
+    CommentNode,
+    DateTime,
+    Document,
+    ElementNode,
+    ErrorRep,
+    Event,
+    Func,
+    Grip,
+    GripArray,
+    GripMap,
+    InfinityRep,
+    LongStringRep,
+    NaNRep,
+    Null,
+    Number,
+    ObjectWithText,
+    ObjectWithURL,
+    PromiseRep,
+    RegExp,
+    Rep,
+    StringRep,
+    StyleSheet,
+    SymbolRep,
+    TextNode,
+    Undefined,
+    Window,
+  };
 });

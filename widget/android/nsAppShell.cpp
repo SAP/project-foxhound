@@ -30,6 +30,12 @@
 #include "nsToolkitCompsCID.h"
 #include "nsGeoPosition.h"
 
+#include "nsIDocument.h"
+#include "nsIWidget.h"
+#include "WidgetUtils.h"
+
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Hal.h"
@@ -59,6 +65,7 @@
 #endif
 
 #include "AndroidAlerts.h"
+#include "AndroidUiThread.h"
 #include "ANRReporter.h"
 #include "GeckoBatteryManager.h"
 #include "GeckoNetworkManager.h"
@@ -80,6 +87,9 @@ nsIGeolocationUpdate *gLocationCallback = nullptr;
 
 nsAppShell* nsAppShell::sAppShell;
 StaticAutoPtr<Mutex> nsAppShell::sAppShellLock;
+
+uint32_t nsAppShell::Queue::sLatencyCount[];
+uint64_t nsAppShell::Queue::sLatencyTime[];
 
 NS_IMPL_ISUPPORTS_INHERITED(nsAppShell, nsBaseAppShell, nsIObserver)
 
@@ -250,6 +260,19 @@ public:
         NotifyObservers(aTopic, aData);
     }
 
+    template<typename Functor>
+    static void OnNativeCall(Functor&& aCall)
+    {
+        MOZ_ASSERT(aCall.IsTarget(&NotifyPushObservers));
+        NS_DispatchToMainThread(NS_NewRunnableFunction(mozilla::Move(aCall)));
+    }
+
+    static void NotifyPushObservers(jni::String::Param aTopic,
+                                    jni::String::Param aData)
+    {
+        NotifyObservers(aTopic, aData);
+    }
+
     static void NotifyObservers(jni::String::Param aTopic,
                                 jni::String::Param aData)
     {
@@ -339,14 +362,16 @@ public:
     }
 
     static void NotifyAlertListener(jni::String::Param aName,
-                                    jni::String::Param aTopic)
+                                    jni::String::Param aTopic,
+                                    jni::String::Param aCookie)
     {
-        if (!aName || !aTopic) {
+        if (!aName || !aTopic || !aCookie) {
             return;
         }
 
         AndroidAlerts::NotifyListener(
-                aName->ToString(), aTopic->ToCString().get());
+                aName->ToString(), aTopic->ToCString().get(),
+                aCookie->ToString().get());
     }
 
     static void OnFullScreenPluginHidden(jni::Object::Param aView)
@@ -374,17 +399,22 @@ nsAppShell::nsAppShell()
         AndroidBridge::ConstructBridge();
         GeckoAppShellSupport::Init();
         GeckoThreadSupport::Init();
-        mozilla::ANRReporter::Init();
         mozilla::GeckoBatteryManager::Init();
         mozilla::GeckoNetworkManager::Init();
         mozilla::GeckoScreenOrientation::Init();
-        mozilla::MemoryMonitor::Init();
         mozilla::PrefsHelper::Init();
-        mozilla::widget::Telemetry::Init();
-        mozilla::ThumbnailHelper::Init();
         nsWindow::InitNatives();
 
+        if (jni::IsFennec()) {
+            mozilla::ANRReporter::Init();
+            mozilla::MemoryMonitor::Init();
+            mozilla::widget::Telemetry::Init();
+            mozilla::ThumbnailHelper::Init();
+        }
+
         java::GeckoThread::SetState(java::GeckoThread::State::JNI_READY());
+
+        CreateAndroidUiThread();
     }
 
     sPowerManagerService = do_GetService(POWERMANAGERSERVICE_CONTRACTID);
@@ -415,6 +445,7 @@ nsAppShell::~nsAppShell()
     }
 
     if (jni::IsAvailable()) {
+        DestroyAndroidUiThread();
         AndroidBridge::DeconstructBridge();
     }
 }
@@ -423,6 +454,43 @@ void
 nsAppShell::NotifyNativeEvent()
 {
     mEventQueue.Signal();
+}
+
+void
+nsAppShell::RecordLatencies()
+{
+    if (!mozilla::Telemetry::CanRecordExtended()) {
+        return;
+    }
+
+    const mozilla::Telemetry::ID timeIDs[] = {
+        mozilla::Telemetry::ID::FENNEC_LOOP_UI_LATENCY,
+        mozilla::Telemetry::ID::FENNEC_LOOP_OTHER_LATENCY
+    };
+
+    static_assert(ArrayLength(Queue::sLatencyCount) == Queue::LATENCY_COUNT,
+                  "Count array length mismatch");
+    static_assert(ArrayLength(Queue::sLatencyTime) == Queue::LATENCY_COUNT,
+                  "Time array length mismatch");
+    static_assert(ArrayLength(timeIDs) == Queue::LATENCY_COUNT,
+                  "Time ID array length mismatch");
+
+    for (size_t i = 0; i < Queue::LATENCY_COUNT; i++) {
+        if (!Queue::sLatencyCount[i]) {
+            continue;
+        }
+
+        const uint64_t time = Queue::sLatencyTime[i] / 1000ull /
+                              Queue::sLatencyCount[i];
+        if (time) {
+            mozilla::Telemetry::Accumulate(
+                    timeIDs[i], uint32_t(std::min<uint64_t>(UINT32_MAX, time)));
+        }
+
+        // Reset latency counts.
+        Queue::sLatencyCount[i] = 0;
+        Queue::sLatencyTime[i] = 0;
+    }
 }
 
 #define PREFNAME_COALESCE_TOUCHES "dom.event.touch.coalescing.enabled"
@@ -506,13 +574,30 @@ nsAppShell::Observe(nsISupports* aSubject,
         removeObserver = true;
 
     } else if (!strcmp(aTopic, "chrome-document-loaded")) {
-        if (jni::IsAvailable()) {
-            // Our first window has loaded, assume any JS initialization has run.
-            java::GeckoThread::CheckAndSetState(
-                    java::GeckoThread::State::PROFILE_READY(),
-                    java::GeckoThread::State::RUNNING());
+        // Set the global ready state.
+        nsCOMPtr<nsIDocument> doc = do_QueryInterface(aSubject);
+        MOZ_ASSERT(doc);
+        nsCOMPtr<nsIWidget> widget =
+            WidgetUtils::DOMWindowToWidget(doc->GetWindow());
+
+        // `widget` may be one of several different types in the parent
+        // process, including the Android nsWindow, PuppetWidget, etc. To
+        // ensure that we only accept the Android nsWindow, we check that the
+        // widget is a top-level window and that its NS_NATIVE_WIDGET value is
+        // non-null, which is not the case for non-native widgets like
+        // PuppetWidget.
+        if (widget &&
+            widget->WindowType() == nsWindowType::eWindowType_toplevel &&
+            widget->GetNativeData(NS_NATIVE_WIDGET) == widget) {
+            if (jni::IsAvailable()) {
+                // When our first window has loaded, assume any JS
+                // initialization has run and set Gecko to ready.
+                java::GeckoThread::CheckAndSetState(
+                        java::GeckoThread::State::PROFILE_READY(),
+                        java::GeckoThread::State::RUNNING());
+            }
+            removeObserver = true;
         }
-        removeObserver = true;
 
     } else if (!strcmp(aTopic, "quit-application-granted")) {
         if (jni::IsAvailable()) {

@@ -24,8 +24,6 @@ MediaDataDecoderCallbackProxy::FlushComplete()
 RefPtr<MediaDataDecoder::InitPromise>
 MediaDataDecoderProxy::InternalInit()
 {
-  MOZ_ASSERT(!mIsShutdown);
-
   return mProxyDecoder->Init();
 }
 
@@ -78,7 +76,7 @@ MediaDataDecoderProxy::Shutdown()
 #if defined(DEBUG)
   mIsShutdown = true;
 #endif
-  mProxyThread->AsXPCOMThread()->Dispatch(NewRunnableMethod(mProxyDecoder,
+  mProxyThread->AsEventTarget()->Dispatch(NewRunnableMethod(mProxyDecoder,
                                                             &MediaDataDecoder::Shutdown),
                                           NS_DISPATCH_SYNC);
 }

@@ -16,7 +16,7 @@
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource:///modules/MigrationUtils.jsm");
+Cu.import("resource:///modules/MigrationUtils.jsm"); /* globals MigratorPrototype */
 Cu.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesBackups",
@@ -39,7 +39,7 @@ function FirefoxProfileMigrator() {
 
 FirefoxProfileMigrator.prototype = Object.create(MigratorPrototype);
 
-FirefoxProfileMigrator.prototype._getAllProfiles = function () {
+FirefoxProfileMigrator.prototype._getAllProfiles = function() {
   let allProfiles = new Map();
   let profiles =
     Components.classes["@mozilla.org/toolkit/profile-service;1"]
@@ -62,7 +62,7 @@ function sorter(a, b) {
 }
 
 Object.defineProperty(FirefoxProfileMigrator.prototype, "sourceProfiles", {
-  get: function() {
+  get() {
     return [...this._getAllProfiles().keys()].map(x => ({id: x, name: x})).sort(sorter);
   }
 });
@@ -94,7 +94,7 @@ FirefoxProfileMigrator.prototype.getResources = function(aProfile) {
   if (sourceProfileDir.equals(currentProfileDir))
     return null;
 
-  return this._getResourcesInternal(sourceProfileDir, currentProfileDir, aProfile);
+  return this._getResourcesInternal(sourceProfileDir, currentProfileDir);
 };
 
 FirefoxProfileMigrator.prototype.getLastUsedDate = function() {
@@ -104,7 +104,7 @@ FirefoxProfileMigrator.prototype.getLastUsedDate = function() {
   return Promise.resolve(new Date(0));
 };
 
-FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileDir, currentProfileDir, aProfile) {
+FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileDir, currentProfileDir) {
   let getFileResource = function(aMigrationType, aFileNames) {
     let files = [];
     for (let fileName of aFileNames) {
@@ -117,7 +117,7 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
     }
     return {
       type: aMigrationType,
-      migrate: function(aCallback) {
+      migrate(aCallback) {
         for (let file of files) {
           file.copyTo(currentProfileDir, "");
         }
@@ -130,8 +130,8 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
   let places = getFileResource(types.HISTORY, ["places.sqlite"]);
   let cookies = getFileResource(types.COOKIES, ["cookies.sqlite"]);
   let passwords = getFileResource(types.PASSWORDS,
-                                  ["signons.sqlite", "logins.json", "key3.db",
-                                   "signedInUser.json"]);
+    ["signons.sqlite", "logins.json", "key3.db",
+     "signedInUser.json"]);
   let formData = getFileResource(types.FORMDATA, ["formhistory.sqlite"]);
   let bookmarksBackups = getFileResource(types.OTHERDATA,
     [PlacesBackups.profileRelativeFolderPath]);
@@ -143,7 +143,7 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
   if (sessionFile) {
     session = {
       type: types.SESSION,
-      migrate: function(aCallback) {
+      migrate(aCallback) {
         sessionCheckpoints.copyTo(currentProfileDir, "sessionCheckpoints.json");
         let newSessionFile = currentProfileDir.clone();
         newSessionFile.append("sessionstore.js");
@@ -200,13 +200,13 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
 
       // If the 'datareporting' directory exists we migrate files from it.
       let haveStateFile = false;
-      let subdir = this._getFileObject(sourceProfileDir, "datareporting");
-      if (subdir && subdir.isDirectory()) {
+      let dataReportingDir = this._getFileObject(sourceProfileDir, "datareporting");
+      if (dataReportingDir && dataReportingDir.isDirectory()) {
         // Copy only specific files.
         let toCopy = ["state.json", "session-state.json"];
 
         let dest = createSubDir("datareporting");
-        let enumerator = subdir.directoryEntries;
+        let enumerator = dataReportingDir.directoryEntries;
         while (enumerator.hasMoreElements()) {
           let file = enumerator.getNext().QueryInterface(Ci.nsIFile);
           if (file.isDirectory() || toCopy.indexOf(file.leafName) == -1) {
@@ -225,9 +225,9 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
         // We first moved the client id management from the FHR implementation to the datareporting
         // service.
         // Consequently, we try to migrate an existing FHR state file here as a fallback.
-        let subdir = this._getFileObject(sourceProfileDir, "healthreport");
-        if (subdir && subdir.isDirectory()) {
-          let stateFile = this._getFileObject(subdir, "state.json");
+        let healthReportDir = this._getFileObject(sourceProfileDir, "healthreport");
+        if (healthReportDir && healthReportDir.isDirectory()) {
+          let stateFile = this._getFileObject(healthReportDir, "state.json");
           if (stateFile) {
             let dest = createSubDir("healthreport");
             stateFile.copyTo(dest, "");
@@ -237,7 +237,7 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
 
       aCallback(true);
     }
-  }
+  };
 
   return [places, cookies, passwords, formData, dictionary, bookmarksBackups,
           session, times, telemetry].filter(r => r);

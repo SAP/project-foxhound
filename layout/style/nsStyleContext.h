@@ -11,6 +11,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/RestyleLogging.h"
 #include "mozilla/StyleContextSource.h"
+#include "mozilla/StyleComplexColor.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsStyleSet.h"
 
@@ -20,6 +21,15 @@ class nsPresContext;
 namespace mozilla {
 enum class CSSPseudoElementType : uint8_t;
 } // namespace mozilla
+
+extern "C" {
+#define STYLE_STRUCT(name_, checkdata_cb_)     \
+  struct nsStyle##name_;                       \
+  const nsStyle##name_* Servo_GetStyle##name_( \
+    ServoComputedValuesBorrowedOrNull computed_values);
+#include "nsStyleStructList.h"
+#undef STYLE_STRUCT
+}
 
 /**
  * An nsStyleContext represents the computed style data for an element.
@@ -32,7 +42,7 @@ enum class CSSPseudoElementType : uint8_t;
  * (with a few exceptions, like system color changes), the data in an
  * nsStyleContext are also immutable (with the additional exception of
  * GetUniqueStyleData).  When style data change,
- * nsFrameManager::ReResolveStyleContext creates a new style context.
+ * ElementRestyler::Restyle creates a new style context.
  *
  * Style contexts are reference counted.  References are generally held
  * by:
@@ -178,32 +188,6 @@ public:
                      mozilla::NonOwningStyleContextSource aSource,
                      mozilla::NonOwningStyleContextSource aSourceIfVisited,
                      bool aRelevantLinkVisited);
-  /**
-   * Get the color property that should be used to fill text.
-   */
-  nsCSSPropertyID GetTextFillColorProp() {
-    return StyleText()->mWebkitTextFillColorForeground
-           ? eCSSProperty_color : eCSSProperty__webkit_text_fill_color;
-  }
-
-  /**
-   * Get the color that should be used to fill text: either
-   * the current foreground color, or a separately-specified text fill color.
-   */
-  nscolor GetTextFillColor() {
-    return (GetTextFillColorProp() == eCSSProperty_color)
-           ? StyleColor()->mColor : StyleText()->mWebkitTextFillColor;
-  }
-
-  /**
-   * Get the color that should be used to stroke text: either
-   * the current foreground color, or a separately-specified text stroke color.
-   */
-  nscolor GetTextStrokeColor() {
-    const nsStyleText* textStyle = StyleText();
-    return textStyle->mWebkitTextStrokeColorForeground
-           ? StyleColor()->mColor : textStyle->mWebkitTextStrokeColor;
-  }
 
   // Does this style context or any of its ancestors have text
   // decoration lines?
@@ -409,13 +393,18 @@ public:
    * Like the above, but allows comparing ServoComputedValues instead of needing
    * a full-fledged style context.
    */
-  nsChangeHint CalcStyleDifference(ServoComputedValues* aNewComputedValues,
+  nsChangeHint CalcStyleDifference(const ServoComputedValues* aNewComputedValues,
                                    nsChangeHint aParentHintsNotHandledForDescendants,
                                    uint32_t* aEqualStructs,
                                    uint32_t* aSamePointerStructs);
 
 private:
-  template<class StyleContextLike>
+  enum class NeutralChangeHandling {
+    Retain,
+    Strip,
+  };
+
+  template<class StyleContextLike, NeutralChangeHandling aNeutralChangeHandling>
   nsChangeHint CalcStyleDifferenceInternal(StyleContextLike* aNewContext,
                                            nsChangeHint aParentHintsNotHandledForDescendants,
                                            uint32_t* aEqualStructs,
@@ -426,14 +415,12 @@ public:
    * Get a color that depends on link-visitedness using this and
    * this->GetStyleIfVisited().
    *
-   * aProperty must be a color-valued property that StyleAnimationValue
-   * knows how to extract.  It must also be a property that we know to
-   * do change handling for in nsStyleContext::CalcDifference.
-   *
-   * Note that if aProperty is eCSSProperty_border_*_color, this
-   * function handles -moz-use-text-color.
+   * @param aField A pointer to a member variable in a style struct.
+   *               The member variable and its style struct must have
+   *               been listed in nsCSSVisitedDependentPropList.h.
    */
-  nscolor GetVisitedDependentColor(nsCSSPropertyID aProperty);
+  template<typename T, typename S>
+  nscolor GetVisitedDependentColor(T S::* aField);
 
   /**
    * aColors should be a two element array of nscolor in which the first
@@ -531,45 +518,6 @@ public:
   }
 
   mozilla::NonOwningStyleContextSource StyleSource() const { return mSource.AsRaw(); }
-
-#ifdef MOZ_STYLO
-  // NOTE: It'd be great to assert here that the previous change hint is always
-  // consumed.
-  //
-  // This is not the case right now, since the changes of childs of frames that
-  // go through frame construction are not consumed.
-  void StoreChangeHint(nsChangeHint aHint)
-  {
-    MOZ_ASSERT(!IsShared());
-    mStoredChangeHint = aHint;
-#ifdef DEBUG
-    mConsumedChangeHint = false;
-#endif
-  }
-
-  nsChangeHint ConsumeStoredChangeHint()
-  {
-    MOZ_ASSERT(!mConsumedChangeHint, "Re-consuming the same change hint!");
-    nsChangeHint result = mStoredChangeHint;
-    mStoredChangeHint = nsChangeHint(0);
-#ifdef DEBUG
-    mConsumedChangeHint = true;
-#endif
-    return result;
-  }
-#else
-  void StoreChangeHint(nsChangeHint aHint)
-  {
-    MOZ_CRASH("stylo: Called nsStyleContext::StoreChangeHint in a non MOZ_STYLO "
-              "build.");
-  }
-
-  nsChangeHint ConsumeStoredChangeHint()
-  {
-    MOZ_CRASH("stylo: Called nsStyleContext::ComsumeStoredChangeHint in a non "
-               "MOZ_STYLO build.");
-  }
-#endif
 
 private:
   // Private destructor, to discourage deletion outside of Release():
@@ -702,6 +650,8 @@ private:
           newData =                                                     \
             Servo_GetStyle##name_(mSource.AsServoComputedValues());     \
         }                                                               \
+        /* perform any remaining main thread work on the struct */      \
+        const_cast<nsStyle##name_*>(newData)->FinishStyle(PresContext());\
         /* the Servo-backed StyleContextSource owns the struct */       \
         AddStyleBit(NS_STYLE_INHERIT_BIT(name_));                       \
       }                                                                 \
@@ -730,6 +680,8 @@ private:
       } else {                                                          \
         newData =                                                       \
           Servo_GetStyle##name_(mSource.AsServoComputedValues());       \
+        /* perform any remaining main thread work on the struct */      \
+        const_cast<nsStyle##name_*>(newData)->FinishStyle(PresContext());\
         /* The Servo-backed StyleContextSource owns the struct.         \
          *                                                              \
          * XXXbholley: Unconditionally caching reset structs here       \
@@ -824,15 +776,6 @@ private:
   uint64_t                mBits;
 
   uint32_t                mRefCnt;
-
-  // For now we store change hints on the style context during parallel traversal.
-  // We should improve this - see bug 1289861.
-#ifdef MOZ_STYLO
-  nsChangeHint            mStoredChangeHint;
-#ifdef DEBUG
-  bool                    mConsumedChangeHint;
-#endif
-#endif
 
 #ifdef DEBUG
   uint32_t                mFrameRefCnt; // number of frames that use this

@@ -25,6 +25,8 @@ class nsIContentIterator;
 class nsIFrame;
 class nsFrameSelection;
 struct SelectionDetails;
+class nsCopySupport;
+class nsHTMLCopyEncoder;
 
 namespace mozilla {
 class ErrorResult;
@@ -94,12 +96,15 @@ public:
   enum {
     SCROLL_SYNCHRONOUS = 1<<1,
     SCROLL_FIRST_ANCESTOR_ONLY = 1<<2,
-    SCROLL_DO_FLUSH = 1<<3,
+    SCROLL_DO_FLUSH = 1<<3,  // only matters if SCROLL_SYNCHRONOUS is passed too
     SCROLL_OVERFLOW_HIDDEN = 1<<5,
     SCROLL_FOR_CARET_MOVE = 1<<6
   };
-  // aDoFlush only matters if aIsSynchronous is true.  If not, we'll just flush
-  // when the scroll event fires so we make sure to scroll to the right place.
+  // If aFlags doesn't contain SCROLL_SYNCHRONOUS, then we'll flush when
+  // the scroll event fires so we make sure to scroll to the right place.
+  // Otherwise, if SCROLL_DO_FLUSH is also in aFlags, then this method will
+  // flush layout and you MUST hold a strong ref on 'this' for the duration
+  // of this call.  This might destroy arbitrary layout objects.
   nsresult      ScrollIntoView(SelectionRegion aRegion,
                                nsIPresShell::ScrollAxis aVertical =
                                  nsIPresShell::ScrollAxis(),
@@ -120,7 +125,7 @@ public:
   nsresult      Clear(nsPresContext* aPresContext);
   nsresult      Collapse(nsINode* aParentNode, int32_t aOffset);
   nsresult      Extend(nsINode* aParentNode, int32_t aOffset);
-  nsRange*      GetRangeAt(int32_t aIndex);
+  nsRange*      GetRangeAt(int32_t aIndex) const;
 
   // Get the anchor-to-focus range if we don't care which end is
   // anchor and which end is focus.
@@ -160,7 +165,7 @@ public:
   nsINode*     GetFocusNode();
   uint32_t     FocusOffset();
 
-  bool IsCollapsed();
+  bool IsCollapsed() const;
   void Collapse(nsINode& aNode, uint32_t aOffset, mozilla::ErrorResult& aRv);
   void CollapseToStart(mozilla::ErrorResult& aRv);
   void CollapseToEnd(mozilla::ErrorResult& aRv);
@@ -183,8 +188,21 @@ public:
 
   bool ContainsNode(nsINode& aNode, bool aPartlyContained, mozilla::ErrorResult& aRv);
 
+  /**
+   * Check to see if the given point is contained within the selection area. In
+   * particular, this iterates through all the rects that make up the selection,
+   * not just the bounding box, and checks to see if the given point is contained
+   * in any one of them.
+   * @param aPoint The point to check, relative to the root frame.
+   */
+  bool ContainsPoint(const nsPoint& aPoint);
+
   void Modify(const nsAString& aAlter, const nsAString& aDirection,
               const nsAString& aGranularity, mozilla::ErrorResult& aRv);
+
+  void SetBaseAndExtent(nsINode& aAnchorNode, uint32_t aAnchorOffset,
+                        nsINode& aFocusNode, uint32_t aFocusOffset,
+                        mozilla::ErrorResult& aRv);
 
   bool GetInterlinePosition(mozilla::ErrorResult& aRv);
   void SetInterlinePosition(bool aValue, mozilla::ErrorResult& aRv);
@@ -226,6 +244,12 @@ private:
 
   // Note: DoAutoScroll might destroy arbitrary frames etc.
   nsresult DoAutoScroll(nsIFrame *aFrame, nsPoint& aPoint);
+
+  // XXX Please don't add additional uses of this method, it's only for
+  // XXX supporting broken code (bug 1245883) in the following classes:
+  friend class ::nsCopySupport;
+  friend class ::nsHTMLCopyEncoder;
+  void AddRangeInternal(nsRange& aRange, nsIDocument* aDocument, ErrorResult&);
 
 public:
   SelectionType GetType() const { return mSelectionType; }

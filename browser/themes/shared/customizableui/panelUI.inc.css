@@ -155,10 +155,15 @@
   filter: none;
 }
 
+#PanelUI-menu-button[badge-status="addon-alert"] > .toolbarbutton-badge-stack > .toolbarbutton-badge {
+  height: 13px;
+  background: transparent url(chrome://browser/skin/addons/addon-badge.svg) no-repeat center;
+}
+
 .panel-subviews {
   padding: 4px;
   background-clip: padding-box;
-  border-left: 1px solid var(--panel-arrowcontent-border-color);
+  border-left: 1px solid var(--arrowpanel-border-color);
   box-shadow: 0 3px 5px hsla(210,4%,10%,.1),
               0 0 7px hsla(210,4%,10%,.1);
   margin-inline-start: var(--panel-ui-exit-subview-gutter-width);
@@ -561,11 +566,12 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   top: 25%;
 }
 
-#PanelUI-update-status[update-status]::after {
+#PanelUI-update-status[update-status]::after,
+#PanelUI-footer-addons > toolbarbutton::after {
   content: "";
   width: 14px;
   height: 14px;
-  margin-right: 16.5px;
+  margin-inline-end: 16.5px;
   box-shadow: 0px 1px 0px rgba(255,255,255,.2) inset, 0px -1px 0px rgba(0,0,0,.1) inset, 0px 1px 0px rgba(12,27,38,.2);
   border-radius: 2px;
   background-size: contain;
@@ -580,6 +586,24 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
 #PanelUI-update-status[update-status="failed"]::after {
   background-image: url(chrome://browser/skin/update-badge-failed.svg);
   background-color: #D90000;
+}
+
+#PanelUI-footer-addons > toolbarbutton {
+  background-color: #C7F5FF;
+  display: flex;
+  flex: 1 1 0%;
+  width: calc(@menuPanelWidth@ + 30px);
+  padding-inline-start: 15px;
+  border-inline-start-style: none;
+}
+
+#PanelUI-footer-addons > toolbarbutton > .toolbarbutton-icon {
+  width: 14px;
+  height: 14px;
+}
+
+#PanelUI-footer-addons > toolbarbutton::after {
+  background-image: url(chrome://browser/skin/addons/addon-badge.svg);
 }
 
 #PanelUI-fxa-status {
@@ -616,6 +640,7 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
 #PanelUI-help,
 #PanelUI-fxa-label,
 #PanelUI-fxa-icon,
+#PanelUI-footer-addons > toolbarbutton,
 #PanelUI-customize,
 #PanelUI-quit {
   margin: 0;
@@ -677,6 +702,7 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
 }
 
 #PanelUI-fxa-label,
+#PanelUI-footer-addons > toolbarbutton,
 #PanelUI-customize {
   flex: 1;
   padding-inline-start: 15px;
@@ -841,6 +867,7 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
 
 #PanelUI-fxa-label,
 #PanelUI-fxa-icon,
+#PanelUI-footer-addons > toolbarbutton,
 #PanelUI-customize,
 #PanelUI-help,
 #PanelUI-quit {

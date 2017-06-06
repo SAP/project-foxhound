@@ -10,6 +10,7 @@
 
 #include "GeckoProfiler.h"
 #include "nsComponentManagerUtils.h"
+#include "nsIIdlePeriod.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Services.h"
@@ -168,7 +169,7 @@ LazyIdleThread::EnsureThread()
     return NS_ERROR_UNEXPECTED;
   }
 
-  rv = NS_NewThread(getter_AddRefs(mThread), runnable);
+  rv = NS_NewNamedThread("Lazy Idle", getter_AddRefs(mThread), runnable);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -179,11 +180,6 @@ LazyIdleThread::EnsureThread()
 void
 LazyIdleThread::InitThread()
 {
-  char aLocal;
-  profiler_register_thread(mName.get(), &aLocal);
-
-  PR_SetCurrentThreadName(mName.get());
-
   // Happens on mThread but mThread may not be set yet...
 
   nsCOMPtr<nsIThreadInternal> thread(do_QueryInterface(NS_GetCurrentThread()));
@@ -210,8 +206,6 @@ LazyIdleThread::CleanupThread()
     MOZ_ASSERT(!mThreadIsShuttingDown, "Shouldn't be true ever!");
     mThreadIsShuttingDown = true;
   }
-
-  profiler_unregister_thread();
 }
 
 void
@@ -459,6 +453,19 @@ LazyIdleThread::GetPRThread(PRThread** aPRThread)
 }
 
 NS_IMETHODIMP
+LazyIdleThread::GetCanInvokeJS(bool* aCanInvokeJS)
+{
+  *aCanInvokeJS = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LazyIdleThread::SetCanInvokeJS(bool aCanInvokeJS)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 LazyIdleThread::AsyncShutdown()
 {
   ASSERT_OWNING_THREAD();
@@ -491,6 +498,18 @@ LazyIdleThread::HasPendingEvents(bool* aHasPendingEvents)
   // implemented here.
   NS_NOTREACHED("Shouldn't ever call this!");
   return NS_ERROR_UNEXPECTED;
+}
+
+NS_IMETHODIMP
+LazyIdleThread::IdleDispatch(already_AddRefed<nsIRunnable> aEvent)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+LazyIdleThread::RegisterIdlePeriod(already_AddRefed<nsIIdlePeriod> aIdlePeriod)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP

@@ -43,13 +43,11 @@ var testData = [
  * harness.  It is where you do the work of creating the query, running it, and
  * playing with the result set.
  */
-function run_test()
-{
+function run_test() {
   run_next_test();
 }
 
-add_task(function* test_onlyBookmarked()
-{
+add_task(function* test_onlyBookmarked() {
   // This function in head_queries.js creates our database with the above data
   yield task_populateDB(testData);
 
@@ -74,19 +72,16 @@ add_task(function* test_onlyBookmarked()
   compareArrayToResult(testData, root);
   do_print("end first test");
 
-  /* ******************
-  Test live-update
-  ********************/
-
+  // Test live-update
   var liveUpdateTestData = [
-    //Add a bookmark that should show up
+    // Add a bookmark that should show up
     { isBookmark: true,
       uri: "http://bookmarked2.com/",
       parentGuid: PlacesUtils.bookmarks.toolbarGuid,
       index: PlacesUtils.bookmarks.DEFAULT_INDEX,
       isInQuery: true },
 
-    //Add a bookmark that should not show up
+    // Add a bookmark that should not show up
     { isBookmark: true,
       uri: "http://bookmarked-elsewhere2.com/",
       parentGuid: PlacesUtils.bookmarks.menuGuid,

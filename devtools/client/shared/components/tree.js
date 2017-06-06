@@ -4,7 +4,8 @@
 /* eslint-env browser */
 "use strict";
 
-const { DOM: dom, createClass, createFactory, PropTypes } = require("devtools/client/shared/vendor/react");
+const React = require("devtools/client/shared/vendor/react");
+const { DOM: dom, createClass, createFactory, PropTypes } = React;
 
 const AUTO_EXPAND_DEPTH = 0;
 const NUMBER_OF_OFFSCREEN_ITEMS = 1;
@@ -444,11 +445,11 @@ module.exports = createClass({
     switch (e.key) {
       case "ArrowUp":
         this._focusPrevNode();
-        return;
+        break;
 
       case "ArrowDown":
         this._focusNextNode();
-        return;
+        break;
 
       case "ArrowLeft":
         if (this.props.isExpanded(this.props.focused)
@@ -457,7 +458,7 @@ module.exports = createClass({
         } else {
           this._focusParentNode();
         }
-        return;
+        break;
 
       case "ArrowRight":
         if (!this.props.isExpanded(this.props.focused)) {
@@ -465,7 +466,7 @@ module.exports = createClass({
         } else {
           this._focusNextNode();
         }
-        return;
+        break;
     }
   },
 
@@ -548,16 +549,19 @@ module.exports = createClass({
   render() {
     const traversal = this._dfsFromRoots();
 
-    // Remove `NUMBER_OF_OFFSCREEN_ITEMS` from `begin` and add `2 *
-    // NUMBER_OF_OFFSCREEN_ITEMS` to `end` so that the top and bottom of the
-    // page are filled with the `NUMBER_OF_OFFSCREEN_ITEMS` previous and next
-    // items respectively, rather than whitespace if the item is not in full
-    // view.
-    const begin = Math.max(((this.state.scroll / this.props.itemHeight) | 0)
-                           - NUMBER_OF_OFFSCREEN_ITEMS, 0);
-    const end = begin + (2 * NUMBER_OF_OFFSCREEN_ITEMS)
-                      + ((this.state.height / this.props.itemHeight) | 0);
+    // 'begin' and 'end' are the index of the first (at least partially) visible item
+    // and the index after the last (at least partially) visible item, respectively.
+    // `NUMBER_OF_OFFSCREEN_ITEMS` is removed from `begin` and added to `end` so that
+    // the top and bottom of the page are filled with the `NUMBER_OF_OFFSCREEN_ITEMS`
+    // previous and next items respectively, which helps the user to see fewer empty
+    // gaps when scrolling quickly.
+    const { itemHeight } = this.props;
+    const { scroll, height } = this.state;
+    const begin = Math.max(((scroll / itemHeight) | 0) - NUMBER_OF_OFFSCREEN_ITEMS, 0);
+    const end = Math.ceil((scroll + height) / itemHeight) + NUMBER_OF_OFFSCREEN_ITEMS;
     const toRender = traversal.slice(begin, end);
+    const topSpacerHeight = begin * itemHeight;
+    const bottomSpacerHeight = Math.max(traversal.length - end, 0) * itemHeight;
 
     const nodes = [
       dom.div({
@@ -565,18 +569,23 @@ module.exports = createClass({
         style: {
           padding: 0,
           margin: 0,
-          height: begin * this.props.itemHeight + "px"
+          height: topSpacerHeight + "px"
         }
       })
     ];
 
     for (let i = 0; i < toRender.length; i++) {
-      let { item, depth } = toRender[i];
+      const index = begin + i;
+      const first = index == 0;
+      const last = index == traversal.length - 1;
+      const { item, depth } = toRender[i];
       nodes.push(TreeNode({
         key: this.props.getKey(item),
-        index: begin + i,
-        item: item,
-        depth: depth,
+        index,
+        first,
+        last,
+        item,
+        depth,
         renderItem: this.props.renderItem,
         focused: this.props.focused === item,
         expanded: this.props.isExpanded(item),
@@ -584,6 +593,7 @@ module.exports = createClass({
         onExpand: this._onExpand,
         onCollapse: this._onCollapse,
         onFocus: () => this._focus(begin + i, item),
+        onFocusedNodeUnmount: () => this.refs.tree && this.refs.tree.focus(),
       }));
     }
 
@@ -592,7 +602,7 @@ module.exports = createClass({
       style: {
         padding: 0,
         margin: 0,
-        height: (traversal.length - 1 - end) * this.props.itemHeight + "px"
+        height: bottomSpacerHeight + "px"
       }
     }));
 
@@ -620,6 +630,14 @@ module.exports = createClass({
  */
 const ArrowExpander = createFactory(createClass({
   displayName: "ArrowExpander",
+
+  propTypes: {
+    item: PropTypes.any.isRequired,
+    visible: PropTypes.bool.isRequired,
+    expanded: PropTypes.bool.isRequired,
+    onCollapse: PropTypes.func.isRequired,
+    onExpand: PropTypes.func.isRequired,
+  },
 
   shouldComponentUpdate(nextProps, nextState) {
     return this.props.item !== nextProps.item
@@ -650,6 +668,23 @@ const ArrowExpander = createFactory(createClass({
 }));
 
 const TreeNode = createFactory(createClass({
+  propTypes: {
+    focused: PropTypes.bool.isRequired,
+    onFocusedNodeUnmount: PropTypes.func,
+    item: PropTypes.any.isRequired,
+    expanded: PropTypes.bool.isRequired,
+    hasChildren: PropTypes.bool.isRequired,
+    onExpand: PropTypes.func.isRequired,
+    index: PropTypes.number.isRequired,
+    first: PropTypes.bool,
+    last: PropTypes.bool,
+    onFocus: PropTypes.func,
+    onBlur: PropTypes.func,
+    onCollapse: PropTypes.func.isRequired,
+    depth: PropTypes.number.isRequired,
+    renderItem: PropTypes.func.isRequired,
+  },
+
   componentDidMount() {
     if (this.props.focused) {
       this.refs.button.focus();
@@ -659,6 +694,20 @@ const TreeNode = createFactory(createClass({
   componentDidUpdate() {
     if (this.props.focused) {
       this.refs.button.focus();
+    }
+  },
+
+  componentWillUnmount() {
+    // If this node is being destroyed and has focus, transfer the focus manually
+    // to the parent tree component. Otherwise, the focus will get lost and keyboard
+    // navigation in the tree will stop working. This is a workaround for a XUL bug.
+    // See bugs 1259228 and 1152441 for details.
+    // DE-XUL: Remove this hack once all usages are only in HTML documents.
+    if (this.props.focused) {
+      this.refs.button.blur();
+      if (this.props.onFocusedNodeUnmount) {
+        this.props.onFocusedNodeUnmount();
+      }
     }
   },
 
@@ -687,13 +736,25 @@ const TreeNode = createFactory(createClass({
       onCollapse: this.props.onCollapse,
     });
 
-    let isOddRow = this.props.index % 2;
+    let classList = [ "tree-node", "div" ];
+    if (this.props.index % 2) {
+      classList.push("tree-node-odd");
+    }
+    if (this.props.first) {
+      classList.push("tree-node-first");
+    }
+    if (this.props.last) {
+      classList.push("tree-node-last");
+    }
+
     return dom.div(
       {
-        className: `tree-node div ${isOddRow ? "tree-node-odd" : ""}`,
+        className: classList.join(" "),
         onFocus: this.props.onFocus,
         onClick: this.props.onFocus,
         onBlur: this.props.onBlur,
+        "data-expanded": this.props.expanded ? "" : undefined,
+        "data-depth": this.props.depth,
         style: {
           padding: 0,
           margin: 0

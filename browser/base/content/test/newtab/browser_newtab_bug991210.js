@@ -7,15 +7,15 @@ add_task(function* () {
 
   // add a test provider that waits for load
   let afterLoadProvider = {
-    getLinks: function(callback) {
+    getLinks(callback) {
       this.callback = callback;
     },
-    addObserver: function() {},
+    addObserver() {},
   };
   NewTabUtils.links.addProvider(afterLoadProvider);
 
   // wait until about:newtab loads before calling provider callback
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:newtab");
+  yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:newtab");
 
   afterLoadProvider.callback([]);
 

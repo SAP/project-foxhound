@@ -2,18 +2,19 @@ dnl This Source Code Form is subject to the terms of the Mozilla Public
 dnl License, v. 2.0. If a copy of the MPL was not distributed with this
 dnl file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-dnl Several autoconf functions AC_REQUIRE AC_PROG_CPP/AC_PROG_CXXCPP,
-dnl meaning they are called even when we don't call them explicitly.
+dnl Several autoconf functions AC_REQUIRE AC_PROG_CPP/AC_PROG_CXXCPP
+dnl or AC_HEADER_STDC, meaning they are called even when we don't call
+dnl them explicitly.
 dnl However, theses checks are not necessary and python configure sets
 dnl the corresponding variables already, so just skip those tests
 dnl entirely.
 define([AC_PROG_CPP],[])
 define([AC_PROG_CXXCPP],[])
+define([AC_HEADER_STDC], [])
 
 AC_DEFUN([MOZ_TOOL_VARIABLES],
 [
 GNU_AS=
-GNU_LD=
 
 GNU_CC=
 GNU_CXX=
@@ -26,9 +27,6 @@ if test "`echo | $AS -o conftest.out -v 2>&1 | grep -c GNU`" != "0"; then
     GNU_AS=1
 fi
 rm -f conftest.out
-if test "`echo | $LD -v 2>&1 | grep -c GNU`" != "0"; then
-    GNU_LD=1
-fi
 
 CLANG_CC=
 CLANG_CXX=
@@ -80,7 +78,7 @@ AC_PROG_CXX
 AC_CHECK_PROGS(RANLIB, "${TOOLCHAIN_PREFIX}ranlib", :)
 AC_CHECK_PROGS(AR, "${TOOLCHAIN_PREFIX}ar", :)
 AC_CHECK_PROGS(AS, "${TOOLCHAIN_PREFIX}as", :)
-AC_CHECK_PROGS(LD, "${TOOLCHAIN_PREFIX}ld", :)
+AC_CHECK_PROGS(LIPO, "${TOOLCHAIN_PREFIX}lipo", :)
 AC_CHECK_PROGS(STRIP, "${TOOLCHAIN_PREFIX}strip", :)
 AC_CHECK_PROGS(WINDRES, "${TOOLCHAIN_PREFIX}windres", :)
 AC_CHECK_PROGS(OTOOL, "${TOOLCHAIN_PREFIX}otool", :)

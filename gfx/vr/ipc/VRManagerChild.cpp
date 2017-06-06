@@ -14,8 +14,10 @@
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/VREventObserver.h"
 #include "mozilla/dom/WindowBinding.h" // for FrameRequestCallback
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/layers/TextureClient.h"
 #include "nsContentUtils.h"
+#include "mozilla/dom/GamepadManager.h"
 
 using layers::TextureClient;
 
@@ -42,7 +44,6 @@ VRManagerChild::VRManagerChild()
   , mFrameRequestCallbackCounter(0)
   , mBackend(layers::LayersBackend::LAYERS_NONE)
 {
-  MOZ_COUNT_CTOR(VRManagerChild);
   MOZ_ASSERT(NS_IsMainThread());
 
   mStartTimeStamp = TimeStamp::Now();
@@ -51,7 +52,6 @@ VRManagerChild::VRManagerChild()
 VRManagerChild::~VRManagerChild()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_COUNT_DTOR(VRManagerChild);
 }
 
 /*static*/ void
@@ -95,6 +95,16 @@ VRManagerChild::InitForContent(Endpoint<PVRManagerChild>&& aEndpoint)
   }
   sVRManagerChildSingleton = child;
   return true;
+}
+
+/* static */ bool
+VRManagerChild::ReinitForContent(Endpoint<PVRManagerChild>&& aEndpoint)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  ShutDown();
+
+  return InitForContent(Move(aEndpoint));
 }
 
 /*static*/ void
@@ -249,7 +259,7 @@ VRManagerChild::UpdateDisplayInfo(nsTArray<VRDisplayInfo>& aDisplayUpdates)
   mDisplaysInitialized = true;
 }
 
-bool
+mozilla::ipc::IPCResult
 VRManagerChild::RecvUpdateDisplayInfo(nsTArray<VRDisplayInfo>&& aDisplayUpdates)
 {
   UpdateDisplayInfo(aDisplayUpdates);
@@ -272,7 +282,7 @@ VRManagerChild::RecvUpdateDisplayInfo(nsTArray<VRDisplayInfo>&& aDisplayUpdates)
     nav->NotifyVRDisplaysUpdated();
   }
   mNavigatorCallbacks.Clear();
-  return true;
+  return IPC_OK();
 }
 
 bool
@@ -308,19 +318,13 @@ VRManagerChild::GetInputFrameID()
   return mInputFrameID;
 }
 
-bool
+mozilla::ipc::IPCResult
 VRManagerChild::RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageData>&& aMessages)
 {
   for (InfallibleTArray<AsyncParentMessageData>::index_type i = 0; i < aMessages.Length(); ++i) {
     const AsyncParentMessageData& message = aMessages[i];
 
     switch (message.type()) {
-      case AsyncParentMessageData::TOpDeliverFence: {
-        const OpDeliverFence& op = message.get_OpDeliverFence();
-        FenceHandle fence = op.fence();
-        DeliverFence(op.TextureId(), fence);
-        break;
-      }
       case AsyncParentMessageData::TOpNotifyNotUsed: {
         const OpNotifyNotUsed& op = message.get_OpNotifyNotUsed();
         NotifyNotUsed(op.TextureId(), op.fwdTransactionId());
@@ -328,10 +332,10 @@ VRManagerChild::RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageData>
       }
       default:
         NS_ERROR("unknown AsyncParentMessageData type");
-        return false;
+        return IPC_FAIL_NO_REASON(this);
     }
   }
-  return true;
+  return IPC_OK();
 }
 
 PTextureChild*
@@ -341,16 +345,6 @@ VRManagerChild::CreateTexture(const SurfaceDescriptor& aSharedData,
                               uint64_t aSerial)
 {
   return SendPTextureConstructor(aSharedData, aLayersBackend, aFlags, aSerial);
-}
-
-void
-VRManagerChild::DeliverFence(uint64_t aTextureId, FenceHandle& aReleaseFenceHandle)
-{
-  RefPtr<TextureClient> client = mTexturesWaitingRecycled.Get(aTextureId);
-  if (!client) {
-    return;
-  }
-  client->SetReleaseFenceHandle(aReleaseFenceHandle);
 }
 
 void
@@ -389,10 +383,10 @@ VRManagerChild::AllocUnsafeShmem(size_t aSize,
   return PVRManagerChild::AllocUnsafeShmem(aSize, aType, aShmem);
 }
 
-void
+bool
 VRManagerChild::DeallocShmem(ipc::Shmem& aShmem)
 {
-  PVRManagerChild::DeallocShmem(aShmem);
+  return PVRManagerChild::DeallocShmem(aShmem);
 }
 
 PVRLayerChild*
@@ -457,17 +451,17 @@ VRManagerChild::CancelFrameRequestCallback(int32_t aHandle)
   mFrameRequestCallbacks.RemoveElementSorted(aHandle);
 }
 
-bool
+mozilla::ipc::IPCResult
 VRManagerChild::RecvNotifyVSync()
 {
   for (auto& display : mDisplays) {
     display->NotifyVsync();
   }
 
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 VRManagerChild::RecvNotifyVRVSync(const uint32_t& aDisplayID)
 {
   for (auto& display : mDisplays) {
@@ -476,7 +470,23 @@ VRManagerChild::RecvNotifyVRVSync(const uint32_t& aDisplayID)
     }
   }
 
-  return true;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+VRManagerChild::RecvGamepadUpdate(const GamepadChangeEvent& aGamepadEvent)
+{
+  // VRManagerChild could be at other processes, but GamepadManager
+  // only exists at the content process or the same process
+  // in non-e10s mode.
+  MOZ_ASSERT(XRE_IsContentProcess() || IsSameProcess());
+
+  RefPtr<GamepadManager> gamepadManager(GamepadManager::GetService());
+  if (gamepadManager) {
+    gamepadManager->Update(aGamepadEvent);
+  }
+
+  return IPC_OK();
 }
 
 void
@@ -564,6 +574,12 @@ VRManagerChild::RemoveListener(dom::VREventObserver* aObserver)
   if (mListeners.IsEmpty()) {
     Unused << SendSetHaveEventListener(false);
   }
+}
+
+void
+VRManagerChild::HandleFatalError(const char* aName, const char* aMsg) const
+{
+  dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aName, aMsg, OtherPid());
 }
 
 } // namespace gfx

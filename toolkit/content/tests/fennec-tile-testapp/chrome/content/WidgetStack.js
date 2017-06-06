@@ -39,13 +39,11 @@ function dumpJSStack(stopAtNamedFunction) {
 }
 
 function log() {
-  return;
-  logbase.apply(window, arguments);
+  // logbase.apply(window, arguments);
 }
 
 function log2() {
-  return;
-  logbase.apply(window, arguments);
+  // logbase.apply(window, arguments);
 }
 
 var reportError = log;
@@ -61,14 +59,14 @@ function wsBorder(t, l, b, r) {
 
 wsBorder.prototype = {
 
-  setBorder: function (t, l, b, r) {
+  setBorder(t, l, b, r) {
     this.top = t;
     this.left = l;
     this.bottom = b;
     this.right = r;
   },
 
-  toString: function () {
+  toString() {
     return "[l:" + this.left + ",t:" + this.top + ",r:" + this.right + ",b:" + this.bottom + "]";
   }
 };
@@ -81,8 +79,8 @@ wsBorder.prototype = {
 function wsRect(x, y, w, h) {
   this.left = x;
   this.top = y;
-  this.right = x+w;
-  this.bottom = y+h;
+  this.right = x + w;
+  this.bottom = y + h;
 }
 
 wsRect.prototype = {
@@ -104,16 +102,16 @@ wsRect.prototype = {
   set width(v) { this.right = this.left + v; },
   set height(v) { this.bottom = this.top + v; },
 
-  setRect: function(x, y, w, h) {
+  setRect(x, y, w, h) {
     this.left = x;
     this.top = y;
-    this.right = x+w;
-    this.bottom = y+h;
+    this.right = x + w;
+    this.bottom = y + h;
 
     return this;
   },
 
-  setBounds: function(t, l, b, r) {
+  setBounds(t, l, b, r) {
     this.top = t;
     this.left = l;
     this.bottom = b;
@@ -123,7 +121,7 @@ wsRect.prototype = {
   },
 
   equals: function equals(r) {
-    return (r != null       &&
+    return (r != null &&
             this.top == r.top &&
             this.left == r.left &&
             this.bottom == r.bottom &&
@@ -143,7 +141,7 @@ wsRect.prototype = {
     return this.center().map(Math.round);
   },
 
-  copyFrom: function(r) {
+  copyFrom(r) {
     this.top = r.top;
     this.left = r.left;
     this.bottom = r.bottom;
@@ -152,7 +150,7 @@ wsRect.prototype = {
     return this;
   },
 
-  copyFromTLBR: function(r) {
+  copyFromTLBR(r) {
     this.left = r.left;
     this.top = r.top;
     this.right = r.right;
@@ -161,7 +159,7 @@ wsRect.prototype = {
     return this;
   },
 
-  translate: function(x, y) {
+  translate(x, y) {
     this.left += x;
     this.right += x;
     this.top += y;
@@ -171,20 +169,20 @@ wsRect.prototype = {
   },
 
   // return a new wsRect that is the union of that one and this one
-  union: function(rect) {
+  union(rect) {
     let l = Math.min(this.left, rect.left);
     let r = Math.max(this.right, rect.right);
     let t = Math.min(this.top, rect.top);
     let b = Math.max(this.bottom, rect.bottom);
 
-    return new wsRect(l, t, r-l, b-t);
+    return new wsRect(l, t, r - l, b - t);
   },
 
-  toString: function() {
+  toString() {
     return "[" + this.x + "," + this.y + "," + this.width + "," + this.height + "]";
   },
 
-  expandBy: function(b) {
+  expandBy(b) {
     this.left += b.left;
     this.right += b.right;
     this.top += b.top;
@@ -192,14 +190,14 @@ wsRect.prototype = {
     return this;
   },
 
-  contains: function(other) {
+  contains(other) {
     return !!(other.left >= this.left &&
               other.right <= this.right &&
               other.top >= this.top &&
               other.bottom <= this.bottom);
   },
 
-  intersect: function(r2) {
+  intersect(r2) {
     let xmost1 = this.right;
     let xmost2 = r2.right;
 
@@ -224,7 +222,7 @@ wsRect.prototype = {
     return new wsRect(x, y, width, height);
   },
 
-  intersects: function(other) {
+  intersects(other) {
     let xok = (other.left > this.left && other.left < this.right) ||
       (other.right > this.left && other.right < this.right) ||
       (other.left <= this.left && other.right >= this.right);
@@ -278,7 +276,7 @@ wsRect.prototype = {
     let t = Math.min(this.top, rect.top);
     let b = Math.max(this.bottom, rect.bottom);
 
-    return this.setRect(l, t, r-l, b-t);
+    return this.setRect(l, t, r - l, b - t);
   },
 
   round: function round(scale) {
@@ -382,7 +380,7 @@ WidgetStack.prototype = {
   // init:
   //   el: the <stack> element whose children are to be managed
   //
-  init: function (el, ew, eh) {
+  init(el, ew, eh) {
     this._el = el;
     this._widgetState = {};
     this._barriers = [];
@@ -424,7 +422,7 @@ WidgetStack.prototype = {
   // not be used on vp-relative or otherwise frozen widgets (using it
   // on the x coordinate for x-ignore widgets and similarily for y is
   // ok, as long as the other coordinate remains 0.)
-  moveWidgetBy: function (wid, x, y) {
+  moveWidgetBy(wid, x, y) {
     let state = this._getState(wid);
 
     state.rect.x += x;
@@ -474,13 +472,13 @@ WidgetStack.prototype = {
   // in the stack -- its x,y position will still be tracked in the
   // state, but the left/top attributes won't be overwritten.  Call unfreeze
   // to move the widget back to where the ws thinks it should be.
-  freeze: function (wid) {
+  freeze(wid) {
     let state = this._getState(wid);
 
     state.frozen = true;
   },
 
-  unfreeze: function (wid) {
+  unfreeze(wid) {
     let state = this._getState(wid);
     if (!state.frozen)
       return;
@@ -491,7 +489,7 @@ WidgetStack.prototype = {
 
   // moveFrozenTo: move a frozen widget with id wid to x, y in the stack.
   // can only be used on frozen widgets
-  moveFrozenTo: function (wid, x, y) {
+  moveFrozenTo(wid, x, y) {
     let state = this._getState(wid);
     if (!state.frozen)
       throw "moveFrozenTo on non-frozen widget " + wid;
@@ -504,7 +502,7 @@ WidgetStack.prototype = {
   // the stack. should only be used on unfrozen widgets when a dynamic change
   // in position needs to be made. we basically remove, adjust and re-add
   // the widget
-  moveUnfrozenTo: function (wid, x, y) {
+  moveUnfrozenTo(wid, x, y) {
     delete this._widgetState[wid];
     let widget = document.getElementById(wid);
     if (x) widget.setAttribute("left", x);
@@ -514,7 +512,7 @@ WidgetStack.prototype = {
   },
 
   // we're relying on viewportBounds and viewingRect having the same origin
-  get viewportVisibleRect () {
+  get viewportVisibleRect() {
     let rect = this._viewportBounds.intersect(this._viewingRect);
     if (!rect)
         rect = new wsRect(0, 0, 0, 0);
@@ -527,7 +525,7 @@ WidgetStack.prototype = {
 
   // isWidgetVisible: return true if any portion of widget with id wid is
   // visible; otherwise return false.
-  isWidgetVisible: function (wid) {
+  isWidgetVisible(wid) {
     let state = this._getState(wid);
     let visibleStackRect = new wsRect(0, 0, this._viewingRect.width, this._viewingRect.height);
 
@@ -535,7 +533,7 @@ WidgetStack.prototype = {
   },
 
   // getWidgetVisibility: returns the percentage that the widget is visible
-  getWidgetVisibility: function (wid) {
+  getWidgetVisibility(wid) {
     let state = this._getState(wid);
     let visibleStackRect = new wsRect(0, 0, this._viewingRect.width, this._viewingRect.height);
 
@@ -547,7 +545,7 @@ WidgetStack.prototype = {
   },
 
   // offsetAll: add an offset to all widgets
-  offsetAll: function (x, y) {
+  offsetAll(x, y) {
     this.globalOffsetX += x;
     this.globalOffsetY += y;
 
@@ -591,20 +589,18 @@ WidgetStack.prototype = {
       throw "Invalid number of arguments to setViewportBounds";
     }
 
-    let vp = this._viewport;
-
     let dleft = this._viewportBounds.left - oldBounds.left;
     let dright = this._viewportBounds.right - oldBounds.right;
     let dtop = this._viewportBounds.top - oldBounds.top;
     let dbottom = this._viewportBounds.bottom - oldBounds.bottom;
 
-    //log2("setViewportBounds dltrb", dleft, dtop, dright, dbottom);
+    // log2("setViewportBounds dltrb", dleft, dtop, dright, dbottom);
 
     // move all vp-relative widgets to be the right offset from the bounds again
     for (let wid in this._widgetState) {
       let state = this._widgetState[wid];
       if (state.vpRelative) {
-        //log2("vpRelative widget", state.id, state.rect.x, dleft, dright);
+        // log2("vpRelative widget", state.id, state.rect.x, dleft, dright);
         if (state.vpOffsetXBefore) {
           state.rect.x += dleft;
         } else {
@@ -617,7 +613,7 @@ WidgetStack.prototype = {
           state.rect.y += dbottom;
         }
 
-        //log2("vpRelative widget", state.id, state.rect.x, dleft, dright);
+        // log2("vpRelative widget", state.id, state.rect.x, dleft, dright);
         this._commitState(state);
       }
     }
@@ -625,25 +621,23 @@ WidgetStack.prototype = {
     for (let bid in this._barriers) {
       let barrier = this._barriers[bid];
 
-      //log2("setViewportBounds: looking at barrier", bid, barrier.vpRelative, barrier.type);
+      // log2("setViewportBounds: looking at barrier", bid, barrier.vpRelative, barrier.type);
 
       if (barrier.vpRelative) {
         if (barrier.type == "vertical") {
-          let q = "v barrier moving from " + barrier.x + " to ";
           if (barrier.vpOffsetXBefore) {
             barrier.x += dleft;
           } else {
             barrier.x += dright;
           }
-          //log2(q += barrier.x);
+          // log2(q += barrier.x);
         } else if (barrier.type == "horizontal") {
-          let q = "h barrier moving from " + barrier.y + " to ";
           if (barrier.vpOffsetYBefore) {
             barrier.y += dtop;
           } else {
             barrier.y += dbottom;
           }
-          //log2(q += barrier.y);
+          // log2(q += barrier.y);
         }
       }
     }
@@ -664,7 +658,7 @@ WidgetStack.prototype = {
   // bounds change, passing in the new rect that's to be displayed in the
   // viewport.
   //
-  setViewportHandler: function (uh) {
+  setViewportHandler(uh) {
     this._viewportUpdateHandler = uh;
   },
 
@@ -673,7 +667,7 @@ WidgetStack.prototype = {
   //
   // The given functin object is called whenever elements pan; it provides
   // the new area of the pannable bounds that's visible in the stack.
-  setPanHandler: function (uh) {
+  setPanHandler(uh) {
     this._panHandler = uh;
   },
 
@@ -745,7 +739,7 @@ WidgetStack.prototype = {
       if (this._viewportUpdateTimeout != -1)
         clearTimeout(this._viewportUpdateTimeout);
       let self = this;
-      this._viewportUpdateTimeout = setTimeout(function () { self._viewportDragUpdate(); }, this._viewportUpdateInterval);
+      this._viewportUpdateTimeout = setTimeout(function() { self._viewportDragUpdate(); }, this._viewportUpdateInterval);
     }
 
     return panned;
@@ -771,11 +765,11 @@ WidgetStack.prototype = {
 
     // XXX these methods aren't working correctly yet, but they aren't strictly
     // necessary in Fennec's default config
-    //for (let wid in this._widgetState) {
+    // for (let wid in this._widgetState) {
     //  let s = this._widgetState[wid];
     //  this._updateWidgetRect(s);
-    //}
-    //this._updateViewportOverflow();
+    // }
+    // this._updateViewportOverflow();
 
     this._viewingRect.width = width;
     this._viewingRect.height = height;
@@ -815,7 +809,7 @@ WidgetStack.prototype = {
   // Internal code
   //
 
-  _updateWidgetRect: function(state) {
+  _updateWidgetRect(state) {
     // don't need to support updating the viewport rect at the moment
     // (we'd need to duplicate the vptarget* code from _addNewWidget if we did)
     if (state == this._viewport)
@@ -834,7 +828,7 @@ WidgetStack.prototype = {
     }
   },
 
-  _dumpRects: function () {
+  _dumpRects() {
     dump("WidgetStack:\n");
     dump("\tthis._viewportBounds: " + this._viewportBounds + "\n");
     dump("\tthis._viewingRect: " + this._viewingRect + "\n");
@@ -872,7 +866,7 @@ WidgetStack.prototype = {
     this.panBy(panX, panY, true);
   },
 
-  _getState: function (wid) {
+  _getState(wid) {
     let w = this._widgetState[wid];
     if (!w)
       throw "Unknown widget id '" + wid + "'; widget not in stack";
@@ -936,7 +930,7 @@ WidgetStack.prototype = {
     this._viewportUpdateHandler.apply(window, [vwb, vwib, vis, boundsChanged]);
   },
 
-  _dragCoordsFromClient: function (cx, cy, t) {
+  _dragCoordsFromClient(cx, cy, t) {
     this._dragState.curTime = t ? t : Date.now();
     this._dragState.outerCurX = cx;
     this._dragState.outerCurY = cy;
@@ -947,7 +941,7 @@ WidgetStack.prototype = {
     this._dragState.outerDY = dy;
   },
 
-  _panHandleBarriers: function (dx, dy) {
+  _panHandleBarriers(dx, dy) {
     // XXX unless the barriers are sorted by position, this will break
     // with multiple barriers that are near enough to eachother that a
     // drag could cross more than one.
@@ -965,7 +959,7 @@ WidgetStack.prototype = {
     for (let i = 0; i < this._barriers.length; i++) {
       let b = this._barriers[i];
 
-      //log2("barrier", i, b.type, b.x, b.y);
+      // log2("barrier", i, b.type, b.x, b.y);
 
       if (dx != 0 && b.type == "vertical") {
         if (barrier_x != null) {
@@ -975,19 +969,17 @@ WidgetStack.prototype = {
 
         let alreadyKnownDistance = this._dragState.barrierState[i] || 0;
 
-        //log2("alreadyKnownDistance", alreadyKnownDistance);
+        // log2("alreadyKnownDistance", alreadyKnownDistance);
 
         let dbx = 0;
 
-        //100 <= 100 && 100-(-5) > 100
+        // 100 <= 100 && 100-(-5) > 100
 
-        if ((vr.left <= b.x && vr.left+dx > b.x) ||
-            (vr.left >= b.x && vr.left+dx < b.x))
-        {
+        if ((vr.left <= b.x && vr.left + dx > b.x) ||
+            (vr.left >= b.x && vr.left + dx < b.x)) {
           dbx = b.x - vr.left;
-        } else if ((vr.right <= b.x && vr.right+dx > b.x) ||
-                   (vr.right >= b.x && vr.right+dx < b.x))
-        {
+        } else if ((vr.right <= b.x && vr.right + dx > b.x) ||
+                   (vr.right >= b.x && vr.right + dx < b.x)) {
           dbx = b.x - vr.right;
         } else {
           delete this._dragState.barrierState[i];
@@ -996,7 +988,7 @@ WidgetStack.prototype = {
 
         let leftoverDistance = dbx - dx;
 
-        //log2("initial dbx", dbx, leftoverDistance);
+        // log2("initial dbx", dbx, leftoverDistance);
 
         let dist = Math.abs(leftoverDistance + alreadyKnownDistance) - b.size;
 
@@ -1011,13 +1003,13 @@ WidgetStack.prototype = {
           this._dragState.barrierState[i] = leftoverDistance + alreadyKnownDistance;
         }
 
-        //log2("final dbx", dbx, "state", this._dragState.barrierState[i]);
+        // log2("final dbx", dbx, "state", this._dragState.barrierState[i]);
 
         if (Math.abs(barrier_dx) <= Math.abs(dbx)) {
           barrier_x = b;
           barrier_dx = dbx;
 
-          //log2("new barrier_dx", barrier_dx);
+          // log2("new barrier_dx", barrier_dx);
         }
       }
 
@@ -1029,19 +1021,17 @@ WidgetStack.prototype = {
 
         let alreadyKnownDistance = this._dragState.barrierState[i] || 0;
 
-        //log2("alreadyKnownDistance", alreadyKnownDistance);
+        // log2("alreadyKnownDistance", alreadyKnownDistance);
 
         let dby = 0;
 
-        //100 <= 100 && 100-(-5) > 100
+        // 100 <= 100 && 100-(-5) > 100
 
-        if ((vr.top <= b.y && vr.top+dy > b.y) ||
-            (vr.top >= b.y && vr.top+dy < b.y))
-        {
+        if ((vr.top <= b.y && vr.top + dy > b.y) ||
+            (vr.top >= b.y && vr.top + dy < b.y)) {
           dby = b.y - vr.top;
-        } else if ((vr.bottom <= b.y && vr.bottom+dy > b.y) ||
-                   (vr.bottom >= b.y && vr.bottom+dy < b.y))
-        {
+        } else if ((vr.bottom <= b.y && vr.bottom + dy > b.y) ||
+                   (vr.bottom >= b.y && vr.bottom + dy < b.y)) {
           dby = b.y - vr.bottom;
         } else {
           delete this._dragState.barrierState[i];
@@ -1050,7 +1040,7 @@ WidgetStack.prototype = {
 
         let leftoverDistance = dby - dy;
 
-        //log2("initial dby", dby, leftoverDistance);
+        // log2("initial dby", dby, leftoverDistance);
 
         let dist = Math.abs(leftoverDistance + alreadyKnownDistance) - b.size;
 
@@ -1065,19 +1055,19 @@ WidgetStack.prototype = {
           this._dragState.barrierState[i] = leftoverDistance + alreadyKnownDistance;
         }
 
-        //log2("final dby", dby, "state", this._dragState.barrierState[i]);
+        // log2("final dby", dby, "state", this._dragState.barrierState[i]);
 
         if (Math.abs(barrier_dy) <= Math.abs(dby)) {
           barrier_y = b;
           barrier_dy = dby;
 
-          //log2("new barrier_dy", barrier_dy);
+          // log2("new barrier_dy", barrier_dy);
         }
       }
     }
 
     if (barrier_x) {
-      //log2("did barrier_x", barrier_x, "barrier_dx", barrier_dx);
+      // log2("did barrier_x", barrier_x, "barrier_dx", barrier_dx);
       dx = barrier_dx;
     }
 
@@ -1149,7 +1139,7 @@ WidgetStack.prototype = {
   //
   // widget addition/removal
   //
-  _addNewWidget: function (w) {
+  _addNewWidget(w) {
     let wid = w.getAttribute("id");
     if (!wid) {
       reportError("WidgetStack: child widget without id!");
@@ -1202,8 +1192,7 @@ WidgetStack.prototype = {
       state.viewport = true;
 
       if (w.hasAttribute("vptargetx") && w.hasAttribute("vptargety") &&
-          w.hasAttribute("vptargetw") && w.hasAttribute("vptargeth"))
-      {
+          w.hasAttribute("vptargetw") && w.hasAttribute("vptargeth")) {
         let wx = parseInt(w.getAttribute("vptargetx"));
         let wy = parseInt(w.getAttribute("vptargety"));
         let ww = parseInt(w.getAttribute("vptargetw"));
@@ -1223,10 +1212,10 @@ WidgetStack.prototype = {
 
     this._widgetState[wid] = state;
 
-    log ("(New widget: " + wid + (state.viewport ? " [viewport]" : "") + " at: " + state.rect + ")");
+    log("(New widget: " + wid + (state.viewport ? " [viewport]" : "") + " at: " + state.rect + ")");
   },
 
-  _removeWidget: function (w) {
+  _removeWidget(w) {
     let wid = w.getAttribute("id");
     delete this._widgetState[wid];
     this._updateWidgets();
@@ -1239,10 +1228,8 @@ WidgetStack.prototype = {
   // See setViewportBounds for use of vpOffset* state variables, and for how
   // the actual x and y coords of each widget are calculated based on their offsets
   // and the viewport bounds.
-  _updateWidgets: function () {
+  _updateWidgets() {
     let vp = this._viewport;
-
-    let ofRect = this._viewingRect.clone();
 
     for (let wid in this._widgetState) {
       let state = this._widgetState[wid];
@@ -1272,7 +1259,7 @@ WidgetStack.prototype = {
   },
 
   // updates the viewportOverflow/pannableBounds
-  _updateViewportOverflow: function() {
+  _updateViewportOverflow() {
     let vp = this._viewport;
     if (!vp)
       return;
@@ -1293,10 +1280,10 @@ WidgetStack.prototype = {
     // bottom/right values, which would otherwise happen if there aren't widgets
     // beyond each of those edges
     this._viewportOverflow = new wsBorder(
-      /*top*/ Math.round(Math.min(ofRect.top, 0)),
-      /*left*/ Math.round(Math.min(ofRect.left, 0)),
-      /*bottom*/ Math.round(Math.max(ofRect.bottom - vp.rect.height, 0)),
-      /*right*/ Math.round(Math.max(ofRect.right - vp.rect.width, 0))
+      /* top*/ Math.round(Math.min(ofRect.top, 0)),
+      /* left*/ Math.round(Math.min(ofRect.left, 0)),
+      /* bottom*/ Math.round(Math.max(ofRect.bottom - vp.rect.height, 0)),
+      /* right*/ Math.round(Math.max(ofRect.right - vp.rect.width, 0))
     );
 
     // clear the _pannableBounds cache, since it depends on the
@@ -1304,7 +1291,7 @@ WidgetStack.prototype = {
     this._pannableBounds = null;
   },
 
-  _widgetBounds: function () {
+  _widgetBounds() {
     let r = new wsRect(0, 0, 0, 0);
 
     for (let wid in this._widgetState) {
@@ -1315,7 +1302,7 @@ WidgetStack.prototype = {
     return r;
   },
 
-  _commitState: function (state) {
+  _commitState(state) {
     // if the widget is frozen, don't actually update its left/top;
     // presumably the caller is managing those directly for now.
     if (state.frozen)
@@ -1324,7 +1311,7 @@ WidgetStack.prototype = {
     let l = state.rect.x + state.offsetLeft;
     let t = state.rect.y + state.offsetTop;
 
-    //cache left/top to avoid calling setAttribute unnessesarily
+    // cache left/top to avoid calling setAttribute unnessesarily
     if (state._left != l) {
       state._left = l;
       w.setAttribute("left", l);
@@ -1338,7 +1325,7 @@ WidgetStack.prototype = {
 
   // constrain translate of rect by dx dy to bounds; return dx dy that can
   // be used to bring rect up to the edge of bounds if we'd go over.
-  _rectTranslateConstrain: function (dx, dy, rect, bounds) {
+  _rectTranslateConstrain(dx, dy, rect, bounds) {
     let newX, newY;
 
     // If the rect is larger than the bounds, allow it to increase its overlap
@@ -1365,7 +1352,7 @@ WidgetStack.prototype = {
   },
 
   // add a new barrier from a <spacer>
-  _addNewBarrierFromSpacer: function (el) {
+  _addNewBarrierFromSpacer(el) {
     let t = el.getAttribute("barriertype");
 
     // XXX implement these at some point
@@ -1373,12 +1360,9 @@ WidgetStack.prototype = {
     // t != "tb" && t != "bt" &&
 
     if (t != "horizontal" &&
-        t != "vertical")
-    {
+        t != "vertical") {
       throw "Invalid barrier type: " + t;
     }
-
-    let x, y;
 
     let barrier = {};
     let vp = this._viewport;
@@ -1431,7 +1415,7 @@ WidgetStack.prototype = {
           barrier.vpOffsetY = barrier.y - vp.rect.top;
         }
 
-        //log2("h barrier relative", barrier.vpOffsetYBefore, barrier.vpOffsetY);
+        // log2("h barrier relative", barrier.vpOffsetYBefore, barrier.vpOffsetY);
       }
     }
 

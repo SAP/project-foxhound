@@ -45,7 +45,7 @@ class GenericPrinter
     }
 
     // Prints a formatted string into the buffer.
-    virtual int printf(const char* fmt, ...);
+    virtual int printf(const char* fmt, ...) MOZ_FORMAT_PRINTF(2, 3);
     virtual int vprintf(const char* fmt, va_list ap);
 
     // Report that a string operation failed to get the memory it requested. The
@@ -117,7 +117,7 @@ class Sprinter final : public GenericPrinter
     // Format the given format/arguments as if by JS_vsmprintf, then put it.
     // Return true on success, else return false and report an error (typically
     // OOM).
-    MOZ_MUST_USE bool jsprintf(const char* fmt, ...);
+    MOZ_MUST_USE bool jsprintf(const char* fmt, ...) MOZ_FORMAT_PRINTF(2, 3);
 
     // Prints a formatted string into the buffer.
     virtual int vprintf(const char* fmt, va_list ap) override;
@@ -159,7 +159,7 @@ class Fprinter final : public GenericPrinter
     using GenericPrinter::put; // pick up |inline int put(const char* s);|
 
     // Prints a formatted string into the buffer.
-    virtual int printf(const char* fmt, ...) override;
+    virtual int printf(const char* fmt, ...) override MOZ_FORMAT_PRINTF(2, 3);
     virtual int vprintf(const char* fmt, va_list ap) override;
 };
 
@@ -205,7 +205,7 @@ class LSprinter final : public GenericPrinter
     using GenericPrinter::put; // pick up |inline int put(const char* s);|
 
     // Prints a formatted string into the buffer.
-    virtual int printf(const char* fmt, ...) override;
+    virtual int printf(const char* fmt, ...) override MOZ_FORMAT_PRINTF(2, 3);
     virtual int vprintf(const char* fmt, va_list ap) override;
 
     // Report that a string operation failed to get the memory it requested. The

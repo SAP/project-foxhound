@@ -15,7 +15,7 @@ include IPCStream;
 include InputStreamParams;
 include PBackgroundSharedTypes;
 
-using mozilla::NeckoOriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
 using struct nsHttpAtom from "nsHttp.h";
@@ -32,6 +32,7 @@ struct LoadInfoArgs
 {
   OptionalPrincipalInfo requestingPrincipalInfo;
   PrincipalInfo         triggeringPrincipalInfo;
+  OptionalPrincipalInfo principalToInheritInfo;
   uint32_t              securityFlags;
   uint32_t              contentPolicyType;
   uint32_t              tainting;
@@ -46,7 +47,7 @@ struct LoadInfoArgs
   bool                  enforceSecurity;
   bool                  initialSecurityCheckDone;
   bool                  isInThirdPartyContext;
-  NeckoOriginAttributes originAttributes;
+  OriginAttributes      originAttributes;
   PrincipalInfo[]       redirectChainIncludingInternalRedirects;
   PrincipalInfo[]       redirectChain;
   nsCString[]           corsUnsafeHeaders;
@@ -129,6 +130,8 @@ struct HttpChannelOpenArgs
   bool                        allowStaleCacheContent;
   nsCString                   contentTypeHint;
   nsCString                   channelId;
+  uint64_t                    contentWindowId;
+  nsCString                   preferredAlternativeType;
 };
 
 struct HttpChannelConnectArgs

@@ -19,6 +19,8 @@
 #include "Client.h"
 #include "PersistenceType.h"
 
+#include "prenv.h"
+
 #define QUOTA_MANAGER_CONTRACTID "@mozilla.org/dom/quota/manager;1"
 
 class mozIStorageConnection;
@@ -113,7 +115,11 @@ private:
 public:
   NS_INLINE_DECL_REFCOUNTING(QuotaManager)
 
-  static const bool kRunningXPCShellTests;
+  static bool IsRunningXPCShellTests()
+  {
+    static bool kRunningXPCShellTests = !!PR_GetEnv("XPCSHELL_TEST_PROFILE_DIR");
+    return kRunningXPCShellTests;
+  }
 
   static const char kReplaceChars[];
 
@@ -449,11 +455,11 @@ private:
   MaybeRemoveOldDirectories();
 
   nsresult
-  UpgradeStorageFrom0ToCurrent(mozIStorageConnection* aConnection);
+  UpgradeStorageFrom0_0To1_0(mozIStorageConnection* aConnection);
 
 #if 0
   nsresult
-  UpgradeStorageFrom1To2(mozIStorageConnection* aConnection);
+  UpgradeStorageFrom1_0To2_0(mozIStorageConnection* aConnection);
 #endif
 
   nsresult

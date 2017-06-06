@@ -9,8 +9,7 @@
 
 "use strict";
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 XPCOMUtils.defineLazyModuleGetter(this, "DownloadStore",
                                   "resource://gre/modules/DownloadStore.jsm");
@@ -29,23 +28,20 @@ XPCOMUtils.defineLazyModuleGetter(this, "OS",
  * @resolves Array [ Newly created DownloadList , associated DownloadStore ].
  * @rejects JavaScript exception.
  */
-function promiseNewListAndStore(aStorePath)
-{
-  return promiseNewList().then(function (aList) {
+function promiseNewListAndStore(aStorePath) {
+  return promiseNewList().then(function(aList) {
     let path = aStorePath || getTempFile(TEST_STORE_FILE_NAME).path;
     let store = new DownloadStore(aList, path);
     return [aList, store];
   });
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
 /**
  * Saves downloads to a file, then reloads them.
  */
-add_task(function* test_save_reload()
-{
+add_task(function* test_save_reload() {
   let [listForSave, storeForSave] = yield promiseNewListAndStore();
   let [listForLoad, storeForLoad] = yield promiseNewListAndStore(
                                                  storeForSave.path);
@@ -66,6 +62,15 @@ add_task(function* test_save_reload()
   });
   listForSave.add(pdfDownload);
 
+  // If we used a callback to adjust the channel, the download should
+  // not be serialized because we can't recreate it across sessions.
+  let adjustedDownload = yield Downloads.createDownload({
+    source: { url: httpUrl("empty.txt"),
+              adjustChannel: () => Promise.resolve() },
+    target: getTempFile(TEST_TARGET_FILE_NAME),
+  });
+  listForSave.add(adjustedDownload);
+
   let legacyDownload = yield promiseStartLegacyDownload();
   yield legacyDownload.cancel();
   listForSave.add(legacyDownload);
@@ -73,7 +78,8 @@ add_task(function* test_save_reload()
   yield storeForSave.save();
   yield storeForLoad.load();
 
-  // Remove the PDF download because it should not appear in this list.
+  // Remove the PDF and adjusted downloads because they should not appear here.
+  listForSave.remove(adjustedDownload);
   listForSave.remove(pdfDownload);
 
   let itemsForSave = yield listForSave.getAll();
@@ -101,9 +107,8 @@ add_task(function* test_save_reload()
 /**
  * Checks that saving an empty list deletes any existing file.
  */
-add_task(function* test_save_empty()
-{
-  let [list, store] = yield promiseNewListAndStore();
+add_task(function* test_save_empty() {
+  let [, store] = yield promiseNewListAndStore();
 
   let createdFile = yield OS.File.open(store.path, { create: true });
   yield createdFile.close();
@@ -119,8 +124,7 @@ add_task(function* test_save_empty()
 /**
  * Checks that loading from a missing file results in an empty list.
  */
-add_task(function* test_load_empty()
-{
+add_task(function* test_load_empty() {
   let [list, store] = yield promiseNewListAndStore();
 
   do_check_false(yield OS.File.exists(store.path));
@@ -136,8 +140,7 @@ add_task(function* test_load_empty()
  * test is to verify that the JSON format used in previous versions can be
  * loaded, assuming the file is reloaded on the same platform.
  */
-add_task(function* test_load_string_predefined()
-{
+add_task(function* test_load_string_predefined() {
   let [list, store] = yield promiseNewListAndStore();
 
   // The platform-dependent file name should be generated dynamically.
@@ -174,8 +177,7 @@ add_task(function* test_load_string_predefined()
 /**
  * Loads downloads from a well-formed JSON string containing unrecognized data.
  */
-add_task(function* test_load_string_unrecognized()
-{
+add_task(function* test_load_string_unrecognized() {
   let [list, store] = yield promiseNewListAndStore();
 
   // The platform-dependent file name should be generated dynamically.
@@ -206,8 +208,7 @@ add_task(function* test_load_string_unrecognized()
 /**
  * Loads downloads from a malformed JSON string.
  */
-add_task(function* test_load_string_malformed()
-{
+add_task(function* test_load_string_malformed() {
   let [list, store] = yield promiseNewListAndStore();
 
   let string = "{\"list\":[{\"source\":null,\"target\":null}," +
@@ -235,8 +236,7 @@ add_task(function* test_load_string_malformed()
  * Saves downloads with unknown properties to a file and then reloads
  * them to ensure that these properties are preserved.
  */
-add_task(function* test_save_reload_unknownProperties()
-{
+add_task(function* test_save_reload_unknownProperties() {
   let [listForSave, storeForSave] = yield promiseNewListAndStore();
   let [listForLoad, storeForLoad] = yield promiseNewListAndStore(
                                                  storeForSave.path);

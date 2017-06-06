@@ -50,6 +50,7 @@ DEFAULT_NO_CONNECTIONS_PREFS = {
     'media.gmp-manager.cert.requireBuiltIn' : False,
     'media.gmp-manager.url' : 'http://localhost/media-dummy/gmpmanager',
     'media.gmp-manager.url.override': 'http://localhost/dummy-gmp-manager.xml',
+    'media.gmp-manager.updateEnabled': False,
     'browser.aboutHomeSnippets.updateUrl': 'https://localhost/snippet-dummy',
     'browser.newtab.url' : 'about:blank',
     'browser.search.update': False,
@@ -57,6 +58,8 @@ DEFAULT_NO_CONNECTIONS_PREFS = {
     'browser.safebrowsing.phishing.enabled' : False,
     'browser.safebrowsing.provider.google.updateURL': 'http://localhost/safebrowsing-dummy/update',
     'browser.safebrowsing.provider.google.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
+    'browser.safebrowsing.provider.google4.updateURL': 'http://localhost/safebrowsing4-dummy/update',
+    'browser.safebrowsing.provider.google4.gethashURL': 'http://localhost/safebrowsing4-dummy/gethash',
     'browser.safebrowsing.malware.reportURL': 'http://localhost/safebrowsing-dummy/malwarereport',
     'browser.selfsupport.url': 'https://localhost/selfsupport-dummy',
     'browser.safebrowsing.provider.mozilla.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
@@ -118,6 +121,8 @@ DEFAULT_FIREFOX_PREFS = {
     # Point the url-classifier to a nonexistent local URL for fast failures.
     'browser.safebrowsing.provider.google.gethashURL' : 'http://localhost/safebrowsing-dummy/gethash',
     'browser.safebrowsing.provider.google.updateURL' : 'http://localhost/safebrowsing-dummy/update',
+    'browser.safebrowsing.provider.google4.gethashURL' : 'http://localhost/safebrowsing4-dummy/gethash',
+    'browser.safebrowsing.provider.google4.updateURL' : 'http://localhost/safebrowsing4-dummy/update',
     'browser.safebrowsing.provider.mozilla.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
     'browser.safebrowsing.provider.mozilla.updateURL': 'http://localhost/safebrowsing-dummy/update',
 }
@@ -211,7 +216,6 @@ DEFAULT_TEST_PREFS = {
     'layout.css.report_errors': True,
     'layout.css.grid.enabled': True,
     'layout.spammy_warnings.enabled': False,
-    'dom.mozSettings.enabled': True,
     # Make sure the disk cache doesn't get auto disabled
     'network.http.bypass-cachelock-threshold': 200000,
     # Always use network provider for geolocation tests
@@ -228,8 +232,6 @@ DEFAULT_TEST_PREFS = {
     'browser.newtabpage.introShown': True,
     # Disable useragent updates.
     'general.useragent.updates.enabled': False,
-    'dom.mozApps.debug': True,
-    'dom.apps.customization.enabled': True,
     'media.eme.enabled': True,
     'media.eme.apiVisible': True,
     # Don't forceably kill content processes after a timeout

@@ -19,7 +19,7 @@
 #include "nsWeakReference.h"
 #include "nsWeakPtr.h"
 #include "nsTArray.h"
-#include "nsIDOMXMLDocument.h"
+#include "nsIDOMDocument.h"
 #include "nsIDOMDocumentXBL.h"
 #include "nsStubDocumentObserver.h"
 #include "nsIScriptGlobalObject.h"
@@ -68,7 +68,9 @@
 #include "jsfriendapi.h"
 #include "ImportManager.h"
 #include "mozilla/LinkedList.h"
-#include "CustomElementsRegistry.h"
+#include "CustomElementRegistry.h"
+#include "mozilla/dom/Performance.h"
+#include "mozilla/Maybe.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -94,9 +96,11 @@ namespace mozilla {
 class EventChainPreVisitor;
 namespace dom {
 class BoxObject;
-class UndoManager;
+class ImageTracker;
 struct LifecycleCallbacks;
 class CallbackFunction;
+class DOMIntersectionObserver;
+class Performance;
 
 struct FullscreenRequest : public LinkedListElement<FullscreenRequest>
 {
@@ -305,9 +309,8 @@ public:
     return mDocument;
   }
 
-  virtual uint32_t Length() override;
-  virtual mozilla::CSSStyleSheet*
-  IndexedGetter(uint32_t aIndex, bool& aFound) override;
+  uint32_t Length() override;
+  mozilla::StyleSheet* IndexedGetter(uint32_t aIndex, bool& aFound) override;
 
 protected:
   virtual ~nsDOMStyleSheetList();
@@ -485,16 +488,8 @@ protected:
 };
 
 // Base class for our document implementations.
-//
-// Note that this class *implements* nsIDOMXMLDocument, but it's not
-// really an nsIDOMXMLDocument. The reason for implementing
-// nsIDOMXMLDocument on this class is to avoid having to duplicate all
-// its inherited methods on document classes that *are*
-// nsIDOMXMLDocument's. nsDocument's QI should *not* claim to support
-// nsIDOMXMLDocument unless someone writes a real implementation of
-// the interface.
 class nsDocument : public nsIDocument,
-                   public nsIDOMXMLDocument, // inherits nsIDOMDocument
+                   public nsIDOMDocument,
                    public nsIDOMDocumentXBL,
                    public nsSupportsWeakReference,
                    public nsIScriptObjectPrincipal,
@@ -599,15 +594,13 @@ public:
    * its presentation context (presentation contexts <b>must not</b> be
    * shared among multiple presentation shells).
    */
-  virtual already_AddRefed<nsIPresShell> CreateShell(
-      nsPresContext* aContext,
-      nsViewManager* aViewManager,
-      mozilla::StyleSetHandle aStyleSet) override;
+  already_AddRefed<nsIPresShell> CreateShell(nsPresContext* aContext,
+                                             nsViewManager* aViewManager,
+                                             mozilla::StyleSetHandle aStyleSet)
+    final;
   virtual void DeleteShell() override;
 
-  virtual nsresult GetAllowPlugins(bool* aAllowPlugins) override;
-
-  virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() override;
+  virtual bool GetAllowPlugins() override;
 
   static bool IsElementAnimateEnabled(JSContext* aCx, JSObject* aObject);
   static bool IsWebAnimationsEnabled(JSContext* aCx, JSObject* aObject);
@@ -625,37 +618,37 @@ public:
   virtual Element* FindContentForSubDocument(nsIDocument *aDocument) const override;
   virtual Element* GetRootElementInternal() const override;
 
-  virtual void EnsureOnDemandBuiltInUASheet(mozilla::StyleSheetHandle aSheet) override;
+  virtual void EnsureOnDemandBuiltInUASheet(mozilla::StyleSheet* aSheet) override;
 
   /**
    * Get the (document) style sheets owned by this document.
    * These are ordered, highest priority last
    */
   virtual int32_t GetNumberOfStyleSheets() const override;
-  virtual mozilla::StyleSheetHandle GetStyleSheetAt(int32_t aIndex) const override;
+  virtual mozilla::StyleSheet* GetStyleSheetAt(int32_t aIndex) const override;
   virtual int32_t GetIndexOfStyleSheet(
-      const mozilla::StyleSheetHandle aSheet) const override;
-  virtual void AddStyleSheet(mozilla::StyleSheetHandle aSheet) override;
-  virtual void RemoveStyleSheet(mozilla::StyleSheetHandle aSheet) override;
+      const mozilla::StyleSheet* aSheet) const override;
+  virtual void AddStyleSheet(mozilla::StyleSheet* aSheet) override;
+  virtual void RemoveStyleSheet(mozilla::StyleSheet* aSheet) override;
 
   virtual void UpdateStyleSheets(
-      nsTArray<mozilla::StyleSheetHandle::RefPtr>& aOldSheets,
-      nsTArray<mozilla::StyleSheetHandle::RefPtr>& aNewSheets) override;
-  virtual void AddStyleSheetToStyleSets(mozilla::StyleSheetHandle aSheet);
-  virtual void RemoveStyleSheetFromStyleSets(mozilla::StyleSheetHandle aSheet);
+      nsTArray<RefPtr<mozilla::StyleSheet>>& aOldSheets,
+      nsTArray<RefPtr<mozilla::StyleSheet>>& aNewSheets) override;
+  virtual void AddStyleSheetToStyleSets(mozilla::StyleSheet* aSheet);
+  virtual void RemoveStyleSheetFromStyleSets(mozilla::StyleSheet* aSheet);
 
-  virtual void InsertStyleSheetAt(mozilla::StyleSheetHandle aSheet,
+  virtual void InsertStyleSheetAt(mozilla::StyleSheet* aSheet,
                                   int32_t aIndex) override;
-  virtual void SetStyleSheetApplicableState(mozilla::StyleSheetHandle aSheet,
+  virtual void SetStyleSheetApplicableState(mozilla::StyleSheet* aSheet,
                                             bool aApplicable) override;
 
   virtual nsresult LoadAdditionalStyleSheet(additionalSheetType aType,
                                             nsIURI* aSheetURI) override;
   virtual nsresult AddAdditionalStyleSheet(additionalSheetType aType,
-                                           mozilla::StyleSheetHandle aSheet) override;
+                                           mozilla::StyleSheet* aSheet) override;
   virtual void RemoveAdditionalStyleSheet(additionalSheetType aType,
                                           nsIURI* sheetURI) override;
-  virtual mozilla::StyleSheetHandle GetFirstAdditionalAuthorSheet() override;
+  virtual mozilla::StyleSheet* GetFirstAdditionalAuthorSheet() override;
 
   virtual nsIChannel* GetChannel() const override {
     return mChannel;
@@ -715,15 +708,15 @@ public:
   virtual void DocumentStatesChanged(
                  mozilla::EventStates aStateMask) override;
 
-  virtual void StyleRuleChanged(mozilla::StyleSheetHandle aStyleSheet,
+  virtual void StyleRuleChanged(mozilla::StyleSheet* aStyleSheet,
                                 mozilla::css::Rule* aStyleRule) override;
-  virtual void StyleRuleAdded(mozilla::StyleSheetHandle aStyleSheet,
+  virtual void StyleRuleAdded(mozilla::StyleSheet* aStyleSheet,
                               mozilla::css::Rule* aStyleRule) override;
-  virtual void StyleRuleRemoved(mozilla::StyleSheetHandle aStyleSheet,
+  virtual void StyleRuleRemoved(mozilla::StyleSheet* aStyleSheet,
                                 mozilla::css::Rule* aStyleRule) override;
 
-  virtual void FlushPendingNotifications(mozFlushType aType) override;
-  virtual void FlushExternalResources(mozFlushType aType) override;
+  virtual void FlushPendingNotifications(mozilla::FlushType aType) override;
+  virtual void FlushExternalResources(mozilla::FlushType aType) override;
   virtual void SetXMLDeclaration(const char16_t *aVersion,
                                  const char16_t *aEncoding,
                                  const int32_t aStandalone) override;
@@ -782,16 +775,33 @@ public:
 
   virtual nsViewportInfo GetViewportInfo(const mozilla::ScreenIntSize& aDisplaySize) override;
 
-  /**
-   * Called when an app-theme-changed observer notification is
-   * received by this document.
-   */
-  void OnAppThemeChanged();
+  enum class UseCounterReportKind {
+    // Flush the document's use counters only; the use counters for any
+    // external resource documents will be flushed when the external
+    // resource documents themselves are destroyed.
+    eDefault,
 
-  void ReportUseCounters();
+    // Flush use counters for the document and for its external resource
+    // documents. (Should only be necessary for tests, where we need
+    // flushing to happen synchronously and deterministically.)
+    eIncludeExternalResources,
+  };
+
+  void ReportUseCounters(UseCounterReportKind aKind = UseCounterReportKind::eDefault);
+
+  virtual void AddIntersectionObserver(
+    mozilla::dom::DOMIntersectionObserver* aObserver) override;
+  virtual void RemoveIntersectionObserver(
+    mozilla::dom::DOMIntersectionObserver* aObserver) override;
+  virtual void UpdateIntersectionObservations() override;
+  virtual void ScheduleIntersectionObserverNotification() override;
+  virtual void NotifyIntersectionObservers() override;
+
+  virtual void NotifyLayerManagerRecreated() override;
+
 
 private:
-  void AddOnDemandBuiltInUASheet(mozilla::StyleSheetHandle aSheet);
+  void AddOnDemandBuiltInUASheet(mozilla::StyleSheet* aSheet);
   nsRadioGroupStruct* GetRadioGroupInternal(const nsAString& aName) const;
   void SendToConsole(nsCOMArray<nsISecurityConsoleMessage>& aMessages);
 
@@ -802,14 +812,11 @@ public:
   // nsIDOMDocument
   NS_DECL_NSIDOMDOCUMENT
 
-  // nsIDOMXMLDocument
-  NS_DECL_NSIDOMXMLDOCUMENT
-
   // nsIDOMDocumentXBL
   NS_DECL_NSIDOMDOCUMENTXBL
 
   // nsIDOMEventTarget
-  virtual nsresult PreHandleEvent(
+  virtual nsresult GetEventTargetParent(
                      mozilla::EventChainPreVisitor& aVisitor) override;
   virtual mozilla::EventListenerManager*
     GetOrCreateListenerManager() override;
@@ -901,8 +908,6 @@ public:
   virtual mozilla::PendingAnimationTracker*
   GetOrCreatePendingAnimationTracker() override;
 
-  void SetImagesNeedAnimating(bool aAnimating) override;
-
   virtual void SuppressEventHandling(SuppressionType aWhat,
                                      uint32_t aIncrease) override;
 
@@ -912,13 +917,13 @@ public:
   void DecreaseEventSuppression() {
     MOZ_ASSERT(mEventsSuppressed);
     --mEventsSuppressed;
-    MaybeRescheduleAnimationFrameNotifications();
+    UpdateFrameRequestCallbackSchedulingState();
   }
 
   void ResumeAnimations() {
     MOZ_ASSERT(mAnimationsPaused);
     --mAnimationsPaused;
-    MaybeRescheduleAnimationFrameNotifications();
+    UpdateFrameRequestCallbackSchedulingState();
   }
 
   virtual nsIDocument* GetTemplateContentsOwner() override;
@@ -974,7 +979,7 @@ public:
                             const nsAString& aIntegrity) override;
 
   virtual nsresult LoadChromeSheetSync(nsIURI* uri, bool isAgentSheet,
-                                       mozilla::StyleSheetHandle::RefPtr* aSheet) override;
+                                       RefPtr<mozilla::StyleSheet>* aSheet) override;
 
   virtual nsISupports* GetCurrentContentSink() override;
 
@@ -994,10 +999,6 @@ public:
   virtual Element *LookupImageElement(const nsAString& aElementId) override;
   virtual void MozSetImageElement(const nsAString& aImageElementId,
                                   Element* aElement) override;
-
-  virtual nsresult AddImage(imgIRequest* aImage) override;
-  virtual nsresult RemoveImage(imgIRequest* aImage, uint32_t aFlags) override;
-  virtual nsresult SetImageLockingState(bool aLocked) override;
 
   // AddPlugin adds a plugin-related element to mPlugins when the element is
   // added to the tree.
@@ -1092,10 +1093,11 @@ public:
   Element* FullScreenStackTop();
 
   // DOM-exposed fullscreen API
-  bool FullscreenEnabled() override;
+  bool FullscreenEnabled(mozilla::dom::CallerType aCallerType) override;
   Element* GetFullscreenElement() override;
 
-  void RequestPointerLock(Element* aElement) override;
+  void RequestPointerLock(Element* aElement,
+                          mozilla::dom::CallerType aCallerType) override;
   bool SetPointerLock(Element* aElement, int aCursorStyle);
   static void UnlockPointer(nsIDocument* aDoc = nullptr);
 
@@ -1139,7 +1141,7 @@ public:
                                                   ErrorResult& rv) override;
   virtual already_AddRefed<Element> CreateElementNS(const nsAString& aNamespaceURI,
                                                     const nsAString& aQualifiedName,
-                                                    const mozilla::dom::ElementCreationOptions& aOptions,
+                                                    const mozilla::dom::ElementCreationOptionsOrString& aOptions,
                                                     mozilla::ErrorResult& rv) override;
 
   virtual nsIDocument* MasterDocument() override
@@ -1284,13 +1286,9 @@ public:
   bool ContainsMSEContent();
 
 protected:
-  already_AddRefed<nsIPresShell> doCreateShell(nsPresContext* aContext,
-                                               nsViewManager* aViewManager,
-                                               mozilla::StyleSetHandle aStyleSet);
-
   void RemoveDocStyleSheetsFromStyleSets();
   void RemoveStyleSheetsFromStyleSets(
-      const nsTArray<mozilla::StyleSheetHandle::RefPtr>& aSheets,
+      const nsTArray<RefPtr<mozilla::StyleSheet>>& aSheets,
       mozilla::SheetType aType);
   void ResetStylesheetsToURI(nsIURI* aURI);
   void FillStyleSet(mozilla::StyleSetHandle aStyleSet);
@@ -1307,6 +1305,9 @@ protected:
   virtual bool InternalAllowXULXBL() override;
 
   void UpdateScreenOrientation();
+
+  virtual mozilla::dom::FlashClassification DocumentFlashClassification() override;
+  virtual bool IsThirdParty() override;
 
 #define NS_DOCUMENT_NOTIFY_OBSERVERS(func_, params_)                        \
   NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mObservers, nsIDocumentObserver, \
@@ -1328,6 +1329,14 @@ protected:
   // fails and nothing gets changed.
   bool ApplyFullscreen(const FullscreenRequest& aRequest);
 
+  // Retrieves the classification of the Flash plugins in the document based on
+  // the classification lists.
+  mozilla::dom::FlashClassification PrincipalFlashClassification();
+
+  // Attempts to determine the Flash classification of this page based on the
+  // the classification lists and the classification of parent documents.
+  mozilla::dom::FlashClassification ComputeFlashClassification();
+
   nsTArray<nsIObserver*> mCharSetObservers;
 
   PLDHashTable *mSubDocuments;
@@ -1344,12 +1353,15 @@ protected:
   // EndLoad() has already happened.
   nsWeakPtr mWeakSink;
 
-  nsTArray<mozilla::StyleSheetHandle::RefPtr> mStyleSheets;
-  nsTArray<mozilla::StyleSheetHandle::RefPtr> mOnDemandBuiltInUASheets;
-  nsTArray<mozilla::StyleSheetHandle::RefPtr> mAdditionalSheets[AdditionalSheetTypeCount];
+  nsTArray<RefPtr<mozilla::StyleSheet>> mStyleSheets;
+  nsTArray<RefPtr<mozilla::StyleSheet>> mOnDemandBuiltInUASheets;
+  nsTArray<RefPtr<mozilla::StyleSheet>> mAdditionalSheets[AdditionalSheetTypeCount];
 
   // Array of observers
   nsTObserverArray<nsIDocumentObserver*> mObservers;
+
+  // Array of intersection observers
+  nsTArray<RefPtr<mozilla::dom::DOMIntersectionObserver>> mIntersectionObservers;
 
   // Tracker for animations that are waiting to start.
   // nullptr until GetOrCreatePendingAnimationTracker is called.
@@ -1369,6 +1381,10 @@ protected:
   // non-null when this document is in fullscreen mode.
   nsWeakPtr mFullscreenRoot;
 
+  mozilla::dom::FlashClassification mFlashClassification;
+  // Do not use this value directly. Call the |IsThirdParty()| method, which
+  // caches its result here.
+  mozilla::Maybe<bool> mIsThirdParty;
 private:
   static bool CustomElementConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp);
 
@@ -1387,10 +1403,16 @@ private:
     ErrorResult& rv);
 
 public:
-  virtual already_AddRefed<mozilla::dom::CustomElementsRegistry>
-    GetCustomElementsRegistry() override;
+  virtual already_AddRefed<mozilla::dom::CustomElementRegistry>
+    GetCustomElementRegistry() override;
 
+  // Check whether web components are enabled for the global of aObject.
   static bool IsWebComponentsEnabled(JSContext* aCx, JSObject* aObject);
+  // Check whether web components are enabled for the global of the document
+  // this nodeinfo comes from.
+  static bool IsWebComponentsEnabled(mozilla::dom::NodeInfo* aNodeInfo);
+  // Check whether web components are enabled for the given window.
+  static bool IsWebComponentsEnabled(nsPIDOMWindowInner* aWindow);
 
   RefPtr<mozilla::EventListenerManager> mListenerManager;
   RefPtr<mozilla::dom::StyleSheetList> mDOMStyleSheets;
@@ -1428,12 +1450,6 @@ public:
 
   bool mInXBLUpdate:1;
 
-  // Whether we're currently holding a lock on all of our images.
-  bool mLockingImages:1;
-
-  // Whether we currently require our images to animate
-  bool mAnimatingImages:1;
-
   // Whether we're currently under a FlushPendingNotifications call to
   // our presshell.  This is used to handle flush reentry correctly.
   bool mInFlush:1;
@@ -1450,12 +1466,6 @@ public:
 
   uint16_t mCurrentOrientationAngle;
   mozilla::dom::OrientationType mCurrentOrientationType;
-
-  // Whether we're observing the "app-theme-changed" observer service
-  // notification.  We need to keep track of this because we might get multiple
-  // OnPageShow notifications in a row without an OnPageHide in between, if
-  // we're getting document.open()/close() called on us.
-  bool mObservingAppThemeChanged:1;
 
   // Keeps track of whether we have a pending
   // 'style-sheet-applicable-state-changed' notification.
@@ -1500,8 +1510,8 @@ private:
   friend class nsUnblockOnloadEvent;
   // Recomputes the visibility state but doesn't set the new value.
   mozilla::dom::VisibilityState GetVisibilityState() const;
-  void NotifyStyleSheetAdded(mozilla::StyleSheetHandle aSheet, bool aDocumentSheet);
-  void NotifyStyleSheetRemoved(mozilla::StyleSheetHandle aSheet, bool aDocumentSheet);
+  void NotifyStyleSheetAdded(mozilla::StyleSheet* aSheet, bool aDocumentSheet);
+  void NotifyStyleSheetRemoved(mozilla::StyleSheet* aSheet, bool aDocumentSheet);
 
   void PostUnblockOnloadEvent();
   void DoUnblockOnload();
@@ -1525,16 +1535,10 @@ private:
   void EnableStyleSheetsForSetInternal(const nsAString& aSheetSet,
                                        bool aUpdateCSSLoader);
 
-  // Revoke any pending notifications due to requestAnimationFrame calls
-  void RevokeAnimationFrameNotifications();
-  // Reschedule any notifications we need to handle
-  // requestAnimationFrame, if it's OK to do so.
-  void MaybeRescheduleAnimationFrameNotifications();
-
   void ClearAllBoxObjects();
 
   // Returns true if the scheme for the url for this document is "about"
-  bool IsAboutPage();
+  bool IsAboutPage() const;
 
   // These are not implemented and not supported.
   nsDocument(const nsDocument& aOther);
@@ -1603,13 +1607,8 @@ private:
   uint8_t mScrolledToRefAlready : 1;
   uint8_t mChangeScrollPosWhenScrollingToRef : 1;
 
-  // Tracking for images in the document.
-  nsDataHashtable< nsPtrHashKey<imgIRequest>, uint32_t> mImageTracker;
-
   // Tracking for plugins in the document.
   nsTHashtable< nsPtrHashKey<nsIObjectLoadingContent> > mPlugins;
-
-  RefPtr<mozilla::dom::UndoManager> mUndoManager;
 
   RefPtr<mozilla::dom::DocumentTimeline> mDocumentTimeline;
   mozilla::LinkedList<mozilla::dom::DocumentTimeline> mTimelines;

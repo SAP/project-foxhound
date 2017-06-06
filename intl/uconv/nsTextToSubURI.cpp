@@ -240,11 +240,10 @@ NS_IMETHODIMP  nsTextToSubURI::UnEscapeURIForUI(const nsACString & aCharset,
     nsresult rv = mozilla::Preferences::GetString("network.IDN.blacklist_chars",
                                                   &blacklist);
     if (NS_SUCCEEDED(rv)) {
-      nsAString& chars = blacklist;
       // we allow SPACE and IDEOGRAPHIC SPACE in this method
-      chars.StripChars(u" \u3000");
-      mUnsafeChars.AppendElements(static_cast<const char16_t*>(chars.Data()),
-                                  chars.Length());
+      blacklist.StripChars(u" \u3000");
+      mUnsafeChars.AppendElements(static_cast<const char16_t*>(blacklist.Data()),
+                                  blacklist.Length());
     } else {
       NS_WARNING("Failed to get the 'network.IDN.blacklist_chars' preference");
     }
@@ -263,15 +262,16 @@ NS_IMETHODIMP  nsTextToSubURI::UnEscapeURIForUI(const nsACString & aCharset,
   return NS_OK;
 }
 
-NS_IMETHODIMP  nsTextToSubURI::UnEscapeNonAsciiURI(const nsACString & aCharset, 
-                                                   const nsACString & aURIFragment, 
-                                                   nsAString &_retval)
+NS_IMETHODIMP
+nsTextToSubURI::UnEscapeNonAsciiURI(const nsACString& aCharset,
+                                    const nsACString& aURIFragment,
+                                    nsAString& _retval)
 {
   nsAutoCString unescapedSpec;
   NS_UnescapeURL(PromiseFlatCString(aURIFragment),
                  esc_AlwaysCopy | esc_OnlyNonASCII, unescapedSpec);
   // leave the URI as it is if it's not UTF-8 and aCharset is not a ASCII
-  // superset since converting "http:" with such an encoding is always a bad 
+  // superset since converting "http:" with such an encoding is always a bad
   // idea.
   if (!IsUTF8(unescapedSpec) && 
       (aCharset.LowerCaseEqualsLiteral("utf-16") ||
@@ -283,7 +283,11 @@ NS_IMETHODIMP  nsTextToSubURI::UnEscapeNonAsciiURI(const nsACString & aCharset,
     return NS_OK;
   }
 
-  return convertURItoUnicode(PromiseFlatCString(aCharset), unescapedSpec, _retval);
+  nsresult rv = convertURItoUnicode(PromiseFlatCString(aCharset),
+                                    unescapedSpec, _retval);
+  // NS_OK_UDEC_MOREINPUT is a success code, so caller can't catch the error
+  // if the string ends with a valid (but incomplete) sequence.
+  return rv == NS_OK_UDEC_MOREINPUT ? NS_ERROR_UDEC_ILLEGALINPUT : rv;
 }
 
 //----------------------------------------------------------------------

@@ -9,6 +9,7 @@
 #include "H264Converter.h"
 #include "ImageContainer.h"
 #include "MediaInfo.h"
+#include "MediaPrefs.h"
 #include "mp4_demuxer/AnnexB.h"
 #include "mp4_demuxer/H264.h"
 
@@ -18,9 +19,8 @@ namespace mozilla
 H264Converter::H264Converter(PlatformDecoderModule* aPDM,
                              const CreateDecoderParams& aParams)
   : mPDM(aPDM)
-  , mOriginalConfig(aParams.VideoConfig())
   , mCurrentConfig(aParams.VideoConfig())
-  , mLayersBackend(aParams.mLayersBackend)
+  , mKnowsCompositor(aParams.mKnowsCompositor)
   , mImageContainer(aParams.mImageContainer)
   , mTaskQueue(aParams.mTaskQueue)
   , mCallback(aParams.mCallback)
@@ -87,6 +87,11 @@ H264Converter::Input(MediaRawData* aSample)
     }
   } else {
     rv = CheckForSPSChange(aSample);
+    if (rv == NS_ERROR_NOT_INITIALIZED) {
+      // The decoder is pending initialization.
+      mCallback->InputExhausted();
+      return;
+    }
   }
   if (NS_FAILED(rv)) {
     mCallback->Error(
@@ -101,7 +106,7 @@ H264Converter::Input(MediaRawData* aSample)
   }
 
   if (!mNeedAVCC &&
-      !mp4_demuxer::AnnexB::ConvertSampleToAnnexB(aSample)) {
+      !mp4_demuxer::AnnexB::ConvertSampleToAnnexB(aSample, mNeedKeyframe)) {
     mCallback->Error(MediaResult(NS_ERROR_OUT_OF_MEMORY,
                                  RESULT_DETAIL("ConvertSampleToAnnexB")));
     return;
@@ -166,7 +171,7 @@ H264Converter::SetSeekThreshold(const media::TimeUnit& aTime)
 nsresult
 H264Converter::CreateDecoder(DecoderDoctorDiagnostics* aDiagnostics)
 {
-  if (mNeedAVCC && !mp4_demuxer::AnnexB::HasSPS(mCurrentConfig.mExtraData)) {
+  if (!mp4_demuxer::AnnexB::HasSPS(mCurrentConfig.mExtraData)) {
     // nothing found yet, will try again later
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -176,32 +181,27 @@ H264Converter::CreateDecoder(DecoderDoctorDiagnostics* aDiagnostics)
   if (mp4_demuxer::H264::DecodeSPSFromExtraData(mCurrentConfig.mExtraData, spsdata)) {
     // Do some format check here.
     // WMF H.264 Video Decoder and Apple ATDecoder do not support YUV444 format.
-    if (spsdata.chroma_format_idc == 3 /*YUV444*/) {
+    if (spsdata.profile_idc == 244 /* Hi444PP */ ||
+        spsdata.chroma_format_idc == PDMFactory::kYUV444) {
       mLastError = NS_ERROR_FAILURE;
       if (aDiagnostics) {
-        aDiagnostics->SetVideoFormatNotSupport();
+        aDiagnostics->SetVideoNotSupported();
       }
       return NS_ERROR_FAILURE;
     }
-  } else if (mNeedAVCC) {
+  } else {
     // SPS was invalid.
     mLastError = NS_ERROR_FAILURE;
     return NS_ERROR_FAILURE;
   }
 
-  if (!mNeedAVCC) {
-    // When using a decoder handling AnnexB, we get here only once from the
-    // constructor. We do want to get the dimensions extracted from the SPS.
-    mOriginalConfig = mCurrentConfig;
-  }
-
   mDecoder = mPDM->CreateVideoDecoder({
-    mNeedAVCC ? mCurrentConfig : mOriginalConfig,
+    mCurrentConfig,
     mTaskQueue,
     mCallback,
     aDiagnostics,
     mImageContainer,
-    mLayersBackend,
+    mKnowsCompositor,
     mGMPCrashHelper
   });
 
@@ -231,12 +231,12 @@ H264Converter::CreateDecoderAndInit(MediaRawData* aSample)
     // Queue the incoming sample.
     mMediaRawSamples.AppendElement(aSample);
 
-    RefPtr<H264Converter> self = this;
-
-    mInitPromiseRequest.Begin(mDecoder->Init()
+    mDecoder->Init()
       ->Then(AbstractThread::GetCurrent()->AsTaskQueue(), __func__, this,
              &H264Converter::OnDecoderInitDone,
-             &H264Converter::OnDecoderInitFailed));
+             &H264Converter::OnDecoderInitFailed)
+      ->Track(mInitPromiseRequest);
+    return NS_ERROR_NOT_INITIALIZED;
   }
   return rv;
 }
@@ -253,6 +253,13 @@ H264Converter::OnDecoderInitDone(const TrackType aTrackType)
         continue;
       }
       mNeedKeyframe = false;
+    }
+    if (!mNeedAVCC &&
+        !mp4_demuxer::AnnexB::ConvertSampleToAnnexB(sample, mNeedKeyframe)) {
+      mCallback->Error(MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                                   RESULT_DETAIL("ConvertSampleToAnnexB")));
+      mMediaRawSamples.Clear();
+      return;
     }
     mDecoder->Input(sample);
   }
@@ -281,9 +288,12 @@ H264Converter::CheckForSPSChange(MediaRawData* aSample)
                                             mCurrentConfig.mExtraData)) {
         return NS_OK;
       }
-  if (!mNeedAVCC) {
+
+  if (MediaPrefs::MediaDecoderCheckRecycling() &&
+      mDecoder->SupportDecoderRecycling()) {
+    // Do not recreate the decoder, reuse it.
     UpdateConfigFromExtraData(extra_data);
-    mDecoder->ConfigurationChanged(mCurrentConfig);
+    mNeedKeyframe = true;
     return NS_OK;
   }
   // The SPS has changed, signal to flush the current decoder and create a

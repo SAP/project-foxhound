@@ -11,11 +11,11 @@ function expectedURL(aSearchTerms) {
 
 function simulateClick(aEvent, aTarget) {
   var event = document.createEvent("MouseEvent");
-  var ctrlKeyArg  = aEvent.ctrlKey  || false;
-  var altKeyArg   = aEvent.altKey   || false;
+  var ctrlKeyArg  = aEvent.ctrlKey || false;
+  var altKeyArg   = aEvent.altKey || false;
   var shiftKeyArg = aEvent.shiftKey || false;
-  var metaKeyArg  = aEvent.metaKey  || false;
-  var buttonArg   = aEvent.button   || 0;
+  var metaKeyArg  = aEvent.metaKey || false;
+  var buttonArg   = aEvent.button || 0;
   event.initMouseEvent("click", true, true, window,
                         0, 0, 0, 0, 0,
                         ctrlKeyArg, altKeyArg, shiftKeyArg, metaKeyArg,
@@ -47,11 +47,11 @@ function getMenuEntries() {
 function countEntries(name, value) {
   return new Promise(resolve => {
     let count = 0;
-    let obj = name && value ? {fieldname: name, value: value} : {};
+    let obj = name && value ? {fieldname: name, value} : {};
     FormHistory.count(obj,
-                      { handleResult: function(result) { count = result; },
-                        handleError: function(error) { throw error; },
-                        handleCompletion: function(reason) {
+                      { handleResult(result) { count = result; },
+                        handleError(error) { throw error; },
+                        handleCompletion(reason) {
                           if (!reason) {
                             resolve(count);
                           }
@@ -153,20 +153,20 @@ add_task(function* testAltReturn() {
   is(gBrowser.currentURI.spec, expectedURL(searchBar.value), "testAltReturn opened correct search page");
 });
 
-//Shift key has no effect for now, so skip it
+// Shift key has no effect for now, so skip it
 add_task(function* testShiftAltReturn() {
-  return;
-
+  /*
   yield* prepareTest();
 
   let url = expectedURL(searchBar.value);
 
   let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser, url);
   EventUtils.synthesizeKey("VK_RETURN", { shiftKey: true, altKey: true });
-  let newTab = yield newTabPromise;
+  yield newTabPromise;
 
   is(gBrowser.tabs.length, preTabNo + 1, "Shift+Alt+Return key added new tab");
   is(gBrowser.currentURI.spec, url, "testShiftAltReturn opened correct search page");
+  */
 });
 
 add_task(function* testLeftClick() {

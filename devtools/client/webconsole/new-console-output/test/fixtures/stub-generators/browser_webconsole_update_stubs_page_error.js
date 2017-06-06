@@ -5,8 +5,8 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/osfile.jsm");
-const TEST_URI = "data:text/html;charset=utf-8,stub generation";
+Cu.import("resource://gre/modules/osfile.jsm", {});
+const TEST_URI = "http://example.com/browser/devtools/client/webconsole/new-console-output/test/fixtures/stub-generators/test-console-api.html";
 
 const { pageError: snippets} = require("devtools/client/webconsole/new-console-output/test/fixtures/stub-generators/stub-snippets.js");
 
@@ -19,7 +19,8 @@ add_task(function* () {
   let toolbox = yield openNewTabAndToolbox(TEST_URI, "webconsole");
   ok(true, "make the test not fail");
 
-  for (var [key,code] of snippets) {
+  for (let [key, code] of snippets) {
+    OS.File.writeAtomic(TEMP_FILE_PATH, `${code}`);
     let received = new Promise(resolve => {
       toolbox.target.client.addListener("pageError", function onPacket(e, packet) {
         toolbox.target.client.removeListener("pageError", onPacket);
@@ -32,18 +33,16 @@ add_task(function* () {
       });
     });
 
-    info("Injecting script: " + code);
-
-    yield ContentTask.spawn(gBrowser.selectedBrowser, code, function(code) {
-      let container = content.document.createElement("script");
-      content.document.body.appendChild(container);
-      container.textContent = code;
-      content.document.body.removeChild(container);
+    yield ContentTask.spawn(gBrowser.selectedBrowser, key, function (subKey) {
+      let script = content.document.createElement("script");
+      script.src = "test-tempfile.js?key=" + encodeURIComponent(subKey);
+      content.document.body.appendChild(script);
     });
 
     yield received;
   }
 
   let filePath = OS.Path.join(`${BASE_PATH}/stubs`, "pageError.js");
-  OS.File.writeAtomic(filePath, formatFile(stubs));
+  OS.File.writeAtomic(filePath, formatFile(stubs, "ConsoleMessage"));
+  OS.File.writeAtomic(TEMP_FILE_PATH, "");
 });

@@ -14,7 +14,7 @@
 #include "nsDOMCSSAttrDeclaration.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIDocument.h"
-#include "mozilla/css/Declaration.h"
+#include "mozilla/DeclarationBlockInlines.h"
 #include "nsCSSParser.h"
 #include "mozilla/css/Loader.h"
 #include "nsIDOMMutationEvent.h"
@@ -49,7 +49,7 @@ nsStyledElement::ParseAttribute(int32_t aNamespaceID,
 }
 
 nsresult
-nsStyledElement::SetInlineStyleDeclaration(css::Declaration* aDeclaration,
+nsStyledElement::SetInlineStyleDeclaration(DeclarationBlock* aDeclaration,
                                            const nsAString* aSerialized,
                                            bool aNotify)
 {
@@ -81,7 +81,7 @@ nsStyledElement::SetInlineStyleDeclaration(css::Declaration* aDeclaration,
     modification = !!mAttrsAndChildren.GetAttr(nsGkAtoms::style);
   }
 
-  nsAttrValue attrValue(aDeclaration, aSerialized);
+  nsAttrValue attrValue(do_AddRef(aDeclaration), aSerialized);
 
   // XXXbz do we ever end up with ADDITION here?  I doubt it.
   uint8_t modType = modification ?
@@ -91,21 +91,6 @@ nsStyledElement::SetInlineStyleDeclaration(css::Declaration* aDeclaration,
   return SetAttrAndNotify(kNameSpaceID_None, nsGkAtoms::style, nullptr,
                           oldValue, attrValue, modType, hasListeners,
                           aNotify, kDontCallAfterSetAttr);
-}
-
-css::Declaration*
-nsStyledElement::GetInlineStyleDeclaration()
-{
-  if (!MayHaveStyle()) {
-    return nullptr;
-  }
-  const nsAttrValue* attrVal = mAttrsAndChildren.GetAttr(nsGkAtoms::style);
-
-  if (attrVal && attrVal->Type() == nsAttrValue::eGeckoCSSDeclaration) {
-    return attrVal->GetGeckoCSSDeclarationValue();
-  }
-
-  return nullptr;
 }
 
 // ---------------------------------------------------------------
@@ -134,13 +119,7 @@ nsStyledElement::ReparseStyleAttribute(bool aForceInDataDoc)
     return NS_OK;
   }
   const nsAttrValue* oldVal = mAttrsAndChildren.GetAttr(nsGkAtoms::style);
-  
-  nsAttrValue::ValueType desiredType =
-    OwnerDoc()->GetStyleBackendType() == StyleBackendType::Gecko ?
-      nsAttrValue::eGeckoCSSDeclaration :
-      nsAttrValue::eServoCSSDeclaration;
-
-  if (oldVal && oldVal->Type() != desiredType) {
+  if (oldVal && oldVal->Type() != nsAttrValue::eCSSDeclaration) {
     nsAttrValue attrValue;
     nsAutoString stringValue;
     oldVal->ToString(stringValue);

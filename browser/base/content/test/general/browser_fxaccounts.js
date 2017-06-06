@@ -16,8 +16,8 @@ const TEST_ROOT = "http://example.com/browser/browser/base/content/test/general/
 
   // The stub functions.
   let stubs = {
-    updateAppMenuItem: function() {
-      return unstubs['updateAppMenuItem'].call(gFxAccounts).then(() => {
+    updateAppMenuItem() {
+      return unstubs["updateAppMenuItem"].call(gFxAccounts).then(() => {
         Services.obs.notifyObservers(null, "test:browser_fxaccounts:updateAppMenuItem", null);
       });
     },
@@ -25,7 +25,7 @@ const TEST_ROOT = "http://example.com/browser/browser/base/content/test/general/
     // due to the promises it fires off at load time  and there's no clear way to
     // know when they are done.
     // So just ensure openPreferences is called rather than whether it opens.
-    openPreferences: function() {
+    openPreferences() {
       Services.obs.notifyObservers(null, "test:browser_fxaccounts:openPreferences", null);
     }
   };
@@ -116,6 +116,7 @@ add_task(function* test_verifiedUserEmptyProfile() {
   // we first fetch the profile. We want them both to fire or we aren't testing
   // the state we think we are testing.
   let promiseUpdateDone = promiseObserver("test:browser_fxaccounts:updateAppMenuItem", 2);
+  gFxAccounts._cachedProfile = null;
   configureProfileURL({}); // successful but empty profile.
   yield setSignedInUser(true); // this will fire the observer that does the update.
   yield promiseUpdateDone;
@@ -135,6 +136,7 @@ add_task(function* test_verifiedUserEmptyProfile() {
 
 add_task(function* test_verifiedUserDisplayName() {
   let promiseUpdateDone = promiseObserver("test:browser_fxaccounts:updateAppMenuItem", 2);
+  gFxAccounts._cachedProfile = null;
   configureProfileURL({ displayName: "Test User Display Name" });
   yield setSignedInUser(true); // this will fire the observer that does the update.
   yield promiseUpdateDone;
@@ -150,6 +152,7 @@ add_task(function* test_verifiedUserDisplayName() {
 add_task(function* test_verifiedUserProfileFailure() {
   // profile failure means only one observer fires.
   let promiseUpdateDone = promiseObserver("test:browser_fxaccounts:updateAppMenuItem", 1);
+  gFxAccounts._cachedProfile = null;
   configureProfileURL(null, 500);
   yield setSignedInUser(true); // this will fire the observer that does the update.
   yield promiseUpdateDone;
@@ -175,7 +178,7 @@ function configureProfileURL(profile, responseStatus = 200) {
             "responseBody=" + responseBody +
             // This is a bit cheeky - the FxA code will just append "/profile"
             // to the preference value. We arrange for this to be seen by our
-            //.sjs as part of the query string.
+            // .sjs as part of the query string.
             "&path=";
 
   Services.prefs.setCharPref("identity.fxaccounts.remote.profile.uri", url);
@@ -183,10 +186,10 @@ function configureProfileURL(profile, responseStatus = 200) {
 
 function promiseObserver(topic, count = 1) {
   return new Promise(resolve => {
-    let obs = (subject, topic, data) => {
+    let obs = (aSubject, aTopic, aData) => {
       if (--count == 0) {
-        Services.obs.removeObserver(obs, topic);
-        resolve(subject);
+        Services.obs.removeObserver(obs, aTopic);
+        resolve(aSubject);
       }
     }
     Services.obs.addObserver(obs, topic, false);
@@ -215,8 +218,7 @@ var promiseTabOpen = Task.async(function*(urlBase) {
   yield whenUnloaded;
 });
 
-function promiseTabUnloaded(tab)
-{
+function promiseTabUnloaded(tab) {
   return new Promise(resolve => {
     info("Wait for tab to unload");
     function handle(event) {
@@ -237,7 +239,7 @@ function setSignedInUser(verified) {
     sessionToken: "dead",
     kA: "beef",
     kB: "cafe",
-    verified: verified,
+    verified,
 
     oauthTokens: {
       // a token for the profile server.

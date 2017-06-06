@@ -15,6 +15,11 @@ checkSdpAfterEndOfTrickle: function(sdp, testOptions, label) {
   } else {
     ok(sdp.sdp.includes("a=rtcp:"), label + ": SDP contains rtcp port");
   }
+  if (testOptions.ssrc) {
+    ok(sdp.sdp.includes("a=ssrc"), label + ": SDP contains a=ssrc");
+  } else {
+    ok(!sdp.sdp.includes("a=ssrc"), label + ": SDP does not contain a=ssrc");
+  }
 },
 
 // takes sdp in string form (or possibly a fragment, say an m-section), and
@@ -37,6 +42,10 @@ removeCodec: function(sdp, codec) {
 
 removeRtcpMux: function(sdp) {
   return sdp.replace(/a=rtcp-mux\r\n/g,"");
+},
+
+removeSSRCs: function(sdp) {
+  return sdp.replace(/a=ssrc.*\r\n/g,"");
 },
 
 removeBundle: function(sdp) {
@@ -89,9 +98,9 @@ verifySdp: function(desc, expectedType, offerConstraintsList, offerOptions,
   ok(!desc.sdp.includes(LOOPBACK_ADDR), "loopback interface is absent from SDP");
   var requiresTrickleIce = !desc.sdp.includes("a=candidate");
   if (requiresTrickleIce) {
-    info("at least one ICE candidate is present in SDP");
-  } else {
     info("No ICE candidate in SDP -> requiring trickle ICE");
+  } else {
+    info("at least one ICE candidate is present in SDP");
   }
 
   //TODO: how can we check for absence/presence of m=application?
@@ -127,6 +136,7 @@ verifySdp: function(desc, expectedType, offerConstraintsList, offerOptions,
 	   desc.sdp.includes("a=rtpmap:121 VP9/90000"), "VP8 or VP9 codec is present in SDP");
     }
     is(testOptions.rtcpmux, desc.sdp.includes("a=rtcp-mux"), "RTCP Mux is offered in SDP");
+    is(testOptions.ssrc, desc.sdp.includes("a=ssrc"), "a=ssrc signaled in SDP");
   }
 
   return requiresTrickleIce;

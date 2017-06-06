@@ -58,7 +58,7 @@ ThrowExceptionValueIfSafe(JSContext* aCx, JS::Handle<JS::Value> exnVal,
   // is also why we don't just call ThrowExceptionObject on the Exception we
   // create: it would do the right thing, but that fact is not obvious.
   RefPtr<Exception> syntheticException =
-    CreateException(aCx, NS_ERROR_UNEXPECTED);
+    CreateException(NS_ERROR_UNEXPECTED);
   JS::Rooted<JS::Value> syntheticVal(aCx);
   if (!GetOrCreateDOMReflector(aCx, syntheticException, &syntheticVal)) {
     return;
@@ -163,7 +163,7 @@ Throw(JSContext* aCx, nsresult aRv, const nsACString& aMessage)
     }
   }
 
-  RefPtr<Exception> finalException = CreateException(aCx, aRv, aMessage);
+  RefPtr<Exception> finalException = CreateException(aRv, aMessage);
   MOZ_ASSERT(finalException);
 
   ThrowExceptionObject(aCx, finalException);
@@ -184,7 +184,7 @@ ThrowAndReport(nsPIDOMWindowInner* aWindow, nsresult aRv)
 }
 
 already_AddRefed<Exception>
-CreateException(JSContext* aCx, nsresult aRv, const nsACString& aMessage)
+CreateException(nsresult aRv, const nsACString& aMessage)
 {
   // Do we use DOM exceptions for this error code?
   switch (NS_ERROR_GET_MODULE(aRv)) {
@@ -193,7 +193,6 @@ CreateException(JSContext* aCx, nsresult aRv, const nsACString& aMessage)
   case NS_ERROR_MODULE_DOM_XPATH:
   case NS_ERROR_MODULE_DOM_INDEXEDDB:
   case NS_ERROR_MODULE_DOM_FILEHANDLE:
-  case NS_ERROR_MODULE_DOM_BLUETOOTH:
   case NS_ERROR_MODULE_DOM_ANIM:
   case NS_ERROR_MODULE_DOM_PUSH:
   case NS_ERROR_MODULE_DOM_MEDIA:
@@ -306,7 +305,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSStackFrame)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCaller)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAsyncCaller)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(JSStackFrame)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mStack)
@@ -345,7 +343,7 @@ NS_IMETHODIMP JSStackFrame::GetLanguageName(nsACString& aLanguageName)
 // @argument [out] aValue the value we got from the stack.
 template<typename ReturnType, typename GetterOutParamType>
 static void
-GetValueIfNotCached(JSContext* aCx, JSObject* aStack,
+GetValueIfNotCached(JSContext* aCx, const JS::Heap<JSObject*>& aStack,
                     JS::SavedFrameResult (*aPropGetter)(JSContext*,
                                                         JS::Handle<JSObject*>,
                                                         GetterOutParamType,
@@ -365,7 +363,6 @@ GetValueIfNotCached(JSContext* aCx, JSObject* aStack,
   }
 
   *aUseCachedValue = false;
-  JS::ExposeObjectToActiveJS(stack);
 
   aPropGetter(aCx, stack, aValue, JS::SavedFrameSelfHosted::Exclude);
 }
@@ -628,7 +625,6 @@ NS_IMETHODIMP JSStackFrame::GetFormattedStack(JSContext* aCx, nsAString& aStack)
     return NS_OK;
   }
 
-  JS::ExposeObjectToActiveJS(mStack);
   JS::Rooted<JSObject*> stack(aCx, mStack);
 
   JS::Rooted<JSString*> formattedStack(aCx);
@@ -657,9 +653,6 @@ NS_IMETHODIMP JSStackFrame::GetFormattedStack(JSContext* aCx, nsAString& aStack)
 
 NS_IMETHODIMP JSStackFrame::GetNativeSavedFrame(JS::MutableHandle<JS::Value> aSavedFrame)
 {
-  if (mStack) {
-    JS::ExposeObjectToActiveJS(mStack);
-  }
   aSavedFrame.setObjectOrNull(mStack);
   return NS_OK;
 }

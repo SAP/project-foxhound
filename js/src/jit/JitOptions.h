@@ -47,6 +47,7 @@ struct DefaultJitOptions
 #endif
     bool checkRangeAnalysis;
     bool runExtraChecks;
+    bool disableInlineBacktracking;
     bool disableAma;
     bool disableEaa;
     bool disableEagerSimdUnbox;
@@ -71,6 +72,7 @@ struct DefaultJitOptions
     bool osr;
     bool asmJSAtomicsEnable;
     bool wasmTestMode;
+    bool wasmAlwaysCheckBounds;
     bool wasmFoldOffsets;
     bool ionInterruptWithoutSignals;
     uint32_t baselineWarmUpThreshold;
@@ -85,6 +87,8 @@ struct DefaultJitOptions
     uint32_t branchPruningBlockSpanFactor;
     uint32_t branchPruningEffectfulInstFactor;
     uint32_t branchPruningThreshold;
+    uint32_t wasmBatchIonThreshold;
+    uint32_t wasmBatchBaselineThreshold;
     mozilla::Maybe<uint32_t> forcedDefaultIonWarmUpThreshold;
     mozilla::Maybe<uint32_t> forcedDefaultIonSmallFunctionWarmUpThreshold;
     mozilla::Maybe<IonRegisterAllocator> forcedRegisterAllocator;

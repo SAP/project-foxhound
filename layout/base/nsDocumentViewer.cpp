@@ -6,6 +6,7 @@
 
 /* container for a document and its presentation */
 
+#include "mozilla/ServoRestyleManager.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsAutoPtr.h"
 #include "nscore.h"
@@ -42,8 +43,8 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/EncodingUtils.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/StyleSheetHandle.h"
-#include "mozilla/StyleSheetHandleInlines.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 
 #include "nsViewManager.h"
 #include "nsView.h"
@@ -52,7 +53,7 @@
 #include "nsNetUtil.h"
 #include "nsIContentViewerEdit.h"
 #include "nsIContentViewerFile.h"
-#include "mozilla/CSSStyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -148,7 +149,9 @@ static mozilla::LazyLogModule gPrintingLog("printing");
 //-----------------------------------------------------
 
 class nsDocumentViewer;
-class nsPrintEventDispatcher;
+namespace mozilla {
+class AutoPrintEventDispatcher;
+}
 
 // a small delegate class used to avoid circular references
 
@@ -246,18 +249,6 @@ public:
 
   // nsIDocumentViewerPrint Printing Methods
   NS_DECL_NSIDOCUMENTVIEWERPRINT
-
-
-  static void DispatchBeforePrint(nsIDocument* aTop)
-  {
-    DispatchEventToWindowTree(aTop, NS_LITERAL_STRING("beforeprint"));
-  }
-  static void DispatchAfterPrint(nsIDocument* aTop)
-  {
-    DispatchEventToWindowTree(aTop, NS_LITERAL_STRING("afterprint"));
-  }
-  static void DispatchEventToWindowTree(nsIDocument* aTop,
-                                        const nsAString& aEvent);
 
 protected:
   virtual ~nsDocumentViewer();
@@ -397,7 +388,7 @@ protected:
   RefPtr<nsPrintEngine>          mPrintEngine;
   float                            mOriginalPrintPreviewScale;
   float                            mPrintPreviewZoom;
-  nsAutoPtr<nsPrintEventDispatcher> mBeforeAndAfterPrint;
+  nsAutoPtr<AutoPrintEventDispatcher> mAutoBeforeAndAfterPrint;
 #endif // NS_PRINT_PREVIEW
 
 #ifdef DEBUG
@@ -415,20 +406,52 @@ protected:
   bool mHidden;
 };
 
-class nsPrintEventDispatcher
+namespace mozilla {
+
+/**
+ * A RAII class for automatic dispatch of the 'beforeprint' and 'afterprint'
+ * events ('beforeprint' on construction, 'afterprint' on destruction).
+ *
+ * https://developer.mozilla.org/en-US/docs/Web/Events/beforeprint
+ * https://developer.mozilla.org/en-US/docs/Web/Events/afterprint
+ */
+class AutoPrintEventDispatcher
 {
 public:
-  explicit nsPrintEventDispatcher(nsIDocument* aTop) : mTop(aTop)
+  explicit AutoPrintEventDispatcher(nsIDocument* aTop) : mTop(aTop)
   {
-    nsDocumentViewer::DispatchBeforePrint(mTop);
+    DispatchEventToWindowTree(NS_LITERAL_STRING("beforeprint"));
   }
-  ~nsPrintEventDispatcher()
+  ~AutoPrintEventDispatcher()
   {
-    nsDocumentViewer::DispatchAfterPrint(mTop);
+    DispatchEventToWindowTree(NS_LITERAL_STRING("afterprint"));
+  }
+
+private:
+  void DispatchEventToWindowTree(const nsAString& aEvent)
+  {
+    nsCOMArray<nsIDocument> targets;
+    CollectDocuments(mTop, &targets);
+    for (int32_t i = 0; i < targets.Count(); ++i) {
+      nsIDocument* d = targets[i];
+      nsContentUtils::DispatchTrustedEvent(d, d->GetWindow(),
+                                           aEvent, false, false, nullptr);
+    }
+  }
+
+  static bool CollectDocuments(nsIDocument* aDocument, void* aData)
+  {
+    if (aDocument) {
+      static_cast<nsCOMArray<nsIDocument>*>(aData)->AppendObject(aDocument);
+      aDocument->EnumerateSubDocuments(CollectDocuments, aData);
+    }
+    return true;
   }
 
   nsCOMPtr<nsIDocument> mTop;
 };
+
+}
 
 class nsDocumentShownDispatcher : public Runnable
 {
@@ -653,7 +676,7 @@ nsDocumentViewer::InitPresentationStuff(bool aDoInitialReflow)
     // Note that we are flushing before we add mPresShell as an observer
     // to avoid bogus notifications.
 
-    mDocument->FlushPendingNotifications(Flush_ContentAndNotify);
+    mDocument->FlushPendingNotifications(FlushType::ContentAndNotify);
   }
 
   mPresShell->BeginObservingDocument();
@@ -927,7 +950,7 @@ nsDocumentViewer::LoadComplete(nsresult aStatus)
   if (mPresShell && !mStopped) {
     // Hold strong ref because this could conceivably run script
     nsCOMPtr<nsIPresShell> shell = mPresShell;
-    shell->FlushPendingNotifications(Flush_Layout);
+    shell->FlushPendingNotifications(FlushType::Layout);
   }
 
   nsresult rv = NS_OK;
@@ -1141,8 +1164,11 @@ nsDocumentViewer::PermitUnloadInternal(bool *aShouldPrompt,
     nsIDocument::PageUnloadingEventTimeStamp timestamp(mDocument);
 
     mInPermitUnload = true;
-    EventDispatcher::DispatchDOMEvent(window, nullptr, event, mPresContext,
-                                      nullptr);
+    {
+      Telemetry::AutoTimer<Telemetry::HANDLE_BEFOREUNLOAD_MS> telemetryTimer;
+      EventDispatcher::DispatchDOMEvent(window, nullptr, event, mPresContext,
+                                        nullptr);
+    }
     mInPermitUnload = false;
   }
 
@@ -1325,7 +1351,10 @@ nsDocumentViewer::PageHide(bool aIsUnload)
 
     nsIDocument::PageUnloadingEventTimeStamp timestamp(mDocument);
 
-    EventDispatcher::Dispatch(window, mPresContext, &event, nullptr, &status);
+    {
+      Telemetry::AutoTimer<Telemetry::HANDLE_UNLOAD_MS> telemetryTimer;
+      EventDispatcher::Dispatch(window, mPresContext, &event, nullptr, &status);
+    }
   }
 
 #ifdef MOZ_XUL
@@ -1547,7 +1576,8 @@ nsDocumentViewer::Destroy()
       return NS_OK;
     }
   }
-  mBeforeAndAfterPrint = nullptr;
+  // Dispatch the 'afterprint' event now, if pending:
+  mAutoBeforeAndAfterPrint = nullptr;
 #endif
 
   // Don't let the document get unloaded while we are printing.
@@ -2212,7 +2242,7 @@ nsDocumentViewer::CreateStyleSet(nsIDocument* aDocument)
   auto cache = nsLayoutStylesheetCache::For(backendType);
 
   // Handle the user sheets.
-  StyleSheetHandle sheet = nullptr;
+  StyleSheet* sheet = nullptr;
   if (nsContentUtils::IsInChromeDocshell(aDocument)) {
     sheet = cache->UserChromeSheet();
   } else {
@@ -2229,7 +2259,7 @@ nsDocumentViewer::CreateStyleSet(nsIDocument* aDocument)
   nsCOMPtr<nsIDocShell> ds(mContainer);
   nsCOMPtr<nsIDOMEventTarget> chromeHandler;
   nsCOMPtr<nsIURI> uri;
-  StyleSheetHandle::RefPtr chromeSheet;
+  RefPtr<StyleSheet> chromeSheet;
 
   if (ds) {
     ds->GetChromeEventHandler(getter_AddRefs(chromeHandler));
@@ -2348,10 +2378,10 @@ nsDocumentViewer::CreateStyleSet(nsIDocument* aDocument)
   if (styleSet->IsGecko()) {
     nsStyleSheetService* sheetService = nsStyleSheetService::GetInstance();
     if (sheetService) {
-      for (StyleSheetHandle sheet : *sheetService->AgentStyleSheets()) {
+      for (StyleSheet* sheet : *sheetService->AgentStyleSheets()) {
         styleSet->AppendStyleSheet(SheetType::Agent, sheet);
       }
-      for (StyleSheetHandle sheet : Reversed(*sheetService->UserStyleSheets())) {
+      for (StyleSheet* sheet : Reversed(*sheetService->UserStyleSheets())) {
         styleSet->PrependStyleSheet(SheetType::User, sheet);
       }
     }
@@ -3373,7 +3403,7 @@ nsDocumentViewer::GetContentSizeInternal(int32_t* aWidth, int32_t* aHeight,
 
   // Flush out all content and style updates. We can't use a resize reflow
   // because it won't change some sizes that a style change reflow will.
-  mDocument->FlushPendingNotifications(Flush_Layout);
+  mDocument->FlushPendingNotifications(FlushType::Layout);
 
   nsIFrame *root = presShell->GetRootFrame();
   NS_ENSURE_TRUE(root, NS_ERROR_FAILURE);
@@ -3778,8 +3808,11 @@ nsDocumentViewer::Print(nsIPrintSettings*       aPrintSettings,
     return rv;
   }
 
-  nsAutoPtr<nsPrintEventDispatcher> beforeAndAfterPrint(
-    new nsPrintEventDispatcher(mDocument));
+  // Dispatch 'beforeprint' event and ensure 'afterprint' will be dispatched:
+  MOZ_ASSERT(!mAutoBeforeAndAfterPrint,
+             "We don't want to dispatch nested beforeprint/afterprint");
+  nsAutoPtr<AutoPrintEventDispatcher> autoBeforeAndAfterPrint(
+    new AutoPrintEventDispatcher(mDocument));
   NS_ENSURE_STATE(!GetIsPrinting());
   // If we are hosting a full-page plugin, tell it to print
   // first. It shows its own native print UI.
@@ -3808,7 +3841,9 @@ nsDocumentViewer::Print(nsIPrintSettings*       aPrintSettings,
     }
   }
   if (mPrintEngine->HasPrintCallbackCanvas()) {
-    mBeforeAndAfterPrint = beforeAndAfterPrint;
+    // Postpone the 'afterprint' event until after the mozPrintCallback
+    // callbacks have been called:
+    mAutoBeforeAndAfterPrint = autoBeforeAndAfterPrint;
   }
   dom::Element* root = mDocument->GetRootElement();
   if (root && root->HasAttr(kNameSpaceID_None, nsGkAtoms::mozdisallowselectionprint)) {
@@ -3857,8 +3892,18 @@ nsDocumentViewer::PrintPreview(nsIPrintSettings* aPrintSettings,
   nsCOMPtr<nsIDocument> doc = window->GetDoc();
   NS_ENSURE_STATE(doc);
 
-  nsAutoPtr<nsPrintEventDispatcher> beforeAndAfterPrint(
-    new nsPrintEventDispatcher(doc));
+  // Dispatch 'beforeprint' event and ensure 'afterprint' will be dispatched:
+  // XXX Currently[1] when the user switches between portrait and landscape
+  // mode in print preview, we re-enter this function before
+  // mAutoBeforeAndAfterPrint (if set) is cleared to dispatch the 'afterprint'
+  // event.  To avoid sending multiple 'beforeprint'/'afterprint' events we
+  // must avoid creating a new AutoPrintEventDispatcher object here if we
+  // already have one saved in mAutoBeforeAndAfterPrint.
+  // [1] Until PDF.js is removed (though, maybe after that as well).
+  nsAutoPtr<AutoPrintEventDispatcher> autoBeforeAndAfterPrint;
+  if (!mAutoBeforeAndAfterPrint) {
+    autoBeforeAndAfterPrint = new AutoPrintEventDispatcher(doc);
+  }
   NS_ENSURE_STATE(!GetIsPrinting());
   // beforeprint event may have caused ContentViewer to be shutdown.
   NS_ENSURE_STATE(mContainer);
@@ -3882,8 +3927,11 @@ nsDocumentViewer::PrintPreview(nsIPrintSettings* aPrintSettings,
       return rv;
     }
   }
-  if (mPrintEngine->HasPrintCallbackCanvas()) {
-    mBeforeAndAfterPrint = beforeAndAfterPrint;
+  if (autoBeforeAndAfterPrint &&
+      mPrintEngine->HasPrintCallbackCanvas()) {
+    // Postpone the 'afterprint' event until after the mozPrintCallback
+    // callbacks have been called:
+    mAutoBeforeAndAfterPrint = autoBeforeAndAfterPrint;
   }
   dom::Element* root = doc->GetRootElement();
   if (root && root->HasAttr(kNameSpaceID_None, nsGkAtoms::mozdisallowselectionprint)) {
@@ -4228,28 +4276,6 @@ nsDocumentViewer::ShouldAttachToTopLevel()
   return false;
 }
 
-bool CollectDocuments(nsIDocument* aDocument, void* aData)
-{
-  if (aDocument) {
-    static_cast<nsCOMArray<nsIDocument>*>(aData)->AppendObject(aDocument);
-    aDocument->EnumerateSubDocuments(CollectDocuments, aData);
-  }
-  return true;
-}
-
-void
-nsDocumentViewer::DispatchEventToWindowTree(nsIDocument* aDoc,
-                                              const nsAString& aEvent)
-{
-  nsCOMArray<nsIDocument> targets;
-  CollectDocuments(aDoc, &targets);
-  for (int32_t i = 0; i < targets.Count(); ++i) {
-    nsIDocument* d = targets[i];
-    nsContentUtils::DispatchTrustedEvent(d, d->GetWindow(),
-                                         aEvent, false, false, nullptr);
-  }
-}
-
 //------------------------------------------------------------
 // XXX this always returns false for subdocuments
 bool
@@ -4279,7 +4305,8 @@ nsDocumentViewer::SetIsPrinting(bool aIsPrinting)
   }
 
   if (!aIsPrinting) {
-    mBeforeAndAfterPrint = nullptr;
+    // Dispatch the 'afterprint' event now, if pending:
+    mAutoBeforeAndAfterPrint = nullptr;
   }
 #endif
 }
@@ -4312,7 +4339,8 @@ nsDocumentViewer::SetIsPrintPreview(bool aIsPrintPreview)
     SetIsPrintingInDocShellTree(docShell, aIsPrintPreview, true);
   }
   if (!aIsPrintPreview) {
-    mBeforeAndAfterPrint = nullptr;
+    // Dispatch the 'afterprint' event now, if pending:
+    mAutoBeforeAndAfterPrint = nullptr;
   }
 #endif
   if (!aIsPrintPreview) {
@@ -4453,6 +4481,15 @@ NS_IMETHODIMP nsDocumentViewer::SetPageMode(bool aPageMode, nsIPrintSettings* aP
 
   mViewManager  = nullptr;
   mWindow       = nullptr;
+
+  // We're creating a new presentation context for an existing document.
+  // Drop any associated Servo data.
+#ifdef MOZ_STYLO
+  Element* root = mDocument->GetRootElement();
+  if (root && root->IsStyledByServo()) {
+    ServoRestyleManager::ClearServoDataFromSubtree(root);
+  }
+#endif
 
   NS_ENSURE_STATE(mDocument);
   if (aPageMode)

@@ -6,15 +6,18 @@
 
 UNIFIED_SOURCES += [
     'MockMediaResource.cpp',
+    'TestAudioBuffers.cpp',
     'TestAudioCompactor.cpp',
-    'TestEME.cpp',
+    'TestAudioMixer.cpp',
+    'TestAudioPacketizer.cpp',
+    'TestAudioSegment.cpp',
     'TestGMPCrossOrigin.cpp',
     'TestGMPRemoveAndDelete.cpp',
     'TestGMPUtils.cpp',
     'TestIntervalSet.cpp',
     'TestMediaDataDecoder.cpp',
     'TestMediaEventSource.cpp',
-    'TestMediaFormatReader.cpp',
+    'TestMediaMIMETypes.cpp',
     'TestMozPromise.cpp',
     'TestMP3Demuxer.cpp',
     'TestMP4Demuxer.cpp',
@@ -49,6 +52,7 @@ TEST_HARNESS_FILES.gtest += [
     'short-zero-in-moov.mp4',
     'short-zero-inband.mov',
     'small-shot-false-positive.mp3',
+    'small-shot-partial-xing.mp3',
     'small-shot.mp3',
     'test.webm',
     'test_case_1224361.vp8.ivf',
@@ -60,7 +64,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
     '/dom/media',
-    '/dom/media/eme',
     '/dom/media/encoder',
     '/dom/media/fmp4',
     '/dom/media/gmp',

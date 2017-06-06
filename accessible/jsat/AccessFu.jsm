@@ -33,21 +33,10 @@ this.AccessFu = { // jshint ignore:line
     Utils.init(aWindow);
 
     try {
-      Services.androidBridge.handleGeckoMessage(
-          { type: 'Accessibility:Ready' });
+      Services.androidBridge.dispatch('Accessibility:Ready');
       Services.obs.addObserver(this, 'Accessibility:Settings', false);
     } catch (x) {
       // Not on Android
-      if (aWindow.navigator.mozSettings) {
-        let lock = aWindow.navigator.mozSettings.createLock();
-        let req = lock.get(SCREENREADER_SETTING);
-        req.addEventListener('success', () => {
-          this._systemPref = req.result[SCREENREADER_SETTING];
-          this._enableOrDisable();
-        });
-        aWindow.navigator.mozSettings.addObserver(
-          SCREENREADER_SETTING, this.handleEvent);
-      }
     }
 
     this._activatePref = new PrefCache(
@@ -66,9 +55,6 @@ this.AccessFu = { // jshint ignore:line
     }
     if (Utils.MozBuildApp === 'mobile/android') {
       Services.obs.removeObserver(this, 'Accessibility:Settings');
-    } else if (Utils.win.navigator.mozSettings) {
-      Utils.win.navigator.mozSettings.removeObserver(
-        SCREENREADER_SETTING, this.handleEvent);
     }
     delete this._activatePref;
     Utils.uninit();
@@ -342,9 +328,9 @@ this.AccessFu = { // jshint ignore:line
       case 'remote-browser-shown':
       case 'inprocess-browser-shown':
       {
-        // Ignore notifications that aren't from a BrowserOrApp
+        // Ignore notifications that aren't from a Browser
         let frameLoader = aSubject.QueryInterface(Ci.nsIFrameLoader);
-        if (!frameLoader.ownerIsMozBrowserOrAppFrame) {
+        if (!frameLoader.ownerIsMozBrowserFrame) {
           return;
         }
         this._handleMessageManager(frameLoader.messageManager);
@@ -583,23 +569,9 @@ var Output = {
     }
   },
 
-  get androidBridge() {
-    delete this.androidBridge;
-    if (Utils.MozBuildApp === 'mobile/android') {
-      this.androidBridge = Services.androidBridge;
-    } else {
-      this.androidBridge = null;
-    }
-    return this.androidBridge;
-  },
-
   Android: function Android(aDetails, aBrowser) {
     const ANDROID_VIEW_TEXT_CHANGED = 0x10;
     const ANDROID_VIEW_TEXT_SELECTION_CHANGED = 0x2000;
-
-    if (!this.androidBridge) {
-      return;
-    }
 
     for (let androidEvent of aDetails) {
       androidEvent.type = 'Accessibility:Event';
@@ -622,7 +594,8 @@ var Output = {
             androidEvent.brailleOutput);
           break;
       }
-      this.androidBridge.handleGeckoMessage(androidEvent);
+
+      Utils.win.WindowEventDispatcher.sendRequest(androidEvent);
     }
   },
 
@@ -818,8 +791,7 @@ var Input = {
 
         if (Utils.MozBuildApp == 'mobile/android') {
           // Return focus to native Android browser chrome.
-          Services.androidBridge.handleGeckoMessage(
-              { type: 'ToggleChrome:Focus' });
+          Utils.win.WindowEventDispatcher.dispatch('ToggleChrome:Focus');
         }
         break;
       case aEvent.DOM_VK_RETURN:

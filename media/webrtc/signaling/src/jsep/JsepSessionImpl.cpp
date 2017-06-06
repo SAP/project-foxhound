@@ -4,6 +4,7 @@
 
 #include "logging.h"
 
+#include "webrtc/config.h"
 #include "signaling/src/jsep/JsepSessionImpl.h"
 #include <string>
 #include <set>
@@ -116,15 +117,35 @@ JsepSessionImpl::AddTrack(const RefPtr<JsepTrack>& track)
 {
   mLastError.clear();
   MOZ_ASSERT(track->GetDirection() == sdp::kSend);
-
+  MOZ_MTLOG(ML_DEBUG, "Adding track.");
   if (track->GetMediaType() != SdpMediaSection::kApplication) {
     track->SetCNAME(mCNAME);
-
-    if (track->GetSsrcs().empty()) {
-      uint32_t ssrc;
+    // Establish minimum number of required SSRCs
+    // Note that AddTrack is only for send direction
+    size_t minimumSsrcCount = 0;
+    std::vector<JsepTrack::JsConstraints> constraints;
+    track->GetJsConstraints(&constraints);
+    for (auto constraint : constraints) {
+      if (constraint.rid != "") {
+        minimumSsrcCount++;
+      }
+    }
+    // We need at least 1 SSRC
+    minimumSsrcCount = std::max<size_t>(1, minimumSsrcCount);
+    size_t currSsrcCount = track->GetSsrcs().size();
+    if (currSsrcCount < minimumSsrcCount ) {
+      MOZ_MTLOG(ML_DEBUG,
+                "Adding " << (minimumSsrcCount - currSsrcCount) << " SSRCs.");
+    }
+    while (track->GetSsrcs().size() < minimumSsrcCount) {
+      uint32_t ssrc=0;
       nsresult rv = CreateSsrc(&ssrc);
       NS_ENSURE_SUCCESS(rv, rv);
-      track->AddSsrc(ssrc);
+      // Don't add duplicate ssrcs
+      std::vector<uint32_t> ssrcs = track->GetSsrcs();
+      if (std::find(ssrcs.begin(), ssrcs.end(), ssrc) == ssrcs.end()) {
+        track->AddSsrc(ssrc);
+      }
     }
   }
 
@@ -198,44 +219,40 @@ JsepSessionImpl::AddDtlsFingerprint(const std::string& algorithm,
 }
 
 nsresult
-JsepSessionImpl::AddAudioRtpExtension(const std::string& extensionName)
+JsepSessionImpl::AddRtpExtension(std::vector<SdpExtmapAttributeList::Extmap>& extensions,
+                                 const std::string& extensionName,
+                                 SdpDirectionAttribute::Direction direction)
 {
   mLastError.clear();
 
-  if (mAudioRtpExtensions.size() + 1 > UINT16_MAX) {
-    JSEP_SET_ERROR("Too many audio rtp extensions have been added");
+  if (extensions.size() + 1 > UINT16_MAX) {
+    JSEP_SET_ERROR("Too many rtp extensions have been added");
     return NS_ERROR_FAILURE;
   }
 
   SdpExtmapAttributeList::Extmap extmap =
-      { static_cast<uint16_t>(mAudioRtpExtensions.size() + 1),
-        SdpDirectionAttribute::kSendrecv,
-        false, // don't actually specify direction
+      { static_cast<uint16_t>(extensions.size() + 1),
+        direction,
+        direction != SdpDirectionAttribute::kSendrecv, // do we want to specify direction?
         extensionName,
         "" };
 
-  mAudioRtpExtensions.push_back(extmap);
+  extensions.push_back(extmap);
   return NS_OK;
 }
 
 nsresult
-JsepSessionImpl::AddVideoRtpExtension(const std::string& extensionName)
+JsepSessionImpl::AddAudioRtpExtension(const std::string& extensionName,
+                                      SdpDirectionAttribute::Direction direction)
 {
-  mLastError.clear();
+  return AddRtpExtension(mAudioRtpExtensions, extensionName, direction);
+}
 
-  if (mVideoRtpExtensions.size() + 1 > UINT16_MAX) {
-    JSEP_SET_ERROR("Too many video rtp extensions have been added");
-    return NS_ERROR_FAILURE;
-  }
-
-  SdpExtmapAttributeList::Extmap extmap =
-      { static_cast<uint16_t>(mVideoRtpExtensions.size() + 1),
-        SdpDirectionAttribute::kSendrecv,
-        false, // don't actually specify direction
-        extensionName, "" };
-
-  mVideoRtpExtensions.push_back(extmap);
-  return NS_OK;
+nsresult
+JsepSessionImpl::AddVideoRtpExtension(const std::string& extensionName,
+                                      SdpDirectionAttribute::Direction direction)
+{
+  return AddRtpExtension(mVideoRtpExtensions, extensionName, direction);
 }
 
 template<class T>
@@ -287,7 +304,66 @@ JsepSessionImpl::SetParameters(const std::string& streamId,
     JSEP_SET_ERROR("Track " << streamId << "/" << trackId << " was never added.");
     return NS_ERROR_INVALID_ARG;
   }
+
+  // Add RtpStreamId Extmap
+  // SdpDirectionAttribute::Direction is a bitmask
+  SdpDirectionAttribute::Direction addVideoExt = SdpDirectionAttribute::kInactive;
+  SdpDirectionAttribute::Direction addAudioExt = SdpDirectionAttribute::kInactive;
+  for (auto constraintEntry: constraints) {
+    if (constraintEntry.rid != "") {
+      switch (it->mTrack->GetMediaType()) {
+        case SdpMediaSection::kVideo: {
+           addVideoExt = static_cast<SdpDirectionAttribute::Direction>(addVideoExt
+                                                                       | it->mTrack->GetDirection());
+          break;
+        }
+        case SdpMediaSection::kAudio: {
+          addAudioExt = static_cast<SdpDirectionAttribute::Direction>(addAudioExt
+                                                                      | it->mTrack->GetDirection());
+          break;
+        }
+      }
+    }
+  }
+  if (addVideoExt != SdpDirectionAttribute::kInactive) {
+    AddVideoRtpExtension("urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id", addVideoExt);
+  }
+  if (addAudioExt != SdpDirectionAttribute::kInactive) {
+    AddAudioRtpExtension("urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id", addAudioExt);
+  }
+
   it->mTrack->SetJsConstraints(constraints);
+
+  auto track = it->mTrack;
+  if (track->GetDirection() == sdp::kSend) {
+    // Establish minimum number of required SSRCs
+    // Note that AddTrack is only for send direction
+    size_t minimumSsrcCount = 0;
+    std::vector<JsepTrack::JsConstraints> constraints;
+    track->GetJsConstraints(&constraints);
+    for (auto constraint : constraints) {
+      if (constraint.rid != "") {
+        minimumSsrcCount++;
+      }
+    }
+    // We need at least 1 SSRC
+    minimumSsrcCount = std::max<size_t>(1, minimumSsrcCount);
+    size_t currSsrcCount = track->GetSsrcs().size();
+    if (currSsrcCount < minimumSsrcCount ) {
+      MOZ_MTLOG(ML_DEBUG,
+                "Adding " << (minimumSsrcCount - currSsrcCount) << " SSRCs.");
+    }
+    while (track->GetSsrcs().size() < minimumSsrcCount) {
+      uint32_t ssrc=0;
+      nsresult rv = CreateSsrc(&ssrc);
+      NS_ENSURE_SUCCESS(rv, rv);
+      // Don't add duplicate ssrcs
+      std::vector<uint32_t> ssrcs = track->GetSsrcs();
+      if (std::find(ssrcs.begin(), ssrcs.end(), ssrc) == ssrcs.end()) {
+        track->AddSsrc(ssrc);
+      }
+    }
+  }
   return NS_OK;
 }
 
@@ -1115,12 +1191,10 @@ JsepSessionImpl::SetLocalDescription(JsepSdpType type, const std::string& sdp)
 
   // Create transport objects.
   mOldTransports = mTransports; // Save in case we need to rollback
+  mTransports.clear();
   for (size_t t = 0; t < parsed->GetMediaSectionCount(); ++t) {
-    if (t >= mTransports.size()) {
-      mTransports.push_back(RefPtr<JsepTransport>(new JsepTransport));
-    }
-
-    UpdateTransport(parsed->GetMediaSection(t), mTransports[t].get());
+    mTransports.push_back(RefPtr<JsepTransport>(new JsepTransport));
+    InitTransport(parsed->GetMediaSection(t), mTransports[t].get());
   }
 
   switch (type) {
@@ -1454,8 +1528,8 @@ JsepSessionImpl::MakeNegotiatedTrackPair(const SdpMediaSection& remote,
 }
 
 void
-JsepSessionImpl::UpdateTransport(const SdpMediaSection& msection,
-                                 JsepTransport* transport)
+JsepSessionImpl::InitTransport(const SdpMediaSection& msection,
+                               JsepTransport* transport)
 {
   if (mSdpHelper.MsectionIsDisabled(msection)) {
     transport->Close();
@@ -2140,6 +2214,18 @@ JsepSessionImpl::SetupDefaultCodecs()
                                     8 * 8000 * 1 // 8 * frequency * channels
                                     ));
 
+  // note: because telephone-event is effectively a marker codec that indicates
+  // that dtmf rtp packets may be passed, the packetSize and bitRate fields
+  // don't make sense here.  For now, use zero. (mjf)
+  mSupportedCodecs.values.push_back(
+      new JsepAudioCodecDescription("101",
+                                    "telephone-event",
+                                    8000,
+                                    1,
+                                    0, // packetSize doesn't make sense here
+                                    0  // bitRate doesn't make sense here
+                                    ));
+
   // Supported video codecs.
   // Note: order here implies priority for building offers!
   JsepVideoCodecDescription* vp8 = new JsepVideoCodecDescription(
@@ -2196,6 +2282,7 @@ JsepSessionImpl::SetupDefaultCodecs()
       );
   mSupportedCodecs.values.push_back(ulpfec);
 
+
   mSupportedCodecs.values.push_back(new JsepApplicationCodecDescription(
       "5000",
       "webrtc-datachannel",
@@ -2210,9 +2297,8 @@ JsepSessionImpl::SetupDefaultCodecs()
 void
 JsepSessionImpl::SetupDefaultRtpExtensions()
 {
-  AddAudioRtpExtension("urn:ietf:params:rtp-hdrext:ssrc-audio-level");
-  AddAudioRtpExtension("urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id");
-  AddVideoRtpExtension("urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id");
+  AddAudioRtpExtension("urn:ietf:params:rtp-hdrext:ssrc-audio-level",
+                       SdpDirectionAttribute::Direction::kSendonly);
 }
 
 void

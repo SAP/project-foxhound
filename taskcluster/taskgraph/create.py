@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 CONCURRENCY = 50
 
 
-def create_tasks(taskgraph, label_to_taskid):
-    # TODO: use the taskGroupId of the decision task
-    task_group_id = slugid()
+def create_tasks(taskgraph, label_to_taskid, params):
     taskid_to_label = {t: l for l, t in label_to_taskid.iteritems()}
 
     session = requests.Session()
@@ -39,6 +37,13 @@ def create_tasks(taskgraph, label_to_taskid):
     session.mount('http://', http_adapter)
 
     decision_task_id = os.environ.get('TASK_ID')
+
+    # when running as an actual decision task, we use the decision task's
+    # taskId as the taskGroupId.  The process that created the decision task
+    # helpfully placed it in this same taskGroup.  If there is no $TASK_ID,
+    # fall back to a slugid
+    task_group_id = decision_task_id or slugid()
+    scheduler_id = 'gecko-level-{}'.format(params['level'])
 
     with futures.ThreadPoolExecutor(CONCURRENCY) as e:
         fs = {}
@@ -62,7 +67,7 @@ def create_tasks(taskgraph, label_to_taskid):
                 task_def['dependencies'] = [decision_task_id]
 
             task_def['taskGroupId'] = task_group_id
-            task_def['schedulerId'] = '-'
+            task_def['schedulerId'] = scheduler_id
 
             # Wait for dependencies before submitting this.
             deps_fs = [fs[dep] for dep in task_def.get('dependencies', [])
@@ -70,13 +75,13 @@ def create_tasks(taskgraph, label_to_taskid):
             for f in futures.as_completed(deps_fs):
                 f.result()
 
-            fs[task_id] = e.submit(_create_task, session, task_id,
+            fs[task_id] = e.submit(create_task, session, task_id,
                                    taskid_to_label[task_id], task_def)
 
             # Schedule tasks as many times as task_duplicates indicates
             for i in range(1, attributes.get('task_duplicates', 1)):
                 # We use slugid() since we want a distinct task id
-                fs[task_id] = e.submit(_create_task, session, slugid(),
+                fs[task_id] = e.submit(create_task, session, slugid(),
                                        taskid_to_label[task_id], task_def)
 
         # Wait for all futures to complete.
@@ -84,7 +89,7 @@ def create_tasks(taskgraph, label_to_taskid):
             f.result()
 
 
-def _create_task(session, task_id, label, task_def):
+def create_task(session, task_id, label, task_def):
     # create the task using 'http://taskcluster/queue', which is proxied to the queue service
     # with credentials appropriate to this job.
 

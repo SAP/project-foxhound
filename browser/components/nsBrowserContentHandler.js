@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.importGlobalProperties(["URLSearchParams"]);
+/* eslint no-undef:2 */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
@@ -65,8 +65,7 @@ function resolveURIInternal(aCmdLine, aArgument) {
   try {
     if (uri.file.exists())
       return uri;
-  }
-  catch (e) {
+  } catch (e) {
     Components.utils.reportError(e);
   }
 
@@ -75,8 +74,7 @@ function resolveURIInternal(aCmdLine, aArgument) {
 
   try {
     uri = uriFixup.createFixupURI(aArgument, 0);
-  }
-  catch (e) {
+  } catch (e) {
     Components.utils.reportError(e);
   }
 
@@ -189,8 +187,8 @@ function openWindow(parent, url, target, features, args, noExternalArgs) {
   }
 
   // Pass an array to avoid the browser "|"-splitting behavior.
-  var argArray = Components.classes["@mozilla.org/supports-array;1"]
-                    .createInstance(Components.interfaces.nsISupportsArray);
+  var argArray = Components.classes["@mozilla.org/array;1"]
+                    .createInstance(Components.interfaces.nsIMutableArray);
 
   // add args to the arguments array
   var stringArgs = null;
@@ -201,44 +199,44 @@ function openWindow(parent, url, target, features, args, noExternalArgs) {
 
   if (stringArgs) {
     // put the URIs into argArray
-    var uriArray = Components.classes["@mozilla.org/supports-array;1"]
-                       .createInstance(Components.interfaces.nsISupportsArray);
-    stringArgs.forEach(function (uri) {
+    var uriArray = Components.classes["@mozilla.org/array;1"]
+                       .createInstance(Components.interfaces.nsIMutableArray);
+    stringArgs.forEach(function(uri) {
       var sstring = Components.classes["@mozilla.org/supports-string;1"]
                               .createInstance(nsISupportsString);
       sstring.data = uri;
-      uriArray.AppendElement(sstring);
+      uriArray.appendElement(sstring, /* weak = */ false);
     });
-    argArray.AppendElement(uriArray);
+    argArray.appendElement(uriArray, /* weak =*/ false);
   } else {
-    argArray.AppendElement(null);
+    argArray.appendElement(null, /* weak =*/ false);
   }
 
   // Pass these as null to ensure that we always trigger the "single URL"
   // behavior in browser.js's gBrowserInit.onLoad (which handles the window
   // arguments)
-  argArray.AppendElement(null); // charset
-  argArray.AppendElement(null); // referer
-  argArray.AppendElement(null); // postData
-  argArray.AppendElement(null); // allowThirdPartyFixup
+  argArray.appendElement(null, /* weak =*/ false); // charset
+  argArray.appendElement(null, /* weak =*/ false); // referer
+  argArray.appendElement(null, /* weak =*/ false); // postData
+  argArray.appendElement(null, /* weak =*/ false); // allowThirdPartyFixup
 
   return Services.ww.openWindow(parent, url, target, features, argArray);
 }
 
 function openPreferences() {
-  var sa = Components.classes["@mozilla.org/supports-array;1"]
-                     .createInstance(Components.interfaces.nsISupportsArray);
+  var args = Components.classes["@mozilla.org/array;1"]
+                     .createInstance(Components.interfaces.nsIMutableArray);
 
   var wuri = Components.classes["@mozilla.org/supports-string;1"]
                        .createInstance(Components.interfaces.nsISupportsString);
   wuri.data = "about:preferences";
 
-  sa.AppendElement(wuri);
+  args.appendElement(wuri, /* weak = */ false);
 
   Services.ww.openWindow(null, gBrowserContentHandler.chromeURL,
                          "_blank",
                          "chrome,dialog=no,all",
-                         sa);
+                         args);
 }
 
 function logSystemBasedSearch(engine) {
@@ -253,18 +251,18 @@ function doSearch(searchTerm, cmdLine) {
 
   var submission = engine.getSubmission(searchTerm, null, "system");
 
-  // fill our nsISupportsArray with uri-as-wstring, null, null, postData
-  var sa = Components.classes["@mozilla.org/supports-array;1"]
-                     .createInstance(Components.interfaces.nsISupportsArray);
+  // fill our nsIMutableArray with uri-as-wstring, null, null, postData
+  var args = Components.classes["@mozilla.org/array;1"]
+                     .createInstance(Components.interfaces.nsIMutableArray);
 
   var wuri = Components.classes["@mozilla.org/supports-string;1"]
                        .createInstance(Components.interfaces.nsISupportsString);
   wuri.data = submission.uri.spec;
 
-  sa.AppendElement(wuri);
-  sa.AppendElement(null);
-  sa.AppendElement(null);
-  sa.AppendElement(submission.postData);
+  args.appendElement(wuri, /* weak =*/ false);
+  args.appendElement(null, /* weak =*/ false);
+  args.appendElement(null, /* weak =*/ false);
+  args.appendElement(submission.postData, /* weak =*/ false);
 
   // XXXbsmedberg: use handURIToExistingBrowser to obey tabbed-browsing
   // preferences, but need nsIBrowserDOMWindow extensions
@@ -273,7 +271,7 @@ function doSearch(searchTerm, cmdLine) {
                                 "_blank",
                                 "chrome,dialog=no,all" +
                                 gBrowserContentHandler.getFeatures(cmdLine),
-                                sa);
+                                args);
 }
 
 function nsBrowserContentHandler() {
@@ -341,8 +339,7 @@ nsBrowserContentHandler.prototype = {
                    uri.spec);
         cmdLine.preventDefault = true;
       }
-    }
-    catch (e) {
+    } catch (e) {
       Components.utils.reportError(e);
     }
 
@@ -352,8 +349,7 @@ nsBrowserContentHandler.prototype = {
         handURIToExistingBrowser(uri, nsIBrowserDOMWindow.OPEN_NEWTAB, cmdLine);
         cmdLine.preventDefault = true;
       }
-    }
-    catch (e) {
+    } catch (e) {
       Components.utils.reportError(e);
     }
 
@@ -383,8 +379,7 @@ nsBrowserContentHandler.prototype = {
           dump("*** Preventing load of web URI as chrome\n");
           dump("    If you're trying to load a webpage, do not pass --chrome.\n");
         }
-      }
-      catch (e) {
+      } catch (e) {
         Components.utils.reportError(e);
       }
     }
@@ -437,7 +432,7 @@ nsBrowserContentHandler.prototype = {
       cmdLine.preventDefault = true;
     }
 
-    if (AppConstants.platform  == "win") {
+    if (AppConstants.platform == "win") {
       // Handle "? searchterm" for Windows Vista start menu integration
       for (var i = cmdLine.length - 1; i >= 0; --i) {
         var param = cmdLine.getArgument(i);
@@ -586,8 +581,7 @@ nsBrowserContentHandler.prototype = {
           this.mFeatures += ",width=" + width;
         if (height)
           this.mFeatures += ",height=" + height;
-      }
-      catch (e) {
+      } catch (e) {
       }
 
       // The global PB Service consumes this flag, so only eat it in per-window
@@ -649,8 +643,7 @@ nsBrowserContentHandler.prototype = {
 };
 var gBrowserContentHandler = new nsBrowserContentHandler();
 
-function handURIToExistingBrowser(uri, location, cmdLine, forcePrivate)
-{
+function handURIToExistingBrowser(uri, location, cmdLine, forcePrivate) {
   if (!shouldLoadURI(uri))
     return;
 
@@ -697,18 +690,6 @@ nsDefaultCommandLineHandler.prototype = {
 
   /* nsICommandLineHandler */
   handle : function dch_handle(cmdLine) {
-    // The -url flag is inserted by the operating system when the default
-    // application handler is used. We check for default browser to remove
-    // instances where users explicitly decide to "open with" the browser.
-    // Note that users who launch firefox manually with the -url flag will
-    // get erroneously counted.
-    try {
-      if (cmdLine.findFlag("url", false) &&
-          ShellService.isDefaultBrowser(false, false)) {
-        Services.telemetry.getHistogramById("FX_STARTUP_EXTERNAL_CONTENT_HANDLER").add();
-      }
-    } catch (e) {}
-
     var urilist = [];
 
     if (AppConstants.platform == "win") {
@@ -721,74 +702,22 @@ nsDefaultCommandLineHandler.prototype = {
       if (!this._haveProfile) {
         try {
           // This will throw when a profile has not been selected.
-          var dir = Services.dirsvc.get("ProfD", Components.interfaces.nsILocalFile);
+          Services.dirsvc.get("ProfD", Components.interfaces.nsILocalFile);
           this._haveProfile = true;
-        }
-        catch (e) {
+        } catch (e) {
           while ((ar = cmdLine.handleFlagWithParam("url", false)));
           cmdLine.preventDefault = true;
         }
       }
     }
 
-    let redirectWinSearch = false;
-    if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
-      redirectWinSearch = Services.prefs.getBoolPref("browser.search.redirectWindowsSearch");
-    }
-
     try {
       var ar;
       while ((ar = cmdLine.handleFlagWithParam("url", false))) {
         var uri = resolveURIInternal(cmdLine, ar);
-
-        // Searches in the Windows 10 task bar searchbox simply open the default browser
-        // with a URL for a search on Bing. Here we extract the search term and use the
-        // user's default search engine instead.
-        var uriScheme = "", uriHost = "", uriPath = "";
-        try {
-          uriScheme = uri.scheme;
-          uriHost = uri.host;
-          uriPath = uri.path;
-        } catch (e) {
-        }
-
-        // Most Windows searches are "https://www.bing.com/search...", but bug
-        // 1182308 reports a Chinese edition of Windows 10 using
-        // "http://cn.bing.com/search...", so be a bit flexible in what we match.
-        if (redirectWinSearch &&
-            (uriScheme == "http" || uriScheme == "https") &&
-            uriHost.endsWith(".bing.com") && uriPath.startsWith("/search")) {
-          try {
-            var url = uri.QueryInterface(Components.interfaces.nsIURL);
-            var params = new URLSearchParams(url.query);
-            // We don't want to rewrite all Bing URLs coming from external apps. Look
-            // for the magic URL parm that's present in searches from the task bar.
-            // * Typed searches use "form=WNSGPH"
-            // * Cortana voice searches use "FORM=WNSBOX" or direct results, or "FORM=WNSFC2"
-            //   for "see more results on Bing.com")
-            // * Cortana voice searches started from "Hey, Cortana" use "form=WNSHCO"
-            //   or "form=WNSSSV" or "form=WNSSCX"
-            var allowedParams = ["WNSGPH", "WNSBOX", "WNSFC2", "WNSHCO", "WNSSCX", "WNSSSV"];
-            var formParam = params.get("form");
-            if (!formParam) {
-              formParam = params.get("FORM");
-            }
-            if (allowedParams.indexOf(formParam) != -1) {
-              var term = params.get("q");
-              var engine = Services.search.defaultEngine;
-              logSystemBasedSearch(engine);
-              var submission = engine.getSubmission(term, null, "system");
-              uri = submission.uri;
-            }
-          } catch (e) {
-            Components.utils.reportError("Couldn't redirect Windows search: " + e);
-          }
-        }
-
         urilist.push(uri);
       }
-    }
-    catch (e) {
+    } catch (e) {
       Components.utils.reportError(e);
     }
 
@@ -802,8 +731,7 @@ nsDefaultCommandLineHandler.prototype = {
       } else {
         try {
           urilist.push(resolveURIInternal(cmdLine, curarg));
-        }
-        catch (e) {
+        } catch (e) {
           Components.utils.reportError("Error opening URI '" + curarg + "' from the command line: " + e + "\n");
         }
       }
@@ -817,8 +745,7 @@ nsDefaultCommandLineHandler.prototype = {
         try {
           handURIToExistingBrowser(urilist[0], nsIBrowserDOMWindow.OPEN_DEFAULTWINDOW, cmdLine);
           return;
-        }
-        catch (e) {
+        } catch (e) {
         }
       }
 
@@ -829,8 +756,7 @@ nsDefaultCommandLineHandler.prototype = {
                    URLlist);
       }
 
-    }
-    else if (!cmdLine.preventDefault) {
+    } else if (!cmdLine.preventDefault) {
       if (AppConstants.isPlatformAndVersionAtLeast("win", "10") &&
           cmdLine.state != nsICommandLine.STATE_INITIAL_LAUNCH &&
           WindowsUIUtils.inTabletMode) {

@@ -68,7 +68,7 @@ class CompartmentChecker
     }
 
     void check(JSObject* obj) {
-        MOZ_ASSERT_IF(obj, IsInsideNursery(obj) || !obj->asTenured().isMarked(gc::GRAY));
+        MOZ_ASSERT_IF(obj, !JS::ObjectIsMarkedGray(obj));
         if (obj)
             check(obj->compartment());
     }
@@ -84,7 +84,7 @@ class CompartmentChecker
     }
 
     void check(JSString* str) {
-        MOZ_ASSERT(!str->isMarked(gc::GRAY));
+        MOZ_ASSERT(!js::gc::detail::CellIsMarkedGray(str));
         if (!str->isAtom())
             checkZone(str->zone());
     }
@@ -119,7 +119,7 @@ class CompartmentChecker
     void check(jsid id) {}
 
     void check(JSScript* script) {
-        MOZ_ASSERT_IF(script, !script->isMarked(gc::GRAY));
+        MOZ_ASSERT_IF(script, !JS::ScriptIsMarkedGray(script));
         if (script)
             check(script->compartment());
     }
@@ -135,6 +135,10 @@ class CompartmentChecker
         if (desc.hasSetterObject())
             check(desc.setterObject());
         check(desc.value());
+    }
+
+    void check(TypeSet::Type type) {
+        check(type.maybeCompartment());
     }
 };
 
@@ -365,7 +369,7 @@ ExclusiveContext::typeLifoAlloc()
 }  /* namespace js */
 
 inline void
-JSContext::setPendingException(js::Value v)
+JSContext::setPendingException(const js::Value& v)
 {
     // overRecursed_ is set after the fact by ReportOverRecursed.
     this->overRecursed_ = false;

@@ -37,9 +37,9 @@ function prepareState(state, selected) {
 
 const SIMPLE_STATE = {
   tabs: [
-    { entries: [{ url: "http://example.com/", title: "title" }] },
-    { entries: [{ url: "http://example.com/", title: "title" }] },
-    { entries: [{ url: "http://example.com/", title: "title" }] },
+    { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] },
+    { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] },
+    { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] },
   ],
   title: "",
   _closedTabs: [],
@@ -47,9 +47,9 @@ const SIMPLE_STATE = {
 
 const PINNED_STATE = {
   tabs: [
-    { entries: [{ url: "http://example.com/", title: "title" }], pinned: true },
-    { entries: [{ url: "http://example.com/", title: "title" }], pinned: true },
-    { entries: [{ url: "http://example.com/", title: "title" }] },
+    { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }], pinned: true },
+    { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }], pinned: true },
+    { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] },
   ],
   title: "",
   _closedTabs: [],
@@ -144,17 +144,30 @@ function* runScenarios(scenarios) {
     // Hook up an event listener to make sure that the right
     // tabs flip remoteness, and only once.
     let flipListener = {
-      seenTabs: new Set(),
+      seenBeforeTabs: new Set(),
+      seenAfterTabs: new Set(),
       handleEvent(e) {
         let index = Array.from(tabbrowser.tabs).indexOf(e.target);
-        info(`Saw a tab at index ${index} flip remoteness`);
-        if (this.seenTabs.has(e.target)) {
-          Assert.ok(false, "Saw a tab flip remoteness more than once");
+        switch (e.type) {
+          case "BeforeTabRemotenessChange":
+            info(`Saw tab at index ${index} before remoteness flip`);
+            if (this.seenBeforeTabs.has(e.target)) {
+              Assert.ok(false, "Saw tab before remoteness flip more than once");
+            }
+            this.seenBeforeTabs.add(e.target);
+            break;
+          case "TabRemotenessChange":
+            info(`Saw tab at index ${index} after remoteness flip`);
+            if (this.seenAfterTabs.has(e.target)) {
+              Assert.ok(false, "Saw tab after remoteness flip more than once");
+            }
+            this.seenAfterTabs.add(e.target);
+            break;
         }
-        this.seenTabs.add(e.target);
       },
     };
 
+    win.addEventListener("BeforeTabRemotenessChange", flipListener);
     win.addEventListener("TabRemotenessChange", flipListener);
 
     // Okay, time to test!
@@ -163,6 +176,7 @@ function* runScenarios(scenarios) {
 
     SessionStore.setWindowState(win, state, true);
 
+    win.removeEventListener("BeforeTabRemotenessChange", flipListener);
     win.removeEventListener("TabRemotenessChange", flipListener);
 
     // Because we know that scenario.expectedFlips and
@@ -173,11 +187,15 @@ function* runScenarios(scenarios) {
       let expectedRemoteness = scenario.expectedRemoteness[i];
       let tab = tabbrowser.tabs[i];
       if (expectedToFlip) {
-        Assert.ok(flipListener.seenTabs.has(tab),
-                  `We should have seen tab at index ${i} flip remoteness`);
+        Assert.ok(flipListener.seenBeforeTabs.has(tab),
+                  `We should have seen tab at index ${i} before remoteness flip`);
+        Assert.ok(flipListener.seenAfterTabs.has(tab),
+                  `We should have seen tab at index ${i} after remoteness flip`);
       } else {
-        Assert.ok(!flipListener.seenTabs.has(tab),
-                  `We should not have seen tab at index ${i} flip remoteness`);
+        Assert.ok(!flipListener.seenBeforeTabs.has(tab),
+                  `We should not have seen tab at index ${i} before remoteness flip`);
+        Assert.ok(!flipListener.seenAfterTabs.has(tab),
+                  `We should not have seen tab at index ${i} after remoteness flip`);
       }
 
       Assert.equal(tab.linkedBrowser.isRemoteBrowser, expectedRemoteness,

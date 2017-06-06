@@ -750,7 +750,14 @@ GetContentProcessTempBaseDirKey()
 nsresult
 nsXREDirProvider::LoadContentProcessTempDir()
 {
-  mContentTempDir = GetContentProcessSandboxTempDir();
+  // The parent is responsible for creating the sandbox temp dir.
+  if (XRE_IsParentProcess()) {
+    mContentProcessSandboxTempDir = CreateContentProcessSandboxTempDir();
+    mContentTempDir = mContentProcessSandboxTempDir;
+  } else {
+    mContentTempDir = GetContentProcessSandboxTempDir();
+  }
+
   if (mContentTempDir) {
     return NS_OK;
   } else {
@@ -1209,10 +1216,11 @@ nsXREDirProvider::DoStartup()
     obsSvc->NotifyObservers(nullptr, "profile-initial-state", nullptr);
 
 #if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
-    // The parent is responsible for creating the sandbox temp dir
-    if (XRE_IsParentProcess()) {
-      mContentProcessSandboxTempDir = CreateContentProcessSandboxTempDir();
-      mContentTempDir = mContentProcessSandboxTempDir;
+    // Makes sure the content temp dir has been loaded if it hasn't been
+    // already. In the parent this ensures it has been created before we attempt
+    // to start any content processes.
+    if (!mContentTempDir) {
+      mozilla::Unused << NS_WARN_IF(NS_FAILED(LoadContentProcessTempDir()));
     }
 #endif
   }
@@ -1315,14 +1323,14 @@ GetRegWindowsAppDataFolder(bool aLocal, nsAString& _retval)
   // |size| may or may not include room for the terminating null character
   DWORD resultLen = size / 2;
 
-  _retval.SetLength(resultLen);
-  nsAString::iterator begin;
-  _retval.BeginWriting(begin);
-  if (begin.size_forward() != resultLen) {
+  if (!_retval.SetLength(resultLen, mozilla::fallible)) {
     ::RegCloseKey(key);
     _retval.SetLength(0);
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+  nsAString::iterator begin;
+  _retval.BeginWriting(begin);
 
   res = RegQueryValueExW(key, (aLocal ? L"Local AppData" : L"AppData"),
                          nullptr, nullptr, (LPBYTE) begin.get(), &size);

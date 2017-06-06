@@ -33,7 +33,6 @@ static GtkWidget*
 CreateWindowWidget()
 {
   GtkWidget *widget = gtk_window_new(GTK_WINDOW_POPUP);
-  gtk_widget_realize(widget);
   gtk_widget_set_name(widget, "MozillaGtkWidget");
   return widget;
 }
@@ -50,7 +49,6 @@ static void
 AddToWindowContainer(GtkWidget* widget)
 {
   gtk_container_add(GTK_CONTAINER(GetWidget(MOZ_GTK_WINDOW_CONTAINER)), widget);
-  gtk_widget_realize(widget);
 }
 
 static GtkWidget*
@@ -142,7 +140,6 @@ CreateToolbarWidget()
 {
   GtkWidget* widget = gtk_toolbar_new();
   gtk_container_add(GTK_CONTAINER(GetWidget(MOZ_GTK_GRIPPER)), widget);
-  gtk_widget_realize(widget);
   return widget;
 }
 
@@ -183,7 +180,6 @@ CreateButtonArrowWidget()
 {
   GtkWidget* widget = gtk_arrow_new(GTK_ARROW_DOWN, GTK_SHADOW_OUT);
   gtk_container_add(GTK_CONTAINER(GetWidget(MOZ_GTK_TOGGLE_BUTTON)), widget);
-  gtk_widget_realize(widget);
   gtk_widget_show(widget);
   return widget;
 }
@@ -205,19 +201,235 @@ CreateEntryWidget()
 }
 
 static GtkWidget*
-CreateScrolledWindowWidget()
+CreateComboBoxWidget()
 {
-  GtkWidget* widget = gtk_scrolled_window_new(nullptr, nullptr);
+  GtkWidget* widget = gtk_combo_box_new();
+  AddToWindowContainer(widget);
+  return widget;
+}
+
+typedef struct
+{
+  GType       type;
+  GtkWidget** widget;
+} GtkInnerWidgetInfo;
+
+static void
+GetInnerWidget(GtkWidget* widget, gpointer client_data)
+{
+  auto info = static_cast<GtkInnerWidgetInfo*>(client_data);
+
+  if (G_TYPE_CHECK_INSTANCE_TYPE(widget, info->type)) {
+    *info->widget = widget;
+  }
+}
+
+static GtkWidget*
+CreateComboBoxButtonWidget()
+{
+  GtkWidget* comboBox = GetWidget(MOZ_GTK_COMBOBOX);
+  GtkWidget* comboBoxButton = nullptr;
+
+  /* Get its inner Button */
+  GtkInnerWidgetInfo info = { GTK_TYPE_TOGGLE_BUTTON,
+                              &comboBoxButton };
+  gtk_container_forall(GTK_CONTAINER(comboBox),
+                       GetInnerWidget, &info);
+
+  if (!comboBoxButton) {
+    /* Shouldn't be reached with current internal gtk implementation; we
+     * use a generic toggle button as last resort fallback to avoid
+     * crashing. */
+    comboBoxButton = GetWidget(MOZ_GTK_TOGGLE_BUTTON);
+  } else {
+    /* We need to have pointers to the inner widgets (button, separator, arrow)
+     * of the ComboBox to get the correct rendering from theme engines which
+     * special cases their look. Since the inner layout can change, we ask GTK
+     * to NULL our pointers when they are about to become invalid because the
+     * corresponding widgets don't exist anymore. It's the role of
+     * g_object_add_weak_pointer().
+     * Note that if we don't find the inner widgets (which shouldn't happen), we
+     * fallback to use generic "non-inner" widgets, and they don't need that kind
+     * of weak pointer since they are explicit children of gProtoLayout and as
+     * such GTK holds a strong reference to them. */
+    g_object_add_weak_pointer(G_OBJECT(comboBoxButton),
+                              reinterpret_cast<gpointer *>(sWidgetStorage) +
+                              MOZ_GTK_COMBOBOX_BUTTON);
+  }
+
+  return comboBoxButton;
+}
+
+static GtkWidget*
+CreateComboBoxArrowWidget()
+{
+  GtkWidget* comboBoxButton = GetWidget(MOZ_GTK_COMBOBOX_BUTTON);
+  GtkWidget* comboBoxArrow = nullptr;
+
+  /* Get the widgets inside the Button */
+  GtkWidget* buttonChild = gtk_bin_get_child(GTK_BIN(comboBoxButton));
+  if (GTK_IS_BOX(buttonChild)) {
+    /* appears-as-list = FALSE, cell-view = TRUE; the button
+     * contains an hbox. This hbox is there because the ComboBox
+     * needs to place a cell renderer, a separator, and an arrow in
+     * the button when appears-as-list is FALSE. */
+    GtkInnerWidgetInfo info = { GTK_TYPE_ARROW,
+                                &comboBoxArrow };
+    gtk_container_forall(GTK_CONTAINER(buttonChild),
+                         GetInnerWidget, &info);
+  } else if (GTK_IS_ARROW(buttonChild)) {
+    /* appears-as-list = TRUE, or cell-view = FALSE;
+     * the button only contains an arrow */
+    comboBoxArrow = buttonChild;
+  }
+
+  if (!comboBoxArrow) {
+    /* Shouldn't be reached with current internal gtk implementation;
+     * we gButtonArrowWidget as last resort fallback to avoid
+     * crashing. */
+    comboBoxArrow = GetWidget(MOZ_GTK_BUTTON_ARROW);
+  } else {
+    g_object_add_weak_pointer(G_OBJECT(comboBoxArrow),
+                              reinterpret_cast<gpointer *>(sWidgetStorage) +
+                              MOZ_GTK_COMBOBOX_ARROW);
+  }
+
+  return comboBoxArrow;
+}
+
+static GtkWidget*
+CreateComboBoxSeparatorWidget()
+{
+  // Ensure to search for separator only once as it can fail
+  // TODO - it won't initialize after ResetWidgetCache() call
+  static bool isMissingSeparator = false;
+  if (isMissingSeparator)
+    return nullptr;
+
+  /* Get the widgets inside the Button */
+  GtkWidget* comboBoxSeparator = nullptr;
+  GtkWidget* buttonChild =
+    gtk_bin_get_child(GTK_BIN(GetWidget(MOZ_GTK_COMBOBOX_BUTTON)));
+  if (GTK_IS_BOX(buttonChild)) {
+    /* appears-as-list = FALSE, cell-view = TRUE; the button
+     * contains an hbox. This hbox is there because the ComboBox
+     * needs to place a cell renderer, a separator, and an arrow in
+     * the button when appears-as-list is FALSE. */
+    GtkInnerWidgetInfo info = { GTK_TYPE_SEPARATOR,
+                                &comboBoxSeparator };
+    gtk_container_forall(GTK_CONTAINER(buttonChild),
+                         GetInnerWidget, &info);
+  }
+
+  if (comboBoxSeparator) {
+    g_object_add_weak_pointer(G_OBJECT(comboBoxSeparator),
+                              reinterpret_cast<gpointer *>(sWidgetStorage) +
+                              MOZ_GTK_COMBOBOX_SEPARATOR);
+  } else {
+    /* comboBoxSeparator may be NULL
+     * when "appears-as-list" = TRUE or "cell-view" = FALSE;
+     * if there is no separator, then we just won't paint it. */
+    isMissingSeparator = true;
+  }
+
+  return comboBoxSeparator;
+}
+
+static GtkWidget*
+CreateComboBoxEntryWidget()
+{
+  GtkWidget* widget = gtk_combo_box_new_with_entry();
   AddToWindowContainer(widget);
   return widget;
 }
 
 static GtkWidget*
-CreateTextViewWidget()
+CreateComboBoxEntryTextareaWidget()
 {
-  GtkWidget* widget = gtk_text_view_new();
-  gtk_container_add(GTK_CONTAINER(GetWidget(MOZ_GTK_SCROLLED_WINDOW)),
-                    widget);
+  GtkWidget* comboBoxTextarea = nullptr;
+
+  /* Get its inner Entry and Button */
+  GtkInnerWidgetInfo info = { GTK_TYPE_ENTRY,
+                              &comboBoxTextarea };
+  gtk_container_forall(GTK_CONTAINER(GetWidget(MOZ_GTK_COMBOBOX_ENTRY)),
+                       GetInnerWidget, &info);
+
+  if (!comboBoxTextarea) {
+    comboBoxTextarea = GetWidget(MOZ_GTK_ENTRY);
+  } else {
+    g_object_add_weak_pointer(G_OBJECT(comboBoxTextarea),
+                              reinterpret_cast<gpointer *>(sWidgetStorage) +
+                              MOZ_GTK_COMBOBOX_ENTRY);
+  }
+
+  return comboBoxTextarea;
+}
+
+static GtkWidget*
+CreateComboBoxEntryButtonWidget()
+{
+  GtkWidget* comboBoxButton = nullptr;
+
+  /* Get its inner Entry and Button */
+  GtkInnerWidgetInfo info = { GTK_TYPE_TOGGLE_BUTTON,
+                              &comboBoxButton };
+  gtk_container_forall(GTK_CONTAINER(GetWidget(MOZ_GTK_COMBOBOX_ENTRY)),
+                       GetInnerWidget, &info);
+
+  if (!comboBoxButton) {
+    comboBoxButton = GetWidget(MOZ_GTK_TOGGLE_BUTTON);
+  } else {
+    g_object_add_weak_pointer(G_OBJECT(comboBoxButton),
+                              reinterpret_cast<gpointer *>(sWidgetStorage) +
+                              MOZ_GTK_COMBOBOX_ENTRY_BUTTON);
+  }
+
+  return comboBoxButton;
+}
+
+static GtkWidget*
+CreateComboBoxEntryArrowWidget()
+{
+  GtkWidget* comboBoxArrow = nullptr;
+
+  /* Get the Arrow inside the Button */
+  GtkWidget* buttonChild =
+    gtk_bin_get_child(GTK_BIN(GetWidget(MOZ_GTK_COMBOBOX_ENTRY_BUTTON)));
+
+  if (GTK_IS_BOX(buttonChild)) {
+   /* appears-as-list = FALSE, cell-view = TRUE; the button
+     * contains an hbox. This hbox is there because the ComboBox
+     * needs to place a cell renderer, a separator, and an arrow in
+     * the button when appears-as-list is FALSE. */
+    GtkInnerWidgetInfo info = { GTK_TYPE_ARROW,
+                                &comboBoxArrow };
+    gtk_container_forall(GTK_CONTAINER(buttonChild),
+                         GetInnerWidget, &info);
+  } else if (GTK_IS_ARROW(buttonChild)) {
+    /* appears-as-list = TRUE, or cell-view = FALSE;
+     * the button only contains an arrow */
+    comboBoxArrow = buttonChild;
+  }
+
+  if (!comboBoxArrow) {
+    /* Shouldn't be reached with current internal gtk implementation;
+     * we gButtonArrowWidget as last resort fallback to avoid
+     * crashing. */
+    comboBoxArrow = GetWidget(MOZ_GTK_BUTTON_ARROW);
+  } else {
+    g_object_add_weak_pointer(G_OBJECT(comboBoxArrow),
+                              reinterpret_cast<gpointer *>(sWidgetStorage) +
+                              MOZ_GTK_COMBOBOX_ENTRY_ARROW);
+  }
+
+  return comboBoxArrow;
+}
+
+static GtkWidget*
+CreateScrolledWindowWidget()
+{
+  GtkWidget* widget = gtk_scrolled_window_new(nullptr, nullptr);
+  AddToWindowContainer(widget);
   return widget;
 }
 
@@ -227,7 +439,6 @@ CreateMenuSeparatorWidget()
   GtkWidget* widget = gtk_separator_menu_item_new();
   gtk_menu_shell_append(GTK_MENU_SHELL(GetWidget(MOZ_GTK_MENUPOPUP)),
                         widget);
-  gtk_widget_realize(widget);
   return widget;
 }
 
@@ -306,15 +517,6 @@ CreateVPanedWidget()
 }
 
 static GtkWidget*
-CreateImageMenuItemWidget()
-{
-  GtkWidget* widget = gtk_image_menu_item_new();
-  gtk_menu_shell_append(GTK_MENU_SHELL(GetWidget(MOZ_GTK_MENUPOPUP)), widget);
-  gtk_widget_realize(widget);
-  return widget;
-}
-
-static GtkWidget*
 CreateScaleWidget(GtkOrientation aOrientation)
 {
   GtkWidget* widget = gtk_scale_new(aOrientation, nullptr);
@@ -380,8 +582,6 @@ CreateWidget(WidgetNodeType aWidgetType)
       return CreateEntryWidget();
     case MOZ_GTK_SCROLLED_WINDOW: 
       return CreateScrolledWindowWidget();
-    case MOZ_GTK_TEXT_VIEW:
-      return CreateTextViewWidget();
     case MOZ_GTK_TREEVIEW:
       return CreateTreeViewWidget();
     case MOZ_GTK_TREE_HEADER_CELL:
@@ -392,14 +592,28 @@ CreateWidget(WidgetNodeType aWidgetType)
       return CreateHPanedWidget();
     case MOZ_GTK_SPLITTER_VERTICAL:
       return CreateVPanedWidget();
-    case MOZ_GTK_IMAGEMENUITEM:
-      return CreateImageMenuItemWidget();
     case MOZ_GTK_SCALE_HORIZONTAL:
       return CreateScaleWidget(GTK_ORIENTATION_HORIZONTAL);
     case MOZ_GTK_SCALE_VERTICAL:
       return CreateScaleWidget(GTK_ORIENTATION_VERTICAL);
     case MOZ_GTK_NOTEBOOK:
       return CreateNotebookWidget();
+    case MOZ_GTK_COMBOBOX:
+      return CreateComboBoxWidget();
+    case MOZ_GTK_COMBOBOX_BUTTON:
+      return CreateComboBoxButtonWidget();
+    case MOZ_GTK_COMBOBOX_ARROW:
+      return CreateComboBoxArrowWidget();
+    case MOZ_GTK_COMBOBOX_SEPARATOR:
+      return CreateComboBoxSeparatorWidget();
+    case MOZ_GTK_COMBOBOX_ENTRY:
+      return CreateComboBoxEntryWidget();
+    case MOZ_GTK_COMBOBOX_ENTRY_TEXTAREA:
+      return CreateComboBoxEntryTextareaWidget();
+    case MOZ_GTK_COMBOBOX_ENTRY_BUTTON:
+      return CreateComboBoxEntryButtonWidget();
+    case MOZ_GTK_COMBOBOX_ENTRY_ARROW:
+      return CreateComboBoxEntryArrowWidget();
     default:
       /* Not implemented */
       return nullptr;
@@ -474,9 +688,20 @@ CreateCSSNode(const char* aName, GtkStyleContext* aParentStyle, GType aType)
     reinterpret_cast<void (*)(GtkWidgetPath *, gint, const char *)>
     (dlsym(RTLD_DEFAULT, "gtk_widget_path_iter_set_object_name"));
 
-  GtkWidgetPath* path = aParentStyle ?
-    gtk_widget_path_copy(gtk_style_context_get_path(aParentStyle)) :
-    gtk_widget_path_new();
+  GtkWidgetPath* path;
+  if (aParentStyle) {
+    path = gtk_widget_path_copy(gtk_style_context_get_path(aParentStyle));
+    // Copy classes from the parent style context to its corresponding node in
+    // the path, because GTK will only match against ancestor classes if they
+    // are on the path.
+    GList* classes = gtk_style_context_list_classes(aParentStyle);
+    for (GList* link = classes; link; link = link->next) {
+      gtk_widget_path_iter_add_class(path, -1, static_cast<gchar*>(link->data));
+    }
+    g_list_free(classes);
+  } else {
+    path = gtk_widget_path_new();
+  }
 
   gtk_widget_path_append_type(path, aType);
 
@@ -508,12 +733,37 @@ GetWidgetRootStyle(WidgetNodeType aNodeType)
     case MOZ_GTK_MENUITEM:
       style = CreateStyleForWidget(gtk_menu_item_new(), MOZ_GTK_MENUPOPUP);
       break;
-    case MOZ_GTK_CHECKMENUITEM_CONTAINER:
+    case MOZ_GTK_CHECKMENUITEM:
       style = CreateStyleForWidget(gtk_check_menu_item_new(), MOZ_GTK_MENUPOPUP);
       break;
-    case MOZ_GTK_RADIOMENUITEM_CONTAINER:
+    case MOZ_GTK_RADIOMENUITEM:
       style = CreateStyleForWidget(gtk_radio_menu_item_new(nullptr),
                                    MOZ_GTK_MENUPOPUP);
+      break;
+    case MOZ_GTK_TEXT_VIEW:
+      style = CreateStyleForWidget(gtk_text_view_new(),
+                                   MOZ_GTK_SCROLLED_WINDOW);
+      break;
+    case MOZ_GTK_TOOLTIP:
+      if (gtk_check_version(3, 20, 0) != nullptr) {
+          // The tooltip style class is added first in CreateTooltipWidget()
+          // and transfered to style in CreateStyleForWidget().
+          GtkWidget* tooltipWindow = CreateTooltipWidget();
+          style = CreateStyleForWidget(tooltipWindow, nullptr);
+          gtk_widget_destroy(tooltipWindow); // Release GtkWindow self-reference.
+      } else {
+          // We create this from the path because GtkTooltipWindow is not public.
+          style = CreateCSSNode("tooltip", nullptr, GTK_TYPE_TOOLTIP);
+          gtk_style_context_add_class(style, GTK_STYLE_CLASS_BACKGROUND);
+      }
+      break;
+    case MOZ_GTK_TOOLTIP_BOX:
+      style = CreateStyleForWidget(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0),
+                                   MOZ_GTK_TOOLTIP);
+      break;
+    case MOZ_GTK_TOOLTIP_BOX_LABEL:
+      style = CreateStyleForWidget(gtk_label_new(nullptr),
+                                   MOZ_GTK_TOOLTIP_BOX);
       break;
     default:
       GtkWidget* widget = GetWidget(aNodeType);
@@ -576,6 +826,10 @@ GetCssNodeStyleInternal(WidgetNodeType aNodeType)
       style = CreateChildCSSNode(GTK_STYLE_CLASS_SLIDER,
                                  MOZ_GTK_SCROLLBAR_TROUGH_VERTICAL);
       break;
+    case MOZ_GTK_SCROLLBAR_BUTTON:
+      style = CreateChildCSSNode(GTK_STYLE_CLASS_BUTTON,
+                                 MOZ_GTK_SCROLLBAR_CONTENTS_VERTICAL);
+      break;
     case MOZ_GTK_RADIOBUTTON:
       style = CreateChildCSSNode(GTK_STYLE_CLASS_RADIO,
                                  MOZ_GTK_RADIOBUTTON_CONTAINER);
@@ -584,13 +838,13 @@ GetCssNodeStyleInternal(WidgetNodeType aNodeType)
       style = CreateChildCSSNode(GTK_STYLE_CLASS_CHECK,
                                  MOZ_GTK_CHECKBUTTON_CONTAINER);
       break;
-    case MOZ_GTK_RADIOMENUITEM:
+    case MOZ_GTK_RADIOMENUITEM_INDICATOR:
       style = CreateChildCSSNode(GTK_STYLE_CLASS_RADIO,
-                                 MOZ_GTK_RADIOMENUITEM_CONTAINER);
+                                 MOZ_GTK_RADIOMENUITEM);
       break;
-    case MOZ_GTK_CHECKMENUITEM:
+    case MOZ_GTK_CHECKMENUITEM_INDICATOR:
       style = CreateChildCSSNode(GTK_STYLE_CLASS_CHECK,
-                                 MOZ_GTK_CHECKMENUITEM_CONTAINER);
+                                 MOZ_GTK_CHECKMENUITEM);
       break;
     case MOZ_GTK_PROGRESS_TROUGH:
       /* Progress bar background (trough) */
@@ -601,11 +855,6 @@ GetCssNodeStyleInternal(WidgetNodeType aNodeType)
       style = CreateChildCSSNode("progress",
                                  MOZ_GTK_PROGRESS_TROUGH);
       break;
-    case MOZ_GTK_TOOLTIP:
-      // We create this from the path because GtkTooltipWindow is not public.
-      style = CreateCSSNode("tooltip", nullptr, GTK_TYPE_TOOLTIP);
-      gtk_style_context_add_class(style, GTK_STYLE_CLASS_BACKGROUND);
-      break; 
     case MOZ_GTK_GRIPPER:
       // TODO - create from CSS node
       return GetWidgetStyleWithClass(MOZ_GTK_GRIPPER,
@@ -622,10 +871,28 @@ GetCssNodeStyleInternal(WidgetNodeType aNodeType)
       // TODO - create from CSS node
       return GetWidgetStyleWithClass(MOZ_GTK_SCROLLED_WINDOW,
                                      GTK_STYLE_CLASS_FRAME);
-    case MOZ_GTK_TEXT_VIEW:
-      // TODO - create from CSS node
-      return GetWidgetStyleWithClass(MOZ_GTK_TEXT_VIEW,
-                                     GTK_STYLE_CLASS_VIEW);
+    case MOZ_GTK_TEXT_VIEW_TEXT:
+    case MOZ_GTK_RESIZER:
+      style = CreateChildCSSNode("text", MOZ_GTK_TEXT_VIEW);
+      if (aNodeType == MOZ_GTK_RESIZER) {
+        // The "grip" class provides the correct builtin icon from
+        // gtk_render_handle().  The icon is drawn with shaded variants of
+        // the background color, and so a transparent background would lead to
+        // a transparent resizer.  gtk_render_handle() also uses the
+        // background color to draw a background, and so this style otherwise
+        // matches what is used in GtkTextView to match the background with
+        // textarea elements.
+        GdkRGBA color;
+        gtk_style_context_get_background_color(style, GTK_STATE_FLAG_NORMAL,
+                                               &color);
+        if (color.alpha == 0.0) {
+          g_object_unref(style);
+          style = CreateStyleForWidget(gtk_text_view_new(),
+                                       MOZ_GTK_SCROLLED_WINDOW);
+        }
+        gtk_style_context_add_class(style, GTK_STYLE_CLASS_GRIP);
+      }
+      break;
     case MOZ_GTK_FRAME_BORDER:
       style = CreateChildCSSNode("border", MOZ_GTK_FRAME);
       break;
@@ -728,27 +995,20 @@ GetWidgetStyleInternal(WidgetNodeType aNodeType)
     case MOZ_GTK_CHECKBUTTON:
       return GetWidgetStyleWithClass(MOZ_GTK_CHECKBUTTON_CONTAINER,
                                      GTK_STYLE_CLASS_CHECK);
-    case MOZ_GTK_RADIOMENUITEM:
-      return GetWidgetStyleWithClass(MOZ_GTK_RADIOMENUITEM_CONTAINER,
+    case MOZ_GTK_RADIOMENUITEM_INDICATOR:
+      return GetWidgetStyleWithClass(MOZ_GTK_RADIOMENUITEM,
                                      GTK_STYLE_CLASS_RADIO);
-    case MOZ_GTK_CHECKMENUITEM:
-      return GetWidgetStyleWithClass(MOZ_GTK_CHECKMENUITEM_CONTAINER,
+    case MOZ_GTK_CHECKMENUITEM_INDICATOR:
+      return GetWidgetStyleWithClass(MOZ_GTK_CHECKMENUITEM,
                                      GTK_STYLE_CLASS_CHECK);
     case MOZ_GTK_PROGRESS_TROUGH:
       return GetWidgetStyleWithClass(MOZ_GTK_PROGRESSBAR,
                                      GTK_STYLE_CLASS_TROUGH);
-    case MOZ_GTK_TOOLTIP: {
-      GtkStyleContext* style = sStyleStorage[aNodeType];
-      if (style)
-        return style;
-
-      // The tooltip style class is added first in CreateTooltipWidget() so
-      // that gtk_widget_path_append_for_widget() in CreateStyleForWidget()
-      // will find it.
-      GtkWidget* tooltipWindow = CreateTooltipWidget();
-      style = CreateStyleForWidget(tooltipWindow, nullptr);
-      gtk_widget_destroy(tooltipWindow); // Release GtkWindow self-reference.
-      sStyleStorage[aNodeType] = style;
+    case MOZ_GTK_PROGRESS_CHUNK: {
+      GtkStyleContext* style =
+        GetWidgetStyleWithClass(MOZ_GTK_PROGRESSBAR,
+                                GTK_STYLE_CLASS_PROGRESSBAR);
+      gtk_style_context_remove_class(style, GTK_STYLE_CLASS_TROUGH);
       return style;
     }
     case MOZ_GTK_GRIPPER:
@@ -763,9 +1023,25 @@ GetWidgetStyleInternal(WidgetNodeType aNodeType)
     case MOZ_GTK_SCROLLED_WINDOW:
       return GetWidgetStyleWithClass(MOZ_GTK_SCROLLED_WINDOW,
                                      GTK_STYLE_CLASS_FRAME);
-    case MOZ_GTK_TEXT_VIEW:
-      return GetWidgetStyleWithClass(MOZ_GTK_TEXT_VIEW,
-                                     GTK_STYLE_CLASS_VIEW);
+    case MOZ_GTK_TEXT_VIEW_TEXT:
+    case MOZ_GTK_RESIZER: {
+      // GTK versions prior to 3.20 do not have the view class on the root
+      // node, but add this to determine the background for the text window.
+      GtkStyleContext* style =
+        GetWidgetStyleWithClass(MOZ_GTK_TEXT_VIEW, GTK_STYLE_CLASS_VIEW);
+      if (aNodeType == MOZ_GTK_RESIZER) {
+        // The "grip" class provides the correct builtin icon from
+        // gtk_render_handle().  The icon is drawn with shaded variants of
+        // the background color, and so a transparent background would lead to
+        // a transparent resizer.  gtk_render_handle() also uses the
+        // background color to draw a background, and so this style otherwise
+        // matches MOZ_GTK_TEXT_VIEW_TEXT to match the background with
+        // textarea elements.  GtkTextView creates a separate text window and
+        // so the background should not be transparent.
+        gtk_style_context_add_class(style, GTK_STYLE_CLASS_GRIP);
+      }
+      return style;
+    }
     case MOZ_GTK_FRAME_BORDER:
       return GetWidgetRootStyle(MOZ_GTK_FRAME);
     case MOZ_GTK_TREEVIEW_VIEW:

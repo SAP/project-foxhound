@@ -16,6 +16,8 @@
 #include <unistd.h>
 #endif
 
+#include "MainThreadIdlePeriod.h"
+
 using namespace mozilla;
 
 static MOZ_THREAD_LOCAL(bool) sTLSIsMainThread;
@@ -97,6 +99,11 @@ nsThreadManager::Init()
   if (NS_FAILED(rv)) {
     mMainThread = nullptr;
     return rv;
+  }
+
+  {
+    nsCOMPtr<nsIIdlePeriod> idlePeriod = new MainThreadIdlePeriod();
+    mMainThread->RegisterIdlePeriod(idlePeriod.forget());
   }
 
   // We need to keep a pointer to the current thread, so we can satisfy
@@ -242,6 +249,14 @@ nsThreadManager::NewThread(uint32_t aCreationFlags,
                            uint32_t aStackSize,
                            nsIThread** aResult)
 {
+  return NewNamedThread(NS_LITERAL_CSTRING(""), aStackSize, aResult);
+}
+
+NS_IMETHODIMP
+nsThreadManager::NewNamedThread(const nsACString& aName,
+                                uint32_t aStackSize,
+                                nsIThread** aResult)
+{
   // Note: can be called from arbitrary threads
   
   // No new threads during Shutdown
@@ -250,7 +265,7 @@ nsThreadManager::NewThread(uint32_t aCreationFlags,
   }
 
   RefPtr<nsThread> thr = new nsThread(nsThread::NOT_MAIN_THREAD, aStackSize);
-  nsresult rv = thr->Init();  // Note: blocks until the new thread has been set up
+  nsresult rv = thr->Init(aName);  // Note: blocks until the new thread has been set up
   if (NS_FAILED(rv)) {
     return rv;
   }

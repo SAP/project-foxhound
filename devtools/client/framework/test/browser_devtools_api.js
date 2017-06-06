@@ -3,7 +3,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// /////////////////
 //
 // Whitelisting this test.
 // As part of bug 1077403, the leaking uncaught rejections should be fixed.
@@ -71,7 +70,7 @@ function runTests1(aTab) {
 
   gDevTools.showToolbox(target, toolId1).then(function (toolbox) {
     is(toolbox.target, target, "toolbox target is correct");
-    is(toolbox._host.hostTab, gBrowser.selectedTab, "toolbox host is correct");
+    is(toolbox.target.tab, gBrowser.selectedTab, "targeted tab is correct");
 
     ok(events["init"], "init event fired");
     ok(events["ready"], "ready event fired");
@@ -139,7 +138,7 @@ function runTests2() {
 
   gDevTools.showToolbox(target, toolId2).then(function (toolbox) {
     is(toolbox.target, target, "toolbox target is correct");
-    is(toolbox._host.hostTab, gBrowser.selectedTab, "toolbox host is correct");
+    is(toolbox.target.tab, gBrowser.selectedTab, "targeted tab is correct");
 
     ok(events["init"], "init event fired");
     ok(events["build"], "build event fired");
@@ -153,11 +152,13 @@ var continueTests = Task.async(function* (toolbox, panel) {
   ok(toolbox.getCurrentPanel(), "panel value is correct");
   is(toolbox.currentToolId, toolId2, "toolbox _currentToolId is correct");
 
-  ok(!toolbox.doc.getElementById("toolbox-tab-" + toolId2).hasAttribute("icon-invertable"),
-    "The tool tab does not have the invertable attribute");
+  ok(!toolbox.doc.getElementById("toolbox-tab-" + toolId2)
+     .classList.contains("icon-invertable"),
+     "The tool tab does not have the invertable class");
 
-  ok(toolbox.doc.getElementById("toolbox-tab-inspector").hasAttribute("icon-invertable"),
-    "The builtin tool tabs do have the invertable attribute");
+  ok(toolbox.doc.getElementById("toolbox-tab-inspector")
+     .classList.contains("icon-invertable"),
+     "The builtin tool tabs do have the invertable class");
 
   let toolDefinitions = gDevTools.getToolDefinitionMap();
   ok(toolDefinitions.has(toolId2), "The tool is in gDevTools");

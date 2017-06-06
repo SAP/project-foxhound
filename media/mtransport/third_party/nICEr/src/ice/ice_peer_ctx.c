@@ -466,7 +466,7 @@ static void nr_ice_peer_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg)
     nr_ice_peer_ctx *pctx=cb_arg;
     nr_ice_media_stream *str1,*str2;
 
-    NR_async_timer_cancel(pctx->done_cb_timer);
+    NR_async_timer_cancel(pctx->connected_cb_timer);
     RFREE(pctx->label);
     RFREE(pctx->peer_ufrag);
     RFREE(pctx->peer_pwd);
@@ -527,17 +527,17 @@ int nr_ice_peer_ctx_start_checks2(nr_ice_peer_ctx *pctx, int allow_non_first)
     int started = 0;
 
     /* Might have added some streams */
-    pctx->reported_done = 0;
-    NR_async_timer_cancel(pctx->done_cb_timer);
-    pctx->done_cb_timer = 0;
+    pctx->reported_connected = 0;
+    NR_async_timer_cancel(pctx->connected_cb_timer);
+    pctx->connected_cb_timer = 0;
     pctx->checks_started = 0;
 
-    if((r=nr_ice_peer_ctx_check_if_done(pctx))) {
-      r_log(LOG_ICE,LOG_ERR,"ICE(%s): peer (%s) initial done check failed",pctx->ctx->label,pctx->label);
+    if((r=nr_ice_peer_ctx_check_if_connected(pctx))) {
+      r_log(LOG_ICE,LOG_ERR,"ICE(%s): peer (%s) initial connected check failed",pctx->ctx->label,pctx->label);
       ABORT(r);
     }
 
-    if (pctx->reported_done) {
+    if (pctx->reported_connected) {
       r_log(LOG_ICE,LOG_ERR,"ICE(%s): peer (%s) in %s all streams were done",pctx->ctx->label,pctx->label,__FUNCTION__);
       return (0);
     }
@@ -648,21 +648,70 @@ int nr_ice_peer_ctx_dump_state(nr_ice_peer_ctx *pctx,FILE *out)
   }
 #endif
 
-static void nr_ice_peer_ctx_fire_done(NR_SOCKET s, int how, void *cb_arg)
+void nr_ice_peer_ctx_refresh_consent_all_streams(nr_ice_peer_ctx *pctx)
   {
-    nr_ice_peer_ctx *pctx=cb_arg;
+    nr_ice_media_stream *str;
 
-    pctx->done_cb_timer=0;
+    r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s): refreshing consent on all streams",pctx->label);
 
-    /* Fire the handler callback to say we're done */
-    if (pctx->handler) {
-      pctx->handler->vtbl->ice_completed(pctx->handler->obj, pctx);
+    str=STAILQ_FIRST(&pctx->peer_streams);
+    while(str) {
+      nr_ice_media_stream_refresh_consent_all(str);
+      str=STAILQ_NEXT(str,entry);
     }
   }
 
+void nr_ice_peer_ctx_disconnected(nr_ice_peer_ctx *pctx)
+  {
+    if (pctx->reported_connected &&
+        pctx->handler &&
+        pctx->handler->vtbl->ice_disconnected) {
+      pctx->handler->vtbl->ice_disconnected(pctx->handler->obj, pctx);
+
+      pctx->reported_connected = 0;
+    }
+  }
+
+void nr_ice_peer_ctx_disconnect_all_streams(nr_ice_peer_ctx *pctx)
+  {
+    nr_ice_media_stream *str;
+
+    r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s): disconnecting all streams",pctx->label);
+
+    str=STAILQ_FIRST(&pctx->peer_streams);
+    while(str) {
+      nr_ice_media_stream_disconnect_all_components(str);
+
+      /* The first stream to be disconnected will cause the peer ctx to signal
+         the disconnect up. */
+      nr_ice_media_stream_set_disconnected(str, NR_ICE_MEDIA_STREAM_DISCONNECTED);
+
+      str=STAILQ_NEXT(str,entry);
+    }
+  }
+
+void nr_ice_peer_ctx_connected(nr_ice_peer_ctx *pctx)
+  {
+    /* Fire the handler callback to say we're done */
+    if (pctx->reported_connected &&
+        pctx->handler &&
+        pctx->handler->vtbl->ice_connected) {
+      pctx->handler->vtbl->ice_connected(pctx->handler->obj, pctx);
+    }
+  }
+
+static void nr_ice_peer_ctx_fire_connected(NR_SOCKET s, int how, void *cb_arg)
+  {
+    nr_ice_peer_ctx *pctx=cb_arg;
+
+    pctx->connected_cb_timer=0;
+
+    nr_ice_peer_ctx_connected(pctx);
+  }
+
 /* Examine all the streams to see if we're
-   maybe miraculously done */
-int nr_ice_peer_ctx_check_if_done(nr_ice_peer_ctx *pctx)
+   maybe miraculously connected */
+int nr_ice_peer_ctx_check_if_connected(nr_ice_peer_ctx *pctx)
   {
     int _status;
     nr_ice_media_stream *str;
@@ -671,7 +720,7 @@ int nr_ice_peer_ctx_check_if_done(nr_ice_peer_ctx *pctx)
 
     str=STAILQ_FIRST(&pctx->peer_streams);
     while(str){
-      if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_COMPLETED){
+      if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED){
         succeeded++;
       }
       else if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_FAILED){
@@ -689,18 +738,17 @@ int nr_ice_peer_ctx_check_if_done(nr_ice_peer_ctx *pctx)
     /* OK, we're finished, one way or another */
     r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s): all checks completed success=%d fail=%d",pctx->label,succeeded,failed);
 
-    /* Schedule a done notification for the first done event.
+    /* Schedule a connected notification for the first connected event.
        IMPORTANT: This is done in a callback because we expect destructors
        of various kinds to be fired from here */
-    if (!pctx->reported_done) {
-      pctx->reported_done = 1;
-      assert(!pctx->done_cb_timer);
-      NR_ASYNC_TIMER_SET(0,nr_ice_peer_ctx_fire_done,pctx,&pctx->done_cb_timer);
+    if (!pctx->reported_connected) {
+      pctx->reported_connected = 1;
+      assert(!pctx->connected_cb_timer);
+      NR_ASYNC_TIMER_SET(0,nr_ice_peer_ctx_fire_connected,pctx,&pctx->connected_cb_timer);
     }
 
   done:
     _status=0;
-//  abort:
     return(_status);
   }
 

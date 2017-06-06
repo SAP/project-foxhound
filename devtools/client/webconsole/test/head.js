@@ -37,7 +37,7 @@ const SEVERITY_LOG = 3;
 // The indent of a console group in pixels.
 const GROUP_INDENT = 12;
 
-const WEBCONSOLE_STRINGS_URI = "devtools/locale/webconsole.properties";
+const WEBCONSOLE_STRINGS_URI = "devtools/client/locales/webconsole.properties";
 var WCUL10n = new WebConsoleUtils.L10n(WEBCONSOLE_STRINGS_URI);
 
 const DOCS_GA_PARAMS = "?utm_source=mozilla" +
@@ -46,18 +46,10 @@ const DOCS_GA_PARAMS = "?utm_source=mozilla" +
 
 flags.testing = true;
 
-function loadTab(url) {
-  let deferred = promise.defer();
-
-  let tab = gBrowser.selectedTab = gBrowser.addTab(url);
-  let browser = gBrowser.getBrowserForTab(tab);
-
-  browser.addEventListener("load", function onLoad() {
-    browser.removeEventListener("load", onLoad, true);
-    deferred.resolve({tab: tab, browser: browser});
-  }, true);
-
-  return deferred.promise;
+function loadTab(url, preferredRemoteType) {
+  return addTab(url, { preferredRemoteType }).then( tab => {
+    return { tab, browser: tab.linkedBrowser };
+  });
 }
 
 function loadBrowser(browser) {
@@ -65,18 +57,7 @@ function loadBrowser(browser) {
 }
 
 function closeTab(tab) {
-  let deferred = promise.defer();
-
-  let container = gBrowser.tabContainer;
-
-  container.addEventListener("TabClose", function onTabClose() {
-    container.removeEventListener("TabClose", onTabClose, true);
-    deferred.resolve(null);
-  }, true);
-
-  gBrowser.removeTab(tab);
-
-  return deferred.promise;
+  return removeTab(tab);
 }
 
 /**
@@ -312,6 +293,12 @@ var finishTest = Task.async(function* () {
   yield gDevTools.closeToolbox(target);
 
   finish();
+});
+
+// Always use the 'old' frontend for tests that rely on it
+Services.prefs.setBoolPref("devtools.webconsole.new-frontend-enabled", false);
+registerCleanupFunction(function* () {
+  Services.prefs.clearUserPref("devtools.webconsole.new-frontend-enabled");
 });
 
 registerCleanupFunction(function* () {
@@ -1782,21 +1769,6 @@ function checkLinkToInspector(hasLinkToInspector, msg) {
 function getSourceActor(sources, URL) {
   let item = sources.getItemForAttachment(a => a.source.url === URL);
   return item && item.value;
-}
-
-/**
- * Make a request against an actor and resolve with the packet.
- * @param object client
- *   The client to use when making the request.
- * @param function requestType
- *   The client request function to run.
- * @param array args
- *   The arguments to pass into the function.
- */
-function getPacket(client, requestType, args) {
-  return new Promise(resolve => {
-    client[requestType](...args, packet => resolve(packet));
-  });
 }
 
 /**

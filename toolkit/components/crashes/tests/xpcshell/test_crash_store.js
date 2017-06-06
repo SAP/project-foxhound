@@ -9,7 +9,7 @@
 
 var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-var bsp = Cu.import("resource://gre/modules/CrashManager.jsm", this);
+var {CrashManager, CrashStore, dateToDays} = Cu.import("resource://gre/modules/CrashManager.jsm", {});
 Cu.import("resource://gre/modules/osfile.jsm", this);
 Cu.import("resource://gre/modules/Task.jsm", this);
 
@@ -24,13 +24,12 @@ const {
   PROCESS_TYPE_CONTENT,
   PROCESS_TYPE_PLUGIN,
   PROCESS_TYPE_GMPLUGIN,
+  PROCESS_TYPE_GPU,
   CRASH_TYPE_CRASH,
   CRASH_TYPE_HANG,
   SUBMISSION_RESULT_OK,
   SUBMISSION_RESULT_FAILED,
 } = CrashManager.prototype;
-
-const CrashStore = bsp.CrashStore;
 
 var STORE_DIR_COUNT = 0;
 
@@ -334,6 +333,33 @@ add_task(function* test_add_gmplugin_crash() {
   Assert.equal(crashes.length, 2);
 });
 
+add_task(function* test_add_gpu_crash() {
+  let s = yield getStore();
+
+  Assert.ok(
+    s.addCrash(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH, "id1", new Date())
+  );
+  Assert.equal(s.crashesCount, 1);
+
+  let c = s.crashes[0];
+  Assert.ok(c.crashDate);
+  Assert.equal(c.type, PROCESS_TYPE_GPU + "-" + CRASH_TYPE_CRASH);
+  Assert.ok(c.isOfType(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH));
+
+  Assert.ok(
+    s.addCrash(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH, "id2", new Date())
+  );
+  Assert.equal(s.crashesCount, 2);
+
+  Assert.ok(
+    s.addCrash(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH, "id1", new Date())
+  );
+  Assert.equal(s.crashesCount, 2);
+
+  let crashes = s.getCrashesOfType(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH);
+  Assert.equal(crashes.length, 2);
+});
+
 add_task(function* test_add_mixed_types() {
   let s = yield getStore();
 
@@ -344,10 +370,11 @@ add_task(function* test_add_mixed_types() {
     s.addCrash(PROCESS_TYPE_CONTENT, CRASH_TYPE_HANG, "chang", new Date()) &&
     s.addCrash(PROCESS_TYPE_PLUGIN, CRASH_TYPE_CRASH, "pcrash", new Date()) &&
     s.addCrash(PROCESS_TYPE_PLUGIN, CRASH_TYPE_HANG, "phang", new Date()) &&
-    s.addCrash(PROCESS_TYPE_GMPLUGIN, CRASH_TYPE_CRASH, "gmpcrash", new Date())
+    s.addCrash(PROCESS_TYPE_GMPLUGIN, CRASH_TYPE_CRASH, "gmpcrash", new Date()) &&
+    s.addCrash(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH, "gpucrash", new Date())
   );
 
-  Assert.equal(s.crashesCount, 7);
+  Assert.equal(s.crashesCount, 8);
 
   yield s.save();
 
@@ -356,7 +383,7 @@ add_task(function* test_add_mixed_types() {
 
   yield s.load();
 
-  Assert.equal(s.crashesCount, 7);
+  Assert.equal(s.crashesCount, 8);
 
   let crashes = s.getCrashesOfType(PROCESS_TYPE_MAIN, CRASH_TYPE_CRASH);
   Assert.equal(crashes.length, 1);
@@ -371,6 +398,8 @@ add_task(function* test_add_mixed_types() {
   crashes = s.getCrashesOfType(PROCESS_TYPE_PLUGIN, CRASH_TYPE_HANG);
   Assert.equal(crashes.length, 1);
   crashes = s.getCrashesOfType(PROCESS_TYPE_GMPLUGIN, CRASH_TYPE_CRASH);
+  Assert.equal(crashes.length, 1);
+  crashes = s.getCrashesOfType(PROCESS_TYPE_GPU, CRASH_TYPE_CRASH);
   Assert.equal(crashes.length, 1);
 });
 
@@ -438,8 +467,8 @@ add_task(function* test_high_water() {
   Assert.equal(crashes.length, 2 * s.HIGH_WATER_DAILY_THRESHOLD);
 
   // But raw counts should be preserved.
-  let day1 = bsp.dateToDays(d1);
-  let day2 = bsp.dateToDays(d2);
+  let day1 = dateToDays(d1);
+  let day2 = dateToDays(d2);
   Assert.ok(s._countsByDay.has(day1));
   Assert.ok(s._countsByDay.has(day2));
 
@@ -553,4 +582,3 @@ add_task(function* test_setRemoteCrashID() {
   Assert.ok(s.setRemoteCrashID("crash1", "bp-1"));
   Assert.equal(s.crashes[0].remoteID, "bp-1");
 });
-

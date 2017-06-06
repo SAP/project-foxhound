@@ -1,13 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Constants
+// Constants
 
 const TOPIC_AUTOCOMPLETE_FEEDBACK_INCOMING = "autocomplete-will-enter-text";
 
-////////////////////////////////////////////////////////////////////////////////
-//// Helpers
+// Helpers
 
 /**
  * Ensures that we have no data in the tables created by ANALYZE.
@@ -37,18 +35,15 @@ function do_check_analyze_ran(aTableName, aRan) {
     if (aRan) {
       do_check_true(stmt.executeStep());
       do_check_neq(stmt.row.idx, null);
-    }
-    else {
+    } else {
       do_check_false(stmt.executeStep());
     }
-  }
-  finally {
+  } finally {
     stmt.finalize();
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
 function run_test() {
   run_next_test();
@@ -72,7 +67,7 @@ add_task(function* init_tests() {
     get controller() { return thing; },
     popupOpen: true,
     selectedIndex: 0,
-    getValueAt: function() { return TEST_URI.spec; },
+    getValueAt() { return TEST_URI.spec; },
     searchString: TEST_TITLE,
   };
   Services.obs.notifyObservers(thing, TOPIC_AUTOCOMPLETE_FEEDBACK_INCOMING,

@@ -61,7 +61,7 @@ public:
     {
     }
     ~txLoadedDocumentsHash();
-    void init(txXPathNode* aSourceDocument);
+    MOZ_MUST_USE nsresult init(txXPathNode* aSourceDocument);
 
 private:
     friend class txExecutionState;
@@ -94,6 +94,8 @@ public:
     // Stack functions
     nsresult pushEvalContext(txIEvalContext* aContext);
     txIEvalContext* popEvalContext();
+
+    void popAndDeleteEvalContext();
 
     /**
      * Helper that deletes all entries before |aContext| and then

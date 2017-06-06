@@ -24,7 +24,6 @@
 #include "nsIDOMElement.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMXMLDocument.h"
 #include "nsIDOMXULElement.h"
 #include "nsIDocument.h"
 #include "nsBindingManager.h"
@@ -103,7 +102,6 @@ nsXULTemplateBuilder::nsXULTemplateBuilder(void)
       mTop(nullptr),
       mObservedDocument(nullptr)
 {
-    MOZ_COUNT_CTOR(nsXULTemplateBuilder);
 }
 
 void
@@ -133,8 +131,6 @@ nsXULTemplateBuilder::~nsXULTemplateBuilder(void)
         NS_IF_RELEASE(gScriptSecurityManager);
         NS_IF_RELEASE(gObserverService);
     }
-
-    MOZ_COUNT_DTOR(nsXULTemplateBuilder);
 }
 
 

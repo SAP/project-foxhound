@@ -7,8 +7,7 @@ Support for running toolchain-building jobs via dedicated scripts
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import time
-from voluptuous import Schema, Required
+from voluptuous import Schema, Required, Any
 
 from taskgraph.transforms.job import run_job_using
 from taskgraph.transforms.job.common import (
@@ -21,6 +20,14 @@ toolchain_run_schema = Schema({
 
     # the script (in taskcluster/scripts/misc) to run
     Required('script'): basestring,
+
+    # If not false, tooltool downloads will be enabled via relengAPIProxy
+    # for either just public files, or all files.  Not supported on Windows
+    Required('tooltool-downloads', default=False): Any(
+        False,
+        'public',
+        'internal',
+    ),
 })
 
 
@@ -43,21 +50,31 @@ def docker_worker_toolchain(config, job, taskdesc):
 
     env = worker['env']
     env.update({
-        'MOZ_BUILD_DATE': time.strftime("%Y%m%d%H%M%S", time.gmtime(config.params['pushdate'])),
+        'MOZ_BUILD_DATE': config.params['moz_build_date'],
         'MOZ_SCM_LEVEL': config.params['level'],
         'TOOLS_DISABLE': 'true',
     })
 
-    # tooltool downloads; note that this downloads using the API endpoint directly,
-    # rather than via relengapi-proxy
+    # tooltool downloads.  By default we download using the API endpoint, but
+    # the job can optionally request relengapi-proxy (for example when downloading
+    # internal tooltool resources.  So we define the tooltool cache unconditionally.
     worker['caches'].append({
         'type': 'persistent',
         'name': 'tooltool-cache',
         'mount-point': '/home/worker/tooltool-cache',
     })
     env['TOOLTOOL_CACHE'] = '/home/worker/tooltool-cache'
-    env['TOOLTOOL_REPO'] = 'https://github.com/mozilla/build-tooltool'
-    env['TOOLTOOL_REV'] = 'master'
+
+    # tooltool downloads
+    worker['relengapi-proxy'] = False  # but maybe enabled for tooltool below
+    if run['tooltool-downloads']:
+        worker['relengapi-proxy'] = True
+        taskdesc['scopes'].extend([
+            'docker-worker:relengapi-proxy:tooltool.download.public',
+        ])
+        if run['tooltool-downloads'] == 'internal':
+            taskdesc['scopes'].append(
+                'docker-worker:relengapi-proxy:tooltool.download.internal')
 
     command = ' && '.join([
         "cd /home/worker/",
@@ -65,3 +82,50 @@ def docker_worker_toolchain(config, job, taskdesc):
         "./workspace/build/src/taskcluster/scripts/misc/" + run['script'],
     ])
     worker['command'] = ["/bin/bash", "-c", command]
+
+
+@run_job_using("generic-worker", "toolchain-script", schema=toolchain_run_schema)
+def windows_toolchain(config, job, taskdesc):
+    run = job['run']
+
+    worker = taskdesc['worker']
+
+    worker['artifacts'] = [{
+        'path': r'public\build',
+        'type': 'directory',
+    }]
+
+    docker_worker_add_gecko_vcs_env_vars(config, job, taskdesc)
+
+    # We fetch LLVM SVN into this.
+    svn_cache = 'level-{}-toolchain-clang-cl-build-svn'.format(config.params['level'])
+    worker['mounts'] = [{
+        'cache-name': svn_cache,
+        'path': r'llvm-sources',
+    }]
+    taskdesc['scopes'].extend([
+        'generic-worker:cache:' + svn_cache,
+    ])
+
+    env = worker['env']
+    env.update({
+        'MOZ_BUILD_DATE': config.params['moz_build_date'],
+        'MOZ_SCM_LEVEL': config.params['level'],
+    })
+
+    hg = r'c:\Program Files\Mercurial\hg.exe'
+    hg_command = ['"{}"'.format(hg)]
+    hg_command.append('robustcheckout')
+    hg_command.extend(['--sharebase', 'y:\\hg-shared'])
+    hg_command.append('--purge')
+    hg_command.extend(['--upstream', 'https://hg.mozilla.org/mozilla-unified'])
+    hg_command.extend(['--revision', '%GECKO_HEAD_REV%'])
+    hg_command.append('%GECKO_HEAD_REPOSITORY%')
+    hg_command.append('.\\build\\src')
+
+    bash = r'c:\mozilla-build\msys\bin\bash'
+    worker['command'] = [
+        ' '.join(hg_command),
+        # do something intelligent.
+        r'{} -c ./build/src/taskcluster/scripts/misc/{}'.format(bash, run['script'])
+    ]

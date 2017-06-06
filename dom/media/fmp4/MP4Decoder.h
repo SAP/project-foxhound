@@ -9,8 +9,11 @@
 #include "MediaDecoder.h"
 #include "MediaFormatReader.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/layers/KnowsCompositor.h"
 
 namespace mozilla {
+
+class MediaContainerType;
 
 // Decoder that uses a bundled MP4 demuxer and platform decoders to play MP4.
 class MP4Decoder : public MediaDecoder
@@ -27,29 +30,29 @@ public:
 
   MediaDecoderStateMachine* CreateStateMachine() override;
 
-  // Returns true if aMIMEType is a type that we think we can render with the
-  // a MP4 platform decoder backend. If aCodecs is non emtpy, it is filled
-  // with a comma-delimited list of codecs to check support for. Notes in
-  // out params wether the codecs string contains AAC or H.264.
-  static bool CanHandleMediaType(const nsACString& aMIMETypeExcludingCodecs,
-                                 const nsAString& aCodecs,
-                                 DecoderDoctorDiagnostics* aDiagnostics);
-
-  static bool CanHandleMediaType(const nsAString& aMIMEType,
-                                 DecoderDoctorDiagnostics* aDiagnostics);
+  // Returns true if aContainerType is an MP4 type that we think we can render
+  // with the a platform decoder backend.
+  // If provided, codecs are checked for support.
+  static bool IsSupportedType(const MediaContainerType& aContainerType,
+                              DecoderDoctorDiagnostics* aDiagnostics);
 
   // Return true if aMimeType is a one of the strings used by our demuxers to
   // identify H264. Does not parse general content type strings, i.e. white
   // space matters.
   static bool IsH264(const nsACString& aMimeType);
 
+  // Return true if aMimeType is a one of the strings used by our demuxers to
+  // identify AAC. Does not parse general content type strings, i.e. white
+  // space matters.
+  static bool IsAAC(const nsACString& aMimeType);
+
   // Returns true if the MP4 backend is preffed on.
   static bool IsEnabled();
 
   static already_AddRefed<dom::Promise>
-  IsVideoAccelerated(layers::LayersBackend aBackend, nsIGlobalObject* aParent);
+  IsVideoAccelerated(layers::KnowsCompositor* aKnowsCompositor, nsIGlobalObject* aParent);
 
-  void GetMozDebugReaderData(nsAString& aString) override;
+  void GetMozDebugReaderData(nsACString& aString) override;
 
 private:
   RefPtr<MediaFormatReader> mReader;

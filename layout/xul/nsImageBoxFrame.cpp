@@ -226,6 +226,12 @@ nsImageBoxFrame::UpdateImage()
   if (mUseSrcAttr) {
     nsIDocument* doc = mContent->GetComposedDoc();
     if (doc) {
+      nsContentPolicyType contentPolicyType;
+      nsCOMPtr<nsIPrincipal> loadingPrincipal;
+      nsContentUtils::GetContentPolicyTypeForUIImageLoading(mContent,
+                                                            getter_AddRefs(loadingPrincipal),
+                                                            contentPolicyType);
+
       nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
       nsCOMPtr<nsIURI> uri;
       nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri),
@@ -233,10 +239,11 @@ nsImageBoxFrame::UpdateImage()
                                                 doc,
                                                 baseURI);
       if (uri) {
-        nsresult rv = nsContentUtils::LoadImage(uri, mContent, doc, mContent->NodePrincipal(),
+        nsresult rv = nsContentUtils::LoadImage(uri, mContent, doc, loadingPrincipal,
                                                 doc->GetDocumentURI(), doc->GetReferrerPolicy(),
                                                 mListener, mLoadFlags,
-                                                EmptyString(), getter_AddRefs(mImageRequest));
+                                                EmptyString(), getter_AddRefs(mImageRequest),
+                                                contentPolicyType);
 
         if (NS_SUCCEEDED(rv) && mImageRequest) {
           nsLayoutUtils::RegisterImageRequestIfAnimated(presContext,
@@ -264,7 +271,7 @@ nsImageBoxFrame::UpdateImage()
     mIntrinsicSize.SizeTo(0, 0);
   } else {
     // We don't want discarding or decode-on-draw for xul images.
-    mImageRequest->StartDecoding();
+    mImageRequest->StartDecoding(imgIContainer::FLAG_NONE);
     mImageRequest->LockImage();
   }
 
@@ -410,7 +417,11 @@ nsImageBoxFrame::PaintImage(nsRenderingContext& aRenderingContext,
 void nsDisplayXULImage::Paint(nsDisplayListBuilder* aBuilder,
                               nsRenderingContext* aCtx)
 {
-  uint32_t flags = imgIContainer::FLAG_NONE;
+  // Even though we call StartDecoding when we get a new image we pass
+  // FLAG_SYNC_DECODE_IF_FAST here for the case where the size we draw at is not
+  // the intrinsic size of the image and we aren't likely to implement predictive
+  // decoding at the correct size for this class like nsImageFrame has.
+  uint32_t flags = imgIContainer::FLAG_SYNC_DECODE_IF_FAST;
   if (aBuilder->ShouldSyncDecodeImages())
     flags |= imgIContainer::FLAG_SYNC_DECODE;
   if (aBuilder->IsPaintingToWindow())

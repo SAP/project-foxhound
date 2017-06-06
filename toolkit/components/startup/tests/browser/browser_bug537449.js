@@ -4,7 +4,6 @@
 
 "use strict";
 
-///////////////////
 //
 // Whitelisting this test.
 // As part of bug 1077403, the leaking uncaught rejection should be fixed.
@@ -21,7 +20,7 @@ function test() {
   gBrowser.selectedTab = gBrowser.addTab(TEST_URL);
   let browser = gBrowser.selectedBrowser;
 
-  whenBrowserLoaded(browser, function () {
+  whenBrowserLoaded(browser, function() {
     let seenDialog = false;
 
     // Cancel the prompt the first time.
@@ -30,7 +29,7 @@ function test() {
       btnStay.click();
     });
 
-    let appStartup = Cc['@mozilla.org/toolkit/app-startup;1'].
+    let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].
                        getService(Ci.nsIAppStartup);
     appStartup.quit(Ci.nsIAppStartup.eAttemptQuit);
     ok(seenDialog, "Should have seen a prompt dialog");

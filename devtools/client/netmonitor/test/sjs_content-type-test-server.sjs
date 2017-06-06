@@ -137,6 +137,14 @@ function handleRequest(request, response) {
         response.finish();
         break;
       }
+      case "json-b64": {
+        response.setStatusLine(request.httpVersion, status, "OK");
+        response.setHeader("Content-Type", "text/json; charset=utf-8", false);
+        setCacheHeaders();
+        response.write(btoa("{ \"greeting\": \"This is a base 64 string.\" }"));
+        response.finish();
+        break;
+      }
       case "json-long": {
         let str = "{ \"greeting\": \"Hello long string JSON!\" },";
         response.setStatusLine(request.httpVersion, status, "OK");
@@ -230,6 +238,17 @@ function handleRequest(request, response) {
         };
         let data = new Array(1000).join("Hello gzip!");
         doubleGzipCompressString(data, observer);
+        break;
+      }
+      case "br": {
+        response.setStatusLine(request.httpVersion, status, "Connected");
+        response.setHeader("Content-Type", "text/plain", false);
+        response.setHeader("Content-Encoding", "br", false);
+        setCacheHeaders();
+        response.setHeader("Content-Length", "10", false);
+        // Use static data since we cannot encode brotli.
+        response.write("\x1b\x3f\x00\x00\x24\xb0\xe2\x99\x80\x12");
+        response.finish();
         break;
       }
       case "hls-m3u8": {

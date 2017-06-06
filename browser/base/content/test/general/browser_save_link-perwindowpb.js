@@ -17,9 +17,9 @@ function triggerSave(aWindow, aCallback) {
   testBrowser.loadURI(testURI);
   BrowserTestUtils.browserLoaded(testBrowser, false, testURI)
                   .then(() => {
-    waitForFocus(function () {
+    waitForFocus(function() {
       info("register to handle popupshown");
-      aWindow.document.addEventListener("popupshown", contextMenuOpened, false);
+      aWindow.document.addEventListener("popupshown", contextMenuOpened);
 
       BrowserTestUtils.synthesizeMouseAtCenter("#fff", {type: "contextmenu", button: 2}, testBrowser);
       info("right clicked!");
@@ -39,7 +39,7 @@ function triggerSave(aWindow, aCallback) {
       info("showCallback");
       fileName = fp.defaultString;
       info("fileName: " + fileName);
-      destFile.append (fileName);
+      destFile.append(fileName);
       MockFilePicker.returnFiles = [destFile];
       MockFilePicker.filterIndex = 1; // kSaveAsType_URL
       info("done showCallback");
@@ -64,9 +64,9 @@ function triggerSave(aWindow, aCallback) {
     info("popup hidden");
   }
 
-  function onTransferComplete(aWindow, downloadSuccess, destDir) {
+  function onTransferComplete(aWindow2, downloadSuccess, destDir) {
     ok(downloadSuccess, "Link should have been downloaded successfully");
-    aWindow.close();
+    aWindow2.close();
 
     executeSoon(() => aCallback());
   }
@@ -86,10 +86,10 @@ function test() {
 
   function whenDelayedStartupFinished(aWindow, aCallback) {
     info("whenDelayedStartupFinished");
-    Services.obs.addObserver(function observer(aSubject, aTopic) {
+    Services.obs.addObserver(function obs(aSubject, aTopic) {
       info("whenDelayedStartupFinished, got topic: " + aTopic + ", got subject: " + aSubject + ", waiting for " + aWindow);
       if (aWindow == aSubject) {
-        Services.obs.removeObserver(observer, aTopic);
+        Services.obs.removeObserver(obs, aTopic);
         executeSoon(aCallback);
         info("whenDelayedStartupFinished found our window");
       }
@@ -98,7 +98,7 @@ function test() {
 
   mockTransferRegisterer.register();
 
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     info("Running the cleanup code");
     mockTransferRegisterer.unregister();
     MockFilePicker.cleanup();
@@ -170,8 +170,8 @@ function test() {
       is(gNumSet, 1, "1 cookie should be set");
 
       // The second save from a private window also sets a cookie.
-      testOnWindow({private: true}, function(win) {
-        triggerSave(win, function() {
+      testOnWindow({private: true}, function(win2) {
+        triggerSave(win2, function() {
           is(gNumSet, 2, "2 cookies should be set");
           finish();
         });
@@ -180,6 +180,7 @@ function test() {
   });
 }
 
+/* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
 Cc["@mozilla.org/moz/jssubscript-loader;1"]
   .getService(Ci.mozIJSSubScriptLoader)
   .loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",

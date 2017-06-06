@@ -99,6 +99,13 @@ public:
         return mInstance;
     }
 
+    template<class T>
+    bool IsInstanceOf() const
+    {
+        return FindEnv()->IsInstanceOf(
+                mInstance, typename T::Context().ClassRef());
+    }
+
     bool operator==(const Ref& other) const
     {
         // Treat two references of the same object as being the same.
@@ -124,6 +131,11 @@ public:
     CopyableCtx operator->() const
     {
         return CopyableCtx(FindEnv(), mInstance);
+    }
+
+    CopyableCtx operator*() const
+    {
+        return operator->();
     }
 
     // Any ref can be cast to an object ref.
@@ -162,11 +174,6 @@ protected:
     JNIEnv* const mEnv;
 
 public:
-    static jclass RawClassRef()
-    {
-        return sClassRef;
-    }
-
     Context()
         : Ref(nullptr)
         , mEnv(Ref::FindEnv())
@@ -180,7 +187,9 @@ public:
     jclass ClassRef() const
     {
         if (!sClassRef) {
-            sClassRef = GetClassGlobalRef(mEnv, Cls::name);
+            const jclass cls = GetClassRef(mEnv, Cls::name);
+            sClassRef = jclass(mEnv->NewGlobalRef(cls));
+            mEnv->DeleteLocalRef(cls);
         }
         return sClassRef;
     }
@@ -188,6 +197,13 @@ public:
     JNIEnv* Env() const
     {
         return mEnv;
+    }
+
+    template<class T>
+    bool IsInstanceOf() const
+    {
+        return mEnv->IsInstanceOf(
+                Ref::mInstance, typename T::Context(mEnv, nullptr).ClassRef());
     }
 
     bool operator==(const Ref& other) const
@@ -216,6 +232,11 @@ public:
     {
         MOZ_ASSERT(Ref::mInstance, "Null jobject");
         return Cls(*this);
+    }
+
+    const Context<Cls, Type>& operator*() const
+    {
+        return *this;
     }
 };
 
@@ -265,11 +286,29 @@ public:
     {}
 };
 
+// Binding for a boxed primitive object.
+template<typename T>
+class BoxedObject : public ObjectBase<BoxedObject<T>, jobject>
+{
+public:
+    explicit BoxedObject(const Context<BoxedObject<T>, jobject>& ctx)
+        : ObjectBase<BoxedObject<T>, jobject>(ctx)
+    {}
+};
 
 // Define bindings for built-in types.
 using String = TypedObject<jstring>;
 using Class = TypedObject<jclass>;
 using Throwable = TypedObject<jthrowable>;
+
+using Boolean = BoxedObject<jboolean>;
+using Byte = BoxedObject<jbyte>;
+using Character = BoxedObject<jchar>;
+using Short = BoxedObject<jshort>;
+using Integer = BoxedObject<jint>;
+using Long = BoxedObject<jlong>;
+using Float = BoxedObject<jfloat>;
+using Double = BoxedObject<jdouble>;
 
 using BooleanArray = TypedObject<jbooleanArray>;
 using ByteArray = TypedObject<jbyteArray>;
@@ -421,31 +460,31 @@ public:
         return obj;
     }
 
-    LocalRef<Cls>& operator=(LocalRef<Cls> ref)
+    LocalRef<Cls>& operator=(LocalRef<Cls> ref) &
     {
         return swap(ref);
     }
 
-    LocalRef<Cls>& operator=(const Ref& ref)
+    LocalRef<Cls>& operator=(const Ref& ref) &
     {
         LocalRef<Cls> newRef(Ctx::mEnv, ref);
         return swap(newRef);
     }
 
-    LocalRef<Cls>& operator=(LocalRef<GenericObject>&& ref)
+    LocalRef<Cls>& operator=(LocalRef<GenericObject>&& ref) &
     {
         LocalRef<Cls> newRef(mozilla::Move(ref));
         return swap(newRef);
     }
 
     template<class C>
-    LocalRef<Cls>& operator=(GenericLocalRef<C>&& ref)
+    LocalRef<Cls>& operator=(GenericLocalRef<C>&& ref) &
     {
         LocalRef<Cls> newRef(mozilla::Move(ref));
         return swap(newRef);
     }
 
-    LocalRef<Cls>& operator=(decltype(nullptr))
+    LocalRef<Cls>& operator=(decltype(nullptr)) &
     {
         LocalRef<Cls> newRef(Ctx::mEnv, nullptr);
         return swap(newRef);
@@ -530,24 +569,24 @@ public:
         }
     }
 
-    GlobalRef<Cls>& operator=(GlobalRef<Cls> ref)
+    GlobalRef<Cls>& operator=(GlobalRef<Cls> ref) &
     {
         return swap(ref);
     }
 
-    GlobalRef<Cls>& operator=(const Ref& ref)
+    GlobalRef<Cls>& operator=(const Ref& ref) &
     {
         GlobalRef<Cls> newRef(ref);
         return swap(newRef);
     }
 
-    GlobalRef<Cls>& operator=(const LocalRef<Cls>& ref)
+    GlobalRef<Cls>& operator=(const LocalRef<Cls>& ref) &
     {
         GlobalRef<Cls> newRef(ref);
         return swap(newRef);
     }
 
-    GlobalRef<Cls>& operator=(decltype(nullptr))
+    GlobalRef<Cls>& operator=(decltype(nullptr)) &
     {
         GlobalRef<Cls> newRef(nullptr);
         return swap(newRef);
@@ -707,6 +746,21 @@ public:
         : Base(ctx)
     {}
 
+    static typename Base::LocalRef New(const ElementType* data, size_t length) {
+        using JNIElemType = typename detail::TypeAdapter<ElementType>::JNIType;
+        static_assert(sizeof(ElementType) == sizeof(JNIElemType),
+                      "Size of native type must match size of JNI type");
+        JNIEnv* const jenv = mozilla::jni::GetEnvForThread();
+        auto result =
+            (jenv->*detail::TypeAdapter<ElementType>::NewArray)(length);
+        MOZ_CATCH_JNI_EXCEPTION(jenv);
+        (jenv->*detail::TypeAdapter<ElementType>::SetArray)(
+                result, jsize(0), length,
+                reinterpret_cast<const JNIElemType*>(data));
+        MOZ_CATCH_JNI_EXCEPTION(jenv);
+        return Base::LocalRef::Adopt(jenv, result);
+    }
+
     size_t Length() const
     {
         const size_t ret = Base::Env()->GetArrayLength(Base::Instance());
@@ -816,6 +870,18 @@ class TypedObject<jobjectArray>
     using Base = ObjectBase<TypedObject<jobjectArray>, jobjectArray>;
 
 public:
+    template<class Cls = Object>
+    static Base::LocalRef New(size_t length,
+                              typename Cls::Param initialElement = nullptr) {
+        JNIEnv* const env = GetEnvForThread();
+        jobjectArray array = env->NewObjectArray(
+                jsize(length),
+                typename Cls::Context(env, nullptr).ClassRef(),
+                initialElement.Get());
+        MOZ_CATCH_JNI_EXCEPTION(env);
+        return Base::LocalRef::Adopt(env, array);
+    }
+
     explicit TypedObject(const Context& ctx) : Base(ctx) {}
 
     size_t Length() const

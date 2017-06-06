@@ -9,6 +9,8 @@
 
 #include "jit/MacroAssembler.h"
 
+#include "mozilla/MathAlgorithms.h"
+
 #if defined(JS_CODEGEN_X86)
 # include "jit/x86/MacroAssembler-x86-inl.h"
 #elif defined(JS_CODEGEN_X64)
@@ -90,6 +92,13 @@ MacroAssembler::call(const wasm::CallSiteDesc& desc, uint32_t funcDefIndex)
 {
     CodeOffset l = callWithPatch();
     append(desc, l, framePushed(), funcDefIndex);
+}
+
+void
+MacroAssembler::call(const wasm::CallSiteDesc& desc, wasm::Trap trap)
+{
+    CodeOffset l = callWithPatch();
+    append(desc, l, framePushed(), trap);
 }
 
 // ===============================================================
@@ -384,6 +393,19 @@ MacroAssembler::branchIfRope(Register str, Label* label)
     Address flags(str, JSString::offsetOfFlags());
     static_assert(JSString::ROPE_FLAGS == 0, "Rope type flags must be 0");
     branchTest32(Assembler::Zero, flags, Imm32(JSString::TYPE_FLAGS_MASK), label);
+}
+
+void
+MacroAssembler::branchIfRopeOrExternal(Register str, Register temp, Label* label)
+{
+    Address flags(str, JSString::offsetOfFlags());
+    move32(Imm32(JSString::TYPE_FLAGS_MASK), temp);
+    and32(flags, temp);
+
+    static_assert(JSString::ROPE_FLAGS == 0, "Rope type flags must be 0");
+    branchTest32(Assembler::Zero, temp, temp, label);
+
+    branch32(Assembler::Equal, temp, Imm32(JSString::EXTERNAL_FLAGS), label);
 }
 
 void
@@ -705,6 +727,12 @@ MacroAssembler::addStackPtrTo(T t)
     addPtr(getStackPointer(), t);
 }
 
+void
+MacroAssembler::reserveStack(uint32_t amount)
+{
+    subFromStackPtr(Imm32(amount));
+    adjustFrame(amount);
+}
 #endif // !JS_CODEGEN_ARM64
 
 template <typename T>
@@ -725,7 +753,7 @@ MacroAssembler::assertStackAlignment(uint32_t alignment, int32_t offset /* = 0 *
 {
 #ifdef DEBUG
     Label ok, bad;
-    MOZ_ASSERT(IsPowerOfTwo(alignment));
+    MOZ_ASSERT(mozilla::IsPowerOfTwo(alignment));
 
     // Wrap around the offset to be a non-negative number.
     offset %= alignment;

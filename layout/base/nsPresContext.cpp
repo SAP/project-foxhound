@@ -74,8 +74,10 @@
 #include "gfxTextRun.h"
 #include "nsFontFaceUtils.h"
 #include "nsLayoutStylesheetCache.h"
-#include "mozilla/StyleSheetHandle.h"
-#include "mozilla/StyleSheetHandleInlines.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/ServoRestyleManagerInlines.h"
+#include "mozilla/Telemetry.h"
 
 #if defined(MOZ_WIDGET_GTK)
 #include "gfxPlatformGtk.h" // xxx - for UseFcFontList
@@ -210,6 +212,7 @@ nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
     mPageSize(-1, -1), mPPScale(1.0f),
     mViewportStyleScrollbar(NS_STYLE_OVERFLOW_AUTO, NS_STYLE_OVERFLOW_AUTO),
     mImageAnimationModePref(imgIContainer::kNormalAnimMode),
+    mAllInvalidated(false),
     mPaintFlashing(false), mPaintFlashingInitialized(false)
 {
   // NOTE! nsPresContext::operator new() zeroes out all members, so don't
@@ -257,6 +260,8 @@ nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
   NS_ASSERTION(mDocument, "Null document");
 
   mCounterStylesDirty = true;
+
+  mInteractionTimeEnabled = true;
 
   // if text perf logging enabled, init stats struct
   if (MOZ_LOG_TEST(gfxPlatform::GetLog(eGfxLog_textperf), LogLevel::Warning)) {
@@ -602,11 +607,6 @@ nsPresContext::GetUserPreferences()
                         GET_BIDI_OPTION_NUMERAL(bidiOptions));
   SET_BIDI_OPTION_NUMERAL(bidiOptions, prefInt);
 
-  prefInt =
-    Preferences::GetInt(IBMBIDI_SUPPORTMODE_STR,
-                        GET_BIDI_OPTION_SUPPORT(bidiOptions));
-  SET_BIDI_OPTION_SUPPORT(bidiOptions, prefInt);
-
   // We don't need to force reflow: either we are initializing a new
   // prescontext or we are being called from UpdateAfterPreferencesChanged()
   // which triggers a reflow anyway.
@@ -886,10 +886,6 @@ nsPresContext::Init(nsDeviceContext* aDeviceContext)
   mInitialized = true;
 #endif
 
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_THIN] = CSSPixelsToAppUnits(1);
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_MEDIUM] = CSSPixelsToAppUnits(3);
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_THICK] = CSSPixelsToAppUnits(5);
-
   return NS_OK;
 }
 
@@ -986,7 +982,7 @@ nsPresContext::DetachShell()
     mRestyleManager->Disconnect();
     mRestyleManager = nullptr;
   }
-  if (mRefreshDriver && mRefreshDriver->PresContext() == this) {
+  if (mRefreshDriver && mRefreshDriver->GetPresContext() == this) {
     mRefreshDriver->Disconnect();
     // Can't null out the refresh driver here.
   }
@@ -1155,7 +1151,7 @@ nsPresContext::CompatibilityModeChanged()
 
   StyleSetHandle styleSet = mShell->StyleSet();
   auto cache = nsLayoutStylesheetCache::For(styleSet->BackendType());
-  StyleSheetHandle sheet = cache->QuirkSheet();
+  StyleSheet* sheet = cache->QuirkSheet();
 
   if (needsQuirkSheet) {
     // quirk.css needs to come after html.css; we just keep it at the end.
@@ -1372,15 +1368,6 @@ static nsIContent*
 GetPropagatedScrollbarStylesForViewport(nsPresContext* aPresContext,
                                         ScrollbarStyles *aStyles)
 {
-  // Set default
-  *aStyles = ScrollbarStyles(NS_STYLE_OVERFLOW_AUTO, NS_STYLE_OVERFLOW_AUTO);
-
-  // We never mess with the viewport scroll state
-  // when printing or in print preview
-  if (aPresContext->IsPaginated()) {
-    return nullptr;
-  }
-
   nsIDocument* document = aPresContext->Document();
   Element* docElement = document->GetRootElement();
 
@@ -1392,7 +1379,8 @@ GetPropagatedScrollbarStylesForViewport(nsPresContext* aPresContext,
   // Check the style on the document root element
   StyleSetHandle styleSet = aPresContext->StyleSet();
   RefPtr<nsStyleContext> rootStyle;
-  rootStyle = styleSet->ResolveStyleFor(docElement, nullptr);
+  rootStyle = styleSet->ResolveStyleFor(docElement, nullptr,
+                                        LazyComputeBehavior::Allow);
   if (CheckOverflow(rootStyle->StyleDisplay(), aStyles)) {
     // tell caller we stole the overflow style from the root element
     return docElement;
@@ -1420,7 +1408,8 @@ GetPropagatedScrollbarStylesForViewport(nsPresContext* aPresContext,
   }
 
   RefPtr<nsStyleContext> bodyStyle;
-  bodyStyle = styleSet->ResolveStyleFor(bodyElement->AsElement(), rootStyle);
+  bodyStyle = styleSet->ResolveStyleFor(bodyElement->AsElement(), rootStyle,
+                                        LazyComputeBehavior::Allow);
 
   if (CheckOverflow(bodyStyle->StyleDisplay(), aStyles)) {
     // tell caller we stole the overflow style from the body element
@@ -1433,8 +1422,15 @@ GetPropagatedScrollbarStylesForViewport(nsPresContext* aPresContext,
 nsIContent*
 nsPresContext::UpdateViewportScrollbarStylesOverride()
 {
-  nsIContent* propagatedFrom =
-    GetPropagatedScrollbarStylesForViewport(this, &mViewportStyleScrollbar);
+  // Start off with our default styles, and then update them as needed.
+  mViewportStyleScrollbar = ScrollbarStyles(NS_STYLE_OVERFLOW_AUTO,
+                                            NS_STYLE_OVERFLOW_AUTO);
+  nsIContent* propagatedFrom = nullptr;
+  // Don't propagate the scrollbar state in printing or print preview.
+  if (!IsPaginated()) {
+    propagatedFrom =
+      GetPropagatedScrollbarStylesForViewport(this, &mViewportStyleScrollbar);
+  }
 
   nsIDocument* document = Document();
   if (Element* fullscreenElement = document->GetFullscreenElement()) {
@@ -1451,6 +1447,24 @@ nsPresContext::UpdateViewportScrollbarStylesOverride()
   }
 
   return propagatedFrom;
+}
+
+bool
+nsPresContext::ElementWouldPropagateScrollbarStyles(Element* aElement)
+{
+  MOZ_ASSERT(IsPaginated(), "Should only be called on paginated contexts");
+  if (aElement->GetParent() && !aElement->IsHTMLElement(nsGkAtoms::body)) {
+    // We certainly won't be propagating from this element.
+    return false;
+  }
+
+  // Go ahead and just call GetPropagatedScrollbarStylesForViewport, but update
+  // a dummy ScrollbarStyles we don't care about.  It'll do a bit of extra work,
+  // but saves us having to have more complicated code or more code duplication;
+  // in practice we will make this call quite rarely, because we checked for all
+  // the common cases above.
+  ScrollbarStyles dummy(NS_STYLE_OVERFLOW_AUTO, NS_STYLE_OVERFLOW_AUTO);
+  return GetPropagatedScrollbarStylesForViewport(this, &dummy) == aElement;
 }
 
 void
@@ -1498,6 +1512,9 @@ nsPresContext::Detach()
 {
   SetContainer(nullptr);
   SetLinkHandler(nullptr);
+  if (mShell) {
+    mShell->CancelInvalidatePresShellIfHidden();
+  }
 }
 
 bool
@@ -1581,6 +1598,71 @@ nsPresContext::IsTopLevelWindowInactive()
   nsCOMPtr<nsPIDOMWindowOuter> domWindow = rootItem->GetWindow();
 
   return domWindow && !domWindow->IsActive();
+}
+
+void
+nsPresContext::RecordInteractionTime(InteractionType aType)
+{
+  if (!mInteractionTimeEnabled) {
+    return;
+  }
+
+  // Array of references to the member variable of each time stamp
+  // for the different interaction types, keyed by InteractionType.
+  TimeStamp nsPresContext::*interactionTimes[] = {
+    &nsPresContext::mFirstClickTime,
+    &nsPresContext::mFirstKeyTime,
+    &nsPresContext::mFirstMouseMoveTime,
+    &nsPresContext::mFirstScrollTime
+  };
+
+  // Array of histogram IDs for the different interaction types,
+  // keyed by InteractionType.
+  Telemetry::ID histogramIds[] = {
+    Telemetry::TIME_TO_FIRST_CLICK,
+    Telemetry::TIME_TO_FIRST_KEY_INPUT,
+    Telemetry::TIME_TO_FIRST_MOUSE_MOVE,
+    Telemetry::TIME_TO_FIRST_SCROLL
+  };
+
+  TimeStamp& interactionTime = this->*(
+    interactionTimes[static_cast<uint32_t>(aType)]);
+  if (!interactionTime.IsNull()) {
+    // We have already recorded an interaction time.
+    return;
+  }
+
+  // Record the interaction time if it occurs after the first paint
+  // of the top level content document.
+  nsPresContext* topContentPresContext =
+    GetToplevelContentDocumentPresContext();
+
+  if (!topContentPresContext) {
+    // There is no top content pres context so we don't care
+    // about the interaction time. Record a value anyways to avoid
+    // trying to find the top content pres context in future interactions.
+    interactionTime = TimeStamp::Now();
+    return;
+  }
+
+  if (topContentPresContext->mFirstPaintTime.IsNull()) {
+    // Top content pres context has not painted yet, so don't record
+    // interaction time.
+    return;
+  }
+
+  interactionTime = TimeStamp::Now();
+  // Only the top level content pres context reports first interaction
+  // time to telemetry (if it hasn't already done so).
+  if (this == topContentPresContext) {
+    if (Telemetry::CanRecordExtended()) {
+       double millis = (interactionTime - mFirstPaintTime).ToMilliseconds();
+       Telemetry::Accumulate(histogramIds[static_cast<uint32_t>(aType)],
+                             millis);
+    }
+  } else {
+    topContentPresContext->RecordInteractionTime(aType);
+  }
 }
 
 nsITheme*
@@ -2053,9 +2135,9 @@ nsPresContext::HasAuthorSpecifiedRules(const nsIFrame *aFrame,
 }
 
 gfxUserFontSet*
-nsPresContext::GetUserFontSet()
+nsPresContext::GetUserFontSet(bool aFlushUserFontSet)
 {
-  return mDocument->GetUserFontSet();
+  return mDocument->GetUserFontSet(aFlushUserFontSet);
 }
 
 void
@@ -2291,6 +2373,7 @@ nsPresContext::NotifyInvalidation(uint32_t aFlags)
 {
   nsIFrame* rootFrame = PresShell()->FrameManager()->GetRootFrame();
   NotifyInvalidation(rootFrame->GetVisualOverflowRect(), aFlags);
+  mAllInvalidated = true;
 }
 
 void
@@ -2324,6 +2407,10 @@ nsPresContext::NotifyInvalidation(const nsRect& aRect, uint32_t aFlags)
   // MayHavePaintEventListener is pretty cheap and we could make it
   // even cheaper by providing a more efficient
   // nsPIDOMWindow::GetListenerManager.
+
+  if (mAllInvalidated) {
+    return;
+  }
 
   nsPresContext* pc;
   for (pc = this; pc; pc = pc->GetParentPresContext()) {
@@ -2459,12 +2546,17 @@ nsPresContext::NotifyDidPaintForSubtree(uint32_t aFlags, uint64_t aTransactionId
   if (aFlags & nsIPresShell::PAINT_LAYERS) {
     mUndeliveredInvalidateRequestsBeforeLastPaint.TakeFrom(
         &mInvalidateRequestsSinceLastPaint);
+    mAllInvalidated = false;
   }
   if (aFlags & nsIPresShell::PAINT_COMPOSITE) {
     nsCOMPtr<nsIRunnable> ev =
       new DelayedFireDOMPaintEvent(this, &mUndeliveredInvalidateRequestsBeforeLastPaint,
                                    aTransactionId);
     nsContentUtils::AddScriptRunner(ev);
+
+    if (mFirstPaintTime.IsNull()) {
+      mFirstPaintTime = TimeStamp::Now();
+    }
   }
 
   NotifyDidPaintSubdocumentCallbackClosure closure = { aFlags, aTransactionId, false };
@@ -2747,6 +2839,19 @@ nsPresContext::IsRootContentDocument() const
   return (f && f->PresContext()->IsChrome());
 }
 
+void
+nsPresContext::NotifyNonBlankPaint()
+{
+  MOZ_ASSERT(!mHadNonBlankPaint);
+  mHadNonBlankPaint = true;
+  if (IsRootContentDocument()) {
+    RefPtr<nsDOMNavigationTiming> timing = mDocument->GetNavigationTiming();
+    if (timing) {
+      timing->NotifyNonBlankPaintForRootContentDocument();
+    }
+  }
+}
+
 bool nsPresContext::GetPaintFlashing() const
 {
   if (!mPaintFlashingInitialized) {
@@ -2858,19 +2963,22 @@ nsRootPresContext::ComputePluginGeometryUpdates(nsIFrame* aFrame,
     f->SetEmptyWidgetConfiguration();
   }
 
-  nsIFrame* rootFrame = FrameManager()->GetRootFrame();
+  if (aBuilder) {
+    MOZ_ASSERT(aList);
+    nsIFrame* rootFrame = FrameManager()->GetRootFrame();
 
-  if (rootFrame && aBuilder->ContainsPluginItem()) {
-    aBuilder->SetForPluginGeometry();
-    aBuilder->SetAccurateVisibleRegions();
-    // Merging and flattening has already been done and we should not do it
-    // again. nsDisplayScroll(Info)Layer doesn't support trying to flatten
-    // again.
-    aBuilder->SetAllowMergingAndFlattening(false);
-    nsRegion region = rootFrame->GetVisualOverflowRectRelativeToSelf();
-    // nsDisplayPlugin::ComputeVisibility will automatically set a non-hidden
-    // widget configuration for the plugin, if it's visible.
-    aList->ComputeVisibilityForRoot(aBuilder, &region);
+    if (rootFrame && aBuilder->ContainsPluginItem()) {
+      aBuilder->SetForPluginGeometry();
+      aBuilder->SetAccurateVisibleRegions();
+      // Merging and flattening has already been done and we should not do it
+      // again. nsDisplayScroll(Info)Layer doesn't support trying to flatten
+      // again.
+      aBuilder->SetAllowMergingAndFlattening(false);
+      nsRegion region = rootFrame->GetVisualOverflowRectRelativeToSelf();
+      // nsDisplayPlugin::ComputeVisibility will automatically set a non-hidden
+      // widget configuration for the plugin, if it's visible.
+      aList->ComputeVisibilityForRoot(aBuilder, &region);
+    }
   }
 
 #ifdef XP_MACOSX

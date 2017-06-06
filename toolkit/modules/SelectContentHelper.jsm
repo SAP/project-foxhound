@@ -30,28 +30,30 @@ this.EXPORTED_SYMBOLS = [
   "SelectContentHelper"
 ];
 
-this.SelectContentHelper = function (aElement, aGlobal) {
+this.SelectContentHelper = function(aElement, aOptions, aGlobal) {
   this.element = aElement;
   this.initialSelection = aElement[aElement.selectedIndex] || null;
   this.global = aGlobal;
   this.closedWithEnter = false;
+  this.isOpenedViaTouch = aOptions.isOpenedViaTouch;
   this.init();
   this.showDropDown();
   this._updateTimer = new DeferredTask(this._update.bind(this), 0);
 }
 
 Object.defineProperty(SelectContentHelper, "open", {
-  get: function() {
+  get() {
     return gOpen;
   },
 });
 
 this.SelectContentHelper.prototype = {
-  init: function() {
+  init() {
     this.global.addMessageListener("Forms:SelectDropDownItem", this);
     this.global.addMessageListener("Forms:DismissedDropDown", this);
     this.global.addMessageListener("Forms:MouseOver", this);
     this.global.addMessageListener("Forms:MouseOut", this);
+    this.global.addMessageListener("Forms:MouseUp", this);
     this.global.addEventListener("pagehide", this);
     this.global.addEventListener("mozhidedropdown", this);
     let MutationObserver = this.element.ownerDocument.defaultView.MutationObserver;
@@ -64,12 +66,13 @@ this.SelectContentHelper.prototype = {
     this.mut.observe(this.element, {childList: true, subtree: true});
   },
 
-  uninit: function() {
+  uninit() {
     this.element.openInParentProcess = false;
     this.global.removeMessageListener("Forms:SelectDropDownItem", this);
     this.global.removeMessageListener("Forms:DismissedDropDown", this);
     this.global.removeMessageListener("Forms:MouseOver", this);
     this.global.removeMessageListener("Forms:MouseOut", this);
+    this.global.removeMessageListener("Forms:MouseUp", this);
     this.global.removeEventListener("pagehide", this);
     this.global.removeEventListener("mozhidedropdown", this);
     this.element = null;
@@ -80,23 +83,24 @@ this.SelectContentHelper.prototype = {
     gOpen = false;
   },
 
-  showDropDown: function() {
+  showDropDown() {
     this.element.openInParentProcess = true;
     let rect = this._getBoundingContentRect();
     this.global.sendAsyncMessage("Forms:ShowDropDown", {
-      rect: rect,
+      rect,
       options: this._buildOptionList(),
       selectedIndex: this.element.selectedIndex,
-      direction: getComputedDirection(this.element)
+      direction: getComputedStyles(this.element).direction,
+      isOpenedViaTouch: this.isOpenedViaTouch
     });
     gOpen = true;
   },
 
-  _getBoundingContentRect: function() {
+  _getBoundingContentRect() {
     return BrowserUtils.getElementBoundingScreenRect(this.element);
   },
 
-  _buildOptionList: function() {
+  _buildOptionList() {
     return buildOptionListForChildren(this.element);
   },
 
@@ -109,7 +113,16 @@ this.SelectContentHelper.prototype = {
     });
   },
 
-  receiveMessage: function(message) {
+  dispatchMouseEvent(win, target, eventName) {
+    let mouseEvent = new win.MouseEvent(eventName, {
+      view: win,
+      bubbles: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(mouseEvent);
+  },
+
+  receiveMessage(message) {
     switch (message.name) {
       case "Forms:SelectDropDownItem":
         this.element.selectedIndex = message.data.value;
@@ -127,15 +140,8 @@ this.SelectContentHelper.prototype = {
           // to select an element in the dropdown, we only fire input and
           // change events.
           if (!this.closedWithEnter) {
-            const MOUSE_EVENTS = ["mousedown", "mouseup"];
-            for (let eventName of MOUSE_EVENTS) {
-              let mouseEvent = new win.MouseEvent(eventName, {
-                view: win,
-                bubbles: true,
-                cancelable: true,
-              });
-              selectedOption.dispatchEvent(mouseEvent);
-            }
+            this.dispatchMouseEvent(win, selectedOption, "mousedown");
+            this.dispatchMouseEvent(win, selectedOption, "mouseup");
             DOMUtils.removeContentState(this.element, kStateActive);
           }
 
@@ -150,12 +156,7 @@ this.SelectContentHelper.prototype = {
           this.element.dispatchEvent(changeEvent);
 
           if (!this.closedWithEnter) {
-            let mouseEvent = new win.MouseEvent("click", {
-              view: win,
-              bubbles: true,
-              cancelable: true,
-            });
-            selectedOption.dispatchEvent(mouseEvent);
+            this.dispatchMouseEvent(win, selectedOption, "click");
           }
         }
 
@@ -170,10 +171,20 @@ this.SelectContentHelper.prototype = {
         DOMUtils.removeContentState(this.element, kStateHover);
         break;
 
+      case "Forms:MouseUp":
+        let win = this.element.ownerDocument.defaultView;
+        if (message.data.onAnchor) {
+          this.dispatchMouseEvent(win, this.element, "mouseup");
+        }
+        DOMUtils.removeContentState(this.element, kStateActive);
+        if (message.data.onAnchor) {
+          this.dispatchMouseEvent(win, this.element, "click");
+        }
+        break;
     }
   },
 
-  handleEvent: function(event) {
+  handleEvent(event) {
     switch (event.type) {
       case "pagehide":
         if (this.element.ownerDocument === event.target) {
@@ -192,8 +203,8 @@ this.SelectContentHelper.prototype = {
 
 }
 
-function getComputedDirection(element) {
-  return element.ownerDocument.defaultView.getComputedStyle(element).getPropertyValue("direction");
+function getComputedStyles(element) {
+  return element.ownerDocument.defaultView.getComputedStyle(element);
 }
 
 function buildOptionListForChildren(node) {
@@ -202,27 +213,29 @@ function buildOptionListForChildren(node) {
   for (let child of node.children) {
     let tagName = child.tagName.toUpperCase();
 
-    if (tagName == 'OPTION' || tagName == 'OPTGROUP') {
+    if (tagName == "OPTION" || tagName == "OPTGROUP") {
       if (child.hidden) {
         continue;
       }
 
       let textContent =
-        tagName == 'OPTGROUP' ? child.getAttribute("label")
+        tagName == "OPTGROUP" ? child.getAttribute("label")
                               : child.text;
       if (textContent == null) {
         textContent = "";
       }
 
+      let cs = getComputedStyles(child);
+
       let info = {
         index: child.index,
-        tagName: tagName,
-        textContent: textContent,
+        tagName,
+        textContent,
         disabled: child.disabled,
-        display: child.style.display,
+        display: cs.display,
         // We need to do this for every option element as each one can have
         // an individual style set for direction
-        textDirection: getComputedDirection(child),
+        textDirection: cs.direction,
         tooltip: child.title,
         // XXX this uses a highlight color when this is the selected element.
         // We need to suppress such highlighting in the content process to get
@@ -231,7 +244,7 @@ function buildOptionListForChildren(node) {
         // color does not override color: menutext in the parent.
         // backgroundColor: computedStyle.backgroundColor,
         // color: computedStyle.color,
-        children: tagName == 'OPTGROUP' ? buildOptionListForChildren(child) : []
+        children: tagName == "OPTGROUP" ? buildOptionListForChildren(child) : []
       };
       result.push(info);
     }

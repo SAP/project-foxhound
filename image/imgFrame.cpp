@@ -22,6 +22,7 @@
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Telemetry.h"
 #include "nsMargin.h"
 #include "nsThreadUtils.h"
 
@@ -130,14 +131,6 @@ AllowedImageSize(int32_t aWidth, int32_t aHeight)
     NS_WARNING("width or height too large");
     return false;
   }
-#if defined(XP_MACOSX)
-  // CoreGraphics is limited to images < 32K in *height*, so clamp all surfaces
-  // on the Mac to that height
-  if (MOZ_UNLIKELY(aHeight > SHRT_MAX)) {
-    NS_WARNING("image too big");
-    return false;
-  }
-#endif
   return true;
 }
 
@@ -501,7 +494,7 @@ imgFrame::SurfaceForDrawing(bool               aDoPartialDecode,
 
   if (!aDoPartialDecode) {
     return SurfaceWithFormat(new gfxSurfaceDrawable(aSurface, mImageSize),
-                                                    mFormat);
+                             mFormat);
   }
 
   gfxRect available = gfxRect(mDecoded.x, mDecoded.y, mDecoded.width,
@@ -538,7 +531,8 @@ imgFrame::SurfaceForDrawing(bool               aDoPartialDecode,
 }
 
 bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
-                    SamplingFilter aSamplingFilter, uint32_t aImageFlags)
+                    SamplingFilter aSamplingFilter, uint32_t aImageFlags,
+                    float aOpacity)
 {
   PROFILER_LABEL("imgFrame", "Draw",
     js::ProfileEntry::Category::GRAPHICS);
@@ -580,7 +574,7 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
   if (surfaceResult.IsValid()) {
     gfxUtils::DrawPixelSnapped(aContext, surfaceResult.mDrawable,
                                imageRect.Size(), region, surfaceResult.mFormat,
-                               aSamplingFilter, aImageFlags);
+                               aSamplingFilter, aImageFlags, aOpacity);
   }
   return true;
 }
@@ -619,6 +613,8 @@ imgFrame::Finish(Opacity aFrameOpacity /* = Opacity::SOME_TRANSPARENCY */,
 
   if (aFrameOpacity == Opacity::FULLY_OPAQUE) {
     mHasNoAlpha = true;
+    Telemetry::Accumulate(Telemetry::IMAGE_DECODE_OPAQUE_BGRA,
+                          mFormat == SurfaceFormat::B8G8R8A8);
   }
 
   mDisposalMethod = aDisposalMethod;

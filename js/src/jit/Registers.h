@@ -88,6 +88,19 @@ struct Register {
         return SetType(1) << code();
     }
 
+    static constexpr RegTypeName DefaultType = RegTypeName::GPR;
+
+    template <RegTypeName = DefaultType>
+    static SetType LiveAsIndexableSet(SetType s) {
+        return SetType(0);
+    }
+
+    template <RegTypeName Name = DefaultType>
+    static SetType AllocatableAsIndexableSet(SetType s) {
+        static_assert(Name != RegTypeName::Any, "Allocatable set are not iterable");
+        return SetType(0);
+    }
+
     static uint32_t SetSize(SetType x) {
         return Codes::SetSize(x);
     }
@@ -98,6 +111,24 @@ struct Register {
         return Codes::LastBit(x);
     }
 };
+
+template <> inline Register::SetType
+Register::LiveAsIndexableSet<RegTypeName::GPR>(SetType set)
+{
+    return set;
+}
+
+template <> inline Register::SetType
+Register::LiveAsIndexableSet<RegTypeName::Any>(SetType set)
+{
+    return set;
+}
+
+template <> inline Register::SetType
+Register::AllocatableAsIndexableSet<RegTypeName::GPR>(SetType set)
+{
+    return set;
+}
 
 #if defined(JS_NUNBOX32)
 static const uint32_t INT64LOW_OFFSET = 0 * sizeof(int32_t);
@@ -124,8 +155,7 @@ struct Register64
         return reg != other.reg;
     }
     static Register64 Invalid() {
-        Register64 r(Register::Invalid());
-        return r;
+        return Register64(Register::Invalid());
     }
 #else
     constexpr Register64(Register h, Register l)
@@ -138,8 +168,7 @@ struct Register64
         return high != other.high || low != other.low;
     }
     static Register64 Invalid() {
-        Register64 r(Register::Invalid(), Register::Invalid());
-        return r;
+        return Register64(Register::Invalid(), Register::Invalid());
     }
 #endif
 };

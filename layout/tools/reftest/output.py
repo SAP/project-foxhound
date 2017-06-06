@@ -55,11 +55,11 @@ class ReftestFormatter(TbplFormatter):
         if "reftest_screenshots" in extra:
             screenshots = extra["reftest_screenshots"]
             if len(screenshots) == 3:
-                output_text += ("\nREFTEST   IMAGE 1 (TEST): %s\n"
-                                "REFTEST   IMAGE 2 (REFERENCE): %s") % (screenshots[0]["screenshot"],
+                output_text += ("\nREFTEST   IMAGE 1 (TEST): data:image/png;base64,%s\n"
+                                "REFTEST   IMAGE 2 (REFERENCE): data:image/png;base64,%s") % (screenshots[0]["screenshot"],
                                                                          screenshots[2]["screenshot"])
             elif len(screenshots) == 1:
-                output_text += "\nREFTEST   IMAGE: %(image1)s" % screenshots[0]["screenshot"]
+                output_text += "\nREFTEST   IMAGE: data:image/png;base64,%(image1)s" % screenshots[0]["screenshot"]
 
 
         output_text += "\nREFTEST TEST-END | %s" % test
@@ -105,8 +105,6 @@ class OutputHandler(object):
     def __init__(self, log, utilityPath, symbolsPath=None):
         self.stack_fixer_function = get_stack_fixer_function(utilityPath, symbolsPath)
         self.log = log
-        # needed for b2gautomation.py
-        self.suite_finished = False
 
     def __call__(self, line):
         # need to return processed messages to appease remoteautomation.py
@@ -120,9 +118,6 @@ class OutputHandler(object):
             return [line]
 
         if isinstance(data, dict) and 'action' in data:
-            if data['action'] == 'suite_end':
-                self.suite_finished = True
-
             self.log.log_raw(data)
         else:
             self.verbatim(json.dumps(data))

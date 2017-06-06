@@ -1,6 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
-/*global Services, requestLongerTimeout, TestUtils, BrowserTestUtils,
+/* global Services, requestLongerTimeout, TestUtils, BrowserTestUtils,
  ok, info, dump, is, Ci, Cu, Components, ctypes, privateNoteIntentionalCrash,
  gBrowser, add_task, addEventListener, removeEventListener, ContentTask */
 
@@ -32,7 +32,7 @@ function removeFile(directory, filename) {
  * @return nsIFile
  */
 function getMinidumpDirectory() {
-  let dir = Services.dirsvc.get('ProfD', Ci.nsIFile);
+  let dir = Services.dirsvc.get("ProfD", Ci.nsIFile);
   dir.append("minidumps");
   return dir;
 }
@@ -45,16 +45,16 @@ add_task(function* test_content_url_annotation() {
   let redirect_url = "https://example.com/browser/toolkit/content/tests/browser/file_redirect_to.html";
 
   yield BrowserTestUtils.withNewTab({
-    gBrowser: gBrowser
+    gBrowser
   }, function* (browser) {
     ok(browser.isRemoteBrowser, "Should be a remote browser");
 
     // file_redirect.html should send us to file_redirect_to.html
     let promise = ContentTask.spawn(browser, {}, function* () {
-      dump('ContentTask starting...\n');
+      dump("ContentTask starting...\n");
       yield new Promise((resolve) => {
         addEventListener("RedirectDone", function listener() {
-          dump('Got RedirectDone\n');
+          dump("Got RedirectDone\n");
           removeEventListener("RedirectDone", listener);
           resolve();
         }, true, true);

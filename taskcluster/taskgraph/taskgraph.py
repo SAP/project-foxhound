@@ -46,6 +46,11 @@ class TaskGraph(object):
             tasks[key] = task_json
         return tasks
 
+    def for_each_task(self, f, *args, **kwargs):
+        for task_label in self.graph.visit_postorder():
+            task = self.tasks[task_label]
+            f(task, self, *args, **kwargs)
+
     def __getitem__(self, label):
         "Get a task by label"
         return self.tasks[label]
@@ -61,7 +66,7 @@ class TaskGraph(object):
         return self.tasks == other.tasks and self.graph == other.graph
 
     @classmethod
-    def from_json(cls, tasks_dict, root):
+    def from_json(cls, tasks_dict):
         """
         This code is used to generate the a TaskGraph using a dictionary
         which is representative of the TaskGraph.

@@ -15,8 +15,8 @@
 #include "mozilla/ReentrantMonitor.h"   // for ReentrantMonitorAutoEnter, etc
 #include "mozilla/TimeStamp.h"          // for TimeStamp
 #include "mozilla/gfx/Point.h"          // For IntSize
-#include "mozilla/layers/GonkNativeHandle.h"
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend, etc
+#include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/mozalloc.h"           // for operator delete, etc
 #include "nsAutoPtr.h"                  // for nsRefPtr, nsAutoArrayPtr, etc
 #include "nsAutoRef.h"                  // for nsCountedRef
@@ -145,13 +145,13 @@ namespace layers {
 
 class ImageClient;
 class ImageCompositeNotification;
+class ImageContainer;
 class ImageContainerChild;
 class PImageContainerChild;
 class SharedPlanarYCbCrImage;
 class PlanarYCbCrImage;
 class TextureClient;
-class CompositableClient;
-class GrallocImage;
+class KnowsCompositor;
 class NVImage;
 
 struct ImageBackendData
@@ -170,8 +170,6 @@ class SharedRGBImage;
 class SurfaceTextureImage;
 #elif defined(XP_MACOSX)
 class MacIOSurfaceImage;
-#elif defined(MOZ_WIDGET_GONK)
-class OverlayImage;
 #endif
 
 /**
@@ -214,20 +212,15 @@ public:
 
   virtual already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() = 0;
 
-  virtual GrallocImage* AsGrallocImage()
-  {
-    return nullptr;
-  }
-
   virtual bool IsValid() { return true; }
 
   virtual uint8_t* GetBuffer() { return nullptr; }
 
   /**
-   * For use with the CompositableClient only (so that the later can
+   * For use with the TextureForwarder only (so that the later can
    * synchronize the TextureClient with the TextureHost).
    */
-  virtual TextureClient* GetTextureClient(CompositableClient* aClient) { return nullptr; }
+  virtual TextureClient* GetTextureClient(KnowsCompositor* aForwarder) { return nullptr; }
 
   /* Access to derived classes. */
   virtual EGLImageImage* AsEGLImageImage() { return nullptr; }
@@ -331,6 +324,24 @@ protected:
     const gfx::IntSize& aScaleHint,
     BufferRecycleBin *aRecycleBin);
 };
+
+// Used to notify ImageContainer::NotifyComposite()
+class ImageContainerListener final {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainerListener)
+
+public:
+  explicit ImageContainerListener(ImageContainer* aImageContainer);
+
+  void NotifyComposite(const ImageCompositeNotification& aNotification);
+  void ClearImageContainer();
+private:
+  typedef mozilla::Mutex Mutex;
+
+  ~ImageContainerListener();
+
+  Mutex mLock;
+  ImageContainer* mImageContainer;
+};
  
 /**
  * A class that manages Images for an ImageLayer. The only reason
@@ -374,7 +385,7 @@ public:
    * async container ID.
    * @param aAsyncContainerID async container ID for which we are a proxy
    */
-  explicit ImageContainer(uint64_t aAsyncContainerID);
+  explicit ImageContainer(const CompositableHandle& aHandle);
 
   typedef uint32_t FrameID;
   typedef uint32_t ProducerID;
@@ -383,10 +394,6 @@ public:
 
   // Factory methods for shared image types.
   RefPtr<SharedRGBImage> CreateSharedRGBImage();
-
-#ifdef MOZ_WIDGET_GONK
-  RefPtr<OverlayImage> CreateOverlayImage();
-#endif
 
   struct NonOwningImage {
     explicit NonOwningImage(Image* aImage = nullptr,
@@ -479,7 +486,7 @@ public:
    *
    * Can be called from any thread.
    */
-  uint64_t GetAsyncContainerID() const;
+  CompositableHandle GetAsyncContainerHandle();
 
   /**
    * Returns if the container currently has an image.
@@ -574,7 +581,14 @@ public:
     return mDroppedImageCount;
   }
 
+  void NotifyComposite(const ImageCompositeNotification& aNotification);
+
   PImageContainerChild* GetPImageContainerChild();
+
+  ImageContainerListener* GetImageContainerListener()
+  {
+    return mNotifyCompositeListener;
+  }
 
   /**
    * Main thread only.
@@ -595,7 +609,7 @@ private:
   // calling this function!
   void EnsureActiveImage();
 
-  void NotifyCompositeInternal(const ImageCompositeNotification& aNotification);
+  void EnsureImageClient();
 
   // ReentrantMonitor to protect thread safe access to the "current
   // image", and any other state which is shared between threads.
@@ -635,16 +649,15 @@ private:
   // asynchronusly using the ImageBridge IPDL protocol.
   RefPtr<ImageClient> mImageClient;
 
-  uint64_t mAsyncContainerID;
+  bool mIsAsync;
+  CompositableHandle mAsyncContainerHandle;
 
   nsTArray<FrameID> mFrameIDsNotYetComposited;
   // ProducerID for last current image(s), including the frames in
   // mFrameIDsNotYetComposited
   ProducerID mCurrentProducerID;
 
-  // Object must be released on the ImageBridge thread. Field is immutable
-  // after creation of the ImageContainer.
-  RefPtr<ImageContainerChild> mIPDLChild;
+  RefPtr<ImageContainerListener> mNotifyCompositeListener;
 
   static mozilla::Atomic<uint32_t> sGenerationCounter;
 };
@@ -685,6 +698,7 @@ struct PlanarYCbCrData {
   uint32_t mPicY;
   gfx::IntSize mPicSize;
   StereoMode mStereoMode;
+  YUVColorSpace mYUVColorSpace;
 
   gfx::IntRect GetPictureRect() const {
     return gfx::IntRect(mPicX, mPicY,
@@ -697,6 +711,7 @@ struct PlanarYCbCrData {
     , mCbChannel(nullptr), mCrChannel(nullptr)
     , mCbCrStride(0), mCbCrSize(0, 0) , mCbSkip(0), mCrSkip(0)
     , mPicX(0), mPicY(0), mPicSize(0, 0), mStereoMode(StereoMode::MONO)
+    , mYUVColorSpace(YUVColorSpace::BT601)
   {}
 };
 
@@ -888,7 +903,8 @@ public:
     return surface.forget();
   }
 
-  virtual TextureClient* GetTextureClient(CompositableClient* aClient) override;
+  void SetTextureFlags(TextureFlags aTextureFlags) { mTextureFlags = aTextureFlags; }
+  virtual TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
 
   virtual gfx::IntSize GetSize() override { return mSize; }
 
@@ -900,55 +916,8 @@ private:
   gfx::IntSize mSize;
   nsCountedRef<nsOwningThreadSourceSurfaceRef> mSourceSurface;
   nsDataHashtable<nsUint32HashKey, RefPtr<TextureClient> >  mTextureClients;
+  TextureFlags mTextureFlags;
 };
-
-#ifdef MOZ_WIDGET_GONK
-class OverlayImage : public Image {
-  /**
-   * OverlayImage is a special Image type that does not hold any buffer.
-   * It only hold an Id as identifier to the real content of the Image.
-   * Therefore, OverlayImage must be handled by some specialized hardware(e.g. HWC) 
-   * to show its content.
-   */
-public:
-  struct Data {
-    int32_t mOverlayId;
-    gfx::IntSize mSize;
-  };
-
-  struct SidebandStreamData {
-    GonkNativeHandle mStream;
-    gfx::IntSize mSize;
-  };
-
-  OverlayImage() : Image(nullptr, ImageFormat::OVERLAY_IMAGE) { mOverlayId = INVALID_OVERLAY; }
-
-  void SetData(const Data& aData)
-  {
-    mOverlayId = aData.mOverlayId;
-    mSize = aData.mSize;
-    mSidebandStream = GonkNativeHandle();
-  }
-
-  void SetData(const SidebandStreamData& aData)
-  {
-    mSidebandStream = aData.mStream;
-    mSize = aData.mSize;
-    mOverlayId = INVALID_OVERLAY;
-  }
-
-  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() { return nullptr; } ;
-  int32_t GetOverlayId() { return mOverlayId; }
-  GonkNativeHandle& GetSidebandStream() { return mSidebandStream; }
-
-  gfx::IntSize GetSize() { return mSize; }
-
-private:
-  int32_t mOverlayId;
-  GonkNativeHandle mSidebandStream;
-  gfx::IntSize mSize;
-};
-#endif
 
 } // namespace layers
 } // namespace mozilla

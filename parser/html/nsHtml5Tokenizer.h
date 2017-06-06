@@ -163,24 +163,23 @@ class nsHtml5Tokenizer
       charRefBuf[charRefBufLen++] = c;
     }
 
-    inline void clearCharRefBufAndAppend(char16_t c, const TaintFlow* t)
-    {
-      charRefBuf[0] = c;
-      charRefBufLen = 1;
-      charRefTaint.clear();
-      if (t)
-        charRefTaint.set(0, *t);
-    }
-
     void emitOrAppendCharRefBuf(int32_t returnState);
-    inline void clearStrBufAndAppend(char16_t c)
+    inline void clearStrBufAfterUse()
     {
-      strBuf[0] = c;
-      strBufLen = 1;
+      strBufLen = 0;
+      charRefTaint.clear();
     }
 
-    inline void clearStrBuf()
+    inline void clearStrBufBeforeUse()
     {
+      MOZ_ASSERT(!strBufLen, "strBufLen not reset after previous use!");
+      strBufLen = 0;
+    }
+
+    inline void clearStrBufAfterOneHyphen()
+    {
+      MOZ_ASSERT(strBufLen == 1, "strBufLen length not one!");
+      MOZ_ASSERT(strBuf[0] == '-', "strBuf does not start with a hyphen!");
       strBufLen = 0;
     }
 
@@ -215,6 +214,7 @@ class nsHtml5Tokenizer
     inline void appendCharRefBufToStrBuf()
     {
       appendStrBuf(charRefBuf, 0, charRefBufLen);
+      charRefBufLen = 0;
     }
 
     void emitComment(int32_t provisionalHyphens, int32_t pos);

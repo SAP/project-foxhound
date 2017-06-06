@@ -110,18 +110,18 @@ static constexpr FloatRegister ScratchSimd128Reg = InvalidFloatReg;
 // A bias applied to the GlobalReg to allow the use of instructions with small
 // negative immediate offsets which doubles the range of global data that can be
 // accessed with a single instruction.
-static const int32_t AsmJSGlobalRegBias = 32768;
+static const int32_t WasmGlobalRegBias = 32768;
 
 // Registers used in the GenerateFFIIonExit Enable Activation block.
-static constexpr Register AsmJSIonExitRegCallee = t0;
-static constexpr Register AsmJSIonExitRegE0 = a0;
-static constexpr Register AsmJSIonExitRegE1 = a1;
+static constexpr Register WasmIonExitRegCallee = t0;
+static constexpr Register WasmIonExitRegE0 = a0;
+static constexpr Register WasmIonExitRegE1 = a1;
 
 // Registers used in the GenerateFFIIonExit Disable Activation block.
 // None of these may be the second scratch register (t8).
-static constexpr Register AsmJSIonExitRegD0 = a0;
-static constexpr Register AsmJSIonExitRegD1 = a1;
-static constexpr Register AsmJSIonExitRegD2 = t0;
+static constexpr Register WasmIonExitRegD0 = a0;
+static constexpr Register WasmIonExitRegD1 = a1;
+static constexpr Register WasmIonExitRegD2 = t0;
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
 static constexpr Register RegExpMatcherRegExpReg = CallTempReg0;
@@ -494,7 +494,7 @@ class BOffImm16
         MOZ_ASSERT(IsInRange(offset));
     }
     static bool IsInRange(int offset) {
-        if ((offset - 4) < (INT16_MIN << 2))
+        if ((offset - 4) < int(unsigned(INT16_MIN) << 2))
             return false;
         if ((offset - 4) > (INT16_MAX << 2))
             return false;
@@ -636,7 +636,7 @@ class GSImm13
         return value;
     }
     static bool IsInRange(int32_t imm) {
-        return imm >= (-256 << 4) && imm <= (255 << 4);
+        return imm >= int32_t(uint32_t(-256) << 4) && imm <= (255 << 4);
     }
 };
 
@@ -776,6 +776,8 @@ class AssemblerMIPSShared : public AssemblerShared
         LessThan,
         LessThanOrEqual,
         Overflow,
+        CarrySet,
+        CarryClear,
         Signed,
         NotSigned,
         Zero,
@@ -908,6 +910,12 @@ class AssemblerMIPSShared : public AssemblerShared
   public:
     bool oom() const;
 
+    void disableProtection() {}
+    void enableProtection() {}
+    void setLowerBoundForProtection(size_t) {}
+    void unprotectRegion(unsigned char*, size_t) {}
+    void reprotectRegion(unsigned char*, size_t) {}
+
     void setPrinter(Sprinter* sp) {
     }
 
@@ -920,7 +928,7 @@ class AssemblerMIPSShared : public AssemblerShared
   public:
     void finish();
     bool asmMergeWith(const AssemblerMIPSShared& other);
-    void executableCopy(void* buffer);
+    void executableCopy(void* buffer, bool flushICache = true);
     void copyJumpRelocationTable(uint8_t* dest);
     void copyDataRelocationTable(uint8_t* dest);
     void copyPreBarrierTable(uint8_t* dest);
@@ -1194,7 +1202,7 @@ class AssemblerMIPSShared : public AssemblerShared
 
     // label operations
     void bind(Label* label, BufferOffset boff = BufferOffset());
-    void bindLater(Label* label, wasm::JumpTarget target);
+    void bindLater(Label* label, wasm::TrapDesc target);
     virtual void bind(InstImm* inst, uintptr_t branch, uintptr_t target) = 0;
     virtual void Bind(uint8_t* rawCode, CodeOffset* label, const void* address) = 0;
     void bind(CodeOffset* label) {
@@ -1224,7 +1232,7 @@ class AssemblerMIPSShared : public AssemblerShared
 #endif
     }
     static bool SupportsUnalignedAccesses() {
-        return false;
+        return true;
     }
     static bool SupportsSimd() {
         return js::jit::SupportsSimd;
@@ -1270,6 +1278,8 @@ class AssemblerMIPSShared : public AssemblerShared
 
     static void ToggleToJmp(CodeLocationLabel inst_);
     static void ToggleToCmp(CodeLocationLabel inst_);
+
+    static void UpdateLuiOriValue(Instruction* inst0, Instruction* inst1, uint32_t value);
 
     void processCodeLabels(uint8_t* rawCode);
 
@@ -1513,6 +1523,12 @@ class InstGS : public Instruction
       : Instruction(op | RS(rs) | RT(rt) | off.encode(6) | ff)
     { }
 };
+
+inline bool
+IsUnaligned(const wasm::MemoryAccessDesc& access)
+{
+    return access.align() && access.align() < access.byteSize();
+}
 
 } // namespace jit
 } // namespace js

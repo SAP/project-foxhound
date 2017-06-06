@@ -48,7 +48,7 @@ public:
   {
     mLock = PR_NewLock();
     if (!mLock) {
-      NS_RUNTIMEABORT("Can't allocate mozilla::Mutex");
+      MOZ_CRASH("Can't allocate mozilla::Mutex");
     }
   }
 
@@ -110,6 +110,10 @@ private:
   PRLock* mLock;
 
   friend class CondVar;
+
+  // MozPromise needs to access mLock for debugging purpose.
+  template<typename, typename, bool>
+  friend class MozPromise;
 };
 
 /**

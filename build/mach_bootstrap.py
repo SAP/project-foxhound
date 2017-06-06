@@ -53,6 +53,7 @@ SEARCH_PATHS = [
     'python/slugid',
     'python/py',
     'python/pytest',
+    'python/pytoml',
     'python/redo',
     'python/voluptuous',
     'build',
@@ -66,11 +67,10 @@ SEARCH_PATHS = [
     'taskcluster',
     'testing',
     'testing/firefox-ui/harness',
-    'testing/firefox-ui/tests',
-    'testing/luciddream',
-    'testing/marionette/harness',
-    'testing/marionette/harness/marionette/runner/mixins/browsermob-proxy-py',
     'testing/marionette/client',
+    'testing/marionette/harness',
+    'testing/marionette/harness/marionette_harness/runner/mixins/browsermob-proxy-py',
+    'testing/marionette/puppeteer/firefox',
     'testing/mozbase/mozcrash',
     'testing/mozbase/mozdebug',
     'testing/mozbase/mozdevice',
@@ -89,7 +89,6 @@ SEARCH_PATHS = [
     'testing/mozbase/moztest',
     'testing/mozbase/mozversion',
     'testing/mozbase/manifestparser',
-    'testing/puppeteer/firefox',
     'testing/taskcluster',
     'testing/tools/autotry',
     'testing/web-platform',
@@ -119,7 +118,6 @@ MACH_MODULES = [
     'services/common/tests/mach_commands.py',
     'taskcluster/mach_commands.py',
     'testing/firefox-ui/mach_commands.py',
-    'testing/luciddream/mach_commands.py',
     'testing/mach_commands.py',
     'testing/marionette/mach_commands.py',
     'testing/mochitest/mach_commands.py',
@@ -206,6 +204,9 @@ def bootstrap(topsrcdir, mozilla_dir=None):
     sys.path[0:0] = [os.path.join(mozilla_dir, path) for path in SEARCH_PATHS]
     import mach.main
     from mozboot.util import get_state_dir
+
+    from mozbuild.util import patch_main
+    patch_main()
 
     def telemetry_handler(context, data):
         # We have not opted-in to telemetry

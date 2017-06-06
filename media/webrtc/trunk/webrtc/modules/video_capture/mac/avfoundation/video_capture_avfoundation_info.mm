@@ -9,9 +9,9 @@
  */
 
 #import "webrtc/modules/video_capture/mac/avfoundation/video_capture_avfoundation_info_objc.h"
-#include "webrtc/modules/video_capture/include/video_capture.h"
+#include "webrtc/modules/video_capture/video_capture.h"
 #include "webrtc/modules/video_capture/video_capture_config.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/trace.h"
 #include "nsDebug.h"
 
 namespace webrtc
@@ -54,7 +54,8 @@ int32_t VideoCaptureMacAVFoundationInfo::GetDeviceName(
     uint32_t deviceNumber, char* deviceNameUTF8,
     uint32_t deviceNameLength, char* deviceUniqueIdUTF8,
     uint32_t deviceUniqueIdUTF8Length, char* productUniqueIdUTF8,
-    uint32_t productUniqueIdUTF8Length)
+    uint32_t productUniqueIdUTF8Length,
+    pid_t* pid)
 {
     nsAutoreleasePool localPool;
     int errNum = [[_captureInfo getDeviceNamesFromIndex:deviceNumber

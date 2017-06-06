@@ -89,7 +89,7 @@ const kDownloadsStringsRequiringFormatting = {
 };
 
 const kDownloadsStringsRequiringPluralForm = {
-  otherDownloads2: true
+  otherDownloads3: true
 };
 
 const kPartialDownloadSuffix = ".part";
@@ -1195,11 +1195,16 @@ DownloadsIndicatorDataCtor.prototype = {
           Cu.reportError("Unknown reputation verdict: " +
                          download.error.reputationCheckVerdict);
       }
-    } else if (download.succeeded || download.error) {
+    } else if (download.succeeded) {
       // Existing higher level attention indication trumps ATTENTION_SUCCESS.
       if (this._attention != DownloadsCommon.ATTENTION_SEVERE &&
           this._attention != DownloadsCommon.ATTENTION_WARNING) {
         this.attention = DownloadsCommon.ATTENTION_SUCCESS;
+      }
+    } else if (download.error) {
+      // Existing higher level attention indication trumps ATTENTION_WARNING.
+      if (this._attention != DownloadsCommon.ATTENTION_SEVERE) {
+        this.attention = DownloadsCommon.ATTENTION_WARNING;
       }
     }
 
@@ -1520,12 +1525,11 @@ DownloadsSummaryData.prototype = {
       DownloadsCommon.summarizeDownloads(this._downloadsForSummary());
 
     this._description = DownloadsCommon.strings
-                                       .otherDownloads2(summary.numActive);
+                                       .otherDownloads3(summary.numDownloading);
     this._percentComplete = summary.percentComplete;
 
-    // If all downloads are paused, show the progress indicator as paused.
-    this._showingProgress = summary.numDownloading > 0 ||
-                            summary.numPaused > 0;
+    // Only show the downloading items.
+    this._showingProgress = summary.numDownloading > 0;
 
     // Display the estimated time left, if present.
     if (summary.rawTimeLeft == -1) {

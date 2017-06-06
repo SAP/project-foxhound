@@ -24,6 +24,7 @@
 #include "nsITimer.h"
 
 #include "AbstractMediaDecoder.h"
+#include "DecoderDoctorDiagnostics.h"
 #include "MediaDecoderOwner.h"
 #include "MediaEventSource.h"
 #include "MediaMetadataManager.h"
@@ -41,8 +42,10 @@ namespace mozilla {
 
 namespace dom {
 class Promise;
+class HTMLMediaElement;
 }
 
+class AbstractThread;
 class VideoFrameContainer;
 class MediaDecoderStateMachine;
 
@@ -57,13 +60,6 @@ enum class MediaEventType : int8_t;
 class MediaDecoder : public AbstractMediaDecoder
 {
 public:
-  struct SeekResolveValue {
-    SeekResolveValue(bool aAtEnd, MediaDecoderEventVisibility aEventVisibility)
-      : mAtEnd(aAtEnd), mEventVisibility(aEventVisibility) {}
-    bool mAtEnd;
-    MediaDecoderEventVisibility mEventVisibility;
-  };
-
   // Used to register with MediaResource to receive notifications which will
   // be forwarded to MediaDecoder.
   class ResourceCallback : public MediaResourceCallback {
@@ -72,6 +68,7 @@ public:
     static const uint32_t sDelay = 500;
 
   public:
+    explicit ResourceCallback(AbstractThread* aMainThread);
     // Start to receive notifications from ResourceCallback.
     void Connect(MediaDecoder* aDecoder);
     // Called upon shutdown to stop receiving notifications.
@@ -81,7 +78,6 @@ public:
     /* MediaResourceCallback functions */
     MediaDecoderOwner* GetMediaOwner() const override;
     void SetInfinite(bool aInfinite) override;
-    void SetMediaSeekable(bool aMediaSeekable) override;
     void NotifyNetworkError() override;
     void NotifyDecodeError() override;
     void NotifyDataArrived() override;
@@ -97,9 +93,10 @@ public:
     MediaDecoder* mDecoder = nullptr;
     nsCOMPtr<nsITimer> mTimer;
     bool mTimerArmed = false;
+    const RefPtr<AbstractThread> mAbstractMainThread;
   };
 
-  typedef MozPromise<SeekResolveValue, bool /* aIgnored */, /* IsExclusive = */ true> SeekPromise;
+  typedef MozPromise<bool /* aIgnored */, bool /* aIgnored */, /* IsExclusive = */ true> SeekPromise;
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
@@ -132,6 +129,11 @@ public:
   // Cleanup internal data structures. Must be called on the main
   // thread by the owning object before that object disposes of this object.
   virtual void Shutdown();
+
+  // Notified by the shutdown manager that XPCOM shutdown has begun.
+  // The decoder should notify its owner to drop the reference to the decoder
+  // to prevent further calls into the decoder.
+  void NotifyXPCOMShutdown();
 
   // Start downloading the media. Decode the downloaded data up to the
   // point of the first frame of data.
@@ -183,13 +185,7 @@ public:
   virtual nsresult Play();
 
   // Notify activity of the decoder owner is changed.
-  // Based on the activity, dormant state is updated.
-  // Dormant state is a state to free all scarce media resources
-  //  (like hw video codec), did not decoding and stay dormant.
-  // It is used to share scarece media resources in system.
   virtual void NotifyOwnerActivityChanged(bool aIsVisible);
-
-  void UpdateDormantState(bool aDormantTimeout, bool aActivity);
 
   // Pause video playback.
   virtual void Pause();
@@ -203,6 +199,8 @@ public:
   // played. This reduces the memory overhead of media elements that may
   // not be played. Note that seeking also doesn't cause us start prerolling.
   void SetMinimizePrerollUntilPlaybackStarts();
+
+  bool GetMinimizePreroll() const { return mMinimizePreroll; }
 
   // All MediaStream-related data is protected by mReentrantMonitor.
   // We have at most one DecodedStreamData per MediaDecoder. Its stream
@@ -239,6 +237,9 @@ public:
   // Return true if the decoder has reached the end of playback.
   bool IsEnded() const;
 
+  // True if we are playing a MediaSource object.
+  virtual bool IsMSE() const { return false; }
+
   // Return true if the MediaDecoderOwner's error attribute is not null.
   // Must be called before Shutdown().
   bool OwnerHasError() const;
@@ -257,17 +258,9 @@ protected:
   void UpdateEstimatedMediaDuration(int64_t aDuration) override;
 
 public:
-  // Set a flag indicating whether random seeking is supported
-  void SetMediaSeekable(bool aMediaSeekable);
-  // Set a flag indicating whether seeking is supported only in buffered ranges
-  void SetMediaSeekableOnlyInBufferedRanges(bool aMediaSeekableOnlyInBufferedRanges);
-
   // Returns true if this media supports random seeking. False for example with
   // chained ogg files.
   bool IsMediaSeekable();
-  // Returns true if this media supports seeking only in buffered ranges. True
-  // for example in WebMs with no cues
-  bool IsMediaSeekableOnlyInBufferedRanges();
   // Returns true if seeking is supported on a transport level (e.g. the server
   // supports range requests, we are playing a file, etc.).
   bool IsTransportSeekable();
@@ -403,7 +396,7 @@ private:
   void PlaybackEnded();
 
   void OnSeekRejected();
-  void OnSeekResolved(SeekResolveValue aVal);
+  void OnSeekResolved();
 
   void SeekingChanged()
   {
@@ -416,16 +409,16 @@ private:
   // Seeking has started. Inform the element on the main thread.
   void SeekingStarted();
 
-  void UpdateLogicalPositionInternal(MediaDecoderEventVisibility aEventVisibility);
+  void UpdateLogicalPositionInternal();
   void UpdateLogicalPosition()
   {
     MOZ_ASSERT(NS_IsMainThread());
-    MOZ_ASSERT(!IsShutdown());
+    MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
     // Per spec, offical position remains stable during pause and seek.
     if (mPlayState == PLAY_STATE_PAUSED || IsSeeking()) {
       return;
     }
-    UpdateLogicalPositionInternal(MediaDecoderEventVisibility::Observable);
+    UpdateLogicalPositionInternal();
   }
 
   // Find the end of the cached data starting at the current decoder
@@ -439,6 +432,11 @@ private:
   void UpdateSameOriginStatus(bool aSameOrigin);
 
   MediaDecoderOwner* GetOwner() const override;
+
+  AbstractThread* AbstractMainThread() const final override
+  {
+    return mAbstractMainThread;
+  }
 
   typedef MozPromise<RefPtr<CDMProxy>, bool /* aIgnored */, /* IsExclusive = */ true> CDMProxyPromise;
 
@@ -454,10 +452,6 @@ private:
   static bool IsOpusEnabled();
   static bool IsWaveEnabled();
   static bool IsWebMEnabled();
-
-#ifdef MOZ_OMX_DECODER
-  static bool IsOmxEnabled();
-#endif
 
 #ifdef MOZ_ANDROID_OMX
   static bool IsAndroidMediaPluginEnabled();
@@ -486,8 +480,8 @@ private:
   void UpdateReadyState()
   {
     MOZ_ASSERT(NS_IsMainThread());
-    MOZ_ASSERT(!IsShutdown());
-    mOwner->UpdateReadyState();
+    MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+    GetOwner()->UpdateReadyState();
   }
 
   virtual MediaDecoderOwner::NextFrameStatus NextFrameStatus() { return mNextFrameStatus; }
@@ -495,7 +489,7 @@ private:
 
   // Returns a string describing the state of the media player internal
   // data. Used for debugging purposes.
-  virtual void GetMozDebugReaderData(nsAString& aString) {}
+  virtual void GetMozDebugReaderData(nsACString& aString) {}
 
   virtual void DumpDebugInfo();
 
@@ -508,14 +502,6 @@ protected:
                                 MediaDecoderEventVisibility aEventVisibility);
 
   void SetStateMachineParameters();
-
-  static void DormantTimerExpired(nsITimer *aTimer, void *aClosure);
-
-  // Start a timer for heuristic dormant.
-  void StartDormantTimer();
-
-  // Cancel a timer for heuristic dormant.
-  void CancelDormantTimer();
 
   bool IsShutdown() const;
 
@@ -533,7 +519,7 @@ protected:
 
   void SetExplicitDuration(double aValue)
   {
-    MOZ_ASSERT(!IsShutdown());
+    MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
     mExplicitDuration.Set(Some(aValue));
 
     // We Invoke DurationChanged explicitly, rather than using a watcher, so
@@ -544,9 +530,6 @@ protected:
   /******
    * The following members should be accessed with the decoder lock held.
    ******/
-
-  // Whether the decoder implementation supports dormant mode.
-  bool mDormantSupported;
 
   // The logical playback position of the media resource in units of
   // seconds. This corresponds to the "official position" in HTML5. Note that
@@ -586,12 +569,17 @@ private:
   MediaEventSource<void>*
   DataArrivedEvent() override { return &mDataArrivedEvent; }
 
+  MediaEventSource<RefPtr<layers::KnowsCompositor>>*
+  CompositorUpdatedEvent() override { return &mCompositorUpdatedEvent; }
+
   void OnPlaybackEvent(MediaEventType aEvent);
   void OnPlaybackErrorEvent(const MediaResult& aError);
 
+  void OnDecoderDoctorEvent(DecoderDoctorEvent aEvent);
+
   void OnMediaNotSeekable()
   {
-    SetMediaSeekable(false);
+    mMediaSeekable = false;
   }
 
   void FinishShutdown();
@@ -600,6 +588,7 @@ private:
   void DisconnectMirrors();
 
   MediaEventProducer<void> mDataArrivedEvent;
+  MediaEventProducer<RefPtr<layers::KnowsCompositor>> mCompositorUpdatedEvent;
 
   // The state machine object for handling the decoding. It is safe to
   // call methods of this object from other threads. Its internal data
@@ -629,9 +618,6 @@ protected:
   void DiscardOngoingSeekIfExists();
   virtual void CallSeek(const SeekTarget& aTarget, dom::Promise* aPromise);
 
-  // Returns true if heuristic dormant is supported.
-  bool IsHeuristicDormantSupported() const;
-
   MozPromiseRequestHolder<SeekPromise> mSeekRequest;
   RefPtr<dom::Promise> mSeekDOMPromise;
 
@@ -659,6 +645,9 @@ protected:
   // away. The decoder does not add a reference the element.
   MediaDecoderOwner* mOwner;
 
+  // The AbstractThread from mOwner.
+  const RefPtr<AbstractThread> mAbstractMainThread;
+
   // Counters related to decode and presentation of frames.
   const RefPtr<FrameStatistics> mFrameStats;
 
@@ -672,9 +661,6 @@ protected:
   // True when our media stream has been pinned. We pin the stream
   // while seeking.
   bool mPinnedForSeek;
-
-  // True if the playback is paused because the playback rate member is 0.0.
-  bool mPausedForPlaybackRateNull;
 
   // Be assigned from media element during the initialization and pass to
   // AudioStream Class.
@@ -693,6 +679,13 @@ protected:
   // True if we've already fired metadataloaded.
   bool mFiredMetadataLoaded;
 
+  // True if the media is seekable (i.e. supports random access).
+  bool mMediaSeekable = true;
+
+  // True if the media is only seekable within its buffered ranges
+  // like WebMs with no cues.
+  bool mMediaSeekableOnlyInBufferedRanges = false;
+
   // Stores media info, including info of audio tracks and video tracks, should
   // only be accessed from main thread.
   nsAutoPtr<MediaInfo> mInfo;
@@ -703,21 +696,6 @@ protected:
   // If true, forces the decoder to be considered hidden.
   bool mForcedHidden;
 
-  // True if MediaDecoder is in dormant state.
-  bool mIsDormant;
-
-  // True if heuristic dormant is supported.
-  const bool mIsHeuristicDormantSupported;
-
-  // Timeout ms of heuristic dormant timer.
-  const int mHeuristicDormantTimeout;
-
-  // True if MediaDecoder is in dormant by heuristic.
-  bool mIsHeuristicDormant;
-
-  // Timer to schedule updating dormant state.
-  nsCOMPtr<nsITimer> mDormantTimer;
-
   // A listener to receive metadata updates from MDSM.
   MediaEventListener mTimedMetadataListener;
 
@@ -726,6 +704,7 @@ protected:
 
   MediaEventListener mOnPlaybackEvent;
   MediaEventListener mOnPlaybackErrorEvent;
+  MediaEventListener mOnDecoderDoctorEvent;
   MediaEventListener mOnMediaNotSeekable;
 
 protected:
@@ -757,7 +736,7 @@ protected:
   Canonical<double> mVolume;
 
   // PlaybackRate and pitch preservation status we should start at.
-  Canonical<double> mPlaybackRate;
+  double mPlaybackRate = 1;
 
   Canonical<bool> mPreservesPitch;
 
@@ -806,12 +785,6 @@ protected:
   // back again.
   Canonical<int64_t> mDecoderPosition;
 
-  // True if the media is seekable (i.e. supports random access).
-  Canonical<bool> mMediaSeekable;
-
-  // True if the media is only seekable within its buffered ranges.
-  Canonical<bool> mMediaSeekableOnlyInBufferedRanges;
-
   // True if the decoder is visible.
   Canonical<bool> mIsVisible;
 
@@ -819,9 +792,6 @@ public:
   AbstractCanonical<media::NullableTimeUnit>* CanonicalDurationOrNull() override;
   AbstractCanonical<double>* CanonicalVolume() {
     return &mVolume;
-  }
-  AbstractCanonical<double>* CanonicalPlaybackRate() {
-    return &mPlaybackRate;
   }
   AbstractCanonical<bool>* CanonicalPreservesPitch() {
     return &mPreservesPitch;
@@ -855,12 +825,6 @@ public:
   }
   AbstractCanonical<int64_t>* CanonicalDecoderPosition() {
     return &mDecoderPosition;
-  }
-  AbstractCanonical<bool>* CanonicalMediaSeekable() {
-    return &mMediaSeekable;
-  }
-  AbstractCanonical<bool>* CanonicalMediaSeekableOnlyInBufferedRanges() {
-    return &mMediaSeekableOnlyInBufferedRanges;
   }
   AbstractCanonical<bool>* CanonicalIsVisible() {
     return &mIsVisible;
@@ -903,6 +867,10 @@ private:
   void NotifyDownloadEnded(nsresult aStatus);
 
   bool mTelemetryReported;
+
+  // Used to debug how mOwner becomes a dangling pointer in bug 1326294.
+  bool mIsMediaElement;
+  WeakPtr<dom::HTMLMediaElement> mElement;
 };
 
 } // namespace mozilla

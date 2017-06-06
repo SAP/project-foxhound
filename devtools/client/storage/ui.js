@@ -8,9 +8,15 @@
 const {Task} = require("devtools/shared/task");
 const EventEmitter = require("devtools/shared/event-emitter");
 const {LocalizationHelper, ELLIPSIS} = require("devtools/shared/l10n");
-const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
+const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const JSOL = require("devtools/client/shared/vendor/jsol");
 const {KeyCodes} = require("devtools/client/shared/keycodes");
+
+// GUID to be used as a separator in compound keys. This must match the same
+// constant in devtools/server/actors/storage.js,
+// devtools/client/storage/test/head.js and
+// devtools/server/tests/browser/head.js
+const SEPARATOR_GUID = "{9d414cc5-8319-0a04-0586-c0a6ae01670a}";
 
 loader.lazyRequireGetter(this, "TreeWidget",
                          "devtools/client/shared/widgets/TreeWidget", true);
@@ -24,7 +30,7 @@ loader.lazyImporter(this, "VariablesView",
 /**
  * Localization convenience methods.
  */
-const STORAGE_STRINGS = "devtools/locale/storage.properties";
+const STORAGE_STRINGS = "devtools/client/locales/storage.properties";
 const L10N = new LocalizationHelper(STORAGE_STRINGS);
 
 const GENERIC_VARIABLES_VIEW_SETTINGS = {
@@ -35,13 +41,6 @@ const GENERIC_VARIABLES_VIEW_SETTINGS = {
   searchPlaceholder: L10N.getStr("storage.search.placeholder"),
   preventDescriptorModifiers: true
 };
-
-// Columns which are hidden by default in the storage table
-const HIDDEN_COLUMNS = [
-  "creationTime",
-  "isDomain",
-  "isSecure"
-];
 
 const REASON = {
   NEW_ROW: "new-row",
@@ -67,6 +66,13 @@ const ITEM_NAME_MAX_LENGTH = 32;
 
 function addEllipsis(name) {
   if (name.length > ITEM_NAME_MAX_LENGTH) {
+    if (/^https?:/.test(name)) {
+      // For URLs, add ellipsis in the middle
+      const halfLen = ITEM_NAME_MAX_LENGTH / 2;
+      return name.slice(0, halfLen) + ELLIPSIS + name.slice(-halfLen);
+    }
+
+    // For other strings, add ellipsis at the end
     return name.substr(0, ITEM_NAME_MAX_LENGTH) + ELLIPSIS;
   }
 
@@ -157,7 +163,7 @@ function StorageUI(front, target, panelWin, toolbox) {
   this.onRemoveItem = this.onRemoveItem.bind(this);
   this.onRemoveAllFrom = this.onRemoveAllFrom.bind(this);
   this.onRemoveAll = this.onRemoveAll.bind(this);
-  this.onRemoveDatabase = this.onRemoveDatabase.bind(this);
+  this.onRemoveTreeItem = this.onRemoveTreeItem.bind(this);
 
   this._tablePopupDelete = this._panelDoc.getElementById(
     "storage-table-popup-delete");
@@ -176,10 +182,8 @@ function StorageUI(front, target, panelWin, toolbox) {
     "storage-tree-popup-delete-all");
   this._treePopupDeleteAll.addEventListener("command", this.onRemoveAll);
 
-  this._treePopupDeleteDatabase = this._panelDoc.getElementById(
-    "storage-tree-popup-delete-database");
-  this._treePopupDeleteDatabase.addEventListener("command",
-    this.onRemoveDatabase);
+  this._treePopupDelete = this._panelDoc.getElementById("storage-tree-popup-delete");
+  this._treePopupDelete.addEventListener("command", this.onRemoveTreeItem);
 }
 
 exports.StorageUI = StorageUI;
@@ -205,21 +209,14 @@ StorageUI.prototype = {
     this.searchBox.removeEventListener("input", this.filterItems);
     this.searchBox = null;
 
-    this._treePopup.removeEventListener("popupshowing",
-      this.onTreePopupShowing);
-    this._treePopupDeleteAll.removeEventListener("command",
-      this.onRemoveAll);
-    this._treePopupDeleteDatabase.removeEventListener("command",
-      this.onRemoveDatabase);
+    this._treePopup.removeEventListener("popupshowing", this.onTreePopupShowing);
+    this._treePopupDeleteAll.removeEventListener("command", this.onRemoveAll);
+    this._treePopupDelete.removeEventListener("command", this.onRemoveTreeItem);
 
-    this._tablePopup.removeEventListener("popupshowing",
-      this.onTablePopupShowing);
-    this._tablePopupDelete.removeEventListener("command",
-      this.onRemoveItem);
-    this._tablePopupDeleteAllFrom.removeEventListener("command",
-      this.onRemoveAllFrom);
-    this._tablePopupDeleteAll.removeEventListener("command",
-      this.onRemoveAll);
+    this._tablePopup.removeEventListener("popupshowing", this.onTablePopupShowing);
+    this._tablePopupDelete.removeEventListener("command", this.onRemoveItem);
+    this._tablePopupDeleteAllFrom.removeEventListener("command", this.onRemoveAllFrom);
+    this._tablePopupDeleteAll.removeEventListener("command", this.onRemoveAll);
   },
 
   /**
@@ -576,7 +573,7 @@ StorageUI.prototype = {
   },
 
   /**
-   * Populates the selected entry from teh table in the sidebar for a more
+   * Populates the selected entry from the table in the sidebar for a more
    * detailed view.
    */
   displayObjectSidebar: Task.async(function* () {
@@ -618,6 +615,11 @@ StorageUI.prototype = {
         let otherProps = itemProps.filter(
           e => !["name", "value", "valueActor"].includes(e));
         for (let prop of otherProps) {
+          let column = this.table.columns.get(prop);
+          if (column && column.private) {
+            continue;
+          }
+
           let cookieProp = COOKIE_KEY_MAP[prop] || prop;
           // The pseduo property of HostOnly refers to converse of isDomain property
           rawObject[cookieProp] = (prop === "isDomain") ? !item[prop] : item[prop];
@@ -629,6 +631,11 @@ StorageUI.prototype = {
     } else {
       // Case when displaying IndexedDB db/object store properties.
       for (let key in item) {
+        let column = this.table.columns.get(key);
+        if (column && column.private) {
+          continue;
+        }
+
         mainScope.addItem(key, {}, true).setGrip(item[key]);
         this.parseItemValue(key, item[key]);
       }
@@ -647,7 +654,17 @@ StorageUI.prototype = {
    * @param {string} value
    *        The string to be parsed into an object
    */
-  parseItemValue: function (name, value) {
+  parseItemValue: function (name, originalValue) {
+    // Find if value is URLEncoded ie
+    let decodedValue = "";
+    try {
+      decodedValue = decodeURIComponent(originalValue);
+    } catch (e) {
+      // Unable to decode, nothing to do
+    }
+    let value = (decodedValue && decodedValue !== originalValue)
+      ? decodedValue : originalValue;
+
     let json = null;
     try {
       json = JSOL.parse(value);
@@ -778,6 +795,8 @@ StorageUI.prototype = {
     let uniqueKey = null;
     let columns = {};
     let editableFields = [];
+    let hiddenFields = [];
+    let privateFields = [];
     let fields = yield this.getCurrentActor().getFields(subtype);
 
     fields.forEach(f => {
@@ -789,10 +808,21 @@ StorageUI.prototype = {
         editableFields.push(f.name);
       }
 
+      if (f.hidden) {
+        hiddenFields.push(f.name);
+      }
+
+      if (f.private) {
+        privateFields.push(f.name);
+      }
+
       columns[f.name] = f.name;
       let columnName;
       try {
-        columnName = L10N.getStr("table.headers." + type + "." + f.name);
+        // Path key names for l10n in the case of a string change.
+        let name = f.name === "keyPath" ? "keyPath2" : f.name;
+
+        columnName = L10N.getStr("table.headers." + type + "." + name);
       } catch (e) {
         columnName = COOKIE_KEY_MAP[f.name];
       }
@@ -804,7 +834,7 @@ StorageUI.prototype = {
       }
     });
 
-    this.table.setColumns(columns, null, HIDDEN_COLUMNS);
+    this.table.setColumns(columns, null, hiddenFields, privateFields);
     this.hideSidebar();
 
     yield this.makeFieldsEditable(editableFields);
@@ -919,10 +949,13 @@ StorageUI.prototype = {
 
     let rowId = this.table.contextMenuRowId;
     let data = this.table.items.get(rowId);
-    let name = addEllipsis(data[this.table.uniqueId]);
+    let name = data[this.table.uniqueId];
+
+    let separatorRegex = new RegExp(SEPARATOR_GUID, "g");
+    let label = addEllipsis((name + "").replace(separatorRegex, "-"));
 
     this._tablePopupDelete.setAttribute("label",
-      L10N.getFormatStr("storage.popupMenu.deleteLabel", name));
+      L10N.getFormatStr("storage.popupMenu.deleteLabel", label));
 
     if (type === "cookies") {
       let host = addEllipsis(data.host);
@@ -944,24 +977,39 @@ StorageUI.prototype = {
       let actor = this.storageTypes[type];
 
       // The delete all (aka clear) action is displayed for IndexedDB object stores
-      // (level 4 of tree) and for the whole host (level 2 of tree) of other storage
-      // types (cookies, localStorage, ...).
-      let showDeleteAll = actor.removeAll &&
-        (selectedItem.length === (type === "indexedDB" ? 4 : 2));
+      // (level 4 of tree), for Cache objects (level 3) and for the whole host (level 2)
+      // for other storage types (cookies, localStorage, ...).
+      let showDeleteAll = false;
+      if (actor.removeAll) {
+        let level;
+        if (type == "indexedDB") {
+          level = 4;
+        } else if (type == "Cache") {
+          level = 3;
+        } else {
+          level = 2;
+        }
+
+        if (selectedItem.length == level) {
+          showDeleteAll = true;
+        }
+      }
 
       this._treePopupDeleteAll.hidden = !showDeleteAll;
 
-      // The action to delete database is available for IndexedDB databases, i.e.,
-      // at level 3 of the tree.
-      let showDeleteDb = actor.removeDatabase && selectedItem.length === 3;
-      this._treePopupDeleteDatabase.hidden = !showDeleteDb;
-      if (showDeleteDb) {
-        let dbName = addEllipsis(selectedItem[2]);
-        this._treePopupDeleteDatabase.setAttribute("label",
-          L10N.getFormatStr("storage.popupMenu.deleteLabel", dbName));
+      // The delete action is displayed for:
+      // - IndexedDB databases (level 3 of the tree)
+      // - Cache objects (level 3 of the tree)
+      let showDelete = (type == "indexedDB" || type == "Cache") &&
+                       selectedItem.length == 3;
+      this._treePopupDelete.hidden = !showDelete;
+      if (showDelete) {
+        let itemName = addEllipsis(selectedItem[selectedItem.length - 1]);
+        this._treePopupDelete.setAttribute("label",
+          L10N.getFormatStr("storage.popupMenu.deleteLabel", itemName));
       }
 
-      showMenu = showDeleteAll || showDeleteDb;
+      showMenu = showDeleteAll || showDelete;
     }
 
     if (!showMenu) {
@@ -1010,15 +1058,24 @@ StorageUI.prototype = {
     actor.removeAll(host, data.host);
   },
 
-  onRemoveDatabase: function () {
-    let [type, host, name] = this.tree.selectedItem;
-    let actor = this.storageTypes[type];
+  onRemoveTreeItem: function () {
+    let [type, host, ...path] = this.tree.selectedItem;
 
-    actor.removeDatabase(host, name).then(result => {
+    if (type == "indexedDB" && path.length == 1) {
+      this.removeDatabase(host, path[0]);
+    } else if (type == "Cache" && path.length == 1) {
+      this.removeCache(host, path[0]);
+    }
+  },
+
+  removeDatabase: function (host, dbName) {
+    let actor = this.storageTypes.indexedDB;
+
+    actor.removeDatabase(host, dbName).then(result => {
       if (result.blocked) {
         let notificationBox = this._toolbox.getNotificationBox();
         notificationBox.appendNotification(
-          L10N.getFormatStr("storage.idb.deleteBlocked", name),
+          L10N.getFormatStr("storage.idb.deleteBlocked", dbName),
           "storage-idb-delete-blocked",
           null,
           notificationBox.PRIORITY_WARNING_LOW);
@@ -1026,10 +1083,16 @@ StorageUI.prototype = {
     }).catch(error => {
       let notificationBox = this._toolbox.getNotificationBox();
       notificationBox.appendNotification(
-        L10N.getFormatStr("storage.idb.deleteError", name),
+        L10N.getFormatStr("storage.idb.deleteError", dbName),
         "storage-idb-delete-error",
         null,
         notificationBox.PRIORITY_CRITICAL_LOW);
     });
-  }
+  },
+
+  removeCache: function (host, cacheName) {
+    let actor = this.storageTypes.Cache;
+
+    actor.removeItem(host, JSON.stringify([ cacheName ]));
+  },
 };

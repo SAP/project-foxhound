@@ -258,6 +258,7 @@ struct WorkerLoadInfo
   nsString mServiceWorkerCacheName;
 
   ChannelInfo mChannelInfo;
+  nsLoadFlags mLoadFlags;
 
   uint64_t mWindowID;
   uint64_t mServiceWorkerID;
@@ -269,8 +270,8 @@ struct WorkerLoadInfo
   bool mXHRParamsAllowed;
   bool mPrincipalIsSystem;
   bool mStorageAllowed;
-  bool mPrivateBrowsing;
   bool mServiceWorkersTestingInWindow;
+  OriginAttributes mOriginAttributes;
 
   WorkerLoadInfo();
   ~WorkerLoadInfo();
@@ -348,7 +349,7 @@ public:
 };
 
 WorkerCrossThreadDispatcher*
-GetWorkerCrossThreadDispatcher(JSContext* aCx, JS::Value aWorker);
+GetWorkerCrossThreadDispatcher(JSContext* aCx, const JS::Value& aWorker);
 
 // Random unique constant to facilitate JSPrincipal debugging
 const uint32_t kJSPrincipalsDebugToken = 0x7e2df9d2;

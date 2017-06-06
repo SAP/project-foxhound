@@ -9,9 +9,10 @@
 
 #include "mozilla/EventStates.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ServoTypes.h"
 #include "mozilla/SheetType.h"
 #include "mozilla/StyleBackendType.h"
-#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheet.h"
 #include "nsChangeHint.h"
 #include "nsCSSPseudoElements.h"
 #include "nsTArray.h"
@@ -114,10 +115,12 @@ public:
     inline nsresult EndUpdate();
     inline already_AddRefed<nsStyleContext>
     ResolveStyleFor(dom::Element* aElement,
-                    nsStyleContext* aParentContext);
+                    nsStyleContext* aParentContext,
+                    LazyComputeBehavior aMayCompute);
     inline already_AddRefed<nsStyleContext>
     ResolveStyleFor(dom::Element* aElement,
                     nsStyleContext* aParentContext,
+                    LazyComputeBehavior aMayCompute,
                     TreeMatchContext& aTreeMatchContext);
     inline already_AddRefed<nsStyleContext>
     ResolveStyleForText(nsIContent* aTextNode,
@@ -132,18 +135,18 @@ public:
     inline already_AddRefed<nsStyleContext>
     ResolveAnonymousBoxStyle(nsIAtom* aPseudoTag, nsStyleContext* aParentContext,
                              uint32_t aFlags = 0);
-    inline nsresult AppendStyleSheet(SheetType aType, StyleSheetHandle aSheet);
-    inline nsresult PrependStyleSheet(SheetType aType, StyleSheetHandle aSheet);
-    inline nsresult RemoveStyleSheet(SheetType aType, StyleSheetHandle aSheet);
+    inline nsresult AppendStyleSheet(SheetType aType, StyleSheet* aSheet);
+    inline nsresult PrependStyleSheet(SheetType aType, StyleSheet* aSheet);
+    inline nsresult RemoveStyleSheet(SheetType aType, StyleSheet* aSheet);
     inline nsresult ReplaceSheets(SheetType aType,
-                           const nsTArray<StyleSheetHandle::RefPtr>& aNewSheets);
+                           const nsTArray<RefPtr<StyleSheet>>& aNewSheets);
     inline nsresult InsertStyleSheetBefore(SheetType aType,
-                                    StyleSheetHandle aNewSheet,
-                                    StyleSheetHandle aReferenceSheet);
+                                    StyleSheet* aNewSheet,
+                                    StyleSheet* aReferenceSheet);
     inline int32_t SheetCount(SheetType aType) const;
-    inline StyleSheetHandle StyleSheetAt(SheetType aType, int32_t aIndex) const;
-    inline nsresult RemoveDocStyleSheet(StyleSheetHandle aSheet);
-    inline nsresult AddDocStyleSheet(StyleSheetHandle aSheet, nsIDocument* aDocument);
+    inline StyleSheet* StyleSheetAt(SheetType aType, int32_t aIndex) const;
+    inline nsresult RemoveDocStyleSheet(StyleSheet* aSheet);
+    inline nsresult AddDocStyleSheet(StyleSheet* aSheet, nsIDocument* aDocument);
     inline already_AddRefed<nsStyleContext>
     ProbePseudoElementStyle(dom::Element* aParentElement,
                             mozilla::CSSPseudoElementType aType,

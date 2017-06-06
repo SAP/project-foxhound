@@ -6,14 +6,14 @@
 package org.mozilla.gecko.home;
 
 import org.json.JSONObject;
-import org.mozilla.gecko.AppConstants.Versions;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.animation.PropertyAnimator;
 import org.mozilla.gecko.animation.PropertyAnimator.Property;
 import org.mozilla.gecko.animation.ViewHelper;
-import org.mozilla.gecko.gfx.BitmapUtils;
+import org.mozilla.gecko.util.FloatUtils;
+import org.mozilla.gecko.util.ResourceDrawableUtils;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.widget.EllipsisTextView;
@@ -170,7 +170,7 @@ public class HomeBanner extends LinearLayout
                 setTag(id);
                 mTextView.setOriginalText(Html.fromHtml(text));
 
-                BitmapUtils.getDrawable(getContext(), iconURI, new BitmapUtils.BitmapLoader() {
+                ResourceDrawableUtils.getDrawable(getContext(), iconURI, new ResourceDrawableUtils.BitmapLoader() {
                     @Override
                     public void onBitmapFound(final Drawable d) {
                         // Hide the image view if we don't have an icon to show.
@@ -292,7 +292,7 @@ public class HomeBanner extends LinearLayout
 
                 // Don't change this value if it wasn't a significant movement
                 if (delta >= 10 || delta <= -10) {
-                    mUserSwipedDown = (newTranslationY == mHeight);
+                    mUserSwipedDown = FloatUtils.fuzzyEquals(newTranslationY, mHeight);
                 }
 
                 ViewHelper.setTranslationY(this, newTranslationY);

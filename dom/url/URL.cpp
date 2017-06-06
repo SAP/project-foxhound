@@ -521,22 +521,11 @@ URLMainThread::GetPathname(nsAString& aPathname, ErrorResult& aRv) const
 {
   aPathname.Truncate();
 
-  nsCOMPtr<nsIURL> url(do_QueryInterface(mURI));
-  if (!url) {
-    nsAutoCString path;
-    nsresult rv = mURI->GetPath(path);
-    if (NS_FAILED(rv)){
-      // Do not throw!  Not having a valid URI or URL should result in an empty
-      // string.
-      return;
-    }
-
-    CopyUTF8toUTF16(path, aPathname);
-    return;
-  }
+  // Do not throw!  Not having a valid URI or URL should result in an empty
+  // string.
 
   nsAutoCString file;
-  nsresult rv = url->GetFilePath(file);
+  nsresult rv = mURI->GetFilePath(file);
   if (NS_SUCCEEDED(rv)) {
     CopyUTF8toUTF16(file, aPathname);
   }
@@ -545,13 +534,9 @@ URLMainThread::GetPathname(nsAString& aPathname, ErrorResult& aRv) const
 void
 URLMainThread::SetPathname(const nsAString& aPathname, ErrorResult& aRv)
 {
-  nsCOMPtr<nsIURL> url(do_QueryInterface(mURI));
-  if (!url) {
-    // Ignore failures to be compatible with NS4.
-    return;
-  }
+  // Do not throw!
 
-  url->SetFilePath(NS_ConvertUTF16toUTF8(aPathname));
+  mURI->SetFilePath(NS_ConvertUTF16toUTF8(aPathname));
 }
 
 void
@@ -559,15 +544,13 @@ URLMainThread::GetSearch(nsAString& aSearch, ErrorResult& aRv) const
 {
   aSearch.Truncate();
 
-  nsCOMPtr<nsIURL> url(do_QueryInterface(mURI));
-  if (!url) {
-    // Do not throw!  Not having a valid URI or URL should result in an empty
-    // string.
-    return;
-  }
+  // Do not throw!  Not having a valid URI or URL should result in an empty
+  // string.
 
   nsAutoCString search;
-  nsresult rv = url->GetQuery(search);
+  nsresult rv;
+
+  rv = mURI->GetQuery(search);
   if (NS_SUCCEEDED(rv) && !search.IsEmpty()) {
     CopyUTF8toUTF16(NS_LITERAL_CSTRING("?") + search, aSearch);
   }
@@ -598,13 +581,9 @@ URLMainThread::SetHash(const nsAString& aHash, ErrorResult& aRv)
 void
 URLMainThread::SetSearchInternal(const nsAString& aSearch, ErrorResult& aRv)
 {
-  nsCOMPtr<nsIURL> url(do_QueryInterface(mURI));
-  if (!url) {
-    // Ignore failures to be compatible with NS4.
-    return;
-  }
+  // Ignore failures to be compatible with NS4.
 
-  url->SetQuery(NS_ConvertUTF16toUTF8(aSearch));
+  mURI->SetQuery(NS_ConvertUTF16toUTF8(aSearch));
 }
 
 } // anonymous namespace
@@ -1134,6 +1113,12 @@ public:
     return true;
   }
 
+  void
+  Dispatch(ErrorResult& aRv)
+  {
+    WorkerMainThreadRunnable::Dispatch(Terminating, aRv);
+  }
+
 private:
   nsAString& mValue;
   GetterType mType;
@@ -1234,6 +1219,12 @@ public:
     return mFailed;
   }
 
+  void
+  Dispatch(ErrorResult& aRv)
+  {
+    WorkerMainThreadRunnable::Dispatch(Terminating, aRv);
+  }
+
 private:
   const nsString mValue;
   SetterType mType;
@@ -1245,7 +1236,7 @@ already_AddRefed<URLWorker>
 FinishConstructor(JSContext* aCx, WorkerPrivate* aPrivate,
                   ConstructorRunnable* aRunnable, ErrorResult& aRv)
 {
-  aRunnable->Dispatch(aRv);
+  aRunnable->Dispatch(Terminating, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1323,7 +1314,7 @@ URLWorker::CreateObjectURL(const GlobalObject& aGlobal, Blob& aBlob,
   RefPtr<CreateURLRunnable> runnable =
     new CreateURLRunnable(workerPrivate, blobImpl, aOptions, aResult);
 
-  runnable->Dispatch(aRv);
+  runnable->Dispatch(Terminating, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -1346,7 +1337,7 @@ URLWorker::RevokeObjectURL(const GlobalObject& aGlobal, const nsAString& aUrl,
   RefPtr<RevokeURLRunnable> runnable =
     new RevokeURLRunnable(workerPrivate, aUrl);
 
-  runnable->Dispatch(aRv);
+  runnable->Dispatch(Terminating, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -1369,7 +1360,7 @@ URLWorker::IsValidURL(const GlobalObject& aGlobal, const nsAString& aUrl,
   RefPtr<IsValidURLRunnable> runnable =
     new IsValidURLRunnable(workerPrivate, aUrl);
 
-  runnable->Dispatch(aRv);
+  runnable->Dispatch(Terminating, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return false;
   }

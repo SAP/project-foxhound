@@ -129,7 +129,7 @@ CacheObserver::Init()
   obs->AddObserver(sSelf, "profile-before-change", true);
   obs->AddObserver(sSelf, "xpcom-shutdown", true);
   obs->AddObserver(sSelf, "last-pb-context-exited", true);
-  obs->AddObserver(sSelf, "clear-origin-data", true);
+  obs->AddObserver(sSelf, "clear-origin-attributes-data", true);
   obs->AddObserver(sSelf, "memory-pressure", true);
 
   return NS_OK;
@@ -410,7 +410,7 @@ namespace CacheStorageEvictHelper {
 
 nsresult ClearStorage(bool const aPrivate,
                       bool const aAnonymous,
-                      NeckoOriginAttributes &aOa)
+                      OriginAttributes &aOa)
 {
   nsresult rv;
 
@@ -436,7 +436,7 @@ nsresult ClearStorage(bool const aPrivate,
   return NS_OK;
 }
 
-nsresult Run(NeckoOriginAttributes &aOa)
+nsresult Run(OriginAttributes &aOa)
 {
   nsresult rv;
 
@@ -552,10 +552,10 @@ CacheObserver::Observe(nsISupports* aSubject,
     return NS_OK;
   }
 
-  if (!strcmp(aTopic, "clear-origin-data")) {
-    NeckoOriginAttributes oa;
+  if (!strcmp(aTopic, "clear-origin-attributes-data")) {
+    OriginAttributes oa;
     if (!oa.Init(nsDependentString(aData))) {
-      NS_ERROR("Could not parse NeckoOriginAttributes JSON in clear-origin-data notification");
+      NS_ERROR("Could not parse OriginAttributes JSON in clear-origin-attributes-data notification");
       return NS_OK;
     }
 

@@ -152,7 +152,7 @@ Site.prototype = {
     if (this.link.endTime && this.link.endTime < Date.now()) {
        let oldUrl = this.url;
        // chop off the path part from url
-       this.link.url = Services.io.newURI(this.url, null, null).resolve("/");
+       this.link.url = Services.io.newURI(this.url).resolve("/");
        // clear supplied images - this triggers thumbnail download for new url
        delete this.link.imageURI;
        delete this.link.enhancedImageURI;
@@ -258,13 +258,14 @@ Site.prototype = {
         link.type == "history" &&
         link.baseDomain) {
       let placeholder = this._querySelector(".newtab-thumbnail.placeholder");
-      let hue = 0;
+      let charCodeSum = 0;
       for (let c of link.baseDomain) {
-        hue += c.charCodeAt(0);
+        charCodeSum += c.charCodeAt(0);
       }
-      hue %= 256;
-      placeholder.style.backgroundColor = "hsl(" + hue + ",50%,60%)";
-      placeholder.textContent = link.baseDomain.substr(0,1);
+      const COLORS = 16;
+      let hue = Math.round((charCodeSum % COLORS) / COLORS * 360);
+      placeholder.style.backgroundColor = "hsl(" + hue + ",80%,40%)";
+      placeholder.textContent = link.baseDomain.substr(0,1).toUpperCase();
     }
 
     if (link.enhancedImageURI) {
@@ -292,9 +293,9 @@ Site.prototype = {
    */
   _addEventHandlers: function Site_addEventHandlers() {
     // Register drag-and-drop event handlers.
-    this._node.addEventListener("dragstart", this, false);
-    this._node.addEventListener("dragend", this, false);
-    this._node.addEventListener("mouseover", this, false);
+    this._node.addEventListener("dragstart", this);
+    this._node.addEventListener("dragend", this);
+    this._node.addEventListener("mouseover", this);
 
     // Specially treat the sponsored icon & suggested explanation
     // text to prevent regular hover effects
@@ -309,7 +310,7 @@ Site.prototype = {
    */
   _speculativeConnect: function Site_speculativeConnect() {
     let sc = Services.io.QueryInterface(Ci.nsISpeculativeConnect);
-    let uri = Services.io.newURI(this.url, null, null);
+    let uri = Services.io.newURI(this.url);
     try {
       // This can throw for certain internal URLs, when they wind up in
       // about:newtab. Be sure not to propagate the error.
@@ -425,7 +426,7 @@ Site.prototype = {
   handleEvent: function Site_handleEvent(aEvent) {
     switch (aEvent.type) {
       case "mouseover":
-        this._node.removeEventListener("mouseover", this, false);
+        this._node.removeEventListener("mouseover", this);
         this._speculativeConnect();
         break;
       case "dragstart":

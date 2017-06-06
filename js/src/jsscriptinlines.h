@@ -9,10 +9,10 @@
 
 #include "jsscript.h"
 
-#include "asmjs/AsmJS.h"
 #include "jit/BaselineJIT.h"
 #include "jit/IonAnalysis.h"
 #include "vm/EnvironmentObject.h"
+#include "wasm/AsmJS.h"
 
 #include "jscompartmentinlines.h"
 
@@ -74,13 +74,13 @@ void
 SetFrameArgumentsObject(JSContext* cx, AbstractFramePtr frame,
                         HandleScript script, JSObject* argsobj);
 
-inline JSFunction*
-LazyScript::functionDelazifying(JSContext* cx) const
+/* static */ inline JSFunction*
+LazyScript::functionDelazifying(JSContext* cx, Handle<LazyScript*> script)
 {
-    Rooted<const LazyScript*> self(cx, this);
-    if (self->function_ && !self->function_->getOrCreateScript(cx))
+    RootedFunction fun(cx, script->function_);
+    if (script->function_ && !JSFunction::getOrCreateScript(cx, fun))
         return nullptr;
-    return self->function_;
+    return script->function_;
 }
 
 } // namespace js
@@ -100,7 +100,7 @@ JSScript::functionDelazifying() const
 }
 
 inline void
-JSScript::ensureNonLazyCanonicalFunction(JSContext* cx)
+JSScript::ensureNonLazyCanonicalFunction()
 {
     // Infallibly delazify the canonical script.
     JSFunction* fun = function();

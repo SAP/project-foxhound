@@ -47,6 +47,7 @@
 }
 
 .objectBox-string,
+.objectBox-symbol,
 .objectBox-text,
 .objectLink-textNode,
 .objectBox-table {
@@ -61,7 +62,9 @@
   color: var(--number-color);
 }
 
-.objectBox-string {
+.objectBox-textNode,
+.objectBox-string,
+.objectBox-symbol {
   color: var(--string-color);
 }
 
@@ -91,6 +94,15 @@
   padding-left: 8px;
   font-weight: bold;
   color: var(--source-link-color);
+}
+
+.objectBox-failure {
+  color: var(--string-color);
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 2px;
+  font-size: 0.8em;
+  padding: 0 2px;
 }
 
 /******************************************************************************/

@@ -23,10 +23,10 @@ menulist > menupopup {
 
 /* ::::: Variables ::::: */
 :root {
-  --panel-arrowcontent-padding: 10px;
-  --panel-arrowcontent-background: -moz-field;
-  --panel-arrowcontent-color: -moz-FieldText;
-  --panel-arrowcontent-border-color: ThreeDShadow;
+  --arrowpanel-padding: 10px;
+  --arrowpanel-background: -moz-field;
+  --arrowpanel-color: -moz-FieldText;
+  --arrowpanel-border-color: ThreeDShadow;
 }
 
 /* ::::: root elements ::::: */
@@ -297,6 +297,8 @@ popupnotificationcontent {
   margin-top: .5em;
 }
 
+%include ../../shared/notification-popup.inc.css
+
 /* :::::: autoscroll popup ::::: */
 
 .autoscroller {
@@ -350,9 +352,7 @@ popupnotificationcontent {
   width: 20px;
 }
 
-@media (-moz-os-version: windows-xp),
-       (-moz-os-version: windows-vista),
-       (-moz-os-version: windows-win7) {
+@media (-moz-os-version: windows-win7) {
   .close-icon {
     -moz-image-region: rect(0, 16px, 16px, 0);
   }
@@ -386,9 +386,7 @@ popupnotificationcontent {
     -moz-image-region: rect(0, 120px, 40px, 80px);
   }
 
-  @media (-moz-os-version: windows-xp),
-         (-moz-os-version: windows-vista),
-         (-moz-os-version: windows-win7) {
+  @media (-moz-os-version: windows-win7) {
     .close-icon {
       -moz-image-region: rect(0, 32px, 32px, 0);
     }

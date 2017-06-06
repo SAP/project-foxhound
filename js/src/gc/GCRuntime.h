@@ -29,6 +29,7 @@ class VerifyPreTracer;
 namespace gc {
 
 typedef Vector<JS::Zone*, 4, SystemAllocPolicy> ZoneVector;
+using BlackGrayEdgeVector = Vector<TenuredCell*, 0, SystemAllocPolicy>;
 
 class AutoMaybeStartBackgroundAllocation;
 class MarkingValidator;
@@ -720,13 +721,6 @@ class GCRuntime
         --noNurseryAllocationCheck;
     }
 
-    bool isInsideUnsafeRegion() { return inUnsafeRegion != 0; }
-    void enterUnsafeRegion() { ++inUnsafeRegion; }
-    void leaveUnsafeRegion() {
-        MOZ_ASSERT(inUnsafeRegion > 0);
-        --inUnsafeRegion;
-    }
-
     bool isStrictProxyCheckingEnabled() { return disableStrictProxyCheckingCount == 0; }
     void disableStrictProxyChecking() { ++disableStrictProxyCheckingCount; }
     void enableStrictProxyChecking() {
@@ -734,6 +728,23 @@ class GCRuntime
         --disableStrictProxyCheckingCount;
     }
 #endif // DEBUG
+
+    bool isInsideUnsafeRegion() { return inUnsafeRegion != 0; }
+    void enterUnsafeRegion() {
+        MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+        ++inUnsafeRegion;
+    }
+    void leaveUnsafeRegion() {
+        MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+        MOZ_ASSERT(inUnsafeRegion > 0);
+        --inUnsafeRegion;
+    }
+
+    void verifyIsSafeToGC() {
+        MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+        MOZ_DIAGNOSTIC_ASSERT(!isInsideUnsafeRegion(),
+                              "[AutoAssertNoGC] possible GC in GC-unsafe region");
+    }
 
     void setAlwaysPreserveCode() { alwaysPreserveCode = true; }
 
@@ -783,16 +794,12 @@ class GCRuntime
 
     void setFullCompartmentChecks(bool enable);
 
-    bool isManipulatingDeadZones() { return manipulatingDeadZones; }
-    void setManipulatingDeadZones(bool value) { manipulatingDeadZones = value; }
-    unsigned objectsMarkedInDeadZonesCount() { return objectsMarkedInDeadZones; }
-    void incObjectsMarkedInDeadZone() {
-        MOZ_ASSERT(manipulatingDeadZones);
-        ++objectsMarkedInDeadZones;
-    }
-
     JS::Zone* getCurrentZoneGroup() { return currentZoneGroup; }
-    void setFoundBlackGrayEdges() { foundBlackGrayEdges = true; }
+    void setFoundBlackGrayEdges(TenuredCell& target) {
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        if (!foundBlackGrayEdges.append(&target))
+            oomUnsafe.crash("OOM|small: failed to insert into foundBlackGrayEdges");
+    }
 
     uint64_t gcNumber() const { return number; }
 
@@ -807,9 +814,6 @@ class GCRuntime
     bool isIncrementalGc() const { return isIncremental; }
     bool isFullGc() const { return isFull; }
     bool isCompactingGc() const { return isCompacting; }
-
-    bool areGrayBitsValid() const { return grayBitsValid; }
-    void setGrayBitsInvalid() { grayBitsValid = false; }
 
     bool minorGCRequested() const { return minorGCTriggerReason != JS::gcreason::NO_REASON; }
     bool majorGCRequested() const { return majorGCTriggerReason != JS::gcreason::NO_REASON; }
@@ -893,7 +897,8 @@ class GCRuntime
     friend class ArenaLists;
     Chunk* pickChunk(const AutoLockGC& lock,
                      AutoMaybeStartBackgroundAllocation& maybeStartBGAlloc);
-    Arena* allocateArena(Chunk* chunk, Zone* zone, AllocKind kind, const AutoLockGC& lock);
+    Arena* allocateArena(Chunk* chunk, Zone* zone, AllocKind kind,
+                         ShouldCheckThresholds checkThresholds, const AutoLockGC& lock);
     void arenaAllocatedDuringGC(JS::Zone* zone, Arena* arena);
 
     // Allocator internals
@@ -922,8 +927,9 @@ class GCRuntime
 
     void requestMajorGC(JS::gcreason::Reason reason);
     SliceBudget defaultBudget(JS::gcreason::Reason reason, int64_t millis);
-    void budgetIncrementalGC(SliceBudget& budget, AutoLockForExclusiveAccess& lock);
-    void resetIncrementalGC(const char* reason, AutoLockForExclusiveAccess& lock);
+    void budgetIncrementalGC(JS::gcreason::Reason reason, SliceBudget& budget,
+                             AutoLockForExclusiveAccess& lock);
+    void resetIncrementalGC(AbortReason reason, AutoLockForExclusiveAccess& lock);
 
     // Assert if the system state is such that we should never
     // receive a request to do GC work.
@@ -937,6 +943,7 @@ class GCRuntime
     void collect(bool nonincrementalByAPI, SliceBudget budget, JS::gcreason::Reason reason) JS_HAZ_GC_CALL;
     MOZ_MUST_USE bool gcCycle(bool nonincrementalByAPI, SliceBudget& budget,
                               JS::gcreason::Reason reason);
+    bool shouldRepeatForDeadZone(JS::gcreason::Reason reason);
     void incrementalCollectSlice(SliceBudget& budget, JS::gcreason::Reason reason,
                                  AutoLockForExclusiveAccess& lock);
 
@@ -944,7 +951,7 @@ class GCRuntime
     void purgeRuntime(AutoLockForExclusiveAccess& lock);
     MOZ_MUST_USE bool beginMarkPhase(JS::gcreason::Reason reason, AutoLockForExclusiveAccess& lock);
     bool shouldPreserveJITCode(JSCompartment* comp, int64_t currentTime,
-                               JS::gcreason::Reason reason);
+                               JS::gcreason::Reason reason, bool canAllocateMoreCode);
     void traceRuntimeForMajorGC(JSTracer* trc, AutoLockForExclusiveAccess& lock);
     void traceRuntimeAtoms(JSTracer* trc, AutoLockForExclusiveAccess& lock);
     void traceRuntimeCommon(JSTracer* trc, TraceOrMarkRuntime traceOrMark,
@@ -963,7 +970,7 @@ class GCRuntime
 
     void beginSweepPhase(bool lastGC, AutoLockForExclusiveAccess& lock);
     void findZoneGroups(AutoLockForExclusiveAccess& lock);
-    MOZ_MUST_USE bool findZoneEdgesForWeakMaps();
+    MOZ_MUST_USE bool findInterZoneEdges();
     void getNextZoneGroup();
     void endMarkingZoneGroup();
     void beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock);
@@ -1099,12 +1106,6 @@ class GCRuntime
         resetBufferedGrayRoots();
     }
 
-    /*
-     * The gray bits can become invalid if UnmarkGray overflows the stack. A
-     * full GC will reset this bit, since it fills in all the gray bits.
-     */
-    bool grayBitsValid;
-
     mozilla::Atomic<JS::gcreason::Reason, mozilla::Relaxed> majorGCTriggerReason;
 
     JS::gcreason::Reason minorGCTriggerReason;
@@ -1168,7 +1169,7 @@ class GCRuntime
     bool releaseObservedTypes;
 
     /* Whether any black->gray edges were found during marking. */
-    bool foundBlackGrayEdges;
+    BlackGrayEdgeVector foundBlackGrayEdges;
 
     /* Singly linekd list of zones to be swept in the background. */
     ZoneList backgroundSweepZones;
@@ -1253,23 +1254,6 @@ class GCRuntime
      */
     unsigned compactingDisabledCount;
 
-    /*
-     * This is true if we are in the middle of a brain transplant (e.g.,
-     * JS_TransplantObject) or some other operation that can manipulate
-     * dead zones.
-     */
-    bool manipulatingDeadZones;
-
-    /*
-     * This field is incremented each time we mark an object inside a
-     * zone with no incoming cross-compartment pointers. Typically if
-     * this happens it signals that an incremental GC is marking too much
-     * stuff. At various times we check this counter and, if it has changed, we
-     * run an immediate, non-incremental GC to clean up the dead
-     * zones. This should happen very rarely.
-     */
-    unsigned objectsMarkedInDeadZones;
-
     bool poked;
 
     /*
@@ -1339,7 +1323,6 @@ class GCRuntime
     /* Always preserve JIT code during GCs, for testing. */
     bool alwaysPreserveCode;
 
-#ifdef DEBUG
     /*
      * Some regions of code are hard for the static rooting hazard analysis to
      * understand. In those cases, we trade the static analysis for a dynamic
@@ -1348,6 +1331,7 @@ class GCRuntime
      */
     int inUnsafeRegion;
 
+#ifdef DEBUG
     size_t noGCOrAllocationCheck;
     size_t noNurseryAllocationCheck;
 

@@ -17,12 +17,12 @@
 #include "mozilla/layers/AsyncCanvasRenderer.h"
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/CompositorBridgeChild.h" // for CompositorBridgeChild
-#include "mozilla/layers/GrallocTextureClient.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/TextureClient.h"  // for TextureClient, etc
 #include "mozilla/layers/TextureClientOGL.h"
 #include "nsDebug.h"                    // for printf_stderr, NS_ASSERTION
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType, etc
+#include "ShareableCanvasLayer.h"
 #include "TextureClientSharedSurface.h"
 
 using namespace mozilla::gfx;
@@ -55,14 +55,14 @@ CanvasClientBridge::UpdateAsync(AsyncCanvasRenderer* aRenderer)
     return;
   }
 
-  uint64_t asyncID = aRenderer->GetCanvasClientAsyncID();
-  if (asyncID == 0 || mAsyncID == asyncID) {
+  CompositableHandle asyncID = aRenderer->GetCanvasClientAsyncHandle();
+  if (!asyncID || mAsyncHandle == asyncID) {
     return;
   }
 
   static_cast<ShadowLayerForwarder*>(GetForwarder())
     ->AttachAsyncCompositable(asyncID, mLayer);
-  mAsyncID = asyncID;
+  mAsyncHandle = asyncID;
 }
 
 void
@@ -91,7 +91,7 @@ CanvasClient2D::UpdateFromTexture(TextureClient* aTexture)
 }
 
 void
-CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
+CanvasClient2D::Update(gfx::IntSize aSize, ShareableCanvasLayer* aLayer)
 {
   mBufferProviderTexture = nullptr;
 
@@ -165,7 +165,7 @@ already_AddRefed<TextureClient>
 CanvasClient2D::CreateTextureClientForCanvas(gfx::SurfaceFormat aFormat,
                                              gfx::IntSize aSize,
                                              TextureFlags aFlags,
-                                             ClientCanvasLayer* aLayer)
+                                             ShareableCanvasLayer* aLayer)
 {
   if (aLayer->IsGLLayer()) {
     // We want a cairo backend here as we don't want to be copying into
@@ -211,7 +211,7 @@ static inline void SwapRB_R8G8B8A8(uint8_t* pixel) {
 
 class TexClientFactory
 {
-  ClientIPCAllocator* const mAllocator;
+  CompositableForwarder* const mAllocator;
   const bool mHasAlpha;
   const gfx::IntSize mSize;
   const gfx::BackendType mBackendType;
@@ -219,7 +219,7 @@ class TexClientFactory
   const LayersBackend mLayersBackend;
 
 public:
-  TexClientFactory(ClientIPCAllocator* allocator, bool hasAlpha,
+  TexClientFactory(CompositableForwarder* allocator, bool hasAlpha,
                    const gfx::IntSize& size, gfx::BackendType backendType,
                    TextureFlags baseTexFlags, LayersBackend layersBackend)
     : mAllocator(allocator)
@@ -267,7 +267,7 @@ public:
 };
 
 static already_AddRefed<TextureClient>
-TexClientFromReadback(SharedSurface* src, ClientIPCAllocator* allocator,
+TexClientFromReadback(SharedSurface* src, CompositableForwarder* allocator,
                       TextureFlags baseFlags, LayersBackend layersBackend)
 {
   auto backendType = gfx::BackendType::CAIRO;
@@ -377,10 +377,10 @@ CloneSurface(gl::SharedSurface* src, gl::SurfaceFactory* factory)
 }
 
 void
-CanvasClientSharedSurface::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
+CanvasClientSharedSurface::Update(gfx::IntSize aSize, ShareableCanvasLayer* aLayer)
 {
   Renderer renderer;
-  renderer.construct<ClientCanvasLayer*>(aLayer);
+  renderer.construct<ShareableCanvasLayer*>(aLayer);
   UpdateRenderer(aSize, renderer);
 }
 
@@ -396,10 +396,10 @@ void
 CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize, Renderer& aRenderer)
 {
   GLContext* gl = nullptr;
-  ClientCanvasLayer* layer = nullptr;
+  ShareableCanvasLayer* layer = nullptr;
   AsyncCanvasRenderer* asyncRenderer = nullptr;
-  if (aRenderer.constructed<ClientCanvasLayer*>()) {
-    layer = aRenderer.ref<ClientCanvasLayer*>();
+  if (aRenderer.constructed<ShareableCanvasLayer*>()) {
+    layer = aRenderer.ref<ShareableCanvasLayer*>();
     gl = layer->mGLContext;
   } else {
     asyncRenderer = aRenderer.ref<AsyncCanvasRenderer*>();
@@ -423,7 +423,7 @@ CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize, Renderer& aRendere
   } else {
     mShSurfClient = gl->Screen()->Front();
     if (mShSurfClient && mShSurfClient->GetAllocator() &&
-        mShSurfClient->GetAllocator()->AsCompositableForwarder() != GetForwarder()) {
+        mShSurfClient->GetAllocator() != GetForwarder()->GetTextureForwarder()) {
       mShSurfClient = CloneSurface(mShSurfClient->Surf(), gl->Screen()->Factory());
     }
     if (!mShSurfClient) {
@@ -448,7 +448,7 @@ CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize, Renderer& aRendere
     CompositableForwarder* shadowForwarder = nullptr;
     if (layer) {
       flags |= layer->Flags();
-      shadowForwarder = layer->ClientManager()->AsShadowForwarder();
+      shadowForwarder = layer->GetForwarder();
     } else {
       MOZ_ASSERT(asyncRenderer);
       flags |= mTextureFlags;
@@ -501,7 +501,9 @@ CanvasClientSharedSurface::Updated()
   mNewFront = nullptr;
 
   // Add the new TexClient.
-  MOZ_ALWAYS_TRUE( AddTextureClient(mFront) );
+  if (!AddTextureClient(mFront)) {
+    return;
+  }
 
   AutoTArray<CompositableForwarder::TimedTextureClient,1> textures;
   CompositableForwarder::TimedTextureClient* t = textures.AppendElement();

@@ -369,9 +369,11 @@
           this._remoteWebNavigationImpl = this._remoteWebNavigation.wrappedJSObject;
           this._remoteWebNavigationImpl.swapBrowser(this);
 
-          // Initialize to the null principal
-          let Services = Components.utils.import("resource://gre/modules/Services.jsm", {}).Services
-          this._contentPrincipal = Services.scriptSecurityManager.createNullPrincipal({});
+          // Initialize contentPrincipal to the about:blank principal for this loadcontext
+          let {Services} = Components.utils.import("resource://gre/modules/Services.jsm", {});
+          let aboutBlank = Services.io.newURI("about:blank");
+          let ssm = Services.scriptSecurityManager;
+          this._contentPrincipal = ssm.getLoadContextCodebasePrincipal(aboutBlank, this.loadContext);
 
           this.messageManager.addMessageListener("Browser:Init", this);
           this.messageManager.addMessageListener("DOMTitleChanged", this);
@@ -387,7 +389,6 @@
           if (this.hasAttribute("selectmenulist")) {
             this.messageManager.addMessageListener("Forms:ShowDropDown", this);
             this.messageManager.addMessageListener("Forms:HideDropDown", this);
-            this.messageManager.loadFrameScript("chrome://global/content/select-child.js", true);
           }
 
           if (!this.hasAttribute("disablehistory")) {
@@ -467,8 +468,11 @@
 
               let menulist = document.getElementById(this.getAttribute("selectmenulist"));
               menulist.menupopup.style.direction = data.direction;
-              this._selectParentHelper.populate(menulist, data.options, data.selectedIndex, this._fullZoom);
-              this._selectParentHelper.open(this, menulist, data.rect);
+
+              let zoom = Services.prefs.getBoolPref("browser.zoom.full") ||
+                         this.isSyntheticDocument ? this._fullZoom : this._textZoom;
+              this._selectParentHelper.populate(menulist, data.options, data.selectedIndex, zoom);
+              this._selectParentHelper.open(this, menulist, data.rect, data.isOpenedViaTouch);
               break;
             }
 
@@ -495,14 +499,6 @@
               break;
             }
 
-            case "Forms:HideDropDown": {
-              if (this._selectParentHelper) {
-                let menulist = document.getElementById(this.getAttribute("selectmenulist"));
-                this._selectParentHelper.hide(menulist, this);
-              }
-              break;
-            }
-
             case "DOMFullscreen:RequestExit": {
               let windowUtils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
                                       .getInterface(Components.interfaces.nsIDOMWindowUtils);
@@ -524,7 +520,6 @@
             default:
               // Delegate to browser.xml.
               return this._receiveMessage(aMessage);
-              break;
           }
           return undefined;
         ]]></body>
@@ -558,6 +553,15 @@
             }
             this._remoteWebNavigationImpl.canGoBack = false;
             this._remoteWebNavigationImpl.canGoForward = false;
+          ]]>
+        </body>
+      </method>
+
+      <method name="createAboutBlankContentViewer">
+        <parameter name="aPrincipal"/>
+        <body>
+          <![CDATA[
+            this.messageManager.sendAsyncMessage("Browser:CreateAboutBlank", aPrincipal);
           ]]>
         </body>
       </method>

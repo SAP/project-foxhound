@@ -311,6 +311,7 @@ ContainsHoistedDeclaration(ExclusiveContext* cx, ParseNode* node, bool* result)
       case PNK_CONDITIONAL:
       case PNK_TYPEOFNAME:
       case PNK_TYPEOFEXPR:
+      case PNK_AWAIT:
       case PNK_VOID:
       case PNK_NOT:
       case PNK_BITNOT:
@@ -377,6 +378,7 @@ ContainsHoistedDeclaration(ExclusiveContext* cx, ParseNode* node, bool* result)
       case PNK_TRUE:
       case PNK_FALSE:
       case PNK_NULL:
+      case PNK_RAW_UNDEFINED:
       case PNK_THIS:
       case PNK_ELISION:
       case PNK_NUMBER:
@@ -467,6 +469,7 @@ IsEffectless(ParseNode* node)
            node->isKind(PNK_TEMPLATE_STRING) ||
            node->isKind(PNK_NUMBER) ||
            node->isKind(PNK_NULL) ||
+           node->isKind(PNK_RAW_UNDEFINED) ||
            node->isKind(PNK_FUNCTION) ||
            node->isKind(PNK_GENEXP);
 }
@@ -491,6 +494,7 @@ Boolish(ParseNode* pn)
 
       case PNK_FALSE:
       case PNK_NULL:
+      case PNK_RAW_UNDEFINED:
         return Falsy;
 
       case PNK_VOID: {
@@ -1642,6 +1646,7 @@ Fold(ExclusiveContext* cx, ParseNode** pnp, Parser<FullParseHandler>& parser, bo
       case PNK_TRUE:
       case PNK_FALSE:
       case PNK_NULL:
+      case PNK_RAW_UNDEFINED:
       case PNK_ELISION:
       case PNK_NUMBER:
       case PNK_DEBUGGER:
@@ -1783,6 +1788,7 @@ Fold(ExclusiveContext* cx, ParseNode** pnp, Parser<FullParseHandler>& parser, bo
         return Fold(cx, &pn->pn_left, parser, inGenexpLambda);
 
       case PNK_YIELD:
+      case PNK_AWAIT:
         MOZ_ASSERT(pn->isArity(PN_BINARY));
         MOZ_ASSERT(pn->pn_right->isKind(PNK_NAME) ||
                    (pn->pn_right->isKind(PNK_ASSIGN) &&

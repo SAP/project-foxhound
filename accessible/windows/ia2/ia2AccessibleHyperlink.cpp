@@ -45,8 +45,6 @@ ia2AccessibleHyperlink::QueryInterface(REFIID iid, void** ppv)
 STDMETHODIMP
 ia2AccessibleHyperlink::get_anchor(long aIndex, VARIANT* aAnchor)
 {
-  A11Y_TRYBLOCK_BEGIN
-
   if (!aAnchor)
     return E_INVALIDARG;
 
@@ -74,19 +72,14 @@ ia2AccessibleHyperlink::get_anchor(long aIndex, VARIANT* aAnchor)
   if (FAILED(result))
     return result;
 
-  IUnknown* unknownPtr = static_cast<IUnknown*>(instancePtr);
-  aAnchor->ppunkVal = &unknownPtr;
+  aAnchor->punkVal = static_cast<IUnknown*>(instancePtr);
   aAnchor->vt = VT_UNKNOWN;
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
 ia2AccessibleHyperlink::get_anchorTarget(long aIndex, VARIANT* aAnchorTarget)
 {
-  A11Y_TRYBLOCK_BEGIN
-
   if (!aAnchorTarget) {
     return E_INVALIDARG;
   }
@@ -125,15 +118,11 @@ ia2AccessibleHyperlink::get_anchorTarget(long aIndex, VARIANT* aAnchorTarget)
   aAnchorTarget->bstrVal = ::SysAllocStringLen(stringURI.get(),
                                                stringURI.Length());
   return aAnchorTarget->bstrVal ? S_OK : E_OUTOFMEMORY;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
 ia2AccessibleHyperlink::get_startIndex(long* aIndex)
 {
-  A11Y_TRYBLOCK_BEGIN
-
   if (!aIndex)
     return E_INVALIDARG;
 
@@ -150,15 +139,11 @@ ia2AccessibleHyperlink::get_startIndex(long* aIndex)
 
   *aIndex = thisObj->StartOffset();
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
 ia2AccessibleHyperlink::get_endIndex(long* aIndex)
 {
-  A11Y_TRYBLOCK_BEGIN
-
   if (!aIndex)
     return E_INVALIDARG;
 
@@ -175,15 +160,11 @@ ia2AccessibleHyperlink::get_endIndex(long* aIndex)
 
   *aIndex = thisObj->EndOffset();
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
 ia2AccessibleHyperlink::get_valid(boolean* aValid)
 {
-  A11Y_TRYBLOCK_BEGIN
-
   if (!aValid)
     return E_INVALIDARG;
 
@@ -200,7 +181,5 @@ ia2AccessibleHyperlink::get_valid(boolean* aValid)
 
   *aValid = thisObj->IsLinkValid();
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 

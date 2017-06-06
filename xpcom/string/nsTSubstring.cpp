@@ -10,6 +10,11 @@
 
 using double_conversion::DoubleToStringConverter;
 
+const nsTSubstring_CharT::size_type nsTSubstring_CharT::kMaxCapacity =
+    (nsTSubstring_CharT::size_type(-1) /
+        2 - sizeof(nsStringBuffer)) /
+    sizeof(nsTSubstring_CharT::char_type) - 2;
+
 #ifdef XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
 nsTSubstring_CharT::nsTSubstring_CharT(char_type* aData, size_type aLength,
                                        uint32_t aFlags)
@@ -56,13 +61,8 @@ nsTSubstring_CharT::MutatePrep(size_type aCapacity, char_type** aOldData,
   // to be allocating 2GB+ strings anyway.
   static_assert((sizeof(nsStringBuffer) & 0x1) == 0,
                 "bad size for nsStringBuffer");
-  const size_type kMaxCapacity =
-    (size_type(-1) / 2 - sizeof(nsStringBuffer)) / sizeof(char_type) - 2;
-  if (aCapacity > kMaxCapacity) {
-    // Also assert for |aCapacity| equal to |size_type(-1)|, since we used to
-    // use that value to flag immutability.
-    NS_ASSERTION(aCapacity != size_type(-1), "Bogus capacity");
-    return false;
+  if (!CheckCapacity(aCapacity)) {
+      return false;
   }
 
   // |curCapacity == 0| means that the buffer is immutable or 0-sized, so we
@@ -83,17 +83,25 @@ nsTSubstring_CharT::MutatePrep(size_type aCapacity, char_type** aOldData,
     // least 1.125, rounding up to the nearest MiB.
     const size_type slowGrowthThreshold = 8 * 1024 * 1024;
 
+    // nsStringBuffer allocates sizeof(nsStringBuffer) + passed size, and
+    // storageSize below wants extra 1 * sizeof(char_type).
+    const size_type neededExtraSpace =
+      sizeof(nsStringBuffer) / sizeof(char_type) + 1;
+
     size_type temp;
     if (aCapacity >= slowGrowthThreshold) {
       size_type minNewCapacity = curCapacity + (curCapacity >> 3); // multiply by 1.125
-      temp = XPCOM_MAX(aCapacity, minNewCapacity);
+      temp = XPCOM_MAX(aCapacity, minNewCapacity) + neededExtraSpace;
 
-      // Round up to the next multiple of MiB.
+      // Round up to the next multiple of MiB, but ensure the expected
+      // capacity doesn't include the extra space required by nsStringBuffer
+      // and null-termination.
       const size_t MiB = 1 << 20;
-      temp = MiB * ((temp + MiB - 1) / MiB);
+      temp = (MiB * ((temp + MiB - 1) / MiB)) - neededExtraSpace;
     } else {
       // Round up to the next power of two.
-      temp = mozilla::RoundUpPow2(aCapacity);
+      temp =
+        mozilla::RoundUpPow2(aCapacity + neededExtraSpace) - neededExtraSpace;
     }
 
     MOZ_ASSERT(XPCOM_MIN(temp, kMaxCapacity) >= aCapacity,
@@ -543,6 +551,8 @@ nsTSubstring_CharT::Adopt(char_type* aData, size_type aLength)
       aLength = char_traits::length(aData);
     }
 
+    MOZ_RELEASE_ASSERT(CheckCapacity(aLength), "adopting a too-long string");
+
     mData = aData;
     mLength = aLength;
     SetDataFlags(F_TERMINATED | F_OWNED);
@@ -979,7 +989,7 @@ nsTSubstring_CharT::AppendPrintf(const char* aFormat, ...)
   va_start(ap, aFormat);
   uint32_t r = PR_vsxprintf(AppendFunc, this, aFormat, ap);
   if (r == (uint32_t)-1) {
-    NS_RUNTIMEABORT("Allocation or other failure in PR_vsxprintf");
+    MOZ_CRASH("Allocation or other failure in PR_vsxprintf");
   }
   va_end(ap);
 }
@@ -989,7 +999,7 @@ nsTSubstring_CharT::AppendPrintf(const char* aFormat, va_list aAp)
 {
   uint32_t r = PR_vsxprintf(AppendFunc, this, aFormat, aAp);
   if (r == (uint32_t)-1) {
-    NS_RUNTIMEABORT("Allocation or other failure in PR_vsxprintf");
+    MOZ_CRASH("Allocation or other failure in PR_vsxprintf");
   }
 }
 

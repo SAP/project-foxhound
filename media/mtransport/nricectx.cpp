@@ -92,7 +92,7 @@ extern "C" {
 #include "nricemediastream.h"
 #include "nr_socket_prsock.h"
 #include "nrinterfaceprioritizer.h"
-#include "rlogringbuffer.h"
+#include "rlogconnector.h"
 #include "test_nr_socket.h"
 
 namespace mozilla {
@@ -109,16 +109,17 @@ MOZ_MTLOG_MODULE("mtransport")
 
 const char kNrIceTransportUdp[] = "udp";
 const char kNrIceTransportTcp[] = "tcp";
+const char kNrIceTransportTls[] = "tls";
 
 static bool initialized = false;
 
 // Implement NSPR-based crypto algorithms
 static int nr_crypto_nss_random_bytes(UCHAR *buf, int len) {
-  ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+  UniquePK11SlotInfo slot(PK11_GetInternalSlot());
   if (!slot)
     return R_INTERNAL;
 
-  SECStatus rv = PK11_GenerateRandomOnSlot(slot, buf, len);
+  SECStatus rv = PK11_GenerateRandomOnSlot(slot.get(), buf, len);
   if (rv != SECSuccess)
     return R_INTERNAL;
 
@@ -211,6 +212,13 @@ nsresult NrIceStunServer::ToNicerStunStruct(nr_ice_stun_server *server) const {
     server->transport = IPPROTO_UDP;
   } else if (transport_ == kNrIceTransportTcp) {
     server->transport = IPPROTO_TCP;
+  } else if (transport_ == kNrIceTransportTls) {
+    server->transport = IPPROTO_TCP;
+    if (has_addr_) {
+      // Refuse to try TLS without an FQDN
+      return NS_ERROR_INVALID_ARG;
+    }
+    server->tls = 1;
   } else {
     MOZ_MTLOG(ML_ERROR, "Unsupported STUN server transport: " << transport_);
     return NS_ERROR_FAILURE;
@@ -242,11 +250,6 @@ nsresult NrIceTurnServer::ToNicerTurnStruct(nr_ice_turn_server *server) const {
   nsresult rv = ToNicerStunStruct(&server->turn_server);
   if (NS_FAILED(rv))
     return rv;
-
-  if (username_.empty())
-    return NS_ERROR_INVALID_ARG;
-  if (password_.empty())
-    return NS_ERROR_INVALID_ARG;
 
   if (!(server->username=r_strdup(username_.c_str())))
     return NS_ERROR_OUT_OF_MEMORY;
@@ -341,16 +344,27 @@ int NrIceCtx::ice_checking(void *obj, nr_ice_peer_ctx *pctx) {
   return 0;
 }
 
-int NrIceCtx::ice_completed(void *obj, nr_ice_peer_ctx *pctx) {
-  MOZ_MTLOG(ML_DEBUG, "ice_completed called");
+int NrIceCtx::ice_connected(void *obj, nr_ice_peer_ctx *pctx) {
+  MOZ_MTLOG(ML_DEBUG, "ice_connected called");
 
   // Get the ICE ctx
   NrIceCtx *ctx = static_cast<NrIceCtx *>(obj);
 
   // This is called even on failed contexts.
   if (ctx->connection_state() != ICE_CTX_FAILED) {
-    ctx->SetConnectionState(ICE_CTX_OPEN);
+    ctx->SetConnectionState(ICE_CTX_CONNECTED);
   }
+
+  return 0;
+}
+
+int NrIceCtx::ice_disconnected(void *obj, nr_ice_peer_ctx *pctx) {
+  MOZ_MTLOG(ML_DEBUG, "ice_disconnected called");
+
+  // Get the ICE ctx
+  NrIceCtx *ctx = static_cast<NrIceCtx *>(obj);
+
+  ctx->SetConnectionState(ICE_CTX_DISCONNECTED);
 
   return 0;
 }
@@ -581,6 +595,7 @@ NrIceCtx::Initialize(const std::string& ufrag,
   nsCString mapping_type;
   nsCString filtering_type;
   bool block_udp = false;
+  bool block_tcp = false;
 
   nsresult rv;
   nsCOMPtr<nsIPrefService> pref_service =
@@ -599,6 +614,9 @@ NrIceCtx::Initialize(const std::string& ufrag,
       rv = pref_branch->GetBoolPref(
           "media.peerconnection.nat_simulator.block_udp",
           &block_udp);
+      rv = pref_branch->GetBoolPref(
+          "media.peerconnection.nat_simulator.block_tcp",
+          &block_tcp);
     }
   }
 
@@ -609,6 +627,7 @@ NrIceCtx::Initialize(const std::string& ufrag,
     test_nat->filtering_type_ = TestNat::ToNatBehavior(filtering_type.get());
     test_nat->mapping_type_ = TestNat::ToNatBehavior(mapping_type.get());
     test_nat->block_udp_ = block_udp;
+    test_nat->block_tcp_ = block_tcp;
     test_nat->enabled_ = true;
     SetNat(test_nat);
   }
@@ -618,9 +637,10 @@ NrIceCtx::Initialize(const std::string& ufrag,
   ice_handler_vtbl_->select_pair = &NrIceCtx::select_pair;
   ice_handler_vtbl_->stream_ready = &NrIceCtx::stream_ready;
   ice_handler_vtbl_->stream_failed = &NrIceCtx::stream_failed;
-  ice_handler_vtbl_->ice_completed = &NrIceCtx::ice_completed;
+  ice_handler_vtbl_->ice_connected = &NrIceCtx::ice_connected;
   ice_handler_vtbl_->msg_recvd = &NrIceCtx::msg_recvd;
   ice_handler_vtbl_->ice_checking = &NrIceCtx::ice_checking;
+  ice_handler_vtbl_->ice_disconnected = &NrIceCtx::ice_disconnected;
 
   ice_handler_ = new nr_ice_handler();
   ice_handler_->vtbl = ice_handler_vtbl_;
@@ -661,7 +681,7 @@ int NrIceCtx::SetNat(const RefPtr<TestNat>& aNat) {
 void NrIceCtx::internal_DeinitializeGlobal() {
   NR_reg_del((char *)"stun");
   NR_reg_del((char *)"ice");
-  RLogRingBuffer::DestroyInstance();
+  RLogConnector::DestroyInstance();
   nr_crypto_vtbl = nullptr;
   initialized = false;
 }
@@ -964,6 +984,16 @@ nsresult NrIceCtx::Finalize() {
   return NS_OK;
 }
 
+void NrIceCtx::UpdateNetworkState(bool online) {
+  MOZ_MTLOG(ML_INFO, "NrIceCtx(" << name_ << "): updating network state to " <<
+            (online ? "online" : "offline"));
+  if (online) {
+    nr_ice_peer_ctx_refresh_consent_all_streams(peer_);
+  } else {
+    nr_ice_peer_ctx_disconnect_all_streams(peer_);
+  }
+}
+
 void NrIceCtx::SetConnectionState(ConnectionState state) {
   if (state == connection_state_)
     return;
@@ -975,7 +1005,7 @@ void NrIceCtx::SetConnectionState(ConnectionState state) {
   if (connection_state_ == ICE_CTX_FAILED) {
     MOZ_MTLOG(ML_INFO, "NrIceCtx(" << name_ << "): dumping r_log ringbuffer... ");
     std::deque<std::string> logs;
-    RLogRingBuffer::GetInstance()->GetAny(0, &logs);
+    RLogConnector::GetInstance()->GetAny(0, &logs);
     for (auto l = logs.begin(); l != logs.end(); ++l) {
       MOZ_MTLOG(ML_INFO, *l);
     }

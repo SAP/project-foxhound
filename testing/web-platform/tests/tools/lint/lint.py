@@ -3,7 +3,6 @@ from __future__ import print_function, unicode_literals
 import abc
 import argparse
 import ast
-import fnmatch
 import json
 import os
 import re
@@ -12,10 +11,12 @@ import sys
 
 from collections import defaultdict
 
-from .. import localpaths
+from . import fnmatch
+from ..localpaths import repo_root
+from ..gitignore.gitignore import PathFilter
 
 from manifest.sourcefile import SourceFile
-from six import iteritems
+from six import iteritems, itervalues
 from six.moves import range
 
 here = os.path.abspath(os.path.split(__file__)[0])
@@ -39,10 +40,39 @@ def all_git_paths(repo_root):
     for item in output.split("\n"):
         yield item
 
+def all_filesystem_paths(repo_root):
+    path_filter = PathFilter(repo_root, extras=[".git/*"])
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        for filename in filenames:
+            path = os.path.relpath(os.path.join(dirpath, filename), repo_root)
+            if path_filter(path):
+                yield path
+        dirnames[:] = [item for item in dirnames if
+                       path_filter(os.path.relpath(os.path.join(dirpath, item) + "/",
+                                                   repo_root))]
+
+
+def all_paths(repo_root, ignore_local):
+    fn = all_git_paths if ignore_local else all_filesystem_paths
+    for item in fn(repo_root):
+        yield item
 
 def check_path_length(repo_root, path):
     if len(path) + 1 > 150:
-        return [("PATH LENGTH", "/%s longer than maximum path length (%d > 150)" % (path, len(path) + 1), None)]
+        return [("PATH LENGTH", "/%s longer than maximum path length (%d > 150)" % (path, len(path) + 1), path, None)]
+    return []
+
+
+def check_worker_collision(repo_root, path):
+    endings = [(".any.html", ".any.js"),
+               (".any.worker.html", ".any.js"),
+               (".worker.html", ".worker.js")]
+    for path_ending, generated in endings:
+        if path.endswith(path_ending):
+            return [("WORKER COLLISION",
+                     "path ends with %s which collides with generated tests from %s files" % (path_ending, generated),
+                     path,
+                     None)]
     return []
 
 
@@ -52,6 +82,7 @@ def parse_whitelist(f):
     """
 
     data = defaultdict(lambda:defaultdict(set))
+    ignored_files = set()
 
     for line in f:
         line = line.strip()
@@ -64,9 +95,14 @@ def parse_whitelist(f):
             parts[-1] = int(parts[-1])
 
         error_type, file_match, line_number = parts
-        data[file_match][error_type].add(line_number)
+        file_match = os.path.normcase(file_match)
 
-    return data
+        if error_type == "*":
+            ignored_files.add(file_match)
+        else:
+            data[file_match][error_type].add(line_number)
+
+    return data, ignored_files
 
 
 def filter_whitelist_errors(data, path, errors):
@@ -74,14 +110,16 @@ def filter_whitelist_errors(data, path, errors):
     Filter out those errors that are whitelisted in `data`.
     """
 
+    if not errors:
+        return []
+
     whitelisted = [False for item in range(len(errors))]
+    normpath = os.path.normcase(path)
 
     for file_match, whitelist_errors in iteritems(data):
-        if fnmatch.fnmatch(path, file_match):
+        if fnmatch.fnmatchcase(normpath, file_match):
             for i, (error_type, msg, path, line) in enumerate(errors):
-                if "*" in whitelist_errors:
-                    whitelisted[i] = True
-                elif error_type in whitelist_errors:
+                if error_type in whitelist_errors:
                     allowed_lines = whitelist_errors[error_type]
                     if None in allowed_lines or line in allowed_lines:
                         whitelisted[i] = True
@@ -176,6 +214,12 @@ def check_parsed(repo_root, path, f):
     if source_file.root is None:
         return [("PARSE-FAILED", "Unable to parse file", path, None)]
 
+    if source_file.type == "manual" and not source_file.name_is_manual:
+        return [("CONTENT-MANUAL", "Manual test whose filename doesn't end in '-manual'", path, None)]
+
+    if source_file.type == "visual" and not source_file.name_is_visual:
+        return [("CONTENT-VISUAL", "Visual test whose filename doesn't end in '-visual'", path, None)]
+
     if len(source_file.timeout_nodes) > 1:
         errors.append(("MULTIPLE-TIMEOUT", "More than one meta name='timeout'", path, None))
 
@@ -239,6 +283,14 @@ def check_parsed(repo_root, path, f):
 
             if all(seen_elements[name] for name in required_elements):
                 break
+
+
+    for element in source_file.root.findall(".//{http://www.w3.org/1999/xhtml}script[@src]"):
+        src = element.attrib["src"]
+        for name in ["testharness", "testharnessreport"]:
+            if "%s.js" % name == src or ("/%s.js" % name in src and src != "/resources/%s.js" % name):
+                errors.append(("%s-PATH" % name.upper(), "%s.js script seen with incorrect path" % name, path, None))
+
 
     return errors
 
@@ -344,12 +396,13 @@ def parse_args():
                         help="List of paths to lint")
     parser.add_argument("--json", action="store_true",
                         help="Output machine-readable JSON format")
+    parser.add_argument("--ignore-local", action="store_true",
+                        help="Ignore locally added files in the working directory (requires git).")
     return parser.parse_args()
 
 def main():
-    repo_root = localpaths.repo_root
     args = parse_args()
-    paths = args.paths if args.paths else all_git_paths(repo_root)
+    paths = args.paths if args.paths else all_paths(repo_root, args.ignore_local)
     return lint(repo_root, paths, args.json)
 
 def lint(repo_root, paths, output_json):
@@ -357,7 +410,7 @@ def lint(repo_root, paths, output_json):
     last = None
 
     with open(os.path.join(repo_root, "lint.whitelist")) as f:
-        whitelist = parse_whitelist(f)
+        whitelist, ignored_files = parse_whitelist(f)
 
     if output_json:
         output_errors = output_errors_json
@@ -390,11 +443,14 @@ def lint(repo_root, paths, output_json):
         if not os.path.exists(abs_path):
             continue
 
+        if any(fnmatch.fnmatch(path, file_match) for file_match in ignored_files):
+            continue
+
         errors = check_path(repo_root, path)
         last = process_errors(path, errors) or last
 
         if not os.path.isdir(abs_path):
-            with open(abs_path) as f:
+            with open(abs_path, 'rb') as f:
                 errors = check_file_contents(repo_root, path, f)
                 last = process_errors(path, errors) or last
 
@@ -402,9 +458,9 @@ def lint(repo_root, paths, output_json):
         output_error_count(error_count)
         if error_count:
             print(ERROR_MSG % (last[0], last[1], last[0], last[1]))
-    return sum(error_count.itervalues())
+    return sum(itervalues(error_count))
 
-path_lints = [check_path_length]
+path_lints = [check_path_length, check_worker_collision]
 file_lints = [check_regexp_line, check_parsed, check_python_ast]
 
 if __name__ == "__main__":

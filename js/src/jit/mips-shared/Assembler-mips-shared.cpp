@@ -1343,6 +1343,12 @@ AssemblerMIPSShared::as_cvtsd(FloatRegister fd, FloatRegister fs)
 }
 
 BufferOffset
+AssemblerMIPSShared::as_cvtsl(FloatRegister fd, FloatRegister fs)
+{
+    return writeInst(InstReg(op_cop1, rs_l, zero, fs, fd, ff_cvt_s_fmt).encode());
+}
+
+BufferOffset
 AssemblerMIPSShared::as_cvtsw(FloatRegister fd, FloatRegister fs)
 {
     return writeInst(InstReg(op_cop1, rs_w, zero, fs, fd, ff_cvt_s_fmt).encode());
@@ -1562,7 +1568,7 @@ AssemblerMIPSShared::bind(Label* label, BufferOffset boff)
 }
 
 void
-AssemblerMIPSShared::bindLater(Label* label, wasm::JumpTarget target)
+AssemblerMIPSShared::bindLater(Label* label, wasm::TrapDesc target)
 {
     if (label->used()) {
         int32_t next;
@@ -1571,7 +1577,7 @@ AssemblerMIPSShared::bindLater(Label* label, wasm::JumpTarget target)
         do {
             Instruction* inst = editSrc(b);
 
-            append(target, b.getOffset());
+            append(wasm::TrapSite(target, b.getOffset()));
             next = inst[1].encode();
             inst[1].makeNop();
 
@@ -1738,3 +1744,12 @@ AssemblerMIPSShared::ToggleToCmp(CodeLocationLabel inst_)
     AutoFlushICache::flush(uintptr_t(inst), 4);
 }
 
+void
+AssemblerMIPSShared::UpdateLuiOriValue(Instruction* inst0, Instruction* inst1, uint32_t value)
+{
+    MOZ_ASSERT(inst0->extractOpcode() == ((uint32_t)op_lui >> OpcodeShift));
+    MOZ_ASSERT(inst1->extractOpcode() == ((uint32_t)op_ori >> OpcodeShift));
+
+    ((InstImm*) inst0)->setImm16(Imm16::Upper(Imm32(value)));
+    ((InstImm*) inst1)->setImm16(Imm16::Lower(Imm32(value)));
+}

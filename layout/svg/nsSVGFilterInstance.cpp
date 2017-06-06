@@ -13,6 +13,7 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "nsReferencedElement.h"
+#include "nsSVGEffects.h"
 #include "nsSVGFilterFrame.h"
 #include "nsSVGUtils.h"
 #include "SVGContentUtils.h"
@@ -131,7 +132,7 @@ nsSVGFilterInstance::GetFilterFrame(nsIFrame* aTargetFrame)
   // CanvasRenderingContext2D.
   nsCOMPtr<nsIURI> url = aTargetFrame
     ? nsSVGEffects::GetFilterURI(aTargetFrame, mFilter)
-    : mFilter.GetURL()->Resolve(mTargetContent);
+    : mFilter.GetURL()->ResolveLocalRef(mTargetContent);
 
   if (!url) {
     NS_NOTREACHED("an nsStyleFilter of type URL should have a non-null URL");

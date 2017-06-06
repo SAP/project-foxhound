@@ -7,6 +7,7 @@
 const { DOM: dom, createClass, createFactory, PropTypes, addons } =
   require("devtools/client/shared/vendor/react");
 
+const { getStr } = require("../utils/l10n");
 const Types = require("../types");
 const DeviceSelector = createFactory(require("./device-selector"));
 
@@ -16,7 +17,7 @@ module.exports = createClass({
   propTypes: {
     devices: PropTypes.shape(Types.devices).isRequired,
     selectedDevice: PropTypes.string.isRequired,
-    onChangeViewportDevice: PropTypes.func.isRequired,
+    onChangeDevice: PropTypes.func.isRequired,
     onResizeViewport: PropTypes.func.isRequired,
     onRotateViewport: PropTypes.func.isRequired,
     onUpdateDeviceModalOpen: PropTypes.func.isRequired,
@@ -28,7 +29,7 @@ module.exports = createClass({
     let {
       devices,
       selectedDevice,
-      onChangeViewportDevice,
+      onChangeDevice,
       onResizeViewport,
       onRotateViewport,
       onUpdateDeviceModalOpen,
@@ -41,13 +42,14 @@ module.exports = createClass({
       DeviceSelector({
         devices,
         selectedDevice,
-        onChangeViewportDevice,
+        onChangeDevice,
         onResizeViewport,
         onUpdateDeviceModalOpen,
       }),
       dom.button({
         className: "viewport-rotate-button toolbar-button devtools-button",
         onClick: onRotateViewport,
+        title: getStr("responsive.rotate"),
       })
     );
   },

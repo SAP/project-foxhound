@@ -8,8 +8,7 @@
  * downloaded files.
  */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -19,8 +18,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
                                   "resource://gre/modules/NetUtil.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
                                   "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
 
 const BackgroundFileSaverOutputStream = Components.Constructor(
       "@mozilla.org/network/background-file-saver;1?mode=outputstream",
@@ -80,14 +77,12 @@ function readFileToString(aFilename) {
 function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
   let deferred = Promise.defer();
   aSaver.observer = {
-    onTargetChange: function BFSO_onSaveComplete(aSaver, aTarget)
-    {
+    onTargetChange: function BFSO_onSaveComplete(unused, aTarget) {
       if (aOnTargetChangeFn) {
         aOnTargetChangeFn(aTarget);
       }
     },
-    onSaveComplete: function BFSO_onSaveComplete(aSaver, aStatus)
-    {
+    onSaveComplete: function BFSO_onSaveComplete(unused, aStatus) {
       if (Components.isSuccessCode(aStatus)) {
         deferred.resolve();
       } else {
@@ -120,13 +115,12 @@ function promiseCopyToSaver(aSourceString, aSaverOutputStream, aCloseWhenDone) {
   copier.init(inputStream, aSaverOutputStream, null, false, true, 0x8000, true,
               aCloseWhenDone);
   copier.asyncCopy({
-    onStartRequest: function () { },
-    onStopRequest: function (aRequest, aContext, aStatusCode)
-    {
+    onStartRequest() { },
+    onStopRequest(aRequest, aContext, aStatusCode) {
       if (Components.isSuccessCode(aStatusCode)) {
         deferred.resolve();
       } else {
-        deferred.reject(new Components.Exception(aResult));
+        deferred.reject(new Components.Exception(aStatusCode));
       }
     },
   }, null);
@@ -160,16 +154,13 @@ function registerTableUpdate(aTable, aFilename) {
   });
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
-function run_test()
-{
+function run_test() {
   run_next_test();
 }
 
-add_task(function* test_setup()
-{
+add_task(function* test_setup() {
   // Wait 10 minutes, that is half of the external xpcshell timeout.
   do_timeout(10 * 60 * 1000, function() {
     if (gStillRunning) {
@@ -245,6 +236,14 @@ add_task(function* test_setup()
   });
 
   gHttpServer.start(4444);
+
+  do_register_cleanup(function() {
+    return Task.spawn(function* () {
+      yield new Promise(resolve => {
+        gHttpServer.stop(resolve);
+      });
+    });
+  });
 });
 
 // Construct a response with redirect urls.
@@ -264,8 +263,6 @@ function processUpdateRequest() {
 function waitForUpdates() {
   let deferred = Promise.defer();
   gHttpServer.registerPathHandler("/downloads", function(request, response) {
-    let buf = NetUtil.readInputStreamToString(request.bodyInputStream,
-      request.bodyInputStream.available());
     let blob = processUpdateRequest();
     response.setHeader("Content-Type",
                        "application/vnd.google.safebrowsing-update", false);
@@ -314,14 +311,12 @@ function promiseQueryReputation(query, expectedShouldBlock) {
   return deferred.promise;
 }
 
-add_task(function* ()
-{
+add_task(function* () {
   // Wait for Safebrowsing local list updates to complete.
   yield waitForUpdates();
 });
 
-add_task(function* test_signature_whitelists()
-{
+add_task(function* test_signature_whitelists() {
   // We should never get to the remote server.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -351,8 +346,7 @@ add_task(function* test_signature_whitelists()
                                 fileSize: 12}, false);
 });
 
-add_task(function* test_blocked_binary()
-{
+add_task(function* test_blocked_binary() {
   // We should reach the remote server for a verdict.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -364,8 +358,7 @@ add_task(function* test_blocked_binary()
                                 fileSize: 12}, true);
 });
 
-add_task(function* test_non_binary()
-{
+add_task(function* test_non_binary() {
   // We should not reach the remote server for a verdict for non-binary files.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -376,8 +369,7 @@ add_task(function* test_non_binary()
                                 fileSize: 12}, false);
 });
 
-add_task(function* test_good_binary()
-{
+add_task(function* test_good_binary() {
   // We should reach the remote server for a verdict.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -389,8 +381,7 @@ add_task(function* test_good_binary()
                                 fileSize: 12}, false);
 });
 
-add_task(function* test_disabled()
-{
+add_task(function* test_disabled() {
   // Explicitly disable remote checks
   Services.prefs.setBoolPref(remoteEnabledPref,
                              false);
@@ -411,8 +402,7 @@ add_task(function* test_disabled()
   yield deferred.promise;
 });
 
-add_task(function* test_disabled_through_lists()
-{
+add_task(function* test_disabled_through_lists() {
   Services.prefs.setBoolPref(remoteEnabledPref,
                              false);
   Services.prefs.setCharPref(appRepURLPref,
@@ -432,7 +422,6 @@ add_task(function* test_disabled_through_lists()
   );
   yield deferred.promise;
 });
-add_task(function* test_teardown()
-{
+add_task(function* test_teardown() {
   gStillRunning = false;
 });

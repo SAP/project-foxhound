@@ -1,10 +1,10 @@
 add_task(function* test_switchtab_decodeuri() {
   info("Opening first tab");
-  let tab = gBrowser.addTab("http://example.org/browser/browser/base/content/test/urlbar/dummy_page.html#test%7C1");
-  yield promiseTabLoadEvent(tab);
+  const TEST_URL = "http://example.org/browser/browser/base/content/test/urlbar/dummy_page.html#test%7C1";
+  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
 
   info("Opening and selecting second tab");
-  let newTab = gBrowser.selectedTab = gBrowser.addTab();
+  gBrowser.selectedTab = gBrowser.addTab();
 
   info("Wait for autocomplete")
   yield promiseAutocompleteResultPopup("dummy_page");
@@ -17,10 +17,10 @@ add_task(function* test_switchtab_decodeuri() {
   yield new Promise((resolve, reject) => {
     // In case of success it should switch tab.
     gBrowser.tabContainer.addEventListener("TabSelect", function select() {
-      gBrowser.tabContainer.removeEventListener("TabSelect", select, false);
+      gBrowser.tabContainer.removeEventListener("TabSelect", select);
       is(gBrowser.selectedTab, tab, "Should have switched to the right tab");
       resolve();
-    }, false);
+    });
     EventUtils.synthesizeKey("VK_RETURN", { });
   });
 

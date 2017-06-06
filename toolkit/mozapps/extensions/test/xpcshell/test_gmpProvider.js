@@ -4,7 +4,7 @@
 "use strict";
 
 var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-var GMPScope = Cu.import("resource://gre/modules/addons/GMPProvider.jsm");
+var GMPScope = Cu.import("resource://gre/modules/addons/GMPProvider.jsm", {});
 Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/UpdateUtils.jsm");
 
@@ -42,7 +42,10 @@ function MockGMPInstallManager() {
 }
 
 MockGMPInstallManager.prototype = {
-  checkForAddons: () => Promise.resolve([...gMockAddons.values()]),
+  checkForAddons: () => Promise.resolve({
+    usedFallback: true,
+    gmpAddons: [...gMockAddons.values()]
+  }),
 
   installAddon: addon => {
     gInstalledAddonId = addon.id;

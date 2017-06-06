@@ -12,7 +12,7 @@ const SECOND_URL = "https://example.com/" + RELATIVE_DIR + "releaseNotes.xhtml";
 var gLoadCompleteCallback = null;
 
 var gProgressListener = {
-  onStateChange: function(aWebProgress, aRequest, aStateFlags, aStatus) {
+  onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
     // Only care about the network stop status events
     if (!(aStateFlags & (Ci.nsIWebProgressListener.STATE_IS_NETWORK)) ||
         !(aStateFlags & (Ci.nsIWebProgressListener.STATE_STOP)))
@@ -23,10 +23,10 @@ var gProgressListener = {
     gLoadCompleteCallback = null;
   },
 
-  onLocationChange: function() { },
-  onSecurityChange: function() { },
-  onProgressChange: function() { },
-  onStatusChange: function() { },
+  onLocationChange() { },
+  onSecurityChange() { },
+  onProgressChange() { },
+  onStatusChange() { },
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
                                          Ci.nsISupportsWeakReference]),
@@ -58,23 +58,27 @@ function test() {
 
   Services.prefs.setCharPref(PREF_DISCOVERURL, MAIN_URL);
 
-  var gProvider = new MockProvider();
-  gProvider.createAddons([{
-    id: "test1@tests.mozilla.org",
-    name: "Test add-on 1",
-    description: "foo"
-  },
-  {
-    id: "test2@tests.mozilla.org",
-    name: "Test add-on 2",
-    description: "bar"
-  },
-  {
-    id: "test3@tests.mozilla.org",
-    name: "Test add-on 3",
-    type: "theme",
-    description: "bar"
-  }]);
+  SpecialPowers.pushPrefEnv({"set": [
+      ["dom.ipc.processCount", 1],
+    ]}, () => {
+    var gProvider = new MockProvider();
+    gProvider.createAddons([{
+      id: "test1@tests.mozilla.org",
+      name: "Test add-on 1",
+      description: "foo"
+    },
+    {
+      id: "test2@tests.mozilla.org",
+      name: "Test add-on 2",
+      description: "bar"
+    },
+    {
+      id: "test3@tests.mozilla.org",
+      name: "Test add-on 3",
+      type: "theme",
+      description: "bar"
+    }]);
+  });
 
   run_next_test();
 }
@@ -233,12 +237,6 @@ add_test(function() {
   if (!gUseInContentUI) {
     run_next_test();
     return;
-  }
-
-  function promiseViewLoad(manager) {
-    return new Promise(resolve => {
-      wait_for_view_load(manager, resolve);
-    });
   }
 
   function promiseManagerLoaded(manager) {
@@ -428,7 +426,7 @@ add_test(function() {
     gBrowser.addEventListener("pageshow", function(event) {
       if (event.target.location != "http://example.com/")
         return;
-      gBrowser.removeEventListener("pageshow", arguments.callee, false);
+      gBrowser.removeEventListener("pageshow", arguments.callee);
       info("Part 2");
 
       executeSoon(function() {
@@ -440,7 +438,7 @@ add_test(function() {
         gBrowser.addEventListener("pageshow", function(event) {
           if (event.target.location != "about:addons")
             return;
-          gBrowser.removeEventListener("pageshow", arguments.callee, false);
+          gBrowser.removeEventListener("pageshow", arguments.callee);
 
           wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
             info("Part 3");
@@ -450,7 +448,7 @@ add_test(function() {
             gBrowser.addEventListener("pageshow", function(event) {
               if (event.target.location != "http://example.com/")
                 return;
-              gBrowser.removeEventListener("pageshow", arguments.callee, false);
+              gBrowser.removeEventListener("pageshow", arguments.callee);
               info("Part 4");
 
               executeSoon(function() {
@@ -462,20 +460,20 @@ add_test(function() {
                 gBrowser.addEventListener("pageshow", function(event) {
                   if (event.target.location != "about:addons")
                     return;
-                  gBrowser.removeEventListener("pageshow", arguments.callee, false);
+                  gBrowser.removeEventListener("pageshow", arguments.callee);
                   wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
                     info("Part 5");
                     is_in_list(aManager, "addons://list/plugin", false, true);
 
                     close_manager(aManager, run_next_test);
                   });
-                }, false);
+                });
               });
-            }, false);
+            });
           });
-        }, false);
+        });
       });
-    }, false);
+    });
   });
 });
 
@@ -574,7 +572,7 @@ add_test(function() {
         gBrowser.addEventListener("pageshow", function(event) {
           if (event.target.location != "http://example.com/")
             return;
-          gBrowser.removeEventListener("pageshow", arguments.callee, false);
+          gBrowser.removeEventListener("pageshow", arguments.callee);
 
           info("Part 4");
           executeSoon(function() {
@@ -585,7 +583,7 @@ add_test(function() {
             gBrowser.addEventListener("pageshow", function(event) {
                 if (event.target.location != "about:addons")
                 return;
-              gBrowser.removeEventListener("pageshow", arguments.callee, false);
+              gBrowser.removeEventListener("pageshow", arguments.callee);
 
               wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
                 info("Part 5");
@@ -600,9 +598,9 @@ add_test(function() {
                   close_manager(aManager, run_next_test);
                 });
               });
-            }, false);
+            });
           });
-        }, false);
+        });
       });
     });
   });
@@ -630,7 +628,7 @@ add_test(function() {
       gBrowser.addEventListener("pageshow", function(event) {
         if (event.target.location != "about:addons")
           return;
-        gBrowser.removeEventListener("pageshow", arguments.callee, false);
+        gBrowser.removeEventListener("pageshow", arguments.callee);
 
         wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
           info("Part 3");
@@ -644,7 +642,7 @@ add_test(function() {
             close_manager(aManager, run_next_test);
           });
         });
-      }, false);
+      });
     });
   });
 });
@@ -671,7 +669,7 @@ add_test(function() {
       gBrowser.addEventListener("pageshow", function(event) {
         if (event.target.location != "about:addons")
           return;
-        gBrowser.removeEventListener("pageshow", arguments.callee, false);
+        gBrowser.removeEventListener("pageshow", arguments.callee);
 
         wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
           info("Part 3");
@@ -685,7 +683,7 @@ add_test(function() {
             close_manager(aManager, run_next_test);
           });
         });
-      }, false);
+      });
     });
   });
 });

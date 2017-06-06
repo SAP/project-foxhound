@@ -8,7 +8,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/CSSEditUtils.h"
-#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/File.h"
@@ -103,6 +103,9 @@ public:
   bool GetReturnInParagraphCreatesNewParagraph();
   Element* GetSelectionContainer();
 
+  // nsIEditor overrides
+  NS_IMETHOD GetPreferredIMEState(widget::IMEState* aState) override;
+
   // TextEditor overrides
   NS_IMETHOD GetIsDocumentEditable(bool* aIsDocumentEditable) override;
   NS_IMETHOD BeginningOfDocument() override;
@@ -118,14 +121,21 @@ public:
   virtual already_AddRefed<nsIContent> GetInputEventTargetContent() override;
   virtual bool IsEditable(nsINode* aNode) override;
   using EditorBase::IsEditable;
+  virtual nsresult RemoveAttributeOrEquivalent(
+                     Element* aElement,
+                     nsIAtom* aAttribute,
+                     bool aSuppressTransaction) override;
+  virtual nsresult SetAttributeOrEquivalent(Element* aElement,
+                                            nsIAtom* aAttribute,
+                                            const nsAString& aValue,
+                                            bool aSuppressTransaction) override;
+  using EditorBase::RemoveAttributeOrEquivalent;
+  using EditorBase::SetAttributeOrEquivalent;
 
   // nsStubMutationObserver overrides
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
-
-  // nsIEditorIMESupport overrides
-  NS_IMETHOD GetPreferredIMEState(widget::IMEState* aState) override;
 
   // nsIHTMLEditor methods
   NS_DECL_NSIHTMLEDITOR
@@ -329,14 +339,6 @@ public:
    */
   virtual nsresult SelectEntireDocument(Selection* aSelection) override;
 
-  NS_IMETHOD SetAttributeOrEquivalent(nsIDOMElement* aElement,
-                                      const nsAString& aAttribute,
-                                      const nsAString& aValue,
-                                      bool aSuppressTransaction) override;
-  NS_IMETHOD RemoveAttributeOrEquivalent(nsIDOMElement* aElement,
-                                         const nsAString& aAttribute,
-                                         bool aSuppressTransaction) override;
-
   /**
    * Join together any adjacent editable text nodes in the range.
    */
@@ -365,7 +367,7 @@ public:
   NS_IMETHOD GetRootElement(nsIDOMElement** aRootElement) override;
 
   // nsICSSLoaderObserver
-  NS_IMETHOD StyleSheetLoaded(StyleSheetHandle aSheet,
+  NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet,
                               bool aWasAlternate, nsresult aStatus) override;
 
   // Utility Routines, not part of public API
@@ -417,15 +419,15 @@ public:
   /**
    * Dealing with the internal style sheet lists.
    */
-  StyleSheetHandle GetStyleSheetForURL(const nsAString& aURL);
-  void GetURLForStyleSheet(StyleSheetHandle aStyleSheet,
+  StyleSheet* GetStyleSheetForURL(const nsAString& aURL);
+  void GetURLForStyleSheet(StyleSheet* aStyleSheet,
                            nsAString& aURL);
 
   /**
    * Add a url + known style sheet to the internal lists.
    */
   nsresult AddNewStyleSheetToList(const nsAString &aURL,
-                                  StyleSheetHandle aStyleSheet);
+                                  StyleSheet* aStyleSheet);
   nsresult RemoveStyleSheetFromList(const nsAString &aURL);
 
   bool IsCSSEnabled()
@@ -648,7 +650,8 @@ protected:
                                         bool aAddCites,
                                         nsIDOMNode** aNodeInserted);
 
-  nsresult InsertObject(const char* aType, nsISupports* aObject, bool aIsSafe,
+  nsresult InsertObject(const nsACString& aType, nsISupports* aObject,
+                        bool aIsSafe,
                         nsIDOMDocument* aSourceDoc,
                         nsIDOMNode* aDestinationNode,
                         int32_t aDestOffset,
@@ -837,8 +840,8 @@ protected:
                            nsCOMPtr<nsIDOMNode>* outNode,
                            bool bNoBlockCrossing = false);
 
-  nsresult IsFirstEditableChild(nsIDOMNode* aNode, bool* aOutIsFirst);
-  nsresult IsLastEditableChild(nsIDOMNode* aNode, bool* aOutIsLast);
+  bool IsFirstEditableChild(nsINode* aNode);
+  bool IsLastEditableChild(nsINode* aNode);
   nsIContent* GetFirstEditableChild(nsINode& aNode);
   nsIContent* GetLastEditableChild(nsINode& aNode);
 
@@ -907,7 +910,7 @@ protected:
 
   // Maintain a list of associated style sheets and their urls.
   nsTArray<nsString> mStyleSheetURLs;
-  nsTArray<StyleSheetHandle::RefPtr> mStyleSheets;
+  nsTArray<RefPtr<StyleSheet>> mStyleSheets;
 
   // an array for holding default style settings
   nsTArray<PropItem*> mDefaultStyles;
@@ -920,7 +923,7 @@ protected:
                                   Element* aElement,
                                   nsIContent* aParentContent,
                                   nsIPresShell* aShell);
-  void DeleteRefToAnonymousNode(nsIDOMElement* aElement,
+  void DeleteRefToAnonymousNode(nsIContent* aContent,
                                 nsIContent* aParentContent,
                                 nsIPresShell* aShell);
 
@@ -1010,7 +1013,7 @@ protected:
   already_AddRefed<Element> CreateResizer(int16_t aLocation,
                                           nsIDOMNode* aParentNode);
   void SetAnonymousElementPosition(int32_t aX, int32_t aY,
-                                   nsIDOMElement* aResizer);
+                                   Element* aResizer);
 
   already_AddRefed<Element> CreateShadow(nsIDOMNode* aParentNode,
                                          nsIDOMElement* aOriginalObject);
@@ -1065,16 +1068,16 @@ protected:
   // inline table editing
   nsCOMPtr<nsIDOMElement> mInlineEditedCell;
 
-  nsCOMPtr<nsIDOMElement> mAddColumnBeforeButton;
-  nsCOMPtr<nsIDOMElement> mRemoveColumnButton;
-  nsCOMPtr<nsIDOMElement> mAddColumnAfterButton;
+  RefPtr<Element> mAddColumnBeforeButton;
+  RefPtr<Element> mRemoveColumnButton;
+  RefPtr<Element> mAddColumnAfterButton;
 
-  nsCOMPtr<nsIDOMElement> mAddRowBeforeButton;
-  nsCOMPtr<nsIDOMElement> mRemoveRowButton;
-  nsCOMPtr<nsIDOMElement> mAddRowAfterButton;
+  RefPtr<Element> mAddRowBeforeButton;
+  RefPtr<Element> mRemoveRowButton;
+  RefPtr<Element> mAddRowAfterButton;
 
-  void AddMouseClickListener(nsIDOMElement* aElement);
-  void RemoveMouseClickListener(nsIDOMElement* aElement);
+  void AddMouseClickListener(Element* aElement);
+  void RemoveMouseClickListener(Element* aElement);
 
   nsCOMPtr<nsILinkHandler> mLinkHandler;
 
@@ -1101,6 +1104,25 @@ private:
                               const nsAString& aTagName, nsINode* aNode);
   already_AddRefed<Element> CreateElementWithDefaults(
                               const nsAString& aTagName);
+  /**
+   * Returns an anonymous Element of type aTag,
+   * child of aParentNode. If aIsCreatedHidden is true, the class
+   * "hidden" is added to the created element. If aAnonClass is not
+   * the empty string, it becomes the value of the attribute "_moz_anonclass"
+   * @return a Element
+   * @param aTag             [IN] desired type of the element to create
+   * @param aParentNode      [IN] the parent node of the created anonymous
+   *                              element
+   * @param aAnonClass       [IN] contents of the _moz_anonclass attribute
+   * @param aIsCreatedHidden [IN] a boolean specifying if the class "hidden"
+   *                              is to be added to the created anonymous
+   *                              element
+   */
+  already_AddRefed<Element> CreateAnonymousElement(
+                              nsIAtom* aTag,
+                              nsIDOMNode* aParentNode,
+                              const nsAString& aAnonClass,
+                              bool aIsCreatedHidden);
 };
 
 } // namespace mozilla

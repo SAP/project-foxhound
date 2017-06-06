@@ -51,7 +51,7 @@
 #ifdef XP_WIN
 #include "nsCExternalHandlerService.h"
 #include "nsEscape.h"
-#include "nsIMimeInfo.h"
+#include "nsIMIMEInfo.h"
 #include "nsIMIMEService.h"
 #include "nsIURL.h"
 #include "nsReadableUtils.h"
@@ -334,6 +334,8 @@ nsCopySupport::GetTransferableForNode(nsINode* aNode,
 {
   nsCOMPtr<nsISelection> selection;
   // Make a temporary selection with aNode in a single range.
+  // XXX We should try to get rid of the Selection object here.
+  // XXX bug 1245883
   nsresult rv = NS_NewDomSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIDOMNode> node = do_QueryInterface(aNode);
@@ -341,7 +343,9 @@ nsCopySupport::GetTransferableForNode(nsINode* aNode,
   RefPtr<nsRange> range = new nsRange(aNode);
   rv = range->SelectNode(node);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = selection->AddRange(range);
+  ErrorResult result;
+  selection->AsSelection()->AddRangeInternal(*range, aDoc, result);
+  rv = result.StealNSResult();
   NS_ENSURE_SUCCESS(rv, rv);
   // It's not the primary selection - so don't skip invisible content.
   uint32_t flags = 0;
@@ -731,7 +735,7 @@ IsSelectionInsideRuby(nsISelection* aSelection)
   if (NS_FAILED(rv)) {
     return false;
   }
-  for (auto i : MakeRange(rangeCount)) {
+  for (auto i : IntegerRange(rangeCount)) {
     nsCOMPtr<nsIDOMRange> range;
     aSelection->GetRangeAt(i, getter_AddRefs(range));
     nsCOMPtr<nsIDOMNode> node;
@@ -843,7 +847,7 @@ nsCopySupport::FireClipboardEvent(EventMessage aEventMessage,
 
   // Update the presentation in case the event handler modified the selection,
   // see bug 602231.
-  presShell->FlushPendingNotifications(Flush_Frames);
+  presShell->FlushPendingNotifications(FlushType::Frames);
   if (presShell->IsDestroying())
     return false;
 

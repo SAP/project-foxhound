@@ -696,6 +696,9 @@ public:
   void PassUnionWithDefaultValue17(const DoubleOrSupportedType& arg);
   void PassUnionWithDefaultValue18(const DoubleOrSupportedType& arg);
   void PassUnionWithDefaultValue19(const DoubleOrSupportedType& arg);
+  void PassUnionWithDefaultValue20(const DoubleOrUSVString& arg);
+  void PassUnionWithDefaultValue21(const DoubleOrUSVString& arg);
+  void PassUnionWithDefaultValue22(const DoubleOrUSVString& arg);
 
   void PassNullableUnionWithDefaultValue1(const Nullable<DoubleOrString>& arg);
   void PassNullableUnionWithDefaultValue2(const Nullable<DoubleOrString>& arg);
@@ -717,6 +720,10 @@ public:
   void PassNullableUnionWithDefaultValue18(const Nullable<DoubleOrSupportedType>& arg);
   void PassNullableUnionWithDefaultValue19(const Nullable<DoubleOrSupportedType>& arg);
   void PassNullableUnionWithDefaultValue20(const Nullable<DoubleOrSupportedType>& arg);
+  void PassNullableUnionWithDefaultValue21(const Nullable<DoubleOrUSVString>& arg);
+  void PassNullableUnionWithDefaultValue22(const Nullable<DoubleOrUSVString>& arg);
+  void PassNullableUnionWithDefaultValue23(const Nullable<DoubleOrUSVString>& arg);
+  void PassNullableUnionWithDefaultValue24(const Nullable<DoubleOrUSVString>& arg);
 
   void PassSequenceOfUnions(const Sequence<OwningCanvasPatternOrCanvasGradient>&);
   void PassSequenceOfUnions2(JSContext*, const Sequence<OwningObjectOrLong>&);
@@ -753,13 +760,9 @@ public:
 
   // Promise types
   void PassPromise(Promise&);
-  void PassNullablePromise(Promise*);
   void PassOptionalPromise(const Optional<OwningNonNull<Promise>>&);
-  void PassOptionalNullablePromise(const Optional<RefPtr<Promise>>&);
-  void PassOptionalNullablePromiseWithDefaultValue(Promise*);
   void PassPromiseSequence(const Sequence<OwningNonNull<Promise>>&);
   void PassPromiseMozMap(const MozMap<RefPtr<Promise>>&);
-  void PassNullablePromiseSequence(const Sequence<RefPtr<Promise>> &);
   Promise* ReceivePromise();
   already_AddRefed<Promise> ReceiveAddrefedPromise();
 
@@ -805,11 +808,11 @@ public:
   int8_t DeprecatedAttribute();
   int8_t SetDeprecatedAttribute(int8_t);
   int8_t DeprecatedMethod();
-  int8_t DeprecatedMethodWithContext(JSContext*, JS::Value);
+  int8_t DeprecatedMethodWithContext(JSContext*, const JS::Value&);
 
   // Static methods and attributes
   static void StaticMethod(const GlobalObject&, bool);
-  static void StaticMethodWithContext(const GlobalObject&, JS::Value);
+  static void StaticMethodWithContext(const GlobalObject&, const JS::Value&);
   static bool StaticAttribute(const GlobalObject&);
   static void SetStaticAttribute(const GlobalObject&, bool);
   static void Assert(const GlobalObject&, bool);
@@ -818,7 +821,7 @@ public:
   static int8_t StaticDeprecatedAttribute(const GlobalObject&);
   static int8_t SetStaticDeprecatedAttribute(const GlobalObject&, int8_t);
   static int8_t StaticDeprecatedMethod(const GlobalObject&);
-  static int8_t StaticDeprecatedMethodWithContext(const GlobalObject&, JS::Value);
+  static int8_t StaticDeprecatedMethodWithContext(const GlobalObject&, const JS::Value&);
 
   // Overload resolution tests
   bool Overload1(TestInterface&);
@@ -933,7 +936,20 @@ public:
   void SetThrowingGetterAttr(bool arg);
   bool ThrowingSetterAttr() const;
   void SetThrowingSetterAttr(bool arg, ErrorResult& aRv);
-  int16_t LegacyCall(JS::Value, uint32_t, TestInterface&);
+  void CanOOMMethod(OOMReporter& aRv);
+  bool GetCanOOMAttr(OOMReporter& aRv) const;
+  void SetCanOOMAttr(bool arg, OOMReporter& aRv);
+  bool GetCanOOMGetterAttr(OOMReporter& aRv) const;
+  void SetCanOOMGetterAttr(bool arg);
+  bool CanOOMSetterAttr() const;
+  void SetCanOOMSetterAttr(bool arg, OOMReporter& aRv);
+  void NeedsSubjectPrincipalMethod(nsIPrincipal&);
+  bool NeedsSubjectPrincipalAttr(nsIPrincipal&);
+  void SetNeedsSubjectPrincipalAttr(bool, nsIPrincipal&);
+  void NeedsCallerTypeMethod(CallerType);
+  bool NeedsCallerTypeAttr(CallerType);
+  void SetNeedsCallerTypeAttr(bool, CallerType);
+  int16_t LegacyCall(const JS::Value&, uint32_t, TestInterface&);
   void PassArgsWithDefaults(JSContext*, const Optional<int32_t>&,
                             TestInterface*, const Dict&, double,
                             const Optional<float>&);
@@ -1304,40 +1320,6 @@ public:
   int32_t Volatile();
 };
 
-class TestIndexedDeleterInterface : public nsISupports,
-                                    public nsWrapperCache
-{
-public:
-  NS_DECL_ISUPPORTS
-
-  // We need a GetParentObject to make binding codegen happy
-  virtual nsISupports* GetParentObject();
-
-  void IndexedDeleter(uint32_t, bool&);
-  void IndexedDeleter(uint32_t) = delete;
-  long IndexedGetter(uint32_t, bool&);
-  uint32_t Length();
-  void DelItem(uint32_t);
-  void DelItem(uint32_t, bool&) = delete;
-};
-
-class TestIndexedDeleterWithRetvalInterface : public nsISupports,
-                                              public nsWrapperCache
-{
-public:
-  NS_DECL_ISUPPORTS
-
-  // We need a GetParentObject to make binding codegen happy
-  virtual nsISupports* GetParentObject();
-
-  bool IndexedDeleter(uint32_t, bool&);
-  bool IndexedDeleter(uint32_t) = delete;
-  long IndexedGetter(uint32_t, bool&);
-  uint32_t Length();
-  bool DelItem(uint32_t);
-  bool DelItem(uint32_t, bool&) = delete;
-};
-
 class TestNamedDeleterInterface : public nsISupports,
                                   public nsWrapperCache
 {
@@ -1366,27 +1348,6 @@ public:
   long NamedGetter(const nsAString&, bool&);
   bool DelNamedItem(const nsAString&);
   bool DelNamedItem(const nsAString&, bool&) = delete;
-  void GetSupportedNames(nsTArray<nsString>&);
-};
-
-class TestIndexedAndNamedDeleterInterface : public nsISupports,
-                                            public nsWrapperCache
-{
-public:
-  NS_DECL_ISUPPORTS
-
-  // We need a GetParentObject to make binding codegen happy
-  virtual nsISupports* GetParentObject();
-
-  void IndexedDeleter(uint32_t, bool&);
-  long IndexedGetter(uint32_t, bool&);
-  uint32_t Length();
-
-  void NamedDeleter(const nsAString&, bool&);
-  void NamedDeleter(const nsAString&) = delete;
-  long NamedGetter(const nsAString&, bool&);
-  void DelNamedItem(const nsAString&);
-  void DelNamedItem(const nsAString&, bool&) = delete;
   void GetSupportedNames(nsTArray<nsString>&);
 };
 
@@ -1455,6 +1416,29 @@ class TestRenamedNamespace {
 };
 
 class TestProtoObjectHackedNamespace {
+};
+
+class TestWorkerExposedInterface : public nsISupports,
+                                   public nsWrapperCache
+{
+public:
+  NS_DECL_ISUPPORTS
+
+  // We need a GetParentObject to make binding codegen happy
+  nsISupports* GetParentObject();
+
+  void NeedsSubjectPrincipalMethod(Maybe<nsIPrincipal*>);
+  bool NeedsSubjectPrincipalAttr(Maybe<nsIPrincipal*>);
+  void SetNeedsSubjectPrincipalAttr(bool, Maybe<nsIPrincipal*>);
+  void NeedsCallerTypeMethod(CallerType);
+  bool NeedsCallerTypeAttr(CallerType);
+  void SetNeedsCallerTypeAttr(bool, CallerType);
+};
+
+class TestHTMLConstructorInterface : public nsGenericHTMLElement
+{
+public:
+  virtual nsISupports* GetParentObject();
 };
 
 } // namespace dom

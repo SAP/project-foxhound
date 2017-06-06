@@ -213,7 +213,7 @@ public class HomePager extends ViewPager implements HomeScreen {
         }
 
         // Only animate on post-HC devices, when a non-null animator is given
-        final boolean shouldAnimate = Versions.feature11Plus && animator != null;
+        final boolean shouldAnimate = animator != null;
 
         final HomeAdapter adapter = new HomeAdapter(mContext, fm);
         adapter.setOnAddPanelListener(mAddPanelListener);
@@ -225,8 +225,14 @@ public class HomePager extends ViewPager implements HomeScreen {
         // list of panels in place.
         mTabStrip.setVisibility(View.INVISIBLE);
 
-        // Load list of panels from configuration
-        lm.initLoader(LOADER_ID_CONFIG, null, mConfigLoaderCallbacks);
+        // If HomeConfigLoader already exist and there's no restoreData(for bookmark's parentStack),
+        // call forceLoad() to trigger updateUiFromConfigState() and reset HomePager's adapter.
+        if (lm.getLoader(LOADER_ID_CONFIG) != null && restoreData == null) {
+            lm.getLoader(LOADER_ID_CONFIG).forceLoad();
+        } else {
+            // Load list of panels from configuration
+            lm.initLoader(LOADER_ID_CONFIG, null, mConfigLoaderCallbacks);
+        }
 
         if (shouldAnimate) {
             animator.addPropertyAnimationListener(new PropertyAnimator.PropertyAnimationListener() {

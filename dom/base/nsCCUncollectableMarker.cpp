@@ -28,9 +28,11 @@
 #include "nsJSEnvironment.h"
 #include "nsInProcessTabChildGlobal.h"
 #include "nsFrameLoader.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ProcessGlobal.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "xpcpublic.h"
 #include "nsObserverService.h"
 #include "nsFocusManager.h"
@@ -209,7 +211,8 @@ MarkContentViewer(nsIContentViewer* aViewer, bool aCleanupJS,
         if (elm) {
           elm->MarkForCC();
         }
-        static_cast<nsGlobalWindow*>(win.get())->UnmarkGrayTimers();
+        static_cast<nsGlobalWindow*>(win.get())->AsInner()->
+          TimeoutManager().UnmarkGrayTimers();
       }
     } else if (aPrepareForCC) {
       // Unfortunately we need to still mark user data just before running CC so
@@ -313,6 +316,8 @@ MarkWindowList(nsISimpleEnumerator* aWindowList, bool aCleanupJS,
         nsCOMPtr<nsIContentFrameMessageManager> mm;
         tabChild->GetMessageManager(getter_AddRefs(mm));
         if (mm) {
+          // MarkForCC ends up calling UnmarkGray on message listeners, which
+          // TraceBlackJS can't do yet.
           mm->MarkForCC();
         }
       }
@@ -489,6 +494,13 @@ mozilla::dom::TraceBlackJS(JSTracer* aTrc, uint32_t aGCNumber, bool aIsShutdownG
     return;
   }
 
+  if (nsFrameMessageManager::GetChildProcessManager()) {
+    nsIContentProcessMessageManager* pg = ProcessGlobal::Get();
+    if (pg) {
+      mozilla::TraceScriptHolder(pg, aTrc);
+    }
+  }
+
   // Mark globals of active windows black.
   nsGlobalWindow::WindowByIdTable* windowsById =
     nsGlobalWindow::GetWindowsTable();
@@ -500,6 +512,31 @@ mozilla::dom::TraceBlackJS(JSTracer* aTrc, uint32_t aGCNumber, bool aIsShutdownG
         EventListenerManager* elm = window->GetExistingListenerManager();
         if (elm) {
           elm->TraceListeners(aTrc);
+        }
+
+        if (window->IsRootOuterWindow()) {
+          // In child process trace all the TabChildGlobals.
+          // Since there is one root outer window per TabChildGlobal, we need
+          // to look for only those windows, not all.
+          nsIDocShell* ds = window->GetDocShell();
+          if (ds) {
+            nsCOMPtr<nsITabChild> tabChild = ds->GetTabChild();
+            if (tabChild) {
+              nsCOMPtr<nsIContentFrameMessageManager> mm;
+              tabChild->GetMessageManager(getter_AddRefs(mm));
+              nsCOMPtr<EventTarget> et = do_QueryInterface(mm);
+              if (et) {
+                nsCOMPtr<nsISupports> tabChildAsSupports =
+                  do_QueryInterface(tabChild);
+                mozilla::TraceScriptHolder(tabChildAsSupports, aTrc);
+                EventListenerManager* elm = et->GetExistingListenerManager();
+                if (elm) {
+                  elm->TraceListeners(aTrc);
+                }
+                // As of now there isn't an easy way to trace message listeners.
+              }
+            }
+          }
         }
 
 #ifdef MOZ_XUL

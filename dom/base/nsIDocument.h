@@ -6,7 +6,7 @@
 #ifndef nsIDocument_h___
 #define nsIDocument_h___
 
-#include "mozFlushType.h"                // for enum
+#include "mozilla/FlushType.h"           // for enum
 #include "nsAutoPtr.h"                   // for member
 #include "nsCOMArray.h"                  // for member
 #include "nsCRT.h"                       // for NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
@@ -32,12 +32,13 @@
 #include "nsExpirationTracker.h"
 #include "nsClassHashtable.h"
 #include "prclist.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/dom/Dispatcher.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/StyleBackendType.h"
-#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
 #include <bitset>                        // for member
 
 #ifdef MOZILLA_INTERNAL_API
@@ -101,6 +102,7 @@ class nsIGlobalObject;
 struct nsCSSSelectorList;
 
 namespace mozilla {
+class AbstractThread;
 class CSSStyleSheet;
 class ErrorResult;
 class EventStates;
@@ -123,10 +125,12 @@ class BoxObject;
 class CDATASection;
 class Comment;
 struct CustomElementDefinition;
+class DocGroup;
 class DocumentFragment;
 class DocumentTimeline;
 class DocumentType;
 class DOMImplementation;
+class DOMIntersectionObserver;
 class DOMStringList;
 class Element;
 struct ElementCreationOptions;
@@ -136,6 +140,7 @@ class EventTarget;
 class FontFaceSet;
 class FrameRequestCallback;
 struct FullscreenRequest;
+class ImageTracker;
 class ImportManager;
 class HTMLBodyElement;
 struct LifecycleCallbackArgs;
@@ -145,15 +150,15 @@ class MediaQueryList;
 class GlobalObject;
 class NodeFilter;
 class NodeIterator;
-enum class OrientationType : uint32_t;
+enum class OrientationType : uint8_t;
 class ProcessingInstruction;
 class Promise;
 class StyleSheetList;
 class SVGDocument;
+class SVGSVGElement;
 class Touch;
 class TouchList;
 class TreeWalker;
-class UndoManager;
 class XPathEvaluator;
 class XPathExpression;
 class XPathNSResolver;
@@ -162,6 +167,8 @@ template<typename> class Sequence;
 
 template<typename, typename> class CallbackObjectHolder;
 typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
+
+enum class CallerType : uint32_t;
 
 } // namespace dom
 } // namespace mozilla
@@ -199,7 +206,8 @@ class nsContentList;
 
 // Document interface.  This is implemented by all document objects in
 // Gecko.
-class nsIDocument : public nsINode
+class nsIDocument : public nsINode,
+                    public mozilla::dom::DispatcherTrait
 {
   typedef mozilla::dom::GlobalObject GlobalObject;
 
@@ -286,6 +294,9 @@ public:
 
   virtual void SetSuppressParserErrorElement(bool aSuppress) {}
   virtual bool SuppressParserErrorElement() { return false; }
+
+  virtual void SetSuppressParserErrorConsoleMessages(bool aSuppress) {}
+  virtual bool SuppressParserErrorConsoleMessages() { return false; }
 
   /**
    * Signal that the document title may have changed
@@ -698,6 +709,14 @@ public:
   }
 
   /**
+  * Set referrer policy CSP flag for this document.
+  */
+  void SetHasReferrerPolicyCSP(bool aHasReferrerPolicyCSP)
+  {
+    mHasReferrerPolicyCSP = aHasReferrerPolicyCSP;
+  }
+
+  /**
    * Set the mixed display content blocked flag for this document.
    */
   void SetHasMixedDisplayContentBlocked(bool aHasMixedDisplayContentBlocked)
@@ -864,7 +883,7 @@ public:
   /**
    * Are plugins allowed in this document ?
    */
-  virtual nsresult GetAllowPlugins (bool* aAllowPlugins) = 0;
+  virtual bool GetAllowPlugins () = 0;
 
   /**
    * Set the sub document for aContent to aSubDoc.
@@ -978,6 +997,8 @@ public:
     return mPageUnloadingEventTimeStamp;
   }
 
+  virtual void NotifyLayerManagerRecreated() = 0;
+
 protected:
   virtual Element *GetRootElementInternal() const = 0;
 
@@ -1090,7 +1111,7 @@ public:
    * TODO We can get rid of the whole concept of delayed loading if we fix
    * bug 77999.
    */
-  virtual void EnsureOnDemandBuiltInUASheet(mozilla::StyleSheetHandle aSheet) = 0;
+  virtual void EnsureOnDemandBuiltInUASheet(mozilla::StyleSheet* aSheet) = 0;
 
   /**
    * Get the number of (document) stylesheets
@@ -1106,7 +1127,7 @@ public:
    * @return the stylesheet at aIndex.  Null if aIndex is out of range.
    * @throws no exceptions
    */
-  virtual mozilla::StyleSheetHandle GetStyleSheetAt(int32_t aIndex) const = 0;
+  virtual mozilla::StyleSheet* GetStyleSheetAt(int32_t aIndex) const = 0;
 
   /**
    * Insert a sheet at a particular spot in the stylesheet list (zero-based)
@@ -1115,7 +1136,7 @@ public:
    *   adjusted for the "special" sheets.
    * @throws no exceptions
    */
-  virtual void InsertStyleSheetAt(mozilla::StyleSheetHandle aSheet,
+  virtual void InsertStyleSheetAt(mozilla::StyleSheet* aSheet,
                                   int32_t aIndex) = 0;
 
   /**
@@ -1125,7 +1146,7 @@ public:
    * @return aIndex the index of the sheet in the full list
    */
   virtual int32_t GetIndexOfStyleSheet(
-      const mozilla::StyleSheetHandle aSheet) const = 0;
+      const mozilla::StyleSheet* aSheet) const = 0;
 
   /**
    * Replace the stylesheets in aOldSheets with the stylesheets in
@@ -1136,24 +1157,24 @@ public:
    * will simply be removed.
    */
   virtual void UpdateStyleSheets(
-      nsTArray<mozilla::StyleSheetHandle::RefPtr>& aOldSheets,
-      nsTArray<mozilla::StyleSheetHandle::RefPtr>& aNewSheets) = 0;
+      nsTArray<RefPtr<mozilla::StyleSheet>>& aOldSheets,
+      nsTArray<RefPtr<mozilla::StyleSheet>>& aNewSheets) = 0;
 
   /**
    * Add a stylesheet to the document
    */
-  virtual void AddStyleSheet(mozilla::StyleSheetHandle aSheet) = 0;
+  virtual void AddStyleSheet(mozilla::StyleSheet* aSheet) = 0;
 
   /**
    * Remove a stylesheet from the document
    */
-  virtual void RemoveStyleSheet(mozilla::StyleSheetHandle aSheet) = 0;
+  virtual void RemoveStyleSheet(mozilla::StyleSheet* aSheet) = 0;
 
   /**
    * Notify the document that the applicable state of the sheet changed
    * and that observers should be notified and style sets updated
    */
-  virtual void SetStyleSheetApplicableState(mozilla::StyleSheetHandle aSheet,
+  virtual void SetStyleSheetApplicableState(mozilla::StyleSheet* aSheet,
                                             bool aApplicable) = 0;
 
   enum additionalSheetType {
@@ -1166,10 +1187,10 @@ public:
   virtual nsresult LoadAdditionalStyleSheet(additionalSheetType aType,
                                             nsIURI* aSheetURI) = 0;
   virtual nsresult AddAdditionalStyleSheet(additionalSheetType aType,
-                                           mozilla::StyleSheetHandle aSheet) = 0;
+                                           mozilla::StyleSheet* aSheet) = 0;
   virtual void RemoveAdditionalStyleSheet(additionalSheetType aType,
                                           nsIURI* sheetURI) = 0;
-  virtual mozilla::StyleSheetHandle GetFirstAdditionalAuthorSheet() = 0;
+  virtual mozilla::StyleSheet* GetFirstAdditionalAuthorSheet() = 0;
 
   /**
    * Assuming that aDocSheets is an array of document-level style
@@ -1431,7 +1452,8 @@ public:
    */
   void DispatchFullscreenError(const char* aMessage);
 
-  virtual void RequestPointerLock(Element* aElement) = 0;
+  virtual void RequestPointerLock(Element* aElement,
+                                  mozilla::dom::CallerType aCallerType) = 0;
 
   static void UnlockPointer(nsIDocument* aDoc = nullptr);
 
@@ -1490,26 +1512,26 @@ public:
 
   // Observation hooks for style data to propagate notifications
   // to document observers
-  virtual void StyleRuleChanged(mozilla::StyleSheetHandle aStyleSheet,
+  virtual void StyleRuleChanged(mozilla::StyleSheet* aStyleSheet,
                                 mozilla::css::Rule* aStyleRule) = 0;
-  virtual void StyleRuleAdded(mozilla::StyleSheetHandle aStyleSheet,
+  virtual void StyleRuleAdded(mozilla::StyleSheet* aStyleSheet,
                               mozilla::css::Rule* aStyleRule) = 0;
-  virtual void StyleRuleRemoved(mozilla::StyleSheetHandle aStyleSheet,
+  virtual void StyleRuleRemoved(mozilla::StyleSheet* aStyleSheet,
                                 mozilla::css::Rule* aStyleRule) = 0;
 
   /**
    * Flush notifications for this document and its parent documents
    * (since those may affect the layout of this one).
    */
-  virtual void FlushPendingNotifications(mozFlushType aType) = 0;
+  virtual void FlushPendingNotifications(mozilla::FlushType aType) = 0;
 
   /**
    * Calls FlushPendingNotifications on any external resources this document
    * has. If this document has no external resources or is an external resource
    * itself this does nothing. This should only be called with
-   * aType >= Flush_Style.
+   * aType >= FlushType::Style.
    */
-  virtual void FlushExternalResources(mozFlushType aType) = 0;
+  virtual void FlushExternalResources(mozilla::FlushType aType) = 0;
 
   nsBindingManager* BindingManager() const
   {
@@ -2126,11 +2148,6 @@ public:
   virtual mozilla::PendingAnimationTracker*
   GetOrCreatePendingAnimationTracker() = 0;
 
-  // Makes the images on this document capable of having their animation
-  // active or suspended. An Image will animate as long as at least one of its
-  // owning Documents needs it to animate; otherwise it can suspend.
-  virtual void SetImagesNeedAnimating(bool aAnimating) = 0;
-
   enum SuppressionType {
     eAnimationsOnly = 0x1,
 
@@ -2302,7 +2319,7 @@ public:
    * DO NOT USE FOR UNTRUSTED CONTENT.
    */
   virtual nsresult LoadChromeSheetSync(nsIURI* aURI, bool aIsAgentSheet,
-                                       mozilla::StyleSheetHandle::RefPtr* aSheet) = 0;
+                                       RefPtr<mozilla::StyleSheet>* aSheet) = 0;
 
   /**
    * Returns true if the locale used for the document specifies a direction of
@@ -2378,13 +2395,13 @@ public:
    */
   virtual Element* LookupImageElement(const nsAString& aElementId) = 0;
 
-  virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() = 0;
-
   virtual mozilla::dom::DocumentTimeline* Timeline() = 0;
   virtual mozilla::LinkedList<mozilla::dom::DocumentTimeline>& Timelines() = 0;
 
   virtual void GetAnimations(
       nsTArray<RefPtr<mozilla::dom::Animation>>& aAnimations) = 0;
+
+  mozilla::dom::SVGSVGElement* GetSVGRootElement() const;
 
   nsresult ScheduleFrameRequestCallback(mozilla::dom::FrameRequestCallback& aCallback,
                                         int32_t *aHandle);
@@ -2407,29 +2424,7 @@ public:
   // This returns true when the document tree is being teared down.
   bool InUnlinkOrDeletion() { return mInUnlinkOrDeletion; }
 
-  /*
-   * Image Tracking
-   *
-   * Style and content images register their imgIRequests with their document
-   * so that the document can efficiently tell all descendant images when they
-   * are and are not visible. When an image is on-screen, we want to call
-   * LockImage() on it so that it doesn't do things like discarding frame data
-   * to save memory. The PresShell informs the document whether its images
-   * should be locked or not via SetImageLockingState().
-   *
-   * See bug 512260.
-   */
-
-  // Add/Remove images from the document image tracker
-  virtual nsresult AddImage(imgIRequest* aImage) = 0;
-  // If the REQUEST_DISCARD flag is passed then if the lock count is zero we
-  // will request the image be discarded now (instead of waiting).
-  enum { REQUEST_DISCARD = 0x1 };
-  virtual nsresult RemoveImage(imgIRequest* aImage, uint32_t aFlags = 0) = 0;
-
-  // Makes the images on this document locked/unlocked. By default, the locking
-  // state is unlocked/false.
-  virtual nsresult SetImageLockingState(bool aLocked) = 0;
+  mozilla::dom::ImageTracker* ImageTracker();
 
   virtual nsresult AddPlugin(nsIObjectLoadingContent* aPlugin) = 0;
   virtual void RemovePlugin(nsIObjectLoadingContent* aPlugin) = 0;
@@ -2466,9 +2461,6 @@ public:
 #undef DEPRECATED_OPERATION
   bool HasWarnedAbout(DeprecatedOperations aOperation) const;
   void WarnOnceAbout(DeprecatedOperations aOperation,
-                     bool asError = false) const;
-  void WarnOnceAbout(DeprecatedOperations aOperation,
-                     const nsAString& aErrorText,
                      bool asError = false) const;
 
 #define DOCUMENT_WARNING(_op) e##_op,
@@ -2566,13 +2558,14 @@ public:
                 mozilla::ErrorResult& rv);
   virtual mozilla::dom::DOMImplementation*
     GetImplementation(mozilla::ErrorResult& rv) = 0;
-  void GetURL(nsString& retval) const;
-  void GetDocumentURI(nsString& retval) const;
+  MOZ_MUST_USE nsresult GetURL(nsString& retval) const;
+  MOZ_MUST_USE nsresult GetDocumentURI(nsString& retval) const;
   // Return the URI for the document.
   // The returned value may differ if the document is loaded via XHR, and
   // when accessed from chrome privileged script and
   // from content privileged script for compatibility.
   void GetDocumentURIFromJS(nsString& aDocumentURI,
+                            mozilla::dom::CallerType aCallerType,
                             mozilla::ErrorResult& aRv) const;
   void GetCompatMode(nsString& retval) const;
   void GetCharacterSet(nsAString& retval) const;
@@ -2597,8 +2590,8 @@ public:
                     const mozilla::dom::ElementRegistrationOptions& aOptions,
                     JS::MutableHandle<JSObject*> aRetval,
                     mozilla::ErrorResult& rv) = 0;
-  virtual already_AddRefed<mozilla::dom::CustomElementsRegistry>
-    GetCustomElementsRegistry() = 0;
+  virtual already_AddRefed<mozilla::dom::CustomElementRegistry>
+    GetCustomElementRegistry() = 0;
 
   already_AddRefed<nsContentList>
   GetElementsByTagName(const nsAString& aTagName)
@@ -2619,7 +2612,7 @@ public:
   virtual already_AddRefed<Element>
     CreateElementNS(const nsAString& aNamespaceURI,
                     const nsAString& aQualifiedName,
-                    const mozilla::dom::ElementCreationOptions& aOptions,
+                    const mozilla::dom::ElementCreationOptionsOrString& aOptions,
                     mozilla::ErrorResult& rv) = 0;
   already_AddRefed<mozilla::dom::DocumentFragment>
     CreateDocumentFragment() const;
@@ -2689,7 +2682,7 @@ public:
                                   Element* aElement) = 0;
   nsIURI* GetDocumentURIObject() const;
   // Not const because all the full-screen goop is not const
-  virtual bool FullscreenEnabled() = 0;
+  virtual bool FullscreenEnabled(mozilla::dom::CallerType aCallerType) = 0;
   virtual Element* GetFullscreenElement() = 0;
   bool Fullscreen()
   {
@@ -2743,7 +2736,12 @@ public:
                                           const nsAString& aAttrName,
                                           const nsAString& aAttrValue);
   Element* GetBindingParent(nsINode& aNode);
-  void LoadBindingDocument(const nsAString& aURI, mozilla::ErrorResult& rv);
+  void LoadBindingDocument(const nsAString& aURI,
+                           nsIPrincipal& aSubjectPrincipal,
+                           mozilla::ErrorResult& rv);
+  void LoadBindingDocument(const nsAString& aURI,
+                           const mozilla::Maybe<nsIPrincipal*>& aSubjectPrincipal,
+                           mozilla::ErrorResult& rv);
   mozilla::dom::XPathExpression*
     CreateExpression(const nsAString& aExpression,
                      mozilla::dom::XPathNSResolver* aResolver,
@@ -2820,7 +2818,7 @@ public:
     }
   }
 
-  gfxUserFontSet* GetUserFontSet();
+  gfxUserFontSet* GetUserFontSet(bool aFlushUserFontSet = true);
   void FlushUserFontSet();
   void RebuildUserFontSet(); // asynchronously
   mozilla::dom::FontFaceSet* GetFonts() { return mFontFaceSet; }
@@ -2866,6 +2864,41 @@ public:
   {
     return mHasScrollLinkedEffect;
   }
+
+  mozilla::dom::DocGroup* GetDocGroup() const;
+
+  virtual void AddIntersectionObserver(
+    mozilla::dom::DOMIntersectionObserver* aObserver) = 0;
+  virtual void RemoveIntersectionObserver(
+    mozilla::dom::DOMIntersectionObserver* aObserver) = 0;
+
+  virtual void UpdateIntersectionObservations() = 0;
+  virtual void ScheduleIntersectionObserverNotification() = 0;
+  virtual void NotifyIntersectionObservers() = 0;
+
+  // Dispatch a runnable related to the document.
+  virtual nsresult Dispatch(const char* aName,
+                            mozilla::dom::TaskCategory aCategory,
+                            already_AddRefed<nsIRunnable>&& aRunnable) override;
+
+  virtual nsIEventTarget*
+  EventTargetFor(mozilla::dom::TaskCategory aCategory) const override;
+
+  virtual mozilla::AbstractThread*
+  AbstractMainThreadFor(mozilla::dom::TaskCategory aCategory) override;
+
+  // The URLs passed to these functions should match what
+  // JS::DescribeScriptedCaller() returns, since these APIs are used to
+  // determine whether some code is being called from a tracking script.
+  void NoteScriptTrackingStatus(const nsACString& aURL, bool isTracking);
+  bool IsScriptTracking(const nsACString& aURL) const;
+
+  bool PrerenderHref(nsIURI* aHref);
+
+  // For more information on Flash classification, see
+  // toolkit/components/url-classifier/flash-block-lists.rst
+  virtual mozilla::dom::FlashClassification DocumentFlashClassification() = 0;
+  virtual bool IsThirdParty() = 0;
 
 protected:
   bool GetUseCounter(mozilla::UseCounter aUseCounter)
@@ -2936,6 +2969,13 @@ protected:
     return mId;
   }
 
+  // Update our frame request callback scheduling state, if needed.  This will
+  // schedule or unschedule them, if necessary, and update
+  // mFrameRequestCallbacksScheduled.  aOldShell should only be passed when
+  // mPresShell is becoming null; in that case it will be used to get hold of
+  // the relevant refresh driver.
+  void UpdateFrameRequestCallbackSchedulingState(nsIPresShell* aOldShell = nullptr);
+
   nsCString mReferrer;
   nsString mLastModified;
 
@@ -2980,6 +3020,9 @@ protected:
   RefPtr<nsHTMLCSSStyleSheet> mStyleAttrStyleSheet;
   RefPtr<mozilla::SVGAttrAnimationRuleProcessor> mSVGAttrAnimationRuleProcessor;
 
+  // Tracking for images in the document.
+  RefPtr<mozilla::dom::ImageTracker> mImageTracker;
+
   // The set of all object, embed, applet, video/audio elements or
   // nsIObjectLoadingContent or nsIDocumentActivity for which this is the
   // owner document. (They might not be in the document.)
@@ -3005,23 +3048,12 @@ protected:
   // container for per-context fonts (downloadable, SVG, etc.)
   RefPtr<mozilla::dom::FontFaceSet> mFontFaceSet;
 
-  // Compatibility mode
-  nsCompatibility mCompatMode;
-
-  // Our readyState
-  ReadyState mReadyState;
-
-#ifdef MOZILLA_INTERNAL_API
-  // Our visibility state
-  mozilla::dom::VisibilityState mVisibilityState;
-  static_assert(sizeof(mozilla::dom::VisibilityState) == sizeof(uint32_t), "Error size of mVisibilityState and mDummy");
-#else
-  uint32_t mDummy;
-#endif
-
-  // Whether this document has (or will have, once we have a pres shell) a
-  // Gecko- or Servo-backed style system.
-  mozilla::StyleBackendType mStyleBackendType;
+  // XXXheycam rust-bindgen currently doesn't generate correctly aligned fields
+  // to represent the following bitfields if they are preceded by something
+  // non-pointer aligned, so if adding non-pointer sized fields, please do so
+  // somewhere other than right here.
+  //
+  // https://github.com/servo/rust-bindgen/issues/111
 
   // True if BIDI is enabled.
   bool mBidiEnabled : 1;
@@ -3060,6 +3092,9 @@ protected:
   // OnPageHide happens, and becomes true again when OnPageShow happens.  So
   // it's false only when we're in bfcache or unloaded.
   bool mVisible : 1;
+
+  // True if a document load has a CSP with referrer attached.
+  bool mHasReferrerPolicyCSP : 1;
 
   // True if our content viewer has been removed from the docshell
   // (it may still be displayed, but in zombie state). Form control data
@@ -3167,6 +3202,37 @@ protected:
 
   // True is document has ever been in a foreground window.
   bool mEverInForeground : 1;
+
+  // True if we have fired the DOMContentLoaded event, or don't plan to fire one
+  // (e.g. we're not being parsed at all).
+  bool mDidFireDOMContentLoaded : 1;
+
+  // True if ReportHasScrollLinkedEffect() has been called.
+  bool mHasScrollLinkedEffect : 1;
+
+  // True if we have frame request callbacks scheduled with the refresh driver.
+  // This should generally be updated only via
+  // UpdateFrameRequestCallbackSchedulingState.
+  bool mFrameRequestCallbacksScheduled : 1;
+
+  // Compatibility mode
+  nsCompatibility mCompatMode;
+
+  // Our readyState
+  ReadyState mReadyState;
+
+  // Whether this document has (or will have, once we have a pres shell) a
+  // Gecko- or Servo-backed style system.
+  mozilla::StyleBackendType mStyleBackendType;
+
+#ifdef MOZILLA_INTERNAL_API
+  // Our visibility state
+  mozilla::dom::VisibilityState mVisibilityState;
+  static_assert(sizeof(mozilla::dom::VisibilityState) == sizeof(uint8_t),
+                "Error size of mVisibilityState and mDummy");
+#else
+  uint8_t mDummy;
+#endif
 
   enum Type {
     eUnknown, // should never be used
@@ -3301,9 +3367,6 @@ protected:
   nsTArray<RefPtr<mozilla::dom::AnonymousContent>> mAnonymousContents;
 
   uint32_t mBlockDOMContentLoaded;
-  bool mDidFireDOMContentLoaded:1;
-
-  bool mHasScrollLinkedEffect:1;
 
   // Our live MediaQueryLists
   PRCList mDOMMediaQueryLists;
@@ -3320,6 +3383,13 @@ protected:
   bool mUserHasInteracted;
 
   mozilla::TimeStamp mPageUnloadingEventTimeStamp;
+
+  RefPtr<mozilla::dom::DocGroup> mDocGroup;
+
+  // The set of all the tracking script URLs.  URLs are added to this set by
+  // calling NoteScriptTrackingStatus().  Currently we assume that a URL not
+  // existing in the set means the corresponding script isn't a tracking script.
+  nsTHashtable<nsCStringHashKey> mTrackingScripts;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocument, NS_IDOCUMENT_IID)

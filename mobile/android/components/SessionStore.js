@@ -19,6 +19,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "ScrollPosition", "resource://gre/module
 XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch", "resource://gre/modules/TelemetryStopwatch.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Log", "resource://gre/modules/AndroidLog.jsm", "AndroidLog");
 XPCOMUtils.defineLazyModuleGetter(this, "SharedPreferences", "resource://gre/modules/SharedPreferences.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Utils", "resource://gre/modules/sessionstore/Utils.jsm");
+XPCOMUtils.defineLazyServiceGetter(this, "serializationHelper",
+                                   "@mozilla.org/network/serialization-helper;1",
+                                   "nsISerializationHelper");
+XPCOMUtils.defineLazyServiceGetter(this, "uuidGenerator",
+                                   "@mozilla.org/uuid-generator;1",
+                                   "nsIUUIDGenerator");
 
 function dump(a) {
   Services.console.logStringMessage(a);
@@ -40,6 +47,7 @@ function log(a) {
 const STATE_STOPPED = 0;
 const STATE_RUNNING = 1;
 const STATE_QUITTING = -1;
+const STATE_QUITTING_FLUSHED = -2;
 
 const PRIVACY_NONE = 0;
 const PRIVACY_ENCRYPTED = 1;
@@ -47,6 +55,7 @@ const PRIVACY_FULL = 2;
 
 const PREFS_RESTORE_FROM_CRASH = "browser.sessionstore.resume_from_crash";
 const PREFS_MAX_CRASH_RESUMES = "browser.sessionstore.max_resumed_crashes";
+const PREFS_MAX_TABS_UNDO = "browser.sessionstore.max_tabs_undo";
 
 const MINIMUM_SAVE_DELAY = 2000;
 // We reduce the delay in background because we could be killed at any moment,
@@ -91,6 +100,9 @@ SessionStore.prototype = {
   // The Java UI will tell us which tab to watch out for.
   _keepAsZombieTabId: -1,
 
+  // Mapping from legacy docshellIDs to docshellUUIDs.
+  _docshellUUIDMap: new Map(),
+
   init: function ss_init() {
     loggingEnabled = Services.prefs.getBoolPref("browser.sessionstore.debug_logging");
 
@@ -109,7 +121,11 @@ SessionStore.prototype = {
 
     this._interval = Services.prefs.getIntPref("browser.sessionstore.interval");
     this._backupInterval = Services.prefs.getIntPref("browser.sessionstore.backupInterval");
-    this._maxTabsUndo = Services.prefs.getIntPref("browser.sessionstore.max_tabs_undo");
+
+    this._updateMaxTabsUndo();
+    Services.prefs.addObserver(PREFS_MAX_TABS_UNDO, () => {
+      this._updateMaxTabsUndo();
+    }, false);
 
     // Copy changes in Gecko settings to their Java counterparts,
     // so the startup code can access them
@@ -123,13 +139,36 @@ SessionStore.prototype = {
     }, false);
   },
 
+  _updateMaxTabsUndo: function ss_updateMaxTabsUndo() {
+    this._maxTabsUndo = Services.prefs.getIntPref(PREFS_MAX_TABS_UNDO);
+    if (this._maxTabsUndo == 0) {
+      this._forgetClosedTabs();
+    }
+  },
+
   _clearDisk: function ss_clearDisk() {
     this._sessionDataIsGood = false;
+    this._lastBackupTime = 0;
 
-    OS.File.remove(this._sessionFile.path);
-    OS.File.remove(this._sessionFileBackup.path);
-    OS.File.remove(this._sessionFilePrevious.path);
-    OS.File.remove(this._sessionFileTemp.path);
+    if (this._loadState > STATE_QUITTING) {
+      OS.File.remove(this._sessionFile.path);
+      OS.File.remove(this._sessionFileBackup.path);
+      OS.File.remove(this._sessionFilePrevious.path);
+      OS.File.remove(this._sessionFileTemp.path);
+    } else { // We're shutting down and must delete synchronously
+      if (this._sessionFile.exists()) { this._sessionFile.remove(false); }
+      if (this._sessionFileBackup.exists()) { this._sessionFileBackup.remove(false); }
+      if (this._sessionFilePrevious.exists()) { this._sessionFilePrevious.remove(false); }
+      if (this._sessionFileTemp.exists()) { this._sessionFileTemp.remove(false); }
+    }
+  },
+
+  _forgetClosedTabs: function ss_forgetClosedTabs() {
+    for (let [ssid, win] of Object.entries(this._windows)) {
+      win.closedTabs = [];
+    }
+
+    this._lastClosedTabIndex = -1;
   },
 
   observe: function ss_observe(aSubject, aTopic, aData) {
@@ -141,6 +180,7 @@ SessionStore.prototype = {
         observerService.addObserver(this, "domwindowopened", true);
         observerService.addObserver(this, "domwindowclosed", true);
         observerService.addObserver(this, "browser:purge-session-history", true);
+        observerService.addObserver(this, "browser:purge-session-tabs", true);
         observerService.addObserver(this, "quit-application-requested", true);
         observerService.addObserver(this, "quit-application-proceeding", true);
         observerService.addObserver(this, "quit-application", true);
@@ -163,8 +203,8 @@ SessionStore.prototype = {
         let window = aSubject;
         window.addEventListener("load", function() {
           self.onWindowOpen(window);
-          window.removeEventListener("load", arguments.callee, false);
-        }, false);
+          window.removeEventListener("load", arguments.callee);
+        });
         break;
       }
       case "domwindowclosed": // catch closed windows
@@ -192,28 +232,43 @@ SessionStore.prototype = {
         observerService.removeObserver(this, "quit-application-proceeding");
         observerService.removeObserver(this, "quit-application");
 
-        // If a save has been queued, kill the timer and save now
-        if (this._saveTimer) {
-          this._saveTimer.cancel();
-          this._saveTimer = null;
-          this.flushPendingState();
-        }
+        // Flush all pending writes to disk now
+        this.flushPendingState();
+        this._loadState = STATE_QUITTING_FLUSHED;
 
         break;
-      case "browser:purge-session-history": // catch sanitization 
+      case "browser:purge-session-tabs":
+      case "browser:purge-session-history": // catch sanitization
+        log(aTopic);
         this._clearDisk();
 
         // Clear all data about closed tabs
-        for (let [ssid, win] of Object.entries(this._windows))
-          win.closedTabs = [];
+        this._forgetClosedTabs();
 
-        this._lastClosedTabIndex = -1;
+        // Clear all cached session history data.
+        if (aTopic == "browser:purge-session-history") {
+          this._forEachBrowserWindow((window) => {
+            let tabs = window.BrowserApp.tabs;
+            for (let i = 0; i < tabs.length; i++) {
+              let data = tabs[i].browser.__SS_data;
+              let sHistory = data.entries;
+              // Copy the current history entry to the end...
+              sHistory.push(sHistory[data.index - 1]);
+              // ... and then remove everything else.
+              sHistory.splice(0, sHistory.length - 1);
+              data.index = 1;
+            }
+          });
+        }
 
         if (this._loadState == STATE_RUNNING) {
           // Save the purged state immediately
           this.saveState();
-        } else if (this._loadState == STATE_QUITTING) {
+        } else if (this._loadState <= STATE_QUITTING) {
           this.saveStateDelayed();
+          if (this._loadState == STATE_QUITTING_FLUSHED) {
+            this.flushPendingState();
+          }
         }
 
         Services.obs.notifyObservers(null, "sessionstore-state-purge-complete", "");
@@ -284,7 +339,8 @@ SessionStore.prototype = {
         this._openTabs(data);
 
         if (data.shouldNotifyTabsOpenedToJava) {
-          Messaging.sendRequest({
+          let window = Services.wm.getMostRecentWindow("navigator:browser");
+          window.WindowEventDispatcher.sendRequest({
             type: "Tabs:TabsOpened"
           });
         }
@@ -305,9 +361,11 @@ SessionStore.prototype = {
         log("application-background");
         // Tab events dispatched immediately before the application was backgrounded
         // might actually arrive after this point, therefore save them without delay.
-        this._interval = 0;
-        this._minSaveDelay = MINIMUM_SAVE_DELAY_BACKGROUND; // A small delay allows successive tab events to be batched together.
-        this.flushPendingState();
+        if (this._loadState == STATE_RUNNING) {
+          this._interval = 0;
+          this._minSaveDelay = MINIMUM_SAVE_DELAY_BACKGROUND; // A small delay allows successive tab events to be batched together.
+          this.flushPendingState();
+        }
         break;
       case "application-foreground":
         // Reset minimum interval between session store writes back to default.
@@ -318,10 +376,11 @@ SessionStore.prototype = {
         // If we skipped restoring a zombified tab before backgrounding,
         // we might have to do it now instead.
         let window = Services.wm.getMostRecentWindow("navigator:browser");
-        let tab = window.BrowserApp.selectedTab;
-
-        if (tab.browser.__SS_restore) {
-          this._restoreZombieTab(tab.browser, tab.id);
+        if (window) { // Might not yet be ready during a cold startup.
+          let tab = window.BrowserApp.selectedTab;
+          if (tab.browser.__SS_restore) {
+            this._restoreZombieTab(tab.browser, tab.id);
+          }
         }
         break;
       case "ClosedTabs:StartNotifications":
@@ -475,7 +534,7 @@ SessionStore.prototype = {
     }
 
     // Ignore non-browser windows and windows opened while shutting down
-    if (aWindow.document.documentElement.getAttribute("windowtype") != "navigator:browser" || this._loadState == STATE_QUITTING) {
+    if (aWindow.document.documentElement.getAttribute("windowtype") != "navigator:browser" || this._loadState <= STATE_QUITTING) {
       return;
     }
 
@@ -558,6 +617,13 @@ SessionStore.prototype = {
     log("onTabAdd() ran for tab " + aWindow.BrowserApp.getTabForBrowser(aBrowser).id +
         ", aNoNotification = " + aNoNotification);
     if (!aNoNotification) {
+      if (this._loadState == STATE_QUITTING) {
+        // A tab arrived just as were starting to shut down. Since we haven't yet received
+        // application-quit, we refresh the window data one more time before the window closes.
+        this._forEachBrowserWindow((aWindow) => {
+          this._collectWindowData(aWindow);
+        });
+      }
       this.saveStateDelayed();
     }
     this._updateCrashReportURL(aWindow);
@@ -952,10 +1018,13 @@ SessionStore.prototype = {
 
     // If we have private data, send it to Java; otherwise, send null to
     // indicate that there is no private data
-    Messaging.sendRequest({
-      type: "PrivateBrowsing:Data",
-      session: (privateData.windows.length > 0 && privateData.windows[0].tabs.length > 0) ? JSON.stringify(privateData) : null
-    });
+    let window = Services.wm.getMostRecentWindow("navigator:browser");
+    if (window) { // can be null if we're restarting
+      window.WindowEventDispatcher.sendRequest({
+        type: "PrivateBrowsing:Data",
+        session: (privateData.windows.length > 0 && privateData.windows[0].tabs.length > 0) ? JSON.stringify(privateData) : null
+      });
+    }
 
     this._lastSaveTime = Date.now();
   },
@@ -983,11 +1052,14 @@ SessionStore.prototype = {
     aHistory = aHistory || { entries: [{ url: aBrowser.currentURI.spec, title: aBrowser.contentTitle }], index: 1 };
 
     let tabData = {};
+    let tab = aWindow.BrowserApp.getTabForBrowser(aBrowser);
     tabData.entries = aHistory.entries;
     tabData.index = aHistory.index;
     tabData.attributes = { image: aBrowser.mIconURL };
-    tabData.desktopMode = aWindow.BrowserApp.getTabForBrowser(aBrowser).desktopMode;
+    tabData.desktopMode = tab.desktopMode;
     tabData.isPrivate = aBrowser.docShell.QueryInterface(Ci.nsILoadContext).usePrivateBrowsing;
+    tabData.tabId = tab.id;
+    tabData.parentId = tab.parentId;
 
     aBrowser.__SS_data = tabData;
   },
@@ -1159,7 +1231,7 @@ SessionStore.prototype = {
     }
 
     entry.ID = aEntry.ID;
-    entry.docshellID = aEntry.docshellID;
+    entry.docshellUUID = aEntry.docshellID.number;
 
     if (aEntry.referrerURI) {
       entry.referrer = aEntry.referrerURI.spec;
@@ -1187,25 +1259,35 @@ SessionStore.prototype = {
       }
     }
 
+    // Collect triggeringPrincipal data for the current history entry.
+    // Please note that before Bug 1297338 there was no concept of a
+    // principalToInherit. To remain backward/forward compatible we
+    // serialize the principalToInherit as triggeringPrincipal_b64.
+    // Once principalToInherit is well established (within FF55)
+    // we can update this code, remove triggeringPrincipal_b64 and
+    // just keep triggeringPrincipal_base64 as well as
+    // principalToInherit_base64;  see Bug 1301666.
+    if (aEntry.principalToInherit) {
+      try {
+        let principalToInherit = Utils.serializePrincipal(aEntry.principalToInherit);
+        if (principalToInherit) {
+          entry.triggeringPrincipal_b64 = principalToInherit;
+          entry.principalToInherit_base64 = principalToInherit;
+        }
+      } catch (e) {
+        dump(e);
+      }
+    }
+
     if (aEntry.triggeringPrincipal) {
       try {
-        let binaryStream = Cc["@mozilla.org/binaryoutputstream;1"].createInstance(Ci.nsIObjectOutputStream);
-        let pipe = Cc["@mozilla.org/pipe;1"].createInstance(Ci.nsIPipe);
-        pipe.init(false, false, 0, 0xffffffff, null);
-        binaryStream.setOutputStream(pipe.outputStream);
-        binaryStream.writeCompoundObject(aEntry.triggeringPrincipal, Ci.nsIPrincipal, true);
-        binaryStream.close();
-
-        // Now we want to read the data from the pipe's input end and encode it.
-        let scriptableStream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(Ci.nsIBinaryInputStream);
-        scriptableStream.setInputStream(pipe.inputStream);
-        let triggeringPrincipalBytes = scriptableStream.readByteArray(scriptableStream.available());
-        // We can stop doing base64 encoding once our serialization into JSON
-        // is guaranteed to handle all chars in strings, including embedded
-        // nulls.
-        entry.triggeringPrincipal_b64 =
-          btoa(String.fromCharCode.apply(null, triggeringPrincipalBytes));
-      } catch (e) { dump(e); }
+        let triggeringPrincipal = Utils.serializePrincipal(aEntry.triggeringPrincipal);
+        if (triggeringPrincipal) {
+          entry.triggeringPrincipal_base64 = triggeringPrincipal;
+        }
+      } catch (e) {
+        dump(e);
+      }
     }
 
     entry.docIdentifier = aEntry.BFCacheEntry.ID;
@@ -1245,7 +1327,7 @@ SessionStore.prototype = {
   _deserializeHistoryEntry: function _deserializeHistoryEntry(aEntry, aIdMap, aDocIdentMap) {
     let shEntry = Cc["@mozilla.org/browser/session-history-entry;1"].createInstance(Ci.nsISHEntry);
 
-    shEntry.setURI(Services.io.newURI(aEntry.url, null, null));
+    shEntry.setURI(Services.io.newURI(aEntry.url));
     shEntry.setTitle(aEntry.title || aEntry.url);
     if (aEntry.subframe) {
       shEntry.setIsSubFrame(aEntry.subframe || false);
@@ -1255,11 +1337,11 @@ SessionStore.prototype = {
       shEntry.contentType = aEntry.contentType;
     }
     if (aEntry.referrer) {
-      shEntry.referrerURI = Services.io.newURI(aEntry.referrer, null, null);
+      shEntry.referrerURI = Services.io.newURI(aEntry.referrer);
     }
 
     if (aEntry.originalURI) {
-      shEntry.originalURI =  Services.io.newURI(aEntry.originalURI, null, null);
+      shEntry.originalURI =  Services.io.newURI(aEntry.originalURI);
     }
 
     if (aEntry.loadReplace) {
@@ -1284,8 +1366,21 @@ SessionStore.prototype = {
       shEntry.ID = id;
     }
 
+    // If we have the legacy docshellID on our aEntry, upgrade it to a
+    // docshellUUID by going through the mapping.
     if (aEntry.docshellID) {
-      shEntry.docshellID = aEntry.docshellID;
+      if (!this._docshellUUIDMap.has(aEntry.docshellID)) {
+        // Get the `.number` property out of the nsID such that the docshellUUID
+        // property is correctly stored as a string.
+        this._docshellUUIDMap.set(aEntry.docshellID,
+                                  uuidGenerator.generateUUID().number);
+      }
+      aEntry.docshellUUID = this._docshellUUIDMap.get(aEntry.docshellID);
+      delete aEntry.docshellID;
+    }
+
+    if (aEntry.docshellUUID) {
+      shEntry.docshellID = Components.ID(aEntry.docshellUUID);
     }
 
     if (aEntry.structuredCloneState && aEntry.structuredCloneVersion) {
@@ -1328,17 +1423,27 @@ SessionStore.prototype = {
       delete aEntry.owner_b64;
     }
 
-    if (aEntry.triggeringPrincipal_b64) {
-      let triggeringPrincipalInput = Cc["@mozilla.org/io/string-input-stream;1"]
-                                       .createInstance(Ci.nsIStringInputStream);
-      let binaryData = atob(aEntry.triggeringPrincipal_b64);
-      triggeringPrincipalInput.setData(binaryData, binaryData.length);
-      let binaryStream = Cc["@mozilla.org/binaryinputstream;1"]
-                           .createInstance(Ci.nsIObjectInputStream);
-      binaryStream.setInputStream(triggeringPrincipalInput);
-      try { // Catch possible deserialization exceptions
-        shEntry.triggeringPrincipal = binaryStream.readObject(true);
-      } catch (ex) { Cu.reportError("SessionStore: " + ex); }
+    // Before introducing the concept of principalToInherit we only had
+    // a triggeringPrincipal within every entry which basically is the
+    // equivalent of the new principalToInherit. To avoid compatibility
+    // issues, we first check if the entry has entries for
+    // triggeringPrincipal_base64 and principalToInherit_base64. If not
+    // we fall back to using the principalToInherit (which is stored
+    // as triggeringPrincipal_b64) as the triggeringPrincipal and
+    // the principalToInherit.
+    // FF55 will remove the triggeringPrincipal_b64, see Bug 1301666.
+    if (aEntry.triggeringPrincipal_base64 || aEntry.principalToInherit_base64) {
+      if (aEntry.triggeringPrincipal_base64) {
+        shEntry.triggeringPrincipal =
+          Utils.deserializePrincipal(aEntry.triggeringPrincipal_base64);
+      }
+      if (aEntry.principalToInherit_base64) {
+        shEntry.principalToInherit =
+          Utils.deserializePrincipal(aEntry.principalToInherit_base64);
+      }
+    } else if (aEntry.triggeringPrincipal_b64) {
+      shEntry.triggeringPrincipal = Utils.deserializePrincipal(aEntry.triggeringPrincipal_b64);
+      shEntry.principalToInherit = shEntry.triggeringPrincipal;
     }
 
     if (aEntry.children && shEntry instanceof Ci.nsISHContainer) {
@@ -1394,7 +1499,8 @@ SessionStore.prototype = {
         selected: isSelectedTab,
         isPrivate: tabData.isPrivate,
         desktopMode: tabData.desktopMode,
-        cancelEditMode: isSelectedTab
+        cancelEditMode: isSelectedTab,
+        parentId: tabData.parentId
       };
 
       let tab = window.BrowserApp.addTab(tabData.entries[tabData.index - 1].url, params);
@@ -1546,22 +1652,27 @@ SessionStore.prototype = {
 
       // Use stubbed tab if we've already created it; otherwise, make a new tab
       let tab;
+      let parentId = tabData.parentId;
       if (tabData.tabId == null) {
         let params = {
           selected: (selected == i+1),
           delayLoad: true,
           title: entry.title,
           desktopMode: (tabData.desktopMode == true),
-          isPrivate: (tabData.isPrivate == true)
+          isPrivate: (tabData.isPrivate == true),
+          parentId: parentId
         };
         tab = window.BrowserApp.addTab(entry.url, params);
       } else {
         tab = window.BrowserApp.getTabForId(tabData.tabId);
-        delete tabData.tabId;
 
         // Don't restore tab if user has closed it
         if (tab == null) {
+          delete tabData.tabId;
           continue;
+        }
+        if (parentId > -1) {
+          tab.setParentId(parentId);
         }
       }
 
@@ -1588,7 +1699,7 @@ SessionStore.prototype = {
     }
 
     // Restore the closed tabs array on the current window.
-    if (state.windows[0].closedTabs) {
+    if (state.windows[0].closedTabs && this._maxTabsUndo > 0) {
       this._windows[window.__SSID].closedTabs = state.windows[0].closedTabs;
       log("_restoreWindow() loaded " + state.windows[0].closedTabs.length + " closed tabs");
     }
@@ -1633,7 +1744,8 @@ SessionStore.prototype = {
       selected: true,
       isPrivate: aCloseTabData.isPrivate,
       desktopMode: aCloseTabData.desktopMode,
-      tabIndex: this._lastClosedTabIndex
+      tabIndex: this._lastClosedTabIndex,
+      parentId: aCloseTabData.parentId
     };
     let tab = aWindow.BrowserApp.addTab(aCloseTabData.entries[aCloseTabData.index - 1].url, params);
     tab.browser.__SS_data = aCloseTabData;
@@ -1675,6 +1787,12 @@ SessionStore.prototype = {
   },
 
   _sendClosedTabsToJava: function ss_sendClosedTabsToJava(aWindow) {
+
+    // If the app is shutting down, we don't need to do anything.
+    if (this._loadState <= STATE_QUITTING) {
+      return;
+    }
+
     if (!aWindow.__SSID) {
       throw (Components.returnCode = Cr.NS_ERROR_INVALID_ARG);
     }
@@ -1690,7 +1808,7 @@ SessionStore.prototype = {
         return {
           url: lastEntry.url,
           title: lastEntry.title || "",
-          data: tab
+          data: JSON.stringify(tab),
         };
       });
 
@@ -1748,9 +1866,14 @@ SessionStore.prototype = {
     if (this._loadState == STATE_RUNNING) {
       // Save the purged state immediately
       this.saveState();
-    } else if (this._loadState == STATE_QUITTING) {
+    } else if (this._loadState <= STATE_QUITTING) {
       this.saveStateDelayed();
     }
+  },
+
+  setLoadState: function ss_setLoadState(aState) {
+    this.flushPendingState();
+    this._loadState = aState;
   }
 
 };

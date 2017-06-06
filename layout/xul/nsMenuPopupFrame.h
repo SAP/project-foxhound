@@ -48,6 +48,8 @@ enum nsPopupState {
   // state from when a popup is requested to be shown to after the
   // popupshowing event has been fired.
   ePopupShowing,
+  // state while a popup is waiting to be laid out and positioned
+  ePopupPositioning,
   // state while a popup is open but the widget is not yet visible
   ePopupOpening,
   // state while a popup is visible and waiting for the popupshown event
@@ -251,8 +253,10 @@ public:
   // (or the frame for mAnchorContent if aAnchorFrame is null), anchored at a
   // rectangle, or at a specific point if a screen position is set. The popup
   // will be adjusted so that it is on screen. If aIsMove is true, then the
-  // popup is being moved, and should not be flipped.
-  nsresult SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove, bool aSizedToPopup);
+  // popup is being moved, and should not be flipped. If aNotify is true, then
+  // a popuppositioned event is sent.
+  nsresult SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove,
+                            bool aSizedToPopup, bool aNotify);
 
   bool HasGeneratedChildren() { return mGeneratedChildren; }
   void SetGeneratedChildren() { mGeneratedChildren = true; }
@@ -328,6 +332,9 @@ public:
   nsMenuFrame* FindMenuWithShortcut(nsIDOMKeyEvent* aKeyEvent, bool& doAction);
 
   void ClearIncrementalString() { mIncrementalString.Truncate(); }
+  static bool IsWithinIncrementalTime(DOMTimeStamp time) {
+    return !sTimeoutOfIncrementalSearch || time - sLastKeyTime <= sTimeoutOfIncrementalSearch;
+  }
 
   virtual nsIAtom* GetType() const override { return nsGkAtoms::menuPopupFrame; }
 
@@ -425,6 +432,18 @@ public:
     return false;
   }
 
+  void ShowWithPositionedEvent() {
+    mPopupState = ePopupPositioning;
+    mShouldAutoPosition = true;
+  }
+
+  // Checks for the anchor to change and either moves or hides the popup
+  // accordingly. The original position of the anchor should be supplied as
+  // the argument. If the popup needs to be hidden, HidePopup will be called by
+  // CheckForAnchorChange. If the popup needs to be moved, aRect will be updated
+  // with the new rectangle.
+  void CheckForAnchorChange(nsRect& aRect);
+
   // nsIReflowCallback
   virtual bool ReflowFinished() override;
   virtual void ReflowCallbackCanceled() override;
@@ -470,7 +489,7 @@ protected:
                        nscoord aAnchorBegin, nscoord aAnchorEnd,
                        nscoord aMarginBegin, nscoord aMarginEnd,
                        nscoord aOffsetForContextMenu, FlipStyle aFlip,
-                       bool* aFlipSide);
+                       bool aIsOnEnd, bool* aFlipSide);
 
   // check if the popup can fit into the available space by "sliding" (i.e.,
   // by having the anchor arrow slide along one axis and only resizing if that
@@ -489,6 +508,10 @@ protected:
   nscoord SlideOrResize(nscoord& aScreenPoint, nscoord aSize,
                         nscoord aScreenBegin, nscoord aScreenEnd,
                         nscoord *aOffset);
+
+  // Given an anchor frame, compute the anchor rectangle relative to the screen,
+  // using the popup frame's app units, and taking into account transforms.
+  nsRect ComputeAnchorRect(nsPresContext* aRootPresContext, nsIFrame* aAnchorFrame);
 
   // Move the popup to the position specified in its |left| and |top| attributes.
   void MoveToAttributePosition();
@@ -510,6 +533,17 @@ protected:
   // view, and is initially hidden.
   void CreatePopupView();
 
+  // Returns true if the popup should try to remain at the same relative
+  // location as the anchor while it is open. If the anchor becomes hidden
+  // either directly or indirectly because a parent popup or other element
+  // is no longer visible, or a parent deck page is changed, the popup hides
+  // as well. The second variation also sets the anchor rectangle, relative to
+  // the popup frame.
+  bool ShouldFollowAnchor();
+public:
+  bool ShouldFollowAnchor(nsRect& aRect);
+
+protected:
   nsString     mIncrementalString;  // for incremental typing navigation
 
   // the content that the popup is anchored to, if any, which may be in a
@@ -523,6 +557,9 @@ protected:
   nsMenuFrame* mCurrentMenu; // The current menu that is active.
 
   RefPtr<nsXULPopupShownEvent> mPopupShownDispatcher;
+
+  // The popup's screen rectangle in app units.
+  nsIntRect mUsedScreenRect;
 
   // A popup's preferred size may be different than its actual size stored in
   // mRect in the case where the popup was resized because it was too large
@@ -603,6 +640,8 @@ protected:
   nsRect mOverrideConstraintRect;
 
   static int8_t sDefaultLevelIsTop;
+
+  static DOMTimeStamp sLastKeyTime;
 
   // If 0, never timed out.  Otherwise, the value is in milliseconds.
   static uint32_t sTimeoutOfIncrementalSearch;

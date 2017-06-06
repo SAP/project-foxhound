@@ -44,8 +44,7 @@ function add_old_anno(aIdentifier, aName, aValue, aExpirePolicy,
           "WHERE id = (SELECT id FROM moz_items_annos " +
                       "WHERE item_id = :id " +
                       "ORDER BY dateAdded DESC LIMIT 1)";
-  }
-  else if (aIdentifier instanceof Ci.nsIURI) {
+  } else if (aIdentifier instanceof Ci.nsIURI) {
     // Page annotation.
     as.setPageAnnotation(aIdentifier, aName, aValue, 0, aExpirePolicy);
     // Update dateAdded for the last added annotation.
@@ -54,8 +53,7 @@ function add_old_anno(aIdentifier, aName, aValue, aExpirePolicy,
                       "LEFT JOIN moz_places h on h.id = a.place_id " +
                       "WHERE h.url_hash = hash(:id) AND h.url = :id " +
                       "ORDER BY a.dateAdded DESC LIMIT 1)";
-  }
-  else
+  } else
     do_throw("Wrong identifier type");
 
   let stmt = DBConn().createStatement(sql);
@@ -65,8 +63,7 @@ function add_old_anno(aIdentifier, aName, aValue, aExpirePolicy,
   stmt.params.last_modified = lastModifiedDate;
   try {
     stmt.executeStep();
-  }
-  finally {
+  } finally {
     stmt.finalize();
   }
 }
@@ -82,11 +79,11 @@ add_task(function* test_annos_expire_policy() {
   // Expire all expirable pages.
   setMaxPages(0);
 
-  let now = getExpirablePRTime();
+  let now_specific_to_test = getExpirablePRTime();
   // Add some bookmarked page and timed annotations for each.
   for (let i = 0; i < 5; i++) {
     let pageURI = uri("http://item_anno." + i + ".mozilla.org/");
-    yield PlacesTestUtils.addVisits({ uri: pageURI, visitDate: now++ });
+    yield PlacesTestUtils.addVisits({ uri: pageURI, visitDate: now_specific_to_test++ });
     let bm = yield PlacesUtils.bookmarks.insert({
       parentGuid: PlacesUtils.bookmarks.unfiledGuid,
       url: pageURI,
@@ -139,7 +136,7 @@ add_task(function* test_annos_expire_policy() {
   // Add some visited page and timed annotations for each.
   for (let i = 0; i < 5; i++) {
     let pageURI = uri("http://page_anno." + i + ".mozilla.org/");
-    yield PlacesTestUtils.addVisits({ uri: pageURI, visitDate: now++ });
+    yield PlacesTestUtils.addVisits({ uri: pageURI, visitDate: now_specific_to_test++ });
     // Add a 6 days old anno.
     add_old_anno(pageURI, "persist_days", "test", as.EXPIRE_DAYS, 6);
     // Add a 8 days old anno, modified 5 days ago.

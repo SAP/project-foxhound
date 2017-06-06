@@ -7,7 +7,9 @@ let maps = [];
 
 [
   "consoleApi",
+  "cssMessage",
   "evaluationResult",
+  "networkEvent",
   "pageError",
 ].forEach((filename) => {
   maps[filename] = require(`./${filename}`);
@@ -15,12 +17,16 @@ let maps = [];
 
 // Combine all the maps into a single map.
 module.exports = {
-    stubPreparedMessages: new Map([
-      ...maps.consoleApi.stubPreparedMessages,
-      ...maps.evaluationResult.stubPreparedMessages,
-      ...maps.pageError.stubPreparedMessages, ]),
-    stubPackets: new Map([
-      ...maps.consoleApi.stubPackets,
-      ...maps.evaluationResult.stubPackets,
-      ...maps.pageError.stubPackets, ]),
+  stubPreparedMessages: new Map([
+    ...maps.consoleApi.stubPreparedMessages,
+    ...maps.cssMessage.stubPreparedMessages,
+    ...maps.evaluationResult.stubPreparedMessages,
+    ...maps.networkEvent.stubPreparedMessages,
+    ...maps.pageError.stubPreparedMessages, ]),
+  stubPackets: new Map([
+    ...maps.consoleApi.stubPackets,
+    ...maps.cssMessage.stubPackets,
+    ...maps.evaluationResult.stubPackets,
+    ...maps.networkEvent.stubPackets,
+    ...maps.pageError.stubPackets, ]),
 };

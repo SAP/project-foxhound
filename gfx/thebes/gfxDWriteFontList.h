@@ -58,7 +58,6 @@ public:
     void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                                 FontListSizes* aSizes) const final;
 
-    already_AddRefed<IDWriteFont> GetDefaultFont();
 protected:
     /** This font family's directwrite fontfamily object */
     RefPtr<IDWriteFontFamily> mDWFamily;
@@ -167,10 +166,6 @@ public:
     virtual void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                                         FontListSizes* aSizes) const;
 
-    IDWriteFont* GetFont() {
-      return mFont;
-    }
-
 protected:
     friend class gfxDWriteFont;
     friend class gfxDWriteFontList;
@@ -212,7 +207,7 @@ protected:
 class DWriteFontFallbackRenderer final : public IDWriteTextRenderer
 {
 public:
-    DWriteFontFallbackRenderer(IDWriteFactory *aFactory)
+    explicit DWriteFontFallbackRenderer(IDWriteFactory *aFactory)
         : mRefCount(0)
     {
         HRESULT hr = S_OK;
@@ -357,9 +352,7 @@ public:
     }
 
     // initialize font lists
-    virtual nsresult InitFontList();
-
-    virtual gfxFontFamily* GetDefaultFont(const gfxFontStyle* aStyle);
+    virtual nsresult InitFontListForPlatform() override;
 
     virtual gfxFontEntry* LookupLocalFont(const nsAString& aFontName,
                                           uint16_t aWeight,
@@ -390,6 +383,10 @@ public:
                                         FontListSizes* aSizes) const;
     virtual void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                                         FontListSizes* aSizes) const;
+
+protected:
+    virtual gfxFontFamily*
+    GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
 
 private:
     friend class gfxDWriteFontFamily;

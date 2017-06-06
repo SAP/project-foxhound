@@ -20,12 +20,14 @@ exports.ConsoleCommand = Immutable.Record({
   source: MESSAGE_SOURCE.JAVASCRIPT,
   type: MESSAGE_TYPE.COMMAND,
   level: MESSAGE_LEVEL.LOG,
+  groupId: null,
 });
 
 exports.ConsoleMessage = Immutable.Record({
   id: null,
   allowRepeating: true,
   source: null,
+  timeStamp: null,
   type: null,
   level: null,
   messageText: null,
@@ -34,4 +36,20 @@ exports.ConsoleMessage = Immutable.Record({
   repeatId: null,
   stacktrace: null,
   frame: null,
+  groupId: null,
+  exceptionDocURL: null,
+  userProvidedStyles: null,
+});
+
+exports.NetworkEventMessage = Immutable.Record({
+  id: null,
+  actor: null,
+  level: MESSAGE_LEVEL.LOG,
+  isXHR: false,
+  request: null,
+  response: null,
+  source: MESSAGE_SOURCE.NETWORK,
+  type: MESSAGE_TYPE.LOG,
+  timeStamp: null,
+  groupId: null,
 });

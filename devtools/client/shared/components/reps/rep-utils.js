@@ -45,16 +45,11 @@ define(function (require, exports, module) {
       alternativeText = "\u2026";
     }
 
-    // Make sure it's a string.
-    text = text + "";
-
-    // Use default limit if necessary.
-    if (!limit) {
-      limit = 50;
-    }
+    // Make sure it's a string and sanitize it.
+    text = sanitizeString(text + "");
 
     // Crop the string only if a limit is actually specified.
-    if (limit <= 0) {
+    if (!limit || limit <= 0) {
       return text;
     }
 
@@ -72,6 +67,15 @@ define(function (require, exports, module) {
     }
 
     return text;
+  }
+
+  function sanitizeString(text) {
+    // Replace all non-printable characters, except of
+    // (horizontal) tab (HT: \x09) and newline (LF: \x0A, CR: \x0D),
+    // with unicode replacement character (u+fffd).
+    // eslint-disable-next-line no-control-regex
+    let re = new RegExp("[\x00-\x08\x0B\x0C\x0E-\x1F\x80-\x9F]", "g");
+    return text.replace(re, "\ufffd");
   }
 
   function parseURLParams(url) {
@@ -143,6 +147,27 @@ define(function (require, exports, module) {
     };
   }
 
+  /**
+   * Wrap the provided render() method of a rep in a try/catch block that will render a
+   * fallback rep if the render fails.
+   */
+  function wrapRender(renderMethod) {
+    return function () {
+      try {
+        return renderMethod.call(this);
+      } catch (e) {
+        return React.DOM.span(
+          {
+            className: "objectBox objectBox-failure",
+            title: "This object could not be rendered, " +
+                   "please file a bug on bugzilla.mozilla.org"
+          },
+          /* Labels have to be hardcoded for reps, see Bug 1317038. */
+          "Invalid object");
+      }
+    };
+  }
+
   // Exports from this module
   exports.createFactories = createFactories;
   exports.isGrip = isGrip;
@@ -152,4 +177,6 @@ define(function (require, exports, module) {
   exports.parseURLEncodedText = parseURLEncodedText;
   exports.getFileName = getFileName;
   exports.getURLDisplayString = getURLDisplayString;
+  exports.wrapRender = wrapRender;
+  exports.sanitizeString = sanitizeString;
 });

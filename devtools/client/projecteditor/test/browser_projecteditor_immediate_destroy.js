@@ -4,7 +4,6 @@
 
 "use strict";
 
-// /////////////////
 //
 // Whitelisting this test.
 // As part of bug 1077403, the leaking uncaught rejection should be fixed.
@@ -18,7 +17,7 @@ thisTestLeaksUncaughtRejectionsAndShouldBeFixed("TypeError: this.window is null"
 add_task(function* () {
 
   info("Testing tab closure when projecteditor is in various states");
-  let loaderUrl = "chrome://devtools/content/projecteditor/chrome/content/projecteditor-test.xul";
+  let loaderUrl = "chrome://mochitests/content/browser/devtools/client/projecteditor/test/projecteditor-test.xul";
 
   yield addTab(loaderUrl).then(() => {
     let iframe = content.document.getElementById("projecteditor-iframe");

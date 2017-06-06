@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/RestyleManagerBase.h"
-#include "mozilla/StyleSetHandle.h"
+#include "mozilla/StyleSetHandleInlines.h"
 #include "nsIFrame.h"
 
 namespace mozilla {
@@ -378,6 +378,12 @@ VerifyStyleTree(nsIFrame* aFrame)
 void
 RestyleManagerBase::DebugVerifyStyleTree(nsIFrame* aFrame)
 {
+  if (IsServo()) {
+    // XXXheycam For now, we know that we don't use the same inheritance
+    // hierarchy for certain cases, so just skip these assertions until
+    // we work out what we want to assert (bug 1322570).
+    return;
+  }
   if (aFrame) {
     VerifyStyleTree(aFrame);
   }
@@ -1224,6 +1230,13 @@ RestyleManagerBase::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
         // invalidation, so change UpdateOpacityLayer to RepaintFrame.
         hint &= ~nsChangeHint_UpdateOpacityLayer;
         hint |= nsChangeHint_RepaintFrame;
+      }
+
+      // Opacity disables preserve-3d, so if we toggle it, then we also need
+      // to update the overflow areas of all potentially affected frames.
+      if ((hint & nsChangeHint_UpdateUsesOpacity) &&
+          frame->StyleDisplay()->mTransformStyle == NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D) {
+        hint |= nsChangeHint_UpdateSubtreeOverflow;
       }
 
       if (hint & nsChangeHint_UpdateBackgroundPosition) {

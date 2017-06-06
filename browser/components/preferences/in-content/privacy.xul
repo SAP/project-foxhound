@@ -52,6 +52,9 @@
   <preference id="browser.formfill.enable"
               name="browser.formfill.enable"
               type="bool"/>
+  <preference id="privacy.history.custom"
+              name="privacy.history.custom"
+              type="bool"/>
   <!-- Cookies -->
   <preference id="network.cookie.cookieBehavior"
               name="network.cookie.cookieBehavior"
@@ -89,7 +92,7 @@
     <hbox align="start">
       <vbox>
         <caption><label>&trackingProtectionHeader.label;
-          <label id="trackingProtectionLearnMore" class="text-link"
+          <label id="trackingProtectionLearnMore" class="learnMore text-link"
                  value="&trackingProtectionLearnMore.label;"/>
         </label></caption>
         <radiogroup id="trackingProtectionRadioGroup">
@@ -125,7 +128,7 @@
                 accesskey="&trackingProtectionPBM5.accesskey;"
                 label="&trackingProtectionPBM5.label;" />
       <label id="trackingProtectionPBMLearnMore"
-             class="text-link"
+             class="learnMore text-link"
              value="&trackingProtectionPBMLearnMore.label;"/>
       <spacer flex="1" />
       <button id="changeBlockListPBM"
@@ -286,11 +289,23 @@
 <groupbox id="browserContainersGroup" data-category="panePrivacy" hidden="true">
   <vbox id="browserContainersbox" hidden="true">
     <caption><label>&browserContainersHeader.label;
-      <label id="browserContainersLearnMore" class="text-link"
+      <label id="browserContainersLearnMore" class="learnMore text-link"
              value="&browserContainersLearnMore.label;"/>
     </label></caption>
-    <checkbox id="browserContainersCheckbox"
-              label="&browserContainersEnabled.label;"
-              accesskey="&browserContainersEnabled.accesskey;" />
+    <hbox align="start">
+      <vbox>
+        <checkbox id="browserContainersCheckbox"
+                  label="&browserContainersEnabled.label;"
+                  accesskey="&browserContainersEnabled.accesskey;"
+                  preference="privacy.userContext.enabled"
+                  onsyncfrompreference="return gPrivacyPane.readBrowserContainersCheckbox();"/>
+      </vbox>
+      <spacer flex="1"/>
+      <vbox>
+        <button id="browserContainersSettings"
+                label="&browserContainersSettings.label;"
+                accesskey="&browserContainersSettings.accesskey;"/>
+      </vbox>
+    </hbox>
   </vbox>
 </groupbox>

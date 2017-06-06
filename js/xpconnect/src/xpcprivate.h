@@ -58,8 +58,7 @@
  * nsIXPCScriptable). This allows it to implement a more DOM-like interface,
  * besides just exposing XPCOM methods and constants. An nsIXPCScriptable
  * instance has hooks that correspond to all the normal JSClass hooks. Each
- * nsIXPCScriptable instance is mirrored by an XPCNativeScriptableInfo in
- * XPConnect. These can have pointers from XPCWrappedNativeProto and
+ * nsIXPCScriptable instance can have pointers from XPCWrappedNativeProto and
  * XPCWrappedNative (since C++ objects can have scriptable info without having
  * class info).
  */
@@ -581,6 +580,7 @@ public:
 private:
     XPCJSContext();
 
+    MOZ_IS_CLASS_INIT
     nsresult Initialize();
 
     void ReleaseIncrementally(nsTArray<nsISupports*>& array);
@@ -702,7 +702,7 @@ public:
     inline bool                         CanGetTearOff() const ;
     inline XPCWrappedNativeTearOff*     GetTearOff() const ;
 
-    inline XPCNativeScriptableInfo*     GetScriptableInfo() const ;
+    inline nsIXPCScriptable*            GetScriptable() const ;
     inline bool                         CanGetSet() const ;
     inline XPCNativeSet*                GetSet() const ;
     inline bool                         CanGetInterface() const ;
@@ -724,7 +724,7 @@ public:
     inline XPCWrappedNative* GetResolvingWrapper() const;
     inline XPCWrappedNative* SetResolvingWrapper(XPCWrappedNative* w);
 
-    inline void SetRetVal(JS::Value val);
+    inline void SetRetVal(const JS::Value& val);
 
     void SetName(jsid name);
     void SetArgsAndResultPtr(unsigned argc, JS::Value* argv, JS::Value* rval);
@@ -778,9 +778,9 @@ private:
     XPCWrappedNative*               mWrapper;
     XPCWrappedNativeTearOff*        mTearOff;
 
-    XPCNativeScriptableInfo*        mScriptableInfo;
+    nsCOMPtr<nsIXPCScriptable>      mScriptable;
 
-    XPCNativeSet*                   mSet;
+    RefPtr<XPCNativeSet>            mSet;
     RefPtr<XPCNativeInterface>      mInterface;
     XPCNativeMember*                mMember;
 
@@ -873,12 +873,11 @@ public:
 
     JSObject*
     GetGlobalJSObject() const {
-        JS::ExposeObjectToActiveJS(mGlobalJSObject);
         return mGlobalJSObject;
     }
 
     JSObject*
-    GetGlobalJSObjectPreserveColor() const {return mGlobalJSObject;}
+    GetGlobalJSObjectPreserveColor() const {return mGlobalJSObject.unbarrieredGet();}
 
     nsIPrincipal*
     GetPrincipal() const {
@@ -914,14 +913,6 @@ public:
 
     static void
     SuspectAllWrappers(XPCJSContext* cx, nsCycleCollectionNoteRootCallback& cb);
-
-    static void
-    MarkAllWrappedNativesAndProtos();
-
-#ifdef DEBUG
-    static void
-    ASSERT_NoInterfaceSetsAreMarked();
-#endif
 
     static void
     SweepAllWrappedNativeTearOffs();
@@ -1268,7 +1259,7 @@ private:
 // It represents a new XPCNativeSet we are considering constructing, without
 // requiring that the set actually be built.
 
-class XPCNativeSetKey final
+class MOZ_STACK_CLASS XPCNativeSetKey final
 {
 public:
     // This represents an existing set |baseSet|.
@@ -1301,8 +1292,8 @@ public:
     // Allow shallow copy
 
 private:
-    XPCNativeSet* mBaseSet;
-    XPCNativeInterface* mAddition;
+    RefPtr<XPCNativeSet> mBaseSet;
+    RefPtr<XPCNativeInterface> mAddition;
 };
 
 /***************************************************************************/
@@ -1311,9 +1302,12 @@ private:
 class XPCNativeSet final
 {
   public:
-    static XPCNativeSet* GetNewOrUsed(const nsIID* iid);
-    static XPCNativeSet* GetNewOrUsed(nsIClassInfo* classInfo);
-    static XPCNativeSet* GetNewOrUsed(XPCNativeSetKey* key);
+    NS_INLINE_DECL_REFCOUNTING_WITH_DESTROY(XPCNativeSet,
+                                            DestroyInstance(this))
+
+    static already_AddRefed<XPCNativeSet> GetNewOrUsed(const nsIID* iid);
+    static already_AddRefed<XPCNativeSet> GetNewOrUsed(nsIClassInfo* classInfo);
+    static already_AddRefed<XPCNativeSet> GetNewOrUsed(XPCNativeSetKey* key);
 
     // This generates a union set.
     //
@@ -1322,9 +1316,9 @@ class XPCNativeSet final
     // algorithm is applied; but if we detect that |secondSet| is a superset of
     // |firstSet|, we return |secondSet| without worrying about whether the
     // ordering might differ from |firstSet|.
-    static XPCNativeSet* GetNewOrUsed(XPCNativeSet* firstSet,
-                                      XPCNativeSet* secondSet,
-                                      bool preserveFirstSetOrder);
+    static already_AddRefed<XPCNativeSet> GetNewOrUsed(XPCNativeSet* firstSet,
+                                                       XPCNativeSet* secondSet,
+                                                       bool preserveFirstSetOrder);
 
     static void ClearCacheEntryForClassInfo(nsIClassInfo* classInfo);
 
@@ -1364,192 +1358,28 @@ class XPCNativeSet final
     inline bool MatchesSetUpToInterface(const XPCNativeSet* other,
                                           XPCNativeInterface* iface) const;
 
-    inline void Mark();
-
-    // NOP. This is just here to make the AutoMarkingPtr code compile.
-    inline void TraceJS(JSTracer* trc) {}
-    inline void AutoTrace(JSTracer* trc) {}
-
-  public:
-    void Unmark() {
-        mMarked = 0;
-    }
-    bool IsMarked() const {
-        return !!mMarked;
-    }
-
-#ifdef DEBUG
-    inline void ASSERT_NotMarked();
-#endif
-
     void DebugDump(int16_t depth);
-
-    static void DestroyInstance(XPCNativeSet* inst);
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
   protected:
-    static XPCNativeSet* NewInstance(nsTArray<RefPtr<XPCNativeInterface>>&& array);
-    static XPCNativeSet* NewInstanceMutate(XPCNativeSetKey* key);
+    static already_AddRefed<XPCNativeSet> NewInstance(nsTArray<RefPtr<XPCNativeInterface>>&& array);
+    static already_AddRefed<XPCNativeSet> NewInstanceMutate(XPCNativeSetKey* key);
+
     XPCNativeSet()
-      : mMemberCount(0), mInterfaceCount(0), mMarked(0)
-    {
-        MOZ_COUNT_CTOR(XPCNativeSet);
-    }
-    ~XPCNativeSet() {
-        for (int i = 0; i < mInterfaceCount; i++) {
-            NS_RELEASE(mInterfaces[i]);
-        }
-        MOZ_COUNT_DTOR(XPCNativeSet);
-    }
+      : mMemberCount(0), mInterfaceCount(0)
+    {}
+    ~XPCNativeSet();
     void* operator new(size_t, void* p) CPP_THROW_NEW {return p;}
+
+    static void DestroyInstance(XPCNativeSet* inst);
 
   private:
     uint16_t                mMemberCount;
-    uint16_t                mInterfaceCount : 15;
-    uint16_t                mMarked : 1;
+    uint16_t                mInterfaceCount;
     // Always last - object sized for array.
     // These are strong references.
     XPCNativeInterface*     mInterfaces[1];
-};
-
-/***************************************************************************/
-// XPCNativeScriptableFlags is a wrapper class that holds the flags returned
-// from calls to nsIXPCScriptable::GetScriptableFlags(). It has convenience
-// methods to check for particular bitflags.
-
-class XPCNativeScriptableFlags final
-{
-public:
-    explicit XPCNativeScriptableFlags(uint32_t flags = 0) : mFlags(flags) {}
-
-    uint32_t GetFlags() const { return mFlags; }
-    void SetFlags(uint32_t flags) { mFlags = flags; }
-
-    operator uint32_t() const { return GetFlags(); }
-
-    XPCNativeScriptableFlags(const XPCNativeScriptableFlags& r)
-    {
-        mFlags = r.GetFlags();
-    }
-
-    XPCNativeScriptableFlags& operator= (const XPCNativeScriptableFlags& r)
-    {
-        mFlags = r.GetFlags();
-        return *this;
-    }
-
-#ifdef GET_IT
-#undef GET_IT
-#endif
-#define GET_IT(f_) const { return 0 != (mFlags & nsIXPCScriptable:: f_ ); }
-
-    bool WantPreCreate()                GET_IT(WANT_PRECREATE)
-    bool WantAddProperty()              GET_IT(WANT_ADDPROPERTY)
-    bool WantGetProperty()              GET_IT(WANT_GETPROPERTY)
-    bool WantSetProperty()              GET_IT(WANT_SETPROPERTY)
-    bool WantEnumerate()                GET_IT(WANT_ENUMERATE)
-    bool WantNewEnumerate()             GET_IT(WANT_NEWENUMERATE)
-    bool WantResolve()                  GET_IT(WANT_RESOLVE)
-    bool WantFinalize()                 GET_IT(WANT_FINALIZE)
-    bool WantCall()                     GET_IT(WANT_CALL)
-    bool WantConstruct()                GET_IT(WANT_CONSTRUCT)
-    bool WantHasInstance()              GET_IT(WANT_HASINSTANCE)
-    bool UseJSStubForAddProperty()      GET_IT(USE_JSSTUB_FOR_ADDPROPERTY)
-    bool UseJSStubForDelProperty()      GET_IT(USE_JSSTUB_FOR_DELPROPERTY)
-    bool UseJSStubForSetProperty()      GET_IT(USE_JSSTUB_FOR_SETPROPERTY)
-    bool DontEnumQueryInterface()       GET_IT(DONT_ENUM_QUERY_INTERFACE)
-    bool DontAskInstanceForScriptable() GET_IT(DONT_ASK_INSTANCE_FOR_SCRIPTABLE)
-    bool ClassInfoInterfacesOnly()      GET_IT(CLASSINFO_INTERFACES_ONLY)
-    bool AllowPropModsDuringResolve()   GET_IT(ALLOW_PROP_MODS_DURING_RESOLVE)
-    bool AllowPropModsToPrototype()     GET_IT(ALLOW_PROP_MODS_TO_PROTOTYPE)
-    bool IsGlobalObject()               GET_IT(IS_GLOBAL_OBJECT)
-    bool DontReflectInterfaceNames()    GET_IT(DONT_REFLECT_INTERFACE_NAMES)
-
-#undef GET_IT
-
-private:
-    uint32_t mFlags;
-};
-
-/***************************************************************************/
-// XPCNativeScriptableInfo is a trivial wrapper for nsIXPCScriptable which
-// should be removed eventually.
-
-class XPCNativeScriptableInfo final
-{
-public:
-    static XPCNativeScriptableInfo*
-    Construct(const XPCNativeScriptableCreateInfo* sci);
-
-    nsIXPCScriptable*
-    GetCallback() const { return mCallback; }
-
-    XPCNativeScriptableFlags
-    GetFlags() const { return XPCNativeScriptableFlags(mCallback->GetScriptableFlags()); }
-
-    const JSClass*
-    GetJSClass() { return Jsvalify(mCallback->GetClass()); }
-
-protected:
-    explicit XPCNativeScriptableInfo(nsIXPCScriptable* aCallback)
-        : mCallback(aCallback)
-    {
-        MOZ_COUNT_CTOR(XPCNativeScriptableInfo);
-    }
-public:
-    ~XPCNativeScriptableInfo()
-    {
-        MOZ_COUNT_DTOR(XPCNativeScriptableInfo);
-    }
-private:
-
-    // disable copy ctor and assignment
-    XPCNativeScriptableInfo(const XPCNativeScriptableInfo& r) = delete;
-    XPCNativeScriptableInfo& operator= (const XPCNativeScriptableInfo& r) = delete;
-
-private:
-    nsCOMPtr<nsIXPCScriptable> mCallback;
-};
-
-/***************************************************************************/
-// XPCNativeScriptableCreateInfo is used in creating new wrapper and protos.
-// it abstracts out the scriptable interface pointer and the flags. After
-// creation these are factored differently using XPCNativeScriptableInfo.
-
-class MOZ_STACK_CLASS XPCNativeScriptableCreateInfo final
-{
-public:
-
-    explicit XPCNativeScriptableCreateInfo(const XPCNativeScriptableInfo& si)
-        : mCallback(si.GetCallback()), mFlags(si.GetFlags()) {}
-
-    XPCNativeScriptableCreateInfo(already_AddRefed<nsIXPCScriptable>&& callback,
-                                  XPCNativeScriptableFlags flags)
-        : mCallback(callback), mFlags(flags) {}
-
-    XPCNativeScriptableCreateInfo()
-        : mFlags(0) {}
-
-
-    nsIXPCScriptable*
-    GetCallback() const {return mCallback;}
-
-    const XPCNativeScriptableFlags&
-    GetFlags() const      {return mFlags;}
-
-    void
-    SetCallback(already_AddRefed<nsIXPCScriptable>&& callback)
-        {mCallback = callback;}
-
-    void
-    SetFlags(const XPCNativeScriptableFlags& flags)  {mFlags = flags;}
-
-private:
-    // XXX: the flags are the same as the ones gettable from the callback. This
-    // redundancy should be removed eventually.
-    nsCOMPtr<nsIXPCScriptable>  mCallback;
-    XPCNativeScriptableFlags    mFlags;
 };
 
 /***********************************************/
@@ -1562,7 +1392,7 @@ public:
     static XPCWrappedNativeProto*
     GetNewOrUsed(XPCWrappedNativeScope* scope,
                  nsIClassInfo* classInfo,
-                 const XPCNativeScriptableCreateInfo* scriptableCreateInfo,
+                 nsIXPCScriptable* scriptable,
                  bool callPostCreatePrototype = true);
 
     XPCWrappedNativeScope*
@@ -1572,10 +1402,7 @@ public:
     GetContext() const {return mScope->GetContext();}
 
     JSObject*
-    GetJSProtoObject() const {
-        JS::ExposeObjectToActiveJS(mJSProtoObject);
-        return mJSProtoObject;
-    }
+    GetJSProtoObject() const { return mJSProtoObject; }
 
     nsIClassInfo*
     GetClassInfo()     const {return mClassInfo;}
@@ -1583,8 +1410,8 @@ public:
     XPCNativeSet*
     GetSet()           const {return mSet;}
 
-    XPCNativeScriptableInfo*
-    GetScriptableInfo()   {return mScriptableInfo;}
+    nsIXPCScriptable*
+    GetScriptable() const { return mScriptable; }
 
     bool CallPostCreatePrototype();
     void JSProtoObjectFinalized(js::FreeOp* fop, JSObject* obj);
@@ -1600,10 +1427,6 @@ public:
     }
 
     void TraceInside(JSTracer* trc) {
-        if (trc->isMarkingTracer()) {
-            mSet->Mark();
-        }
-
         GetScope()->TraceSelf(trc);
     }
 
@@ -1619,13 +1442,8 @@ public:
     }
 
     // NOP. This is just here to make the AutoMarkingPtr code compile.
+    void Mark() const {}
     inline void AutoTrace(JSTracer* trc) {}
-
-    void Mark() const {mSet->Mark();}
-
-#ifdef DEBUG
-    void ASSERT_SetNotMarked() const {mSet->ASSERT_NotMarked();}
-#endif
 
     ~XPCWrappedNativeProto();
 
@@ -1637,10 +1455,9 @@ protected:
     // hide ctor
     XPCWrappedNativeProto(XPCWrappedNativeScope* Scope,
                           nsIClassInfo* ClassInfo,
-                          XPCNativeSet* Set);
+                          already_AddRefed<XPCNativeSet>&& Set);
 
-    bool Init(const XPCNativeScriptableCreateInfo* scriptableCreateInfo,
-              bool callPostCreatePrototype);
+    bool Init(nsIXPCScriptable* scriptable, bool callPostCreatePrototype);
 
 private:
 #ifdef DEBUG
@@ -1651,8 +1468,8 @@ private:
     XPCWrappedNativeScope*   mScope;
     JS::ObjectPtr            mJSProtoObject;
     nsCOMPtr<nsIClassInfo>   mClassInfo;
-    XPCNativeSet*            mSet;
-    XPCNativeScriptableInfo* mScriptableInfo;
+    RefPtr<XPCNativeSet>     mSet;
+    nsCOMPtr<nsIXPCScriptable> mScriptable;
 };
 
 /***********************************************/
@@ -1781,12 +1598,7 @@ public:
      * This getter clears the gray bit before handing out the JSObject which
      * means that the object is guaranteed to be kept alive past the next CC.
      */
-    JSObject*
-    GetFlatJSObject() const
-    {
-        JS::ExposeObjectToActiveJS(mFlatJSObject);
-        return mFlatJSObject;
-    }
+    JSObject* GetFlatJSObject() const { return mFlatJSObject; }
 
     /**
      * This getter does not change the color of the JSObject meaning that the
@@ -1797,13 +1609,15 @@ public:
      * being rooted (or otherwise signaling the stored value to the CC).
      */
     JSObject*
-    GetFlatJSObjectPreserveColor() const {return mFlatJSObject;}
+    GetFlatJSObjectPreserveColor() const {
+        return mFlatJSObject.unbarrieredGetPtr();
+    }
 
     XPCNativeSet*
     GetSet() const {return mSet;}
 
     void
-    SetSet(XPCNativeSet* set) {mSet = set;}
+    SetSet(already_AddRefed<XPCNativeSet> set) {mSet = set;}
 
     static XPCWrappedNative* Get(JSObject* obj) {
         MOZ_ASSERT(IS_WN_REFLECTOR(obj));
@@ -1818,11 +1632,8 @@ private:
 
 public:
 
-    XPCNativeScriptableInfo*
-    GetScriptableInfo() const {return mScriptableInfo;}
-
-    nsIXPCScriptable*      // call this wrong and you deserve to crash
-    GetScriptableCallback() const  {return mScriptableInfo->GetCallback();}
+    nsIXPCScriptable*
+    GetScriptable() const { return mScriptable; }
 
     nsIClassInfo*
     GetClassInfo() const {return IsValid() && HasProto() ?
@@ -1878,23 +1689,17 @@ public:
                                          nsresult* pError = nullptr);
     XPCWrappedNativeTearOff* FindTearOff(const nsIID& iid);
 
-    void Mark() const
-    {
-        mSet->Mark();
-        if (HasProto()) GetProto()->Mark();
-    }
+    void Mark() const {}
 
     inline void TraceInside(JSTracer* trc) {
-        if (trc->isMarkingTracer()) {
-            mSet->Mark();
-        }
         if (HasProto())
             GetProto()->TraceSelf(trc);
         else
             GetScope()->TraceSelf(trc);
-        if (mFlatJSObject && JS_IsGlobalObject(mFlatJSObject))
-        {
-            xpc::TraceXPCGlobal(trc, mFlatJSObject);
+
+        JSObject* obj = mFlatJSObject.unbarrieredGetPtr();
+        if (obj && JS_IsGlobalObject(obj)) {
+            xpc::TraceXPCGlobal(trc, obj);
         }
     }
 
@@ -1916,19 +1721,12 @@ public:
         TraceSelf(trc);
     }
 
-#ifdef DEBUG
-    void ASSERT_SetsNotMarked() const
-        {mSet->ASSERT_NotMarked();
-         if (HasProto()){GetProto()->ASSERT_SetNotMarked();}}
-#endif
-
     inline void SweepTearOffs();
 
     // Returns a string that shuld be free'd using JS_smprintf_free (or null).
     char* ToString(XPCWrappedNativeTearOff* to = nullptr) const;
 
-    static void GatherProtoScriptableCreateInfo(nsIClassInfo* classInfo,
-                                                XPCNativeScriptableCreateInfo& sciProto);
+    static nsIXPCScriptable* GatherProtoScriptable(nsIClassInfo* classInfo);
 
     bool HasExternalReference() const {return mRefCnt > 1;}
 
@@ -1946,12 +1744,10 @@ protected:
     // This ctor is used if this object will NOT have a proto.
     XPCWrappedNative(already_AddRefed<nsISupports>&& aIdentity,
                      XPCWrappedNativeScope* aScope,
-                     XPCNativeSet* aSet);
+                     already_AddRefed<XPCNativeSet>&& aSet);
 
     virtual ~XPCWrappedNative();
     void Destroy();
-
-    void UpdateScriptableInfo(XPCNativeScriptableInfo* si);
 
 private:
     enum {
@@ -1959,7 +1755,7 @@ private:
         FLAT_JS_OBJECT_VALID = JS_BIT(0)
     };
 
-    bool Init(const XPCNativeScriptableCreateInfo* sci);
+    bool Init(nsIXPCScriptable* scriptable);
     bool FinishInit();
 
     bool ExtendSet(XPCNativeInterface* aInterface);
@@ -1971,10 +1767,10 @@ private:
     bool InitTearOffJSObject(XPCWrappedNativeTearOff* to);
 
 public:
-    static const XPCNativeScriptableCreateInfo& GatherScriptableCreateInfo(nsISupports* obj,
-                                                                           nsIClassInfo* classInfo,
-                                                                           XPCNativeScriptableCreateInfo& sciProto,
-                                                                           XPCNativeScriptableCreateInfo& sciWrapper);
+    static void GatherScriptable(nsISupports* obj,
+                                 nsIClassInfo* classInfo,
+                                 nsIXPCScriptable** scrProto,
+                                 nsIXPCScriptable** scrWrapper);
 
 private:
     union
@@ -1982,9 +1778,9 @@ private:
         XPCWrappedNativeScope* mMaybeScope;
         XPCWrappedNativeProto* mMaybeProto;
     };
-    XPCNativeSet* mSet;
+    RefPtr<XPCNativeSet> mSet;
     JS::TenuredHeap<JSObject*> mFlatJSObject;
-    XPCNativeScriptableInfo* mScriptableInfo;
+    nsCOMPtr<nsIXPCScriptable> mScriptable;
     XPCWrappedNativeTearOff mFirstTearOff;
 };
 
@@ -2157,7 +1953,7 @@ public:
      * be passed into a JS API function and that it won't be stored without
      * being rooted (or otherwise signaling the stored value to the CC).
      */
-    JSObject* GetJSObjectPreserveColor() const {return mJSObj;}
+    JSObject* GetJSObjectPreserveColor() const { return mJSObj.unbarrieredGet(); }
 
     // Returns true if the wrapper chain contains references to multiple
     // compartments. If the wrapper chain contains references to multiple
@@ -2181,8 +1977,8 @@ public:
         return FindInherited(aIID);
     }
 
-    bool IsRootWrapper() const {return mRoot == this;}
-    bool IsValid() const {return mJSObj != nullptr;}
+    bool IsRootWrapper() const { return mRoot == this; }
+    bool IsValid() const { return bool(mJSObj); }
     void SystemIsBeingShutDown();
 
     // These two methods are used by JSObject2WrappedJSMap::FindDyingJSObjects
@@ -2221,6 +2017,10 @@ protected:
     void Unlink();
 
 private:
+    JSCompartment* Compartment() const {
+        return js::GetObjectCompartment(mJSObj.unbarrieredGet());
+    }
+
     JS::Heap<JSObject*> mJSObj;
     RefPtr<nsXPCWrappedJSClass> mClass;
     nsXPCWrappedJS* mRoot;    // If mRoot != this, it is an owning pointer.
@@ -2375,12 +2175,6 @@ public:
                                         const char* ifaceName,
                                         const char* methodName,
                                         nsIException** exception);
-
-    static nsresult JSErrorToXPCException(const char* message,
-                                          const char* ifaceName,
-                                          const char* methodName,
-                                          const JSErrorReport* report,
-                                          nsIException** exception);
 
     static nsresult ConstructException(nsresult rv, const char* message,
                                        const char* ifaceName,
@@ -2828,7 +2622,6 @@ class TypedAutoMarkingPtr : public AutoMarkingPtr
     T* mPtr;
 };
 
-typedef TypedAutoMarkingPtr<XPCNativeSet> AutoMarkingNativeSetPtr;
 typedef TypedAutoMarkingPtr<XPCWrappedNative> AutoMarkingWrappedNativePtr;
 typedef TypedAutoMarkingPtr<XPCWrappedNativeTearOff> AutoMarkingWrappedNativeTearOffPtr;
 typedef TypedAutoMarkingPtr<XPCWrappedNativeProto> AutoMarkingWrappedNativeProtoPtr;
@@ -2872,7 +2665,7 @@ public:
     // if a given nsIVariant is in fact an XPCVariant.
     NS_DECLARE_STATIC_IID_ACCESSOR(XPCVARIANT_IID)
 
-    static already_AddRefed<XPCVariant> newVariant(JSContext* cx, JS::Value aJSVal);
+    static already_AddRefed<XPCVariant> newVariant(JSContext* cx, const JS::Value& aJSVal);
 
     /**
      * This getter clears the gray bit before handing out the Value if the Value
@@ -2880,8 +2673,6 @@ public:
      * kept alive past the next CC.
      */
     JS::Value GetJSVal() const {
-        if (!mJSVal.isPrimitive())
-            JS::ExposeObjectToActiveJS(&mJSVal.toObject());
         return mJSVal;
     }
 
@@ -2894,9 +2685,9 @@ public:
      * be passed into a JS API function and that it won't be stored without
      * being rooted (or otherwise signaling the stored value to the CC).
      */
-    JS::Value GetJSValPreserveColor() const {return mJSVal;}
+    JS::Value GetJSValPreserveColor() const { return mJSVal.unbarrieredGet(); }
 
-    XPCVariant(JSContext* cx, JS::Value aJSVal);
+    XPCVariant(JSContext* cx, const JS::Value& aJSVal);
 
     /**
      * Convert a variant into a JS::Value.
@@ -2944,7 +2735,7 @@ class XPCTraceableVariant: public XPCVariant,
                            public XPCRootSetElem
 {
 public:
-    XPCTraceableVariant(JSContext* cx, JS::Value aJSVal)
+    XPCTraceableVariant(JSContext* cx, const JS::Value& aJSVal)
         : XPCVariant(cx, aJSVal)
     {
          nsXPConnect::GetContextInstance()->AddVariantRoot(this);
@@ -3369,6 +3160,10 @@ public:
     //
     // Using it in production is inherently unsafe.
     bool forcePermissiveCOWs;
+
+    // True if this compartment has been nuked. If true, any wrappers into or
+    // out of it should be considered invalid.
+    bool wasNuked;
 
     // Whether we've emitted a warning about a property that was filtered out
     // by a security wrapper. See XrayWrapper.cpp.

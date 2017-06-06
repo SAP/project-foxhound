@@ -1,25 +1,37 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=8 sts=2 et sw=2 tw=99: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#ifdef XP_WIN
+#include "WMF.h"
+#endif
 #include "GPUParent.h"
 #include "gfxConfig.h"
 #include "gfxPlatform.h"
 #include "gfxPrefs.h"
 #include "GPUProcessHost.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/layers/APZCTreeManager.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/dom/VideoDecoderManagerParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeParent.h"
-#include "nsDebugImpl.h"
+#include "mozilla/dom/VideoDecoderManagerChild.h"
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
-#include "ProcessUtils.h"
+#include "mozilla/layers/UiCompositorControllerParent.h"
+#include "nsDebugImpl.h"
+#include "nsExceptionHandler.h"
+#include "nsThreadManager.h"
 #include "prenv.h"
+#include "ProcessUtils.h"
 #include "VRManager.h"
 #include "VRManagerParent.h"
 #include "VsyncBridgeParent.h"
@@ -37,12 +49,23 @@ namespace gfx {
 using namespace ipc;
 using namespace layers;
 
+static GPUParent* sGPUParent;
+
 GPUParent::GPUParent()
+  : mLaunchTime(TimeStamp::Now())
 {
+  sGPUParent = this;
 }
 
 GPUParent::~GPUParent()
 {
+  sGPUParent = nullptr;
+}
+
+/* static */ GPUParent*
+GPUParent::GetSingleton()
+{
+  return sGPUParent;
 }
 
 bool
@@ -50,34 +73,76 @@ GPUParent::Init(base::ProcessId aParentPid,
                 MessageLoop* aIOLoop,
                 IPC::Channel* aChannel)
 {
+  // Initialize the thread manager before starting IPC. Otherwise, messages
+  // may be posted to the main thread and we won't be able to process them.
+  if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
+    return false;
+  }
+
+  // Now it's safe to start IPC.
   if (NS_WARN_IF(!Open(aChannel, aParentPid, aIOLoop))) {
     return false;
   }
 
   nsDebugImpl::SetMultiprocessMode("GPU");
 
+#ifdef MOZ_CRASHREPORTER
+  // Init crash reporter support.
+  CrashReporterClient::InitSingleton(this);
+#endif
+
   // Ensure gfxPrefs are initialized.
   gfxPrefs::GetSingleton();
   gfxConfig::Init();
   gfxVars::Initialize();
   gfxPlatform::InitNullMetadata();
+  // Ensure our Factory is initialised, mainly for gfx logging to work.
+  gfxPlatform::InitMoz2DLogging();
 #if defined(XP_WIN)
   DeviceManagerDx::Init();
   DeviceManagerD3D9::Init();
 #endif
+
   if (NS_FAILED(NS_InitMinimalXPCOM())) {
     return false;
   }
+
   CompositorThreadHolder::Start();
   APZThreadUtils::SetControllerThread(CompositorThreadHolder::Loop());
   APZCTreeManager::InitializeGlobalState();
-  VRManager::ManagerInit();
   LayerTreeOwnerTracker::Initialize();
   mozilla::ipc::SetThisProcessName("GPU Process");
+#ifdef XP_WIN
+  wmf::MFStartup();
+#endif
   return true;
 }
 
-bool
+void
+GPUParent::NotifyDeviceReset()
+{
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(NS_NewRunnableFunction([] () -> void {
+      GPUParent::GetSingleton()->NotifyDeviceReset();
+    }));
+    return;
+  }
+
+  // Reset and reinitialize the compositor devices
+#ifdef XP_WIN
+  if (!DeviceManagerDx::Get()->MaybeResetAndReacquireDevices()) {
+    // If the device doesn't need to be reset then the device
+    // has already been reset by a previous NotifyDeviceReset message.
+    return;
+  }
+#endif
+
+  // Notify the main process that there's been a device reset
+  // and that they should reset their compositors and repaint
+  Unused << SendNotifyDeviceReset();
+}
+
+mozilla::ipc::IPCResult
 GPUParent::RecvInit(nsTArray<GfxPrefSetting>&& prefs,
                     nsTArray<GfxVarUpdate>&& vars,
                     const DevicePrefs& devicePrefs)
@@ -124,48 +189,57 @@ GPUParent::RecvInit(nsTArray<GfxPrefSetting>&& prefs,
   }
 #endif
 
+  VRManager::ManagerInit();
   // Send a message to the UI process that we're done.
   GPUDeviceData data;
   RecvGetDeviceStatus(&data);
   Unused << SendInitComplete(data);
 
-  return true;
+  Telemetry::AccumulateTimeDelta(Telemetry::GPU_PROCESS_INITIALIZATION_TIME_MS, mLaunchTime);
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvInitVsyncBridge(Endpoint<PVsyncBridgeParent>&& aVsyncEndpoint)
 {
-  VsyncBridgeParent::Start(Move(aVsyncEndpoint));
-  return true;
+  mVsyncBridge = VsyncBridgeParent::Start(Move(aVsyncEndpoint));
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvInitImageBridge(Endpoint<PImageBridgeParent>&& aEndpoint)
 {
   ImageBridgeParent::CreateForGPUProcess(Move(aEndpoint));
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvInitVRManager(Endpoint<PVRManagerParent>&& aEndpoint)
 {
   VRManagerParent::CreateForGPUProcess(Move(aEndpoint));
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
+GPUParent::RecvInitUiCompositorController(Endpoint<PUiCompositorControllerParent>&& aEndpoint)
+{
+  UiCompositorControllerParent::Start(Move(aEndpoint));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
 GPUParent::RecvUpdatePref(const GfxPrefSetting& setting)
 {
   gfxPrefs::Pref* pref = gfxPrefs::all()[setting.index()];
   pref->SetCachedValue(setting.value());
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvUpdateVar(const GfxVarUpdate& aUpdate)
 {
   gfxVars::ApplyUpdate(aUpdate);
-  return true;
+  return IPC_OK();
 }
 
 static void
@@ -189,7 +263,7 @@ CopyFeatureChange(Feature aFeature, FeatureChange* aOut)
   *aOut = FeatureFailure(feature.GetValue(), message, feature.GetFailureId());
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvGetDeviceStatus(GPUDeviceData* aOut)
 {
   CopyFeatureChange(Feature::D3D11_COMPOSITING, &aOut->d3d11Compositing());
@@ -206,7 +280,7 @@ GPUParent::RecvGetDeviceStatus(GPUDeviceData* aOut)
   aOut->gpuDevice() = null_t();
 #endif
 
-  return true;
+  return IPC_OK();
 }
 
 static void
@@ -218,51 +292,84 @@ OpenParent(RefPtr<CompositorBridgeParent> aParent,
   }
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvNewWidgetCompositor(Endpoint<layers::PCompositorBridgeParent>&& aEndpoint,
                                    const CSSToLayoutDeviceScale& aScale,
                                    const TimeDuration& aVsyncRate,
+                                   const CompositorOptions& aOptions,
                                    const bool& aUseExternalSurfaceSize,
                                    const IntSize& aSurfaceSize)
 {
   RefPtr<CompositorBridgeParent> cbp =
-    new CompositorBridgeParent(aScale, aVsyncRate, aUseExternalSurfaceSize, aSurfaceSize);
+    new CompositorBridgeParent(aScale, aVsyncRate, aOptions, aUseExternalSurfaceSize, aSurfaceSize);
 
   MessageLoop* loop = CompositorThreadHolder::Loop();
   loop->PostTask(NewRunnableFunction(OpenParent, cbp, Move(aEndpoint)));
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvNewContentCompositorBridge(Endpoint<PCompositorBridgeParent>&& aEndpoint)
 {
-  return CompositorBridgeParent::CreateForContent(Move(aEndpoint));
+  if (!CompositorBridgeParent::CreateForContent(Move(aEndpoint))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvNewContentImageBridge(Endpoint<PImageBridgeParent>&& aEndpoint)
 {
-  return ImageBridgeParent::CreateForContent(Move(aEndpoint));
+  if (!ImageBridgeParent::CreateForContent(Move(aEndpoint))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GPUParent::RecvNewContentVRManager(Endpoint<PVRManagerParent>&& aEndpoint)
 {
-  return VRManagerParent::CreateForContent(Move(aEndpoint));
+  if (!VRManagerParent::CreateForContent(Move(aEndpoint))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-bool
-GPUParent::RecvDeallocateLayerTreeId(const uint64_t& aLayersId)
+mozilla::ipc::IPCResult
+GPUParent::RecvNewContentVideoDecoderManager(Endpoint<PVideoDecoderManagerParent>&& aEndpoint)
 {
-  CompositorBridgeParent::DeallocateLayerTreeId(aLayersId);
-  return true;
+  if (!dom::VideoDecoderManagerParent::CreateForContent(Move(aEndpoint))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-bool
-GPUParent::RecvAddLayerTreeIdMapping(const uint64_t& aLayersId, const ProcessId& aOwnerId)
+mozilla::ipc::IPCResult
+GPUParent::RecvAddLayerTreeIdMapping(nsTArray<LayerTreeIdMapping>&& aMappings)
 {
-  LayerTreeOwnerTracker::Get()->Map(aLayersId, aOwnerId);
-  return true;
+  for (const LayerTreeIdMapping& map : aMappings) {
+    LayerTreeOwnerTracker::Get()->Map(map.layersId(), map.ownerId());
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+GPUParent::RecvRemoveLayerTreeIdMapping(const LayerTreeIdMapping& aMapping)
+{
+  LayerTreeOwnerTracker::Get()->Unmap(aMapping.layersId(), aMapping.ownerId());
+  CompositorBridgeParent::DeallocateLayerTreeId(aMapping.layersId());
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+GPUParent::RecvNotifyGpuObservers(const nsCString& aTopic)
+{
+  nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+  MOZ_ASSERT(obsSvc);
+  if (obsSvc) {
+    obsSvc->NotifyObservers(nullptr, aTopic.get(), nullptr);
+  }
+  return IPC_OK();
 }
 
 void
@@ -273,6 +380,10 @@ GPUParent::ActorDestroy(ActorDestroyReason aWhy)
     ProcessChild::QuickExit();
   }
 
+#ifdef XP_WIN
+  wmf::MFShutdown();
+#endif
+
 #ifndef NS_FREE_PERMANENT_DATA
   // No point in going through XPCOM shutdown because we don't keep persistent
   // state.
@@ -281,8 +392,11 @@ GPUParent::ActorDestroy(ActorDestroyReason aWhy)
 
   if (mVsyncBridge) {
     mVsyncBridge->Shutdown();
+    mVsyncBridge = nullptr;
   }
+  dom::VideoDecoderManagerParent::ShutdownVideoBridge();
   CompositorThreadHolder::Shutdown();
+  Factory::ShutDown();
 #if defined(XP_WIN)
   DeviceManagerDx::Shutdown();
   DeviceManagerD3D9::Shutdown();
@@ -291,7 +405,9 @@ GPUParent::ActorDestroy(ActorDestroyReason aWhy)
   gfxVars::Shutdown();
   gfxConfig::Shutdown();
   gfxPrefs::DestroySingleton();
-  NS_ShutdownXPCOM(nullptr);
+#ifdef MOZ_CRASHREPORTER
+  CrashReporterClient::DestroySingleton();
+#endif
   XRE_ShutdownChildProcess();
 }
 

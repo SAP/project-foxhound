@@ -55,14 +55,14 @@
 
 const PREF_ACTIVE = "security.mixed_content.block_active_content";
 const PREF_DISPLAY = "security.mixed_content.block_display_content";
-const gHttpsTestRoot = "https://example.com/browser/browser/base/content/test/general/";
-const gHttpTestRoot = "http://example.com/browser/browser/base/content/test/general/";
+const HTTPS_TEST_ROOT = "https://example.com/browser/browser/base/content/test/general/";
+const HTTP_TEST_ROOT = "http://example.com/browser/browser/base/content/test/general/";
 
 var origBlockActive;
 var origBlockDisplay;
 var gTestBrowser = null;
 
-//------------------------ Helper Functions ---------------------
+// ------------------------ Helper Functions ---------------------
 
 registerCleanupFunction(function() {
   // Set preferences back to their original values
@@ -79,219 +79,204 @@ function cleanUpAfterTests() {
   finish();
 }
 
-function waitForCondition(condition, nextTest, errorMsg, okMsg) {
-  var tries = 0;
-  var interval = setInterval(function() {
-    if (tries >= 30) {
-      ok(false, errorMsg);
-      moveOn();
-    }
-    if (condition()) {
-      ok(true, okMsg)
-      moveOn();
-    }
-    tries++;
-  }, 100);
-  var moveOn = function() {
-    clearInterval(interval); nextTest();
-  };
-}
-
-//------------------------ Test 1 ------------------------------
+// ------------------------ Test 1 ------------------------------
 
 function test1() {
-  gTestBrowser.addEventListener("load", checkUIForTest1, true);
-  var url = gHttpsTestRoot + "test_mcb_redirect.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTPS_TEST_ROOT + "test_mcb_redirect.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkUIForTest1);
 }
 
 function checkUIForTest1() {
-  gTestBrowser.removeEventListener("load", checkUIForTest1, true);
-
   assertMixedContentBlockingState(gTestBrowser, {activeLoaded: false, activeBlocked: true, passiveLoaded: false});
 
-  var expected = "script blocked";
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test2, "Error: Waited too long for status in Test 1!",
-    "OK: Expected result in innerHTML for Test1!");
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "script blocked";
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test1!");
+  }).then(test2);
 }
 
-//------------------------ Test 2 ------------------------------
+// ------------------------ Test 2 ------------------------------
 
 function test2() {
-  gTestBrowser.addEventListener("load", checkUIForTest2, true);
-  var url = gHttpTestRoot + "test_mcb_redirect.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTP_TEST_ROOT + "test_mcb_redirect.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkUIForTest2);
 }
 
 function checkUIForTest2() {
-  gTestBrowser.removeEventListener("load", checkUIForTest2, true);
-
   assertMixedContentBlockingState(gTestBrowser, {activeLoaded: false, activeBlocked: false, passiveLoaded: false});
 
-  var expected = "script executed";
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test3, "Error: Waited too long for status in Test 2!",
-    "OK: Expected result in innerHTML for Test2!");
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "script executed";
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test2!");
+  }).then(test3);
 }
 
-//------------------------ Test 3 ------------------------------
+// ------------------------ Test 3 ------------------------------
 // HTTPS page loading insecure image
 function test3() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest3, true);
-  var url = gHttpsTestRoot + "test_mcb_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  info("test3");
+  var url = HTTPS_TEST_ROOT + "test_mcb_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest3);
 }
 
 function checkLoadEventForTest3() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest3, true);
-
-  var expected = "image blocked"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test4, "Error: Waited too long for status in Test 3!",
-    "OK: Expected result in innerHTML for Test3!");
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image blocked"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test3!");
+  }).then(test4);
 }
 
-//------------------------ Test 4 ------------------------------
+// ------------------------ Test 4 ------------------------------
 // HTTP page loading insecure image
 function test4() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest4, true);
-  var url = gHttpTestRoot + "test_mcb_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  info("test4");
+  var url = HTTP_TEST_ROOT + "test_mcb_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest4);
 }
 
 function checkLoadEventForTest4() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest4, true);
-
-  var expected = "image loaded"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test5, "Error: Waited too long for status in Test 4!",
-    "OK: Expected result in innerHTML for Test4!");
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image loaded"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test4!");
+  }).then(test5);
 }
 
-//------------------------ Test 5 ------------------------------
+// ------------------------ Test 5 ------------------------------
 // HTTP page laoding insecure cached image
 // Assuming test 4 succeeded, the image has already been loaded once
 // and hence should be cached per the sjs cache-control header
 // Going into offline mode to ensure we are loading from the cache.
 function test5() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest5, true);
   // Go into offline mode
+  info("test5");
   Services.io.offline = true;
-  var url = gHttpTestRoot + "test_mcb_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTP_TEST_ROOT + "test_mcb_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest5);
 }
 
 function checkLoadEventForTest5() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest5, true);
-
-  var expected = "image loaded"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test6, "Error: Waited too long for status in Test 5!",
-    "OK: Expected result in innerHTML for Test5!");
-  // Go back online
-  Services.io.offline = false;
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image loaded"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test5!");
+  }).then(() => {
+    // Go back online
+    Services.io.offline = false;
+    test6();
+  });
 }
 
-//------------------------ Test 6 ------------------------------
+// ------------------------ Test 6 ------------------------------
 // HTTPS page loading insecure cached image
 // Assuming test 4 succeeded, the image has already been loaded once
 // and hence should be cached per the sjs cache-control header
 // Going into offline mode to ensure we are loading from the cache.
 function test6() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest6, true);
   // Go into offline mode
+  info("test6");
   Services.io.offline = true;
-  var url = gHttpsTestRoot + "test_mcb_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTPS_TEST_ROOT + "test_mcb_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest6);
 }
 
 function checkLoadEventForTest6() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest6, true);
-
-  var expected = "image blocked"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test7, "Error: Waited too long for status in Test 6!",
-    "OK: Expected result in innerHTML for Test6!");
-  // Go back online
-  Services.io.offline = false;
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image blocked"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test6!");
+  }).then(() => {
+    // Go back online
+    Services.io.offline = false;
+    test7();
+  });
 }
 
-//------------------------ Test 7 ------------------------------
+// ------------------------ Test 7 ------------------------------
 // HTTP page loading insecure image that went through a double redirect
 function test7() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest7, true);
-  var url = gHttpTestRoot + "test_mcb_double_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTP_TEST_ROOT + "test_mcb_double_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest7);
 }
 
 function checkLoadEventForTest7() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest7, true);
-
-  var expected = "image loaded"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test8, "Error: Waited too long for status in Test 7!",
-    "OK: Expected result in innerHTML for Test7!");
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image loaded"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test7!");
+  }).then(test8);
 }
 
-//------------------------ Test 8 ------------------------------
+// ------------------------ Test 8 ------------------------------
 // HTTP page loading insecure cached image that went through a double redirect
 // Assuming test 7 succeeded, the image has already been loaded once
 // and hence should be cached per the sjs cache-control header
 // Going into offline mode to ensure we are loading from the cache.
 function test8() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest8, true);
   // Go into offline mode
   Services.io.offline = true;
-  var url = gHttpTestRoot + "test_mcb_double_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTP_TEST_ROOT + "test_mcb_double_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest8);
 }
 
 function checkLoadEventForTest8() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest8, true);
-
-  var expected = "image loaded"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    test9, "Error: Waited too long for status in Test 8!",
-    "OK: Expected result in innerHTML for Test8!");
-  // Go back online
-  Services.io.offline = false;
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image loaded"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test8!");
+  }).then(() => {
+    // Go back online
+    Services.io.offline = false;
+    test9();
+  });
 }
 
-//------------------------ Test 9 ------------------------------
+// ------------------------ Test 9 ------------------------------
 // HTTPS page loading insecure cached image that went through a double redirect
 // Assuming test 7 succeeded, the image has already been loaded once
 // and hence should be cached per the sjs cache-control header
 // Going into offline mode to ensure we are loading from the cache.
 function test9() {
-  gTestBrowser.addEventListener("load", checkLoadEventForTest9, true);
   // Go into offline mode
   Services.io.offline = true;
-  var url = gHttpsTestRoot + "test_mcb_double_redirect_image.html"
-  gTestBrowser.contentWindow.location = url;
+  var url = HTTPS_TEST_ROOT + "test_mcb_double_redirect_image.html";
+  BrowserTestUtils.loadURI(gTestBrowser, url);
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(checkLoadEventForTest9);
 }
 
 function checkLoadEventForTest9() {
-  gTestBrowser.removeEventListener("load", checkLoadEventForTest9, true);
-
-  var expected = "image blocked"
-  waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
-    cleanUpAfterTests, "Error: Waited too long for status in Test 9!",
-    "OK: Expected result in innerHTML for Test9!");
-  // Go back online
-  Services.io.offline = false;
+  ContentTask.spawn(gTestBrowser, null, function* () {
+    var expected = "image blocked"
+    yield ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("mctestdiv").innerHTML == expected,
+      "OK: Expected result in innerHTML for Test9!");
+  }).then(() => {
+    // Go back online
+    Services.io.offline = false;
+    cleanUpAfterTests();
+  });
 }
 
-//------------------------ SETUP ------------------------------
+// ------------------------ SETUP ------------------------------
 
 function test() {
   // Performing async calls, e.g. 'onload', we have to wait till all of them finished

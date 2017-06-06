@@ -199,7 +199,6 @@ IDService.prototype = {
             }
             self.RP._doLogin(rp, rpLoginOptions, assertion);
             self.RP._cleanUpProvisionFlow(aRPId, aProvId);
-            return;
           });
         });
       });
@@ -223,7 +222,8 @@ IDService.prototype = {
     // When that is available, we can remove this custom parser
     var parsedEmail = this.parseEmail(aIdentity);
     if (parsedEmail === null) {
-      return aCallback("Could not parse email: " + aIdentity);
+      aCallback("Could not parse email: " + aIdentity);
+      return;
     }
     log("_discoverIdentityProvider: identity:", aIdentity, "domain:", parsedEmail.domain);
 
@@ -251,9 +251,9 @@ IDService.prototype = {
    * @param aCallback
    *
    */
-  _fetchWellKnownFile: function _fetchWellKnownFile(aDomain, aCallback, aScheme='https') {
+  _fetchWellKnownFile: function _fetchWellKnownFile(aDomain, aCallback, aScheme = "https") {
     // XXX bug 769854 make tests https and remove aScheme option
-    let url = aScheme + '://' + aDomain + "/.well-known/browserid";
+    let url = aScheme + "://" + aDomain + "/.well-known/browserid";
     log("_fetchWellKnownFile:", url);
 
     // this appears to be a more successful way to get at xmlhttprequest (which supposedly will close with a window
@@ -274,17 +274,17 @@ IDService.prototype = {
         let idpParams = req.response;
 
         // Verify that the IdP returned a valid configuration
-        if (! (idpParams.provisioning &&
+        if (!(idpParams.provisioning &&
             idpParams.authentication &&
-            idpParams['public-key'])) {
-          let errStr= "Invalid well-known file from: " + aDomain;
+            idpParams["public-key"])) {
+          let errStr = "Invalid well-known file from: " + aDomain;
           log("_fetchWellKnownFile:", errStr);
           return aCallback(errStr);
         }
 
         let callbackObj = {
           domain: aDomain,
-          idpParams: idpParams,
+          idpParams,
         };
         log("_fetchWellKnownFile result: ", callbackObj);
         // Yay.  Valid IdP configuration for the domain.

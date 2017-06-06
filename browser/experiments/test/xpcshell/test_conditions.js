@@ -7,15 +7,9 @@
 Cu.import("resource:///modules/experiments/Experiments.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm", this);
 
-const FILE_MANIFEST            = "experiments.manifest";
 const SEC_IN_ONE_DAY = 24 * 60 * 60;
-const MS_IN_ONE_DAY  = SEC_IN_ONE_DAY * 1000;
 
-var gProfileDir = null;
-var gHttpServer = null;
-var gHttpRoot   = null;
 var gPolicy     = null;
-
 
 function ManifestEntry(data) {
   this.id = EXPERIMENT1_ID;
@@ -50,7 +44,7 @@ function run_test() {
 
 add_task(function* test_setup() {
   createAppInfo();
-  gProfileDir = do_get_profile();
+  do_get_profile();
   startAddonManagerOnly();
   yield TelemetryController.testSetup();
   gPolicy = new Experiments.Policy();
@@ -71,7 +65,7 @@ function arraysEqual(a, b) {
     return false;
   }
 
-  for (let i=0; i<a.length; ++i) {
+  for (let i = 0; i < a.length; ++i) {
     if (a[i] !== b[i]) {
       return false;
     }
@@ -206,7 +200,7 @@ add_task(function* test_simpleFields() {
     [true,  null, {jsfilter: "var filter = " + sanityFilter.toSource()}],
   ];
 
-  for (let i=0; i<testData.length; ++i) {
+  for (let i = 0; i < testData.length; ++i) {
     let entry = testData[i];
     let applicable;
     let reason = null;
@@ -242,23 +236,23 @@ add_task(function* test_times() {
     // start time
 
     [true,  null, now,
-      {startTime: nowSec -  5 * SEC_IN_ONE_DAY,
+      {startTime: nowSec - 5 * SEC_IN_ONE_DAY,
          endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
     [true,  null, now,
       {startTime: nowSec,
          endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
     [false,  "startTime", now,
-      {startTime: nowSec +  5 * SEC_IN_ONE_DAY,
+      {startTime: nowSec + 5 * SEC_IN_ONE_DAY,
          endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
 
     // end time
 
     [false,  "endTime", now,
-      {startTime: nowSec -  5 * SEC_IN_ONE_DAY,
+      {startTime: nowSec - 5 * SEC_IN_ONE_DAY,
          endTime: nowSec - 10 * SEC_IN_ONE_DAY}],
     [false,  "endTime", now,
-      {startTime: nowSec -  5 * SEC_IN_ONE_DAY,
-         endTime: nowSec -  5 * SEC_IN_ONE_DAY}],
+      {startTime: nowSec - 5 * SEC_IN_ONE_DAY,
+         endTime: nowSec - 5 * SEC_IN_ONE_DAY}],
 
     // max start time
 
@@ -267,7 +261,7 @@ add_task(function* test_times() {
           startTime: nowSec - 10 * SEC_IN_ONE_DAY,
             endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
     [false,  "maxStartTime", now,
-      {maxStartTime: nowSec -  1 * SEC_IN_ONE_DAY,
+      {maxStartTime: nowSec - 1 * SEC_IN_ONE_DAY,
           startTime: nowSec - 10 * SEC_IN_ONE_DAY,
             endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
     [false,  "maxStartTime", now,
@@ -279,7 +273,7 @@ add_task(function* test_times() {
           startTime: nowSec - 10 * SEC_IN_ONE_DAY,
             endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
     [true,  null, now,
-      {maxStartTime: nowSec +  1 * SEC_IN_ONE_DAY,
+      {maxStartTime: nowSec + 1 * SEC_IN_ONE_DAY,
           startTime: nowSec - 10 * SEC_IN_ONE_DAY,
             endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
 
@@ -303,7 +297,7 @@ add_task(function* test_times() {
                 endTime: nowSec + 10 * SEC_IN_ONE_DAY}],
   ];
 
-  for (let i=0; i<testData.length; ++i) {
+  for (let i = 0; i < testData.length; ++i) {
     let entry = testData[i];
     let applicable;
     let reason = null;

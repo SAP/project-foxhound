@@ -93,6 +93,7 @@ enum UnaryOperator {
     UNOP_BITNOT,
     UNOP_TYPEOF,
     UNOP_VOID,
+    UNOP_AWAIT,
 
     UNOP_LIMIT
 };
@@ -162,7 +163,8 @@ static const char* const unopNames[] = {
     "!",       /* UNOP_NOT */
     "~",       /* UNOP_BITNOT */
     "typeof",  /* UNOP_TYPEOF */
-    "void"     /* UNOP_VOID */
+    "void",    /* UNOP_VOID */
+    "await"    /* UNOP_AWAIT */
 };
 
 static const char* const nodeTypeNames[] = {
@@ -193,7 +195,7 @@ typedef AutoValueVector NodeVector;
     JS_BEGIN_MACRO                                                                        \
         MOZ_ASSERT(expr);                                                                 \
         if (!(expr)) {                                                                    \
-            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_BAD_PARSE_NODE);     \
+            JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_BAD_PARSE_NODE);\
             return false;                                                                 \
         }                                                                                 \
     JS_END_MACRO
@@ -201,7 +203,7 @@ typedef AutoValueVector NodeVector;
 #define LOCAL_NOT_REACHED(expr)                                                           \
     JS_BEGIN_MACRO                                                                        \
         MOZ_ASSERT(false);                                                                \
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_BAD_PARSE_NODE);         \
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_BAD_PARSE_NODE);    \
         return false;                                                                     \
     JS_END_MACRO
 
@@ -466,7 +468,7 @@ class NodeBuilder
     MOZ_MUST_USE bool function(ASTType type, TokenPos* pos,
                                HandleValue id, NodeVector& args, NodeVector& defaults,
                                HandleValue body, HandleValue rest, GeneratorStyle generatorStyle,
-                               bool isExpression, MutableHandleValue dst);
+                               bool isAsync, bool isExpression, MutableHandleValue dst);
 
     MOZ_MUST_USE bool variableDeclarator(HandleValue id, HandleValue init, TokenPos* pos,
                                          MutableHandleValue dst);
@@ -1590,7 +1592,7 @@ bool
 NodeBuilder::function(ASTType type, TokenPos* pos,
                       HandleValue id, NodeVector& args, NodeVector& defaults,
                       HandleValue body, HandleValue rest,
-                      GeneratorStyle generatorStyle, bool isExpression,
+                      GeneratorStyle generatorStyle, bool isAsync, bool isExpression,
                       MutableHandleValue dst)
 {
     RootedValue array(cx), defarray(cx);
@@ -1601,6 +1603,7 @@ NodeBuilder::function(ASTType type, TokenPos* pos,
 
     bool isGenerator = generatorStyle != GeneratorStyle::None;
     RootedValue isGeneratorVal(cx, BooleanValue(isGenerator));
+    RootedValue isAsyncVal(cx, BooleanValue(isAsync));
     RootedValue isExpressionVal(cx, BooleanValue(isExpression));
 
     RootedValue cb(cx, callbacks[type]);
@@ -1624,6 +1627,7 @@ NodeBuilder::function(ASTType type, TokenPos* pos,
                        "body", body,
                        "rest", rest,
                        "generator", isGeneratorVal,
+                       "async", isAsyncVal,
                        "style", styleVal,
                        "expression", isExpressionVal,
                        dst);
@@ -1636,6 +1640,7 @@ NodeBuilder::function(ASTType type, TokenPos* pos,
                    "body", body,
                    "rest", rest,
                    "generator", isGeneratorVal,
+                   "async", isAsyncVal,
                    "expression", isExpressionVal,
                    dst);
 }
@@ -1804,6 +1809,7 @@ class ASTSerializer
 
     bool function(ParseNode* pn, ASTType type, MutableHandleValue dst);
     bool functionArgsAndBody(ParseNode* pn, NodeVector& args, NodeVector& defaults,
+                             bool isAsync, bool isExpression,
                              MutableHandleValue body, MutableHandleValue rest);
     bool functionBody(ParseNode* pn, TokenPos* pos, MutableHandleValue dst);
 
@@ -1877,8 +1883,11 @@ ASTSerializer::unop(ParseNodeKind kind, JSOp op)
     if (IsDeleteKind(kind))
         return UNOP_DELETE;
 
-    if (kind == PNK_TYPEOFNAME || kind == PNK_TYPEOFEXPR)
+    if (IsTypeofKind(kind))
         return UNOP_TYPEOF;
+
+    if (kind == PNK_AWAIT)
+        return UNOP_AWAIT;
 
     switch (op) {
       case JSOP_NEG:
@@ -2131,7 +2140,7 @@ ASTSerializer::exportDeclaration(ParseNode* pn, MutableHandleValue dst)
     MOZ_ASSERT(pn->isKind(PNK_EXPORT) ||
                pn->isKind(PNK_EXPORT_FROM) ||
                pn->isKind(PNK_EXPORT_DEFAULT));
-    MOZ_ASSERT(pn->getArity() == pn->isKind(PNK_EXPORT) ? PN_UNARY : PN_BINARY);
+    MOZ_ASSERT(pn->getArity() == (pn->isKind(PNK_EXPORT) ? PN_UNARY : PN_BINARY));
     MOZ_ASSERT_IF(pn->isKind(PNK_EXPORT_FROM), pn->pn_right->isKind(PNK_STRING));
 
     RootedValue decl(cx, NullValue());
@@ -2907,7 +2916,7 @@ ASTSerializer::expression(ParseNode* pn, MutableHandleValue dst)
         return leftAssociate(pn, dst);
 
       case PNK_POW:
-	return rightAssociate(pn, dst);
+        return rightAssociate(pn, dst);
 
       case PNK_DELETENAME:
       case PNK_DELETEPROP:
@@ -2919,6 +2928,7 @@ ASTSerializer::expression(ParseNode* pn, MutableHandleValue dst)
       case PNK_NOT:
       case PNK_BITNOT:
       case PNK_POS:
+      case PNK_AWAIT:
       case PNK_NEG: {
         MOZ_ASSERT(pn->pn_pos.encloses(pn->pn_kid->pn_pos));
 
@@ -3034,7 +3044,12 @@ ASTSerializer::expression(ParseNode* pn, MutableHandleValue dst)
             MOZ_ASSERT(pn->pn_pos.encloses(next->pn_pos));
 
             RootedValue expr(cx);
-            expr.setString(next->pn_atom);
+            if (next->isKind(PNK_RAW_UNDEFINED)) {
+                expr.setUndefined();
+            } else {
+                MOZ_ASSERT(next->isKind(PNK_TEMPLATE_STRING));
+                expr.setString(next->pn_atom);
+            }
             cooked.infallibleAppend(expr);
         }
 
@@ -3126,6 +3141,7 @@ ASTSerializer::expression(ParseNode* pn, MutableHandleValue dst)
       case PNK_TRUE:
       case PNK_FALSE:
       case PNK_NULL:
+      case PNK_RAW_UNDEFINED:
         return literal(pn, dst);
 
       case PNK_YIELD_STAR:
@@ -3266,6 +3282,10 @@ ASTSerializer::literal(ParseNode* pn, MutableHandleValue dst)
         val.setNull();
         break;
 
+      case PNK_RAW_UNDEFINED:
+        val.setUndefined();
+        break;
+
       case PNK_TRUE:
         val.setBoolean(true);
         break;
@@ -3396,15 +3416,11 @@ ASTSerializer::function(ParseNode* pn, ASTType type, MutableHandleValue dst)
            : GeneratorStyle::ES6)
         : GeneratorStyle::None;
 
-    bool isExpression =
-#if JS_HAS_EXPR_CLOSURES
-        func->isExprBody();
-#else
-        false;
-#endif
+    bool isAsync = pn->pn_funbox->isAsync();
+    bool isExpression = pn->pn_funbox->isExprBody();
 
     RootedValue id(cx);
-    RootedAtom funcAtom(cx, func->name());
+    RootedAtom funcAtom(cx, func->explicitName());
     if (!optIdentifier(funcAtom, nullptr, &id))
         return false;
 
@@ -3412,17 +3428,18 @@ ASTSerializer::function(ParseNode* pn, ASTType type, MutableHandleValue dst)
     NodeVector defaults(cx);
 
     RootedValue body(cx), rest(cx);
-    if (func->hasRest())
+    if (pn->pn_funbox->hasRest())
         rest.setUndefined();
     else
         rest.setNull();
-    return functionArgsAndBody(pn->pn_body, args, defaults, &body, &rest) &&
-        builder.function(type, &pn->pn_pos, id, args, defaults, body,
-                         rest, generatorStyle, isExpression, dst);
+    return functionArgsAndBody(pn->pn_body, args, defaults, isAsync, isExpression, &body, &rest) &&
+           builder.function(type, &pn->pn_pos, id, args, defaults, body,
+                            rest, generatorStyle, isAsync, isExpression, dst);
 }
 
 bool
 ASTSerializer::functionArgsAndBody(ParseNode* pn, NodeVector& args, NodeVector& defaults,
+                                   bool isAsync, bool isExpression,
                                    MutableHandleValue body, MutableHandleValue rest)
 {
     ParseNode* pnargs;
@@ -3454,6 +3471,14 @@ ASTSerializer::functionArgsAndBody(ParseNode* pn, NodeVector& args, NodeVector& 
         if (pnstart && pnstart->isKind(PNK_YIELD)) {
             MOZ_ASSERT(pnstart->getOp() == JSOP_INITIALYIELD);
             pnstart = pnstart->pn_next;
+        }
+
+        // Async arrow with expression body is converted into STATEMENTLIST
+        // to insert initial yield.
+        if (isAsync && isExpression) {
+            MOZ_ASSERT(pnstart->getKind() == PNK_RETURN);
+            return functionArgs(pn, pnargs, args, defaults, rest) &&
+                   expression(pnstart->pn_kid, body);
         }
 
         return functionArgs(pn, pnargs, args, defaults, rest) &&
@@ -3496,7 +3521,6 @@ ASTSerializer::functionArgs(ParseNode* pn, ParseNode* pnargs,
         if (!pattern(pat, &node))
             return false;
         if (rest.isUndefined() && arg->pn_next == pnargs->last()) {
-            MOZ_ASSERT(arg->isKind(PNK_NAME));
             rest.setObject(node.toObject());
         } else {
             if (!args.append(node))
@@ -3546,8 +3570,8 @@ reflect_parse(JSContext* cx, uint32_t argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     if (args.length() < 1) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_MORE_ARGS_NEEDED,
-                             "Reflect.parse", "0", "s");
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_MORE_ARGS_NEEDED,
+                                  "Reflect.parse", "0", "s");
         return false;
     }
 
@@ -3651,7 +3675,7 @@ reflect_parse(JSContext* cx, uint32_t argc, Value* vp)
         } else if (isModule) {
             target = ParseTarget::Module;
         } else {
-            JS_ReportError(cx, "Bad target value, expected 'script' or 'module'");
+            JS_ReportErrorASCII(cx, "Bad target value, expected 'script' or 'module'");
             return false;
         }
     }
@@ -3676,7 +3700,7 @@ reflect_parse(JSContext* cx, uint32_t argc, Value* vp)
     UsedNameTracker usedNames(cx);
     if (!usedNames.init())
         return false;
-    Parser<FullParseHandler> parser(cx, cx->tempLifoAlloc(), options, chars.start().get(),
+    Parser<FullParseHandler> parser(cx, cx->tempLifoAlloc(), options, chars.begin().get(),
                                     chars.length(), EmptyTaint, /* foldConstants = */ false, usedNames,
                                     nullptr, nullptr);
     if (!parser.checkOptions())
@@ -3724,7 +3748,7 @@ JS_InitReflectParse(JSContext* cx, HandleObject global)
     if (!GetProperty(cx, global, global, cx->names().Reflect, &reflectVal))
         return false;
     if (!reflectVal.isObject()) {
-        JS_ReportError(cx, "JS_InitReflectParse must be called during global initialization");
+        JS_ReportErrorASCII(cx, "JS_InitReflectParse must be called during global initialization");
         return false;
     }
 

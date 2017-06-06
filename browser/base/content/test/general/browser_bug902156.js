@@ -42,7 +42,7 @@ function cleanUpAfterTests() {
   finish();
 }
 
-//------------------------ Test 1 ------------------------------
+// ------------------------ Test 1 ------------------------------
 
 function test1A() {
   BrowserTestUtils.browserLoaded(gTestBrowser).then(test1B);
@@ -57,12 +57,12 @@ function test1A() {
 function test1B() {
   var expected = "Mixed Content Blocker disabled";
   waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
+    () => content.document.getElementById("mctestdiv").innerHTML == expected,
     test1C, "Error: Waited too long for mixed script to run in Test 1B");
 }
 
 function test1C() {
-  var actual = content.document.getElementById('mctestdiv').innerHTML;
+  var actual = content.document.getElementById("mctestdiv").innerHTML;
   is(actual, "Mixed Content Blocker disabled", "OK: Executed mixed script in Test 1C");
 
   // The Script loaded after we disabled the page, now we are going to reload the
@@ -78,14 +78,14 @@ function test1D() {
   // because our decision of disabling the mixed content blocker is persistent.
   assertMixedContentBlockingState(gTestBrowser, {activeLoaded: true, activeBlocked: false, passiveLoaded: false});
 
-  var actual = content.document.getElementById('mctestdiv').innerHTML;
+  var actual = content.document.getElementById("mctestdiv").innerHTML;
   is(actual, "Mixed Content Blocker disabled", "OK: Executed mixed script in Test 1D");
 
   // move on to Test 2
   test2();
 }
 
-//------------------------ Test 2 ------------------------------
+// ------------------------ Test 2 ------------------------------
 
 function test2() {
   BrowserTestUtils.browserLoaded(gTestBrowser).then(test2A);
@@ -106,12 +106,12 @@ function test2A() {
 function test2B() {
   var expected = "Mixed Content Blocker disabled";
   waitForCondition(
-    () => content.document.getElementById('mctestdiv').innerHTML == expected,
+    () => content.document.getElementById("mctestdiv").innerHTML == expected,
     test2C, "Error: Waited too long for mixed script to run in Test 2B");
 }
 
 function test2C() {
-  var actual = content.document.getElementById('mctestdiv').innerHTML;
+  var actual = content.document.getElementById("mctestdiv").innerHTML;
   is(actual, "Mixed Content Blocker disabled", "OK: Executed mixed script in Test 2C");
 
   // The Script loaded after we disabled the page, now we are going to reload the
@@ -128,14 +128,14 @@ function test2D() {
   // because our decision of disabling the mixed content blocker is persistent.
   assertMixedContentBlockingState(gTestBrowser, {activeLoaded: true, activeBlocked: false, passiveLoaded: false});
 
-  var actual = content.document.getElementById('mctestdiv').innerHTML;
+  var actual = content.document.getElementById("mctestdiv").innerHTML;
   is(actual, "Mixed Content Blocker disabled", "OK: Executed mixed script in Test 2D");
 
   // move on to Test 3
   test3();
 }
 
-//------------------------ Test 3 ------------------------------
+// ------------------------ Test 3 ------------------------------
 
 function test3() {
   BrowserTestUtils.browserLoaded(gTestBrowser).then(test3A);
@@ -150,7 +150,7 @@ function test3A() {
   cleanUpAfterTests();
 }
 
-//------------------------------------------------------
+// ------------------------------------------------------
 
 function test() {
   // Performing async calls, e.g. 'onload', we have to wait till all of them finished

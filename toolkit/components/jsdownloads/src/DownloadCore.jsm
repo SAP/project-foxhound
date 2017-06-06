@@ -50,8 +50,7 @@ this.EXPORTED_SYMBOLS = [
   "DownloadPDFSaver",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -89,6 +88,7 @@ XPCOMUtils.defineLazyServiceGetter(this, "gPrintSettingsService",
            "@mozilla.org/gfx/printsettings-service;1",
            Ci.nsIPrintSettingsService);
 
+/* global DownloadIntegration */
 Integration.downloads.defineModuleGetter(this, "DownloadIntegration",
             "resource://gre/modules/DownloadIntegration.jsm");
 
@@ -108,8 +108,7 @@ function isString(aValue) {
 /**
  * Serialize the unknown properties of aObject into aSerializable.
  */
-function serializeUnknownProperties(aObject, aSerializable)
-{
+function serializeUnknownProperties(aObject, aSerializable) {
   if (aObject._unknownProperties) {
     for (let property in aObject._unknownProperties) {
       aSerializable[property] = aObject._unknownProperties[property];
@@ -122,8 +121,7 @@ function serializeUnknownProperties(aObject, aSerializable)
  * _unknownProperties field of aObject. aFilterFn is called for each property
  * name of aObject and should return true only for unknown properties.
  */
-function deserializeUnknownProperties(aObject, aSerializable, aFilterFn)
-{
+function deserializeUnknownProperties(aObject, aSerializable, aFilterFn) {
   for (let property in aSerializable) {
     if (aFilterFn(property)) {
       if (!aObject._unknownProperties) {
@@ -142,16 +140,14 @@ function deserializeUnknownProperties(aObject, aSerializable, aFilterFn)
  */
 const kProgressUpdateIntervalMs = 400;
 
-////////////////////////////////////////////////////////////////////////////////
-//// Download
+// Download
 
 /**
  * Represents a single download, with associated state and actions.  This object
  * is transient, though it can be included in a DownloadList so that it can be
  * managed by the user interface and persisted across sessions.
  */
-this.Download = function ()
-{
+this.Download = function() {
   this._deferSucceeded = Promise.defer();
 }
 
@@ -352,8 +348,7 @@ this.Download.prototype = {
    * @resolves When the download has finished successfully.
    * @rejects JavaScript exception if the download failed.
    */
-  start: function D_start()
-  {
+  start: function D_start() {
     // If the download succeeded, it's the final state, we have nothing to do.
     if (this.succeeded) {
       return Promise.resolve();
@@ -403,8 +398,7 @@ this.Download.prototype = {
     // it comes in late from a download attempt that was replaced by a new one.
     // If the cancellation process for the download has started, then the update
     // is ignored.
-    function DS_setProgressBytes(aCurrentBytes, aTotalBytes, aHasPartialData)
-    {
+    function DS_setProgressBytes(aCurrentBytes, aTotalBytes, aHasPartialData) {
       if (this._currentAttempt == currentAttempt) {
         this._setBytes(aCurrentBytes, aTotalBytes, aHasPartialData);
       }
@@ -414,8 +408,7 @@ this.Download.prototype = {
     // object, unless it comes in late from a download attempt that was
     // replaced by a new one.  If the cancellation process for the download has
     // started, then the update is ignored.
-    function DS_setProperties(aOptions)
-    {
+    function DS_setProperties(aOptions) {
       if (this._currentAttempt != currentAttempt) {
         return;
       }
@@ -623,7 +616,7 @@ this.Download.prototype = {
    * @resolves When the Download has been unblocked and succeeded.
    * @rejects  JavaScript exception if any of the operations failed.
    */
-  unblock: function() {
+  unblock() {
     if (this._promiseUnblock) {
       return this._promiseUnblock;
     }
@@ -667,7 +660,7 @@ this.Download.prototype = {
    * @resolves When the Download's data has been removed.
    * @rejects  JavaScript exception if any of the operations failed.
    */
-  confirmBlock: function() {
+  confirmBlock() {
     if (this._promiseConfirmBlock) {
       return this._promiseConfirmBlock;
     }
@@ -712,7 +705,7 @@ this.Download.prototype = {
    * @rejects  JavaScript exception if there was an error trying to launch
    *           the file.
    */
-  launch: function () {
+  launch() {
     if (!this.succeeded) {
       return Promise.reject(
         new Error("launch can only be called if the download succeeded")
@@ -774,8 +767,7 @@ this.Download.prototype = {
    * @resolves When the cancellation process has finished.
    * @rejects Never.
    */
-  cancel: function D_cancel()
-  {
+  cancel: function D_cancel() {
     // If the download is currently stopped, we have nothing to do.
     if (this.stopped) {
       return Promise.resolve();
@@ -846,8 +838,7 @@ this.Download.prototype = {
    * @resolves When the partial data has been successfully removed.
    * @rejects JavaScript exception if the operation could not be completed.
    */
-  removePartialData: function ()
-  {
+  removePartialData() {
     if (!this.canceled && !this.error) {
       return Promise.resolve();
     }
@@ -903,8 +894,7 @@ this.Download.prototype = {
    * @resolves When the download has finished successfully.
    * @rejects Never.
    */
-  whenSucceeded: function D_whenSucceeded()
-  {
+  whenSucceeded: function D_whenSucceeded() {
     return this._deferSucceeded.promise;
   },
 
@@ -921,8 +911,7 @@ this.Download.prototype = {
    * @resolves When the operation has completed.
    * @rejects Never.
    */
-  refresh: function ()
-  {
+  refresh() {
     return Task.spawn(function* () {
       if (!this.stopped || this._finalized) {
         return;
@@ -1000,8 +989,7 @@ this.Download.prototype = {
    * @rejects JavaScript exception if an error occurred while removing the
    *          partially downloaded data.
    */
-  finalize: function (aRemovePartialData)
-  {
+  finalize(aRemovePartialData) {
     // Prevents the download from starting again after having been stopped.
     this._finalized = true;
 
@@ -1097,16 +1085,16 @@ this.Download.prototype = {
    *
    * @return A JavaScript object that can be serialized to JSON.
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     let serializable = {
       source: this.source.toSerializable(),
       target: this.target.toSerializable(),
     };
 
     let saver = this.saver.toSerializable();
-    if (!saver) {
-      // If we are unable to serialize the saver, we won't persist the download.
+    if (!serializable.source || !saver) {
+      // If we are unable to serialize either the source or the saver,
+      // we won't persist the download.
       return null;
     }
 
@@ -1148,8 +1136,7 @@ this.Download.prototype = {
    *
    * @return String representing the relevant download state.
    */
-  getSerializationHash: function ()
-  {
+  getSerializationHash() {
     // The "succeeded", "canceled", "error", and startTime properties are not
     // taken into account because they all change before the "stopped" property
     // changes, and are not altered in other cases.
@@ -1193,7 +1180,7 @@ const kPlainSerializableDownloadProperties = [
  *
  * @return The newly created Download object.
  */
-Download.fromSerializable = function (aSerializable) {
+Download.fromSerializable = function(aSerializable) {
   let download = new Download();
   if (aSerializable.source instanceof DownloadSource) {
     download.source = aSerializable.source;
@@ -1248,13 +1235,12 @@ Download.fromSerializable = function (aSerializable) {
   return download;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadSource
+// DownloadSource
 
 /**
  * Represents the source of a download, for example a document or an URI.
  */
-this.DownloadSource = function () {}
+this.DownloadSource = function() {}
 
 this.DownloadSource.prototype = {
   /**
@@ -1276,12 +1262,33 @@ this.DownloadSource.prototype = {
   referrer: null,
 
   /**
+   * For downloads handled by the (default) DownloadCopySaver, this function
+   * can adjust the network channel before it is opened, for example to change
+   * the HTTP headers or to upload a stream as POST data.
+   *
+   * @note If this is defined this object will not be serializable, thus the
+   *       Download object will not be persisted across sessions.
+   *
+   * @param aChannel
+   *        The nsIChannel to be adjusted.
+   *
+   * @return {Promise}
+   * @resolves When the channel has been adjusted and can be opened.
+   * @rejects JavaScript exception that will cause the download to fail.
+   */
+   adjustChannel: null,
+
+  /**
    * Returns a static representation of the current object state.
    *
    * @return A JavaScript object that can be serialized to JSON.
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
+    if (this.adjustChannel) {
+      // If the callback was used, we can't reproduce this across sessions.
+      return null;
+    }
+
     // Simplify the representation if we don't have other details.
     if (!this.isPrivate && !this.referrer && !this._unknownProperties) {
       return this.url;
@@ -1314,11 +1321,15 @@ this.DownloadSource.prototype = {
  *          referrer: String containing the referrer URI of the download source.
  *                    Can be omitted or null if no referrer should be sent or
  *                    the download source is not HTTP.
+ *          adjustChannel: For downloads handled by (default) DownloadCopySaver,
+ *                         this function can adjust the network channel before
+ *                         it is opened, for example to change the HTTP headers
+ *                         or to upload a stream as POST data.  Optional.
  *        }
  *
  * @return The newly created DownloadSource object.
  */
-this.DownloadSource.fromSerializable = function (aSerializable) {
+this.DownloadSource.fromSerializable = function(aSerializable) {
   let source = new DownloadSource();
   if (isString(aSerializable)) {
     // Convert String objects to primitive strings at this point.
@@ -1338,6 +1349,9 @@ this.DownloadSource.fromSerializable = function (aSerializable) {
     if ("referrer" in aSerializable) {
       source.referrer = aSerializable.referrer;
     }
+    if ("adjustChannel" in aSerializable) {
+      source.adjustChannel = aSerializable.adjustChannel;
+    }
 
     deserializeUnknownProperties(source, aSerializable, property =>
       property != "url" && property != "isPrivate" && property != "referrer");
@@ -1346,14 +1360,13 @@ this.DownloadSource.fromSerializable = function (aSerializable) {
   return source;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadTarget
+// DownloadTarget
 
 /**
  * Represents the target of a download, for example a file in the global
  * downloads directory, or a file in the system temporary directory.
  */
-this.DownloadTarget = function () {}
+this.DownloadTarget = function() {}
 
 this.DownloadTarget.prototype = {
   /**
@@ -1425,8 +1438,7 @@ this.DownloadTarget.prototype = {
    *
    * @return A JavaScript object that can be serialized to JSON.
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     // Simplify the representation if we don't have other details.
     if (!this.partFilePath && !this._unknownProperties) {
       return this.path;
@@ -1453,7 +1465,7 @@ this.DownloadTarget.prototype = {
  *
  * @return The newly created DownloadTarget object.
  */
-this.DownloadTarget.fromSerializable = function (aSerializable) {
+this.DownloadTarget.fromSerializable = function(aSerializable) {
   let target = new DownloadTarget();
   if (isString(aSerializable)) {
     // Convert String objects to primitive strings at this point.
@@ -1475,8 +1487,7 @@ this.DownloadTarget.fromSerializable = function (aSerializable) {
   return target;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadError
+// DownloadError
 
 /**
  * Provides detailed information about a download failure.
@@ -1496,8 +1507,7 @@ this.DownloadTarget.fromSerializable = function (aSerializable) {
  *        The properties object may also contain any of the DownloadError's
  *        because properties, which will be set accordingly in the error object.
  */
-this.DownloadError = function (aProperties)
-{
+this.DownloadError = function(aProperties) {
   const NS_ERROR_MODULE_BASE_OFFSET = 0x45;
   const NS_ERROR_MODULE_NETWORK = 6;
   const NS_ERROR_MODULE_FILES = 13;
@@ -1521,8 +1531,7 @@ this.DownloadError = function (aProperties)
                  NS_ERROR_MODULE_BASE_OFFSET;
     this.becauseSourceFailed = (module == NS_ERROR_MODULE_NETWORK);
     this.becauseTargetFailed = (module == NS_ERROR_MODULE_FILES);
-  }
-  else {
+  } else {
     if (aProperties.becauseSourceFailed) {
       this.becauseSourceFailed = true;
     }
@@ -1628,8 +1637,7 @@ this.DownloadError.prototype = {
    *
    * @return A JavaScript object that can be serialized to JSON.
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     let serializable = {
       result: this.result,
       message: this.message,
@@ -1655,7 +1663,7 @@ this.DownloadError.prototype = {
  *
  * @return The newly created DownloadError object.
  */
-this.DownloadError.fromSerializable = function (aSerializable) {
+this.DownloadError.fromSerializable = function(aSerializable) {
   let e = new DownloadError(aSerializable);
   deserializeUnknownProperties(e, aSerializable, property =>
     property != "result" &&
@@ -1671,13 +1679,12 @@ this.DownloadError.fromSerializable = function (aSerializable) {
   return e;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadSaver
+// DownloadSaver
 
 /**
  * Template for an object that actually transfers the data for the download.
  */
-this.DownloadSaver = function () {}
+this.DownloadSaver = function() {}
 
 this.DownloadSaver.prototype = {
   /**
@@ -1710,16 +1717,14 @@ this.DownloadSaver.prototype = {
    * @resolves When the download has finished successfully.
    * @rejects JavaScript exception if the download failed.
    */
-  execute: function DS_execute(aSetProgressBytesFn, aSetPropertiesFn)
-  {
+  execute: function DS_execute(aSetProgressBytesFn, aSetPropertiesFn) {
     throw new Error("Not implemented.");
   },
 
   /**
    * Cancels the download.
    */
-  cancel: function DS_cancel()
-  {
+  cancel: function DS_cancel() {
     throw new Error("Not implemented.");
   },
 
@@ -1734,8 +1739,7 @@ this.DownloadSaver.prototype = {
    * @resolves When the operation has finished successfully.
    * @rejects JavaScript exception.
    */
-  removePartialData: function DS_removePartialData()
-  {
+  removePartialData: function DS_removePartialData() {
     return Promise.resolve();
   },
 
@@ -1744,8 +1748,7 @@ this.DownloadSaver.prototype = {
    * started, to add it to the browsing history.  This method has no effect if
    * the download is private.
    */
-  addToHistory: function ()
-  {
+  addToHistory() {
     if (this.download.source.isPrivate) {
       return;
     }
@@ -1762,8 +1765,7 @@ this.DownloadSaver.prototype = {
     try {
       gDownloadHistory.addDownload(sourceUri, referrerUri, startPRTime,
                                    targetUri);
-    }
-    catch (ex) {
+    } catch (ex) {
       if (!(ex instanceof Components.Exception) ||
           ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
         throw ex;
@@ -1781,21 +1783,18 @@ this.DownloadSaver.prototype = {
    *
    * @return A JavaScript object that can be serialized to JSON.
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     throw new Error("Not implemented.");
   },
 
   /**
    * Returns the SHA-256 hash of the downloaded file, if it exists.
    */
-  getSha256Hash: function ()
-  {
+  getSha256Hash() {
     throw new Error("Not implemented.");
   },
 
-  getSignatureInfo: function ()
-  {
+  getSignatureInfo() {
     throw new Error("Not implemented.");
   },
 }; // DownloadSaver
@@ -1810,7 +1809,7 @@ this.DownloadSaver.prototype = {
  *
  * @return The newly created DownloadSaver object.
  */
-this.DownloadSaver.fromSerializable = function (aSerializable) {
+this.DownloadSaver.fromSerializable = function(aSerializable) {
   let serializable = isString(aSerializable) ? { type: aSerializable }
                                              : aSerializable;
   let saver;
@@ -1830,13 +1829,12 @@ this.DownloadSaver.fromSerializable = function (aSerializable) {
   return saver;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadCopySaver
+// DownloadCopySaver
 
 /**
  * Saver object that simply copies the entire source file to the target.
  */
-this.DownloadCopySaver = function () {}
+this.DownloadCopySaver = function() {}
 
 this.DownloadCopySaver.prototype = {
   __proto__: DownloadSaver.prototype,
@@ -1886,8 +1884,7 @@ this.DownloadCopySaver.prototype = {
   /**
    * Implements "DownloadSaver.execute".
    */
-  execute: function DCS_execute(aSetProgressBytesFn, aSetPropertiesFn)
-  {
+  execute: function DCS_execute(aSetProgressBytesFn, aSetPropertiesFn) {
     let copySaver = this;
 
     this._canceled = false;
@@ -1944,7 +1941,7 @@ this.DownloadCopySaver.prototype = {
           // When the operation completes, reflect the status in the promise
           // returned by this download execution function.
           backgroundFileSaver.observer = {
-            onTargetChange: function () { },
+            onTargetChange() { },
             onSaveComplete: (aSaver, aStatus) => {
               // Send notifications now that we can restart if needed.
               if (Components.isSuccessCode(aStatus)) {
@@ -2001,21 +1998,25 @@ this.DownloadCopySaver.prototype = {
             QueryInterface: XPCOMUtils.generateQI([Ci.nsIInterfaceRequestor]),
             getInterface: XPCOMUtils.generateQI([Ci.nsIProgressEventSink]),
             onProgress: function DCSE_onProgress(aRequest, aContext, aProgress,
-                                                 aProgressMax)
-            {
+                                                 aProgressMax) {
               let currentBytes = resumeFromBytes + aProgress;
               let totalBytes = aProgressMax == -1 ? -1 : (resumeFromBytes +
                                                           aProgressMax);
               aSetProgressBytesFn(currentBytes, totalBytes, aProgress > 0 &&
                                   partFilePath && keepPartialData);
             },
-            onStatus: function () { },
+            onStatus() { },
           };
+
+          // If the callback was set, handle it now before opening the channel.
+          if (download.source.adjustChannel) {
+            yield download.source.adjustChannel(channel);
+          }
 
           // Open the channel, directing output to the background file saver.
           backgroundFileSaver.QueryInterface(Ci.nsIStreamListener);
           channel.asyncOpen2({
-            onStartRequest: function (aRequest, aContext) {
+            onStartRequest: function(aRequest, aContext) {
               backgroundFileSaver.onStartRequest(aRequest, aContext);
 
               // Check if the request's response has been blocked by Windows
@@ -2096,7 +2097,7 @@ this.DownloadCopySaver.prototype = {
               }
             }.bind(copySaver),
 
-            onStopRequest: function (aRequest, aContext, aStatusCode) {
+            onStopRequest(aRequest, aContext, aStatusCode) {
               try {
                 backgroundFileSaver.onStopRequest(aRequest, aContext,
                                                   aStatusCode);
@@ -2108,14 +2109,14 @@ this.DownloadCopySaver.prototype = {
                   backgroundFileSaver.finish(Cr.NS_OK);
                 }
               }
-            }.bind(copySaver),
+            },
 
-            onDataAvailable: function (aRequest, aContext, aInputStream,
-                                       aOffset, aCount) {
+            onDataAvailable(aRequest, aContext, aInputStream,
+                                      aOffset, aCount) {
               backgroundFileSaver.onDataAvailable(aRequest, aContext,
                                                   aInputStream, aOffset,
                                                   aCount);
-            }.bind(copySaver),
+            },
           });
 
           // We should check if we have been canceled in the meantime, after
@@ -2216,8 +2217,7 @@ this.DownloadCopySaver.prototype = {
   /**
    * Implements "DownloadSaver.cancel".
    */
-  cancel: function DCS_cancel()
-  {
+  cancel: function DCS_cancel() {
     this._canceled = true;
     if (this._backgroundFileSaver) {
       this._backgroundFileSaver.finish(Cr.NS_ERROR_FAILURE);
@@ -2228,8 +2228,7 @@ this.DownloadCopySaver.prototype = {
   /**
    * Implements "DownloadSaver.removePartialData".
    */
-  removePartialData: function ()
-  {
+  removePartialData() {
     return Task.spawn(function* task_DCS_removePartialData() {
       if (this.download.target.partFilePath) {
         try {
@@ -2246,8 +2245,7 @@ this.DownloadCopySaver.prototype = {
   /**
    * Implements "DownloadSaver.toSerializable".
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     // Simplify the representation if we don't have other details.
     if (!this.entityID && !this._unknownProperties) {
       return "copy";
@@ -2262,24 +2260,21 @@ this.DownloadCopySaver.prototype = {
   /**
    * Implements "DownloadSaver.getSha256Hash"
    */
-  getSha256Hash: function ()
-  {
+  getSha256Hash() {
     return this._sha256Hash;
   },
 
   /*
    * Implements DownloadSaver.getSignatureInfo.
    */
-  getSignatureInfo: function ()
-  {
+  getSignatureInfo() {
     return this._signatureInfo;
   },
 
   /*
    * Implements DownloadSaver.getRedirects.
    */
-  getRedirects: function ()
-  {
+  getRedirects() {
     return this._redirects;
   }
 };
@@ -2293,7 +2288,7 @@ this.DownloadCopySaver.prototype = {
  *
  * @return The newly created DownloadCopySaver object.
  */
-this.DownloadCopySaver.fromSerializable = function (aSerializable) {
+this.DownloadCopySaver.fromSerializable = function(aSerializable) {
   let saver = new DownloadCopySaver();
   if ("entityID" in aSerializable) {
     saver.entityID = aSerializable.entityID;
@@ -2305,16 +2300,14 @@ this.DownloadCopySaver.fromSerializable = function (aSerializable) {
   return saver;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadLegacySaver
+// DownloadLegacySaver
 
 /**
  * Saver object that integrates with the legacy nsITransfer interface.
  *
  * For more background on the process, see the DownloadLegacyTransfer object.
  */
-this.DownloadLegacySaver = function ()
-{
+this.DownloadLegacySaver = function() {
   this.deferExecuted = Promise.defer();
   this.deferCanceled = Promise.defer();
 }
@@ -2377,8 +2370,7 @@ this.DownloadLegacySaver.prototype = {
    * @param aTotalBytes
    *        Total number of bytes to be transferred, or -1 if unknown.
    */
-  onProgressBytes: function DLS_onProgressBytes(aCurrentBytes, aTotalBytes)
-  {
+  onProgressBytes: function DLS_onProgressBytes(aCurrentBytes, aTotalBytes) {
     this.progressWasNotified = true;
 
     // Ignore progress notifications until we are ready to process them.
@@ -2412,8 +2404,7 @@ this.DownloadLegacySaver.prototype = {
    *        download is added to the browsing history here.  Private downloads
    *        are never added to history even if this parameter is false.
    */
-  onTransferStarted: function (aRequest, aAlreadyAddedToHistory)
-  {
+  onTransferStarted(aRequest, aAlreadyAddedToHistory) {
     // Store the entity ID to use for resuming if required.
     if (this.download.tryToKeepPartialData &&
         aRequest instanceof Ci.nsIResumableChannel) {
@@ -2446,8 +2437,7 @@ this.DownloadLegacySaver.prototype = {
    * @param aStatus
    *        Status code received by the nsITransfer implementation.
    */
-  onTransferFinished: function DLS_onTransferFinished(aRequest, aStatus)
-  {
+  onTransferFinished: function DLS_onTransferFinished(aRequest, aStatus) {
     // Store a reference to the request, used when handling completion.
     this.request = aRequest;
 
@@ -2485,8 +2475,7 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Implements "DownloadSaver.execute".
    */
-  execute: function DLS_execute(aSetProgressBytesFn, aSetPropertiesFn)
-  {
+  execute: function DLS_execute(aSetProgressBytesFn, aSetPropertiesFn) {
     // Check if this is not the first execution of the download.  The Download
     // object guarantees that this function is not re-entered during execution.
     if (this.firstExecutionFinished) {
@@ -2575,7 +2564,7 @@ this.DownloadLegacySaver.prototype = {
     }.bind(this));
   },
 
-  _checkReputationAndMove: function () {
+  _checkReputationAndMove() {
     return DownloadCopySaver.prototype._checkReputationAndMove
                                       .apply(this, arguments);
   },
@@ -2583,8 +2572,7 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Implements "DownloadSaver.cancel".
    */
-  cancel: function DLS_cancel()
-  {
+  cancel: function DLS_cancel() {
     // We may be using a DownloadCopySaver to handle resuming.
     if (this.copySaver) {
       return this.copySaver.cancel.apply(this.copySaver, arguments);
@@ -2601,8 +2589,7 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Implements "DownloadSaver.removePartialData".
    */
-  removePartialData: function ()
-  {
+  removePartialData() {
     // DownloadCopySaver and DownloadLeagcySaver use the same logic for removing
     // partially downloaded data, though this implementation isn't shared by
     // other saver types, thus it isn't found on their shared prototype.
@@ -2612,8 +2599,7 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Implements "DownloadSaver.toSerializable".
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     // This object depends on legacy components that are created externally,
     // thus it cannot be rebuilt during deserialization.  To support resuming
     // across different browser sessions, this object is transformed into a
@@ -2624,8 +2610,7 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Implements "DownloadSaver.getSha256Hash".
    */
-  getSha256Hash: function ()
-  {
+  getSha256Hash() {
     if (this.copySaver) {
       return this.copySaver.getSha256Hash();
     }
@@ -2635,16 +2620,14 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Called by the nsITransfer implementation when the hash is available.
    */
-  setSha256Hash: function (hash)
-  {
+  setSha256Hash(hash) {
     this._sha256Hash = hash;
   },
 
   /**
    * Implements "DownloadSaver.getSignatureInfo".
    */
-  getSignatureInfo: function ()
-  {
+  getSignatureInfo() {
     if (this.copySaver) {
       return this.copySaver.getSignatureInfo();
     }
@@ -2654,16 +2637,14 @@ this.DownloadLegacySaver.prototype = {
   /**
    * Called by the nsITransfer implementation when the hash is available.
    */
-  setSignatureInfo: function (signatureInfo)
-  {
+  setSignatureInfo(signatureInfo) {
     this._signatureInfo = signatureInfo;
   },
 
   /**
    * Implements "DownloadSaver.getRedirects".
    */
-  getRedirects: function ()
-  {
+  getRedirects() {
     if (this.copySaver) {
       return this.copySaver.getRedirects();
     }
@@ -2674,8 +2655,7 @@ this.DownloadLegacySaver.prototype = {
    * Called by the nsITransfer implementation when the redirect chain is
    * available.
    */
-  setRedirects: function (redirects)
-  {
+  setRedirects(redirects) {
     this._redirects = redirects;
   },
 };
@@ -2685,12 +2665,11 @@ this.DownloadLegacySaver.prototype = {
  * deserializable form only when creating a new object in memory, because it
  * cannot be serialized to disk.
  */
-this.DownloadLegacySaver.fromSerializable = function () {
+this.DownloadLegacySaver.fromSerializable = function() {
   return new DownloadLegacySaver();
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadPDFSaver
+// DownloadPDFSaver
 
 /**
  * This DownloadSaver type creates a PDF file from the current document in a
@@ -2703,7 +2682,7 @@ this.DownloadLegacySaver.fromSerializable = function () {
  * Since this DownloadSaver type requires a live document as a source, it cannot
  * be persisted across sessions, unless the download already succeeded.
  */
-this.DownloadPDFSaver = function () {
+this.DownloadPDFSaver = function() {
 }
 
 this.DownloadPDFSaver.prototype = {
@@ -2719,8 +2698,7 @@ this.DownloadPDFSaver.prototype = {
   /**
    * Implements "DownloadSaver.execute".
    */
-  execute: function (aSetProgressBytesFn, aSetPropertiesFn)
-  {
+  execute(aSetProgressBytesFn, aSetPropertiesFn) {
     return Task.spawn(function* task_DCS_execute() {
       if (!this.download.source.windowRef) {
         throw new DownloadError({
@@ -2774,7 +2752,7 @@ this.DownloadPDFSaver.prototype = {
       try {
         yield new Promise((resolve, reject) => {
           this._webBrowserPrint.print(printSettings, {
-            onStateChange: function (webProgress, request, stateFlags, status) {
+            onStateChange(webProgress, request, stateFlags, status) {
               if (stateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
                 if (!Components.isSuccessCode(status)) {
                   reject(new DownloadError({ result: status,
@@ -2784,14 +2762,14 @@ this.DownloadPDFSaver.prototype = {
                 }
               }
             },
-            onProgressChange: function (webProgress, request, curSelfProgress,
-                                        maxSelfProgress, curTotalProgress,
-                                        maxTotalProgress) {
+            onProgressChange(webProgress, request, curSelfProgress,
+                                       maxSelfProgress, curTotalProgress,
+                                       maxTotalProgress) {
               aSetProgressBytesFn(curTotalProgress, maxTotalProgress, false);
             },
-            onLocationChange: function () {},
-            onStatusChange: function () {},
-            onSecurityChange: function () {},
+            onLocationChange() {},
+            onStatusChange() {},
+            onSecurityChange() {},
           });
         });
       } finally {
@@ -2807,8 +2785,7 @@ this.DownloadPDFSaver.prototype = {
   /**
    * Implements "DownloadSaver.cancel".
    */
-  cancel: function DCS_cancel()
-  {
+  cancel: function DCS_cancel() {
     if (this._webBrowserPrint) {
       this._webBrowserPrint.cancel();
       this._webBrowserPrint = null;
@@ -2818,8 +2795,7 @@ this.DownloadPDFSaver.prototype = {
   /**
    * Implements "DownloadSaver.toSerializable".
    */
-  toSerializable: function ()
-  {
+  toSerializable() {
     if (this.download.succeeded) {
       return DownloadCopySaver.prototype.toSerializable.call(this);
     }
@@ -2840,7 +2816,6 @@ this.DownloadPDFSaver.prototype = {
  *
  * @return The newly created DownloadPDFSaver object.
  */
-this.DownloadPDFSaver.fromSerializable = function (aSerializable) {
+this.DownloadPDFSaver.fromSerializable = function(aSerializable) {
   return new DownloadPDFSaver();
 };
-

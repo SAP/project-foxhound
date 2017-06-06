@@ -88,6 +88,8 @@ function isKeyIn(key, ...keys) {
  *       This function is called before the editor has been torn down.
  *    {Function} destroy:
  *       Called when the editor is destroyed and has been torn down.
+ *    {Function} contextMenu:
+ *       Called when the user triggers a contextmenu event on the input.
  *    {Object} advanceChars:
  *       This can be either a string or a function.
  *       If it is a string, then if any characters in it are typed,
@@ -157,7 +159,7 @@ function editableItem(options, callback) {
       }
       evt.stopPropagation();
     }
-  }, false);
+  });
 
   // If focused by means other than a click, start editing by
   // pressing enter or space.
@@ -175,14 +177,14 @@ function editableItem(options, callback) {
     if (evt.target.nodeName !== "a") {
       let cleanup = function () {
         element.style.removeProperty("outline-style");
-        element.removeEventListener("mouseup", cleanup, false);
-        element.removeEventListener("mouseout", cleanup, false);
+        element.removeEventListener("mouseup", cleanup);
+        element.removeEventListener("mouseout", cleanup);
       };
       element.style.setProperty("outline-style", "none");
-      element.addEventListener("mouseup", cleanup, false);
-      element.addEventListener("mouseout", cleanup, false);
+      element.addEventListener("mouseup", cleanup);
+      element.addEventListener("mouseout", cleanup);
     }
-  }, false);
+  });
 
   // Mark the element editable field for tab
   // navigation while editing.
@@ -222,6 +224,7 @@ function InplaceEditor(options, event) {
   this.cssProperties = options.cssProperties;
   this.change = options.change;
   this.done = options.done;
+  this.contextMenu = options.contextMenu;
   this.destroy = options.destroy;
   this.initial = options.initial ? options.initial : this.elt.textContent;
   this.multiline = options.multiline || false;
@@ -249,6 +252,7 @@ function InplaceEditor(options, event) {
   this._onInput = this._onInput.bind(this);
   this._onKeyup = this._onKeyup.bind(this);
   this._onAutocompletePopupClick = this._onAutocompletePopupClick.bind(this);
+  this._onContextMenu = this._onContextMenu.bind(this);
 
   this._createInput();
 
@@ -284,18 +288,19 @@ function InplaceEditor(options, event) {
     this._maybeSuggestCompletion(false);
   }
 
-  this.input.addEventListener("blur", this._onBlur, false);
-  this.input.addEventListener("keypress", this._onKeyPress, false);
-  this.input.addEventListener("input", this._onInput, false);
-  this.input.addEventListener("dblclick", this._stopEventPropagation, false);
-  this.input.addEventListener("click", this._stopEventPropagation, false);
-  this.input.addEventListener("mousedown", this._stopEventPropagation, false);
-  this.doc.defaultView.addEventListener("blur", this._onWindowBlur, false);
+  this.input.addEventListener("blur", this._onBlur);
+  this.input.addEventListener("keypress", this._onKeyPress);
+  this.input.addEventListener("input", this._onInput);
+  this.input.addEventListener("dblclick", this._stopEventPropagation);
+  this.input.addEventListener("click", this._stopEventPropagation);
+  this.input.addEventListener("mousedown", this._stopEventPropagation);
+  this.input.addEventListener("contextmenu", this._onContextMenu);
+  this.doc.defaultView.addEventListener("blur", this._onWindowBlur);
 
   this.validate = options.validate;
 
   if (this.validate) {
-    this.input.addEventListener("keyup", this._onKeyup, false);
+    this.input.addEventListener("keyup", this._onKeyup);
   }
 
   this._updateSize();
@@ -345,16 +350,15 @@ InplaceEditor.prototype = {
       return;
     }
 
-    this.input.removeEventListener("blur", this._onBlur, false);
-    this.input.removeEventListener("keypress", this._onKeyPress, false);
-    this.input.removeEventListener("keyup", this._onKeyup, false);
-    this.input.removeEventListener("input", this._onInput, false);
-    this.input.removeEventListener("dblclick", this._stopEventPropagation,
-      false);
-    this.input.removeEventListener("click", this._stopEventPropagation, false);
-    this.input.removeEventListener("mousedown", this._stopEventPropagation,
-      false);
-    this.doc.defaultView.removeEventListener("blur", this._onWindowBlur, false);
+    this.input.removeEventListener("blur", this._onBlur);
+    this.input.removeEventListener("keypress", this._onKeyPress);
+    this.input.removeEventListener("keyup", this._onKeyup);
+    this.input.removeEventListener("input", this._onInput);
+    this.input.removeEventListener("dblclick", this._stopEventPropagation);
+    this.input.removeEventListener("click", this._stopEventPropagation);
+    this.input.removeEventListener("mousedown", this._stopEventPropagation);
+    this.input.removeEventListener("contextmenu", this._onContextMenu);
+    this.doc.defaultView.removeEventListener("blur", this._onWindowBlur);
 
     this._stopAutosize();
 
@@ -1164,6 +1168,12 @@ InplaceEditor.prototype = {
     }
   },
 
+  _onContextMenu: function (event) {
+    if (this.contextMenu) {
+      this.contextMenu(event);
+    }
+  },
+
   /**
    * Open the autocomplete popup, adding a custom click handler and classname.
    *
@@ -1320,9 +1330,8 @@ InplaceEditor.prototype = {
           startCheckQuery = "";
         }
 
-        list =
-          ["!important",
-           ...this._getCSSValuesForPropertyName(this.property.name)];
+        list = ["!important",
+                ...this._getCSSValuesForPropertyName(this.property.name)];
 
         if (query == "") {
           // Do not suggest '!important' without any manually typed character.
@@ -1346,9 +1355,8 @@ InplaceEditor.prototype = {
             // We are in CSS value completion
             let propertyName =
               query.match(/[;"'=]\s*([^"';:= ]+)\s*:\s*[^"';:=]*$/)[1];
-            list =
-              ["!important;",
-               ...this._getCSSValuesForPropertyName(propertyName)];
+            list = ["!important;",
+                    ...this._getCSSValuesForPropertyName(propertyName)];
             let matchLastQuery = /([^\s,.\/]+$)/.exec(match[2] || "");
             if (matchLastQuery) {
               startCheckQuery = matchLastQuery[0];

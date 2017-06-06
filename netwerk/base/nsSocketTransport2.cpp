@@ -22,6 +22,7 @@
 #include "prerr.h"
 #include "NetworkActivityMonitor.h"
 #include "NSSErrorsService.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/net/NeckoChild.h"
 #include "nsThreadUtils.h"
 #include "nsISocketProviderService.h"
@@ -39,7 +40,6 @@
 #include "xpcpublic.h"
 
 #if defined(XP_WIN)
-#include "mozilla/WindowsVersion.h"
 #include "ShutdownLayer.h"
 #endif
 
@@ -204,6 +204,9 @@ ErrorAccordingToNSPR(PRErrorCode errorCode)
         break;
     case PR_READ_ONLY_FILESYSTEM_ERROR:
         rv = NS_ERROR_FILE_READ_ONLY;
+        break;
+    case PR_BAD_ADDRESS_ERROR:
+        rv = NS_ERROR_UNKNOWN_HOST;
         break;
     default:
         if (psm::IsNSSErrorCode(errorCode)) {
@@ -739,6 +742,7 @@ nsSocketTransport::nsSocketTransport()
     , mProxyTransparentResolvesHost(false)
     , mHttpsProxy(false)
     , mConnectionFlags(0)
+    , mReuseAddrPort(false)
     , mState(STATE_CLOSED)
     , mAttached(false)
     , mInputClosed(true)
@@ -1172,7 +1176,7 @@ nsSocketTransport::BuildSocket(PRFileDesc *&fd, bool &proxyTransparent, bool &us
                 rv = provider->NewSocket(mNetAddr.raw.family,
                                          mHttpsProxy ? mProxyHost.get() : host,
                                          mHttpsProxy ? mProxyPort : port,
-                                         proxyInfo,
+                                         proxyInfo, mOriginAttributes,
                                          controlFlags, &fd,
                                          getter_AddRefs(secinfo));
 
@@ -1187,9 +1191,10 @@ nsSocketTransport::BuildSocket(PRFileDesc *&fd, bool &proxyTransparent, bool &us
                 // to the stack (such as pushing an io layer)
                 rv = provider->AddToSocket(mNetAddr.raw.family,
                                            host, port, proxyInfo,
-                                           controlFlags, fd,
+                                           mOriginAttributes, controlFlags, fd,
                                            getter_AddRefs(secinfo));
             }
+
             // controlFlags = 0; not used below this point...
             if (NS_FAILED(rv))
                 break;
@@ -1351,6 +1356,32 @@ nsSocketTransport::InitiateSocket()
     opt.value.non_blocking = true;
     status = PR_SetSocketOption(fd, &opt);
     NS_ASSERTION(status == PR_SUCCESS, "unable to make socket non-blocking");
+
+    if (mReuseAddrPort) {
+        SOCKET_LOG(("  Setting port/addr reuse socket options\n"));
+
+        // Set ReuseAddr for TCP sockets to enable having several
+        // sockets bound to same local IP and port
+        PRSocketOptionData opt_reuseaddr;
+        opt_reuseaddr.option = PR_SockOpt_Reuseaddr;
+        opt_reuseaddr.value.reuse_addr = PR_TRUE;
+        status = PR_SetSocketOption(fd, &opt_reuseaddr);
+        if (status != PR_SUCCESS) {
+            SOCKET_LOG(("  Couldn't set reuse addr socket option: %d\n",
+                        status));
+        }
+
+        // And also set ReusePort for platforms supporting this socket option
+        PRSocketOptionData opt_reuseport;
+        opt_reuseport.option = PR_SockOpt_Reuseport;
+        opt_reuseport.value.reuse_port = PR_TRUE;
+        status = PR_SetSocketOption(fd, &opt_reuseport);
+        if (status != PR_SUCCESS
+            && PR_GetError() != PR_OPERATION_NOT_SUPPORTED_ERROR) {
+            SOCKET_LOG(("  Couldn't set reuse port socket option: %d\n",
+                        status));
+        }
+    }
 
     // disable the nagle algorithm - if we rely on it to coalesce writes into
     // full packets the final packet of a multi segment POST/PUT or pipeline
@@ -1714,21 +1745,6 @@ nsSocketTransport::OnSocketConnected()
         NS_ASSERTION(mFDref == 1, "wrong socket ref count");
         SetSocketName(mFD);
         mFDconnected = true;
-
-#ifdef XP_WIN
-        if (!IsWin2003OrLater()) { // windows xp
-            PRSocketOptionData opt;
-            opt.option = PR_SockOpt_RecvBufferSize;
-            if (PR_GetSocketOption(mFD, &opt) == PR_SUCCESS) {
-                SOCKET_LOG(("%p checking rwin on xp originally=%u\n",
-                            this, opt.value.recv_buffer_size));
-                if (opt.value.recv_buffer_size < 65535) {
-                    opt.value.recv_buffer_size = 65535;
-                    PR_SetSocketOption(mFD, &opt);
-                }
-            }
-        }
-#endif
     }
 
     // Ensure keepalive is configured correctly if previously enabled.
@@ -1876,7 +1892,7 @@ nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status, nsISupports *pa
             SendStatus(NS_NET_STATUS_RESOLVED_HOST);
 
         SOCKET_LOG(("  MSG_DNS_LOOKUP_COMPLETE\n"));
-        mDNSRequest = 0;
+        mDNSRequest = nullptr;
         if (param) {
             mDNSRecord = static_cast<nsIDNSRecord *>(param);
             mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
@@ -2094,7 +2110,7 @@ nsSocketTransport::OnSocketDetached(PRFileDesc *fd)
         // make sure there isn't any pending DNS request
         if (mDNSRequest) {
             mDNSRequest->Cancel(NS_ERROR_ABORT);
-            mDNSRequest = 0;
+            mDNSRequest = nullptr;
         }
 
         //
@@ -2393,6 +2409,50 @@ nsSocketTransport::SetNetworkInterfaceId(const nsACString_internal &aNetworkInte
 }
 
 NS_IMETHODIMP
+nsSocketTransport::GetScriptableOriginAttributes(JSContext* aCx,
+    JS::MutableHandle<JS::Value> aOriginAttributes)
+{
+    if (NS_WARN_IF(!ToJSValue(aCx, mOriginAttributes, aOriginAttributes))) {
+        return NS_ERROR_FAILURE;
+    }
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetScriptableOriginAttributes(JSContext* aCx,
+    JS::Handle<JS::Value> aOriginAttributes)
+{
+    MutexAutoLock lock(mLock);
+    NS_ENSURE_FALSE(mFD.IsInitialized(), NS_ERROR_FAILURE);
+
+    OriginAttributes attrs;
+    if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
+        return NS_ERROR_INVALID_ARG;
+    }
+
+    mOriginAttributes = attrs;
+    return NS_OK;
+}
+
+nsresult
+nsSocketTransport::GetOriginAttributes(OriginAttributes* aOriginAttributes)
+{
+    NS_ENSURE_ARG(aOriginAttributes);
+    *aOriginAttributes = mOriginAttributes;
+    return NS_OK;
+}
+
+nsresult
+nsSocketTransport::SetOriginAttributes(const OriginAttributes& aOriginAttributes)
+{
+    MutexAutoLock lock(mLock);
+    NS_ENSURE_FALSE(mFD.IsInitialized(), NS_ERROR_FAILURE);
+
+    mOriginAttributes = aOriginAttributes;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsSocketTransport::GetPeerAddr(NetAddr *addr)
 {
     // once we are in the connected state, mNetAddr will not change.
@@ -2490,6 +2550,13 @@ nsSocketTransport::SetTimeout(uint32_t type, uint32_t value)
     mTimeouts[type] = (uint16_t) std::min<uint32_t>(value, UINT16_MAX);
     PostEvent(MSG_TIMEOUT_CHANGED);
     return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetReuseAddrPort(bool reuseAddrPort)
+{
+  mReuseAddrPort = reuseAddrPort;
+  return NS_OK;
 }
 
 NS_IMETHODIMP

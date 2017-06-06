@@ -36,7 +36,10 @@ NS_IMPL_ISUPPORTS(HttpServer,
                   nsIServerSocketListener,
                   nsILocalCertGetCallback)
 
-HttpServer::HttpServer()
+HttpServer::HttpServer(AbstractThread* aMainThread)
+  : mPort()
+  , mHttps()
+  , mAbstractMainThread(aMainThread)
 {
 }
 
@@ -303,6 +306,8 @@ HttpServer::Connection::Connection(nsISocketTransport* aTransport,
   : mServer(aServer)
   , mTransport(aTransport)
   , mState(eRequestLine)
+  , mPendingReqVersion()
+  , mRemainingBodySize()
   , mCloseAfterRequest(false)
 {
   nsCOMPtr<nsIInputStream> input;
@@ -524,19 +529,19 @@ IsWebSocketRequest(InternalRequest* aRequest, uint32_t aHttpVersion)
   InternalHeaders* headers = aRequest->Headers();
   ErrorResult res;
 
-  headers->Get(NS_LITERAL_CSTRING("upgrade"), str, res);
+  headers->GetFirst(NS_LITERAL_CSTRING("upgrade"), str, res);
   MOZ_ASSERT(!res.Failed());
   if (!str.EqualsLiteral("websocket")) {
     return false;
   }
 
-  headers->Get(NS_LITERAL_CSTRING("connection"), str, res);
+  headers->GetFirst(NS_LITERAL_CSTRING("connection"), str, res);
   MOZ_ASSERT(!res.Failed());
   if (!ContainsToken(str, NS_LITERAL_CSTRING("Upgrade"))) {
     return false;
   }
 
-  headers->Get(NS_LITERAL_CSTRING("sec-websocket-key"), str, res);
+  headers->GetFirst(NS_LITERAL_CSTRING("sec-websocket-key"), str, res);
   MOZ_ASSERT(!res.Failed());
   nsAutoCString binary;
   if (NS_FAILED(Base64Decode(str, binary)) || binary.Length() != 16) {
@@ -544,7 +549,7 @@ IsWebSocketRequest(InternalRequest* aRequest, uint32_t aHttpVersion)
   }
 
   nsresult rv;
-  headers->Get(NS_LITERAL_CSTRING("sec-websocket-version"), str, res);
+  headers->GetFirst(NS_LITERAL_CSTRING("sec-websocket-version"), str, res);
   MOZ_ASSERT(!res.Failed());
   if (str.ToInteger(&rv) != 13 || NS_FAILED(rv)) {
     return false;
@@ -581,16 +586,13 @@ HttpServer::Connection::ConsumeLine(const char* aBuffer,
     NS_ENSURE_TRUE(tokens.hasMoreTokens(), NS_ERROR_UNEXPECTED);
     nsDependentCSubstring method = tokens.nextToken();
     NS_ENSURE_TRUE(NS_IsValidHTTPToken(method), NS_ERROR_UNEXPECTED);
-
     NS_ENSURE_TRUE(tokens.hasMoreTokens(), NS_ERROR_UNEXPECTED);
     nsDependentCSubstring url = tokens.nextToken();
     // Seems like it's also allowed to pass full urls with scheme+host+port.
     // May need to support that.
     NS_ENSURE_TRUE(url.First() == '/', NS_ERROR_UNEXPECTED);
-
-    mPendingReq = new InternalRequest(url);
+    mPendingReq = new InternalRequest(url, /* aURLFragment */ EmptyCString());
     mPendingReq->SetMethod(method);
-
     NS_ENSURE_TRUE(tokens.hasMoreTokens(), NS_ERROR_UNEXPECTED);
     nsDependentCSubstring version = tokens.nextToken();
     NS_ENSURE_TRUE(StringBeginsWith(version, NS_LITERAL_CSTRING("HTTP/1.")),
@@ -640,9 +642,9 @@ HttpServer::Connection::ConsumeLine(const char* aBuffer,
     }
 
     nsAutoCString header;
-    mPendingReq->Headers()->Get(NS_LITERAL_CSTRING("connection"),
-                                header,
-                                res);
+    mPendingReq->Headers()->GetFirst(NS_LITERAL_CSTRING("connection"),
+                                     header,
+                                     res);
     MOZ_ASSERT(!res.Failed());
     // 1.0 defaults to closing connections.
     // 1.1 and higher defaults to keep-alive.
@@ -652,9 +654,9 @@ HttpServer::Connection::ConsumeLine(const char* aBuffer,
       mCloseAfterRequest = true;
     }
 
-    mPendingReq->Headers()->Get(NS_LITERAL_CSTRING("content-length"),
-                                header,
-                                res);
+    mPendingReq->Headers()->GetFirst(NS_LITERAL_CSTRING("content-length"),
+                                     header,
+                                     res);
     MOZ_ASSERT(!res.Failed());
 
     LOG_V("HttpServer::Connection::ConsumeLine(%p) - content-length is \"%s\"",
@@ -812,7 +814,7 @@ HttpServer::Connection::HandleAcceptWebSocket(const Optional<nsAString>& aProtoc
     NS_ConvertUTF16toUTF8 protocol(aProtocol.Value());
     nsAutoCString reqProtocols;
     mPendingWebSocketRequest->Headers()->
-      Get(NS_LITERAL_CSTRING("Sec-WebSocket-Protocol"), reqProtocols, aRv);
+      GetFirst(NS_LITERAL_CSTRING("Sec-WebSocket-Protocol"), reqProtocols, aRv);
     if (!ContainsToken(reqProtocols, protocol)) {
       // Should throw a better error here
       aRv.Throw(NS_ERROR_FAILURE);
@@ -825,7 +827,7 @@ HttpServer::Connection::HandleAcceptWebSocket(const Optional<nsAString>& aProtoc
 
   nsAutoCString key, hash;
   mPendingWebSocketRequest->Headers()->
-    Get(NS_LITERAL_CSTRING("Sec-WebSocket-Key"), key, aRv);
+    GetFirst(NS_LITERAL_CSTRING("Sec-WebSocket-Key"), key, aRv);
   nsresult rv = mozilla::net::CalculateWebSocketHashedSecret(key, hash);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
@@ -835,7 +837,7 @@ HttpServer::Connection::HandleAcceptWebSocket(const Optional<nsAString>& aProtoc
 
   nsAutoCString extensions, negotiatedExtensions;
   mPendingWebSocketRequest->Headers()->
-    Get(NS_LITERAL_CSTRING("Sec-WebSocket-Extensions"), extensions, aRv);
+    GetFirst(NS_LITERAL_CSTRING("Sec-WebSocket-Extensions"), extensions, aRv);
   mozilla::net::ProcessServerWebSocketExtensions(extensions,
                                                  negotiatedExtensions);
   if (!negotiatedExtensions.IsEmpty()) {
@@ -1048,7 +1050,7 @@ StreamCopier::FillOutputBuffer(char* aBuffer,
                                uint32_t aCount,
                                uint32_t* aCountRead)
 {
-  nsresult rv;
+  nsresult rv = NS_OK;
   while (mChunked && mSeparator.IsEmpty() && !mChunkRemaining &&
          !mAddedFinalSeparator) {
     uint64_t avail;
@@ -1252,7 +1254,7 @@ HttpServer::Connection::OnOutputStreamReady(nsIAsyncOutputStream* aStream)
       RefPtr<Connection> self = this;
 
       mOutputCopy->
-        Then(AbstractThread::MainThread(),
+        Then(mServer->mAbstractMainThread,
              __func__,
              [self, this] (nsresult aStatus) {
                MOZ_ASSERT(mOutputBuffers[0].mStream);

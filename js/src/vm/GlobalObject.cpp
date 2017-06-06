@@ -15,7 +15,6 @@
 #include "jsprototypes.h"
 #include "jsweakmap.h"
 
-#include "asmjs/WasmJS.h"
 #include "builtin/AtomicsObject.h"
 #include "builtin/Eval.h"
 #if EXPOSE_INTL_API
@@ -24,9 +23,7 @@
 #include "builtin/MapObject.h"
 #include "builtin/ModuleObject.h"
 #include "builtin/Object.h"
-#ifdef SPIDERMONKEY_PROMISE
 #include "builtin/Promise.h"
-#endif
 #include "builtin/RegExp.h"
 #include "builtin/SelfHostingDefines.h"
 #include "builtin/SymbolObject.h"
@@ -40,6 +37,7 @@
 #include "vm/RegExpStatics.h"
 #include "vm/RegExpStaticsObject.h"
 #include "vm/StopIterationObject.h"
+#include "wasm/WasmJS.h"
 
 #include "jscompartmentinlines.h"
 #include "jsobjinlines.h"
@@ -98,8 +96,8 @@ js::GlobalObject::getTypedObjectModule() const {
 /* static */ bool
 GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key)
 {
-    if (key == JSProto_Wasm || key == JSProto_WebAssembly)
-        return !cx->options().wasm() || !wasm::HasCompilerSupport(cx);
+    if (key == JSProto_WebAssembly)
+        return !wasm::HasSupport(cx);
 
 #ifdef ENABLE_SHARED_ARRAY_BUFFER
     // Return true if the given constructor has been disabled at run-time.
@@ -228,11 +226,9 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
         global->setConstructor(key, ObjectValue(*ctor));
     }
 
-    // Define any specified functions and properties, unless we're a dependent
-    // standard class (in which case they live on the prototype), or we're
-    // operating on the self-hosting global, in which case we don't want any
+    // If we're operating on the self-hosting global, we don't want any
     // functions and properties on the builtins and their prototypes.
-    if (!StandardClassIsDependent(key) && !cx->runtime()->isSelfHostingGlobal(global)) {
+    if (!cx->runtime()->isSelfHostingGlobal(global)) {
         if (const JSFunctionSpec* funs = clasp->specPrototypeFunctions()) {
             if (!JS_DefineFunctions(cx, proto, funs))
                 return false;
@@ -333,15 +329,15 @@ GlobalObject::createInternal(JSContext* cx, const Class* clasp)
 
     cx->compartment()->initGlobal(*global);
 
-    if (!global->setQualifiedVarObj(cx))
+    if (!JSObject::setQualifiedVarObj(cx, global))
         return nullptr;
-    if (!global->setDelegate(cx))
+    if (!JSObject::setDelegate(cx, global))
         return nullptr;
 
     return global;
 }
 
-GlobalObject*
+/* static */ GlobalObject*
 GlobalObject::new_(JSContext* cx, const Class* clasp, JSPrincipals* principals,
                    JS::OnNewGlobalHookOption hookOption,
                    const JS::CompartmentOptions& options)
@@ -376,10 +372,10 @@ GlobalObject::new_(JSContext* cx, const Class* clasp, JSPrincipals* principals,
         global = GlobalObject::createInternal(cx, clasp);
         if (!global)
             return nullptr;
-    }
 
-    if (hookOption == JS::FireOnNewGlobalHook)
-        JS_FireOnNewGlobalObject(cx, global);
+        if (hookOption == JS::FireOnNewGlobalHook)
+            JS_FireOnNewGlobalObject(cx, global);
+    }
 
     return global;
 }
@@ -402,14 +398,14 @@ GlobalObject::emptyGlobalScope() const
 GlobalObject::getOrCreateEval(JSContext* cx, Handle<GlobalObject*> global,
                               MutableHandleObject eval)
 {
-    if (!global->getOrCreateObjectPrototype(cx))
+    if (!getOrCreateObjectPrototype(cx, global))
         return false;
     eval.set(&global->getSlot(EVAL).toObject());
     return true;
 }
 
 bool
-GlobalObject::valueIsEval(Value val)
+GlobalObject::valueIsEval(const Value& val)
 {
     Value eval = getSlot(EVAL);
     return eval.isObject() && eval == val;
@@ -537,7 +533,6 @@ GlobalObject::initSelfHostingBuiltins(JSContext* cx, Handle<GlobalObject*> globa
            InitBareBuiltinCtor(cx, global, JSProto_Int32Array) &&
            InitBareWeakMapCtor(cx, global) &&
            InitStopIterationClass(cx, global) &&
-           InitSelfHostingCollectionIteratorFunctions(cx, global) &&
            DefineFunctions(cx, global, builtins, AsIntrinsic);
 }
 
@@ -566,8 +561,8 @@ GlobalObject::warnOnceAbout(JSContext* cx, HandleObject obj, WarnOnceFlag flag,
     MOZ_ASSERT_IF(!v.isUndefined(), v.toInt32());
     int32_t flags = v.isUndefined() ? 0 : v.toInt32();
     if (!(flags & flag)) {
-        if (!JS_ReportErrorFlagsAndNumber(cx, JSREPORT_WARNING, GetErrorMessage, nullptr,
-                                          errorNumber))
+        if (!JS_ReportErrorFlagsAndNumberASCII(cx, JSREPORT_WARNING, GetErrorMessage, nullptr,
+                                               errorNumber))
         {
             return false;
         }
@@ -579,7 +574,7 @@ GlobalObject::warnOnceAbout(JSContext* cx, HandleObject obj, WarnOnceFlag flag,
     return true;
 }
 
-JSFunction*
+/* static */ JSFunction*
 GlobalObject::createConstructor(JSContext* cx, Native ctor, JSAtom* nameArg, unsigned length,
                                 gc::AllocKind kind, const JSJitInfo* jitInfo)
 {
@@ -601,42 +596,42 @@ CreateBlankProto(JSContext* cx, const Class* clasp, HandleObject proto, HandleOb
 
     RootedNativeObject blankProto(cx, NewNativeObjectWithGivenProto(cx, clasp, proto,
                                                                     SingletonObject));
-    if (!blankProto || !blankProto->setDelegate(cx))
+    if (!blankProto || !JSObject::setDelegate(cx, blankProto))
         return nullptr;
 
     return blankProto;
 }
 
-NativeObject*
-GlobalObject::createBlankPrototype(JSContext* cx, const Class* clasp)
+/* static */ NativeObject*
+GlobalObject::createBlankPrototype(JSContext* cx, Handle<GlobalObject*> global, const Class* clasp)
 {
-    Rooted<GlobalObject*> self(cx, this);
-    RootedObject objectProto(cx, getOrCreateObjectPrototype(cx));
+    RootedObject objectProto(cx, getOrCreateObjectPrototype(cx, global));
     if (!objectProto)
         return nullptr;
 
-    return CreateBlankProto(cx, clasp, objectProto, self);
+    return CreateBlankProto(cx, clasp, objectProto, global);
 }
 
-NativeObject*
-GlobalObject::createBlankPrototypeInheriting(JSContext* cx, const Class* clasp, HandleObject proto)
+/* static */ NativeObject*
+GlobalObject::createBlankPrototypeInheriting(JSContext* cx, Handle<GlobalObject*> global,
+                                             const Class* clasp, HandleObject proto)
 {
-    Rooted<GlobalObject*> self(cx, this);
-    return CreateBlankProto(cx, clasp, proto, self);
+    return CreateBlankProto(cx, clasp, proto, global);
 }
 
 bool
-js::LinkConstructorAndPrototype(JSContext* cx, JSObject* ctor_, JSObject* proto_)
+js::LinkConstructorAndPrototype(JSContext* cx, JSObject* ctor_, JSObject* proto_,
+                                unsigned prototypeAttrs, unsigned constructorAttrs)
 {
     RootedObject ctor(cx, ctor_), proto(cx, proto_);
 
     RootedValue protoVal(cx, ObjectValue(*proto));
     RootedValue ctorVal(cx, ObjectValue(*ctor));
 
-    return DefineProperty(cx, ctor, cx->names().prototype, protoVal,
-                          nullptr, nullptr, JSPROP_PERMANENT | JSPROP_READONLY) &&
-           DefineProperty(cx, proto, cx->names().constructor, ctorVal,
-                          nullptr, nullptr, 0);
+    return DefineProperty(cx, ctor, cx->names().prototype, protoVal, nullptr, nullptr,
+                          prototypeAttrs) &&
+           DefineProperty(cx, proto, cx->names().constructor, ctorVal, nullptr, nullptr,
+                          constructorAttrs);
 }
 
 bool
@@ -735,21 +730,19 @@ GlobalObject::hasRegExpStatics() const
     return !getSlot(REGEXP_STATICS).isUndefined();
 }
 
-RegExpStatics*
-GlobalObject::getRegExpStatics(ExclusiveContext* cx) const
+/* static */ RegExpStatics*
+GlobalObject::getRegExpStatics(ExclusiveContext* cx, Handle<GlobalObject*> global)
 {
     MOZ_ASSERT(cx);
-    Rooted<GlobalObject*> self(cx, const_cast<GlobalObject*>(this));
-
     RegExpStaticsObject* resObj = nullptr;
-    const Value& val = this->getSlot(REGEXP_STATICS);
+    const Value& val = global->getSlot(REGEXP_STATICS);
     if (!val.isObject()) {
         MOZ_ASSERT(val.isUndefined());
-        resObj = RegExpStatics::create(cx, self);
+        resObj = RegExpStatics::create(cx, global);
         if (!resObj)
             return nullptr;
 
-        self->initSlot(REGEXP_STATICS, ObjectValue(*resObj));
+        global->initSlot(REGEXP_STATICS, ObjectValue(*resObj));
     } else {
         resObj = &val.toObject().as<RegExpStaticsObject>();
     }
@@ -806,10 +799,10 @@ GlobalObject::getSelfHostedFunction(JSContext* cx, Handle<GlobalObject*> global,
         return false;
     if (exists) {
         RootedFunction fun(cx, &funVal.toObject().as<JSFunction>());
-        if (fun->name() == name)
+        if (fun->explicitName() == name)
             return true;
 
-        if (fun->name() == selfHostedName) {
+        if (fun->explicitName() == selfHostedName) {
             // This function was initially cloned because it was called by
             // other self-hosted code, so the clone kept its self-hosted name,
             // instead of getting the name it's intended to have in content
@@ -872,7 +865,7 @@ GlobalObject::addIntrinsicValue(JSContext* cx, Handle<GlobalObject*> global,
 /* static */ bool
 GlobalObject::ensureModulePrototypesCreated(JSContext *cx, Handle<GlobalObject*> global)
 {
-    return global->getOrCreateObject(cx, MODULE_PROTO, initModuleProto) &&
-           global->getOrCreateObject(cx, IMPORT_ENTRY_PROTO, initImportEntryProto) &&
-           global->getOrCreateObject(cx, EXPORT_ENTRY_PROTO, initExportEntryProto);
+    return getOrCreateObject(cx, global, MODULE_PROTO, initModuleProto) &&
+           getOrCreateObject(cx, global, IMPORT_ENTRY_PROTO, initImportEntryProto) &&
+           getOrCreateObject(cx, global, EXPORT_ENTRY_PROTO, initExportEntryProto);
 }

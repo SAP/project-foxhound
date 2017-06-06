@@ -116,7 +116,7 @@
                       preference="engine.history"/>
           </richlistitem>
           <richlistitem>
-            <checkbox label="&engine.tabs.label;"
+            <checkbox label="&engine.tabs.label2;"
                       accesskey="&engine.tabs.accesskey;"
                       preference="engine.tabs"/>
           </richlistitem>
@@ -132,8 +132,7 @@
         </columns>
         <rows>
           <row align="center">
-            <label accesskey="&syncDeviceName.accesskey;"
-                   control="syncComputerName">
+            <label control="syncComputerName">
               &syncDeviceName.label;
             </label>
             <textbox id="syncComputerName"/>
@@ -185,9 +184,9 @@
               </vbox>
               <vbox flex="1">
                 <label id="signedOutAccountBoxTitle">&signedOut.accountBox.title;</label>
-                <hbox class="fxaAccountBoxButtons" align="center">
-                  <button id="noFxaSignUp" label="&signedOut.accountBox.create;"></button>
-                  <button id="noFxaSignIn" label="&signedOut.accountBox.signin;"></button>
+                <hbox class="fxaAccountBoxButtons">
+                  <button id="noFxaSignUp" label="&signedOut.accountBox.create;" accesskey="&signedOut.accountBox.create.accesskey;"></button>
+                  <button id="noFxaSignIn" label="&signedOut.accountBox.signin;" accesskey="&signedOut.accountBox.signin.accesskey;"></button>
                 </hbox>
               </vbox>
             </hbox>
@@ -230,11 +229,12 @@
               <vbox flex="1" pack="center">
                 <label id="fxaDisplayName" hidden="true"/>
                 <label id="fxaEmailAddress1"/>
-                <hbox class="fxaAccountBoxButtons" align="center">
-                  <button id="fxaUnlinkButton" label="&disconnect.label;"/>
-                  <label id="verifiedManage" class="text-link"
+                <hbox class="fxaAccountBoxButtons">
+                  <button id="fxaUnlinkButton" label="&disconnect.label;" accesskey="&disconnect.accesskey;"/>
+                  <html:a id="verifiedManage" target="_blank"
+                         accesskey="&verifiedManage.accesskey;"
                          onkeypress="gSyncPane.openManageFirefoxAccount(event);"><!--
-                  -->&verifiedManage.label;</label>
+                  -->&verifiedManage.label;</html:a>
                 </hbox>
               </vbox>
             </hbox>
@@ -253,9 +253,9 @@
                     &signedInUnverified.aftername.label;
                   </description>
                 </hbox>
-                <hbox class="fxaAccountBoxButtons" align="center">
-                  <button id="verifyFxaAccount">&verify.label;</button>
-                  <button id="unverifiedUnlinkFxaAccount">&forget.label;</button>
+                <hbox class="fxaAccountBoxButtons">
+                  <button id="verifyFxaAccount" label="&verify.label;" accesskey="&verify.accesskey;"></button>
+                  <button id="unverifiedUnlinkFxaAccount" label="&forget.label;" accesskey="&forget.accesskey;"></button>
                 </hbox>
               </vbox>
             </hbox>
@@ -274,9 +274,9 @@
                     &signedInLoginFailure.aftername.label;
                   </description>
                 </hbox>
-                <hbox class="fxaAccountBoxButtons" align="center">
-                  <button id="rejectReSignIn">&signIn.label;</button>
-                  <button id="rejectUnlinkFxaAccount">&forget.label;</button>
+                <hbox class="fxaAccountBoxButtons">
+                  <button id="rejectReSignIn" label="&signIn.label;" accesskey="&signIn.accesskey;"></button>
+                  <button id="rejectUnlinkFxaAccount" label="&forget.label;" accesskey="&forget.accesskey;"></button>
                 </hbox>
               </vbox>
             </hbox>
@@ -286,7 +286,7 @@
           <caption><label>&signedIn.engines.label;</label></caption>
           <hbox id="fxaSyncEngines">
             <vbox align="start" flex="1">
-              <checkbox label="&engine.tabs.label;"
+              <checkbox label="&engine.tabs.label2;"
                         accesskey="&engine.tabs.accesskey;"
                         preference="engine.tabs"/>
               <checkbox label="&engine.bookmarks.label;"
@@ -317,8 +317,7 @@
     </hbox>
     <groupbox>
       <caption>
-        <label accesskey="&syncDeviceName.accesskey;"
-               control="fxaSyncComputerName">
+        <label control="fxaSyncComputerName">
           &fxaSyncDeviceName.label;
         </label>
       </caption>
@@ -326,12 +325,15 @@
         <textbox id="fxaSyncComputerName" disabled="true"/>
         <hbox>
           <button id="fxaChangeDeviceName"
-                  label="&changeSyncDeviceName.label;"/>
+                  label="&changeSyncDeviceName.label;"
+                  accesskey="&changeSyncDeviceName.accesskey;"/>
           <button id="fxaCancelChangeDeviceName"
                   label="&cancelChangeSyncDeviceName.label;"
+                  accesskey="&cancelChangeSyncDeviceName.accesskey;"
                   hidden="true"/>
           <button id="fxaSaveChangeDeviceName"
                   label="&saveChangeSyncDeviceName.label;"
+                  accesskey="&saveChangeSyncDeviceName.accesskey;"
                   hidden="true"/>
         </hbox>
       </hbox>

@@ -34,8 +34,7 @@ this.EXPORTED_SYMBOLS = [
   "DownloadStore",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -51,16 +50,15 @@ XPCOMUtils.defineLazyModuleGetter(this, "OS",
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "gTextDecoder", function () {
+XPCOMUtils.defineLazyGetter(this, "gTextDecoder", function() {
   return new TextDecoder();
 });
 
-XPCOMUtils.defineLazyGetter(this, "gTextEncoder", function () {
+XPCOMUtils.defineLazyGetter(this, "gTextEncoder", function() {
   return new TextEncoder();
 });
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadStore
+// DownloadStore
 
 /**
  * Handles serialization of Download objects and persistence into a file, so
@@ -71,8 +69,7 @@ XPCOMUtils.defineLazyGetter(this, "gTextEncoder", function () {
  * @param aPath
  *        String containing the file path where data should be saved.
  */
-this.DownloadStore = function (aList, aPath)
-{
+this.DownloadStore = function(aList, aPath) {
   this.list = aList;
   this.path = aPath;
 }
@@ -101,8 +98,7 @@ this.DownloadStore.prototype = {
    * @resolves When the operation finished successfully.
    * @rejects JavaScript exception.
    */
-  load: function DS_load()
-  {
+  load: function DS_load() {
     return Task.spawn(function* task_DS_load() {
       let bytes;
       try {
@@ -154,8 +150,7 @@ this.DownloadStore.prototype = {
    * @resolves When the operation finished successfully.
    * @rejects JavaScript exception.
    */
-  save: function DS_save()
-  {
+  save: function DS_save() {
     return Task.spawn(function* task_DS_save() {
       let downloads = yield this.list.getAll();
 

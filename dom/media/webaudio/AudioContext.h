@@ -13,6 +13,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/TypedArray.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
@@ -42,7 +43,7 @@ class AudioNodeStream;
 
 namespace dom {
 
-enum class AudioContextState : uint32_t;
+enum class AudioContextState : uint8_t;
 class AnalyserNode;
 class AudioBuffer;
 class AudioBufferSourceNode;
@@ -52,6 +53,7 @@ class AudioNode;
 class BiquadFilterNode;
 class ChannelMergerNode;
 class ChannelSplitterNode;
+class ConstantSourceNode;
 class ConvolverNode;
 class DelayNode;
 class DynamicsCompressorNode;
@@ -70,7 +72,7 @@ class WaveShaperNode;
 class PeriodicWave;
 struct PeriodicWaveConstraints;
 class Promise;
-enum class OscillatorType : uint32_t;
+enum class OscillatorType : uint8_t;
 
 // This is addrefed by the OscillatorNodeEngine on the main thread
 // and then used from the MSG thread.
@@ -140,6 +142,8 @@ public:
     return GetOwner();
   }
 
+  virtual void DisconnectFromOwner() override;
+
   void Shutdown(); // idempotent
 
   JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -200,6 +204,8 @@ public:
 
   already_AddRefed<AudioBufferSourceNode> CreateBufferSource(ErrorResult& aRv);
 
+  already_AddRefed<ConstantSourceNode> CreateConstantSource(ErrorResult& aRv);
+
   already_AddRefed<AudioBuffer>
   CreateBuffer(uint32_t aNumberOfChannels, uint32_t aLength, float aSampleRate,
                ErrorResult& aRv);
@@ -252,8 +258,8 @@ public:
   CreateBiquadFilter(ErrorResult& aRv);
 
   already_AddRefed<IIRFilterNode>
-  CreateIIRFilter(const mozilla::dom::binding_detail::AutoSequence<double>& aFeedforward,
-                  const mozilla::dom::binding_detail::AutoSequence<double>& aFeedback,
+  CreateIIRFilter(const Sequence<double>& aFeedforward,
+                  const Sequence<double>& aFeedback,
                   mozilla::ErrorResult& aRv);
 
   already_AddRefed<OscillatorNode>
@@ -320,6 +326,8 @@ public:
   IMPL_EVENT_HANDLER(mozinterruptbegin)
   IMPL_EVENT_HANDLER(mozinterruptend)
 
+  bool CheckClosed(ErrorResult& aRv);
+
 private:
   void DisconnectFromWindow();
   void RemoveFromDecodeQueue(WebAudioDecodeJob* aDecodeJob);
@@ -329,8 +337,6 @@ private:
   NS_DECL_NSIMEMORYREPORTER
 
   friend struct ::mozilla::WebAudioDecodeJob;
-
-  bool CheckClosed(ErrorResult& aRv);
 
   nsTArray<MediaStream*> GetAllStreams() const;
 
@@ -345,7 +351,7 @@ private:
   AudioContextState mAudioContextState;
   RefPtr<AudioDestinationNode> mDestination;
   RefPtr<AudioListener> mListener;
-  nsTArray<RefPtr<WebAudioDecodeJob> > mDecodeJobs;
+  nsTArray<UniquePtr<WebAudioDecodeJob> > mDecodeJobs;
   // This array is used to keep the suspend/resume/close promises alive until
   // they are resolved, so we can safely pass them accross threads.
   nsTArray<RefPtr<Promise>> mPromiseGripArray;
@@ -368,6 +374,7 @@ private:
   bool mCloseCalled;
   // Suspend has been called with no following resume.
   bool mSuspendCalled;
+  bool mIsDisconnecting;
 };
 
 static const dom::AudioContext::AudioContextId NO_AUDIO_CONTEXT = 0;

@@ -91,11 +91,11 @@ var OldStyleSheetActor = protocol.ActorClassWithSpec(oldStyleSheetSpec, {
     let ownerNode = this.rawSheet.ownerNode;
     if (ownerNode) {
       let onSheetLoaded = (event) => {
-        ownerNode.removeEventListener("load", onSheetLoaded, false);
+        ownerNode.removeEventListener("load", onSheetLoaded);
         this._notifyPropertyChanged("ruleCount");
       };
 
-      ownerNode.addEventListener("load", onSheetLoaded, false);
+      ownerNode.addEventListener("load", onSheetLoaded);
     }
   },
 
@@ -208,18 +208,10 @@ var OldStyleSheetActor = protocol.ActorClassWithSpec(oldStyleSheetSpec, {
   /**
    * Get the charset of the stylesheet according to the character set rules
    * defined in <http://www.w3.org/TR/CSS2/syndata.html#charset>.
-   *
-   * @param string channelCharset
-   *        Charset of the source string if set by the HTTP channel.
+   * Note that some of the algorithm is implemented in DevToolsUtils.fetch.
    */
-  _getCSSCharset: function (channelCharset)
+  _getCSSCharset: function ()
   {
-    // StyleSheet's charset can be specified from multiple sources
-    if (channelCharset && channelCharset.length > 0) {
-      // step 1 of syndata.html: charset given in HTTP header.
-      return channelCharset;
-    }
-
     let sheet = this.rawSheet;
     if (sheet) {
       // Do we have a @charset rule in the stylesheet?
@@ -372,7 +364,7 @@ var StyleEditorActor = exports.StyleEditorActor = protocol.ActorClassWithSpec(st
       this._onDocumentLoaded();
     }
     else {
-      this.window.addEventListener("load", this._onDocumentLoaded, false);
+      this.window.addEventListener("load", this._onDocumentLoaded);
     }
     return {};
   },
@@ -383,7 +375,7 @@ var StyleEditorActor = exports.StyleEditorActor = protocol.ActorClassWithSpec(st
    */
   _onDocumentLoaded: function (event) {
     if (event) {
-      this.window.removeEventListener("load", this._onDocumentLoaded, false);
+      this.window.removeEventListener("load", this._onDocumentLoaded);
     }
 
     let documents = [this.document];
@@ -522,7 +514,7 @@ exports.StyleEditorActor = StyleEditorActor;
  * Normalize multiple relative paths towards the base paths on the right.
  */
 function normalize(...aURLs) {
-  let base = Services.io.newURI(aURLs.pop(), null, null);
+  let base = Services.io.newURI(aURLs.pop());
   let url;
   while ((url = aURLs.pop())) {
     base = Services.io.newURI(url, null, base);
@@ -532,5 +524,5 @@ function normalize(...aURLs) {
 
 function dirname(aPath) {
   return Services.io.newURI(
-    ".", null, Services.io.newURI(aPath, null, null)).spec;
+    ".", null, Services.io.newURI(aPath)).spec;
 }

@@ -4,12 +4,26 @@ const SCALAR_URLBAR = "browser.engagement.navigation.urlbar";
 
 // The preference to enable suggestions in the urlbar.
 const SUGGEST_URLBAR_PREF = "browser.urlbar.suggest.searches";
-// The preference to enable oneoff searches in the urlbar.
-const ONEOFF_URLBAR_PREF = "browser.urlbar.oneOffSearches";
 // The name of the search engine used to generate suggestions.
 const SUGGESTION_ENGINE_NAME = "browser_UsageTelemetry usageTelemetrySearchSuggestions.xml";
+const ONEOFF_URLBAR_PREF = "browser.urlbar.oneOffSearches";
 
-let searchInAwesomebar = Task.async(function* (inputText, win=window) {
+XPCOMUtils.defineLazyModuleGetter(this, "URLBAR_SELECTED_RESULT_TYPES",
+                                  "resource:///modules/BrowserUsageTelemetry.jsm");
+
+function checkHistogramResults(resultIndexes, expected, histogram) {
+  for (let i = 0; i < resultIndexes.counts.length; i++) {
+    if (i == expected) {
+      Assert.equal(resultIndexes.counts[i], 1,
+        `expected counts should match for ${histogram} index ${i}`);
+    } else {
+      Assert.equal(resultIndexes.counts[i], 0,
+        `unexpected counts should be zero for ${histogram} index ${i}`);
+    }
+  }
+}
+
+let searchInAwesomebar = Task.async(function* (inputText, win = window) {
   yield new Promise(r => waitForFocus(r, win));
   // Write the search query in the urlbar.
   win.gURLBar.focus();
@@ -56,23 +70,41 @@ add_task(function* setup() {
 
   // Enable search suggestions in the urlbar.
   Services.prefs.setBoolPref(SUGGEST_URLBAR_PREF, true);
+
+  // Enable the urlbar one-off buttons.
   Services.prefs.setBoolPref(ONEOFF_URLBAR_PREF, true);
 
   // Enable Extended Telemetry.
   yield SpecialPowers.pushPrefEnv({"set": [["toolkit.telemetry.enabled", true]]});
 
+  // Enable local telemetry recording for the duration of the tests.
+  let oldCanRecord = Services.telemetry.canRecordExtended;
+  Services.telemetry.canRecordExtended = true;
+
+  // Enable event recording for the events tested here.
+  Services.telemetry.setEventRecordingEnabled("navigation", true);
+
   // Make sure to restore the engine once we're done.
   registerCleanupFunction(function* () {
+    Services.telemetry.canRecordExtended = oldCanRecord;
     Services.search.currentEngine = originalEngine;
     Services.search.removeEngine(engine);
-    Services.prefs.clearUserPref(SUGGEST_URLBAR_PREF, true);
+    Services.prefs.clearUserPref(SUGGEST_URLBAR_PREF);
     Services.prefs.clearUserPref(ONEOFF_URLBAR_PREF);
+    yield PlacesTestUtils.clearHistory();
+    Services.telemetry.setEventRecordingEnabled("navigation", false);
   });
 });
 
 add_task(function* test_simpleQuery() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+  let resultIndexHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX");
+  let resultTypeHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE");
+  resultIndexHist.clear();
+  resultTypeHist.clear();
+
   let search_hist = getSearchCountsHistogram();
 
   let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
@@ -84,14 +116,27 @@ add_task(function* test_simpleQuery() {
   yield p;
 
   // Check if the scalars contain the expected values.
-  const scalars =
-    Services.telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
   checkKeyedScalar(scalars, SCALAR_URLBAR, "search_enter", 1);
   Assert.equal(Object.keys(scalars[SCALAR_URLBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, 'other-MozSearch.urlbar', 1);
+  checkKeyedHistogram(search_hist, "other-MozSearch.urlbar", 1);
+
+  // Also check events.
+  let events = Services.telemetry.snapshotBuiltinEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  events = events.filter(e => e[1] == "navigation" && e[2] == "search");
+  checkEvents(events, [["navigation", "search", "urlbar", "enter", {engine: "other-MozSearch"}]]);
+
+  // Check the histograms as well.
+  let resultIndexes = resultIndexHist.snapshot();
+  checkHistogramResults(resultIndexes, 0, "FX_URLBAR_SELECTED_RESULT_INDEX");
+
+  let resultTypes = resultTypeHist.snapshot();
+  checkHistogramResults(resultTypes,
+    URLBAR_SELECTED_RESULT_TYPES.searchengine,
+    "FX_URLBAR_SELECTED_RESULT_TYPE");
 
   yield BrowserTestUtils.removeTab(tab);
 });
@@ -99,6 +144,12 @@ add_task(function* test_simpleQuery() {
 add_task(function* test_searchAlias() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+  let resultIndexHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX");
+  let resultTypeHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE");
+  resultIndexHist.clear();
+  resultTypeHist.clear();
+
   let search_hist = getSearchCountsHistogram();
 
   let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
@@ -110,14 +161,27 @@ add_task(function* test_searchAlias() {
   yield p;
 
   // Check if the scalars contain the expected values.
-  const scalars =
-    Services.telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
   checkKeyedScalar(scalars, SCALAR_URLBAR, "search_alias", 1);
   Assert.equal(Object.keys(scalars[SCALAR_URLBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, 'other-MozSearch.urlbar', 1);
+  checkKeyedHistogram(search_hist, "other-MozSearch.urlbar", 1);
+
+  // Also check events.
+  let events = Services.telemetry.snapshotBuiltinEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  events = events.filter(e => e[1] == "navigation" && e[2] == "search");
+  checkEvents(events, [["navigation", "search", "urlbar", "alias", {engine: "other-MozSearch"}]]);
+
+  // Check the histograms as well.
+  let resultIndexes = resultIndexHist.snapshot();
+  checkHistogramResults(resultIndexes, 0, "FX_URLBAR_SELECTED_RESULT_INDEX");
+
+  let resultTypes = resultTypeHist.snapshot();
+  checkHistogramResults(resultTypes,
+    URLBAR_SELECTED_RESULT_TYPES.searchengine,
+    "FX_URLBAR_SELECTED_RESULT_TYPE");
 
   yield BrowserTestUtils.removeTab(tab);
 });
@@ -125,6 +189,12 @@ add_task(function* test_searchAlias() {
 add_task(function* test_oneOff() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+  let resultIndexHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX");
+  let resultTypeHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE");
+  resultIndexHist.clear();
+  resultTypeHist.clear();
+
   let search_hist = getSearchCountsHistogram();
 
   let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
@@ -139,14 +209,27 @@ add_task(function* test_oneOff() {
   yield p;
 
   // Check if the scalars contain the expected values.
-  const scalars =
-    Services.telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
   checkKeyedScalar(scalars, SCALAR_URLBAR, "search_oneoff", 1);
   Assert.equal(Object.keys(scalars[SCALAR_URLBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, 'other-MozSearch.urlbar', 1);
+  checkKeyedHistogram(search_hist, "other-MozSearch.urlbar", 1);
+
+  // Also check events.
+  let events = Services.telemetry.snapshotBuiltinEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  events = events.filter(e => e[1] == "navigation" && e[2] == "search");
+  checkEvents(events, [["navigation", "search", "urlbar", "oneoff", {engine: "other-MozSearch"}]]);
+
+  // Check the histograms as well.
+  let resultIndexes = resultIndexHist.snapshot();
+  checkHistogramResults(resultIndexes, 0, "FX_URLBAR_SELECTED_RESULT_INDEX");
+
+  let resultTypes = resultTypeHist.snapshot();
+  checkHistogramResults(resultTypes,
+    URLBAR_SELECTED_RESULT_TYPES.searchengine,
+    "FX_URLBAR_SELECTED_RESULT_TYPE");
 
   yield BrowserTestUtils.removeTab(tab);
 });
@@ -154,6 +237,12 @@ add_task(function* test_oneOff() {
 add_task(function* test_suggestion() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+  let resultIndexHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX");
+  let resultTypeHist = Services.telemetry.getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE");
+  resultIndexHist.clear();
+  resultTypeHist.clear();
+
   let search_hist = getSearchCountsHistogram();
 
   // Create an engine to generate search suggestions and add it as default
@@ -179,14 +268,28 @@ add_task(function* test_suggestion() {
   yield p;
 
   // Check if the scalars contain the expected values.
-  const scalars =
-    Services.telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
   checkKeyedScalar(scalars, SCALAR_URLBAR, "search_suggestion", 1);
   Assert.equal(Object.keys(scalars[SCALAR_URLBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, 'other-' + suggestionEngine.name + '.urlbar', 1);
+  let searchEngineId = "other-" + suggestionEngine.name;
+  checkKeyedHistogram(search_hist, searchEngineId + ".urlbar", 1);
+
+  // Also check events.
+  let events = Services.telemetry.snapshotBuiltinEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  events = events.filter(e => e[1] == "navigation" && e[2] == "search");
+  checkEvents(events, [["navigation", "search", "urlbar", "suggestion", {engine: searchEngineId}]]);
+
+  // Check the histograms as well.
+  let resultIndexes = resultIndexHist.snapshot();
+  checkHistogramResults(resultIndexes, 3, "FX_URLBAR_SELECTED_RESULT_INDEX");
+
+  let resultTypes = resultTypeHist.snapshot();
+  checkHistogramResults(resultTypes,
+    URLBAR_SELECTED_RESULT_TYPES.searchsuggestion,
+    "FX_URLBAR_SELECTED_RESULT_TYPE");
 
   Services.search.currentEngine = previousEngine;
   Services.search.removeEngine(suggestionEngine);

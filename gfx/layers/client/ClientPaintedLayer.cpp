@@ -24,10 +24,6 @@
 #include "gfx2DGlue.h"
 #include "ReadbackProcessor.h"
 
-#ifdef XP_WIN
-#include "gfxWindowsPlatform.h"
-#endif
-
 namespace mozilla {
 namespace layers {
 
@@ -36,13 +32,6 @@ using namespace mozilla::gfx;
 void
 ClientPaintedLayer::PaintThebes()
 {
-#ifdef XP_WIN
-  if (gfxWindowsPlatform::GetPlatform()->DidRenderingDeviceReset()) {
-    // If our rendering device has reset simply avoid rendering completely.
-    return;
-  }
-#endif
-
   PROFILER_LABEL("ClientPaintedLayer", "PaintThebes",
     js::ProfileEntry::Category::GRAPHICS);
 
@@ -66,6 +55,7 @@ ClientPaintedLayer::PaintThebes()
 
   if (!state.mRegionToDraw.IsEmpty() && !ClientManager()->GetPaintedLayerCallback()) {
     ClientManager()->SetTransactionIncomplete();
+    mContentClient->EndPaint(nullptr);
     return;
   }
 
@@ -110,7 +100,7 @@ ClientPaintedLayer::PaintThebes()
     mValidRegion.Or(mValidRegion, state.mRegionToDraw);
 
     ContentClientRemote* contentClientRemote = static_cast<ContentClientRemote*>(mContentClient.get());
-    MOZ_ASSERT(contentClientRemote->GetIPDLActor());
+    MOZ_ASSERT(contentClientRemote->GetIPCHandle());
 
     // Hold(this) ensures this layer is kept alive through the current transaction
     // The ContentClient assumes this layer is kept alive (e.g., in CreateBuffer),

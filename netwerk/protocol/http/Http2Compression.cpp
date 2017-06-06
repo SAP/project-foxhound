@@ -17,6 +17,7 @@
 #include "Http2HuffmanIncoming.h"
 #include "Http2HuffmanOutgoing.h"
 #include "mozilla/StaticPtr.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsHttpHandler.h"
 
 namespace mozilla {
@@ -281,6 +282,9 @@ Http2BaseCompressor::Http2BaseCompressor()
   : mOutput(nullptr)
   , mMaxBuffer(kDefaultMaxBuffer)
   , mMaxBufferSetting(kDefaultMaxBuffer)
+  , mSetInitialMaxBufferSizeAllowed(true)
+  , mPeakSize(0)
+  , mPeakCount(0)
 {
   mDynamicReporter = new HpackDynamicTableReporter(this);
   RegisterStrongMemoryReporter(mDynamicReporter);
@@ -288,6 +292,12 @@ Http2BaseCompressor::Http2BaseCompressor()
 
 Http2BaseCompressor::~Http2BaseCompressor()
 {
+  if (mPeakSize) {
+    Telemetry::Accumulate(mPeakSizeID, mPeakSize);
+  }
+  if (mPeakCount) {
+    Telemetry::Accumulate(mPeakCountID, mPeakCount);
+  }
   UnregisterStrongMemoryReporter(mDynamicReporter);
   mDynamicReporter->mCompressor = nullptr;
   mDynamicReporter = nullptr;
@@ -312,6 +322,9 @@ Http2BaseCompressor::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) co
 void
 Http2BaseCompressor::MakeRoom(uint32_t amount, const char *direction)
 {
+  uint32_t countEvicted = 0;
+  uint32_t bytesEvicted = 0;
+
   // make room in the header table
   while (mHeaderTable.VariableLength() && ((mHeaderTable.ByteCount() + amount) > mMaxBuffer)) {
     // NWGH - remove the "- 1" here
@@ -319,7 +332,19 @@ Http2BaseCompressor::MakeRoom(uint32_t amount, const char *direction)
     LOG(("HTTP %s header table index %u %s %s removed for size.\n",
          direction, index, mHeaderTable[index]->mName.get(),
          mHeaderTable[index]->mValue.get()));
+    ++countEvicted;
+    bytesEvicted += mHeaderTable[index]->Size();
     mHeaderTable.RemoveElement();
+  }
+
+  if (!strcmp(direction, "decompressor")) {
+    Telemetry::Accumulate(Telemetry::HPACK_ELEMENTS_EVICTED_DECOMPRESSOR, countEvicted);
+    Telemetry::Accumulate(Telemetry::HPACK_BYTES_EVICTED_DECOMPRESSOR, bytesEvicted);
+    Telemetry::Accumulate(Telemetry::HPACK_BYTES_EVICTED_RATIO_DECOMPRESSOR, (uint32_t)((100.0 * (double)bytesEvicted) / (double)amount));
+  } else {
+    Telemetry::Accumulate(Telemetry::HPACK_ELEMENTS_EVICTED_COMPRESSOR, countEvicted);
+    Telemetry::Accumulate(Telemetry::HPACK_BYTES_EVICTED_COMPRESSOR, bytesEvicted);
+    Telemetry::Accumulate(Telemetry::HPACK_BYTES_EVICTED_RATIO_COMPRESSOR, (uint32_t)((100.0 * (double)bytesEvicted) / (double)amount));
   }
 }
 
@@ -361,9 +386,23 @@ Http2BaseCompressor::SetMaxBufferSizeInternal(uint32_t maxBufferSize)
 }
 
 nsresult
+Http2BaseCompressor::SetInitialMaxBufferSize(uint32_t maxBufferSize)
+{
+  MOZ_ASSERT(mSetInitialMaxBufferSizeAllowed);
+
+  if (mSetInitialMaxBufferSizeAllowed) {
+    mMaxBufferSetting = maxBufferSize;
+    return NS_OK;
+  }
+
+  return NS_ERROR_FAILURE;
+}
+
+nsresult
 Http2Decompressor::DecodeHeaderBlock(const uint8_t *data, uint32_t datalen,
                                      nsACString &output, bool isPush)
 {
+  mSetInitialMaxBufferSizeAllowed = false;
   mOffset = 0;
   mData = data;
   mDataLen = datalen;
@@ -412,6 +451,12 @@ Http2Decompressor::DecodeHeaderBlock(const uint8_t *data, uint32_t datalen,
       // decompressing until we either hit the end of the header block or find a
       // hard failure. That way we won't get an inconsistent compression state
       // with the server.
+      softfail_rv = rv;
+      rv = NS_OK;
+    } else if (rv == NS_ERROR_NET_RESET) {
+      // This happens when we detect connection-based auth being requested in
+      // the response headers. We'll paper over it for now, and the session will
+      // handle this as if it received RST_STREAM with HTTP_1_1_REQUIRED.
       softfail_rv = rv;
       rv = NS_OK;
     }
@@ -478,6 +523,23 @@ Http2Decompressor::DecodeInteger(uint32_t prefixLen, uint32_t &accum)
     factor = factor * 128;
   }
   return NS_OK;
+}
+
+static bool
+HasConnectionBasedAuth(const nsACString& headerValue)
+{
+  nsCCharSeparatedTokenizer t(headerValue, '\n');
+  while (t.hasMoreTokens()) {
+    const nsDependentCSubstring& authMethod = t.nextToken();
+    if (authMethod.LowerCaseEqualsLiteral("ntlm")) {
+      return true;
+    }
+    if (authMethod.LowerCaseEqualsLiteral("negotiate")) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 nsresult
@@ -552,7 +614,8 @@ Http2Decompressor::OutputHeader(const nsACString &name, const nsACString &value)
       break;
     }
   }
-  if(isColonHeader) {
+
+  if (isColonHeader) {
     // :status is the only pseudo-header field allowed in received HEADERS frames, PUSH_PROMISE allows the other pseudo-header fields
     if (!name.EqualsLiteral(":status") && !mIsPush) {
       LOG(("HTTP Decompressor found illegal response pseudo-header %s", name.BeginReading()));
@@ -574,6 +637,20 @@ Http2Decompressor::OutputHeader(const nsACString &name, const nsACString &value)
   mOutput->AppendLiteral(": ");
   mOutput->Append(value);
   mOutput->AppendLiteral("\r\n");
+
+  // Need to check if the server is going to try to speak connection-based auth
+  // with us. If so, we need to kill this via h2, and dial back with http/1.1.
+  // Technically speaking, the server should've just reset or goaway'd us with
+  // HTTP_1_1_REQUIRED, but there are some busted servers out there, so we need
+  // to check on our own to work around them.
+  if (name.EqualsLiteral("www-authenticate") ||
+      name.EqualsLiteral("proxy-authenticate")) {
+    if (HasConnectionBasedAuth(value)) {
+      LOG3(("Http2Decompressor %p connection-based auth found in %s", this,
+            name.BeginReading()));
+      return NS_ERROR_NET_RESET;
+    }
+  }
   return NS_OK;
 }
 
@@ -918,7 +995,9 @@ Http2Decompressor::DoLiteralWithIncremental()
   if (NS_SUCCEEDED(rv)) {
     rv = OutputHeader(name, value);
   }
-  if (NS_FAILED(rv)) {
+  // Let NET_RESET continue on so that we don't get out of sync, as it is just
+  // used to kill the stream, not the session.
+  if (NS_FAILED(rv) && rv != NS_ERROR_NET_RESET) {
     return rv;
   }
 
@@ -929,7 +1008,7 @@ Http2Decompressor::DoLiteralWithIncremental()
          room, name.get(), value.get()));
     LOG(("Decompressor state after ClearHeaderTable"));
     DumpState();
-    return NS_OK;
+    return rv;
   }
 
   MakeRoom(room, "decompressor");
@@ -937,10 +1016,20 @@ Http2Decompressor::DoLiteralWithIncremental()
   // Incremental Indexing implicitly adds a row to the header table.
   mHeaderTable.AddElement(name, value);
 
+  uint32_t currentSize = mHeaderTable.ByteCount();
+  if (currentSize > mPeakSize) {
+    mPeakSize = currentSize;
+  }
+
+  uint32_t currentCount = mHeaderTable.VariableLength();
+  if (currentCount > mPeakCount) {
+    mPeakCount = currentCount;
+  }
+
   LOG(("HTTP decompressor literal with index 0 %s %s\n",
        name.get(), value.get()));
 
-  return NS_OK;
+  return rv;
 }
 
 nsresult
@@ -1001,6 +1090,7 @@ Http2Compressor::EncodeHeaderBlock(const nsCString &nvInput,
                                    const nsACString &host, const nsACString &scheme,
                                    bool connectForm, nsACString &output)
 {
+  mSetInitialMaxBufferSizeAllowed = false;
   mOutput = &output;
   output.SetCapacity(1024);
   output.Truncate();

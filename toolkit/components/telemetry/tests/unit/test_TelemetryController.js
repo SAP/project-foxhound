@@ -287,9 +287,6 @@ add_task(function* test_pingHasEnvironmentAndClientId() {
 });
 
 add_task(function* test_archivePings() {
-  const ARCHIVE_PATH =
-    OS.Path.join(OS.Constants.Path.profileDir, "datareporting", "archived");
-
   let now = new Date(2009, 10, 18, 12, 0, 0);
   fakeNow(now);
 
@@ -414,7 +411,7 @@ add_task(function* test_midnightPingSendFuzzing() {
 add_task(function* test_changePingAfterSubmission() {
   // Submit a ping with a custom payload.
   let payload = { canary: "test" };
-  let pingPromise = TelemetryController.submitExternalPing(TEST_PING_TYPE, payload, options);
+  let pingPromise = TelemetryController.submitExternalPing(TEST_PING_TYPE, payload);
 
   // Change the payload with a predefined value.
   payload.canary = "changed";
@@ -455,6 +452,9 @@ add_task(function* test_telemetryEnabledUnexpectedValue() {
   yield TelemetryController.testReset();
   Assert.equal(Telemetry.canRecordExtended, false,
                "False must disable Telemetry recording.");
+
+  // Restore the state of the pref.
+  Preferences.set(PREF_ENABLED, true);
 });
 
 add_task(function* test_telemetryCleanFHRDatabase() {
@@ -503,6 +503,15 @@ add_task(function* test_telemetryCleanFHRDatabase() {
   for (let dbFilePath of DEFAULT_DB_PATHS) {
     Assert.ok(!(yield OS.File.exists(dbFilePath)), "The DB must not be on the disk anymore: " + dbFilePath);
   }
+});
+
+// Testing shutdown and checking that pings sent afterwards are rejected.
+add_task(function* test_pingRejection() {
+  yield TelemetryController.testReset();
+  yield TelemetryController.testShutdown();
+  yield sendPing(false, false)
+    .then(() => Assert.ok(false, "Pings submitted after shutdown must be rejected."),
+          () => Assert.ok(true, "Ping submitted after shutdown correctly rejected."));
 });
 
 add_task(function* stopServer() {

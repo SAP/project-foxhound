@@ -1300,10 +1300,10 @@
      * scripts where use of dynamic scoping inhibits optimization.
      *   Category: Variables and Scopes
      *   Type: Variables
-     *   Operands: uint32_t funcIndex
-     *   Stack: =>
+     *   Operands:
+     *   Stack: fun =>
      */ \
-    macro(JSOP_DEFFUN,    127,"deffun",     NULL,         5,  0,  0,  JOF_OBJECT) \
+    macro(JSOP_DEFFUN,    127,"deffun",     NULL,         1,  1,  0,  JOF_BYTE) \
     /* Defines the new constant binding on global lexical scope.
      *
      * Throws if a binding with the same name already exists on the scope, or
@@ -1529,7 +1529,15 @@
      *   Stack: => new.target
      */ \
     macro(JSOP_NEWTARGET,  148, "newtarget", NULL,      1,  0,  1,  JOF_BYTE) \
-    macro(JSOP_UNUSED149,  149, "unused149", NULL,      1,  0,  0,  JOF_BYTE) \
+    /*
+     * Pops the top of stack value as 'unwrapped', converts it to async
+     * function 'wrapped', and pushes 'wrapped' back on the stack.
+     *   Category: Statements
+     *   Type: Function
+     *   Operands:
+     *   Stack: unwrapped => wrapped
+     */ \
+    macro(JSOP_TOASYNC,       149, "toasync", NULL,       1,  1,  1, JOF_BYTE) \
     /*
      * Pops the top two values 'lval' and 'rval' from the stack, then pushes
      * the result of 'Math.pow(lval, rval)'.
@@ -1862,9 +1870,24 @@
      *   Stack: =>
      */ \
     macro(JSOP_POPVARENV,          181, "popvarenv",            NULL,  1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED182,     182,"unused182",  NULL,     1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED183,     183,"unused183",  NULL,     1,  0,  0,  JOF_BYTE) \
-    \
+    /*
+     * Pops the top two values on the stack as 'name' and 'fun', defines the
+     * name of 'fun' to 'name' with prefix if any, and pushes 'fun' back onto
+     * the stack.
+     *   Category: Statements
+     *   Type: Function
+     *   Operands: uint8_t prefixKind
+     *   Stack: fun, name => fun
+     */ \
+    macro(JSOP_SETFUNNAME,    182,"setfunname", NULL,     2,  2,  1,  JOF_UINT8) \
+    /*
+     * Moves the top of the stack value under the nth element of the stack.
+     *   Category: Operators
+     *   Type: Stack Operations
+     *   Operands: uint8_t n
+     *   Stack: v[n], v[n-1], ..., v[1], v[0] => v[0], v[n], v[n-1], ..., v[1]
+     */ \
+    macro(JSOP_UNPICK,        183,"unpick",     NULL,     2,  0,  0,  JOF_UINT8) \
     /*
      * Pops the top of stack value, pushes property of it onto the stack.
      *
@@ -1893,8 +1916,16 @@
      *   Stack: => this
      */ \
     macro(JSOP_GLOBALTHIS,    186,"globalthis", NULL,     1,  0,  1,  JOF_BYTE) \
-    macro(JSOP_UNUSED187,     187,"unused187",  NULL,     1,  0,  0,  JOF_BYTE) \
-    \
+    /*
+     * Pushes a boolean indicating whether the top of the stack is
+     * MagicValue(JS_GENERATOR_CLOSING).
+     *
+     *   Category: Statements
+     *   Type: For-In Statement
+     *   Operands:
+     *   Stack: val => val, res
+     */ \
+    macro(JSOP_ISGENCLOSING,  187, "isgenclosing",   NULL,         1,  1,  2,  JOF_BYTE) \
     /*
      * Pushes unsigned 24-bit int immediate integer operand onto the stack.
      *   Category: Literals
@@ -2170,7 +2201,16 @@
      */ \
     macro(JSOP_HOLE,          218, "hole",         NULL,  1,  0,  1,  JOF_BYTE) \
     \
-    macro(JSOP_UNUSED219,     219,"unused219",     NULL,  1,  0,  0,  JOF_BYTE) \
+    /*
+     * Checks that the top value on the stack is callable, and throws a
+     * TypeError if not. The operand 'kind' is used only to generate an
+     * appropriate error message.
+     *   Category: Statements
+     *   Type: Function
+     *   Operands: uint8_t kind
+     *   Stack: result => result, callable
+     */ \
+    macro(JSOP_CHECKISCALLABLE, 219, "checkiscallable", NULL, 2, 1, 1, JOF_UINT8) \
     macro(JSOP_UNUSED220,     220,"unused220",     NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED221,     221,"unused221",     NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED222,     222,"unused222",     NULL,  1,  0,  0,  JOF_BYTE) \

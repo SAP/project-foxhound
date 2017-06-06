@@ -90,7 +90,7 @@ var clearPings = Task.async(function* (aPingIds) {
  * @param {Integer} aPendingQuota The new quota, in bytes.
  */
 function fakePendingPingsQuota(aPendingQuota) {
-  let storage = Cu.import("resource://gre/modules/TelemetryStorage.jsm");
+  let storage = Cu.import("resource://gre/modules/TelemetryStorage.jsm", {});
   storage.Policy.getPendingPingsQuota = () => aPendingQuota;
 }
 
@@ -178,7 +178,7 @@ add_task(function* setupEnvironment() {
  */
 add_task(function* test_recent_pings_sent() {
   let pingTypes = [{ num: RECENT_PINGS }];
-  let recentPings = yield createSavedPings(pingTypes);
+  yield createSavedPings(pingTypes);
 
   yield TelemetryController.testReset();
   yield TelemetrySend.testWaitOnOutgoingPings();

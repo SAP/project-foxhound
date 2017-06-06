@@ -43,15 +43,15 @@ static constexpr Register IntArgReg3 = { Registers::invalid_reg };
 static constexpr Register GlobalReg = { Registers::invalid_reg };
 static constexpr Register HeapReg = { Registers::invalid_reg };
 
-static constexpr Register AsmJSIonExitRegCallee = { Registers::invalid_reg };
-static constexpr Register AsmJSIonExitRegE0 = { Registers::invalid_reg };
-static constexpr Register AsmJSIonExitRegE1 = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegCallee = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegE0 = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegE1 = { Registers::invalid_reg };
 
-static constexpr Register AsmJSIonExitRegReturnData = { Registers::invalid_reg };
-static constexpr Register AsmJSIonExitRegReturnType = { Registers::invalid_reg };
-static constexpr Register AsmJSIonExitRegD0 = { Registers::invalid_reg };
-static constexpr Register AsmJSIonExitRegD1 = { Registers::invalid_reg };
-static constexpr Register AsmJSIonExitRegD2 = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegReturnData = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegReturnType = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegD0 = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegD1 = { Registers::invalid_reg };
+static constexpr Register WasmIonExitRegD2 = { Registers::invalid_reg };
 
 static constexpr Register RegExpTesterRegExpReg = { Registers::invalid_reg };
 static constexpr Register RegExpTesterStringReg = { Registers::invalid_reg };
@@ -137,6 +137,8 @@ class Assembler : public AssemblerShared
 
     static Condition InvertCondition(Condition) { MOZ_CRASH(); }
 
+    static DoubleCondition InvertCondition(DoubleCondition) { MOZ_CRASH(); }
+
     template <typename T, typename S>
     static void PatchDataWithValueCheck(CodeLocationLabel, T, S) { MOZ_CRASH(); }
     static void PatchWrite_Imm32(CodeLocationLabel, Imm32) { MOZ_CRASH(); }
@@ -194,7 +196,7 @@ class MacroAssemblerNone : public Assembler
     static bool SupportsSimd() { return false; }
     static bool SupportsUnalignedAccesses() { return false; }
 
-    void executableCopy(void*) { MOZ_CRASH(); }
+    void executableCopy(void*, bool) { MOZ_CRASH(); }
     void copyJumpRelocationTable(uint8_t*) { MOZ_CRASH(); }
     void copyDataRelocationTable(uint8_t*) { MOZ_CRASH(); }
     void copyPreBarrierTable(uint8_t*) { MOZ_CRASH(); }
@@ -203,7 +205,7 @@ class MacroAssemblerNone : public Assembler
     void flushBuffer() { MOZ_CRASH(); }
 
     template <typename T> void bind(T) { MOZ_CRASH(); }
-    void bindLater(Label*, wasm::JumpTarget) { MOZ_CRASH(); }
+    void bindLater(Label*, wasm::TrapDesc) { MOZ_CRASH(); }
     template <typename T> void j(Condition, T) { MOZ_CRASH(); }
     template <typename T> void jump(T) { MOZ_CRASH(); }
     void haltingAlign(size_t) { MOZ_CRASH(); }
@@ -253,10 +255,10 @@ class MacroAssemblerNone : public Assembler
     template <typename T, typename S> void cmpPtrSet(Condition, T, S, Register) { MOZ_CRASH(); }
     template <typename T, typename S> void cmp32Set(Condition, T, S, Register) { MOZ_CRASH(); }
 
-    template <typename T, typename S> void mov(T, S) { MOZ_CRASH(); }
+    template <typename T> void mov(T, Register) { MOZ_CRASH(); }
+    template <typename T> void movePtr(T, Register) { MOZ_CRASH(); }
+    template <typename T> void move32(T, Register) { MOZ_CRASH(); }
     template <typename T, typename S> void movq(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void movePtr(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void move32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void moveFloat32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void moveDouble(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void move64(T, S) { MOZ_CRASH(); }
@@ -364,6 +366,7 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void unboxDouble(T, FloatRegister) { MOZ_CRASH(); }
     void unboxValue(const ValueOperand&, AnyRegister) { MOZ_CRASH(); }
     void unboxNonDouble(const ValueOperand&, Register ) { MOZ_CRASH();}
+    void unboxNonDouble(const Address&, Register ) { MOZ_CRASH();}
     void notBoolean(ValueOperand) { MOZ_CRASH(); }
     Register extractObject(Address, Register) { MOZ_CRASH(); }
     Register extractObject(ValueOperand, Register) { MOZ_CRASH(); }
@@ -380,7 +383,8 @@ class MacroAssemblerNone : public Assembler
 
     template <typename T> void convertInt32ToDouble(T, FloatRegister) { MOZ_CRASH(); }
     void convertFloat32ToDouble(FloatRegister, FloatRegister) { MOZ_CRASH(); }
-    void convertUInt64ToDouble(Register64, Register, FloatRegister) { MOZ_CRASH(); }
+    static bool convertUInt64ToDoubleNeedsTemp() { MOZ_CRASH(); }
+    void convertUInt64ToDouble(Register64, FloatRegister, Register) { MOZ_CRASH(); }
 
     void boolValueToDouble(ValueOperand, FloatRegister) { MOZ_CRASH(); }
     void boolValueToFloat32(ValueOperand, FloatRegister) { MOZ_CRASH(); }
@@ -393,7 +397,7 @@ class MacroAssemblerNone : public Assembler
     Condition testStringTruthy(bool, ValueOperand) { MOZ_CRASH(); }
 
     template <typename T> void loadUnboxedValue(T, MIRType, AnyRegister) { MOZ_CRASH(); }
-    template <typename T> void storeUnboxedValue(ConstantOrRegister, MIRType, T, MIRType) { MOZ_CRASH(); }
+    template <typename T> void storeUnboxedValue(const ConstantOrRegister&, MIRType, T, MIRType) { MOZ_CRASH(); }
     template <typename T> void storeUnboxedPayload(ValueOperand value, T, size_t) { MOZ_CRASH(); }
 
     void convertUInt32ToDouble(Register, FloatRegister) { MOZ_CRASH(); }
@@ -417,6 +421,12 @@ class MacroAssemblerNone : public Assembler
     // Instrumentation for entering and leaving the profiler.
     void profilerEnterFrame(Register , Register ) { MOZ_CRASH(); }
     void profilerExitFrame() { MOZ_CRASH(); }
+
+    void disableProtection() { MOZ_CRASH(); }
+    void enableProtection() { MOZ_CRASH(); }
+    void setLowerBoundForProtection(size_t) { MOZ_CRASH(); }
+    void unprotectRegion(unsigned char*, size_t) { MOZ_CRASH(); }
+    void reprotectRegion(unsigned char*, size_t) { MOZ_CRASH(); }
 
 #ifdef JS_NUNBOX32
     Address ToPayload(Address) { MOZ_CRASH(); }

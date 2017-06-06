@@ -15,6 +15,7 @@ import which
 
 from mach.mixin.logging import LoggingMixin
 from mach.mixin.process import ProcessExecutionMixin
+from mozversioncontrol import get_repository_object
 
 from .backend.configenvironment import ConfigEnvironment
 from .controller.clobber import Clobberer
@@ -281,6 +282,12 @@ class MozbuildObject(ProcessExecutionMixin):
                             env[key] = value
         return env
 
+    @memoized_property
+    def repository(self):
+        '''Get a `mozversioncontrol.Repository` object for the
+        top source directory.'''
+        return get_repository_object(self.topsrcdir)
+
     def is_clobber_needed(self):
         if not os.path.exists(self.topobjdir):
             return False
@@ -379,16 +386,13 @@ class MozbuildObject(ProcessExecutionMixin):
                     '-message', msg], ensure_exit_code=False)
             elif sys.platform.startswith('linux'):
                 try:
-                    import dbus
-                except ImportError:
-                    raise Exception('Install the python dbus module to '
-                        'get a notification when the build finishes.')
-                bus = dbus.SessionBus()
-                notify = bus.get_object('org.freedesktop.Notifications',
-                                        '/org/freedesktop/Notifications')
-                method = notify.get_dbus_method('Notify',
-                                                'org.freedesktop.Notifications')
-                method('Mozilla Build System', 0, '', msg, '', [], [], -1)
+                    notifier = which.which('notify-send')
+                except which.WhichError:
+                    raise Exception('Install notify-send (usually part of '
+                        'the libnotify package) to get a notification when '
+                        'the build finishes.')
+                self.run_process([notifier, '--app-name=Mozilla Build System',
+                    'Mozilla Build System', msg], ensure_exit_code=False)
             elif sys.platform.startswith('win'):
                 from ctypes import Structure, windll, POINTER, sizeof
                 from ctypes.wintypes import DWORD, HANDLE, WINFUNCTYPE, BOOL, UINT

@@ -12,6 +12,9 @@
 #include "VPXDecoder.h"
 
 #include "MediaPrefs.h"
+#include "OpusDecoder.h"
+#include "VorbisDecoder.h"
+
 #include "nsPromiseFlatString.h"
 #include "nsIGfxInfo.h"
 
@@ -56,6 +59,74 @@ GetFeatureStatus(int32_t aFeature)
   return status == nsIGfxInfo::FEATURE_STATUS_OK;
 };
 
+CryptoInfo::LocalRef
+GetCryptoInfoFromSample(const MediaRawData* aSample)
+{
+  auto& cryptoObj = aSample->mCrypto;
+
+  if (!cryptoObj.mValid) {
+    return nullptr;
+  }
+
+  CryptoInfo::LocalRef cryptoInfo;
+  nsresult rv = CryptoInfo::New(&cryptoInfo);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+
+  uint32_t numSubSamples =
+    std::min<uint32_t>(cryptoObj.mPlainSizes.Length(), cryptoObj.mEncryptedSizes.Length());
+
+  uint32_t totalSubSamplesSize = 0;
+  for (auto& size : cryptoObj.mEncryptedSizes) {
+    totalSubSamplesSize += size;
+  }
+
+  // mPlainSizes is uint16_t, need to transform to uint32_t first.
+  nsTArray<uint32_t> plainSizes;
+  for (auto& size : cryptoObj.mPlainSizes) {
+    totalSubSamplesSize += size;
+    plainSizes.AppendElement(size);
+  }
+
+  uint32_t codecSpecificDataSize = aSample->Size() - totalSubSamplesSize;
+  // Size of codec specific data("CSD") for Android MediaCodec usage should be
+  // included in the 1st plain size.
+  plainSizes[0] += codecSpecificDataSize;
+
+  static const int kExpectedIVLength = 16;
+  auto tempIV(cryptoObj.mIV);
+  auto tempIVLength = tempIV.Length();
+  MOZ_ASSERT(tempIVLength <= kExpectedIVLength);
+  for (size_t i = tempIVLength; i < kExpectedIVLength; i++) {
+    // Padding with 0
+    tempIV.AppendElement(0);
+  }
+
+  auto numBytesOfPlainData = mozilla::jni::IntArray::New(
+                              reinterpret_cast<int32_t*>(&plainSizes[0]),
+                              plainSizes.Length());
+
+  auto numBytesOfEncryptedData =
+    mozilla::jni::IntArray::New(reinterpret_cast<const int32_t*>(&cryptoObj.mEncryptedSizes[0]),
+                                cryptoObj.mEncryptedSizes.Length());
+  auto iv = mozilla::jni::ByteArray::New(reinterpret_cast<int8_t*>(&tempIV[0]),
+                                        tempIV.Length());
+  auto keyId = mozilla::jni::ByteArray::New(reinterpret_cast<const int8_t*>(&cryptoObj.mKeyId[0]),
+                                            cryptoObj.mKeyId.Length());
+  cryptoInfo->Set(numSubSamples,
+                  numBytesOfPlainData,
+                  numBytesOfEncryptedData,
+                  keyId,
+                  iv,
+                  MediaCodec::CRYPTO_MODE_AES_CTR);
+
+  return cryptoInfo;
+}
+
+AndroidDecoderModule::AndroidDecoderModule(CDMProxy* aProxy)
+{
+  mProxy = static_cast<MediaDrmCDMProxy*>(aProxy);
+}
+
 bool
 AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType,
                                        DecoderDoctorDiagnostics* aDiagnostics) const
@@ -88,6 +159,14 @@ AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType,
     return false;
   }
 
+  // Prefer the gecko decoder for opus and vorbis; stagefright crashes
+  // on content demuxed from mp4.
+  if (OpusDataDecoder::IsOpus(aMimeType) ||
+      VorbisDataDecoder::IsVorbis(aMimeType)) {
+    LOG("Rejecting audio of type %s", aMimeType.Data());
+    return false;
+  }
+
   return java::HardwareCodecCapabilityUtils::FindDecoderCodecInfoForMimeType(
       nsCString(TranslateMimeType(aMimeType)));
 }
@@ -95,6 +174,13 @@ AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType,
 already_AddRefed<MediaDataDecoder>
 AndroidDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
 {
+  // Temporary - forces use of VPXDecoder when alpha is present.
+  // Bug 1263836 will handle alpha scenario once implemented. It will shift
+  // the check for alpha to PDMFactory but not itself remove the need for a
+  // check.
+  if (aParams.VideoConfig().HasAlpha()) {
+    return nullptr;
+  }
   MediaFormat::LocalRef format;
 
   const VideoInfo& config = aParams.VideoConfig();
@@ -104,16 +190,26 @@ AndroidDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
       config.mDisplay.height,
       &format), nullptr);
 
-  RefPtr<MediaDataDecoder> decoder = MediaPrefs::PDMAndroidRemoteCodecEnabled() ?
-      RemoteDataDecoder::CreateVideoDecoder(config,
-                                            format,
-                                            aParams.mCallback,
-                                            aParams.mImageContainer) :
-      MediaCodecDataDecoder::CreateVideoDecoder(config,
-                                                format,
-                                                aParams.mCallback,
-                                                aParams.mImageContainer);
+  nsString drmStubId;
+  if (mProxy) {
+    drmStubId = mProxy->GetMediaDrmStubId();
+  }
 
+  RefPtr<MediaDataDecoder> decoder = MediaPrefs::PDMAndroidRemoteCodecEnabled() ?
+    RemoteDataDecoder::CreateVideoDecoder(config,
+                                          format,
+                                          aParams.mCallback,
+                                          aParams.mImageContainer,
+                                          drmStubId,
+                                          mProxy,
+                                          aParams.mTaskQueue) :
+    MediaCodecDataDecoder::CreateVideoDecoder(config,
+                                              format,
+                                              aParams.mCallback,
+                                              aParams.mImageContainer,
+                                              drmStubId,
+                                              mProxy,
+                                              aParams.mTaskQueue);
   return decoder.forget();
 }
 
@@ -121,7 +217,10 @@ already_AddRefed<MediaDataDecoder>
 AndroidDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
 {
   const AudioInfo& config = aParams.AudioConfig();
-  MOZ_ASSERT(config.mBitDepth == 16, "We only handle 16-bit audio!");
+  if (config.mBitDepth != 16) {
+    // We only handle 16-bit audio.
+    return nullptr;
+  }
 
   MediaFormat::LocalRef format;
 
@@ -134,10 +233,23 @@ AndroidDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
       config.mChannels,
       &format), nullptr);
 
+  nsString drmStubId;
+  if (mProxy) {
+    drmStubId = mProxy->GetMediaDrmStubId();
+  }
   RefPtr<MediaDataDecoder> decoder = MediaPrefs::PDMAndroidRemoteCodecEnabled() ?
-      RemoteDataDecoder::CreateAudioDecoder(config, format, aParams.mCallback) :
-      MediaCodecDataDecoder::CreateAudioDecoder(config, format, aParams.mCallback);
-
+      RemoteDataDecoder::CreateAudioDecoder(config,
+                                            format,
+                                            aParams.mCallback,
+                                            drmStubId,
+                                            mProxy,
+                                            aParams.mTaskQueue) :
+      MediaCodecDataDecoder::CreateAudioDecoder(config,
+                                                format,
+                                                aParams.mCallback,
+                                                drmStubId,
+                                                mProxy,
+                                                aParams.mTaskQueue);
   return decoder.forget();
 }
 

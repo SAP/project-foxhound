@@ -75,21 +75,7 @@ void passed(const char* msg, ...)
 
 //-----------------------------------------------------------------------------
 
-class ScopedLogging
-{
-public:
-    ScopedLogging()
-    {
-        NS_LogInit();
-    }
-
-    ~ScopedLogging()
-    {
-        NS_LogTerm();
-    }
-};
-
-static class ScopedXPCOM : public nsIDirectoryServiceProvider2
+class ScopedXPCOM : public nsIDirectoryServiceProvider2
 {
   public:
     NS_DECL_ISUPPORTS

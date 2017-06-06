@@ -36,6 +36,7 @@
 #include <unistd.h>
 #endif
 
+#include "base/child_privileges.h"
 #include "base/command_line.h"
 #include "base/process.h"
 
@@ -74,7 +75,8 @@ enum ProcessArchitecture {
   PROCESS_ARCH_X86_64 = 0x2,
   PROCESS_ARCH_PPC = 0x4,
   PROCESS_ARCH_ARM = 0x8,
-  PROCESS_ARCH_MIPS = 0x10
+  PROCESS_ARCH_MIPS = 0x10,
+  PROCESS_ARCH_ARM64 = 0x20
 };
 
 inline ProcessArchitecture GetCurrentProcessArchitecture()
@@ -90,6 +92,8 @@ inline ProcessArchitecture GetCurrentProcessArchitecture()
   currentArchitecture = base::PROCESS_ARCH_ARM;
 #elif defined(ARCH_CPU_MIPS)
   currentArchitecture = base::PROCESS_ARCH_MIPS;
+#elif defined(ARCH_CPU_ARM64)
+  currentArchitecture = base::PROCESS_ARCH_ARM64;
 #endif
   return currentArchitecture;
 }
@@ -139,13 +143,6 @@ void SetAllFDsToCloseOnExec();
 // that there aren't any other threads.
 void CloseSuperfluousFds(const base::InjectiveMultimap& saved_map);
 #endif
-
-enum ChildPrivileges {
-  PRIVILEGES_DEFAULT,
-  PRIVILEGES_UNPRIVILEGED,
-  PRIVILEGES_INHERIT,
-  PRIVILEGES_LAST
-};
 
 #if defined(OS_WIN)
 // Runs the given application name with the given command line. Normally, the

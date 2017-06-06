@@ -23,7 +23,7 @@ add_task(function* test_removePages() {
     pages.push(NetUtil.newURI(TEST_URI.spec + i));
   }
 
-  yield PlacesTestUtils.addVisits(pages.map(uri => ({ uri: uri })));
+  yield PlacesTestUtils.addVisits(pages.map(uri => ({ uri })));
   // Bookmarked item should not be removed from moz_places.
   const ANNO_INDEX = 1;
   const ANNO_NAME = "testAnno";
@@ -61,18 +61,18 @@ add_task(function* test_removePages() {
 
 add_task(function* test_removePagesByTimeframe() {
   let visits = [];
-  let startDate = Date.now() * 1000;
+  let startDate = (Date.now() - 10000) * 1000;
   for (let i = 0; i < 10; i++) {
     visits.push({
       uri: NetUtil.newURI(TEST_URI.spec + i),
-      visitDate: startDate + i
+      visitDate: startDate + i * 1000
     });
   }
 
   yield PlacesTestUtils.addVisits(visits);
 
   // Delete all pages except the first and the last.
-  PlacesUtils.bhistory.removePagesByTimeframe(startDate + 1, startDate + 8);
+  PlacesUtils.bhistory.removePagesByTimeframe(startDate + 1000, startDate + 8000);
 
   // Check that we have removed the correct pages.
   for (let i = 0; i < 10; i++) {
@@ -81,7 +81,7 @@ add_task(function* test_removePagesByTimeframe() {
   }
 
   // Clear remaining items and check that all pages have been removed.
-  PlacesUtils.bhistory.removePagesByTimeframe(startDate, startDate + 9);
+  PlacesUtils.bhistory.removePagesByTimeframe(startDate, startDate + 9000);
   do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
 });
 
@@ -109,12 +109,12 @@ add_task(function* test_getObservers() {
   // This is just for testing purposes, never do it.
   return new Promise((resolve, reject) => {
     DBConn().executeSimpleSQLAsync("DELETE FROM moz_historyvisits", {
-      handleError: function(error) {
+      handleError(error) {
         reject(error);
       },
-      handleResult: function(result) {
+      handleResult(result) {
       },
-      handleCompletion: function(result) {
+      handleCompletion(result) {
         // Just invoking getObservers should be enough to invalidate the cache.
         PlacesUtils.history.getObservers();
         do_check_eq(0, PlacesUtils.history.hasHistoryEntries);

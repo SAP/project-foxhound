@@ -7,8 +7,7 @@
 
 "use strict";
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
                                   "resource://gre/modules/Sqlite.jsm");
@@ -126,10 +125,10 @@ function promiseInsertRow(aConnection, aDownloadRow) {
                             + "maxBytes, mimeType, preferredApplication,"
                             + "preferredAction, autoResume, guid)"
                             + "VALUES ("
-                            + "'', ?, ?, ?, ?, " //name,
-                            + "0, ?, ?, ?, 0, "  //endTime, currBytes
+                            + "'', ?, ?, ?, ?, " // name,
+                            + "0, ?, ?, ?, 0, "  // endTime, currBytes
                             + " ?, ?, ?, "       //
-                            + " ?, ?, '')",      //and guid are not imported
+                            + " ?, ?, '')",      // and guid are not imported
                             values);
 }
 
@@ -170,14 +169,14 @@ function promiseEntityID(aUrl) {
   });
 
   channel.asyncOpen2({
-    onStartRequest: function (aRequest) {
+    onStartRequest(aRequest) {
       if (aRequest instanceof Ci.nsIResumableChannel) {
         entityID = aRequest.entityID;
       }
       aRequest.cancel(Cr.NS_BINDING_ABORTED);
     },
 
-    onStopRequest: function (aRequest, aContext, aStatusCode) {
+    onStopRequest(aRequest, aContext, aStatusCode) {
       if (aStatusCode == Cr.NS_BINDING_ABORTED) {
         deferred.resolve(entityID);
       } else {
@@ -185,7 +184,7 @@ function promiseEntityID(aUrl) {
       }
     },
 
-    onDataAvailable: function () {}
+    onDataAvailable() {}
   });
 
   return deferred.promise;
@@ -322,8 +321,7 @@ function checkDownload(aDownload, aDownloadRow) {
   });
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Preparation tasks
+// Preparation tasks
 
 /**
  * Prepares the list of downloads to be added to the database that should
@@ -535,8 +533,7 @@ add_task(function* prepareDownloadsToImport() {
  * Prepares the list of downloads to be added to the database that should
  * *not* be imported by the import procedure.
  */
-add_task(function* prepareNonImportableDownloads()
-{
+add_task(function* prepareNonImportableDownloads() {
   gDownloadsRowNonImportable = [
     // Download with no source (should never happen in normal circumstances).
     {
@@ -652,16 +649,14 @@ add_task(function* prepareNonImportableDownloads()
   ];
 });
 
-////////////////////////////////////////////////////////////////////////////////
-//// Test
+// Test
 
 /**
  * Creates a temporary Sqlite database with download data and perform an
  * import of that data to the new Downloads API to verify that the import
  * worked correctly.
  */
-add_task(function* test_downloadImport()
-{
+add_task(function* test_downloadImport() {
   let connection = null;
   let downloadsSqlite = getTempFile("downloads.sqlite").path;
 

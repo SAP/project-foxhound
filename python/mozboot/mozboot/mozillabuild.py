@@ -35,7 +35,7 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
             with open(mozillabuild_dir + 'msys/etc/profile.d/profile-rustup.sh', 'wb') as f:
                 f.write('#!/bash/sh\n')
                 f.write('if test -n "$MOZILLABUILD"; then\n')
-                f.write('    WIN_HOME=$(cd "$HOME" && pwd)\n')
+                f.write('    WIN_HOME=$(command cd "$HOME" && pwd)\n')
                 f.write('    PATH="$WIN_HOME/.cargo/bin:$PATH"\n')
                 f.write('    export PATH\n')
                 f.write('fi')
@@ -52,6 +52,9 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
         pass
 
     def install_browser_packages(self):
+        pass
+
+    def install_browser_artifact_mode_packages(self):
         pass
 
     def install_mobile_android_packages(self):

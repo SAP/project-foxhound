@@ -29,12 +29,13 @@ DevToolsModules(
     'preference.js',
     'profiler.js',
     'promises.js',
-    'settings.js',
+    'reflow.js',
     'storage.js',
     'string.js',
     'styles.js',
     'stylesheets.js',
     'timeline.js',
     'webaudio.js',
+    'webextension-inspected-window.js',
     'webgl.js'
 )

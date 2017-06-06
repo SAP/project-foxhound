@@ -15,7 +15,7 @@ add_task(function*() {
   for (let i = 0; i < kTestWidgetCount; i++) {
     let id = kTestWidgetPfx + i;
     widgetIds.push(id);
-    let spec = {id: id, type: 'button', removable: true, label: "unregisterArea test", tooltiptext: "" + i};
+    let spec = {id, type: "button", removable: true, label: "unregisterArea test", tooltiptext: "" + i};
     CustomizableUI.createWidget(spec);
   }
   for (let i = kTestWidgetCount; i < kTestWidgetCount * 2; i++) {
@@ -70,7 +70,7 @@ add_task(function*() {
   checkWidgetFates(widgetIds);
   toolbarNode.remove();
 
-  //XXXgijs: ensure cleanup function doesn't barf:
+  // XXXgijs: ensure cleanup function doesn't barf:
   gAddedToolbars.delete(kToolbarName);
 
   // Remove all the XUL widgets, destroy the others:

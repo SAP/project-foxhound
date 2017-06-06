@@ -7,12 +7,15 @@
 package org.mozilla.gecko.util;
 
 import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.AppConstants.Versions;
 
+import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecInfo.CodecCapabilities;
 import android.media.MediaCodecList;
+import android.os.Build;
 import android.util.Log;
+
+import java.util.Locale;
 
 public final class HardwareCodecCapabilityUtils {
   private static final String LOGTAG = "GeckoHardwareCodecCapabilityUtils";
@@ -24,6 +27,7 @@ public final class HardwareCodecCapabilityUtils {
   private static final String[] supportedVp8HwDecCodecPrefixes =
   {"OMX.qcom.", "OMX.Nvidia.", "OMX.Exynos.", "OMX.Intel." };
   private static final String VP8_MIME_TYPE = "video/x-vnd.on2.vp8";
+  private static final String VP9_MIME_TYPE = "video/x-vnd.on2.vp9";
   // NV12 color format supported by QCOM codec, but not declared in MediaCodec -
   // see /hardware/qcom/media/mm-core/inc/OMX_QCOMExtns.h
   private static final int
@@ -34,6 +38,11 @@ public final class HardwareCodecCapabilityUtils {
     CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
     CodecCapabilities.COLOR_QCOM_FormatYUV420SemiPlanar,
     COLOR_QCOM_FORMATYUV420PackedSemiPlanar32m
+  };
+  private static final String[] adaptivePlaybackBlacklist =
+  {
+    "GT-I9300", // S3 (I9300 / I9300I)
+    "SCH-I535"  // S3
   };
 
   @WrapForJNI
@@ -52,8 +61,51 @@ public final class HardwareCodecCapabilityUtils {
     return false;
   }
 
+  @WrapForJNI
+  public static boolean checkSupportsAdaptivePlayback(MediaCodec aCodec, String aMimeType) {
+    // isFeatureSupported supported on API level >= 19.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT ||
+        isAdaptivePlaybackBlacklisted(aMimeType)) {
+      return false;
+    }
+
+    try {
+      MediaCodecInfo info = aCodec.getCodecInfo();
+      MediaCodecInfo.CodecCapabilities capabilities = info.getCapabilitiesForType(aMimeType);
+      return capabilities != null &&
+             capabilities.isFeatureSupported(
+               MediaCodecInfo.CodecCapabilities.FEATURE_AdaptivePlayback);
+    } catch (IllegalArgumentException e) {
+      Log.e(LOGTAG, "Retrieve codec information failed", e);
+    }
+    return false;
+  }
+
+  // See Bug1360626 and
+  // https://codereview.chromium.org/1869103002 for details.
+  private static boolean isAdaptivePlaybackBlacklisted(String aMimeType) {
+    if (!aMimeType.equals("video/avc") && !aMimeType.equals("video/avc1")) {
+      return false;
+    }
+
+    if (!Build.VERSION.RELEASE.equals("4.4.2")) {
+      return false;
+    }
+
+    if (!Build.MANUFACTURER.toLowerCase(Locale.getDefault()).equals("samsung")) {
+      return false;
+    }
+
+    for (String model : adaptivePlaybackBlacklist) {
+      if (Build.MODEL.startsWith(model)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public static boolean getHWEncoderCapability() {
-    if (Versions.feature20Plus) {
+    if (Build.VERSION.SDK_INT >= 20) {
       for (int i = 0; i < MediaCodecList.getCodecCount(); ++i) {
         MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
         if (!info.isEncoder()) {
@@ -106,7 +158,16 @@ public final class HardwareCodecCapabilityUtils {
   }
 
   public static boolean getHWDecoderCapability() {
-    if (Versions.feature20Plus) {
+    return getHWDecoderCapability(VP8_MIME_TYPE);
+  }
+
+  @WrapForJNI
+  public static boolean HasHWVP9() {
+    return getHWDecoderCapability(VP9_MIME_TYPE);
+  }
+
+  public static boolean getHWDecoderCapability(String aMimeType) {
+    if (Build.VERSION.SDK_INT >= 20) {
       for (int i = 0; i < MediaCodecList.getCodecCount(); ++i) {
         MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
         if (info.isEncoder()) {
@@ -114,7 +175,7 @@ public final class HardwareCodecCapabilityUtils {
         }
         String name = null;
         for (String mimeType : info.getSupportedTypes()) {
-          if (mimeType.equals(VP8_MIME_TYPE)) {
+          if (mimeType.equals(aMimeType)) {
             name = info.getName();
             break;
           }
@@ -138,7 +199,7 @@ public final class HardwareCodecCapabilityUtils {
 
         // Check if codec supports either yuv420 or nv12.
         CodecCapabilities capabilities =
-          info.getCapabilitiesForType(VP8_MIME_TYPE);
+          info.getCapabilitiesForType(aMimeType);
         for (int colorFormat : capabilities.colorFormats) {
           Log.v(LOGTAG, "   Color: 0x" + Integer.toHexString(colorFormat));
         }

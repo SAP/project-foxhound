@@ -5,11 +5,9 @@
 
 const { classes: Cc, interfaces: Ci, manager: Cm, utils: Cu, results: Cr } = Components;
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
-const dateFormat = Cc["@mozilla.org/intl/scriptabledateformat;1"]
-                      .getService(Components.interfaces.nsIScriptableDateFormat);
 
 const mockUpdateManager = {
   contractId: "@mozilla.org/updates/update-manager;1",
@@ -22,14 +20,14 @@ const mockUpdateManager = {
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIUpdateManager]),
 
-  createInstance: function(outer, iiD) {
+  createInstance(outer, iiD) {
     if (outer) {
       throw Cr.NS_ERROR_NO_AGGREGATION;
     }
     return this.QueryInterface(iiD);
   },
 
-  register: function () {
+  register() {
     let registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
     if (!registrar.isCIDRegistered(this._mockClassId)) {
       this._originalClassId = registrar.contractIDToCID(this.contractId);
@@ -39,7 +37,7 @@ const mockUpdateManager = {
     }
   },
 
-  unregister: function () {
+  unregister() {
     let registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
     registrar.unregisterFactory(this._mockClassId, this);
     registrar.registerFactory(this._originalClassId, "", this.contractId, this._originalFactory);
@@ -49,7 +47,7 @@ const mockUpdateManager = {
     return this._updates.length;
   },
 
-  getUpdateAt: function (index) {
+  getUpdateAt(index) {
     return this._updates[index];
   },
 
@@ -87,15 +85,12 @@ function resetPreferences() {
 
 function formatInstallDate(sec) {
   var date = new Date(sec);
-  return dateFormat.FormatDateTime("",
-    dateFormat.dateFormatLong,
-    dateFormat.timeFormatSeconds,
-    date.getFullYear(),
-    date.getMonth() + 1,
-    date.getDate(),
-    date.getHours(),
-    date.getMinutes(),
-    date.getSeconds());
+  const locale = Cc["@mozilla.org/chrome/chrome-registry;1"]
+                 .getService(Ci.nsIXULChromeRegistry)
+                 .getSelectedLocale("global", true);
+  const dtOptions = { year: "numeric", month: "long", day: "numeric",
+                      hour: "numeric", minute: "numeric", second: "numeric" };
+  return date.toLocaleString(locale, dtOptions);
 }
 
 registerCleanupFunction(resetPreferences);

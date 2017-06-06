@@ -36,13 +36,7 @@ class ContentProcessController final
       : public GeckoContentController
 {
 public:
-  ~ContentProcessController();
-
-  static APZChild* Create(const dom::TabId& aTabId);
-
-  // ContentProcessController
-
-  void SetBrowser(dom::TabChild* aBrowser);
+  explicit ContentProcessController(const RefPtr<dom::TabChild>& aBrowser);
 
   // GeckoContentController
 
@@ -53,6 +47,11 @@ public:
                  Modifiers aModifiers,
                  const ScrollableLayerGuid& aGuid,
                  uint64_t aInputBlockId) override;
+
+  void NotifyPinchGesture(PinchGestureInput::PinchGestureType aType,
+                          const ScrollableLayerGuid& aGuid,
+                          LayoutDeviceCoord aSpanChange,
+                          Modifiers aModifiers) override;
 
   void NotifyAPZStateChange(const ScrollableLayerGuid& aGuid,
                             APZStateChange aChange,
@@ -70,12 +69,7 @@ public:
   void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) override;
 
 private:
-  ContentProcessController();
-
-  void SetObserver(nsIObserver* aObserver);
-
   RefPtr<dom::TabChild> mBrowser;
-  RefPtr<nsIObserver> mObserver;
 };
 
 } // namespace layers

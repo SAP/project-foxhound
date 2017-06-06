@@ -17,6 +17,7 @@
 #include "js/GCAPI.h"
 #include "vm/Debugger.h"
 #include "vm/Opcodes.h"
+#include "wasm/WasmDebugFrame.h"
 
 #include "jit/JitFrameIterator-inl.h"
 #include "vm/EnvironmentObject-inl.h"
@@ -85,7 +86,7 @@ InterpreterFrame::isNonGlobalEvalFrame() const
 JSObject*
 InterpreterFrame::createRestParameter(JSContext* cx)
 {
-    MOZ_ASSERT(callee().hasRest());
+    MOZ_ASSERT(script()->hasRest());
     unsigned nformal = callee().nargs() - 1, nactual = numActualArgs();
     unsigned nrest = (nactual > nformal) ? nactual - nformal : 0;
     Value* restvp = argv() + nformal;
@@ -155,6 +156,10 @@ AssertScopeMatchesEnvironment(Scope* scope, JSObject* originalEnv)
                 MOZ_ASSERT(env->as<ModuleEnvironmentObject>().module().script() ==
                            si.scope()->as<ModuleScope>().script());
                 env = &env->as<ModuleEnvironmentObject>().enclosingEnvironment();
+                break;
+
+              case ScopeKind::WasmFunction:
+                env = &env->as<WasmFunctionCallObject>().enclosingEnvironment();
                 break;
             }
         }
@@ -372,7 +377,7 @@ InterpreterFrame::trace(JSTracer* trc, Value* sp, jsbytecode* pc)
         unsigned argc = Max(numActualArgs(), numFormalArgs());
         TraceRootRange(trc, argc + isConstructing(), argv_, "fp argv");
     } else {
-        // Mark newTarget.
+        // Trace newTarget.
         TraceRoot(trc, ((Value*)this) - 1, "stack newTarget");
     }
 
@@ -384,22 +389,19 @@ InterpreterFrame::trace(JSTracer* trc, Value* sp, jsbytecode* pc)
         // All locals are live.
         traceValues(trc, 0, sp - slots());
     } else {
-        // Mark operand stack.
+        // Trace operand stack.
         traceValues(trc, nfixed, sp - slots());
 
         // Clear dead block-scoped locals.
         while (nfixed > nlivefixed)
             unaliasedLocal(--nfixed).setUndefined();
 
-        // Mark live locals.
+        // Trace live locals.
         traceValues(trc, 0, nlivefixed);
     }
 
     if (script->compartment()->debugEnvs)
-        script->compartment()->debugEnvs->markLiveFrame(trc, this);
-
-    if (trc->isMarkingTracer())
-        script->compartment()->zone()->active = true;
+        script->compartment()->debugEnvs->traceLiveFrame(trc, this);
 }
 
 void
@@ -410,7 +412,7 @@ InterpreterFrame::traceValues(JSTracer* trc, unsigned start, unsigned end)
 }
 
 static void
-MarkInterpreterActivation(JSTracer* trc, InterpreterActivation* act)
+TraceInterpreterActivation(JSTracer* trc, InterpreterActivation* act)
 {
     for (InterpreterFrameIterator frames(act); !frames.done(); ++frames) {
         InterpreterFrame* fp = frames.frame();
@@ -419,12 +421,12 @@ MarkInterpreterActivation(JSTracer* trc, InterpreterActivation* act)
 }
 
 void
-js::MarkInterpreterActivations(JSRuntime* rt, JSTracer* trc)
+js::TraceInterpreterActivations(JSRuntime* rt, JSTracer* trc)
 {
     for (ActivationIterator iter(rt); !iter.done(); ++iter) {
         Activation* act = iter.activation();
         if (act->isInterpreter())
-            MarkInterpreterActivation(trc, act->asInterpreter());
+            TraceInterpreterActivation(trc, act->asInterpreter());
     }
 }
 
@@ -543,14 +545,14 @@ FrameIter::settleOnActivation()
         }
 
         if (activation->isWasm()) {
-            data_.wasmFrames_ = wasm::FrameIterator(*data_.activations_->asWasm());
+            data_.wasmFrames_ = wasm::FrameIterator(data_.activations_->asWasm());
 
             if (data_.wasmFrames_.done()) {
                 ++data_.activations_;
                 continue;
             }
 
-            data_.pc_ = (jsbytecode*)data_.wasmFrames_.pc();
+            data_.pc_ = nullptr;
             data_.state_ = WASM;
             return;
         }
@@ -683,7 +685,7 @@ FrameIter::popWasmFrame()
     MOZ_ASSERT(data_.state_ == WASM);
 
     ++data_.wasmFrames_;
-    data_.pc_ = (jsbytecode*)data_.wasmFrames_.pc();
+    data_.pc_ = nullptr;
     if (data_.wasmFrames_.done())
         popActivation();
 }
@@ -706,6 +708,8 @@ FrameIter::operator++()
             while (!hasUsableAbstractFramePtr() || abstractFramePtr() != eifPrev) {
                 if (data_.state_ == JIT)
                     popJitFrame();
+                else if (data_.state_ == WASM)
+                    popWasmFrame();
                 else
                     popInterpreterFrame();
             }
@@ -731,7 +735,6 @@ FrameIter::copyData() const
     if (!data)
         return nullptr;
 
-    MOZ_ASSERT(data_.state_ != WASM);
     if (data && data_.jitFrames_.isIonScripted())
         data->ionInlineFrameNo_ = ionInlineFrames_.frameNo();
     return data;
@@ -757,7 +760,7 @@ FrameIter::rawFramePtr() const
       case INTERP:
         return interpFrame();
       case WASM:
-        return data_.wasmFrames_.fp();
+        return nullptr;
     }
     MOZ_CRASH("Unexpected state");
 }
@@ -809,7 +812,7 @@ FrameIter::isFunctionFrame() const
             return data_.jitFrames_.baselineFrame()->isFunctionFrame();
         return script()->functionNonDelazifying();
       case WASM:
-        return true;
+        return false;
     }
     MOZ_CRASH("Unexpected state");
 }
@@ -817,15 +820,15 @@ FrameIter::isFunctionFrame() const
 JSAtom*
 FrameIter::functionDisplayAtom() const
 {
-    MOZ_ASSERT(isFunctionFrame());
-
     switch (data_.state_) {
       case DONE:
         break;
       case INTERP:
       case JIT:
+        MOZ_ASSERT(isFunctionFrame());
         return calleeTemplate()->displayAtom();
       case WASM:
+        MOZ_ASSERT(isWasm());
         return data_.wasmFrames_.functionDisplayAtom();
     }
 
@@ -944,7 +947,6 @@ FrameIter::hasUsableAbstractFramePtr() const
 {
     switch (data_.state_) {
       case DONE:
-      case WASM:
         return false;
       case JIT:
         if (data_.jitFrames_.isBaselineJS())
@@ -956,6 +958,8 @@ FrameIter::hasUsableAbstractFramePtr() const
         break;
       case INTERP:
         return true;
+      case WASM:
+        return data_.wasmFrames_.debugEnabled();
     }
     MOZ_CRASH("Unexpected state");
 }
@@ -966,7 +970,6 @@ FrameIter::abstractFramePtr() const
     MOZ_ASSERT(hasUsableAbstractFramePtr());
     switch (data_.state_) {
       case DONE:
-      case WASM:
         break;
       case JIT: {
         if (data_.jitFrames_.isBaselineJS())
@@ -980,6 +983,9 @@ FrameIter::abstractFramePtr() const
       case INTERP:
         MOZ_ASSERT(interpFrame());
         return AbstractFramePtr(interpFrame());
+      case WASM:
+        MOZ_ASSERT(data_.wasmFrames_.debugEnabled());
+        return data_.wasmFrames_.debugFrame();
     }
     MOZ_CRASH("Unexpected state");
 }
@@ -988,6 +994,7 @@ void
 FrameIter::updatePcQuadratic()
 {
     switch (data_.state_) {
+      case WASM:
       case DONE:
         break;
       case INTERP: {
@@ -1025,10 +1032,6 @@ FrameIter::updatePcQuadratic()
             data_.jitFrames_.baselineScriptAndPc(nullptr, &data_.pc_);
             return;
         }
-        break;
-      case WASM:
-        // Update the pc.
-        data_.pc_ = (jsbytecode*)data_.wasmFrames_.pc();
         break;
     }
     MOZ_CRASH("Unexpected state");
@@ -1574,7 +1577,7 @@ jit::JitActivation::removeRematerializedFramesFromDebugger(JSContext* cx, uint8_
 }
 
 void
-jit::JitActivation::markRematerializedFrames(JSTracer* trc)
+jit::JitActivation::traceRematerializedFrames(JSTracer* trc)
 {
     if (!rematerializedFrames_)
         return;
@@ -1615,7 +1618,7 @@ jit::JitActivation::removeIonFrameRecovery(JitFrameLayout* fp)
 }
 
 void
-jit::JitActivation::markIonRecovery(JSTracer* trc)
+jit::JitActivation::traceIonRecovery(JSTracer* trc)
 {
     for (RInstructionResults* it = ionRecovery_.begin(); it != ionRecovery_.end(); it++)
         it->trace(trc);
@@ -1762,7 +1765,7 @@ JS::ProfilingFrameIterator::operator++()
     MOZ_ASSERT(activation_->isWasm() || activation_->isJit());
 
     if (activation_->isWasm()) {
-        ++asmJSIter();
+        ++wasmIter();
         settle();
         return;
     }
@@ -1828,7 +1831,7 @@ JS::ProfilingFrameIterator::iteratorDestroy()
     MOZ_ASSERT(activation_->isWasm() || activation_->isJit());
 
     if (activation_->isWasm()) {
-        asmJSIter().~ProfilingFrameIterator();
+        wasmIter().~ProfilingFrameIterator();
         return;
     }
 
@@ -1844,7 +1847,7 @@ JS::ProfilingFrameIterator::iteratorDone()
     MOZ_ASSERT(activation_->isWasm() || activation_->isJit());
 
     if (activation_->isWasm())
-        return asmJSIter().done();
+        return wasmIter().done();
 
     return jitIter().done();
 }
@@ -1856,7 +1859,7 @@ JS::ProfilingFrameIterator::stackAddress() const
     MOZ_ASSERT(activation_->isWasm() || activation_->isJit());
 
     if (activation_->isWasm())
-        return asmJSIter().stackAddress();
+        return wasmIter().stackAddress();
 
     return jitIter().stackAddress();
 }
@@ -1866,13 +1869,14 @@ JS::ProfilingFrameIterator::getPhysicalFrameAndEntry(jit::JitcodeGlobalEntry* en
 {
     void* stackAddr = stackAddress();
 
-    if (isAsmJS()) {
+    if (isWasm()) {
         Frame frame;
-        frame.kind = Frame_AsmJS;
+        frame.kind = Frame_Wasm;
         frame.stackAddress = stackAddr;
         frame.returnAddress = nullptr;
         frame.activation = activation_;
-        return mozilla::Some(mozilla::Move(frame));
+        frame.label = nullptr;
+        return mozilla::Some(frame);
     }
 
     MOZ_ASSERT(isJit());
@@ -1896,7 +1900,8 @@ JS::ProfilingFrameIterator::getPhysicalFrameAndEntry(jit::JitcodeGlobalEntry* en
     frame.stackAddress = stackAddr;
     frame.returnAddress = returnAddr;
     frame.activation = activation_;
-    return mozilla::Some(mozilla::Move(frame));
+    frame.label = nullptr;
+    return mozilla::Some(frame);
 }
 
 uint32_t
@@ -1912,11 +1917,9 @@ JS::ProfilingFrameIterator::extractStack(Frame* frames, uint32_t offset, uint32_
     if (physicalFrame.isNothing())
         return 0;
 
-    if (isAsmJS()) {
-        frames[offset] = mozilla::Move(physicalFrame.ref());
-        frames[offset].label = DuplicateString(asmJSIter().label());
-        if (!frames[offset].label)
-            return 0; // Drop stack frames silently on OOM.
+    if (isWasm()) {
+        frames[offset] = physicalFrame.value();
+        frames[offset].label = wasmIter().label();
         return 1;
     }
 
@@ -1927,11 +1930,8 @@ JS::ProfilingFrameIterator::extractStack(Frame* frames, uint32_t offset, uint32_
     for (uint32_t i = 0; i < depth; i++) {
         if (offset + i >= end)
             return i;
-        Frame& frame = frames[offset + i];
-        frame = mozilla::Move(physicalFrame.ref());
-        frame.label = DuplicateString(labels[i]);
-        if (!frame.label)
-            return i;  // Drop stack frames silently on OOM.
+        frames[offset + i] = physicalFrame.value();
+        frames[offset + i].label = labels[i];
     }
 
     return depth;
@@ -1945,7 +1945,7 @@ JS::ProfilingFrameIterator::getPhysicalFrameWithoutLabel() const
 }
 
 bool
-JS::ProfilingFrameIterator::isAsmJS() const
+JS::ProfilingFrameIterator::isWasm() const
 {
     MOZ_ASSERT(!done());
     return activation_->isWasm();

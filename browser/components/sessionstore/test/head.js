@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const {Utils} = Cu.import("resource://gre/modules/sessionstore/Utils.jsm", {});
+const triggeringPrincipal_base64 = Utils.SERIALIZED_SYSTEMPRINCIPAL;
+
 const TAB_STATE_NEEDS_RESTORE = 1;
 const TAB_STATE_RESTORING = 2;
 
@@ -123,7 +126,7 @@ function waitForBrowserState(aState, aSetStateCallback) {
     if (aTopic == "domwindowopened") {
       let newWindow = aSubject.QueryInterface(Ci.nsIDOMWindow);
       newWindow.addEventListener("load", function() {
-        newWindow.removeEventListener("load", arguments.callee, false);
+        newWindow.removeEventListener("load", arguments.callee);
 
         if (++windowsOpen == expectedWindows) {
           Services.ww.unregisterNotification(windowObserver);
@@ -134,7 +137,7 @@ function waitForBrowserState(aState, aSetStateCallback) {
         windows.push(newWindow);
         // Add the progress listener
         newWindow.gBrowser.tabContainer.addEventListener("SSTabRestored", onSSTabRestored, true);
-      }, false);
+      });
     }
   }
 
@@ -273,25 +276,27 @@ var promiseForEachSessionRestoreFile = Task.async(function*(cb) {
     let data = "";
     try {
       data = yield OS.File.read(SessionFile.Paths[key], { encoding: "utf-8" });
-    } catch (ex if ex instanceof OS.File.Error
-	     && ex.becauseNoSuchFile) {
+    } catch (ex) {
       // Ignore missing files
+      if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
+        throw ex;
+      }
     }
     cb(data, key);
   }
 });
 
-function promiseBrowserLoaded(aBrowser, ignoreSubFrames = true) {
-  return BrowserTestUtils.browserLoaded(aBrowser, !ignoreSubFrames);
+function promiseBrowserLoaded(aBrowser, ignoreSubFrames = true, wantLoad = null) {
+  return BrowserTestUtils.browserLoaded(aBrowser, !ignoreSubFrames, wantLoad);
 }
 
 function whenWindowLoaded(aWindow, aCallback = next) {
   aWindow.addEventListener("load", function windowLoadListener() {
-    aWindow.removeEventListener("load", windowLoadListener, false);
+    aWindow.removeEventListener("load", windowLoadListener);
     executeSoon(function executeWhenWindowLoaded() {
       aCallback(aWindow);
     });
-  }, false);
+  });
 }
 function promiseWindowLoaded(aWindow) {
   return new Promise(resolve => whenWindowLoaded(aWindow, resolve));
@@ -302,7 +307,7 @@ function r() {
   return Date.now() + "-" + (++gUniqueCounter);
 }
 
-function BrowserWindowIterator() {
+function* BrowserWindowIterator() {
   let windowsEnum = Services.wm.getEnumerator("navigator:browser");
   while (windowsEnum.hasMoreElements()) {
     let currentWindow = windowsEnum.getNext();
@@ -372,7 +377,7 @@ var gProgressListener = {
   _countTabs: function () {
     let needsRestore = 0, isRestoring = 0, wasRestored = 0;
 
-    for (let win in BrowserWindowIterator()) {
+    for (let win of BrowserWindowIterator()) {
       for (let i = 0; i < win.gBrowser.tabs.length; i++) {
         let browser = win.gBrowser.tabs[i].linkedBrowser;
         if (!browser.__SS_restoreState)
@@ -394,7 +399,7 @@ registerCleanupFunction(function () {
 // Close all but our primary window.
 function promiseAllButPrimaryWindowClosed() {
   let windows = [];
-  for (let win in BrowserWindowIterator()) {
+  for (let win of BrowserWindowIterator()) {
     if (win != window) {
       windows.push(win);
     }
@@ -542,15 +547,11 @@ function modifySessionStorage(browser, data, options = {}) {
 }
 
 function pushPrefs(...aPrefs) {
-  return new Promise(resolve => {
-    SpecialPowers.pushPrefEnv({"set": aPrefs}, resolve);
-  });
+  return SpecialPowers.pushPrefEnv({"set": aPrefs});
 }
 
 function popPrefs() {
-  return new Promise(resolve => {
-    SpecialPowers.popPrefEnv(resolve);
-  });
+  return SpecialPowers.popPrefEnv();
 }
 
 function* checkScroll(tab, expected, msg) {

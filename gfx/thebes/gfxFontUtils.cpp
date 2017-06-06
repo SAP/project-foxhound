@@ -139,9 +139,13 @@ gfxFontUtils::ReadCMAPTableFormat10(const uint8_t *aBuf, uint32_t aLength,
 }
 
 nsresult
-gfxFontUtils::ReadCMAPTableFormat12(const uint8_t *aBuf, uint32_t aLength,
-                                    gfxSparseBitSet& aCharacterMap) 
+gfxFontUtils::ReadCMAPTableFormat12or13(const uint8_t *aBuf, uint32_t aLength,
+                                        gfxSparseBitSet& aCharacterMap)
 {
+    // Format 13 has the same structure as format 12, the only difference is
+    // the interpretation of the glyphID field. So we can share the code here
+    // that reads the table and just records character coverage.
+
     // Ensure table is large enough that we can safely read the header
     NS_ENSURE_TRUE(aLength >= sizeof(Format12CmapHeader),
                     NS_ERROR_GFX_CMAP_MALFORMED);
@@ -149,9 +153,10 @@ gfxFontUtils::ReadCMAPTableFormat12(const uint8_t *aBuf, uint32_t aLength,
     // Sanity-check header fields
     const Format12CmapHeader *cmap12 =
         reinterpret_cast<const Format12CmapHeader*>(aBuf);
-    NS_ENSURE_TRUE(uint16_t(cmap12->format) == 12, 
+    NS_ENSURE_TRUE(uint16_t(cmap12->format) == 12 ||
+                   uint16_t(cmap12->format) == 13,
                    NS_ERROR_GFX_CMAP_MALFORMED);
-    NS_ENSURE_TRUE(uint16_t(cmap12->reserved) == 0, 
+    NS_ENSURE_TRUE(uint16_t(cmap12->reserved) == 0,
                    NS_ERROR_GFX_CMAP_MALFORMED);
 
     uint32_t tablelen = cmap12->length;
@@ -472,7 +477,7 @@ gfxFontUtils::FindPreferredSubtable(const uint8_t *aBuf, uint32_t aBufLength,
             keepFormat = format;
             *aTableOffset = offset;
             *aSymbolEncoding = false;
-        } else if ((format == 10 || format == 12) &&
+        } else if ((format == 10 || format == 12 || format == 13) &&
                    acceptableUCS4Encoding(platformID, encodingID, keepFormat)) {
             keepFormat = format;
             *aTableOffset = offset;
@@ -521,10 +526,11 @@ gfxFontUtils::ReadCMAP(const uint8_t *aBuf, uint32_t aBufLength,
                                      aCharacterMap);
 
     case 12:
+    case 13:
         aUnicodeFont = true;
         aSymbolFont = false;
-        return ReadCMAPTableFormat12(aBuf + offset, aBufLength - offset,
-                                     aCharacterMap);
+        return ReadCMAPTableFormat12or13(aBuf + offset, aBufLength - offset,
+                                         aCharacterMap);
 
     default:
         break;
@@ -651,13 +657,17 @@ gfxFontUtils::MapCharToGlyphFormat10(const uint8_t *aBuf, uint32_t aCh)
 }
 
 uint32_t
-gfxFontUtils::MapCharToGlyphFormat12(const uint8_t *aBuf, uint32_t aCh)
+gfxFontUtils::MapCharToGlyphFormat12or13(const uint8_t *aBuf, uint32_t aCh)
 {
+    // The only difference between formats 12 and 13 is the interpretation of
+    // the glyphId field. So the code here uses the same "Format12" structures,
+    // etc., to handle both subtable formats.
+
     const Format12CmapHeader *cmap12 =
         reinterpret_cast<const Format12CmapHeader*>(aBuf);
 
     // We know that numGroups is within range for the subtable size
-    // because it was checked by ReadCMAPTableFormat12.
+    // because it was checked by ReadCMAPTableFormat12or13.
     uint32_t numGroups = cmap12->numGroups;
 
     // The array of groups immediately follows the subtable header.
@@ -688,10 +698,13 @@ gfxFontUtils::MapCharToGlyphFormat12(const uint8_t *aBuf, uint32_t aCh)
     }
 
     // Check if the character is actually present in the range and return
-    // the corresponding glyph ID
+    // the corresponding glyph ID. Here is where formats 12 and 13 interpret
+    // the startGlyphId (12) or glyphId (13) field differently
     startCharCode = groups[range].startCharCode;
     if (startCharCode <= aCh && groups[range].endCharCode >= aCh) {
-        return groups[range].startGlyphId + aCh - startCharCode;
+        return uint16_t(cmap12->format) == 12
+               ? uint16_t(groups[range].startGlyphId) + aCh - startCharCode
+               : uint16_t(groups[range].startGlyphId);
     }
 
     // Else it's not present, so return the .notdef glyph
@@ -767,7 +780,8 @@ gfxFontUtils::MapCharToGlyph(const uint8_t *aCmapBuf, uint32_t aBufLength,
         gid = MapCharToGlyphFormat10(aCmapBuf + offset, aUnicode);
         break;
     case 12:
-        gid = MapCharToGlyphFormat12(aCmapBuf + offset, aUnicode);
+    case 13:
+        gid = MapCharToGlyphFormat12or13(aCmapBuf + offset, aUnicode);
         break;
     default:
         NS_WARNING("unsupported cmap format, glyphs will be missing");
@@ -793,8 +807,9 @@ gfxFontUtils::MapCharToGlyph(const uint8_t *aCmapBuf, uint32_t aBufLength,
                                                     aUnicode);
                     break;
                 case 12:
-                    varGID = MapCharToGlyphFormat12(aCmapBuf + offset,
-                                                    aUnicode);
+                case 13:
+                    varGID = MapCharToGlyphFormat12or13(aCmapBuf + offset,
+                                                        aUnicode);
                     break;
                 }
             }
@@ -918,16 +933,18 @@ IsValidSFNTVersion(uint32_t version)
            version == TRUETYPE_TAG('t','r','u','e');
 }
 
-// copy and swap UTF-16 values, assume no surrogate pairs, can be in place
+// Copy and swap UTF-16 values, assume no surrogate pairs, can be in place.
+// aInBuf and aOutBuf are NOT necessarily 16-bit-aligned, so we should avoid
+// accessing them directly as uint16_t* values.
+// aLen is count of UTF-16 values, so the byte buffers are twice that.
 static void
-CopySwapUTF16(const uint16_t *aInBuf, uint16_t *aOutBuf, uint32_t aLen)
+CopySwapUTF16(const char* aInBuf, char* aOutBuf, uint32_t aLen)
 {
-    const uint16_t *end = aInBuf + aLen;
+    const char* end = aInBuf + aLen * 2;
     while (aInBuf < end) {
-        uint16_t value = *aInBuf;
-        *aOutBuf = (value >> 8) | (value & 0xff) << 8;
-        aOutBuf++;
-        aInBuf++;
+        uint8_t b0 = *aInBuf++;
+        *aOutBuf++ = *aInBuf++;
+        *aOutBuf++ = b0;
     }
 }
 
@@ -1446,13 +1463,13 @@ gfxFontUtils::DecodeFontName(const char *aNameData, int32_t aByteLen,
     if (csName[0] == 0) {
         // empty charset name: data is utf16be, no need to instantiate a converter
         uint32_t strLen = aByteLen / 2;
-#ifdef IS_LITTLE_ENDIAN
         aName.SetLength(strLen);
-        CopySwapUTF16(reinterpret_cast<const uint16_t*>(aNameData),
-                      reinterpret_cast<uint16_t*>(aName.BeginWriting()), strLen);
+#ifdef IS_LITTLE_ENDIAN
+        CopySwapUTF16(aNameData, reinterpret_cast<char*>(aName.BeginWriting()),
+                      strLen);
 #else
-        aName.Assign(reinterpret_cast<const char16_t*>(aNameData), strLen);
-#endif    
+        memcpy(aName.BeginWriting(), aNameData, strLen * 2);
+#endif
         return true;
     }
 

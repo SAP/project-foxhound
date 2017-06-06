@@ -5,10 +5,10 @@ function* test_decoder_doctor_notification(type, notificationMessage, options) {
     let awaitNotificationBar =
       BrowserTestUtils.waitForNotificationBar(gBrowser, browser, "decoder-doctor-notification");
 
-    yield ContentTask.spawn(browser, type, function*(type) {
+    yield ContentTask.spawn(browser, type, function*(aType) {
       Services.obs.notifyObservers(content.window,
                                    "decoder-doctor-notification",
-                                   JSON.stringify({type: type,
+                                   JSON.stringify({type: aType,
                                                    isSolved: false,
                                                    decoderDoctorReportId: "test",
                                                    formats: "test"}));
@@ -37,7 +37,8 @@ function* test_decoder_doctor_notification(type, notificationMessage, options) {
       "notification button should have accesskey");
 
     let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
-    let url = baseURL + "fix-video-audio-problems-firefox-windows";
+    let url = baseURL + ((options && options.sumo) ||
+                         "fix-video-audio-problems-firefox-windows");
     let awaitNewTab = BrowserTestUtils.waitForNewTab(gBrowser, url);
     button.click();
     let sumoTab = yield awaitNewTab;
@@ -51,13 +52,7 @@ add_task(function* test_adobe_cdm_not_found() {
     return;
   }
 
-  let message;
-  if (AppConstants.isPlatformAndVersionAtMost("win", "5.9")) {
-    message = gNavigatorBundle.getFormattedString("emeNotifications.drmContentDisabled.message", [""]);
-  } else {
-    message = gNavigatorBundle.getString("decoder.noCodecs.message");
-  }
-
+  let message = gNavigatorBundle.getString("decoder.noCodecs.message");
   yield test_decoder_doctor_notification("adobe-cdm-not-found", message);
 });
 
@@ -67,22 +62,11 @@ add_task(function* test_adobe_cdm_not_activated() {
     return;
   }
 
-  let message;
-  if (AppConstants.isPlatformAndVersionAtMost("win", "5.9")) {
-    message = gNavigatorBundle.getString("decoder.noCodecsXP.message");
-  } else {
-    message = gNavigatorBundle.getString("decoder.noCodecs.message");
-  }
-
+  let message = gNavigatorBundle.getString("decoder.noCodecs.message");
   yield test_decoder_doctor_notification("adobe-cdm-not-activated", message);
 });
 
 add_task(function* test_platform_decoder_not_found() {
-  // Not sent on Windows XP.
-  if (AppConstants.isPlatformAndVersionAtMost("win", "5.9")) {
-    return;
-  }
-
   let message;
   let isLinux = AppConstants.platform == "linux";
   if (isLinux) {
@@ -96,15 +80,25 @@ add_task(function* test_platform_decoder_not_found() {
                                          {noLearnMoreButton: isLinux});
 });
 
+add_task(function* test_cannot_initialize_pulseaudio() {
+  // This is only sent on Linux.
+  if (AppConstants.platform != "linux") {
+    return;
+  }
+
+  let message = gNavigatorBundle.getString("decoder.noPulseAudio.message");
+  yield test_decoder_doctor_notification("cannot-initialize-pulseaudio",
+                                         message,
+                                         {sumo: "fix-common-audio-and-video-issues"});
+});
+
 add_task(function* test_unsupported_libavcodec() {
   // This is only sent on Linux.
   if (AppConstants.platform != "linux") {
     return;
   }
 
-  // Note: Hard-coded string in aurora and beta because translation cannot
-  // be achieved in time.
-  let message = "libavcodec may be vulnerable or is not supported, and should be updated to play video.";
+  let message = gNavigatorBundle.getString("decoder.unsupportedLibavcodec.message");
   yield test_decoder_doctor_notification("unsupported-libavcodec",
                                          message,
                                          {noLearnMoreButton: true});

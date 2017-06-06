@@ -35,20 +35,22 @@ add_task(function* init() {
 
   yield new Promise((resolve, reject) => {
     info("adding search history values: " + kValues);
-    let ops = kValues.map(value => { return {op: "add",
+    let addOps = kValues.map(value => {
+ return {op: "add",
                                              fieldname: "searchbar-history",
-                                             value: value}
+                                             value}
                                    });
-    searchbar.FormHistory.update(ops, {
-      handleCompletion: function() {
+    searchbar.FormHistory.update(addOps, {
+      handleCompletion() {
         registerCleanupFunction(() => {
           info("removing search history values: " + kValues);
-          let ops =
-            kValues.map(value => { return {op: "remove",
+          let removeOps =
+            kValues.map(value => {
+ return {op: "remove",
                                            fieldname: "searchbar-history",
-                                           value: value}
+                                           value}
                                  });
-          searchbar.FormHistory.update(ops);
+          searchbar.FormHistory.update(removeOps);
         });
         resolve();
       },
@@ -371,7 +373,7 @@ add_task(function* test_tab_and_arrows() {
 
 add_task(function* test_open_search() {
   let rootDir = getRootDirectory(gTestPath);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, rootDir + "opensearch.html");
+  yield BrowserTestUtils.openNewForegroundTab(gBrowser, rootDir + "opensearch.html");
 
   let promise = promiseEvent(searchPopup, "popupshown");
   info("Opening search panel");

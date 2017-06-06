@@ -101,12 +101,11 @@ nsFirstLetterFrame::GetChildFrameContainingOffset(int32_t inContentOffset,
                                                   nsIFrame **outChildFrame)
 {
   nsIFrame *kid = mFrames.FirstChild();
-  if (kid)
-  {
+  if (kid) {
     return kid->GetChildFrameContainingOffset(inContentOffset, inHint, outFrameContentOffset, outChildFrame);
-  }
-  else
+  } else {
     return nsFrame::GetChildFrameContainingOffset(inContentOffset, inHint, outFrameContentOffset, outChildFrame);
+  }
 }
 
 // Needed for non-floating first-letter frames and for the continuations
@@ -125,6 +124,7 @@ nsFirstLetterFrame::AddInlinePrefISize(nsRenderingContext *aRenderingContext,
                                        nsIFrame::InlinePrefISizeData *aData)
 {
   DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::PREF_ISIZE);
+  aData->mLineIsEmpty = false;
 }
 
 // Needed for floating first-letter frames.
@@ -195,7 +195,7 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
     // When there is no lineLayout provided, we provide our own. The
     // only time that the first-letter-frame is not reflowing in a
     // line context is when its floating.
-    WritingMode kidWritingMode = GetWritingMode(kid);
+    WritingMode kidWritingMode = WritingModeForLine(wm, kid);
     LogicalSize kidAvailSize = availSize.ConvertTo(kidWritingMode, wm);
     ReflowInput rs(aPresContext, aReflowInput, kid, kidAvailSize);
     nsLineLayout ll(aPresContext, nullptr, &aReflowInput, nullptr, nullptr);
@@ -239,8 +239,7 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
     ConsiderChildOverflow(aMetrics.mOverflowAreas, kid);
 
     FinishAndStoreOverflow(&aMetrics);
-  }
-  else {
+  } else {
     // Pretend we are a span and reflow the child frame
     nsLineLayout* ll = aReflowInput.mLineLayout;
     bool          pushedFrame;
@@ -257,7 +256,13 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
     aMetrics.ISize(lineWM) = ll->EndSpan(this) + bp.IStartEnd(wm);
     ll->SetInFirstLetter(false);
 
-    nsLayoutUtils::SetBSizeFromFontMetrics(this, aMetrics, bp, lineWM, wm);
+    if (mStyleContext->StyleTextReset()->mInitialLetterSize != 0.0f) {
+      aMetrics.SetBlockStartAscent(kidMetrics.BlockStartAscent() +
+                                   bp.BStart(wm));
+      aMetrics.BSize(lineWM) = kidMetrics.BSize(lineWM) + bp.BStartEnd(wm);
+    } else {
+      nsLayoutUtils::SetBSizeFromFontMetrics(this, aMetrics, bp, lineWM, wm);
+    }
   }
 
   if (!NS_INLINE_IS_BREAK_BEFORE(aReflowStatus)) {
@@ -272,8 +277,7 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
         // Remove all of the childs next-in-flows
         kidNextInFlow->GetParent()->DeleteNextInFlowChild(kidNextInFlow, true);
       }
-    }
-    else {
+    } else {
       // Create a continuation for the child frame if it doesn't already
       // have one.
       if (!IsFloating()) {

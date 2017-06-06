@@ -1,7 +1,7 @@
 BRANCH = "try"
 MOZILLA_DIR = BRANCH
 EN_US_BINARY_URL = "http://archive.mozilla.org/pub/" \
-                   "mobile/nightly/latest-mozilla-aurora-android-api-15/en-US"
+                   "mobile/nightly/latest-mozilla-central-android-api-15/en-US"
 
 config = {
     "branch": "try",
@@ -11,7 +11,7 @@ config = {
     "buildbot_json_path": "buildprops.json",
     "force_clobber": True,
     "clobberer_url": "https://api.pub.build.mozilla.org/clobberer/lastclobber",
-    "locales_file": "%s/mobile/android/locales/all-locales" % MOZILLA_DIR,
+    "locales_file": "%s/mobile/locales/l10n-changesets.json" % MOZILLA_DIR,
     "locales_dir": "mobile/android/locales",
     "ignore_locales": ["en-US"],
     "nightly_build": False,
@@ -35,15 +35,15 @@ config = {
         "repo": "https://hg.mozilla.org/try",
         "revision": "%(revision)s",
         "dest": "try",
-        "clone_upstream_url": "https://hg.mozilla.org/releases/mozilla-aurora",
+        "clone_upstream_url": "https://hg.mozilla.org/mozilla-unified",
         "clone_by_revision": True,
         "clone_with_purge": True,
     }],
-    "hg_l10n_base": "https://hg.mozilla.org/releases/l10n/mozilla-aurora",
+    "hg_l10n_base": "https://hg.mozilla.org/l10n-central",
     "hg_l10n_tag": "default",
     'vcs_share_base': "/builds/hg-shared",
 
-    "l10n_dir": "mozilla-aurora",
+    "l10n_dir": "l10n-central",
     "repack_env": {
         # so ugly, bug 951238
         "LD_LIBRARY_PATH": "/lib:/tools/gcc-4.7.2-0moz1/lib:/tools/gcc-4.7.2-0moz1/lib64",

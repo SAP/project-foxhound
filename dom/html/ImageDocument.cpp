@@ -291,13 +291,6 @@ ImageDocument::OnPageShow(bool aPersisted,
 }
 
 NS_IMETHODIMP
-ImageDocument::GetImageResizingEnabled(bool* aImageResizingEnabled)
-{
-  *aImageResizingEnabled = ImageResizingEnabled();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 ImageDocument::GetImageIsOverflowing(bool* aImageIsOverflowing)
 {
   *aImageIsOverflowing = ImageIsOverflowing();
@@ -402,7 +395,7 @@ ImageDocument::ScrollImageTo(int32_t aX, int32_t aY, bool restoreImage)
 
   if (restoreImage) {
     RestoreImage();
-    FlushPendingNotifications(Flush_Layout);
+    FlushPendingNotifications(FlushType::Layout);
   }
 
   nsCOMPtr<nsIPresShell> shell = GetShell();
@@ -629,7 +622,7 @@ ImageDocument::UpdateSizeFromLayout()
     return;
   }
 
-  nsIFrame* contentFrame = mImageContent->GetPrimaryFrame(Flush_Frames);
+  nsIFrame* contentFrame = mImageContent->GetPrimaryFrame(FlushType::Frames);
   if (!contentFrame) {
     return;
   }

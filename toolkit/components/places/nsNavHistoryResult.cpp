@@ -2351,13 +2351,25 @@ nsNavHistoryQueryResultNode::RecursiveSort(
   }
 }
 
+NS_IMETHODIMP
+nsNavHistoryQueryResultNode::GetSkipTags(bool *aSkipTags)
+{
+  *aSkipTags = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNavHistoryQueryResultNode::GetSkipDescendantsOnItemRemoval(bool *aSkipDescendantsOnItemRemoval)
+{
+  *aSkipDescendantsOnItemRemoval = false;
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 nsNavHistoryQueryResultNode::OnBeginUpdateBatch()
 {
   return NS_OK;
 }
-
 
 NS_IMETHODIMP
 nsNavHistoryQueryResultNode::OnEndUpdateBatch()
@@ -3520,6 +3532,19 @@ nsNavHistoryFolderResultNode::FindChildById(int64_t aItemId,
     return NS_OK; \
   }
 
+NS_IMETHODIMP
+nsNavHistoryFolderResultNode::GetSkipTags(bool *aSkipTags)
+{
+  *aSkipTags = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNavHistoryFolderResultNode::GetSkipDescendantsOnItemRemoval(bool *aSkipDescendantsOnItemRemoval)
+{
+  *aSkipDescendantsOnItemRemoval = false;
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 nsNavHistoryFolderResultNode::OnBeginUpdateBatch()
@@ -4401,6 +4426,20 @@ nsNavHistoryResult::requestRefresh(nsNavHistoryContainerResultNode* aContainer)
   PR_END_MACRO
 
 NS_IMETHODIMP
+nsNavHistoryResult::GetSkipTags(bool *aSkipTags)
+{
+  *aSkipTags = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNavHistoryResult::GetSkipDescendantsOnItemRemoval(bool *aSkipDescendantsOnItemRemoval)
+{
+  *aSkipDescendantsOnItemRemoval = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsNavHistoryResult::OnBeginUpdateBatch()
 {
   // Since we could be observing both history and bookmarks, it's possible both
@@ -4617,7 +4656,8 @@ NS_IMETHODIMP
 nsNavHistoryResult::OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,
                             int64_t aSessionId, int64_t aReferringId,
                             uint32_t aTransitionType, const nsACString& aGUID,
-                            bool aHidden, uint32_t aVisitCount, uint32_t aTyped)
+                            bool aHidden, uint32_t aVisitCount, uint32_t aTyped,
+                            const nsAString& aLastKnownTitle)
 {
   NS_ENSURE_ARG(aURI);
 
@@ -4631,6 +4671,16 @@ nsNavHistoryResult::OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,
   ENUMERATE_HISTORY_OBSERVERS(OnVisit(aURI, aVisitId, aTime, aSessionId,
                                       aReferringId, aTransitionType, aGUID,
                                       aHidden, &added));
+
+  // When we add visits through UpdatePlaces, we don't bother telling
+  // the world that the title 'changed' from nothing to the first title
+  // we ever see for a history entry. Our consumers here might still
+  // care, though, so we have to tell them - but only for the first
+  // visit we add. For subsequent changes, updateplaces will dispatch
+  // ontitlechanged notifications as normal.
+  if (!aLastKnownTitle.IsVoid() && aVisitCount == 1) {
+    ENUMERATE_HISTORY_OBSERVERS(OnTitleChanged(aURI, aLastKnownTitle, aGUID));
+  }
 
   if (!mRootNode->mExpanded)
     return NS_OK;

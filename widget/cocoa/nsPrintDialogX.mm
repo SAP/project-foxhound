@@ -145,7 +145,18 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter *aParent, nsIPrintSettings *aSett
       [dict setObject: [NSNumber numberWithFloat: 1]
                forKey: NSPrintScalingFactor];
     }
+    // Set the scaling factor to 100% in the NSPrintInfo
+    // object so that it will not affect the paper size
+    // retrieved from the PMPageFormat routines.
+    [copy setScalingFactor:1.0];
+  } else {
+    aSettings->SetScaling([copy scalingFactor]);
   }
+
+  // Set the adjusted paper size now that we've updated
+  // the scaling factor.
+  settingsX->InitAdjustedPaperSize();
+
   [copy release];
 
   int16_t pageRange;
@@ -173,6 +184,8 @@ NS_IMETHODIMP
 nsPrintDialogServiceX::ShowPageSetup(nsPIDOMWindowOuter *aParent,
                                      nsIPrintSettings *aNSSettings)
 {
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+
   NS_PRECONDITION(aParent, "aParent must not be null");
   NS_PRECONDITION(aNSSettings, "aSettings must not be null");
   NS_ENSURE_TRUE(aNSSettings, NS_ERROR_FAILURE);
@@ -188,6 +201,8 @@ nsPrintDialogServiceX::ShowPageSetup(nsPIDOMWindowOuter *aParent,
   nsCocoaUtils::CleanUpAfterNativeAppModalDialog();
 
   return button == NSFileHandlingPanelOKButton ? NS_OK : NS_ERROR_ABORT;
+
+  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
 // Accessory view

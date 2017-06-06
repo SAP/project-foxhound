@@ -12,6 +12,7 @@
 #include "GLDefs.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/EnumeratedArray.h"
@@ -303,6 +304,7 @@ class WebGLContext
     friend class ScopedFBRebinder;
     friend class WebGL2Context;
     friend class WebGLContextUserData;
+    friend class WebGLExtensionCompressedTextureASTC;
     friend class WebGLExtensionCompressedTextureATC;
     friend class WebGLExtensionCompressedTextureES3;
     friend class WebGLExtensionCompressedTextureETC1;
@@ -328,6 +330,10 @@ class WebGLContext
 
     static const uint32_t kMinMaxColorAttachments;
     static const uint32_t kMinMaxDrawBuffers;
+
+    const uint32_t mMaxPerfWarnings;
+    mutable uint64_t mNumPerfWarnings;
+    const uint32_t mMaxAcceptableFBStatusInvals;
 
 public:
     WebGLContext();
@@ -515,10 +521,11 @@ public:
     GetContextAttributes(dom::Nullable<dom::WebGLContextAttributes>& retval);
 
     bool IsContextLost() const { return mContextStatus != ContextNotLost; }
-    void GetSupportedExtensions(JSContext* cx,
-                                dom::Nullable< nsTArray<nsString> >& retval);
+    void GetSupportedExtensions(dom::Nullable< nsTArray<nsString> >& retval,
+                                dom::CallerType callerType);
     void GetExtension(JSContext* cx, const nsAString& name,
-                      JS::MutableHandle<JSObject*> retval, ErrorResult& rv);
+                      JS::MutableHandle<JSObject*> retval,
+                      dom::CallerType callerType, ErrorResult& rv);
     void AttachShader(WebGLProgram& prog, WebGLShader& shader);
     void BindAttribLocation(WebGLProgram& prog, GLuint location,
                             const nsAString& name);
@@ -1444,6 +1451,8 @@ protected:
     uint32_t mImplMaxColorAttachments;
     uint32_t mImplMaxDrawBuffers;
 
+    uint32_t mImplMaxViewportDims[2];
+
 public:
     GLenum LastColorAttachmentEnum() const {
         return LOCAL_GL_COLOR_ATTACHMENT0 + mImplMaxColorAttachments - 1;
@@ -1504,7 +1513,7 @@ protected:
     void EnableExtension(WebGLExtensionID ext);
 
     // Enable an extension if it's supported. Return the extension on success.
-    WebGLExtensionBase* EnableSupportedExtension(JSContext* js,
+    WebGLExtensionBase* EnableSupportedExtension(dom::CallerType callerType,
                                                  WebGLExtensionID ext);
 
 public:
@@ -1512,8 +1521,9 @@ public:
     bool IsExtensionEnabled(WebGLExtensionID ext) const;
 
 protected:
-    // returns true if the extension is supported for this JSContext (this decides what getSupportedExtensions exposes)
-    bool IsExtensionSupported(JSContext* cx, WebGLExtensionID ext) const;
+    // returns true if the extension is supported for this caller type (this decides what getSupportedExtensions exposes)
+    bool IsExtensionSupported(dom::CallerType callerType,
+                              WebGLExtensionID ext) const;
     bool IsExtensionSupported(WebGLExtensionID ext) const;
 
     static const char* GetExtensionString(WebGLExtensionID ext);
@@ -1565,7 +1575,6 @@ protected:
     bool ValidateBlendFuncSrcEnum(GLenum mode, const char* info);
     bool ValidateBlendFuncEnumsCompatibility(GLenum sfactor, GLenum dfactor,
                                              const char* info);
-    bool ValidateTextureTargetEnum(GLenum target, const char* info);
     bool ValidateComparisonEnum(GLenum target, const char* info);
     bool ValidateStencilOpEnum(GLenum action, const char* info);
     bool ValidateFaceEnum(GLenum face, const char* info);
@@ -1932,6 +1941,10 @@ protected:
 
     bool ShouldGenerateWarnings() const;
 
+    bool ShouldGeneratePerfWarnings() const {
+        return mNumPerfWarnings < mMaxPerfWarnings;
+    }
+
     uint64_t mLastUseIndex;
 
     bool mNeedsFakeNoAlpha;
@@ -2023,6 +2036,8 @@ public:
     // console logging helpers
     void GenerateWarning(const char* fmt, ...);
     void GenerateWarning(const char* fmt, va_list ap);
+
+    void GeneratePerfWarning(const char* fmt, ...) const;
 
 public:
     UniquePtr<webgl::FormatUsageAuthority> mFormatUsage;
@@ -2178,10 +2193,9 @@ private:
 
 ////
 
-void
-Intersect(uint32_t srcSize, int32_t dstStartInSrc, uint32_t dstSize,
-          uint32_t* const out_intStartInSrc, uint32_t* const out_intStartInDst,
-          uint32_t* const out_intSize);
+bool
+Intersect(int32_t srcSize, int32_t read0, int32_t readSize, int32_t* out_intRead0,
+          int32_t* out_intWrite0, int32_t* out_intSize);
 
 ////
 

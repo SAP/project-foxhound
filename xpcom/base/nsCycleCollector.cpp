@@ -1340,6 +1340,9 @@ public:
                            size_t* aPurpleBufferSize) const;
 
   JSPurpleBuffer* GetJSPurpleBuffer();
+
+  CycleCollectedJSContext* Context() { return mJSContext; }
+
 private:
   void CheckThreadSafety();
   void ShutdownCollect();
@@ -2062,7 +2065,7 @@ private:
   CycleCollectorResults& mResults;
   NodePool::Builder mNodeBuilder;
   EdgePool::Builder mEdgeBuilder;
-  PtrInfo* mCurrPi;
+  MOZ_INIT_OUTSIDE_CTOR PtrInfo* mCurrPi;
   nsCycleCollectionParticipant* mJSParticipant;
   nsCycleCollectionParticipant* mJSZoneParticipant;
   nsCString mNextEdgeName;
@@ -2276,7 +2279,7 @@ CCGraphBuilder::BuildGraph(SliceBudget& aBudget)
     SetFirstChild();
 
     if (pi->mParticipant) {
-      nsresult rv = pi->mParticipant->Traverse(pi->mPointer, *this);
+      nsresult rv = pi->mParticipant->TraverseNativeAndJS(pi->mPointer, *this);
       MOZ_RELEASE_ASSERT(!NS_FAILED(rv), "Cycle collector Traverse method failed");
     }
 
@@ -2550,7 +2553,7 @@ static bool
 MayHaveChild(void* aObj, nsCycleCollectionParticipant* aCp)
 {
   ChildFinder cf;
-  aCp->Traverse(aObj, cf);
+  aCp->TraverseNativeAndJS(aObj, cf);
   return cf.MayHaveChild();
 }
 
@@ -2607,7 +2610,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSPurpleBuffer)
   CycleCollectionNoteChild(cb, tmp, "self");
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 #define NS_TRACE_SEGMENTED_ARRAY(_field, _type)                               \
@@ -2655,7 +2657,10 @@ public:
       if (!o.mRefCnt->get() && !o.mRefCnt->IsInPurpleBuffer()) {
         mCollector->RemoveObjectFromGraph(o.mPointer);
         o.mRefCnt->stabilizeForDeletion();
-        o.mParticipant->Trace(o.mPointer, *this, nullptr);
+        {
+          JS::AutoEnterCycleCollection autocc(mCollector->Context()->Context());
+          o.mParticipant->Trace(o.mPointer, *this, nullptr);
+        }
         o.mParticipant->DeleteCycleCollectable(o.mPointer);
       }
     }
@@ -2683,9 +2688,10 @@ public:
   virtual void Trace(JS::Heap<JS::Value>* aValue, const char* aName,
                      void* aClosure) const override
   {
-    if (aValue->isMarkable() && ValueIsGrayCCThing(*aValue)) {
-      MOZ_ASSERT(!js::gc::IsInsideNursery(aValue->toGCThing()));
-      mCollector->GetJSPurpleBuffer()->mValues.InfallibleAppend(*aValue);
+    const JS::Value& val = aValue->unbarrieredGet();
+    if (val.isGCThing() && ValueIsGrayCCThing(val)) {
+      MOZ_ASSERT(!js::gc::IsInsideNursery(val.toGCThing()));
+      mCollector->GetJSPurpleBuffer()->mValues.InfallibleAppend(val);
     }
   }
 
@@ -2705,7 +2711,7 @@ public:
   virtual void Trace(JS::Heap<JSObject*>* aObject, const char* aName,
                      void* aClosure) const override
   {
-    AppendJSObjectToPurpleBuffer(*aObject);
+    AppendJSObjectToPurpleBuffer(aObject->unbarrieredGet());
   }
 
   virtual void Trace(JSObject** aObject, const char* aName,
@@ -2717,7 +2723,7 @@ public:
   virtual void Trace(JS::TenuredHeap<JSObject*>* aObject, const char* aName,
                      void* aClosure) const override
   {
-    AppendJSObjectToPurpleBuffer(*aObject);
+    AppendJSObjectToPurpleBuffer(aObject->unbarrieredGetPtr());
   }
 
   virtual void Trace(JS::Heap<JSString*>* aString, const char* aName,
@@ -2861,13 +2867,14 @@ nsCycleCollector::ForgetSkippable(bool aRemoveChildlessNodes,
 MOZ_NEVER_INLINE void
 nsCycleCollector::MarkRoots(SliceBudget& aBudget)
 {
-  JS::AutoAssertOnGC nogc;
+  JS::AutoAssertNoGC nogc;
   TimeLog timeLog;
   AutoRestore<bool> ar(mScanInProgress);
   MOZ_RELEASE_ASSERT(!mScanInProgress);
   mScanInProgress = true;
   MOZ_ASSERT(mIncrementalPhase == GraphBuildingPhase);
 
+  JS::AutoEnterCycleCollection autocc(Context()->Context());
   bool doneBuilding = mBuilder->BuildGraph(aBudget);
 
   if (!doneBuilding) {
@@ -3182,12 +3189,14 @@ nsCycleCollector::ScanBlackNodes()
 void
 nsCycleCollector::ScanRoots(bool aFullySynchGraphBuild)
 {
-  JS::AutoAssertOnGC nogc;
+  JS::AutoAssertNoGC nogc;
   AutoRestore<bool> ar(mScanInProgress);
   MOZ_RELEASE_ASSERT(!mScanInProgress);
   mScanInProgress = true;
   mWhiteNodeCount = 0;
   MOZ_ASSERT(mIncrementalPhase == ScanAndCollectWhitePhase);
+
+  JS::AutoEnterCycleCollection autocc(Context()->Context());
 
   if (!aFullySynchGraphBuild) {
     ScanIncrementalRoots();
@@ -3271,7 +3280,7 @@ nsCycleCollector::CollectWhite()
   uint32_t numWhiteJSZones = 0;
 
   {
-    JS::AutoAssertOnGC nogc;
+    JS::AutoAssertNoGC nogc;
     bool hasJSContext = !!mJSContext;
     nsCycleCollectionParticipant* zoneParticipant =
       hasJSContext ? mJSContext->ZoneParticipant() : nullptr;
@@ -3328,7 +3337,7 @@ nsCycleCollector::CollectWhite()
   }
   timeLog.Checkpoint("CollectWhite::Unlink");
 
-  JS::AutoAssertOnGC nogc;
+  JS::AutoAssertNoGC nogc;
   for (auto iter = whiteNodes.Iter(); !iter.Done(); iter.Next()) {
     PtrInfo* pinfo = iter.Get();
     MOZ_ASSERT(pinfo->mParticipant,
@@ -3826,13 +3835,14 @@ nsCycleCollector::BeginCollection(ccType aCCType,
   timeLog.Checkpoint("Post-FreeSnowWhite finish IGC");
 
   // Set up the data structures for building the graph.
+  JS::AutoAssertNoGC nogc;
+  JS::AutoEnterCycleCollection autocc(mJSContext->Context());
   mGraph.Init();
   mResults.Init();
   mResults.mAnyManual = (aCCType != SliceCC);
   bool mergeZones = ShouldMergeZones(aCCType);
   mResults.mMergedZones = mergeZones;
 
-  JS::AutoAssertOnGC nogc;
   MOZ_ASSERT(!mBuilder, "Forgot to clear mBuilder");
   mBuilder = new CCGraphBuilder(mGraph, mResults, mJSContext, mLogger,
                                 mergeZones);

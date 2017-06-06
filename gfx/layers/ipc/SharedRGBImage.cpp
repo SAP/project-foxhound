@@ -63,8 +63,7 @@ SharedRGBImage::~SharedRGBImage()
 {
   MOZ_COUNT_DTOR(SharedRGBImage);
 
-  if (mCompositable->GetAsyncID() != 0 &&
-      !InImageBridgeChildThread()) {
+  if (mCompositable->GetAsyncHandle() && !InImageBridgeChildThread()) {
     ADDREF_MANUALLY(mTextureClient);
     ImageBridgeChild::DispatchReleaseTextureClient(mTextureClient);
     mTextureClient = nullptr;
@@ -98,7 +97,7 @@ SharedRGBImage::GetSize()
 }
 
 TextureClient*
-SharedRGBImage::GetTextureClient(CompositableClient* aClient)
+SharedRGBImage::GetTextureClient(KnowsCompositor* aForwarder)
 {
   return mTextureClient.get();
 }
@@ -106,7 +105,32 @@ SharedRGBImage::GetTextureClient(CompositableClient* aClient)
 already_AddRefed<gfx::SourceSurface>
 SharedRGBImage::GetAsSourceSurface()
 {
-  return nullptr;
+  NS_ASSERTION(NS_IsMainThread(), "Must be main thread");
+
+  if (mSourceSurface) {
+    RefPtr<gfx::SourceSurface> surface(mSourceSurface);
+    return surface.forget();
+  }
+
+  RefPtr<gfx::SourceSurface> surface;
+  {
+    // We are 'borrowing' the DrawTarget and retaining a permanent reference to
+    // the underlying data (via the surface). It is in this instance since we
+    // know that the TextureClient is always wrapping a BufferTextureData and
+    // therefore it won't go away underneath us.
+    BufferTextureData* decoded_buffer =
+      mTextureClient->GetInternalData()->AsBufferTextureData();
+    RefPtr<gfx::DrawTarget> drawTarget = decoded_buffer->BorrowDrawTarget();
+
+    if (!drawTarget) {
+      return nullptr;
+    }
+
+    surface = drawTarget->Snapshot();
+  }
+
+  mSourceSurface = surface;
+  return surface.forget();
 }
 
 } // namespace layers

@@ -9,6 +9,7 @@
 
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
@@ -188,6 +189,7 @@ private:
   void MaybeEnableFamilySafetyCompatibility();
   void MaybeImportEnterpriseRoots();
 #ifdef XP_WIN
+  void ImportEnterpriseRootsForLocation(DWORD locationFlag);
   nsresult MaybeImportFamilySafetyRoot(PCCERT_CONTEXT certificate,
                                        bool& wasFamilySafetyRoot);
   nsresult LoadFamilySafetyRoot();
@@ -210,7 +212,7 @@ private:
 #endif
 
 #ifdef DEBUG
-  nsAutoString mTestBuiltInRootHash;
+  nsString mTestBuiltInRootHash;
 #endif
   nsString mContentSigningRootHash;
 

@@ -46,6 +46,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/dom/TabChild.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 
@@ -63,9 +64,11 @@ static nsIAtom** kRelationAttrs[] =
 {
   &nsGkAtoms::aria_labelledby,
   &nsGkAtoms::aria_describedby,
+  &nsGkAtoms::aria_details,
   &nsGkAtoms::aria_owns,
   &nsGkAtoms::aria_controls,
   &nsGkAtoms::aria_flowto,
+  &nsGkAtoms::aria_errormessage,
   &nsGkAtoms::_for,
   &nsGkAtoms::control
 };
@@ -77,7 +80,12 @@ static const uint32_t kRelationAttrsLen = ArrayLength(kRelationAttrs);
 
 DocAccessible::
   DocAccessible(nsIDocument* aDocument, nsIPresShell* aPresShell) :
-  HyperTextAccessibleWrap(nullptr, this),
+    // XXX don't pass a document to the Accessible constructor so that we don't
+    // set mDoc until our vtable is fully setup.  If we set mDoc before setting
+    // up the vtable we will call Accessible::AddRef() but not the overrides of
+    // it for subclasses.  It is important to call those overrides to avoid
+    // confusing leak checking machinary.
+  HyperTextAccessibleWrap(nullptr, nullptr),
   // XXX aaronl should we use an algorithm for the initial cache size?
   mAccessibleCache(kDefaultCacheLength),
   mNodeToAccessibleMap(kDefaultCacheLength),
@@ -89,6 +97,7 @@ DocAccessible::
 {
   mGenericTypes |= eDocument;
   mStateFlags |= eNotNodeMapEntry;
+  mDoc = this;
 
   MOZ_ASSERT(mPresShell, "should have been given a pres shell");
   mPresShell->SetDocAccessible(this);
@@ -1458,8 +1467,25 @@ DocAccessible::NotifyOfLoading(bool aIsReloading)
 void
 DocAccessible::DoInitialUpdate()
 {
-  if (nsCoreUtils::IsTabDocument(mDocumentNode))
+  if (nsCoreUtils::IsTabDocument(mDocumentNode)) {
     mDocFlags |= eTabDocument;
+    if (IPCAccessibilityActive()) {
+      nsIDocShell* docShell = mDocumentNode->GetDocShell();
+      if (RefPtr<dom::TabChild> tabChild = dom::TabChild::GetFrom(docShell)) {
+        DocAccessibleChild* ipcDoc = new DocAccessibleChild(this, tabChild);
+        SetIPCDoc(ipcDoc);
+
+#if defined(XP_WIN)
+        IAccessibleHolder holder(CreateHolderFromAccessible(this));
+        int32_t childID = AccessibleWrap::GetChildIDFor(this);
+#else
+        int32_t holder = 0, childID = 0;
+#endif
+        tabChild->SendPDocAccessibleConstructor(ipcDoc, nullptr, 0, childID,
+                                                holder);
+      }
+    }
+  }
 
   mLoadState |= eTreeConstructed;
 
@@ -1858,8 +1884,8 @@ DocAccessible::ProcessContentInserted(Accessible* aContainer,
                         "container", aContainer, "child", iter.Child(), nullptr);
 #endif
 
-      mt.AfterInsertion(iter.Child());
       CreateSubtree(iter.Child());
+      mt.AfterInsertion(iter.Child());
       continue;
     }
 
@@ -1905,10 +1931,10 @@ DocAccessible::ProcessContentInserted(Accessible* aContainer, nsIContent* aNode)
       if (!aContainer->InsertAfter(child, walker.Prev())) {
         return;
       }
+      CreateSubtree(child);
       mt.AfterInsertion(child);
       mt.Done();
 
-      CreateSubtree(child);
       FireEventsOnInsertion(aContainer);
     }
   }
@@ -2061,11 +2087,13 @@ DocAccessible::DoARIAOwnsRelocation(Accessible* aOwner)
           child->SetRelocated(true);
           children->InsertElementAt(arrayIdx, child);
 
-          insertIdx = child->IndexInParent() + 1;
-          arrayIdx++;
-
+          // Create subtree before adjusting the insertion index, since subtree
+          // creation may alter children in the container.
           CreateSubtree(child);
           FireEventsOnInsertion(aOwner);
+
+          insertIdx = child->IndexInParent() + 1;
+          arrayIdx++;
         }
       }
       continue;
@@ -2150,7 +2178,14 @@ DocAccessible::PutChildrenBack(nsTArray<RefPtr<Accessible> >* aChildren,
       TreeWalker walker(origContainer);
       if (walker.Seek(child->GetContent())) {
         Accessible* prevChild = walker.Prev();
-        idxInParent = prevChild ? prevChild->IndexInParent() + 1 : 0;
+        if (prevChild) {
+          idxInParent = prevChild->IndexInParent() + 1;
+          MOZ_ASSERT(origContainer == prevChild->Parent(), "Broken tree");
+          origContainer = prevChild->Parent();
+        }
+        else {
+          idxInParent = 0;
+        }
       }
     }
     MoveChild(child, origContainer, idxInParent);
@@ -2180,6 +2215,8 @@ DocAccessible::MoveChild(Accessible* aChild, Accessible* aNewParent,
     children->RemoveElement(aChild);
   }
 
+  NotificationController::MoveGuard mguard(mNotificationController);
+
   if (curParent == aNewParent) {
     MOZ_ASSERT(aChild->IndexInParent() != aIdxInParent, "No move case");
     curParent->MoveChild(aIdxInParent, aChild);
@@ -2202,6 +2239,11 @@ DocAccessible::MoveChild(Accessible* aChild, Accessible* aNewParent,
 
   // No insertion point for the child.
   if (aIdxInParent == -1) {
+    return true;
+  }
+
+  if (aIdxInParent > static_cast<int32_t>(aNewParent->ChildCount())) {
+    MOZ_ASSERT_UNREACHABLE("Wrong insertion point for a moving child");
     return true;
   }
 
@@ -2269,8 +2311,15 @@ DocAccessible::UncacheChildrenInSubtree(Accessible* aRoot)
   RemoveDependentIDsFor(aRoot);
 
   uint32_t count = aRoot->ContentChildCount();
-  for (uint32_t idx = 0; idx < count; idx++)
-    UncacheChildrenInSubtree(aRoot->ContentChildAt(idx));
+  for (uint32_t idx = 0; idx < count; idx++) {
+    Accessible* child = aRoot->ContentChildAt(idx);
+
+    // Removing this accessible from the document doesn't mean anything about
+    // accessibles for subdocuments, so skip removing those from the tree.
+    if (!child->IsDoc()) {
+      UncacheChildrenInSubtree(child);
+    }
+  }
 
   if (aRoot->IsNodeMapEntry() &&
       mNodeToAccessibleMap.Get(aRoot->GetNode()) == aRoot)

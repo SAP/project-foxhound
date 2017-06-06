@@ -55,10 +55,11 @@ MarionetteComponent.prototype = {
   ],
   enabled: false,
   finalUiStartup: false,
+  gfxWindow: null,
   server: null,
 };
 
-MarionetteComponent.prototype.setupLogger_ = function(level) {
+MarionetteComponent.prototype.setupLogger_ = function (level) {
   let log = Log.repository.getLogger("Marionette");
   log.level = level;
   log.addAppender(new Log.DumpAppender());
@@ -67,9 +68,6 @@ MarionetteComponent.prototype.setupLogger_ = function(level) {
 
 MarionetteComponent.prototype.determineLoggingLevel_ = function() {
   let level = Log.Level.Info;
-#ifdef DEBUG
-  level = Log.Level.Trace;
-#endif
 
   // marionette.logging pref can override default
   // with an entry from the Log.Level enum
@@ -101,13 +99,13 @@ MarionetteComponent.prototype.onSocketAccepted = function(
   this.logger.info("onSocketAccepted for Marionette dummy socket");
 };
 
-MarionetteComponent.prototype.onStopListening = function(socket, status) {
+MarionetteComponent.prototype.onStopListening = function (socket, status) {
   this.logger.info(`onStopListening for Marionette dummy socket, code ${status}`);
   socket.close();
 };
 
 /** Check cmdLine argument for {@code --marionette}. */
-MarionetteComponent.prototype.handle = function(cmdLine) {
+MarionetteComponent.prototype.handle = function (cmdLine) {
   // if the CLI is there then lets do work otherwise nothing to see
   if (cmdLine.handleFlag("marionette", false)) {
     this.enabled = true;
@@ -116,13 +114,15 @@ MarionetteComponent.prototype.handle = function(cmdLine) {
   }
 };
 
-MarionetteComponent.prototype.observe = function(subj, topic, data) {
+MarionetteComponent.prototype.observe = function (subject, topic, data) {
   switch (topic) {
     case "profile-after-change":
-      this.maybeReadPrefsFromEnvironment();
-      // Using final-ui-startup as the xpcom category doesn't seem to work,
+      // Using sessionstore-windows-restored as the xpcom category doesn't seem to work,
       // so we wait for that by adding an observer here.
-      this.observerService.addObserver(this, "final-ui-startup", false);
+      this.observerService.addObserver(this, "sessionstore-windows-restored", false);
+
+      this.maybeReadPrefsFromEnvironment();
+
 #ifdef ENABLE_MARIONETTE
       this.enabled = Preferences.get(ENABLED_PREF, false);
       if (this.enabled) {
@@ -137,16 +137,43 @@ MarionetteComponent.prototype.observe = function(subj, topic, data) {
 #endif
       break;
 
-    case "final-ui-startup":
-      this.finalUiStartup = true;
-      this.observerService.removeObserver(this, topic);
-      this.observerService.addObserver(this, "xpcom-shutdown", false);
-      this.init();
+    case "domwindowclosed":
+      if (this.gfxWindow === null || subject === this.gfxWindow) {
+        this.observerService.removeObserver(this, topic);
+
+        this.observerService.addObserver(this, "xpcom-shutdown", false);
+        this.finalUiStartup = true;
+        this.init();
+      }
       break;
 
     case "domwindowopened":
       this.observerService.removeObserver(this, topic);
       this.suppressSafeModeDialog_(subj);
+      break;
+
+    case "sessionstore-windows-restored":
+      this.observerService.removeObserver(this, topic);
+
+      // When Firefox starts on Windows, an additional GFX sanity test window
+      // may appear off-screen.  Marionette should wait for it to close.
+      let winEn = Services.wm.getEnumerator(null);
+      while (winEn.hasMoreElements()) {
+        let win = winEn.getNext();
+        if (win.document.documentURI == "chrome://gfxsanity/content/sanityparent.html") {
+          this.gfxWindow = win;
+          break;
+        }
+      }
+
+      if (this.gfxWindow) {
+        this.observerService.addObserver(this, "domwindowclosed", false);
+      } else {
+        this.observerService.addObserver(this, "xpcom-shutdown", false);
+        this.finalUiStartup = true;
+        this.init();
+      }
+
       break;
 
     case "xpcom-shutdown":
@@ -175,7 +202,7 @@ MarionetteComponent.prototype.maybeReadPrefsFromEnvironment = function() {
   }
 }
 
-MarionetteComponent.prototype.suppressSafeModeDialog_ = function(win) {
+MarionetteComponent.prototype.suppressSafeModeDialog_ = function (win) {
   // Wait for the modal dialog to finish loading.
   win.addEventListener("load", function onload() {
     win.removeEventListener("load", onload);

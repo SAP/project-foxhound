@@ -11,8 +11,7 @@
 
 "use strict";
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 function* reloadAndCheckLoginsGen(aExpectedLogins)
 {
@@ -21,8 +20,7 @@ function* reloadAndCheckLoginsGen(aExpectedLogins)
   LoginTestUtils.clearData();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
 /**
  * Tests addLogin with valid non-ASCII characters.
@@ -33,7 +31,7 @@ add_task(function* test_storage_addLogin_nonascii()
 
   // Store the strings "user" and "pass" using similarly looking glyphs.
   let loginInfo = TestData.formLogin({
-    hostname: hostname,
+    hostname,
     formSubmitURL: hostname,
     username: String.fromCharCode(533, 537, 7570, 345),
     password: String.fromCharCode(421, 259, 349, 537),

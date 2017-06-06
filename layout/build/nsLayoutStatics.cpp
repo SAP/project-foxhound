@@ -7,6 +7,7 @@
 #include "nsLayoutStatics.h"
 #include "nscore.h"
 
+#include "DateTimeFormat.h"
 #include "nsAttrValue.h"
 #include "nsAutoCopyListener.h"
 #include "nsColorNames.h"
@@ -49,7 +50,10 @@
 #include "nsCSSRuleProcessor.h"
 #include "nsCORSListenerProxy.h"
 #include "nsHTMLDNSPrefetch.h"
+#include "nsHtml5Atoms.h"
 #include "nsHtml5Module.h"
+#include "nsHTMLTags.h"
+#include "nsIRDFContentSink.h"	// for RDF atom initialization
 #include "mozilla/dom/FallbackEncoding.h"
 #include "nsFocusManager.h"
 #include "nsListControlFrame.h"
@@ -59,7 +63,7 @@
 #include "nsMathMLAtoms.h"
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
-#include "DOMStorageObserver.h"
+#include "StorageObserver.h"
 #include "CacheObserver.h"
 #include "DisplayItemClip.h"
 #include "ActiveLayerTracker.h"
@@ -116,23 +120,17 @@ using namespace mozilla::system;
 #include "nsPermissionManager.h"
 #include "nsCookieService.h"
 #include "nsApplicationCacheService.h"
-#include "mozilla/dom/CustomElementsRegistry.h"
+#include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/time/DateCacheCleaner.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/dom/HTMLVideoElement.h"
-#include "CameraPreferences.h"
 #include "TouchManager.h"
 #include "MediaDecoder.h"
 #include "MediaPrefs.h"
-#include "mozilla/dom/devicestorage/DeviceStorageStatics.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPresData.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
-
-#ifdef MOZ_B2G_BT
-#include "mozilla/dom/BluetoothUUID.h"
-#endif
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -163,6 +161,12 @@ nsLayoutStatics::Initialize()
   nsCSSProps::AddRefTable();
   nsColorNames::AddRefTable();
   nsGkAtoms::AddRefAtoms();
+  nsHtml5Atoms::AddRefAtoms();
+  nsTextServicesDocument::RegisterAtoms();
+  nsHTMLTags::RegisterAtoms();
+  nsRDFAtoms::RegisterAtoms();
+
+  NS_SealStaticAtomTable();
 
   StartupJSEnvironment();
   rv = nsRegion::InitStatic();
@@ -215,8 +219,6 @@ nsLayoutStatics::Initialize()
 
   nsMathMLOperators::AddRefTable();
 
-  nsTextServicesDocument::RegisterAtoms();
-
 #ifdef DEBUG
   nsFrame::DisplayReflowStartup();
 #endif
@@ -228,9 +230,9 @@ nsLayoutStatics::Initialize()
     return rv;
   }
 
-  rv = DOMStorageObserver::Init();
+  rv = StorageObserver::Init();
   if (NS_FAILED(rv)) {
-    NS_ERROR("Could not initialize DOMStorageObserver");
+    NS_ERROR("Could not initialize StorageObserver");
     return rv;
   }
 
@@ -271,8 +273,6 @@ nsLayoutStatics::Initialize()
 
   nsCORSListenerProxy::Startup();
 
-  NS_SealStaticAtomTable();
-
   nsWindowMemoryReporter::Init();
 
   SVGElementFactory::Init();
@@ -294,8 +294,6 @@ nsLayoutStatics::Initialize()
 
   CounterStyleManager::InitializeBuiltinCounterStyles();
 
-  CameraPreferences::Initialize();
-
   IMEStateManager::Init();
 
   ServiceWorkerRegistrar::Initialize();
@@ -309,13 +307,11 @@ nsLayoutStatics::Initialize()
 
   PromiseDebugging::Init();
 
-  mozilla::dom::devicestorage::DeviceStorageStatics::Initialize();
-
   mozilla::dom::WebCryptoThreadPool::Initialize();
 
-  // NB: We initialize servo in nsAppRunner.cpp, because we need to do it after
-  // creating the hidden DOM window to support some current stylo hacks. We
-  // should move initialization back here once those go away.
+#ifdef MOZ_STYLO
+  Servo_Initialize();
+#endif
 
 #ifndef MOZ_WIDGET_ANDROID
   // On Android, we instantiate it when constructing AndroidBridge.
@@ -331,12 +327,16 @@ nsLayoutStatics::Shutdown()
   // Don't need to shutdown nsWindowMemoryReporter, that will be done by the
   // memory reporter manager.
 
+#ifdef MOZ_STYLO
+  Servo_Shutdown();
+#endif
+
   nsMessageManagerScriptExecutor::Shutdown();
   nsFocusManager::Shutdown();
 #ifdef MOZ_XUL
   nsXULPopupManager::Shutdown();
 #endif
-  DOMStorageObserver::Shutdown();
+  StorageObserver::Shutdown();
   txMozillaXSLTProcessor::Shutdown();
   Attr::Shutdown();
   EventListenerManager::Shutdown();
@@ -390,6 +390,7 @@ nsLayoutStatics::Shutdown()
   nsAutoCopyListener::Shutdown();
   FrameLayerBuilder::Shutdown();
 
+
 #ifdef MOZ_ANDROID_OMX
   AndroidMediaPluginHost::Shutdown();
 #endif
@@ -429,19 +430,15 @@ nsLayoutStatics::Shutdown()
   nsHyphenationManager::Shutdown();
   nsDOMMutationObserver::Shutdown();
 
+  DateTimeFormat::Shutdown();
+
   ContentParent::ShutDown();
 
   DisplayItemClip::Shutdown();
 
-  CustomElementsRegistry::XPCOMShutdown();
+  CustomElementRegistry::XPCOMShutdown();
 
   CacheObserver::Shutdown();
 
-  CameraPreferences::Shutdown();
-
   PromiseDebugging::Shutdown();
-
-#ifdef MOZ_B2G_BT
-  BluetoothUUID::HandleShutdown();
-#endif
 }

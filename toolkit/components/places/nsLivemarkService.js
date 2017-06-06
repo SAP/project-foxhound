@@ -4,8 +4,7 @@
 
 const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 
-////////////////////////////////////////////////////////////////////////////////
-//// Modules and services.
+// Modules and services.
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
@@ -18,14 +17,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "Task",
 XPCOMUtils.defineLazyModuleGetter(this, "Deprecated",
                                   "resource://gre/modules/Deprecated.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "asyncHistory", function () {
+XPCOMUtils.defineLazyGetter(this, "asyncHistory", function() {
   // Lazily add an history observer when it's actually needed.
   PlacesUtils.history.addObserver(PlacesUtils.livemarks, true);
   return PlacesUtils.asyncHistory;
 });
 
-////////////////////////////////////////////////////////////////////////////////
-//// Constants
+// Constants
 
 // Delay between reloads of consecute livemarks.
 const RELOAD_DELAY_MS = 500;
@@ -34,8 +32,7 @@ const EXPIRE_TIME_MS = 3600000; // 1 hour.
 // Expire livemarks after this time on error.
 const ONERROR_EXPIRE_TIME_MS = 300000; // 5 minutes.
 
-////////////////////////////////////////////////////////////////////////////////
-//// Livemarks cache.
+// Livemarks cache.
 
 XPCOMUtils.defineLazyGetter(this, "CACHE_SQL", () => {
   function getAnnoSQLFragment(aAnnoParam) {
@@ -108,8 +105,7 @@ function toDate(time) {
   return time ? new Date(parseInt(time / 1000)) : undefined;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// LivemarkService
+// LivemarkService
 
 function LivemarkService() {
   // Cleanup on shutdown.
@@ -127,8 +123,7 @@ LivemarkService.prototype = {
   _startReloadTimer(livemarksMap, forceUpdate, reloaded) {
     if (this._reloadTimer) {
       this._reloadTimer.cancel();
-    }
-    else {
+    } else {
       this._reloadTimer = Cc["@mozilla.org/timer;1"]
                             .createInstance(Ci.nsITimer);
     }
@@ -149,8 +144,7 @@ LivemarkService.prototype = {
     }, RELOAD_DELAY_MS, Ci.nsITimer.TYPE_ONE_SHOT);
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsIObserver
+  // nsIObserver
 
   observe(aSubject, aTopic, aData) {
     if (aTopic == PlacesUtils.TOPIC_SHUTDOWN) {
@@ -169,8 +163,7 @@ LivemarkService.prototype = {
     }
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// mozIAsyncLivemarks
+  // mozIAsyncLivemarks
 
   addLivemark(aLivemarkInfo) {
     if (!aLivemarkInfo) {
@@ -182,7 +175,7 @@ LivemarkService.prototype = {
     // Must provide at least non-null parent guid/id, index and feedURI.
     if ((!hasParentId && !hasParentGuid) ||
         (hasParentId && aLivemarkInfo.parentId < 1) ||
-        (hasParentGuid &&!/^[a-zA-Z0-9\-_]{12}$/.test(aLivemarkInfo.parentGuid)) ||
+        (hasParentGuid && !/^[a-zA-Z0-9\-_]{12}$/.test(aLivemarkInfo.parentGuid)) ||
         (hasIndex && aLivemarkInfo.index < Ci.nsINavBookmarksService.DEFAULT_INDEX) ||
         !(aLivemarkInfo.feedURI instanceof Ci.nsIURI) ||
         (aLivemarkInfo.siteURI && !(aLivemarkInfo.siteURI instanceof Ci.nsIURI)) ||
@@ -314,8 +307,7 @@ LivemarkService.prototype = {
     }.bind(this));
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsINavBookmarkObserver
+  // nsINavBookmarkObserver
 
   onBeginUpdateBatch() {},
   onEndUpdateBatch() {},
@@ -366,8 +358,7 @@ LivemarkService.prototype = {
     });
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsINavHistoryObserver
+  // nsINavHistoryObserver
 
   onPageChanged() {},
   onTitleChanged() {},
@@ -397,8 +388,7 @@ LivemarkService.prototype = {
     });
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsISupports
+  // nsISupports
 
   classID: Components.ID("{dca61eb5-c7cd-4df1-b0fb-d0722baba251}"),
 
@@ -413,8 +403,7 @@ LivemarkService.prototype = {
   ])
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// Livemark
+// Livemark
 
 /**
  * Object used internally to represent a livemark.
@@ -425,8 +414,7 @@ LivemarkService.prototype = {
  *
  * @note terminate() must be invoked before getting rid of this object.
  */
-function Livemark(aLivemarkInfo)
-{
+function Livemark(aLivemarkInfo) {
   this.id = aLivemarkInfo.id;
   this.guid = aLivemarkInfo.guid;
   this.feedURI = aLivemarkInfo.feedURI;
@@ -491,8 +479,7 @@ Livemark.prototype = {
     try {
       secMan.checkLoadURIWithPrincipal(feedPrincipal, aSiteURI,
                                        Ci.nsIScriptSecurityManager.DISALLOW_INHERIT_PRINCIPAL);
-    }
-    catch (ex) {
+    } catch (ex) {
       return;
     }
 
@@ -556,8 +543,7 @@ Livemark.prototype = {
       channel.asyncOpen2(listener);
 
       this.loadGroup = loadgroup;
-    }
-    catch (ex) {
+    } catch (ex) {
       this.status = Ci.mozILivemark.STATUS_FAILED;
     }
   },
@@ -600,8 +586,6 @@ Livemark.prototype = {
     let nodes = [];
     let now = Date.now() * 1000;
     for (let child of this.children) {
-      // Workaround for bug 449811.
-      let localChild = child;
       let node = {
         // The QueryInterface is needed cause aContainerNode is a jsval.
         // This is required to avoid issues with scriptable wrappers that would
@@ -613,13 +597,13 @@ Livemark.prototype = {
           return this.parent.parentResult;
         },
         get uri() {
-          return localChild.uri.spec;
+          return child.uri.spec;
         },
         get type() {
           return Ci.nsINavHistoryResultNode.RESULT_TYPE_URI;
         },
         get title() {
-          return localChild.title;
+          return child.title;
         },
         get accessCount() {
           return Number(livemark._isURIVisited(NetUtil.newURI(this.uri)));
@@ -691,12 +675,9 @@ Livemark.prototype = {
       if (this._nodes.has(container)) {
         let nodes = this._nodes.get(container);
         for (let node of nodes) {
-          // Workaround for bug 449811.
-          let localObserver = observer;
-          let localNode = node;
           if (!aURI || node.uri == aURI.spec) {
             Services.tm.mainThread.dispatch(() => {
-              localObserver.nodeHistoryDetailsChanged(localNode, 0, aVisitedStatus);
+              observer.nodeHistoryDetailsChanged(node, 0, aVisitedStatus);
             }, Ci.nsIThread.DISPATCH_NORMAL);
           }
         }
@@ -730,8 +711,7 @@ Livemark.prototype = {
   ])
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// LivemarkLoadListener
+// LivemarkLoadListener
 
 /**
  * Object used internally to handle loading a livemark's contents.
@@ -792,21 +772,18 @@ LivemarkLoadListener.prototype = {
           Services.scriptSecurityManager
                   .checkLoadURIWithPrincipal(feedPrincipal, uri,
                                              Ci.nsIScriptSecurityManager.DISALLOW_INHERIT_PRINCIPAL);
-        }
-        catch (ex) {
+        } catch (ex) {
           continue;
         }
 
         let title = entry.title ? entry.title.plainText() : "";
-        livemarkChildren.push({ uri: uri, title: title, visited: false });
+        livemarkChildren.push({ uri, title, visited: false });
       }
 
       this._livemark.children = livemarkChildren;
-    }
-    catch (ex) {
+    } catch (ex) {
       this.abort(ex);
-    }
-    finally {
+    } finally {
       this._processor.listener = null;
       this._processor = null;
     }
@@ -832,8 +809,7 @@ LivemarkLoadListener.prototype = {
       this._processor.listener = this;
       this._processor.parseAsync(null, channel.URI);
       this._processor.onStartRequest(aRequest, aContext);
-    }
-    catch (ex) {
+    } catch (ex) {
       Components.utils.reportError("Livemark Service: feed processor received an invalid channel for " + channel.URI.spec);
       this.abort(ex);
     }
@@ -868,11 +844,9 @@ LivemarkLoadListener.prototype = {
         }
       }
       this._setResourceTTL(EXPIRE_TIME_MS);
-    }
-    catch (ex) {
+    } catch (ex) {
       this.abort(ex);
-    }
-    finally {
+    } finally {
       if (this._livemark.status == Ci.mozILivemark.STATUS_LOADING) {
         this._livemark.status = Ci.mozILivemark.STATUS_READY;
       }

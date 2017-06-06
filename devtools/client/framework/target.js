@@ -14,6 +14,8 @@ const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
 loader.lazyRequireGetter(this, "DebuggerClient",
   "devtools/shared/client/main", true);
+loader.lazyRequireGetter(this, "gDevTools",
+  "devtools/client/framework/devtools", true);
 
 const targets = new WeakMap();
 const promiseTargets = new WeakMap();
@@ -21,7 +23,7 @@ const promiseTargets = new WeakMap();
 /**
  * Functions for creating Targets
  */
-exports.TargetFactory = {
+const TargetFactory = exports.TargetFactory = {
   /**
    * Construct a Target
    * @param {XULTab} tab
@@ -140,6 +142,8 @@ function TabTarget(tab) {
     this._isTabActor = true;
   }
 }
+
+exports.TabTarget = TabTarget;
 
 TabTarget.prototype = {
   _webProgressListener: null,
@@ -384,8 +388,13 @@ TabTarget.prototype = {
       // DebuggerServer here, once and for all tools.
       if (!DebuggerServer.initialized) {
         DebuggerServer.init();
-        DebuggerServer.addBrowserActors();
       }
+      // When connecting to a local tab, we only need the root actor.
+      // Then we are going to call DebuggerServer.connectToChild and talk
+      // directly with actors living in the child process.
+      // We also need browser actors for actor registry which enabled addons
+      // to register custom actors.
+      DebuggerServer.registerActors({ root: true, browser: true, tab: false });
 
       this._client = new DebuggerClient(DebuggerServer.connectPipe());
       // A local TabTarget will never perform chrome debugging.
@@ -454,6 +463,7 @@ TabTarget.prototype = {
     this.tab.addEventListener("TabClose", this);
     this.tab.parentNode.addEventListener("TabSelect", this);
     this.tab.ownerDocument.defaultView.addEventListener("unload", this);
+    this.tab.addEventListener("TabRemotenessChange", this);
   },
 
   /**
@@ -467,6 +477,7 @@ TabTarget.prototype = {
     this._tab.ownerDocument.defaultView.removeEventListener("unload", this);
     this._tab.removeEventListener("TabClose", this);
     this._tab.parentNode.removeEventListener("TabSelect", this);
+    this._tab.removeEventListener("TabRemotenessChange", this);
   },
 
   /**
@@ -548,7 +559,36 @@ TabTarget.prototype = {
           this.emit("hidden", event);
         }
         break;
+      case "TabRemotenessChange":
+        this.onRemotenessChange();
+        break;
     }
+  },
+
+  // Automatically respawn the toolbox when the tab changes between being
+  // loaded within the parent process and loaded from a content process.
+  // Process change can go in both ways.
+  onRemotenessChange: function () {
+    // Responsive design do a crazy dance around tabs and triggers
+    // remotenesschange events. But we should ignore them as at the end
+    // the content doesn't change its remoteness.
+    if (this._tab.isResponsiveDesignMode) {
+      return;
+    }
+
+    // Save a reference to the tab as it will be nullified on destroy
+    let tab = this._tab;
+    let onToolboxDestroyed = (event, target) => {
+      if (target != this) {
+        return;
+      }
+      gDevTools.off("toolbox-destroyed", target);
+
+      // Recreate a fresh target instance as the current one is now destroyed
+      let newTarget = TargetFactory.forTab(tab);
+      gDevTools.showToolbox(newTarget);
+    };
+    gDevTools.on("toolbox-destroyed", onToolboxDestroyed);
   },
 
   /**
@@ -619,6 +659,9 @@ TabTarget.prototype = {
     this._form = null;
     this._remote = null;
     this._root = null;
+    this._title = null;
+    this._url = null;
+    this.threadActor = null;
   },
 
   toString: function () {

@@ -11,6 +11,7 @@
 #include "MediaTrackConstraints.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/dom/VideoStreamTrack.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/media/DeviceChangeCallback.h"
 
 namespace mozilla {
@@ -214,6 +215,9 @@ public:
   /* Populate the UUID of this device in the nsACString */
   virtual void GetUUID(nsACString&) const = 0;
 
+  /* Override w/true if source does end-run around cross origin restrictions. */
+  virtual bool GetScary() const { return false; };
+
   class AllocationHandle
   {
   public:
@@ -222,16 +226,17 @@ public:
     ~AllocationHandle() {}
   public:
     AllocationHandle(const dom::MediaTrackConstraints& aConstraints,
-                     const nsACString& aOrigin,
+                     const ipc::PrincipalInfo& aPrincipalInfo,
                      const MediaEnginePrefs& aPrefs,
                      const nsString& aDeviceId)
+
     : mConstraints(aConstraints),
-      mOrigin(aOrigin),
+      mPrincipalInfo(aPrincipalInfo),
       mPrefs(aPrefs),
       mDeviceId(aDeviceId) {}
   public:
     NormalizedConstraints mConstraints;
-    nsCString mOrigin;
+    ipc::PrincipalInfo mPrincipalInfo;
     MediaEnginePrefs mPrefs;
     nsString mDeviceId;
   };
@@ -249,9 +254,14 @@ public:
         return a.get() == b.get();
       }
     };
-    MOZ_ASSERT(mRegisteredHandles.Contains(handle, Comparator()));
-    mRegisteredHandles.RemoveElementAt(mRegisteredHandles.IndexOf(handle, 0,
-                                                                  Comparator()));
+
+    auto ix = mRegisteredHandles.IndexOf(handle, 0, Comparator());
+    if (ix == mRegisteredHandles.NoIndex) {
+      MOZ_ASSERT(false);
+      return NS_ERROR_FAILURE;
+    }
+
+    mRegisteredHandles.RemoveElementAt(ix);
     if (mRegisteredHandles.Length() && !mInShutdown) {
       // Whenever constraints are removed, other parties may get closer to ideal.
       auto& first = mRegisteredHandles[0];
@@ -317,14 +327,14 @@ public:
   virtual nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
                             const MediaEnginePrefs &aPrefs,
                             const nsString& aDeviceId,
-                            const nsACString& aOrigin,
+                            const ipc::PrincipalInfo& aPrincipalInfo,
                             AllocationHandle** aOutHandle,
                             const char** aOutBadConstraint)
   {
     AssertIsOnOwningThread();
     MOZ_ASSERT(aOutHandle);
-    RefPtr<AllocationHandle> handle = new AllocationHandle(aConstraints, aOrigin,
-                                                           aPrefs, aDeviceId);
+    RefPtr<AllocationHandle> handle =
+      new AllocationHandle(aConstraints, aPrincipalInfo, aPrefs, aDeviceId);
     nsresult rv = ReevaluateAllocation(handle, nullptr, aPrefs, aDeviceId,
                                        aOutBadConstraint);
     if (NS_FAILED(rv)) {

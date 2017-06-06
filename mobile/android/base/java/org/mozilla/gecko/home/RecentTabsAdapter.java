@@ -18,24 +18,27 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.gecko.AboutPages;
 import org.mozilla.gecko.EventDispatcher;
+import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.SessionParser;
 import org.mozilla.gecko.home.CombinedHistoryAdapter.RecentTabsUpdateHandler;
 import org.mozilla.gecko.home.CombinedHistoryPanel.PanelStateUpdateHandler;
+import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
-import org.mozilla.gecko.util.NativeEventListener;
-import org.mozilla.gecko.util.NativeJSObject;
+import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.mozilla.gecko.home.CombinedHistoryItem.ItemType;
+import static org.mozilla.gecko.home.CombinedHistoryPanel.OnPanelLevelChangeListener.PanelLevel.CHILD_RECENT_TABS;
 
 public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
-                               implements CombinedHistoryRecyclerView.AdapterContextMenuBuilder, NativeEventListener {
+                               implements CombinedHistoryRecyclerView.AdapterContextMenuBuilder,
+                                          BundleEventListener {
     private static final String LOGTAG = "GeckoRecentTabsAdapter";
 
     private static final int NAVIGATION_BACK_BUTTON_INDEX = 0;
@@ -80,26 +83,26 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
     }
 
     public void startListeningForClosedTabs() {
-        EventDispatcher.getInstance().registerGeckoThreadListener(this, "ClosedTabs:Data");
+        EventDispatcher.getInstance().registerUiThreadListener(this, "ClosedTabs:Data");
         GeckoAppShell.notifyObservers("ClosedTabs:StartNotifications", null);
     }
 
     public void stopListeningForClosedTabs() {
         GeckoAppShell.notifyObservers("ClosedTabs:StopNotifications", null);
-        EventDispatcher.getInstance().unregisterGeckoThreadListener(this, "ClosedTabs:Data");
+        EventDispatcher.getInstance().unregisterUiThreadListener(this, "ClosedTabs:Data");
         recentlyClosedTabsReceived = false;
     }
 
     public void startListeningForHistorySanitize() {
-        EventDispatcher.getInstance().registerGeckoThreadListener(this, "Sanitize:Finished");
+        EventDispatcher.getInstance().registerUiThreadListener(this, "Sanitize:Finished");
     }
 
     public void stopListeningForHistorySanitize() {
-        EventDispatcher.getInstance().unregisterGeckoThreadListener(this, "Sanitize:Finished");
+        EventDispatcher.getInstance().unregisterUiThreadListener(this, "Sanitize:Finished");
     }
 
     @Override
-    public void handleMessage(String event, NativeJSObject message, EventCallback callback) {
+    public void handleMessage(String event, GeckoBundle message, EventCallback callback) {
         switch (event) {
             case "ClosedTabs:Data":
                 updateRecentlyClosedTabs(message);
@@ -110,39 +113,35 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
         }
     }
 
-    private void updateRecentlyClosedTabs(NativeJSObject message) {
-        final NativeJSObject[] tabs = message.getObjectArray("tabs");
+    private void updateRecentlyClosedTabs(final GeckoBundle message) {
+        final GeckoBundle[] tabs = message.getBundleArray("tabs");
         final int length = tabs.length;
 
         final ClosedTab[] closedTabs = new ClosedTab[length];
         for (int i = 0; i < length; i++) {
-            final NativeJSObject tab = tabs[i];
-            closedTabs[i] = new ClosedTab(tab.getString("url"), tab.getString("title"), tab.getObject("data").toString());
+            final GeckoBundle tab = tabs[i];
+            closedTabs[i] = new ClosedTab(tab.getString("url"), tab.getString("title"),
+                                          tab.getString("data"));
         }
 
-        // Only modify recentlyClosedTabs on the UI thread.
-        ThreadUtils.postToUiThread(new Runnable() {
-            @Override
-            public void run() {
-                // Save some data about the old panel state, so we can be
-                // smarter about notifying the recycler view which bits changed.
-                int prevClosedTabsCount = recentlyClosedTabs.length;
-                boolean prevSectionHeaderVisibility = isSectionHeaderVisible();
-                int prevSectionHeaderIndex = getSectionHeaderIndex();
+        // Save some data about the old panel state, so we can be
+        // smarter about notifying the recycler view which bits changed.
+        int prevClosedTabsCount = recentlyClosedTabs.length;
+        boolean prevSectionHeaderVisibility = isSectionHeaderVisible();
+        int prevSectionHeaderIndex = getSectionHeaderIndex();
 
-                recentlyClosedTabs = closedTabs;
-                recentlyClosedTabsReceived = true;
-                recentTabsUpdateHandler.onRecentTabsCountUpdated(
-                        getClosedTabsCount(), recentlyClosedTabsReceived);
-                panelStateUpdateHandler.onPanelStateUpdated();
+        recentlyClosedTabs = closedTabs;
+        recentlyClosedTabsReceived = true;
+        recentTabsUpdateHandler.onRecentTabsCountUpdated(
+                getClosedTabsCount(), recentlyClosedTabsReceived);
+        panelStateUpdateHandler.onPanelStateUpdated(CHILD_RECENT_TABS);
 
-                // Handle the section header hiding/unhiding.
-                updateHeaderVisibility(prevSectionHeaderVisibility, prevSectionHeaderIndex);
+        // Handle the section header hiding/unhiding.
+        updateHeaderVisibility(prevSectionHeaderVisibility, prevSectionHeaderIndex);
 
-                // Update the "Recently closed" part of the tab list.
-                updateTabsList(prevClosedTabsCount, recentlyClosedTabs.length, getFirstRecentTabIndex(), getLastRecentTabIndex());
-            }
-        });
+        // Update the "Recently closed" part of the tab list.
+        updateTabsList(prevClosedTabsCount, recentlyClosedTabs.length,
+                       getFirstRecentTabIndex(), getLastRecentTabIndex());
     }
 
     private void readPreviousSessionData() {
@@ -191,7 +190,7 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
                         lastSessionTabs = closedTabs;
                         recentTabsUpdateHandler.onRecentTabsCountUpdated(
                                 getClosedTabsCount(), recentlyClosedTabsReceived);
-                        panelStateUpdateHandler.onPanelStateUpdated();
+                        panelStateUpdateHandler.onPanelStateUpdated(CHILD_RECENT_TABS);
 
                         // Handle the section header hiding/unhiding.
                         updateHeaderVisibility(prevSectionHeaderVisibility, prevSectionHeaderIndex);
@@ -209,30 +208,24 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
     private void clearLastSessionData() {
         final ClosedTab[] emptyLastSessionTabs = new ClosedTab[0];
 
-        // Only modify mLastSessionTabs on the UI thread.
-        ThreadUtils.postToUiThread(new Runnable() {
-            @Override
-            public void run() {
-                // Save some data about the old panel state, so we can be
-                // smarter about notifying the recycler view which bits changed.
-                int prevClosedTabsCount = lastSessionTabs.length;
-                boolean prevSectionHeaderVisibility = isSectionHeaderVisible();
-                int prevSectionHeaderIndex = getSectionHeaderIndex();
+        // Save some data about the old panel state, so we can be
+        // smarter about notifying the recycler view which bits changed.
+        int prevClosedTabsCount = lastSessionTabs.length;
+        boolean prevSectionHeaderVisibility = isSectionHeaderVisible();
+        int prevSectionHeaderIndex = getSectionHeaderIndex();
 
-                lastSessionTabs = emptyLastSessionTabs;
-                recentTabsUpdateHandler.onRecentTabsCountUpdated(
-                        getClosedTabsCount(), recentlyClosedTabsReceived);
-                panelStateUpdateHandler.onPanelStateUpdated();
+        lastSessionTabs = emptyLastSessionTabs;
+        recentTabsUpdateHandler.onRecentTabsCountUpdated(
+                getClosedTabsCount(), recentlyClosedTabsReceived);
+        panelStateUpdateHandler.onPanelStateUpdated(CHILD_RECENT_TABS);
 
-                // Handle the section header hiding.
-                updateHeaderVisibility(prevSectionHeaderVisibility, prevSectionHeaderIndex);
+        // Handle the section header hiding.
+        updateHeaderVisibility(prevSectionHeaderVisibility, prevSectionHeaderIndex);
 
-                // Handle the "tabs from last time" being cleared.
-                if (prevClosedTabsCount > 0) {
-                    notifyItemRangeRemoved(getFirstLastSessionTabIndex(), prevClosedTabsCount);
-                }
-            }
-        });
+        // Handle the "tabs from last time" being cleared.
+        if (prevClosedTabsCount > 0) {
+            notifyItemRangeRemoved(getFirstLastSessionTabIndex(), prevClosedTabsCount);
+        }
     }
 
     private void updateHeaderVisibility(boolean prevSectionHeaderVisibility, int prevSectionHeaderIndex) {

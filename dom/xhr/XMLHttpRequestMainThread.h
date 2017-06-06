@@ -34,6 +34,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/dom/MutableBlobStorage.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/XMLHttpRequest.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
@@ -56,6 +57,7 @@ namespace dom {
 
 class Blob;
 class BlobSet;
+class DOMString;
 class FormData;
 class URLSearchParams;
 class XMLHttpRequestUpload;
@@ -162,7 +164,9 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
                                        public nsIInterfaceRequestor,
                                        public nsSupportsWeakReference,
                                        public nsITimerCallback,
-                                       public nsISizeOfEventTarget
+                                       public nsISizeOfEventTarget,
+                                       public nsINamed,
+                                       public MutableBlobStorageCallback
 {
   friend class nsXHRParseEndListener;
   friend class nsXMLHttpRequestXPCOMifier;
@@ -227,6 +231,9 @@ public:
 
   // nsITimerCallback
   NS_DECL_NSITIMERCALLBACK
+
+  // nsINamed
+  NS_DECL_NSINAMED
 
   // nsISizeOfEventTarget
   virtual size_t
@@ -323,6 +330,8 @@ private:
   // interface ID.
   void PopulateNetworkInterfaceId();
 
+  void UnsuppressEventHandlingAndResume();
+
 public:
   virtual void
   Send(JSContext* /*aCx*/, ErrorResult& aRv) override
@@ -389,26 +398,14 @@ public:
   Send(JSContext* aCx, nsIInputStream* aStream, ErrorResult& aRv) override
   {
     NS_ASSERTION(aStream, "Null should go to string version");
-    nsCOMPtr<nsIXPConnectWrappedJS> wjs = do_QueryInterface(aStream);
-    if (wjs) {
-      JSObject* data = wjs->GetJSObject();
-      if (!data) {
-        aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
-        return;
-      }
-      JS::Rooted<JS::Value> dataAsValue(aCx, JS::ObjectValue(*data));
-      nsAutoString dataAsString;
-      if (ConvertJSValueToString(aCx, dataAsValue, eNull,
-                                 eNull, dataAsString)) {
-        Send(aCx, dataAsString, aRv);
-      } else {
-        aRv.Throw(NS_ERROR_FAILURE);
-      }
-      return;
-    }
     RequestBody<nsIInputStream> body(aStream);
     aRv = SendInternal(&body);
   }
+
+  void
+  RequestErrorSteps(const ProgressEventType aEventType,
+                    const nsresult aOptionalException,
+                    ErrorResult& aRv);
 
   void
   Abort() {
@@ -474,7 +471,7 @@ public:
               ErrorResult& aRv) override;
 
   virtual void
-  GetResponseText(nsAString& aResponseText, ErrorResult& aRv) override;
+  GetResponseText(DOMString& aResponseText, ErrorResult& aRv) override;
 
   void
   GetResponseText(XMLHttpRequestStringSnapshot& aSnapshot,
@@ -553,6 +550,10 @@ public:
   virtual void
   SetOriginAttributes(const mozilla::dom::OriginAttributesDictionary& aAttrs) override;
 
+  void BlobStoreCompleted(MutableBlobStorage* aBlobStorage,
+                          Blob* aBlob,
+                          nsresult aResult) override;
+
 protected:
   // XHR states are meant to mirror the XHR2 spec:
   //   https://xhr.spec.whatwg.org/#states
@@ -595,7 +596,11 @@ protected:
   void StartProgressEventTimer();
   void StopProgressEventTimer();
 
+  void MaybeCreateBlobStorage();
+
   nsresult OnRedirectVerifyCallback(nsresult result);
+
+  void SetTimerEventTarget(nsITimer* aTimer);
 
   already_AddRefed<nsXMLHttpRequestXPCOMifier> EnsureXPCOMifier();
 
@@ -661,8 +666,11 @@ protected:
   // Non-null only when we are able to get a os-file representation of the
   // response, i.e. when loading from a file.
   RefPtr<Blob> mDOMBlob;
-  // We stream data to mBlobSet when response type is "blob" or "moz-blob"
-  // and mDOMBlob is null.
+  // We stream data to mBlobStorage when response type is "blob" and mDOMBlob is
+  // null.
+  RefPtr<MutableBlobStorage> mBlobStorage;
+  // We stream data to mBlobStorage when response type is "moz-blob" and
+  // mDOMBlob is null.
   nsAutoPtr<BlobSet> mBlobSet;
 
   nsString mOverrideMimeType;
@@ -716,6 +724,9 @@ protected:
   void StartTimeoutTimer();
   void HandleTimeoutCallback();
 
+  nsCOMPtr<nsIDocument> mSuspendedDoc;
+  nsCOMPtr<nsIRunnable> mResumeTimeoutRunnable;
+
   nsCOMPtr<nsITimer> mSyncTimeoutTimer;
 
   enum SyncTimeoutType {
@@ -735,7 +746,7 @@ protected:
   bool mIsHtml;
   bool mWarnAboutMultipartHtml;
   bool mWarnAboutSyncHtml;
-  int64_t mLoadTotal; // 0 if not known.
+  int64_t mLoadTotal; // -1 if not known.
   // Amount of script-exposed (i.e. after undoing gzip compresion) data
   // received.
   uint64_t mDataAvailable;

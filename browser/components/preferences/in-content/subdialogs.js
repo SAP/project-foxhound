@@ -11,36 +11,38 @@ var gSubDialog = {
   _frame: null,
   _overlay: null,
   _box: null,
-  _injectedStyleSheets: ["chrome://mozapps/content/preferences/preferences.css",
-                         "chrome://browser/skin/preferences/preferences.css",
-                         "chrome://global/skin/in-content/common.css",
-                         "chrome://browser/skin/preferences/in-content/preferences.css",
-                         "chrome://browser/skin/preferences/in-content/dialog.css"],
+  _openedURL: null,
+  _injectedStyleSheets: [
+    "chrome://browser/skin/preferences/preferences.css",
+    "chrome://global/skin/in-content/common.css",
+    "chrome://browser/skin/preferences/in-content/preferences.css",
+    "chrome://browser/skin/preferences/in-content/dialog.css",
+  ],
   _resizeObserver: null,
 
-  init: function() {
+  init() {
     this._frame = document.getElementById("dialogFrame");
     this._overlay = document.getElementById("dialogOverlay");
     this._box = document.getElementById("dialogBox");
     this._closeButton = document.getElementById("dialogClose");
   },
 
-  updateTitle: function(aEvent) {
+  updateTitle(aEvent) {
     if (aEvent.target != gSubDialog._frame.contentDocument)
       return;
     document.getElementById("dialogTitle").textContent = gSubDialog._frame.contentDocument.title;
   },
 
-  injectXMLStylesheet: function(aStylesheetURL) {
+  injectXMLStylesheet(aStylesheetURL) {
     let contentStylesheet = this._frame.contentDocument.createProcessingInstruction(
-      'xml-stylesheet',
+      "xml-stylesheet",
       'href="' + aStylesheetURL + '" type="text/css"'
     );
     this._frame.contentDocument.insertBefore(contentStylesheet,
                                              this._frame.contentDocument.documentElement);
   },
 
-  open: function(aURL, aFeatures = null, aParams = null, aClosingCallback = null) {
+  open(aURL, aFeatures = null, aParams = null, aClosingCallback = null) {
     // If we're already open/opening on this URL, do nothing.
     if (this._openedURL == aURL && !this._isClosing) {
       return;
@@ -58,7 +60,7 @@ var gSubDialog = {
     }
     this._addDialogEventListeners();
 
-    let features = (!!aFeatures ? aFeatures + "," : "") + "resizable,dialog=no,centerscreen";
+    let features = (aFeatures ? aFeatures + "," : "") + "resizable,dialog=no,centerscreen";
     let dialog = window.openDialog(aURL, "dialogFrame", features, aParams);
     if (aClosingCallback) {
       this._closingCallback = aClosingCallback.bind(dialog);
@@ -75,7 +77,7 @@ var gSubDialog = {
                                         featureParams.get("resizable") != "0");
   },
 
-  close: function(aEvent = null) {
+  close(aEvent = null) {
     if (this._isClosing) {
       return;
     }
@@ -111,7 +113,7 @@ var gSubDialog = {
         if (this._frame.contentWindow.location.href == "about:blank") {
           this._frame.removeEventListener("load", onBlankLoad);
           // We're now officially done closing, so update the state to reflect that.
-          delete this._openedURL;
+          this._openedURL = null;
           this._isClosing = false;
           this._resolveClosePromise();
         }
@@ -121,7 +123,7 @@ var gSubDialog = {
     }, 0);
   },
 
-  handleEvent: function(aEvent) {
+  handleEvent(aEvent) {
     switch (aEvent.type) {
       case "command":
         this._frame.contentWindow.close();
@@ -152,13 +154,13 @@ var gSubDialog = {
 
   /* Private methods */
 
-  _onUnload: function(aEvent) {
+  _onUnload(aEvent) {
     if (aEvent.target.location.href == this._openedURL) {
       this._frame.contentWindow.close();
     }
   },
 
-  _onContentLoaded: function(aEvent) {
+  _onContentLoaded(aEvent) {
     if (aEvent.target != this._frame || aEvent.target.contentWindow.location == "about:blank") {
       return;
     }
@@ -171,6 +173,18 @@ var gSubDialog = {
     this._frame.contentDocument.documentElement.setAttribute("subdialog", "true");
 
     this._frame.contentWindow.addEventListener("dialogclosing", this);
+
+    let oldResizeBy = this._frame.contentWindow.resizeBy;
+    this._frame.contentWindow.resizeBy = function(resizeByWidth, resizeByHeight) {
+      // Only handle resizeByHeight currently.
+      let frameHeight = gSubDialog._frame.clientHeight;
+      let boxMinHeight = parseFloat(getComputedStyle(gSubDialog._box).minHeight, 10);
+
+      gSubDialog._frame.style.height = (frameHeight + resizeByHeight) + "px";
+      gSubDialog._box.style.minHeight = (boxMinHeight + resizeByHeight) + "px";
+
+      oldResizeBy.call(gSubDialog._frame.contentWindow, resizeByWidth, resizeByHeight);
+    };
 
     // Make window.close calls work like dialog closing.
     let oldClose = this._frame.contentWindow.close;
@@ -196,7 +210,7 @@ var gSubDialog = {
     this._overlay.style.opacity = "0.01";
   },
 
-  _onLoad: function(aEvent) {
+  _onLoad(aEvent) {
     if (aEvent.target.contentWindow.location == "about:blank") {
       return;
     }
@@ -258,7 +272,7 @@ var gSubDialog = {
       // If the height is bigger than that of the window, we should let the contents scroll:
       frameHeight = maxHeight + "px";
       frameMinHeight = maxHeight + "px";
-      let containers = this._frame.contentDocument.querySelectorAll('.largeDialogContainer');
+      let containers = this._frame.contentDocument.querySelectorAll(".largeDialogContainer");
       for (let container of containers) {
         container.classList.add("doScroll");
       }
@@ -272,13 +286,15 @@ var gSubDialog = {
     this._overlay.style.visibility = "visible";
     this._overlay.style.opacity = ""; // XXX: focus hack continued from _onContentLoaded
 
-    this._resizeObserver = new MutationObserver(this._onResize);
-    this._resizeObserver.observe(this._box, {attributes: true});
+    if (this._box.getAttribute("resizable") == "true") {
+      this._resizeObserver = new MutationObserver(this._onResize);
+      this._resizeObserver.observe(this._box, {attributes: true});
+    }
 
     this._trapFocus();
   },
 
-  _onResize: function(mutations) {
+  _onResize(mutations) {
     let frame = gSubDialog._frame;
     // The width and height styles are needed for the initial
     // layout of the frame, but afterward they need to be removed
@@ -304,12 +320,12 @@ var gSubDialog = {
     }
   },
 
-  _onDialogClosing: function(aEvent) {
+  _onDialogClosing(aEvent) {
     this._frame.contentWindow.removeEventListener("dialogclosing", this);
     this._closingEvent = aEvent;
   },
 
-  _onKeyDown: function(aEvent) {
+  _onKeyDown(aEvent) {
     if (aEvent.currentTarget == window && aEvent.keyCode == aEvent.DOM_VK_ESCAPE &&
         !aEvent.defaultPrevented) {
       this.close(aEvent);
@@ -323,7 +339,7 @@ var gSubDialog = {
     let fm = Services.focus;
 
     function isLastFocusableElement(el) {
-      //XXXgijs unfortunately there is no way to get the last focusable element without asking
+      // XXXgijs unfortunately there is no way to get the last focusable element without asking
       // the focus manager to move focus to it.
       let rv = el == fm.moveFocus(gSubDialog._frame.contentWindow, null, fm.MOVEFOCUS_LAST, 0);
       fm.setFocus(el, 0);
@@ -347,7 +363,7 @@ var gSubDialog = {
     }
   },
 
-  _onParentWinFocus: function(aEvent) {
+  _onParentWinFocus(aEvent) {
     // Explicitly check for the focus target of |window| to avoid triggering this when the window
     // is refocused
     if (aEvent.target != this._closeButton && aEvent.target != window) {
@@ -355,7 +371,7 @@ var gSubDialog = {
     }
   },
 
-  _addDialogEventListeners: function() {
+  _addDialogEventListeners() {
     // Make the close button work.
     this._closeButton.addEventListener("command", this);
 
@@ -377,7 +393,7 @@ var gSubDialog = {
     window.addEventListener("keydown", this, true);
   },
 
-  _removeDialogEventListeners: function() {
+  _removeDialogEventListeners() {
     let chromeBrowser = this._getBrowser();
     chromeBrowser.removeEventListener("DOMTitleChanged", this, true);
     chromeBrowser.removeEventListener("unload", this, true);
@@ -395,7 +411,7 @@ var gSubDialog = {
     this._untrapFocus();
   },
 
-  _trapFocus: function() {
+  _trapFocus() {
     let fm = Services.focus;
     fm.moveFocus(this._frame.contentWindow, null, fm.MOVEFOCUS_FIRST, 0);
     this._frame.contentDocument.addEventListener("keydown", this, true);
@@ -404,13 +420,13 @@ var gSubDialog = {
     window.addEventListener("focus", this, true);
   },
 
-  _untrapFocus: function() {
+  _untrapFocus() {
     this._frame.contentDocument.removeEventListener("keydown", this, true);
     this._closeButton.removeEventListener("keydown", this);
     window.removeEventListener("focus", this);
   },
 
-  _getBrowser: function() {
+  _getBrowser() {
     return window.QueryInterface(Ci.nsIInterfaceRequestor)
                  .getInterface(Ci.nsIWebNavigation)
                  .QueryInterface(Ci.nsIDocShell)

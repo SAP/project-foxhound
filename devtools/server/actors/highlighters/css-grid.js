@@ -4,6 +4,7 @@
 
 "use strict";
 
+const Services = require("Services");
 const { extend } = require("sdk/core/heritage");
 const { AutoRefreshHighlighter } = require("./auto-refresh");
 const {
@@ -14,9 +15,11 @@ const {
 } = require("./utils/markup");
 const {
   getCurrentZoom,
-  setIgnoreLayoutChanges
+  setIgnoreLayoutChanges,
+  getWindowDimensions,
+  getMaxSurfaceSize,
 } = require("devtools/shared/layout/utils");
-const Services = require("Services");
+const { stringifyGridFragments } = require("devtools/server/actors/utils/css-grid-utils");
 
 const CSS_GRID_ENABLED_PREF = "layout.css.grid.enabled";
 const ROWS = "rows";
@@ -45,7 +48,24 @@ const GRID_GAP_PATTERN_STROKE_STYLE = "#9370DB";
 /**
  * Cached used by `CssGridHighlighter.getGridGapPattern`.
  */
-const gCachedGridPattern = new Map();
+const gCachedGridPattern = new WeakMap();
+// WeakMap key for the Row grid pattern.
+const ROW_KEY = {};
+// WeakMap key for the Column grid pattern.
+const COLUMN_KEY = {};
+
+// That's the maximum size we can allocate for the canvas, in bytes. See:
+// http://searchfox.org/mozilla-central/source/gfx/thebes/gfxPrefs.h#401
+// It might become accessible as user preference, but at the moment we have to hard code
+// it (see: https://bugzilla.mozilla.org/show_bug.cgi?id=1282656).
+const MAX_ALLOC_SIZE = 500000000;
+// One pixel on canvas is using 4 bytes (R, G, B and Alpha); we use this to calculate the
+// proper memory allocation below
+const BYTES_PER_PIXEL = 4;
+// The maximum allocable pixels the canvas can have
+const MAX_ALLOC_PIXELS = MAX_ALLOC_SIZE / BYTES_PER_PIXEL;
+// The maximum allocable pixels per side in a square canvas
+const MAX_ALLOC_PIXELS_PER_SIDE = Math.sqrt(MAX_ALLOC_PIXELS)|0;
 
 /**
  * The CssGridHighlighter is the class that overlays a visual grid on top of
@@ -91,8 +111,25 @@ const gCachedGridPattern = new Map();
 function CssGridHighlighter(highlighterEnv) {
   AutoRefreshHighlighter.call(this, highlighterEnv);
 
+  this.maxCanvasSizePerSide = getMaxSurfaceSize(this.highlighterEnv.window);
+
+  // We cache the previous content's size so we're able to understand when it will
+  // change. The `width` and `height` are expressed in physical pixels in order to react
+  // also at any variation of zoom / pixel ratio.
+  // We initialize with `0` so it will check also at the first `_update()` iteration.
+  this._contentSize = {
+    width: 0,
+    height: 0
+  };
+
   this.markup = new CanvasFrameAnonymousContentHelper(this.highlighterEnv,
     this._buildMarkup.bind(this));
+
+  this.onNavigate = this.onNavigate.bind(this);
+  this.onWillNavigate = this.onWillNavigate.bind(this);
+
+  this.highlighterEnv.on("navigate", this.onNavigate);
+  this.highlighterEnv.on("will-navigate", this.onWillNavigate);
 }
 
 CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
@@ -107,11 +144,20 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
       }
     });
 
+    let root = createNode(this.win, {
+      parent: container,
+      attributes: {
+        "id": "root",
+        "class": "root"
+      },
+      prefix: this.ID_CLASS_PREFIX
+    });
+
     // We use a <canvas> element so that we can draw an arbitrary number of lines
     // which wouldn't be possible with HTML or SVG without having to insert and remove
     // the whole markup on every update.
     createNode(this.win, {
-      parent: container,
+      parent: root,
       nodeType: "canvas",
       attributes: {
         "id": "canvas",
@@ -124,7 +170,7 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     // Build the SVG element
     let svg = createSVGNode(this.win, {
       nodeType: "svg",
-      parent: container,
+      parent: root,
       attributes: {
         "id": "elements",
         "width": "100%",
@@ -203,9 +249,15 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
   },
 
   destroy() {
-    AutoRefreshHighlighter.prototype.destroy.call(this);
+    this.highlighterEnv.off("navigate", this.onNavigate);
+    this.highlighterEnv.off("will-navigate", this.onWillNavigate);
     this.markup.destroy();
-    gCachedGridPattern.clear();
+
+    // Clear the pattern cache to avoid dead object exceptions (Bug 1342051).
+    gCachedGridPattern.delete(ROW_KEY);
+    gCachedGridPattern.delete(COLUMN_KEY);
+
+    AutoRefreshHighlighter.prototype.destroy.call(this);
   },
 
   getElement(id) {
@@ -223,13 +275,14 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
   /**
    * Gets the grid gap pattern used to render the gap regions.
    *
-   * @param  {String} dimensionType
-   *         The grid dimension type which is either the constant COLUMNS or ROWS.
+   * @param  {Object} dimension
+   *         Refers to the WeakMap key for the grid dimension type which is either the
+   *         constant COLUMN or ROW.
    * @return {CanvasPattern} grid gap pattern.
    */
-  getGridGapPattern(dimensionType) {
-    if (gCachedGridPattern.has(dimensionType)) {
-      return gCachedGridPattern.get(dimensionType);
+  getGridGapPattern(dimension) {
+    if (gCachedGridPattern.has(dimension)) {
+      return gCachedGridPattern.get(dimension);
     }
 
     // Create the diagonal lines pattern for the rendering the grid gaps.
@@ -242,7 +295,7 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     ctx.beginPath();
     ctx.translate(.5, .5);
 
-    if (dimensionType === COLUMNS) {
+    if (dimension === COLUMN_KEY) {
       ctx.moveTo(0, 0);
       ctx.lineTo(GRID_GAP_PATTERN_WIDTH, GRID_GAP_PATTERN_HEIGHT);
     } else {
@@ -254,8 +307,23 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     ctx.stroke();
 
     let pattern = ctx.createPattern(canvas, "repeat");
-    gCachedGridPattern.set(dimensionType, pattern);
+    gCachedGridPattern.set(dimension, pattern);
     return pattern;
+  },
+
+  /**
+   * Called when the page navigates. Used to clear the cached gap patterns and avoid
+   * using DeadWrapper objects as gap patterns the next time.
+   */
+  onNavigate() {
+    gCachedGridPattern.delete(ROW_KEY);
+    gCachedGridPattern.delete(COLUMN_KEY);
+  },
+
+  onWillNavigate({ isTopLevel }) {
+    if (isTopLevel) {
+      this.hide();
+    }
   },
 
   _show() {
@@ -327,8 +395,16 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
   _update() {
     setIgnoreLayoutChanges(true);
 
+    let root = this.getElement("root");
+    // Hide the root element and force the reflow in order to get the proper window's
+    // dimensions without increasing them.
+    root.setAttribute("style", "display: none");
+    this.currentNode.offsetWidth;
+
+    let { width, height } = getWindowDimensions(this.win);
+
     // Clear the canvas the grid area highlights.
-    this.clearCanvas();
+    this.clearCanvas(width, height);
     this.clearGridAreas();
 
     // Start drawing the grid fragments.
@@ -347,7 +423,10 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
 
     this._showGrid();
 
-    setIgnoreLayoutChanges(false, this.currentNode.ownerDocument.documentElement);
+    root.setAttribute("style",
+      `position:absolute; width:${width}px;height:${height}px; overflow:hidden`);
+
+    setIgnoreLayoutChanges(false, this.highlighterEnv.window.document.documentElement);
     return true;
   },
 
@@ -406,15 +485,72 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     moveInfobar(container, bounds, this.win);
   },
 
-  clearCanvas() {
+  clearCanvas(width, height) {
     let ratio = parseFloat((this.win.devicePixelRatio || 1).toFixed(2));
-    let width = this.win.innerWidth;
-    let height = this.win.innerHeight;
+
+    height *= ratio;
+    width *= ratio;
+
+    let hasResolutionChanged = false;
+    if (height !== this._contentSize.height || width !== this._contentSize.width) {
+      hasResolutionChanged = true;
+      this._contentSize.width = width;
+      this._contentSize.height = height;
+    }
+
+    let isCanvasClipped = false;
+
+    if (height > this.maxCanvasSizePerSide) {
+      height = this.maxCanvasSizePerSide;
+      isCanvasClipped = true;
+    }
+
+    if (width > this.maxCanvasSizePerSide) {
+      width = this.maxCanvasSizePerSide;
+      isCanvasClipped = true;
+    }
+
+    // `maxCanvasSizePerSide` has the maximum size per side, but we have to consider
+    // also the memory allocation limit.
+    // For example, a 16384x16384 canvas will exceeds the current MAX_ALLOC_PIXELS
+    if (width * height > MAX_ALLOC_PIXELS) {
+      isCanvasClipped = true;
+      // We want to keep more or less the same ratio of the document's size.
+      // Therefore we don't only check if `height` is greater than `width`, but also
+      // that `width` is not greater than MAX_ALLOC_PIXELS_PER_SIDE (otherwise we'll end
+      // up to reduce `height` in favor of `width`, for example).
+      if (height > width && width < MAX_ALLOC_PIXELS_PER_SIDE) {
+        height = (MAX_ALLOC_PIXELS / width) |0;
+      } else if (width > height && height < MAX_ALLOC_PIXELS_PER_SIDE) {
+        width = (MAX_ALLOC_PIXELS / height) |0;
+      } else {
+        // fallback to a square canvas with the maximum pixels per side Available
+        height = width = MAX_ALLOC_PIXELS_PER_SIDE;
+      }
+    }
+
+    // We warn the user that we had to clip the canvas, but only if resolution has
+    // changed since the last time.
+    // This is only a temporary workaround, and the warning message is supposed to be
+    // non-localized.
+    // Bug 1345434 will get rid of this.
+    if (hasResolutionChanged && isCanvasClipped) {
+      // We display the warning in the web console, so the user will be able to see it.
+      // Unfortunately that would also display the source, where if clicked , will ends
+      // in a non-existing document.
+      // It's not ideal, but from an highlighter there is no an easy way to show such
+      // notification elsewhere.
+      this.win.console.warn("The CSS Grid Highlighter could have been clipped, due " +
+                            "the size of the document inspected\n" +
+                            "See https://bugzilla.mozilla.org/show_bug.cgi?id=1343217 " +
+                            "for further information.");
+    }
 
     // Resize the canvas taking the dpr into account so as to have crisp lines.
-    this.canvas.setAttribute("width", width * ratio);
-    this.canvas.setAttribute("height", height * ratio);
-    this.canvas.setAttribute("style", `width:${width}px;height:${height}px`);
+    this.canvas.setAttribute("width", width);
+    this.canvas.setAttribute("height", height);
+    this.canvas.setAttribute("style",
+      `width:${width / ratio}px;height:${height / ratio}px;`);
     this.ctx.scale(ratio, ratio);
 
     this.ctx.clearRect(0, 0, width, height);
@@ -602,11 +738,12 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
    */
   renderGridGap(linePos, startPos, endPos, breadth, dimensionType) {
     this.ctx.save();
-    this.ctx.fillStyle = this.getGridGapPattern(dimensionType);
 
     if (dimensionType === COLUMNS) {
+      this.ctx.fillStyle = this.getGridGapPattern(COLUMN_KEY);
       this.ctx.fillRect(linePos, startPos, breadth, endPos - startPos);
     } else {
+      this.ctx.fillStyle = this.getGridGapPattern(ROW_KEY);
       this.ctx.fillRect(startPos, linePos, endPos - startPos, breadth);
     }
 
@@ -671,7 +808,7 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     this._hideGrid();
     this._hideGridArea();
     this._hideInfoBar();
-    setIgnoreLayoutChanges(false, this.currentNode.ownerDocument.documentElement);
+    setIgnoreLayoutChanges(false, this.highlighterEnv.window.document.documentElement);
   },
 
   _hideGrid() {
@@ -699,38 +836,5 @@ CssGridHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
   },
 
 });
+
 exports.CssGridHighlighter = CssGridHighlighter;
-
-/**
- * Stringify CSS Grid data as returned by node.getGridFragments.
- * This is useful to compare grid state at each update and redraw the highlighter if
- * needed.
- *
- * @param  {Object} Grid Fragments
- * @return {String} representation of the CSS grid fragment data.
- */
-function stringifyGridFragments(fragments = []) {
-  return JSON.stringify(fragments.map(getStringifiableFragment));
-}
-
-function getStringifiableFragment(fragment) {
-  return {
-    cols: getStringifiableDimension(fragment.cols),
-    rows: getStringifiableDimension(fragment.rows)
-  };
-}
-
-function getStringifiableDimension(dimension) {
-  return {
-    lines: [...dimension.lines].map(getStringifiableLine),
-    tracks: [...dimension.tracks].map(getStringifiableTrack),
-  };
-}
-
-function getStringifiableLine({ breadth, number, start, names }) {
-  return { breadth, number, start, names };
-}
-
-function getStringifiableTrack({ breadth, start, state, type }) {
-  return { breadth, start, state, type };
-}

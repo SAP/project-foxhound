@@ -64,7 +64,7 @@ function setup() {
         receiverIframe.removeEventListener('mozbrowsershowmodalprompt',
                                             receiverListener);
       }
-    }, false);
+    });
 
     var promise = new Promise(function(aResolve, aReject) {
       document.body.appendChild(receiverIframe);
@@ -136,6 +136,15 @@ function testConnectionTerminate() {
         is(connection.state, 'closed', 'Sender: Connection should be closed.');
         aResolve();
       };
+    }),
+    new Promise(function(aResolve, aReject) {
+      function deviceDisconnectedHandler() {
+        gScript.removeMessageListener('device-disconnected', deviceDisconnectedHandler);
+        ok(true, 'should not receive device disconnect');
+        aResolve();
+      }
+
+      gScript.addMessageListener('device-disconnected', deviceDisconnectedHandler);
     }),
     new Promise(function(aResolve, aReject) {
       receiverIframe.addEventListener('mozbrowserclose', function() {

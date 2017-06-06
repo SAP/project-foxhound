@@ -9,6 +9,7 @@
 #include "mozilla/RefPtr.h"
 #include "Units.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/LayersTypes.h"
 
 class nsIWidget;
@@ -30,6 +31,7 @@ namespace widget {
 
 class WinCompositorWidget;
 class X11CompositorWidget;
+class AndroidCompositorWidget;
 class CompositorWidgetInitData;
 
 // Gecko widgets usually need to communicate with the CompositorWidget with
@@ -52,6 +54,18 @@ class CompositorWidgetChild;
 # define MOZ_WIDGET_SUPPORTS_OOP_COMPOSITING
 #endif
 
+class WidgetRenderingContext
+{
+public:
+#if defined(XP_MACOSX)
+  WidgetRenderingContext() : mLayerManager(nullptr) {}
+  layers::LayerManagerComposite* mLayerManager;
+#elif defined(MOZ_WIDGET_ANDROID)
+  WidgetRenderingContext() : mCompositor(nullptr) {}
+  layers::Compositor* mCompositor;
+#endif
+};
+
 /**
  * Access to a widget from the compositor is restricted to these methods.
  */
@@ -64,7 +78,9 @@ public:
    * Create an in-process compositor widget. aWidget may be ignored if the
    * platform does not require it.
    */
-  static RefPtr<CompositorWidget> CreateLocal(const CompositorWidgetInitData& aInitData, nsIWidget* aWidget);
+  static RefPtr<CompositorWidget> CreateLocal(const CompositorWidgetInitData& aInitData,
+                                              const layers::CompositorOptions& aOptions,
+                                              nsIWidget* aWidget);
 
   /**
    * Called before rendering using OMTC. Returns false when the widget is
@@ -73,7 +89,7 @@ public:
    * Always called from the compositing thread, which may be the main-thread if
    * OMTC is not enabled.
    */
-  virtual bool PreRender(layers::LayerManagerComposite* aManager) {
+  virtual bool PreRender(WidgetRenderingContext* aContext) {
     return true;
   }
 
@@ -84,7 +100,7 @@ public:
    * Always called from the compositing thread, which may be the main-thread if
    * OMTC is not enabled.
    */
-  virtual void PostRender(layers::LayerManagerComposite* aManager)
+  virtual void PostRender(WidgetRenderingContext* aContext)
   {}
 
   /**
@@ -92,7 +108,7 @@ public:
    *
    * Always called from the compositing thread.
    */
-  virtual void DrawWindowUnderlay(layers::LayerManagerComposite* aManager,
+  virtual void DrawWindowUnderlay(WidgetRenderingContext* aContext,
                                   LayoutDeviceIntRect aRect)
   {}
 
@@ -101,7 +117,7 @@ public:
    *
    * Always called from the compositing thread.
    */
-  virtual void DrawWindowOverlay(layers::LayerManagerComposite* aManager,
+  virtual void DrawWindowOverlay(WidgetRenderingContext* aContext,
                                  LayoutDeviceIntRect aRect)
   {}
 
@@ -239,6 +255,14 @@ public:
   virtual void ObserveVsync(VsyncObserver* aObserver) = 0;
 
   /**
+   * Get the compositor options for the compositor associated with this
+   * CompositorWidget.
+   */
+  const layers::CompositorOptions& GetCompositorOptions() {
+    return mOptions;
+  }
+
+  /**
    * This is only used by out-of-process compositors.
    */
   virtual RefPtr<VsyncObserver> GetVsyncObserver() const;
@@ -247,6 +271,9 @@ public:
     return nullptr;
   }
   virtual X11CompositorWidget* AsX11() {
+    return nullptr;
+  }
+  virtual AndroidCompositorWidget* AsAndroid() {
     return nullptr;
   }
 
@@ -258,10 +285,13 @@ public:
   }
 
 protected:
+  explicit CompositorWidget(const layers::CompositorOptions& aOptions);
   virtual ~CompositorWidget();
 
   // Back buffer of BasicCompositor
   RefPtr<gfx::DrawTarget> mLastBackBuffer;
+
+  layers::CompositorOptions mOptions;
 };
 
 } // namespace widget

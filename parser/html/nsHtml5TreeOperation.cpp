@@ -573,14 +573,12 @@ nsHtml5TreeOperation::AppendDoctypeToDocument(nsIAtom* aName,
   // Adapted from nsXMLContentSink
   // Create a new doctype node
   nsCOMPtr<nsIDOMDocumentType> docType;
-  nsAutoString voidString;
-  voidString.SetIsVoid(true);
   NS_NewDOMDocumentType(getter_AddRefs(docType),
                         aBuilder->GetNodeInfoManager(),
                         aName,
                         aPublicId,
                         aSystemId,
-                        voidString);
+                        NullString());
   NS_ASSERTION(docType, "Doctype creation failed.");
   nsCOMPtr<nsIContent> asContent = do_QueryInterface(docType);
   return AppendToDocument(asContent, aBuilder);
@@ -835,8 +833,11 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
     case eTreeOpSetStyleLineNumber: {
       nsIContent* node = *(mOne.node);
       nsCOMPtr<nsIStyleSheetLinkingElement> ssle = do_QueryInterface(node);
-      NS_ASSERTION(ssle, "Node didn't QI to style.");
-      ssle->SetLineNumber(mFour.integer);
+      if (ssle) {
+        ssle->SetLineNumber(mFour.integer);
+      } else {
+        MOZ_ASSERT(nsNameSpaceManager::GetInstance()->mSVGDisabled, "Node didn't QI to style, but SVG wasn't disabled.");
+      }
       return NS_OK;
     }
     case eTreeOpSetScriptLineNumberAndFreeze: {

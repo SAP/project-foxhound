@@ -22,10 +22,11 @@
 
 #include "mozilla/ArenaObjectID.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/FlushType.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StyleSetHandle.h"
-#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/WeakPtr.h"
 #include "gfxPoint.h"
 #include "nsTHashtable.h"
@@ -39,7 +40,6 @@
 #include "nsFrameManagerBase.h"
 #include "nsRect.h"
 #include "nsRegionFwd.h"
-#include "mozFlushType.h"
 #include "nsWeakReference.h"
 #include <stdio.h> // for FILE definition
 #include "nsChangeHint.h"
@@ -206,29 +206,16 @@ public:
   bool IsDestroying() { return mIsDestroying; }
 
   /**
-   * Make a one-way transition into a "zombie" state.  In this state,
-   * no reflow is done, no painting is done, and no refresh driver
-   * ticks are processed.  This is a dangerous state: it can leave
-   * areas of the composition target unpainted if callers aren't
-   * careful.  (Don't let your zombie presshell out of the shed.)
-   *
-   * This is used in cases where a presshell is created for reasons
-   * other than reflow/painting.
-   */
-  virtual void MakeZombie() = 0;
-
-  /**
    * All frames owned by the shell are allocated from an arena.  They
    * are also recycled using free lists.  Separate free lists are
    * maintained for each frame type (aID), which must always correspond
-   * to the same aSize value.  AllocateFrame returns zero-filled memory.
-   * AllocateFrame is infallible and will abort on out-of-memory.
+   * to the same aSize value.  AllocateFrame is infallible and will abort
+   * on out-of-memory.
    */
   void* AllocateFrame(nsQueryFrame::FrameIID aID, size_t aSize)
   {
     void* result = mFrameArena.AllocateByFrameID(aID, aSize);
     RecordAlloc(result);
-    memset(result, 0, aSize);
     return result;
   }
 
@@ -242,14 +229,13 @@ public:
   /**
    * This is for allocating other types of objects (not frames).  Separate free
    * lists are maintained for each type (aID), which must always correspond to
-   * the same aSize value.  AllocateByObjectID returns zero-filled memory.
-   * AllocateByObjectID is infallible and will abort on out-of-memory.
+   * the same aSize value.  AllocateByObjectID is infallible and will abort on
+   * out-of-memory.
    */
   void* AllocateByObjectID(mozilla::ArenaObjectID aID, size_t aSize)
   {
     void* result = mFrameArena.AllocateByObjectID(aID, aSize);
     RecordAlloc(result);
-    memset(result, 0, aSize);
     return result;
   }
 
@@ -594,7 +580,7 @@ public:
    *
    * @param aType the type of notifications to flush
    */
-  virtual void FlushPendingNotifications(mozFlushType aType) = 0;
+  virtual void FlushPendingNotifications(mozilla::FlushType aType) = 0;
   virtual void FlushPendingNotifications(mozilla::ChangesToFlush aType) = 0;
 
   /**
@@ -881,13 +867,6 @@ public:
                                                         nsEventStatus* aStatus) = 0;
 
   /**
-   * Dispatch AfterKeyboardEvent with specific target.
-   */
-  virtual void DispatchAfterKeyboardEvent(nsINode* aTarget,
-                                          const mozilla::WidgetKeyboardEvent& aEvent,
-                                          bool aEmbeddedCancelled) = 0;
-
-  /**
    * Return whether or not the event is valid to be dispatched
    */
   virtual bool CanDispatchEvent(
@@ -960,23 +939,23 @@ public:
    * Get the set of agent style sheets for this presentation
    */
   virtual nsresult GetAgentStyleSheets(
-      nsTArray<mozilla::StyleSheetHandle::RefPtr>& aSheets) = 0;
+      nsTArray<RefPtr<mozilla::StyleSheet>>& aSheets) = 0;
 
   /**
    * Replace the set of agent style sheets
    */
   virtual nsresult SetAgentStyleSheets(
-      const nsTArray<mozilla::StyleSheetHandle::RefPtr>& aSheets) = 0;
+      const nsTArray<RefPtr<mozilla::StyleSheet>>& aSheets) = 0;
 
   /**
    * Add an override style sheet for this presentation
    */
-  virtual nsresult AddOverrideStyleSheet(mozilla::StyleSheetHandle aSheet) = 0;
+  virtual nsresult AddOverrideStyleSheet(mozilla::StyleSheet* aSheet) = 0;
 
   /**
    * Remove an override style sheet
    */
-  virtual nsresult RemoveOverrideStyleSheet(mozilla::StyleSheetHandle aSheet) = 0;
+  virtual nsresult RemoveOverrideStyleSheet(mozilla::StyleSheet* aSheet) = 0;
 
   /**
    * Reconstruct frames for all elements in the document
@@ -1127,8 +1106,8 @@ public:
   virtual already_AddRefed<mozilla::gfx::SourceSurface>
   RenderNode(nsIDOMNode* aNode,
              nsIntRegion* aRegion,
-             nsIntPoint& aPoint,
-             nsIntRect* aScreenRect,
+             const mozilla::LayoutDeviceIntPoint aPoint,
+             mozilla::LayoutDeviceIntRect* aScreenRect,
              uint32_t aFlags) = 0;
 
   /**
@@ -1149,8 +1128,8 @@ public:
    */
   virtual already_AddRefed<mozilla::gfx::SourceSurface>
   RenderSelection(nsISelection* aSelection,
-                  nsIntPoint& aPoint,
-                  nsIntRect* aScreenRect,
+                  const mozilla::LayoutDeviceIntPoint aPoint,
+                  mozilla::LayoutDeviceIntRect* aScreenRect,
                   uint32_t aFlags) = 0;
 
   void AddWeakFrameInternal(nsWeakFrame* aWeakFrame);
@@ -1260,17 +1239,18 @@ public:
   // mouse capturing
   static CapturingContentInfo gCaptureInfo;
 
-  struct PointerCaptureInfo
+  class PointerCaptureInfo final
   {
+  public:
     nsCOMPtr<nsIContent> mPendingContent;
     nsCOMPtr<nsIContent> mOverrideContent;
-    bool                 mPrimaryState;
 
-    explicit PointerCaptureInfo(nsIContent* aPendingContent, bool aPrimaryState) :
-      mPendingContent(aPendingContent), mPrimaryState(aPrimaryState)
+    explicit PointerCaptureInfo(nsIContent* aPendingContent)
+      : mPendingContent(aPendingContent)
     {
       MOZ_COUNT_CTOR(PointerCaptureInfo);
     }
+
     ~PointerCaptureInfo()
     {
       MOZ_COUNT_DTOR(PointerCaptureInfo);
@@ -1282,44 +1262,51 @@ public:
     }
   };
 
-  // Keeps a map between pointerId and element that currently capturing pointer
-  // with such pointerId. If pointerId is absent in this map then nobody is
-  // capturing it. Additionally keep information about pending capturing content.
-  // Additionally keep information about primaryState of pointer event.
-  static nsClassHashtable<nsUint32HashKey, PointerCaptureInfo>* gPointerCaptureList;
-
-  struct PointerInfo
+  class PointerInfo final
   {
-    bool      mActiveState;
-    uint16_t  mPointerType;
-    bool      mPrimaryState;
-    PointerInfo(bool aActiveState, uint16_t aPointerType, bool aPrimaryState) :
-      mActiveState(aActiveState), mPointerType(aPointerType), mPrimaryState(aPrimaryState) {}
+  public:
+    uint16_t mPointerType;
+    bool mActiveState;
+    bool mPrimaryState;
+    bool mPreventMouseEventByContent;
+    explicit PointerInfo(bool aActiveState, uint16_t aPointerType,
+                         bool aPrimaryState)
+      : mPointerType(aPointerType)
+      , mActiveState(aActiveState)
+      , mPrimaryState(aPrimaryState)
+      , mPreventMouseEventByContent(false)
+    {
+    }
   };
-  // Keeps information about pointers such as pointerId, activeState, pointerType, primaryState
-  static nsClassHashtable<nsUint32HashKey, PointerInfo>* gActivePointersIds;
 
   static void DispatchGotOrLostPointerCaptureEvent(bool aIsGotCapture,
                                                    uint32_t aPointerId,
                                                    uint16_t aPointerType,
                                                    bool aIsPrimary,
                                                    nsIContent* aCaptureTarget);
-  static void SetPointerCapturingContent(uint32_t aPointerId, nsIContent* aContent);
+  static PointerCaptureInfo* GetPointerCaptureInfo(uint32_t aPointerId);
+  static void SetPointerCapturingContent(uint32_t aPointerId,
+                                         nsIContent* aContent);
   static void ReleasePointerCapturingContent(uint32_t aPointerId);
   static nsIContent* GetPointerCapturingContent(uint32_t aPointerId);
 
-  // CheckPointerCaptureState checks cases, when got/lostpointercapture events should be fired.
+  // CheckPointerCaptureState checks cases, when got/lostpointercapture events
+  // should be fired.
   static void CheckPointerCaptureState(uint32_t aPointerId,
                                        uint16_t aPointerType, bool aIsPrimary);
 
-  // GetPointerInfo returns true if pointer with aPointerId is situated in device, false otherwise.
-  // aActiveState is additional information, which shows state of pointer like button state for mouse.
+  // GetPointerInfo returns true if pointer with aPointerId is situated in
+  // device, false otherwise.
+  // aActiveState is additional information, which shows state of pointer like
+  // button state for mouse.
   static bool GetPointerInfo(uint32_t aPointerId, bool& aActiveState);
 
-  // GetPointerType returns pointer type like mouse, pen or touch for pointer event with pointerId
+  // GetPointerType returns pointer type like mouse, pen or touch for pointer
+  // event with pointerId
   static uint16_t GetPointerType(uint32_t aPointerId);
 
-  // GetPointerPrimaryState returns state of attribute isPrimary for pointer event with pointerId
+  // GetPointerPrimaryState returns state of attribute isPrimary for pointer
+  // event with pointerId
   static bool GetPointerPrimaryState(uint32_t aPointerId);
 
   /**
@@ -1579,6 +1566,11 @@ public:
     mFontSizeInflationEnabledIsDirty = true;
   }
 
+  virtual void AddInvalidateHiddenPresShellObserver(nsRefreshDriver *aDriver) = 0;
+
+  void InvalidatePresShellIfHidden();
+  void CancelInvalidatePresShellIfHidden();
+
 
   //////////////////////////////////////////////////////////////////////////////
   // Approximate frame visibility tracking public API.
@@ -1626,13 +1618,13 @@ public:
    */
 protected:
   virtual bool AddRefreshObserverExternal(nsARefreshObserver* aObserver,
-                                          mozFlushType aFlushType);
+                                          mozilla::FlushType aFlushType);
   bool AddRefreshObserverInternal(nsARefreshObserver* aObserver,
-                                  mozFlushType aFlushType);
+                                  mozilla::FlushType aFlushType);
   virtual bool RemoveRefreshObserverExternal(nsARefreshObserver* aObserver,
-                                             mozFlushType aFlushType);
+                                             mozilla::FlushType aFlushType);
   bool RemoveRefreshObserverInternal(nsARefreshObserver* aObserver,
-                                     mozFlushType aFlushType);
+                                     mozilla::FlushType aFlushType);
 
   /**
    * Do computations necessary to determine if font size inflation is enabled.
@@ -1657,7 +1649,7 @@ protected:
 
 public:
   bool AddRefreshObserver(nsARefreshObserver* aObserver,
-                          mozFlushType aFlushType) {
+                          mozilla::FlushType aFlushType) {
 #ifdef MOZILLA_INTERNAL_API
     return AddRefreshObserverInternal(aObserver, aFlushType);
 #else
@@ -1666,7 +1658,7 @@ public:
   }
 
   bool RemoveRefreshObserver(nsARefreshObserver* aObserver,
-                             mozFlushType aFlushType) {
+                             mozilla::FlushType aFlushType) {
 #ifdef MOZILLA_INTERNAL_API
     return RemoveRefreshObserverInternal(aObserver, aFlushType);
 #else
@@ -1741,6 +1733,10 @@ protected:
   // GetRootFrame() can be inlined:
   nsFrameManagerBase*       mFrameManager;
   mozilla::WeakPtr<nsDocShell>                 mForwardingContainer;
+  nsRefreshDriver* MOZ_UNSAFE_REF("These two objects hold weak references "
+                                  "to each other, and the validity of this "
+                                  "member is ensured by the logic in nsIPresShell.")
+                            mHiddenInvalidationObserverRefreshDriver;
 #ifdef ACCESSIBILITY
   mozilla::a11y::DocAccessible* mDocAccessible;
 #endif
@@ -1750,11 +1746,6 @@ protected:
   // posted messages are processed before other messages when the modal
   // moving/sizing loop is running, see bug 491700 for details.
   nsCOMPtr<nsITimer>        mReflowContinueTimer;
-
-#ifdef MOZ_B2G
-  // Forward hardware key events to the input-method-app
-  nsCOMPtr<nsIHardwareKeyHandler> mHardwareKeyHandler;
-#endif // MOZ_B2G
 
 #ifdef DEBUG
   nsIFrame*                 mDrawEventTargetFrame;
@@ -1795,7 +1786,6 @@ protected:
   bool                      mStylesHaveChanged : 1;
   bool                      mDidInitialize : 1;
   bool                      mIsDestroying : 1;
-  bool                      mIsZombie : 1;
   bool                      mIsReflowing : 1;
 
   // For all documents we initially lock down painting.

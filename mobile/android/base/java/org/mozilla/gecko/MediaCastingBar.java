@@ -4,6 +4,7 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.util.ThreadUtils;
 

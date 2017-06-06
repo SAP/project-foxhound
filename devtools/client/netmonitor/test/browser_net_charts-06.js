@@ -8,10 +8,13 @@
  */
 
 add_task(function* () {
+  let { L10N } = require("devtools/client/netmonitor/l10n");
+
   let { monitor } = yield initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, L10N, Chart } = monitor.panelWin;
+  let { document, NetMonitorView } = monitor.panelWin;
+  let { Chart } = NetMonitorView.Statistics;
 
   let pie = Chart.Pie(document, {
     data: [],

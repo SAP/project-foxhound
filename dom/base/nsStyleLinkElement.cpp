@@ -12,8 +12,8 @@
 
 #include "nsStyleLinkElement.h"
 
-#include "mozilla/StyleSheetHandle.h"
-#include "mozilla/StyleSheetHandleInlines.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FragmentOrElement.h"
@@ -63,7 +63,7 @@ nsStyleLinkElement::Traverse(nsCycleCollectionTraversalCallback &cb)
 }
 
 NS_IMETHODIMP 
-nsStyleLinkElement::SetStyleSheet(StyleSheetHandle aStyleSheet)
+nsStyleLinkElement::SetStyleSheet(StyleSheet* aStyleSheet)
 {
   if (mStyleSheet) {
     mStyleSheet->SetOwningNode(nullptr);
@@ -80,7 +80,7 @@ nsStyleLinkElement::SetStyleSheet(StyleSheetHandle aStyleSheet)
   return NS_OK;
 }
 
-NS_IMETHODIMP_(StyleSheetHandle)
+NS_IMETHODIMP_(StyleSheet*)
 nsStyleLinkElement::GetStyleSheet()
 {
   return mStyleSheet;
@@ -162,7 +162,9 @@ static uint32_t ToLinkMask(const nsAString& aLink, nsIPrincipal* aPrincipal)
     return nsStyleLinkElement::eHTMLIMPORT;
   else if (aLink.EqualsLiteral("preconnect"))
     return nsStyleLinkElement::ePRECONNECT;
-  else 
+  else if (aLink.EqualsLiteral("prerender"))
+    return nsStyleLinkElement::ePRERENDER;
+  else
     return 0;
 }
 

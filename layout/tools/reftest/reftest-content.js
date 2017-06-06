@@ -15,6 +15,7 @@ const DEBUG_CONTRACTID = "@mozilla.org/xpcom/debug;1";
 const PRINTSETTINGS_CONTRACTID = "@mozilla.org/gfx/printsettings-service;1";
 const ENVIRONMENT_CONTRACTID = "@mozilla.org/process/environment;1";
 const NS_OBSERVER_SERVICE_CONTRACTID = "@mozilla.org/observer-service;1";
+const NS_GFXINFO_CONTRACTID = "@mozilla.org/gfx/info;1";
 
 // "<!--CLEAR-->"
 const BLANK_URL_FOR_CLEARING = "data:text/html;charset=UTF-8,%3C%21%2D%2DCLEAR%2D%2D%3E";
@@ -99,9 +100,7 @@ function PaintWaitFinishedListener(event)
 
 function OnInitialLoad()
 {
-#ifndef REFTEST_B2G
     removeEventListener("load", OnInitialLoad, true);
-#endif
 
     gDebug = CC[DEBUG_CONTRACTID].getService(CI.nsIDebug2);
     var env = CC[ENVIRONMENT_CONTRACTID].getService(CI.nsIEnvironment);
@@ -144,7 +143,7 @@ function StartTestURI(type, uri, timeout)
     // the JS ref tests disable the normal browser chrome and do not otherwise
     // create substatial DOM garbage, the CC tends not to run enough normally.
     ++gTestCount;
-    if (gTestCount % 3000 == 0) {
+    if (gTestCount % 1000 == 0) {
         CU.forceGC();
         CU.forceCC();
     }
@@ -181,16 +180,11 @@ function resetZoom() {
 }
 
 function doPrintMode(contentRootElement) {
-#if REFTEST_B2G
-    // nsIPrintSettings not available in B2G
-    return false;
-#else
     // use getAttribute because className works differently in HTML and SVG
     return contentRootElement &&
            contentRootElement.hasAttribute('class') &&
            contentRootElement.getAttribute('class').split(/\s+/)
                              .indexOf("reftest-print") != -1;
-#endif
 }
 
 function setupPrintMode() {
@@ -491,7 +485,7 @@ function WaitForTestEnd(contentRootElement, inPrintMode, spellCheckedElements) {
         // OK, we can end the test now.
         removeEventListener("MozAfterPaint", AfterPaintListener, false);
         if (contentRootElement) {
-            contentRootElement.removeEventListener("DOMAttrModified", AttrModifiedListener, false);
+            contentRootElement.removeEventListener("DOMAttrModified", AttrModifiedListener);
         }
         gExplicitPendingPaintsCompleteHook = null;
         gTimeoutHook = null;
@@ -651,7 +645,7 @@ function WaitForTestEnd(contentRootElement, inPrintMode, spellCheckedElements) {
     // If contentRootElement is null then shouldWaitForReftestWaitRemoval will
     // always return false so we don't need a listener anyway
     if (contentRootElement) {
-      contentRootElement.addEventListener("DOMAttrModified", AttrModifiedListener, false);
+      contentRootElement.addEventListener("DOMAttrModified", AttrModifiedListener);
     }
     gExplicitPendingPaintsCompleteHook = ExplicitPaintsCompleteListener;
     gTimeoutHook = RemoveListeners;
@@ -1028,7 +1022,17 @@ function SendAssertionCount(numAssertions)
 
 function SendContentReady()
 {
-    return sendSyncMessage("reftest:ContentReady")[0];
+    let gfxInfo = (NS_GFXINFO_CONTRACTID in CC) && CC[NS_GFXINFO_CONTRACTID].getService(CI.nsIGfxInfo);
+    let info = gfxInfo.getInfo();
+    try {
+        info.D2DEnabled = gfxInfo.D2DEnabled;
+        info.DWriteEnabled = gfxInfo.DWriteEnabled;
+    } catch (e) {
+        info.D2DEnabled = false;
+        info.DWriteEnabled = false;
+    }
+
+    return sendSyncMessage("reftest:ContentReady", { 'gfx': info })[0];
 }
 
 function SendException(what)
@@ -1151,13 +1155,9 @@ function SendUpdateCanvasForEvent(event, contentRootElement)
         sendAsyncMessage("reftest:UpdateCanvasForInvalidation", { rects: rects });
     }
 }
-#if REFTEST_B2G
-OnInitialLoad();
-#else
 if (content.document.readyState == "complete") {
   // load event has already fired for content, get started
   OnInitialLoad();
 } else {
   addEventListener("load", OnInitialLoad, true);
 }
-#endif

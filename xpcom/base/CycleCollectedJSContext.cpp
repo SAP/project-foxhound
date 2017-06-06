@@ -74,6 +74,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "jsprf.h"
 #include "js/Debug.h"
+#include "js/GCAPI.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -81,6 +82,7 @@
 #include "nsDOMJSUtils.h"
 #include "nsJSUtils.h"
 #include "nsWrapperCache.h"
+#include "nsStringBuffer.h"
 
 #ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
@@ -245,10 +247,10 @@ struct FixWeakMappingGrayBitsTracer : public js::WeakMapTracer
   void trace(JSObject* aMap, JS::GCCellPtr aKey, JS::GCCellPtr aValue) override
   {
     // If nothing that could be held alive by this entry is marked gray, return.
-    bool delegateMightNeedMarking = aKey && JS::GCThingIsMarkedGray(aKey);
+    bool keyMightNeedMarking = aKey && JS::GCThingIsMarkedGray(aKey);
     bool valueMightNeedMarking = aValue && JS::GCThingIsMarkedGray(aValue) &&
                                  aValue.kind() != JS::TraceKind::String;
-    if (!delegateMightNeedMarking && !valueMightNeedMarking) {
+    if (!keyMightNeedMarking && !valueMightNeedMarking) {
       return;
     }
 
@@ -256,9 +258,11 @@ struct FixWeakMappingGrayBitsTracer : public js::WeakMapTracer
       aKey = nullptr;
     }
 
-    if (delegateMightNeedMarking && aKey.is<JSObject>()) {
+    if (keyMightNeedMarking && aKey.is<JSObject>()) {
       JSObject* kdelegate = js::GetWeakmapKeyDelegate(&aKey.as<JSObject>());
-      if (kdelegate && !JS::ObjectIsMarkedGray(kdelegate)) {
+      if (kdelegate && !JS::ObjectIsMarkedGray(kdelegate) &&
+          (!aMap || !JS::ObjectIsMarkedGray(aMap)))
+      {
         if (JS::UnmarkGrayGCThingRecursively(aKey)) {
           mAnyMarked = true;
         }
@@ -294,8 +298,8 @@ CheckParticipatesInCycleCollection(JS::GCCellPtr aThing, const char* aName,
 }
 
 NS_IMETHODIMP
-JSGCThingParticipant::Traverse(void* aPtr,
-                               nsCycleCollectionTraversalCallback& aCb)
+JSGCThingParticipant::TraverseNative(void* aPtr,
+                                     nsCycleCollectionTraversalCallback& aCb)
 {
   auto runtime = reinterpret_cast<CycleCollectedJSContext*>(
     reinterpret_cast<char*>(this) - offsetof(CycleCollectedJSContext,
@@ -311,7 +315,8 @@ JSGCThingParticipant::Traverse(void* aPtr,
 static JSGCThingParticipant sGCThingCycleCollectorGlobal;
 
 NS_IMETHODIMP
-JSZoneParticipant::Traverse(void* aPtr, nsCycleCollectionTraversalCallback& aCb)
+JSZoneParticipant::TraverseNative(void* aPtr,
+                                  nsCycleCollectionTraversalCallback& aCb)
 {
   auto runtime = reinterpret_cast<CycleCollectedJSContext*>(
     reinterpret_cast<char*>(this) - offsetof(CycleCollectedJSContext,
@@ -470,10 +475,8 @@ CycleCollectedJSContext::~CycleCollectedJSContext()
   MOZ_ASSERT(mDebuggerPromiseMicroTaskQueue.empty());
   MOZ_ASSERT(mPromiseMicroTaskQueue.empty());
 
-#ifdef SPIDERMONKEY_PROMISE
   mUncaughtRejections.reset();
   mConsumedRejections.reset();
-#endif // SPIDERMONKEY_PROMISE
 
   JS_DestroyContext(mJSContext);
   mJSContext = nullptr;
@@ -486,7 +489,7 @@ CycleCollectedJSContext::~CycleCollectedJSContext()
 }
 
 static void
-MozCrashWarningReporter(JSContext*, const char*, JSErrorReport*)
+MozCrashWarningReporter(JSContext*, JSErrorReport*)
 {
   MOZ_CRASH("Why is someone touching JSAPI without an AutoJSAPI?");
 }
@@ -507,6 +510,8 @@ CycleCollectedJSContext::Initialize(JSContext* aParentContext,
   if (!mJSContext) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+
+  NS_GetCurrentThread()->SetCanInvokeJS(true);
 
   if (!JS_AddExtraGCRootsTracer(mJSContext, TraceBlackJS, this)) {
     MOZ_CRASH("JS_AddExtraGCRootsTracer failed");
@@ -531,6 +536,7 @@ CycleCollectedJSContext::Initialize(JSContext* aParentContext,
   JS::SetOutOfMemoryCallback(mJSContext, OutOfMemoryCallback, this);
   JS::SetLargeAllocationFailureCallback(mJSContext,
                                         LargeAllocationFailureCallback, this);
+  JS_SetExternalStringSizeofCallback(mJSContext, SizeofExternalStringCallback);
   JS_SetDestroyZoneCallback(mJSContext, XPCStringConvert::FreeZoneCache);
   JS_SetSweepZoneCallback(mJSContext, XPCStringConvert::ClearZoneCache);
   JS::SetBuildIdOp(mJSContext, GetBuildId);
@@ -548,12 +554,10 @@ CycleCollectedJSContext::Initialize(JSContext* aParentContext,
 
   JS::SetGetIncumbentGlobalCallback(mJSContext, GetIncumbentGlobalCallback);
 
-#ifdef SPIDERMONKEY_PROMISE
   JS::SetEnqueuePromiseJobCallback(mJSContext, EnqueuePromiseJobCallback, this);
   JS::SetPromiseRejectionTrackerCallback(mJSContext, PromiseRejectionTrackerCallback, this);
   mUncaughtRejections.init(mJSContext, JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>(js::SystemAllocPolicy()));
   mConsumedRejections.init(mJSContext, JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>(js::SystemAllocPolicy()));
-#endif // SPIDERMONKEY_PROMISE
 
   JS::dbg::SetDebuggerMallocSizeOf(mJSContext, moz_malloc_size_of);
 
@@ -919,6 +923,26 @@ CycleCollectedJSContext::LargeAllocationFailureCallback(void* aData)
   self->OnLargeAllocationFailure();
 }
 
+/* static */ size_t
+CycleCollectedJSContext::SizeofExternalStringCallback(JSString* aStr,
+                                                      MallocSizeOf aMallocSizeOf)
+{
+  // We promised the JS engine we would not GC.  Enforce that:
+  JS::AutoCheckCannotGC autoCannotGC;
+  
+  if (!XPCStringConvert::IsDOMString(aStr)) {
+    // Might be a literal or something we don't understand.  Just claim 0.
+    return 0;
+  }
+
+  const char16_t* chars = JS_GetTwoByteExternalStringChars(aStr);
+  const nsStringBuffer* buf = nsStringBuffer::FromData((void*)chars);
+  // We want sizeof including this, because the entire string buffer is owned by
+  // the external string.  But only report here if we're unshared; if we're
+  // shared then we don't know who really owns this data.
+  return buf->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
+}
+
 class PromiseJobRunnable final : public Runnable
 {
 public:
@@ -936,7 +960,8 @@ protected:
   NS_IMETHOD
   Run() override
   {
-    nsIGlobalObject* global = xpc::NativeGlobal(mCallback->CallbackPreserveColor());
+    JSObject* callback = mCallback->CallbackPreserveColor();
+    nsIGlobalObject* global = callback ? xpc::NativeGlobal(callback) : nullptr;
     if (global && !global->IsDying()) {
       mCallback->Call("promise callback");
     }
@@ -979,7 +1004,6 @@ CycleCollectedJSContext::EnqueuePromiseJobCallback(JSContext* aCx,
   return true;
 }
 
-#ifdef SPIDERMONKEY_PROMISE
 /* static */
 void
 CycleCollectedJSContext::PromiseRejectionTrackerCallback(JSContext* aCx,
@@ -999,7 +1023,6 @@ CycleCollectedJSContext::PromiseRejectionTrackerCallback(JSContext* aCx,
     PromiseDebugging::AddConsumedRejection(aPromise);
   }
 }
-#endif // SPIDERMONKEY_PROMISE
 
 struct JsGcTracer : public TraceCallbacks
 {

@@ -68,7 +68,7 @@ interface HTMLMediaElement : HTMLElement {
   [SetterThrows]
            attribute boolean loop;
   [Throws]
-  void play();
+  Promise<void> play();
   [Throws]
   void pause();
 
@@ -164,6 +164,9 @@ partial interface HTMLMediaElement {
 
   [Pref="media.eme.apiVisible"]
   attribute EventHandler onencrypted;
+
+  [Pref="media.eme.apiVisible"]
+  attribute EventHandler onwaitingforkey;
 };
 
 // This is just for testing

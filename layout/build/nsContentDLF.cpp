@@ -155,7 +155,7 @@ nsContentDLF::CreateInstance(const char* aCommand,
     // type of the data.  If it's known, use it; otherwise use
     // text/plain.
     nsAutoCString type;
-    viewSourceChannel->GetOriginalContentType(type);
+    mozilla::Unused << viewSourceChannel->GetOriginalContentType(type);
     bool knownType =
       (!type.EqualsLiteral(VIEWSOURCE_CONTENT_TYPE) &&
         IsTypeInList(type, gHTMLTypes)) ||
@@ -330,8 +330,7 @@ nsContentDLF::CreateBlankDocument(nsILoadGroup *aLoadGroup,
     blankDoc->SetDocumentCharacterSetSource(kCharsetFromDocTypeDefault);
     blankDoc->SetDocumentCharacterSet(NS_LITERAL_CSTRING("UTF-8"));
     
-    *aDocument = blankDoc;
-    NS_ADDREF(*aDocument);
+    blankDoc.forget(aDocument);
   }
   return rv;
 }

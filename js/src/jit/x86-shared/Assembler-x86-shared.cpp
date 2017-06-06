@@ -51,29 +51,29 @@ TraceDataRelocations(JSTracer* trc, uint8_t* buffer, CompactBufferReader& reader
 {
     while (reader.more()) {
         size_t offset = reader.readUnsigned();
-        void** ptr = X86Encoding::GetPointerRef(buffer + offset);
+        void* ptr = X86Encoding::GetPointer(buffer + offset);
 
 #ifdef JS_PUNBOX64
         // All pointers on x64 will have the top bits cleared. If those bits
         // are not cleared, this must be a Value.
-        uintptr_t* word = reinterpret_cast<uintptr_t*>(ptr);
-        if (*word >> JSVAL_TAG_SHIFT) {
-            jsval_layout layout;
-            layout.asBits = *word;
-            Value v = IMPL_TO_JSVAL(layout);
-            TraceManuallyBarrieredEdge(trc, &v, "ion-masm-value");
-            if (*word != JSVAL_TO_IMPL(v).asBits) {
+        uintptr_t word = reinterpret_cast<uintptr_t>(ptr);
+        if (word >> JSVAL_TAG_SHIFT) {
+            Value v = Value::fromRawBits(word);
+            TraceManuallyBarrieredEdge(trc, &v, "jit-masm-value");
+            if (word != v.asRawBits()) {
                 // Only update the code if the Value changed, because the code
                 // is not writable if we're not moving objects.
-                *word = JSVAL_TO_IMPL(v).asBits;
+                X86Encoding::SetPointer(buffer + offset, v.bitsAsPunboxPointer());
             }
             continue;
         }
 #endif
 
         // No barrier needed since these are constants.
-        TraceManuallyBarrieredGenericPointerEdge(trc, reinterpret_cast<gc::Cell**>(ptr),
-                                                 "ion-masm-ptr");
+        gc::Cell* cellPtr = reinterpret_cast<gc::Cell*>(ptr);
+        TraceManuallyBarrieredGenericPointerEdge(trc, &cellPtr, "jit-masm-ptr");
+        if (cellPtr != ptr)
+            X86Encoding::SetPointer(buffer + offset, cellPtr);
     }
 }
 
@@ -97,7 +97,9 @@ AssemblerX86Shared::trace(JSTracer* trc)
     }
     if (dataRelocations_.length()) {
         CompactBufferReader reader(dataRelocations_);
-        ::TraceDataRelocations(trc, masm.data(), reader);
+        unsigned char* code = masm.acquireData();
+        ::TraceDataRelocations(trc, code, reader);
+        masm.releaseData();
     }
 }
 
@@ -221,6 +223,39 @@ AssemblerX86Shared::ConditionWithoutEqual(Condition cond)
     }
 }
 
+AssemblerX86Shared::DoubleCondition
+AssemblerX86Shared::InvertCondition(DoubleCondition cond)
+{
+    switch (cond) {
+      case DoubleEqual:
+        return DoubleNotEqualOrUnordered;
+      case DoubleEqualOrUnordered:
+        return DoubleNotEqual;
+      case DoubleNotEqualOrUnordered:
+        return DoubleEqual;
+      case DoubleNotEqual:
+        return DoubleEqualOrUnordered;
+      case DoubleLessThan:
+        return DoubleGreaterThanOrEqualOrUnordered;
+      case DoubleLessThanOrUnordered:
+        return DoubleGreaterThanOrEqual;
+      case DoubleLessThanOrEqual:
+        return DoubleGreaterThanOrUnordered;
+      case DoubleLessThanOrEqualOrUnordered:
+        return DoubleGreaterThan;
+      case DoubleGreaterThan:
+        return DoubleLessThanOrEqualOrUnordered;
+      case DoubleGreaterThanOrUnordered:
+        return DoubleLessThanOrEqual;
+      case DoubleGreaterThanOrEqual:
+        return DoubleLessThanOrUnordered;
+      case DoubleGreaterThanOrEqualOrUnordered:
+        return DoubleLessThan;
+      default:
+        MOZ_CRASH("unexpected condition");
+    }
+}
+
 void
 AssemblerX86Shared::verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
                                                 const Disassembler::HeapAccess& heapAccess)
@@ -228,7 +263,9 @@ AssemblerX86Shared::verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
 #ifdef DEBUG
     if (masm.oom())
         return;
-    Disassembler::VerifyHeapAccess(masm.data() + begin, masm.data() + end, heapAccess);
+    unsigned char* code = masm.acquireData();
+    Disassembler::VerifyHeapAccess(code + begin, code + end, heapAccess);
+    masm.releaseData();
 #endif
 }
 

@@ -9,6 +9,7 @@
 
 #include "CertVerifier.h"
 #include "ScopedNSSTypes.h"
+#include "mozilla/BasePrincipal.h"
 #include "nsICertBlocklist.h"
 #include "nsString.h"
 #include "pkix/pkixtypes.h"
@@ -39,16 +40,18 @@ SECStatus InitializeNSS(const char* dir, bool readOnly, bool loadPKCS11Modules);
 
 void DisableMD5();
 
-extern const char BUILTIN_ROOTS_MODULE_DEFAULT_NAME[];
-
-// The dir parameter is the path to the directory containing the NSS builtin
-// roots module. Usually this is the same as the path to the other NSS shared
-// libraries. If it is null then the (library) path will be searched.
-//
-// The modNameUTF8 parameter should usually be
-// BUILTIN_ROOTS_MODULE_DEFAULT_NAME.
-SECStatus LoadLoadableRoots(/*optional*/ const char* dir,
-                            const char* modNameUTF8);
+/**
+ * Loads root certificates from a module.
+ *
+ * @param dir
+ *        The path to the directory containing the NSS builtin roots module.
+ *        Usually the same as the path to the other NSS shared libraries.
+ *        If empty, the (library) path will be searched.
+ * @param modNameUTF8
+ *        The UTF-8 name to give the module for display purposes.
+ * @return true if the roots were successfully loaded, false otherwise.
+ */
+bool LoadLoadableRoots(const nsCString& dir, const nsCString& modNameUTF8);
 
 void UnloadLoadableRoots(const char* modNameUTF8);
 
@@ -80,6 +83,7 @@ public:
                        ValidityCheckingMode validityCheckingMode,
                        CertVerifier::SHA1Mode sha1Mode,
                        NetscapeStepUpPolicy netscapeStepUpPolicy,
+                       const OriginAttributes& originAttributes,
                        UniqueCERTCertList& builtChain,
           /*optional*/ PinningTelemetryInfo* pinningTelemetryInfo = nullptr,
           /*optional*/ const char* hostname = nullptr);
@@ -145,14 +149,22 @@ public:
                    mozilla::pkix::AuxiliaryExtension extension,
                    mozilla::pkix::Input extensionData) override;
 
+  // Resets the OCSP stapling status and SCT lists accumulated during
+  // the chain building.
+  void ResetAccumulatedState();
+
   CertVerifier::OCSPStaplingStatus GetOCSPStaplingStatus() const
   {
     return mOCSPStaplingStatus;
   }
-  void ResetOCSPStaplingStatus()
-  {
-    mOCSPStaplingStatus = CertVerifier::OCSP_STAPLING_NEVER_CHECKED;
-  }
+
+  // SCT lists (see Certificate Transparency) extracted during
+  // certificate verification. Note that the returned Inputs are invalidated
+  // the next time a chain is built and by ResetAccumulatedState method
+  // (and when the TrustDomain object is destroyed).
+
+  mozilla::pkix::Input GetSCTListFromCertificate() const;
+  mozilla::pkix::Input GetSCTListFromOCSPStapling() const;
 
 private:
   enum EncodedResponseSource {
@@ -175,11 +187,15 @@ private:
   ValidityCheckingMode mValidityCheckingMode;
   CertVerifier::SHA1Mode mSHA1Mode;
   NetscapeStepUpPolicy mNetscapeStepUpPolicy;
+  const OriginAttributes& mOriginAttributes;
   UniqueCERTCertList& mBuiltChain; // non-owning
   PinningTelemetryInfo* mPinningTelemetryInfo;
   const char* mHostname; // non-owning - only used for pinning checks
   nsCOMPtr<nsICertBlocklist> mCertBlocklist;
   CertVerifier::OCSPStaplingStatus mOCSPStaplingStatus;
+  // Certificate Transparency data extracted during certificate verification
+  UniqueSECItem mSCTListFromCertificate;
+  UniqueSECItem mSCTListFromOCSPStapling;
 };
 
 } } // namespace mozilla::psm

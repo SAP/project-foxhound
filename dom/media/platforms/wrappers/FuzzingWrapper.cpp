@@ -88,15 +88,6 @@ DecoderFuzzingWrapper::IsHardwareAccelerated(nsACString& aFailureReason) const
   return mDecoder->IsHardwareAccelerated(aFailureReason);
 }
 
-void
-DecoderFuzzingWrapper::ConfigurationChanged(const TrackInfo& aConfig)
-{
-  DFW_LOGV("");
-  MOZ_ASSERT(mDecoder);
-  mDecoder->ConfigurationChanged(aConfig);
-}
-
-
 DecoderCallbackFuzzingWrapper::DecoderCallbackFuzzingWrapper(MediaDataDecoderCallback* aCallback)
   : mCallback(aCallback)
   , mDontDelayInputExhausted(false)
@@ -134,7 +125,7 @@ DecoderCallbackFuzzingWrapper::Output(MediaData* aData)
 {
   if (!mTaskQueue->IsCurrentThreadIn()) {
     nsCOMPtr<nsIRunnable> task =
-      NewRunnableMethod<StorensRefPtrPassByPtr<MediaData>>(
+      NewRunnableMethod<StoreRefPtrPassByPtr<MediaData>>(
         this, &DecoderCallbackFuzzingWrapper::Output, aData);
     mTaskQueue->Dispatch(task.forget());
     return;
@@ -251,23 +242,23 @@ DecoderCallbackFuzzingWrapper::ScheduleOutputDelayedFrame()
     return;
   }
   RefPtr<DecoderCallbackFuzzingWrapper> self = this;
-  mDelayedOutputRequest.Begin(
-    mDelayedOutputTimer->WaitUntil(
-      mPreviousOutput + mFrameOutputMinimumInterval,
-      __func__)
-    ->Then(mTaskQueue, __func__,
-           [self] () -> void {
-             if (self->mDelayedOutputRequest.Exists()) {
-               self->mDelayedOutputRequest.Complete();
-               self->OutputDelayedFrame();
-             }
-           },
-           [self] () -> void {
-             if (self->mDelayedOutputRequest.Exists()) {
-               self->mDelayedOutputRequest.Complete();
-               self->ClearDelayedOutput();
-             }
-           }));
+  mDelayedOutputTimer->WaitUntil(
+    mPreviousOutput + mFrameOutputMinimumInterval,
+    __func__)
+  ->Then(mTaskQueue, __func__,
+         [self] () -> void {
+           if (self->mDelayedOutputRequest.Exists()) {
+             self->mDelayedOutputRequest.Complete();
+             self->OutputDelayedFrame();
+           }
+         },
+         [self] () -> void {
+           if (self->mDelayedOutputRequest.Exists()) {
+             self->mDelayedOutputRequest.Complete();
+             self->ClearDelayedOutput();
+           }
+         })
+  ->Track(mDelayedOutputRequest);
 }
 
 void

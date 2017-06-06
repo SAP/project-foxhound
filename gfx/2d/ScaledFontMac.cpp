@@ -10,12 +10,12 @@
 #include "skia/include/core/SkPath.h"
 #include "skia/include/ports/SkTypeface_mac.h"
 #endif
-#include "DrawTargetCG.h"
 #include <vector>
 #include <dlfcn.h>
 #ifdef MOZ_WIDGET_UIKIT
 #include <CoreFoundation/CoreFoundation.h>
 #endif
+#include "nsCocoaFeatures.h"
 
 #ifdef MOZ_WIDGET_COCOA
 // prototype for private API
@@ -34,6 +34,39 @@ namespace gfx {
 ScaledFontMac::CTFontDrawGlyphsFuncT* ScaledFontMac::CTFontDrawGlyphsPtr = nullptr;
 bool ScaledFontMac::sSymbolLookupDone = false;
 
+// Helper to create a CTFont from a CGFont, copying any variations that were
+// set on the original CGFont.
+static CTFontRef
+CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont, CGFloat aSize)
+{
+    // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
+    // versions (see bug 1331683)
+    if (!nsCocoaFeatures::OnSierraOrLater()) {
+        return CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, nullptr);
+    }
+
+    CFDictionaryRef vars = CGFontCopyVariations(aCGFont);
+    CTFontRef ctFont;
+    if (vars) {
+        CFDictionaryRef varAttr =
+            CFDictionaryCreate(nullptr,
+                               (const void**)&kCTFontVariationAttribute,
+                               (const void**)&vars, 1,
+                               &kCFTypeDictionaryKeyCallBacks,
+                               &kCFTypeDictionaryValueCallBacks);
+        CFRelease(vars);
+
+        CTFontDescriptorRef varDesc = CTFontDescriptorCreateWithAttributes(varAttr);
+        CFRelease(varAttr);
+
+        ctFont = CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, varDesc);
+        CFRelease(varDesc);
+    } else {
+        ctFont = CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, nullptr);
+    }
+    return ctFont;
+}
+
 ScaledFontMac::ScaledFontMac(CGFontRef aFont, Float aSize)
   : ScaledFontBase(aSize)
 {
@@ -47,7 +80,7 @@ ScaledFontMac::ScaledFontMac(CGFontRef aFont, Float aSize)
   mFont = CGFontRetain(aFont);
   if (CTFontDrawGlyphsPtr != nullptr) {
     // only create mCTFont if we're going to be using the CTFontDrawGlyphs API
-    mCTFont = CTFontCreateWithGraphicsFont(aFont, aSize, nullptr, nullptr);
+    mCTFont = CreateCTFontFromCGFontWithVariations(aFont, aSize);
   } else {
     mCTFont = nullptr;
   }
@@ -68,7 +101,7 @@ SkTypeface* ScaledFontMac::GetSkTypeface()
     if (mCTFont) {
       mTypeface = SkCreateTypefaceFromCTFont(mCTFont);
     } else {
-      CTFontRef fontFace = CTFontCreateWithGraphicsFont(mFont, mSize, nullptr, nullptr);
+      CTFontRef fontFace = CreateCTFontFromCGFontWithVariations(mFont, mSize);
       mTypeface = SkCreateTypefaceFromCTFont(fontFace);
       CFRelease(fontFace);
     }
@@ -87,60 +120,7 @@ SkTypeface* ScaledFontMac::GetSkTypeface()
 already_AddRefed<Path>
 ScaledFontMac::GetPathForGlyphs(const GlyphBuffer &aBuffer, const DrawTarget *aTarget)
 {
-  if (aTarget->GetBackendType() == BackendType::COREGRAPHICS ||
-      aTarget->GetBackendType() == BackendType::COREGRAPHICS_ACCELERATED) {
-#ifdef MOZ_WIDGET_COCOA
-      CGMutablePathRef path = CGPathCreateMutable();
-      for (unsigned int i = 0; i < aBuffer.mNumGlyphs; i++) {
-          // XXX: we could probably fold both of these transforms together to avoid extra work
-          CGAffineTransform flip = CGAffineTransformMakeScale(1, -1);
-
-          CGPathRef glyphPath = ::CGFontGetGlyphPath(mFont, &flip, 0, aBuffer.mGlyphs[i].mIndex);
-
-          CGAffineTransform matrix = CGAffineTransformMake(mSize, 0, 0, mSize,
-                                                           aBuffer.mGlyphs[i].mPosition.x,
-                                                           aBuffer.mGlyphs[i].mPosition.y);
-          CGPathAddPath(path, &matrix, glyphPath);
-          CGPathRelease(glyphPath);
-      }
-      RefPtr<Path> ret = new PathCG(path, FillRule::FILL_WINDING);
-      CGPathRelease(path);
-      return ret.forget();
-#else
-      //TODO: probably want CTFontCreatePathForGlyph
-      MOZ_CRASH("GFX: This needs implemented 1");
-#endif
-  }
   return ScaledFontBase::GetPathForGlyphs(aBuffer, aTarget);
-}
-
-void
-ScaledFontMac::CopyGlyphsToBuilder(const GlyphBuffer &aBuffer, PathBuilder *aBuilder, const Matrix *aTransformHint)
-{
-  BackendType backendType = aBuilder->GetBackendType();
-  if (!(backendType == BackendType::COREGRAPHICS || backendType == BackendType::COREGRAPHICS_ACCELERATED)) {
-    ScaledFontBase::CopyGlyphsToBuilder(aBuffer, aBuilder, aTransformHint);
-    return;
-  }
-#ifdef MOZ_WIDGET_COCOA
-  PathBuilderCG *pathBuilderCG =
-    static_cast<PathBuilderCG*>(aBuilder);
-  // XXX: check builder type
-  for (unsigned int i = 0; i < aBuffer.mNumGlyphs; i++) {
-    // XXX: we could probably fold both of these transforms together to avoid extra work
-    CGAffineTransform flip = CGAffineTransformMakeScale(1, -1);
-    CGPathRef glyphPath = ::CGFontGetGlyphPath(mFont, &flip, 0, aBuffer.mGlyphs[i].mIndex);
-
-    CGAffineTransform matrix = CGAffineTransformMake(mSize, 0, 0, mSize,
-                                                     aBuffer.mGlyphs[i].mPosition.x,
-                                                     aBuffer.mGlyphs[i].mPosition.y);
-    CGPathAddPath(pathBuilderCG->mCGPath, &matrix, glyphPath);
-    CGPathRelease(glyphPath);
-  }
-#else
-    //TODO: probably want CTFontCreatePathForGlyph
-    MOZ_CRASH("GFX: This needs implemented 2");
-#endif
 }
 
 uint32_t
@@ -213,6 +193,24 @@ struct writeBuf
     int offset;
 };
 
+static void CollectVariationSetting(const void *key, const void *value, void *context)
+{
+  auto keyPtr = static_cast<const CFTypeRef>(key);
+  auto valuePtr = static_cast<const CFTypeRef>(value);
+  auto vpp = static_cast<ScaledFont::VariationSetting**>(context);
+  if (CFGetTypeID(keyPtr) == CFNumberGetTypeID() &&
+      CFGetTypeID(valuePtr) == CFNumberGetTypeID()) {
+    uint64_t t;
+    double v;
+    if (CFNumberGetValue(static_cast<CFNumberRef>(keyPtr), kCFNumberSInt64Type, &t) &&
+        CFNumberGetValue(static_cast<CFNumberRef>(valuePtr), kCFNumberDoubleType, &v)) {
+      (*vpp)->mTag = t;
+      (*vpp)->mValue = v;
+      (*vpp)++;
+    }
+  }
+}
+
 bool
 ScaledFontMac::GetFontFileData(FontFileDataOutput aDataCallback, void *aBaton)
 {
@@ -281,8 +279,30 @@ ScaledFontMac::GetFontFileData(FontFileDataOutput aDataCallback, void *aBaton)
     // set checkSumAdjust to the computed checksum
     memcpy(&buf.data[checkSumAdjustmentOffset], &fontChecksum, sizeof(fontChecksum));
 
+    // Collect any variation settings that were incorporated into the CTFont.
+    uint32_t variationCount = 0;
+    VariationSetting* variations = nullptr;
+    // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
+    // versions (see bug 1331683)
+    if (nsCocoaFeatures::OnSierraOrLater()) {
+      if (mCTFont) {
+        CFDictionaryRef dict = CTFontCopyVariation(mCTFont);
+        if (dict) {
+          CFIndex count = CFDictionaryGetCount(dict);
+          if (count > 0) {
+            variations = new VariationSetting[count];
+            VariationSetting* vPtr = variations;
+            CFDictionaryApplyFunction(dict, CollectVariationSetting, &vPtr);
+            variationCount = vPtr - variations;
+          }
+          CFRelease(dict);
+        }
+      }
+    }
+
     // we always use an index of 0
-    aDataCallback(buf.data, buf.offset, 0, mSize, aBaton);
+    aDataCallback(buf.data, buf.offset, 0, mSize, variationCount, variations, aBaton);
+    delete[] variations;
 
     return true;
 

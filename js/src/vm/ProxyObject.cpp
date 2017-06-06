@@ -7,6 +7,10 @@
 #include "vm/ProxyObject.h"
 
 #include "jscompartment.h"
+
+#include "proxy/DeadObjectProxy.h"
+#include "proxy/ScriptedProxyHandler.h"
+
 #include "jsobjinlines.h"
 
 using namespace js;
@@ -41,7 +45,7 @@ ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler, HandleValue pri
     // wrappee. Prefer to allocate in the nursery, when possible.
     NewObjectKind newKind = NurseryAllocatedProxy;
     if (options.singleton()) {
-        MOZ_ASSERT(priv.isGCThing() && priv.toGCThing()->isTenured());
+        MOZ_ASSERT(priv.isNull() || (priv.isGCThing() && priv.toGCThing()->isTenured()));
         newKind = SingletonObject;
     } else if ((priv.isGCThing() && priv.toGCThing()->isTenured()) ||
                !handler->canNurseryAllocate() ||
@@ -112,14 +116,29 @@ ProxyObject::setSameCompartmentPrivate(const Value& priv)
 }
 
 void
-ProxyObject::nuke(const BaseProxyHandler* handler)
+ProxyObject::nuke()
 {
-    setSameCompartmentPrivate(NullValue());
-    for (size_t i = 0; i < detail::PROXY_EXTRA_SLOTS; i++)
-        SetProxyExtra(this, i, NullValue());
+    // When nuking scripted proxies, isCallable and isConstructor values for
+    // the proxy needs to be preserved. Do this before clearing the target.
+    uint32_t callable = handler()->isCallable(this)
+                        ? ScriptedProxyHandler::IS_CALLABLE : 0;
+    uint32_t constructor = handler()->isConstructor(this)
+                           ? ScriptedProxyHandler::IS_CONSTRUCTOR : 0;
+    setExtra(ScriptedProxyHandler::IS_CALLCONSTRUCT_EXTRA,
+             PrivateUint32Value(callable | constructor));
 
-    /* Restore the handler as requested after nuking. */
-    setHandler(handler);
+    // Clear the target reference.
+    setSameCompartmentPrivate(NullValue());
+
+    // Update the handler to make this a DeadObjectProxy.
+    setHandler(&DeadObjectProxy::singleton);
+
+    // The proxy's extra slots are not cleared and will continue to be
+    // traced. This avoids the possibility of triggering write barriers while
+    // nuking proxies in dead compartments which could otherwise cause those
+    // compartments to be kept alive. Note that these are slots cannot hold
+    // cross compartment pointers, so this cannot cause the target compartment
+    // to leak.
 }
 
 JS_FRIEND_API(void)

@@ -17,8 +17,8 @@
 #include "nsIDocumentObserver.h"
 #include "imgILoader.h"
 #include "imgRequestProxy.h"
-#include "mozilla/StyleSheetHandle.h"
-#include "mozilla/StyleSheetHandleInlines.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
@@ -135,7 +135,7 @@ nsXBLResourceLoader::LoadResources(bool* aResult)
           CheckLoadURIWithPrincipal(docPrincipal, url,
                                     nsIScriptSecurityManager::ALLOW_CHROME);
         if (NS_SUCCEEDED(rv)) {
-          StyleSheetHandle::RefPtr sheet;
+          RefPtr<StyleSheet> sheet;
           rv = cssLoader->LoadSheetSync(url, &sheet);
           NS_ASSERTION(NS_SUCCEEDED(rv), "Load failed!!!");
           if (NS_SUCCEEDED(rv))
@@ -164,7 +164,7 @@ nsXBLResourceLoader::LoadResources(bool* aResult)
 
 // nsICSSLoaderObserver
 NS_IMETHODIMP
-nsXBLResourceLoader::StyleSheetLoaded(StyleSheetHandle aSheet,
+nsXBLResourceLoader::StyleSheetLoaded(StyleSheet* aSheet,
                                       bool aWasAlternate,
                                       nsresult aStatus)
 {
@@ -232,7 +232,7 @@ nsXBLResourceLoader::NotifyBoundElements()
     
       if (doc) {
         // Flush first to make sure we can get the frame for content
-        doc->FlushPendingNotifications(Flush_Frames);
+        doc->FlushPendingNotifications(FlushType::Frames);
 
         // If |content| is (in addition to having binding |mBinding|)
         // also a descendant of another element with binding |mBinding|,
@@ -259,7 +259,7 @@ nsXBLResourceLoader::NotifyBoundElements()
 
         // Flush again
         // XXXbz why is this needed?
-        doc->FlushPendingNotifications(Flush_ContentAndNotify);
+        doc->FlushPendingNotifications(FlushType::ContentAndNotify);
       }
     }
   }

@@ -78,15 +78,6 @@ struct SignedCertificateTimestamp
     V1 = 0,
   };
 
-  // Source of the SCT - supplementary, not defined in CT RFC.
-  // Note: The numeric values are used within histograms and should not change
-  // or be re-assigned.
-  enum class Origin {
-    Embedded = 0,
-    TLSExtension = 1,
-    OCSPResponse = 2,
-  };
-
   Version version;
   Buffer logId;
   // "timestamp" is the current time in milliseconds, measured since the epoch,
@@ -94,9 +85,7 @@ struct SignedCertificateTimestamp
   uint64_t timestamp;
   Buffer extensions;
   DigitallySigned signature;
-  Origin origin;
 };
-
 
 inline pkix::Result BufferToInput(const Buffer& buffer, pkix::Input& input)
 {

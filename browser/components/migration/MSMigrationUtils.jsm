@@ -14,7 +14,7 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource:///modules/MigrationUtils.jsm");
 
-Cu.importGlobalProperties(['FileReader']);
+Cu.importGlobalProperties(["FileReader"]);
 
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
@@ -40,9 +40,6 @@ const WEB_CREDENTIALS_VAULT_ID = [0x4BF4C442,
 
 Cu.importGlobalProperties(["File"]);
 
-////////////////////////////////////////////////////////////////////////////////
-//// Helpers.
-
 const wintypes = {
   BOOL: ctypes.int,
   DWORD: ctypes.uint32_t,
@@ -53,7 +50,7 @@ const wintypes = {
   PDWORD: ctypes.uint32_t.ptr,
   VOIDP: ctypes.voidptr_t,
   WORD: ctypes.uint16_t,
-}
+};
 
 // TODO: Bug 1202978 - Refactor MSMigrationUtils ctypes helpers
 function CtypesKernelHelpers() {
@@ -261,7 +258,7 @@ CtypesVaultHelpers.prototype = {
     } catch (ex) {}
     this._vaultcliLib = null;
   }
-}
+};
 
 /**
  * Checks whether an host is an IP (v4 or v6) address.
@@ -332,15 +329,15 @@ Bookmarks.prototype = {
     if (!this.__favoritesFolder) {
       if (this._migrationType == MSMigrationUtils.MIGRATION_TYPE_IE) {
         let favoritesFolder = Services.dirsvc.get("Favs", Ci.nsIFile);
-        if (favoritesFolder.exists() && favoritesFolder.isReadable())
-          return this.__favoritesFolder = favoritesFolder;
-      }
-      if (this._migrationType == MSMigrationUtils.MIGRATION_TYPE_EDGE) {
+        if (favoritesFolder.exists() && favoritesFolder.isReadable()) {
+          this.__favoritesFolder = favoritesFolder;
+        }
+      } else if (this._migrationType == MSMigrationUtils.MIGRATION_TYPE_EDGE) {
         let edgeDir = getEdgeLocalDataFolder();
         if (edgeDir) {
           edgeDir.appendRelativePath(EDGE_FAVORITES);
           if (edgeDir.exists() && edgeDir.isReadable() && edgeDir.isDirectory()) {
-            return this.__favoritesFolder = edgeDir;
+            this.__favoritesFolder = edgeDir;
           }
         }
       }
@@ -376,16 +373,23 @@ Bookmarks.prototype = {
       }
       yield this._migrateFolder(this._favoritesFolder, folderGuid);
     }.bind(this)).then(() => aCallback(true),
-                        e => { Cu.reportError(e); aCallback(false) });
+                       e => { Cu.reportError(e); aCallback(false) });
   },
 
   _migrateFolder: Task.async(function* (aSourceFolder, aDestFolderGuid) {
+    let bookmarks = yield this._getBookmarksInFolder(aSourceFolder);
+    if (bookmarks.length) {
+      yield MigrationUtils.insertManyBookmarksWrapper(bookmarks, aDestFolderGuid);
+    }
+  }),
+
+  _getBookmarksInFolder: Task.async(function* (aSourceFolder) {
     // TODO (bug 741993): the favorites order is stored in the Registry, at
     // HCU\Software\Microsoft\Windows\CurrentVersion\Explorer\MenuOrder\Favorites
     // for IE, and in a similar location for Edge.
     // Until we support it, bookmarks are imported in alphabetical order.
     let entries = aSourceFolder.directoryEntries;
-    let succeeded = true;
+    let rv = [];
     while (entries.hasMoreElements()) {
       let entry = entries.getNext().QueryInterface(Ci.nsIFile);
       try {
@@ -394,31 +398,25 @@ Bookmarks.prototype = {
         // Don't use isSymlink(), since it would throw for invalid
         // lnk files pointing to URLs or to unresolvable paths.
         if (entry.path == entry.target && entry.isDirectory()) {
-          let folderGuid;
-          if (entry.leafName == this._toolbarFolderName &&
-              entry.parent.equals(this._favoritesFolder)) {
+          let isBookmarksFolder = entry.leafName == this._toolbarFolderName &&
+                                  entry.parent.equals(this._favoritesFolder);
+          if (isBookmarksFolder && entry.isReadable()) {
             // Import to the bookmarks toolbar.
-            folderGuid = PlacesUtils.bookmarks.toolbarGuid;
+            let folderGuid = PlacesUtils.bookmarks.toolbarGuid;
             if (!MigrationUtils.isStartupMigration) {
               folderGuid =
                 yield MigrationUtils.createImportedBookmarksFolder(this.importedAppLabel, folderGuid);
             }
-          }
-          else {
-            // Import to a new folder.
-            folderGuid = (yield MigrationUtils.insertBookmarkWrapper({
-              type: PlacesUtils.bookmarks.TYPE_FOLDER,
-              parentGuid: aDestFolderGuid,
-              title: entry.leafName
-            })).guid;
-          }
-
-          if (entry.isReadable()) {
-            // Recursively import the folder.
             yield this._migrateFolder(entry, folderGuid);
+          } else if (entry.isReadable()) {
+            let childBookmarks = yield this._getBookmarksInFolder(entry);
+            rv.push({
+              type: PlacesUtils.bookmarks.TYPE_FOLDER,
+              title: entry.leafName,
+              children: childBookmarks,
+            });
           }
-        }
-        else {
+        } else {
           // Strip the .url extension, to both check this is a valid link file,
           // and get the associated title.
           let matches = entry.leafName.match(/(.+)\.url$/i);
@@ -426,21 +424,14 @@ Bookmarks.prototype = {
             let fileHandler = Cc["@mozilla.org/network/protocol;1?name=file"].
                               getService(Ci.nsIFileProtocolHandler);
             let uri = fileHandler.readURLFile(entry);
-            let title = matches[1];
-
-            yield MigrationUtils.insertBookmarkWrapper({
-              parentGuid: aDestFolderGuid, url: uri, title
-            });
+            rv.push({url: uri, title: matches[1]});
           }
         }
       } catch (ex) {
         Components.utils.reportError("Unable to import " + this.importedAppLabel + " favorite (" + entry.leafName + "): " + ex);
-        succeeded = false;
       }
     }
-    if (!succeeded) {
-      throw new Error("Failed to import all bookmarks correctly.");
-    }
+    return rv;
   }),
 
 };
@@ -506,7 +497,8 @@ Cookies.prototype = {
         }
       }
     }
-    return this.__cookiesFolders = folders.length ? folders : null;
+    this.__cookiesFolders = folders.length ? folders : null;
+    return this.__cookiesFolders;
   },
 
   migrate(aCallback) {
@@ -547,7 +539,7 @@ Cookies.prototype = {
   _readCookieFile(aFile, aCallback) {
     let fileReader = new FileReader();
     let onLoadEnd = () => {
-      fileReader.removeEventListener("loadend", onLoadEnd, false);
+      fileReader.removeEventListener("loadend", onLoadEnd);
 
       if (fileReader.readyState != fileReader.DONE) {
         Cu.reportError("Could not read cookie contents: " + fileReader.error);
@@ -565,8 +557,8 @@ Cookies.prototype = {
         aCallback(success);
       }
     };
-    fileReader.addEventListener("loadend", onLoadEnd, false);
-    fileReader.readAsText(new File(aFile));
+    fileReader.addEventListener("loadend", onLoadEnd);
+    fileReader.readAsText(File.createFromNsIFile(aFile));
   },
 
   /**
@@ -693,8 +685,8 @@ function getTypedURLs(registryKeyPath) {
             urlTimeHex.unshift(c);
           }
           try {
-            let hi = parseInt(urlTimeHex.slice(0, 4).join(''), 16);
-            let lo = parseInt(urlTimeHex.slice(4, 8).join(''), 16);
+            let hi = parseInt(urlTimeHex.slice(0, 4).join(""), 16);
+            let lo = parseInt(urlTimeHex.slice(4, 8).join(""), 16);
             // Convert to seconds since epoch:
             timeTyped = cTypes.fileTimeToSecondsSinceEpoch(hi, lo);
             // Callers expect PRTime, which is microseconds since epoch:
@@ -723,7 +715,7 @@ function getTypedURLs(registryKeyPath) {
 
 
 // Migrator for form passwords on Windows 8 and higher.
-function WindowsVaultFormPasswords () {
+function WindowsVaultFormPasswords() {
 }
 
 WindowsVaultFormPasswords.prototype = {
@@ -764,14 +756,11 @@ WindowsVaultFormPasswords.prototype = {
     let successfulVaultOpen = false;
     let error, vault;
     try {
-
       // web credentials vault id
       let vaultGuid = new ctypesVaultHelpers._structs.GUID(WEB_CREDENTIALS_VAULT_ID);
-      // number of available vaults
-      let vaultCount = new wintypes.DWORD;
-      error = new wintypes.DWORD;
+      error = new wintypes.DWORD();
       // web credentials vault
-      vault = new wintypes.VOIDP;
+      vault = new wintypes.VOIDP();
       // open the current vault using the vaultGuid
       error = ctypesVaultHelpers._functions.VaultOpenVault(vaultGuid.address(), 0, vault.address());
       if (error != RESULT_SUCCESS) {
@@ -779,8 +768,8 @@ WindowsVaultFormPasswords.prototype = {
       }
       successfulVaultOpen = true;
 
-      let item = new ctypesVaultHelpers._structs.VAULT_ELEMENT.ptr;
-      let itemCount = new wintypes.DWORD;
+      let item = new ctypesVaultHelpers._structs.VAULT_ELEMENT.ptr();
+      let itemCount = new wintypes.DWORD();
       // enumerate all the available items. This api is going to return a table of all the
       // available items and item is going to point to the first element of this table.
       error = ctypesVaultHelpers._functions.VaultEnumerateItems(vault, VAULT_ENUMERATE_ALL_ITEMS,
@@ -798,7 +787,7 @@ WindowsVaultFormPasswords.prototype = {
           let url = item.contents.pResourceElement.contents.itemValue.readString();
           let realURL;
           try {
-            realURL = Services.io.newURI(url, null, null);
+            realURL = Services.io.newURI(url);
           } catch (ex) { /* leave realURL as null */ }
           if (!realURL || ["http", "https", "ftp"].indexOf(realURL.scheme) == -1) {
             // Ignore items for non-URLs or URLs that aren't HTTP(S)/FTP
@@ -812,7 +801,7 @@ WindowsVaultFormPasswords.prototype = {
           }
           let username = item.contents.pIdentityElement.contents.itemValue.readString();
           // the current login credential object
-          let credential = new ctypesVaultHelpers._structs.VAULT_ELEMENT.ptr;
+          let credential = new ctypesVaultHelpers._structs.VAULT_ELEMENT.ptr();
           error = ctypesVaultHelpers._functions.VaultGetItem(vault,
                                                              item.contents.schemaId.address(),
                                                              item.contents.pResourceElement,
@@ -879,7 +868,7 @@ WindowsVaultFormPasswords.prototype = {
 var MSMigrationUtils = {
   MIGRATION_TYPE_IE: 1,
   MIGRATION_TYPE_EDGE: 2,
-  CtypesKernelHelpers: CtypesKernelHelpers,
+  CtypesKernelHelpers,
   getBookmarksMigrator(migrationType = this.MIGRATION_TYPE_IE) {
     return new Bookmarks(migrationType);
   },

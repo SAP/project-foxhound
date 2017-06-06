@@ -198,6 +198,8 @@ class Configuration(DescriptorProvider):
                 getter = lambda x: x.interface.isExposedInAnyWorker()
             elif key == 'isExposedInWorkerDebugger':
                 getter = lambda x: x.interface.isExposedInWorkerDebugger()
+            elif key == 'isExposedInAnyWorklet':
+                getter = lambda x: x.interface.isExposedInAnyWorklet()
             elif key == 'isExposedInSystemGlobals':
                 getter = lambda x: x.interface.isExposedInSystemGlobals()
             elif key == 'isExposedInWindow':
@@ -279,7 +281,18 @@ class Descriptor(DescriptorProvider):
         self.config = config
         self.interface = interface
 
-        self.wantsXrays = interface.isExposedInWindow()
+        self.wantsXrays = (not interface.isExternal() and
+                           interface.isExposedInWindow())
+
+        if self.wantsXrays:
+            # We could try to restrict self.wantsXrayExpandoClass further.  For
+            # example, we could set it to false if all of our slots store
+            # Gecko-interface-typed things, because we don't use Xray expando
+            # slots for those.  But note that we would need to check the types
+            # of not only the members of "interface" but also of all its
+            # ancestors, because those can have members living in our slots too.
+            # For now, do the simple thing.
+            self.wantsXrayExpandoClass = (interface.totalMembersInSlots != 0)
 
         # Read the desc, and fill in the relevant defaults.
         ifaceName = self.interface.identifier.name
@@ -455,13 +468,6 @@ class Descriptor(DescriptorProvider):
         self.wrapperCache = (not self.interface.isCallback() and
                              not self.interface.isIteratorInterface() and
                              desc.get('wrapperCache', True))
-        # Nasty temporary hack for supporting both DOM and SpiderMonkey promises
-        # without too much pain
-        if self.interface.identifier.name == "Promise":
-            assert self.wrapperCache
-            # But really, we're only wrappercached if we have an interface
-            # object (that is, when we're not using SpiderMonkey promises).
-            self.wrapperCache = self.interface.hasInterfaceObject()
 
         self.name = interface.identifier.name
 
@@ -562,17 +568,29 @@ class Descriptor(DescriptorProvider):
         return self.isGlobal() and self.supportsNamedProperties()
 
     def getExtendedAttributes(self, member, getter=False, setter=False):
-        def ensureValidThrowsExtendedAttribute(attr):
+        def ensureValidBoolExtendedAttribute(attr, name):
             if (attr is not None and attr is not True):
-                raise TypeError("Unknown value for 'Throws': " + attr[0])
+                raise TypeError("Unknown value for '%s': %s" % (name, attr[0]))
+
+        def ensureValidThrowsExtendedAttribute(attr):
+            ensureValidBoolExtendedAttribute(attr, "Throws")
+
+        def ensureValidCanOOMExtendedAttribute(attr):
+            ensureValidBoolExtendedAttribute(attr, "CanOOM")
 
         def maybeAppendInfallibleToAttrs(attrs, throws):
             ensureValidThrowsExtendedAttribute(throws)
             if throws is None:
                 attrs.append("infallible")
 
+        def maybeAppendCanOOMToAttrs(attrs, canOOM):
+            ensureValidCanOOMExtendedAttribute(canOOM)
+            if canOOM is not None:
+                attrs.append("canOOM")
+
         name = member.identifier.name
         throws = self.interface.isJSImplemented() or member.getExtendedAttribute("Throws")
+        canOOM = member.getExtendedAttribute("CanOOM")
         if member.isMethod():
             # JSObject-returning [NewObject] methods must be fallible,
             # since they have to (fallibly) allocate the new JSObject.
@@ -581,6 +599,7 @@ class Descriptor(DescriptorProvider):
                 throws = True
             attrs = self.extendedAttributes['all'].get(name, [])
             maybeAppendInfallibleToAttrs(attrs, throws)
+            maybeAppendCanOOMToAttrs(attrs, canOOM)
             return attrs
 
         assert member.isAttr()
@@ -591,13 +610,38 @@ class Descriptor(DescriptorProvider):
             throwsAttr = "GetterThrows" if getter else "SetterThrows"
             throws = member.getExtendedAttribute(throwsAttr)
         maybeAppendInfallibleToAttrs(attrs, throws)
+        if canOOM is None:
+            canOOMAttr = "GetterCanOOM" if getter else "SetterCanOOM"
+            canOOM = member.getExtendedAttribute(canOOMAttr)
+        maybeAppendCanOOMToAttrs(attrs, canOOM)
         return attrs
 
     def supportsIndexedProperties(self):
         return self.operations['IndexedGetter'] is not None
 
+    def lengthNeedsCallerType(self):
+        """
+        Determine whether our length getter needs a caller type; this is needed
+        in some indexed-getter proxy algorithms.  The idea is that if our
+        indexed getter needs a caller type, our automatically-generated Length()
+        calls need one too.
+        """
+        assert self.supportsIndexedProperties()
+        indexedGetter = self.operations['IndexedGetter']
+        return indexedGetter.getExtendedAttribute("NeedsCallerType")
+
     def supportsNamedProperties(self):
         return self.operations['NamedGetter'] is not None
+
+    def supportedNamesNeedCallerType(self):
+        """
+        Determine whether our GetSupportedNames call needs a caller type.  The
+        idea is that if your named getter needs a caller type, then so does
+        GetSupportedNames.
+        """
+        assert self.supportsNamedProperties()
+        namedGetter = self.operations['NamedGetter']
+        return namedGetter.getExtendedAttribute("NeedsCallerType")
 
     def hasNonOrdinaryGetPrototypeOf(self):
         return self.interface.getExtendedAttribute("NonOrdinaryGetPrototypeOf")
@@ -642,6 +686,8 @@ class Descriptor(DescriptorProvider):
                 self.interface.identifier.name not in ["HTMLObjectElement",
                                                        "HTMLEmbedElement",
                                                        "HTMLAppletElement"])
+    def needsXrayNamedDeleterHook(self):
+        return self.operations["NamedDeleter"] is not None
 
     def needsSpecialGenericOps(self):
         """

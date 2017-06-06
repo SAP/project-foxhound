@@ -76,7 +76,6 @@ SpecialPowersObserver.prototype._loadFrameScript = function()
     this._messageManager.addMessageListener("SpecialPowers.CreateFiles", this);
     this._messageManager.addMessageListener("SpecialPowers.RemoveFiles", this);
     this._messageManager.addMessageListener("SPPermissionManager", this);
-    this._messageManager.addMessageListener("SPWebAppService", this);
     this._messageManager.addMessageListener("SPObserverService", this);
     this._messageManager.addMessageListener("SPLoadChromeScript", this);
     this._messageManager.addMessageListener("SPImportInMainProcess", this);
@@ -88,7 +87,6 @@ SpecialPowersObserver.prototype._loadFrameScript = function()
     this._messageManager.addMessageListener("SPUnloadExtension", this);
     this._messageManager.addMessageListener("SPExtensionMessage", this);
     this._messageManager.addMessageListener("SPCleanUpSTSData", this);
-    this._messageManager.addMessageListener("SPClearAppPrivateData", this);
 
     this._messageManager.loadFrameScript(CHILD_LOGGER_SCRIPT, true);
     this._messageManager.loadFrameScript(CHILD_SCRIPT_API, true);
@@ -149,7 +147,6 @@ SpecialPowersObserver.prototype.uninit = function()
     this._messageManager.removeMessageListener("SpecialPowers.CreateFiles", this);
     this._messageManager.removeMessageListener("SpecialPowers.RemoveFiles", this);
     this._messageManager.removeMessageListener("SPPermissionManager", this);
-    this._messageManager.removeMessageListener("SPWebAppService", this);
     this._messageManager.removeMessageListener("SPObserverService", this);
     this._messageManager.removeMessageListener("SPLoadChromeScript", this);
     this._messageManager.removeMessageListener("SPImportInMainProcess", this);
@@ -161,7 +158,6 @@ SpecialPowersObserver.prototype.uninit = function()
     this._messageManager.removeMessageListener("SPUnloadExtension", this);
     this._messageManager.removeMessageListener("SPExtensionMessage", this);
     this._messageManager.removeMessageListener("SPCleanUpSTSData", this);
-    this._messageManager.removeMessageListener("SPClearAppPrivateData", this);
 
     this._messageManager.removeDelayedFrameScript(CHILD_LOGGER_SCRIPT);
     this._messageManager.removeDelayedFrameScript(CHILD_SCRIPT_API);
@@ -261,7 +257,7 @@ SpecialPowersObserver.prototype.receiveMessage = function(aMessage) {
           const filePerms = 0666;
           let testFile = Services.dirsvc.get("ProfD", Ci.nsIFile);
           if (request.name) {
-            testFile.append(request.name);
+            testFile.appendRelativePath(request.name);
           } else {
             testFile.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, filePerms);
           }
@@ -270,9 +266,9 @@ SpecialPowersObserver.prototype.receiveMessage = function(aMessage) {
                          filePerms, 0);
           if (request.data) {
             outStream.write(request.data, request.data.length);
-            outStream.close();
           }
-          filePaths.push(new File(testFile.path, request.options));
+          outStream.close();
+          filePaths.push(File.createFromFileName(testFile.path, request.options));
           createdFiles.push(testFile);
         });
         aMessage.target

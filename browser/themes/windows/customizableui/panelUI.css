@@ -5,7 +5,7 @@
 %include ../../shared/customizableui/panelUI.inc.css
 
 .panel-subviews {
-  background-color: var(--panel-arrowcontent-background);
+  background-color: var(--arrowpanel-background);
 }
 
 #PanelUI-contents #zoom-out-btn {
@@ -30,8 +30,9 @@
 #BMB_bookmarksPopup menupopup[placespopup=true] > hbox {
   /* emulating chrome://browser/content/places/menu.xml#places-popup-arrow but without the arrow */
   box-shadow: 0 0 4px rgba(0,0,0,0.2);
-  background: var(--panel-arrowcontent-background);
-  border: 1px solid var(--panel-arrowcontent-border-color);
+  background: var(--arrowpanel-background);
+  color: var(--arrowpanel-color);
+  border: 1px solid var(--arrowpanel-border-color);
   border-radius: 3.5px;
   margin-top: -4px;
 }
@@ -119,7 +120,7 @@ menu[disabled="true"].subviewbutton > .menu-right {
   list-style-image: url(chrome://browser/skin/customizableui/menu-arrow.svg#arrow-disabled);
 }
 
-@media not all and (-moz-windows-default-theme) {
+@media (-moz-windows-default-theme: 0) {
   menu[_moz-menuactive].subviewbutton > .menu-right {
     list-style-image: url(chrome://browser/skin/customizableui/menu-arrow.svg#arrow-hover);
   }
@@ -130,21 +131,17 @@ menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
 }
 
 /* Win8 and beyond. */
-@media not all and (-moz-os-version: windows-xp) {
-  @media not all and (-moz-os-version: windows-vista) {
-    @media not all and (-moz-os-version: windows-win7) {
-      panelview .toolbarbutton-1,
-      .subviewbutton,
-      .widget-overflow-list .toolbarbutton-1,
-      .panelUI-grid .toolbarbutton-1 > .toolbarbutton-menubutton-button,
-      #BMB_bookmarksPopup menupopup[placespopup=true] > hbox,
-      #edit-controls@inAnyPanel@,
-      #zoom-controls@inAnyPanel@,
-      #edit-controls@inAnyPanel@ > toolbarbutton,
-      #zoom-controls@inAnyPanel@ > toolbarbutton {
-        border-radius: 0;
-      }
-    }
+@media not all and (-moz-os-version: windows-win7) {
+  panelview .toolbarbutton-1,
+  .subviewbutton,
+  .widget-overflow-list .toolbarbutton-1,
+  .panelUI-grid .toolbarbutton-1 > .toolbarbutton-menubutton-button,
+  #BMB_bookmarksPopup menupopup[placespopup=true] > hbox,
+  #edit-controls@inAnyPanel@,
+  #zoom-controls@inAnyPanel@,
+  #edit-controls@inAnyPanel@ > toolbarbutton,
+  #zoom-controls@inAnyPanel@ > toolbarbutton {
+    border-radius: 0;
   }
 }
 

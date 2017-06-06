@@ -16,14 +16,14 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "webrtc/base/macutils.h"
+#include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/mac/desktop_configuration.h"
 #include "webrtc/modules/desktop_capture/mac/full_screen_chrome_window_detector.h"
 #include "webrtc/modules/desktop_capture/mac/window_list_utils.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/scoped_refptr.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/logging.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -44,9 +44,8 @@ bool IsWindowValid(CGWindowID id) {
 
 class WindowCapturerMac : public WindowCapturer {
  public:
-  explicit WindowCapturerMac(
-      scoped_refptr<FullScreenChromeWindowDetector>
-          full_screen_chrome_window_detector);
+  explicit WindowCapturerMac(rtc::scoped_refptr<FullScreenChromeWindowDetector>
+                                 full_screen_chrome_window_detector);
   virtual ~WindowCapturerMac();
 
   // WindowCapturer interface.
@@ -65,15 +64,14 @@ class WindowCapturerMac : public WindowCapturer {
   // The window being captured.
   CGWindowID window_id_;
 
-  scoped_refptr<FullScreenChromeWindowDetector>
+  rtc::scoped_refptr<FullScreenChromeWindowDetector>
       full_screen_chrome_window_detector_;
 
-  DISALLOW_COPY_AND_ASSIGN(WindowCapturerMac);
+  RTC_DISALLOW_COPY_AND_ASSIGN(WindowCapturerMac);
 };
 
-WindowCapturerMac::WindowCapturerMac(
-    scoped_refptr<FullScreenChromeWindowDetector>
-        full_screen_chrome_window_detector)
+WindowCapturerMac::WindowCapturerMac(rtc::scoped_refptr<
+    FullScreenChromeWindowDetector> full_screen_chrome_window_detector)
     : callback_(NULL),
       window_id_(0),
       full_screen_chrome_window_detector_(full_screen_chrome_window_detector) {
@@ -100,6 +98,8 @@ bool WindowCapturerMac::GetWindowList(WindowList* windows) {
         CFDictionaryGetValue(window, kCGWindowName));
     CFNumberRef window_id = reinterpret_cast<CFNumberRef>(
         CFDictionaryGetValue(window, kCGWindowNumber));
+    CFNumberRef window_pid = reinterpret_cast<CFNumberRef>(
+        CFDictionaryGetValue(window, kCGWindowOwnerPID));
     CFNumberRef window_layer = reinterpret_cast<CFNumberRef>(
         CFDictionaryGetValue(window, kCGWindowLayer));
     if (window_title && window_id && window_layer) {
@@ -123,8 +123,11 @@ bool WindowCapturerMac::GetWindowList(WindowList* windows) {
 
       int id;
       CFNumberGetValue(window_id, kCFNumberIntType, &id);
+      pid_t pid = 0;
+      CFNumberGetValue(window_pid, kCFNumberIntType, &pid);
       WindowCapturer::Window window;
       window.id = id;
+      window.pid = pid;
       if (!rtc::ToUtf8(window_title, &(window.title)) ||
           window.title.empty()) {
         continue;

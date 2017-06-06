@@ -31,6 +31,7 @@
 #include "nsSMILAnimationController.h"
 #include "gfxContext.h"
 #include "harfbuzz/hb.h"
+#include "mozilla/dom/ImageTracker.h"
 
 #define SVG_CONTENT_TYPE NS_LITERAL_CSTRING("image/svg+xml")
 #define UTF8_CHARSET NS_LITERAL_CSTRING("utf-8")
@@ -164,13 +165,13 @@ gfxSVGGlyphsDocument::SetupPresentation()
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    mDocument->FlushPendingNotifications(Flush_Layout);
+    mDocument->FlushPendingNotifications(FlushType::Layout);
 
     nsSMILAnimationController* controller = mDocument->GetAnimationController();
     if (controller) {
       controller->Resume(nsSMILTimeContainer::PAUSE_IMAGE);
     }
-    mDocument->SetImagesNeedAnimating(true);
+    mDocument->ImageTracker()->SetAnimatingState(true);
 
     mViewer = viewer;
     mPresShell = presShell;

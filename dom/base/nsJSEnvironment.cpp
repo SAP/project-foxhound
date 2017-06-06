@@ -626,7 +626,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsJSContext)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsJSContext)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobalObjectRef)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsJSContext)
@@ -991,8 +990,7 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, JS::Value *aArgv)
     case nsISupportsPrimitive::TYPE_ID :
     case nsISupportsPrimitive::TYPE_PRUINT64 :
     case nsISupportsPrimitive::TYPE_PRINT64 :
-    case nsISupportsPrimitive::TYPE_PRTIME :
-    case nsISupportsPrimitive::TYPE_VOID : {
+    case nsISupportsPrimitive::TYPE_PRTIME : {
       NS_WARNING("Unsupported primitive type used");
       aArgv->setNull();
       break;
@@ -2124,11 +2122,13 @@ DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress, const JS::GCDescrip
         }
       }
 
-      if (sPostGCEventsToObserver) {
-        nsString json;
-        json.Adopt(aDesc.formatJSON(aCx, PR_Now()));
-        RefPtr<NotifyGCEndRunnable> notify = new NotifyGCEndRunnable(json);
-        NS_DispatchToMainThread(notify);
+      if (!sShuttingDown) {
+        if (sPostGCEventsToObserver || Telemetry::CanRecordExtended()) {
+          nsString json;
+          json.Adopt(aDesc.formatJSON(aCx, PR_Now()));
+          RefPtr<NotifyGCEndRunnable> notify = new NotifyGCEndRunnable(json);
+          NS_DispatchToMainThread(notify);
+        }
       }
 
       sCCLockedOut = false;
@@ -2218,17 +2218,6 @@ nsJSContext::SetWindowProxy(JS::Handle<JSObject*> aWindowProxy)
 
 JSObject*
 nsJSContext::GetWindowProxy()
-{
-  JSObject* windowProxy = GetWindowProxyPreserveColor();
-  if (windowProxy) {
-    JS::ExposeObjectToActiveJS(windowProxy);
-  }
-
-  return windowProxy;
-}
-
-JSObject*
-nsJSContext::GetWindowProxyPreserveColor()
 {
   return mWindowProxy;
 }
@@ -2746,7 +2735,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsJSArgArray)
   tmp->ReleaseJSObjects();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsJSArgArray)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsJSArgArray)

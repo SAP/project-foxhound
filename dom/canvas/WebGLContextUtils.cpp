@@ -90,12 +90,13 @@ WebGLContext::GenerateWarning(const char* fmt, va_list ap)
     }
 
     JSContext* cx = api.cx();
-    JS_ReportWarning(cx, "WebGL: %s", buf);
+    JS_ReportWarningASCII(cx, "WebGL warning: %s", buf);
     if (!ShouldGenerateWarnings()) {
-        JS_ReportWarning(cx,
-                         "WebGL: No further warnings will be reported for this"
-                         " WebGL context. (already reported %d warnings)",
-                         mAlreadyGeneratedWarnings);
+        JS_ReportWarningASCII(cx,
+                              "WebGL: No further warnings will be reported for"
+                              " this WebGL context."
+                              " (already reported %d warnings)",
+                              mAlreadyGeneratedWarnings);
     }
 }
 
@@ -106,6 +107,43 @@ WebGLContext::ShouldGenerateWarnings() const
         return true;
 
     return mAlreadyGeneratedWarnings < mMaxWarnings;
+}
+
+void
+WebGLContext::GeneratePerfWarning(const char* fmt, ...) const
+{
+    if (!ShouldGeneratePerfWarnings())
+        return;
+
+    if (!mCanvasElement)
+        return;
+
+    dom::AutoJSAPI api;
+    if (!api.Init(mCanvasElement->OwnerDoc()->GetScopeObject()))
+        return;
+    JSContext* cx = api.cx();
+
+    ////
+
+    va_list ap;
+    va_start(ap, fmt);
+
+    char buf[1024];
+    PR_vsnprintf(buf, 1024, fmt, ap);
+
+    va_end(ap);
+
+    ////
+
+    JS_ReportWarningASCII(cx, "WebGL perf warning: %s", buf);
+    mNumPerfWarnings++;
+
+    if (!ShouldGeneratePerfWarnings()) {
+        JS_ReportWarningASCII(cx,
+                              "WebGL: After reporting %u, no further perf warnings will"
+                              " be reported for this WebGL context.",
+                              uint32_t(mNumPerfWarnings));
+    }
 }
 
 void

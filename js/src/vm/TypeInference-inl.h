@@ -142,6 +142,15 @@ TypeSet::ObjectKey::singleton()
     return res;
 }
 
+inline JSCompartment*
+TypeSet::ObjectKey::maybeCompartment()
+{
+    if (isSingleton())
+        return singleton()->compartment();
+
+    return group()->compartment();
+}
+
 /* static */ inline TypeSet::Type
 TypeSet::ObjectType(JSObject* obj)
 {
@@ -284,7 +293,7 @@ struct AutoEnterAnalysis
     gc::AutoSuppressGC suppressGC;
 
     // Allow clearing inference info on OOM during incremental sweeping.
-    AutoClearTypeInferenceStateOnOOM oom;
+    mozilla::Maybe<AutoClearTypeInferenceStateOnOOM> oom;
 
     // Pending recompilations to perform before execution of JIT code can resume.
     RecompileInfoVector pendingRecompiles;
@@ -296,14 +305,14 @@ struct AutoEnterAnalysis
     Zone* zone;
 
     explicit AutoEnterAnalysis(ExclusiveContext* cx)
-      : suppressGC(cx), oom(cx->zone()), suppressMetadata(cx)
+      : suppressGC(cx), suppressMetadata(cx)
     {
         init(cx->defaultFreeOp(), cx->zone());
     }
 
     AutoEnterAnalysis(FreeOp* fop, Zone* zone)
       : suppressGC(zone->runtimeFromMainThread()->contextFromMainThread()),
-        oom(zone), suppressMetadata(zone)
+        suppressMetadata(zone)
     {
         init(fop, zone);
     }
@@ -324,8 +333,10 @@ struct AutoEnterAnalysis
         this->freeOp = fop;
         this->zone = zone;
 
-        if (!zone->types.activeAnalysis)
+        if (!zone->types.activeAnalysis) {
+            MOZ_RELEASE_ASSERT(!zone->types.sweepingTypes);
             zone->types.activeAnalysis = this;
+        }
     }
 };
 
@@ -600,6 +611,8 @@ TypeScript::MonitorAssign(JSContext* cx, HandleObject obj, jsid id)
 /* static */ inline void
 TypeScript::SetThis(JSContext* cx, JSScript* script, TypeSet::Type type)
 {
+    assertSameCompartment(cx, script, type);
+
     StackTypeSet* types = ThisTypes(script);
     if (!types)
         return;
@@ -622,6 +635,8 @@ TypeScript::SetThis(JSContext* cx, JSScript* script, const js::Value& value)
 /* static */ inline void
 TypeScript::SetArgument(JSContext* cx, JSScript* script, unsigned arg, TypeSet::Type type)
 {
+    assertSameCompartment(cx, script, type);
+
     StackTypeSet* types = ArgTypes(script, arg);
     if (!types)
         return;
@@ -859,6 +874,18 @@ TypeSet::Type::trace(JSTracer* trc)
         TraceManuallyBarrieredEdge(trc, &group, "TypeSet::Group");
         *this = TypeSet::ObjectType(group);
     }
+}
+
+inline JSCompartment*
+TypeSet::Type::maybeCompartment()
+{
+    if (isSingletonUnchecked())
+        return singletonNoBarrier()->compartment();
+
+    if (isGroupUnchecked())
+        return groupNoBarrier()->compartment();
+
+    return nullptr;
 }
 
 inline bool

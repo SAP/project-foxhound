@@ -157,6 +157,8 @@ static const char* const sExtensionNames[] = {
     "GL_IMG_texture_compression_pvrtc",
     "GL_IMG_texture_npot",
     "GL_KHR_debug",
+    "GL_KHR_texture_compression_astc_hdr",
+    "GL_KHR_texture_compression_astc_ldr",
     "GL_NV_draw_instanced",
     "GL_NV_fence",
     "GL_NV_framebuffer_blit",
@@ -1795,6 +1797,13 @@ GLContext::InitExtensions()
             MarkExtensionSupported(OES_EGL_sync);
         }
 
+        if (Vendor() == GLVendor::ATI) {
+            // ATI drivers say this extension exists, but we can't
+            // actually find the EGLImageTargetRenderbufferStorageOES
+            // extension function pointer in the drivers.
+            MarkExtensionUnsupported(OES_EGL_image);
+        }
+
         if (Vendor() == GLVendor::Imagination &&
             Renderer() == GLRenderer::SGX540)
         {
@@ -2143,13 +2152,13 @@ GLContext::AssembleOffscreenFBs(const GLuint colorMSRB,
     if (drawFB_out) {
         *drawFB_out = drawFB;
     } else if (drawFB) {
-        NS_RUNTIMEABORT("drawFB created when not requested!");
+        MOZ_CRASH("drawFB created when not requested!");
     }
 
     if (readFB_out) {
         *readFB_out = readFB;
     } else if (readFB) {
-        NS_RUNTIMEABORT("readFB created when not requested!");
+        MOZ_CRASH("readFB created when not requested!");
     }
 
     return isComplete;

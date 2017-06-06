@@ -5,8 +5,7 @@
  * This file tests the Services.jsm module.
  */
 
-////////////////////////////////////////////////////////////////////////////////
-/// Globals
+// Globals
 
 var Cc = Components.classes;
 var Ci = Components.interfaces;
@@ -22,11 +21,9 @@ function checkService(service, interface) {
   do_check_true(Services[service] instanceof interface);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/// Tests
+// Tests
 
-function run_test()
-{
+function run_test() {
   do_get_profile();
 
   checkService("appShell", Ci.nsIAppShellService);

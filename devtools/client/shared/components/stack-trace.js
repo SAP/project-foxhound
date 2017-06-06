@@ -9,12 +9,12 @@ const { DOM: dom, createClass, createFactory, PropTypes } = React;
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const Frame = createFactory(require("./frame"));
 
-const l10n = new LocalizationHelper("devtools/locale/webconsole.properties");
+const l10n = new LocalizationHelper("devtools/client/locales/webconsole.properties");
 
 const AsyncFrame = createFactory(createClass({
   displayName: "AsyncFrame",
 
-  PropTypes: {
+  propTypes: {
     asyncCause: PropTypes.string.isRequired
   },
 
@@ -31,13 +31,18 @@ const AsyncFrame = createFactory(createClass({
 const StackTrace = createClass({
   displayName: "StackTrace",
 
-  PropTypes: {
+  propTypes: {
     stacktrace: PropTypes.array.isRequired,
-    onViewSourceInDebugger: PropTypes.func.isRequired
+    onViewSourceInDebugger: PropTypes.func.isRequired,
+    onViewSourceInScratchpad: PropTypes.func,
   },
 
   render() {
-    let { stacktrace, onViewSourceInDebugger } = this.props;
+    let {
+      stacktrace,
+      onViewSourceInDebugger,
+      onViewSourceInScratchpad
+    } = this.props;
 
     let frames = [];
     stacktrace.forEach(s => {
@@ -47,17 +52,20 @@ const StackTrace = createClass({
         }), "\n");
       }
 
+      let source = s.filename.split(" -> ").pop();
       frames.push("\t", Frame({
         frame: {
           functionDisplayName: s.functionName,
-          source: s.filename.split(" -> ").pop(),
+          source,
           line: s.lineNumber,
           column: s.columnNumber,
         },
         showFunctionName: true,
         showAnonymousFunctionName: true,
         showFullSourceUrl: true,
-        onClick: onViewSourceInDebugger
+        onClick: (/^Scratchpad\/\d+$/.test(source))
+          ? onViewSourceInScratchpad
+          : onViewSourceInDebugger
       }), "\n");
     });
 

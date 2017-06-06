@@ -79,7 +79,7 @@ add_task(function* populatePromise() {
   let expectedLinks = makeLinks(0, 10, 2);
 
   let getLinksFcn = Task.async(function* (callback) {
-    //Should not be calling getLinksFcn twice
+    // Should not be calling getLinksFcn twice
     count++;
     do_check_eq(count, 1);
     yield Promise.resolve();
@@ -326,16 +326,16 @@ function TestProvider(getLinksFn) {
 }
 
 TestProvider.prototype = {
-  addObserver: function (observer) {
+  addObserver(observer) {
     this._observers.add(observer);
   },
-  notifyLinkChanged: function (link, index=-1, deleted=false) {
+  notifyLinkChanged(link, index = -1, deleted = false) {
     this._notifyObservers("onLinkChanged", link, index, deleted);
   },
-  notifyManyLinksChanged: function () {
+  notifyManyLinksChanged() {
     this._notifyObservers("onManyLinksChanged");
   },
-  _notifyObservers: function () {
+  _notifyObservers() {
     let observerMethodName = arguments[0];
     let args = Array.prototype.slice.call(arguments, 1);
     args.unshift(this);
@@ -372,7 +372,7 @@ function makeLink(frecency) {
   return {
     url: "http://example" + frecency + ".com/",
     title: "My frecency is " + frecency,
-    frecency: frecency,
+    frecency,
     lastVisitDate: 0,
   };
 }

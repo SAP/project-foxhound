@@ -4,6 +4,8 @@
 
 "use strict";
 
+/* import-globals-from ../contentSearchUI.js */
+
 // The process of adding a new default snippet involves:
 //   * add a new entity to aboutHome.dtd
 //   * add a <span/> for it in aboutHome.xhtml
@@ -25,7 +27,7 @@ var searchText;
 
 // This global tracks if the page has been set up before, to prevent double inits
 var gInitialized = false;
-var gObserver = new MutationObserver(function (mutations) {
+var gObserver = new MutationObserver(function(mutations) {
   for (let mutation of mutations) {
     // The addition of the restore session button changes our width:
     if (mutation.attributeName == "session") {
@@ -41,7 +43,7 @@ var gObserver = new MutationObserver(function (mutations) {
   }
 });
 
-window.addEventListener("pageshow", function () {
+window.addEventListener("pageshow", function() {
   // Delay search engine setup, cause browser.js::BrowserOnAboutPageLoad runs
   // later and may use asynchronous getters.
   window.gObserver.observe(document.documentElement, { attributes: true });
@@ -102,8 +104,7 @@ var gSnippetsMapCallbacks = [];
  * @note Snippets should never directly manage the underlying storage, since
  *       it may change inadvertently.
  */
-function ensureSnippetsMapThen(aCallback)
-{
+function ensureSnippetsMapThen(aCallback) {
   if (gSnippetsMap) {
     aCallback(gSnippetsMap);
     return;
@@ -116,7 +117,7 @@ function ensureSnippetsMapThen(aCallback)
     return;
   }
 
-  let invokeCallbacks = function () {
+  let invokeCallbacks = function() {
     if (!gSnippetsMap) {
       gSnippetsMap = Object.freeze(new Map());
     }
@@ -130,29 +131,29 @@ function ensureSnippetsMapThen(aCallback)
   let openRequest = indexedDB.open(DATABASE_NAME, {version: DATABASE_VERSION,
                                                    storage: DATABASE_STORAGE});
 
-  openRequest.onerror = function (event) {
+  openRequest.onerror = function(event) {
     // Try to delete the old database so that we can start this process over
     // next time.
     indexedDB.deleteDatabase(DATABASE_NAME);
     invokeCallbacks();
   };
 
-  openRequest.onupgradeneeded = function (event) {
+  openRequest.onupgradeneeded = function(event) {
     let db = event.target.result;
     if (!db.objectStoreNames.contains(SNIPPETS_OBJECTSTORE_NAME)) {
       db.createObjectStore(SNIPPETS_OBJECTSTORE_NAME);
     }
   }
 
-  openRequest.onsuccess = function (event) {
+  openRequest.onsuccess = function(event) {
     let db = event.target.result;
 
-    db.onerror = function (event) {
+    db.onerror = function() {
       invokeCallbacks();
     }
 
-    db.onversionchange = function (event) {
-      event.target.close();
+    db.onversionchange = function(versionChangeEvent) {
+      versionChangeEvent.target.close();
       invokeCallbacks();
     }
 
@@ -167,12 +168,12 @@ function ensureSnippetsMapThen(aCallback)
       return;
     }
 
-    cursorRequest.onerror = function (event) {
+    cursorRequest.onerror = function() {
       invokeCallbacks();
     }
 
-    cursorRequest.onsuccess = function(event) {
-      let cursor = event.target.result;
+    cursorRequest.onsuccess = function(cursorRequestEvent) {
+      let cursor = cursorRequestEvent.target.result;
 
       // Populate the cache from the persistent storage.
       if (cursor) {
@@ -184,18 +185,18 @@ function ensureSnippetsMapThen(aCallback)
       // The cache has been filled up, create the snippets map.
       gSnippetsMap = Object.freeze({
         get: (aKey) => cache.get(aKey),
-        set: function (aKey, aValue) {
+        set(aKey, aValue) {
           db.transaction(SNIPPETS_OBJECTSTORE_NAME, "readwrite")
             .objectStore(SNIPPETS_OBJECTSTORE_NAME).put(aValue, aKey);
           return cache.set(aKey, aValue);
         },
         has: (aKey) => cache.has(aKey),
-        delete: function (aKey) {
+        delete(aKey) {
           db.transaction(SNIPPETS_OBJECTSTORE_NAME, "readwrite")
             .objectStore(SNIPPETS_OBJECTSTORE_NAME).delete(aKey);
           return cache.delete(aKey);
         },
-        clear: function () {
+        clear() {
           db.transaction(SNIPPETS_OBJECTSTORE_NAME, "readwrite")
             .objectStore(SNIPPETS_OBJECTSTORE_NAME).clear();
           return cache.clear();
@@ -208,16 +209,14 @@ function ensureSnippetsMapThen(aCallback)
   }
 }
 
-function onSearchSubmit(aEvent)
-{
+function onSearchSubmit(aEvent) {
   gContentSearchController.search(aEvent);
 }
 
 
 var gContentSearchController;
 
-function setupSearch()
-{
+function setupSearch() {
   // Set submit button label for when CSS background are disabled (e.g.
   // high contrast mode).
   document.getElementById("searchSubmit").value =
@@ -242,8 +241,7 @@ function setupSearch()
 /**
  * Inform the test harness that we're done loading the page.
  */
-function loadCompleted()
-{
+function loadCompleted() {
   var event = new CustomEvent("AboutHomeLoadSnippetsCompleted", {bubbles:true});
   document.dispatchEvent(event);
 }
@@ -252,8 +250,7 @@ function loadCompleted()
  * Update the local snippets from the remote storage, then show them through
  * showSnippets.
  */
-function loadSnippets()
-{
+function loadSnippets() {
   if (!gSnippetsMap)
     throw new Error("Snippets map has not properly been initialized");
 
@@ -281,7 +278,7 @@ function loadSnippets()
     // Even if fetching should fail we don't want to spam the server, thus
     // set the last update time regardless its results.  Will retry tomorrow.
     gSnippetsMap.set("snippets-last-update", Date.now());
-    xhr.onloadend = function (event) {
+    xhr.onloadend = function() {
       if (xhr.status == 200) {
         gSnippetsMap.set("snippets", xhr.responseText);
         gSnippetsMap.set("snippets-cached-version", currentVersion);
@@ -295,7 +292,6 @@ function loadSnippets()
     } catch (ex) {
       showSnippets();
       loadCompleted();
-      return;
     }
   } else {
     showSnippets();
@@ -310,8 +306,7 @@ function loadSnippets()
  *        a "too much recursion" exception.
  */
 var _snippetsShown = false;
-function showSnippets()
-{
+function showSnippets() {
   let snippetsElt = document.getElementById("snippets");
 
   // Show about:rights notification, if needed.
@@ -361,8 +356,7 @@ function showSnippets()
 /**
  * Clear snippets element contents and show default snippets.
  */
-function showDefaultSnippets()
-{
+function showDefaultSnippets() {
   // Clear eventual contents...
   let snippetsElt = document.getElementById("snippets");
   snippetsElt.innerHTML = "";

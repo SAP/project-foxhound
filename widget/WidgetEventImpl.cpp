@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "gfxPrefs.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/InternalMutationEvent.h"
@@ -11,6 +12,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 
@@ -54,6 +56,47 @@ ToChar(EventClassID aEventClassID)
 #undef NS_ROOT_EVENT_CLASS
     default:
       return "illegal event class ID";
+  }
+}
+
+const nsCString
+ToString(KeyNameIndex aKeyNameIndex)
+{
+  if (aKeyNameIndex == KEY_NAME_INDEX_USE_STRING) {
+    return NS_LITERAL_CSTRING("USE_STRING");
+  }
+  nsAutoString keyName;
+  WidgetKeyboardEvent::GetDOMKeyName(aKeyNameIndex, keyName);
+  return NS_ConvertUTF16toUTF8(keyName);
+}
+
+const nsCString
+ToString(CodeNameIndex aCodeNameIndex)
+{
+  if (aCodeNameIndex == CODE_NAME_INDEX_USE_STRING) {
+    return NS_LITERAL_CSTRING("USE_STRING");
+  }
+  nsAutoString codeName;
+  WidgetKeyboardEvent::GetDOMCodeName(aCodeNameIndex, codeName);
+  return NS_ConvertUTF16toUTF8(codeName);
+}
+
+const nsCString
+GetDOMKeyCodeName(uint32_t aKeyCode)
+{
+  switch (aKeyCode) {
+#define NS_DISALLOW_SAME_KEYCODE
+#define NS_DEFINE_VK(aDOMKeyName, aDOMKeyCode) \
+    case aDOMKeyCode: \
+      return NS_LITERAL_CSTRING(#aDOMKeyName);
+
+#include "mozilla/VirtualKeyCodeList.h"
+
+#undef NS_DEFINE_VK
+#undef NS_DISALLOW_SAME_KEYCODE
+
+    default:
+      return nsPrintfCString("Invalid DOM keyCode (0x%08X)", aKeyCode);
   }
 }
 
@@ -193,6 +236,7 @@ WidgetEvent::HasMouseEventMessage() const
     case eMouseUp:
     case eMouseClick:
     case eMouseDoubleClick:
+    case eMouseAuxClick:
     case eMouseEnterIntoWidget:
     case eMouseExitFromWidget:
     case eMouseActivate:
@@ -233,10 +277,6 @@ WidgetEvent::HasKeyEventMessage() const
     case eKeyUp:
     case eKeyDownOnPlugin:
     case eKeyUpOnPlugin:
-    case eBeforeKeyDown:
-    case eBeforeKeyUp:
-    case eAfterKeyDown:
-    case eAfterKeyUp:
     case eAccessKeyNotFound:
       return true;
     default:
@@ -272,6 +312,41 @@ WidgetEvent::HasPluginActivationEventMessage() const
  *
  * Specific event checking methods.
  ******************************************************************************/
+
+bool
+WidgetEvent::CanBeSentToRemoteProcess() const
+{
+  // If this event is explicitly marked as shouldn't be sent to remote process,
+  // just return false.
+  if (mFlags.mNoCrossProcessBoundaryForwarding) {
+    return false;
+  }
+
+  if (mClass == eKeyboardEventClass ||
+      mClass == eWheelEventClass) {
+    return true;
+  }
+
+  switch (mMessage) {
+    case eMouseDown:
+    case eMouseUp:
+    case eMouseMove:
+    case eContextMenu:
+    case eMouseEnterIntoWidget:
+    case eMouseExitFromWidget:
+    case eMouseTouchDrag:
+    case eTouchStart:
+    case eTouchMove:
+    case eTouchEnd:
+    case eTouchCancel:
+    case eDragOver:
+    case eDragExit:
+    case eDrop:
+      return true;
+    default:
+      return false;
+  }
+}
 
 bool
 WidgetEvent::IsRetargetedNativeEventDelivererForPlugin() const
@@ -334,6 +409,20 @@ WidgetEvent::IsAllowedToDispatchDOMEvent() const
 {
   switch (mClass) {
     case eMouseEventClass:
+      // When content PreventDefault on ePointerDown, we will stop dispatching
+      // the subsequent mouse events (eMouseDown, eMouseUp, eMouseMove). But we
+      // still need the mouse events to be handled in EventStateManager to
+      // generate other events (e.g. eMouseClick). So we only stop dispatching
+      // them to DOM.
+      if (DefaultPreventedByContent() &&
+          (mMessage == eMouseMove || mMessage == eMouseDown ||
+           mMessage == eMouseUp)) {
+        return false;
+      }
+      if (mMessage == eMouseTouchDrag) {
+        return false;
+      }
+      MOZ_FALLTHROUGH;
     case ePointerEventClass:
       // We want synthesized mouse moves to cause mouseover and mouseout
       // DOM events (EventStateManager::PreHandleEvent), but not mousemove
@@ -360,6 +449,15 @@ WidgetEvent::IsAllowedToDispatchDOMEvent() const
     default:
       return true;
   }
+}
+
+bool
+WidgetEvent::IsAllowedToDispatchInSystemGroup() const
+{
+  // We don't expect to implement default behaviors with pointer events because
+  // if we do, prevent default on mouse events can't prevent default behaviors
+  // anymore.
+  return mClass != ePointerEventClass;
 }
 
 /******************************************************************************
@@ -412,35 +510,15 @@ WidgetInputEvent::AccelModifier()
  * mozilla::WidgetWheelEvent (MouseEvents.h)
  ******************************************************************************/
 
-bool WidgetWheelEvent::sInitialized = false;
-bool WidgetWheelEvent::sIsSystemScrollSpeedOverrideEnabled = false;
-int32_t WidgetWheelEvent::sOverrideFactorX = 0;
-int32_t WidgetWheelEvent::sOverrideFactorY = 0;
-
-/* static */ void
-WidgetWheelEvent::Initialize()
-{
-  if (sInitialized) {
-    return;
-  }
-
-  Preferences::AddBoolVarCache(&sIsSystemScrollSpeedOverrideEnabled,
-    "mousewheel.system_scroll_override_on_root_content.enabled", false);
-  Preferences::AddIntVarCache(&sOverrideFactorX,
-    "mousewheel.system_scroll_override_on_root_content.horizontal.factor", 0);
-  Preferences::AddIntVarCache(&sOverrideFactorY,
-    "mousewheel.system_scroll_override_on_root_content.vertical.factor", 0);
-  sInitialized = true;
-}
-
 /* static */ double
 WidgetWheelEvent::ComputeOverriddenDelta(double aDelta, bool aIsForVertical)
 {
-  Initialize();
-  if (!sIsSystemScrollSpeedOverrideEnabled) {
+  if (!gfxPrefs::MouseWheelHasRootScrollDeltaOverride()) {
     return aDelta;
   }
-  int32_t intFactor = aIsForVertical ? sOverrideFactorY : sOverrideFactorX;
+  int32_t intFactor = aIsForVertical
+                      ? gfxPrefs::MouseWheelRootScrollVerticalFactor()
+                      : gfxPrefs::MouseWheelRootScrollHorizontalFactor();
   // Making the scroll speed slower doesn't make sense. So, ignore odd factor
   // which is less than 1.0.
   if (intFactor <= 100) {

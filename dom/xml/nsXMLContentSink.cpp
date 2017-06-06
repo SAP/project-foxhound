@@ -20,7 +20,7 @@
 #include "DocumentType.h"
 #include "nsHTMLParts.h"
 #include "nsCRT.h"
-#include "mozilla/CSSStyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
@@ -96,8 +96,15 @@ NS_NewXMLContentSink(nsIXMLContentSink** aResult,
 }
 
 nsXMLContentSink::nsXMLContentSink()
-  : mPrettyPrintXML(true)
+  : mTextLength(0)
+  , mNotifyLevel(0)
+  , mPrettyPrintXML(true)
+  , mPrettyPrintHasSpecialRoot(0)
+  , mPrettyPrintHasFactoredElements(0)
+  , mPrettyPrinting(0)
+  , mPreventScriptExecution(0)
 {
+  PodArrayZero(mText);
 }
 
 nsXMLContentSink::~nsXMLContentSink()
@@ -411,7 +418,7 @@ nsXMLContentSink::OnTransformDone(nsresult aResult,
 }
 
 NS_IMETHODIMP
-nsXMLContentSink::StyleSheetLoaded(StyleSheetHandle aSheet,
+nsXMLContentSink::StyleSheetLoaded(StyleSheet* aSheet,
                                    bool aWasAlternate,
                                    nsresult aStatus)
 {
@@ -1054,6 +1061,9 @@ nsXMLContentSink::HandleEndElement(const char16_t *aName,
                (debugNameSpaceID == kNameSpaceID_MathML &&
                 content->NodeInfo()->NamespaceID() == kNameSpaceID_disabled_MathML &&
                 content->NodeInfo()->Equals(debugTagAtom)) ||
+               (debugNameSpaceID == kNameSpaceID_SVG &&
+                content->NodeInfo()->NamespaceID() == kNameSpaceID_disabled_SVG &&
+                content->NodeInfo()->Equals(debugTagAtom)) ||
                isTemplateElement, "Wrong element being closed");
 #endif
 
@@ -1434,7 +1444,7 @@ nsXMLContentSink::AddText(const char16_t* aText,
 }
 
 void
-nsXMLContentSink::FlushPendingNotifications(mozFlushType aType)
+nsXMLContentSink::FlushPendingNotifications(FlushType aType)
 {
   // Only flush tags if we're not doing the notification ourselves
   // (since we aren't reentrant)
@@ -1442,14 +1452,14 @@ nsXMLContentSink::FlushPendingNotifications(mozFlushType aType)
     if (mIsDocumentObserver) {
       // Only flush if we're still a document observer (so that our child
       // counts should be correct).
-      if (aType >= Flush_ContentAndNotify) {
+      if (aType >= FlushType::ContentAndNotify) {
         FlushTags();
       }
       else {
         FlushText(false);
       }
     }
-    if (aType >= Flush_InterruptibleLayout) {
+    if (aType >= FlushType::InterruptibleLayout) {
       // Make sure that layout has started so that the reflow flush
       // will actually happen.
       MaybeStartLayout(true);

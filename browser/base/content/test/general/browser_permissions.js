@@ -32,7 +32,6 @@ function* closeIdentityPopup() {
 }
 
 add_task(function* testMainViewVisible() {
-  let {gIdentityHandler} = gBrowser.ownerGlobal;
   let tab = gBrowser.selectedTab = gBrowser.addTab();
   yield promiseTabLoadEvent(tab, PERMISSIONS_PAGE);
 
@@ -91,7 +90,7 @@ add_task(function* testIdentityIcon() {
   ok(!gIdentityHandler._identityBox.classList.contains("grantedPermissions"),
     "identity-box doesn't signal granted permissions");
 
-  SitePermissions.set(gBrowser.currentURI, "cookie", SitePermissions.SESSION);
+  SitePermissions.set(gBrowser.currentURI, "cookie", SitePermissions.ALLOW_COOKIES_FOR_SESSION);
 
   ok(gIdentityHandler._identityBox.classList.contains("grantedPermissions"),
     "identity-box signals granted permissions");
@@ -102,7 +101,6 @@ add_task(function* testIdentityIcon() {
 });
 
 add_task(function* testCancelPermission() {
-  let {gIdentityHandler} = gBrowser.ownerGlobal;
   let tab = gBrowser.selectedTab = gBrowser.addTab();
   yield promiseTabLoadEvent(tab, PERMISSIONS_PAGE);
 
@@ -130,7 +128,6 @@ add_task(function* testCancelPermission() {
 });
 
 add_task(function* testPermissionHints() {
-  let {gIdentityHandler} = gBrowser.ownerGlobal;
   let tab = gBrowser.selectedTab = gBrowser.addTab();
   yield promiseTabLoadEvent(tab, PERMISSIONS_PAGE);
 
@@ -182,7 +179,6 @@ add_task(function* testPermissionIcons() {
 
   SitePermissions.set(gBrowser.currentURI, "camera", SitePermissions.ALLOW);
   SitePermissions.set(gBrowser.currentURI, "geo", SitePermissions.BLOCK);
-  SitePermissions.set(gBrowser.currentURI, "microphone", SitePermissions.SESSION);
 
   let geoIcon = gIdentityHandler._identityBox
     .querySelector(".blocked-permission-icon[data-permission-id='geo']");
@@ -191,11 +187,6 @@ add_task(function* testPermissionIcons() {
   let cameraIcon = gIdentityHandler._identityBox
     .querySelector(".blocked-permission-icon[data-permission-id='camera']");
   ok(!cameraIcon.hasAttribute("showing"),
-    "allowed permission icon is not shown");
-
-  let microphoneIcon  = gIdentityHandler._identityBox
-    .querySelector(".blocked-permission-icon[data-permission-id='microphone']");
-  ok(!microphoneIcon.hasAttribute("showing"),
     "allowed permission icon is not shown");
 
   SitePermissions.remove(gBrowser.currentURI, "geo");

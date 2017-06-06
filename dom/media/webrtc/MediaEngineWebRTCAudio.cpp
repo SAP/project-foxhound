@@ -329,8 +329,7 @@ MediaEngineWebRTCMicrophoneSource::UpdateSingleSource(
       break;
 
     default:
-      LOG(("Audio device %d %s in ignored state %d", mCapIndex,
-           (aHandle? aHandle->mOrigin.get() : ""), mState));
+      LOG(("Audio device %d in ignored state %d", mCapIndex, mState));
       break;
   }
 
@@ -374,10 +373,10 @@ MediaEngineWebRTCMicrophoneSource::SetLastPrefs(
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
 
-  NS_DispatchToMainThread(media::NewRunnableFrom([this, that, aPrefs]() mutable {
-    mSettings.mEchoCancellation.Value() = aPrefs.mAecOn;
-    mSettings.mMozAutoGainControl.Value() = aPrefs.mAgcOn;
-    mSettings.mMozNoiseSuppression.Value() = aPrefs.mNoiseOn;
+  NS_DispatchToMainThread(media::NewRunnableFrom([that, aPrefs]() mutable {
+    that->mSettings.mEchoCancellation.Value() = aPrefs.mAecOn;
+    that->mSettings.mMozAutoGainControl.Value() = aPrefs.mAgcOn;
+    that->mSettings.mMozNoiseSuppression.Value() = aPrefs.mNoiseOn;
     return NS_OK;
   }));
 }
@@ -827,7 +826,7 @@ typedef int16_t sample;
 void
 MediaEngineWebRTCMicrophoneSource::Process(int channel,
                                            webrtc::ProcessingTypes type,
-                                           sample *audio10ms, int length,
+                                           sample *audio10ms, size_t length,
                                            int samplingFreq, bool isStereo)
 {
   MOZ_ASSERT(!PassThrough(), "This should be bypassed when in PassThrough mode.");

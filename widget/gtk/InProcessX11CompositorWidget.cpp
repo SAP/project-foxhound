@@ -11,22 +11,26 @@ namespace mozilla {
 namespace widget {
 
 /* static */ RefPtr<CompositorWidget>
-CompositorWidget::CreateLocal(const CompositorWidgetInitData& aInitData, nsIWidget* aWidget)
+CompositorWidget::CreateLocal(const CompositorWidgetInitData& aInitData,
+                              const layers::CompositorOptions& aOptions,
+                              nsIWidget* aWidget)
 {
-  return new InProcessX11CompositorWidget(aInitData, static_cast<nsWindow*>(aWidget));
+  return new InProcessX11CompositorWidget(aInitData, aOptions, static_cast<nsWindow*>(aWidget));
 }
 
 InProcessX11CompositorWidget::InProcessX11CompositorWidget(const CompositorWidgetInitData& aInitData,
+                                                           const layers::CompositorOptions& aOptions,
                                                            nsWindow* aWindow)
-  : X11CompositorWidget(aInitData, aWindow)
+  : X11CompositorWidget(aInitData, aOptions, aWindow)
 {
 }
 
 void
 InProcessX11CompositorWidget::ObserveVsync(VsyncObserver* aObserver)
 {
-  RefPtr<CompositorVsyncDispatcher> cvd = mWidget->GetCompositorVsyncDispatcher();
-  cvd->SetCompositorVsyncObserver(aObserver);
+  if (RefPtr<CompositorVsyncDispatcher> cvd = mWidget->GetCompositorVsyncDispatcher()) {
+    cvd->SetCompositorVsyncObserver(aObserver);
+  }
 }
 
 } // namespace widget

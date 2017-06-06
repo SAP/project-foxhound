@@ -19,7 +19,7 @@ loader.lazyRequireGetter(this, "ObjectClient", "devtools/shared/client/main", tr
 const { extend } = require("sdk/core/heritage");
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-const STRINGS_URI = "devtools/locale/webconsole.properties";
+const STRINGS_URI = "devtools/client/locales/webconsole.properties";
 
 const WebConsoleUtils = require("devtools/client/webconsole/utils").Utils;
 const { getSourceNames } = require("devtools/client/shared/source-utils");
@@ -3208,9 +3208,9 @@ Widgets.ObjectRenderers.add({
     this._linkedToInspector = true;
 
     this.highlightDomNode = this.highlightDomNode.bind(this);
-    this.element.addEventListener("mouseover", this.highlightDomNode, false);
+    this.element.addEventListener("mouseover", this.highlightDomNode);
     this.unhighlightDomNode = this.unhighlightDomNode.bind(this);
-    this.element.addEventListener("mouseout", this.unhighlightDomNode, false);
+    this.element.addEventListener("mouseout", this.unhighlightDomNode);
 
     this._openInspectorNode = this._anchor("", {
       className: "open-inspector",
@@ -3273,8 +3273,8 @@ Widgets.ObjectRenderers.add({
   destroy: function ()
   {
     if (this.toolbox && this._nodeFront) {
-      this.element.removeEventListener("mouseover", this.highlightDomNode, false);
-      this.element.removeEventListener("mouseout", this.unhighlightDomNode, false);
+      this.element.removeEventListener("mouseover", this.highlightDomNode);
+      this.element.removeEventListener("mouseout", this.unhighlightDomNode);
       this._openInspectorNode.removeEventListener("mousedown", this.openNodeInInspector, true);
 
       if (this._linkedToInspector) {

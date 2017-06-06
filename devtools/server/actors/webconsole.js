@@ -9,7 +9,6 @@
 const Services = require("Services");
 const { Cc, Ci, Cu } = require("chrome");
 const { DebuggerServer, ActorPool } = require("devtools/server/main");
-const { EnvironmentActor } = require("devtools/server/actors/environment");
 const { ThreadActor } = require("devtools/server/actors/script");
 const { ObjectActor, LongStringActor, createValueGrip, stringIsLong } = require("devtools/server/actors/object");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
@@ -24,24 +23,20 @@ loader.lazyRequireGetter(this, "ServerLoggingListener", "devtools/shared/webcons
 loader.lazyRequireGetter(this, "JSPropertyProvider", "devtools/shared/webconsole/js-property-provider", true);
 loader.lazyRequireGetter(this, "Parser", "resource://devtools/shared/Parser.jsm", true);
 loader.lazyRequireGetter(this, "NetUtil", "resource://gre/modules/NetUtil.jsm", true);
+loader.lazyRequireGetter(this, "addWebConsoleCommands", "devtools/server/actors/utils/webconsole-utils", true);
+loader.lazyRequireGetter(this, "CONSOLE_WORKER_IDS", "devtools/server/actors/utils/webconsole-utils", true);
+loader.lazyRequireGetter(this, "WebConsoleUtils", "devtools/server/actors/utils/webconsole-utils", true);
+loader.lazyRequireGetter(this, "EnvironmentActor", "devtools/server/actors/environment", true);
 
-for (let name of ["WebConsoleUtils", "ConsoleServiceListener",
-    "ConsoleAPIListener", "addWebConsoleCommands",
-    "ConsoleReflowListener", "CONSOLE_WORKER_IDS"]) {
-  Object.defineProperty(this, name, {
-    get: function (prop) {
-      if (prop == "WebConsoleUtils") {
-        prop = "Utils";
-      }
-      if (isWorker) {
-        return require("devtools/server/actors/utils/webconsole-worker-utils")[prop];
-      } else {
-        return require("devtools/server/actors/utils/webconsole-utils")[prop];
-      }
-    }.bind(null, name),
-    configurable: true,
-    enumerable: true
-  });
+// Overwrite implemented listeners for workers so that we don't attempt
+// to load an unsupported module.
+if (isWorker) {
+  loader.lazyRequireGetter(this, "ConsoleAPIListener", "devtools/server/actors/utils/webconsole-worker-listeners", true);
+  loader.lazyRequireGetter(this, "ConsoleServiceListener", "devtools/server/actors/utils/webconsole-worker-listeners", true);
+} else {
+  loader.lazyRequireGetter(this, "ConsoleAPIListener", "devtools/server/actors/utils/webconsole-listeners", true);
+  loader.lazyRequireGetter(this, "ConsoleServiceListener", "devtools/server/actors/utils/webconsole-listeners", true);
+  loader.lazyRequireGetter(this, "ConsoleReflowListener", "devtools/server/actors/utils/webconsole-listeners", true);
 }
 
 /**
@@ -156,8 +151,7 @@ WebConsoleActor.prototype =
    * @type boolean
    */
   get _parentIsContentActor() {
-    return "ContentActor" in DebuggerServer &&
-            this.parentActor instanceof DebuggerServer.ContentActor;
+    return this.parentActor.constructor.name == "ContentActor";
   },
 
   /**
@@ -319,6 +313,11 @@ WebConsoleActor.prototype =
   },
 
   hasNativeConsoleAPI: function WCA_hasNativeConsoleAPI(aWindow) {
+    if (isWorker) {
+      // Can't use XPCNativeWrapper as a way to check for console API in workers
+      return true;
+    }
+
     let isNative = false;
     try {
       // We are very explicitly examining the "console" property of
@@ -336,8 +335,7 @@ WebConsoleActor.prototype =
   /**
    * Destroy the current WebConsoleActor instance.
    */
-  disconnect: function WCA_disconnect()
-  {
+  destroy() {
     if (this.consoleServiceListener) {
       this.consoleServiceListener.destroy();
       this.consoleServiceListener = null;
@@ -551,9 +549,7 @@ WebConsoleActor.prototype =
     return this._lastConsoleInputEvaluation;
   },
 
-  // ////////////////
   // Request handlers for known packet types.
-  // ////////////////
 
   /**
    * Handler for the "startListeners" request.
@@ -565,18 +561,11 @@ WebConsoleActor.prototype =
    */
   onStartListeners: function WCA_onStartListeners(aRequest)
   {
-    // XXXworkers: Not handling the Console API yet for workers (Bug 1209353).
-    if (isWorker) {
-      aRequest.listeners = [];
-    }
-
     let startedListeners = [];
     let window = !this.parentActor.isRootActor ? this.window : null;
-    let appId = null;
     let messageManager = null;
 
     if (this._parentIsContentActor) {
-      appId = this.parentActor.docShell.appId;
       messageManager = this.parentActor.messageManager;
     }
 
@@ -584,6 +573,10 @@ WebConsoleActor.prototype =
       let listener = aRequest.listeners.shift();
       switch (listener) {
         case "PageError":
+          // Workers don't support this message type yet
+          if (isWorker) {
+            break;
+          }
           if (!this.consoleServiceListener) {
             this.consoleServiceListener =
               new ConsoleServiceListener(window, this);
@@ -603,20 +596,24 @@ WebConsoleActor.prototype =
           startedListeners.push(listener);
           break;
         case "NetworkActivity":
+          // Workers don't support this message type
+          if (isWorker) {
+            break;
+          }
           if (!this.networkMonitor) {
             // Create a StackTraceCollector that's going to be shared both by the
             // NetworkMonitorChild (getting messages about requests from parent) and
             // by the NetworkMonitor that directly watches service workers requests.
-            this.stackTraceCollector = new StackTraceCollector({ window, appId });
+            this.stackTraceCollector = new StackTraceCollector({ window });
             this.stackTraceCollector.init();
 
             let processBoundary = Services.appinfo.processType !=
                                   Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-            if ((appId || messageManager) && processBoundary) {
+            if (messageManager && processBoundary) {
               // Start a network monitor in the parent process to listen to
               // most requests than happen in parent
               this.networkMonitor =
-                new NetworkMonitorChild(appId, this.parentActor.outerWindowID,
+                new NetworkMonitorChild(this.parentActor.outerWindowID,
                                         messageManager, this.conn, this);
               this.networkMonitor.init();
               // Spawn also one in the child to listen to service workers
@@ -630,6 +627,10 @@ WebConsoleActor.prototype =
           startedListeners.push(listener);
           break;
         case "FileActivity":
+          // Workers don't support this message type
+          if (isWorker) {
+            break;
+          }
           if (this.window instanceof Ci.nsIDOMWindow) {
             if (!this.consoleProgressListener) {
               this.consoleProgressListener =
@@ -641,6 +642,10 @@ WebConsoleActor.prototype =
           }
           break;
         case "ReflowActivity":
+          // Workers don't support this message type
+          if (isWorker) {
+            break;
+          }
           if (!this.consoleReflowListener) {
             this.consoleReflowListener =
               new ConsoleReflowListener(this.window, this);
@@ -648,6 +653,10 @@ WebConsoleActor.prototype =
           startedListeners.push(listener);
           break;
         case "ServerLogging":
+          // Workers don't support this message type
+          if (isWorker) {
+            break;
+          }
           if (!this.serverLoggingListener) {
             this.serverLoggingListener =
               new ServerLoggingListener(this.window, this);
@@ -890,7 +899,7 @@ WebConsoleActor.prototype =
     let evalResult = evalInfo.result;
     let helperResult = evalInfo.helperResult;
 
-    let result, errorDocURL, errorMessage, errorGrip = null;
+    let result, errorDocURL, errorMessage, errorGrip = null, frame = null;
     if (evalResult) {
       if ("return" in evalResult) {
         result = evalResult.return;
@@ -898,19 +907,52 @@ WebConsoleActor.prototype =
         result = evalResult.yield;
       } else if ("throw" in evalResult) {
         let error = evalResult.throw;
-        errorGrip = this.createValueGrip(error);
-        // XXXworkers: Calling unsafeDereference() returns an object with no
-        // toString method in workers. See Bug 1215120.
-        let unsafeDereference = error && (typeof error === "object") &&
-                                error.unsafeDereference();
-        errorMessage = unsafeDereference && unsafeDereference.toString
-          ? unsafeDereference.toString()
-          : String(error);
 
-          // It is possible that we won't have permission to unwrap an
-          // object and retrieve its errorMessageName.
+        errorGrip = this.createValueGrip(error);
+
+        errorMessage = String(error);
+        if (typeof error === "object" && error !== null) {
+          try {
+            errorMessage = DevToolsUtils.callPropertyOnObject(error, "toString");
+          } catch (e) {
+            // If the debuggee is not allowed to access the "toString" property
+            // of the error object, calling this property from the debuggee's
+            // compartment will fail. The debugger should show the error object
+            // as it is seen by the debuggee, so this behavior is correct.
+            //
+            // Unfortunately, we have at least one test that assumes calling the
+            // "toString" property of an error object will succeed if the
+            // debugger is allowed to access it, regardless of whether the
+            // debuggee is allowed to access it or not.
+            //
+            // To accomodate these tests, if calling the "toString" property
+            // from the debuggee compartment fails, we rewrap the error object
+            // in the debugger's compartment, and then call the "toString"
+            // property from there.
+            if (typeof error.unsafeDereference === "function") {
+              errorMessage = error.unsafeDereference().toString();
+            }
+          }
+        }
+
+        // It is possible that we won't have permission to unwrap an
+        // object and retrieve its errorMessageName.
         try {
           errorDocURL = ErrorDocs.GetURL(error);
+        } catch (ex) {}
+
+        try {
+          let line = error.errorLineNumber;
+          let column = error.errorColumnNumber;
+
+          if (typeof line === "number" && typeof column === "number") {
+            // Set frame only if we have line/column numbers.
+            frame = {
+              source: "debugger eval code",
+              line,
+              column
+            };
+          }
         } catch (ex) {}
       }
     }
@@ -934,6 +976,7 @@ WebConsoleActor.prototype =
       exception: errorGrip,
       exceptionMessage: this._createStringGrip(errorMessage),
       exceptionDocURL: errorDocURL,
+      frame,
       helperResult: helperResult,
     };
   },
@@ -1040,7 +1083,7 @@ WebConsoleActor.prototype =
   {
     let prefs = Object.create(null);
     for (let key of aRequest.preferences) {
-      prefs[key] = !!this._prefs[key];
+      prefs[key] = this._prefs[key];
     }
     return { preferences: prefs };
   },
@@ -1074,9 +1117,7 @@ WebConsoleActor.prototype =
     return { updated: Object.keys(aRequest.preferences) };
   },
 
-  // ////////////////
   // End of request handlers.
-  // ////////////////
 
   /**
    * Create an object with the API we expose to the Web Console during
@@ -1188,6 +1229,8 @@ WebConsoleActor.prototype =
    *        in the Inspector (or null, if there is no selection). This is used
    *        for helper functions that make reference to the currently selected
    *        node, like $0.
+   *         - url: the url to evaluate the script as. Defaults to
+   *         "debugger eval code".
    * @return object
    *         An object that holds the following properties:
    *         - dbg: the debugger where the string was evaluated.
@@ -1197,8 +1240,6 @@ WebConsoleActor.prototype =
    *         - result: the result of the evaluation.
    *         - helperResult: any result coming from a Web Console commands
    *         function.
-   *         - url: the url to evaluate the script as. Defaults to
-   *         "debugger eval code".
    */
   evalWithDebugger: function WCA_evalWithDebugger(aString, aOptions = {})
   {
@@ -1410,9 +1451,7 @@ WebConsoleActor.prototype =
     };
   },
 
-  // ////////////////
   // Event handlers for various listeners.
-  // ////////////////
 
   /**
    * Handler for messages received from the ConsoleServiceListener. This method
@@ -1690,9 +1729,7 @@ WebConsoleActor.prototype =
     this.conn.send(packet);
   },
 
-  // ////////////////
   // End of event handlers for various listeners.
-  // ////////////////
 
   /**
    * Prepare a message from the console API to be sent to the remote Web Console
@@ -1717,6 +1754,7 @@ WebConsoleActor.prototype =
     delete result.ID;
     delete result.innerID;
     delete result.consoleID;
+    delete result.originAttributes;
 
     result.arguments = Array.map(aMessage.arguments || [], (aObj) => {
       let dbgObj = this.makeDebuggeeValue(aObj, aUseObjectGlobal);

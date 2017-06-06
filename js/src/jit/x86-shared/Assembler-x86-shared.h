@@ -59,7 +59,9 @@ class Operand
     // Used as a Register::Encoding and a FloatRegister::Encoding.
     uint32_t base_ : 5;
     Scale scale_ : 3;
-    Register::Encoding index_ : 5;
+    // We don't use all 8 bits, of course, but GCC complains if the size of
+    // this field is smaller than the size of Register::Encoding.
+    Register::Encoding index_ : 8;
     int32_t disp_;
 
   public:
@@ -167,9 +169,8 @@ class Operand
           case REG:          return r.encoding() == reg();
           case MEM_REG_DISP: return r.encoding() == base();
           case MEM_SCALE:    return r.encoding() == base() || r.encoding() == index();
-          default: MOZ_CRASH("Unexpected Operand kind");
+          default:           return false;
         }
-        return false;
     }
 };
 
@@ -386,6 +387,8 @@ class AssemblerX86Shared : public AssemblerShared
     static Condition UnsignedCondition(Condition cond);
     static Condition ConditionWithoutEqual(Condition cond);
 
+    static DoubleCondition InvertCondition(DoubleCondition cond);
+
     // Return the primary condition to test. Some primary conditions may not
     // handle NaNs properly and may therefore require a secondary condition.
     // Use NaNCondFromDoubleCondition to determine what else is needed.
@@ -404,6 +407,18 @@ class AssemblerX86Shared : public AssemblerShared
                jumpRelocations_.oom() ||
                dataRelocations_.oom() ||
                preBarriers_.oom();
+    }
+
+    void disableProtection() { masm.disableProtection(); }
+    void enableProtection() { masm.enableProtection(); }
+    void setLowerBoundForProtection(size_t size) {
+        masm.setLowerBoundForProtection(size);
+    }
+    void unprotectRegion(unsigned char* first, size_t size) {
+        masm.unprotectRegion(first, size);
+    }
+    void reprotectRegion(unsigned char* first, size_t size) {
+        masm.reprotectRegion(first, size);
     }
 
     void setPrinter(Sprinter* sp) {
@@ -920,12 +935,12 @@ class AssemblerX86Shared : public AssemblerShared
     void j(Condition cond, RepatchLabel* label) { jSrc(cond, label); }
     void jmp(RepatchLabel* label) { jmpSrc(label); }
 
-    void j(Condition cond, wasm::JumpTarget target) {
+    void j(Condition cond, wasm::TrapDesc target) {
         Label l;
         j(cond, &l);
         bindLater(&l, target);
     }
-    void jmp(wasm::JumpTarget target) {
+    void jmp(wasm::TrapDesc target) {
         Label l;
         jmp(&l);
         bindLater(&l, target);
@@ -961,11 +976,11 @@ class AssemblerX86Shared : public AssemblerShared
         }
         label->bind(dst.offset());
     }
-    void bindLater(Label* label, wasm::JumpTarget target) {
+    void bindLater(Label* label, wasm::TrapDesc target) {
         if (label->used()) {
             JmpSrc jmp(label->offset());
             do {
-                append(target, jmp.offset());
+                append(wasm::TrapSite(target, jmp.offset()));
             } while (masm.nextJump(jmp, &jmp));
         }
         label->reset();
@@ -1056,21 +1071,29 @@ class AssemblerX86Shared : public AssemblerShared
     CodeOffset callWithPatch() {
         return CodeOffset(masm.call().offset());
     }
+
     void patchCall(uint32_t callerOffset, uint32_t calleeOffset) {
-        unsigned char* code = masm.data();
-        X86Encoding::AutoUnprotectAssemblerBufferRegion unprotect(masm, callerOffset - 4, 4);
+        unsigned char* code = masm.acquireData();
         X86Encoding::SetRel32(code + callerOffset, code + calleeOffset);
+        masm.releaseData();
     }
-    CodeOffset thunkWithPatch() {
+    CodeOffset farJumpWithPatch() {
         return CodeOffset(masm.jmp().offset());
     }
-    void patchThunk(uint32_t thunkOffset, uint32_t targetOffset) {
-        unsigned char* code = masm.data();
-        X86Encoding::AutoUnprotectAssemblerBufferRegion unprotect(masm, thunkOffset - 4, 4);
-        X86Encoding::SetRel32(code + thunkOffset, code + targetOffset);
+    void patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
+        unsigned char* code = masm.acquireData();
+        X86Encoding::SetRel32(code + farJump.offset(), code + targetOffset);
+        masm.releaseData();
     }
-    static void repatchThunk(uint8_t* code, uint32_t thunkOffset, uint32_t targetOffset) {
-        X86Encoding::SetRel32(code + thunkOffset, code + targetOffset);
+    static void repatchFarJump(uint8_t* code, uint32_t farJumpOffset, uint32_t targetOffset) {
+        X86Encoding::SetRel32(code + farJumpOffset, code + targetOffset);
+    }
+
+    // This is for patching during code generation, not after.
+    void patchAddl(CodeOffset offset, int32_t n) {
+        unsigned char* code = masm.acquireData();
+        X86Encoding::SetInt32(code + offset.offset(), n);
+        masm.releaseData();
     }
 
     CodeOffset twoByteNop() {
@@ -1081,6 +1104,13 @@ class AssemblerX86Shared : public AssemblerShared
     }
     static void patchJumpToTwoByteNop(uint8_t* jump) {
         X86Encoding::BaseAssembler::patchJumpToTwoByteNop(jump);
+    }
+
+    static void patchFiveByteNopToCall(uint8_t* callsite, uint8_t* target) {
+        X86Encoding::BaseAssembler::patchFiveByteNopToCall(callsite, target);
+    }
+    static void patchCallToFiveByteNop(uint8_t* callsite) {
+        X86Encoding::BaseAssembler::patchCallToFiveByteNop(callsite);
     }
 
     void breakpoint() {

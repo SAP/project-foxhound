@@ -181,7 +181,7 @@ public:
     virtual ots::TableAction GetTableAction(uint32_t aTag) override {
         // Preserve Graphite, color glyph and SVG tables
         if (
-#ifdef RELEASE_BUILD // For Beta/Release, also allow OT Layout tables through
+#ifdef RELEASE_OR_BETA // For Beta/Release, also allow OT Layout tables through
                      // unchecked, and rely on harfbuzz to handle them safely.
             aTag == TRUETYPE_TAG('G', 'D', 'E', 'F') ||
             aTag == TRUETYPE_TAG('G', 'P', 'O', 'S') ||
@@ -319,6 +319,19 @@ gfxUserFontEntry::GetFamilyNameAndURIForLogging(nsACString& aFamilyName,
   } else {
     if (mSrcList[mSrcIndex].mURI) {
       mSrcList[mSrcIndex].mURI->GetSpec(aURI);
+      // If the source URI was very long, elide the middle of it.
+      // In principle, the byte-oriented chopping here could leave us
+      // with partial UTF-8 characters at the point where we cut it,
+      // but it really doesn't matter as this is just for logging.
+      const uint32_t kMaxURILengthForLogging = 256;
+      // UTF-8 ellipsis, with spaces to allow additional wrap opportunities
+      // in the resulting log message
+      const char kEllipsis[] = { ' ', '\xE2', '\x80', '\xA6', ' ' };
+      if (aURI.Length() > kMaxURILengthForLogging) {
+        aURI.Replace(kMaxURILengthForLogging / 2,
+                     aURI.Length() - kMaxURILengthForLogging,
+                     kEllipsis, ArrayLength(kEllipsis));
+      }
     } else {
       aURI.AppendLiteral("(invalid URI)");
     }
@@ -422,7 +435,10 @@ gfxUserFontEntry::LoadNextSrc()
         // src local ==> lookup and load immediately
 
         if (currSrc.mSourceType == gfxFontFaceSrc::eSourceType_Local) {
-            gfxFontEntry* fe =
+            // Don't look up local fonts if the font whitelist is being used.
+            gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
+            gfxFontEntry* fe = pfl && pfl->IsFontFamilyWhitelistActive() ?
+                nullptr :
                 gfxPlatform::GetPlatform()->LookupLocalFont(currSrc.mLocalName,
                                                             mWeight,
                                                             mStretch,

@@ -7,6 +7,8 @@
 #include "ThreadInfo.h"
 #include "ThreadProfile.h"
 
+#include "mozilla/DebugOnly.h"
+
 ThreadInfo::ThreadInfo(const char* aName, int aThreadId,
                        bool aIsMainThread, PseudoStack* aPseudoStack,
                        void* aStackTop)
@@ -15,13 +17,11 @@ ThreadInfo::ThreadInfo(const char* aName, int aThreadId,
   , mIsMainThread(aIsMainThread)
   , mPseudoStack(aPseudoStack)
   , mPlatformData(Sampler::AllocPlatformData(aThreadId))
-  , mProfile(nullptr)
   , mStackTop(aStackTop)
   , mPendingDelete(false)
 {
-#ifndef SPS_STANDALONE
+  MOZ_COUNT_CTOR(ThreadInfo);
   mThread = NS_GetCurrentThread();
-#endif
 
   // We don't have to guess on mac
 #ifdef XP_MACOSX
@@ -31,12 +31,7 @@ ThreadInfo::ThreadInfo(const char* aName, int aThreadId,
 }
 
 ThreadInfo::~ThreadInfo() {
-  free(mName);
-
-  if (mProfile)
-    delete mProfile;
-
-  Sampler::FreePlatformData(mPlatformData);
+  MOZ_COUNT_DTOR(ThreadInfo);
 }
 
 void
@@ -50,3 +45,16 @@ ThreadInfo::SetPendingDelete()
   }
 }
 
+bool
+ThreadInfo::CanInvokeJS() const
+{
+  nsIThread* thread = GetThread();
+  if (!thread) {
+    MOZ_ASSERT(IsMainThread());
+    return true;
+  }
+  bool result;
+  mozilla::DebugOnly<nsresult> rv = thread->GetCanInvokeJS(&result);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  return result;
+}

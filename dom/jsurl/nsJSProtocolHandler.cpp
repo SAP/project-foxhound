@@ -36,7 +36,6 @@
 #include "nsIContentViewer.h"
 #include "nsIXPConnect.h"
 #include "nsContentUtils.h"
-#include "nsNullPrincipal.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIScriptChannel.h"
@@ -160,7 +159,10 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
         nsCOMPtr<nsILoadInfo> loadInfo;
         aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
         if (loadInfo && loadInfo->GetForceInheritPrincipal()) {
-            principal = loadInfo->TriggeringPrincipal();
+            principal = loadInfo->PrincipalToInherit();
+            if (!principal) {
+                principal = loadInfo->TriggeringPrincipal();
+            }
         } else {
             // No execution without a principal!
             NS_ASSERTION(!owner, "Non-principal owner?");
@@ -180,6 +182,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
         bool allowsInlineScript = true;
         rv = csp->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
                                   EmptyString(), // aNonce
+                                  true,         // aParserCreated
                                   EmptyString(), // aContent
                                   0,             // aLineNumber
                                   &allowsInlineScript);
@@ -332,7 +335,7 @@ public:
     NS_FORWARD_SAFE_NSIPROPERTYBAG(mPropertyBag)
     NS_FORWARD_SAFE_NSIPROPERTYBAG2(mPropertyBag)
 
-    nsresult Init(nsIURI *aURI);
+    nsresult Init(nsIURI *aURI, nsILoadInfo* aLoadInfo);
 
     // Actually evaluate the script.
     void EvaluateScript();
@@ -350,17 +353,16 @@ protected:
     nsCOMPtr<nsIChannel>    mStreamChannel;
     nsCOMPtr<nsIPropertyBag2> mPropertyBag;
     nsCOMPtr<nsIStreamListener> mListener;  // Our final listener
-    nsCOMPtr<nsISupports> mContext; // The context passed to AsyncOpen
     nsCOMPtr<nsPIDOMWindowInner> mOriginalInnerWindow;  // The inner window our load
                                                         // started against.
-    // If we blocked onload on a document in AsyncOpen, this is the document we
+    // If we blocked onload on a document in AsyncOpen2, this is the document we
     // did it on.
     nsCOMPtr<nsIDocument>   mDocumentOnloadBlockedOn;
 
     nsresult mStatus; // Our status
 
     nsLoadFlags             mLoadFlags;
-    nsLoadFlags             mActualLoadFlags; // See AsyncOpen
+    nsLoadFlags             mActualLoadFlags; // See AsyncOpen2
 
     RefPtr<nsJSThunk>     mIOThunk;
     PopupControlState       mPopupState;
@@ -400,7 +402,7 @@ nsresult nsJSChannel::StopAll()
     return rv;
 }
 
-nsresult nsJSChannel::Init(nsIURI *aURI)
+nsresult nsJSChannel::Init(nsIURI* aURI, nsILoadInfo* aLoadInfo)
 {
     RefPtr<nsJSURI> jsURI;
     nsresult rv = aURI->QueryInterface(kJSURICID,
@@ -414,21 +416,13 @@ nsresult nsJSChannel::Init(nsIURI *aURI)
     // Remember, until AsyncOpen is called, the script will not be evaluated
     // and the underlying Input Stream will not be created...
     nsCOMPtr<nsIChannel> channel;
-
-    nsCOMPtr<nsIPrincipal> nullPrincipal = nsNullPrincipal::Create();
-
-    // If the resultant script evaluation actually does return a value, we
-    // treat it as html.
-    // The following channel is never openend, so it does not matter what
-    // securityFlags we pass; let's follow the principle of least privilege.
-    rv = NS_NewInputStreamChannel(getter_AddRefs(channel),
-                                  aURI,
-                                  mIOThunk,
-                                  nullPrincipal,
-                                  nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
-                                  nsIContentPolicy::TYPE_OTHER,
-                                  NS_LITERAL_CSTRING("text/html"));
-    if (NS_FAILED(rv)) return rv;
+    rv = NS_NewInputStreamChannelInternal(getter_AddRefs(channel),
+                                          aURI,
+                                          mIOThunk,
+                                          NS_LITERAL_CSTRING("text/html"),
+                                          EmptyCString(),
+                                          aLoadInfo);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     rv = mIOThunk->Init(aURI);
     if (NS_SUCCEEDED(rv)) {
@@ -559,6 +553,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
                "security flags in loadInfo but asyncOpen2() not called");
     }
 #endif
+    MOZ_RELEASE_ASSERT(!aContext, "please call AsyncOpen2()");
 
     NS_ENSURE_ARG(aListener);
 
@@ -580,7 +575,6 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
     }
     
     mListener = aListener;
-    mContext = aContext;
 
     mIsActive = true;
 
@@ -651,7 +645,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
             return mStatus;
         }
 
-        // We're returning success from asyncOpen(), but we didn't open a
+        // We're returning success from asyncOpen2(), but we didn't open a
         // stream channel.  We'll have to notify ourselves, but make sure to do
         // it asynchronously.
         method = &nsJSChannel::NotifyListener;            
@@ -768,7 +762,7 @@ nsJSChannel::EvaluateScript()
         return;
     }
     
-    mStatus = mStreamChannel->AsyncOpen(this, mContext);
+    mStatus = mStreamChannel->AsyncOpen2(this);
     if (NS_SUCCEEDED(mStatus)) {
         // mStreamChannel will call OnStartRequest and OnStopRequest on
         // us, so we'll be sure to call them on our listener.
@@ -796,8 +790,8 @@ nsJSChannel::EvaluateScript()
 void
 nsJSChannel::NotifyListener()
 {
-    mListener->OnStartRequest(this, mContext);
-    mListener->OnStopRequest(this, mContext, mStatus);
+    mListener->OnStartRequest(this, nullptr);
+    mListener->OnStopRequest(this, nullptr, mStatus);
 
     CleanupStrongRefs();
 }
@@ -806,7 +800,6 @@ void
 nsJSChannel::CleanupStrongRefs()
 {
     mListener = nullptr;
-    mContext = nullptr;
     mOriginalInnerWindow = nullptr;
     if (mDocumentOnloadBlockedOn) {
         mDocumentOnloadBlockedOn->UnblockOnload(false);
@@ -1152,8 +1145,12 @@ nsJSProtocolHandler::EnsureUTF8Spec(const nsAFlatCString &aSpec, const char *aCh
   rv = mTextToSubURI->UnEscapeNonAsciiURI(nsDependentCString(aCharset), aSpec, uStr);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!IsASCII(uStr))
-    NS_EscapeURL(NS_ConvertUTF16toUTF8(uStr), esc_AlwaysCopy | esc_OnlyNonASCII, aUTF8Spec);
+  if (!IsASCII(uStr)) {
+    rv = NS_EscapeURL(NS_ConvertUTF16toUTF8(uStr),
+                      esc_AlwaysCopy | esc_OnlyNonASCII, aUTF8Spec,
+                      mozilla::fallible);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }
@@ -1226,17 +1223,12 @@ nsJSProtocolHandler::NewChannel2(nsIURI* uri,
     nsresult rv;
 
     NS_ENSURE_ARG_POINTER(uri);
-
     RefPtr<nsJSChannel> channel = new nsJSChannel();
     if (!channel) {
         return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    rv = channel->Init(uri);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // set the loadInfo on the new channel
-    rv = channel->SetLoadInfo(aLoadInfo);
+    rv = channel->Init(uri, aLoadInfo);
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (NS_SUCCEEDED(rv)) {

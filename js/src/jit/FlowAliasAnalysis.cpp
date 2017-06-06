@@ -402,7 +402,7 @@ DumpImprovement(MDefinition *load, MDefinitionVector& input, MDefinitionVector& 
     if (JitSpewEnabled(JitSpew_Alias)) {
         Fprinter &print = JitSpewPrinter();
         JitSpewHeader(JitSpew_Alias);
-        print.printf("   Improve dependency from ", load->id());
+        print.printf("   Improve dependency from %d", load->id());
         DumpStoreList(input);
         print.printf(" to ");
         DumpStoreList(output);
@@ -815,7 +815,7 @@ FlowAliasAnalysis::saveStoreDependency(MDefinition* ins, BlockStoreInfo& prevSto
     // To form a store dependency chain, we store the previous last dependencies
     // in the current store.
 
-    StoreDependency* dependency = new(alloc()) StoreDependency(alloc());
+    StoreDependency* dependency = new(alloc().fallible()) StoreDependency(alloc());
     if (!dependency)
         return false;
     if (!dependency->init(prevStores))

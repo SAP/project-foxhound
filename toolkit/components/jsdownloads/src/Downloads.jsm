@@ -14,8 +14,7 @@ this.EXPORTED_SYMBOLS = [
   "Downloads",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -39,11 +38,11 @@ XPCOMUtils.defineLazyModuleGetter(this, "Promise",
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 
+/* global DownloadIntegration */
 Integration.downloads.defineModuleGetter(this, "DownloadIntegration",
             "resource://gre/modules/DownloadIntegration.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// Downloads
+// Downloads
 
 /**
  * This object is exposed directly to the consumers of this JavaScript module,
@@ -103,8 +102,7 @@ this.Downloads = {
    * @resolves The newly created Download object.
    * @rejects JavaScript exception.
    */
-  createDownload: function D_createDownload(aProperties)
-  {
+  createDownload: function D_createDownload(aProperties) {
     try {
       return Promise.resolve(Download.fromSerializable(aProperties));
     } catch (ex) {
@@ -140,7 +138,7 @@ this.Downloads = {
    * @resolves When the download has finished successfully.
    * @rejects JavaScript exception if the download failed.
    */
-  fetch: function (aSource, aTarget, aOptions) {
+  fetch(aSource, aTarget, aOptions) {
     return this.createDownload({
       source: aSource,
       target: aTarget,
@@ -171,8 +169,7 @@ this.Downloads = {
    * @resolves The requested DownloadList or DownloadCombinedList object.
    * @rejects JavaScript exception.
    */
-  getList: function (aType)
-  {
+  getList(aType) {
     if (!this._promiseListsInitialized) {
       this._promiseListsInitialized = Task.spawn(function* () {
         let publicList = new DownloadList();
@@ -233,8 +230,7 @@ this.Downloads = {
    * @resolves The requested DownloadList or DownloadCombinedList object.
    * @rejects JavaScript exception.
    */
-  getSummary: function (aType)
-  {
+  getSummary(aType) {
     if (aType != Downloads.PUBLIC && aType != Downloads.PRIVATE &&
         aType != Downloads.ALL) {
       throw new Error("Invalid aType argument.");

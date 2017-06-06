@@ -12,9 +12,6 @@ const Cc = Components.classes;
 const Cu = Components.utils;
 
 const POSITION_UNAVAILABLE = Ci.nsIDOMGeoPositionError.POSITION_UNAVAILABLE;
-const SETTINGS_DEBUG_ENABLED = "geolocation.debugging.enabled";
-const SETTINGS_CHANGED_TOPIC = "mozsettings-changed";
-const SETTINGS_WIFI_ENABLED = "wifi.enabled";
 
 var gLoggingEnabled = false;
 
@@ -32,7 +29,6 @@ var gLoggingEnabled = false;
 var gLocationRequestTimeout = 5000;
 
 var gWifiScanningEnabled = true;
-var gCellScanningEnabled = false;
 
 function LOG(aMsg) {
   if (gLoggingEnabled) {
@@ -243,10 +239,6 @@ function WifiGeoPositionProvider() {
     gWifiScanningEnabled = Services.prefs.getBoolPref("geo.wifi.scan");
   } catch (e) {}
 
-  try {
-    gCellScanningEnabled = Services.prefs.getBoolPref("geo.cell.scan");
-  } catch (e) {}
-
   this.wifiService = null;
   this.timer = null;
   this.started = false;
@@ -259,24 +251,6 @@ WifiGeoPositionProvider.prototype = {
                                            Ci.nsITimerCallback,
                                            Ci.nsIObserver]),
   listener: null,
-
-  observe: function(aSubject, aTopic, aData) {
-    if (aTopic != SETTINGS_CHANGED_TOPIC) {
-      return;
-    }
-
-    try {
-      if ("wrappedJSObject" in aSubject) {
-        aSubject = aSubject.wrappedJSObject;
-      }
-      if (aSubject.key == SETTINGS_DEBUG_ENABLED) {
-        gLoggingEnabled = aSubject.value;
-      } else if (aSubject.key == SETTINGS_WIFI_ENABLED) {
-        gWifiScanningEnabled = aSubject.value;
-      }
-    } catch (e) {
-    }
-  },
 
   resetTimer: function() {
     if (this.timer) {
@@ -296,37 +270,6 @@ WifiGeoPositionProvider.prototype = {
 
     this.started = true;
     let self = this;
-    let settingsCallback = {
-      handle: function(name, result) {
-        // Stop the B2G UI setting from overriding the js prefs setting, and turning off logging
-        // If gLoggingEnabled is already on during startup, that means it was set in js prefs.
-        if (name == SETTINGS_DEBUG_ENABLED && !gLoggingEnabled) {
-          gLoggingEnabled = result;
-        } else if (name == SETTINGS_WIFI_ENABLED) {
-          gWifiScanningEnabled = result;
-          if (self.wifiService) {
-            self.wifiService.stopWatching(self);
-          }
-          if (gWifiScanningEnabled) {
-            self.wifiService = Cc["@mozilla.org/wifi/monitor;1"].getService(Ci.nsIWifiMonitor);
-            self.wifiService.startWatching(self);
-          }
-        }
-      },
-
-      handleError: function(message) {
-        gLoggingEnabled = false;
-        LOG("settings callback threw an exception, dropping");
-      }
-    };
-
-    Services.obs.addObserver(this, SETTINGS_CHANGED_TOPIC, false);
-    let settingsService = Cc["@mozilla.org/settingsService;1"];
-    if (settingsService) {
-      let settings = settingsService.getService(Ci.nsISettingsService);
-      settings.createLock().get(SETTINGS_WIFI_ENABLED, settingsCallback);
-      settings.createLock().get(SETTINGS_DEBUG_ENABLED, settingsCallback);
-    }
 
     if (gWifiScanningEnabled && Cc["@mozilla.org/wifi/monitor;1"]) {
       if (this.wifiService) {
@@ -363,8 +306,6 @@ WifiGeoPositionProvider.prototype = {
       this.wifiService.stopWatching(this);
       this.wifiService = null;
     }
-
-    Services.obs.removeObserver(this, SETTINGS_CHANGED_TOPIC);
 
     this.listener = null;
     this.started = false;
@@ -408,56 +349,6 @@ WifiGeoPositionProvider.prototype = {
     this.sendLocationRequest(null);
   },
 
-  getMobileInfo: function() {
-    LOG("getMobileInfo called");
-    try {
-      let radioService = Cc["@mozilla.org/ril;1"]
-                    .getService(Ci.nsIRadioInterfaceLayer);
-      let service = Cc["@mozilla.org/mobileconnection/mobileconnectionservice;1"]
-                    .getService(Ci.nsIMobileConnectionService);
-
-      let result = [];
-      for (let i = 0; i < service.numItems; i++) {
-        LOG("Looking for SIM in slot:" + i + " of " + service.numItems);
-        let connection = service.getItemByServiceId(i);
-        let voice = connection && connection.voice;
-        let cell = voice && voice.cell;
-        let type = voice && voice.type;
-        let network = voice && voice.network;
-
-        if (network && cell && type) {
-          let radioTechFamily;
-          switch (type) {
-            case "gsm":
-            case "gprs":
-            case "edge":
-              radioTechFamily = "gsm";
-              break;
-            case "umts":
-            case "hsdpa":
-            case "hsupa":
-            case "hspa":
-            case "hspa+":
-              radioTechFamily = "wcdma";
-              break;
-            case "lte":
-              radioTechFamily = "lte";
-              break;
-            // CDMA cases to be handled in bug 1010282
-          };
-          result.push({ radioType: radioTechFamily,
-                      mobileCountryCode: voice.network.mcc,
-                      mobileNetworkCode: voice.network.mnc,
-                      locationAreaCode: cell.gsmLocationAreaCode,
-                      cellId: cell.gsmCellId });
-        }
-      }
-      return result;
-    } catch (e) {
-      return null;
-    }
-  },
-
   notify: function (timer) {
     this.sendLocationRequest(null);
   },
@@ -466,13 +357,6 @@ WifiGeoPositionProvider.prototype = {
     let data = { cellTowers: undefined, wifiAccessPoints: undefined };
     if (wifiData && wifiData.length >= 2) {
       data.wifiAccessPoints = wifiData;
-    }
-
-    if (gCellScanningEnabled) {
-      let cellData = this.getMobileInfo();
-      if (cellData && cellData.length > 0) {
-        data.cellTowers = cellData;
-      }
     }
 
     let useCached = isCachedRequestMoreAccurateThanServerRequest(data.cellTowers,

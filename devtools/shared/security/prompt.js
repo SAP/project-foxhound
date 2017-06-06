@@ -15,7 +15,7 @@ loader.lazyRequireGetter(this, "AuthenticationResult",
   "devtools/shared/security/auth", true);
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools-shared/locale/debugger.properties");
+const L10N = new LocalizationHelper("devtools/shared/locales/debugger.properties");
 
 var Client = exports.Client = {};
 var Server = exports.Server = {};
@@ -65,14 +65,14 @@ Client.defaultSendOOB = ({ authResult, oob }) => {
       let win = xulWindow.QueryInterface(Ci.nsIInterfaceRequestor)
                          .getInterface(Ci.nsIDOMWindow);
       win.addEventListener("load", function listener() {
-        win.removeEventListener("load", listener, false);
+        win.removeEventListener("load", listener);
         if (win.document.documentElement.getAttribute("id") != "commonDialog") {
           return;
         }
         // Found the window
         promptWindow = win;
         Services.wm.removeListener(windowListener);
-      }, false);
+      });
     },
     onCloseWindow() {},
     onWindowTitleChange() {}

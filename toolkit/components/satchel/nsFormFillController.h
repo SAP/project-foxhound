@@ -110,10 +110,12 @@ protected:
   nsString mLastSearchString;
 
   nsDataHashtable<nsPtrHashKey<const nsINode>, bool> mPwmgrInputs;
+  nsDataHashtable<nsPtrHashKey<const nsINode>, bool> mAutofillInputs;
 
   uint32_t mTimeout;
   uint32_t mMinResultsForPopup;
   uint32_t mMaxRows;
+  bool mContextMenuFiredBeforeFocus;
   bool mDisableAutoComplete;
   bool mCompleteDefaultIndex;
   bool mCompleteSelectedIndex;

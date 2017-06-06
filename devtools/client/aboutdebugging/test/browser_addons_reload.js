@@ -122,7 +122,7 @@ add_task(function* reloadButtonReloadsAddon() {
 
   const onBootstrapInstallCalled = new Promise(done => {
     Services.obs.addObserver(function listener() {
-      Services.obs.removeObserver(listener, ADDON_NAME, false);
+      Services.obs.removeObserver(listener, ADDON_NAME);
       info("Add-on was re-installed: " + ADDON_NAME);
       done();
     }, ADDON_NAME, false);
@@ -170,8 +170,8 @@ add_task(function* reloadButtonRefreshesMetadata() {
 
   // Wait for the add-on list to be updated with the reloaded name.
   const onReInstall = promiseAddonEvent("onInstalled");
-  const onAddonReloaded = waitForMutation(getAddonList(document),
-                                          { childList: true, subtree: true });
+  const onAddonReloaded = waitForContentMutation(getAddonList(document));
+
   const reloadButton = getReloadButton(document, manifestBase.name);
   reloadButton.click();
 

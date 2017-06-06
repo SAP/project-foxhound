@@ -21,7 +21,7 @@
 using namespace js;
 
 bool
-Wrapper::finalizeInBackground(Value priv) const
+Wrapper::finalizeInBackground(const Value& priv) const
 {
     if (!priv.isObject())
         return true;
@@ -380,6 +380,12 @@ js::UnwrapOneChecked(JSObject* obj, bool stopAtWindowProxy)
 
     const Wrapper* handler = Wrapper::wrapperHandler(obj);
     return handler->hasSecurityPolicy() ? nullptr : Wrapper::wrappedObject(obj);
+}
+
+void
+js::ReportAccessDenied(JSContext* cx)
+{
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_OBJECT_ACCESS_DENIED);
 }
 
 const char Wrapper::family = 0;

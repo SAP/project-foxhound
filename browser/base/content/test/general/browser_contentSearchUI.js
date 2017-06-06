@@ -195,28 +195,28 @@ add_task(function* cycleSuggestions() {
       accelKey: true,
     };
 
-    let state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+    let state = yield msg("key", { key: "VK_DOWN", modifiers });
     checkState(state, "xfoo", ["xfoo", "xbar"], 0, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_DOWN", modifiers });
     checkState(state, "xbar", ["xfoo", "xbar"], 1, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_DOWN", modifiers });
     checkState(state, "x", ["xfoo", "xbar"], -1, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_DOWN", modifiers });
     checkState(state, "xfoo", ["xfoo", "xbar"], 0, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_UP", modifiers });
     checkState(state, "x", ["xfoo", "xbar"], -1, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_UP", modifiers });
     checkState(state, "xbar", ["xfoo", "xbar"], 1, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_UP", modifiers });
     checkState(state, "xfoo", ["xfoo", "xbar"], 0, aSelectedButtonIndex);
 
-    state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+    state = yield msg("key", { key: "VK_UP", modifiers });
     checkState(state, "x", ["xfoo", "xbar"], -1, aSelectedButtonIndex);
   });
 
@@ -249,22 +249,22 @@ add_task(function* cycleOneOffs() {
     altKey: true,
   };
 
-  state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_DOWN", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 0);
 
-  state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_DOWN", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 1);
 
-  state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_DOWN", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1);
 
-  state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_UP", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 1);
 
-  state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_UP", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 0);
 
-  state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_UP", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1);
 
   // If the settings button is selected, pressing alt+up/down should select the
@@ -274,13 +274,13 @@ add_task(function* cycleOneOffs() {
   state = yield msg("key", "VK_TAB"); // Settings button selected.
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 2);
 
-  state = yield msg("key", { key: "VK_UP", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_UP", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 1);
 
   state = yield msg("key", "VK_TAB");
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 2);
 
-  state = yield msg("key", { key: "VK_DOWN", modifiers: modifiers });
+  state = yield msg("key", { key: "VK_DOWN", modifiers });
   checkState(state, "xbar", ["xfoo", "xbar"], 1, 0);
 
   yield msg("removeLastOneOff");
@@ -418,7 +418,7 @@ add_task(function* search() {
   // Test typing a query and pressing enter.
   let p = msg("waitForSearch");
   yield msg("key", { key: "x", waitForSuggestions: true });
-  yield msg("key", { key: "VK_RETURN", modifiers: modifiers });
+  yield msg("key", { key: "VK_RETURN", modifiers });
   let mesg = yield p;
   let eventData = {
     engineName: TEST_ENGINE_PREFIX + " " + TEST_ENGINE_BASENAME,
@@ -437,7 +437,7 @@ add_task(function* search() {
   yield msg("key", { key: "x", waitForSuggestions: true });
   yield msg("key", "VK_DOWN");
   yield msg("key", "VK_DOWN");
-  yield msg("key", { key: "VK_RETURN", modifiers: modifiers });
+  yield msg("key", { key: "VK_RETURN", modifiers });
   mesg = yield p;
   eventData.searchString = "xfoo";
   eventData.engineName = TEST_ENGINE_PREFIX + " " + TEST_ENGINE_BASENAME;
@@ -455,7 +455,7 @@ add_task(function* search() {
   yield msg("key", { key: "x", waitForSuggestions: true });
   yield msg("key", "VK_UP");
   yield msg("key", "VK_UP");
-  yield msg("key", { key: "VK_RETURN", modifiers: modifiers });
+  yield msg("key", { key: "VK_RETURN", modifiers });
   mesg = yield p;
   delete eventData.selection;
   eventData.searchString = "x";
@@ -470,7 +470,7 @@ add_task(function* search() {
   modifiers.button = 0;
   yield msg("key", { key: "x", waitForSuggestions: true });
   yield msg("mousemove", -1);
-  yield msg("click", { eltIdx: -1, modifiers: modifiers });
+  yield msg("click", { eltIdx: -1, modifiers });
   mesg = yield p;
   eventData.originalEvent = modifiers;
   eventData.engineName = TEST_ENGINE_PREFIX + " " + TEST_ENGINE_BASENAME;
@@ -483,7 +483,7 @@ add_task(function* search() {
   yield msg("key", { key: "x", waitForSuggestions: true });
   p = msg("waitForSearch");
   yield msg("mousemove", 1);
-  yield msg("click", { eltIdx: 1, modifiers: modifiers });
+  yield msg("click", { eltIdx: 1, modifiers });
   mesg = yield p;
   eventData.searchString = "xfoo";
   eventData.selection = {
@@ -499,7 +499,7 @@ add_task(function* search() {
   yield msg("key", { key: "x", waitForSuggestions: true });
   p = msg("waitForSearch");
   yield msg("mousemove", 3);
-  yield msg("click", { eltIdx: 3, modifiers: modifiers });
+  yield msg("click", { eltIdx: 3, modifiers });
   mesg = yield p;
   eventData.searchString = "x";
   eventData.engineName = TEST_ENGINE_PREFIX + " " + TEST_ENGINE_2_BASENAME;
@@ -515,7 +515,7 @@ add_task(function* search() {
   p = msg("waitForSearch");
   yield msg("mousemove", 1);
   yield msg("mousemove", 3);
-  yield msg("click", { eltIdx: 3, modifiers: modifiers });
+  yield msg("click", { eltIdx: 3, modifiers });
   mesg = yield p;
   eventData.searchString = "xfoo"
   eventData.selection = {
@@ -534,7 +534,7 @@ add_task(function* search() {
   yield msg("key", "VK_DOWN");
   yield msg("key", "VK_DOWN");
   yield msg("key", "VK_TAB");
-  yield msg("key", { key: "VK_RETURN", modifiers: modifiers });
+  yield msg("key", { key: "VK_RETURN", modifiers });
   mesg = yield p;
   eventData.selection = {
     index: 1,
@@ -554,7 +554,7 @@ add_task(function* search() {
   yield msg("commitComposition");
   delete modifiers.button;
   p = msg("waitForSearch");
-  yield msg("key", { key: "VK_RETURN", modifiers: modifiers });
+  yield msg("key", { key: "VK_RETURN", modifiers });
   mesg = yield p;
   eventData.searchString = "x"
   eventData.originalEvent = modifiers;
@@ -582,9 +582,8 @@ add_task(function* search() {
                           { str: "xfoo", type: "formHistory" }, "xbar"], 1);
 
   modifiers.button = 0;
-  let currentTab = gBrowser.selectedTab;
   p = msg("waitForSearch");
-  yield msg("click", { eltIdx: 1, modifiers: modifiers });
+  yield msg("click", { eltIdx: 1, modifiers });
   mesg = yield p;
   eventData.searchString = "xfoo";
   eventData.originalEvent = modifiers;
@@ -661,18 +660,18 @@ function setUp(aNoEngine) {
   });
 }
 
-function msg(type, data=null) {
+function msg(type, data = null) {
   gMsgMan.sendAsyncMessage(TEST_MSG, {
-    type: type,
-    data: data,
+    type,
+    data,
   });
   let deferred = Promise.defer();
-  gMsgMan.addMessageListener(TEST_MSG, function onMsg(msg) {
-    if (msg.data.type != type) {
+  gMsgMan.addMessageListener(TEST_MSG, function onMsg(msgObj) {
+    if (msgObj.data.type != type) {
       return;
     }
     gMsgMan.removeMessageListener(TEST_MSG, onMsg);
-    deferred.resolve(msg.data.data);
+    deferred.resolve(msgObj.data.data);
   });
   return deferred.promise;
 }
@@ -704,11 +703,9 @@ function checkState(actualState, expectedInputVal, expectedSuggestions,
   };
   if (expectedSelectedButtonIdx != undefined) {
     expectedState.selectedButtonIndex = expectedSelectedButtonIdx;
-  }
-  else if (expectedSelectedIdx < expectedSuggestions.length) {
+  } else if (expectedSelectedIdx < expectedSuggestions.length) {
     expectedState.selectedButtonIndex = -1;
-  }
-  else {
+  } else {
     expectedState.selectedButtonIndex = expectedSelectedIdx - expectedSuggestions.length;
   }
 
@@ -717,11 +714,10 @@ function checkState(actualState, expectedInputVal, expectedSuggestions,
 
 var gMsgMan;
 
-function promiseTab() {
+function* promiseTab() {
   let deferred = Promise.defer();
-  let tab = gBrowser.addTab();
-  registerCleanupFunction(() => gBrowser.removeTab(tab));
-  gBrowser.selectedTab = tab;
+  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser);
+  registerCleanupFunction(() => BrowserTestUtils.removeTab(tab));
   let pageURL = getRootDirectory(gTestPath) + TEST_PAGE_BASENAME;
   tab.linkedBrowser.addEventListener("load", function onLoad(event) {
     tab.linkedBrowser.removeEventListener("load", onLoad, true);
@@ -743,11 +739,11 @@ function promiseTab() {
 function promiseMsg(name, type, msgMan) {
   let deferred = Promise.defer();
   info("Waiting for " + name + " message " + type + "...");
-  msgMan.addMessageListener(name, function onMsg(msg) {
-    info("Received " + name + " message " + msg.data.type + "\n");
-    if (msg.data.type == type) {
+  msgMan.addMessageListener(name, function onMsg(msgObj) {
+    info("Received " + name + " message " + msgObj.data.type + "\n");
+    if (msgObj.data.type == type) {
       msgMan.removeMessageListener(name, onMsg);
-      deferred.resolve(msg);
+      deferred.resolve(msgObj);
     }
   });
   return deferred.promise;
@@ -760,7 +756,7 @@ function setUpEngines() {
     let currentEngines = Services.search.getVisibleEngines();
     info("Adding test search engines");
     let engine1 = yield promiseNewSearchEngine(TEST_ENGINE_BASENAME);
-    let engine2 = yield promiseNewSearchEngine(TEST_ENGINE_2_BASENAME);
+    yield promiseNewSearchEngine(TEST_ENGINE_2_BASENAME);
     Services.search.currentEngine = engine1;
     for (let engine of currentEngines) {
       Services.search.removeEngine(engine);

@@ -198,7 +198,16 @@ TEST_P(TlsConnectGeneric, SignatureAlgorithmServerOnly) {
             ssl_sig_ecdsa_secp384r1_sha384);
 }
 
-TEST_P(TlsConnectTls12Plus, SignatureSchemeCurveMismatch) {
+// In TLS 1.2, curve and hash aren't bound together.
+TEST_P(TlsConnectTls12, SignatureSchemeCurveMismatch) {
+  Reset(TlsAgent::kServerEcdsa256);
+  client_->SetSignatureSchemes(SignatureSchemeEcdsaSha384,
+                               PR_ARRAY_SIZE(SignatureSchemeEcdsaSha384));
+  Connect();
+}
+
+// In TLS 1.3, curve and hash are coupled.
+TEST_P(TlsConnectTls13, SignatureSchemeCurveMismatch) {
   Reset(TlsAgent::kServerEcdsa256);
   client_->SetSignatureSchemes(SignatureSchemeEcdsaSha384,
                                PR_ARRAY_SIZE(SignatureSchemeEcdsaSha384));
@@ -207,7 +216,16 @@ TEST_P(TlsConnectTls12Plus, SignatureSchemeCurveMismatch) {
   client_->CheckErrorCode(SSL_ERROR_NO_CYPHER_OVERLAP);
 }
 
-TEST_P(TlsConnectTls12Plus, SignatureSchemeBadConfig) {
+// Configuring a P-256 cert with only SHA-384 signatures is OK in TLS 1.2.
+TEST_P(TlsConnectTls12, SignatureSchemeBadConfig) {
+  Reset(TlsAgent::kServerEcdsa256);  // P-256 cert can't be used.
+  server_->SetSignatureSchemes(SignatureSchemeEcdsaSha384,
+                               PR_ARRAY_SIZE(SignatureSchemeEcdsaSha384));
+  Connect();
+}
+
+// A P-256 certificate in TLS 1.3 needs a SHA-256 signature scheme.
+TEST_P(TlsConnectTls13, SignatureSchemeBadConfig) {
   Reset(TlsAgent::kServerEcdsa256);  // P-256 cert can't be used.
   server_->SetSignatureSchemes(SignatureSchemeEcdsaSha384,
                                PR_ARRAY_SIZE(SignatureSchemeEcdsaSha384));
@@ -289,7 +307,7 @@ class BeforeFinished : public TlsRecordFilter {
         state_(BEFORE_CCS) {}
 
  protected:
-  virtual PacketFilter::Action FilterRecord(const RecordHeader& header,
+  virtual PacketFilter::Action FilterRecord(const TlsRecordHeader& header,
                                             const DataBuffer& body,
                                             DataBuffer* out) {
     switch (state_) {
@@ -507,7 +525,7 @@ TEST_P(TlsConnectGenericPre13, AuthCompleteDelayed) {
   EXPECT_EQ(TlsAgent::STATE_CONNECTED, server_->state());
 
   // Remove this before closing or the close_notify alert will trigger it.
-  client_->SetPacketFilter(nullptr);
+  client_->DeletePacketFilter();
 }
 
 // TLS 1.3 handles a delayed AuthComplete callback differently since the
@@ -528,7 +546,7 @@ TEST_P(TlsConnectTls13, AuthCompleteDelayed) {
   EXPECT_EQ(TlsAgent::STATE_CONNECTING, client_->state());
 
   // This should allow the handshake to complete now.
-  client_->SetPacketFilter(nullptr);
+  client_->DeletePacketFilter();
   EXPECT_EQ(SECSuccess, SSL_AuthCertificateComplete(client_->ssl_fd(), 0));
   client_->Handshake();  // Send Finished
   server_->Handshake();  // Transition to connected and send NewSessionTicket

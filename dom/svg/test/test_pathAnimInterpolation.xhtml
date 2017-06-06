@@ -335,10 +335,14 @@ function run()
          " from " + test.from + " to " + test.to);
   }
 
+  // Clear all the tests. We have tons of them attached to the DOM and refresh driver tick will
+  // go through them all by calling animation controller.
+  gSVG.remove();
+
   SimpleTest.finish();
 }
 
-window.addEventListener("load", run, false);
+window.addEventListener("load", run);
 ]]></script>
 </body>
 </html>

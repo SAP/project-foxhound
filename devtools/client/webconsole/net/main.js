@@ -13,20 +13,20 @@ var { utils: Cu } = Components;
 const rootUrl = "resource://devtools/client/webconsole/net/";
 const require = BrowserLoader({
   baseURI: rootUrl,
-  window: this}).require;
+  window}).require;
 
 const NetRequest = require("./net-request");
 const { loadSheet } = require("sdk/stylesheet/utils");
 
 // Localization
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/netmonitor.properties");
+const L10N = new LocalizationHelper("devtools/client/locales/netmonitor.properties");
 
 // Stylesheets
 var styleSheets = [
   "resource://devtools/client/jsonview/css/toolbar.css",
   "resource://devtools/client/shared/components/tree/tree-view.css",
-  "resource://devtools/client/shared/components/reps/reps.css",
+  "resource://devtools/client/shared/components/reps.css",
   "resource://devtools/client/webconsole/net/net-request.css",
   "resource://devtools/client/webconsole/net/components/size-limit.css",
   "resource://devtools/client/webconsole/net/components/net-info-body.css",

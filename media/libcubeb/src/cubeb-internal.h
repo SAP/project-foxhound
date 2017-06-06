@@ -8,6 +8,7 @@
 #define CUBEB_INTERNAL_0eb56756_4e20_4404_a76d_42bf88cd15a5
 
 #include "cubeb/cubeb.h"
+#include "cubeb_log.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,14 @@ void cubeb_crash() CLANG_ANALYZER_NORETURN;
 }
 #endif
 
+typedef struct {
+  char const * name;
+  unsigned int const channels;
+  cubeb_channel_layout const layout;
+} cubeb_layout_map;
+
+extern cubeb_layout_map const CUBEB_CHANNEL_LAYOUT_MAPS[CUBEB_LAYOUT_MAX];
+
 struct cubeb_ops {
   int (* init)(cubeb ** context, char const * context_name);
   char const * (* get_backend_id)(cubeb * context);
@@ -42,6 +51,7 @@ struct cubeb_ops {
                           cubeb_stream_params params,
                           uint32_t * latency_ms);
   int (* get_preferred_sample_rate)(cubeb * context, uint32_t * rate);
+  int (* get_preferred_channel_layout)(cubeb * context, cubeb_channel_layout * layout);
   int (* enumerate_devices)(cubeb * context, cubeb_device_type type,
                             cubeb_device_collection ** collection);
   void (* destroy)(cubeb * context);

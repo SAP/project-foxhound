@@ -31,7 +31,7 @@ let promise = require("promise");
 let defer = require("devtools/shared/defer");
 const Services = require("Services");
 const {Task} = require("devtools/shared/task");
-const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
+const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 
 const TEST_DIR = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
 const CHROME_URL_ROOT = TEST_DIR + "/";
@@ -96,6 +96,7 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.dump.emit");
   Services.prefs.clearUserPref("devtools.toolbox.host");
   Services.prefs.clearUserPref("devtools.toolbox.previousHost");
+  Services.prefs.clearUserPref("devtools.toolbox.splitconsoleEnabled");
 });
 
 registerCleanupFunction(function* cleanup() {
@@ -110,6 +111,7 @@ registerCleanupFunction(function* cleanup() {
  * @param {Object} options Object with various optional fields:
  *   - {Boolean} background If true, open the tab in background
  *   - {ChromeWindow} window Firefox top level window we should use to open the tab
+ *   - {String} preferredRemoteType
  * @return a promise that resolves to the tab object when the url is loaded
  */
 var addTab = Task.async(function* (url, options = { background: false, window: window }) {
@@ -118,7 +120,7 @@ var addTab = Task.async(function* (url, options = { background: false, window: w
   let { background } = options;
   let { gBrowser } = options.window ? options.window : window;
 
-  let tab = gBrowser.addTab(url);
+  let tab = gBrowser.addTab(url, {preferredRemoteType: options.preferredRemoteType});
   if (!background) {
     gBrowser.selectedTab = tab;
   }
@@ -201,15 +203,18 @@ function synthesizeKeyShortcut(key, target) {
   // parseElectronKey requires any window, just to access `KeyboardEvent`
   let window = Services.appShell.hiddenDOMWindow;
   let shortcut = KeyShortcuts.parseElectronKey(window, key);
-
-  info("Synthesizing key shortcut: " + key);
-  EventUtils.synthesizeKey(shortcut.key || "", {
-    keyCode: shortcut.keyCode,
+  let keyEvent = {
     altKey: shortcut.alt,
     ctrlKey: shortcut.ctrl,
     metaKey: shortcut.meta,
     shiftKey: shortcut.shift
-  }, target);
+  };
+  if (shortcut.keyCode) {
+    keyEvent.keyCode = shortcut.keyCode;
+  }
+
+  info("Synthesizing key shortcut: " + key);
+  EventUtils.synthesizeKey(shortcut.key || "", keyEvent, target);
 }
 
 /**
@@ -249,6 +254,41 @@ function waitForNEvents(target, eventName, numTimes, useCapture = false) {
   }
 
   return deferred.promise;
+}
+
+/**
+ * Wait for DOM change on target.
+ *
+ * @param {Object} target
+ *        The Node on which to observe DOM mutations.
+ * @param {String} selector
+ *        Given a selector to watch whether the expected element is changed
+ *        on target.
+ * @param {Number} expectedLength
+ *        Optional, default set to 1
+ *        There may be more than one element match an array match the selector,
+ *        give an expected length to wait for more elements.
+ * @return A promise that resolves when the event has been handled
+ */
+function waitForDOM(target, selector, expectedLength = 1) {
+  return new Promise((resolve) => {
+    let observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        let elements = mutation.target.querySelectorAll(selector);
+
+        if (elements.length === expectedLength) {
+          observer.disconnect();
+          resolve(elements);
+        }
+      });
+    });
+
+    observer.observe(target, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  });
 }
 
 /**
@@ -460,11 +500,14 @@ function waitForContextMenu(popup, button, onShown, onHidden) {
   popup.addEventListener("popupshown", onPopupShown);
 
   info("wait for the context menu to open");
-  button.scrollIntoView();
-  let eventDetails = {type: "contextmenu", button: 2};
-  EventUtils.synthesizeMouse(button, 5, 2, eventDetails,
-                             button.ownerDocument.defaultView);
+  synthesizeContextMenuEvent(button);
   return deferred.promise;
+}
+
+function synthesizeContextMenuEvent(el) {
+  el.scrollIntoView();
+  let eventDetails = {type: "contextmenu", button: 2};
+  EventUtils.synthesizeMouse(el, 5, 2, eventDetails, el.ownerDocument.defaultView);
 }
 
 /**
@@ -558,4 +601,66 @@ function stopRecordingTelemetryLogs(Telemetry) {
   delete Telemetry.prototype._oldlog;
   delete Telemetry.prototype._oldlogKeyed;
   delete Telemetry.prototype.telemetryInfo;
+}
+
+/**
+ * Clean the logical clipboard content. This method only clears the OS clipboard on
+ * Windows (see Bug 666254).
+ */
+function emptyClipboard() {
+  let clipboard = Cc["@mozilla.org/widget/clipboard;1"]
+    .getService(SpecialPowers.Ci.nsIClipboard);
+  clipboard.emptyClipboard(clipboard.kGlobalClipboard);
+}
+
+/**
+ * Check if the current operating system is Windows.
+ */
+function isWindows() {
+  return Services.appinfo.OS === "WINNT";
+}
+
+/**
+ * Wait for a given toolbox to get its title updated.
+ */
+function waitForTitleChange(toolbox) {
+  let deferred = defer();
+  toolbox.win.parent.addEventListener("message", function onmessage(event) {
+    if (event.data.name == "set-host-title") {
+      toolbox.win.parent.removeEventListener("message", onmessage);
+      deferred.resolve();
+    }
+  });
+  return deferred.promise;
+}
+
+/**
+ * Create an HTTP server that can be used to simulate custom requests within
+ * a test.  It is automatically cleaned up when the test ends, so no need to
+ * call `destroy`.
+ *
+ * See https://developer.mozilla.org/en-US/docs/Httpd.js/HTTP_server_for_unit_tests
+ * for more information about how to register handlers.
+ *
+ * The server can be accessed like:
+ *
+ *   const server = createTestHTTPServer();
+ *   let url = "http://localhost: " + server.identity.primaryPort + "/path";
+ *
+ * @returns {HttpServer}
+ */
+function createTestHTTPServer() {
+  const {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
+  let server = new HttpServer();
+
+  registerCleanupFunction(function* cleanup() {
+    let destroyed = defer();
+    server.stop(() => {
+      destroyed.resolve();
+    });
+    yield destroyed.promise;
+  });
+
+  server.start(-1);
+  return server;
 }

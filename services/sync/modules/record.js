@@ -43,7 +43,7 @@ WBORecord.prototype = {
   // Get thyself from your URI, then deserialize.
   // Set thine 'response' field.
   fetch: function fetch(resource) {
-    if (!resource instanceof Resource) {
+    if (!(resource instanceof Resource)) {
       throw new Error("First argument must be a Resource instance.");
     }
 
@@ -56,7 +56,7 @@ WBORecord.prototype = {
   },
 
   upload: function upload(resource) {
-    if (!resource instanceof Resource) {
+    if (!(resource instanceof Resource)) {
       throw new Error("First argument must be a Resource instance.");
     }
 
@@ -65,7 +65,7 @@ WBORecord.prototype = {
 
   // Take a base URI string, with trailing slash, and return the URI of this
   // WBO based on collection and ID.
-  uri: function(base) {
+  uri(base) {
     if (this.collection && this.id) {
       let url = Utils.makeURI(base + this.collection + "/" + this.id);
       url.QueryInterface(Ci.nsIURL);
@@ -80,7 +80,7 @@ WBORecord.prototype = {
     try {
       // The payload is likely to be JSON, but if not, keep it as a string
       this.payload = JSON.parse(this.payload);
-    } catch(ex) {}
+    } catch (ex) {}
   },
 
   toJSON: function toJSON() {
@@ -95,11 +95,11 @@ WBORecord.prototype = {
 
   toString: function toString() {
     return "{ " +
-      "id: "       + this.id        + "  " +
-      "index: "    + this.sortindex + "  " +
-      "modified: " + this.modified  + "  " +
-      "ttl: "      + this.ttl       + "  " +
-      "payload: "  + JSON.stringify(this.payload) +
+      "id: " + this.id + "  " +
+      "index: " + this.sortindex + "  " +
+      "modified: " + this.modified + "  " +
+      "ttl: " + this.ttl + "  " +
+      "payload: " + JSON.stringify(this.payload) +
       " }";
   }
 };
@@ -186,11 +186,11 @@ CryptoWrapper.prototype = {
     let payload = this.deleted ? "DELETED" : JSON.stringify(this.cleartext);
 
     return "{ " +
-      "id: "         + this.id          + "  " +
-      "index: "      + this.sortindex   + "  " +
-      "modified: "   + this.modified    + "  " +
-      "ttl: "        + this.ttl         + "  " +
-      "payload: "    + payload          + "  " +
+      "id: " + this.id + "  " +
+      "index: " + this.sortindex + "  " +
+      "modified: " + this.modified + "  " +
+      "ttl: " + this.ttl + "  " +
+      "payload: " + payload + "  " +
       "collection: " + (this.collection || "undefined") +
       " }";
   },
@@ -281,10 +281,10 @@ RecordManager.prototype = {
  * You can update this thing simply by giving it /info/collections. It'll
  * use the last modified time to bring itself up to date.
  */
-this.CollectionKeyManager = function CollectionKeyManager() {
-  this.lastModified = 0;
-  this._collections = {};
-  this._default = null;
+this.CollectionKeyManager = function CollectionKeyManager(lastModified, default_, collections) {
+  this.lastModified = lastModified || 0;
+  this._default = default_ || null;
+  this._collections = collections || {};
 
   this._log = Log.repository.getLogger("Sync.CollectionKeyManager");
 }
@@ -292,6 +292,19 @@ this.CollectionKeyManager = function CollectionKeyManager() {
 // TODO: persist this locally as an Identity. Bug 610913.
 // Note that the last modified time needs to be preserved.
 CollectionKeyManager.prototype = {
+
+  /**
+   * Generate a new CollectionKeyManager that has the same attributes
+   * as this one.
+   */
+  clone() {
+    const newCollections = {};
+    for (let c in this._collections) {
+      newCollections[c] = this._collections[c];
+    }
+
+    return new CollectionKeyManager(this.lastModified, this._default, newCollections);
+  },
 
   // Return information about old vs new keys:
   // * same: true if two collections are equal
@@ -317,7 +330,7 @@ CollectionKeyManager.prototype = {
     let last;
     changed = changed.filter(x => (x != last) && (last = x));
     return {same: changed.length == 0,
-            changed: changed};
+            changed};
   },
 
   get isClear() {
@@ -331,7 +344,7 @@ CollectionKeyManager.prototype = {
     this._default = null;
   },
 
-  keyForCollection: function(collection) {
+  keyForCollection(collection) {
     if (collection && this._collections[collection])
       return this._collections[collection];
 
@@ -343,7 +356,7 @@ CollectionKeyManager.prototype = {
    * over it and generate random keys for each collection.
    * Create a WBO for the given data.
    */
-  _makeWBO: function(collections, defaultBundle) {
+  _makeWBO(collections, defaultBundle) {
     let wbo = new CryptoWrapper(CRYPTO_COLLECTION, KEYS_WBO);
     let c = {};
     for (let k in collections) {
@@ -361,42 +374,92 @@ CollectionKeyManager.prototype = {
   /**
    * Create a WBO for the current keys.
    */
-  asWBO: function(collection, id) {
+  asWBO(collection, id) {
     return this._makeWBO(this._collections, this._default);
   },
 
   /**
    * Compute a new default key, and new keys for any specified collections.
    */
-  newKeys: function(collections) {
-    let newDefaultKey = new BulkKeyBundle(DEFAULT_KEYBUNDLE_NAME);
-    newDefaultKey.generateRandom();
+  newKeys(collections) {
+    let newDefaultKeyBundle = this.newDefaultKeyBundle();
 
     let newColls = {};
     if (collections) {
-      collections.forEach(function (c) {
+      collections.forEach(function(c) {
         let b = new BulkKeyBundle(c);
         b.generateRandom();
         newColls[c] = b;
       });
     }
-    return [newDefaultKey, newColls];
+    return [newDefaultKeyBundle, newColls];
   },
 
   /**
    * Generates new keys, but does not replace our local copy. Use this to
    * verify an upload before storing.
    */
-  generateNewKeysWBO: function(collections) {
+  generateNewKeysWBO(collections) {
     let newDefaultKey, newColls;
     [newDefaultKey, newColls] = this.newKeys(collections);
 
     return this._makeWBO(newColls, newDefaultKey);
   },
 
+  /**
+   * Create a new default key.
+   *
+   * @returns {BulkKeyBundle}
+   */
+  newDefaultKeyBundle() {
+    const key = new BulkKeyBundle(DEFAULT_KEYBUNDLE_NAME);
+    key.generateRandom();
+    return key;
+  },
+
+  /**
+   * Create a new default key and store it as this._default, since without one you cannot use setContents.
+   */
+  generateDefaultKey() {
+    this._default = this.newDefaultKeyBundle();
+  },
+
+  /**
+   * Return true if keys are already present for each of the given
+   * collections.
+   */
+  hasKeysFor(collections) {
+    // We can't use filter() here because sometimes collections is an iterator.
+    for (let collection of collections) {
+      if (!this._collections[collection]) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * Return a new CollectionKeyManager that has keys for each of the
+   * given collections (creating new ones for collections where we
+   * don't already have keys).
+   */
+  ensureKeysFor(collections) {
+    const newKeys = Object.assign({}, this._collections);
+    for (let c of collections) {
+      if (newKeys[c]) {
+        continue;  // don't replace existing keys
+      }
+
+      const b = new BulkKeyBundle(c);
+      b.generateRandom();
+      newKeys[c] = b;
+    }
+    return new CollectionKeyManager(this.lastModified, this._default, newKeys);
+  },
+
   // Take the fetched info/collections WBO, checking the change
   // time of the crypto collection.
-  updateNeeded: function(info_collections) {
+  updateNeeded(info_collections) {
 
     this._log.info("Testing for updateNeeded. Last modified: " + this.lastModified);
 
@@ -423,9 +486,6 @@ CollectionKeyManager.prototype = {
   // * Otherwise, return false -- we were up-to-date.
   //
   setContents: function setContents(payload, modified) {
-
-    if (!modified)
-      throw "No modified time provided to setContents.";
 
     let self = this;
 
@@ -456,9 +516,7 @@ CollectionKeyManager.prototype = {
         if (v) {
           let keyObj = new BulkKeyBundle(k);
           keyObj.keyPairB64 = v;
-          if (keyObj) {
-            newCollections[k] = keyObj;
-          }
+          newCollections[k] = keyObj;
         }
       }
     }
@@ -469,8 +527,11 @@ CollectionKeyManager.prototype = {
     let sameColls = collComparison.same;
 
     if (sameDefault && sameColls) {
-      self._log.info("New keys are the same as our old keys! Bumped local modified time.");
-      self.lastModified = modified;
+      self._log.info("New keys are the same as our old keys!");
+      if (modified) {
+        self._log.info("Bumped local modified time.");
+        self.lastModified = modified;
+      }
       return false;
     }
 
@@ -482,8 +543,10 @@ CollectionKeyManager.prototype = {
     this._collections = newCollections;
 
     // Always trust the server.
-    self._log.info("Bumping last modified to " + modified);
-    self.lastModified = modified;
+    if (modified) {
+      self._log.info("Bumping last modified to " + modified);
+      self.lastModified = modified;
+    }
 
     return sameDefault ? collComparison.changed : true;
   },
@@ -531,9 +594,12 @@ this.Collection = function Collection(uri, recordObj, service) {
   this._older = 0;
   this._newer = 0;
   this._data = [];
-  // optional members used by batch operations.
+  // optional members used by batch upload operations.
   this._batch = null;
   this._commit = false;
+  // Used for batch download operations -- note that this is explicitly an
+  // opaque value and not (necessarily) a number.
+  this._offset = null;
 }
 Collection.prototype = {
   __proto__: Resource.prototype,
@@ -545,14 +611,14 @@ Collection.prototype = {
 
     let args = [];
     if (this.older)
-      args.push('older=' + this.older);
+      args.push("older=" + this.older);
     else if (this.newer) {
-      args.push('newer=' + this.newer);
+      args.push("newer=" + this.newer);
     }
     if (this.full)
-      args.push('full=1');
+      args.push("full=1");
     if (this.sort)
-      args.push('sort=' + this.sort);
+      args.push("sort=" + this.sort);
     if (this.ids != null)
       args.push("ids=" + this.ids);
     if (this.limit > 0 && this.limit != Infinity)
@@ -561,8 +627,10 @@ Collection.prototype = {
       args.push("batch=" + encodeURIComponent(this._batch));
     if (this._commit)
       args.push("commit=true");
+    if (this._offset)
+      args.push("offset=" + encodeURIComponent(this._offset));
 
-    this.uri.query = (args.length > 0)? '?' + args.join('&') : '';
+    this.uri.query = (args.length > 0) ? "?" + args.join("&") : "";
   },
 
   // get full items
@@ -610,17 +678,100 @@ Collection.prototype = {
     this._rebuildURL();
   },
 
+  get offset() { return this._offset; },
+  set offset(value) {
+    this._offset = value;
+    this._rebuildURL();
+  },
+
   // Set information about the batch for this request.
-  get batch() { return _batch; },
+  get batch() { return this._batch; },
   set batch(value) {
     this._batch = value;
     this._rebuildURL();
   },
 
-  get commit() { return _commit; },
+  get commit() { return this._commit; },
   set commit(value) {
     this._commit = value && true;
     this._rebuildURL();
+  },
+
+  // Similar to get(), but will page through the items `batchSize` at a time,
+  // deferring calling the record handler until we've gotten them all.
+  //
+  // Returns the last response processed, and doesn't run the record handler
+  // on any items if a non-success status is received while downloading the
+  // records (or if a network error occurs).
+  getBatched(batchSize = DEFAULT_DOWNLOAD_BATCH_SIZE) {
+    let totalLimit = Number(this.limit) || Infinity;
+    if (batchSize <= 0 || batchSize >= totalLimit) {
+      // Invalid batch sizes should arguably be an error, but they're easy to handle
+      return this.get();
+    }
+
+    if (!this.full) {
+      throw new Error("getBatched is unimplemented for guid-only GETs");
+    }
+
+    // _onComplete and _onProgress are reset after each `get` by AsyncResource.
+    // We overwrite _onRecord to something that stores the data in an array
+    // until the end.
+    let { _onComplete, _onProgress, _onRecord } = this;
+    let recordBuffer = [];
+    let resp;
+    try {
+      this._onRecord = r => recordBuffer.push(r);
+      let lastModifiedTime;
+      this.limit = batchSize;
+
+      do {
+        this._onProgress = _onProgress;
+        this._onComplete = _onComplete;
+        if (batchSize + recordBuffer.length > totalLimit) {
+          this.limit = totalLimit - recordBuffer.length;
+        }
+        this._log.trace("Performing batched GET", { limit: this.limit, offset: this.offset });
+        // Actually perform the request
+        resp = this.get();
+        if (!resp.success) {
+          break;
+        }
+
+        // Initialize last modified, or check that something broken isn't happening.
+        let lastModified = resp.headers["x-last-modified"];
+        if (!lastModifiedTime) {
+          lastModifiedTime = lastModified;
+          this.setHeader("X-If-Unmodified-Since", lastModified);
+        } else if (lastModified != lastModifiedTime) {
+          // Should be impossible -- We'd get a 412 in this case.
+          throw new Error("X-Last-Modified changed in the middle of a download batch! " +
+                          `${lastModified} => ${lastModifiedTime}`)
+        }
+
+        // If this is missing, we're finished.
+        this.offset = resp.headers["x-weave-next-offset"];
+      } while (this.offset && totalLimit > recordBuffer.length);
+    } finally {
+      // Ensure we undo any temporary state so that subsequent calls to get()
+      // or getBatched() work properly. We do this before calling the record
+      // handler so that we can more convincingly pretend to be a normal get()
+      // call. Note: we're resetting these to the values they had before this
+      // function was called.
+      this._onRecord = _onRecord;
+      this._limit = totalLimit;
+      this._offset = null;
+      delete this._headers["x-if-unmodified-since"];
+      this._rebuildURL();
+    }
+    if (resp.success && Async.checkAppReady()) {
+      // call the original _onRecord (e.g. the user supplied record handler)
+      // for each record we've stored
+      for (let record of recordBuffer) {
+        this._onRecord(record);
+      }
+    }
+    return resp;
   },
 
   set recordHandler(onRecord) {
@@ -629,6 +780,8 @@ Collection.prototype = {
 
     // Switch to newline separated records for incremental parsing
     coll.setHeader("Accept", "application/newlines");
+
+    this._onRecord = onRecord;
 
     this._onProgress = function() {
       let newline;
@@ -640,7 +793,7 @@ Collection.prototype = {
         // Deserialize a record from json and give it to the callback
         let record = new coll._recordObj();
         record.deserialize(json);
-        onRecord(record);
+        coll._onRecord(record);
       }
     };
   },
@@ -822,7 +975,7 @@ PostQueue.prototype = {
 
     headers.push(["x-if-unmodified-since", this.lastModified]);
 
-    this.log.info(`Posting ${this.numQueued} records of ${this.queued.length+1} bytes with batch=${batch}`);
+    this.log.info(`Posting ${this.numQueued} records of ${this.queued.length + 1} bytes with batch=${batch}`);
     let queued = this.queued + "]";
     if (finalBatchPost) {
       this.bytesAlreadyBatched = 0;

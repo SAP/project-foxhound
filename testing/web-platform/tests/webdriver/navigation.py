@@ -1,5 +1,3 @@
-import contextlib
-import httplib
 import json
 import pytest
 import types
@@ -16,32 +14,6 @@ alert_doc = inline("<script>window.alert()</script>")
 frame_doc = inline("<p>frame")
 one_frame_doc = inline("<iframe src='%s'></iframe>" % frame_doc)
 two_frames_doc = inline("<iframe src='%s'></iframe>" % one_frame_doc)
-
-
-class HTTPRequest(object):
-    def __init__(self, host, port):
-        self.host = host
-        self.port = port
-
-    def head(self, path):
-        return self._request("HEAD", path)
-
-    def get(self, path):
-        return self._request("GET", path)
-
-    @contextlib.contextmanager
-    def _request(self, method, path):
-        conn = httplib.HTTPConnection(self.host, self.port)
-        try:
-            conn.request(method, path)
-            yield conn.getresponse()
-        finally:
-            conn.close()
-
-
-@pytest.fixture
-def http(request, session):
-    return HTTPRequest(session.transport.host, session.transport.port)
 
 
 @pytest.fixture
@@ -93,12 +65,16 @@ def test_get_current_url_special_pages(session):
     assert session.url == "about:blank"
 
 
+"""
+Disabled due to https://bugzilla.mozilla.org/show_bug.cgi?id=1332122
+
 # TODO(ato): This test requires modification to pass on Windows
 def test_get_current_url_file_protocol(session):
     # tests that the browsing context remains the same
     # when navigated privileged documents
     session.url = "file:///"
     assert session.url == "file:///"
+"""
 
 
 # TODO(ato): Test for http:// and https:// protocols.
@@ -128,10 +104,10 @@ def test_get_current_url_nested_browsing_contexts(session):
     session.url = two_frames_doc
     top_level_url = session.url
 
-    outer_frame = session.find("iframe", all=False)
+    outer_frame = session.find.css("iframe", all=False)
     session.switch_frame(outer_frame)
 
-    inner_frame = session.find("iframe", all=False)
+    inner_frame = session.find.css("iframe", all=False)
     session.switch_frame(frame)
 
     assert session.url == top_level_url

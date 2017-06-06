@@ -30,10 +30,14 @@ var AnimationsPanel = {
       return;
     }
     if (this.initialized) {
-      yield this.initialized.promise;
+      yield this.initialized;
       return;
     }
-    this.initialized = promise.defer();
+
+    let resolver;
+    this.initialized = new Promise(resolve => {
+      resolver = resolve;
+    });
 
     this.playersEl = $("#players");
     this.errorMessageEl = $("#error-message");
@@ -56,7 +60,8 @@ var AnimationsPanel = {
     }
 
     // Binding functions that need to be called in scope.
-    for (let functionName of ["onKeyDown", "onPickerStarted",
+    for (let functionName of [
+      "onKeyDown", "onPickerStarted",
       "onPickerStopped", "refreshAnimationsUI", "onToggleAllClicked",
       "onTabNavigated", "onTimelineDataChanged", "onTimelinePlayClicked",
       "onTimelineRewindClicked", "onRateChanged"]) {
@@ -78,7 +83,7 @@ var AnimationsPanel = {
 
     yield this.refreshAnimationsUI();
 
-    this.initialized.resolve();
+    resolver();
     this.emit(this.PANEL_INITIALIZED);
   }),
 
@@ -88,10 +93,14 @@ var AnimationsPanel = {
     }
 
     if (this.destroyed) {
-      yield this.destroyed.promise;
+      yield this.destroyed;
       return;
     }
-    this.destroyed = promise.defer();
+
+    let resolver;
+    this.destroyed = new Promise(resolve => {
+      resolver = resolve;
+    });
 
     this.stopListeners();
 
@@ -108,7 +117,7 @@ var AnimationsPanel = {
     this.playTimelineButtonEl = this.rewindTimelineButtonEl = null;
     this.timelineCurrentTimeEl = this.rateSelectorEl = null;
 
-    this.destroyed.resolve();
+    resolver();
   }),
 
   startListeners: function () {
@@ -125,7 +134,7 @@ var AnimationsPanel = {
     this.rewindTimelineButtonEl.addEventListener(
       "click", this.onTimelineRewindClicked);
 
-    document.addEventListener("keydown", this.onKeyDown, false);
+    document.addEventListener("keydown", this.onKeyDown);
 
     gToolbox.target.on("navigate", this.onTabNavigated);
 
@@ -152,7 +161,7 @@ var AnimationsPanel = {
     this.rewindTimelineButtonEl.removeEventListener("click",
       this.onTimelineRewindClicked);
 
-    document.removeEventListener("keydown", this.onKeyDown, false);
+    document.removeEventListener("keydown", this.onKeyDown);
 
     gToolbox.target.off("navigate", this.onTabNavigated);
 

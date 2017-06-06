@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* globals document, PerformanceView, ToolbarView, RecordingsView, DetailsView */
+/* globals window, document, PerformanceView, ToolbarView, RecordingsView, DetailsView */
 
 /* exported Cc, Ci, Cu, Cr, loader */
 var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
@@ -11,12 +11,12 @@ var BrowserLoaderModule = {};
 Cu.import("resource://devtools/client/shared/browser-loader.js", BrowserLoaderModule);
 var { loader, require } = BrowserLoaderModule.BrowserLoader({
   baseURI: "resource://devtools/client/performance/",
-  window: this
+  window
 });
 var { Task } = require("devtools/shared/task");
 /* exported Heritage, ViewHelpers, WidgetMethods, setNamedTimeout, clearNamedTimeout */
 var { Heritage, ViewHelpers, WidgetMethods, setNamedTimeout, clearNamedTimeout } = require("devtools/client/shared/widgets/view-helpers");
-var { gDevTools } = require("devtools/client/framework/devtools");
+var { PrefObserver } = require("devtools/client/shared/prefs");
 
 // Events emitted by various objects in the panel.
 var EVENTS = require("devtools/client/performance/events");
@@ -27,12 +27,16 @@ Object.defineProperty(this, "EVENTS", {
 });
 
 /* exported React, ReactDOM, JITOptimizationsView, RecordingControls, RecordingButton,
-   Services, promise, EventEmitter, DevToolsUtils, system */
+   RecordingList, RecordingListItem, Services, Waterfall, promise, EventEmitter,
+   DevToolsUtils, system */
 var React = require("devtools/client/shared/vendor/react");
 var ReactDOM = require("devtools/client/shared/vendor/react-dom");
+var Waterfall = React.createFactory(require("devtools/client/performance/components/waterfall"));
 var JITOptimizationsView = React.createFactory(require("devtools/client/performance/components/jit-optimizations"));
 var RecordingControls = React.createFactory(require("devtools/client/performance/components/recording-controls"));
 var RecordingButton = React.createFactory(require("devtools/client/performance/components/recording-button"));
+var RecordingList = React.createFactory(require("devtools/client/performance/components/recording-list"));
+var RecordingListItem = React.createFactory(require("devtools/client/performance/components/recording-list-item"));
 
 var Services = require("Services");
 var promise = require("promise");
@@ -43,7 +47,7 @@ var system = require("devtools/shared/system");
 
 // Logic modules
 /* exported L10N, PerformanceTelemetry, TIMELINE_BLUEPRINT, RecordingUtils,
-   PerformanceUtils, OptimizationsGraph, GraphsController, WaterfallHeader, MarkerView,
+   PerformanceUtils, OptimizationsGraph, GraphsController,
    MarkerDetails, MarkerBlueprintUtils, WaterfallUtils, FrameUtils, CallView, ThreadNode,
    FrameNode */
 var { L10N } = require("devtools/client/performance/modules/global");
@@ -52,8 +56,6 @@ var { TIMELINE_BLUEPRINT } = require("devtools/client/performance/modules/marker
 var RecordingUtils = require("devtools/shared/performance/recording-utils");
 var PerformanceUtils = require("devtools/client/performance/modules/utils");
 var { OptimizationsGraph, GraphsController } = require("devtools/client/performance/modules/widgets/graphs");
-var { WaterfallHeader } = require("devtools/client/performance/modules/widgets/waterfall-ticks");
-var { MarkerView } = require("devtools/client/performance/modules/widgets/marker-view");
 var { MarkerDetails } = require("devtools/client/performance/modules/widgets/marker-details");
 var { MarkerBlueprintUtils } = require("devtools/client/performance/modules/marker-blueprint-utils");
 var WaterfallUtils = require("devtools/client/performance/modules/logic/waterfall-utils");
@@ -141,7 +143,8 @@ var PerformanceController = {
     RecordingsView.on(EVENTS.UI_RECORDING_SELECTED, this._onRecordingSelectFromView);
     DetailsView.on(EVENTS.UI_DETAILS_VIEW_SELECTED, this._pipe);
 
-    gDevTools.on("pref-changed", this._onThemeChanged);
+    this._prefObserver = new PrefObserver("devtools.");
+    this._prefObserver.on("devtools.theme", this._onThemeChanged);
   }),
 
   /**
@@ -161,7 +164,8 @@ var PerformanceController = {
     RecordingsView.off(EVENTS.UI_RECORDING_SELECTED, this._onRecordingSelectFromView);
     DetailsView.off(EVENTS.UI_DETAILS_VIEW_SELECTED, this._pipe);
 
-    gDevTools.off("pref-changed", this._onThemeChanged);
+    this._prefObserver.off("devtools.theme", this._onThemeChanged);
+    this._prefObserver.destroy();
   },
 
   /**
@@ -400,14 +404,9 @@ var PerformanceController = {
   /*
    * Called when the developer tools theme changes.
    */
-  _onThemeChanged: function (_, data) {
-    // Right now, gDevTools only emits `pref-changed` for the theme,
-    // but this could change in the future.
-    if (data.pref !== "devtools.theme") {
-      return;
-    }
-
-    this.emit(EVENTS.THEME_CHANGED, data.newValue);
+  _onThemeChanged: function () {
+    let newValue = Services.prefs.getCharPref("devtools.theme");
+    this.emit(EVENTS.THEME_CHANGED, newValue);
   },
 
   /**

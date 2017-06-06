@@ -41,6 +41,7 @@
 # include <binder/ProcessState.h>
 #endif
 
+#include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsDllBlocklist.h"
 
@@ -79,16 +80,6 @@ static bool IsArg(const char* arg, const char* s)
 
   return false;
 }
-
-/**
- * A helper class which calls NS_LogInit/NS_LogTerm in its scope.
- */
-class ScopedLogging
-{
-public:
-  ScopedLogging() { NS_LogInit(); }
-  ~ScopedLogging() { NS_LogTerm(); }
-};
 
 XRE_GetFileFromPathType XRE_GetFileFromPath;
 XRE_CreateAppDataType XRE_CreateAppData;
@@ -133,7 +124,7 @@ static int do_main(int argc, char* argv[])
     }
 
     char appEnv[MAXPATHLEN];
-    snprintf(appEnv, MAXPATHLEN, "XUL_APP_FILE=%s", argv[2]);
+    SprintfLiteral(appEnv, "XUL_APP_FILE=%s", argv[2]);
     if (putenv(strdup(appEnv))) {
       Output("Couldn't set %s.\n", appEnv);
       return 255;
@@ -155,12 +146,12 @@ static int do_main(int argc, char* argv[])
       Output("Couldn't read application.ini");
       return 255;
     }
-    int result = XRE_main(argc, argv, appData, 0);
+    int result = XRE_main(argc, argv, appData);
     XRE_FreeAppData(appData);
     return result;
   }
 
-  return XRE_main(argc, argv, &sAppData, 0);
+  return XRE_main(argc, argv, &sAppData);
 }
 
 int main(int argc, char* argv[])
@@ -200,9 +191,6 @@ int main(int argc, char* argv[])
 #ifdef HAS_DLL_BLOCKLIST
   DllBlocklist_Initialize();
 #endif
-
-  // We do this because of data in bug 771745
-  XPCOMGlueEnablePreload();
 
   rv = XPCOMGlueStartup(exePath);
   if (NS_FAILED(rv)) {

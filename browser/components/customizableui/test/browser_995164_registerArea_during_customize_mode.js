@@ -65,7 +65,7 @@ add_task(function*() {
   otherTB.setAttribute("customizable", "true");
   let wasInformedCorrectlyOfAreaAppearing = false;
   let listener = {
-    onAreaNodeRegistered: function(aArea, aNode) {
+    onAreaNodeRegistered(aArea, aNode) {
       if (aNode == otherTB) {
         wasInformedCorrectlyOfAreaAppearing = true;
       }
@@ -91,7 +91,7 @@ add_task(function*() {
   ok(otherTB.querySelector(`#${kNonPlacedWidgetId}`), "Button is on other toolbar, too.");
 
   let wasInformedCorrectlyOfAreaDisappearing = false;
-  //XXXgijs So we could be using promiseWindowClosed here. However, after
+  // XXXgijs So we could be using promiseWindowClosed here. However, after
   // repeated random oranges, I'm instead relying on onWindowClosed below to
   // fire appropriately - it is linked to an unload event as well, and so
   // reusing it prevents a potential race between unload handlers where the
@@ -99,14 +99,14 @@ add_task(function*() {
   // (and therefore onAreaNodeRegistered) one, causing the test to fail.
   let windowCloseDeferred = Promise.defer();
   listener = {
-    onAreaNodeUnregistered: function(aArea, aNode, aReason) {
+    onAreaNodeUnregistered(aArea, aNode, aReason) {
       if (aArea == TOOLBARID) {
         is(aNode, otherTB, "Should be informed about other toolbar");
         is(aReason, CustomizableUI.REASON_WINDOW_CLOSED, "Reason should be correct.");
         wasInformedCorrectlyOfAreaDisappearing = (aReason === CustomizableUI.REASON_WINDOW_CLOSED);
       }
     },
-    onWindowClosed: function(aWindow) {
+    onWindowClosed(aWindow) {
       if (aWindow == otherWin) {
         windowCloseDeferred.resolve(aWindow);
       } else {
@@ -133,7 +133,7 @@ add_task(function*() {
   CustomizableUI.removeListener(listener);
   wasInformedCorrectlyOfAreaDisappearing = false;
   listener = {
-    onAreaNodeUnregistered: function(aArea, aNode, aReason) {
+    onAreaNodeUnregistered(aArea, aNode, aReason) {
       if (aArea == TOOLBARID) {
         is(aNode, toolbar, "Should be informed about this window's toolbar");
         is(aReason, CustomizableUI.REASON_AREA_UNREGISTERED, "Reason for final removal should be correct.");

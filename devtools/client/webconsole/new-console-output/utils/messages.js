@@ -7,7 +7,7 @@
 "use strict";
 
 const WebConsoleUtils = require("devtools/client/webconsole/utils").Utils;
-const STRINGS_URI = "devtools/locale/webconsole.properties";
+const STRINGS_URI = "devtools/client/locales/webconsole.properties";
 const l10n = new WebConsoleUtils.L10n(STRINGS_URI);
 
 const {
@@ -15,7 +15,10 @@ const {
   MESSAGE_TYPE,
   MESSAGE_LEVEL,
 } = require("../constants");
-const { ConsoleMessage } = require("../types");
+const {
+  ConsoleMessage,
+  NetworkEventMessage,
+} = require("../types");
 
 function prepareMessage(packet, idGenerator) {
   // This packet is already in the expected packet structure. Simply return.
@@ -78,13 +81,44 @@ function transformPacket(packet) {
             type = MESSAGE_TYPE.NULL_MESSAGE;
           }
           break;
+        case "table":
+          const supportedClasses = [
+            "Array", "Object", "Map", "Set", "WeakMap", "WeakSet"];
+          if (
+            !Array.isArray(parameters) ||
+            parameters.length === 0 ||
+            !supportedClasses.includes(parameters[0].class)
+          ) {
+            // If the class of the first parameter is not supported,
+            // we handle the call as a simple console.log
+            type = "log";
+          }
+          break;
+        case "group":
+          type = MESSAGE_TYPE.START_GROUP;
+          parameters = null;
+          messageText = message.groupName || l10n.getStr("noGroupLabel");
+          break;
+        case "groupCollapsed":
+          type = MESSAGE_TYPE.START_GROUP_COLLAPSED;
+          parameters = null;
+          messageText = message.groupName || l10n.getStr("noGroupLabel");
+          break;
+        case "groupEnd":
+          type = MESSAGE_TYPE.END_GROUP;
+          parameters = null;
+          break;
+        case "dirxml":
+          // Handle console.dirxml calls as simple console.log
+          type = "log";
+          break;
       }
 
-      const frame = {
-        source: message.filename || null,
-        line: message.lineNumber || null,
-        column: message.columnNumber || null
-      };
+      const frame = message.filename ? {
+        source: message.filename,
+        line: message.lineNumber,
+        column: message.columnNumber,
+      } : null;
 
       return new ConsoleMessage({
         source: MESSAGE_SOURCE.CONSOLE_API,
@@ -93,7 +127,9 @@ function transformPacket(packet) {
         parameters,
         messageText,
         stacktrace: message.stacktrace ? message.stacktrace : null,
-        frame
+        frame,
+        timeStamp: message.timeStamp,
+        userProvidedStyles: message.styles,
       });
     }
 
@@ -104,6 +140,7 @@ function transformPacket(packet) {
         type: MESSAGE_TYPE.LOG,
         level: MESSAGE_LEVEL.LOG,
         messageText: "Navigated to " + message.url,
+        timeStamp: message.timeStamp
       });
     }
 
@@ -116,30 +153,59 @@ function transformPacket(packet) {
         level = MESSAGE_LEVEL.INFO;
       }
 
-      const frame = {
+      const frame = pageError.sourceName ? {
         source: pageError.sourceName,
         line: pageError.lineNumber,
         column: pageError.columnNumber
-      };
+      } : null;
 
+      let matchesCSS = /^(?:CSS|Layout)\b/.test(pageError.category);
+      let messageSource = matchesCSS ? MESSAGE_SOURCE.CSS
+                                     : MESSAGE_SOURCE.JAVASCRIPT;
       return new ConsoleMessage({
-        source: MESSAGE_SOURCE.JAVASCRIPT,
+        source: messageSource,
         type: MESSAGE_TYPE.LOG,
         level,
         messageText: pageError.errorMessage,
+        stacktrace: pageError.stacktrace ? pageError.stacktrace : null,
         frame,
+        exceptionDocURL: pageError.exceptionDocURL,
+        timeStamp: pageError.timeStamp
+      });
+    }
+
+    case "networkEvent": {
+      let { networkEvent } = packet;
+
+      return new NetworkEventMessage({
+        actor: networkEvent.actor,
+        isXHR: networkEvent.isXHR,
+        request: networkEvent.request,
+        response: networkEvent.response,
+        timeStamp: networkEvent.timeStamp
       });
     }
 
     case "evaluationResult":
     default: {
-      let { result } = packet;
+      let {
+        exceptionMessage: messageText,
+        exceptionDocURL,
+        frame,
+        result: parameters,
+        timestamp: timeStamp,
+      } = packet;
 
+      const level = messageText ? MESSAGE_LEVEL.ERROR : MESSAGE_LEVEL.LOG;
       return new ConsoleMessage({
         source: MESSAGE_SOURCE.JAVASCRIPT,
         type: MESSAGE_TYPE.RESULT,
-        level: MESSAGE_LEVEL.LOG,
-        parameters: result,
+        level,
+        messageText,
+        parameters,
+        exceptionDocURL,
+        frame,
+        timeStamp,
       });
     }
   }
@@ -165,6 +231,9 @@ function convertCachedPacket(packet) {
   } else if ("_navPayload" in packet) {
     convertPacket.type = "navigationMessage";
     convertPacket.message = packet;
+  } else if (packet._type === "NetworkEvent") {
+    convertPacket.networkEvent = packet;
+    convertPacket.type = "networkEvent";
   } else {
     throw new Error("Unexpected packet type");
   }
@@ -208,8 +277,16 @@ function getLevelFromType(type) {
   return levelMap[type] || MESSAGE_TYPE.LOG;
 }
 
+function isGroupType(type) {
+  return [
+    MESSAGE_TYPE.START_GROUP,
+    MESSAGE_TYPE.START_GROUP_COLLAPSED
+  ].includes(type);
+}
+
 exports.prepareMessage = prepareMessage;
 // Export for use in testing.
 exports.getRepeatId = getRepeatId;
 
 exports.l10n = l10n;
+exports.isGroupType = isGroupType;

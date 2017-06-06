@@ -18,7 +18,7 @@ var observer = {
 
   tagRelatedGuids: new Set(),
 
-  reset: function () {
+  reset() {
     this.itemsAdded = new Map();
     this.itemsRemoved = new Map();
     this.itemsChanged = new Map();
@@ -27,17 +27,16 @@ var observer = {
     this.endUpdateBatch = false;
   },
 
-  onBeginUpdateBatch: function () {
+  onBeginUpdateBatch() {
     this.beginUpdateBatch = true;
   },
 
-  onEndUpdateBatch: function () {
+  onEndUpdateBatch() {
     this.endUpdateBatch = true;
   },
 
-  onItemAdded:
-  function (aItemId, aParentId, aIndex, aItemType, aURI, aTitle, aDateAdded,
-            aGuid, aParentGuid) {
+  onItemAdded(aItemId, aParentId, aIndex, aItemType, aURI, aTitle, aDateAdded,
+           aGuid, aParentGuid) {
     // Ignore tag items.
     if (aParentId == PlacesUtils.tagsFolderId ||
         (aParentId != PlacesUtils.placesRootId &&
@@ -54,8 +53,7 @@ var observer = {
                                , url:            aURI });
   },
 
-  onItemRemoved:
-  function (aItemId, aParentId, aIndex, aItemType, aURI, aGuid, aParentGuid) {
+  onItemRemoved(aItemId, aParentId, aIndex, aItemType, aURI, aGuid, aParentGuid) {
     if (this.tagRelatedGuids.has(aGuid))
       return;
 
@@ -64,9 +62,8 @@ var observer = {
                                  , itemType:   aItemType });
   },
 
-  onItemChanged:
-  function (aItemId, aProperty, aIsAnnoProperty, aNewValue, aLastModified,
-            aItemType, aParentId, aGuid, aParentGuid) {
+  onItemChanged(aItemId, aProperty, aIsAnnoProperty, aNewValue, aLastModified,
+           aItemType, aParentId, aGuid, aParentGuid) {
     if (this.tagRelatedGuids.has(aGuid))
       return;
 
@@ -84,7 +81,7 @@ var observer = {
         newValue = null;
     }
     let change = { isAnnoProperty: aIsAnnoProperty
-                 , newValue: newValue
+                 , newValue
                  , lastModified: aLastModified
                  , itemType: aItemType };
     changesForGuid.set(aProperty, change);
@@ -92,9 +89,8 @@ var observer = {
 
   onItemVisited: () => {},
 
-  onItemMoved:
-  function (aItemId, aOldParent, aOldIndex, aNewParent, aNewIndex, aItemType,
-            aGuid, aOldParentGuid, aNewParentGuid) {
+  onItemMoved(aItemId, aOldParent, aOldIndex, aNewParent, aNewIndex, aItemType,
+           aGuid, aOldParentGuid, aNewParentGuid) {
     this.itemsMoved.set(aGuid, { oldParentGuid: aOldParentGuid
                                , oldIndex:      aOldIndex
                                , newParentGuid: aNewParentGuid
@@ -109,7 +105,7 @@ var bmStartIndex = 0;
 
 function run_test() {
   bmsvc.addObserver(observer, false);
-  do_register_cleanup(function () {
+  do_register_cleanup(function() {
     bmsvc.removeObserver(observer);
   });
 
@@ -185,8 +181,7 @@ function ensureItemsRemoved(...items) {
     // We accept both guids and full info object here.
     if (typeof(item) == "string") {
       Assert.ok(observer.itemsRemoved.has(item));
-    }
-    else {
+    } else {
       Assert.ok(observer.itemsRemoved.has(item.guid));
       let info = observer.itemsRemoved.get(item.guid);
       Assert.equal(info.parentGuid, item.parentGuid);
@@ -286,23 +281,19 @@ function* ensureEqualBookmarksTrees(aOriginal,
                                         false,
                                         true);
       }
-    }
-    else if (property == "guid") {
+    } else if (property == "guid") {
       // guid shouldn't be copied if the item was not restored.
       Assert.notEqual(aOriginal.guid, aNew.guid);
-    }
-    else if (property == "dateAdded") {
+    } else if (property == "dateAdded") {
       // dateAdded shouldn't be copied if the item was not restored.
       Assert.ok(is_time_ordered(aOriginal.dateAdded, aNew.dateAdded));
-    }
-    else if (property == "lastModified") {
+    } else if (property == "lastModified") {
       // same same, except for the never-changed case
       if (!aOriginal.lastModified)
         Assert.ok(!aNew.lastModified);
       else
         Assert.ok(is_time_ordered(aOriginal.lastModified, aNew.lastModified));
-    }
-    else if (aCheckParentAndPosition ||
+    } else if (aCheckParentAndPosition ||
              (property != "parentGuid" && property != "index")) {
       Assert.deepEqual(aOriginal[property], aNew[property]);
     }
@@ -332,8 +323,7 @@ add_task(function* test_recycled_transactions() {
     try {
       yield aTransaction.transact();
       do_throw("Shouldn't be able to use the same transaction twice");
-    }
-    catch (ex) { }
+    } catch (ex) { }
     ensureUndoState(txns, undoPosition);
   }
 
@@ -355,8 +345,7 @@ add_task(function* test_recycled_transactions() {
     try {
       yield txn_a.transact();
       do_throw("Shouldn't be able to use the same transaction twice");
-    }
-    catch (ex) { }
+    } catch (ex) { }
     ensureUndoState();
     yield txn_b.transact();
   });
@@ -451,22 +440,22 @@ add_task(function* test_merge_create_folder_and_item() {
                 , title: "Test Bookmark"
                 , index: bmStartIndex };
 
-  let { folderTxn, bkmTxn } = yield PT.batch(function* () {
+  let [folderTxnResult, bkmTxnResult] = yield PT.batch(function* () {
     let folderTxn = PT.NewFolder(folder_info);
     folder_info.guid = bm_info.parentGuid = yield folderTxn.transact();
     let bkmTxn = PT.NewBookmark(bm_info);
     bm_info.guid = yield bkmTxn.transact();
-    return { folderTxn, bkmTxn };
+    return [folderTxn, bkmTxn];
   });
 
   let ensureDo = function* () {
-    ensureUndoState([[bkmTxn, folderTxn]], 0);
+    ensureUndoState([[bkmTxnResult, folderTxnResult]], 0);
     yield ensureItemsAdded(folder_info, bm_info);
     observer.reset();
   };
 
   let ensureUndo = () => {
-    ensureUndoState([[bkmTxn, folderTxn]], 1);
+    ensureUndoState([[bkmTxnResult, folderTxnResult]], 1);
     ensureItemsRemoved(folder_info, bm_info);
     observer.reset();
   };
@@ -491,7 +480,7 @@ add_task(function* test_move_items_to_folder() {
                    , title: "Bookmark B" };
 
   // Test moving items within the same folder.
-  let [folder_a_txn, bkm_a_txn, bkm_b_txn] = yield PT.batch(function* () {
+  let [folder_a_txn_result, bkm_a_txn_result, bkm_b_txn_result] = yield PT.batch(function* () {
     let folder_a_txn = PT.NewFolder(folder_a_info);
 
     folder_a_info.guid = bkm_a_info.parentGuid = bkm_b_info.parentGuid =
@@ -503,14 +492,14 @@ add_task(function* test_move_items_to_folder() {
     return [folder_a_txn, bkm_a_txn, bkm_b_txn];
   });
 
-  ensureUndoState([[bkm_b_txn, bkm_a_txn, folder_a_txn]], 0);
+  ensureUndoState([[bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result]], 0);
 
   let moveTxn = PT.Move({ guid:          bkm_a_info.guid
                         , newParentGuid: folder_a_info.guid });
   yield moveTxn.transact();
 
   let ensureDo = () => {
-    ensureUndoState([[moveTxn], [bkm_b_txn, bkm_a_txn, folder_a_txn]], 0);
+    ensureUndoState([[moveTxn], [bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result]], 0);
     ensureItemsMoved({ guid:          bkm_a_info.guid
                      , oldParentGuid: folder_a_info.guid
                      , newParentGuid: folder_a_info.guid
@@ -519,7 +508,7 @@ add_task(function* test_move_items_to_folder() {
     observer.reset();
   };
   let ensureUndo = () => {
-    ensureUndoState([[moveTxn], [bkm_b_txn, bkm_a_txn, folder_a_txn]], 1);
+    ensureUndoState([[moveTxn], [bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result]], 1);
     ensureItemsMoved({ guid:          bkm_a_info.guid
                      , oldParentGuid: folder_a_info.guid
                      , newParentGuid: folder_a_info.guid
@@ -537,14 +526,14 @@ add_task(function* test_move_items_to_folder() {
   ensureUndo();
 
   yield PT.clearTransactionsHistory(false, true);
-  ensureUndoState([[bkm_b_txn, bkm_a_txn, folder_a_txn]], 0);
+  ensureUndoState([[bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result]], 0);
 
   // Test moving items between folders.
   let folder_b_info = createTestFolderInfo("Folder B");
   let folder_b_txn = PT.NewFolder(folder_b_info);
   folder_b_info.guid = yield folder_b_txn.transact();
   ensureUndoState([ [folder_b_txn]
-                  , [bkm_b_txn, bkm_a_txn, folder_a_txn] ], 0);
+                  , [bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result] ], 0);
 
   moveTxn = PT.Move({ guid:          bkm_a_info.guid
                     , newParentGuid: folder_b_info.guid
@@ -554,7 +543,7 @@ add_task(function* test_move_items_to_folder() {
   ensureDo = () => {
     ensureUndoState([ [moveTxn]
                     , [folder_b_txn]
-                    , [bkm_b_txn, bkm_a_txn, folder_a_txn] ], 0);
+                    , [bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result] ], 0);
     ensureItemsMoved({ guid:          bkm_a_info.guid
                      , oldParentGuid: folder_a_info.guid
                      , newParentGuid: folder_b_info.guid
@@ -565,7 +554,7 @@ add_task(function* test_move_items_to_folder() {
   ensureUndo = () => {
     ensureUndoState([ [moveTxn]
                     , [folder_b_txn]
-                    , [bkm_b_txn, bkm_a_txn, folder_a_txn] ], 1);
+                    , [bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result] ], 1);
     ensureItemsMoved({ guid:          bkm_a_info.guid
                      , oldParentGuid: folder_b_info.guid
                      , newParentGuid: folder_a_info.guid
@@ -588,7 +577,7 @@ add_task(function* test_move_items_to_folder() {
   do_check_eq(observer.itemsRemoved.size, 4);
   ensureUndoState([ [moveTxn]
                   , [folder_b_txn]
-                  , [bkm_b_txn, bkm_a_txn, folder_a_txn] ], 3);
+                  , [bkm_b_txn_result, bkm_a_txn_result, folder_a_txn_result] ], 3);
   yield PT.clearTransactionsHistory();
   ensureUndoState();
 });
@@ -596,8 +585,8 @@ add_task(function* test_move_items_to_folder() {
 add_task(function* test_remove_folder() {
   let folder_level_1_info = createTestFolderInfo("Folder Level 1");
   let folder_level_2_info = { title: "Folder Level 2" };
-  let [folder_level_1_txn,
-       folder_level_2_txn] = yield PT.batch(function* () {
+  let [folder_level_1_txn_result,
+       folder_level_2_txn_result] = yield PT.batch(function* () {
     let folder_level_1_txn  = PT.NewFolder(folder_level_1_info);
     folder_level_1_info.guid = yield folder_level_1_txn.transact();
     folder_level_2_info.parentGuid = folder_level_1_info.guid;
@@ -606,7 +595,7 @@ add_task(function* test_remove_folder() {
     return [folder_level_1_txn, folder_level_2_txn];
   });
 
-  ensureUndoState([[folder_level_2_txn, folder_level_1_txn]]);
+  ensureUndoState([[folder_level_2_txn_result, folder_level_1_txn_result]]);
   yield ensureItemsAdded(folder_level_1_info, folder_level_2_info);
   observer.reset();
 
@@ -614,13 +603,13 @@ add_task(function* test_remove_folder() {
   yield remove_folder_2_txn.transact();
 
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ]);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ]);
   yield ensureItemsRemoved(folder_level_2_info);
 
   // Undo Remove "Folder Level 2"
   yield PT.undo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ], 1);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ], 1);
   yield ensureItemsAdded(folder_level_2_info);
   ensureTimestampsUpdated(folder_level_2_info.guid, true);
   observer.reset();
@@ -628,14 +617,14 @@ add_task(function* test_remove_folder() {
   // Redo Remove "Folder Level 2"
   yield PT.redo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ]);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ]);
   yield ensureItemsRemoved(folder_level_2_info);
   observer.reset();
 
   // Undo it again
   yield PT.undo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ], 1);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ], 1);
   yield ensureItemsAdded(folder_level_2_info);
   ensureTimestampsUpdated(folder_level_2_info.guid, true);
   observer.reset();
@@ -643,14 +632,14 @@ add_task(function* test_remove_folder() {
   // Undo the creation of both folders
   yield PT.undo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ], 2);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ], 2);
   yield ensureItemsRemoved(folder_level_2_info, folder_level_1_info);
   observer.reset();
 
   // Redo the creation of both folders
   yield PT.redo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ], 1);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ], 1);
   yield ensureItemsAdded(folder_level_1_info, folder_level_2_info);
   ensureTimestampsUpdated(folder_level_1_info.guid, true);
   ensureTimestampsUpdated(folder_level_2_info.guid, true);
@@ -659,20 +648,20 @@ add_task(function* test_remove_folder() {
   // Redo Remove "Folder Level 2"
   yield PT.redo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ]);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ]);
   yield ensureItemsRemoved(folder_level_2_info);
   observer.reset();
 
   // Undo everything one last time
   yield PT.undo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ], 1);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ], 1);
   yield ensureItemsAdded(folder_level_2_info);
   observer.reset();
 
   yield PT.undo();
   ensureUndoState([ [remove_folder_2_txn]
-                  , [folder_level_2_txn, folder_level_1_txn] ], 2);
+                  , [folder_level_2_txn_result, folder_level_1_txn_result] ], 2);
   yield ensureItemsRemoved(folder_level_2_info, folder_level_2_info);
   observer.reset();
 
@@ -1214,16 +1203,14 @@ add_task(function* test_untag_uri() {
   });
 
   function* doTest(aInfo) {
-    let urls, tagsToRemove;
+    let urls, tagsRemoved;
     if (aInfo instanceof Ci.nsIURI) {
       urls = [aInfo];
       tagsRemoved = [];
-    }
-    else if (Array.isArray(aInfo)) {
+    } else if (Array.isArray(aInfo)) {
       urls = aInfo;
       tagsRemoved = [];
-    }
-    else {
+    } else {
       urls = "url" in aInfo ? [aInfo.url] : aInfo.urls;
       tagsRemoved = "tag" in aInfo ? [aInfo.tag] : aInfo.tags;
     }
@@ -1344,18 +1331,18 @@ add_task(function* test_annotate_multiple() {
     Assert.deepEqual(currentAnnos, expectedAnnos);
   }
 
-  yield PT.Annotate({ guid: guid, annotations: annos(1, 2) }).transact();
+  yield PT.Annotate({ guid, annotations: annos(1, 2) }).transact();
   verifyAnnoValues(1, 2);
   yield PT.undo();
   verifyAnnoValues();
   yield PT.redo();
   verifyAnnoValues(1, 2);
 
-  yield PT.Annotate({ guid: guid
+  yield PT.Annotate({ guid
                     , annotation: { name: "A" } }).transact();
   verifyAnnoValues(null, 2);
 
-  yield PT.Annotate({ guid: guid
+  yield PT.Annotate({ guid
                     , annotation: { name: "B", value: 0 } }).transact();
   verifyAnnoValues(null, 0);
   yield PT.undo();
@@ -1471,7 +1458,7 @@ add_task(function* test_livemark_txns() {
 add_task(function* test_copy() {
   function* duplicate_and_test(aOriginalGuid) {
     let txn = PT.Copy({ guid: aOriginalGuid, newParentGuid: rootGuid });
-    yield duplicateGuid = yield txn.transact();
+    let duplicateGuid = yield txn.transact();
     let originalInfo = yield PlacesUtils.promiseBookmarksTree(aOriginalGuid);
     let duplicateInfo = yield PlacesUtils.promiseBookmarksTree(duplicateGuid);
     yield ensureEqualBookmarksTrees(originalInfo, duplicateInfo, false);
@@ -1501,9 +1488,9 @@ add_task(function* test_copy() {
   }
 
   // Test duplicating leafs (bookmark, separator, empty folder)
-  let bmTxn = PT.NewBookmark({ url: new URL("http://test.item.duplicate")
-                             , parentGuid: rootGuid
-                             , annos: [{ name: "Anno", value: "AnnoValue"}] });
+  PT.NewBookmark({ url: new URL("http://test.item.duplicate")
+                 , parentGuid: rootGuid
+                 , annos: [{ name: "Anno", value: "AnnoValue"}] });
   let sepTxn = PT.NewSeparator({ parentGuid: rootGuid, index: 1 });
   let livemarkTxn = PT.NewLivemark(
     { feedUrl: new URL("http://test.feed.uri")
@@ -1589,13 +1576,13 @@ add_task(function* test_copy_excluding_annotations() {
     yield PT.Copy({ guid: folderGuid
                   , newParentGuid: rootGuid
                   , excludingAnnotation: "a" }).transact();
-  yield ensureAnnosSet(excluding_a_dupeGuid,  "b", "c");
+  yield ensureAnnosSet(excluding_a_dupeGuid, "b", "c");
 
   let excluding_ac_dupeGuid =
     yield PT.Copy({ guid: folderGuid
                   , newParentGuid: rootGuid
                   , excludingAnnotations: ["a", "c"] }).transact();
-  yield ensureAnnosSet(excluding_ac_dupeGuid,  "b");
+  yield ensureAnnosSet(excluding_ac_dupeGuid, "b");
 
   // Cleanup
   yield PT.undo();
@@ -1664,7 +1651,7 @@ add_task(function* test_remove_multiple() {
     let nestedFolderGuid =
       yield PT.NewFolder({ title: "Nested Test Folder"
                          , parentGuid: folderGuid }).transact();
-    let nestedSepGuid = yield PT.NewSeparator(nestedFolderGuid).transact();
+    yield PT.NewSeparator(nestedFolderGuid).transact();
 
     guids.push(folderGuid);
 

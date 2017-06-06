@@ -31,7 +31,7 @@ const EventEmitter = require("devtools/shared/event-emitter");
 const {gDevTools} = require("devtools/client/framework/devtools");
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/inspector.properties");
+const L10N = new LocalizationHelper("devtools/client/locales/inspector.properties");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -164,8 +164,8 @@ function getMdnPage(pageUrl) {
 
   let xhr = new XMLHttpRequest();
 
-  xhr.addEventListener("load", onLoaded, false);
-  xhr.addEventListener("error", onError, false);
+  xhr.addEventListener("load", onLoaded);
+  xhr.addEventListener("error", onError);
 
   xhr.open("GET", pageUrl);
   xhr.responseType = "document";
@@ -267,6 +267,9 @@ function MdnDocsWidget(tooltipContainer) {
 
   // get the localized string for the link text
   this.elements.linkToMdn.textContent = L10N.getStr("docsTooltip.visitMDN");
+
+  // force using LTR because we use the en-US version of MDN
+  tooltipContainer.setAttribute("dir", "ltr");
 
   // listen for clicks and open in the browser window instead
   let mainWindow = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);

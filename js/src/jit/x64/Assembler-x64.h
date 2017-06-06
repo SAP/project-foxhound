@@ -150,16 +150,16 @@ static constexpr FloatRegister FloatArgRegs[NumFloatArgRegs] = { xmm0, xmm1, xmm
 #endif
 
 // Registers used in the GenerateFFIIonExit Enable Activation block.
-static constexpr Register AsmJSIonExitRegCallee = r10;
-static constexpr Register AsmJSIonExitRegE0 = rax;
-static constexpr Register AsmJSIonExitRegE1 = rdi;
+static constexpr Register WasmIonExitRegCallee = r10;
+static constexpr Register WasmIonExitRegE0 = rax;
+static constexpr Register WasmIonExitRegE1 = rdi;
 
 // Registers used in the GenerateFFIIonExit Disable Activation block.
-static constexpr Register AsmJSIonExitRegReturnData = ecx;
-static constexpr Register AsmJSIonExitRegReturnType = ecx;
-static constexpr Register AsmJSIonExitRegD0 = rax;
-static constexpr Register AsmJSIonExitRegD1 = rdi;
-static constexpr Register AsmJSIonExitRegD2 = rbx;
+static constexpr Register WasmIonExitRegReturnData = ecx;
+static constexpr Register WasmIonExitRegReturnType = ecx;
+static constexpr Register WasmIonExitRegD0 = rax;
+static constexpr Register WasmIonExitRegD1 = rdi;
+static constexpr Register WasmIonExitRegD2 = rbx;
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
 static constexpr Register RegExpMatcherRegExpReg = CallTempReg0;
@@ -238,7 +238,7 @@ static_assert(JitStackAlignment % SimdMemoryAlignment == 0,
   "Stack alignment should be larger than any of the alignments which are used for "
   "spilled values.  Thus it should be larger than the alignment for SIMD accesses.");
 
-static const uint32_t AsmJSStackAlignment = SimdMemoryAlignment;
+static const uint32_t WasmStackAlignment = SimdMemoryAlignment;
 
 static const Scale ScalePointer = TimesEight;
 
@@ -316,7 +316,7 @@ class Assembler : public AssemblerX86Shared
 
     // Copy the assembly code to the given buffer, and perform any pending
     // relocations relying on the target address.
-    void executableCopy(uint8_t* buffer);
+    void executableCopy(uint8_t* buffer, bool flushICache = true);
 
     // Actual assembly emitting functions.
 
@@ -358,6 +358,13 @@ class Assembler : public AssemblerX86Shared
     }
     CodeOffset movWithPatch(ImmPtr imm, Register dest) {
         return movWithPatch(ImmWord(uintptr_t(imm.value)), dest);
+    }
+
+    // This is for patching during code generation, not after.
+    void patchAddq(CodeOffset offset, int32_t n) {
+        unsigned char* code = masm.acquireData();
+        X86Encoding::SetInt32(code + offset.offset(), n);
+        masm.releaseData();
     }
 
     // Load an ImmWord value into a register. Note that this instruction will
@@ -553,6 +560,10 @@ class Assembler : public AssemblerX86Shared
 
     void addq(Imm32 imm, Register dest) {
         masm.addq_ir(imm.value, dest.encoding());
+    }
+    CodeOffset addqWithPatch(Imm32 imm, Register dest) {
+        masm.addq_i32r(imm.value, dest.encoding());
+        return CodeOffset(masm.currentOffset());
     }
     void addq(Imm32 imm, const Operand& dest) {
         switch (dest.kind()) {
@@ -757,7 +768,7 @@ class Assembler : public AssemblerX86Shared
     }
     void mov(wasm::SymbolicAddress imm, Register dest) {
         masm.movq_i64r(-1, dest.encoding());
-        append(AsmJSAbsoluteAddress(CodeOffset(masm.currentOffset()), imm));
+        append(wasm::SymbolicAccess(CodeOffset(masm.currentOffset()), imm));
     }
     void mov(const Operand& src, Register dest) {
         movq(src, dest);

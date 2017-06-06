@@ -59,7 +59,7 @@
 
 #include <shlwapi.h>
 
-PRLogModuleInfo* gWindowsLog = nullptr;
+mozilla::LazyLogModule gWindowsLog("Widget");
 
 using namespace mozilla::gfx;
 
@@ -452,15 +452,17 @@ struct CoTaskMemFreePolicy
 
 SetThreadDpiAwarenessContextProc WinUtils::sSetThreadDpiAwarenessContext = NULL;
 EnableNonClientDpiScalingProc WinUtils::sEnableNonClientDpiScaling = NULL;
+#ifdef ACCESSIBILITY
+typedef NTSTATUS (NTAPI* NtTestAlertPtr)(VOID);
+static NtTestAlertPtr sNtTestAlert = nullptr;
+#endif
+
 
 /* static */
 void
 WinUtils::Initialize()
 {
-  if (!gWindowsLog) {
-    gWindowsLog = PR_NewLogModule("Widget");
-  }
-  if (!sDwmDll && IsVistaOrLater()) {
+  if (!sDwmDll) {
     sDwmDll = ::LoadLibraryW(kDwmLibraryName);
 
     if (sDwmDll) {
@@ -486,6 +488,12 @@ WinUtils::Initialize()
         ::GetProcAddress(user32Dll, "SetThreadDpiAwarenessContext");
     }
   }
+
+#ifdef ACCESSIBILITY
+  sNtTestAlert = reinterpret_cast<NtTestAlertPtr>(
+      ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "NtTestAlert"));
+  MOZ_ASSERT(sNtTestAlert);
+#endif
 }
 
 // static
@@ -593,7 +601,7 @@ WinUtils::SystemScaleFactor()
   return systemScale;
 }
 
-#ifndef WM_DPICHANGED
+#if WINVER < 0x603
 typedef enum {
   MDT_EFFECTIVE_DPI = 0,
   MDT_ANGULAR_DPI = 1,
@@ -620,16 +628,14 @@ GETPROCESSDPIAWARENESSPROC sGetProcessDpiAwareness;
 static bool
 SlowIsPerMonitorDPIAware()
 {
-  if (IsVistaOrLater()) {
-    // Intentionally leak the handle.
-    HMODULE shcore =
-      LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (shcore) {
-      sGetDpiForMonitor =
-        (GETDPIFORMONITORPROC) GetProcAddress(shcore, "GetDpiForMonitor");
-      sGetProcessDpiAwareness =
-        (GETPROCESSDPIAWARENESSPROC) GetProcAddress(shcore, "GetProcessDpiAwareness");
-    }
+  // Intentionally leak the handle.
+  HMODULE shcore =
+    LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (shcore) {
+    sGetDpiForMonitor =
+      (GETDPIFORMONITORPROC) GetProcAddress(shcore, "GetDpiForMonitor");
+    sGetProcessDpiAwareness =
+      (GETPROCESSDPIAWARENESSPROC) GetProcAddress(shcore, "GetProcessDpiAwareness");
   }
   PROCESS_DPI_AWARENESS dpiAwareness;
   return sGetDpiForMonitor && sGetProcessDpiAwareness &&
@@ -691,11 +697,31 @@ WinUtils::MonitorFromRect(const gfx::Rect& rect)
   return ::MonitorFromRect(&globalWindowBounds, MONITOR_DEFAULTTONEAREST);
 }
 
+#ifdef ACCESSIBILITY
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+#endif
+
+static Atomic<bool> sAPCPending;
+
+/* static */
+void
+WinUtils::SetAPCPending()
+{
+  sAPCPending = true;
+}
+#endif // ACCESSIBILITY
+
 /* static */
 bool
 WinUtils::PeekMessage(LPMSG aMsg, HWND aWnd, UINT aFirstMessage,
                       UINT aLastMessage, UINT aOption)
 {
+#ifdef ACCESSIBILITY
+  if (NS_IsMainThread() && sAPCPending.exchange(false)) {
+    while (sNtTestAlert() != STATUS_SUCCESS) ;
+  }
+#endif
 #ifdef NS_ENABLE_TSF
   ITfMessagePump* msgPump = TSFTextStore::GetMessagePump();
   if (msgPump) {
@@ -732,7 +758,7 @@ static DWORD
 GetWaitFlags()
 {
   DWORD result = MWMO_INPUTAVAILABLE;
-  if (IsVistaOrLater() && XRE_IsContentProcess()) {
+  if (XRE_IsContentProcess()) {
     result |= MWMO_ALERTABLE;
   }
   return result;
@@ -764,14 +790,21 @@ WinUtils::WaitForMessage(DWORD aTimeoutMs)
     if (result == WAIT_TIMEOUT) {
       break;
     }
+#if defined(ACCESSIBILITY)
     if (result == WAIT_IO_COMPLETION) {
       if (NS_IsMainThread()) {
+        if (sAPCPending.exchange(false)) {
+          // Clear out any pending APCs
+          while (sNtTestAlert() != STATUS_SUCCESS) ;
+        }
         // We executed an APC that would have woken up the hang monitor. Since
-        // we're now going to sleep again, we should notify the hang monitor.
+        // there are no more APCs pending and we are now going to sleep again,
+        // we should notify the hang monitor.
         mozilla::HangMonitor::Suspend();
       }
       continue;
     }
+#endif // defined(ACCESSIBILITY)
 
     // Sent messages (via SendMessage and friends) are processed differently
     // than queued messages (via PostMessage); the destination window procedure
@@ -1105,7 +1138,8 @@ WinUtils::GetIsMouseFromTouch(EventMessage aEventMessage)
   const uint32_t MOZ_T_I_SIGNATURE = TABLET_INK_TOUCH | TABLET_INK_SIGNATURE;
   const uint32_t MOZ_T_I_CHECK_TCH = TABLET_INK_TOUCH | TABLET_INK_CHECK;
   return ((aEventMessage == eMouseMove || aEventMessage == eMouseDown ||
-           aEventMessage == eMouseUp) &&
+           aEventMessage == eMouseUp || aEventMessage == eMouseAuxClick ||
+           aEventMessage == eMouseDoubleClick) &&
          (GetMessageExtraInfo() & MOZ_T_I_SIGNATURE) == MOZ_T_I_CHECK_TCH);
 }
 
@@ -1843,7 +1877,7 @@ WinUtils::IsTouchDeviceSupportPresent()
 uint32_t
 WinUtils::GetMaxTouchPoints()
 {
-  if (IsWin7OrLater() && IsTouchDeviceSupportPresent()) {
+  if (IsTouchDeviceSupportPresent()) {
     return GetSystemMetrics(SM_MAXIMUMTOUCHES);
   }
   return 0;
@@ -1881,11 +1915,6 @@ typedef struct REPARSE_DATA_BUFFER {
 bool
 WinUtils::ResolveMovedUsersFolder(std::wstring& aPath)
 {
-  // Users folder was introduced with Vista.
-  if (!IsVistaOrLater()) {
-    return true;
-  }
-
   wchar_t* usersPath;
   if (FAILED(WinUtils::SHGetKnownFolderPath(FOLDERID_UserProfiles, 0, nullptr,
                                             &usersPath))) {
@@ -2042,21 +2071,19 @@ WinUtils::GetAppInitDLLs(nsAString& aOutput)
   }
   nsAutoRegKey key(hkey);
   LONG status;
-  if (IsVistaOrLater()) {
-    const wchar_t kLoadAppInitDLLs[] = L"LoadAppInit_DLLs";
-    DWORD loadAppInitDLLs = 0;
-    DWORD loadAppInitDLLsLen = sizeof(loadAppInitDLLs);
-    status = RegQueryValueExW(hkey, kLoadAppInitDLLs, nullptr,
-                              nullptr, (LPBYTE)&loadAppInitDLLs,
-                              &loadAppInitDLLsLen);
-    if (status != ERROR_SUCCESS) {
-      return false;
-    }
-    if (!loadAppInitDLLs) {
-      // If loadAppInitDLLs is zero then AppInit_DLLs is disabled.
-      // In this case we'll return true along with an empty output string.
-      return true;
-    }
+  const wchar_t kLoadAppInitDLLs[] = L"LoadAppInit_DLLs";
+  DWORD loadAppInitDLLs = 0;
+  DWORD loadAppInitDLLsLen = sizeof(loadAppInitDLLs);
+  status = RegQueryValueExW(hkey, kLoadAppInitDLLs, nullptr,
+                            nullptr, (LPBYTE)&loadAppInitDLLs,
+                            &loadAppInitDLLsLen);
+  if (status != ERROR_SUCCESS) {
+    return false;
+  }
+  if (!loadAppInitDLLs) {
+    // If loadAppInitDLLs is zero then AppInit_DLLs is disabled.
+    // In this case we'll return true along with an empty output string.
+    return true;
   }
   DWORD numBytes = 0;
   const wchar_t kAppInitDLLs[] = L"AppInit_DLLs";

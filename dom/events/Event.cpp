@@ -230,7 +230,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPresContext)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExplicitOriginalTarget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 
@@ -244,14 +243,6 @@ JSObject*
 Event::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
   return EventBinding::Wrap(aCx, this, aGivenProto);
-}
-
-bool
-Event::IsChrome(JSContext* aCx) const
-{
-  return mIsMainThreadEvent ?
-    xpc::AccessCheck::isChrome(js::GetContextCompartment(aCx)) :
-    mozilla::dom::workers::IsCurrentThreadRunningChromeWorker();
 }
 
 // nsIDOMEventInterface
@@ -415,6 +406,7 @@ Event::Constructor(const GlobalObject& aGlobal,
   bool trusted = e->Init(t);
   e->InitEvent(aType, aParam.mBubbles, aParam.mCancelable);
   e->SetTrusted(trusted);
+  e->SetComposed(aParam.mComposed);
   return e.forget();
 }
 
@@ -503,15 +495,13 @@ Event::PreventDefault()
 }
 
 void
-Event::PreventDefault(JSContext* aCx)
+Event::PreventDefault(JSContext* aCx, CallerType aCallerType)
 {
-  MOZ_ASSERT(aCx, "JS context must be specified");
-
   // Note that at handling default action, another event may be dispatched.
   // Then, JS in content mey be call preventDefault()
   // even in the event is in system event group.  Therefore, don't refer
   // mInSystemGroup here.
-  PreventDefaultInternal(IsChrome(aCx));
+  PreventDefaultInternal(aCallerType == CallerType::System);
 }
 
 void
@@ -567,11 +557,42 @@ Event::SetEventType(const nsAString& aEventTypeArg)
     mEvent->mSpecifiedEventType =
       nsContentUtils::GetEventMessageAndAtom(aEventTypeArg, mEvent->mClass,
                                              &(mEvent->mMessage));
+    mEvent->SetDefaultComposed();
   } else {
     mEvent->mSpecifiedEventType = nullptr;
     mEvent->mMessage = eUnidentifiedEvent;
     mEvent->mSpecifiedEventTypeString = aEventTypeArg;
+    mEvent->SetComposed(aEventTypeArg);
   }
+  mEvent->SetDefaultComposedInNativeAnonymousContent();
+}
+
+already_AddRefed<EventTarget>
+Event::EnsureWebAccessibleRelatedTarget(EventTarget* aRelatedTarget)
+{
+  nsCOMPtr<EventTarget> relatedTarget = aRelatedTarget;
+  if (relatedTarget) {
+    nsCOMPtr<nsIContent> content = do_QueryInterface(relatedTarget);
+    nsCOMPtr<nsIContent> currentTarget =
+      do_QueryInterface(mEvent->mCurrentTarget);
+
+    if (content && content->ChromeOnlyAccess() &&
+        !nsContentUtils::CanAccessNativeAnon()) {
+      content = content->FindFirstNonChromeOnlyAccessContent();
+      relatedTarget = do_QueryInterface(content);
+    }
+
+    nsIContent* shadowRelatedTarget =
+      GetShadowRelatedTarget(currentTarget, content);
+    if (shadowRelatedTarget) {
+      relatedTarget = shadowRelatedTarget;
+    }
+
+    if (relatedTarget) {
+      relatedTarget = relatedTarget->GetTargetForDOMEvent();
+    }
+  }
+  return relatedTarget.forget();
 }
 
 void
@@ -899,12 +920,6 @@ Event::GetScreenCoords(nsPresContext* aPresContext,
                        WidgetEvent* aEvent,
                        LayoutDeviceIntPoint aPoint)
 {
-  if (!nsContentUtils::LegacyIsCallerChromeOrNativeCode() &&
-      nsContentUtils::ResistFingerprinting()) {
-    // When resisting fingerprinting, return client coordinates instead.
-    return GetClientCoords(aPresContext, aEvent, aPoint, CSSIntPoint(0, 0));
-  }
-
   if (EventStateManager::sIsPointerLocked) {
     return EventStateManager::sLastScreenPoint;
   }
@@ -1018,7 +1033,7 @@ Event::GetOffsetCoords(nsPresContext* aPresContext,
   if (!shell) {
     return CSSIntPoint(0, 0);
   }
-  shell->FlushPendingNotifications(Flush_Layout);
+  shell->FlushPendingNotifications(FlushType::Layout);
   nsIFrame* frame = content->GetPrimaryFrame();
   if (!frame) {
     return CSSIntPoint(0, 0);
@@ -1061,10 +1076,8 @@ Event::GetEventName(EventMessage aEventType)
 }
 
 bool
-Event::DefaultPrevented(JSContext* aCx) const
+Event::DefaultPrevented(CallerType aCallerType) const
 {
-  MOZ_ASSERT(aCx, "JS context must be specified");
-
   NS_ENSURE_TRUE(mEvent, false);
 
   // If preventDefault() has never been called, just return false.
@@ -1075,7 +1088,8 @@ Event::DefaultPrevented(JSContext* aCx) const
   // If preventDefault() has been called by content, return true.  Otherwise,
   // i.e., preventDefault() has been called by chrome, return true only when
   // this is called by chrome.
-  return mEvent->DefaultPreventedByContent() || IsChrome(aCx);
+  return mEvent->DefaultPreventedByContent() ||
+         aCallerType == CallerType::System;
 }
 
 double
@@ -1107,16 +1121,11 @@ Event::TimeStamp() const
     return perf->GetDOMTiming()->TimeStampToDOMHighRes(mEvent->mTimeStamp);
   }
 
-  // For dedicated workers, we should make times relative to the navigation
-  // start of the document that created the worker, which is the same as the
-  // timebase for performance.now().
   workers::WorkerPrivate* workerPrivate =
     workers::GetCurrentThreadWorkerPrivate();
   MOZ_ASSERT(workerPrivate);
 
-  TimeDuration duration =
-    mEvent->mTimeStamp - workerPrivate->NowBaseTimeStamp();
-  return duration.ToMilliseconds();
+  return workerPrivate->TimeStampToDOMHighRes(mEvent->mTimeStamp);
 }
 
 bool
@@ -1167,6 +1176,7 @@ Event::Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType)
   IPC::WriteParam(aMsg, Bubbles());
   IPC::WriteParam(aMsg, Cancelable());
   IPC::WriteParam(aMsg, IsTrusted());
+  IPC::WriteParam(aMsg, Composed());
 
   // No timestamp serialization for now!
 }
@@ -1186,8 +1196,12 @@ Event::Deserialize(const IPC::Message* aMsg, PickleIterator* aIter)
   bool trusted = false;
   NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &trusted), false);
 
+  bool composed = false;
+  NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &composed), false);
+
   InitEvent(type, bubbles, cancelable);
   SetTrusted(trusted);
+  SetComposed(composed);
 
   return true;
 }
@@ -1261,6 +1275,23 @@ Event::GetShadowRelatedTarget(nsIContent* aCurrentTarget,
   }
 
   return nullptr;
+}
+
+NS_IMETHODIMP
+Event::GetCancelBubble(bool* aCancelBubble)
+{
+  NS_ENSURE_ARG_POINTER(aCancelBubble);
+  *aCancelBubble = CancelBubble();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Event::SetCancelBubble(bool aCancelBubble)
+{
+  if (aCancelBubble) {
+    mEvent->StopPropagation();
+  }
+  return NS_OK;
 }
 
 } // namespace dom

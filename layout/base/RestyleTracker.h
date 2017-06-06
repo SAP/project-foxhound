@@ -22,10 +22,6 @@
 #include "GeckoProfiler.h"
 #include "mozilla/Maybe.h"
 
-#if defined(MOZ_ENABLE_PROFILER_SPS)
-#include "ProfilerBacktrace.h"
-#endif
-
 namespace mozilla {
 
 class RestyleManager;
@@ -128,9 +124,7 @@ public:
     // that we called AddPendingRestyle for and found the element this is
     // the RestyleData for as its nearest restyle root.
     nsTArray<RefPtr<Element>> mDescendants;
-#if defined(MOZ_ENABLE_PROFILER_SPS)
-    UniquePtr<ProfilerBacktrace> mBacktrace;
-#endif
+    UniqueProfilerBacktrace mBacktrace;
   };
 
   /**
@@ -265,11 +259,9 @@ RestyleTracker::AddPendingRestyleToTable(Element* aElement,
   if (!existingData) {
     RestyleData* rd =
       new RestyleData(aRestyleHint, aMinChangeHint, aRestyleHintData);
-#if defined(MOZ_ENABLE_PROFILER_SPS)
     if (profiler_feature_active("restyle")) {
-      rd->mBacktrace.reset(profiler_get_backtrace());
+      rd->mBacktrace = profiler_get_backtrace();
     }
-#endif
     mPendingRestyles.Put(aElement, rd);
     return false;
   }
@@ -328,7 +320,7 @@ RestyleTracker::AddPendingRestyle(Element* aElement,
 
   // We can only treat this element as a restyle root if we would
   // actually restyle its descendants (so either call
-  // ReResolveStyleContext on it or just reframe it).
+  // ElementRestyler::Restyle on it or just reframe it).
   if ((aRestyleHint & ~eRestyle_LaterSiblings) ||
       (aMinChangeHint & nsChangeHint_ReconstructFrame)) {
     Element* cur =

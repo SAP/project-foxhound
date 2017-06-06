@@ -75,19 +75,6 @@ enum DOM4ErrorTypeCodeMap {
   /* WebCrypto errors https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html#dfn-DataError */
   OperationError           = 0,
 
-  /* Bluetooth API errors */
-  BtFailError              = 0,
-  BtNotReadyError          = 0,
-  BtNoMemError             = 0,
-  BtBusyError              = 0,
-  BtDoneError              = 0,
-  BtUnsupportedError       = 0,
-  BtParmInvalidError       = 0,
-  BtUnhandledError         = 0,
-  BtAuthFailureError       = 0,
-  BtRmtDevDownError        = 0,
-  BtAuthRejectedError      = 0,
-
   /* Push API errors */
   NotAllowedError          = 0,
 };
@@ -178,7 +165,6 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Exception)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Exception)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mData)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Exception)

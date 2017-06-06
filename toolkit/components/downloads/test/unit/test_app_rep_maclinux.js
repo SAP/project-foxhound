@@ -8,8 +8,7 @@
  * downloaded files.
  */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -64,16 +63,13 @@ function registerTableUpdate(aTable, aFilename) {
   });
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
-function run_test()
-{
+function run_test() {
   run_next_test();
 }
 
-add_task(function test_setup()
-{
+add_task(function test_setup() {
   // Wait 10 minutes, that is half of the external xpcshell timeout.
   do_timeout(10 * 60 * 1000, function() {
     if (gStillRunning) {
@@ -145,6 +141,14 @@ add_task(function test_setup()
   });
 
   gHttpServer.start(4444);
+
+  do_register_cleanup(function() {
+    return Task.spawn(function* () {
+      yield new Promise(resolve => {
+        gHttpServer.stop(resolve);
+      });
+    });
+  });
 });
 
 // Construct a response with redirect urls.
@@ -164,8 +168,6 @@ function processUpdateRequest() {
 function waitForUpdates() {
   let deferred = Promise.defer();
   gHttpServer.registerPathHandler("/downloads", function(request, response) {
-    let buf = NetUtil.readInputStreamToString(request.bodyInputStream,
-      request.bodyInputStream.available());
     let blob = processUpdateRequest();
     response.setHeader("Content-Type",
                        "application/vnd.google.safebrowsing-update", false);
@@ -214,14 +216,12 @@ function promiseQueryReputation(query, expectedShouldBlock) {
   return deferred.promise;
 }
 
-add_task(function* ()
-{
+add_task(function* () {
   // Wait for Safebrowsing local list updates to complete.
   yield waitForUpdates();
 });
 
-add_task(function* test_blocked_binary()
-{
+add_task(function* test_blocked_binary() {
   // We should reach the remote server for a verdict.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -233,8 +233,7 @@ add_task(function* test_blocked_binary()
                                 fileSize: 12}, true);
 });
 
-add_task(function* test_non_binary()
-{
+add_task(function* test_non_binary() {
   // We should not reach the remote server for a verdict for non-binary files.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -245,8 +244,7 @@ add_task(function* test_non_binary()
                                 fileSize: 12}, false);
 });
 
-add_task(function* test_good_binary()
-{
+add_task(function* test_good_binary() {
   // We should reach the remote server for a verdict.
   Services.prefs.setBoolPref(remoteEnabledPref,
                              true);
@@ -258,8 +256,7 @@ add_task(function* test_good_binary()
                                 fileSize: 12}, false);
 });
 
-add_task(function* test_disabled()
-{
+add_task(function* test_disabled() {
   // Explicitly disable remote checks
   Services.prefs.setBoolPref(remoteEnabledPref,
                              false);
@@ -280,8 +277,7 @@ add_task(function* test_disabled()
   yield deferred.promise;
 });
 
-add_task(function* test_disabled_through_lists()
-{
+add_task(function* test_disabled_through_lists() {
   Services.prefs.setBoolPref(remoteEnabledPref,
                              false);
   Services.prefs.setCharPref(appRepURLPref,
@@ -301,7 +297,6 @@ add_task(function* test_disabled_through_lists()
   );
   yield deferred.promise;
 });
-add_task(function* test_teardown()
-{
+add_task(function* test_teardown() {
   gStillRunning = false;
 });

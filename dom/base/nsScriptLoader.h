@@ -83,6 +83,7 @@ public:
       mIsXSLT(false),
       mIsCanceled(false),
       mWasCompiledOMT(false),
+      mIsTracking(false),
       mOffThreadToken(nullptr),
       mScriptTextBuf(nullptr),
       mScriptTextLength(0),
@@ -90,7 +91,7 @@ public:
       mLineNo(1),
       mCORSMode(aCORSMode),
       mIntegrity(aIntegrity),
-      mReferrerPolicy(mozilla::net::RP_Default)
+      mReferrerPolicy(mozilla::net::RP_Unset)
   {
   }
 
@@ -132,6 +133,16 @@ public:
     return mOffThreadToken ?  &mOffThreadToken : nullptr;
   }
 
+  bool IsTracking() const
+  {
+    return mIsTracking;
+  }
+  void SetIsTracking()
+  {
+    MOZ_ASSERT(!mIsTracking);
+    mIsTracking = true;
+  }
+
   enum class Progress {
     Loading,
     Compiling,
@@ -165,6 +176,7 @@ public:
   bool mIsXSLT;           // True if we live in mXSLTRequests.
   bool mIsCanceled;       // True if we have been explicitly canceled.
   bool mWasCompiledOMT;   // True if the script has been compiled off main thread.
+  bool mIsTracking;       // True if the script comes from a source on our tracking protection list.
   void* mOffThreadToken;  // Off-thread parsing token.
   nsString mSourceMapURL; // Holds source map url for loaded scripts
   char16_t* mScriptTextBuf; // Holds script text for non-inline scripts. Don't
@@ -469,6 +481,11 @@ public:
     return mPendingChildLoaders.AppendElement(aChild) != nullptr;
   }
 
+  mozilla::dom::DocGroup* GetDocGroup() const
+  {
+    return mDocument->GetDocGroup();
+  }
+
 private:
   virtual ~nsScriptLoader();
 
@@ -549,10 +566,10 @@ private:
   nsresult EvaluateScript(nsScriptLoadRequest* aRequest);
 
   already_AddRefed<nsIScriptGlobalObject> GetScriptGlobalObject();
-  void FillCompileOptionsForRequest(const mozilla::dom::AutoJSAPI &jsapi,
-                                    nsScriptLoadRequest *aRequest,
-                                    JS::Handle<JSObject *> aScopeChain,
-                                    JS::CompileOptions *aOptions);
+  nsresult FillCompileOptionsForRequest(const mozilla::dom::AutoJSAPI& jsapi,
+                                        nsScriptLoadRequest* aRequest,
+                                        JS::Handle<JSObject*> aScopeChain,
+                                        JS::CompileOptions* aOptions);
 
   uint32_t NumberOfProcessors();
   nsresult PrepareLoadedRequest(nsScriptLoadRequest* aRequest,

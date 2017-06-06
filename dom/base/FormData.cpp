@@ -8,6 +8,7 @@
 #include "nsIVariant.h"
 #include "nsIInputStream.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/Directory.h"
 #include "mozilla/dom/HTMLFormElement.h"
 
 #include "MultipartBlobImpl.h"
@@ -83,7 +84,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(FormData)
                                 "mFormData[i].GetAsBlob()", 0);
   }
 
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(FormData)

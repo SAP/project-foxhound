@@ -1161,7 +1161,9 @@ DownloadsPlacesView.prototype = {
   isCommandEnabled(aCommand) {
     switch (aCommand) {
       case "cmd_copy":
-        return this._richlistbox.selectedItems.length > 0;
+      case "downloadsCmd_openReferrer":
+      case "downloadShowMenuItem":
+        return this._richlistbox.selectedItems.length == 1;
       case "cmd_selectAll":
         return true;
       case "cmd_paste":
@@ -1215,7 +1217,7 @@ DownloadsPlacesView.prototype = {
       let [url, name] = data.value.QueryInterface(Ci.nsISupportsString)
                             .data.split("\n");
       if (url) {
-        return [NetUtil.newURI(url, null, null).spec, name];
+        return [NetUtil.newURI(url).spec, name];
       }
     } catch (ex) {}
 
@@ -1295,6 +1297,7 @@ DownloadsPlacesView.prototype = {
     let download = element._shell.download;
     contextMenu.setAttribute("state",
                              DownloadsCommon.stateOfDownload(download));
+    contextMenu.setAttribute("exists", "true");
     contextMenu.classList.toggle("temporary-block",
                                  !!download.hasBlockedData);
 
@@ -1391,9 +1394,9 @@ DownloadsPlacesView.prototype = {
 
   onDragOver(aEvent) {
     let types = aEvent.dataTransfer.types;
-    if (types.contains("text/uri-list") ||
-        types.contains("text/x-moz-url") ||
-        types.contains("text/plain")) {
+    if (types.includes("text/uri-list") ||
+        types.includes("text/x-moz-url") ||
+        types.includes("text/plain")) {
       aEvent.preventDefault();
     }
   },
@@ -1406,12 +1409,15 @@ DownloadsPlacesView.prototype = {
       return;
     }
 
-    let name = {};
-    let url = Services.droppedLinkHandler.dropLink(aEvent, name);
-    if (url) {
-      let browserWin = RecentWindow.getMostRecentBrowserWindow();
-      let initiatingDoc = browserWin ? browserWin.document : document;
-      DownloadURL(url, name.value, initiatingDoc);
+    let links = Services.droppedLinkHandler.dropLinks(aEvent);
+    if (!links.length)
+      return;
+    let browserWin = RecentWindow.getMostRecentBrowserWindow();
+    let initiatingDoc = browserWin ? browserWin.document : document;
+    for (let link of links) {
+      if (link.url.startsWith("about:"))
+        continue;
+      DownloadURL(link.url, link.name, initiatingDoc);
     }
   },
 };

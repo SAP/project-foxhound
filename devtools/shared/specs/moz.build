@@ -34,8 +34,8 @@ DevToolsModules(
     'preference.js',
     'profiler.js',
     'promises.js',
+    'reflow.js',
     'script.js',
-    'settings.js',
     'source.js',
     'storage.js',
     'string.js',
@@ -44,6 +44,7 @@ DevToolsModules(
     'stylesheets.js',
     'timeline.js',
     'webaudio.js',
+    'webextension-inspected-window.js',
     'webgl.js',
     'worker.js'
 )

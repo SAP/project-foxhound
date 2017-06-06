@@ -16,11 +16,11 @@ menulist > menupopup {
 
 /* ::::: Variables ::::: */
 :root {
-  --panel-arrowcontent-padding: 16px;
-  --panel-arrowcontent-background: linear-gradient(hsla(0,0%,99%,1), hsla(0,0%,99%,.975) 10%, hsla(0,0%,98%,.975));
-  --panel-arrowcontent-color: hsl(0,0%,10%);
-  --panel-arrowcontent-border-color: hsla(210,4%,10%,.05);
-  --panel-arrowcontent-border-radius: 3.5px;
+  --arrowpanel-padding: 16px;
+  --arrowpanel-background: linear-gradient(hsla(0,0%,99%,1), hsla(0,0%,99%,.975) 10%, hsla(0,0%,98%,.975));
+  --arrowpanel-color: hsl(0,0%,10%);
+  --arrowpanel-border-color: hsla(210,4%,10%,.05);
+  --arrowpanel-border-radius: 3.5px;
 }
 
 /* ::::: root elements ::::: */
@@ -253,11 +253,13 @@ notification > button {
   border-radius: 10000px;
   border: @roundButtonBorder@;
   text-shadow: @loweredShadow@;
+  color: @roundButtonColor@;
   background: @roundButtonBackground@;
   box-shadow: @roundButtonShadow@;
 }
 
 notification > button:active:hover {
+  color: @roundButtonColor@;
   background: @roundButtonPressedBackground@;
   box-shadow: @roundButtonPressedShadow@;
 }
@@ -277,6 +279,8 @@ notification > button > .button-box > .button-text {
 popupnotificationcontent {
   margin-top: .5em;
 }
+
+%include ../../shared/notification-popup.inc.css
 
 /* :::::: autoscroll popup ::::: */
 

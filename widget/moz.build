@@ -8,7 +8,7 @@ toolkit = CONFIG['MOZ_WIDGET_TOOLKIT']
 
 if toolkit in ('cocoa', 'android', 'gonk', 'uikit'):
     DIRS += [toolkit]
-if toolkit in ('android', 'gonk', 'gtk2', 'gtk3'):
+if toolkit in ('android', 'cocoa', 'gonk', 'gtk2', 'gtk3'):
     EXPORTS += ['nsIPrintDialogService.h']
 
 if toolkit == 'windows':
@@ -38,7 +38,6 @@ elif toolkit == 'cocoa':
     ]
     EXPORTS += [
         'nsINativeMenuService.h',
-        'nsIPrintDialogService.h',
     ]
 
 TEST_DIRS += ['tests']
@@ -75,7 +74,7 @@ XPIDL_SOURCES += [
     'nsIGfxInfoDebug.idl',
     'nsIIdleService.idl',
     'nsIIdleServiceInternal.idl',
-    'nsIPrintOptions.idl',
+    'nsIPrinterEnumerator.idl',
     'nsIPrintSession.idl',
     'nsIPrintSettings.idl',
     'nsIPrintSettingsService.idl',
@@ -249,6 +248,7 @@ LOCAL_INCLUDES += [
     '/layout/base',
     '/layout/forms',
     '/layout/generic',
+    '/layout/painting',
     '/layout/xul',
     '/view',
     '/widget',
@@ -284,6 +284,3 @@ if CONFIG['MOZ_ENABLE_D3D10_LAYER']:
     DEFINES['MOZ_ENABLE_D3D10_LAYER'] = True
 
 CXXFLAGS += CONFIG['TK_CFLAGS']
-
-if CONFIG['GNU_CXX']:
-    CXXFLAGS += ['-Wno-error=shadow']

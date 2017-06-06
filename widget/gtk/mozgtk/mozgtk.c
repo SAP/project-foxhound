@@ -9,6 +9,7 @@ STUB(gdk_atom_name)
 STUB(gdk_beep)
 STUB(gdk_cairo_create)
 STUB(gdk_color_free)
+STUB(gdk_color_parse)
 STUB(gdk_cursor_new_for_display)
 STUB(gdk_cursor_new_from_name)
 STUB(gdk_cursor_new_from_pixbuf)
@@ -244,7 +245,6 @@ STUB(gtk_icon_theme_get_icon_sizes)
 STUB(gtk_icon_theme_lookup_by_gicon)
 STUB(gtk_icon_theme_lookup_icon)
 STUB(gtk_image_get_type)
-STUB(gtk_image_menu_item_new)
 STUB(gtk_image_new)
 STUB(gtk_image_new_from_stock)
 STUB(gtk_image_set_from_pixbuf)
@@ -577,10 +577,10 @@ STUB(gtk_tree_view_column_get_button)
 STUB(gtk_widget_get_preferred_size)
 STUB(gtk_widget_get_state_flags)
 STUB(gtk_widget_get_style_context)
-STUB(gtk_widget_path_append_for_widget)
 STUB(gtk_widget_path_append_type)
 STUB(gtk_widget_path_copy)
 STUB(gtk_widget_path_free)
+STUB(gtk_widget_path_iter_add_class)
 STUB(gtk_widget_path_new)
 STUB(gtk_widget_path_unref)
 STUB(gtk_widget_set_visual)
@@ -612,6 +612,9 @@ STUB(gdkx_visual_get)
 STUB(gtk_object_get_type)
 #endif
 
+#ifndef GTK3_SYMBOLS
+// Only define the following workaround when using GTK3, which we detect
+// by checking if GTK3 stubs are not provided.
 #include <X11/Xlib.h>
 // Bug 1271100
 // We need to trick system Cairo into not using the XShm extension due to
@@ -625,4 +628,5 @@ XShmQueryExtension(Display* aDisplay)
 {
   return False;
 }
+#endif
 

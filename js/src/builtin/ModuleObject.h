@@ -142,14 +142,7 @@ class ModuleNamespaceObject : public ProxyObject
   private:
     struct ProxyHandler : public BaseProxyHandler
     {
-        enum
-        {
-            EnumerateFunctionSlot = 0
-        };
-
         ProxyHandler();
-
-        JS::Value getEnumerateFunction(HandleObject proxy) const;
 
         bool getOwnPropertyDescriptor(JSContext* cx, HandleObject proxy, HandleId id,
                                       MutableHandle<PropertyDescriptor> desc) const override;
@@ -265,7 +258,7 @@ class ModuleObject : public NativeObject
     static bool DeclarationInstantiation(JSContext* cx, HandleModuleObject self);
     static bool Evaluation(JSContext* cx, HandleModuleObject self);
 
-    void setHostDefinedField(JS::Value value);
+    void setHostDefinedField(const JS::Value& value);
 
     // For intrinsic_CreateModuleEnvironment.
     void createEnvironment();

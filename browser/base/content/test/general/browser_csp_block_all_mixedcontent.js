@@ -9,14 +9,14 @@
 const PRE_PATH = "https://example.com/browser/browser/base/content/test/general/";
 var gTestBrowser = null;
 
-//------------------------------------------------------
+// ------------------------------------------------------
 function cleanUpAfterTests() {
   gBrowser.removeCurrentTab();
   window.focus();
   finish();
 }
 
-//------------------------------------------------------
+// ------------------------------------------------------
 function verifyUInotDegraded() {
   // make sure that not mixed content is loaded and also not blocked
   assertMixedContentBlockingState(
@@ -30,7 +30,7 @@ function verifyUInotDegraded() {
   cleanUpAfterTests();
 }
 
-//------------------------------------------------------
+// ------------------------------------------------------
 function runTests() {
   var newTab = gBrowser.addTab();
   gBrowser.selectedTab = newTab;
@@ -43,13 +43,13 @@ function runTests() {
   gTestBrowser.loadURI(url);
 }
 
-//------------------------------------------------------
+// ------------------------------------------------------
 function test() {
   // Performing async calls, e.g. 'onload', we have to wait till all of them finished
   waitForExplicitFinish();
 
   SpecialPowers.pushPrefEnv(
-    { 'set': [["security.mixed_content.block_active_content", true]] },
+    { "set": [["security.mixed_content.block_active_content", true]] },
     function() { runTests(); }
   );
 }

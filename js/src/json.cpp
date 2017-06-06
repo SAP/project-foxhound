@@ -315,8 +315,7 @@ class CycleDetector
     bool foundCycle(JSContext* cx) {
         auto addPtr = stack.lookupForAdd(obj_);
         if (addPtr) {
-            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_JSON_CYCLIC_VALUE,
-                                 js_object_str);
+            JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_JSON_CYCLIC_VALUE);
             return false;
         }
         if (!stack.add(addPtr, obj_)) {
@@ -399,9 +398,9 @@ JO(JSContext* cx, HandleObject obj, StringifyContext* scx)
 #ifdef DEBUG
         if (scx->maybeSafely) {
             RootedNativeObject nativeObj(cx, &obj->as<NativeObject>());
-            RootedShape prop(cx);
+            Rooted<PropertyResult> prop(cx);
             NativeLookupOwnPropertyNoResolve(cx, nativeObj, id, &prop);
-            MOZ_ASSERT(prop && prop->isDataDescriptor());
+            MOZ_ASSERT(prop && prop.isNativeProperty() && prop.shape()->isDataDescriptor());
         }
 #endif // DEBUG
         if (!GetProperty(cx, obj, obj, id, &outputValue))
@@ -600,7 +599,7 @@ Str(JSContext* cx, const Value& v, StringifyContext* scx)
 
 /* ES6 24.3.2. */
 bool
-js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_, Value space_,
+js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_, const Value& space_,
               StringBuffer& sb, StringifyBehavior stringifyBehavior)
 {
     RootedObject replacer(cx, replacer_);
@@ -982,9 +981,9 @@ static const JSFunctionSpec json_static_methods[] = {
 JSObject*
 js::InitJSONClass(JSContext* cx, HandleObject obj)
 {
-    Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
+    Handle<GlobalObject*> global = obj.as<GlobalObject>();
 
-    RootedObject proto(cx, global->getOrCreateObjectPrototype(cx));
+    RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
     if (!proto)
         return nullptr;
     RootedObject JSON(cx, NewObjectWithGivenProto(cx, &JSONClass, proto, SingletonObject));

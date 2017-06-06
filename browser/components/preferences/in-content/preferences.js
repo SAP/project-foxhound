@@ -2,6 +2,18 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this file,
    - You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// Import globals from the files imported by the .xul files.
+/* import-globals-from subdialogs.js */
+/* import-globals-from advanced.js */
+/* import-globals-from main.js */
+/* import-globals-from search.js */
+/* import-globals-from content.js */
+/* import-globals-from privacy.js */
+/* import-globals-from applications.js */
+/* import-globals-from security.js */
+/* import-globals-from sync.js */
+/* import-globals-from ../../../base/content/utilityOverlay.js */
+
 "use strict";
 
 var Cc = Components.classes;
@@ -30,17 +42,14 @@ function init_category_if_required(category) {
 function register_module(categoryName, categoryObject) {
   gCategoryInits.set(categoryName, {
     inited: false,
-    init: function() {
+    init() {
       categoryObject.init();
       this.inited = true;
     }
   });
 }
 
-addEventListener("DOMContentLoaded", function onLoad() {
-  removeEventListener("DOMContentLoaded", onLoad);
-  init_all();
-});
+document.addEventListener("DOMContentLoaded", init_all, {once: true});
 
 function init_all() {
   document.documentElement.instantApply = true;
@@ -49,6 +58,7 @@ function init_all() {
   register_module("paneGeneral", gMainPane);
   register_module("paneSearch", gSearchPane);
   register_module("panePrivacy", gPrivacyPane);
+  register_module("paneContainers", gContainersPane);
   register_module("paneAdvanced", gAdvancedPane);
   register_module("paneApplications", gApplicationsPane);
   register_module("paneContent", gContentPane);
@@ -73,8 +83,8 @@ function init_all() {
   init_dynamic_padding();
 
   var initFinished = new CustomEvent("Initialized", {
-    'bubbles': true,
-    'cancelable': true
+    "bubbles": true,
+    "cancelable": true
   });
   document.dispatchEvent(initFinished);
 
@@ -95,7 +105,7 @@ function init_all() {
 function init_dynamic_padding() {
   let categories = document.getElementById("categories");
   let catPadding = Number.parseInt(getComputedStyle(categories)
-                                     .getPropertyValue('padding-top'));
+                                     .getPropertyValue("padding-top"));
   let fullHeight = categories.lastElementChild.getBoundingClientRect().bottom;
   let mediaRule = `
   @media (max-height: ${fullHeight}px) {
@@ -104,8 +114,8 @@ function init_dynamic_padding() {
     }
   }
   `;
-  let mediaStyle = document.createElementNS('http://www.w3.org/1999/xhtml', 'html:style');
-  mediaStyle.setAttribute('type', 'text/css');
+  let mediaStyle = document.createElementNS("http://www.w3.org/1999/xhtml", "html:style");
+  mediaStyle.setAttribute("type", "text/css");
   mediaStyle.appendChild(document.createCDATASection(mediaRule));
   document.documentElement.appendChild(mediaStyle);
 }
@@ -187,10 +197,20 @@ function gotoPref(aCategory) {
 }
 
 function search(aQuery, aAttribute) {
-  let elements = document.getElementById("mainPrefPane").children;
+  let mainPrefPane = document.getElementById("mainPrefPane");
+  let elements = mainPrefPane.children;
   for (let element of elements) {
     let attributeValue = element.getAttribute(aAttribute);
     element.hidden = (attributeValue != aQuery);
+  }
+
+  let keysets = mainPrefPane.getElementsByTagName("keyset");
+  for (let element of keysets) {
+    let attributeValue = element.getAttribute(aAttribute);
+    if (attributeValue == aQuery)
+      element.removeAttribute("disabled");
+    else
+      element.setAttribute("disabled", true);
   }
 }
 

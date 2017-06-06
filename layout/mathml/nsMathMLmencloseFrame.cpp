@@ -779,9 +779,8 @@ void nsDisplayNotation::Paint(nsDisplayListBuilder* aBuilder,
                            presContext->AppUnitsPerDevPixel());
   rect.Deflate(strokeWidth / 2.f);
 
-  nsCSSPropertyID colorProp = mFrame->StyleContext()->GetTextFillColorProp();
   ColorPattern color(ToDeviceColor(
-                                 mFrame->GetVisitedDependentColor(colorProp)));
+    mFrame->GetVisitedDependentColor(&nsStyleText::mWebkitTextFillColor)));
 
   StrokeOptions strokeOptions(strokeWidth);
 

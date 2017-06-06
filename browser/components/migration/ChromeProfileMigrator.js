@@ -24,9 +24,9 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
+Cu.import("resource://gre/modules/osfile.jsm"); /* globals OS */
 Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource:///modules/MigrationUtils.jsm");
+Cu.import("resource:///modules/MigrationUtils.jsm"); /* globals MigratorPrototype */
 
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
@@ -64,22 +64,33 @@ function getDataFolder(subfoldersWin, subfoldersOSX, subfoldersUnix) {
  * @note    Google Chrome uses FILETIME / 10 as time.
  *          FILETIME is based on same structure of Windows.
  */
-function chromeTimeToDate(aTime)
-{
-  return new Date((aTime * S100NS_PER_MS - S100NS_FROM1601TO1970 ) / 10000);
+function chromeTimeToDate(aTime) {
+  return new Date((aTime * S100NS_PER_MS - S100NS_FROM1601TO1970) / 10000);
 }
 
 /**
- * Insert bookmark items into specific folder.
+ * Convert Date object to Chrome time format
  *
- * @param   parentGuid
- *          GUID of the folder where items will be inserted
+ * @param   aDate
+ *          Date object or integer equivalent
+ * @return  Chrome time
+ * @note    For details on Chrome time, see chromeTimeToDate.
+ */
+function dateToChromeTime(aDate) {
+  return (aDate * 10000 + S100NS_FROM1601TO1970) / S100NS_PER_MS;
+}
+
+/**
+ * Converts an array of chrome bookmark objects into one our own places code
+ * understands.
+ *
  * @param   items
- *          bookmark items to be inserted
+ *          bookmark items to be inserted on this parent
  * @param   errorAccumulator
  *          function that gets called with any errors thrown so we don't drop them on the floor.
  */
-function* insertBookmarkItems(parentGuid, items, errorAccumulator) {
+function convertBookmarks(items, errorAccumulator) {
+  let itemsToInsert = [];
   for (let item of items) {
     try {
       if (item.type == "url") {
@@ -88,21 +99,18 @@ function* insertBookmarkItems(parentGuid, items, errorAccumulator) {
           // messages to the console, so we avoid doing that.
           continue;
         }
-        yield MigrationUtils.insertBookmarkWrapper({
-          parentGuid, url: item.url, title: item.name
-        });
+        itemsToInsert.push({url: item.url, title: item.name});
       } else if (item.type == "folder") {
-        let newFolderGuid = (yield MigrationUtils.insertBookmarkWrapper({
-          parentGuid, type: PlacesUtils.bookmarks.TYPE_FOLDER, title: item.name
-        })).guid;
-
-        yield insertBookmarkItems(newFolderGuid, item.children, errorAccumulator);
+        let folderItem = {type: PlacesUtils.bookmarks.TYPE_FOLDER, title: item.name};
+        folderItem.children = convertBookmarks(item.children, errorAccumulator);
+        itemsToInsert.push(folderItem);
       }
-    } catch (e) {
-      Cu.reportError(e);
-      errorAccumulator(e);
+    } catch (ex) {
+      Cu.reportError(ex);
+      errorAccumulator(ex);
     }
   }
+  return itemsToInsert;
 }
 
 function ChromeProfileMigrator() {
@@ -137,11 +145,10 @@ ChromeProfileMigrator.prototype.getResources =
 ChromeProfileMigrator.prototype.getLastUsedDate =
   function Chrome_getLastUsedDate() {
     let datePromises = this.sourceProfiles.map(profile => {
-      let profileFolder = this._chromeUserDataFolder.clone();
       let basePath = OS.Path.join(this._chromeUserDataFolder.path, profile.id);
       let fileDatePromises = ["Bookmarks", "History", "Cookies"].map(leafName => {
         let path = OS.Path.join(basePath, leafName);
-        return OS.File.stat(path).catch(_ => null).then(info => {
+        return OS.File.stat(path).catch(() => null).then(info => {
           return info ? info.lastModificationDate : 0;
         });
       });
@@ -200,10 +207,11 @@ Object.defineProperty(ChromeProfileMigrator.prototype, "sourceProfiles", {
     }
 
     // Only list profiles from which any data can be imported
-    return this.__sourceProfiles = profiles.filter(function(profile) {
+    this.__sourceProfiles = profiles.filter(function(profile) {
       let resources = this.getResources(profile);
       return resources && resources.length > 0;
     }, this);
+    return this.__sourceProfiles;
   }
 });
 
@@ -215,14 +223,13 @@ Object.defineProperty(ChromeProfileMigrator.prototype, "sourceHomePageURL", {
       // XXX reading and parsing JSON is synchronous.
       let fstream = Cc[FILE_INPUT_STREAM_CID].
                     createInstance(Ci.nsIFileInputStream);
-      fstream.init(file, -1, 0, 0);
+      fstream.init(prefsFile, -1, 0, 0);
       try {
         return JSON.parse(
           NetUtil.readInputStreamToString(fstream, fstream.available(),
                                           { charset: "UTF-8" })
             ).homepage;
-      }
-      catch (e) {
+      } catch (e) {
         Cu.reportError("Error parsing Chrome's preferences file: " + e);
       }
     }
@@ -246,27 +253,12 @@ function GetBookmarksResource(aProfileFolder) {
   return {
     type: MigrationUtils.resourceTypes.BOOKMARKS,
 
-    migrate: function(aCallback) {
+    migrate(aCallback) {
       return Task.spawn(function* () {
         let gotErrors = false;
-        let errorGatherer = () => gotErrors = true;
-        let jsonStream = yield new Promise(resolve =>
-          NetUtil.asyncFetch({ uri: NetUtil.newURI(bookmarksFile),
-                               loadUsingSystemPrincipal: true
-                             },
-                             (inputStream, resultCode) => {
-                               if (Components.isSuccessCode(resultCode)) {
-                                 resolve(inputStream);
-                               } else {
-                                 reject(new Error("Could not read Bookmarks file"));
-                               }
-                             }
-          )
-        );
-
+        let errorGatherer = function() { gotErrors = true };
         // Parse Chrome bookmark file that is JSON format
-        let bookmarkJSON = NetUtil.readInputStreamToString(
-          jsonStream, jsonStream.available(), { charset : "UTF-8" });
+        let bookmarkJSON = yield OS.File.read(bookmarksFile.path, {encoding: "UTF-8"});
         let roots = JSON.parse(bookmarkJSON).roots;
 
         // Importing bookmark bar items
@@ -274,11 +266,12 @@ function GetBookmarksResource(aProfileFolder) {
             roots.bookmark_bar.children.length > 0) {
           // Toolbar
           let parentGuid = PlacesUtils.bookmarks.toolbarGuid;
+          let bookmarks = convertBookmarks(roots.bookmark_bar.children, errorGatherer);
           if (!MigrationUtils.isStartupMigration) {
             parentGuid =
               yield MigrationUtils.createImportedBookmarksFolder("Chrome", parentGuid);
           }
-          yield insertBookmarkItems(parentGuid, roots.bookmark_bar.children, errorGatherer);
+          yield MigrationUtils.insertManyBookmarksWrapper(bookmarks, parentGuid);
         }
 
         // Importing bookmark menu items
@@ -286,17 +279,18 @@ function GetBookmarksResource(aProfileFolder) {
             roots.other.children.length > 0) {
           // Bookmark menu
           let parentGuid = PlacesUtils.bookmarks.menuGuid;
+          let bookmarks = convertBookmarks(roots.other.children, errorGatherer);
           if (!MigrationUtils.isStartupMigration) {
-            parentGuid =
-              yield MigrationUtils.createImportedBookmarksFolder("Chrome", parentGuid);
+            parentGuid
+              = yield MigrationUtils.createImportedBookmarksFolder("Chrome", parentGuid);
           }
-          yield insertBookmarkItems(parentGuid, roots.other.children, errorGatherer);
+          yield MigrationUtils.insertManyBookmarksWrapper(bookmarks, parentGuid);
         }
         if (gotErrors) {
-          throw "The migration included errors.";
+          throw new Error("The migration included errors.");
         }
-      }.bind(this)).then(() => aCallback(true),
-                          e => aCallback(false));
+      }).then(() => aCallback(true),
+              () => aCallback(false));
     }
   };
 }
@@ -312,14 +306,20 @@ function GetHistoryResource(aProfileFolder) {
 
     migrate(aCallback) {
       Task.spawn(function* () {
-        let dbOptions = {
-          readOnly: true,
-          ignoreLockingMode: true,
-          path: historyFile.path
-        };
+        const MAX_AGE_IN_DAYS = Services.prefs.getIntPref("browser.migrate.chrome.history.maxAgeInDays");
+        const LIMIT = Services.prefs.getIntPref("browser.migrate.chrome.history.limit");
 
-        let rows = yield MigrationUtils.getRowsFromDBWithoutLocks(historyFile.path, "Chrome history",
-          `SELECT url, title, last_visit_time, typed_count FROM urls WHERE hidden = 0`);
+        let query = "SELECT url, title, last_visit_time, typed_count FROM urls WHERE hidden = 0";
+        if (MAX_AGE_IN_DAYS) {
+          let maxAge = dateToChromeTime(Date.now() - MAX_AGE_IN_DAYS * 24 * 60 * 60 * 1000);
+          query += " AND last_visit_time > " + maxAge;
+        }
+        if (LIMIT) {
+          query += " ORDER BY last_visit_time DESC LIMIT " + LIMIT;
+        }
+
+        let rows =
+          yield MigrationUtils.getRowsFromDBWithoutLocks(historyFile.path, "Chrome history", query);
         let places = [];
         for (let row of rows) {
           try {
@@ -346,14 +346,10 @@ function GetHistoryResource(aProfileFolder) {
         if (places.length > 0) {
           yield new Promise((resolve, reject) => {
             MigrationUtils.insertVisitsWrapper(places, {
-              _success: false,
-              handleResult: function() {
-                // Importing any entry is considered a successful import.
-                this._success = true;
-              },
-              handleError: function() {},
-              handleCompletion: function() {
-                if (this._success) {
+              ignoreErrors: true,
+              ignoreResults: true,
+              handleCompletion(updatedCount) {
+                if (updatedCount > 0) {
                   resolve();
                 } else {
                   reject(new Error("Couldn't add visits"));
@@ -362,7 +358,7 @@ function GetHistoryResource(aProfileFolder) {
             });
           });
         }
-      }).then(() => { aCallback(true); },
+      }).then(() => { aCallback(true) },
               ex => {
                 Cu.reportError(ex);
                 aCallback(false);
@@ -386,9 +382,9 @@ function GetCookiesResource(aProfileFolder) {
        `SELECT host_key, name, value, path, expires_utc, secure, httponly, encrypted_value
         FROM cookies
         WHERE length(encrypted_value) = 0`).catch(ex => {
-        Cu.reportError(ex);
-        aCallback(false);
-      });
+          Cu.reportError(ex);
+          aCallback(false);
+        });
       // If the promise was rejected we will have already called aCallback,
       // so we can just return here.
       if (!rows) {
@@ -437,9 +433,9 @@ function GetWindowsPasswordsResource(aProfileFolder) {
        `SELECT origin_url, action_url, username_element, username_value,
         password_element, password_value, signon_realm, scheme, date_created,
         times_used FROM logins WHERE blacklisted_by_user = 0`).catch(ex => {
-        Cu.reportError(ex);
-        aCallback(false);
-      });
+          Cu.reportError(ex);
+          aCallback(false);
+        });
       // If the promise was rejected we will have already called aCallback,
       // so we can just return here.
       if (!rows) {
@@ -448,24 +444,35 @@ function GetWindowsPasswordsResource(aProfileFolder) {
       let crypto = new OSCrypto();
 
       for (let row of rows) {
-        let loginInfo = {
-          username: row.getResultByName("username_value"),
-          password: crypto.
-                    decryptData(crypto.arrayToString(row.getResultByName("password_value")),
-                                                     null),
-          hostname: NetUtil.newURI(row.getResultByName("origin_url")).prePath,
-          formSubmitURL: null,
-          httpRealm: null,
-          usernameElement: row.getResultByName("username_element"),
-          passwordElement: row.getResultByName("password_element"),
-          timeCreated: chromeTimeToDate(row.getResultByName("date_created") + 0).getTime(),
-          timesUsed: row.getResultByName("times_used") + 0,
-        };
-
         try {
+          let origin_url = NetUtil.newURI(row.getResultByName("origin_url"));
+          // Ignore entries for non-http(s)/ftp URLs because we likely can't
+          // use them anyway.
+          const kValidSchemes = new Set(["https", "http", "ftp"]);
+          if (!kValidSchemes.has(origin_url.scheme)) {
+            continue;
+          }
+          let loginInfo = {
+            username: row.getResultByName("username_value"),
+            password: crypto.
+                      decryptData(crypto.arrayToString(row.getResultByName("password_value")),
+                                                       null),
+            hostname: origin_url.prePath,
+            formSubmitURL: null,
+            httpRealm: null,
+            usernameElement: row.getResultByName("username_element"),
+            passwordElement: row.getResultByName("password_element"),
+            timeCreated: chromeTimeToDate(row.getResultByName("date_created") + 0).getTime(),
+            timesUsed: row.getResultByName("times_used") + 0,
+          };
+
           switch (row.getResultByName("scheme")) {
             case AUTH_TYPE.SCHEME_HTML:
-              loginInfo.formSubmitURL = NetUtil.newURI(row.getResultByName("action_url")).prePath;
+              let action_url = NetUtil.newURI(row.getResultByName("action_url"));
+              if (!kValidSchemes.has(action_url.scheme)) {
+                continue; // This continues the outer for loop.
+              }
+              loginInfo.formSubmitURL = action_url.prePath;
               break;
             case AUTH_TYPE.SCHEME_BASIC:
             case AUTH_TYPE.SCHEME_DIGEST:

@@ -245,15 +245,54 @@
  * example, write
  *
  *   MOZ_MUST_USE int foo();
- *
  * or
- *
  *   MOZ_MUST_USE int foo() { return 42; }
+ *
+ * MOZ_MUST_USE is most appropriate for functions where the return value is
+ * some kind of success/failure indicator -- often |nsresult|, |bool| or |int|
+ * -- because these functions are most commonly the ones that have missing
+ * checks. There are three cases of note.
+ *
+ * - Fallible functions whose return values should always be checked. For
+ *   example, a function that opens a file should always be checked because any
+ *   subsequent operations on the file will fail if opening it fails. Such
+ *   functions should be given a MOZ_MUST_USE annotation.
+ *
+ * - Fallible functions whose return value need not always be checked. For
+ *   example, a function that closes a file might not be checked because it's
+ *   common that no further operations would be performed on the file. Such
+ *   functions do not need a MOZ_MUST_USE annotation.
+ *
+ * - Infallible functions, i.e. ones that always return a value indicating
+ *   success. These do not need a MOZ_MUST_USE annotation. Ideally, they would
+ *   be converted to not return a success/failure indicator, though sometimes
+ *   interface constraints prevent this.
  */
 #if defined(__GNUC__) || defined(__clang__)
 #  define MOZ_MUST_USE __attribute__ ((warn_unused_result))
 #else
 #  define MOZ_MUST_USE
+#endif
+
+/**
+ * MOZ_MAYBE_UNUSED suppresses compiler warnings about functions that are
+ * never called (in this build configuration, at least).
+ *
+ * Place this attribute at the very beginning of a function declaration. For
+ * example, write
+ *
+ *   MOZ_MAYBE_UNUSED int foo();
+ *
+ * or
+ *
+ *   MOZ_MAYBE_UNUSED int foo() { return 42; }
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#  define MOZ_MAYBE_UNUSED __attribute__ ((__unused__))
+#elif defined(_MSC_VER)
+#  define MOZ_MAYBE_UNUSED __pragma(warning(suppress:4505))
+#else
+#  define MOZ_MAYBE_UNUSED
 #endif
 
 /**
@@ -464,10 +503,16 @@
  *   tool aware that the marked function is part of the initialization process
  *   and to include the marked function in the scan mechanism that determines witch
  *   member variables still remain uninitialized.
+ * MOZ_NON_PARAM: Applies to types. Makes it compile time error to use the type
+ *   in parameter without pointer or reference.
  * MOZ_NON_AUTOABLE: Applies to class declarations. Makes it a compile time error to
  *   use `auto` in place of this type in variable declarations.  This is intended to
  *   be used with types which are intended to be implicitly constructed into other
  *   other types before being assigned to variables.
+ * MOZ_REQUIRED_BASE_METHOD: Applies to virtual class method declarations.
+ *  Sometimes derived classes override methods that need to be called by their
+ *  overridden counterparts. This marker indicates that the marked method must
+ *  be called by the method that it overrides.
  */
 #ifdef MOZ_CLANG_PLUGIN
 #  define MOZ_MUST_OVERRIDE __attribute__((annotate("moz_must_override")))
@@ -501,6 +546,10 @@
     __attribute__((annotate("moz_ignore_ctor_initialization")))
 #  define MOZ_IS_CLASS_INIT \
     __attribute__((annotate("moz_is_class_init")))
+#  define MOZ_NON_PARAM \
+    __attribute__((annotate("moz_non_param")))
+#  define MOZ_REQUIRED_BASE_METHOD \
+    __attribute__((annotate("moz_required_base_method")))
 /*
  * It turns out that clang doesn't like void func() __attribute__ {} without a
  * warning, so use pragmas to disable the warning. This code won't work on GCC
@@ -534,27 +583,45 @@
 #  define MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS /* nothing */
 #  define MOZ_INIT_OUTSIDE_CTOR /* nothing */
 #  define MOZ_IS_CLASS_INIT /* nothing */
+#  define MOZ_NON_PARAM /* nothing */
 #  define MOZ_NON_AUTOABLE /* nothing */
+#  define MOZ_REQUIRED_BASE_METHOD /* nothing */
 #endif /* MOZ_CLANG_PLUGIN */
 
 #define MOZ_RAII MOZ_NON_TEMPORARY_CLASS MOZ_STACK_CLASS
 
-/*
- * MOZ_HAVE_REF_QUALIFIERS is defined for compilers that support C++11's rvalue
- * qualifier, "&&".
- */
-#if defined(_MSC_VER) && _MSC_VER >= 1900
-#  define MOZ_HAVE_REF_QUALIFIERS
-#elif defined(__clang__)
-// All supported Clang versions
-#  define MOZ_HAVE_REF_QUALIFIERS
-#elif defined(__GNUC__)
-#  include "mozilla/Compiler.h"
-#  if MOZ_GCC_VERSION_AT_LEAST(4, 8, 1)
-#    define MOZ_HAVE_REF_QUALIFIERS
-#  endif
-#endif
-
 #endif /* __cplusplus */
+
+/**
+ * Printf style formats.  MOZ_FORMAT_PRINTF can be used to annotate a
+ * function or method that is "printf-like"; this will let (some)
+ * compilers check that the arguments match the template string.
+ *
+ * This macro takes two arguments.  The first argument is the argument
+ * number of the template string.  The second argument is the argument
+ * number of the '...' argument holding the arguments.
+ *
+ * Argument numbers start at 1.  Note that the implicit "this"
+ * argument of a non-static member function counts as an argument.
+ *
+ * So, for a simple case like:
+ *   void print_something (int whatever, const char *fmt, ...);
+ * The corresponding annotation would be
+ *   MOZ_FORMAT_PRINTF(2, 3)
+ * However, if "print_something" were a non-static member function,
+ * then the annotation would be:
+ *   MOZ_FORMAT_PRINTF(3, 4)
+ *
+ * Note that the checking is limited to standards-conforming
+ * printf-likes, and in particular this should not be used for
+ * PR_snprintf and friends, which are "printf-like" but which assign
+ * different meanings to the various formats.
+ */
+#ifdef __GNUC__
+#define MOZ_FORMAT_PRINTF(stringIndex, firstToCheck)  \
+    __attribute__ ((format (printf, stringIndex, firstToCheck)))
+#else
+#define MOZ_FORMAT_PRINTF(stringIndex, firstToCheck)
+#endif
 
 #endif /* mozilla_Attributes_h */

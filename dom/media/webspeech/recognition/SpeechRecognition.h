@@ -17,7 +17,6 @@
 
 #include "nsIDOMNavigatorUserMedia.h"
 #include "nsITimer.h"
-#include "MediaEngine.h"
 #include "MediaStreamGraph.h"
 #include "AudioSegment.h"
 #include "mozilla/WeakPtr.h"
@@ -31,6 +30,8 @@
 #include "mozilla/dom/SpeechRecognitionError.h"
 
 namespace mozilla {
+
+class DOMMediaStream;
 
 namespace dom {
 
@@ -255,8 +256,8 @@ class SpeechEvent : public Runnable
 public:
   SpeechEvent(SpeechRecognition* aRecognition, SpeechRecognition::EventType aType)
   : mAudioSegment(0)
-  , mRecognitionResultList(0)
-  , mError(0)
+  , mRecognitionResultList(nullptr)
+  , mError(nullptr)
   , mRecognition(aRecognition)
   , mType(aType)
   , mTrackRate(0)

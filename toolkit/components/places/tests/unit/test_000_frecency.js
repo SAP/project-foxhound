@@ -56,7 +56,7 @@ var prefPrefix = "places.frecency.";
 function* task_initializeBucket(bucket) {
   let [cutoffName, weightName] = bucket;
   // get pref values
-  var weight = 0, cutoff = 0, bonus = 0;
+  var weight = 0, cutoff = 0;
   try {
     weight = prefs.getIntPref(prefPrefix + weightName);
   } catch (ex) {}
@@ -79,7 +79,7 @@ function* task_initializeBucket(bucket) {
     if (bonusName == "unvisitedBookmarkBonus" || bonusName == "unvisitedTypedBonus") {
       if (cutoffName == "firstBucketCutoff") {
         let points = Math.ceil(bonusValue / parseFloat(100.0) * weight);
-        var visitCount = 1; //bonusName == "unvisitedBookmarkBonus" ? 1 : 0;
+        var visitCount = 1; // bonusName == "unvisitedBookmarkBonus" ? 1 : 0;
         frecency = Math.ceil(visitCount * points);
         calculatedURI = uri("http://" + searchTerm + ".com/" +
           bonusName + ":" + bonusValue + "/cutoff:" + cutoff +
@@ -87,8 +87,7 @@ function* task_initializeBucket(bucket) {
         if (bonusName == "unvisitedBookmarkBonus") {
           matchTitle = searchTerm + "UnvisitedBookmark";
           bmsvc.insertBookmark(bmsvc.unfiledBookmarksFolder, calculatedURI, bmsvc.DEFAULT_INDEX, matchTitle);
-        }
-        else {
+        } else {
           matchTitle = searchTerm + "UnvisitedTyped";
           yield PlacesTestUtils.addVisits({
             uri: calculatedURI,
@@ -99,8 +98,7 @@ function* task_initializeBucket(bucket) {
           histsvc.markPageAsTyped(calculatedURI);
         }
       }
-    }
-    else {
+    } else {
       // visited
       // visited bookmarks get the visited bookmark bonus twice
       if (visitType == Ci.nsINavHistoryService.TRANSITION_BOOKMARK)
@@ -116,8 +114,7 @@ function* task_initializeBucket(bucket) {
           frecency = 0;
         else
           frecency = -1;
-      }
-      else
+      } else
         frecency = points;
       calculatedURI = uri("http://" + searchTerm + ".com/" +
         bonusName + ":" + bonusValue + "/cutoff:" + cutoff +
@@ -125,9 +122,8 @@ function* task_initializeBucket(bucket) {
       if (visitType == Ci.nsINavHistoryService.TRANSITION_BOOKMARK) {
         matchTitle = searchTerm + "Bookmarked";
         bmsvc.insertBookmark(bmsvc.unfiledBookmarksFolder, calculatedURI, bmsvc.DEFAULT_INDEX, matchTitle);
-      }
-      else
-        matchTitle = calculatedURI.spec.substr(calculatedURI.spec.lastIndexOf("/")+1);
+      } else
+        matchTitle = calculatedURI.spec.substr(calculatedURI.spec.lastIndexOf("/") + 1);
       yield PlacesTestUtils.addVisits({
         uri: calculatedURI,
         transition: visitType,
@@ -166,21 +162,21 @@ AutoCompleteInput.prototype = {
     return this.searches.length;
   },
 
-  getSearchAt: function(aIndex) {
+  getSearchAt(aIndex) {
     return this.searches[aIndex];
   },
 
-  onSearchBegin: function() {},
-  onSearchComplete: function() {},
+  onSearchBegin() {},
+  onSearchComplete() {},
 
   popupOpen: false,
 
   popup: {
-    setSelectedIndex: function(aIndex) {},
-    invalidate: function() {},
+    setSelectedIndex(aIndex) {},
+    invalidate() {},
 
     // nsISupports implementation
-    QueryInterface: function(iid) {
+    QueryInterface(iid) {
       if (iid.equals(Ci.nsISupports) ||
           iid.equals(Ci.nsIAutoCompletePopup))
         return this;
@@ -190,7 +186,7 @@ AutoCompleteInput.prototype = {
   },
 
   // nsISupports implementation
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsISupports) ||
         iid.equals(Ci.nsIAutoCompleteInput))
       return this;
@@ -199,8 +195,7 @@ AutoCompleteInput.prototype = {
   }
 }
 
-add_task(function* test_frecency()
-{
+add_task(function* test_frecency() {
   // Disable autoFill for this test.
   Services.prefs.setBoolPref("browser.urlbar.autoFill", false);
   do_register_cleanup(() => Services.prefs.clearUserPref("browser.urlbar.autoFill"));
@@ -214,7 +209,7 @@ add_task(function* test_frecency()
   prefs.setIntPref("browser.urlbar.maxRichResults", results.length);
 
   // DEBUG
-  //results.every(function(el) { dump("result: " + el[1] + ": " + el[0].spec + " (" + el[2] + ")\n"); return true; })
+  // results.every(function(el) { dump("result: " + el[1] + ": " + el[0].spec + " (" + el[2] + ")\n"); return true; })
 
   yield PlacesTestUtils.promiseAsyncUpdates();
 

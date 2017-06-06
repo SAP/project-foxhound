@@ -7,7 +7,7 @@
 #include "nsTreeSanitizer.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/CSSStyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Declaration.h"
 #include "mozilla/css/StyleRule.h"
 #include "mozilla/css/Rule.h"
@@ -1067,8 +1067,8 @@ bool
 nsTreeSanitizer::SanitizeStyleDeclaration(mozilla::css::Declaration* aDeclaration,
                                           nsAutoString& aRuleText)
 {
-  bool didSanitize = aDeclaration->HasProperty(eCSSProperty_binding);
-  aDeclaration->RemoveProperty(eCSSProperty_binding);
+  bool didSanitize = aDeclaration->HasProperty(eCSSProperty__moz_binding);
+  aDeclaration->RemovePropertyByID(eCSSProperty__moz_binding);
   aDeclaration->ToString(aRuleText);
   return didSanitize;
 }

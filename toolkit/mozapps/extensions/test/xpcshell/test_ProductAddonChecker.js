@@ -62,43 +62,23 @@ function compareFiles(file1, file2) {
 }
 
 add_task(function* test_404() {
-  try {
-    let addons = yield ProductAddonChecker.getProductAddonList(root + "404.xml");
-    do_throw("Should not have returned anything");
-  }
-  catch (e) {
-    do_check_true(true, "Expected to throw for a missing update file");
-  }
+  let res = yield ProductAddonChecker.getProductAddonList(root + "404.xml");
+  do_check_true(res.usedFallback);
 });
 
 add_task(function* test_not_xml() {
-  try {
-    let addons = yield ProductAddonChecker.getProductAddonList(root + "bad.txt");
-    do_throw("Should not have returned anything");
-  }
-  catch (e) {
-    do_check_true(true, "Expected to throw for a non XML result");
-  }
+  let res = yield ProductAddonChecker.getProductAddonList(root + "bad.txt");
+  do_check_true(res.usedFallback);
 });
 
 add_task(function* test_invalid_xml() {
-  try {
-    let addons = yield ProductAddonChecker.getProductAddonList(root + "bad.xml");
-    do_throw("Should not have returned anything");
-  }
-  catch (e) {
-    do_check_true(true, "Expected to throw for invalid XML");
-  }
+  let res = yield ProductAddonChecker.getProductAddonList(root + "bad.xml");
+  do_check_true(res.usedFallback);
 });
 
 add_task(function* test_wrong_xml() {
-  try {
-    let addons = yield ProductAddonChecker.getProductAddonList(root + "bad2.xml");
-    do_throw("Should not have returned anything");
-  }
-  catch (e) {
-    do_check_true(true, "Expected to throw for a missing <updates> tag");
-  }
+  let res = yield ProductAddonChecker.getProductAddonList(root + "bad2.xml");
+  do_check_true(res.usedFallback);
 });
 
 add_task(function* test_missing() {
@@ -107,19 +87,19 @@ add_task(function* test_missing() {
 });
 
 add_task(function* test_empty() {
-  let addons = yield ProductAddonChecker.getProductAddonList(root + "empty.xml");
-  do_check_true(Array.isArray(addons));
-  do_check_eq(addons.length, 0);
+  let res = yield ProductAddonChecker.getProductAddonList(root + "empty.xml");
+  do_check_true(Array.isArray(res.gmpAddons));
+  do_check_eq(res.gmpAddons.length, 0);
 });
 
 add_task(function* test_good_xml() {
-  let addons = yield ProductAddonChecker.getProductAddonList(root + "good.xml");
-  do_check_true(Array.isArray(addons));
+  let res = yield ProductAddonChecker.getProductAddonList(root + "good.xml");
+  do_check_true(Array.isArray(res.gmpAddons));
 
   // There are three valid entries in the XML
-  do_check_eq(addons.length, 5);
+  do_check_eq(res.gmpAddons.length, 5);
 
-  let addon = addons[0];
+  let addon = res.gmpAddons[0];
   do_check_eq(addon.id, "test1");
   do_check_eq(addon.URL, "http://example.com/test1.xpi");
   do_check_eq(addon.hashFunction, undefined);
@@ -127,7 +107,7 @@ add_task(function* test_good_xml() {
   do_check_eq(addon.version, undefined);
   do_check_eq(addon.size, undefined);
 
-  addon = addons[1];
+  addon = res.gmpAddons[1];
   do_check_eq(addon.id, "test2");
   do_check_eq(addon.URL, "http://example.com/test2.xpi");
   do_check_eq(addon.hashFunction, "md5");
@@ -135,7 +115,7 @@ add_task(function* test_good_xml() {
   do_check_eq(addon.version, undefined);
   do_check_eq(addon.size, undefined);
 
-  addon = addons[2];
+  addon = res.gmpAddons[2];
   do_check_eq(addon.id, "test3");
   do_check_eq(addon.URL, "http://example.com/test3.xpi");
   do_check_eq(addon.hashFunction, undefined);
@@ -143,7 +123,7 @@ add_task(function* test_good_xml() {
   do_check_eq(addon.version, "1.0");
   do_check_eq(addon.size, 45);
 
-  addon = addons[3];
+  addon = res.gmpAddons[3];
   do_check_eq(addon.id, "test4");
   do_check_eq(addon.URL, undefined);
   do_check_eq(addon.hashFunction, undefined);
@@ -151,7 +131,7 @@ add_task(function* test_good_xml() {
   do_check_eq(addon.version, undefined);
   do_check_eq(addon.size, undefined);
 
-  addon = addons[4];
+  addon = res.gmpAddons[4];
   do_check_eq(addon.id, undefined);
   do_check_eq(addon.URL, "http://example.com/test5.xpi");
   do_check_eq(addon.hashFunction, undefined);
@@ -166,8 +146,7 @@ add_task(function* test_download_nourl() {
 
     yield OS.File.remove(path);
     do_throw("Should not have downloaded a file with a missing url");
-  }
-  catch (e) {
+  } catch (e) {
     do_check_true(true, "Should have thrown when downloading a file with a missing url.");
   }
 });
@@ -180,8 +159,7 @@ add_task(function* test_download_missing() {
 
     yield OS.File.remove(path);
     do_throw("Should not have downloaded a missing file");
-  }
-  catch (e) {
+  } catch (e) {
     do_check_true(true, "Should have thrown when downloading a missing file.");
   }
 });
@@ -209,8 +187,7 @@ add_task(function* test_download_badsize() {
 
     yield OS.File.remove(path);
     do_throw("Should not have downloaded a file with a bad size");
-  }
-  catch (e) {
+  } catch (e) {
     do_check_true(true, "Should have thrown when downloading a file with a bad size.");
   }
 });
@@ -225,8 +202,7 @@ add_task(function* test_download_badhashfn() {
 
     yield OS.File.remove(path);
     do_throw("Should not have downloaded a file with a bad hash function");
-  }
-  catch (e) {
+  } catch (e) {
     do_check_true(true, "Should have thrown when downloading a file with a bad hash function.");
   }
 });
@@ -241,8 +217,7 @@ add_task(function* test_download_badhash() {
 
     yield OS.File.remove(path);
     do_throw("Should not have downloaded a file with a bad hash");
-  }
-  catch (e) {
+  } catch (e) {
     do_check_true(true, "Should have thrown when downloading a file with a bad hash.");
   }
 });

@@ -24,9 +24,9 @@ dictionary ElementCreationOptions {
 interface Document : Node {
   [Throws]
   readonly attribute DOMImplementation implementation;
-  [Pure, Throws]
+  [Pure, Throws, BinaryName="documentURIFromJS", NeedsCallerType]
   readonly attribute DOMString URL;
-  [Pure, Throws]
+  [Pure, Throws, BinaryName="documentURIFromJS", NeedsCallerType]
   readonly attribute DOMString documentURI;
   [Pure]
   readonly attribute DOMString compatMode;
@@ -55,7 +55,7 @@ interface Document : Node {
   [NewObject, Throws]
   Element createElement(DOMString localName, optional (ElementCreationOptions or DOMString) options);
   [NewObject, Throws]
-  Element createElementNS(DOMString? namespace, DOMString qualifiedName, optional ElementCreationOptions options);
+  Element createElementNS(DOMString? namespace, DOMString qualifiedName, optional (ElementCreationOptions or DOMString) options);
   [NewObject]
   DocumentFragment createDocumentFragment();
   [NewObject]
@@ -152,9 +152,6 @@ partial interface Document {
 
   // Gecko extensions?
                 attribute EventHandler onwheel;
-                attribute EventHandler oncopy;
-                attribute EventHandler oncut;
-                attribute EventHandler onpaste;
                 attribute EventHandler onbeforescriptexecute;
                 attribute EventHandler onafterscriptexecute;
 
@@ -232,9 +229,9 @@ partial interface Document {
   readonly attribute boolean fullscreen;
   [BinaryName="fullscreen"]
   readonly attribute boolean mozFullScreen;
-  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled", NeedsCallerType]
   readonly attribute boolean fullscreenEnabled;
-  [BinaryName="fullscreenEnabled"]
+  [BinaryName="fullscreenEnabled", NeedsCallerType]
   readonly attribute boolean mozFullScreenEnabled;
   [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
   readonly attribute Element? fullscreenElement;
@@ -271,7 +268,7 @@ partial interface Document {
 //http://dvcs.w3.org/hg/webcomponents/raw-file/tip/spec/custom/index.html#dfn-document-register
 partial interface Document {
     // this is deprecated from CustomElements v0
-    [Throws, Func="CustomElementsRegistry::IsCustomElementsEnabled"]
+    [Throws, Func="CustomElementRegistry::IsCustomElementEnabled"]
     object registerElement(DOMString name, optional ElementRegistrationOptions options);
 };
 
@@ -302,12 +299,6 @@ partial interface Document {
     readonly attribute Element? scrollingElement;
 };
 
-// http://dvcs.w3.org/hg/undomanager/raw-file/tip/undomanager.html
-partial interface Document {
-    [Pref="dom.undo_manager.enabled"]
-    readonly attribute UndoManager? undoManager;
-};
-
 // http://dev.w3.org/2006/webapi/selectors-api2/#interface-definitions
 partial interface Document {
   [Throws, Pure]
@@ -327,6 +318,12 @@ partial interface Document {
   sequence<Animation> getAnimations();
 };
 
+// https://svgwg.org/svg2-draft/struct.html#InterfaceDocumentExtensions
+partial interface Document {
+  [BinaryName="SVGRootElement"]
+  readonly attribute SVGSVGElement? rootElement;
+};
+
 //  Mozilla extensions of various sorts
 partial interface Document {
   // nsIDOMDocumentXBL.  Wish we could make these [ChromeOnly], but
@@ -338,7 +335,7 @@ partial interface Document {
                                           DOMString attrValue);
   [Func="IsChromeOrXBL"]
   Element? getBindingParent(Node node);
-  [Throws, Func="IsChromeOrXBL"]
+  [Throws, Func="IsChromeOrXBL", NeedsSubjectPrincipal]
   void loadBindingDocument(DOMString documentURL);
 
   // nsIDOMDocumentTouch
@@ -443,8 +440,23 @@ partial interface Document {
   [Func="IsChromeOrXBL"] readonly attribute boolean inlineScriptAllowedByCSP;
 };
 
+// For more information on Flash classification, see
+// toolkit/components/url-classifier/flash-block-lists.rst
+enum FlashClassification {
+  "unclassified",   // Denotes a classification that has not yet been computed.
+                    // Allows for lazy classification.
+  "unknown",        // Site is not on the whitelist or blacklist
+  "allowed",        // Site is on the Flash whitelist
+  "denied"          // Site is on the Flash blacklist
+};
+partial interface Document {
+  [ChromeOnly]
+  readonly attribute FlashClassification documentFlashClassification;
+};
+
 Document implements XPathEvaluator;
 Document implements GlobalEventHandlers;
+Document implements DocumentAndElementEventHandlers;
 Document implements TouchEventHandlers;
 Document implements ParentNode;
 Document implements OnErrorEventHandlerForNodes;

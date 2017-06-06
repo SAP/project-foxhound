@@ -189,7 +189,7 @@ TextPropertyEditor.prototype = {
     this.filterProperty.addEventListener("click", event => {
       this.ruleEditor.ruleView.setFilterStyles("`" + this.prop.name + "`");
       event.stopPropagation();
-    }, false);
+    });
 
     // Holds the viewers for the computed properties.
     // will be populated in |_updateComputed|.
@@ -209,7 +209,7 @@ TextPropertyEditor.prototype = {
         if (event.target === this.nameContainer) {
           this.nameSpan.click();
         }
-      }, false);
+      });
 
       editableField({
         start: this._onStartEditing,
@@ -219,12 +219,13 @@ TextPropertyEditor.prototype = {
         advanceChars: ":",
         contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
         popup: this.popup,
-        cssProperties: this.cssProperties
+        cssProperties: this.cssProperties,
+        contextMenu: this.ruleView.inspector.onTextBoxContextMenu
       });
 
       // Auto blur name field on multiple CSS rules get pasted in.
       this.nameContainer.addEventListener("paste",
-        blurOnMultipleProperties(this.cssProperties), false);
+        blurOnMultipleProperties(this.cssProperties));
 
       this.valueContainer.addEventListener("click", (event) => {
         // Clicks within the value shouldn't propagate any further.
@@ -234,7 +235,7 @@ TextPropertyEditor.prototype = {
         if (event.target === this.valueContainer) {
           this.valueSpan.click();
         }
-      }, false);
+      });
 
       // The mousedown event could trigger a blur event on nameContainer, which
       // will trigger a call to the update function. The update function clears
@@ -260,12 +261,12 @@ TextPropertyEditor.prototype = {
             index: similarElements.indexOf(clickedEl)
           };
         }
-      }, false);
+      });
 
       this.valueSpan.addEventListener("mouseup", (event) => {
         this._clickedElementOptions = null;
         this._hasPendingClick = false;
-      }, false);
+      });
 
       this.valueSpan.addEventListener("click", (event) => {
         let target = event.target;
@@ -275,7 +276,7 @@ TextPropertyEditor.prototype = {
           event.preventDefault();
           this.browserWindow.openUILinkIn(target.href, "tab");
         }
-      }, false);
+      });
 
       editableField({
         start: this._onStartEditing,
@@ -289,7 +290,8 @@ TextPropertyEditor.prototype = {
         popup: this.popup,
         multiline: true,
         maxWidth: () => this.container.getBoundingClientRect().width,
-        cssProperties: this.cssProperties
+        cssProperties: this.cssProperties,
+        contextMenu: this.ruleView.inspector.onTextBoxContextMenu
       });
     }
   },
@@ -340,14 +342,15 @@ TextPropertyEditor.prototype = {
 
     let outputParser = this.ruleView._outputParser;
     let parserOptions = {
-      colorSwatchClass: SHARED_SWATCH_CLASS + " " + COLOR_SWATCH_CLASS,
-      colorClass: "ruleview-color",
-      bezierSwatchClass: SHARED_SWATCH_CLASS + " " + BEZIER_SWATCH_CLASS,
-      bezierClass: "ruleview-bezier",
-      filterSwatchClass: SHARED_SWATCH_CLASS + " " + FILTER_SWATCH_CLASS,
-      filterClass: "ruleview-filter",
-      angleSwatchClass: SHARED_SWATCH_CLASS + " " + ANGLE_SWATCH_CLASS,
       angleClass: "ruleview-angle",
+      angleSwatchClass: SHARED_SWATCH_CLASS + " " + ANGLE_SWATCH_CLASS,
+      bezierClass: "ruleview-bezier",
+      bezierSwatchClass: SHARED_SWATCH_CLASS + " " + BEZIER_SWATCH_CLASS,
+      colorClass: "ruleview-color",
+      colorSwatchClass: SHARED_SWATCH_CLASS + " " + COLOR_SWATCH_CLASS,
+      filterClass: "ruleview-filter",
+      filterSwatchClass: SHARED_SWATCH_CLASS + " " + FILTER_SWATCH_CLASS,
+      gridClass: "ruleview-grid",
       defaultColorType: !propDirty,
       urlClass: "theme-link",
       baseURI: this.sheetHref
@@ -422,6 +425,15 @@ TextPropertyEditor.prototype = {
       }
     }
 
+    let gridToggle = this.valueSpan.querySelector(".ruleview-grid");
+    if (gridToggle) {
+      gridToggle.setAttribute("title", l10n("rule.gridToggle.tooltip"));
+      if (this.ruleView.highlighters.gridHighlighterShown ===
+          this.ruleView.inspector.selection.nodeFront) {
+        gridToggle.classList.add("active");
+      }
+    }
+
     // Now that we have updated the property's value, we might have a pending
     // click on the value container. If we do, we have to trigger a click event
     // on the right element.
@@ -451,6 +463,7 @@ TextPropertyEditor.prototype = {
 
   _onStartEditing: function () {
     this.element.classList.remove("ruleview-overridden");
+    this.filterProperty.hidden = true;
     this.enable.style.visibility = "hidden";
   },
 
@@ -722,6 +735,10 @@ TextPropertyEditor.prototype = {
       return;
     }
 
+    if (this.isDisplayGrid()) {
+      this.ruleView.highlighters.hideGridHighlighter();
+    }
+
     // First, set this property value (common case, only modified a property)
     this.prop.setValue(val.value, val.priority);
 
@@ -848,6 +865,15 @@ TextPropertyEditor.prototype = {
    */
   isValid: function () {
     return this.prop.isValid();
+  },
+
+  /**
+   * Returns true if the property is a `display: grid` declaration.
+   *
+   * @return {Boolean} true if the property is a `display: grid` declaration.
+   */
+  isDisplayGrid: function () {
+    return this.prop.name === "display" && this.prop.value === "grid";
   }
 };
 
