@@ -990,9 +990,13 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
     if (!utf8chars)
         return false;
 
+    // true iff current char is tainted
     bool marker = false;
+    // offset between encoded string and unicode string
     size_t offset = 1;
-    bool escape = false;
+    // amount of chars that are escaped by "\".
+    int escape = 0;
+    // String representations always starts with a quote
     fprintf(gOutFile->fp, "%c", utf8chars[0]);
     for(size_t i = 1; utf8chars[i] != '\0'; i++) {
         if (taint[i-offset] && !marker) {
@@ -1004,11 +1008,20 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
             marker = false;
         }
         fprintf(gOutFile->fp, "%c", utf8chars[i]);
-        if (!escape && utf8chars[i] == '\\') {
-            escape = true;
+        if (escape == 0 && utf8chars[i] == '\\' && utf8chars[i+1] == 'u') {
+            escape = 5;
             offset++;
-        } else if (escape) {
-            escape = false;
+        } else if (escape == 0 && utf8chars[i] == '\\' && utf8chars[i+1] == 'x') {
+            escape = 3;
+            offset++;
+        } else if (escape == 0 && utf8chars[i] == '\\') {
+            escape = 1;
+            offset++;
+        } else if (escape > 0) {
+            escape--;
+            if(escape > 0) {
+                offset++;
+            }
         }
     }
     if (marker)
